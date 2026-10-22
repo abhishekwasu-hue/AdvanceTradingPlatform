@@ -2440,3 +2440,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Evals: 12 new copilot_jobs cases (must-answer, no-data, AI wording kept / rejected) and 13 new copilot_safety cases
   (refusals + controls) on new synthetic fixtures; pins updated. e2e fixture and two 1440 baselines refreshed (jobs 3-5
   "Ready"), two new e2e tests. No migration. Questions CP5-6..CP5-10.
+
+## 22 Oct - Settings redesign C: My trading defaults (a pre-fill, never a hidden rule)
+
+- New per-user prefs namespace `trading_defaults` (`app/me/prefs.py`, strict, every field None by default, the deployment
+  API's own limits kept equal by a test). Only the reviewed fields (R7); never mode, broker routing, order style or any
+  LIVE field. The server never reads it to trade (a test greps `app/`). No migration.
+- New v2 page `/settings/trading-defaults` (`frontend/src/settings/TradingDefaultsV2.tsx`), found by search; Part B's
+  Settings index can link it. Risk limits is a link to its own page.
+- Pre-fill in the frontend only, behind `ui_v2`: the Paper bot's "Start on paper" ("Use my defaults for this bot" + the
+  list of values taken), the paper-only full form (each field marked "from your defaults"), the chain order ticket
+  (lots / product / order type). Empty defaults: byte-identical request bodies (tests).
+- Research: `docs/design/TRADING_DEFAULTS.md`. Questions SR-11..SR-14.

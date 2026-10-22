@@ -10,9 +10,11 @@ import { CardV2, ChipV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2
 import type { PageProps } from "../routes";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, StateChipV2 } from "../trading/PartsV2";
 import type { CustomStrategyResponse, Deployment, StrategyInfo } from "../types";
+import { DEFAULTS_PATH, appliedLine, useTradingDefaults, type TradingDefaults } from "../settings/tradingDefaults";
 import { PageIntro } from "../ui/PageIntro";
+import { useFeatures } from "../ui/useFeatures";
 import {
-  READY, SYMBOLS, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, paperBotRequest, sortBots, startSummary,
+  READY, SYMBOLS, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, paperBotRequestWithDefaults, sortBots, startSummary,
   strategyLine, symbolProblem,
 } from "./model";
 
@@ -33,6 +35,9 @@ const OTHER = "__other__";
  */
 export default function PaperBotV2(_props: PageProps) {
   const { user, loading: authLoading } = useAuth();
+  const features = useFeatures();
+  // Settings part C: the user's own defaults pre-fill "Start on paper" (v2 only; null = none, start as today).
+  const defaults = useTradingDefaults(!!user && features.on("ui_v2"));
   const [bots, setBots] = useState<Deployment[] | null>(null);
   const [botsFailed, setBotsFailed] = useState(false);
   const [library, setLibrary] = useState<StrategyInfo[] | null>(null);
@@ -151,7 +156,8 @@ export default function PaperBotV2(_props: PageProps) {
 
       {canChange && (
         <section ref={formRef} className="scroll-mt-20">
-          <StartBotV2 library={library} custom={custom} hasBroker={hasBroker} firstField={firstField} onStarted={() => void loadBots()} />
+          <StartBotV2 library={library} custom={custom} hasBroker={hasBroker} firstField={firstField} onStarted={() => void loadBots()}
+            defaults={defaults} approvalAllowed={features.on("approval_only_entries")} />
         </section>
       )}
 
@@ -231,11 +237,14 @@ function StepNo({ n }: { n: number }) {
   return <span aria-hidden className="mr-space-1 inline-flex h-5 w-5 items-center justify-center rounded-pill bg-surface-3 text-t12 font-semibold text-fg">{n}</span>;
 }
 
-export function StartBotV2({ library, custom, hasBroker, firstField, onStarted }: {
+export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, defaults = null, approvalAllowed = false }: {
   library: StrategyInfo[] | null; custom: CustomStrategyResponse[]; hasBroker: boolean | null;
   firstField: RefObject<HTMLSelectElement>; onStarted: () => void;
+  /** Settings part C: the user's own defaults (a pre-fill, shown and switchable here); null = none. */
+  defaults?: TradingDefaults | null; approvalAllowed?: boolean;
 }) {
-  const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId() };
+  const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId() };
+  const [useDefaults, setUseDefaults] = useState(true);
   const ready = useMemo(() => (library ?? []).filter((s) => READY.some((r) => r.id === s.id))
     .sort((a, b) => READY.findIndex((r) => r.id === a.id) - READY.findIndex((r) => r.id === b.id)), [library]);
   const others = useMemo(() => (library ?? []).filter((s) => !READY.some((r) => r.id === s.id)), [library]);
@@ -264,13 +273,15 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted }
   const symbol = symbolChoice === OTHER ? otherSymbol : symbolChoice;
   const problem = symbolProblem(symbol);
   const line = strategyLine(strategyId, info) || (custom.some((c) => c.strategy_id === strategyId) ? "Your own strategy from Build a strategy." : "");
+  const offered = paperBotRequestWithDefaults(strategyId, symbol, info, defaults, approvalAllowed).applied;
+  const { request } = paperBotRequestWithDefaults(strategyId, symbol, info, defaults, approvalAllowed, useDefaults);
 
   async function start() {
     setTouched(true);
     if (problem || !strategyId) return;
     setBusy(true); setResult(null);
     try {
-      await api.createDeployment(paperBotRequest(strategyId, symbol, info));
+      await api.createDeployment(request);
       setResult({ kind: "done", text: `Started on paper: ${cleanSymbol(symbol)}. It shows under Your bots and starts checking the market on its next round.` });
       onStarted();
     } catch (e) {
@@ -321,7 +332,20 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted }
           {touched && problem && <p role="alert" className="mt-space-1 text-t13 text-warn">{problem}</p>}
         </div>
         <div className="space-y-space-2">
-          <p className="text-t14 text-fg-muted">{startSummary(symbol, info)}</p>
+          <p className="text-t14 text-fg-muted">{startSummary(symbol, info, request)}</p>
+          {offered.length > 0 && (
+            <div className="space-y-space-1 rounded-control border border-subtle p-space-3" data-defaults>
+              <label className="flex min-h-11 cursor-pointer items-center gap-space-2 text-t14 font-medium text-fg md:min-h-0">
+                <input type="checkbox" className="h-4 w-4 shrink-0 accent-brand" checked={useDefaults} aria-describedby={ids.defaults}
+                  onChange={(e) => { setUseDefaults(e.target.checked); setResult(null); }} />
+                Use my defaults for this bot
+              </label>
+              <p id={ids.defaults} className="text-t13 text-fg-muted" data-defaults-line>
+                {useDefaults ? appliedLine(offered) : "Starts with the usual settings instead."}{" "}
+                <Link to={DEFAULTS_PATH} className="font-medium text-brand hover:underline">Change my defaults</Link>
+              </p>
+            </div>
+          )}
           <button type="button" className={`${BUTTON_PRIMARY} w-full sm:w-auto`} disabled={busy || !strategyId} aria-busy={busy || undefined} onClick={() => void start()}>
             {busy && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}
             Start on paper

@@ -1,3 +1,4 @@
+import { botWithDefaults, structureLabel, type TradingDefaults } from "../settings/tradingDefaults";
 import type { ContractRules, Deployment, DeploymentCreateRequest, StrategyInfo } from "../types";
 
 /**
@@ -75,10 +76,32 @@ export function paperBotRequest(strategyId: string, symbol: string, info: Pick<S
   };
 }
 
-/** What "Start on paper" says under the button. */
-export function startSummary(symbol: string, info: Pick<StrategyInfo, "timeframes"> | null | undefined): string {
+const EXPIRY_WORDS: Record<string, string> = { NEAREST: "nearest", NEXT: "next", MONTHLY: "monthly" };
+
+/** Settings part C: the same request with the user's own defaults (a pre-fill: only the values that apply, each named in
+ * `applied` so the page can say "From your defaults: ..."). No defaults, or `use` false: today's request itself. Never
+ * the mode: it stays PAPER. */
+export function paperBotRequestWithDefaults(strategyId: string, symbol: string, info: Pick<StrategyInfo, "timeframes"> | null | undefined,
+  defaults: TradingDefaults | null | undefined, approvalAllowed: boolean, use = true):
+  { request: DeploymentCreateRequest & { mode: "PAPER" }; applied: string[] } {
+  const base = paperBotRequest(strategyId, symbol, info);
+  if (!use) return { request: base, applied: [] };
+  return botWithDefaults(base, defaults, { index: isIndex(symbol), swing: isSwing(info), approvalAllowed });
+}
+
+/** What "Start on paper" says under the button. Settings part C: given the request (with the user's defaults), it says
+ * what that request trades; without one (or with today's request) the words are today's. */
+export function startSummary(symbol: string, info: Pick<StrategyInfo, "timeframes"> | null | undefined,
+  req?: Pick<DeploymentCreateRequest, "instrument_kind" | "expiry_rule" | "max_lots" | "option_strategy">): string {
   const s = cleanSymbol(symbol) || "the symbol";
-  const what = isIndex(s) ? `a ${s} option at the nearest expiry, 1 lot` : `${s} itself`;
+  const lots = req?.max_lots ?? 1;
+  const expiry = EXPIRY_WORDS[req?.expiry_rule ?? "NEAREST"] ?? "nearest";
+  const size = `${lots} lot${lots === 1 ? "" : "s"}`;
+  const structure = req?.option_strategy && req.option_strategy !== "SINGLE" ? req.option_strategy : null;
+  const what = !isIndex(s) ? `${s} itself`
+    : req?.instrument_kind === "FUTURE" ? `a ${s} future at the ${expiry} expiry, ${size}`
+    : structure ? `${s} options as a ${structureLabel(structure).toLowerCase()} at the ${expiry} expiry, ${size}`
+    : `a ${s} option at the ${expiry} expiry, ${size}`;
   const when = isSwing(info) ? "held for days" : "closed before the market closes";
   return `Trades ${what}, ${when}. Paper money only; your risk limits apply.`;
 }

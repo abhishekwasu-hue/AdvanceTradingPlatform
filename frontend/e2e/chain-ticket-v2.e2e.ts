@@ -44,7 +44,7 @@ function preview(body: Record<string, unknown>) {
 
 interface Seen { posts: MockCalls["posts"]; held: number }
 
-async function open(page: Page, theme: "light" | "dark", opts: { options?: MockOptions; held?: unknown[] } = {}): Promise<Seen> {
+async function open(page: Page, theme: "light" | "dark", opts: { options?: MockOptions; held?: unknown[]; tradingDefaults?: unknown } = {}): Promise<Seen> {
   await page.clock.install({ time: new Date("2026-10-27T10:30:00+05:30") });
   await page.addInitScript((t) => {
     try {
@@ -94,6 +94,10 @@ async function open(page: Page, theme: "light" | "dark", opts: { options?: MockO
     seen.posts.push({ url: "/alerts/rules", method: "POST", body });
     return route.fulfill({ status: 201, json: { id: 5, ...body, status: "active" } });
   });
+  // Settings part C: the user's own ticket defaults (left out: the prefs read is a 404, the ticket starts as today).
+  if (opts.tradingDefaults) {
+    await page.route(/\/api(?:\/v1)?\/me\/prefs$/, (r) => r.fulfill({ json: { prefs: { trading_defaults: opts.tradingDefaults }, versions: { trading_defaults: 1 } } }));
+  }
   await page.goto("/option-chain");
   await page.addStyleTag({ content: [
     "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }",
@@ -161,6 +165,23 @@ test.describe("Chain ticket v2 flows", () => {
     expect(placed[0].body).not.toHaveProperty("mode");
     await ticket.locator("[data-ticket='done']").tap();
     await expect(page.locator("tr[data-strike='24500'] [data-held='call']")).toBeVisible();
+  });
+
+  test("Settings part C: the user's ticket defaults start the ticket, marked, and can be changed", async ({ page }) => {
+    const seen = await open(page, "light", { tradingDefaults: { ticket: { lots: 2, product: "NRML", order_type: "MARKET" } } });
+    await callCell(page).tap();
+    await page.locator("[data-chain-actions] [data-action='buy']").tap();
+    const ticket = page.locator("[data-order-ticket]");
+    await expect(ticket.locator("[data-ticket='lots']")).toHaveValue("2");
+    await expect(ticket.locator("[data-ticket='product'] [data-option='NRML']")).toHaveAttribute("aria-checked", "true");
+    await expect(ticket.locator("[data-from-defaults='lots']")).toHaveText("from your defaults");
+    await expect(ticket.locator("[data-from-defaults='type-product']")).toHaveText("Order type and product from your defaults. Tap to change.");
+    await ticket.locator("[data-ticket='product'] [data-option='MIS']").tap();
+    await expect(ticket.locator("[data-from-defaults='type-product']")).toHaveText("Order type from your defaults. Tap to change.");
+    await ticket.locator("[data-ticket='review']").tap();
+    const asked = () => seen.posts.filter((p) => p.url.endsWith("/order/preview"));
+    await expect.poll(() => asked().length).toBe(1);
+    expect(asked()[0].body).toMatchObject({ side: "BUY", lots: 2, product: "MIS", order_type: "MARKET" });
   });
 
   test("a refused ticket says why in plain words and cannot be placed", async ({ page }) => {

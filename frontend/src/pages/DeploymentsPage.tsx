@@ -1,5 +1,5 @@
 import { AlertTriangle, Bot, CircleDot, Pause, Play, Plus, Square, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { PageProps } from "../routes";
 import { useAuth } from "../auth/AuthContext";
@@ -8,6 +8,8 @@ import BrokerUncertainBanner from "../components/BrokerUncertainBanner";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { Card, StatTile } from "../components/ui";
 import { PageHeader } from "../components/primitives";
+import { FROM_DEFAULTS, formPrefill, stillFromDefaults, useTradingDefaults, type FormPrefill } from "../settings/tradingDefaults";
+import { useFeatures } from "../ui/useFeatures";
 import {
   BASE_TIMEFRAMES,
   type BrokerAccount,
@@ -38,6 +40,11 @@ import {
 
 // Index symbols have no cash leg: picking one switches the form to options (server rejects UNDERLYING on an index).
 const INDEX_SYMBOLS = new Set(["NIFTY 50", "NIFTY", "NIFTY BANK", "BANKNIFTY", "NIFTY FIN SERVICE", "FINNIFTY", "NIFTY MID SELECT", "MIDCPNIFTY", "NIFTY NEXT 50", "SENSEX", "BANKEX"]);
+
+/** Settings part C: the mark next to a field that still shows the value it took from the user's defaults. */
+function FromDefaults({ on }: { on: boolean }) {
+  return on ? <span className="ml-1 text-xs font-medium text-brand" data-from-defaults>{FROM_DEFAULTS}</span> : null;
+}
 
 function StatusBadge({ status }: { status: Deployment["status"] }) {
   const cls =
@@ -124,6 +131,15 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   const [exitBreakEven, setExitBreakEven] = useState("");
   const [exitMinutes, setExitMinutes] = useState("");
   const [exitAt, setExitAt] = useState("");
+  // Settings part C: on the v2 Paper bot page only (paperOnly, so PAPER), the user's own defaults pre-fill this form once;
+  // each field that still shows its default is marked, and every field stays editable. No defaults: nothing changes.
+  const features = useFeatures();
+  const approvalAllowed = features.on("approval_only_entries");
+  const defaults = useTradingDefaults(paperOnly && !!user && features.on("ui_v2"));
+  const [prefill, setPrefill] = useState<FormPrefill>({});
+  const [approval, setApproval] = useState(false);
+  const prefilled = useRef(false);
+  const marked = <K extends keyof FormPrefill>(key: K, value: FormPrefill[K]) => stillFromDefaults(prefill, key, value);
   const [regimes, setRegimes] = useState<string[]>([]);
   const OI_GATE_OPTIONS: [string, string][] = [
     ["OI_DIFF", "OI diff signal"], ["OI_CONFIRM", "OI confirmation"], ["PCR", "PCR limits"], ["IV_CHANGE", "IV jump"],
@@ -211,6 +227,33 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   }, [user]);
 
   useEffect(() => {
+    if (!defaults || prefilled.current) return;
+    prefilled.current = true;
+    const p = formPrefill(defaults, approvalAllowed);
+    // The form opens on an index symbol, which has no cash leg: "the symbol itself" is not taken there.
+    if (p.kind === "UNDERLYING" && INDEX_SYMBOLS.has(symbol.trim().toUpperCase())) delete p.kind;
+    if (!Object.keys(p).length) return;
+    setPrefill(p);
+    if (p.kind) setKind(p.kind);
+    if (p.structure) setStructure(p.structure);
+    if (p.position) setPosition(p.position);
+    if (p.expiryRule) setExpiryRule(p.expiryRule);
+    if (p.strikeRule) setStrikeRule(p.strikeRule);
+    if (p.strikeOffset !== undefined) setStrikeOffset(p.strikeOffset);
+    if (p.premiumStop !== undefined) setPremiumStop(p.premiumStop);
+    if (p.maxLots !== undefined) setMaxLots(p.maxLots);
+    if (p.spreadWidth !== undefined) setSpreadWidth(p.spreadWidth);
+    if (p.targetCredit !== undefined) setTargetCredit(p.targetCredit);
+    if (p.stopCredit !== undefined) setStopCredit(p.stopCredit);
+    if (p.exitTrail !== undefined) setExitTrail(p.exitTrail);
+    if (p.exitBreakEven !== undefined) setExitBreakEven(p.exitBreakEven);
+    if (p.exitMinutes !== undefined) setExitMinutes(p.exitMinutes);
+    if (p.exitAt !== undefined) setExitAt(p.exitAt);
+    if (p.approval) setApproval(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaults]);
+
+  useEffect(() => {
     refresh();
     const timer = setInterval(refresh, 15000);
     return () => clearInterval(timer);
@@ -236,6 +279,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
         broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, oi_gates: oiGates.length ? oiGates : null, ...contractRules(),
         routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
         order_style: orderStyle, market_protection_pct: orderStyle === "PROTECTED_LIMIT" && protectionPct ? Number(protectionPct) : null,
+        ...(paperOnly && approvalAllowed && approval ? { entry_mode: "APPROVAL" as const } : {}),
       });
       setMessage(paperOnly ? `Started on paper: ${created.symbol}. See it under Your bots.`
         : `Deployment #${created.id} is ${created.status}: ${created.strategy_id} on ${created.symbol} (${created.mode}).`);
@@ -430,7 +474,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
           <div className="grid sm:grid-cols-6 gap-3 items-end">
             <div>
-              <label className="block text-xs text-fg-muted mb-1">Trade as</label>
+              <label className="block text-xs text-fg-muted mb-1">Trade as<FromDefaults on={marked("kind", kind)} /></label>
               <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={kind} onChange={(e) => { setKind(e.target.value as InstrumentKind); setPreview(null); }}>
                 <option value="UNDERLYING">Underlying (cash)</option>
                 <option value="OPTION">Option</option>
@@ -439,7 +483,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
             </div>
             {kind === "OPTION" && (
               <div>
-                <label className="block text-xs text-fg-muted mb-1">Structure</label>
+                <label className="block text-xs text-fg-muted mb-1">Structure<FromDefaults on={marked("structure", structure as FormPrefill["structure"])} /></label>
                 <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={structure} onChange={(e) => { setStructure(e.target.value as OptionStrategy); setPreview(null); }}>
                   <option value="SINGLE">Single option</option>
                   <option value="BULL_PUT_SPREAD">Bull put spread (LONG)</option>
@@ -460,7 +504,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
             )}
             {kind === "OPTION" && structure === "SINGLE" && (
               <div>
-                <label className="block text-xs text-fg-muted mb-1">Position</label>
+                <label className="block text-xs text-fg-muted mb-1">Position<FromDefaults on={marked("position", position)} /></label>
                 <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={position} onChange={(e) => { setPosition(e.target.value as OptionPosition); setPreview(null); }}>
                   <option value="BUY">Buy (LONG→CE, SHORT→PE)</option>
                   <option value="WRITE">Write (LONG→sell PE, SHORT→sell CE)</option>
@@ -469,7 +513,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
             )}
             {kind !== "UNDERLYING" && (
               <div>
-                <label className="block text-xs text-fg-muted mb-1">Expiry</label>
+                <label className="block text-xs text-fg-muted mb-1">Expiry<FromDefaults on={marked("expiryRule", expiryRule)} /></label>
                 <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={expiryRule} onChange={(e) => { setExpiryRule(e.target.value as ExpiryRule); setPreview(null); }}>
                   <option value="NEAREST">Nearest</option>
                   <option value="NEXT">Next</option>
@@ -480,7 +524,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
             {kind === "OPTION" && (
               <>
                 <div>
-                  <label className="block text-xs text-fg-muted mb-1">Strike</label>
+                  <label className="block text-xs text-fg-muted mb-1">Strike<FromDefaults on={marked("strikeRule", strikeRule) || marked("strikeOffset", strikeOffset)} /></label>
                   <div className="flex gap-1">
                     <select className="flex-1 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={strikeRule} onChange={(e) => { setStrikeRule(e.target.value as StrikeRule); setPreview(null); }}>
                       <option value="ATM">ATM</option>
@@ -494,19 +538,19 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
                 </div>
                 {structure === "SINGLE" ? (
                   <div>
-                    <label className="block text-xs text-fg-muted mb-1">Premium {position === "BUY" ? "stop" : "ceiling"} %</label>
+                    <label className="block text-xs text-fg-muted mb-1">Premium {position === "BUY" ? "stop" : "ceiling"} %<FromDefaults on={marked("premiumStop", premiumStop)} /></label>
                     <input type="number" min={5} max={95} placeholder={position === "BUY" ? "30" : "50"} className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={premiumStop} onChange={(e) => setPremiumStop(e.target.value)} />
                   </div>
                 ) : (
                   <>
                     {WIDTH_STRUCTURES.includes(structure) && (
                       <div>
-                        <label className="block text-xs text-fg-muted mb-1">{WINGED_STRUCTURES.includes(structure) || structure === "LONG_BUTTERFLY" ? "Wing width (steps)" : "Short strike distance (steps)"}</label>
+                        <label className="block text-xs text-fg-muted mb-1">{WINGED_STRUCTURES.includes(structure) || structure === "LONG_BUTTERFLY" ? "Wing width (steps)" : "Short strike distance (steps)"}<FromDefaults on={marked("spreadWidth", spreadWidth)} /></label>
                         <input type="number" min={1} max={20} className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={spreadWidth} onChange={(e) => { setSpreadWidth(Number(e.target.value)); setPreview(null); }} />
                       </div>
                     )}
                     <div>
-                      <label className="block text-xs text-fg-muted mb-1">Target / stop (% of {PAYOFF_STRUCTURES.includes(structure) ? "max profit / risk basis" : DEBIT_STRUCTURES.includes(structure) ? "debit" : "credit"})</label>
+                      <label className="block text-xs text-fg-muted mb-1">Target / stop (% of {PAYOFF_STRUCTURES.includes(structure) ? "max profit / risk basis" : DEBIT_STRUCTURES.includes(structure) ? "debit" : "credit"})<FromDefaults on={marked("targetCredit", targetCredit) || marked("stopCredit", stopCredit)} /></label>
                       <div className="flex gap-1">
                         <input type="number" min={5} max={95} placeholder="50" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)}
                           title={DEBIT_STRUCTURES.includes(structure) ? "take profit once the structure is worth this % more than the debit" : "take profit once this % of the credit is captured"} />
@@ -520,7 +564,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
             )}
             {kind !== "UNDERLYING" && (
               <div>
-                <label className="block text-xs text-fg-muted mb-1">Max lots</label>
+                <label className="block text-xs text-fg-muted mb-1">Max lots<FromDefaults on={marked("maxLots", maxLots)} /></label>
                 <input type="number" min={1} max={500} placeholder="risk-based" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={maxLots} onChange={(e) => setMaxLots(e.target.value)} />
               </div>
             )}
@@ -661,23 +705,31 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
           <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">Dynamic exits <span className="normal-case font-normal">(optional; the strategy's stop and targets still apply)</span></div>
           <div className="grid sm:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs text-fg-muted mb-1">Trailing stop %</label>
+              <label className="block text-xs text-fg-muted mb-1">Trailing stop %<FromDefaults on={marked("exitTrail", exitTrail)} /></label>
               <input type="number" step="0.1" min={0} placeholder="off" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={exitTrail} onChange={(e) => setExitTrail(e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs text-fg-muted mb-1">Break-even at R</label>
+              <label className="block text-xs text-fg-muted mb-1">Break-even at R<FromDefaults on={marked("exitBreakEven", exitBreakEven)} /></label>
               <input type="number" step="0.1" min={0} placeholder="off" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={exitBreakEven} onChange={(e) => setExitBreakEven(e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs text-fg-muted mb-1">Time exit (minutes)</label>
+              <label className="block text-xs text-fg-muted mb-1">Time exit (minutes)<FromDefaults on={marked("exitMinutes", exitMinutes)} /></label>
               <input type="number" min={1} placeholder="off" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={exitMinutes} onChange={(e) => setExitMinutes(e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs text-fg-muted mb-1">Flat at (HH:MM IST)</label>
+              <label className="block text-xs text-fg-muted mb-1">Flat at (HH:MM IST)<FromDefaults on={marked("exitAt", exitAt)} /></label>
               <input placeholder="off" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={exitAt} onChange={(e) => setExitAt(e.target.value)} />
             </div>
           </div>
         </div>
+
+        {paperOnly && approvalAllowed && (
+          <label className="mt-3 flex min-h-11 items-center gap-2 text-sm text-fg md:min-h-0" data-approval>
+            <input type="checkbox" checked={approval} onChange={(e) => setApproval(e.target.checked)} />
+            <span>This bot keeps asking for my Approve before each entry, even if approval-only is turned off later</span>
+            <FromDefaults on={prefill.approval === true && approval} />
+          </label>
+        )}
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
           <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">Regime filter <span className="normal-case font-normal">(optional; a diagnostic only - recorded for review, it never blocks an entry)</span></div>

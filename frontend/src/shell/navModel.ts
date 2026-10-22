@@ -1,7 +1,7 @@
 import {
   BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Filter, GraduationCap, History, Layers,
   LayoutDashboard, Link2, ListChecks, ListTodo, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
-  ScanSearch, Sigma, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, type LucideIcon,
+  ScanSearch, Sigma, SlidersHorizontal, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, type LucideIcon,
 } from "lucide-react";
 import { needsAttention, type BrokerDot } from "../broker/brokerState";
 import { BROKER_PATH } from "../broker/paths";
@@ -18,8 +18,8 @@ import { PAGE_FLAGS } from "./pageFlags";
  */
 
 /** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
- * Settings → Setup (`/settings/setup`, UI2-7). */
-export type ShellKey = Page | "charts" | "setup";
+ * Settings → Setup (`/settings/setup`, UI2-7) and Settings → My trading defaults (`/settings/trading-defaults`, part C). */
+export type ShellKey = Page | "charts" | "setup" | "trading-defaults";
 
 export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more";
 
@@ -141,6 +141,9 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   { ...item("account", "Account", "Account", "/settings/account", UserCircle2, { keywords: ["profile", "password", "two-factor", "sessions", "email"] }), section: "account" },
   // UI2-7: Settings → Setup, the setup wizard and the go-live checklist (§11); Settings v2 groups arrive with UI2-6.
   { ...item("setup", "Setup", "Setup", "/settings/setup", ListTodo, { keywords: ["set up your account", "setup wizard", "get started", "go-live checklist", "readiness"] }), section: "account" },
+  // Settings redesign part C: the user's own starting values for new bots and chain tickets (a pre-fill, never a rule).
+  { ...item("trading-defaults", "My trading defaults", "My trading defaults", "/settings/trading-defaults", SlidersHorizontal,
+    { keywords: ["defaults", "default lots", "presets", "order presets", "expiry rule", "strike rule", "trailing stop"] }), section: "account" },
 ];
 
 /** The phone bottom bar (§4): Home, Charts, Signals, Positions - and More, which opens the sheet. */

@@ -1,12 +1,14 @@
 import * as RD from "@radix-ui/react-dialog";
 import { Minus, Plus, ShieldCheck, X } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
+import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { formatPrice } from "../ui/format";
+import { useFeatures } from "../ui/useFeatures";
 import { fnoApi, type FnoApi, type OrderPreview, type OrderResult, type Side } from "./api";
 import {
   MAX_LOTS, ORDER_TYPES, PRACTICE_TEXT, PRACTICE_TITLE, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
-  newDraft, resultText, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
+  draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
 } from "./ticketModel";
 
 /**
@@ -62,7 +64,14 @@ function Line({ label, children, testId }: { label: string; children: ReactNode;
 }
 
 export default function OrderTicketV2({ open, target, side, onClose, onPlaced, api = fnoApi }: OrderTicketProps) {
-  const [draft, setDraft] = useState<Draft>(() => newDraft(side));
+  // Settings part C: the user's own lots / product / order type start a new ticket (v2 only; marked, changeable).
+  const features = useFeatures();
+  const saved = useTradingDefaults(features.on("ui_v2"));
+  const defaults = useMemo<DraftDefaults | undefined>(() => {
+    const p = ticketPrefill(saved);
+    return Object.keys(p).length ? p : undefined;
+  }, [saved]);
+  const [draft, setDraft] = useState<Draft>(() => newDraft(side, defaults));
   const [step, setStep] = useState<Step>({ kind: "edit" });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -72,11 +81,11 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
   // A new target or side starts a fresh ticket (and a fresh id, so a second order is never mistaken for the first).
   useEffect(() => {
     if (!open) return;
-    setDraft(newDraft(side));
+    setDraft(newDraft(side, defaults));
     setStep({ kind: "edit" });
     setProblem(null);
     ref.current = newClientRef();
-  }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right]);
+  }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults]);
 
   // Desktop shortcuts: B = Buy, S = Sell while the ticket is being filled in (never while typing in a field).
   useEffect(() => {
@@ -137,7 +146,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
               <X size={18} aria-hidden />
             </RD.Close>
           </div>
-          <TicketBody target={target} draft={draft} step={step} busy={busy} problem={problem} idPrefix={idPrefix}
+          <TicketBody target={target} draft={draft} step={step} busy={busy} problem={problem} idPrefix={idPrefix} defaults={defaults}
             onDraft={(patch) => { setDraft((d) => ({ ...d, ...patch })); setProblem(null); }}
             onReview={review} onPlace={place} onBack={() => setStep({ kind: "edit" })} onClose={onClose} />
         </RD.Content>
@@ -157,13 +166,19 @@ export function PracticeFrame() {
   );
 }
 
+const sentence = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
 /** The ticket's fields, the confirm step and the buttons (no state, no hooks). */
-export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose }: {
+export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose, defaults }: {
   target: TicketTarget; draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string;
+  /** Settings part C: the user's own ticket defaults, to mark the fields that still show them. */
+  defaults?: DraftDefaults;
   onDraft: (patch: Partial<Draft>) => void; onReview: () => void; onPlace: () => void; onBack: () => void; onClose: () => void;
 }) {
   const n = needs(draft.orderType);
   const ids = { lots: `${idPrefix}-lots`, price: `${idPrefix}-price`, trigger: `${idPrefix}-trigger`, stop: `${idPrefix}-stop` };
+  const marks = draftFromDefaults(draft, defaults);
+  const fromDefaults = [marks.lots && "lots", marks.orderType && "order type", marks.product && "product"].filter(Boolean) as string[];
   const sideTone = draft.side === "BUY" ? "bg-up text-on-brand" : "bg-down text-on-brand";
   return (
     <>
@@ -174,7 +189,9 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
               options={[{ value: "BUY", label: "Buy" }, { value: "SELL", label: "Sell" }]} />
             <p className="hidden text-t12 text-fg-muted md:block">Keys: B for Buy, S for Sell.</p>
             <div>
-              <label htmlFor={ids.lots} className="mb-space-1 block text-t12 font-medium text-fg-muted">Lots</label>
+              <label htmlFor={ids.lots} className="mb-space-1 block text-t12 font-medium text-fg-muted">
+                Lots{marks.lots && <span className="ml-space-1 font-normal text-brand" data-from-defaults="lots">{FROM_DEFAULTS}</span>}
+              </label>
               <div className="flex items-center gap-space-2">
                 <button type="button" aria-label="One lot less" onClick={() => onDraft({ lots: clampLots(draft.lots - 1) })} disabled={draft.lots <= 1}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border text-fg disabled:opacity-40" data-ticket="lots-less">
@@ -191,6 +208,11 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             </div>
             <Segmented label="Order type" testId="order-type" value={draft.orderType} onChange={(v) => onDraft({ orderType: v })} options={ORDER_TYPES} />
             <Segmented label="Product" testId="product" value={draft.product} onChange={(v) => onDraft({ product: v })} options={PRODUCTS} />
+            {(marks.orderType || marks.product) && (
+              <p className="text-t12 text-fg-muted" data-from-defaults="type-product">
+                {sentence(fromDefaults.filter((w) => w !== "lots").join(" and "))} {FROM_DEFAULTS}. Tap to change.
+              </p>
+            )}
             {(n.price || n.trigger) && (
               <div className="grid grid-cols-2 gap-space-2">
                 {n.price && (

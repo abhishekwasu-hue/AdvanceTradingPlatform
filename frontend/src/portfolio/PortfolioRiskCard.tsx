@@ -11,7 +11,7 @@ import { usePortfolioT } from "./i18n";
 import { bucketLabel, isRiskView, limitLines, money, overLimit, pct, signed, type PortfolioRiskView } from "./model";
 
 function Sub({ main, sub }: { main: string; sub: string }) {
-  return <><span>{main}</span><span className="block text-[11px] font-normal text-fg-muted">{sub}</span></>;
+  return <><span>{main}</span><span className="block text-xs font-normal text-fg-muted">{sub}</span></>;
 }
 
 export function PortfolioRiskView({ view }: { view: PortfolioRiskView }) {
@@ -68,8 +68,8 @@ export function PortfolioRiskView({ view }: { view: PortfolioRiskView }) {
           {limits.map((line) => <div key={line} className="text-fg-muted">{line}</div>)}
         </div>
       )}
-      {notes.map((n) => <p key={n} className="text-[11px] text-fg-muted">{n}</p>)}
-      <p className="text-[11px] text-fg-muted">{t("footer")}</p>
+      {notes.map((n) => <p key={n} className="text-xs text-fg-muted">{n}</p>)}
+      <p className="text-xs text-fg-muted">{t("footer")}</p>
     </div>
   );
 }

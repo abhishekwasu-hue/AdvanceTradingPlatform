@@ -74,5 +74,8 @@ textarea::placeholder {
   /* Check boxes and radios: bigger boxes, and the label around them is the 44 px target. */
   input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
   label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { min-height: 44px; }
-  body:has(input:focus, textarea:focus, select:focus) .bottom-nav { display: none; }
+  /* Item 1: the navigation comes back 300 ms after the field loses focus, not at once - a tap that blurs a field must
+     land on what was under the finger, not on the navigation reappearing there. Hidden = no pointer events. */
+  .bottom-nav { transition: visibility 0s linear 300ms; }
+  body:has(input:focus, textarea:focus, select:focus) .bottom-nav { visibility: hidden; transition-delay: 0s; }
 }

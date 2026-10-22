@@ -2029,6 +2029,53 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
 
+## Item 1 (handover pack): readable text size, and the "Text size" setting
+
+- Branch `claude/font-size` (from main). Fixed in the design system, not page by page.
+- One root scale: `html { font-size: calc(100% * var(--text-scale)) }` (tokens.css); `data-text-size` on <html>
+  (normal 1, large 1.125, xlarge 1.25). Every Tailwind size (xs..5xl and the t12..t32 tokens) is now in rem, and so
+  are the space tokens and the row / stage heights, so text, spacing and tap targets move together.
+- Sizes at Normal: body 16 px (`text-sm`, `t14`), secondary / captions and table / chain cells never below 14 px
+  (`text-xs`, `t12`, `t13`), headings and key numbers larger (t18 20, t24 28, t32 36). 103 files had their own
+  `text-[9px]`..`text-[13px]` (now `text-xs`) or `text-[15/16px]` (now `text-sm`); a test fails on any new
+  `text-[Npx]` below 14.
+- Settings > Appearance > "Text size": Normal (default) / Large / Extra large, stored per user on the server
+  (`/api/me/prefs`, new namespace `appearance`, no migration: the prefs table already takes any allow-listed
+  namespace); the browser copy paints it before the app loads (theme-init.js); applied on sign-in from the server; a
+  size chosen before this release is sent up once.
+- Charts: axis, price and crosshair labels follow it (`chartFontSize()`: 12 / 14 / 15 px), re-read on the theme event.
+- Layout fixes the bigger text exposed (e2e): the market strip on a 360 px phone (two indices a row, VIX below); the
+  Signals list at 1440 (padding, symbol never cut, the detail pane 400 px, a sign never wraps away from its amount);
+  the phone bottom navigation comes back 300 ms after a field loses focus (a tap that blurs a field landed on it).
+  At the Large / Extra large sizes (`useBigText`) the dashboard keeps its stacked strip and one column until 2xl.
+- Tests: backend `tests/test_appearance_prefs.py`; vitest `src/textSize.test.ts` (scale in rem, 14 px floor, the
+  setting, theme-init, the server sync); e2e `e2e/text-size-v2.e2e.ts` (Large and Extra large: phone layout rules,
+  no sideways scroll at 1440, nothing spills); all 106 changed e2e baselines regenerated at the new size.
+
+## Master Order 3, part 2: the UX audit report (docs only)
+
+- Branch `claude/ux-audit-report` from `claude/font-size` (PR #335), so every picture shows the new text size. No
+  product code changed; the page fixes follow in their own PRs, in the order the report gives.
+- `docs/design/UX_AUDIT_FULL.md`: 61 audited items (41 pages / views, 13 modals and sheets, 7 old pages still
+  reached while `ui_v2` is off), each scored against U1-U12 with the elements to remove / hide / move / merge / make
+  prominent, tagged User / Admin / Remove (handover 8a: two groups, no Simple / Pro), a primary action and a mock;
+  the merges and the new sidebar; the admin console and its server-side enforcement and tests; all 81 feature flags
+  in plain words with status and advice; the banned-words list for the future CI guard; the fresh-eyes walkthrough.
+- Screenshots: committed baselines reused; the rest captured by `frontend/e2e/ux-audit-capture.e2e.ts` (capture
+  only, `page.screenshot({ path })`, skipped in CI, registered in the phone project) into `docs/design/ux-audit/`
+  (64 PNGs, made-up fixture data). The Settings → AI block is masked in the pictures (it lists internal model
+  names). The Journal page's pictures are named `discipline-*.png`: the public-repo guard reads "journal" in a file
+  name as a real trade journal.
+- Fresh-eyes test: no sub-agent tool was available in this session, so it is a heuristic Playwright walkthrough by
+  the auditor on a fresh mocked account (stated with its limits in section 9 of the report).
+## OC4: the Analysis tabs, Ask AI and My analyses below the v2 chain (handover 2a)
+
+- Branch `claude/oc4-wire-analyses` (stacked on `claude/font-size`).
+- `AnalysisSlotV2` now mounts the built pieces for the symbol and expiry on screen, in order: the Analysis tabs (OC2),
+  Ask AI (OC3) and My analyses (OC3); each refreshes with the chain's own answer (`fetched_at`). Behind `ui_v2` like
+  the page and the routes. Information only; nothing places an order.
+- Tests: vitest (the order below the chain, no developer words); e2e `option-chain-v2.e2e.ts` OC4 cases with new
+  baselines `option-chain-v2-analyses-{1440,390}-{light,dark}.png`, phone layout rules at 390.
 ## 2026-10-22 - AMW port status audit (owner order 11a) and Strategy Lab design approval (11b)
 
 - Branch `claude/amw-port-audit` (from main at 15f619f). Docs only: no code, no migration, no deploy.

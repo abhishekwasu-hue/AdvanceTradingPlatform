@@ -65,7 +65,7 @@ export function TermTip({ term }: { term: GlossaryKey }) {
   return (
     <span className="relative inline-flex">
       <button type="button" aria-label={`What is ${entry.term}?`} aria-expanded={open} aria-controls={id} onClick={() => setOpen((o) => !o)}
-        className="relative inline-flex h-5 w-5 items-center justify-center rounded-pill border border-border text-[11px] font-semibold text-fg-muted after:absolute after:-inset-3 after:content-[''] hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+        className="relative inline-flex h-5 w-5 items-center justify-center rounded-pill border border-border text-xs font-semibold text-fg-muted after:absolute after:-inset-3 after:content-[''] hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
         ?
       </button>
       {open && (
@@ -128,8 +128,8 @@ export function LevelsChart({ item }: { item: SignalFeedItem }) {
   const line = (p: number, label: string, cls: string, textCls: string) => (
     <g key={label}>
       <line x1={0} x2={400} y1={y(p)} y2={y(p)} strokeWidth={1.5} strokeDasharray="6 4" className={cls} />
-      <text x={4} y={y(p) - 5} className={cx("text-[12px] font-medium", textCls)}>{label}</text>
-      <text x={396} y={y(p) - 5} textAnchor="end" className={cx("font-tabular text-[12px] font-semibold", textCls)}>{formatPrice(p)}</text>
+      <text x={4} y={y(p) - 5} className={cx("text-xs font-medium", textCls)}>{label}</text>
+      <text x={396} y={y(p) - 5} textAnchor="end" className={cx("font-tabular text-xs font-semibold", textCls)}>{formatPrice(p)}</text>
     </g>
   );
   return (
@@ -148,7 +148,8 @@ function Figure({ label, value, sub, tone, term }: { label: string; value: strin
   return (
     <div className="bg-surface-1 px-space-3 py-space-2">
       <dt className="flex items-center gap-space-1 text-t12 text-fg-muted">{label}{term && <TermTip term={term} />}</dt>
-      <dd className={cx("font-tabular text-t15 font-semibold", tone === "down" ? "text-down" : "text-fg")}>{value}</dd>
+      {/* No wrapping: a sign stays with its amount ("−₹5,250.00" never breaks after the minus, item 1). */}
+      <dd className={cx("whitespace-nowrap font-tabular text-t14 font-semibold", tone === "down" ? "text-down" : "text-fg")}>{value}</dd>
       {sub && <dd className="font-tabular text-t12 text-fg-muted">{sub}</dd>}
     </div>
   );

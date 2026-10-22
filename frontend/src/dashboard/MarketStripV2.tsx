@@ -1,6 +1,7 @@
 import { Check, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { EMPTY, formatChange, formatPct, formatPrice, formatSignedINR } from "../ui/format";
+import { useBigText } from "../theme";
 import { TermHint } from "../ui/TermHint";
 import { CARD, toneClass } from "./CardV2";
 import { indexCaption, signTone, vixNote, type TodayPnl } from "./model";
@@ -61,15 +62,22 @@ function StatusChip({ children, tone }: { children: ReactNode; tone: "neutral" |
 export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowMs }: MarketStripProps) {
   const data = strip.status === "ok" ? strip.data : null;
   const total = pnl.total;
+  // Item 1: the one-row desktop strip only at the Normal text size; at Large / Extra large it stays stacked (indices,
+  // then the chips, then the P&L), and on a phone the two indices share a row with VIX below.
+  const big = useBigText();
+  const L = (cls: string) => (big ? "" : cls);
+  const cell = (n: number) => (n === 2 ? (big ? "col-span-2 sm:col-span-1" : "col-span-2 min-[380px]:col-span-1") : "");
   return (
-    <section aria-label="Market" data-block="strip" className={`${CARD} grid gap-space-4 p-space-4 md:p-space-5 xl:grid-cols-[repeat(3,minmax(0,1fr))_auto_auto] xl:gap-0 xl:p-0`}>
-      <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.8fr)] gap-space-3 xl:contents">
-        {data ? data.indices.map((i) => (
-          <div key={i.key} className="xl:border-r xl:border-subtle xl:p-space-5">
+    <section aria-label="Market" data-block="strip" className={`${CARD} grid gap-space-4 p-space-4 md:p-space-5 ${L("xl:grid-cols-[repeat(3,minmax(0,1fr))_auto_auto] xl:gap-0 xl:p-0")}`}>
+      {/* Item 1: on the narrowest phones (under 380 px; any phone at the larger text sizes) the two indices share a row
+          and VIX takes the next one, so the prices stay large without spilling out of their cells. */}
+      <div className={`grid grid-cols-2 gap-space-3 ${big ? "sm:grid-cols-3" : "min-[380px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.8fr)] xl:contents"}`}>
+        {data ? data.indices.map((i, n) => (
+          <div key={i.key} className={`${L("xl:border-r xl:border-subtle xl:p-space-5")} ${cell(n)}`}>
             <IndexCell index={i} oi={oi[i.key]} nowMs={nowMs} />
           </div>
-        )) : ["NIFTY 50", "BANK NIFTY", "INDIA VIX"].map((label) => (
-          <div key={label} className="min-w-0 xl:border-r xl:border-subtle xl:p-space-5">
+        )) : ["NIFTY 50", "BANK NIFTY", "INDIA VIX"].map((label, n) => (
+          <div key={label} className={`min-w-0 ${L("xl:border-r xl:border-subtle xl:p-space-5")} ${cell(n)}`}>
             <div className="text-t12 font-medium uppercase text-fg-muted">{label}</div>
             {strip.status === "loading"
               ? <div className="mt-space-2 h-6 w-20 animate-pulse rounded-control bg-surface-2" />
@@ -77,8 +85,8 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
           </div>
         ))}
       </div>
-      {strip.status === "error" && <p className="text-t13 text-fg-muted xl:order-last xl:col-span-5 xl:border-t xl:border-subtle xl:px-space-5 xl:py-space-3">We could not load the market prices. We will try again in a moment.</p>}
-      <div className="flex flex-wrap items-center gap-space-2 border-t border-subtle pt-space-4 xl:flex-col xl:items-stretch xl:justify-center xl:border-r xl:border-t-0 xl:p-space-5">
+      {strip.status === "error" && <p className={`text-t13 text-fg-muted ${L("xl:order-last xl:col-span-5 xl:border-t xl:border-subtle xl:px-space-5 xl:py-space-3")}`}>We could not load the market prices. We will try again in a moment.</p>}
+      <div className={`flex flex-wrap items-center gap-space-2 border-t border-subtle pt-space-4 ${L("xl:flex-col xl:items-stretch xl:justify-center xl:border-r xl:border-t-0 xl:p-space-5")}`}>
         {marketText && <StatusChip tone="neutral"><span aria-hidden className="h-1.5 w-1.5 rounded-pill bg-fg" />{marketText}</StatusChip>}
         {broker && (
           <StatusChip tone={broker.tone}>
@@ -87,8 +95,8 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
           </StatusChip>
         )}
       </div>
-      <div className="flex items-center justify-between gap-space-3 xl:flex-col xl:items-end xl:justify-center xl:p-space-5 xl:text-right">
-        <div className="flex shrink-0 items-center gap-space-1 whitespace-nowrap text-t14 text-fg-muted xl:text-t13">
+      <div className={`flex items-center justify-between gap-space-3 ${L("xl:flex-col xl:items-end xl:justify-center xl:p-space-5 xl:text-right")}`}>
+        <div className={`flex shrink-0 items-center gap-space-1 whitespace-nowrap text-t14 text-fg-muted ${L("xl:text-t13")}`}>
           Today&apos;s P&amp;L <TermHint term="todays-pnl" align="end" />
         </div>
         <div className="text-right">

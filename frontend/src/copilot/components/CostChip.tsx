@@ -14,7 +14,7 @@ export function formatInr(v: number): string {
 export default function CostChip({ tokens, inr, estimate = false }: { tokens: number; inr: number; estimate?: boolean }) {
   const t = useCopilotT();
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-muted"
+    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-xs text-fg-muted"
           title={estimate ? t("cost.estimateHint") : t("cost.meteredHint")}>
       <Coins size={11} />≈ {t("cost.tokens", { n: formatTokens(tokens) })} · {formatInr(inr)}{estimate ? ` ${t("cost.est")}` : ""}
     </span>

@@ -71,9 +71,9 @@ export function DrawingToolbar({ view, controller, onPick }: { view: ToolView; c
     controller.setTool(kind);
     onPick?.();
   };
-  const btn = "rounded px-1.5 py-0.5 text-[10px] font-semibold";
+  const btn = "rounded px-1.5 py-0.5 text-xs font-semibold";
   return (
-    <div className="mb-1 flex flex-wrap items-center gap-1 text-[10px]" role="toolbar" aria-label="Drawing tools">
+    <div className="mb-1 flex flex-wrap items-center gap-1 text-xs" role="toolbar" aria-label="Drawing tools">
       {TOOLBAR_KINDS.map((t) => (
         <button key={t.kind} type="button" title={t.title} aria-pressed={view.tool === t.kind} onClick={() => pick(t.kind)}
                 className={`${btn} ${view.tool === t.kind ? "bg-brand/15 text-brand ring-1 ring-brand/40" : "text-fg-muted hover:text-fg"}`}>

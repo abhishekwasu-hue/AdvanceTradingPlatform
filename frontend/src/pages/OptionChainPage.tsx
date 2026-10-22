@@ -156,7 +156,7 @@ export default function OptionChainPage() {
           <Card title="Strike-wise chain">
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+                <thead className="text-fg-muted uppercase text-xs tracking-wide">
                   <tr className="text-left">
                     <th className="py-1 pr-3">Call OI</th>
                     <th className="py-1 pr-3">Call Activity</th>

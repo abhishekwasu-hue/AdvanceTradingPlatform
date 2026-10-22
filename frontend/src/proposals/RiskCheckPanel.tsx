@@ -27,7 +27,7 @@ export default function RiskCheckPanel({ a }: { a: Pick<AiAction, "risk_check" |
       {/* N1 F3 (flag portfolio_risk): the owner's own book after this entry - numbers only, never advice. */}
       {impact && <p className="text-fg-muted" data-testid="portfolio-impact">{impact}</p>}
       {breach.map((row) => <p key={row.key} className="text-fg-muted" data-testid="strike-breach-row">{row.text}</p>)}
-      {breach.length > 0 && a.strike_breach && <p className="text-[11px] text-fg-muted">{a.strike_breach.note}</p>}
+      {breach.length > 0 && a.strike_breach && <p className="text-xs text-fg-muted">{a.strike_breach.note}</p>}
     </div>
   );
 }

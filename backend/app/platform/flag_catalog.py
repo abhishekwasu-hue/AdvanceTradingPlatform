@@ -138,6 +138,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "backtest_models": FlagInfo("More realistic fills in backtests (opt-in per run)", "trading", "options in Advanced", (), "", "ready"),
     "screener_etf": FlagInfo("ETF screen", "screens", "a screen", ("screener_v2",), "daily history", "ready"),
     "alerts_whatsapp_dlt": FlagInfo("WhatsApp and SMS alerts (India DLT)", "data", "channels", (), "DLT registration", "unfinished"),
+    "growth_v2": FlagInfo("Your plan and usage, a discipline card to share, activation in the admin console", "platform", "a usage meter on Settings › Account & plan, a Share my week card on the Journal, Activation in the admin console", ("ui_v2",), "", "unfinished"),
     "plan_limits_v2": FlagInfo("Per-plan limits for watchlists, reports, Lab", "platform", "limits", (), "plans", "decision"),
 }
 

@@ -11,6 +11,8 @@ import {
 } from "../journal/format";
 import type { DisciplineScore, DisciplineSettings, JournalEntry, JournalSettingsResponse, JournalTag, JournalWeek, TagStatus, WeeklyReview } from "../journal/types";
 import type { PageProps } from "../routes";
+import DisciplineCardV2 from "../growth/DisciplineCardV2";
+import { useFeatures } from "../ui/useFeatures";
 
 const OFF_TEXT = "The discipline engine is turned off for this organisation. A platform operator can turn on the discipline_engine feature.";
 
@@ -259,6 +261,9 @@ function SettingsTab() {
 
 export default function JournalPage(_props: PageProps) {
   const toast = useToast();
+  const features = useFeatures();
+  // MO4 slice 3: "Share my week" - the discipline card (ui_v2 + growth_v2).
+  const shareCard = features.on("ui_v2") && features.on("growth_v2");
   const [week, setWeek] = useState<string | undefined>(undefined);
   const [data, setData] = useState<JournalWeek | null>(null);
   const [off, setOff] = useState(false);
@@ -286,6 +291,7 @@ export default function JournalPage(_props: PageProps) {
       <PageHeader title="Journal & discipline"
         description="Every trade journaled automatically, behaviour tags you confirm or dismiss, and a weekly discipline score. Your own data only; numbers, not advice."
         actions={off ? undefined : nav} />
+      {shareCard && <DisciplineCardV2 />}
       {off ? <EmptyState icon={<NotebookPen size={20} />} title="Not enabled" body={OFF_TEXT} /> : !data ? <Skeleton className="h-40 w-full" /> : (
         <Tabs value={tab} onChange={setTab} items={[
           { value: "week", label: "Week", content: <WeekTab data={data} onDecide={decide} /> },

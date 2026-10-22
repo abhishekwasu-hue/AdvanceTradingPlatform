@@ -44,6 +44,8 @@ DEFAULTS: Dict[str, Any] = {
     "max_output_tokens": 3000,
     "estimate_input_tokens": 3000,          # the pre-call estimate used against the caps (the real cost is metered)
     "estimate_output_tokens": 2500,
+    # The share link (PR-A4, CA-5): how long a link stays open (the owner can stop it at any time before).
+    "share_expiry_days": 7,
     # Plan limits (analyses a day, analyses a month, the monthly AI cost cap in USD on the platform's AI)
     "limits": {
         "free": {"daily": 0, "monthly": 0, "cost_cap_usd": 0.0},
@@ -70,6 +72,7 @@ BOUNDS: Dict[str, tuple] = {
     "max_output_tokens": (256, 16000),
     "estimate_input_tokens": (0, 200000),
     "estimate_output_tokens": (0, 200000),
+    "share_expiry_days": (1, 30),
 }
 LIMIT_BOUNDS: Dict[str, tuple] = {"daily": (0, 100000), "monthly": (0, 1000000), "cost_cap_usd": (0.0, 100000.0)}
 

@@ -261,6 +261,8 @@ export default function BacktestPage() {
               onChange={(e) => setSymbol(e.target.value)}
             />
           </div>
+          {/* UX3 fix 7: sample bars are a testing tool; a user without sample data never sees the field. */}
+          {!source.sampleHidden && (
           <div>
             <label className="block text-xs text-fg-muted mb-1">Sample bars</label>
             <input
@@ -270,6 +272,7 @@ export default function BacktestPage() {
               onChange={(e) => setBars(Number(e.target.value))}
             />
           </div>
+          )}
           <button
             onClick={runBacktest}
             disabled={!selected || loading}
@@ -669,7 +672,7 @@ export default function BacktestPage() {
                   {result.trades.length === 0 && (
                     <tr>
                       <td colSpan={6} className="py-3 text-center text-fg-muted">
-                        No trades were triggered on this sample dataset.
+                        {source.sampleHidden ? "No trades were triggered in this period." : "No trades were triggered on this sample dataset."}
                       </td>
                     </tr>
                   )}

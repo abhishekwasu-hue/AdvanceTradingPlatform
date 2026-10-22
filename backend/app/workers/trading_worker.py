@@ -104,6 +104,7 @@ SQUARE_OFF_AT = dtime(15, 15)
 MAX_CONSECUTIVE_FAILURES = 5
 # How often a VALID token is re-proven against the broker.
 TOKEN_RECHECK_SECONDS = 300
+RHYTHM_EVERY_MINUTES = 5            # MO4: how often the worker looks for daily-rhythm digests due on Telegram
 # Fairness: no tenant may consume more than this share of a cycle evaluating entries. Deployments
 # that don't get their turn are picked up first next cycle (round-robin), so a tenant with many
 # deployments is slowed, never starved - and never starves the others.
@@ -220,6 +221,7 @@ class TradingWorker:
         self._last_billing_day = None
         # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
         self._last_eod_summary_day = None
+        self._last_rhythm_check: Optional[datetime] = None     # MO4: the daily rhythm's Telegram sends
         self._last_thesis_report_day = None
         self._last_login_reminder_day = None   # D5: the pre-open daily-login reminder, once per IST day
         self._last_analytics_expiry_day = None  # Upstox analytics token: the 7-day / last-day expiry warning, once per IST day
@@ -552,6 +554,17 @@ class TradingWorker:
                         await oi_alerts.send_digests(own, now)
                 except Exception as exc:  # noqa: BLE001 - a digest never blocks the cycle
                     logger.warning("OI banner digest failed: %s", exc)
+                # MO4 (app/rhythm): the daily rhythm on each opted-in user's own Telegram chat - the pre-market brief, the
+                # pulse, the closing wrap on trading days and the weekly review on the weekend; once each (marks per user).
+                # Flags ui_v2 + daily_rhythm per organisation. Its own session; read-only towards trading.
+                if self._last_rhythm_check is None or now - self._last_rhythm_check >= timedelta(minutes=RHYTHM_EVERY_MINUTES):
+                    self._last_rhythm_check = now
+                    try:
+                        from app.rhythm import deliver as rhythm_deliver
+                        async with self.session_factory() as own:
+                            await rhythm_deliver.send_due(own, now)
+                    except Exception as exc:  # noqa: BLE001 - a digest never blocks the cycle
+                        logger.warning("Daily rhythm sends failed: %s", type(exc).__name__)
                 # Phase AX: the end-of-day summary - once per IST weekday from 15:35, one
                 # notification per organisation with a deployment or a trade today. Read-only.
                 ist_now = now.astimezone(IST)

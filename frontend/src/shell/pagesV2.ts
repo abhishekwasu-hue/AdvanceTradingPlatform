@@ -37,6 +37,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   settings: lazy(() => import("../settings/SettingsIndexV2")),
   // MO3 addition (a): the admin console in sections (src/admin) at /admin; SUPER_ADMIN only (the server is the gate).
   admin: lazy(() => import("../admin/AdminConsoleV2")),
+  // Idea library slice 1 (src/ideas) at /ideas - a v2-only page behind `idea_library`.
+  ideas: lazy(() => import("../ideas/IdeaLibraryV2")),
   ...Object.fromEntries(SETTINGS_SECTIONS.map((s) => [s.key, SettingsSection])),
 };
 

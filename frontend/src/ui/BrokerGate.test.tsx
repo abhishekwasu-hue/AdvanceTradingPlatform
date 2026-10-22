@@ -37,7 +37,7 @@ describe("UI2-0 BrokerGate: the three states", () => {
     const notYet = render([tokenRow("angel_one", { token_status: "UNKNOWN" })]);
     expect(notYet).toContain("Log in to Angel One to see live prices and your positions.");
     expect(notYet).not.toMatch(/never see or store/);                       // TOTP broker: never that sentence
-    expect(notYet).toContain("PIN and TOTP secret you stored, encrypted");
+    expect(notYet).toContain("PIN and authenticator key you stored, encrypted");
   });
 
   it("UI2-9a: on My positions (positions listed under the gate) the sentences name live prices only", () => {

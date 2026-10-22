@@ -1,5 +1,5 @@
 import { AlarmClock, Check, ChartCandlestick, Clock, Ellipsis, TriangleAlert } from "lucide-react";
-import { Suspense, lazy, useId, useState } from "react";
+import { Suspense, lazy, useId, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
 import type { LevelLine } from "../chart/chartCore";
@@ -17,11 +17,12 @@ import {
   canDecide, decisionFailure, decisionMessage, directionLabel, effectiveStatus, levelDelta, riskSentences, sizeAndLoss, sourceCaption, statusLabel,
   type FeedTab, type SignalFeedItem,
 } from "./feed";
+import { LEVEL_LABELS, reasonWords, setupWords } from "./signalText";
 
 /**
  * UI2-3 (UI v2 proposal §7, §8): the Signals inbox's building blocks - the status chip, Long / Short, the level tiles,
  * the levels chart (UI2-4e: the v2 chart with the levels marked), the six key figures, the risk sentences and the decision buttons. Colour carries meaning only:
- * green / red for Long / Short and the target / stop levels, brand for "Waiting" and the one primary action, neutral
+ * green / red for Long / Short and the user's own exit levels (UX3: those levels sit in the "Your levels" fold), brand for "Waiting" and the one primary action, neutral
  * outlines for every other status.
  */
 
@@ -78,12 +79,13 @@ export function TermTip({ term }: { term: GlossaryKey }) {
   );
 }
 
-/** Entry, Stop and Target in a row of three tiles (the phone card, the start of the figures). */
+/** The user's own three levels in a row of tiles, with neutral labels (LEVEL_LABELS). UX3 fix 10: only inside the
+ * "Your levels" fold, never in the signal text itself. */
 export function LevelTiles({ item }: { item: SignalFeedItem }) {
   if (item.entry === null && item.stop === null && item.target === null) return null;
   return (
     <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-panel border border-subtle bg-border-subtle">
-      {([["Entry", item.entry], ["Stop", item.stop], ["Target", item.target]] as const).map(([label, value]) => (
+      {([[LEVEL_LABELS.entry, item.entry], [LEVEL_LABELS.stop, item.stop], [LEVEL_LABELS.target, item.target]] as const).map(([label, value]) => (
         <div key={label} className="bg-surface-1 px-space-3 py-space-2">
           <dt className="text-t12 text-fg-muted">{label}</dt>
           <dd className="font-tabular text-t15 font-semibold text-fg">{formatPrice(value)}</dd>
@@ -93,12 +95,31 @@ export function LevelTiles({ item }: { item: SignalFeedItem }) {
   );
 }
 
+/** UX3 fix 10: the user's own levels, one tap away (collapsed): the numbers his approval needs, from his strategy's
+ * settings. The signal text above it stays in structure words. */
+export function YourLevels({ item }: { item: SignalFeedItem }) {
+  if (item.entry === null && item.stop === null && item.target === null) return null;
+  return <LevelsFold><div className="px-space-3 pb-space-3"><LevelTiles item={item} /></div></LevelsFold>;
+}
+
+function LevelsFold({ children }: { children: ReactNode }) {
+  return (
+    <details className="group rounded-panel border border-subtle" data-your-levels>
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-space-2 px-space-3 text-t14 font-semibold text-brand [&::-webkit-details-marker]:hidden">
+        <span className="whitespace-nowrap">Your levels</span>
+        <span className="min-w-0 text-right text-t12 font-normal text-fg-muted">from your strategy&apos;s settings</span>
+      </summary>
+      {children}
+    </details>
+  );
+}
+
 // UI2-4e: the v2 chart, its own chunk (the chart library loads with it, not with the inbox).
 const EmbeddedChartV2 = lazy(() => import("../chart/EmbeddedChartV2"));
 
 /** The levels a signal's chart marks: Entry neutral, Stop red, Target green (as the levels drawing). Pure. */
 export function signalLevels(item: Pick<SignalFeedItem, "entry" | "stop" | "target">): LevelLine[] {
-  const all: [number | null, string, LevelLine["tone"]][] = [[item.target, "Target", "up"], [item.entry, "Entry", "neutral"], [item.stop, "Stop", "down"]];
+  const all: [number | null, string, LevelLine["tone"]][] = [[item.target, LEVEL_LABELS.target, "up"], [item.entry, LEVEL_LABELS.entry, "neutral"], [item.stop, LEVEL_LABELS.stop, "down"]];
   return all.filter(([p]) => p !== null && Number.isFinite(p)).map(([price, title, tone]) => ({ price: price as number, title, tone }));
 }
 
@@ -135,12 +156,12 @@ export function LevelsChart({ item }: { item: SignalFeedItem }) {
   );
   return (
     <svg viewBox="0 0 400 160" className="h-40 w-full" role="img" data-levels-chart
-      aria-label={`Levels: entry ${formatPrice(entry)}${stop !== null ? `, stop ${formatPrice(stop)}` : ""}${target !== null ? `, target ${formatPrice(target)}` : ""}`}>
+      aria-label={`Your levels: ${LEVEL_LABELS.entry} ${formatPrice(entry)}${stop !== null ? `, ${LEVEL_LABELS.stop} ${formatPrice(stop)}` : ""}${target !== null ? `, ${LEVEL_LABELS.target} ${formatPrice(target)}` : ""}`}>
       {target !== null && zone(entry, target, "fill-up/10")}
       {stop !== null && zone(entry, stop, "fill-down/10")}
-      {target !== null && line(target, "Target", "stroke-up", "fill-up")}
-      {line(entry, "Entry", "stroke-fg-muted", "fill-fg")}
-      {stop !== null && line(stop, "Stop", "stroke-down", "fill-down")}
+      {target !== null && line(target, LEVEL_LABELS.target, "stroke-up", "fill-up")}
+      {line(entry, LEVEL_LABELS.entry, "stroke-fg-muted", "fill-fg")}
+      {stop !== null && line(stop, LEVEL_LABELS.stop, "stroke-down", "fill-down")}
     </svg>
   );
 }
@@ -156,31 +177,42 @@ function Figure({ label, value, sub, tone, term }: { label: string; value: strin
   );
 }
 
-/** The six key figures: entry, stop (±), target (±), size, max loss, reward : risk. Size and max loss come from the
- * existing risk pre-check (risk_by_default); without it they show "–". */
+/** The figures the approval needs: size, most you can lose and reward : risk (from the existing risk pre-check,
+ * risk_by_default; without it "–"). UX3 fix 10: the user's own three levels moved into the "Your levels" fold below
+ * them (with their distance from the entry), so the signal itself reads in structure words. */
 export function KeyFigures({ item, proposal }: { item: SignalFeedItem; proposal?: AiAction }) {
   const stopDelta = levelDelta(item.stop, item.entry);
   const targetDelta = levelDelta(item.target, item.entry);
   const sized = sizeAndLoss(proposal);
+  const levels = item.entry !== null || item.stop !== null || item.target !== null;
   return (
-    <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-panel border border-subtle bg-border-subtle" data-key-figures>
-      <Figure label="Entry" value={formatPrice(item.entry)} />
-      <Figure label="Stop" value={formatPrice(item.stop)} sub={stopDelta !== null ? formatChange(stopDelta) : null} term="stop" />
-      <Figure label="Target" value={formatPrice(item.target)} sub={targetDelta !== null ? formatChange(targetDelta) : null} term="target" />
-      <Figure label="Size" value={sized ? formatLots(sized.quantity, sized.lotSize) : "–"} term="lot" />
-      <Figure label="Max loss" value={sized ? formatSignedINR(-sized.maxLoss) : "–"} tone={sized ? "down" : undefined} term="max-loss" />
-      <Figure label="Reward : risk" value={item.rr !== null ? formatNumber(item.rr, 1) : "–"} term="reward-risk" />
-    </dl>
+    <div className="space-y-space-3">
+      <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-panel border border-subtle bg-border-subtle" data-key-figures>
+        <Figure label="Size" value={sized ? formatLots(sized.quantity, sized.lotSize) : "–"} term="lot" />
+        <Figure label="Max loss" value={sized ? formatSignedINR(-sized.maxLoss) : "–"} tone={sized ? "down" : undefined} term="max-loss" />
+        <Figure label="Reward : risk" value={item.rr !== null ? formatNumber(item.rr, 1) : "–"} term="reward-risk" />
+      </dl>
+      {levels && (
+        <LevelsFold>
+          <dl className="mx-space-3 mb-space-3 grid grid-cols-3 gap-px overflow-hidden rounded-panel border border-subtle bg-border-subtle">
+            <Figure label={LEVEL_LABELS.entry} value={formatPrice(item.entry)} />
+            <Figure label={LEVEL_LABELS.stop} value={formatPrice(item.stop)} sub={stopDelta !== null ? formatChange(stopDelta) : null} />
+            <Figure label={LEVEL_LABELS.target} value={formatPrice(item.target)} sub={targetDelta !== null ? formatChange(targetDelta) : null} />
+          </dl>
+        </LevelsFold>
+      )}
+    </div>
   );
 }
 
 export function Reasons({ item }: { item: SignalFeedItem }) {
-  if (item.reasons.length === 0) return null;
+  const reasons = reasonWords(item.reasons);   // UX3 fix 10: structure words only
+  if (reasons.length === 0) return null;
   return (
     <section>
-      <h3 className="text-t15 font-semibold text-fg">Why this trade</h3>
+      <h3 className="text-t15 font-semibold text-fg">Why this signal</h3>
       <ol className="mt-space-2 list-decimal space-y-space-1 pl-space-5 text-t14 text-fg">
-        {item.reasons.map((r) => <li key={r}>{r}</li>)}
+        {reasons.map((r) => <li key={r}>{r}</li>)}
       </ol>
     </section>
   );
@@ -214,7 +246,7 @@ export function OutcomeLine({ item, now }: { item: SignalFeedItem; now: Date }) 
   const status = effectiveStatus(item, now);
   const text = status === "expired" ? "This signal expired before anyone decided. Nothing was placed."
     : status === "skipped" ? "Skipped. Nothing was placed."
-    : status === "taken" ? (item.source.kind === "autopilot" && item.action_id === null ? "Taken by your Autopilot." : "Approved.")
+    : status === "taken" ? (item.source.kind === "autopilot" && item.action_id === null ? "Taken by your paper bot." : "Approved.")
     : status === "not_placed" ? "Nothing was placed."
     : status === "snoozed" ? "Snoozed. It comes back to Waiting before it expires."
     : status === "info" ? (item.source.kind === "library" ? "Made with the signal generator. Nothing to decide." : "A scan match. Nothing to decide.")
@@ -369,10 +401,11 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
         {!waiting && <OutcomeLine item={item} now={now} />}
         <SignalActions item={item} now={now} compact canTrade={canTrade} onDone={onDone} onError={onError} />
         <SetupChainLinkV2 item={item} />
-        {item.reasons.length > 0 && (
+        <YourLevels item={item} />
+        {reasonWords(item.reasons).length > 0 && (
           <details className="group">
-            <summary className="flex min-h-11 cursor-pointer items-center text-t14 font-semibold text-brand">Why this trade</summary>
-            <ol className="list-decimal space-y-space-1 pl-space-5 text-t14 text-fg">{item.reasons.map((r) => <li key={r}>{r}</li>)}</ol>
+            <summary className="flex min-h-11 cursor-pointer items-center text-t14 font-semibold text-brand">Why this signal</summary>
+            <ol className="list-decimal space-y-space-1 pl-space-5 text-t14 text-fg">{reasonWords(item.reasons).map((r) => <li key={r}>{r}</li>)}</ol>
           </details>
         )}
       </div>
@@ -389,14 +422,14 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
             <StatusChip item={item} now={now} />
           </div>
           <p className="mt-space-1 text-t14 text-fg-muted">
-            {item.setup} · from {sourceCaption(item)}{modeLabel ? ` · ${modeLabel}` : ""}
+            {setupWords(item.setup)} · from {sourceCaption(item)}{modeLabel ? ` · ${modeLabel}` : ""}
           </p>
         </div>
         {waiting && canTrade && <MoreButton item={item} open={moreOpen} controls={menuId} onToggle={() => setMoreOpen((o) => !o)} />}
       </div>
       {waiting && canTrade && moreOpen && <SnoozeMenu id={menuId} item={item} now={now} onDone={onDone} onError={onError} />}
       <SignalChart item={item} timeframe={timeframe} onTimeframe={setTimeframe} />
-      {(item.entry !== null || item.stop !== null || item.target !== null) && <KeyFigures item={item} proposal={proposal} />}
+      {(item.entry !== null || item.stop !== null || item.target !== null || item.rr !== null || proposal?.risk_check) && <KeyFigures item={item} proposal={proposal} />}
       <Reasons item={item} />
       {waiting ? <RiskLines proposal={proposal} /> : <OutcomeLine item={item} now={now} />}
       <SignalActions item={item} now={now} canTrade={canTrade} chartTimeframe={timeframe} onDone={onDone} onError={onError} />

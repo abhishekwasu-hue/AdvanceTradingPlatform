@@ -3,13 +3,14 @@ import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { cx } from "../components/primitives";
-import { formatPrice, formatTimeIST } from "../ui/format";
+import { formatTimeIST } from "../ui/format";
 import { PageIntro } from "../ui/PageIntro";
 import {
   SOURCES, TABS, canDecide, canTradeRole, countLabel, defaultTab, itemForProposal, missingProposalMessage, sourceCaption,
   type FeedSource, type FeedTab, type SignalFeedItem,
 } from "./feed";
-import { Direction, LevelTiles, SignalDetail, StatusChip, signalDay, signalTime } from "./SignalPartsV2";
+import { Direction, SignalDetail, StatusChip, signalDay, signalTime } from "./SignalPartsV2";
+import { setupWords } from "./signalText";
 import { useSignalFeed } from "./useSignalFeed";
 
 /** Desktop gets the list and the detail side by side from this width (UI v2 §8: "detail panels 430 px"). The seven
@@ -36,7 +37,7 @@ export function useMediaQuery(query: string): boolean {
 
 const EMPTY: Record<FeedTab, { title: string; body: string }> = {
   waiting: { title: "Nothing is waiting for you.", body: "New signals also arrive as a notification." },
-  today: { title: "No signals yet today.", body: "Signals from your Autopilot, scans and Copilot show here as they come." },
+  today: { title: "No signals yet today.", body: "Signals from your paper bots, scans and Copilot show here as they come." },
   history: { title: "No signals in the last 30 days.", body: "Signals you approve, skip or let expire are kept here for 30 days." },
 };
 
@@ -44,7 +45,8 @@ const EMPTY: Record<FeedTab, { title: string; body: string }> = {
  * UI2-3 (UI v2 proposal §7, §3 M6 / M7; MOBILE_APP_PLAN §2.1): Signals - "What should I act on?". An inbox of the trades
  * your Autopilot, scans and Copilot suggest, from the read-only `GET /api/signals/feed`:
  * - tabs Waiting for you (count) · Today (count) · History (30 days, paged); a source filter and a symbol filter;
- * - desktop (1440 px and up): the list with Time, Symbol + Long/Short, Setup + source, Entry, Stop, Target, Status, and
+ * - desktop (1440 px and up): the list with Time, Symbol + Long/Short, Setup + source, Status (UX3 fix 10: no single
+ *   prices in the signal text; the user's own levels are in the detail's "Your levels" fold), and
  *   the detail of the selected signal on the right (default: Today, the first waiting signal selected);
  * - phone: cards (default: Waiting for you); a card opens in place with Approve / Skip / chart / More at 44 px.
  * Approve, Skip and Snooze are the existing proposal endpoints with their step-up and owner rules; the AI never places
@@ -92,12 +94,12 @@ export default function SignalsV2() {
   return (
     <div className="space-y-space-4" data-page="signals-v2">
       <PageIntro id="signals" lines={[
-        "Trades your Autopilot, scans and Copilot suggest, in one list. Nothing is placed until you approve it.",
+        "Trades your paper bots, scans and Copilot suggest, in one list. Nothing is placed until you approve it.",
         "Open a signal to see its levels and why it was suggested, then approve or skip it.",
       ]} />
       <header>
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Signals</h1>
-        <p className="hidden text-t14 text-fg-muted md:mt-space-1 md:block">Trades your Autopilot, scans and Copilot suggest. Nothing is placed until you approve it.</p>
+        <p className="hidden text-t14 text-fg-muted md:mt-space-1 md:block">Trades your paper bots, scans and Copilot suggest. Nothing is placed until you approve it.</p>
       </header>
 
       <div role="tablist" aria-label="Signals" data-tour="signals-tabs"
@@ -217,7 +219,7 @@ function Filters({ source, symbol, open, onToggle, onSource, onSymbol, updated }
           <form onSubmit={submit} className="flex items-center gap-space-2">
             <label htmlFor={fieldId} className="sr-only">Symbol</label>
             <input id={fieldId} value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus autoComplete="off" autoCapitalize="characters" spellCheck={false}
-              placeholder="Symbol, e.g. NIFTY 50"
+              placeholder="Any symbol"
               className="h-11 w-48 rounded-control border border-border bg-surface-2 px-space-3 text-sm text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9 md:text-t14" />
             <button type="submit" className="inline-flex min-h-11 items-center rounded-control border border-border bg-surface-1 px-space-3 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9">Show</button>
           </form>
@@ -245,20 +247,16 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
   items: SignalFeedItem[]; tab: FeedTab; now: Date; selectedId: string | null; onSelect: (id: string) => void;
 }) {
   // Every column but Setup sizes to its content (`w-px` + no wrapping); Setup takes the rest and wraps. When space runs
-  // out (1440 px with an always-visible scrollbar and six-digit prices) it may break inside a word, hyphenated where
-  // possible (`overflow-wrap: anywhere` + `hyphens: auto`), instead of a long word pushing Status past the edge. The price
-  // columns are at least 3.5 rem of tabular figures (56 px at the Normal text size, item 1) and grow for a longer price ("1,35,000.00")
-  // instead of clipping it. History shows its date above the time, so the Time column stays as narrow as on Today.
+  // out it may break inside a word, hyphenated where possible (`overflow-wrap: anywhere` + `hyphens: auto`), instead of a
+  // long word pushing Status past the edge. UX3 fix 10: no price columns (the levels are in the detail's fold). History
+  // shows its date above the time, so the Time column stays as narrow as on Today.
   const th = "w-px whitespace-nowrap px-space-2 py-space-2 font-medium";
-  const num = "w-px whitespace-nowrap px-space-1 text-right font-tabular";
-  const price = "inline-block min-w-[3.5rem]";
   return (
     <div className="overflow-hidden rounded-panel border border-subtle bg-surface-1 shadow-card">
       <table className="w-full table-auto text-t14" aria-label="Signals list">
         <thead>
           <tr className="border-b border-subtle text-left text-t12 text-fg-muted">
             <th className={th}>Time</th><th className={th}>Symbol</th><th className="px-space-2 py-space-2 font-medium">Setup</th>
-            {["Entry", "Stop", "Target"].map((h) => <th key={h} className={`${num} py-space-2 font-medium`}><span className={price}>{h}</span></th>)}
             <th className={th}>Status</th>
           </tr>
         </thead>
@@ -281,12 +279,9 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
                   </div>
                 </td>
                 <td className="px-space-2 py-space-3">
-                  <span className="block hyphens-auto text-fg [overflow-wrap:anywhere]">{item.setup}</span>
+                  <span className="block hyphens-auto text-fg [overflow-wrap:anywhere]">{setupWords(item.setup)}</span>
                   <span className="block hyphens-auto text-t12 text-fg-muted [overflow-wrap:anywhere]">{sourceCaption(item)}</span>
                 </td>
-                {[item.entry, item.stop, item.target].map((v, i) => (
-                  <td key={i} className={`${num} py-space-3 text-fg`}><span className={price}>{formatPrice(v)}</span></td>
-                ))}
                 <td className="whitespace-nowrap px-space-2 py-space-3"><StatusChip item={item} now={now} short /></td>
               </tr>
             );
@@ -312,8 +307,7 @@ function SignalCard({ item, now, open, canTrade, proposalAction, onOpen, onDone,
           </h2>
           <StatusChip item={item} now={now} />
         </div>
-        <p className="text-t14 text-fg-muted">{item.setup} · {sourceCaption(item)}{item.mode === "LIVE" ? " · Live" : ""}</p>
-        <LevelTiles item={item} />
+        <p className="text-t14 text-fg-muted">{setupWords(item.setup)} · {sourceCaption(item)}{item.mode === "LIVE" ? " · Live" : ""}</p>
         {open ? (
           <SignalDetail item={item} proposal={proposalAction} now={now} compact canTrade={canTrade} onDone={onDone} onError={onError} />
         ) : (

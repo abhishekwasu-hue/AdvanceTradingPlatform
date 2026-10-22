@@ -18,7 +18,7 @@ export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
   return (
     <CardV2 title="Open positions" count={total} more={{ label: "View all", to: "/positions" }} testId="positions" tour="dashboard-positions">
       {data.status === "loading" ? <LoadingRowsV2 /> : data.status === "error" ? <LoadFailedV2 what="your positions" /> : data.rows.length === 0 ? (
-        <EmptyStateV2 text="No open positions. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
+        <EmptyStateV2 text="No open positions. Find a setup or let a paper bot trade for you." action={{ label: "Find setups", to: "/screener" }} />
       ) : (
         <ul className="divide-y divide-subtle">
           {data.rows.map((p) => {
@@ -53,7 +53,7 @@ export function ActiveSignalsV2({ data }: { data: Rows<SignalRow> }) {
   return (
     <CardV2 title="Active signals" more={{ label: "View all", to: "/signals" }} testId="signals" tour="dashboard-signals">
       {data.status === "loading" ? <LoadingRowsV2 /> : data.status === "error" ? <LoadFailedV2 what="today's signals" /> : data.rows.length === 0 ? (
-        <EmptyStateV2 text="No signals yet today. Your scans and Autopilot strategies post them here." action={{ label: "Set up a scan", to: "/screener/custom" }} />
+        <EmptyStateV2 text="No signals yet today. Your scans and paper bots post them here." action={{ label: "Set up a scan", to: "/screener/custom" }} />
       ) : (
         <ul className="divide-y divide-subtle">
           {data.rows.map((s) => (
@@ -70,7 +70,6 @@ export function ActiveSignalsV2({ data }: { data: Rows<SignalRow> }) {
                   <ChipV2 kind={s.waiting ? "brand" : "outline"}>{s.status}</ChipV2>
                 </div>
                 {s.setup && <p className="mt-px text-t13 text-fg-muted">{s.setup}</p>}
-                {s.levels && <p className="mt-px font-tabular text-t13 text-fg">{s.levels}</p>}
                 <p className="mt-px text-t12 text-fg-muted">{s.source}</p>
               </div>
             </li>

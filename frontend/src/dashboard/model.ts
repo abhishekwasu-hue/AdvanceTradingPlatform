@@ -3,6 +3,7 @@ import type { BrokerGateState } from "../ui/brokerSession";
 import { brokerDisplayName } from "../ui/brokerSession";
 import type { SetupHealthItem } from "../setup/model";
 import { paperOnlyFrom } from "../setup/paperOnly";
+import { reasonWords, setupWords } from "../signals/signalText";
 import { EMPTY, formatDateIST, formatLots, formatPrice, formatTimeIST } from "../ui/format";
 import type { OiBannerResponse } from "../oi/types";
 import type {
@@ -238,15 +239,15 @@ export interface SignalRow {
   time: string;
   symbol: string;
   side: "Long" | "Short";
+  /** Structure words only (UX3 fix 10, src/signals/signalText.ts): no single price, no call word. */
   setup: string;
-  levels: string;
   source: string;
   status: SignalStatus;
   waiting: boolean;
 }
 
 const SOURCES: Record<string, string> = {
-  deployment: "Autopilot", scan: "Scan", tradingview: "TradingView alert", public_api: "Your API", manual: "Your setup",
+  deployment: "Paper bot", scan: "Scan", tradingview: "TradingView alert", public_api: "Your API", manual: "Your setup",
   ticket: "Paper ticket", requote: "Re-quoted", console: "Copilot",
 };
 const STATUS: Record<string, SignalStatus> = {
@@ -266,19 +267,15 @@ function signalRow(a: AiAction): SignalRow {
   const e = a.evidence ?? {};
   const signal = (typeof e.signal === "object" && e.signal !== null ? e.signal : {}) as Record<string, unknown>;
   const reasons = Array.isArray(signal.reasons) ? signal.reasons.filter((r): r is string => typeof r === "string" && r.trim() !== "") : [];
-  const levels = [
-    num(e.proposal_price) !== null ? `Entry ${formatPrice(num(e.proposal_price))}` : "",
-    num(e.stop_loss) !== null ? `Stop ${formatPrice(num(e.stop_loss))}` : "",
-    num(e.target1) !== null ? `Target ${formatPrice(num(e.target1))}` : "",
-  ].filter(Boolean).join(" · ");
+  // UX3 fix 10 (signal language, CLAUDE.md): no "Entry · Stop · Target" prices on the row; the Signals page holds the
+  // user's own levels one tap away. The setup is the first reason in structure words, else the strategy's name.
   const strategy = humanise(str(e.strategy_id));
   return {
     id: a.id,
     time: formatTimeIST(a.created_at, { suffix: false }),
     symbol: str(e.symbol) || EMPTY,
     side: str(e.direction).toUpperCase() === "SHORT" ? "Short" : "Long",
-    setup: reasons[0] ?? strategy,
-    levels,
+    setup: setupWords(reasonWords(reasons)[0] ?? strategy),
     source: [SOURCES[str(e.source)] ?? "Signal", strategy].filter(Boolean).join(" · "),
     status: STATUS[a.status] ?? "Expired",
     waiting: a.status === "PROPOSED",
@@ -434,7 +431,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
   if (others.length) {
     rows.push({
       id: "suggestions", icon: "approval", tone: "neutral",
-      title: others.length === 1 ? "1 Autopilot suggestion needs your answer" : `${others.length} Autopilot suggestions need your answer`,
+      title: others.length === 1 ? "1 paper bot suggestion needs your answer" : `${others.length} paper bot suggestions need your answer`,
       detail: others[0].reason, action: { label: "Review", to: input.approvalsPath },
     });
   }
@@ -444,7 +441,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
     const d = paused[0];
     rows.push({
       id: "paused", icon: "paused", tone: "warn",
-      title: paused.length === 1 ? `Autopilot paused “${humanise(d.strategy_id)} ${d.symbol}”` : `${paused.length} Autopilot strategies are paused`,
+      title: paused.length === 1 ? `Paper bot paused “${humanise(d.strategy_id)} ${d.symbol}”` : `${paused.length} paper bots are paused`,
       detail: paused.length === 1 ? (d.pause_reason ? `${d.pause_reason} Nothing else is affected.` : "It stays paused until you resume it.")
         : "They stay paused until you resume them.",
       action: { label: "Review", to: "/deployments" }, dismissible: true,
@@ -452,8 +449,8 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
   } else if (failing.length) {
     rows.push({
       id: "failing", icon: "paused", tone: "warn",
-      title: failing.length === 1 ? `Autopilot “${humanise(failing[0].strategy_id)} ${failing[0].symbol}” hit a problem` : `${failing.length} Autopilot strategies hit a problem`,
-      detail: "Open Autopilot to see what happened and what to do.", action: { label: "Review", to: "/deployments" }, dismissible: true,
+      title: failing.length === 1 ? `Paper bot “${humanise(failing[0].strategy_id)} ${failing[0].symbol}” hit a problem` : `${failing.length} paper bots hit a problem`,
+      detail: "Open Paper bot to see what happened and what to do.", action: { label: "Review", to: "/deployments" }, dismissible: true,
     });
   }
   const lockout = input.risk?.lockout;

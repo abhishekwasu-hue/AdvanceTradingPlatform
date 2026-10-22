@@ -3,6 +3,7 @@ import { useEffect, useId, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import { ApiError, NETWORK_MESSAGE } from "../api/errors";
 import { loginErrorText } from "../ui/brokerSession";
+import { useFeatures } from "../ui/useFeatures";
 import type { BrokerCatalogEntry, BrokerCatalogField } from "../types";
 import { BTN_PRIMARY, BTN_SECONDARY, BrokerLogo, ResponsiveDialog } from "./parts";
 import { entryFor, useBrokerCatalog } from "./useBrokerCatalog";
@@ -83,6 +84,21 @@ export function complete(fields: readonly Pick<BrokerCatalogField, "key">[], val
   return fields.every((f) => (values[f.key] ?? "").trim() !== "");
 }
 
+/**
+ * UX3 fix 6 (UX audit P02, handover 8f "1-2 fields per broker"): the catalog fields a beginner should not meet first - the
+ * Fyers "Redirect URL" and the Angel One / Shoonya "TOTP secret". With `ui_v2` they sit under the panel's own
+ * "Advanced" fold (still required: Connect stays off until they are filled, and a line says where the missing one is).
+ */
+export const ADVANCED_FIELD_KEYS: ReadonlySet<string> = new Set(["redirect_uri", "totp_secret"]);
+
+/** The panel's fields split into the ones shown first and the ones under Advanced. Nothing is folded when no field
+ * would stay outside the fold. */
+export function splitFields(fields: readonly BrokerCatalogField[], fold: ReadonlySet<string>): { main: BrokerCatalogField[]; advanced: BrokerCatalogField[] } {
+  const main = fields.filter((f) => !fold.has(f.key));
+  const advanced = fields.filter((f) => fold.has(f.key));
+  return main.length === 0 ? { main: [...fields], advanced: [] } : { main, advanced };
+}
+
 /** After "Log in": the broker's page opened in a new tab (or the browser blocked it - then the link). */
 export interface LoginOpened { link: string; opened: boolean }
 
@@ -100,14 +116,37 @@ export interface ConnectPanelViewProps {
   loginBusy?: boolean;
   loginOpened?: LoginOpened | null;
   onDone?: () => void;
+  /** Catalog field keys shown under "Advanced" (UX3 fix 6); none by default. */
+  fold?: ReadonlySet<string>;
 }
 
+const NO_FOLD: ReadonlySet<string> = new Set();
+
 /** The panel's body - no dialog and no fetching, so tests render it directly. */
-export function ConnectPanelView({ entry, step, values, onChange, onSubmit, busy, result, note = null, onLogin, loginBusy = false, loginOpened = null, onDone }: ConnectPanelViewProps) {
+export function ConnectPanelView({ entry, step, values, onChange, onSubmit, busy, result, note = null, onLogin, loginBusy = false, loginOpened = null, onDone, fold = NO_FOLD }: ConnectPanelViewProps) {
   const ids = useId();
   const submit = (e: FormEvent) => { e.preventDefault(); if (!busy) onSubmit(); };
   const images = HOW_TO_IMAGES[entry.broker] ?? [];
   const busyWord = step.action === "Renew" ? "Renewing" : "Connecting";
+  const { main, advanced } = splitFields(step.fields, fold);
+  // The fields shown first are filled but one under Advanced is not: say where it is (Connect stays off until then).
+  const advancedMissing = advanced.length > 0 && complete(main, values) && !complete(advanced, values);
+  const field = (f: BrokerCatalogField) => {
+    const i = step.fields.indexOf(f);
+    return (
+      <div key={f.key} className="space-y-space-1">
+        <label htmlFor={`${ids}-${i}`} className="block text-t13 font-medium text-fg">{f.label}</label>
+        <input id={`${ids}-${i}`} name={f.key} data-field={f.key}
+          type={f.kind === "secret" ? "password" : "text"}
+          autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          aria-describedby={f.placeholder ? `${ids}-${i}-hint` : undefined}
+          value={values[f.key] ?? ""}
+          onChange={(e) => onChange(f.key, e.target.value)}
+          className="h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-sm text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:text-t14" />
+        {f.placeholder && <p id={`${ids}-${i}-hint`} className="text-t12 text-fg-muted">{f.placeholder}</p>}
+      </div>
+    );
+  };
   return (
     <form onSubmit={submit} className="space-y-space-4" data-connect-panel={entry.broker} data-endpoint={step.endpoint}>
       <div className="flex items-center gap-space-3">
@@ -133,19 +172,7 @@ export function ConnectPanelView({ entry, step, values, onChange, onSubmit, busy
         </div>
       )}
 
-      {step.fields.map((f, i) => (
-        <div key={f.key} className="space-y-space-1">
-          <label htmlFor={`${ids}-${i}`} className="block text-t13 font-medium text-fg">{f.label}</label>
-          <input id={`${ids}-${i}`} name={f.key} data-field={f.key}
-            type={f.kind === "secret" ? "password" : "text"}
-            autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-            aria-describedby={f.placeholder ? `${ids}-${i}-hint` : undefined}
-            value={values[f.key] ?? ""}
-            onChange={(e) => onChange(f.key, e.target.value)}
-            className="h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-sm text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:text-t14" />
-          {f.placeholder && <p id={`${ids}-${i}-hint`} className="text-t12 text-fg-muted">{f.placeholder}</p>}
-        </div>
-      ))}
+      {main.map(field)}
 
       {step.fields.length > 0 && entry.how_to.length > 0 && (
         <details className="rounded-control border border-subtle" data-how-to>
@@ -172,6 +199,15 @@ export function ConnectPanelView({ entry, step, values, onChange, onSubmit, busy
         </details>
       )}
 
+      {advanced.length > 0 && (
+        <details className="rounded-control border border-subtle" data-advanced data-advanced-fields>
+          <summary className="flex min-h-11 cursor-pointer list-none items-center px-space-3 text-t14 font-medium text-fg [&::-webkit-details-marker]:hidden">
+            Advanced ({advanced.length === 1 ? "1 more field" : `${advanced.length} more fields`})
+          </summary>
+          <div className="space-y-space-3 px-space-3 pb-space-3">{advanced.map(field)}</div>
+        </details>
+      )}
+
       {result && (result.ok ? (
         <p role="status" data-result="ok" className="text-t14 font-semibold text-fg">Connected ✓</p>
       ) : (
@@ -179,6 +215,10 @@ export function ConnectPanelView({ entry, step, values, onChange, onSubmit, busy
           <TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0" /> <span>{result.text}</span>
         </p>
       ))}
+
+      {advancedMissing && !result?.ok && (
+        <p className="text-t13 text-fg-muted" data-advanced-missing>One more field is under Advanced.</p>
+      )}
 
       {result?.ok ? (
         <button type="button" onClick={onDone} className={`${BTN_SECONDARY} w-full`}>Done</button>
@@ -204,6 +244,7 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
   onChanged?: () => void;
 }) {
   const { entries, failed, retry } = useBrokerCatalog();
+  const fold = useFeatures().on("ui_v2") ? ADVANCED_FIELD_KEYS : NO_FOLD;
   const entry = broker ? entryFor(entries, broker) : null;
   const label = accountLabel || "primary";
   const [values, setValues] = useState<Record<string, string>>({});
@@ -267,7 +308,7 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
         <ConnectPanelView entry={entry} step={step} values={values} busy={busy} result={result} note={afterSave}
           onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}
           onSubmit={() => void submit()} onDone={() => onOpenChange(false)}
-          onLogin={login} loginBusy={loginBusy} loginOpened={loginOpened} />
+          onLogin={login} loginBusy={loginBusy} loginOpened={loginOpened} fold={fold} />
       ) : entries && broker ? (
         <p className="text-t14 text-fg-muted">This broker cannot be connected here yet.</p>
       ) : failed ? (

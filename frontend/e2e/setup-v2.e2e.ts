@@ -250,8 +250,8 @@ test.describe("setup wizard 390 x 844", () => {
     await expect(wizard(page)).not.toContainText(/\bLive\b|\bLIVE\b|real money/);
     await cards.first().getByRole("button", { name: "Test it" }).click();
     await expect(cards.first()).toContainText("12 trades · 58% won · +₹4,250 on the last 30 days of NIFTY 50 prices.");
-    await cards.nth(2).getByRole("button", { name: "Start on Paper Autopilot" }).click();
-    await expect(cards.nth(2)).toContainText("Started on Paper Autopilot.");
+    await cards.nth(2).getByRole("button", { name: "Start a paper bot" }).click();
+    await expect(cards.nth(2)).toContainText("Started as a paper bot.");
     const post = server.sent.find((c) => c.method === "POST" && c.url === "/deployments");
     expect(post?.body).toMatchObject({ strategy_id: "orb_15m_5m", mode: "PAPER", instrument_kind: "OPTION", option_position: "BUY" });
     expect(post?.body).not.toHaveProperty("broker_name");
@@ -273,9 +273,9 @@ test.describe("setup wizard 390 x 844", () => {
   test("the strategy step: already deployed in the organisation (409) says nothing new started and is not done", async ({ page }) => {
     await open(page, { done: { broker: true, risk: true }, deployConflict: true });
     const first = wizard(page).locator("[data-suggestion]").first();
-    await first.getByRole("button", { name: "Start on Paper Autopilot" }).click();
+    await first.getByRole("button", { name: "Start a paper bot" }).click();
     await expect(first).toContainText("Nothing new was started: this strategy already runs on paper for NIFTY 50 in your organisation. Use Test it");
-    await expect(first).not.toContainText("Started on Paper Autopilot");
+    await expect(first).not.toContainText("Started as a paper bot");
     await expect(wizard(page).locator("[data-step-state='done']")).toHaveCount(2);
   });
 

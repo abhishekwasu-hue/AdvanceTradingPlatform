@@ -1,0 +1,60 @@
+{
+  "schema": "atp.template/1",
+  "id": "D3",
+  "version": 1,
+  "name": "Moving-average pullback in trend",
+  "family": "D",
+  "idea": "In a trend (the close beyond a rising or falling slow average), wait for the pullback to reach the fast average and for a reversal there with the close back beyond it; the idea is wrong beyond the pullback's extreme.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "ma_type", "label": "Average type", "help": "How both averages are calculated.", "type": "ma_type", "default": "EMA", "choices": ["EMA", "SMA", "WMA", "HMA"], "choice_labels": ["Exponential", "Simple", "Weighted", "Hull"]},
+    {"key": "fast", "label": "Pullback average", "help": "Bars in the fast average the pullback comes back to.", "type": "int", "default": 20, "min": 2, "max": 200, "step": 1},
+    {"key": "slow", "label": "Trend average", "help": "Bars in the slow average that defines the trend.", "type": "int", "default": 50, "min": 3, "max": 500, "step": 1},
+    {"key": "slope_bars", "label": "Trend slope over (bars)", "help": "The trend average must be higher (rising trend) or lower (falling trend) than it was this many bars before.", "type": "int", "default": 5, "min": 1, "max": 100, "step": 1},
+    {"key": "trigger_bar", "label": "Reversal on the pullback bar", "help": "Whether the bar that first reaches the fast average may itself be the reversal bar, or the reversal must come on a later bar.", "type": "enum", "default": "later", "choices": ["later", "same"], "choice_labels": ["Only on a later bar", "The same bar may count"]},
+    {"key": "pullback_max_bars", "label": "Reversal within (bars)", "help": "The reversal must come within this many bars after the pullback first reached the fast average.", "type": "int", "default": 20, "min": 1, "max": 200, "step": 1},
+    {"key": "exit_rule", "label": "The idea has ended", "help": "When the close goes back across the trend average, or no exit signal from this template.", "type": "enum", "default": "slow_average", "choices": ["slow_average", "none"], "choice_labels": ["A close back across the trend average", "No exit signal"]}
+  ],
+  "constraints": [
+    {"left": "fast", "op": "<", "right": "slow", "message": "The pullback average must be shorter than the trend average."}
+  ],
+  "sides_default": "both",
+  "setup": {
+    "by": "trigger_bar",
+    "variants": {
+      "later": {
+        "kind": "event",
+        "long": "close > MA(close, $slow, $ma_type) AND MA(close, $slow, $ma_type) > Lag(MA(close, $slow, $ma_type), $slope_bars) AND low <= MA(close, $fast, $ma_type) AND low[1] > MA(close, $fast, $ma_type)[1]",
+        "short": "close < MA(close, $slow, $ma_type) AND MA(close, $slow, $ma_type) < Lag(MA(close, $slow, $ma_type), $slope_bars) AND high >= MA(close, $fast, $ma_type) AND high[1] < MA(close, $fast, $ma_type)[1]",
+        "expiry_bars": "$pullback_max_bars",
+        "same_bar": false
+      },
+      "same": {
+        "kind": "event",
+        "long": "close > MA(close, $slow, $ma_type) AND MA(close, $slow, $ma_type) > Lag(MA(close, $slow, $ma_type), $slope_bars) AND low <= MA(close, $fast, $ma_type) AND low[1] > MA(close, $fast, $ma_type)[1]",
+        "short": "close < MA(close, $slow, $ma_type) AND MA(close, $slow, $ma_type) < Lag(MA(close, $slow, $ma_type), $slope_bars) AND high >= MA(close, $fast, $ma_type) AND high[1] < MA(close, $fast, $ma_type)[1]",
+        "expiry_bars": "$pullback_max_bars",
+        "same_bar": true
+      }
+    }
+  },
+  "trigger": {
+    "long": "ReversalAt(MA(close, $fast, $ma_type), \"bullish\") AND close > MA(close, $fast, $ma_type)",
+    "short": "ReversalAt(MA(close, $fast, $ma_type), \"bearish\") AND close < MA(close, $fast, $ma_type)"
+  },
+  "invalidation": {"extreme": "since_setup"},
+  "exit_signal": {
+    "by": "exit_rule",
+    "variants": {
+      "slow_average": {"long": "close < MA(close, $slow, $ma_type)", "short": "close > MA(close, $slow, $ma_type)"},
+      "none": null
+    }
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "pullback_to_fast_ma_reversed_up"}],
+    "short": [{"token": "rally_to_fast_ma_reversed_down"}]
+  }
+}

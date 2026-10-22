@@ -274,6 +274,7 @@ def test_the_library_validates_against_the_registry():
             if part is None:
                 continue
             sided = [v for v in part.variants.values() if v is not None] if hasattr(part, "variants") else [part]   # step 2: D2 switches
+            sided = [v for v in sided if hasattr(v, "long")]           # step 5: the extreme since the setup has no expression
             for text in [x for v in sided for x in (v.long, v.short)]:
                 for name in [w for w in FUNCTIONS if re.search(rf"(?<![A-Za-z]){w}\(", text)]:      # DowTrend( is not Trend(
                     assert name not in LAST_BAR_ONLY

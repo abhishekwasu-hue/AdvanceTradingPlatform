@@ -25,6 +25,7 @@ from typing import Dict, List, Literal, Optional, Tuple, Union
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
 
 from app.screener import nodes as n
+from app.screener.registry import INTRADAY_SERIES_TFS
 
 SCHEMA_VERSION = "atp.template/1"
 SIGNAL_TIMEFRAME = "signal_timeframe"        # the reserved name a constraint uses for the user's chosen signal timeframe
@@ -118,6 +119,20 @@ class Switch(_Strict):
     variants: Dict[str, Optional[Sided]] = Field(min_length=1)
 
 
+class SetupExtreme(_Strict):
+    """Step 5 (TPL-5): an invalidation that is the extreme SINCE THE SETUP BAR - long: the lowest low from the setup
+    instance's bar to the trigger bar (both included); short: the highest high. The engine keeps it while it walks the
+    bars (a pure function of bars, R3): it starts on the bar an instance arms and restarts when a newer setup replaces
+    the instance (R8), so it reads only bars up to the trigger (no look-ahead). Used for "the pullback low", "the dip's
+    low", "the excursion's extreme" and "the session low since the cross-under". Allowed for an invalidation only."""
+    extreme: Literal["since_setup"]
+
+
+class InvalidationSwitch(Switch):
+    """An invalidation per value of the enum setting `by`: an expression, or the extreme since the setup bar."""
+    variants: Dict[str, Optional[Union[Sided, SetupExtreme]]] = Field(min_length=1)   # type: ignore[assignment]
+
+
 class Context(_Strict):
     """Optional filters on closed context bars, read on the trigger bar. With `timeframe_param`, every field and function
     in the expression that names no timeframe runs on the chosen context timeframe (the ScreenQL runtime's close-time
@@ -141,6 +156,10 @@ class Setup(_Strict):
     same_bar: StrictBool = False
     arm_level: Optional[Sided] = None
     breach_on: Literal["close", "wick"] = "close"
+    # Step 5 (TPL-5, E5): the instance lives within the session of its setup bar only. The session is the one the
+    # exchange calendar gives each bar's own timestamp (the runtime's session map, as SessionVWAP's reset) - no time-of-day
+    # rule; the first bar of a later session voids the instance. Intraday timeframes only.
+    session_bound: StrictBool = False
 
 
 class SetupSwitch(_Strict):
@@ -190,7 +209,8 @@ class Template(_Strict):
     context: Optional[Union[Context, ContextSwitch]] = None
     setup: Union[Setup, SetupSwitch]
     trigger: Optional[Union[Sided, Switch]] = None   # None: the setup event itself is the trigger (needs kind event + same_bar)
-    invalidation: Union[Sided, Switch]               # a price per side, read on the trigger bar (S6: on the losing side of the close)
+    # a price per side, read on the trigger bar (S6: on the losing side of the close); step 5: or the extreme since the setup
+    invalidation: Union[Sided, SetupExtreme, InvalidationSwitch]
     exit_signal: Optional[Union[Sided, Switch]] = None
     evidence: Tuple[Evidence, ...] = ()
     signal_text: SignalText
@@ -241,6 +261,9 @@ class Template(_Strict):
                     raise ValueError("expiry_bars must be a whole number or a $setting of type int")
             elif setup.expiry_bars is not None and setup.expiry_bars < 0:
                 raise ValueError("expiry_bars must not be negative")
+        if any(s.session_bound for s in setups):
+            if not set(self.allowed_timeframes) <= set(INTRADAY_SERIES_TFS):
+                raise ValueError("a setup bound to its session needs intraday timeframes only")
         if self.trigger is None and not all(s.kind == "event" and s.same_bar for s in setups):
             raise ValueError("without a trigger the setup event is the signal: kind event with same_bar true")
         if len({e.name for e in self.evidence}) != len(self.evidence):
@@ -258,4 +281,5 @@ class Template(_Strict):
 
 
 __all__ = ["SCHEMA_VERSION", "SIGNAL_TIMEFRAME", "MA_TYPES", "SOURCES", "ParamSpec", "Constraint", "Sided", "Context", "Setup",
-           "Evidence", "TextPart", "SignalText", "Template", "Switch", "SetupSwitch", "ContextSwitch"]
+           "Evidence", "TextPart", "SignalText", "Template", "Switch", "SetupSwitch", "ContextSwitch", "SetupExtreme",
+           "InvalidationSwitch"]

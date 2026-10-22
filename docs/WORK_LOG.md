@@ -2948,6 +2948,22 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_wave5_templates.py` (must-fire per style, must-not per count type, mirror, truncation, parity incl.
   the 1-hour wave chart, property tests, no number literal, defaults, words, flags, id length).
 - Questions WAVE-38..WAVE-45 (OPEN_QUESTIONS). Not built: G12 (after family F), the RSI / volume filters, the UI.
+## 22 Oct - Strategy templates step 5 (TPL-5): the extreme since the setup bar, C2, D3, E1, E3, E5 (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl5-setup-extreme`. No migration (templates are JSON in the repository; no new flag).
+- Engine: an invalidation may be "the extreme since the setup bar" (`{"extreme": "since_setup"}`: the lowest low / highest
+  high from the setup instance's bar to the trigger bar, restarted by a newer setup; causal, truncation-tested); a setup
+  may be bound to its session (the exchange calendar's session of each bar's own timestamp; no time-of-day rule). Every
+  earlier template runs and hashes as before.
+- R7 for C2: RetestEntry / RetestEntryRef take `swing=` (the swing breakout's degree; `degree` stays the wave degree; left
+  out = the older call, byte-identical; a larger degree asks for its history).
+- Templates: C2 swing breakout and retest, D3 moving-average pullback in trend, E1 RSI pullback in trend, E3 Bollinger mean
+  reversion in a range, E5 session VWAP reclaim / reject (Intraday, session-based). Every number a setting with a default;
+  signal text in structure / indicator words; no target, size or order anywhere.
+- Not built (TPL-Q49): E2 (its own PR: an RSI period on RsiDivergence, an extreme companion, the lower-degree trigger),
+  B10, C4, family F.
+- Tests: `tests/test_tpl5_templates.py` (the engine piece, `swing=`, the section 8 gate for the five templates), runtime
+  fixture, causal cases (lookahead job). Questions TPL-Q41..TPL-Q49.
 ## 22 Oct - Strategy templates family F: the option seller packs F1, F2 (behind strategy_templates, PAPER only)
 
 - Branch `claude/tpl6-family-f`. No migration (templates are JSON in the repository; no new flag).

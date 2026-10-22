@@ -2677,7 +2677,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   redirect URI point at the Broker page; Telegram linking at Settings > Alerts; AI keys and models at Settings > AI; vision
   reviews, the own Telegram bot and personal API keys at Settings > Advanced. Help entries (`support/content/help.md`) link
   the new pages. Tests that pinned the old words updated. No fixture hash changed.
-- #365 / #366 overlap: skipped (neither is merged into main; `src/signals/signalText.ts` and `language.ts` are not on main).
+- #365 / #366 overlap: both landed on main while this branch was open (as #374 and #376), so after merging main
+  `src/signals/signalText.ts` takes its call-word check (`isClean`) and its price check (`hasPrice`, moved into
+  `src/signals/language.ts` unchanged) from the one signal-language module. `src/signals/signalText.test.ts` runs a
+  frozen copy of the old checks on a corpus: identical answers.
+- SR-13 after merging main: the broker-login texts of deployments, accounts and the trading worker, the push re-enable
+  text and the public API's webhook note point at the Broker page / Settings > Alerts too.
 ## 22 Oct - Analyze a chart A4: the share link (design PR-D) and history filters (behind chart_analyze + chart_analyze_share)
 
 - Branch `claude/chart-analyze-a4`. No migration (the link state lives in `chart_analyses.result_json` under `_share`).

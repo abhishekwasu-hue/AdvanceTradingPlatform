@@ -377,11 +377,11 @@ async def _get_owned_or_404(deployment_id: int, user: User, session: AsyncSessio
 async def _require_usable_broker(session: AsyncSession, tenant_id: int, broker_name: str, account_label: str = "primary") -> BrokerCredentialRecord:
     record = await get_credential_record(session, tenant_id, broker_name, account_label)
     if record is None:
-        raise HTTPException(status_code=409, detail=f"No stored credentials for broker '{broker_name}' - add them in Settings first")
+        raise HTTPException(status_code=409, detail=f"No stored credentials for broker '{broker_name}' - add them on the Broker page first")
     if not token_is_usable(record):
         raise HTTPException(
             status_code=409,
-            detail=f"{broker_name} session is {record.token_status} - log in to {broker_name} from Settings before going LIVE",
+            detail=f"{broker_name} session is {record.token_status} - log in to {broker_name} on the Broker page before going LIVE",
         )
     return record
 
@@ -486,7 +486,7 @@ async def create_deployment(
             if not stored:
                 raise HTTPException(
                     status_code=409,
-                    detail="Store broker credentials in Settings first - even paper trading needs a broker session for live candles",
+                    detail="Store broker credentials on the Broker page first - even paper trading needs a broker session for live candles",
                 )
             if len(stored) > 1:
                 raise HTTPException(status_code=400, detail="Several brokers stored - name the one to use for market data")
@@ -586,7 +586,7 @@ async def preview_contract(
                 except Exception as exc:  # noqa: BLE001 - premiums are a bonus in a preview
                     entry["metrics_error"] = str(exc)
             else:
-                entry["metrics_error"] = "No usable broker session to quote the legs - log in from Settings to see credit, max loss and breakeven"
+                entry["metrics_error"] = "No usable broker session to quote the legs - log in on the Broker page to see credit, max loss and breakeven"
             out["structures"][direction.value] = entry
         return out
     for direction in (SignalDirection.LONG, SignalDirection.SHORT):

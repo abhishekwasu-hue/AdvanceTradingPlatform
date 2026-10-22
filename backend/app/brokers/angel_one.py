@@ -9,7 +9,7 @@ trading PIN and a TOTP. Responses are `{"status": true|false, "message": ..., "e
 Endpoint paths, field names and enums follow the public SmartAPI documentation
 (https://smartapi.angelbroking.com/docs) as of training cutoff; verify against the live docs before
 production use, since broker APIs evolve. Nothing here is reached by a LIVE order until the tenant
-has logged in through Settings and the platform's own risk path has approved the order.
+has logged in through the Broker page and the platform's own risk path has approved the order.
 
 Credentials (`BrokerCredentials`): `api_key` (SmartAPI app key), `client_id` (client code),
 `pin` (trading PIN), `totp_secret` (the base32 secret from the SmartAPI TOTP enrolment - the

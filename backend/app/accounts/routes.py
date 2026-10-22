@@ -48,7 +48,7 @@ async def sync(account_id: int, user: User = Depends(require_trader), session: A
     if record is None:
         raise HTTPException(status_code=409, detail="No credentials stored for this account")
     if not token_is_usable(record):
-        raise HTTPException(status_code=409, detail=f"{account.broker_name} session is {record.token_status} - log in from Settings first")
+        raise HTTPException(status_code=409, detail=f"{account.broker_name} session is {record.token_status} - log in on the Broker page first")
     account = await sync_account(session, account, build_adapter(record))
     if account.last_sync_error:
         raise HTTPException(status_code=502, detail=f"Sync failed: {account.last_sync_error}")

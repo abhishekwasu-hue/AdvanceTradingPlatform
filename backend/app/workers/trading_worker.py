@@ -1055,7 +1055,7 @@ class TradingWorker:
             await self.streams.drop_prefix(f"{tenant_id}:")
         data_broker = next(iter(adapters.values()), None)
         if data_broker is None:
-            message = "No usable broker session (token expired or missing) - log in again from Settings"
+            message = "No usable broker session (token expired or missing) - log in again on the Broker page"
             for dep in deployments:
                 dep.last_error = message
             await session.commit()
@@ -1653,7 +1653,7 @@ class TradingWorker:
         routed_broker = account.broker_name if account is not None else (dep.broker_name or "")
         broker = adapters.get(_adapter_key(routed_broker, label))
         if broker is None:
-            return None, account_id, f"LIVE entry skipped: no usable {routed_broker} session - log in again from Settings"
+            return None, account_id, f"LIVE entry skipped: no usable {routed_broker} session - log in again on the Broker page"
         uncertain = broker_uncertain_reason(await session.get(Tenant, dep.tenant_id))
         if uncertain:
             # execute_signal_for_user would refuse this too (as a REJECTED order per signal

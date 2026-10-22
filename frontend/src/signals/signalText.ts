@@ -1,4 +1,4 @@
-import { hasCallWords } from "../chartAnalyze/signalLanguage";
+import { hasPrice, isClean } from "./language";
 
 /**
  * UX3 fix 10 (UX audit §1 problem 8, CLAUDE.md "Signal language"): the one formatter for what a signal SAYS on the
@@ -6,25 +6,19 @@ import { hasCallWords } from "../chartAnalyze/signalLanguage";
  * single price, never a buy / sell / target / stop-loss word. The user's own levels (the numbers his approval needs) are
  * not signal text: they sit one tap away in the detail's "Your levels" fold, with neutral labels (LEVEL_LABELS).
  *
- * The same call-word list as Analyze a chart (src/chartAnalyze/signalLanguage.ts, backend
- * app/chart_analyze/signal_language.py), so the two never disagree; a price is any figure a trader would read as one.
+ * The call-word and price checks live in the one signal-language module (./language.ts: `isClean`, `hasPrice`), the
+ * same list Analyze a chart uses, so the surfaces never disagree; a price is any figure a trader would read as one.
  */
 
 /** Shown when the setup's own name reads as a call ("Buy the dip") or names a price. */
 export const SETUP_FALLBACK = "A setup from your strategy";
 
-/** A price-like figure: "24,790", "24790", "1,35,000.50", "99.5". Small whole numbers ("EMA 20", "15m") are not prices. */
-const PRICE = /(?:\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\b\d{3,}(?:\.\d+)?\b|\b\d+\.\d+\b)/;
-
-/** True when the text carries a single price. */
-export function hasPrice(text: string): boolean {
-  return PRICE.test(text);
-}
+export { hasPrice };
 
 /** True when the text may be shown as signal text: no call word and no price. */
 export function isStructureText(text: string): boolean {
   const t = text.trim();
-  return t !== "" && !hasCallWords(t) && !hasPrice(t);
+  return t !== "" && isClean(t) && !hasPrice(t);
 }
 
 /** The setup as shown: its own words when they are structure words, else the plain fallback. */

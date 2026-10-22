@@ -32,6 +32,15 @@ export function isClean(text: string): boolean {
   return callWords(text).length === 0;
 }
 
+// --- a single price in free text (the Signals page's own levels check; frontend only) ----------------------------------------
+/** A price-like figure: "24,790", "24790", "1,35,000.50", "99.5". Small whole numbers ("EMA 20", "15m") are not prices. */
+export const PRICE_LIKE = /(?:\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\b\d{3,}(?:\.\d+)?\b|\b\d+\.\d+\b)/;
+
+/** True when the text carries a single price. */
+export function hasPrice(text: string): boolean {
+  return PRICE_LIKE.test(text);
+}
+
 // --- the formatter ---------------------------------------------------------------------------------------------------------
 export type Surface = "signal_own" | "signal_public" | "education";
 export const SURFACES: readonly Surface[] = ["signal_own", "signal_public", "education"];

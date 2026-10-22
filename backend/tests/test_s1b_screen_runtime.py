@@ -405,6 +405,33 @@ def test_tpl3_retest_companion_and_the_forwarded_breakout_settings():
     assert ev('RetestEntryRef("level", "down", "range", 10, TRUE)').isna().all()
 
 
+def test_tpl4_breakout_family_companions():
+    """Strategy templates step 4 (R2 for the other breakout families): each companion gives its breakout's prices on that
+    breakout's signal bars only, held_level holds the level forward (tests/test_tpl4_templates.py checks every output
+    against the breakout screen's own columns and the stop reference)."""
+    from app.quality.lookahead import synthetic_bars
+    walk = SymbolData("S", {"5m": synthetic_bars(600, tf="5m", seed=4)})
+    for ref, base in (('SwingBreakoutRef("level", "{s}", 0, 0)', 'SwingBreakout("{s}", 0, 0)'),
+                      ('NRBreakoutRef("fail_level", "{s}", "nr7", 0, 0)', 'NRBreakout("{s}", "nr7", 0, 0)'),
+                      ('VolumeBreakoutRef("level", "{s}", 1.5, 10)', 'VolumeBreakout("{s}", 1.5, 10)'),
+                      ('DonchianBreakoutRef("stop_midpoint", "{s}", 20, 0)', 'DonchianBreakout("{s}", 20, 0)'),
+                      ('MABreakoutRef("level", "{s}", 10, "sma", 0)', 'MABreakout("{s}", 10, "sma", 0)'),
+                      ('PatternBreakoutRef("base_low", "{s}", "triangle", 0, 0)', 'PatternBreakout("{s}", "triangle", 0, 0)')):
+        for side in ("up", "down"):
+            fired, level = _ev(base.format(s=side), walk), _ev(ref.format(s=side), walk)
+            assert (level.notna() == fired).all(), (ref, side)
+        assert _ev(base.format(s="up"), walk).any() or _ev(base.format(s="down"), walk).any(), base
+    up = _sym([100.0] * 60 + [110.0, 111.0], vol=[100.0] * 62)          # a flat channel (high 101, low 99), then a break
+    assert _ev('DonchianBreakoutRef("stop_midpoint", "up", 20, 0)', up).iloc[-2] == pytest.approx(100.0)
+    held = _ev('DonchianBreakoutRef("held_level", "up", 20, 0)', up)
+    assert held.iloc[:-2].isna().all() and held.iloc[-2:].tolist() == [101.0, 101.0]
+    from tests.breakout_bk3_fixtures import vcp
+    f = vcp()
+    COVERED.add("VCPBreakoutRef")
+    v = evaluate(parse('VCPBreakoutRef("stop_base", "up")'), SymbolData("S", {"1d": f}), base_tf="1d")
+    assert v.notna().sum() == 1 and v.iloc[-1] < f["close"].iloc[-1]
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

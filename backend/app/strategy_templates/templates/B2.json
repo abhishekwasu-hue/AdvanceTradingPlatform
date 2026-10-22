@@ -1,0 +1,42 @@
+{
+  "schema": "atp.template/1",
+  "id": "B2",
+  "version": 1,
+  "name": "Swing-level breakout",
+  "family": "B",
+  "idea": "A signal on the first close beyond the latest confirmed swing in the direction of the swing trend (a break of structure); the idea has ended when the structure breaks the other way against the trend.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "swing_degree", "label": "Swing size", "help": "Which swings count: 0 is the smallest, 3 the largest. Larger swings need more history.", "type": "int", "default": 1, "min": 0, "max": 3, "step": 1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the swing the close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The level that says the break failed: the latest confirmed swing on the other side, or just beyond the broken swing. When it is not on the losing side of the close, there is no signal.", "type": "enum", "default": "swing", "choices": ["swing", "stop_level_atr"], "choice_labels": ["The latest confirmed opposite swing", "Just beyond the broken swing"]},
+    {"key": "stop_mult", "label": "Edge buffer", "help": "For 'just beyond the broken swing': how many average true ranges beyond it.", "type": "float", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "SwingBreakType(\"up\", $swing_degree, $k) == \"BOS\"",
+    "short": "SwingBreakType(\"down\", $swing_degree, $k) == \"BOS\"",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "variants": {
+      "swing": {"long": "SwingLow($swing_degree)", "short": "SwingHigh($swing_degree)"},
+      "stop_level_atr": {"long": "SwingBreakoutRef(\"stop_level_atr\", \"up\", $swing_degree, $k, $stop_mult)", "short": "SwingBreakoutRef(\"stop_level_atr\", \"down\", $swing_degree, $k, $stop_mult)"}
+    },
+    "by": "invalidation"
+  },
+  "exit_signal": {
+    "long": "SwingBreakType(\"down\", $swing_degree, $k) == \"CHOCH\"",
+    "short": "SwingBreakType(\"up\", $swing_degree, $k) == \"CHOCH\""
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "swing_high_broken_with_trend"}],
+    "short": [{"token": "swing_low_broken_with_trend"}]
+  }
+}

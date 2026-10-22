@@ -1,0 +1,40 @@
+{
+  "schema": "atp.template/1",
+  "id": "B6",
+  "version": 1,
+  "name": "Pattern breakout",
+  "family": "B",
+  "idea": "A signal on the first close beyond a flag, a pennant or a converging triangle; the idea has ended when the close is back inside the pattern.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "pattern", "label": "The pattern", "help": "Which consolidation the break comes out of.", "type": "enum", "default": "flag", "choices": ["flag", "pennant", "triangle"], "choice_labels": ["A flag", "A pennant", "A converging triangle"]},
+    {"key": "vol_mult", "label": "Volume expansion", "help": "The breakout bar's volume must be at least this many times the average (0 means no volume condition; indices have no volume).", "type": "float", "default": 0.0, "min": 0.0, "max": 20.0, "step": 0.1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the pattern the close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The level that says the breakout failed: the far side of the pattern, just beyond the broken edge, or the middle of the pattern.", "type": "enum", "default": "stop_base", "choices": ["stop_base", "stop_level_atr", "stop_midpoint"], "choice_labels": ["The far side of the pattern", "Just beyond the broken edge", "The middle of the pattern"]},
+    {"key": "stop_mult", "label": "Edge buffer", "help": "For 'just beyond the broken edge': how many average true ranges beyond it.", "type": "float", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "PatternBreakout(\"up\", $pattern, $vol_mult, $k)",
+    "short": "PatternBreakout(\"down\", $pattern, $vol_mult, $k)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "PatternBreakoutRef($invalidation, \"up\", $pattern, $vol_mult, $k, $stop_mult)",
+    "short": "PatternBreakoutRef($invalidation, \"down\", $pattern, $vol_mult, $k, $stop_mult)"
+  },
+  "exit_signal": {
+    "long": "close < PatternBreakoutRef(\"held_level\", \"up\", $pattern, $vol_mult, $k)",
+    "short": "close > PatternBreakoutRef(\"held_level\", \"down\", $pattern, $vol_mult, $k)"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "pattern_broken_upward"}],
+    "short": [{"token": "pattern_broken_downward"}]
+  }
+}

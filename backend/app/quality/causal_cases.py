@@ -159,6 +159,21 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
                          'RangeBreakoutRef("held_level", "up", 10, 0, 0, "fixed")', 'RangeBreakoutRef("stop_level_atr", "up", 10, 0, 0)@1h'],
     "LineBreakoutRef": ['LineBreakoutRef("level", "up", "line", 2, 0)', 'LineBreakoutRef("stop_midpoint", "down", "channel", 2, 0)',
                         'LineBreakoutRef("held_level", "up", "line", 2, 0)'],
+    # Strategy templates step 4 (R2 for the other breakout families): the companions of the swing, inside / NR, volume,
+    # Donchian, moving-average, pattern and VCP breakouts (prices on signal bars; held_level forward)
+    "SwingBreakoutRef": ['SwingBreakoutRef("level", "up", 0, 0)', 'SwingBreakoutRef("stop_level_atr", "down", 0, 0, 1)',
+                         'SwingBreakoutRef("held_level", "up", 0, 0)'],
+    "NRBreakoutRef": ['NRBreakoutRef("fail_level", "up", "nr7", 0, 0)', 'NRBreakoutRef("stop_base", "down", "inside", 0, 0)',
+                      'NRBreakoutRef("held_level", "up", "nr4", 0, 0)@1h'],
+    "VolumeBreakoutRef": ['VolumeBreakoutRef("stop_level_atr", "up", 1.5)', 'VolumeBreakoutRef("level", "down", 1.5, 10)',
+                          'VolumeBreakoutRef("held_level", "up", 1.5)'],
+    "DonchianBreakoutRef": ['DonchianBreakoutRef("stop_midpoint", "up", 20, 0)', 'DonchianBreakoutRef("base_low", "down", 10, 0.1)',
+                            'DonchianBreakoutRef("held_level", "up", 10, 0)@1h'],
+    "MABreakoutRef": ['MABreakoutRef("stop_level_atr", "up", 20, "sma", 0)', 'MABreakoutRef("level", "down", 20, "ema", 0)',
+                      'MABreakoutRef("held_level", "up", 10, "sma", 0)'],
+    "PatternBreakoutRef": ['PatternBreakoutRef("stop_base", "up", "triangle", 0, 0)', 'PatternBreakoutRef("level", "down", "flag", 0, 0)',
+                           'PatternBreakoutRef("held_level", "up", "triangle", 0, 0)'],
+    "VCPBreakoutRef": ['VCPBreakoutRef("level", "up", 2, 1, 0, 0, FALSE, FALSE)', 'VCPBreakoutRef("stop_base", "down", 2, 1, 0, 0, FALSE, FALSE)'],
     "RelVolume": ["RelVolume(20)", "RelVolume(10)@1h"],
     "ATRPercentile": ["ATRPercentile(14, 50)", "ATRPercentile(14, 20)@1h"],
     "DowTrend": ["DowTrend(0)", "DowTrend(0)@15m"],                    # @1h: 50 bars here, too few confirmed swings to read
@@ -219,6 +234,7 @@ SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "clos
                              'SqueezeBreakout("down", "ttm")', 'MABreakout("down", 50, "sma", 0)', 'RegimeBreakout("up", 15, 10, 30, 0)',
                              'TrendlineBreakout("down", "line", 2, 0)', 'PatternBreakout("down", "flag", 0, 0)',      # U6 BK4
                              'RetestEntry("up", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)',   # daily synthetic bars open at the last close: no gaps
+                             'VCPBreakoutRef("stop_base", "up", 2, 1, 0, 0, FALSE, FALSE)', 'DonchianBreakoutRef("held_level", "down", 55, 0)',   # TPL-4
                              "StDev(close, 10)@1w", 'RsiDivergence("bullish", 40)', 'SwingLabel("low", 0)@1w',                     # AMW-3
                              "WaveState(1)", "WaveClarity(2)",                                                                    # waves W1
                              'Pattern("bullish_strong_body", "unconfirmed")']

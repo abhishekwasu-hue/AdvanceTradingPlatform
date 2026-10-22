@@ -275,7 +275,7 @@ def test_a_mapping_is_checked_against_the_real_template_library():
     assert t1 is not None
     good = t1.model_copy(update={"adopt": c.Adopt(template="D1", timeframe="15m", params={"period": 12})})
     assert c.check_adopt(good) == []
-    assert c.check_adopt(t1.model_copy(update={"adopt": c.Adopt(template="G9")})) == ["T1: unknown template 'G9'"]
+    assert c.check_adopt(t1.model_copy(update={"adopt": c.Adopt(template="G99")})) == ["T1: unknown template 'G99'"]   # an id no library template has
     bad = c.check_adopt(t1.model_copy(update={"adopt": c.Adopt(template="D1", params={"period": 0})}))
     assert bad and all(p.startswith("T1: ") for p in bad)
     assert c.check_adopt(t1.model_copy(update={"adopt": c.Adopt(template="D1", params={"nope": 1})}))

@@ -221,6 +221,8 @@ def _templates() -> Dict[str, Render]:
                                            + (f"; its named arguments: {', '.join(a.name for a in s.kwargs)}" if s.kwargs else "")),
         "timeframe_unsupported": _with_function(lambda s: f"{s.name} runs on {' / '.join('@' + t for t in s.timeframes)} bars only"
                                                 if s.timeframes else None),
+        # strategy templates R7 (named arguments): the same argument by position and by name
+        "argument_twice": _with_function(lambda s: f"{s.name}: an argument is given twice (by position and by name)"),
         "argument_type": _with_arg(lambda s, a: f"{s.name}: argument {a.name} must be {'a whole number of bars' if a.type == 'window' else a.type}"),
         "price_argument": _with_arg(lambda s, a: f"{s.name}: {a.name} must be a price"),
         "tf_multiple": _tf_multiple,

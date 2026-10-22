@@ -1,0 +1,39 @@
+{
+  "schema": "atp.template/1",
+  "id": "B4",
+  "version": 1,
+  "name": "Trendline breakout",
+  "family": "B",
+  "idea": "A signal on the first close beyond a trendline: above a falling resistance line, or below a rising support line. The idea has ended when the close is back across the line.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "touches", "label": "Line touches", "help": "How many swings must touch the line.", "type": "int", "default": 2, "min": 2, "max": 10, "step": 1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the line the close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The level that says the breakout failed: just beyond the broken line, or the far end of the move along the line.", "type": "enum", "default": "stop_level_atr", "choices": ["stop_level_atr", "stop_base"], "choice_labels": ["Just beyond the broken line", "The far end of the move along the line"]},
+    {"key": "stop_mult", "label": "Edge buffer", "help": "For 'just beyond the broken line': how many average true ranges beyond it.", "type": "float", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "TrendlineBreakout(\"up\", \"line\", $touches, $k)",
+    "short": "TrendlineBreakout(\"down\", \"line\", $touches, $k)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "LineBreakoutRef($invalidation, \"up\", \"line\", $touches, $k, $stop_mult)",
+    "short": "LineBreakoutRef($invalidation, \"down\", \"line\", $touches, $k, $stop_mult)"
+  },
+  "exit_signal": {
+    "long": "close < LineBreakoutRef(\"held_level\", \"up\", \"line\", $touches, $k)",
+    "short": "close > LineBreakoutRef(\"held_level\", \"down\", \"line\", $touches, $k)"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "trendline_broken_upward"}],
+    "short": [{"token": "trendline_broken_downward"}]
+  }
+}

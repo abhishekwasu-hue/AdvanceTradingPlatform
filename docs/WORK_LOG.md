@@ -2891,6 +2891,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_tpl3_templates.py` (section 8 gate for the four templates + R7), runtime fixture, causal cases
   (lookahead job), history sweep; updated registry coverage tests. Questions TPL-Q18..TPL-Q25; TPL-Q8 answered.
 
+
+## 22 Oct - Strategy templates step 4 (TPL-4): R2 for the other breakout families, the next B / C / D / E templates (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl4-bcde-batch`. No migration (templates are JSON in the repository; no new flag).
+- R2 for the other breakout families: the level companions `SwingBreakoutRef`, `NRBreakoutRef`, `VolumeBreakoutRef`,
+  `DonchianBreakoutRef`, `MABreakoutRef`, `PatternBreakoutRef`, `VCPBreakoutRef` (the breakout screen's own columns on its
+  signal bars, `held_level` forward, the stop references of the quality overlay), one per family with the breakout's own
+  arguments, bounds and flags; sparse in the engine (they never hold the warm-up back).
+- Templates: B2 swing-level breakout (BOS), B4 trendline, B5 Donchian, B6 flag / pennant / triangle, B7 squeeze, B8 inside
+  bar / narrow range, B9 volume, B11 volatility contraction (Daily), C5 Donchian breakout and retest (B5's settings
+  forwarded, R7), D4 moving-average breakout, D5 ADX / DI, D6 MACD, D7 parabolic SAR, E4 stochastic. Every number a
+  setting with a default; signal text in structure / indicator words; no target, size or order anywhere.
+- Not built (TPL-Q40): B10, C2, C4, D3, E1, E2, E3, E5 (gap companion, the swing degree for the retest, the projected
+  trendline retest, the "extreme since the setup" invalidation, the divergence's RSI period and extreme), family F.
+- Also fixes main: the Copilot screen-draft template for the validator's "argument given twice" (named arguments, #391), and the idea-library test's "unknown template" id (G9 exists since #396; now G99).
+- Tests: `tests/test_tpl4_templates.py` (section 8 gate for the fourteen templates + the companions), runtime fixture,
+  causal cases (lookahead job), history sweep, the breakout families' registry tests. Questions TPL-Q26..TPL-Q40.
 ## 22 Oct - Wave templates (family G): G4-G7, G2, G9-G11 (behind strategy_templates + screener_waves)
 
 - Branch `claude/wave5-g4-g7-g2-g9`. No migration (templates are JSON in the repository).

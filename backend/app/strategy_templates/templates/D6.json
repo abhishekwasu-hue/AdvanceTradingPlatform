@@ -1,0 +1,47 @@
+{
+  "schema": "atp.template/1",
+  "id": "D6",
+  "version": 1,
+  "name": "MACD crossover",
+  "family": "D",
+  "idea": "A signal when the MACD line crosses its signal line on a closed bar; optionally only on the matching side of the zero line. The idea has ended on the opposite cross.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "fast", "label": "Fast average", "help": "Bars in the fast average of the MACD line.", "type": "int", "default": 12, "min": 2, "max": 200, "step": 1},
+    {"key": "slow", "label": "Slow average", "help": "Bars in the slow average of the MACD line: more than the fast one.", "type": "int", "default": 26, "min": 3, "max": 400, "step": 1},
+    {"key": "signal", "label": "Signal line", "help": "Bars in the average of the MACD line that makes the signal line.", "type": "int", "default": 9, "min": 2, "max": 100, "step": 1},
+    {"key": "zero_filter", "label": "Zero-line filter", "help": "Only signal when the MACD line is above zero (bullish) or below zero (bearish).", "type": "bool", "default": false},
+    {"key": "swing_degree", "label": "Swing size", "help": "Which swings count: 0 is the smallest, 3 the largest. Larger swings need more history.", "type": "int", "default": 1, "min": 0, "max": 3, "step": 1}
+  ],
+  "constraints": [
+    {"left": "fast", "op": "<", "right": "slow", "message": "The fast average must have fewer bars than the slow one."}
+  ],
+  "sides_default": "both",
+  "context": {
+    "long": "MACD($fast, $slow, $signal) > 0",
+    "short": "MACD($fast, $slow, $signal) < 0",
+    "enabled_by": "zero_filter"
+  },
+  "setup": {
+    "kind": "event",
+    "long": "CrossAbove(MACD($fast, $slow, $signal), MACDSignal($fast, $slow, $signal))",
+    "short": "CrossBelow(MACD($fast, $slow, $signal), MACDSignal($fast, $slow, $signal))",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "SwingLow($swing_degree)",
+    "short": "SwingHigh($swing_degree)"
+  },
+  "exit_signal": {
+    "long": "CrossBelow(MACD($fast, $slow, $signal), MACDSignal($fast, $slow, $signal))",
+    "short": "CrossAbove(MACD($fast, $slow, $signal), MACDSignal($fast, $slow, $signal))"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "macd_crossed_above_signal"}, {"token": "macd_above_zero", "when": "zero_filter"}],
+    "short": [{"token": "macd_crossed_below_signal"}, {"token": "macd_below_zero", "when": "zero_filter"}]
+  }
+}

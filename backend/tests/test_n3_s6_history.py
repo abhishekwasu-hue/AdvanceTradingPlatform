@@ -307,6 +307,7 @@ SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false 
     # strategy templates step 2 (R2): prices on signal bars only - read as "the close is above the latest breakout's level"
     "RangeBreakoutRef": 'close > RangeBreakoutRef("held_level", "up", 20, 0, 0)',
     "LineBreakoutRef": 'close > LineBreakoutRef("held_level", "up", "line", 2, 0)',
+    "RetestEntryRef": 'close > RetestEntryRef("held_level", "up", "range", 20, FALSE, k=0, v=0)',     # step 3 (R7)
     "Least": "Least(open, close, low) < SMA(close, 5)",
     "NearSupport": "NearSupport(0.05, 3)",
     "NearResistance": "NearResistance(0.05, 3)",

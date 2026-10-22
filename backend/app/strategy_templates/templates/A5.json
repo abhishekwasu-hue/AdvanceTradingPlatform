@@ -1,0 +1,50 @@
+{
+  "schema": "atp.template/1",
+  "id": "A5",
+  "version": 1,
+  "name": "Structure flip retest",
+  "family": "A",
+  "idea": "After a level breaks, wait for the market to come back to it from the other side and reject it: old resistance acting as support, or old support as resistance. A retest idea, never a breakout chase.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "retest_of", "label": "What broke", "help": "The kind of level whose retest is read.",
+     "type": "enum", "default": "swing", "choices": ["swing", "range", "trendline", "channel"],
+     "choice_labels": ["A swing level", "A range edge", "A trendline", "A channel edge"]},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the level the breaking close must be, in average true ranges (0 means any close beyond).",
+     "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "range_mode", "label": "The range", "help": "For a range edge: the bars just before the break, or the consolidation found before it.",
+     "type": "enum", "default": "auto", "choices": ["fixed", "auto"],
+     "choice_labels": ["A set number of bars before the break", "The consolidation before the break"]},
+    {"key": "range_n", "label": "Range bars", "help": "For a range edge made of a set number of bars: how many bars before the break.",
+     "type": "int", "default": 20, "min": 2, "max": 500, "step": 1},
+    {"key": "vol_mult", "label": "Volume expansion", "help": "For a range edge: the breaking bar's volume must be at least this many times the average (0 means no volume condition).",
+     "type": "float", "default": 0.0, "min": 0.0, "max": 20.0, "step": 0.1},
+    {"key": "touches", "label": "Line touches", "help": "For a trendline or a channel: how many swings must touch the line.",
+     "type": "int", "default": 2, "min": 2, "max": 10, "step": 1},
+    {"key": "retest_max_bars", "label": "Retest within (bars)", "help": "The return must come within this many bars after the break; a later return is a new base, not a retest.",
+     "type": "int", "default": 10, "min": 1, "max": 100, "step": 1},
+    {"key": "stop_mult", "label": "Buffer beyond the level", "help": "The idea is wrong when the market is back through the level by this many average true ranges (0 means the level itself).",
+     "type": "float", "default": 0.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "RetestEntry(\"up\", $retest_of, $retest_max_bars, TRUE, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode, touches=$touches)",
+    "short": "RetestEntry(\"down\", $retest_of, $retest_max_bars, TRUE, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode, touches=$touches)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "RetestEntryRef(\"stop_level_atr\", \"up\", $retest_of, $retest_max_bars, TRUE, $stop_mult, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode, touches=$touches)",
+    "short": "RetestEntryRef(\"stop_level_atr\", \"down\", $retest_of, $retest_max_bars, TRUE, $stop_mult, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode, touches=$touches)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "resistance_flip_retested"}],
+    "short": [{"token": "support_flip_retested"}]
+  }
+}

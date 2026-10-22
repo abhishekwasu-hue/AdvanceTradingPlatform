@@ -2518,6 +2518,25 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   e2e `admin-console-v2.e2e.ts` with new baselines `admin-<section>-v2-*` and `admin-diagnostics-v2-*` (1440 / 390, light / dark).
 - Questions MO3-A1..A6 ("View as user" design note in MO3-A1).
 
+## 22 Oct - F&O workspace slice 4: contracts in watchlists, positions Add / Adjust / Exit and grouping (behind ui_v2)
+
+- Branch `claude/fno4-watchlist-chart-positions`. No migration. No new order path: Add opens the existing ONE ticket
+  (`/api/paper/fno/order`, `phase0_lock.assert_paper`); Exit is today's "Exit now" (never blocked); Roll only edits the
+  watchlist. Owner questions FNO-4-1..10 (OPEN_QUESTIONS).
+- Backend: `app/paper/fno_contracts.py` (what a saved contract is - master first, else the Upstox / Kite trading symbol
+  itself; Expired from the expiry day's close; the roll target = same strike in the next listed expiry, monthly to monthly;
+  basket legs from their orders' idempotency keys + `leg_group_id` structures), routes `POST /api/paper/fno/contracts`
+  (`ui_v2`, read only) and `GET /api/paper/fno/positions/groups` (`ui_v2` + `paper_account`, own legs only); the batch
+  quote rows carry `oi` when the broker's quote has it. Route table: both classified.
+- Frontend: `src/fno/contracts.ts` (lookup client, row words, Expired split, roll edit, Add target, Adjust link, grouping
+  maths); `chart/watchlistsV2.ts` ListEdit "replace" + `oi`; `chart/WatchlistPanel.tsx` (contract name + days left + OI,
+  the "Expired (n)" block with "Roll to next expiry"; the price poll unchanged); `trading/PositionsV2.tsx` (Add / Adjust on
+  F&O PAPER positions with `paper_account`, the ticket as a lazy chunk, legs of one basket in one box with the combined P&L).
+- Not built: chart SL / target drag (no PAPER modify path exists - FNO-4-10, owner go-ahead needed), quick Buy / Sell on a
+  watchlist row (FNO-4-7), the group's payoff chart (FNO-4-9).
+- Tests: backend `tests/test_fno4_watchlist_positions.py`; vitest `src/fno/contracts.test.tsx`; e2e
+  `fno-workspace-v2.e2e.ts` with new baselines `fno4-watchlist-v2-*` and `fno4-positions-v2-*` (360 / 390 / 1440, light /
+  dark); no existing baseline changed.
 ## 22 Oct - Idea library slice 1 (owner order ATP_SESSION_IDEA_LIBRARY.md, T1-T8; behind ui_v2 + idea_library)
 
 - Branch `claude/idea-library-1`. No migration (content as data: `backend/app/idea_library/ideas.json`). New flag

@@ -35,6 +35,8 @@ export interface QuoteRow {
   missing: boolean;
   stale?: boolean | null;
   error?: string | null;
+  /** FNO-4: a contract's open interest when the broker's quote carries it. */
+  oi?: number | null;
 }
 export interface QuotesReply { items: QuoteRow[]; fetched_at?: string; warnings?: string[] }
 
@@ -110,7 +112,10 @@ export type ListEdit =
   | { kind: "add"; item: WatchItem }
   | { kind: "remove"; item: WatchItem }
   | { kind: "move"; item: WatchItem; to: number }
-  | { kind: "rename"; name: string };
+  | { kind: "rename"; name: string }
+  /** FNO-4 "Roll to next expiry": the row replaced in place by another (when the list already holds that one, the row
+   * is only removed, so nothing shows twice). */
+  | { kind: "replace"; item: WatchItem; with: WatchItem };
 
 /** `items` with the row at `from` moved to `to` (both clamped). Pure. */
 export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
@@ -132,6 +137,12 @@ export function applyEdit(list: WatchlistV2, edit: ListEdit): WatchlistV2 {
   }
   if (at < 0) return list;
   if (edit.kind === "remove") return { ...list, items: list.items.filter((_, i) => i !== at) };
+  if (edit.kind === "replace") {
+    const next = { symbol: edit.with.symbol.toUpperCase(), exchange: edit.with.exchange.toUpperCase() };
+    if (same(next, edit.item)) return list;
+    if (list.items.some((i) => same(i, next))) return { ...list, items: list.items.filter((_, i) => i !== at) };
+    return { ...list, items: list.items.map((x, i) => (i === at ? next : x)) };
+  }
   return { ...list, items: moveItem(list.items, at, edit.to) };
 }
 

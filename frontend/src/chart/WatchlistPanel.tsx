@@ -1,8 +1,11 @@
-import { ArrowDown, ArrowUp, ChevronDown, Copy, GripVertical, Lock, PanelRightClose, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Copy, GripVertical, Lock, PanelRightClose, Pencil, Plus, Repeat, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from "react";
 import { cx } from "../components/primitives/cx";
 import { EMPTY, formatDateIST, formatPct, formatPrice } from "../ui/format";
 import { SymbolPicker } from "../ui/SymbolPicker";
+import {
+  contractItems, contractSubline, contractsApi, contractsKey, holdsTarget, known, rollEdit, splitExpired, type ContractFacts, type KnownContract,
+} from "../fno/contracts";
 import { ConfirmBox } from "./ConfirmBox";
 import { ListBrowser } from "./ListBrowser";
 import {
@@ -65,6 +68,31 @@ function useQuotes(items: readonly WatchItem[]) {
   return quotes;
 }
 
+/** FNO-4: what the list's F&O contract rows are (name, days left, Expired, the roll target), read again when the set of
+ * contract rows changes and every few minutes (a contract expires at the close). Any failure - `ui_v2` off included -
+ * reads as "nothing known", so the rows show as before. */
+const CONTRACTS_REFRESH_MS = 5 * 60_000;
+export function useContractFacts(items: readonly WatchItem[]): ReadonlyMap<string, ContractFacts> {
+  const [facts, setFacts] = useState<ReadonlyMap<string, ContractFacts>>(new Map());
+  const key = contractsKey(items);
+  const latest = useRef(items);
+  latest.current = items;
+  useEffect(() => {
+    if (!key) { setFacts(new Map()); return undefined; }
+    let live = true;
+    const load = () => {
+      contractsApi.lookup(contractItems(latest.current)).then(
+        (r) => { if (live) setFacts(new Map((r?.items ?? []).map((f) => [itemKey(f), f]))); },
+        () => { if (live) setFacts(new Map()); },
+      );
+    };
+    load();
+    const timer = setInterval(load, CONTRACTS_REFRESH_MS);
+    return () => { live = false; clearInterval(timer); };
+  }, [key]);
+  return facts;
+}
+
 /** WL1: the system groups, read once. Any failure (the flag off included) reads as "none", so the panel is as before. */
 function useSystemGroups(off: boolean): SystemGroup[] {
   const [groups, setGroups] = useState<SystemGroup[]>([]);
@@ -103,6 +131,68 @@ function Change({ row }: { row: QuoteRow | undefined }) {
   );
 }
 
+/** FNO-4: a row's name and second line - a contract as traders write it ("NIFTY 28 OCT 22800 CE", "6 days left · OI
+ * 12.5 L"), anything else as before (symbol, exchange). */
+export function RowName({ item, facts, q }: { item: WatchItem; facts: ContractFacts | undefined; q: QuoteRow | undefined }) {
+  if (known(facts)) {
+    return (
+      <span className="min-w-0 flex-1 py-space-1" data-contract={facts.right}>
+        <span className="block break-words font-semibold leading-tight" title={item.symbol}>{facts.label}</span>
+        <span className="block text-t12 text-fg-muted">{contractSubline(facts, q?.oi)}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="min-w-0 flex-1">
+      <span className="block truncate font-semibold">{item.symbol}</span>
+      <span className="block text-t12 text-fg-muted">{item.exchange}</span>
+    </span>
+  );
+}
+
+/** FNO-4: the list's expired contracts, below the others - each with "Roll to next expiry" (the same strike in the next
+ * expiry, replacing the row in place: a watchlist edit only, nothing is traded) and remove. */
+export function ExpiredRows({ rows, facts, listName, inList, onRoll, onRemove, iconBtn, touch }: {
+  rows: readonly WatchItem[]; facts: ReadonlyMap<string, ContractFacts>; listName: string;
+  inList: (f: ContractFacts | undefined) => boolean; onRoll: (item: WatchItem, f: KnownContract) => void; onRemove: (item: WatchItem) => void;
+  iconBtn: string; touch: boolean;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div data-expired className="border-t border-subtle px-space-1 pb-space-2">
+      <h3 className="px-space-2 pb-space-1 pt-space-2 text-t12 font-semibold uppercase tracking-wide text-fg-muted">Expired ({rows.length})</h3>
+      <ul aria-label={`Expired contracts in ${listName}`}>
+        {rows.map((item) => {
+          const f = facts.get(itemKey(item));
+          if (!known(f)) return null;
+          const already = inList(f);
+          return (
+            <li key={itemKey(item)} data-expired-row={item.symbol} className="flex flex-wrap items-center gap-x-space-1 gap-y-space-1 rounded-control px-space-2 py-space-1">
+              <span className="min-w-0 basis-full">
+                <span className="block break-words font-semibold leading-tight text-fg-muted" title={item.symbol}>{f.label}</span>
+                <span className="block text-t12 text-fg-muted">
+                  {f.roll ? `Next: ${f.roll.label}` : "The next expiry is not listed yet"}
+                </span>
+              </span>
+              {f.roll && (
+                <button type="button" onClick={() => onRoll(item, f)} data-action="roll"
+                  title={already ? `${f.roll.label} is already in this list: this removes the expired row` : `Replace with ${f.roll.label}`}
+                  className={cx("inline-flex shrink-0 items-center gap-space-1 rounded-control border border-border px-space-2 text-t13 font-semibold text-brand hover:bg-surface-2",
+                    touch ? "min-h-11" : "min-h-11 md:min-h-9", focus)}>
+                  <Repeat size={14} aria-hidden />Roll to next expiry
+                </button>
+              )}
+              <button type="button" aria-label={`Remove ${f.label}`} title="Remove from this list" className={cx(iconBtn, "ml-auto")} onClick={() => onRemove(item)}>
+                <X size={14} aria-hidden />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function Price({ q }: { q: QuoteRow | undefined }) {
   return (
     <span className="text-right">
@@ -135,7 +225,13 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
   const [sort, setSort] = useState<RowSort>("list");
   const matching = useMemo(() => (systemList ? filterRows(systemList.items, rowQuery) : []), [systemList, rowQuery]);
   const items = useMemo(() => (state.off ? [] : systemList ? matching : list?.items ?? []), [list, state.off, systemList, matching]);
+  // The price poll keeps the list's own rows (so a lookup answering later never restarts it and leaves a gap).
   const quotes = useQuotes(items);
+  // FNO-4: the contract rows of the trader's own list; expired ones move to "Expired" below the others (no price shown).
+  const ownItems = useMemo(() => (systemList || state.off ? [] : list?.items ?? []), [list, state.off, systemList]);
+  const facts = useContractFacts(ownItems);
+  const split = useMemo(() => splitExpired(items, systemList ? new Map() : facts), [items, facts, systemList]);
+  const live = split.live;
 
   const [naming, setNaming] = useState<null | "new" | "rename">(null);
   const [name, setName] = useState("");
@@ -220,8 +316,9 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
     setDrag({ from: index, to: index });
   };
   const dragMove = (e: PointerEvent<HTMLButtonElement>) => { if (drag) setDrag({ ...drag, to: rowAt(e.clientY) }); };
+  // Positions are counted among the rows still trading (the expired ones sit below them, not draggable).
   const dragEnd = () => {
-    if (drag && drag.to !== drag.from) move(items[drag.from], drag.to);
+    if (drag && drag.to !== drag.from) move(live[drag.from], items.indexOf(live[drag.to]));
     setDrag(null);
   };
   // On the handle the arrow keys move the row; anywhere else in the row Alt+arrow does.
@@ -230,9 +327,15 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
     if ((e.key !== "ArrowUp" && e.key !== "ArrowDown") || (!handle && !e.altKey)) return;
     e.preventDefault();
     const to = index + (e.key === "ArrowUp" ? -1 : 1);
-    if (to >= 0 && to < items.length) move(items[index], to);
+    if (to >= 0 && to < live.length) move(live[index], items.indexOf(live[to]));
   };
-  const shown = drag ? moveItem(items, drag.from, drag.to) : items;
+  const shown = drag ? moveItem(live, drag.from, drag.to) : live;
+  const roll = (item: WatchItem, f: KnownContract) => {
+    const edit = rollEdit(item, f);
+    if (!list || !edit || !f.roll) return;
+    setNotice(`Rolled ${f.label} to ${f.roll.label} in ${list.name}. Nothing was traded.`);
+    void store.edit(list.id, edit);
+  };
   const priced = useMemo(() => new Map(matching.slice(0, QUOTE_ROWS).map((i) => [itemKey(i), quotes.rows.get(itemKey(i))]).filter((e): e is [string, QuoteRow] => !!e[1])),
     [matching, quotes.rows]);
   const systemRows = useMemo(() => sortRows(matching, sort, priced), [matching, sort, priced]);
@@ -328,14 +431,14 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
           </div>
           {items.length === 0 ? (
             <p className="px-space-3 pb-space-4 text-t13 text-fg-muted">This list is empty. Search a symbol above to add it.</p>
-          ) : (
+          ) : live.length === 0 ? null : (
             <ul ref={rowsRef} aria-label={`Symbols in ${list.name}`} className="min-h-0 flex-1 overflow-y-auto px-space-1 pb-space-2">
               {shown.map((item) => {
-                const index = items.indexOf(item);
-                const q = index < QUOTE_ROWS ? quotes.rows.get(itemKey(item)) : undefined;
+                const index = live.indexOf(item);
+                const q = items.indexOf(item) < QUOTE_ROWS ? quotes.rows.get(itemKey(item)) : undefined;
                 const current = item.symbol === symbol && item.exchange === exchange;
                 return (
-                  <li key={itemKey(item)} data-row className={cx("flex items-center rounded-control", current && "bg-surface-2", drag && items[drag.from] === item && "opacity-60")}
+                  <li key={itemKey(item)} data-row className={cx("flex items-center rounded-control", current && "bg-surface-2", drag && live[drag.from] === item && "opacity-60")}
                     onKeyDown={(e) => keyMove(e, index)}>
                     <button type="button" data-handle aria-label={`Move ${item.symbol}`} title="Drag, or use the arrow keys, to move"
                       onPointerDown={(e) => dragStart(e, index)} onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={() => setDrag(null)}
@@ -344,10 +447,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
                     </button>
                     <button type="button" aria-current={current ? "true" : undefined} onClick={() => onOpen(item)}
                       className={cx("flex min-w-0 flex-1 items-center gap-space-2 rounded-control px-space-1 text-left hover:bg-surface-2", touch ? "min-h-11" : "min-h-11 md:min-h-9", focus)}>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-semibold">{item.symbol}</span>
-                        <span className="block text-t12 text-fg-muted">{item.exchange}</span>
-                      </span>
+                      <RowName item={item} facts={facts.get(itemKey(item))} q={q} />
                       <Price q={q} />
                     </button>
                     <button type="button" aria-label={`Remove ${item.symbol}`} title="Remove from this list" className={iconBtn}
@@ -359,6 +459,8 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
               })}
             </ul>
           )}
+          <ExpiredRows rows={split.expired} facts={facts} listName={list.name} inList={(f) => holdsTarget(list, f)} onRoll={roll}
+            onRemove={(item) => void store.edit(list.id, { kind: "remove", item })} iconBtn={iconBtn} touch={touch} />
           {(items.length > QUOTE_ROWS || quotes.failed) && (
             <p className="border-t border-subtle px-space-3 py-space-2 text-t12 text-fg-muted">
               {quotes.failed ? "Prices could not be loaded just now. They try again every 10 seconds." : `Prices show for the first ${QUOTE_ROWS} symbols. Move a symbol up to see its price.`}

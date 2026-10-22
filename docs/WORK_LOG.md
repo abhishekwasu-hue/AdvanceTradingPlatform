@@ -3023,3 +3023,16 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   removed, both sides' text kept.
 - Tests: `tests/test_tpl7_e2_packs_v2.py`, `tests/test_tpl6_family_f.py` (reads version 2), runtime fixture, causal
   cases (lookahead job), history sweep. Questions TPL-Q50..TPL-Q57.
+
+## 22 Oct - F&O workspace 8b slice 4: the risk line's events / liquidity / margin, the F&O desk, the journal chart
+- Branch `claude/fno8b-slice-4`. No migration, no new flag (behind `ui_v2` + the PAPER account); no order path changed.
+- 8b-d: `GET /api/paper/fno/event-risk` (the market events + the company's calendar from today to the expiry, his own
+  event rule per day, "the calendar is empty" said plainly); the risk budget carries the PAPER balance (read only, no
+  account created). The ticket's and the basket's confirm steps show one "Before you place (information only)" box:
+  events, liquidity (bid-ask / OI / volume compared with the chain on screen) and the margin beside the PAPER balance.
+- 8b-i: My positions shows the cockpit as a desk: chart of the underlying with his strikes, the chain near his strikes and
+  his basket beside the cockpit card from 1024 px; a quick switch on a phone. Read only.
+- 8b-k: the journal draft's "Show the chart" redraws the underlying's candles around the trade with "Opened" / "Closed"
+  marked (client side, one read, nothing stored).
+- Tests: `backend/tests/test_fno8b4_risk_parts.py`, `frontend/src/fno/slice4.test.tsx`, `frontend/e2e/fno8b-slice4-v2.e2e.ts`
+  (new baselines). Questions FNO-8B-27..31.

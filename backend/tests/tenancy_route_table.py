@@ -574,6 +574,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/basket/broker-link"): S_COMPUTE,  # the legs pre-filled for the user's broker app; sends nothing
     ("GET", "/api/paper/fno/risk-budget"): "member: the caller's own effective risk settings only (8b-d, the risk line)",
     ("GET", "/api/paper/fno/setup-strikes"): "member: the caller's own signal and own deployments only (8b-a)",
+    ("GET", "/api/paper/fno/event-risk"): "member: the shared events calendar plus the caller's own organisation's entries only (8b-d)",
     ("POST", "/api/paper/fno/journal/link"): "trader",        # 8b-k: his own signal on his own PAPER F&O trades' journal rows only
     ("GET", "/api/paper/fno/journal/drafts"): "member: the caller's own closed PAPER F&O trades and journal rows only (8b-k)",
     ("POST", "/api/paper/fno/contracts"): S_COMPUTE,         # FNO-4: saved contracts read from the instrument master (platform-wide data)

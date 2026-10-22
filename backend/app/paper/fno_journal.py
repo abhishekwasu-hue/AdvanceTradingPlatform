@@ -214,6 +214,8 @@ def _draft(key: str, legs: List[TradeRecord], entries: Dict[int, JournalEntryRec
     return {
         "key": key, "kind": kind, "title": name if len(legs) == 1 or kind == "trade" else f"{name} · {len(legs)} legs",
         "underlying": underlying, "trade_ids": [t.id for t in legs],
+        # 8b slice 4: where the snapshot's candles come from (the underlying's own chart; drawn on the page, not stored).
+        "spot_symbol": master.INDEX_SYMBOLS.get(underlying, underlying), "spot_exchange": master.INDEX_EXCHANGE.get(underlying, "NSE"),
         "opened_at": _iso(min(opened, default=None)), "closed_at": _iso(max(closed, default=None)),
         "legs": [_leg(t) for t in legs], "pnl": total, "charges": round(sum(float(t.charges or 0.0) for t in legs), 2),
         "placed_by": placed_by,

@@ -234,7 +234,7 @@ async def send_to_own_chat(session: AsyncSession, row: ScreenEvidenceRecord, use
         return {"sent": False, "reason": "Only the person who ran the screen can send its evidence to their own chat."}
     chat = await own_chat(session, user.tenant_id, user.id)
     if chat is None:
-        return {"sent": False, "reason": "Link your Telegram under Settings > Notifications first (a private chat with the bot)."}
+        return {"sent": False, "reason": "Link your Telegram under Settings > Alerts first (a private chat with the bot)."}
     token = await _bot(session, user.tenant_id)
     if token is None:
         return {"sent": False, "reason": "Your organisation's Telegram bot is not set up or is off."}

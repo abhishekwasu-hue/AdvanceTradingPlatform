@@ -1,4 +1,4 @@
-"""Part D4: Settings > Static IP - the IPs an organisation registered with its brokers (SEBI retail-algo framework)."""
+"""Part D4: Static IP (on the Broker page) - the IPs an organisation registered with its brokers (SEBI retail-algo framework)."""
 from dataclasses import asdict
 from datetime import date, datetime
 from typing import List, Optional

@@ -49,7 +49,7 @@ class FlagInfo(NamedTuple):
 FLAG_INFO: Dict[str, FlagInfo] = {
     "ai_copilot": FlagInfo("The AI Copilot page and AI strategy drafts", "ai", "Copilot in the sidebar; AI drafts", (), "an AI key (else the built-in parser)", "ready"),
     "marketplace": FlagInfo("Strategies other users publish", "platform", "Marketplace page", (), "", "decision"),
-    "public_api": FlagInfo("API keys for developers", "platform", "Settings › API keys", (), "", "ready"),
+    "public_api": FlagInfo("API keys for developers", "platform", "Settings › Advanced › Personal API keys", (), "", "ready"),
     "backtest_optimizer": FlagInfo("Try many settings of a strategy at once", "trading", "Optimise button in Backtest", (), "", "ready"),
     "live_trading": FlagInfo("New LIVE (real money) bots", "trading", "LIVE mode", (), "go-live checklist, two-factor", "decision"),
     "phase0_paper_only": FlagInfo("Paper only: every new real-money entry is refused (exits still work)", "trading", "nothing visible", (), "", "behind_the_scenes"),

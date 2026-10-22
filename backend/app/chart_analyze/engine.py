@@ -5,7 +5,7 @@ Which AI answers, in this order:
    user switched Vision on and has a key for the chosen provider (`app.ai.byok`). The user's own daily / monthly BYOK
    caps apply (hard stop), the call is logged in `llm_calls` as billed to the user's key, and the key is opened only
    for this call and only for its owner (`byok.open_key`), exactly as the Vision audit does.
-2. **The organisation's AI provider** (Settings > AI provider, `app.ai.settings.provider_for`): only on a plan with AI
+2. **The organisation's AI provider** (Settings > AI, `app.ai.settings.provider_for`): only on a plan with AI
    features, after the owner accepted the data-sharing consent, while the plan's monthly AI budget lasts; metered and
    logged like every other AI call (`MeteredProvider`). On top, this feature's own monthly cost cap per plan tier
    (`limits.check_cost`) applies before the call.

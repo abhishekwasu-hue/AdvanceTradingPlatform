@@ -5,7 +5,7 @@ each trading day - no refresh tokens. How each broker logs in (`login_method`):
 - `oauth`        the platform drives the redirect end to end (Upstox);
 - `login_code`   the platform opens the broker's page, the operator pastes the one-time code (Fyers, Kite);
 - `api_key`      a long-lived key with no daily session (crypto venues, PERMANENT_KEY_BROKERS);
-- `manual`       the token is pasted in Settings (everything else).
+- `manual`       the token is pasted on the Broker page (everything else).
 On a trading day, `reminder_minutes_before_open` before the open (rule-set data), every organisation with an ACTIVE
 deployment on a broker whose session will not last the day gets one WARNING naming the broker and how to log in.
 
@@ -30,10 +30,10 @@ RULE = "IN-SEBI.login.daily"
 TITLE_PREFIX = "Log in to "
 DATA_TITLE_PREFIX = "Live data: log in to "   # BT1: the per-user reminder for the bring-your-own-broker data tier
 HOW = {
-    "oauth": "Settings > Brokers > Log in (the broker's page opens and returns here)",
-    "login_code": "Settings > Brokers > Open login page, then paste the code from the address bar",
+    "oauth": "Broker page > Log in (the broker's page opens and returns here)",
+    "login_code": "Broker page > Open login page, then paste the code from the address bar",
     "api_key": "no daily login (API key)",
-    "manual": "Settings > Brokers > paste today's access token",
+    "manual": "Broker page > paste today's access token",
 }
 
 

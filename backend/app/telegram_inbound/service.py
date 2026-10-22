@@ -344,7 +344,7 @@ async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: Teleg
     if user is None:
         await write_audit_log(session, tenant.id, None, "telegram_callback_refused", f"action #{action.id}: Telegram user {from_id or '?'} in chat {chat_id} is not an authorised approver")
         await session.commit()
-        return "You are not an authorised approver for this organisation - ask the owner to add your Telegram user id under Settings."
+        return "You are not an authorised approver for this organisation - ask the owner to add your Telegram user id under Settings > Advanced > Your own Telegram bot."
     from app.execution.approval import may_decide
     if not may_decide(user, action):                       # Z3 (review L8): the proposal's owner or the organisation OWNER
         await write_audit_log(session, tenant.id, user.id, "telegram_callback_refused", f"action #{action.id}: belongs to another member")
@@ -545,7 +545,7 @@ async def _manual_paper(session: AsyncSession, tenant: Tenant, user: User, text:
     exchange = exchange_for_symbol(setup["symbol"])
     lookup = await price_lookup_for_user(session, user)
     if lookup is None:
-        return "No broker session to price the setup - log in to a broker in Settings first."
+        return "No broker session to price the setup - log in to your broker on the Broker page first."
     try:
         price = float(await lookup(setup["symbol"], exchange))
     except NoLivePrice as exc:
@@ -700,11 +700,11 @@ async def _link_from_start(session: AsyncSession, tenant: Tenant, cfg: TelegramC
         await write_audit_log(session, tenant.id, None, "telegram_link_refused", f"chat {chat_id}: {why}")
     await session.commit()
     if row is not None:
-        text = "Linked. Screen alerts from the rules you created will come to this chat. Unlink any time in Settings."
+        text = "Linked. Screen alerts from the rules you created will come to this chat. Unlink any time under Settings > Alerts."
     elif why == "not_private":
         text = "Send the code to the bot in a private chat, not in a group."
     else:
-        text = "That code did not work (wrong, used or expired). Make a new one in Settings."
+        text = "That code did not work (wrong, used or expired). Make a new one under Settings > Alerts."
     await reply(cfg, chat_id, text, client, parse_mode=None)
     return {"handled": "link", "result": why}
 
@@ -766,7 +766,7 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
             if audit_stranger(tenant.id, f"{chat_id}:{from_id}"):
                 await write_audit_log(session, tenant.id, None, "telegram_inbound_refused", f"Telegram user {from_id or '?'} in chat {chat_id} is not an authorised user: {text[:60]!r}")
                 await session.commit()
-            await reply(cfg, chat_id, "You are not an authorised user of this bot - ask the owner to add your Telegram user id under Settings.", client, parse_mode=None)
+            await reply(cfg, chat_id, "You are not an authorised user of this bot - ask the owner to add your Telegram user id under Settings > Advanced > Your own Telegram bot.", client, parse_mode=None)
             return {"handled": "refused", "reason": "sender not an approver"}
         try:
             answer = await answer_text(session, tenant, user, text)

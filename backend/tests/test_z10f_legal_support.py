@@ -557,7 +557,7 @@ def test_help_entries_are_well_formed_and_point_at_real_pages():
     from app.support.knowledge import parse_help
     entries = parse_help(knowledge.HELP_FILE.read_text(encoding="utf-8"))
     assert len(entries) >= 20 and len({e.id for e in entries}) == len(entries)
-    pages = {"/", "/account", "/team", "/settings", "/notifications", "/positions", "/copilot/watchtower", "/risk-management",
+    pages = {"/", "/account", "/team", "/settings", "/settings/ai", "/settings/alerts", "/settings/appearance", "/broker", "/notifications", "/positions", "/copilot/watchtower", "/risk-management",
              "/backtest", "/strategy-builder", "/deployments", "/screener", "/system-logs", "/legal/privacy", "/legal/risk"}
     assert {e.url for e in entries} <= pages
     with pytest.raises(ValueError):

@@ -98,7 +98,7 @@ class CoinDCXBroker(BrokerInterface):
     # --- transport -------------------------------------------------------------------------------
     def _signed_headers(self, body: str) -> Dict[str, str]:
         if not self.credentials.api_key or not self.credentials.api_secret:
-            raise BrokerAuthenticationError("CoinDCX needs an API key and secret (Settings > Brokers)")
+            raise BrokerAuthenticationError("CoinDCX needs an API key and secret (on the Broker page)")
         signature = hmac.new(self.credentials.api_secret.encode(), body.encode(), hashlib.sha256).hexdigest()
         return {"Content-Type": "application/json", "X-AUTH-APIKEY": self.credentials.api_key, "X-AUTH-SIGNATURE": signature}
 

@@ -94,7 +94,7 @@ async def revoke_key(key_id: int, user: User = Depends(require_owner), session: 
 @public_router.get("/docs")
 async def docs() -> dict:
     return {
-        "version": "v1", "auth": "X-API-Key header; keys are created by an OWNER under Settings > API keys and shown once",
+        "version": "v1", "auth": "X-API-Key header; keys are created by an OWNER under Settings > Advanced > Personal API keys and shown once",
         "base_url": "/api/public/v1", "scopes": SCOPES, "error_codes": ERROR_CODES,
         "rate_limits": "per key per minute (set at creation, max 600) plus the plan's daily allowance",
         "idempotency": "POST /signals takes idempotency_key; the same key replays the original outcome instead of re-executing",

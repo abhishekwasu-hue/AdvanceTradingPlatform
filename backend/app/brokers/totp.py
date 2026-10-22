@@ -1,7 +1,7 @@
 """The current one-time code for a broker login, from whatever the tenant stored as `totp_secret`.
 
 Brokers that log in with a TOTP (Angel One's `totp`, Shoonya's `factor2`) want the six-digit code of the
-moment, while what a person keeps in Settings is usually the base32 secret from the broker's TOTP
+moment, while what a person keeps on the Broker page is usually the base32 secret from the broker's TOTP
 enrolment. A stored base32 secret is turned into the current code here; a value that is already a 6- or
 8-digit code is sent as-is (a one-off login), and anything else (Shoonya accounts set up with a date of
 birth or PAN as the second factor) is passed through unchanged. Spaces are dropped, so a secret copied

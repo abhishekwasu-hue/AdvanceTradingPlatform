@@ -2,7 +2,7 @@
 
 All of them read server data only: the organisation's own broker session today (`evidence.server_frame`, the H-C1 a
 path), the market-data lake once part B is merged. Nothing posted by a browser reaches a tool. When there is no
-broker session the tool says so (the fix is under Settings > Brokers) - it never falls back to sample data.
+broker session the tool says so (the fix is on the Broker page) - it never falls back to sample data.
 
 Outputs stay small (the model pays for every token): candles are summarised with the last few bars, the chain is the
 strikes around the ATM plus the totals, the backtest returns its statistics and a sample-size warning, never the trades.

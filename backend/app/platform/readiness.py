@@ -1,7 +1,7 @@
 """Phase AB: go-live readiness checklists.
 
 The V1 acceptance row of the gap analysis has read "blocked on operator" for a while: the code is
-there, the steps that need a human (broker key in Settings, a broker login, a worker process, an
+there, the steps that need a human (broker key on the Broker page, a broker login, a worker process, an
 alert channel, a deployment) are scattered across pages and runbooks. This module turns them into
 two explicit checklists computed from the platform's own state:
 
@@ -100,10 +100,10 @@ async def tenant_checklist(session: AsyncSession, user: User, tenant: Tenant, ta
             items.append(Item("broker_session", "Broker session token valid today", "ok", ", ".join(f"{r.broker_name} ({r.account_label})" for r in usable), scope="PAPER", link="settings"))
         else:
             items.append(Item("broker_session", "Broker session token valid today", "todo", "No stored broker has a VALID token",
-                              "Log in to the broker under Settings > Brokers (Upstox: OAuth). Tokens expire every trading day.", "settings"))
+                              "Log in to the broker on the Broker page (Upstox: OAuth). Tokens expire every trading day.", "settings"))
     else:
         items.append(Item("broker_credentials", "Broker API key stored", "todo", "No broker credentials for this organisation",
-                          "Add the broker's API key and secret under Settings > Brokers. They are encrypted at rest and never go in the environment or in chat.", "settings"))
+                          "Add the broker's API key and secret on the Broker page. They are encrypted at rest and never go in the environment or in chat.", "settings"))
         items.append(Item("broker_session", "Broker session token valid today", "todo", "Needs credentials first", "Log in to the broker after storing its key.", "settings"))
 
     # 2. Instrument master ------------------------------------------------------------------------
@@ -202,7 +202,7 @@ async def tenant_checklist(session: AsyncSession, user: User, tenant: Tenant, ta
         items.append(Item("static_ip", "Server IP registered with each LIVE broker",
                           "ok" if live_brokers and not problems and app_config.SERVER_EGRESS_IP else ("todo" if live else "info"),
                           "; ".join(problems)[:200] if problems else (f"{app_config.SERVER_EGRESS_IP} registered" if app_config.SERVER_EGRESS_IP else "SERVER_EGRESS_IP not configured"),
-                          "Register this server's public IP with the broker (its API console), then record it under Settings > Static IP. "
+                          "Register this server's public IP with the broker (its API console), then record it on the Broker page, under Static IP. "
                           f"Rule {static_ip.RULE}.", "settings", scope="LIVE"))
 
     # 10. Optional --------------------------------------------------------------------------------

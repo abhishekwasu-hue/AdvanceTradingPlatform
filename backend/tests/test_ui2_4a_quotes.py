@@ -370,7 +370,7 @@ def test_tenant_scoped_another_organisations_broker_is_never_used(monkeypatch):
     monkeypatch.setattr(quotes_routes, "build_adapter", build)
     _count_tokens(monkeypatch)
     res = _post(other_headers, [{"symbol": "RELIANCE"}])
-    assert res.status_code == 409 and "Settings > Brokers" in res.json()["detail"]
+    assert res.status_code == 409 and "Broker page" in res.json()["detail"]
     assert _post(other_headers, [{"symbol": "RELIANCE"}], broker="upstox").status_code == 404
     assert used == []                                                          # tenant A's credential was never built
     assert _post(owner_headers, [{"symbol": "RELIANCE"}]).status_code == 200 and used == [owner["tenant_id"]]

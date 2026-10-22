@@ -278,7 +278,7 @@ def test_no_broker_session_is_409_and_never_another_organisations(monkeypatch, m
     assert client.get(f"/api/option-chain/{name}/futures", headers=a_headers).status_code == 200
     asked = len(broker.asked)
     res = client.get(f"/api/option-chain/{name}/futures", headers=b_headers)
-    assert res.status_code == 409 and "Settings > Brokers" in res.json()["detail"]
+    assert res.status_code == 409 and "Broker page" in res.json()["detail"]
     assert len(broker.asked) == asked                         # B's request made no broker call through A's session
 
 

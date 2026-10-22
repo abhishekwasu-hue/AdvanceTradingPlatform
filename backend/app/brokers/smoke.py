@@ -1,4 +1,4 @@
-"""Phase AJ: a read-only smoke test of one broker session, run from Settings.
+"""Phase AJ: a read-only smoke test of one broker session, run from the Broker page.
 
 Every adapter and the Phase AI symbol translator are verified against mocked transports; the
 gap analysis has said "first live confirmation pending" since the first adapter landed. This is

@@ -155,7 +155,7 @@ async def open_position_greeks(
         stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
         usable = [r for r in stored if token_is_usable(r)]
         if rows and not usable:
-            raise HTTPException(status_code=409, detail="Greeks need live premiums - no usable broker session (log in from Settings)")
+            raise HTTPException(status_code=409, detail="Greeks need live premiums - no usable broker session (log in on the Broker page)")
         adapter = build_adapter(usable[0]) if usable else None
     today = today_ist().isoformat()   # P0.6: the exchange's date, not the container's UTC date
     spots: dict = {}

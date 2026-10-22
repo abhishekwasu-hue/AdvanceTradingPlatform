@@ -54,7 +54,7 @@ export function Composer({ draft, busy, placement, onDraft, onAsk }: Pick<ChatVi
   };
   const bottom = placement === "bottom";
   return (
-    <form onSubmit={submit} data-composer={placement}
+    <form onSubmit={submit} data-composer={placement} data-tour="copilot-ask"
       className={bottom
         ? "fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 flex items-end gap-space-2 border-t border-subtle bg-surface-1 px-space-4 py-space-2 shadow-raised"
         : "flex items-end gap-space-2 rounded-panel border border-border bg-surface-1 p-space-3 shadow-card"}>
@@ -99,7 +99,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
         </section>
       )}
 
-      <section className={`${CARD} p-space-4`} data-market-line={line.empty ? "empty" : "ok"}>
+      <section className={`${CARD} p-space-4`} data-tour="copilot-market" data-market-line={line.empty ? "empty" : "ok"}>
         <h2 className="text-t12 font-semibold uppercase tracking-wide text-fg-muted">{t("chat.marketLine")}</h2>
         <p className={`mt-space-1 text-t15 ${line.empty ? "text-fg-muted" : "text-fg"}`}>{homeError ?? (home ? line.text : t("chat.loading"))}</p>
       </section>
@@ -133,7 +133,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
       )}
 
       {home && (
-        <section aria-labelledby="copilot-can-do" data-can-do>
+        <section aria-labelledby="copilot-can-do" data-can-do data-tour="copilot-jobs">
           <h2 id="copilot-can-do" className="mb-space-2 text-t15 font-semibold text-fg">{t("chat.canDo")}</h2>
           <ul className="grid gap-space-3 sm:grid-cols-2 xl:grid-cols-4">
             {jobCards(home.jobs).map(({ job, link }) => (
@@ -154,7 +154,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
         </section>
       )}
 
-      <nav aria-labelledby="copilot-more" className="text-t13">
+      <nav aria-labelledby="copilot-more" className="text-t13" data-tour="copilot-more">
         <h2 id="copilot-more" className="mb-space-1 font-semibold text-fg-muted">{t("chat.more")}</h2>
         <ul className="flex flex-wrap gap-x-space-4">
           {COPILOT_TABS.map((tab) => (

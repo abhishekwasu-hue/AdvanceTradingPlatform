@@ -17,7 +17,7 @@ def test_fresh_tenant_sees_blockers_then_clears_them():
     body = client.get("/api/readiness", headers=headers).json()
     items = _by_key(body)
     assert body["target"] == "PAPER" and body["ready"] is False
-    assert items["broker_credentials"]["status"] == "todo" and "Settings > Brokers" in items["broker_credentials"]["fix"] and items["broker_credentials"]["link"] == "settings"
+    assert items["broker_credentials"]["status"] == "todo" and "Broker page" in items["broker_credentials"]["fix"] and items["broker_credentials"]["link"] == "settings"
     assert items["broker_session"]["status"] == "todo" and items["deployment"]["status"] == "todo"
     assert items["worker"]["status"] in ("todo", "warn", "ok")            # depends on other tests' heartbeats; never missing
     assert items["kill_switch"]["status"] == "ok" and items["broker_uncertain"]["status"] == "ok"

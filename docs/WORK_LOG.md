@@ -2531,3 +2531,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Migrations: none for W1-W4 and G1-G11; WAVE_PROJECTION waits for the templates spec section 5 (migration + owner
   approval).
 - Owner questions WAVE-1..WAVE-16 in docs/OPEN_QUESTIONS.md; README row 14 updated. Build next, in the review's order.
+
+## 22 Oct - Small follow-ups: the Copilot page tour (MO2-2) and the old Settings paths in server texts (SR-13)
+
+- Branch `claude/followups-tour-strings`. No migration.
+- MO2-2: `frontend/src/tours/content/copilot.ts` (Ask, the market line, What I can do, More Copilot tools; the question box
+  has a phone step because it sits above the bottom bar). `copilot` added to TOUR_IDS in `src/tours/pages.ts` and in the
+  server allow-list `app/me/prefs.py`. `tourIdFor(key, path)` gives the Copilot tips on `/copilot` only, not on the older
+  tool pages `/copilot/<tab>`. Stable ids on the chat page: `copilot-ask`, `copilot-market`, `copilot-jobs`,
+  `copilot-more`. `tours.test.tsx` and `e2e/tours-v2.e2e.ts` (the Copilot in the every-step check, desktop and phone).
+- SR-13: `backend/app` swept for "Settings >" / "Settings ›" / "in Settings": broker keys, logins, Static IP and the
+  redirect URI point at the Broker page; Telegram linking at Settings > Alerts; AI keys and models at Settings > AI; vision
+  reviews, the own Telegram bot and personal API keys at Settings > Advanced. Help entries (`support/content/help.md`) link
+  the new pages. Tests that pinned the old words updated. No fixture hash changed.
+- #365 / #366 overlap: skipped (neither is merged into main; `src/signals/signalText.ts` and `language.ts` are not on main).

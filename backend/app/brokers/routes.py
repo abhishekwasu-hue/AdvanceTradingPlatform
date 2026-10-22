@@ -93,7 +93,7 @@ class BrokerTokenStatusResponse(AnalyticsTokenInfo):
     # The exact redirect URI to register on the broker's developer console for that flow.
     oauth_callback_url: Optional[str]
     # D2 (OAuth brokers only): True when this account stores a Redirect URI on a domain name that differs from
-    # `oauth_callback_url` - the login then sends the stored one, so the UI points to Settings instead of showing an
+    # `oauth_callback_url` - the login then sends the stored one, so the UI points to the Broker page instead of showing an
     # address it will not use.
     redirect_uri_mismatch: Optional[bool] = None
     # D2 (OAuth brokers only): True when the stored Redirect URI is left over on an IP address or plain http - the next
@@ -774,13 +774,13 @@ async def broker_login_url(
         raise HTTPException(status_code=400, detail=f"{name} has no hosted login page the platform can open (Upstox: use the OAuth button)")
     record = await get_credential_record(session, user.tenant_id, name, _clean_label(account_label))
     if record is None:
-        raise HTTPException(status_code=404, detail=f"Store your {name} API key (App ID) in Settings first")
+        raise HTTPException(status_code=404, detail=f"Store your {name} API key (App ID) on the Broker page first")
     await _ensure_holder(session, record, user)          # BT1b (flag on): the holder's App ID / redirect URI stay theirs
     credentials = load_credentials(record)
     if not credentials.api_key:
         raise HTTPException(status_code=400, detail=f"{name} credentials need api_key (the App ID)")
     if spec["needs_redirect_uri"] and not credentials.redirect_uri:
-        raise HTTPException(status_code=400, detail=f"Store the Redirect URI exactly as registered on the {name} app (Settings > Redirect URI), then try again")
+        raise HTTPException(status_code=400, detail=f"Store the Redirect URI exactly as registered on the {name} app, on the Broker page, then try again")
     url = build_login_url(name, credentials.api_key, credentials.redirect_uri)
     code_param = spec["code_param"]
     return LoginUrlResponse(broker_name=name, authorization_url=url, code_param=code_param,
@@ -853,7 +853,7 @@ async def broker_login_code(
 #
 # Upstox retail apps get a daily-expiring access token and no refresh token, so every trading
 # morning someone has to log in again. Rather than copy-pasting a code out of a browser address
-# bar into Settings, the UI's "Login to Upstox" button hits /oauth/start, the browser is sent to
+# bar into the Broker page, the UI's "Login to Upstox" button hits /oauth/start, the browser is sent to
 # Upstox's login dialog, and Upstox sends it back to /oauth/callback with a one-time code the
 # platform exchanges and stores (encrypted) itself. The redirect URI registered on the Upstox
 # developer console must be exactly the callback URL this API is reachable at.
@@ -915,7 +915,7 @@ async def upstox_oauth_start(
     label = _clean_label(account_label)
     record = await get_credential_record(session, user.tenant_id, "upstox", label)
     if record is None:
-        raise HTTPException(status_code=404, detail=f"Store your Upstox API key/secret in Settings first ({label})")
+        raise HTTPException(status_code=404, detail=f"Store your Upstox API key/secret on the Broker page first ({label})")
     await _ensure_holder(session, record, user)
     credentials = load_credentials(record)
     if not credentials.api_key or not credentials.api_secret:
@@ -1033,7 +1033,7 @@ async def _oauth_start(name: str, request: Request, user: User, session: AsyncSe
     label = _clean_label(account_label)
     record = await get_credential_record(session, user.tenant_id, name, label)
     if record is None:
-        raise HTTPException(status_code=404, detail=f"Store your {spec.display_name} keys in Settings first ({label})")
+        raise HTTPException(status_code=404, detail=f"Store your {spec.display_name} keys on the Broker page first ({label})")
     await _ensure_holder(session, record, user)
     credentials = load_credentials(record)
     if not credentials.api_key or not credentials.api_secret:

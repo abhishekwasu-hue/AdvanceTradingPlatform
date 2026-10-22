@@ -150,12 +150,12 @@ async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[s
         if not wanted:
             raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{broker}' ({account_label})")
         if not data_is_usable(wanted[0]):
-            raise HTTPException(status_code=409, detail=f"Broker '{broker}' has no valid session token today. Log in to it under Settings > Brokers.")
+            raise HTTPException(status_code=409, detail=f"Broker '{broker}' has no valid session token today. Log in to it on the Broker page.")
         return wanted[0]
     # A logged-in session first; else an Upstox row whose analytics token serves market data without the daily login.
     usable = [r for r in records if token_is_usable(r)] or [r for r in records if data_is_usable(r)]
     if not usable:
-        raise HTTPException(status_code=409, detail="No broker session with a valid token. Add the broker's API key under Settings > Brokers "
+        raise HTTPException(status_code=409, detail="No broker session with a valid token. Add the broker's API key on the Broker page "
                                                     "(it is stored encrypted, never in the environment) and log in to it, then try again.")
     return usable[0]
 

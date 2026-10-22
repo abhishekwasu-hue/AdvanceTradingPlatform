@@ -67,7 +67,7 @@ export default function AppShellV2() {
   const accountPath = user ? "/settings/account" : pathFor("account");
   const go = useCallback((p: Page) => navigate(pathFor(p)), [navigate]);
   // MO2 part C: this page's tips (welcome and page tours, src/tours) and the "?" that replays them.
-  const tourId = user ? tourIdFor(key) : null;
+  const tourId = user ? tourIdFor(key, path) : null;
   const tours = useTours(user?.id ?? null);
   const replayTour = tourId && tours.known && tours.store ? () => tours.store?.request({ kind: "page", id: tourId }) : undefined;
 

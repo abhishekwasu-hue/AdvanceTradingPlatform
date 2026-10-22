@@ -4,7 +4,7 @@ One small interface - `complete(system, user) -> str` plus `complete_full(...) -
 and three implementations: Anthropic (Messages API through the official SDK), OpenAI (Chat Completions) and a
 deterministic **rule-based** provider that needs no key and no network (it runs the existing NLU parser), so every AI
 feature degrades to something explainable when no provider is configured. Keys live per tenant in
-`ai_provider_configs`, encrypted at rest, entered on the Settings page only; nothing here reads them from the
+`ai_provider_configs`, encrypted at rest, entered under Settings > AI only; nothing here reads them from the
 environment or logs them. The AI never sees broker credentials (safety rule 15): a provider gets text in and text
 out, nothing else.
 
@@ -406,11 +406,11 @@ class AnthropicProvider:
             try:
                 response = await client.with_options(timeout=timeout_for(budget)).beta.messages.create(**self._request(system, user, budget, image_png))
             except anthropic.AuthenticationError as exc:
-                raise ProviderError("Anthropic rejected the API key (401) - re-enter it under Settings", usage=spent, kind="auth") from exc
+                raise ProviderError("Anthropic rejected the API key (401) - re-enter it under Settings > AI", usage=spent, kind="auth") from exc
             except anthropic.RateLimitError as exc:
                 raise ProviderError("Anthropic rate limit (429) - try again shortly", usage=spent, kind="rate") from exc
             except anthropic.NotFoundError as exc:
-                raise ProviderError(f"Anthropic does not know model '{self.model}' - pick another under Settings", usage=spent, kind="model") from exc
+                raise ProviderError(f"Anthropic does not know model '{self.model}' - pick another under Settings > AI", usage=spent, kind="model") from exc
             except anthropic.APIStatusError as exc:
                 raise ProviderError(f"Anthropic error HTTP {exc.status_code}: {exc.type or exc.message}", usage=spent,
                                     kind=_anthropic_status_kind(exc)) from exc
@@ -447,7 +447,7 @@ class AnthropicProvider:
         try:
             response = await client.with_options(timeout=timeout_for(budget)).beta.messages.create(**body)
         except anthropic.AuthenticationError as exc:
-            raise ProviderError("Anthropic rejected the API key (401) - re-enter it under Settings", kind="auth") from exc
+            raise ProviderError("Anthropic rejected the API key (401) - re-enter it under Settings > AI", kind="auth") from exc
         except anthropic.RateLimitError as exc:
             raise ProviderError("Anthropic rate limit (429) - try again shortly", kind="rate") from exc
         except anthropic.APIStatusError as exc:
@@ -542,7 +542,7 @@ class OpenAIProvider:
             except httpx.HTTPError as exc:
                 raise ProviderError(f"Provider unreachable: {exc.__class__.__name__}", usage=spent, kind="unreachable") from exc
             if response.status_code == 401:
-                raise ProviderError("Provider rejected the API key (401) - re-enter it under Settings", usage=spent, kind="auth")
+                raise ProviderError("Provider rejected the API key (401) - re-enter it under Settings > AI", usage=spent, kind="auth")
             if response.status_code == 429:
                 raise ProviderError("Provider rate limit (429) - try again shortly", usage=spent,
                                     kind=_openai_kind(response, _error_detail(response, self.api_key)))
@@ -619,7 +619,7 @@ class OpenAIProvider:
         except httpx.HTTPError as exc:
             raise ProviderError(f"Provider unreachable: {exc.__class__.__name__}", kind="unreachable") from exc
         if response.status_code == 401:
-            raise ProviderError("Provider rejected the API key (401) - re-enter it under Settings", kind="auth")
+            raise ProviderError("Provider rejected the API key (401) - re-enter it under Settings > AI", kind="auth")
         if response.status_code == 429:
             raise ProviderError("Provider rate limit (429) - try again shortly", kind=_openai_kind(response, _error_detail(response, self.api_key)))
         if response.status_code >= 400:
@@ -705,7 +705,7 @@ class GeminiProvider:
 
     async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000, image_png: Optional[bytes] = None) -> Completion:
         if not _GEMINI_MODEL_ID.match(self.model or ""):
-            raise ProviderError("Gemini model id is not valid - pick another under Settings", kind="model")
+            raise ProviderError("Gemini model id is not valid - pick another under Settings > AI", kind="model")
         headers = {"x-goog-api-key": self.api_key, "content-type": "application/json"}
         client = self.client or _openai_client()
         budget = self._budget(max_tokens)
@@ -719,11 +719,11 @@ class GeminiProvider:
             detail = _error_detail(response, self.api_key) if response.status_code >= 400 else ""
             kind = _gemini_kind(response.status_code, detail) if response.status_code >= 400 else "other"
             if response.status_code in (401, 403) or (response.status_code == 400 and "api key" in detail.lower()):
-                raise ProviderError(f"Gemini rejected the API key (HTTP {response.status_code}) - re-enter it under Settings", usage=spent, kind=kind)
+                raise ProviderError(f"Gemini rejected the API key (HTTP {response.status_code}) - re-enter it under Settings > AI", usage=spent, kind=kind)
             if response.status_code == 429:
                 raise ProviderError("Gemini rate limit or quota (429) - try again later", usage=spent, kind=kind)
             if response.status_code == 404:
-                raise ProviderError(f"Gemini does not know model '{self.model}' - pick another under Settings", usage=spent, kind=kind)
+                raise ProviderError(f"Gemini does not know model '{self.model}' - pick another under Settings > AI", usage=spent, kind=kind)
             if response.status_code >= 400:
                 raise ProviderError(f"Gemini error HTTP {response.status_code}: {detail}" if detail else f"Gemini error HTTP {response.status_code}",
                                     usage=spent, kind=kind)

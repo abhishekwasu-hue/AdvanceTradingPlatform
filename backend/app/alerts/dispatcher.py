@@ -147,6 +147,8 @@ def render_text(notification: NotificationRecord) -> Tuple[str, str]:
 
 async def send_telegram(config: TelegramConfig, html_text: str, client: Optional[httpx.AsyncClient] = None, chat_id: Optional[str] = None,
                         reply_markup: Optional[dict] = None) -> None:
+    if not config.bot_token:                               # UX2 fix 5: a platform-bot channel while the server has no bot token
+        raise RuntimeError("Telegram alerts are not set up on this server yet")
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=SEND_TIMEOUT_SECONDS)
     try:

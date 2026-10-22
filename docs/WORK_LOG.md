@@ -2295,6 +2295,26 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   in `docs/adr/README.md`); `docs/OPEN_QUESTIONS.md` LAB-9 records it. G-LAB still gates every code-mode flag. The ADR
   note also records that order 11e overrides AMW_PORT C-3 (AI may write code for every Lab mode, as untrusted code).
 - CLAUDE.md and `docs/owner-orders/` not touched (owner-orders lives on its own branch).
+## MO3 UX fixes 4-5: the Paper bot page and Connect Telegram in one tap
+
+- Branch `claude/ux2-paperbot-telegram` (from main). Audit: docs/design/UX_AUDIT_FULL.md problems 3 and 7, P18, P24,
+  P25. Behind `ui_v2`; with it off every page is as before.
+- Fix 4, Paper bot (`src/paperbot`): the v2 page at /deployments - "Your bots" as cards (name, what it trades, Running /
+  Paused with a readable reason / Stopped, last check, open trades; Pause, Resume, Stop with a confirm), "Start a
+  paper bot" in three steps (pick a strategy with one sentence, pick a symbol, Start on paper: always PAPER, 1 lot for
+  an index option, the user's risk limits on the server), and the old form under "More ways to trade" in a paper-only
+  mode (no PAPER / LIVE switch, no worker tiles, no second list). The navigation says "Paper bot".
+- Fix 5, Telegram (`app/alerts/platform_bot.py`, `src/alerts/TelegramConnectV2.tsx`): "Connect Telegram" makes a
+  one-time code (the S3b-2 link table, so no migration), opens `t.me/<bot>?start=<code>`; Start in a private chat
+  links that chat as the organisation's Telegram channel (`platform_bot`), a welcome message goes out and the row turns
+  "Connected" with "Send a test" and "Disconnect". The platform token is filled in from the server's setting and never
+  stored per organisation; the alert-channel API cannot move the chat; the shared bot gets no two-way commands. Webhook
+  with a secret, or getUpdates while a user waits. Settings (v2) shows the row first and folds the own-bot form away;
+  the Setup wizard's alerts step uses the row.
+- Tests: backend `tests/test_ux2_telegram_connect.py`; vitest `src/paperbot/PaperBotV2.test.tsx`,
+  `src/alerts/telegramConnect.test.tsx`; e2e `e2e/paper-bot-v2.e2e.ts` (baselines `paper-bot-v2-{1440,390}-{light,dark}`)
+  and `e2e/setup-v2.e2e.ts` (the connect flow, `setup-v2-telegram-connected-390-light`, step 4 regenerated).
+- Owner action for Telegram: create the bot with @BotFather and set `ATP_TELEGRAM_BOT_TOKEN` (runbook section 4).
 ## 2026-10-22 - UX1: sign-in screen, "Coming soon" for flag-off pages, friendly errors, admin flag list (MO3 fixes 1-2)
 
 - Branch `claude/ux1-signin-comingsoon` (merged with main; keeps #332 login wording and #336 Google sign-in, whose

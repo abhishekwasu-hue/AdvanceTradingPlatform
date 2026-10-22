@@ -26,7 +26,7 @@ describe("UI2-1 navigation model: sections (proposal §2)", () => {
   it("uses the plain-language labels (§3 renames) and puts Signals in Trading (UI-2)", () => {
     expect(labels(everything)).toEqual([
       ["Markets", ["Dashboard", "Charts", "Option chain", "Find setups"]],
-      ["Strategies", ["Library", "Build a strategy", "Test a strategy", "AI Copilot", "Autopilot"]],
+      ["Strategies", ["Library", "Build a strategy", "Test a strategy", "AI Copilot", "Paper bot"]],
       ["Trading", ["Signals", "My positions", "Orders", "Portfolio", "Risk"]],
       ["Insights", ["Performance", "Journal", "News & events", "Company research"]],
       ["Account", ["Settings", "Team", "Notifications"]],

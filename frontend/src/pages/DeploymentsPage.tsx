@@ -1,6 +1,7 @@
 import { AlertTriangle, Bot, CircleDot, Pause, Play, Plus, Square, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import type { PageProps } from "../routes";
 import { useAuth } from "../auth/AuthContext";
 import BrokerTokenBanner from "../components/BrokerTokenBanner";
 import BrokerUncertainBanner from "../components/BrokerUncertainBanner";
@@ -65,7 +66,9 @@ function ago(iso: string | null): string {
   return new Date(iso).toLocaleString();
 }
 
-export default function DeploymentsPage() {
+/** UX2 fix 4: `paperOnly` is the v2 Paper bot page's "More ways to trade" - this form only, PAPER only (no mode switch, no
+ * worker tiles, no list: the page shows the trader's bots itself); `onCreated` tells it a bot was started. */
+export default function DeploymentsPage({ paperOnly = false, onCreated }: PageProps & { paperOnly?: boolean; onCreated?: () => void } = {}) {
   const { user, loading: authLoading } = useAuth();
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
@@ -183,7 +186,7 @@ export default function DeploymentsPage() {
   const [stepUp, setStepUp] = useState<{ reason: string; retry: () => Promise<unknown> } | null>(null);
 
   function refresh() {
-    if (!user) return;
+    if (!user || paperOnly) return;
     Promise.all([api.listDeployments(includeStopped), api.workerStatus()])
       .then(([d, w]) => {
         setDeployments(d);
@@ -234,7 +237,9 @@ export default function DeploymentsPage() {
         routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
         order_style: orderStyle, market_protection_pct: orderStyle === "PROTECTED_LIMIT" && protectionPct ? Number(protectionPct) : null,
       });
-      setMessage(`Deployment #${created.id} is ${created.status}: ${created.strategy_id} on ${created.symbol} (${created.mode}).`);
+      setMessage(paperOnly ? `Started on paper: ${created.symbol}. See it under Your bots.`
+        : `Deployment #${created.id} is ${created.status}: ${created.strategy_id} on ${created.symbol} (${created.mode}).`);
+      onCreated?.();
       setConfirmLive(false);
       setLiveTyped("");
       refresh();
@@ -292,6 +297,7 @@ export default function DeploymentsPage() {
 
   return (
     <div className="space-y-4">
+      {!paperOnly && <>
       <PageHeader title="Autopilot" description="Strategy deployments the background worker trades on its own: live broker candles every minute, the same risk engine and kill switches as a manual execute, exits monitored continuously, everything squared off before 15:20 IST." />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -335,8 +341,9 @@ export default function DeploymentsPage() {
 
       <BrokerTokenBanner />
       <BrokerUncertainBanner />
+      </>}
 
-      <Card title="Deploy a strategy">
+      <Card title={paperOnly ? "More ways to trade" : "Deploy a strategy"}>
         <div className="grid sm:grid-cols-6 gap-3 items-end">
           <div className="sm:col-span-2">
             <label className="block text-xs text-fg-muted mb-1">Strategy</label>
@@ -696,7 +703,7 @@ export default function DeploymentsPage() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2 text-sm">
+          {!paperOnly && <div className="flex items-center gap-2 text-sm">
             <span className="text-xs text-fg-muted">Mode</span>
             {(["PAPER", "LIVE"] as ExecutionMode[]).map((m) => (
               <button
@@ -712,7 +719,7 @@ export default function DeploymentsPage() {
                 {m}
               </button>
             ))}
-          </div>
+          </div>}
           <button
             onClick={handleCreate}
             disabled={busy || !strategyId || !symbol}
@@ -720,7 +727,7 @@ export default function DeploymentsPage() {
               mode === "LIVE" ? "bg-down text-surface hover:brightness-110" : "bg-brand text-on-brand hover:bg-brand-strong"
             }`}
           >
-            <Plus size={14} /> {mode === "LIVE" ? "Deploy LIVE" : "Deploy paper"}
+            <Plus size={14} /> {mode === "LIVE" ? "Deploy LIVE" : paperOnly ? "Start on paper" : "Deploy paper"}
           </button>
           {brokers.length === 0 && (
             <span className="text-xs text-warn">Connect a broker on the Broker page first - even paper trading needs a broker session for live candles.</span>
@@ -761,7 +768,7 @@ export default function DeploymentsPage() {
         {message && <div className="mt-3 text-sm text-up">{message}</div>}
       </Card>
 
-      <Card title={`Deployments (${deployments.length})`}>
+      {!paperOnly && <Card title={`Deployments (${deployments.length})`}>
         <div className="flex justify-end mb-2">
           <label className="flex items-center gap-2 text-xs text-fg-muted cursor-pointer">
             <input type="checkbox" checked={includeStopped} onChange={(e) => setIncludeStopped(e.target.checked)} />
@@ -826,7 +833,7 @@ export default function DeploymentsPage() {
             </table>
           </div>
         )}
-      </Card>
+      </Card>}
     </div>
   );
 }

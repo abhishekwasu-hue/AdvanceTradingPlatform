@@ -23,6 +23,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   // UI2-7: Settings → Setup (§11, src/setup) at /settings/setup - the setup wizard, v2 only (P3: the go-live checklist is
   // under Settings → Advanced in both shells).
   setup: lazy(() => import("../setup/SetupPageV2")),
+  // UX2 fix 4: the Paper bot page (src/paperbot) at /deployments - start a bot in three taps, your bots as cards.
+  deployments: lazy(() => import("../paperbot/PaperBotV2")),
   // Item 5 (owner's handover): the chat-first Copilot (src/copilot/chat) at /copilot; /copilot/<tab> keeps today's tabs.
   copilot: lazy(() => import("../copilot/chat/CopilotPageV2")),
 };

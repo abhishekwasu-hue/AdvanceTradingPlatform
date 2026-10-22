@@ -128,6 +128,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # user's own key, else the organisation's, else the rules / `ai_not_connected`). OFF: every AI call and page behaves
     # exactly as before and /api/ai/byok/connect* answers 404. Background jobs stay on the organisation's key. No orders.
     "ai_one_key": "One AI key for every AI feature: the Connect AI panel and the user's own key first for Copilot, chart analysis and the other AI tools",
+    # Master Order 4 slice 1 (app/rhythm; needs `ui_v2`): the daily rhythm - the pre-market brief, the mid-session pulse,
+    # the closing wrap and the weekly review as a card on the Dashboard, and on the user's own Telegram when the user
+    # turns it on (Settings > Alerts, OFF by default). Built from the user's own data and the market data ATP holds;
+    # structure words only, no buy / sell / target / stop wording. OFF: /api/rhythm/* answers 404 and nothing is sent.
+    "daily_rhythm": "Daily rhythm: the pre-market brief, mid-session pulse, closing wrap and weekly review on the Dashboard and, by choice, on Telegram",
     # PW6 (beta spec 4a, Phase 0): the closed-beta gate. ON: sign-up needs a SUPER_ADMIN-issued invite code and stops at
     # BETA_COHORT_CAP accounts. OFF: registration is exactly as before (self_signup still decides). OFF by default.
     "beta_cohort_gate": "Closed beta: sign-up needs an invite code and stops at the cohort cap (BETA_COHORT_CAP, default 500)",

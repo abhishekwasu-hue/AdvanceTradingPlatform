@@ -63,6 +63,7 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
   entry("Connect an AI key", "ai", SETTINGS_PATH.ai, ["ai key", "api key", "claude", "openai", "gemini", "paste key"]),
   entry("AI spending limits", "ai", SETTINGS_PATH.ai, ["limit", "cap", "spend", "cost"]),
   entry("Connect Telegram", "alerts", `${SETTINGS_PATH.alerts}#telegram`, ["telegram", "phone alerts"]),
+  entry("Daily briefs on Telegram", "alerts", `${SETTINGS_PATH.alerts}#daily-briefs`, ["brief", "morning brief", "closing wrap", "weekly review", "digest"], "daily_rhythm"),
   entry("Email, SMS and app notifications", "alerts", `${SETTINGS_PATH.alerts}#channels`, ["email", "sms", "push", "whatsapp", "alert channels"]),
   entry("Text size", "appearance", `${SETTINGS_PATH.appearance}#appearance-text-size-label`, ["font", "bigger", "larger", "zoom"]),
   entry("Theme: light or dark", "appearance", `${SETTINGS_PATH.appearance}#appearance-theme-label`, ["dark mode", "light mode", "night"]),

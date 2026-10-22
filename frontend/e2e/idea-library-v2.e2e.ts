@@ -9,6 +9,7 @@ import { expectPhoneLayout } from "./phoneLayout";
  * questions, a card's full idea, "Try as a scan" into Find setups, and nothing at all while the flag is off.
  * - Baselines (NEW): `idea-library-v2-{1440,390,360}-{light,dark}.png`. Other baselines are untouched.
  * - Slice 2 baselines (NEW): `idea-library-adopt-v2-{1440,390}-{light,dark}.png` (a mapped idea's card, IDEA-1).
+ * - Slice 3 (UPDATED): T7's scans and T5's scan note change the page; the adopt card is T5 on its real template A5.
  * The library is the server's own payload (e2e/fixtures/ideas_v2.json, checked by backend/tests/test_idea_library.py);
  * the stages reply is what the server answers for T5's first scan. No real account, symbol or price anywhere.
  * After an intended change: `npx playwright test --project=phone e2e/idea-library-v2.e2e.ts --update-snapshots`.
@@ -27,10 +28,9 @@ const ON = { idea_library: true, screener_v2: true, screener_builder_u2: true };
 
 interface Sent { stages: unknown[] }
 
-/** Slice 2 (IDEA-1): the library with T5 mapped onto a template the organisation can adopt. No idea is mapped on main
- * today (none shares a template's structure), so this is the state the card takes once one is. */
-const MAPPED = { ...LIB, ideas: LIB.ideas.map((i) => i.id === "T5"
-  ? { ...i, adopt: { available: true, template: "D1", timeframe: "15m", params: { period: 12 } } } : i) };
+/** Slice 3: the fixture is the payload with strategy templates on - T2 (A2) and T5 (A5) are the honest mappings. */
+const MAPPED = LIB;
+const T5_ADOPT = "/deployments?template=A5&timeframe=15m&set.retest_of=swing&set.retest_max_bars=10&set.vol_mult=1.5&set.range_mode=fixed";
 
 async function open(page: Page, path: string, o: { theme?: "light" | "dark"; features?: Record<string, boolean>; library?: unknown } = {}): Promise<Sent> {
   const sent: Sent = { stages: [] };
@@ -141,25 +141,22 @@ test.describe("Idea library behaviour", () => {
     expect(text).not.toMatch(/\bLIVE\b/);
   });
 
-  test("slice 2: no idea on main is adoptable yet", async ({ page }) => {
-    await open(page, "/ideas", { features: { ...ON, strategy_templates: true } });
-    await expect(page.locator("[data-idea]")).toHaveCount(8);
-    await expect(page.locator("[data-adopt]")).toHaveCount(0);
-  });
-
-  test("slice 2: a mapped idea is not offered while strategy templates are off", async ({ page }) => {
+  test("slice 3: the mapped ideas are not offered while strategy templates are off", async ({ page }) => {
     await open(page, "/ideas", { library: MAPPED, features: { ...ON, strategy_templates: false } });
     await expect(page.locator("[data-idea]")).toHaveCount(8);
     await expect(page.locator("[data-adopt]")).toHaveCount(0);
   });
 
-  test("slice 2: a mapped idea links to the Paper bot form with its template and settings", async ({ page }) => {
+  test("slice 3: T2 and T5 link to the Paper bot form with their template and settings", async ({ page }) => {
     await open(page, "/ideas", { library: MAPPED, features: { ...ON, strategy_templates: true } });
-    const link = page.locator("[data-idea='T5'] [data-adopt='D1']");
+    await expect(page.locator("[data-adopt]")).toHaveCount(2);
+    await expect(page.locator("[data-idea='T2'] [data-adopt='A2']")).toHaveAttribute("href", "/deployments?template=A2&timeframe=15m&set.swing_degree=1");
+    const link = page.locator("[data-idea='T5'] [data-adopt='A5']");
     await expect(link).toHaveText("Adopt as a paper strategy");
-    await expect(link).toHaveAttribute("href", "/deployments?template=D1&timeframe=15m&set.period=12");
-    await expect(page.locator("[data-adopt]")).toHaveCount(1);
-    await expect(page.locator("[data-idea='T5'] [data-block='idea-adopt']")).toContainText("runs on paper only");
+    await expect(link).toHaveAttribute("href", T5_ADOPT);
+    const block = page.locator("[data-idea='T5'] [data-block='idea-adopt']");
+    await expect(block).toContainText("runs on paper only");
+    await expect(block.locator("[data-state='adopt-note']")).toContainText("is not checked yet");
   });
 
   test("filter by group, and the beginner questions suggest ideas to read", async ({ page }) => {

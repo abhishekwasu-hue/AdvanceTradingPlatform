@@ -82,6 +82,8 @@ async function open(page: Page, theme: "light" | "dark", path: string, opts: { h
     if (url.pathname.endsWith("/held")) return route.fulfill({ json: [] });
     // 8b-d: the risk line's budget (not set up here: the line is left out, the ticket is unchanged).
     if (url.pathname.endsWith("/risk-budget")) return route.fulfill({ status: 404, json: { detail: "Not found" } });
+    // 8b slice 4: the events calendar (not set up here: the line says it could not be read).
+    if (url.pathname.endsWith("/event-risk")) return route.fulfill({ status: 404, json: { detail: "Not found" } });
     const body = route.request().postDataJSON() as Record<string, unknown>;
     seen.posts.push({ url: url.pathname, body });
     const placed = url.pathname.endsWith("/order")

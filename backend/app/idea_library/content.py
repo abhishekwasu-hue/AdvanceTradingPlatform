@@ -15,8 +15,13 @@ Slice 2 (IDEA-1): "Adopt as a paper strategy". An idea carries `adopt` only when
 template (`app.strategy_templates`): the same structure (context, area, trigger, invalidation), never a stand-in that
 reads differently. The card then links to the paper bot form with the template picked and the mapped settings as the
 pre-fill; the user reviews and saves it himself, PAPER only. `ADOPT_REVIEW` records, for every idea without a mapping,
-why no template matches today (the tests keep both in step). Today none does: the templates on main are D1, D2, B1 and
-B3, and every T idea reads a different structure (OPEN_QUESTIONS IDEA-1, IDEA-10).
+why no template matches today (the tests keep both in step). The first review (D1, D2, B1, B3) found none; the second
+(slice 3, the templates of families A-G) maps T2 onto A2 and T5 onto A5, whose signals are exactly those ideas' own scans
+(the tests compare them bar by bar); each mapping carries a `note` saying where the paper strategy still reads less than
+the card (OPEN_QUESTIONS IDEA-10, IDEA-13).
+
+Slice 3: T7 gets its scans (the second top / bottom at an area, from the existing swing, reversal and zone functions);
+T6 still has none - no registry function reads "price at a channel line" (IDEA-3, IDEA-12).
 """
 from __future__ import annotations
 
@@ -104,6 +109,8 @@ class Adopt(_Strict):
     template: str = Field(pattern=r"^[A-G][0-9]{1,2}$")
     timeframe: Optional[str] = Field(default=None, max_length=4)
     params: Dict[str, Value] = Field(default_factory=dict, max_length=40)
+    # slice 3: what the paper strategy reads differently from the card, in plain words (shown next to the button)
+    note: Optional[str] = Field(default=None, min_length=1, max_length=300)
 
 
 class Idea(_Strict):
@@ -290,6 +297,8 @@ def readable_lines(library: Library) -> List[Tuple[str, str]]:
         out += [(f"{p}.scans.{s.id}.label", s.label) for s in idea.scans]
         if idea.scan_gaps:
             out.append((f"{p}.scan_gaps", idea.scan_gaps))
+        if idea.adopt is not None and idea.adopt.note:
+            out.append((f"{p}.adopt.note", idea.adopt.note))
     return out
 
 
@@ -349,25 +358,26 @@ def scan_payload(idea: Idea, scan: Scan, flags_on: Set[str]) -> Dict[str, Any]:
 
 
 # --------------------------------------------------------------------------------------- adopt as a paper strategy
-# IDEA-1 review (22 Oct, the templates on main: D1 Supertrend flip, D2 moving-average crossover, B1 range breakout, B3
-# channel breakout). An idea is adoptable only through a template with the SAME structure; otherwise its reason is here.
-# The honest home of T1-T8 is the templates spec's family A (same ids): A2 / A5 are built in step 3, their mappings wait for
-# the owner's answers (TPL-Q21 / TPL-Q22); the others are not built yet (TPL-Q23).
+# IDEA-1 review, second round (slice 3, 22 Oct: the templates A2, A5, B1-B11, C1-C5, D1-D7, E1-E5, F1, F2, G1-G11 on
+# main). An idea is adoptable only through a template with the SAME structure (context, area, trigger, invalidation), never
+# one with a similar name; otherwise its reason is here. Mapped: T2 -> A2 and T5 -> A5 (their signals are the ideas' own
+# scans; tests/test_idea_library.py compares them bar by bar). The family A templates that read areas, channel lines and
+# patterns (A1, A3, A4, A6, A7, A8) are not built (TPL-Q23).
 ADOPT_REVIEW: Dict[str, str] = {
-    "T1": "A pullback into a demand / supply area with a reaction there; no template reads an area or a pullback "
-          "(D1 / D2 signal on an indicator flip, B1 / B3 on a breakout).",
-    "T2": "A rejection at a range edge (a fade back into the range); B1 signals the opposite, a close beyond the range. "
-          "Template A2 (range edges, step 3) carries this structure; the mapping is switched on once the owner confirms "
-          "its edge / invalidation reading (TPL-Q21).",
-    "T3": "RSI divergence into an area; no template reads divergence or an area.",
-    "T4": "A sweep beyond an obvious high / low and a close back inside; B1's 'close back inside' is its exit, not a "
-          "signal, and no template reads the sweep.",
-    "T5": "A break, then the retest of the broken level; B1 / B3 signal on the break itself, without the retest. "
-          "Template A5 (structure flip retest, step 3; C1 / C3 for the range / channel breakouts) carries it, but 'a swing "
-          "formed beyond' is not checked yet; the mapping waits for the owner's answer (TPL-Q22).",
-    "T6": "A rejection at the channel line in the trend's favour; B3 signals the opposite, a close beyond the far edge.",
-    "T7": "Double top / bottom or head and shoulders at an area; no template reads swing patterns (IDEA-3).",
-    "T8": "T1 and T2 reduced to direction; adoptable only once T1 / T2 are.",
+    "T1": "A pullback into a demand / supply area with a reaction there; no template reads an area (A1 waits for zone data "
+          "in the template engine, TPL-Q23). D3 and E1 read a pullback to a moving average or an RSI zone, F1's sources a "
+          "Supertrend flip or that average pullback: a different structure.",
+    "T3": "RSI divergence INTO an area; E2 reads the divergence without an area, so it is not the same idea (A3 waits for "
+          "areas, TPL-Q23 / TPL-Q57).",
+    "T4": "A sweep beyond an obvious high / low and a close back inside an area; no template reads it. G7 is the sweep "
+          "beyond the start of wave A inside a wave count, and B1's 'close back inside' is its exit, not a signal.",
+    "T6": "A rejection at the channel line in the trend's favour; B3 signals the opposite (a close beyond the far edge) "
+          "and C3 the retest of that broken edge. A6 needs 'price at a channel line', which no function reads (IDEA-12).",
+    "T7": "Double top / bottom or head and shoulders at an area; no template reads swing patterns at an area (A7, TPL-Q23). "
+          "B6 is a flag / pennant / triangle breakout and G5 / G10 are wave-count lines.",
+    "T8": "T1 and T2 reduced to direction. F2's range edges source is T2's reading, but F1's sources (a Supertrend flip, "
+          "a moving-average pullback) are not T1, and one card cannot adopt half of the pack; adoptable once A1 joins F1 "
+          "(TPL-Q50).",
 }
 
 
@@ -409,7 +419,7 @@ def adopt_payload(idea: Idea, adoptable: FrozenSet[str] = frozenset()) -> Dict[s
     a = idea.adopt
     if a is None or a.template not in adoptable:
         return {"available": False}
-    return {"available": True, "template": a.template, "timeframe": a.timeframe, "params": dict(a.params)}
+    return {"available": True, "template": a.template, "timeframe": a.timeframe, "params": dict(a.params), "note": a.note}
 
 
 def idea_payload(idea: Idea, flags_on: Set[str], adoptable: FrozenSet[str] = frozenset()) -> Dict[str, Any]:

@@ -3023,6 +3023,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   removed, both sides' text kept.
 - Tests: `tests/test_tpl7_e2_packs_v2.py`, `tests/test_tpl6_family_f.py` (reads version 2), runtime fixture, causal
   cases (lookahead job), history sweep. Questions TPL-Q50..TPL-Q57.
+
+## 22 Oct - F&O workspace 8b slice 4: the risk line's events / liquidity / margin, the F&O desk, the journal chart
+- Branch `claude/fno8b-slice-4`. No migration, no new flag (behind `ui_v2` + the PAPER account); no order path changed.
+- 8b-d: `GET /api/paper/fno/event-risk` (the market events + the company's calendar from today to the expiry, his own
+  event rule per day, "the calendar is empty" said plainly); the risk budget carries the PAPER balance (read only, no
+  account created). The ticket's and the basket's confirm steps show one "Before you place (information only)" box:
+  events, liquidity (bid-ask / OI / volume compared with the chain on screen) and the margin beside the PAPER balance.
+- 8b-i: My positions shows the cockpit as a desk: chart of the underlying with his strikes, the chain near his strikes and
+  his basket beside the cockpit card from 1024 px; a quick switch on a phone. Read only.
+- 8b-k: the journal draft's "Show the chart" redraws the underlying's candles around the trade with "Opened" / "Closed"
+  marked (client side, one read, nothing stored).
+- Tests: `backend/tests/test_fno8b4_risk_parts.py`, `frontend/src/fno/slice4.test.tsx`, `frontend/e2e/fno8b-slice4-v2.e2e.ts`
+  (new baselines). Questions FNO-8B-27..31.
 ## 22 Oct - Wave templates (family G): the volume, zone-edge and divergence companions, G1-G11 version 2 (behind strategy_templates + screener_waves, PAPER only)
 
 - Branch `claude/waves-companions`. No migration (templates are JSON in the repository; no new flag).
@@ -3104,3 +3117,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   call); vitest `src/aiKeys/cloudflareProvider.test.tsx`; e2e `connect-ai-v2.e2e.ts` (the flow, new baselines
   `connect-ai-v2-paste-cloudflare-*`; `connect-ai-v2-paste-groq-*` re-taken for the longer no-vision sentence).
   Questions MO2A-9..12.
+## 22 Oct - Idea library slice 3: T7 scans, the second adopt review (behind ui_v2 + idea_library, + strategy_templates for adopt)
+
+- Branch `claude/idea-library-3`. No migration, no new flag, no new route.
+- T7 "Try as a scan": the double top / bottom at an area from existing registry functions only (DowTrend, ReversalAt at
+  the last confirmed swing high / low, NearZone); settings swing size and area tolerance. Head and shoulders and the
+  neckline retest come later (IDEA-14). T6 keeps "comes later": no function reads the trend-side channel line (IDEA-12).
+- Adopt review against families A-G: T2 -> A2, T5 -> A5 (T5 pre-filled with the breakout defaults its scan uses); each
+  mapping carries a guarded `note` shown on the card; T1 / T3 / T4 / T6 / T7 / T8 keep their reasons in `ADOPT_REVIEW`
+  (IDEA-13). T5's card now says that "a swing formed beyond" is not checked.
+- Tests: `tests/test_idea_library.py` (A2 / A5 signals equal the ideas' scans bar by bar, the mappings start from the
+  ideas' settings, the route offers T2 / T5 only with their functions on and the template adopt route accepts the
+  pre-fill as PAPER, T7 must fire / must not fire, no look-ahead, flags); vitest `src/ideas/ideas.test.tsx`; e2e
+  `e2e/idea-library-v2.e2e.ts` (the idea library baselines updated: T7 scans, T5 note, the adopt card on A5). The
+  fixture `e2e/fixtures/ideas_v2.json` is now the payload with strategy templates on; its pin is updated.

@@ -20,7 +20,9 @@ import {
 import { PracticeFrame } from "./OrderTicketV2";
 import { StrategyCompareV2 } from "./CompareV2";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
-import { riskLine, structureOf, type RiskBudget } from "./insights";
+import { riskLine, structureOf, type RiskBudget, type RiskLine } from "./insights";
+import { eventLine, legLiquidity, liquidityLine, marginLine } from "./riskParts";
+import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
 import { moneyText, newClientRef, sideWord } from "./ticketModel";
 
 /**
@@ -104,6 +106,15 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   const rows = useMemo(() => live?.rows ?? [], [live]);
   const atm = live?.summary.atm_strike ?? null;
   const pick = around ?? atm;
+  // 8b slice 4: the risk line's other parts - the events up to the latest leg's expiry and each leg's liquidity on the
+  // chain on screen (information only; the margin part is set beside each step's own margin figure below).
+  const lastExpiry = legs.reduce<string | null>((m, l) => (m === null || l.expiry > m ? l.expiry : m), null);
+  const events = useEventRisk(open && legs.length > 0, legs[0]?.underlying ?? chain.symbol, lastExpiry);
+  const checks = useMemo<(RiskLine | null)[]>(() => [
+    eventLine(events, lastExpiry),
+    legs.length ? liquidityLine(legs.map((l) => legLiquidity(l.expiry === live?.expiry && l.underlying === chain.symbol ? rows : [], l.strike, l.right,
+      l.label ?? `${formatNumber(l.strike, 0)} ${l.right}`))) : null,
+  ], [events, lastExpiry, legs, live?.expiry, chain.symbol, rows]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -282,14 +293,14 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           </div>
           {step.kind === "edit" && (
             <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} rows={rows} pick={pick} atm={atm} spot={spot}
-              product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget}
+              product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks}
               compare={tool === "compare" ? (
                 <StrategyCompareV2 underlying={chain.symbol} legs={legs.map(strip)} saved={saved} rows={rows} expiry={live?.expiry ?? null} around={pick}
                   settings={settings} spot={spot} product={product} api={api} />
               ) : null} />
           )}
           {step.kind === "confirm" && (
-            <ConfirmView preview={step.preview} busy={busy} budget={budget} onBack={() => setStep({ kind: "edit" })} onPlace={() => { void execute(); }} />
+            <ConfirmView preview={step.preview} busy={busy} budget={budget} checks={checks} onBack={() => setStep({ kind: "edit" })} onPlace={() => { void execute(); }} />
           )}
           {step.kind === "done" && (
             <ResultView result={step.result} onRemaining={() => { void confirm(remainingLegs(step.legs, step.result)); }} onEdit={() => setStep({ kind: "edit" })}
@@ -339,7 +350,7 @@ function Figure({ label, children, sub, testId }: { label: string; children: Rea
 }
 
 /** The panel's edit view: ready strategies, the legs, the numbers and the tools (no state, no hooks). */
-export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare }: {
+export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks }: {
   legs: readonly BasketLeg[]; numbers: BasketNumbers | null; problems: string[]; settings: BasketSettings | null; rows: LiveChain["rows"];
   pick: number | null; atm: number | null; spot: number | null; product: Product; note: Note; tool: Tool; saved: SavedState | null;
   saveName: string; idPrefix: string; on: BodyHandlers;
@@ -347,6 +358,8 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
   budget?: RiskBudget | null;
   /** 8b-j: the comparison, shown while the Compare tool is open. */
   compare?: ReactNode;
+  /** 8b slice 4: the events and liquidity parts of the risk line (the margin part is added here). */
+  checks?: readonly (RiskLine | null)[];
 }) {
   const step = strikeStep(rows);
   const ext = numbers?.extremes ?? null;
@@ -416,6 +429,7 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
                   {payoffSentence(numbers, underlying)}
                 </p>
                 <RiskLineV2 line={ext ? riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget) : null} />
+                {checks && <RiskChecksV2 testId="basket" lines={[...checks, marginLine(hedge?.with_hedge.value ?? numbers.margin.value, budget)]} />}
                 <dl className="rounded-control border border-subtle px-space-3">
                   <Figure label={numbers.net_premium >= 0 ? "Net premium received" : "Net premium paid"} testId="net">{moneyText(Math.abs(numbers.net_premium))}</Figure>
                   <Figure label="Max profit" testId="max-profit">{ext ? (ext.unbounded_profit ? "Unlimited" : moneyText(ext.max_profit)) : "See the chart"}</Figure>
@@ -550,10 +564,12 @@ function LegRow({ leg: l, n, lotSize, idPrefix, on }: { leg: BasketLeg; n: numbe
 }
 
 /** The confirm step: every leg as it would be placed (hedge legs first), the total margin and max loss (no state). */
-export function ConfirmView({ preview: p, busy, onBack, onPlace, budget }: {
+export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks }: {
   preview: BasketPreview | null; busy: boolean; onBack: () => void; onPlace: () => void;
   /** 8b-d: the risk line beside the total max loss (information only: the button reads `can_execute` alone). */
   budget?: RiskBudget | null;
+  /** 8b slice 4: the events and liquidity parts (the margin part is added from the totals). */
+  checks?: readonly (RiskLine | null)[];
 }) {
   const hedge = p?.totals?.margin.hedge ?? null;
   const ext = p?.totals?.extremes ?? null;
@@ -592,6 +608,7 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget }: {
               {p.totals && <Figure label="Charges to open (estimate)" testId="total-charges">{moneyText(p.totals.costs)}</Figure>}
             </dl>
             {ext && <RiskLineV2 line={riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget)} />}
+            {checks && <RiskChecksV2 testId="basket-confirm" lines={[...checks, marginLine(hedge?.with_hedge.value, budget)]} />}
             {p.totals_errors.length > 0 && <p className="text-t13 text-fg-muted">{p.totals_errors[0]}</p>}
             {p.refusals.length > 0 && (
               <ul role="alert" className="space-y-space-1 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-basket="confirm-refusals">

@@ -44,7 +44,8 @@ const OrderTicketV2 = lazy(() => import("../fno/OrderTicketV2"));
 // 8b-g: "Compare a change", loaded only when it is opened.
 const AdjustCompareV2 = lazy(() => import("../fno/CompareV2").then((m) => ({ default: m.AdjustCompareV2 })));
 // 8b slice 3: the F&O cockpit (read only) and the auto journal drafts, loaded only while F&O PAPER trading is on.
-const CockpitV2 = lazy(() => import("../fno/CockpitV2"));
+// 8b slice 4: the cockpit as a desk (chart + chain + basket beside it on a desktop; a quick switch on a phone).
+const CockpitDeskV2 = lazy(() => import("../fno/CockpitDeskV2"));
 const JournalDraftsV2 = lazy(() => import("../fno/JournalDraftsV2"));
 
 const REFRESH_MS = 30_000;
@@ -198,7 +199,7 @@ export default function PositionsV2(_props: PageProps = {}) {
 
       {cockpit.length > 0 && (
         <Suspense fallback={null}>
-          <CockpitV2 units={cockpit} alertsOn={features.on("screener_v2")} />
+          <CockpitDeskV2 units={cockpit} alertsOn={features.on("screener_v2")} />
         </Suspense>
       )}
 

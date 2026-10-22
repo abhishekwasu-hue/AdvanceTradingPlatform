@@ -114,12 +114,20 @@ PRIVATE_FIXTURES_RESOLVER = "backend/tests/private_fixtures.py"
 ALLOWED_TEST_DATA: Dict[str, str] = {
     # F&O 8b slice 3: UI screenshots of the auto journal card on made-up trades (e2e/fno8b-slice3-v2.e2e.ts); re-pin
     # after regenerating them
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-dark.png": "326c2ffd0b00274feb9b593e8597b82d538ad202872d0d5811cf4a0ec1304ef7",
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-light.png": "9ddb3873efe5597eb39938a0295e75c0384f034fc80c709a9778982a26f1f44f",
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-360-dark.png": "68f15835ee396e59d97daa8bb6e81e85b7b7731b81e59334ba43073a4b8b6861",
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-360-light.png": "f449069abaed7f3b9cabb151724bd7592c0b41aecdcd5b88125807a7dd099a8a",
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-390-dark.png": "9fdea15fe582b9d87a8d57d624d1f21ad729db2f4a5ea6627ae128ca0a8f9301",
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-390-light.png": "c1a88642dda946b70513834d3a8edcb1d19a3f5f6fbd75de3ca41ccf3be8a0bf",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-dark.png": "437f0c5ae9b63c892f4edd06b4f021cb920be61b6df474b3945bde5442e44350",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-light.png": "df04028261528f4ca681d4862d41fe5116c017ca955d0b8266ad02f869eca022",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-360-dark.png": "6e72441199dc5320742df71285620dcac4096b43c2bde77d93fbed82216ceda6",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-360-light.png": "7ddd76579c050a848c1e0cfe02f72afb1f778a8b1d7cc894bfdaee604e781030",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-390-dark.png": "4d6c5c2a39512cdf8a76db2545272d0eea14a64391c5d60678887b17413d9b28",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-390-light.png": "6a436905f69a2840006d2b2b52eba9c9d7d7c8aa937bd674b33bc26f2b5a4225",
+    # F&O 8b slice 4: the journal card with its chart snapshot drawn from a made-up price history (e2e/fno8b-slice4-v2.e2e.ts);
+    # re-pin after regenerating them
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-1440-dark.png": "5d48ccb7e59c09c1aaba71a895bdca70bbc2aa5104cae92d683d6eb3c510068c",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-1440-light.png": "7341afe2f6549d5388a98965610a14238484f051962cd1a2b00a1e4f95e046c0",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-dark.png": "ac507bee6a2ca0a61e0331dfdcfc6819e14b558db0189a15b3364eb5c75a392c",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-light.png": "09a1bfc63cc672859780c8c74002d8dc9150381166dd8085c81387d8f75c5be7",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-dark.png": "f353c675c428bd5a54120678ef93783982c8458bbe5e35b88a059ba5f54fb415",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-light.png": "fff2cbbad40371663f0bbb8ff5719d9556c0ec1b2447e28dd12bf29695ca0ae2",
     # ATP-generated goldens on synthetic, seeded inputs (each regeneration site names this list)
     "backend/tests/fixtures/charts/pa_layer_golden.json": "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
     "backend/tests/fixtures/charts/study_parity.json": "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",
@@ -146,7 +154,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/tests/fixtures/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
     "frontend/src/signals/__fixtures__/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
     # Idea library slice 1: the server's own payload of the hand-written idea cards (no market data; synced by a backend test)
-    "frontend/e2e/fixtures/ideas_v2.json": "be47523431c5523509f1a46238ff6824da910a0c176b1609e5971a6c23373d7f",
+    "frontend/e2e/fixtures/ideas_v2.json": "aea13574a934836de671313d324d15049c6867efa2eb4f42456549fbecb66845",
     # made-up rows in NSE's file layouts (the universe importer's tests)
     "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
     "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",

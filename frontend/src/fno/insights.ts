@@ -69,6 +69,8 @@ export interface RiskBudget {
   per_trade: { amount: number; pct: number };
   daily: { amount: number; pct: number };
   source: string;
+  /** 8b slice 4: his PAPER balance (starting capital + closed PAPER P&L); the margin open positions use is not taken off. */
+  paper_balance?: { amount: number; source: string; open_margin_counted: false } | null;
   blocks: false;
 }
 

@@ -5,7 +5,9 @@
  * from (the server keeps only the lines in the signal language). The user adds his own notes with the existing notes
  * field; nothing here changes a trade, an order or a setting, and nothing here tells him what to do.
  */
-import { request } from "../api/client";
+import { api, request } from "../api/client";
+import type { OHLCVBar } from "../types";
+import type { SnapWindow } from "./snapshot";
 import { humanise } from "../dashboard/model";
 import { formatDateTimeIST, formatNumber, formatPrice, formatSignedINR } from "../ui/format";
 
@@ -19,6 +21,9 @@ export interface JournalDraft {
   kind: "basket" | "structure" | "trade";
   title: string;
   underlying: string;
+  /** 8b slice 4: the underlying's chart symbol and exchange, for the snapshot (absent on an older server). */
+  spot_symbol?: string;
+  spot_exchange?: string;
   trade_ids: number[];
   opened_at: string | null;
   closed_at: string | null;
@@ -39,6 +44,13 @@ export const journalApi = {
   /** The existing notes field of each trade (`PATCH /api/trades/{id}/journal`): his own words, nothing else changes. */
   saveNotes: (tradeIds: readonly number[], notes: string) =>
     Promise.all(tradeIds.map((id) => request(`/trades/${id}/journal`, { method: "PATCH", body: JSON.stringify({ notes }) }))),
+  /** 8b slice 4: the underlying's candles for the snapshot (the chart page's own read; nothing is stored). */
+  candles: async (symbol: string, exchange: string, w: SnapWindow): Promise<OHLCVBar[]> => {
+    const out = await api.marketDataCandles([symbol], w.timeframe, w.lookbackDays, exchange, undefined, w.before ?? undefined);
+    const entry = out.symbols?.[symbol.toUpperCase()] ?? out.symbols?.[symbol];
+    if (!entry || entry.error) throw new Error(entry?.error ?? "no candles");
+    return entry.bars;
+  },
 };
 export type JournalApi = typeof journalApi;
 
@@ -69,6 +81,9 @@ export function placedByLine(d: Pick<JournalDraft, "placed_by" | "strategy">): s
   if (d.placed_by === "paper_bot") return d.strategy ? `Placed by your paper bot (${d.strategy})` : "Placed by your paper bot";
   return "Placed by you";
 }
+
+export const SNAPSHOT_NOTE = "Redrawn from the price history of the underlying; the lines mark when the trade opened and closed.";
+export const SNAPSHOT_MISSING = "The chart could not be drawn: the price history for this time is not available from your data connection.";
 
 export const DRAFT_NOTE = "Filled in from your trade. Add what you saw and what you would keep or change; only you see it.";
 export const NOTES_MAX = 5000;

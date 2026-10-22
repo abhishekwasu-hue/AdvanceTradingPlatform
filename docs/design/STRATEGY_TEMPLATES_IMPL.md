@@ -66,8 +66,8 @@ Same flag `strategy_templates` (OFF), PAPER only, no migration. Owner questions 
 | A yes / no setting may fill a yes / no argument ("Wait for a reversal at the level", TPL-Q25) | `compile.py` | done |
 | C1 range breakout and retest: B1's own breakout settings (the same keys, labels, defaults, bounds), retest within, wait for a reversal (or a touch), invalidation {the pullback, the breakout's own reference (B1's choices + edge buffer), whichever is farther - default}, exit a close back through the level | `templates/C1.json` | done |
 | C3 channel breakout and retest: B3's settings, the edge projected, the same retest / invalidation / exit choices | `templates/C3.json` | done |
-| A2 range edges (idea library T2): a reversal at the latest swing low / high inside `DowTrend == "RANGE"`, invalidation the edge (TPL-Q21) | `templates/A2.json` | done |
-| A5 structure flip retest (idea library T5): "what broke" (swing / range / trendline / channel), a rejection retest, invalidation the level plus a buffer setting (0) (TPL-Q22) | `templates/A5.json` | done |
+| A2 range edges (idea library T2): a reversal at the latest swing low / high inside `DowTrend == "RANGE"`, invalidation the edge (TPL-Q21) | `templates/A2.json` | done; the idea library's T2 adopts it (idea library slice 3, IDEA-13) |
+| A5 structure flip retest (idea library T5): "what broke" (swing / range / trendline / channel), a rejection retest, invalidation the level plus a buffer setting (0) (TPL-Q22) | `templates/A5.json` | done; the idea library's T5 adopts it, pre-filled with the scan's breakout defaults (IDEA-13) |
 | A1, A3, A4, A8 (areas), A6 (channel lines), A7 (patterns) | - | not built: no zone data in the template engine / no area-edge price, no "at a channel line" or swing-pattern function (TPL-Q23) |
 
 Tests: `tests/test_tpl3_templates.py` - R7 (the user's breakout settings reach the retest - an index without volume

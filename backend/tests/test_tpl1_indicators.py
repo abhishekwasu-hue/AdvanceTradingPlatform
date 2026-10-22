@@ -304,6 +304,19 @@ def test_validator_refuses(text, fragment):
     assert not v.ok and any(fragment in p.message for p in v.problems), [p.message for p in v.problems]
 
 
+@pytest.mark.parametrize("text, shown", [
+    ("MACD(26, 12, 9) > 0", "MACD: fast must be below slow"),
+    ("PSAR(0.3, 0.02, 0.2) < close", "PSAR: start must be at most max"),
+    ("PSARDir(0.02, 0.5, 0.2) == 1", "PSARDir: step must be at most max"),
+])
+def test_argument_order_has_a_copilot_template(text, shown):
+    """The natural-language box shows a registry-only message for the new problem kind (never the draft's numbers)."""
+    from app.screener.nl import shown_problem
+    _, v = compile_screen(text, base_tf="15m")
+    problem = next(p for p in v.problems if p.kind == "argument_order")
+    assert shown_problem(problem) == {"kind": "argument_order", "message": shown, "pos": problem.pos}
+
+
 @pytest.mark.parametrize("text", ["MACD(12, 26, 9) > MACDSignal(12, 26, 9)", "CrossAbove(MACD(), MACDSignal())", "StochK(14, 3) < 20",
                                   "CrossAbove(StochK(14, 3), StochD(14, 3, 3))", "close > HMA(close, 21)", "WMA(close, 10) > EMA(close, 20)",
                                   "PSARDir() == 1 AND PSARDir()[1] == -1", "SupertrendDir(10, 3)@1h == 1", "close > PSAR()",

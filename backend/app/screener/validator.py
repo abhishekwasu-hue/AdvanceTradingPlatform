@@ -457,7 +457,7 @@ class _Checker:
             if numbers and (lo_v > hi_v or (lo_v == hi_v and not equal_ok)):
                 rel = "at most" if equal_ok else "below"
                 self.err(f"{node.name}: {low_name} must be {rel} {high_name}, got {lo_v:g} and {hi_v:g}", node, "argument_order",
-                         function=spec.name, arg=low_name)
+                         function=spec.name, arg=low_name, other=high_name)
         sessions = self.sessions_needed(node, spec)
         if sessions and n.TF_MINUTES[own_tf] < n.TF_MINUTES["1d"]:    # whole sessions in this timeframe's bars
             min_bars = max(min_bars, sessions * math.ceil(n.TF_MINUTES["1d"] / n.TF_MINUTES[own_tf]))

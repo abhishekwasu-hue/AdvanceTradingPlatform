@@ -2028,3 +2028,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   day (deduped by title). `DELETE /api/broker/{name}/analytics-token` forgets the token.
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
+
+## 2026-10-22 - AMW port status audit (owner order 11a) and Strategy Lab design approval (11b)
+
+- Branch `claude/amw-port-audit` (from main at 15f619f). Docs only: no code, no migration, no deploy.
+- `docs/design/AMW_PORT_STATUS.md`: every P-, L-, AI- and C- row and every slice AMW-1..AMW-25 of
+  `docs/design/AMW_PORT.md`, checked against the code on `main` (registry, flags in `platform/controls.py`, routes,
+  pages, merged PRs) rather than the plan's own status column. 85 items: 18 ported, 25 partial, 42 missing. Slices:
+  AMW-1, AMW-2, AMW-3, AMW-18 ported; AMW-6 (S9 AI drafting only, no no-key parser) and AMW-16 (context panel and
+  market strip, no data-health view) partial; the other 19 missing (no `strategy_lab*` flag, no `backend/app/lab/`).
+  Ends with the missing items in order of value for a retail / beginner trader.
+- 11b: ADR-0027 and the threat model marked **accepted** (owner approval of 2026-10-22, dated note in the ADR; index row
+  in `docs/adr/README.md`); `docs/OPEN_QUESTIONS.md` LAB-9 records it. G-LAB still gates every code-mode flag. The ADR
+  note also records that order 11e overrides AMW_PORT C-3 (AI may write code for every Lab mode, as untrusted code).
+- CLAUDE.md and `docs/owner-orders/` not touched (owner-orders lives on its own branch).

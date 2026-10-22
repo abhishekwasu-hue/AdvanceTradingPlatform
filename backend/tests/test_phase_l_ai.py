@@ -3,6 +3,7 @@ behind its review gate, the regime engine and filter, and the monitoring agent's
 machine with human approval."""
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -13,7 +14,7 @@ from app.ai import generator, monitor
 from app.ai.generator import parse_answer
 from app.ai import providers as prov
 from app.ai.providers import DEFAULT_MODELS, AnthropicProvider, OpenAIProvider, ProviderError, RuleBasedProvider, build_provider
-from app.ai.regime import classify_regime, regime_blocks, validate_filter
+from app.ai.regime import classify_regime, regime_blocks, regime_note, validate_filter
 from app.db.models import AiActionRecord, AiProviderConfigRecord, CustomStrategyRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
 from app.secrets_store.encryption import decrypt_text
 from tests.server_evidence import serve_candles
@@ -257,9 +258,11 @@ def test_regime_classifier_distinguishes_trend_range_and_volatility():
     volatile = classify_regime(make_series(spike_prices))
     assert volatile.kind == "VOLATILE" and volatile.atr_ratio > 1.6, volatile
     assert classify_regime(_range_df(30)).kind == "UNKNOWN"
-    assert regime_blocks(up, ["TRENDING_UP"]) is None
-    assert "not in RANGING" in regime_blocks(up, ["RANGING"])
-    assert regime_blocks(up, []) is None
+    # Handover item 5 C: the old filter's verdict is an admin diagnostic (regime_note); regime_blocks never blocks.
+    assert regime_note(up, ["TRENDING_UP"]) is None
+    assert "not in RANGING" in regime_note(up, ["RANGING"]) and "not blocked" in regime_note(up, ["RANGING"])
+    assert regime_note(up, []) is None
+    assert regime_blocks(up, ["RANGING"]) is None and regime_blocks(classify_regime(_range_df(30)), ["TRENDING_UP"]) is None
     assert validate_filter(["trending_up".upper(), "RANGING"]) == ["RANGING", "TRENDING_UP"]
     try:
         validate_filter(["SIDEWAYS"])
@@ -268,14 +271,14 @@ def test_regime_classifier_distinguishes_trend_range_and_volatility():
         pass
 
 
-def test_regime_endpoint_and_deployment_filter_blocks_entries(monkeypatch):
+def test_regime_endpoint_and_a_blocking_regime_no_longer_prevents_an_entry(monkeypatch, caplog):
     headers, _ = _owner("ai-regime@example.com")
     body = client.post("/api/ai/regime", headers=headers, json={"candles": _candles(list(100 + np.arange(300) * 0.15))}).json()
     assert body["kind"] == "TRENDING_UP" and body["adx"] > 25
     assert client.get("/api/ai/regimes").json()["regimes"][0] == "TRENDING_UP"
 
-    # Worker: the fake broker's candles are a mild random walk -> not TRENDING_*; a filter that
-    # demands a trend skips the forced signal and records why.
+    # Worker (handover item 5 C): a filter that demands a trend on a RANGING read used to skip the forced signal. The
+    # indicator regime is now a diagnostic only - the entry goes through and the verdict is only logged.
     t = _worker_tenant("w-regime@example.com")
     dep_id = _deploy(t)
 
@@ -288,9 +291,11 @@ def test_regime_endpoint_and_deployment_filter_blocks_entries(monkeypatch):
     _force_signal(monkeypatch, _signal)
     worker = _worker(monkeypatch, _FakeBroker(ltp=101.0))
     monkeypatch.setattr("app.workers.trading_worker.classify_regime", lambda df: type("R", (), {"kind": "RANGING", "confidence": 0.8, "reasons": ["ADX 12.0", "flat"]})())
-    report = _run(worker.run_cycle(now=OPEN_NOW))
-    assert report.signals_executed == 0 and _trades(t["tenant_id"]) == []
-    assert "Regime RANGING" in _get(StrategyDeploymentRecord, dep_id).last_error
+    with caplog.at_level(logging.INFO, logger="app.workers.trading_worker"):
+        report = _run(worker.run_cycle(now=OPEN_NOW))
+    assert report.signals_executed == 1 and len(_trades(t["tenant_id"])) == 1
+    assert "Regime" not in (_get(StrategyDeploymentRecord, dep_id).last_error or "")
+    assert any("regime diagnostic (never blocks)" in r.getMessage() and "Regime RANGING" in r.getMessage() for r in caplog.records)
 
     created = client.post("/api/deployments", headers=t["headers"], json={"strategy_id": "ema_rsi_scalper_1m", "symbol": "TCS", "regime_filter": ["trending_up"]})
     assert created.status_code == 201, created.text

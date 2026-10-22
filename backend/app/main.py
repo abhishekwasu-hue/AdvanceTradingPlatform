@@ -121,6 +121,7 @@ from app.billing.service import meter
 from app.marketplace.routes import admin_router as marketplace_admin_router, router as marketplace_router
 from app.public_api.routes import keys_router as api_keys_router, public_router as public_api_router
 from app.ai.routes import router as ai_router
+from app.ai.chat_routes import router as ai_chat_router
 from app.ai.byok_routes import router as ai_byok_router
 from app.platform.routes import admin_router as controls_admin_router, status_router as system_status_router, users_router as trading_disable_router
 from app.portfolio.routes import router as portfolio_router
@@ -135,6 +136,7 @@ from app.screener.evidence_routes import router as screener_evidence_router
 from app.screener.board import router as screener_board_router
 from app.screener.library_routes import router as screener_library_router
 from app.screener.etf_routes import router as screener_etf_router
+from app.lab.pine.routes import router as lab_pine_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.screener.then.routes import router as scan_then_router
 from app.alerts.links_routes import router as alert_links_router
@@ -271,6 +273,7 @@ app.include_router(api_keys_router)
 app.include_router(public_api_router)
 app.include_router(ai_byok_router)       # BYOK-V1: the user's own AI key for Vision (flag vision_byok, off by default)
 app.include_router(ai_router)
+app.include_router(ai_chat_router)   # handover item 5: the chat-first Copilot (flag ui_v2, off)
 app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(quant_router)        # Phase Z: factor and risk models
 app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages
@@ -292,6 +295,7 @@ app.include_router(fx_router)
 app.include_router(fx_admin_router)
 app.include_router(incidents_router)
 app.include_router(screener_router)
+app.include_router(lab_pine_router)  # handover 11c-1: Pine Script subset -> ScreenQL, never executed (flag strategy_lab_pine, off)
 app.include_router(screener_history_router)  # N3 S6a: who passed on a date, screen fitness (flag screener_history, off)
 app.include_router(screener_rankings_router)  # N3 S7a: ranking systems (flag screener_rankings, off)
 app.include_router(screener_breakouts_router)

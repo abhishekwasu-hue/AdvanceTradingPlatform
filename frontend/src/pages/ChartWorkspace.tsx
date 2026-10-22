@@ -225,7 +225,7 @@ function Workspace({ params }: { params: URLSearchParams }) {
           {current && <button onClick={() => void remove()} title="Delete this saved layout" aria-label="Delete this saved layout" className="rounded p-1 text-fg-muted hover:text-down"><Trash2 size={12} /></button>}
           <button onClick={() => setHelp((h) => !h)} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" className="rounded p-1 text-fg-muted hover:text-fg"><HelpCircle size={14} /></button>
         </div>
-        {message && <span role="status" className="w-full text-[11px] text-fg-muted">{message}</span>}
+        {message && <span role="status" className="w-full text-xs text-fg-muted">{message}</span>}
       </div>
       {help && (
         <div role="dialog" aria-label="Keyboard shortcuts" className="absolute right-3 top-14 z-50 w-80 rounded-md border border-border bg-panel p-3 text-xs shadow-lg">
@@ -272,10 +272,10 @@ function WorkspaceCell({ index, cell, active, compact, height, maximized, link, 
   return (
     <section aria-label={`Chart ${index + 1}: ${c.symbol} ${c.timeframe}`} onPointerDownCapture={onFocus}
              className={`min-w-0 rounded-md border p-1 ${active ? "border-brand/60" : "border-border"}`}>
-      <div className="mb-1 flex items-center gap-1 text-[11px]">
+      <div className="mb-1 flex items-center gap-1 text-xs">
         <button onClick={() => onGroup(nextGroup(c.group))} title="Link group: none → A → B → C → D (Alt+G)"
                 aria-label={`Link group ${c.group ?? "none"}`}
-                className="h-5 w-5 rounded border border-border text-[10px] font-bold"
+                className="h-5 w-5 rounded border border-border text-xs font-bold"
                 style={c.group ? { color: GROUP_COLORS[c.group], borderColor: GROUP_COLORS[c.group] } : undefined}>{c.group ?? "–"}</button>
         <form onSubmit={(e) => { e.preventDefault(); onSymbol(draft); }} className="min-w-0">
           <input ref={symbolBox} value={draft} onChange={(e) => setDraft(e.target.value.toUpperCase())} onBlur={() => setDraft(c.symbol)}

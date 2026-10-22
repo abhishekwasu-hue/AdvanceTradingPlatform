@@ -8,6 +8,7 @@ import { useSetup } from "../setup/useSetup";
 import { BrokerGateView, CONNECT_BROKER_PATH, SIGN_IN_PATH, useBrokerLogin } from "../ui/BrokerGate";
 import { useBrokerSession, type BrokerGateState } from "../ui/brokerSession";
 import { useFeatures } from "../ui/useFeatures";
+import { useBigText } from "../theme";
 import { ActiveSignalsV2, OpenPositionsV2, TodaySummaryV2, type Rows } from "./BlocksV2";
 import MarketStripV2 from "./MarketStripV2";
 import {
@@ -61,6 +62,7 @@ function rowsOf<T, R>(l: Loadable<T>, map: (data: T) => { rows: R[]; total: numb
 }
 
 export default function DashboardV2(_props: PageProps = {}) {
+  const big = useBigText();
   const { user, loading } = useAuth();
   const features = useFeatures();
   const navigate = useNavigate();
@@ -108,12 +110,13 @@ export default function DashboardV2(_props: PageProps = {}) {
           <GetStartedCardV2 primaryNext={false} />
           <MarketStripV2 strip={data.strip} oi={oiLines(dataOf(data.oi))} marketText={strip ? marketLabel(strip.market, now) : null}
             broker={brokerChip(broker, brokerRows)} pnl={todayPnl(exposure)} nowMs={now} />
-          <div className="grid grid-cols-1 gap-space-4 lg:grid-cols-3 lg:items-start lg:gap-space-6">
-            <div className="min-w-0 space-y-space-4 lg:col-span-2 lg:space-y-space-6">
+          {/* Item 1: at the Large / Extra large text sizes the two columns start only on a wider screen (2xl). */}
+          <div className={`grid grid-cols-1 gap-space-4 ${big ? "2xl:grid-cols-3 2xl:items-start 2xl:gap-space-6" : "lg:grid-cols-3 lg:items-start lg:gap-space-6"}`}>
+            <div className={`min-w-0 space-y-space-4 ${big ? "2xl:col-span-2 2xl:space-y-space-6" : "lg:col-span-2 lg:space-y-space-6"}`}>
               <NeedsAttentionV2 rows={attention} loginBroker={broker.kind === "login-needed" ? broker.broker : null} login={login} />
               <OpenPositionsV2 data={positions} />
             </div>
-            <div className="min-w-0 space-y-space-4 lg:space-y-space-6">
+            <div className={`min-w-0 space-y-space-4 ${big ? "2xl:space-y-space-6" : "lg:space-y-space-6"}`}>
               <ActiveSignalsV2 data={signalRows} />
               <TodaySummaryV2 tiles={todayTiles(exposure, dataOf(data.summary), dataOf(data.risk), signals)} loading={tilesLoading} />
             </div>

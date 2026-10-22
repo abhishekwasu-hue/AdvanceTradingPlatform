@@ -78,12 +78,12 @@
 
 /* U5 shape and rhythm (screener design; other pages adopt them as they are migrated):
    radii - 6 px for controls, 10 px for panels, nothing else; spacing on a 4-pt grid (panel padding 16, row 36,
-   funnel stage 44); type 12 / 13 / 15 / 18 / 24 / 32 at weights 400 / 500 / 600, numbers in tabular figures. */
+   funnel stage 44); type at weights 400 / 500 / 600, numbers in tabular figures (sizes: tailwind.config.js, in rem). */
 :root {
   --radius-control: 6px;
   --radius-panel: 10px;
-  --row-h: 36px;
-  --stage-h: 44px;
+  --row-h: 2.5rem;            /* item 1: rem, so rows grow with the text size (40 px at Normal) */
+  --stage-h: 2.75rem;
 }
 
 /* UI2-0 (UI v2 proposal §8): the v2 additions. Nothing above changes value; v2 screens use these with the tokens above.
@@ -100,15 +100,15 @@
   --warn-tint: 41 30 10;
   --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
   --radius-pill: 999px;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
   --dur-fast: 120ms;
   --dur-base: 200ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
@@ -125,6 +125,14 @@
 @media (prefers-reduced-motion: reduce) {
   :root { --dur-fast: 0ms; --dur-base: 0ms; }
 }
+
+/* Handover item 1: the Appearance "Text size" (Normal / Large / Extra large), stored per user on the server and set
+   as `data-text-size` on <html> (src/theme.ts, public/theme-init.js). One root scale: every Tailwind size and every
+   space token is in rem, so text, spacing and tap targets move together. 100% keeps the browser's own base size. */
+:root { --text-scale: 1; }
+:root[data-text-size="large"] { --text-scale: 1.125; }
+:root[data-text-size="xlarge"] { --text-scale: 1.25; }
+html { font-size: calc(100% * var(--text-scale)); }
 
 /* UI2-4b1 (Charts page plan, owner's chart theme switch): the chart tokens. A chart follows the app theme by default;
    the trader may pick Light or Dark for charts alone, set as `data-chart-theme` on the chart's root, so the scoped

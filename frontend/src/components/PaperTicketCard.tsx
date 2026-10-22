@@ -72,8 +72,8 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
             {status.lockout?.reason}. {lock}
           </p>
         )}
-        {pendingLine(status) && <p className="text-[11px] text-fg-muted" data-testid="risk-pending">{pendingLine(status)}</p>}
-        <p className="text-[11px] text-fg-muted">{status.exits}</p>
+        {pendingLine(status) && <p className="text-xs text-fg-muted" data-testid="risk-pending">{pendingLine(status)}</p>}
+        <p className="text-xs text-fg-muted">{status.exits}</p>
 
         {canTrade && (
           <>
@@ -135,7 +135,7 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
                 <svg viewBox="0 0 100 56" className="h-16 w-28" role="img" aria-label={`Risk gauge: ${g.label}`} data-testid="risk-gauge">
                   <path d={g.track} className="stroke-surface-2" strokeWidth={8} fill="none" />
                   {g.path && <path d={g.path} className={TONE[g.tone]} strokeWidth={8} fill="none" strokeLinecap="round" />}
-                  <text x={50} y={52} textAnchor="middle" className="fill-fg text-[9px]">{g.label}</text>
+                  <text x={50} y={52} textAnchor="middle" className="fill-fg text-xs">{g.label}</text>
                 </svg>
               )}
               <div className="text-xs text-fg-muted">
@@ -150,7 +150,7 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
                   {costRows(view.costs).map((r) => <span key={r.label}>{r.label} <span className="text-fg">{r.value}</span></span>)}
                 </div>
                 <div className="text-fg">Costs {money(view.costs.total)} (at the stop {money(view.costs.at_stop_total)}) · break-even move {view.costs.break_even_move ?? "-"} ({view.costs.break_even_pct ?? "-"}%)</div>
-                <p className="text-[11px] text-fg-muted">{view.costs.basis}</p>
+                <p className="text-xs text-fg-muted">{view.costs.basis}</p>
               </div>
             )}
             {[...view.errors, ...view.refusals].map((r) => <p key={r} className="text-xs text-down">{r}</p>)}

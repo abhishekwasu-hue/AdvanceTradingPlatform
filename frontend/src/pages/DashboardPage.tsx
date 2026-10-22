@@ -70,9 +70,9 @@ function KpiTile({ icon: Icon, tone, label, value, sub, onClick }: { icon: Lucid
       className={`group relative overflow-hidden rounded-xl border ${t.ring} bg-surface-1 text-left p-4 shadow-card transition-colors ${onClick ? "hover:bg-surface-2" : "cursor-default"}`}>
       <div className="relative flex items-start justify-between gap-2">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{label}</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-fg-muted">{label}</div>
           <div className={`font-tabular mt-1.5 text-2xl font-extrabold leading-none ${t.text}`}>{value}</div>
-          {sub && <div className="mt-1.5 text-[11px] text-fg-muted">{sub}</div>}
+          {sub && <div className="mt-1.5 text-xs text-fg-muted">{sub}</div>}
         </div>
         <div className={`shrink-0 rounded-xl ${t.bg} ${t.icon} p-2.5`}><Icon size={18} /></div>
       </div>
@@ -106,7 +106,7 @@ function Ring({ segments, size = 128, label, sub }: { segments: { value: number;
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <div className={`font-tabular font-extrabold text-fg ${String(label).length > 4 ? "text-sm" : "text-xl"}`}>{label}</div>
-        {sub && <div className="text-[10px] uppercase tracking-wider text-fg-muted">{sub}</div>}
+        {sub && <div className="text-xs uppercase tracking-wider text-fg-muted">{sub}</div>}
       </div>
     </div>
   );
@@ -126,7 +126,7 @@ function Bars({ rows, valueLabel, signed = false }: { rows: { key: string; value
               <div className={`h-2.5 rounded-full ${TONE[tone].bar} transition-all`} style={{ width: `${Math.max(3, (Math.abs(r.value) / max) * 100)}%` }} />
             </div>
             <div className={`w-24 shrink-0 text-right font-tabular font-semibold ${signed ? signClass(r.value, 0) : TONE[tone].text}`}>{valueLabel(r.value)}</div>
-            {r.hint && <div className="w-14 shrink-0 text-right text-[10px] text-fg-muted">{r.hint}</div>}
+            {r.hint && <div className="w-14 shrink-0 text-right text-xs text-fg-muted">{r.hint}</div>}
           </div>
         );
       })}
@@ -296,12 +296,12 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                     <span className={`rounded-md px-1.5 py-0.5 font-bold ${d.mode === "LIVE" ? "bg-warn/15 text-warn" : "border border-border text-fg-muted"}`}>{d.mode}</span>
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold text-fg">{d.strategy_id} <span className="text-fg-muted">on</span> {d.symbol}</div>
-                      <div className="truncate text-[10px] text-fg-muted">{d.timeframe} · {d.broker_name ?? "paper"} · {d.open_positions} open{d.last_error ? ` · ${d.last_error}` : ""}</div>
+                      <div className="truncate text-xs text-fg-muted">{d.timeframe} · {d.broker_name ?? "paper"} · {d.open_positions} open{d.last_error ? ` · ${d.last_error}` : ""}</div>
                     </div>
                     <span className={`h-2 w-2 rounded-full ${TONE[STATUS_TONE[d.status] ?? "sky"].bar}`} title={d.status} />
                   </li>
                 ))}
-                {deployments.length > 6 && onNavigate && <button onClick={() => onNavigate("deployments")} className="text-[11px] text-brand hover:underline">+{deployments.length - 6} more</button>}
+                {deployments.length > 6 && onNavigate && <button onClick={() => onNavigate("deployments")} className="text-xs text-brand hover:underline">+{deployments.length - 6} more</button>}
               </ul>
             )}
           </Card>
@@ -318,10 +318,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                       <span className={`rounded-md px-1.5 py-0.5 font-bold ${p.direction === "LONG" ? "bg-up/20 text-up" : "bg-down/20 text-down"}`}>{p.direction === "LONG" ? "L" : "S"}</span>
                       <span className="min-w-0 flex-1 truncate font-semibold text-fg">{p.symbol}</span>
                       <span className="font-tabular text-fg-muted">{p.quantity} @ {p.entry_price.toLocaleString("en-IN")}</span>
-                      <span className={`rounded px-1 text-[10px] ${p.mode === "LIVE" ? "font-semibold text-warn" : "text-fg-muted"}`}>{p.mode}</span>
+                      <span className={`rounded px-1 text-xs ${p.mode === "LIVE" ? "font-semibold text-warn" : "text-fg-muted"}`}>{p.mode}</span>
                     </li>
                   ))}
-                  {positions.length > 5 && onNavigate && <button onClick={() => onNavigate("positions")} className="text-[11px] text-brand hover:underline">+{positions.length - 5} more</button>}
+                  {positions.length > 5 && onNavigate && <button onClick={() => onNavigate("positions")} className="text-xs text-brand hover:underline">+{positions.length - 5} more</button>}
                 </ul>
               )}
             </Card>
@@ -335,11 +335,11 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                       <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${TONE[SEVERITY[a.severity] ?? "sky"].bar}`} />
                       <div className="min-w-0 flex-1">
                         <div className={`truncate ${a.read ? "text-fg-muted" : "font-semibold text-fg"}`}>{a.title}</div>
-                        <div className="text-[10px] text-fg-muted">{a.event_type} · {ago(a.created_at)}</div>
+                        <div className="text-xs text-fg-muted">{a.event_type} · {ago(a.created_at)}</div>
                       </div>
                     </li>
                   ))}
-                  {onNavigate && <button onClick={() => onNavigate("notifications")} className="flex items-center gap-1 text-[11px] text-brand hover:underline"><Bell size={11} /> All notifications</button>}
+                  {onNavigate && <button onClick={() => onNavigate("notifications")} className="flex items-center gap-1 text-xs text-brand hover:underline"><Bell size={11} /> All notifications</button>}
                 </ul>
               )}
             </Card>

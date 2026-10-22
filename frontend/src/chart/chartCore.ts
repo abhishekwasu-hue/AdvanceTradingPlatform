@@ -15,6 +15,7 @@ import {
 import { chartView, formatTick } from "../charting/chartTypes";
 import { LightweightEngine, type LineSeriesLike } from "../charting/lightweight";
 import { DEFAULT_SETTINGS, closes, ema, rsi, sma, vwap, type Series } from "../utils/indicators";
+import { chartFontSize } from "../theme";
 import { applyChartTheme, candleOptions, chartThemeOptions, type ChartPalette } from "./chartTheme";
 import { DAILY_OR_LONGER, type ChartBar, type TimeframeId } from "./timeframes";
 
@@ -127,7 +128,7 @@ export class ChartCore {
       ...theme,
       autoSize: true,
       // The TradingView attribution logo stays (the library's licence asks for it once per chart).
-      layout: { ...theme.layout, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, attributionLogo: true },
+      layout: { ...theme.layout, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: chartFontSize(), attributionLogo: true },
       rightPriceScale: { ...theme.rightPriceScale, minimumWidth: 72 },
       timeScale: { ...theme.timeScale, timeVisible: !daily, secondsVisible: false, rightOffset: 4,
                    tickMarkFormatter: (t: Time, type: number) => formatTick(t as number, type, opts.zone) },
@@ -249,9 +250,11 @@ export class ChartCore {
     this.render();
   }
 
-  /** The chart theme or the grid changed: options in place, no rebuild (the visible range is never touched). */
+  /** The chart theme, the grid or the text size changed: options in place, no rebuild (the visible range is never
+   * touched). */
   applyTheme(palette: ChartPalette, grid: boolean): void {
     this.opts = { ...this.opts, palette, grid };
+    this.chart.applyOptions({ layout: { fontSize: chartFontSize() } });
     applyChartTheme(this.chart, { candles: this.candles, bars: this.bars, line: this.line, rsi: this.rsi ?? undefined,
                                   rsiBands: this.rsiBands, overlays: this.overlays }, palette, grid, this.candlesHidden());
     this.engine.setDefaultDrawingColor(palette.drawing);

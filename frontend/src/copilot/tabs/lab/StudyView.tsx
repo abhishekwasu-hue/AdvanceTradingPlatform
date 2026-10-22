@@ -18,14 +18,14 @@ export default function StudyView({ s, source }: { s: MarketStudy; source: strin
   return (
     <div className="grid gap-4 lg:grid-cols-3" data-testid="lab-study">
       <TiltCard>
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{t("lab.study.title", { symbol: s.symbol })}</div>
+        <div className="text-xs font-semibold uppercase tracking-wider text-fg-muted">{t("lab.study.title", { symbol: s.symbol })}</div>
         <div className="mt-1 flex items-baseline justify-between gap-2">
           <div className="font-tabular text-2xl font-bold text-fg">{num(s.last_price)}{sample && <Badge tone="warn" className="ml-2 align-middle">{t("lab.study.samplePrice")}</Badge>}</div>
           <div className={`text-right text-sm font-semibold ${biasTone}`}>{t("lab.study.reads", { bias: t(`thesis.dir.${s.bias}`) })}</div>
         </div>
-        {s.confidence != null && <div className="text-[11px] text-fg-muted">{t("lab.study.score", { score: s.confidence })}</div>}
+        {s.confidence != null && <div className="text-xs text-fg-muted">{t("lab.study.score", { score: s.confidence })}</div>}
         <div className="my-3">
-          <div className="mb-1 flex justify-between text-[11px] text-fg-muted"><span>{t("thesis.dir.BEARISH")}</span><span>{t("thesis.dir.NEUTRAL")}</span><span>{t("thesis.dir.BULLISH")}</span></div>
+          <div className="mb-1 flex justify-between text-xs text-fg-muted"><span>{t("thesis.dir.BEARISH")}</span><span>{t("thesis.dir.NEUTRAL")}</span><span>{t("thesis.dir.BULLISH")}</span></div>
           <div className="relative h-2 rounded-full" style={{ background: "linear-gradient(90deg, rgb(var(--down) / 0.6), rgb(var(--surface-3)), rgb(var(--up) / 0.6))" }}>
             <div className="absolute -top-1 h-4 w-1.5 rounded bg-fg shadow" style={{ left: `calc(${Math.min(98, Math.max(1, pct))}% - 3px)` }} />
           </div>
@@ -35,7 +35,7 @@ export default function StudyView({ s, source }: { s: MarketStudy; source: strin
       </TiltCard>
 
       <TiltCard>
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{t("lab.study.byTf")}</div>
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">{t("lab.study.byTf")}</div>
         <table className="w-full text-xs">
           <thead><tr className="text-left text-fg-muted"><th className="py-1 font-normal">TF</th><th className="font-normal">{t("lab.study.trend")}</th><th className="text-right font-normal">RSI</th><th className="text-right font-normal">ADX</th></tr></thead>
           <tbody>
@@ -50,7 +50,7 @@ export default function StudyView({ s, source }: { s: MarketStudy; source: strin
           </tbody>
         </table>
         <div className="mt-3 space-y-1.5">
-          {s.detail_shown === false && <p className="text-[11px] text-fg-muted">{t("thesis.noScenarios")}</p>}
+          {s.detail_shown === false && <p className="text-xs text-fg-muted">{t("thesis.noScenarios")}</p>}
           {s.scenarios.map((sc) => (
             <div key={sc.id} className={`rounded-lg border px-2 py-1.5 text-xs text-fg ${sc.id === "bull" ? "border-up/30" : sc.id === "bear" ? "border-down/30" : "border-border"}`}>{sc.text}</div>
           ))}
@@ -58,7 +58,7 @@ export default function StudyView({ s, source }: { s: MarketStudy; source: strin
       </TiltCard>
 
       <TiltCard>
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{t("lab.study.levels")}</div>
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">{t("lab.study.levels")}</div>
         <div className="space-y-0.5 text-xs">
           {rows.map((r) => (
             <div key={r.key + r.price} className={`flex items-center justify-between rounded px-2 py-0.5 ${r.key === "_last" ? "bg-ai/15 font-semibold text-fg" : "text-fg-muted"}`}>

@@ -40,7 +40,7 @@ export default function BillingCard() {
       {sub && (
         <div className="flex flex-wrap items-center gap-3 text-sm mb-3">
           <span className="inline-flex items-center gap-1.5 rounded-md border border-brand/40 bg-brand/10 px-2 py-0.5 font-bold text-brand"><CreditCard size={13} /> {sub.plan_name}</span>
-          <span className={`rounded-md border px-2 py-0.5 text-[11px] font-bold ${sub.status === "ACTIVE" || sub.status === "TRIALING" ? "border-up/40 text-up" : sub.status === "PAST_DUE" ? "border-warn/40 text-warn" : "border-border text-fg-muted"}`}>{sub.status}</span>
+          <span className={`rounded-md border px-2 py-0.5 text-xs font-bold ${sub.status === "ACTIVE" || sub.status === "TRIALING" ? "border-up/40 text-up" : sub.status === "PAST_DUE" ? "border-warn/40 text-warn" : "border-border text-fg-muted"}`}>{sub.status}</span>
           {sub.billing_cycle && <span className="text-fg-muted text-xs">{sub.billing_cycle.toLowerCase()} · {inr(sub.billing_cycle === "YEARLY" ? sub.price_yearly : sub.price_monthly, sub.currency)}</span>}
           {sub.current_period_end && <span className="text-fg-muted text-xs">period ends {new Date(sub.current_period_end).toLocaleDateString()}</span>}
           {sub.trial_end && sub.status === "TRIALING" && <span className="text-warn text-xs">trial ends {new Date(sub.trial_end).toLocaleDateString()}</span>}
@@ -64,8 +64,8 @@ export default function BillingCard() {
                 <div className="font-bold text-sm">{p.name}</div>
                 <div className="text-xs text-fg-muted">{inr(cycle === "YEARLY" ? p.price_yearly : p.price_monthly, p.currency)}{p.price_monthly > 0 && <span>/{cycle === "YEARLY" ? "yr" : "mo"}</span>}</div>
               </div>
-              <div className="text-[11px] text-fg-muted">{p.description}</div>
-              <ul className="text-[11px] text-fg-muted space-y-0.5">
+              <div className="text-xs text-fg-muted">{p.description}</div>
+              <ul className="text-xs text-fg-muted space-y-0.5">
                 <li>{String(p.active_deployments ?? "-")} active deployments · {String(p.live_strategies ?? "-")} LIVE</li>
                 <li>{String(p.custom_strategies ?? "-")} custom strategies · {String(p.backtests_per_month ?? "-")} backtests/mo</li>
                 <li>{String(p.accounts ?? "-")} broker accounts · API {String(p.api_calls_per_day ?? 0) === "0" ? "no" : `${String(p.api_calls_per_day)}/day`}</li>
@@ -76,7 +76,7 @@ export default function BillingCard() {
               {isOwner && !current && p.price_monthly > 0 && (
                 <button disabled={busy} onClick={() => run(`Switched to ${p.name} (${cycle.toLowerCase()}). An invoice is raised when the trial ends.`, () => api.billingSubscribe(p.id, cycle))} className="mt-1 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Choose {p.name}</button>
               )}
-              {current && <div className="text-[11px] text-brand font-bold">current plan</div>}
+              {current && <div className="text-xs text-brand font-bold">current plan</div>}
             </div>
           );
         })}
@@ -100,14 +100,14 @@ export default function BillingCard() {
 
       {Object.keys(usage).length > 0 && (
         <div className="mt-3 text-xs">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-1">Metered usage, last 30 days</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-1">Metered usage, last 30 days</div>
           <div className="flex flex-wrap gap-3">{Object.entries(usage).map(([k, v]) => <span key={k} className="rounded border border-border px-2 py-0.5">{k.replace(/_/g, " ")}: <b>{v}</b></span>)}</div>
         </div>
       )}
 
       {txns.length > 0 && (
         <div className="mt-3">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-1"><Receipt size={12} /> Invoices & payments</div>
+          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-fg-muted mb-1"><Receipt size={12} /> Invoices & payments</div>
           <table className="w-full text-xs"><tbody>
             {txns.slice(0, 8).map((t) => (
               <tr key={t.id} className="border-t border-border/60">

@@ -476,7 +476,7 @@ export default function FundamentalsPage() {
               )}
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <button onClick={handleRefresh} disabled={!user || refreshBusy} title={user ? undefined : "Log in to refresh"} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1.5 text-xs disabled:opacity-50">{refreshBusy ? "Refreshing…" : "Refresh from NSE"}</button>
-                <span className="text-[11px] text-fg-muted">Pulls the profile, latest shareholding pattern and recent announcements; financial statements are not published as JSON by NSE, import them on the Financials tab.</span>
+                <span className="text-xs text-fg-muted">Pulls the profile, latest shareholding pattern and recent announcements; financial statements are not published as JSON by NSE, import them on the Financials tab.</span>
               </div>
               {refreshResult && (
                 <div className="mt-2 text-xs text-fg-muted">
@@ -495,7 +495,7 @@ export default function FundamentalsPage() {
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
-                      <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
+                      <thead className="text-fg-muted uppercase text-xs"><tr className="text-left">
                         <th className="py-1 pr-3">Period</th><th className="py-1 pr-3">Revenue</th><th className="py-1 pr-3">EBITDA</th>
                         <th className="py-1 pr-3">PAT</th><th className="py-1 pr-3">EPS</th><th className="py-1 pr-3">CFO</th>
                       </tr></thead>
@@ -614,7 +614,7 @@ export default function FundamentalsPage() {
               {quarterly && (
                 <Card title={`Quarterly Comparison — ${quarterly.period_label} (${quarterly.overall_quality})`}>
                   <table className="w-full text-xs">
-                    <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
+                    <thead className="text-fg-muted uppercase text-xs"><tr className="text-left">
                       <th className="py-1 pr-3">Metric</th><th className="py-1 pr-3">Current</th><th className="py-1 pr-3">QoQ %</th><th className="py-1 pr-3">YoY %</th><th className="py-1 pr-3"></th>
                     </tr></thead>
                     <tbody>
@@ -657,7 +657,7 @@ export default function FundamentalsPage() {
               {scenario && (
                 <Card title="Bull / Base / Bear (next period)">
                   <table className="w-full text-xs">
-                    <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
+                    <thead className="text-fg-muted uppercase text-xs"><tr className="text-left">
                       <th className="py-1 pr-3">Scenario</th><th className="py-1 pr-3">Revenue</th><th className="py-1 pr-3">EBITDA</th><th className="py-1 pr-3">PAT</th><th className="py-1 pr-3">EPS</th>
                     </tr></thead>
                     <tbody>
@@ -782,7 +782,7 @@ export default function FundamentalsPage() {
               {score && (
                 <Card title={`Fundamental Score: ${score.score} (${score.grade})`}>
                   <table className="w-full text-xs">
-                    <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
+                    <thead className="text-fg-muted uppercase text-xs"><tr className="text-left">
                       <th className="py-1 pr-3">Component</th><th className="py-1 pr-3">Weight</th><th className="py-1 pr-3">Score</th><th className="py-1 pr-3">Contribution</th><th className="py-1 pr-3">Note</th>
                     </tr></thead>
                     <tbody>
@@ -861,7 +861,7 @@ export default function FundamentalsPage() {
 
               <Card title="Sector Rotation (from companies tracked in this platform)">
                 <table className="w-full text-xs">
-                  <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
+                  <thead className="text-fg-muted uppercase text-xs"><tr className="text-left">
                     <th className="py-1 pr-3">Sector</th><th className="py-1 pr-3">Companies</th><th className="py-1 pr-3">Avg 3Y Revenue CAGR</th><th className="py-1 pr-3">Avg ROCE</th>
                   </tr></thead>
                   <tbody>
@@ -886,7 +886,7 @@ export default function FundamentalsPage() {
                   <div className="text-sm text-fg-muted py-2">No events entered yet — add one below.</div>
                 ) : (
                   <table className="w-full text-xs">
-                    <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
+                    <thead className="text-fg-muted uppercase text-xs"><tr className="text-left">
                       <th className="py-1 pr-3">Type</th><th className="py-1 pr-3">Date</th><th className="py-1 pr-3">Description</th>
                     </tr></thead>
                     <tbody>
@@ -982,7 +982,7 @@ export default function FundamentalsPage() {
                 <div className="text-sm text-fg-muted py-2">No peer companies with financial data in this sector yet.</div>
               ) : (
                 <table className="w-full text-xs">
-                  <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
+                  <thead className="text-fg-muted uppercase text-xs"><tr className="text-left">
                     <th className="py-1 pr-3">Symbol</th><th className="py-1 pr-3">Name</th><th className="py-1 pr-3">Revenue YoY</th>
                     <th className="py-1 pr-3">EBITDA Margin</th><th className="py-1 pr-3">ROE</th><th className="py-1 pr-3">ROCE</th><th className="py-1 pr-3">D/E</th>
                   </tr></thead>
@@ -1022,7 +1022,7 @@ export default function FundamentalsPage() {
                 {sectorSpecificResult && (
                   <div className="mb-3">
                     <table className="w-full text-xs">
-                      <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
+                      <thead className="text-fg-muted uppercase text-xs"><tr className="text-left">
                         <th className="py-1 pr-3">Metric</th><th className="py-1 pr-3">Value</th><th className="py-1 pr-3">Classification</th>
                       </tr></thead>
                       <tbody>
@@ -1044,7 +1044,7 @@ export default function FundamentalsPage() {
                   <div className="text-sm text-fg-muted py-2">None entered yet — add one below.</div>
                 ) : (
                   <table className="w-full text-xs mb-3">
-                    <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
+                    <thead className="text-fg-muted uppercase text-xs"><tr className="text-left">
                       <th className="py-1 pr-3">Period</th><th className="py-1 pr-3">Metric Code</th><th className="py-1 pr-3">Value</th>
                     </tr></thead>
                     <tbody>

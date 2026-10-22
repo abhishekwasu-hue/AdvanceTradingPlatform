@@ -24,6 +24,7 @@ from app.execution.contract_execution import ContractExecutionError, build_order
 from app.execution.prechecks import PreCheckRefusal, live_margin_cap, margin_probe_for, validate_instrument
 from app.core.enums import OrderSide, SignalDirection
 from app.instruments.contracts import ContractRules, ResolvedContract
+from app.instruments.models import ContractSpec
 from app.reconciliation.service import broker_uncertain_reason, mark_broker_uncertain
 from app.plans.limits import live_allowed, tenant_is_active
 from app.platform.controls import entry_blocks as platform_entry_blocks
@@ -87,6 +88,7 @@ async def execute_signal_for_user(
     journal_source: Optional[str] = None,
     origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: Optional[int] = None,
     max_quantity: Optional[float] = None, risk_cap_amount: Optional[float] = None, exchange: Optional[str] = None,
+    manual_contract_spec: Optional[ContractSpec] = None, manual_contract_meta: Optional[dict] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -109,6 +111,11 @@ async def execute_signal_for_user(
     entry it is the order's exchange when it is another session family than NSE (a currency deployment orders on CDS);
     an NSE / BSE / NFO name keeps the NSE default. The position records the order's exchange, so its exits follow that
     venue's clock.
+
+    FNO-1: `manual_contract_spec` / `manual_contract_meta` are a manual order on a contract the user picked himself (the
+    option chain's order ticket, app/paper/fno_ticket.py): the signal is already on the contract (its premium levels),
+    the spec carries the instrument master's lot and tick size, and the meta is stored on the position (kind, exchange,
+    expiry, lot size). No underlying levels are stored, so the position exits on its own premium stop or by hand.
     """
     ticket_quantity = max_quantity
     # Phase F3: when the deployment trades a derived contract, the order goes on the contract
@@ -118,7 +125,7 @@ async def execute_signal_for_user(
     underlying_signal = signal
     plan = None
     plan_error: Optional[str] = None
-    contract_spec = None
+    contract_spec = manual_contract_spec
     max_quantity = ticket_quantity
     if contract is not None:
         price_source = quote_broker or broker
@@ -179,6 +186,13 @@ async def execute_signal_for_user(
             # from the instrument master / registry / its shape - a future, an MCX commodity or a sold option is gated too.
             from app.paper import experience
             kill_switch_reasons.extend(await experience.symbol_entry_refusals(session, user, signal.symbol, signal.direction))
+            if manual_contract_meta and manual_contract_meta.get("underlying_symbol"):
+                # FNO-1: a manual order on a contract - the F&O ban period applies as to a resolved one (D7).
+                ban, ban_note = await fo_limits.entry_refusal(session, str(manual_contract_meta["underlying_symbol"]), signal.timestamp)
+                if ban:
+                    kill_switch_reasons.append(ban)
+                elif ban_note:
+                    fo_notes.append(ban_note)
         if kill_switch_reasons:
             order.reasons_json = json.dumps(kill_switch_reasons)
             order = await transition_order(
@@ -426,7 +440,7 @@ async def execute_signal_for_user(
         if result.trade is not None:
             # BK2-8: the position carries the exchange its order went to (a contract plan names its own), so its exits
             # follow that venue's session - never the NSE default a row without an exchange used to fall back to.
-            trade_meta = {"exchange": order_exchange, **(plan.meta if plan is not None else {})}
+            trade_meta = {"exchange": order_exchange, **(plan.meta if plan is not None else {}), **(manual_contract_meta or {})}
             if not trade_meta.get("exchange"):
                 trade_meta["exchange"] = order_exchange
             trade_record = await persist_trade(

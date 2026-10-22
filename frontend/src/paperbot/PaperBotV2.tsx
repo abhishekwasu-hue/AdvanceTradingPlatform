@@ -451,7 +451,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
         </div>
         <div className="space-y-space-2">
           <p className="text-t14 text-fg-muted">{startSummary(symbol, info, request)}</p>
-          {request !== base && <p className="text-t13 text-fg-muted" data-idea-lots>The size comes from your idea.</p>}
+          {withLots !== built && <p className="text-t13 text-fg-muted" data-idea-lots>The size comes from your idea.</p>}
           {offered.length > 0 && (
             <div className="space-y-space-1 rounded-control border border-subtle p-space-3" data-defaults>
               <label className="flex min-h-11 cursor-pointer items-center gap-space-2 text-t14 font-medium text-fg md:min-h-0">

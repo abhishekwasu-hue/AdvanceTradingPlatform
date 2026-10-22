@@ -8,7 +8,8 @@ caller's organisation every route below answers the platform's standard 503 with
 - `GET    /api/chart-analyze/items/{id}/image`    the stored (cleaned) image, private, never cached by a proxy
 - `POST   /api/chart-analyze/items/{id}/analyze`  runs the analysis (Image only in PR-A)
 - `GET    /api/chart-analyze/items/{id}/strikes`  the option strikes the caller's OWN deployment settings work out to
-                                                  at the setup's trigger level (flagged "from your settings"; reads only)
+                                                  at the setup's trigger level (flagged "from your settings"; reads only;
+                                                  flag chart_analyze_strikes as well)
 - `DELETE /api/chart-analyze/items/{id}`          deletes the image and the result at once
 - `GET/PUT /api/admin/chart-analyze/settings`     SUPER_ADMIN (MFA): sizes, retention, limits, cost caps
 Every item route reads the caller's own rows only (tenant AND user). Upload, link and analyze share a per-user rate
@@ -24,7 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_mfa_session, require_role
-from app.chart_analyze import FLAG, contract, imaging, limits, linkfetch, service, storage, strikes
+from app.chart_analyze import FLAG, STRIKES_FLAG, contract, imaging, limits, linkfetch, service, storage, strikes
 from app.chart_analyze import provider as engine_provider
 from app.chart_analyze import settings as settings_mod
 from app.core.rate_limit import charge_user
@@ -189,8 +190,9 @@ async def analyze(item_id: int, user: User = Depends(get_current_user), session:
 async def item_strikes(item_id: int, symbol: Optional[str] = Query(default=None, max_length=40, pattern=STRIKES_SYMBOL),
                        user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Option strikes from the caller's own settings for this analysis (`symbol` overrides the symbol read from the picture).
-    Reads only: the analysis never picks a strike, and nothing here creates or changes an order."""
+    Reads only: the analysis never picks a strike, and nothing here creates or changes an order. Needs its own flag too."""
     await _gate(session, user)
+    await require_flag(session, STRIKES_FLAG, user.tenant_id)
     row = await service.own(session, user, item_id)
     result = service.as_dict(row).get("result")
     if not isinstance(result, dict):

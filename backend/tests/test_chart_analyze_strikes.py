@@ -7,13 +7,33 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from app.chart_analyze import contract, signal_language, strikes
+from app.chart_analyze import STRIKES_FLAG, contract, signal_language, strikes
 from app.db.models import InstrumentRecord, StrategyDeploymentRecord
+from app.platform import controls
 from tests.chart_analyze_fakes import answer
 from tests.test_auth_api import _session_factory, client
 from tests.test_chart_analyze_api import BASE, _fake_answer, _isolated, _owner, _run, _upload  # noqa: F401 - _isolated is the autouse fixture
 
 LADDER = [float(k) for k in range(100, 145, 5)]          # 100, 105, ..., 140
+
+
+def _strikes_flag(tenant_id: int) -> None:
+    async def go():
+        async with _session_factory() as session:
+            current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
+            flags = dict(current.get("flags") or {})
+            entry = flags.get(STRIKES_FLAG) or {"on": False, "tenants": []}
+            flags[STRIKES_FLAG] = {"on": False, "tenants": sorted(set(entry.get("tenants") or []) | {tenant_id})}
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
+            await session.commit()
+    _run(go())
+
+
+def _sowner(tag: str) -> dict:
+    """A member of an organisation with chart_analyze AND chart_analyze_strikes on (the beta allow-lists)."""
+    who = _owner(tag)
+    _strikes_flag(who["tenant_id"])
+    return who
 
 
 def _underlying() -> str:
@@ -71,7 +91,7 @@ def _texts(value) -> list[str]:
 # --- option strikes from your settings ----------------------------------------------------------------------------------
 
 def test_a_bull_put_spread_setting_works_out_its_main_strike_and_wing_at_the_trigger(monkeypatch):
-    who = _owner("strikes")
+    who = _sowner("strikes")
     sym = _underlying()
     _ladder(sym, datetime.now(strikes.IST).date() + timedelta(days=3))
     _deployment(who["tenant_id"], sym)                                     # OTM 1, wing 2 strikes away
@@ -88,7 +108,7 @@ def test_a_bull_put_spread_setting_works_out_its_main_strike_and_wing_at_the_tri
 
 
 def test_only_option_deployments_on_the_same_symbol_that_fit_the_side_are_listed(monkeypatch):
-    who = _owner("strikes-fit")
+    who = _sowner("strikes-fit")
     sym = _underlying()
     _ladder(sym, datetime.now(strikes.IST).date() + timedelta(days=3))
     single = _deployment(who["tenant_id"], sym, strategy="SINGLE", rule="ATM", offset=0, position="BUY")
@@ -97,7 +117,7 @@ def test_only_option_deployments_on_the_same_symbol_that_fit_the_side_are_listed
     _deployment(who["tenant_id"], sym, status="STOPPED")                         # stopped: not listed
     _deployment(who["tenant_id"], sym, kind="UNDERLYING")                        # no options
     _deployment(who["tenant_id"], _underlying())                                 # another symbol
-    other = _owner("strikes-other")
+    other = _sowner("strikes-other")
     _deployment(other["tenant_id"], sym)                                         # another organisation's
     body = _strikes(who, _analysed(who, monkeypatch), sym).json()
     assert [i["id"] for i in body["items"]] == [single]
@@ -106,7 +126,7 @@ def test_only_option_deployments_on_the_same_symbol_that_fit_the_side_are_listed
 
 
 def test_the_empty_states_say_why(monkeypatch):
-    who = _owner("strikes-empty")
+    who = _sowner("strikes-empty")
     sym = _underlying()
     item_id = _analysed(who, monkeypatch)
     assert _strikes(who, item_id, sym).json()["message"] == strikes.NONE_FIT
@@ -119,28 +139,33 @@ def test_the_empty_states_say_why(monkeypatch):
 
 
 def test_the_symbol_read_from_the_picture_is_used_when_none_is_typed(monkeypatch):
-    who = _owner("strikes-read")
+    who = _sowner("strikes-read")
     body = _strikes(who, _analysed(who, monkeypatch)).json()
     assert body["symbol"] == "DEMO" and body["message"] == strikes.NONE_FIT
 
 
 def test_not_analysed_other_users_and_bad_symbols_are_refused(monkeypatch):
-    who = _owner("strikes-refuse")
+    who = _sowner("strikes-refuse")
     item = _upload(who).json()
     assert _strikes(who, item["id"]).status_code == 409
-    other = _owner("strikes-refuse-2")
+    other = _sowner("strikes-refuse-2")
     assert _strikes(other, _analysed(who, monkeypatch)).status_code == 404
     assert _strikes(who, item["id"], "<script>").status_code == 422
 
 
-def test_strikes_route_is_behind_the_flag():
+def test_strikes_route_is_behind_both_flags(monkeypatch):
     who = _owner("strikes-off", flag=False)
     response = client.get(f"{BASE}/items/1/strikes", headers=who["headers"])
     assert response.status_code == 503 and response.headers.get("X-Feature-Disabled") == "chart_analyze"
+    # chart_analyze on, chart_analyze_strikes off: the analysis works, the strikes route does not.
+    only = _owner("strikes-sub-off")
+    item_id = _analysed(only, monkeypatch)
+    response = _strikes(only, item_id)
+    assert response.status_code == 503 and response.headers.get("X-Feature-Disabled") == STRIKES_FLAG
 
 
 def test_the_strikes_answer_uses_structure_words_only(monkeypatch):
-    who = _owner("strikes-words")
+    who = _sowner("strikes-words")
     sym = _underlying()
     _ladder(sym, datetime.now(strikes.IST).date() + timedelta(days=3))
     for strategy in ("SINGLE", "BULL_PUT_SPREAD", "CALL_RATIO_SPREAD"):

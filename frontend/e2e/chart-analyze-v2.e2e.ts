@@ -18,7 +18,7 @@ import { expectPhoneLayout } from "./phoneLayout";
 
 const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_status: "VALID", token_expires_at: null, last_verified_at: null,
   needs_login: false, oauth_supported: true, oauth_callback_url: null, login_url_supported: false, code_param: null }];
-const ON: MockOptions = { features: { ui_v2: true, chart_analyze: true }, brokers: CONNECTED };
+const ON: MockOptions = { features: { ui_v2: true, chart_analyze: true, chart_analyze_strikes: true }, brokers: CONNECTED };
 const OFF: MockOptions = { features: { ui_v2: true }, brokers: CONNECTED };
 
 // --- a drawn placeholder PNG (no real chart) ---------------------------------------------------------------------------
@@ -249,6 +249,18 @@ test.describe("Analyze a chart: the flow", () => {
     await expect(block.getByTestId("strikes-item")).toContainText("Bull put spread · main strike 1 strike out of the money");
     await expect(block.getByRole("cell", { name: "≈ 115" })).toBeVisible();
     await expect(block.getByRole("button", { name: /buy|sell|order|trade/i })).toHaveCount(0);
+  });
+
+  test("option strikes: hidden, and never asked for, while chart_analyze_strikes is off", async ({ page }) => {
+    await open(page, "/chart-analyze", "light", { ...ON, features: { ui_v2: true, chart_analyze: true } });
+    const asked: string[] = [];
+    page.on("request", (r) => { if (new URL(r.url()).pathname.endsWith("/strikes")) asked.push(r.url()); });
+    await mockChartAnalyze(page, "forming");
+    await page.goto("/chart-analyze");
+    await analyzeUpload(page);
+    await expect(page.getByTestId("analysis-result")).toBeVisible();
+    await expect(page.getByRole("region", { name: /Option strikes/ })).toHaveCount(0);
+    expect(asked).toEqual([]);
   });
 
   test("Download PDF prints the result alone: the blocks, the label and the disclaimer, without the buttons", async ({ page }) => {

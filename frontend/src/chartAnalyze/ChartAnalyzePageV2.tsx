@@ -22,6 +22,8 @@ import type { AnalysisItem, AnalyzeStatus } from "./types";
  */
 
 export const FLAG = "chart_analyze";
+/** The "Option strikes · from your settings" block has its own flag on top (owner's tenant first). */
+export const STRIKES_FLAG = "chart_analyze_strikes";
 const ACCEPT = "image/png,image/jpeg";
 const card = "rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card md:p-space-5";
 
@@ -55,6 +57,7 @@ export function firstImage(files: FileList | File[] | null | undefined): File | 
 export default function ChartAnalyzePageV2() {
   const features = useFeatures();
   const on = features.on(FLAG);
+  const strikesOn = on && features.on(STRIKES_FLAG);
   const [status, setStatus] = useState<AnalyzeStatus | null>(null);
   const [off, setOff] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -138,7 +141,7 @@ export default function ChartAnalyzePageV2() {
     }
   }, []);
 
-  const shownId = current?.result ? current.id : null;
+  const shownId = current?.result && strikesOn ? current.id : null;
   useEffect(() => {
     if (shownId == null) { strikesFor.current = null; setStrikes(null); return; }
     void loadStrikes(shownId);

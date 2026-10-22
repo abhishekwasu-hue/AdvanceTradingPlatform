@@ -26,15 +26,20 @@ export function useHubInfo(symbol: string, api: Pick<HubApi, "info"> = hubApi): 
   useEffect(() => {
     if (!key) return undefined;
     const hit = cache.get(key);
-    if (hit && Date.now() - hit.at < CACHE_MS) { setState({ key, info: hit.info }); return undefined; }
+    // Only a real change re-renders the page (no facts for this symbol is the state it starts in).
+    const show = (info: HubInfo | null) => setState((prev) => (prev.key === key && prev.info === info ? prev : { key, info }));
+    if (hit && Date.now() - hit.at < CACHE_MS) { show(hit.info); return undefined; }
     let alive = true;
     api.info(key)
       .then((info) => {
         const ok = isHubInfo(info) ? info : null;
         cache.set(key, { at: Date.now(), info: ok });
-        if (alive) setState({ key, info: ok });
+        if (alive) show(ok);
       })
-      .catch(() => { if (alive) setState({ key, info: null }); });           // no facts: no tab row (fails closed)
+      .catch(() => {                                                         // no facts: no tab row (fails closed)
+        cache.set(key, { at: Date.now(), info: null });                      // and not asked again for a few minutes
+        if (alive) show(null);
+      });
     return () => { alive = false; };
   }, [key, api]);
   return state.key === key ? state.info : (fresh ?? null);

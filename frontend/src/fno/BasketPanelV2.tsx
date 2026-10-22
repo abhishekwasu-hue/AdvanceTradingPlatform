@@ -14,7 +14,7 @@ import {
 import { basket as defaultBasket, useBasket, type BasketLeg, type BasketStore, type NewLeg } from "./basket";
 import {
   MAX_SAVED, STATUS_WORD, STRATEGIES, STRATEGY_TEXT, basketAsk, basketProblems, builderHandoff, legLabel, legsOf, loadBaskets, nameProblem,
-  newSavedId, payoffSentence, readyStrategy, remainingLegs, resultHeadline, saveBaskets, savedOf, stopFor, strikeStep, writeHandoff,
+  needsStop, newSavedId, payoffSentence, readyStrategy, remainingLegs, resultHeadline, saveBaskets, savedOf, stopFor, strikeStep, writeHandoff,
   type SavedState, type StrategyName,
 } from "./basketModel";
 import { PracticeFrame } from "./OrderTicketV2";
@@ -141,7 +141,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
 
   function moveStrike(id: string, strike: number) {
     const leg = legs.find((l) => l.id === id);
-    if (!leg) return;
+    if (!leg || leg.right === "FUT") return;                   // a future has no strike to move
     const row = leg.expiry === live?.expiry ? rows.find((r) => r.strike === strike) : undefined;
     const quote = row ? (leg.right === "CE" ? row.call : row.put) : null;
     const price = quote?.ltp && quote.ltp > 0 ? quote.ltp : leg.price;
@@ -310,7 +310,7 @@ export interface BodyHandlers {
 
 /** The builder's legs for the payoff chart (needs the lot sizes from the server's answer). */
 export function chartLegs(legs: readonly BasketLeg[], numbers: BasketNumbers): BuilderLeg[] {
-  return legs.map((l, i) => ({ id: l.id, direction: l.side, option_type: l.right, strike: l.strike, premium: l.price ?? 0, lots: l.lots,
+  return legs.map((l, i) => ({ id: l.id, direction: l.side, option_type: l.right, strike: l.right === "FUT" ? l.price ?? 0 : l.strike, premium: l.price ?? 0, lots: l.lots,
     lot_size: numbers.lot_sizes[i] ?? 1, expiry: l.expiry, iv: typeof l.iv === "number" ? l.iv / 100 : null }));
 }
 
@@ -516,7 +516,7 @@ function LegRow({ leg: l, n, lotSize, idPrefix, on }: { leg: BasketLeg; n: numbe
           <input inputMode="decimal" id={`${idPrefix}-price`} defaultValue={l.price ?? ""} key={`p${l.price ?? ""}`} className={FIELD} data-leg-price
             onBlur={(e) => on.onLeg(l.id, { price: num(e.target.value) })} />
         </label>
-        {l.side === "SELL" ? (
+        {needsStop(l) ? (
           <label className="min-w-0 text-t12 text-fg-muted">
             Stop-loss
             <input inputMode="decimal" id={`${idPrefix}-stop`} defaultValue={l.stopLoss ?? ""} key={`s${l.stopLoss ?? ""}`} className={FIELD} data-leg-stop

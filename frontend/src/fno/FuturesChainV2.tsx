@@ -13,7 +13,7 @@ import type { Side } from "./api";
 import { basket as defaultBasket, useBasket, type BasketStore } from "./basket";
 import { watchlistAdd, type Lists, type Note } from "./ChainActionSheetV2";
 import {
-  expiryText, futureContract, futureLeg, futureTarget, futuresNotes, hubApi, monthWord, type FutureRow, type FuturesChain, type HubApi,
+  basketHref, expiryText, futureContract, futureLeg, futureTarget, futuresNotes, hubApi, monthWord, type FutureRow, type FuturesChain, type HubApi,
 } from "./hubModel";
 import OrderTicketV2 from "./OrderTicketV2";
 import { PRACTICE_TITLE, type TicketTarget } from "./ticketModel";
@@ -25,7 +25,7 @@ import { PRACTICE_TITLE, type TicketTarget } from "./ticketModel";
  * tab is shown (every 5 min with the market closed); no sample data - a price the broker did not give shows "–".
  *
  * Each row: Chart (the future's own chart, with the timeframe), Buy / Sell (the ONE order ticket of FNO-1, PAPER) and
- * Add to basket (the FNO-1 basket store) - both only with the PAPER account on, like chain trading - and Add to
+ * Add to basket (the FNO-2 basket store; the badge opens the basket panel on the option chain page) - both only with the PAPER account on, like chain trading - and Add to
  * watchlist (behind `watchlists`). Nothing here places an order by itself, and no word tells the trader what to trade.
  * `FuturesChainView` is the look without reads (rendered directly by the tests).
  */
@@ -268,11 +268,13 @@ export function FuturesChainView({ data, problem, loading, trading, watchlistsOn
         </div>
         <div className="flex items-center gap-space-2">
           {trading && <span className="inline-flex rounded-pill bg-warn-tint px-space-2 text-t12 font-semibold text-warn" data-practice-frame>{PRACTICE_TITLE}</span>}
-          {trading && (
-            <span data-futures-basket className="inline-flex min-h-9 items-center gap-space-1 text-t13 font-semibold text-fg" aria-label={`Basket: ${basketCount} leg${basketCount === 1 ? "" : "s"}`}>
+          {trading && data && (
+            <Link to={basketHref(data.underlying, timeframe)} data-futures-basket
+              className="inline-flex min-h-11 items-center gap-space-1 rounded-control px-space-2 text-t13 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9"
+              aria-label={`Open the basket: ${basketCount} leg${basketCount === 1 ? "" : "s"}`}>
               <ShoppingBasket size={16} aria-hidden />
               <span className={cx("rounded-pill px-space-2 text-t12", basketCount ? "bg-brand text-on-brand" : "bg-surface-2 text-fg-muted")}>{basketCount}</span>
-            </span>
+            </Link>
           )}
         </div>
       </div>

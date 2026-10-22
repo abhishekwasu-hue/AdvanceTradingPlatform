@@ -389,3 +389,82 @@ def test_a_future_order_is_paper_and_asserted_at_the_chokepoint(fut, monkeypatch
         assert out.status_code == 200, out.text
     finally:
         _lock(t["tenant_id"], False)
+
+
+# --- a FUTURE as a basket leg (FNO-2's panel; "Add to basket" on the futures chain), PAPER ----------------------------------
+
+@pytest.fixture
+def covered(monkeypatch):
+    """A covered call on a unique expiry: a future at 30,000 and the 30,200 call at 100 (lot 75, as the FNO-2 tests)."""
+    from tests.test_fno2_basket import LOT as BLOT, _contract, _expiry, _prices
+    expiry = _expiry()
+    fut = _future("NIFTY", expiry, lot=BLOT)
+    fut.tradingsymbol = f"NIFTY{uuid.uuid4().hex[:6].upper()}FUT"
+    _add([fut])
+    call = _contract(expiry, 30200.0, "CE")
+    _prices(monkeypatch, {fut.tradingsymbol: 30000.0, call: 100.0})
+    return expiry, fut.tradingsymbol, call, BLOT
+
+
+def _covered_legs(expiry, fut_stop=29960.0):
+    future = {"underlying": "NIFTY", "expiry": expiry.isoformat(), "right": "FUT", "side": "BUY", "lots": 1, "price": 30000.0}
+    if fut_stop is not None:
+        future["stop_loss"] = fut_stop
+    call = {"underlying": "NIFTY", "expiry": expiry.isoformat(), "strike": 30200.0, "right": "CE", "side": "SELL", "lots": 1, "price": 100.0,
+            "stop_loss": 150.0}
+    return [call, future]
+
+
+def test_a_future_leg_in_the_basket_numbers(covered):
+    from tests.test_fno2_basket import _org_tenant as basket_tenant, _post
+    expiry, _, _, lot = covered
+    t = basket_tenant("fut-eval")
+    out = _post(t, "evaluate", {"legs": [{**leg, "iv": 0.15} if leg["right"] != "FUT" else leg for leg in _covered_legs(expiry)], "spot": 30000.0})
+    assert out["ok"] is True, out
+    assert out["labels"][1] == fno_ticket.contract_label("NIFTY", expiry, None, "FUT") and out["labels"][1].endswith(" FUT")
+    assert out["lot_sizes"] == [lot, lot] and out["order"] == [1, 0]                # the bought future first, then the sold call
+    assert out["net_premium"] == pytest.approx(100.0 * lot)                        # the future is left out of the premium
+    # At expiry above the call: (30,200 - 30,000) on the future + the 100 kept = 300 a unit, by hand.
+    assert out["extremes"]["max_profit"] == pytest.approx(300.0 * lot)
+    assert out["margin"]["hedge"]["with_hedge"]["value"] is None                   # a future's margin is the broker's, never invented
+    # A future (no strike) with a strike, or an option without one, is refused.
+    bad = _covered_legs(expiry)
+    assert client.post("/api/paper/fno/basket/evaluate", headers=t["headers"],
+                       json={"legs": [{**bad[1], "strike": 30000.0}], "spot": 30000.0}).status_code == 422
+    assert client.post("/api/paper/fno/basket/evaluate", headers=t["headers"],
+                       json={"legs": [{k: v for k, v in bad[0].items() if k != "strike"}], "spot": 30000.0}).status_code == 422
+
+
+def test_a_future_leg_needs_a_stop_and_is_placed_paper_first(covered, monkeypatch):
+    from tests.test_fno2_basket import _lock as basket_lock, _orders as basket_orders, _org_tenant as basket_tenant, _post
+    expiry, fut_symbol, call_symbol, lot = covered
+    t = basket_tenant("fut-exec")
+    view = _post(t, "preview", {"legs": _covered_legs(expiry, fut_stop=None), "spot": 30000.0})
+    assert not view["can_execute"] and any("A future needs a stop-loss" in e for r in view["legs"] for e in r["errors"])
+    basket_lock(t["tenant_id"], True)
+    try:
+        asserted = []
+        real = phase0_lock.assert_paper
+        monkeypatch.setattr(phase0_lock, "assert_paper", lambda mode, tenant_id: asserted.append((mode, tenant_id)) or real(mode, tenant_id))
+        out = _post(t, "execute", {"legs": _covered_legs(expiry), "basket_ref": uuid.uuid4().hex, "product": "NRML"})
+        assert out["status"] == "PLACED" and out["placed"] == 2, out
+        assert asserted == [("PAPER", t["tenant_id"])] * 2
+        orders = basket_orders(t["tenant_id"])
+        assert [o.symbol for o in orders] == [fut_symbol, call_symbol] and all(o.mode == "PAPER" for o in orders)
+        trade = _trade(out["legs"][0]["trade_id"])
+        assert trade.instrument_kind == "FUTURE" and trade.mode == "PAPER" and trade.quantity == float(lot)
+    finally:
+        basket_lock(t["tenant_id"], False)
+
+
+def test_a_saved_basket_holds_a_future_with_no_strike():
+    from tests.test_trading_worker import _tenant
+    a = _tenant(f"fno3-save-{uuid.uuid4().hex[:6]}@example.com")
+    leg = {"expiry": "2026-10-27", "strike": None, "right": "FUT", "side": "BUY", "lots": 1, "price": 30000.0, "stop_loss": 29960.0}
+    body = {"items": {"abcd1234": {"name": "Covered call", "underlying": "NIFTY", "product": "NRML", "legs": [leg]}}}
+    out = client.put("/api/me/prefs/fno_baskets?version=0", headers=a["headers"], json=body)
+    assert out.status_code == 200, out.text
+    assert out.json()["value"]["items"]["abcd1234"]["legs"][0]["right"] == "FUT"
+    for bad in ({**leg, "strike": 30000.0}, {**leg, "right": "CE"}):
+        assert client.put("/api/me/prefs/fno_baskets?version=1", headers=a["headers"],
+                          json={"items": {"abcd1234": {**body["items"]["abcd1234"], "legs": [bad]}}}).status_code == 422

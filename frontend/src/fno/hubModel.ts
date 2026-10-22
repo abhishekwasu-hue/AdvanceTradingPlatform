@@ -155,6 +155,13 @@ export function hubHref(tab: HubTab, info: Pick<HubInfo, "underlying" | "spot_sy
   return query ? `${base}?${query}` : base;
 }
 
+/** The option chain page with the basket panel open (the futures chain's basket badge: its legs are reviewed there). */
+export function basketHref(underlying: string, timeframe: string | null): string {
+  const q = new URLSearchParams({ underlying, basket: "open" });
+  if (timeframe) q.set("tf", timeframe);
+  return `/option-chain?${q.toString()}`;
+}
+
 // --- the futures rows --------------------------------------------------------------------------------------------------
 
 /** The ticket's target for a future (the ONE order ticket of FNO-1, PAPER). */

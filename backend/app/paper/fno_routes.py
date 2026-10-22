@@ -135,13 +135,21 @@ class BasketLeg(BaseModel):
     model_config = ConfigDict(extra="forbid")
     underlying: str = Field(pattern=SYMBOL)
     expiry: date
-    strike: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
-    right: Literal["CE", "PE"]
+    strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)   # None for a future (FNO-3)
+    right: Literal["CE", "PE", "FUT"]
     side: Literal["BUY", "SELL"]
     lots: int = Field(ge=1, le=fno_ticket.MAX_LOTS)
     price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     iv: Optional[float] = Field(default=None, gt=0, lt=5, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _strike_for_options_only(self) -> "BasketLeg":
+        if self.right == "FUT" and self.strike is not None:
+            raise ValueError("a future has no strike")
+        if self.right != "FUT" and self.strike is None:
+            raise ValueError("an option needs its strike")
+        return self
 
     def ask(self) -> fno_basket.LegAsk:
         values = self.model_dump()

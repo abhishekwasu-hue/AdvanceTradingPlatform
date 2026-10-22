@@ -8,7 +8,7 @@ that changes an item. Never delete a row; mark it done / superseded with the PR.
 | 0 | Step 0: read the repo state; CLAUDE.md | ATP_HANDOVER_PACK.md (STEP 0) | done: CLAUDE.md (#331 + the #330 fold-in, #333); repo-state check done 22 Oct (status per item below) |
 | 1 | Font size | ATP_HANDOVER_PACK.md §1 | PR #335 (draft, ready for review): rem scale, Text size setting, layout fixes, new baselines |
 | 2 | Option chain: analysis + Sensibull-style charts | ATP_HANDOVER_PACK.md §2 | partial (#324 / #326 / #327 merged; 2a wiring PR #337 (stacked on #335); 2b + 2c Charts tab PR #339 (draft; migration, deploy after 15:30 IST; OPEN_QUESTIONS OC5-1..4)) |
-| 3 | F&O workspace | ATP_SESSION_FNO_WORKSPACE.md | slice 1 chain trading + order ticket PR #338 (draft; OPEN_QUESTIONS FNO-1-1..10); slice 2 basket PR #341 (draft, stacked on #338; FNO-2-1..10); slice 3 hub + futures chain in progress |
+| 3 | F&O workspace | ATP_SESSION_FNO_WORKSPACE.md | slice 1 chain trading + order ticket PR #338 (draft; OPEN_QUESTIONS FNO-1-1..10); slice 2 basket PR #341 (draft, stacked on #338; FNO-2-1..10); slice 3 hub tabs + futures chain (sections 1 + 4) PR `claude/fno3-hub-futures` (FNO-3-1..7); sections 2, 7, 8 next |
 | 4 | Default watchlists (indices / index stocks / sectors) | ATP_HANDOVER_PACK.md §4 | in progress: `claude/wl1-system-lists` |
 | 5 | AI Copilot: a professional trader's brain | ATP_HANDOVER_PACK.md §5 | slice 1 PR #342 (draft): chat page + jobs 1, 2, 7, 8, regime admin-only (regime_blocks no longer skips PAPER entries); jobs 3–5 next |
 | 6 | Master Order 2: AI keys + page tours | ATP_HANDOVER_PACK.md §6 | pending |

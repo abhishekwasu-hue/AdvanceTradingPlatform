@@ -120,8 +120,9 @@ export type FnoApi = typeof fnoApi;
 export interface BasketLegAsk {
   underlying: string;
   expiry: string;
-  strike: number;
-  right: Right;
+  /** null for a future (FNO-3) */
+  strike: number | null;
+  right: ContractRight;
   side: Side;
   lots: number;
   price?: number | null;

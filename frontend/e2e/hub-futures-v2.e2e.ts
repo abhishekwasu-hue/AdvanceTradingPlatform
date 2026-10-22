@@ -82,7 +82,9 @@ async function open(page: Page, theme: "light" | "dark", path: string, opts: { h
     if (url.pathname.endsWith("/held")) return route.fulfill({ json: [] });
     const body = route.request().postDataJSON() as Record<string, unknown>;
     seen.posts.push({ url: url.pathname, body });
-    return route.fulfill({ json: {
+    const placed = url.pathname.endsWith("/order")
+      ? { status: "PLACED", reasons: [], order_id: 9, trade_id: 41, filled: { price: 24560, quantity: 75 * Number(body.lots), lots: Number(body.lots) } } : {};
+    return route.fulfill({ json: { ...placed,
       mode: "PAPER", practice: "Practice mode (PAPER): no real order is sent and no money moves.", contract: null, label: "NIFTY 27 OCT FUT",
       side: body.side, lots: body.lots, lot_size: 75, units: 75, order_type: body.order_type, product: body.product, price: 24560, price_source: "live",
       fill_price: 24560, fill_note: "Fills at the live price 24,560.00", stop_loss: body.stop_loss ?? null,
@@ -114,13 +116,15 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
       test(`the hub tabs and the futures chain look the same (${theme})`, async ({ page }) => {
         await open(page, theme, "/charts/NIFTY%2050?hub=futures");
         const row = page.locator("[data-hub-tabs]");
-        await expect(row).toBeVisible();
+        await expect(row).toBeVisible({ timeout: 15_000 });
         await expect(tabs(page)).toHaveText(["Chart", "Option chain", "Futures", "Overview"]);
+        await expect(page.locator("[data-block='futures-chain']").getByText(FUTURES.rollover.caption)).toBeVisible();
+        // The phone layout rules on the page as it opens (before a screenshot scrolls it).
+        if (width === 390) await expectPhoneLayout(page);
         await expect(row).toHaveScreenshot(`hub-tabs-v2-${width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
         const chain = page.locator("[data-block='futures-chain']");
         await expect(chain.getByText(FUTURES.rollover.caption)).toBeVisible();
         await expect(chain).toHaveScreenshot(`futures-chain-v2-${width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
-        if (width === 390) await expectPhoneLayout(page);
       });
     }
   });
@@ -131,7 +135,7 @@ test.describe("Symbol hub v2 flows", () => {
 
   test("Option chain and Futures show only for a symbol with F&O", async ({ page }) => {
     await open(page, "light", "/charts/BANKBEES");
-    await expect(tabs(page)).toHaveText(["Chart", "Overview"]);
+    await expect(tabs(page)).toHaveText(["Chart", "Overview"], { timeout: 15_000 });
     await expect(page.locator("[data-hub-tab='option-chain'], [data-hub-tab='futures']")).toHaveCount(0);
     await page.locator("[data-hub-tab='overview']").click();
     const overview = page.locator("[data-block='hub-overview']");
@@ -140,13 +144,15 @@ test.describe("Symbol hub v2 flows", () => {
   });
 
   test("the symbol, the expiry and the timeframe carry across the tabs", async ({ page }) => {
+
     const seen = await open(page, "light", "/charts/NIFTY%2050?tf=15min");
-    await expect(page.locator("[data-hub-tab='chart']")).toHaveAttribute("aria-current", "page");
+    // The hub facts are read once the chart page has loaded (a slow runner may need more than the default 5 s).
+    await expect(page.locator("[data-hub-tab='chart']")).toHaveAttribute("aria-current", "page", { timeout: 15_000 });
     await expect(page.locator("[data-hub-tab='option-chain']")).toHaveAttribute("href", "/option-chain?underlying=NIFTY&tf=15min");
     await page.locator("[data-hub-tab='option-chain']").click();
     await expect(page.locator("tr[data-atm]")).toBeVisible();
     await expect(page.locator("[data-hub-tab='option-chain']")).toHaveAttribute("aria-current", "page");
-    await page.getByLabel("Expiry").selectOption("2026-11-10");
+    await page.getByLabel("Expiry", { exact: true }).selectOption("2026-11-10");
     await expect(page).toHaveURL(/\/option-chain\?underlying=NIFTY&tf=15min&expiry=2026-11-10$/);
     await expect(page.locator("[data-hub-tab='futures']")).toHaveAttribute("href", "/charts/NIFTY%2050?hub=futures&expiry=2026-11-10&tf=15min");
     await page.locator("[data-hub-tab='futures']").click();
@@ -154,7 +160,7 @@ test.describe("Symbol hub v2 flows", () => {
     expect(seen.futures).toBeGreaterThan(0);
     // Back to the option chain from Futures: the same expiry is selected.
     await page.locator("[data-hub-tab='option-chain']").click();
-    await expect(page.getByLabel("Expiry")).toHaveValue("2026-11-10");
+    await expect(page.getByLabel("Expiry", { exact: true })).toHaveValue("2026-11-10");
     // And to the chart: the timeframe is still 15 minutes.
     await page.locator("[data-hub-tab='chart']").click();
     await expect(page.locator("[data-page='charts-v2'] [aria-pressed='true']", { hasText: "15m" }).first()).toBeVisible();
@@ -164,7 +170,7 @@ test.describe("Symbol hub v2 flows", () => {
   test("each futures row: Chart, Buy / Sell (the PAPER ticket), Add to basket, Add to watchlist", async ({ page }) => {
     const seen = await open(page, "dark", "/charts/NIFTY%2050?hub=futures&tf=15min");
     const near = page.locator("[data-future-row='NIFTY26OCTFUT']");
-    await expect(near.locator("[data-cell='ltp']")).toHaveText("24,560.00");
+    await expect(near.locator("[data-cell='ltp']")).toHaveText("24,560.00", { timeout: 15_000 });
     await expect(near.locator("[data-cell='basis']")).toContainText("+60.00");
     await expect(page.locator("[data-future-row='NIFTY26DECFUT'] [data-cell='ltp']")).toHaveText("–");
     await expect(near.locator("[data-action='chart']")).toHaveAttribute("href", "/charts/NIFTY26OCTFUT?tf=15min&exchange=NFO");
@@ -180,6 +186,7 @@ test.describe("Symbol hub v2 flows", () => {
     await ticket.locator("[data-ticket='review']").click();
     await expect(ticket.locator("[data-line='margin']")).toContainText("SPAN");
     await ticket.locator("[data-ticket='place']").click();
+    await expect(ticket.locator("[data-ticket='done']")).toBeVisible();
     const placed = seen.posts.filter((p) => p.url.endsWith("/paper/fno/order"));
     expect(placed).toHaveLength(1);
     expect(placed[0].body).toMatchObject({ underlying: "NIFTY", expiry: "2026-10-27", right: "FUT", strike: null, side: "BUY", lots: 1, stop_loss: 24500 });
@@ -187,23 +194,24 @@ test.describe("Symbol hub v2 flows", () => {
     await ticket.locator("[data-ticket='done']").click();
 
     const badge = page.locator("[data-futures-basket]");
-    await expect(badge).toHaveAttribute("aria-label", "Basket: 0 legs");
+    await expect(badge).toHaveAttribute("aria-label", "Open the basket: 0 legs");
     await near.locator("[data-action='basket']").click();
-    await page.locator("[data-action='basket-sell']").click();
+    await page.locator("[data-action='basket-sell']:visible").click();
     await expect(page.locator("[data-futures-note='done']")).toHaveText("Added to the basket: Sell 1 lot of NIFTY 27 OCT FUT.");
-    await expect(badge).toHaveAttribute("aria-label", "Basket: 1 leg");
+    await expect(badge).toHaveAttribute("aria-label", "Open the basket: 1 leg");
+    await expect(badge).toHaveAttribute("href", "/option-chain?underlying=NIFTY&basket=open&tf=15min");
 
     await near.locator("[data-action='watchlist']").click();
-    await page.locator("[data-watchlist='3']").click();
+    await page.locator("[data-watchlist='3']:visible").click();
     await expect(page.locator("[data-futures-note='done']")).toHaveText("Added NIFTY 27 OCT FUT to My list.");
     expect(seen.posts.find((p) => p.url === "/watchlists/3")?.body).toMatchObject({ items: [{ symbol: "RELIANCE", exchange: "NSE" }, { symbol: "NIFTY26OCTFUT", exchange: "NFO" }] });
-    expect(seen.posts.filter((p) => p.url.includes("/paper/fno/order"))).toHaveLength(1);     // only the one placed by hand
+    expect(seen.posts.filter((p) => p.url.endsWith("/paper/fno/order"))).toHaveLength(1);     // only the one placed by hand
   });
 
   test("without the PAPER account the futures chain has Chart and Add to watchlist only", async ({ page }) => {
     await open(page, "light", "/charts/NIFTY%2050?hub=futures", { options: { features: { ui_v2: true, watchlists: true }, brokers: CONNECTED } });
     const near = page.locator("[data-future-row='NIFTY26OCTFUT']");
-    await expect(near.locator("[data-action='chart']")).toBeVisible();
+    await expect(near.locator("[data-action='chart']")).toBeVisible({ timeout: 15_000 });
     await expect(near.locator("[data-action='watchlist']")).toBeVisible();
     await expect(near.locator("[data-action='buy'], [data-action='sell'], [data-action='basket']")).toHaveCount(0);
   });
@@ -211,7 +219,7 @@ test.describe("Symbol hub v2 flows", () => {
   test("Overview: the snapshot of the symbol", async ({ page }) => {
     await open(page, "light", "/charts/NIFTY%2050?hub=overview");
     const overview = page.locator("[data-block='hub-overview']");
-    await expect(overview.locator("[data-fact='ltp']")).toBeVisible();
+    await expect(overview.locator("[data-fact='ltp']")).toBeVisible({ timeout: 15_000 });
     await expect(overview.locator("[data-fact='fno']")).toHaveText("F&OYes");
     await expect(overview.locator("[data-fact='lot']")).toHaveText("Lot size75");
     await expect(overview.locator("[data-fact='expiries']")).toContainText("Futures expiries");

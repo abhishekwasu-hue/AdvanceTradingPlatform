@@ -2065,6 +2065,25 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   calls), `brokerLinks.kiteFnoBasketLink`; the Options Builder page reads the hand-over once.
 - Tests: `backend/tests/test_fno2_basket.py`, `frontend/src/fno/basket.test.tsx`, `frontend/e2e/basket-v2.e2e.ts` with
   NEW baselines `basket-panel-v2-{1440,390}-{light,dark}.png` only (the badge keeps its look; no baseline touched).
+## FNO-3: the symbol hub tabs and the futures chain, PAPER only (owner order ATP_SESSION_FNO_WORKSPACE.md 1, 4, 5, 9)
+
+- Branch `claude/fno3-hub-futures` (from main after #338 / #341). Behind `ui_v2` (the reads 404 while it is off);
+  trading actions only with `paper_account`. No migration, no new flag. Open questions FNO-3-1..7.
+- Backend: `app/option_chain/futures_chain.py` (hub facts from the instrument master; the futures chain: LTP, change,
+  OI, OI change since the organisation's first reading, basis vs spot, the rollover near -> next) and
+  `futures_routes.py` (`GET /api/option-chain/{symbol}/hub`, `/futures`: the organisation's or the user's own BT1
+  broker session, one batch quote where the adapter has one, the session's API budget, 409 / 429 in plain words;
+  classified in `tests/tenancy_route_table.py`). The one order ticket takes a FUTURE (`right` FUT, no strike; a
+  stop-loss on both sides; the broker's margin, not estimated) and so does the basket (evaluate / preview / execute /
+  Kite link) and the saved baskets (`fno_baskets`, strike null for a future). Every order is still ONE PAPER order
+  through `fno_ticket.place` with `phase0_lock.assert_paper`.
+- Frontend: `src/fno/SymbolHubTabsV2.tsx` (Chart | Option chain | Futures | Overview, shown by F&O availability, the
+  symbol / expiry / timeframe carried), `FuturesChainV2.tsx` (table on desktop, cards on a phone; Chart, Buy / Sell
+  through the FNO-1 ticket, Add to basket, Add to watchlist; the basket badge opens the basket panel), `OverviewV2.tsx`,
+  `hubModel.ts`; the Charts page shows Futures / Overview in place of the chart (lazy chunks); the Option chain page
+  keeps the expiry in its address.
+- Tests: `backend/tests/test_fno3_hub_futures.py`, `frontend/src/fno/hub.test.tsx`, `frontend/e2e/hub-futures-v2.e2e.ts`
+  with NEW baselines `hub-tabs-v2-*` and `futures-chain-v2-*` (1440 + 390, light + dark).
 ## GS-1: Google sign-in, inert until the credentials are set
 - Owner decision (22 Oct): the "Continue with Google" button stays hidden until `GOOGLE_OAUTH_CLIENT_ID` and
   `GOOGLE_OAUTH_CLIENT_SECRET` are on the server (docs/OPEN_QUESTIONS.md GS-1). Redirect URI

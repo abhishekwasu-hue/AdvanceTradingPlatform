@@ -62,6 +62,7 @@ export default function OptionChainPageV2(_props: PageProps) {
       const next = new URLSearchParams(prev);
       next.set("underlying", symbol);
       if (expiry) next.set("expiry", expiry); else next.delete("expiry");
+      next.delete("basket");                       // read once on opening (the futures chain's basket badge)
       return next.toString() === prev.toString() ? prev : next;
     }, { replace: true });
   }, [symbol, expiry, setParams]);

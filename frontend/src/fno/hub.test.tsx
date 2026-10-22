@@ -8,11 +8,12 @@ import type { WatchlistV2 } from "../chart/watchlistsV2";
 import chainPageSource from "../optionChain/OptionChainPageV2.tsx?raw";
 import { loadExpiryChoice } from "../optionChain/useOptionChain";
 import { BasketStore } from "./basket";
+import { basketAsk, basketProblems, builderHandoff, contractLabel, legLabel, legsOf, savedOf } from "./basketModel";
 import { watchlistAdd } from "./ChainActionSheetV2";
 import { FUTURES_TEXT, FuturesChainView, addFutureToBasket, futuresProblemOf, type FuturesViewProps, type RowHandlers } from "./FuturesChainV2";
 import futuresSource from "./FuturesChainV2.tsx?raw";
 import {
-  dayRange, expiryText, futureContract, futureLeg, futureTarget, hubHref, hubTabs, hubViewOf, isHubInfo, readCarry, yearRange,
+  basketHref, dayRange, expiryText, futureContract, futureLeg, futureTarget, hubHref, hubTabs, hubViewOf, isHubInfo, readCarry, yearRange,
   type Bar, type FutureRow, type FuturesChain, type HubInfo,
 } from "./hubModel";
 import { OverviewView } from "./OverviewV2";
@@ -235,6 +236,38 @@ describe("FNO-3 futures chain: each row's actions", () => {
     const list: WatchlistV2 = { id: 3, name: "Mine", items: [], version: 1 };
     await watchlistAdd(lists as never, contract, list);
     expect(lists.save).toHaveBeenCalled();
+  });
+});
+
+describe("FNO-3 futures in the basket (FNO-2 panel)", () => {
+  const fut = { ...futureLeg(row(), "BUY"), stopLoss: null, iv: null };
+  const call = { underlying: "NIFTY", expiry: "2026-10-27", strike: 24800, right: "CE" as const, side: "SELL" as const, lots: 1, price: 90, label: null, stopLoss: 135, iv: 14 };
+
+  it("the badge opens the basket panel on the option chain page, with the leg count", () => {
+    expect(basketHref("NIFTY", "15min")).toBe("/option-chain?underlying=NIFTY&basket=open&tf=15min");
+    const badge = view({ basketCount: 2 }).els.find((e) => (e.props as Record<string, unknown>)["data-futures-basket"] !== undefined)!.props as Record<string, unknown>;
+    expect(badge.to).toBe("/option-chain?underlying=NIFTY&basket=open&tf=15min");
+    expect(badge["aria-label"]).toBe("Open the basket: 2 legs");
+    expect(chainPageSource).toContain('next.delete("basket")');
+  });
+
+  it("a future leg is written as traders write it, sent with no strike, and needs a stop-loss on either side", () => {
+    expect(contractLabel("NIFTY", "2026-10-27", 0, "FUT")).toBe("NIFTY 27 OCT FUT");
+    expect(legLabel({ ...fut, label: null })).toBe("NIFTY 27 OCT FUT");
+    expect(basketProblems([fut])).toEqual(["NIFTY 27 OCT FUT: a future needs a stop-loss."]);
+    expect(basketProblems([{ ...fut, side: "SELL" }])).toEqual(["NIFTY 27 OCT FUT: a future needs a stop-loss."]);
+    expect(basketProblems([{ ...fut, stopLoss: 24500 }, call])).toEqual([]);
+    const ask = basketAsk([{ ...fut, stopLoss: 24500 }, call], 24550, "NRML");
+    expect(ask.legs[0]).toMatchObject({ right: "FUT", strike: null, side: "BUY", stop_loss: 24500, price: 24612.5 });
+    expect(ask.legs[1]).toMatchObject({ right: "CE", strike: 24800, stop_loss: 135 });
+  });
+
+  it("saved and loaded with no strike; handed to the Options Builder at its entry price", () => {
+    const saved = savedOf([{ ...fut, stopLoss: 24500 }], "Long future", "NRML", new Date("2026-10-21T05:30:00Z"));
+    expect(saved.legs[0]).toEqual({ expiry: "2026-10-27", strike: null, right: "FUT", side: "BUY", lots: 1, price: 24612.5, stop_loss: 24500 });
+    expect(legsOf(saved)[0]).toMatchObject({ right: "FUT", strike: 0, stopLoss: 24500 });
+    const h = builderHandoff([fut, call], [75, 75], 24550, 50)!;
+    expect(h.legs[0]).toMatchObject({ option_type: "FUT", strike: 24612.5, premium: 24612.5, iv: null });
   });
 });
 

@@ -124,6 +124,14 @@ The script reads these optional settings too, but only to report on them (it nev
   authorised redirect URI `https://aialgodesk.tech/api/auth/google/callback`. The button appears after the next deploy.
   Google sign-in signs in an existing, active account whose e-mail equals the Google account's verified e-mail; while
   the `self_signup` flag is off it never creates an account, and two-factor authentication is still asked for.
+- `ATP_TELEGRAM_BOT_TOKEN` (UX2 fix 5, "Connect Telegram" in one tap): optional. Empty = the Connect Telegram button
+  says Telegram alerts are not set up yet (never a failure). To turn it on: in Telegram, open @BotFather, send
+  `/newbot`, name it (for example "AiAlgoDesk alerts") and give it a username ending in `bot`; put the token it gives
+  you here (never in git or chat). `ATP_TELEGRAM_BOT_USERNAME` may stay empty (the app asks Telegram). Without
+  `ATP_TELEGRAM_WEBHOOK_SECRET` the app reads the bot's new messages itself while a user waits on the Connect screen,
+  so nothing else is needed. With a secret (`python3 -c "import secrets;print(secrets.token_urlsafe(32))"`), register
+  the webhook once after the deploy as the platform admin: `POST /api/admin/telegram/platform/register`. Users then
+  tap Connect Telegram, press Start in Telegram, and their alerts arrive there; no token or chat id is typed by anyone.
 
 Then run `/opt/atp/deploy/atp.sh install`.
 

@@ -6,6 +6,7 @@ import type { BetaCohort } from "../beta/rollout";
 import BetaRolloutCard from "../components/BetaRolloutCard";
 import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
+import FeatureFlagsCard from "../admin/FeatureFlagsCard";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import HolidaysCard from "../components/HolidaysCard";
 import SystemListsCard from "../components/SystemListsCard";
@@ -35,6 +36,7 @@ export default function AdminPage() {
   const { refresh: refreshFeatures } = useFeatures();
   const flagsChanged = (next: FeatureFlags) => { setFlags(next); refreshFeatures(); };
   const [flagTenants, setFlagTenants] = useState<Record<string, string>>({});
+  const allowList = (name: string) => (flagTenants[name] ?? "").split(",").map((t) => parseInt(t.trim(), 10)).filter((n) => !Number.isNaN(n));
   const [encryption, setEncryption] = useState<EncryptionStatus | null>(null);
   const [ceilings, setCeilings] = useState<RiskCeilings | null>(null);
   const [ceilingDraft, setCeilingDraft] = useState<Record<string, string>>({});
@@ -162,35 +164,20 @@ export default function AdminPage() {
         <button disabled={busy || !ceilings} onClick={() => act("Risk ceilings saved.", () => api.adminSetRiskCeilings(Object.fromEntries(Object.entries(ceilingDraft).map(([k, v]) => [k, Number(v)]))).then(setCeilings))} className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save ceilings</button>
       </Card>
 
-      <Card title="Feature flags">
-        <p className="text-xs text-fg-muted mb-3">Kill flags: every feature is on unless turned off here. Turning one off with a tenant allow-list keeps it on for those tenants only (staged rollouts, beta access). Exits and PAPER trading are never behind a flag.</p>
-        <table className="w-full text-xs">
-          <thead className="text-fg-muted uppercase text-xs tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Flag</th><th className="py-1 pr-3">State</th><th className="py-1 pr-3">Allow-listed tenant ids</th><th className="py-1 text-right">Actions</th></tr></thead>
-          <tbody>
-            {flags && Object.entries(flags).map(([name, f]) => (
-              <tr key={name} className="border-t border-border">
-                <td className="py-1.5 pr-3"><div className="font-mono text-fg">{name}</div><div className="text-xs text-fg-muted">{f.description}</div></td>
-                <td className={`py-1.5 pr-3 font-bold ${f.on ? "text-up" : "text-down"}`}>{f.on ? "ON" : `OFF${f.tenants.length ? ` (${f.tenants.length} allowed)` : ""}`}</td>
-                <td className="py-1.5 pr-3"><input className="w-full rounded bg-surface-2 border border-border px-2 py-1" placeholder="e.g. 3, 17" value={flagTenants[name] ?? ""} onChange={(e) => setFlagTenants({ ...flagTenants, [name]: e.target.value })} /></td>
-                <td className="py-1.5 text-right whitespace-nowrap">
-                  {f.on
-                    ? <button disabled={busy} onClick={() => act(`${name} turned off.`, () => api.adminSetFlag(name, false, (flagTenants[name] ?? "").split(",").map((t) => parseInt(t.trim(), 10)).filter((n) => !Number.isNaN(n))).then(flagsChanged))} className="rounded border border-down/40 text-down hover:bg-down/10 px-2 py-0.5">Turn off</button>
-                    : <>
-                        <button disabled={busy} onClick={() => act(`${name} allow-list saved.`, () => api.adminSetFlag(name, false, (flagTenants[name] ?? "").split(",").map((t) => parseInt(t.trim(), 10)).filter((n) => !Number.isNaN(n))).then(flagsChanged))} className="rounded border border-border hover:bg-surface-2 text-fg px-2 py-0.5 mr-1">Save list</button>
-                        <button disabled={busy} onClick={() => act(`${name} turned on.`, () => api.adminSetFlag(name, true).then(flagsChanged))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-2 py-0.5">Turn on</button>
-                      </>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {encryption && (
-          <div className="mt-3 text-xs text-fg-muted">
-            Secrets at rest: {encryption.tenant_keys} tenant data keys, {encryption.secrets_total - encryption.secrets_legacy}/{encryption.secrets_total} secrets under tenant keys
+      <FeatureFlagsCard flags={flags} tenants={flagTenants} busy={busy}
+        onTenants={(name, value) => setFlagTenants({ ...flagTenants, [name]: value })}
+        onSet={(name, on) => act(`${flags?.[name]?.plain ?? name} turned ${on ? "on" : "off"}.`, () => (on
+          ? api.adminSetFlag(name, true).then(flagsChanged)
+          : api.adminSetFlag(name, false, allowList(name)).then(flagsChanged)))}
+        onSaveList={(name) => act(`${flags?.[name]?.plain ?? name}: allow-list saved.`, () => api.adminSetFlag(name, false, allowList(name)).then(flagsChanged))} />
+      {encryption && (
+        <Card title="Secrets at rest">
+          <div className="text-xs text-fg-muted">
+            {encryption.tenant_keys} tenant data keys, {encryption.secrets_total - encryption.secrets_legacy}/{encryption.secrets_total} secrets under tenant keys
             {encryption.secrets_legacy > 0 && <span className="text-warn"> - {encryption.secrets_legacy} still under the master key (run scripts/reencrypt_secrets.py reencrypt)</span>}.
           </div>
-        )}
-      </Card>
+        </Card>
+      )}
 
       <Card title={`Incidents (${incidents.filter((i) => i.status !== "RESOLVED").length} open)`}>
         <div className="flex flex-wrap gap-2 text-xs mb-3">

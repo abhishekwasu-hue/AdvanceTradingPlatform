@@ -144,6 +144,7 @@ from app.lab.pine.routes import router as lab_pine_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.screener.then.routes import router as scan_then_router
 from app.alerts.links_routes import router as alert_links_router
+from app.alerts.platform_bot_routes import router as telegram_connect_router
 from app.alerts.outbox_admin import router as alert_outbox_admin_router
 from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
@@ -311,6 +312,7 @@ app.include_router(screener_etf_router)  # S10 J: the ETF screen on the shared E
 app.include_router(alert_rules_router)
 app.include_router(scan_then_router)
 app.include_router(alert_links_router)
+app.include_router(telegram_connect_router)  # UX2 fix 5: Connect Telegram with the platform bot
 app.include_router(alert_outbox_admin_router)  # Z10-b: alert outbox state, dead letters and replay (SUPER_ADMIN)
 app.include_router(compliance_router)
 app.include_router(chart_drawings_router)

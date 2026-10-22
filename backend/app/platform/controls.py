@@ -410,6 +410,18 @@ async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
     return result
 
 
+async def flag_listing(session: AsyncSession) -> Dict[str, Dict]:
+    """UX1: the admin Feature flags list - `feature_flags` plus each flag's catalog entry (app/platform/flag_catalog.py)
+    and its default (`default_on`: the value with nothing stored, the Phase 0 seed included)."""
+    from app.platform.flag_catalog import info_for
+
+    flags = await feature_flags(session)
+    for name, entry in flags.items():
+        phase_default = deployment_phase.default_for(name)
+        entry.update(info_for(name), default_on=(name not in DEFAULT_OFF_FLAGS) if phase_default is None else phase_default)
+    return flags
+
+
 def _entry_enabled(entry: Optional[Dict], tenant_id: Optional[int]) -> bool:
     """One flag's answer from its resolved entry: unknown flags are ON; otherwise ON, or the tenant is allow-listed."""
     if entry is None:

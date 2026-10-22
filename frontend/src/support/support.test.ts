@@ -3,7 +3,7 @@ import appSource from "../App.tsx?raw";
 import feedbackSource from "../feedback/FeedbackDialog.tsx?raw";
 import bannerSource from "../legal/LegalAcceptanceBanner.tsx?raw";
 import legalPageSource from "../legal/LegalPage.tsx?raw";
-import accountSource from "../pages/AccountPage.tsx?raw";
+import accountSource from "../auth/SignInScreen.tsx?raw";
 import dialogSource from "./SupportDialog.tsx?raw";
 import { QUESTION_MAX_CHARS, SUGGESTED_QUESTIONS, safeLinks, sourceLabel, supportQuestion } from "./support";
 

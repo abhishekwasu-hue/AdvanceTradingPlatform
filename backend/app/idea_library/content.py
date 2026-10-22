@@ -9,7 +9,14 @@ run it over the whole file.
 A scan is ScreenQL built ONLY from the existing registry (`app.screener.registry`); every number in it is a `$setting`
 declared on the idea (type, default, bounds), so the user sees and changes it. Where an idea needs something the registry
 does not have yet, the idea says so (`scan_gaps`) instead of inventing a rule. Nothing here places, sizes or exits an
-order; an idea becomes a paper strategy only once the strategy templates core carries it (slice 2, not built here).
+order.
+
+Slice 2 (IDEA-1): "Adopt as a paper strategy". An idea carries `adopt` only when it maps HONESTLY onto a built-in strategy
+template (`app.strategy_templates`): the same structure (context, area, trigger, invalidation), never a stand-in that
+reads differently. The card then links to the paper bot form with the template picked and the mapped settings as the
+pre-fill; the user reviews and saves it himself, PAPER only. `ADOPT_REVIEW` records, for every idea without a mapping,
+why no template matches today (the tests keep both in step). Today none does: the templates on main are D1, D2, B1 and
+B3, and every T idea reads a different structure (OPEN_QUESTIONS IDEA-1, IDEA-10).
 """
 from __future__ import annotations
 
@@ -17,7 +24,7 @@ import json
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
+from typing import Any, Dict, FrozenSet, List, Literal, Optional, Set, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
 
@@ -91,6 +98,14 @@ class Logic(_Strict):
     evidence: Tuple[str, ...] = Field(min_length=1)
 
 
+class Adopt(_Strict):
+    """An honest mapping onto a built-in strategy template: the template, its chart timeframe and the settings it starts
+    with (a pre-fill the user changes; every other setting keeps the template's default)."""
+    template: str = Field(pattern=r"^[A-G][0-9]{1,2}$")
+    timeframe: Optional[str] = Field(default=None, max_length=4)
+    params: Dict[str, Value] = Field(default_factory=dict, max_length=40)
+
+
 class Idea(_Strict):
     id: str = Field(pattern=r"^T[1-8]$")
     name: str = Field(min_length=1, max_length=80)
@@ -107,6 +122,7 @@ class Idea(_Strict):
     provenance: str = Field(min_length=1, max_length=400)
     scans: Tuple[Scan, ...] = ()
     scan_gaps: Optional[str] = Field(default=None, max_length=300)
+    adopt: Optional[Adopt] = None
 
     @model_validator(mode="after")
     def _consistent(self) -> "Idea":
@@ -332,16 +348,77 @@ def scan_payload(idea: Idea, scan: Scan, flags_on: Set[str]) -> Dict[str, Any]:
             "available": all(f in flags_on for f in scan_flags(scan))}
 
 
-def idea_payload(idea: Idea, flags_on: Set[str]) -> Dict[str, Any]:
-    data = json.loads(idea.model_dump_json())
+# --------------------------------------------------------------------------------------- adopt as a paper strategy
+# IDEA-1 review (22 Oct, the templates on main: D1 Supertrend flip, D2 moving-average crossover, B1 range breakout, B3
+# channel breakout). An idea is adoptable only through a template with the SAME structure; otherwise its reason is here.
+# The honest home of T1-T8 is the templates spec's family A (same ids), which is not built yet.
+ADOPT_REVIEW: Dict[str, str] = {
+    "T1": "A pullback into a demand / supply area with a reaction there; no template reads an area or a pullback "
+          "(D1 / D2 signal on an indicator flip, B1 / B3 on a breakout).",
+    "T2": "A rejection at a range edge (a fade back into the range); B1 signals the opposite, a close beyond the range.",
+    "T3": "RSI divergence into an area; no template reads divergence or an area.",
+    "T4": "A sweep beyond an obvious high / low and a close back inside; B1's 'close back inside' is its exit, not a "
+          "signal, and no template reads the sweep.",
+    "T5": "A break, then the retest of the broken level; B1 / B3 signal on the break itself, without the retest. The "
+          "honest match is C1 / C3 (breakout + retest), which wait for R7 (TPL-Q8).",
+    "T6": "A rejection at the channel line in the trend's favour; B3 signals the opposite, a close beyond the far edge.",
+    "T7": "Double top / bottom or head and shoulders at an area; no template reads swing patterns (IDEA-3).",
+    "T8": "T1 and T2 reduced to direction; adoptable only once T1 / T2 are.",
+}
+
+
+def check_adopt(idea: Idea) -> List[str]:
+    """Problems of an idea's mapping against the real template library (empty = it adopts as written)."""
+    if idea.adopt is None:
+        return []
+    from app.strategy_templates import ids, library
+    from app.strategy_templates.adapter import ENGINE_LABEL, TemplateStrategy
+    from app.strategy_templates.compile import TemplateError
+    a = idea.adopt
+    try:
+        template = library.get(a.template)
+    except KeyError:
+        return [f"{idea.id}: unknown template {a.template!r}"]
+    tf = a.timeframe or next((t for t in template.allowed_timeframes if t in ENGINE_LABEL), None)
+    if tf not in ENGINE_LABEL:
+        return [f"{idea.id}: the timeframe {tf!r} cannot run as a paper strategy"]
+    try:
+        _, settings = ids.adopt(template, tf, None, dict(a.params))
+        TemplateStrategy(template, settings)
+    except TemplateError as exc:
+        return [f"{idea.id}: {p}" for p in exc.problems]
+    return []
+
+
+def adopt_templates(library: Library) -> List[str]:
+    """The template ids the library's mappings name (the route checks only these)."""
+    out: List[str] = []
+    for idea in library.ideas:
+        if idea.adopt is not None and idea.adopt.template not in out:
+            out.append(idea.adopt.template)
+    return out
+
+
+def adopt_payload(idea: Idea, adoptable: FrozenSet[str] = frozenset()) -> Dict[str, Any]:
+    """What the card's "Adopt as a paper strategy" needs: available only for a mapped idea whose template the
+    organisation can adopt now (`strategy_templates` on and every function it reads switched on)."""
+    a = idea.adopt
+    if a is None or a.template not in adoptable:
+        return {"available": False}
+    return {"available": True, "template": a.template, "timeframe": a.timeframe, "params": dict(a.params)}
+
+
+def idea_payload(idea: Idea, flags_on: Set[str], adoptable: FrozenSet[str] = frozenset()) -> Dict[str, Any]:
+    data = json.loads(idea.model_dump_json(exclude={"adopt"}))
     data["scans"] = [scan_payload(idea, s, flags_on) for s in idea.scans]
-    data["adopt"] = {"available": False}          # slice 2: once the strategy templates core carries the idea
+    data["adopt"] = adopt_payload(idea, adoptable)
     return data
 
 
-def payload(library: Library, flags_on: Set[str]) -> Dict[str, Any]:
+def payload(library: Library, flags_on: Set[str], adoptable: FrozenSet[str] = frozenset()) -> Dict[str, Any]:
     return {"header": json.loads(library.header.model_dump_json()), "groups": [json.loads(g.model_dump_json()) for g in library.groups],
-            "beginner": json.loads(library.beginner.model_dump_json()), "ideas": [idea_payload(i, flags_on) for i in library.ideas]}
+            "beginner": json.loads(library.beginner.model_dump_json()),
+            "ideas": [idea_payload(i, flags_on, adoptable) for i in library.ideas]}
 
 
 def needed_flags(library: Library) -> List[str]:
@@ -353,5 +430,6 @@ def needed_flags(library: Library) -> List[str]:
     return out
 
 
-__all__ = ["CONTENT_PATH", "FLAG", "IDEA_IDS", "SCREENER_FLAGS", "Library", "Idea", "Scan", "Setting", "load", "guard", "scan_params",
-           "readable_lines", "problems", "check_scan", "scan_flags", "scan_payload", "idea_payload", "payload", "needed_flags"]
+__all__ = ["CONTENT_PATH", "FLAG", "IDEA_IDS", "SCREENER_FLAGS", "ADOPT_REVIEW", "Library", "Idea", "Adopt", "Scan", "Setting", "load",
+           "guard", "scan_params", "readable_lines", "problems", "check_scan", "scan_flags", "scan_payload", "check_adopt",
+           "adopt_templates", "adopt_payload", "idea_payload", "payload", "needed_flags"]

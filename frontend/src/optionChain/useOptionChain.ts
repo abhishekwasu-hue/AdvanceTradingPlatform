@@ -17,11 +17,11 @@ import type { ChainExpiries, LiveChain } from "./types";
 export type ChainProblem = "no-session" | "plan" | "failed";
 
 /** Step 1, pure: the list and the expiry it selects. A failed read selects nothing (the broker's nearest is read). */
-export async function loadExpiryChoice(symbol: string, read: (symbol: string) => Promise<ChainExpiries>):
+export async function loadExpiryChoice(symbol: string, read: (symbol: string) => Promise<ChainExpiries>, wanted: string | null = null):
   Promise<{ list: ChainExpiries | null; expiry: string | null }> {
   try {
     const list = await read(symbol);
-    return { list, expiry: chooseExpiry(list, null) };
+    return { list, expiry: chooseExpiry(list, wanted) };
   } catch {
     return { list: null, expiry: null };
   }
@@ -66,7 +66,9 @@ export interface OptionChainData {
   problem: ChainProblem | null;
 }
 
-export function useOptionChain(symbol: string, marketOpen: boolean | null): OptionChainData {
+/** FNO-3: `wanted` is the expiry the address carried (the symbol hub's tabs keep it); used for the first list only,
+ * while that list holds it. */
+export function useOptionChain(symbol: string, marketOpen: boolean | null, wanted: string | null = null): OptionChainData {
   const visible = usePageVisible();
   const [expiries, setExpiries] = useState<ChainExpiries | null>(null);
   // The symbol whose expiry list has answered: the chain is read only for that symbol (never the old expiry under a
@@ -81,6 +83,7 @@ export function useOptionChain(symbol: string, marketOpen: boolean | null): Opti
   // A page left open past an expiry: the server refuses the passed date (422) and the list is read again.
   const [listRound, setListRound] = useState(0);
   const retriedFor = useRef<string | null>(null);
+  const wantedRef = useRef<string | null>(wanted);
 
   // 1. The expiry list for the symbol; the default expiry is chosen as soon as it answers.
   useEffect(() => {
@@ -92,7 +95,9 @@ export function useOptionChain(symbol: string, marketOpen: boolean | null): Opti
     setLive(null);
     setLoading(true);
     setProblem(null);
-    void loadExpiryChoice(symbol, api.optionChainExpiries).then(({ list, expiry: chosen }) => {
+    const carried = wantedRef.current;
+    wantedRef.current = null;
+    void loadExpiryChoice(symbol, api.optionChainExpiries, carried).then(({ list, expiry: chosen }) => {
       if (!alive) return;
       setExpiries(list);
       setExpiryState(chosen);

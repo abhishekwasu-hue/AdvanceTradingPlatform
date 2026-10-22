@@ -5,7 +5,8 @@ account (`paper_account`, whose "Exit now" is the exit path of these positions):
 Every answer is the caller's own (tenant + user). The only order this can lead to is ONE PAPER order through the
 ordinary pipeline (app/paper/fno_ticket.py); there is no mode in the body and no LIVE path. Nothing here touches an exit.
 
-- `GET  /api/paper/fno/contract`       the contract from the instrument master (trading symbol, lot and tick size).
+- `GET  /api/paper/fno/contract`       the contract from the instrument master (trading symbol, lot and tick size); an
+  option (`right` CE / PE with its strike) or, FNO-3, a future (`right` FUT, no strike).
 - `GET  /api/paper/fno/held`           the caller's open PAPER option positions on one underlying and expiry.
 - `POST /api/paper/fno/order/preview`  the ticket checked: price, units, margin, max loss, risk checks in plain words.
 - `POST /api/paper/fno/order`          place it (at the live price; the pipeline checks again).
@@ -14,7 +15,7 @@ from datetime import date
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_trader
@@ -51,8 +52,8 @@ class OrderBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     underlying: str = Field(pattern=SYMBOL)
     expiry: date
-    strike: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
-    right: Literal["CE", "PE"]
+    strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)   # None for a future
+    right: Literal["CE", "PE", "FUT"]
     side: Literal["BUY", "SELL"]
     lots: int = Field(ge=1, le=fno_ticket.MAX_LOTS)
     order_type: Literal["MARKET", "LIMIT", "SL", "SL-M"] = "MARKET"
@@ -63,6 +64,14 @@ class OrderBody(BaseModel):
     chain_ltp: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     client_ref: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9-]{8,64}$")
 
+    @model_validator(mode="after")
+    def _strike_for_options_only(self) -> "OrderBody":
+        if self.right == "FUT" and self.strike is not None:
+            raise ValueError("a future has no strike")
+        if self.right != "FUT" and self.strike is None:
+            raise ValueError("an option needs its strike")
+        return self
+
     def ask(self) -> fno_ticket.OrderAsk:
         values = self.model_dump()
         values["underlying"] = _name(self.underlying)
@@ -70,10 +79,13 @@ class OrderBody(BaseModel):
 
 
 @router.get("/contract")
-async def contract(underlying: str = Query(pattern=SYMBOL), expiry: date = Query(), strike: float = Query(gt=0, lt=MAX_PRICE),
-                   right: Literal["CE", "PE"] = Query(), user: User = Depends(get_current_user),
+async def contract(underlying: str = Query(pattern=SYMBOL), expiry: date = Query(),
+                   strike: Optional[float] = Query(default=None, gt=0, lt=MAX_PRICE),
+                   right: Literal["CE", "PE", "FUT"] = Query(), user: User = Depends(get_current_user),
                    session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _enabled(session, user)
+    if (right == "FUT") != (strike is None):
+        raise HTTPException(status_code=422, detail="An option needs its strike; a future has none.")
     try:
         found = await fno_ticket.find_contract(session, _name(underlying), expiry, strike, right)
     except fno_ticket.ContractNotFound as exc:

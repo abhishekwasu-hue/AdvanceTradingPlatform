@@ -1,7 +1,10 @@
 import { CalendarDays, Info, TriangleAlert } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { useChainTrading } from "../fno/ChainTradingV2";
+import { readCarry } from "../fno/hubModel";
+import SymbolHubTabsV2 from "../fno/SymbolHubTabsV2";
 import type { PageProps } from "../routes";
 import { formatDateIST, formatTimeIST } from "../ui/format";
 import { PageIntro } from "../ui/PageIntro";
@@ -28,6 +31,8 @@ import { useOptionChain, type OptionChainData } from "./useOptionChain";
  * - Below the chain: the mount point of the Analysis tabs (OC2).
  * - FNO-1: with the PAPER account on, a call or put cell opens its actions and the PAPER order ticket, held contracts
  *   show "P", and a bottom strip holds the key figures (src/fno/ChainTradingV2.tsx). The page itself places nothing.
+ * - FNO-3: the symbol hub's tab row on top (Chart | Option chain | Futures | Overview, src/fno/SymbolHubTabsV2.tsx). The
+ *   address keeps the symbol and the expiry (`?underlying=&expiry=`, and the chart's `tf`), so the tabs carry them.
  * Shown only while `ui_v2` is on (src/shell/pagesV2.ts).
  */
 const SELECT = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 font-semibold text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9";
@@ -43,14 +48,29 @@ function Note({ tone, children }: { tone: "neutral" | "warn"; children: string }
 }
 
 export default function OptionChainPageV2(_props: PageProps) {
+  const [params, setParams] = useSearchParams();
   const [symbol, setSymbol] = useState(() => initialSymbol(typeof window === "undefined" ? "" : window.location.search));
+  const [carried] = useState(() => readCarry(params));
   const market = useMarketStatus();
   const marketOpen = market.status?.sessions?.NSE?.is_open ?? null;
-  const chain = useOptionChain(symbol, marketOpen);
+  const chain = useOptionChain(symbol, marketOpen, carried.expiry);
   const [prefs, setPrefs] = useState<ColumnPrefs>(() => readColumns());
+  // FNO-3: the address follows the symbol and the expiry on screen, so the hub's tabs (and a reload) keep them.
+  const expiry = chain.expiry;
+  useEffect(() => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("underlying", symbol);
+      if (expiry) next.set("expiry", expiry); else next.delete("expiry");
+      return next.toString() === prev.toString() ? prev : next;
+    }, { replace: true });
+  }, [symbol, expiry, setParams]);
   return (
-    <OptionChainView symbol={symbol} onSymbol={setSymbol} chain={chain} marketOpen={marketOpen} prefs={prefs}
-      onPrefs={(next) => { setPrefs(next); writeColumns(next); }} />
+    <>
+      <SymbolHubTabsV2 symbol={symbol} current="option-chain" carry={{ expiry, timeframe: carried.timeframe }} />
+      <OptionChainView symbol={symbol} onSymbol={setSymbol} chain={chain} marketOpen={marketOpen} prefs={prefs}
+        onPrefs={(next) => { setPrefs(next); writeColumns(next); }} />
+    </>
   );
 }
 

@@ -19,6 +19,10 @@ here, before anything is placed:
   loss lockout and entries-per-day limit, approval-only mode, experience gates, the F&O ban, the Risk Guardian, the
   risk engine's size within the risk per trade), in plain words. The order pipeline runs them again when it places.
 
+FNO-3: the same ticket takes a FUTURE (`right` "FUT", no strike): the contract is the instrument master's future (lot
+and tick size), a future needs a stop-loss on both sides (its loss has no limit without one), and its margin is the
+broker's SPAN margin, which PAPER does not have (said so, with the contract value; never invented).
+
 Placing sends ONE PAPER order through the ordinary pipeline (`execute_signal_for_user`, mode PAPER, the order state
 machine and trail) with the asked lots as the ceiling. `phase0_lock.assert_paper` is asserted right before it. Nothing
 here can reach a broker's order API, the AI never calls it (ADR-0006), and nothing here touches an exit (ADR-0004):
@@ -50,6 +54,7 @@ MODE = "PAPER"
 STRATEGY_ID = "manual_fno"
 SIDES = ("BUY", "SELL")
 RIGHTS = ("CE", "PE")
+FUTURE = "FUT"
 ORDER_TYPES = ("MARKET", "LIMIT", "SL", "SL-M")
 PRODUCTS = ("MIS", "NRML")
 MAX_LOTS = 500           # a ticket's own upper bound; the exchange's freeze quantity is not in the master yet (FNO-1-2)
@@ -61,8 +66,8 @@ PRACTICE = "Practice mode (PAPER): no real order is sent and no money moves."
 class OrderAsk:
     underlying: str
     expiry: date
-    strike: float
-    right: str                       # CE | PE
+    strike: Optional[float]          # None for a future
+    right: str                       # CE | PE | FUT
     side: str                        # BUY | SELL
     lots: int
     order_type: str = "MARKET"       # MARKET | LIMIT | SL | SL-M
@@ -81,10 +86,14 @@ class Contract:
     exchange: str
     instrument_key: str
     expiry: date
-    strike: float
-    right: str
+    strike: Optional[float]          # None for a future
+    right: str                       # CE | PE | FUT
     lot_size: int
     tick_size: float
+
+    @property
+    def is_future(self) -> bool:
+        return self.right == FUTURE
 
     @property
     def label(self) -> str:
@@ -97,8 +106,10 @@ class Contract:
                 "freeze_quantity": None}
 
 
-def contract_label(underlying: str, expiry: date, strike: float, right: str) -> str:
-    """The contract as traders write it: "NIFTY 28 OCT 22800 CE"."""
+def contract_label(underlying: str, expiry: date, strike: Optional[float], right: str) -> str:
+    """The contract as traders write it: "NIFTY 28 OCT 22800 CE", a future "NIFTY 28 OCT FUT"."""
+    if right.upper() == FUTURE or strike is None:
+        return f"{underlying} {expiry.day:02d} {MONTHS[expiry.month - 1]} FUT"
     k = int(strike) if float(strike).is_integer() else round(float(strike), 2)
     return f"{underlying} {expiry.day:02d} {MONTHS[expiry.month - 1]} {k} {right}"
 
@@ -107,9 +118,19 @@ class ContractNotFound(LookupError):
     """The instrument master holds no such contract (not synced yet, or no such strike / expiry)."""
 
 
-async def find_contract(session: AsyncSession, underlying: str, expiry: date, strike: float, right: str) -> Contract:
+async def find_contract(session: AsyncSession, underlying: str, expiry: date, strike: Optional[float], right: str) -> Contract:
     """The contract from the instrument master: Upstox's master first (ATP's own data connection), else any broker's."""
     name = master.underlying_of(underlying)
+    if right.upper() == FUTURE:
+        from app.option_chain.futures_chain import find_future
+        fut = await find_future(session, name, expiry)
+        if fut is None:
+            raise ContractNotFound(f"{contract_label(name, expiry, None, FUTURE)} is not in the instrument list yet. It updates every "
+                                   "morning; try again later.")
+        return Contract(underlying=name, tradingsymbol=fut.tradingsymbol, exchange=fut.exchange, instrument_key=fut.instrument_key,
+                        expiry=fut.expiry, strike=None, right=FUTURE, lot_size=fut.lot_size, tick_size=fut.tick_size)
+    if strike is None:
+        raise ContractNotFound("An option needs a strike.")
     row = await master.find_option(session, name, expiry, strike, right)
     if row is None:
         row = await session.scalar(select(InstrumentRecord).where(
@@ -177,18 +198,20 @@ def ask_errors(ask: OrderAsk, tick: float) -> List[str]:
             errors.append("For a buy SL order the limit price must be at or above the trigger")
         if ask.side == "SELL" and ask.price > ask.trigger_price:
             errors.append("For a sell SL order the limit price must be at or below the trigger")
-    if ask.side == "SELL" and ask.stop_loss is None:
+    if ask.right == FUTURE and ask.stop_loss is None:
+        errors.append("A future needs a stop-loss: without one the loss has no limit")
+    elif ask.side == "SELL" and ask.stop_loss is None:
         errors.append("A sold option needs a stop-loss: without one the loss has no limit")
     return errors
 
 
-def stop_errors(side: str, fill: float, stop: Optional[float]) -> List[str]:
+def stop_errors(side: str, fill: float, stop: Optional[float], what: str = "option") -> List[str]:
     if stop is None:
         return []
     if side == "BUY" and not stop < fill:
-        return [f"The stop-loss ({stop:,.2f}) must be below the price ({fill:,.2f}) for a bought option"]
+        return [f"The stop-loss ({stop:,.2f}) must be below the price ({fill:,.2f}) for a bought {what}"]
     if side == "SELL" and not stop > fill:
-        return [f"The stop-loss ({stop:,.2f}) must be above the price ({fill:,.2f}) for a sold option"]
+        return [f"The stop-loss ({stop:,.2f}) must be above the price ({fill:,.2f}) for a sold {what}"]
     return []
 
 
@@ -201,13 +224,25 @@ def position_stop(side: str, stop: Optional[float], tick: float) -> float:
     return float(tick)
 
 
-def max_loss(side: str, fill: float, stop: Optional[float], units: float) -> Dict[str, Any]:
+def max_loss(side: str, fill: float, stop: Optional[float], units: float, future: bool = False) -> Dict[str, Any]:
+    if future:
+        assert stop is not None
+        value = (fill - stop) if side == "BUY" else (stop - fill)
+        return {"value": round(value * units, 2), "basis": f"Down to your stop-loss {stop:,.2f}. A gap past the stop can lose more."
+                if side == "BUY" else f"Up to your stop-loss {stop:,.2f}. A gap past the stop can lose more."}
     if side == "BUY":
         if stop is None:
             return {"value": round(fill * units, 2), "basis": "The premium you pay, if the option expires worthless."}
         return {"value": round((fill - stop) * units, 2), "basis": f"Down to your stop-loss {stop:,.2f}. At most the premium you pay."}
     assert stop is not None
     return {"value": round((stop - fill) * units, 2), "basis": f"Up to your stop-loss {stop:,.2f}. A gap past the stop can lose more."}
+
+
+def future_margin(fill: float, units: float) -> Dict[str, Any]:
+    """A future's margin is the broker's SPAN + exposure margin, which PAPER does not have: not estimated (never made
+    up); the contract value is shown next to it."""
+    return {"value": None, "estimated": True, "basis": "A future needs your broker's SPAN and exposure margin, which practice mode "
+            "does not have.", "note": f"Contract value ₹{fill * units:,.0f}"}
 
 
 def margin(side: str, right: str, strike: float, fill: float, lots: int, lot_size: int, expiry: date) -> Dict[str, Any]:
@@ -248,13 +283,15 @@ def plain(reason: str) -> str:
 # --- the ticket ----------------------------------------------------------------------------------------------------
 
 def _signal(contract: Contract, side: str, fill: float, stop: float, now: datetime, note: str) -> Signal:
-    return Signal(symbol=contract.tradingsymbol, strategy_id=STRATEGY_ID, strategy_name="Manual order (option chain)",
+    name = "Manual order (futures chain)" if contract.is_future else "Manual order (option chain)"
+    return Signal(symbol=contract.tradingsymbol, strategy_id=STRATEGY_ID, strategy_name=name,
                   direction=SignalDirection.LONG if side == "BUY" else SignalDirection.SHORT, timestamp=now, entry=fill, stop_loss=stop,
                   target1=None, risk_reward=None, score=0, grade=SignalGrade.VALID, reasons=[f"Manual order: {side} {contract.label}", note],
                   timeframe_combo="manual")
 
 
 def _spec(contract: Contract) -> ContractSpec:
+    # Sized in whole lots of the master's lot size, an option or a future alike (INDEX_OPTION is the lot-sized class).
     return ContractSpec(symbol=contract.tradingsymbol, exchange=contract.exchange, asset_class=AssetClass.INDEX_OPTION,
                         description=f"{contract.label} ({contract.exchange})", lot_size=float(contract.lot_size),
                         tick_size=contract.tick_size)
@@ -262,6 +299,9 @@ def _spec(contract: Contract) -> ContractSpec:
 
 def _meta(contract: Contract, side: str) -> Dict[str, Any]:
     from app.option_chain.chain_view import spot_instrument
+    if contract.is_future:
+        return {"instrument_kind": "FUTURE", "exchange": contract.exchange, "instrument_key": contract.instrument_key,
+                "lot_size": contract.lot_size, "expiry": contract.expiry, "underlying_symbol": spot_instrument(contract.underlying)[0]}
     return {"instrument_kind": "OPTION", "exchange": contract.exchange, "instrument_key": contract.instrument_key,
             "lot_size": contract.lot_size, "expiry": contract.expiry, "option_position": "BUY" if side == "BUY" else "WRITE",
             "underlying_symbol": spot_instrument(contract.underlying)[0]}
@@ -315,6 +355,8 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     warnings: List[str] = []
     side, right = ask.side.upper(), ask.right.upper()
     ask.side, ask.right, ask.order_type, ask.product = side, right, ask.order_type.upper(), ask.product.upper()
+    future = right == FUTURE
+    what = "future" if future else "option"
     try:
         contract: Optional[Contract] = await find_contract(session, ask.underlying, ask.expiry, ask.strike, right)
     except ContractNotFound as exc:
@@ -347,7 +389,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
             refusals.append(fill_note)
     reference = fill if fill is not None else (ask.price or price)
     if reference is not None and not errors:
-        errors.extend(stop_errors(side, float(reference), ask.stop_loss))
+        errors.extend(stop_errors(side, float(reference), ask.stop_loss, what))
 
     tenant = await session.get(Tenant, user.tenant_id)
     refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, MODE, STRATEGY_ID, user=user, reserve=False))
@@ -380,13 +422,15 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
             refusals.append(f"Your risk per trade (₹{cap_amount:,.0f}) allows {risk['allowed_lots']} lot(s) at this stop-loss. "
                             "Lower the lots or set a closer stop-loss.")
 
-    loss = max_loss(side, fill, ask.stop_loss, units) if fill is not None and units and not errors else None
-    margin_line = margin(side, right, contract.strike, fill, ask.lots, contract.lot_size, contract.expiry) if (
-        contract is not None and fill is not None and not errors) else None
+    loss = max_loss(side, fill, ask.stop_loss, units, future) if fill is not None and units and not errors else None
+    margin_line = None
+    if contract is not None and fill is not None and not errors and units:
+        margin_line = future_margin(fill, units) if future else margin(side, right, float(contract.strike or 0.0), fill, ask.lots,
+                                                                         contract.lot_size, contract.expiry)
     charges = None
     if fill is not None and units and not errors:
         from app.execution.india_costs import leg_cost
-        cost = leg_cost(today, "buy" if side == "BUY" else "sell", fill, units, "OPTION")
+        cost = leg_cost(today, "buy" if side == "BUY" else "sell", fill, units, "FUTURE" if future else "OPTION")
         charges = {"total": round(cost["total"], 2), "estimated": True}
     can_place = not errors and not refusals and fill is not None
     label = contract.label if contract else contract_label(master.underlying_of(ask.underlying), ask.expiry, ask.strike, right)

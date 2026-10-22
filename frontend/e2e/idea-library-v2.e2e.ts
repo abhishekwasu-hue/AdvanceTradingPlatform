@@ -8,6 +8,7 @@ import { expectPhoneLayout } from "./phoneLayout";
  * Idea library slice 1 at /ideas (ui_v2 + idea_library): the method cards T1-T8, the education frame, the beginner
  * questions, a card's full idea, "Try as a scan" into Find setups, and nothing at all while the flag is off.
  * - Baselines (NEW): `idea-library-v2-{1440,390,360}-{light,dark}.png`. Other baselines are untouched.
+ * - Slice 2 baselines (NEW): `idea-library-adopt-v2-{1440,390}-{light,dark}.png` (a mapped idea's card, IDEA-1).
  * The library is the server's own payload (e2e/fixtures/ideas_v2.json, checked by backend/tests/test_idea_library.py);
  * the stages reply is what the server answers for T5's first scan. No real account, symbol or price anywhere.
  * After an intended change: `npx playwright test --project=phone e2e/idea-library-v2.e2e.ts --update-snapshots`.
@@ -26,7 +27,12 @@ const ON = { idea_library: true, screener_v2: true, screener_builder_u2: true };
 
 interface Sent { stages: unknown[] }
 
-async function open(page: Page, path: string, o: { theme?: "light" | "dark"; features?: Record<string, boolean> } = {}): Promise<Sent> {
+/** Slice 2 (IDEA-1): the library with T5 mapped onto a template the organisation can adopt. No idea is mapped on main
+ * today (none shares a template's structure), so this is the state the card takes once one is. */
+const MAPPED = { ...LIB, ideas: LIB.ideas.map((i) => i.id === "T5"
+  ? { ...i, adopt: { available: true, template: "D1", timeframe: "15m", params: { period: 12 } } } : i) };
+
+async function open(page: Page, path: string, o: { theme?: "light" | "dark"; features?: Record<string, boolean>; library?: unknown } = {}): Promise<Sent> {
   const sent: Sent = { stages: [] };
   await page.addInitScript((theme) => {
     try {
@@ -41,7 +47,7 @@ async function open(page: Page, path: string, o: { theme?: "light" | "dark"; fea
   await page.route(api("/ideas(/[A-Za-z0-9]+)?$"), (route) => {
     if (!features.idea_library) return route.fulfill({ status: 404, headers: { "X-Feature-Disabled": "idea_library" }, json: { detail: "Not found" } });
     const m = /\/ideas\/([A-Za-z0-9]+)$/.exec(route.request().url());
-    if (!m) return route.fulfill({ json: LIB });
+    if (!m) return route.fulfill({ json: o.library ?? LIB });
     const idea = LIB.ideas.find((i) => i.id === m[1]);
     return idea ? route.fulfill({ json: idea }) : route.fulfill({ status: 404, json: { detail: "no such idea" } });
   });
@@ -85,6 +91,29 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
   });
 }
 
+for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, { name: "390", width: 390, height: 844, mobile: true }]) {
+  test.describe(`Idea library adopt ${size.name}`, () => {
+    test.use({ viewport: { width: size.width, height: size.height }, isMobile: size.mobile, hasTouch: size.mobile, deviceScaleFactor: 1 });
+
+    for (const theme of ["light", "dark"] as const) {
+      test(`a mapped idea's card with Adopt as a paper strategy looks the same (${theme})`, async ({ page }) => {
+        await open(page, "/ideas", { theme, library: MAPPED, features: { ...ON, strategy_templates: true } });
+        const card = page.locator("[data-idea='T5']");
+        await card.locator("summary").click();
+        await expect(card.locator("[data-state='adopt-ready']")).toBeVisible();
+        await expect(card).toHaveScreenshot(`idea-library-adopt-v2-${size.name}-${theme}.png`, SHOT);
+      });
+    }
+
+    if (size.mobile) {
+      test("adopt: no sideways scroll, 44 px targets", async ({ page }) => {
+        await open(page, "/ideas", { library: MAPPED, features: { ...ON, strategy_templates: true } });
+        await expectPhoneLayout(page);
+      });
+    }
+  });
+}
+
 test.describe("Idea library behaviour", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -110,6 +139,27 @@ test.describe("Idea library behaviour", () => {
     const text = (await page.locator("main").innerText()).replace(/\s+/g, " ");
     expect(text).not.toMatch(/\b(buy|sell|target|stop-loss|stoploss|profit|win rate)\b/i);
     expect(text).not.toMatch(/\bLIVE\b/);
+  });
+
+  test("slice 2: no idea on main is adoptable yet", async ({ page }) => {
+    await open(page, "/ideas", { features: { ...ON, strategy_templates: true } });
+    await expect(page.locator("[data-idea]")).toHaveCount(8);
+    await expect(page.locator("[data-adopt]")).toHaveCount(0);
+  });
+
+  test("slice 2: a mapped idea is not offered while strategy templates are off", async ({ page }) => {
+    await open(page, "/ideas", { library: MAPPED, features: { ...ON, strategy_templates: false } });
+    await expect(page.locator("[data-idea]")).toHaveCount(8);
+    await expect(page.locator("[data-adopt]")).toHaveCount(0);
+  });
+
+  test("slice 2: a mapped idea links to the Paper bot form with its template and settings", async ({ page }) => {
+    await open(page, "/ideas", { library: MAPPED, features: { ...ON, strategy_templates: true } });
+    const link = page.locator("[data-idea='T5'] [data-adopt='D1']");
+    await expect(link).toHaveText("Adopt as a paper strategy");
+    await expect(link).toHaveAttribute("href", "/deployments?template=D1&timeframe=15m&set.period=12");
+    await expect(page.locator("[data-adopt]")).toHaveCount(1);
+    await expect(page.locator("[data-idea='T5'] [data-block='idea-adopt']")).toContainText("runs on paper only");
   });
 
   test("filter by group, and the beginner questions suggest ideas to read", async ({ page }) => {

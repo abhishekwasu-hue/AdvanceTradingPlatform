@@ -1,11 +1,13 @@
-import { BookOpen, ChevronDown, Search } from "lucide-react";
+import { BookOpen, ChevronDown, Play, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/errors";
-import { CARD, ChipV2, LINK_SECONDARY, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
+import { CARD, ChipV2, LINK_PRIMARY, LINK_SECONDARY, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import type { PageProps } from "../routes";
 import { PageTitleV2 } from "../trading/PartsV2";
 import { ComingSoon } from "../ui/ComingSoon";
+import { useFeatures } from "../ui/useFeatures";
+import { paperBotPathFor } from "../strategyTemplates/link";
 import { ideasApi, type Idea, type IdeaLibrary } from "./api";
 import { ALL_GROUPS, IDEA_FLAG, defaultText, ideasIn, rangeText, screenerPathFor, suggestIdeas } from "./model";
 
@@ -17,9 +19,13 @@ import { ALL_GROUPS, IDEA_FLAG, defaultText, ideasIn, rangeText, screenerPathFor
  * names, no prices, no performance claims (the content guard in the backend tests).
  *
  * "Try as a scan" opens the idea's screen in Find setups (`/screener?idea=..&scan=..`), built from the existing registry
- * only. "Use as a paper strategy" comes later, once the strategy templates carry the idea. Nothing here places an order.
+ * only. Slice 2 (IDEA-1): "Adopt as a paper strategy" appears only on an idea the server maps HONESTLY onto a strategy
+ * template (`adopt.available`, with `strategy_templates` on too); it opens the Paper bot form with the template picked
+ * and the idea's settings as the pre-fill, which the user reviews and saves himself (PAPER only). Every other idea says
+ * it comes later. Nothing here places an order.
  */
 export default function IdeaLibraryV2(_props: PageProps = {}) {
+  const features = useFeatures();
   const [library, setLibrary] = useState<IdeaLibrary | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "failed" | "off">("loading");
 
@@ -39,15 +45,17 @@ export default function IdeaLibraryV2(_props: PageProps = {}) {
         subtitle={library?.header.subtitle ?? "Well-known chart-reading methods, explained in plain words."} />
       {state === "loading" && <section className={`${CARD} p-space-4 md:p-space-5`} aria-busy="true"><LoadingRowsV2 rows={4} /></section>}
       {state === "failed" && <section className={`${CARD} p-space-4 md:p-space-5`}><LoadFailedV2 what="the idea library" /></section>}
-      {library && <IdeaLibraryView library={library} />}
+      {library && <IdeaLibraryView library={library} adoptOn={features.on("strategy_templates")} />}
     </div>
   );
 }
 
 /** The library once loaded: the frame, the beginner questions, the group filter and the cards. The starting group and
  * answers are props so the static render tests can show any state. */
-export function IdeaLibraryView({ library, initialGroup = ALL_GROUPS, initialAnswers = {} }: {
+export function IdeaLibraryView({ library, initialGroup = ALL_GROUPS, initialAnswers = {}, adoptOn = false }: {
   library: IdeaLibrary; initialGroup?: string; initialAnswers?: Record<string, string>;
+  /** `strategy_templates` is on (the server checks it too): only then can a mapped idea be adopted. */
+  adoptOn?: boolean;
 }) {
   const [group, setGroup] = useState(initialGroup);
   return (
@@ -58,7 +66,7 @@ export function IdeaLibraryView({ library, initialGroup = ALL_GROUPS, initialAns
       <div className="grid grid-cols-1 gap-space-4 lg:grid-cols-2" data-block="idea-cards">
         {ideasIn(library.ideas, group).map((idea) => (
           <IdeaCard key={idea.id} idea={idea} groupName={library.groups.find((g) => g.id === idea.group)?.name ?? ""}
-            adoptLater={library.header.adopt_later} />
+            adoptLater={library.header.adopt_later} adoptOn={adoptOn} />
         ))}
       </div>
     </>
@@ -146,9 +154,10 @@ function GroupFilter({ library, group, onChange }: { library: IdeaLibrary; group
   );
 }
 
-function IdeaCard({ idea, groupName, adoptLater }: { idea: Idea; groupName: string; adoptLater: string }) {
+function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupName: string; adoptLater: string; adoptOn: boolean }) {
   const titleId = useId();
   const open = idea.scans.filter((s) => s.available);
+  const adoptPath = adoptOn ? adoptPathFor(idea) : null;
   return (
     <article id={`idea-${idea.id}`} aria-labelledby={titleId} data-idea={idea.id} className={`${CARD} flex scroll-mt-space-6 flex-col p-space-4 md:p-space-5`}>
       <div className="flex flex-wrap items-center gap-space-2">
@@ -181,6 +190,15 @@ function IdeaCard({ idea, groupName, adoptLater }: { idea: Idea; groupName: stri
         )}
         {idea.scan_gaps && <p className="mt-space-2 text-t12 text-fg-muted" data-state="scan-gaps">{idea.scan_gaps}</p>}
       </div>
+
+      {adoptPath && (
+        <div className="mt-space-3" data-block="idea-adopt">
+          <Link to={adoptPath} className={LINK_PRIMARY} data-adopt={idea.adopt.available ? idea.adopt.template : undefined} aria-label={`Adopt as a paper strategy: ${idea.name}`}>
+            <Play size={14} aria-hidden />Adopt as a paper strategy
+          </Link>
+          <p className="mt-space-2 text-t12 text-fg-muted">{ADOPT_NOTE}</p>
+        </div>
+      )}
 
       <details className="group mt-space-3 border-t border-subtle pt-space-2">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-space-2 rounded-control text-t14 font-semibold text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9 [&::-webkit-details-marker]:hidden">
@@ -240,11 +258,23 @@ function IdeaCard({ idea, groupName, adoptLater }: { idea: Idea; groupName: stri
               </ul>
             </Part>
           )}
-          <Part title="Use as a paper strategy"><p className="text-fg-muted" data-state="adopt-later">{adoptLater}</p></Part>
+          <Part title="Use as a paper strategy">
+            {adoptPath ? <p className="text-fg-muted" data-state="adopt-ready">{ADOPT_NOTE}</p>
+              : <p className="text-fg-muted" data-state="adopt-later">{adoptLater}</p>}
+          </Part>
         </div>
       </details>
     </article>
   );
+}
+
+/** What "Adopt as a paper strategy" does, in plain words (PAPER only; the user saves it himself). */
+export const ADOPT_NOTE = "Opens the paper bot form with this idea's settings filled in. You review it and start it yourself; it runs on paper only.";
+
+/** The Paper bot link of an idea the server lets the user adopt now, or null ("comes later"). */
+export function adoptPathFor(idea: Pick<Idea, "adopt">): string | null {
+  const a = idea.adopt;
+  return a.available ? paperBotPathFor({ template: a.template, timeframe: a.timeframe, params: a.params }) : null;
 }
 
 function Part({ title, children }: { title: string; children: ReactNode }) {

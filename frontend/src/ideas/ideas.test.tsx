@@ -7,7 +7,7 @@ import { closedFlag } from "../shell/pageFlags";
 import { shellKeyFromPath, shellTitle } from "../shell/shellRoutes";
 import screenerSource from "../pages/ScreenerPage.tsx?raw";
 import type { IdeaLibrary, IdeaSetting } from "./api";
-import { IdeaLibraryView } from "./IdeaLibraryV2";
+import { ADOPT_NOTE, IdeaLibraryView, adoptPathFor } from "./IdeaLibraryV2";
 import pageSource from "./IdeaLibraryV2.tsx?raw";
 import {
   ALL_GROUPS, IDEAS_ADDRESS, IDEA_FLAG, MAX_SUGGESTIONS, defaultText, ideaScanFromSearch, ideasIn, rangeText, scanName,
@@ -21,8 +21,14 @@ import {
 const LIB = fixture as unknown as IdeaLibrary;
 const ORDER = LIB.ideas.map((i) => i.id);
 
-function render(props: { initialGroup?: string; initialAnswers?: Record<string, string> } = {}): string {
-  return renderToStaticMarkup(<MemoryRouter><IdeaLibraryView library={LIB} {...props} /></MemoryRouter>);
+function render(props: { initialGroup?: string; initialAnswers?: Record<string, string>; adoptOn?: boolean } = {}, library: IdeaLibrary = LIB): string {
+  return renderToStaticMarkup(<MemoryRouter><IdeaLibraryView library={library} {...props} /></MemoryRouter>);
+}
+
+/** The library with one idea mapped onto a template (no idea is mapped on main today: IDEA-1 / IDEA-10). */
+function withMapping(id: string): IdeaLibrary {
+  return { ...LIB, ideas: LIB.ideas.map((i) => i.id === id
+    ? { ...i, adopt: { available: true as const, template: "D1", timeframe: "15m", params: { period: 12 } } } : i) };
 }
 
 /** The text a trader reads (markup stripped), without the scan formulas (ScreenQL code, shown folded for the curious). */
@@ -101,6 +107,24 @@ describe("the cards", () => {
     expect(LIB.ideas.every((i) => i.adopt.available === false)).toBe(true);
     expect((html.match(/data-state="adopt-later"/g) ?? []).length).toBe(LIB.ideas.length);
     expect(readable(html)).not.toMatch(/\blive\b/i);
+  });
+
+  it("slice 2: a mapped idea offers Adopt as a paper strategy into the Paper bot form, only with strategy templates on", () => {
+    const mapped = withMapping("T5");
+    const on = render({ adoptOn: true }, mapped);
+    const t5 = on.slice(on.indexOf('data-idea="T5"'), on.indexOf('data-idea="T6"'));
+    expect(t5).toContain('data-adopt="D1"');
+    expect(t5).toContain('href="/deployments?template=D1&amp;timeframe=15m&amp;set.period=12"');
+    expect(t5).toContain('data-state="adopt-ready"');
+    expect(readable(t5)).toContain("runs on paper only");
+    expect((on.match(/data-adopt=/g) ?? []).length).toBe(1);                       // the other ideas still come later
+    expect((on.match(/data-state="adopt-later"/g) ?? []).length).toBe(LIB.ideas.length - 1);
+    const off = render({ adoptOn: false }, mapped);                                 // strategy_templates off: no link
+    expect(off).not.toContain("data-adopt=");
+    expect((off.match(/data-state="adopt-later"/g) ?? []).length).toBe(LIB.ideas.length);
+    expect(render({ adoptOn: true })).not.toContain("data-adopt=");                 // main: nothing is mapped
+    expect(adoptPathFor({ adopt: { available: false } })).toBeNull();
+    expect(ADOPT_NOTE).not.toMatch(/\b(buy|sell|target|stop|profit|live)\b/i);
   });
 
   it("the beginner suggestions link to the cards", () => {

@@ -75,7 +75,7 @@ function Row({ row, primary, loginBroker, login }: { row: AttentionRow; primary:
 export default function NeedsAttentionV2({ rows, loginBroker, login }: NeedsAttentionProps) {
   if (rows !== null && rows.length === 0) {
     return (
-      <section aria-label="Needs attention" data-block="attention"
+      <section aria-label="Needs attention" data-block="attention" data-tour="dashboard-attention"
         className="flex min-h-11 items-center gap-space-3 rounded-panel border border-subtle bg-surface-1 px-space-4 py-space-3 shadow-card md:px-space-5">
         <CircleCheck size={18} aria-hidden className="shrink-0 text-fg-muted" />
         <p className="text-t14 text-fg"><span className="font-semibold">All clear.</span> Nothing needs you right now.</p>
@@ -83,7 +83,7 @@ export default function NeedsAttentionV2({ rows, loginBroker, login }: NeedsAtte
     );
   }
   return (
-    <CardV2 title="Needs attention" count={rows?.length} testId="attention">
+    <CardV2 title="Needs attention" count={rows?.length} testId="attention" tour="dashboard-attention">
       {rows === null ? <LoadingRowsV2 /> : (
         <ul className="divide-y divide-subtle">
           {rows.map((row, i) => <Row key={row.id} row={row} primary={i === 0} loginBroker={loginBroker} login={login} />)}

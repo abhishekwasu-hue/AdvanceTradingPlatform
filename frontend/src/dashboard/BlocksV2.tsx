@@ -16,7 +16,7 @@ type Rows<T> = { status: "loading" } | { status: "error" } | { status: "ok"; row
 export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
   const total = data.status === "ok" ? data.total : undefined;
   return (
-    <CardV2 title="Open positions" count={total} more={{ label: "View all", to: "/positions" }} testId="positions">
+    <CardV2 title="Open positions" count={total} more={{ label: "View all", to: "/positions" }} testId="positions" tour="dashboard-positions">
       {data.status === "loading" ? <LoadingRowsV2 /> : data.status === "error" ? <LoadFailedV2 what="your positions" /> : data.rows.length === 0 ? (
         <EmptyStateV2 text="No open positions. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
       ) : (
@@ -51,7 +51,7 @@ export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
 
 export function ActiveSignalsV2({ data }: { data: Rows<SignalRow> }) {
   return (
-    <CardV2 title="Active signals" more={{ label: "View all", to: "/signals" }} testId="signals">
+    <CardV2 title="Active signals" more={{ label: "View all", to: "/signals" }} testId="signals" tour="dashboard-signals">
       {data.status === "loading" ? <LoadingRowsV2 /> : data.status === "error" ? <LoadFailedV2 what="today's signals" /> : data.rows.length === 0 ? (
         <EmptyStateV2 text="No signals yet today. Your scans and Autopilot strategies post them here." action={{ label: "Set up a scan", to: "/screener/custom" }} />
       ) : (

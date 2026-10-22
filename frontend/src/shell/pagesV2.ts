@@ -23,6 +23,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   // UI2-7: Settings → Setup (§11, src/setup) at /settings/setup - the setup wizard, v2 only (P3: the go-live checklist is
   // under Settings → Advanced in both shells).
   setup: lazy(() => import("../setup/SetupPageV2")),
+  // Item 5 (owner's handover): the chat-first Copilot (src/copilot/chat) at /copilot; /copilot/<tab> keeps today's tabs.
+  copilot: lazy(() => import("../copilot/chat/CopilotPageV2")),
 };
 
 /**
@@ -35,4 +37,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
  * (ADR-0004) while no broker session is usable: the gate's card says what is missing, and below it only the trader's
  * real open positions at the entry price - no live price, no P&L and nothing made up (src/trading/PositionsV2.tsx).
  */
-export const OWN_BROKER_STATES: readonly string[] = ["/", "/positions"];
+/*
+ * Item 5: the chat-first Copilot (`/copilot` only) answers from ATP's shared data and says itself what is missing ("I
+ * don't know the option chain: connect your broker ..."), so the gate does not hide it; `/copilot/<tab>` stays gated.
+ */
+export const OWN_BROKER_STATES: readonly string[] = ["/", "/positions", "/copilot"];

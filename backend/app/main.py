@@ -115,12 +115,14 @@ from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
 from app.option_chain.analyses_routes import router as oc_analyses_router
+from app.option_chain.charts_routes import router as oc_charts_router
 from app.platform.readiness_routes import router as readiness_router
 from app.billing.routes import admin_router as billing_admin_router, router as billing_router, webhook_router as billing_webhook_router
 from app.billing.service import meter
 from app.marketplace.routes import admin_router as marketplace_admin_router, router as marketplace_router
 from app.public_api.routes import keys_router as api_keys_router, public_router as public_api_router
 from app.ai.routes import router as ai_router
+from app.ai.chat_routes import router as ai_chat_router
 from app.ai.byok_routes import router as ai_byok_router
 from app.platform.routes import admin_router as controls_admin_router, status_router as system_status_router, users_router as trading_disable_router
 from app.portfolio.routes import router as portfolio_router
@@ -272,6 +274,7 @@ app.include_router(api_keys_router)
 app.include_router(public_api_router)
 app.include_router(ai_byok_router)       # BYOK-V1: the user's own AI key for Vision (flag vision_byok, off by default)
 app.include_router(ai_router)
+app.include_router(ai_chat_router)   # handover item 5: the chat-first Copilot (flag ui_v2, off)
 app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(quant_router)        # Phase Z: factor and risk models
 app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages
@@ -283,6 +286,7 @@ app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill prog
 app.include_router(history_intraday_admin_router)  # HB2: owner intraday history progress (SUPER_ADMIN, read-only)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
 app.include_router(oc_analyses_router)     # OC2: the built-in option chain analyses, read-only (flag ui_v2, off)
+app.include_router(oc_charts_router)       # OC5: the Option chain "Charts" series, read-only (flag ui_v2)
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)
 app.include_router(controls_admin_router)

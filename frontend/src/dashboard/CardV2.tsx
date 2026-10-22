@@ -13,17 +13,19 @@ export const CARD = "rounded-panel border border-subtle bg-surface-1 shadow-card
 export const LINK_PRIMARY = "inline-flex h-11 shrink-0 items-center justify-center gap-space-2 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface md:h-9";
 export const LINK_SECONDARY = "inline-flex h-11 shrink-0 items-center justify-center gap-space-2 rounded-control border border-border bg-surface-1 px-space-4 text-t14 font-semibold text-fg transition-colors duration-fast hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface md:h-9";
 
-export function CardV2({ title, count, more, children, className = "", testId }: {
+export function CardV2({ title, count, more, children, className = "", testId, tour }: {
   title: ReactNode;
   count?: number;
   more?: { label: string; to: string };
   children: ReactNode;
   className?: string;
   testId?: string;
+  /** MO2 part C: the `data-tour` id a page tour points at. */
+  tour?: string;
 }) {
   const titleId = useId();
   return (
-    <section aria-labelledby={titleId} data-block={testId} className={`${CARD} p-space-4 md:p-space-5 ${className}`}>
+    <section aria-labelledby={titleId} data-block={testId} data-tour={tour} className={`${CARD} p-space-4 md:p-space-5 ${className}`}>
       <div className="flex min-h-11 items-center justify-between gap-space-3 md:min-h-0">
         <h2 id={titleId} className="flex items-center gap-space-2 text-t15 font-semibold text-fg">
           {title}

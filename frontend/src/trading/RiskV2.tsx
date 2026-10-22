@@ -137,7 +137,7 @@ export default function RiskV2(_props: PageProps = {}) {
       ]} />
       <PageTitleV2 title="Risk limits" subtitle="How much you can lose today, and the rules every paper and live entry is checked against." />
 
-      <CardV2 title="Today" testId="today">
+      <CardV2 title="Today" testId="today" tour="risk-today">
         {!config && !loadFailed ? <LoadingRowsV2 rows={2} /> : loadFailed ? <LoadFailedV2 what="your limits" /> : (
           <div className="space-y-space-4">
             <TilesV2 columns={today.paperLimit !== null ? 3 : 2}>
@@ -184,7 +184,7 @@ export default function RiskV2(_props: PageProps = {}) {
       {config && (
         <form onSubmit={save} noValidate data-block="limits"
           className="rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card md:p-space-5">
-          <h2 className="text-t15 font-semibold text-fg">Your limits</h2>
+          <h2 data-tour="risk-limits" className="text-t15 font-semibold text-fg">Your limits</h2>
           <p className="mt-space-1 text-t13 text-fg-muted">Checked before every paper and live entry you place. A limit can never be set above the platform&apos;s ceiling.</p>
           <FieldGroup title="Size and daily limits" fields={LIMIT_FIELDS} drafts={drafts} touched={touched} ceilingOf={ceilingOf} minimumOf={minimumOf} problemOf={problemOf}
             onChange={(k, v) => setDrafts((d) => ({ ...d, [k]: v }))} onBlur={(k) => setTouched((t) => ({ ...t, [k]: true }))} />
@@ -192,7 +192,7 @@ export default function RiskV2(_props: PageProps = {}) {
             onChange={(k, v) => setDrafts((d) => ({ ...d, [k]: v }))} onBlur={(k) => setTouched((t) => ({ ...t, [k]: true }))}
             note="The risk guardian checks these on every entry, paper or live, whatever built the strategy." />
           <div className="mt-space-5">
-            <button type="submit" disabled={saving} className={`${BUTTON_PRIMARY} w-full sm:w-auto`}>{saving ? "Saving…" : "Save limits"}</button>
+            <button type="submit" disabled={saving} data-tour="risk-save" className={`${BUTTON_PRIMARY} w-full sm:w-auto`}>{saving ? "Saving…" : "Save limits"}</button>
           </div>
         </form>
       )}

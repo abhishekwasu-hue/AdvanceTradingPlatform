@@ -2,6 +2,7 @@ import { Eye, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
+import { BYOK_CHANGED_EVENT } from "../aiKeys/detect";
 import { Card } from "./ui";
 import type { ByokAuditScope, ByokChannels, ByokPrefsInput, ByokProviderName, ByokProviderStatus, ByokStatus } from "../types";
 import { capUsage, formatUsd, keyShapeError, parseCap } from "./visionByok";
@@ -42,10 +43,14 @@ export default function VisionByokCard() {
   }
 
   useEffect(() => {
-    api.byokStatus().then(apply).catch((e) => {
+    const read = () => api.byokStatus().then(apply).catch((e) => {
       if (e instanceof ApiError && e.status === 404) setOff(true);
       else setError(String(e));
     });
+    void read();
+    // MO2 part B: a key saved from the "Get an AI key" guide (src/aiKeys/KeyGuidesV2.tsx) shows here at once.
+    window.addEventListener(BYOK_CHANGED_EVENT, read);
+    return () => window.removeEventListener(BYOK_CHANGED_EVENT, read);
   }, []);
 
   async function run(label: string, fn: () => Promise<ByokStatus>) {

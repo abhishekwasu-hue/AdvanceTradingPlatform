@@ -214,7 +214,7 @@ export default function ChartsPageV2(_props: PageProps) {
       {tab === "chart" && (
         <div className={cx("flex min-h-0 gap-space-3", fs.on && "flex-1")}>
           <section aria-label={`Chart of ${symbol}`} className="flex min-h-0 min-w-0 flex-1 flex-col rounded-panel border border-subtle bg-surface-1">
-            <div role="toolbar" aria-label="Chart controls" data-chart-toolbar
+            <div role="toolbar" aria-label="Chart controls" data-chart-toolbar data-tour="charts-toolbar"
               className="relative flex flex-wrap items-center gap-x-space-2 gap-y-space-1 border-b border-subtle p-space-2">
               {/* Phone: symbol and the icon buttons, then market state, type and Indicators, then the timeframes. */}
               <SymbolPicker value={symbol} exchange={exchange} onPick={pick} storageKey={recentKeyFor(userId)} className="order-1 min-w-[8.5rem] flex-1 md:order-none md:w-44 md:flex-none" />
@@ -224,7 +224,7 @@ export default function ChartsPageV2(_props: PageProps) {
                   {chip.text}
                 </span>
               )}
-              <div role="group" aria-label="Timeframe" className="order-6 flex w-full gap-space-1 overflow-x-auto md:order-none md:w-auto">
+              <div role="group" aria-label="Timeframe" data-tour="charts-timeframes" className="order-6 flex w-full gap-space-1 overflow-x-auto md:order-none md:w-auto">
                 {offered.map((tf) => (
                   <button key={tf} type="button" aria-pressed={tf === timeframe} onClick={() => setView({ timeframe: tf })}
                     className={cx("min-h-11 min-w-11 shrink-0 rounded-control px-space-2 text-t13 md:min-h-9 md:min-w-9", focus,
@@ -238,7 +238,7 @@ export default function ChartsPageV2(_props: PageProps) {
                 className={cx("order-4 h-11 w-[6.5rem] rounded-control border border-border bg-surface-2 px-space-2 text-t13 text-fg md:order-none md:h-9 md:w-auto", focus)}>
                 {CHART_TYPES_V2.map((t) => <option key={t} value={t}>{CHART_TYPE_LABELS_V2[t]}</option>)}
               </select>
-              <div className="order-5 md:order-none"><IndicatorsMenu state={indicatorState} on={features.on} onToggle={onIndicator} /></div>
+              <div className="order-5 md:order-none" data-tour="charts-indicators"><IndicatorsMenu state={indicatorState} on={features.on} onToggle={onIndicator} /></div>
               <span className="order-2 ml-auto inline-flex items-center md:order-none">
                 <DrawingMenu tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
                 <button type="button" aria-label="Undo drawing" title="Undo (Ctrl+Z)" className={iconBtn}
@@ -259,7 +259,7 @@ export default function ChartsPageV2(_props: PageProps) {
                 )}
               </span>
             </div>
-            <div className={cx("flex min-h-0", fs.on && "flex-1")}>
+            <div data-tour="charts-chart" className={cx("flex min-h-0", fs.on && "flex-1")}>
               <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
                 prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}

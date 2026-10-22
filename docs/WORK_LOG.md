@@ -2964,3 +2964,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   B10, C4, family F.
 - Tests: `tests/test_tpl5_templates.py` (the engine piece, `swing=`, the section 8 gate for the five templates), runtime
   fixture, causal cases (lookahead job). Questions TPL-Q41..TPL-Q49.
+## 22 Oct - Strategy templates family F: the option seller packs F1, F2 (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl6-family-f`. No migration (templates are JSON in the repository; no new flag).
+- F1 directional seller pack (member D1, the Supertrend flip: "read as a bullish / bearish continuation for the option
+  structure in your own settings") and F2 range seller pack (member A2, range edges: "read as the lower / upper edge of
+  the range ..."). A pack is its member part for part (a `source` switch, the member's own settings and invalidation);
+  only the words differ. `app/strategy_templates/packs.py` holds the mapping; the adopt notes say the option structure,
+  strikes, width, expiry and lots come from the user's own bot settings. Shared files touched: `language.py` (four
+  tokens), `routes.py` (one note line).
+- Tests: `tests/test_tpl6_family_f.py` (the pack equals its member, must fire / must not, mirror, truncation, scan =
+  backtest = options backtest with bull put / bear call / iron condor = worker, legs / width / lots from the configuration,
+  property tests, words, ids, adapter, the API with an OPTION paper bot).
+- Not built: F1's members A1 / D3 and F2's E3 (not in the library yet), G12 (needs a pack composition). Found: A2's
+  DowTrend / reversal check is not exactly mirror-symmetric on some synthetic series (pre-existing). Questions TPL-F1..F8.

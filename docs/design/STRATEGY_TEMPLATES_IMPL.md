@@ -127,6 +127,7 @@ E5 VWAP reclaim (each invalidation is "the extreme since the setup": an engine p
 E5 also needs "the same session" for the cross-under), E2 RSI divergence (RsiDivergence reads a fixed RSI 14 and its
 extreme has no companion), and family F.
 
+<<<<<<< HEAD
 ## Step 5 (TPL-5): the extreme since the setup bar, a session-bound setup, the swing degree for the retest; C2, D3, E1, E3, E5
 
 Same flag `strategy_templates` (OFF), PAPER only, signals only, no migration. Owner questions TPL-Q41..TPL-Q49.
@@ -161,13 +162,58 @@ honest match (TPL-Q48).
 
 Not built in step 5 (TPL-Q49): E2 RSI divergence (an RSI period on RsiDivergence, an extreme companion and the
 lower-degree trigger: its own PR), B10 gap and go, C4 trendline breakout + retest (TPL-Q18), family F.
+=======
+## Family F (TPL-6): the option seller packs F1, F2
+
+Same flag `strategy_templates` (OFF), PAPER only, signals only, no migration. Owner questions TPL-F1..TPL-F8.
+
+A pack is not a new recipe: it is an ordinary `atp.template/1` template whose setting `source` (a `variants` switch, as
+family G) picks a MEMBER template, and every part of each variant is the member's own expression with the member's own
+settings (same keys, labels, defaults, bounds, constraints and timeframes). So a pack signals on exactly the member's bars,
+with the member's invalidation and exit; only the words differ - the signal text adds the pack's reading of the side for
+the option structure the user set up. The mapping is `app/strategy_templates/packs.py` (`MEMBERS`); the tests hold every
+variant equal to its member part by part and series by series, so editing one without the other fails. The option
+structure (bull put spread on the bullish side, bear call spread on the bearish one, an iron condor on either), its
+strikes, width, expiry, lots and exits stay the deployment's own settings (DECISIONS: options construction stays in the
+user's settings); a pack has no field for any of them and the adopt pre-fill carries none (a note says where they come from).
+
+| Part | Where | Status |
+|---|---|---|
+| F1 directional seller pack: `source` = Supertrend flip (D1: its period, multiplier and higher-timeframe filter), read as "a bullish / bearish continuation for the option structure in your own settings"; invalidation the Supertrend line, exit the opposite flip (inert until R5) | `templates/F1.json` | done (member D1) |
+| F2 range seller pack: `source` = range edges (A2: its swing size), read as "the lower / upper edge of the range ..."; invalidation the edge, no exit (A2 has none) | `templates/F2.json` | done (member A2) |
+| The pack mapping (pack -> source -> member), the adopt note | `packs.py`; `routes.py` (`_notes`, one line) | done |
+| Signal text: four tokens (structure words; no buy / sell / target / stop words, no numbers) | `language.py` | done |
+| F1's other members A1 (areas, TPL-Q23) and D3 (the "extreme since the setup" piece), F2's member E3 (the same piece) | - | next: new `source` choices in a new pack version once those templates are in the library (TPL-F1, TPL-F2) |
+| G12 (the wave seller pack, labels over G1-G11) | - | not built: G1-G11 already switch their parts on their own settings (trigger style, window) and share setting keys with different defaults / choices, so one pack template cannot hold them with today's one-level `variants`; needs a pack composition (TPL-F7, WAVE-10) |
+
+Tests: `tests/test_tpl6_family_f.py` - every pack variant compiles to its member's own parts (every allowed timeframe, the
+filter on), the pack's settings are the member's, the pack's series equals the member's (direction, invalidation, exits,
+reasons, warm-up, instances) on random data and in property tests on random valid settings; F1 must fire on the turn on
+both sides with the line and the opposite flip, must not in a steady trend or on noise, the higher-timeframe filter, the
+warm-up and the refusals; F2 only at a range edge inside a range, never outside one, no exit, S6; for both: the mirror
+test (F1 from the bar the Supertrend directions mirror each other, as D1; F2 on mirror-exact fixtures, TPL-F6), the
+truncation test over many t, scan = backtest = options backtest (bull put, bear call and iron condor configurations: the
+same signals for each) = worker on one trailing window; the user's structure decides the legs (bull put spreads only on
+bullish signals, bear call spreads only on bearish ones, condors on either with four legs), the width and the lots come
+from the configuration; no pack field, setting or rule names a strike, premium, expiry, lot, spread or order; the language
+guard, "no number written into a rule", the ids, the adapter's signal (no target, risk_reward None), provenance and flags;
+the API: the cards ("Option seller packs"), adopt as a pre-fill with the note and no option field, an OPTION bull put
+deployment on PAPER from the pre-fill keeping the user's width, LIVE refused. No frontend change: the Paper bot form lists
+the templates from the API.
+>>>>>>> origin/main
 
 ## Not in this PR (next PRs)
 
 - Family A's area templates A1, A8, A3, A4 (an area companion + zone timelines in the template engine, TPL-Q23), A6 / A7
   (their functions); then the rest of B / C / D / E (TPL-Q40: an engine "extreme since the setup" invalidation for D3, E1,
+<<<<<<< HEAD
   E3, E5 and the swing degree for C2: done in step 5; the gap companion for B10; C4 after TPL-Q18; E2 after an RSI period
   and an extreme companion, TPL-Q49), then F.
+=======
+  E3, E5; the gap companion for B10; the swing degree forwarded for C2; C4 after TPL-Q18; E2 after an RSI period and an
+  extreme companion). Family F: F1 / F2 built (TPL-6 above); their further members (A1, D3, E3) and G12 next
+  (TPL-F1, TPL-F2, TPL-F7).
+>>>>>>> origin/main
 - Section 5 "exits as settings" (stop_source / target_rule on the deployment's exit settings): needs a migration and
   the owner's approval. Until then the adapter's Signal carries only the invalidation as its stop.
 - R4 rest: the stop_source rule per instrument_kind and the precedence table with tests (comes with section 5).

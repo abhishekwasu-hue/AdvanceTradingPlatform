@@ -253,7 +253,7 @@ test.describe("top bar notices on the front page (P3 review)", () => {
     await expect(card(page)).toBeVisible();
     await expect(header(page)).not.toContainText("Verify your email");
     await expect(header(page)).not.toContainText("LIVE paused");
-    await page.getByRole("link", { name: "Positions" }).first().click();
+    await page.getByRole("link", { name: /My trades|Positions/ }).first().click();
     await expect(page).toHaveURL(/\/positions$/);
     await expect(header(page)).toContainText("Verify your email");
     await expect(header(page)).toContainText("LIVE paused on zerodha");

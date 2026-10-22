@@ -12,6 +12,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  * deployment is created in this whole flow.
  * - Baselines `copilot-builder-v2-answer-<width>-<theme>.png` (the chat answer) and `copilot-builder-v2-draft-<width>-
  *   <theme>.png` (the review card), 360 / 390 / 1440, light / dark.
+ * - CP6-2: `copilot-builder-v2-offer-<width>-<theme>.png` (a complete draft offers "Test it on past data") and
+ *   `copilot-builder-v2-test-<width>-<theme>.png` (the honest test's answer after his press).
  * Every reply is made-up data (e2e/fixtures/copilot_chat_v2.json: the backend's rule answer on its synthetic eval fixture;
  * e2e/fixtures/setup_v2.json strategies). After an intended change:
  * `npx playwright test --project=phone e2e/copilot-builder-v2.e2e.ts --update-snapshots`.
@@ -82,6 +84,25 @@ async function toPaperBot(page: Page) {
   return card;
 }
 
+// CP6-2: a complete idea (every value his) is offered the honest test on past data; his press only asks the Copilot.
+const COMPLETE = "Turn my idea into a strategy: on the 15-minute chart, go long when the 20 EMA crosses above the 50 EMA and RSI 14 is above 50 "
+  + "on NIFTY. Stop 1.5 x ATR 14, objective 2R.";
+
+async function askComplete(page: Page) {
+  await page.locator("#copilot-question").fill(COMPLETE);
+  await page.getByRole("button", { name: "Ask" }).click();
+  const answer = page.locator("[data-answer='strategy']").last();
+  await expect(answer.locator("[data-followup]")).toBeVisible();
+  return answer;
+}
+
+async function pressTest(page: Page) {
+  await page.locator("[data-answer='strategy'] [data-followup]").first().click();
+  const tested = page.locator("[data-answer='strategy']").nth(1);
+  await expect(tested.locator("[data-section='Your draft on past data']")).toBeVisible();
+  return tested;
+}
+
 const SHOT = { animations: "disabled" as const, maxDiffPixelRatio: 0.02, timeout: 15_000 };
 const SIZES = [
   { name: "360", width: 360, height: 780, mobile: true }, { name: "390", width: 390, height: 844, mobile: true },
@@ -102,7 +123,25 @@ for (const size of SIZES) {
       });
     }
 
+    for (const theme of ["light", "dark"] as const) {
+      test(`CP6-2: the offer and the test on past data look the same (${theme})`, async ({ page }) => {
+        await open(page, theme);
+        const offer = await askComplete(page);
+        await expect(offer).toHaveScreenshot(`copilot-builder-v2-offer-${size.name}-${theme}.png`, SHOT);
+        const tested = await pressTest(page);
+        await expect(tested).toHaveScreenshot(`copilot-builder-v2-test-${size.name}-${theme}.png`, SHOT);
+      });
+    }
+
     if (size.mobile) {
+      test("CP6-2 phone: no sideways scroll, 44 px targets on the offer and the test", async ({ page }) => {
+        await open(page);
+        await askComplete(page);
+        await expectPhoneLayout(page);
+        await pressTest(page);
+        await expectPhoneLayout(page);
+      });
+
       test("phone: no sideways scroll, 44 px targets on the chat answer and the review card", async ({ page }) => {
         await open(page);
         await askIdea(page);
@@ -175,6 +214,26 @@ test.describe("Copilot strategy builder behaviour", () => {
       ],
     });
     expect(server.deployments).toEqual([]);                                                // the Copilot started nothing
+  });
+
+  test("CP6-2: the test on past data runs only on his press, says the facts and saves or starts nothing", async ({ page }) => {
+    const server = await open(page);
+    const offer = await askComplete(page);
+    await expect(offer.locator("[data-unknowns]")).toContainText("I have not tested it yet");
+    await expect(offer.locator("[data-section='Your draft on past data']")).toHaveCount(0);   // nothing ran by itself
+    expect(server.asked).toEqual([COMPLETE]);
+    const tested = await pressTest(page);
+    expect(server.asked).toEqual([COMPLETE, `${COMPLETE} Test it on past data.`]);
+    await expect(tested.locator("[data-section='Your draft on past data']")).toContainText("Net result after costs:");
+    await expect(tested.locator("[data-section='Your draft on past data']")).toContainText("Costs inside that result:");
+    await expect(tested.locator("[data-section='Your draft on past data']")).toContainText("Deepest drop from a peak:");
+    await expect(tested.locator("[data-section='Is it enough to judge?']")).toBeVisible();
+    await expect(tested.locator("[data-section='Did it hold over time?']")).toContainText("Nothing was tuned on this data");
+    await expect(tested.locator("[data-unknowns]")).toContainText("Past results do not say what happens next");
+    await expect(tested.locator("[data-followup]")).toHaveCount(0);
+    await expect(tested.locator("a[data-action='draft']")).toHaveText("Review it on the Paper bot page");   // he still reviews and starts it
+    expect(server.saved).toEqual([]);
+    expect(server.deployments).toEqual([]);
   });
 
   test("discarding the draft leaves the page as it was", async ({ page }) => {

@@ -1,4 +1,4 @@
-import { CircleHelp, ListChecks, Sparkles } from "lucide-react";
+import { CircleHelp, History, ListChecks, Sparkles } from "lucide-react";
 import { Link } from "react-router";
 import { AnalysisTableView, MiniChart } from "../../optionChain/AnalysisTabsV2";
 import { useCopilotT } from "../i18n";
@@ -26,6 +26,12 @@ export function AnswerV2({ answer, onAsk }: { answer: ChatAnswer; onAsk?: (q: st
           className={answer.draft ? DRAFT_ACTION : "inline-flex min-h-11 items-center text-t14 font-semibold text-brand hover:underline md:min-h-0"}>
           {answer.action.label}
         </Link>
+      )}
+      {answer.followup && onAsk && (
+        <button type="button" onClick={() => onAsk(answer.followup!.question)} data-followup
+          className="inline-flex min-h-11 w-full items-center justify-center gap-space-2 rounded-control border border-brand px-space-5 py-space-2 text-t14 font-semibold text-brand transition-colors duration-fast hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:ml-space-2 sm:w-auto">
+          <History size={16} aria-hidden />{answer.followup.label}
+        </button>
       )}
       {answer.sections.length > 0 && (
         <div className="grid gap-space-3 md:grid-cols-2">

@@ -152,8 +152,9 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
     started = time.monotonic()
     system = SYSTEM          # English only, whatever `lang` the caller passes
     allowed_proposals = await available(ctx, proposals.allowed_for(question))      # N3 S9: flagged tools only while on
-    tools = specs(await available(ctx, names("read")) + allowed_proposals)
+    tools = specs(await available(ctx, names("read", agent=True)) + allowed_proposals)
     kinds = {n: t.kind for n, t in registry().items()}
+    rules_only = {n for n, t in registry().items() if not t.agent}      # CP6-2: never run for the model, even when it names one
     run = AgentRunRecord(tenant_id=ctx.tenant_id, user_id=ctx.user.id, question_sha256=_sha(question), prompt_version=PROMPT_VERSION,
                          model=str(getattr(provider, "model", "") or ""), limits_json=json.dumps(limits.__dict__), outcome="running",
                          created_at=datetime.now(timezone.utc))
@@ -214,6 +215,8 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
                         made.append({"tool": call.name, "proposal_id": res.data["proposal_id"], "action": res.data["action"]})
                         await write_audit_log(ctx.session, ctx.tenant_id, ctx.user.id, "agent_proposal_created",
                                               f"run #{run.id} {call.name} -> ai_action #{res.data['proposal_id']} (PROPOSED)")
+            elif call.name in rules_only:
+                res = ToolResult(False, None, None, call.name, error=f"unknown tool {call.name!r}")
             else:
                 res = await run_tool(call.name, call.arguments, ctx)
             payload = res.text()

@@ -142,6 +142,23 @@ describe("job 6: the chat answer and the review card", () => {
     expect(answerSource).toContain("state={actionState(answer)}");
   });
 
+  it("CP6-2: a complete draft offers the test on past data as one button that only asks the Copilot (nothing runs by itself)", () => {
+    const question = `${COMPLETE.idea} Test it on past data.`;
+    const offered: ChatAnswer = { ...answer, followup: { label: "Test it on past data", question } };
+    const asked: string[] = [];
+    const html = renderToStaticMarkup(<MemoryRouter><AnswerV2 answer={offered} onAsk={(q) => asked.push(q)} /></MemoryRouter>);
+    expect(html).toContain("data-followup");
+    expect(text(html)).toContain("Test it on past data");
+    expect(html.indexOf('data-action="draft"')).toBeLessThan(html.indexOf("data-followup"));   // the hand-over stays the primary action
+    // without a way to ask, or without a follow-up, no button
+    expect(renderToStaticMarkup(<MemoryRouter><AnswerV2 answer={offered} /></MemoryRouter>)).not.toContain("data-followup");
+    expect(renderToStaticMarkup(<MemoryRouter><AnswerV2 answer={answer} onAsk={noop} /></MemoryRouter>)).not.toContain("data-followup");
+    // the button only sends the question back to the chat: no backtest, save or start is called from the page
+    const src = code(answerSource);
+    expect(src).toContain("onClick={() => onAsk(answer.followup!.question)}");
+    expect(src).not.toMatch(/backtest|createDeployment|custom-strategies|placeOrder/i);
+  });
+
   it("the card shows the rules, an EMPTY field per open value, what was left out, and Save off until all are set", () => {
     const html = renderToStaticMarkup(<CopilotDraftV2 draft={OPEN} onSaved={noop} onDiscard={noop} />);
     const t = text(html);

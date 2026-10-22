@@ -3023,3 +3023,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   removed, both sides' text kept.
 - Tests: `tests/test_tpl7_e2_packs_v2.py`, `tests/test_tpl6_family_f.py` (reads version 2), runtime fixture, causal
   cases (lookahead job), history sweep. Questions TPL-Q50..TPL-Q57.
+## 22 Oct - Copilot job 6 follow-up CP6-2: the honest test of the draft on past data (behind ui_v2 + ai_copilot, PAPER only)
+
+- Branch `claude/copilot-cp6-backtest`. No migration, no new flag, no new route.
+- `app/ai/draft_backtest.py`: the draft (exactly as built from his words) through ATP's existing backtest engine on the
+  server's candles: the whole window (trades, wins / losses, net result after the engine's dated charges and slippage,
+  the costs, the deepest drop and its share of capital), "too few trades" below 30, the earlier part and the last 30%,
+  the walk-forward windows, the deflated Sharpe as one try (shown only with enough trades, capped at 99.9%); the sealed
+  holdout is never used.
+- Tool `backtest_draft` (read, `ai_copilot`, `agent=False`: only the chat's rules call it; the agent loop neither offers
+  nor runs it). `strategy_builder.config_of` (None while any value is open: the engine's defaults are never used for his
+  values), `test_asked` / `without_test_ask` ("and test it" is never read as a part of the idea).
+- Chat: on his ask a complete draft with a symbol is tested ("Your draft on past data", "Is it enough to judge?", "Did it
+  hold over time?", "How I tested it"); otherwise the missing value / symbol is said. Without the ask, a complete draft
+  offers "Test it on past data" (the answer's `followup`, one secondary button that only asks). New "settings" refusal
+  for tuning the values on past data; the job 6 order refusal also covers "can you test it and deploy it".
+- Evals: +9 job cases (recorded results made by the real engine on synthetic candles), +12 safety cases (9 refusals, 3
+  controls), `expect_followup`; hashes re-pinned. Tests `tests/test_copilot_v2_cp6_backtest.py`, vitest for the button.
+- Found: the engine's losses-in-a-row counter never resets within a run (CP6-15). Questions CP6-10..CP6-16.

@@ -168,10 +168,10 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/baselines.json": "3c28c69e5964aab11c234bd6cf7608f66c9d327f1dfeacdb64d7f42f2b109a09",
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
     "backend/evals/sets/qa.jsonl": "845e5902cbc904864ec1f24bbf589194428ec462e164e388ab04b9734469338e",
-    "backend/evals/sets/tool_args.jsonl": "becccbea044cd67e582bde3593bb500bccac3ba1132d1cd2ab38edc60818befa",
-    "backend/evals/sets/copilot_jobs.jsonl": "664c9e5d6a1d546ea1d23babb2be500112d58477a0c61609d32c095e0aa9ad3a",
-    "backend/evals/sets/copilot_safety.jsonl": "3f2ad7075e04113662e367e0cbd71157098ef3aa0345e4b93ccf99f2621a2925",
-    "backend/evals/sets/copilot_tools.json": "eb2e73b61907e9b5d7631293d89b3f8e4a050abc773a292946ede221a8136a68",
+    "backend/evals/sets/tool_args.jsonl": "578efa3d69f7d860f221068273a074b018e7998b71bdf8c55d5bdbd66d7f862b",
+    "backend/evals/sets/copilot_jobs.jsonl": "f9db88011ebd4f975aabe5ee7f0506ee279750bfda4480847c703b4a553d879b",
+    "backend/evals/sets/copilot_safety.jsonl": "faaeb912b7276423e0641bd9abc3d8c638ab8f5a02d6d4ffbce361e5faaeceb0",
+    "backend/evals/sets/copilot_tools.json": "fb4501e340d477db63ef275b96b4a256483060b4b76c557c6120c10989459eca",
     # hand-written API replies for the Playwright tests
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",
     "frontend/e2e/fixtures/actions.json": "49e8cbfacbd96f95bc73a90691ae343bd487140c7ba30b5954031a1a2d96e547",
@@ -204,7 +204,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/thesis_history.json": "f3226989acc68ddf2bbfa69ff8a5353011a90a480befc57c0bfa0c988ccd5a6c",
     "frontend/e2e/fixtures/thesis_report.json": "e85180cb3f957bf048f9bffe63e3237bb760333376e255f1ae76f6d9df2e287d",
     "frontend/e2e/fixtures/trading_v2.json": "46bc6543f0f50524ef77c82ee261b19afe100722ee8c49d5a6a3fb6cda207265",
-    "frontend/e2e/fixtures/copilot_chat_v2.json": "3537bd6d831372158b163dc1706404a9afc044dd795798f81d5fbed6cbf0eec7",
+    "frontend/e2e/fixtures/copilot_chat_v2.json": "03597dbede1af524f8a58537fdb4216c6dd2bb895c68e2a33e23b884ce6957c5",
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

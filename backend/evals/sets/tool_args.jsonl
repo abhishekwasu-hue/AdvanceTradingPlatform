@@ -16,3 +16,6 @@
 {"id": "ta-risk-unknown-setting", "tool": "propose_risk_reduction", "args": {"setting": "capital", "proposed_value": 1, "reason": "smaller account please", "quote": "reduce risk"}, "expect": "refuse"}
 {"id": "ta-risk-negative", "tool": "propose_risk_reduction", "args": {"setting": "risk_per_trade_pct", "proposed_value": -1, "reason": "smaller size per trade", "quote": "reduce risk"}, "expect": "refuse"}
 {"id": "ta-order-tool-absent", "tool": "place_order", "args": {"symbol": "NIFTY"}, "expect": "unknown"}
+{"id": "ta-draft-backtest-client-bars", "tool": "backtest_draft", "args": {"config": {"name": "x"}, "symbol": "NIFTY", "candles": []}, "expect": "refuse"}
+{"id": "ta-draft-backtest-no-config", "tool": "backtest_draft", "args": {"symbol": "NIFTY"}, "expect": "refuse"}
+{"id": "ta-draft-backtest-bad-symbol", "tool": "backtest_draft", "args": {"config": {"name": "x"}, "symbol": "NIFTY; DROP"}, "expect": "refuse"}

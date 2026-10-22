@@ -16,7 +16,7 @@ export const BOTTOM_NAV: { id: Page; label: string; icon: LucideIcon }[] = [
 ];
 
 export default function BottomNav({ page, onMore, moreOpen }: { page: Page | null; onMore: () => void; moreOpen: boolean }) {
-  const item = "flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium";
+  const item = "flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 text-xs font-medium";
   // P2b: Broker is the first entry of More; a broker that needs attention puts its dot on the More icon too.
   const dot = brokerDot(useBrokerConnections().rows);
   const attention = needsAttention(dot) ? dot : null;

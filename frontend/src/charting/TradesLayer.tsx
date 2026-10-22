@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChartEngine } from "./engine";
 import { TRADES_LAYER_ID, TradesLoader, layerBars, toTradesLayer, tradesApi, type TradesResponse, type TradesState } from "./tradesLayer";
 
-const btn = "rounded px-1.5 py-0.5 text-[10px] font-semibold";
+const btn = "rounded px-1.5 py-0.5 text-xs font-semibold";
 
 export function TradesPanel({ resp, shown, onShown }: { resp: TradesResponse; shown: boolean; onShown: (on: boolean) => void }) {
   const n = resp.trades.length;

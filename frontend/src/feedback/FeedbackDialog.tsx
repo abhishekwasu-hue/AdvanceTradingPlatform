@@ -68,7 +68,7 @@ export default function FeedbackDialog({ open, onOpenChange, pathname, initialTe
             placeholder="What happened, and what did you expect?"
             className="w-full resize-y rounded border border-border bg-surface-2 px-2 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
-          <div className="text-right text-[11px] text-fg-muted">{text.length} / {FEEDBACK_MAX_CHARS}</div>
+          <div className="text-right text-xs text-fg-muted">{text.length} / {FEEDBACK_MAX_CHARS}</div>
           <div className="rounded-md border border-border bg-surface-2 p-3 text-xs">
             <div className="mb-1 font-semibold text-fg">Sent with your message</div>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">

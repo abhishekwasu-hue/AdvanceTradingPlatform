@@ -75,13 +75,13 @@ export default function HolidaysCard() {
       )}
       {isAdmin ? (
         <div>
-          <label className="block text-[11px] text-fg-muted mb-1">Add holidays, one per line as <code>YYYY-MM-DD description</code> (paste the NSE annual circular)</label>
+          <label className="block text-xs text-fg-muted mb-1">Add holidays, one per line as <code>YYYY-MM-DD description</code> (paste the NSE annual circular)</label>
           <textarea value={bulk} onChange={(e) => setBulk(e.target.value)} rows={3} placeholder={`${year}-10-20 Diwali Laxmi Pujan\n${year}-11-05 Guru Nanak Jayanti`}
             className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-xs font-mono" />
           <button disabled={busy || !bulk.trim()} onClick={addBulk} className="mt-2 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Add to {exchange} {year}</button>
         </div>
       ) : (
-        <div className="text-[11px] text-fg-muted">Only a platform administrator can change this list.</div>
+        <div className="text-xs text-fg-muted">Only a platform administrator can change this list.</div>
       )}
     </Card>
   );

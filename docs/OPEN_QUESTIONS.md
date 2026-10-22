@@ -850,3 +850,20 @@ contradicts them.
 | MO2-2 | The AI Copilot v2 page (#342) has no tour yet. | A Copilot tour is the next MO2 step; the tour id list is shared with the server allow-list (a test keeps them equal). | `src/tours/pages.ts` | open |
 | MO2-3 | Key guide screenshots. | Marked placeholders ("Screenshot coming: ...") until we take our own pictures of our own accounts; no third-party picture is fetched or committed. | `src/aiKeys/guides.ts` | open |
 | MO2-4 | Providers in the key guides. | The three BYOK takes today (Google Gemini, Anthropic, OpenAI). OpenRouter, Groq, Mistral and the rest come with part A; the helper already recognises their keys and says they are not taken yet. | `src/aiKeys/` | open |
+
+## Settings redesign: the review's owner questions (SR, 22 Oct)
+
+From docs/design/SETTINGS_REDESIGN_REVIEW.md. Each has a provisional default the build uses until the owner answers.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| SR-1 | One switch for "one key for every AI feature"? (`vision_byok` is OFF by default; its production state is not recorded.) | A new flag `ai_one_key`, OFF, needing `ui_v2`; while it is off everything behaves as today. | `app/platform/controls.py` | open |
+| SR-2 | Free-tier keys that may train on data, and ATP's private method. | Gemini counts as "may train". Chart analyze refuses such a key until the user ticks "My key is on a paid plan"; Copilot text and the screener are allowed, with the one-line warning. | `app/ai/resolve.py`, `chart_analyze/engine.py` | open |
+| SR-3 | Does a user's own key skip the plan's AI gate and the tenant data consent? | Yes: the user pays for it and accepts their own `byok_consent`. | `app/ai/resolve.py` | open |
+| SR-4 | A user's own key reaches its cap. | A plain hard stop; never a silent fallback to the tenant key. | `app/ai/resolve.py` | open |
+| SR-5 | The default caps ($1 a day, $10 a month) now cover every AI feature. | Keep them; show them in rupees. | `core/config.py` | open |
+| SR-6 | Which calls use the user's key. | User-started ones (Copilot, chart analyze, generator, screener NL, scanner plan, option-chain Ask, journal, support). Background jobs (news classification, research jobs) stay on the tenant key. | `app/ai/resolve.py` | open |
+| SR-7 | The key test fails right after saving. | Keep the key; show the plain error with Fix and Remove. | Connect AI panel | open |
+| SR-8 | Team members and the tenant key. | They keep using it as tier 2; only the OWNER who entered it sees "Use this key for your account too". | `app/ai/byok.py` | open |
+| SR-9 | An old `/settings#go-live` link during Phase 0. | Opens the Settings index; nothing about LIVE is shown. The admin keeps the platform checklist on `/admin`. | Settings index | open |
+| SR-10 | Part C: the time exits (`time_exit_at`, `time_exit_minutes`) and the "no time framing" rule. | Available as the user's own settings, empty by default, never pre-filled. | My trading defaults | open |

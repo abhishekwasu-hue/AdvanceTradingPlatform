@@ -2518,6 +2518,32 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   e2e `admin-console-v2.e2e.ts` with new baselines `admin-<section>-v2-*` and `admin-diagnostics-v2-*` (1440 / 390, light / dark).
 - Questions MO3-A1..A6 ("View as user" design note in MO3-A1).
 
+## 22 Oct - UX3: the remaining Master Order 3 audit fixes (behind ui_v2)
+
+- Branch `claude/ux3-audit-fixes`. Frontend only, no migration, no backend change, no trading-logic or order-path change.
+  Owner questions UX3-1..11 (OPEN_QUESTIONS) on their provisional defaults.
+- Fix 10, signal language: `src/signals/signalText.ts` (setup / reasons in structure words, the same call-word list as
+  Analyze a chart, a price detector). Signals v2: no Entry / Stop / Target columns or tiles; the detail keeps size, most
+  you can lose and reward : risk, and the user's own levels sit in a closed "Your levels" fold ("Entry", "Exit if wrong",
+  "Exit at profit", also the chart's level lines); "Why this signal" lists structure reasons only; "Deployment #4" is
+  never a caption ("Paper bot"); the symbol filter says "Any symbol". Dashboard Active signals: no price line.
+- Fix 10, the banned-words CI guard: `src/ux/bannedUiWords.ts` (the audit's section 8 list, the user page roots, four
+  exceptions with reasons) + `bannedUiWords.test.ts` (reads the source with the TypeScript parser: JSX text, text
+  attributes, sentence literals; class lists, imports and keys skipped). Strings it found and that were changed: the AI
+  key guide's "not turned on for your organisation", the TOTP brokers' login note ("authenticator key"), the glossary's
+  "developer console", the Charts / Option chain broker gate ("It takes about 2 minutes.").
+- Fix 6: the broker Connect panel folds the Fyers Redirect URL and the Angel One / Shoonya TOTP secret under
+  "Advanced (1 more field)" with `ui_v2` (still required; a line says where the missing field is). The renewal banner:
+  already the first Needs attention row (UX3-6).
+- Fix 7: with `ui_v2`, sample data is for the platform admin only (`DataSource.tsx` `sampleHiddenFor`): Backtest, Custom
+  scan, Factor Lab, the Copilot's Strategy Lab / Idea Builder and "Try it on a symbol" run on the broker's prices, with a
+  plain bar ("Prices from your broker", "History N days") or "Connect your broker ..." and a link.
+- P05: the option chain summary on a phone is two rows of two plus "More" (no sideways scroll).
+- Fix 9 (part): "Autopilot" -> "Paper bot" on the Dashboard, Signals, Setup and the risk-limit scope (UX2-4-3). The page
+  merges and the new sidebar wait for #362 / #363 / MO4 (UX3-9). Fix 3: the owner's flag (UX3-1).
+- Tests: vitest `src/ux/ux3.test.tsx`, `src/ux/bannedUiWords.test.ts`; updated Signals, feed, chart levels, dashboard,
+  option chain, broker session tests. Baselines regenerated: see the PR.
+
 ## 22 Oct - Strategy Lab slice 2: the signal language (11l) and idea -> scan (11e/j first slice)
 
 - Branch `claude/lab2-signal-language`. No migration. Owner questions LAB-11..17 (OPEN_QUESTIONS). New flag

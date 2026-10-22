@@ -3023,3 +3023,33 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   removed, both sides' text kept.
 - Tests: `tests/test_tpl7_e2_packs_v2.py`, `tests/test_tpl6_family_f.py` (reads version 2), runtime fixture, causal
   cases (lookahead job), history sweep. Questions TPL-Q50..TPL-Q57.
+## 22 Oct - MO4 slice 4: the Signals, Positions, Journal, Charts and Find setups dishes (behind ui_v2 + growth_v2)
+
+- Branch `claude/mo4-dishes`. No migration (every line comes from rows that already exist). No new flag: `growth_v2`
+  (with `ui_v2`) as for slice 3. No price, trial, reminder or referral (MO4-21..33); nothing touches an order.
+- Backend `app/growth/dishes.py` + `GET /api/growth/dish/{page}` (signals, positions, journal, charts `?symbol=&exchange=`,
+  screener; 404 with either flag off or an unknown page, 422 for Charts without a symbol). Built on the daily rhythm's
+  readers and guard (`app/rhythm/build.py` Section / readers, `words.clean`, `words.signal_line`):
+  - Signals: what waits for his decision (count + up to three setups in structure words), today's signals by source, his
+    strategies' paper record over 90 days (closed / ended with a gain / did not; legs of a structure counted once).
+  - Positions: open P&L at the last marks, the result if each reached the invalidation he set (a structure by its max
+    loss) against his own daily loss limit, positions without an invalidation, near it, premium kept on written options,
+    events and expiries in the next 7 days for what he holds. PAPER only.
+  - Journal (needs `discipline_engine`): the week's score and its trend over his past weeks ("following your own plan,
+    not how many trades"), best / costliest setups over four weeks, behaviour patterns in guard-safe words, suggested tags
+    waiting, closed trades without his note.
+  - Charts: the story from the shared daily history (daily swings + the last structure event + where the close sits
+    against the last swings; weekly swings; no level shown), then his own on the symbol (position, latest setup, lists).
+  - Find setups: today's matches of his own scans grouped by scan (most matches first), those on his own lists, how many
+    of his scans run on their own.
+- Frontend `src/growth/PageDishV2.tsx` (title, the headline that stands out, the sections via the daily brief's
+  `RhythmSectionV2`, "Details" / "Hide details" remembered per page on the device, every line re-checked for call words;
+  nothing on 404 / journal off / a failed first read), `model.ts` (`dishShown`, refresh: Signals / Positions 2 min, Find
+  setups 5 min), `dish.fixture.ts`. Mounted on SignalsV2, PositionsV2 (connected branch), JournalPage (above the share
+  card, not while the journal is off), ChartsPageV2 (Chart tab, folded at first) and ScreenerPage.
+- Tests: backend `tests/test_mo4_dishes.py` (flags, each dish from fixtures, empty states, another member's rows never,
+  the language, the pure rules) + tenancy route table; vitest `src/growth/dish.test.tsx`; e2e `e2e/page-dishes-v2.e2e.ts`
+  (no new baselines; `DISH_SHOTS=<dir>` saves before / after pictures). No existing baseline changed.
+- Not built (OPEN_QUESTIONS MO4-34..43): the reader's areas on Charts and similar past setups (`atp-private`), a per-signal
+  "reached the next area" statistic, journal chart snapshots and the monthly PDF, Find setups grouped by method with mini
+  charts, results dates per stock.

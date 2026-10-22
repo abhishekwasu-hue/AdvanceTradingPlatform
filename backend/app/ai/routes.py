@@ -593,7 +593,8 @@ async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), sess
 
 @router.get("/regimes")
 async def regimes() -> dict:
-    return {"regimes": list(REGIMES), "note": "Set regime_filter on a deployment to enter only in the listed regimes; empty = any."}
+    return {"regimes": list(REGIMES), "note": "The indicator regime is a diagnostic only: a deployment's regime_filter is recorded and "
+                                              "logged, and never blocks an entry."}
 
 
 @router.post("/regime")

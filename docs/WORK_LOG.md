@@ -2028,3 +2028,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   day (deduped by title). `DELETE /api/broker/{name}/analytics-token` forgets the token.
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
+
+## Item 5 (owner's handover): the AI Copilot as a trader's brain, first slice (flag `ui_v2`, off)
+- Order: `docs/owner-orders/ATP_HANDOVER_PACK.md` section 5 (A-E), first step of E: the chat-first page + jobs 1, 2, 7, 8.
+- Backend: `app/ai/copilot_chat.py` (routing to the eight jobs, the refusal set, the rule answers, the fail-closed number
+  check, optional AI wording with the Copilot's checks), `app/ai/chat_routes.py` (`GET /api/ai/chat/home`,
+  `POST /api/ai/chat`: `ui_v2` 404 + `ai_copilot` 503, acknowledgement 428, AI rate limit, `POST chat` weighs 4),
+  `app/ai/tools/copilot.py` (four read tools over the context panel, the price-action layer, the market-zones layer and
+  the OC2 option chain analyses, each behind its own flag). Jobs 3-6 answer "coming in a later step" and link today's
+  page. Indicator regime and raw tool errors only in `diagnostics` for a SUPER_ADMIN.
+- Regime (handover 5 C): `regime_blocks` always answers None; the worker logs `regime_note` (what the old filter would
+  have said) and enters anyway. Exits were never involved. The deployment form, the interview, the briefing and the
+  concept library no longer say the regime filter keeps entries out.
+- Evals (handover 5 D): `evals/sets/copilot_jobs.jsonl` (17 cases: job, tool calls in order, facts, scripted model
+  wording shown / rejected) and `copilot_safety.jsonl` (20 cases: 15 refusals of a buy call / an order / a tip, 5
+  controls) on `evals/sets/copilot_tools.json` (synthetic, built by `evals/build_copilot_fixtures.py`); both gated in
+  `evals/baselines.json` at 1.0 and run by `tests/test_hc10_evals.py`.
+- Frontend: `src/copilot/chat/` (the page, the answer, the model), registered in `src/shell/pagesV2.ts`; `/copilot/<tab>`
+  keeps the seven-tab Copilot; `/copilot` added to `OWN_BROKER_STATES` (the chat says itself what a missing broker
+  hides). Strings in `src/copilot/locales/en.ts` (`chat`). New e2e `e2e/copilot-chat-v2.e2e.ts` with four new baselines.
+- Provisional decisions: OPEN_QUESTIONS "Item 5 Copilot" (CP5-1..CP5-5).

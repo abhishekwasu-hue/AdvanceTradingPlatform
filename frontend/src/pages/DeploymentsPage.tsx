@@ -673,7 +673,7 @@ export default function DeploymentsPage() {
         </div>
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-2">Regime filter <span className="normal-case font-normal">(optional; enter only when the market reads as one of these - none selected = any)</span></div>
+          <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-2">Regime filter <span className="normal-case font-normal">(optional; a diagnostic only - recorded for review, it never blocks an entry)</span></div>
           <div className="flex flex-wrap gap-2">
             {REGIME_OPTIONS.map((r) => (
               <button key={r} type="button" onClick={() => toggleRegime(r)} className={`rounded-md border px-2.5 py-1 text-[11px] font-bold ${regimes.includes(r) ? "border-brand/60 text-brand bg-brand/10" : "border-border text-fg-muted hover:text-fg"}`}>

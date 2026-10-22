@@ -706,8 +706,9 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
             pick["description"],
             tr(lang, f"Backtest on these candles ({market['regime_text']} regime): {pick['evidence']['text']}.",
                f"या candles वरचा backtest ({market['regime_text']} स्थिती): {pick['evidence']['text']}."),
-            tr(lang, f"Its rules enter only in these regimes: {', '.join(regime_filter)} - on other days it does not trade.",
-               f"याचे नियम फक्त या स्थितीत entry घेतात: {', '.join(regime_filter)} - इतर दिवशी trade घेत नाही."),
+            # Handover 5 C: the indicator regime is a diagnostic only - it is recorded, it never blocks an entry.
+            tr(lang, f"It is built for these regimes: {', '.join(regime_filter)}. The regime is only recorded for review; it never blocks an entry.",
+               f"हा या स्थितींसाठी बनवला आहे: {', '.join(regime_filter)}. स्थिती फक्त नोंदवली जाते; ती entry कधीच थांबवत नाही."),
         ]
         if pick["regime_fit"] < 2:
             warnings.append(tr(lang, "This template does not fit today's regime well - its rules would produce few or no trades today.",

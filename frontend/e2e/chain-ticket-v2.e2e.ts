@@ -72,6 +72,8 @@ async function open(page: Page, theme: "light" | "dark", opts: { options?: MockO
     const url = new URL(request.url());
     if (url.pathname.endsWith("/contract")) return route.fulfill({ json: { ...CONTRACT, strike: Number(url.searchParams.get("strike")), right: url.searchParams.get("right") } });
     if (url.pathname.endsWith("/held")) { seen.held += 1; return route.fulfill({ json: held }); }
+    // 8b-d: the risk line's budget (not set up here: the line is left out, the ticket is unchanged).
+    if (url.pathname.endsWith("/risk-budget")) return route.fulfill({ status: 404, json: { detail: "Not found" } });
     const body = request.postDataJSON() as Record<string, unknown>;
     seen.posts.push({ url: url.pathname, method: request.method(), body });
     if (url.pathname.endsWith("/order/preview")) return route.fulfill({ json: preview(body) });

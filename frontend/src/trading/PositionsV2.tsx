@@ -30,6 +30,7 @@ import {
   closedRows, closedText, exitConfirmText, failedText, heldRows, holdingTiles, openCaption, type ClosedRow, type HeldRow,
 } from "./model";
 import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from "./PartsV2";
+import { PracticeFrame } from "../fno/OrderTicketV2";
 
 // N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
@@ -160,6 +161,7 @@ export default function PositionsV2(_props: PageProps = {}) {
         "Open a position's chart, or exit a paper position at the current price.",
       ]} />
       <PageTitleV2 title="My positions" subtitle="What you hold now and how it is doing." />
+      {!!list?.length && list.every((p) => p.mode === "PAPER") && <PracticeFrame className="rounded-control" />}
 
       <section aria-label="Summary" data-block="summary" data-tour="positions-summary">
         {positions.status === "loading" ? <LoadingRowsV2 rows={2} /> : (

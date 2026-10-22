@@ -131,6 +131,12 @@ async def _legs(session: AsyncSession, dep: StrategyDeploymentRecord, side: str,
     return {"expiry": expiry_seen.isoformat() if expiry_seen else None, "legs": out, "note": None}
 
 
+async def deployment_legs(session: AsyncSession, dep: StrategyDeploymentRecord, side: str, spot: float, today: date) -> Dict[str, Any]:
+    """The strikes ONE deployment's own settings work out to at `spot` ({expiry, legs, note}); F&O 8b-a (the setup-aware
+    chain, app/paper/fno_insights.py) reads the same rule, so the chain and this result never disagree."""
+    return await _legs(session, dep, side, spot, today)
+
+
 async def for_result(session: AsyncSession, tenant_id: int, result: Dict[str, Any], *, symbol_override: Optional[str] = None,
                      today: Optional[date] = None) -> Dict[str, Any]:
     """The "from your settings" block for one analysis result."""

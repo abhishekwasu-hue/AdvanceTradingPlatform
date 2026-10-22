@@ -85,7 +85,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       ]} />
       <header className="flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between">
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Option chain</h1>
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2 md:flex md:gap-space-3">
+        <div data-tour="oc-pickers" className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2 md:flex md:gap-space-3">
           <div className="min-w-0 md:w-48">
             <label htmlFor={symbolId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
             <select id={symbolId} value={symbol} onChange={(e) => { setPicked(null); onSymbol(e.target.value); }} className={SELECT}>
@@ -122,7 +122,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
 
       <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} />
 
-      <section aria-label="Chain" data-block="chain">
+      <section aria-label="Chain" data-block="chain" data-tour="oc-chain">
         {chain.problem && !live && <Note tone="warn">{chain.problem === "no-session" ? TEXT.noSession : chain.problem === "plan" ? TEXT.plan : TEXT.loadFailed}</Note>}
         {chain.loading && !live && !chain.problem && (
           <div aria-busy="true" className="space-y-space-2 rounded-panel border border-subtle bg-surface-1 p-space-4">

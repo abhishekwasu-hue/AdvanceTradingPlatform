@@ -35,7 +35,7 @@ function Value({ loading, children }: { loading: boolean; children: ReactNode })
 export default function SummaryStripV2({ summary, expiry, loading }: { summary: ChainSummary | null; expiry: string | null; loading: boolean }) {
   const cards = summaryCards(summary, expiry);
   return (
-    <section aria-label="Summary" data-block="chain-summary"
+    <section aria-label="Summary" data-block="chain-summary" data-tour="oc-summary"
       className="-mx-space-4 flex snap-x snap-mandatory gap-space-3 overflow-x-auto px-space-4 pb-space-1 md:mx-0 md:grid md:grid-cols-4 md:gap-space-3 xl:grid-cols-7 md:overflow-visible md:px-0">
       {cards.map((c) => (
         <div key={c.key} data-summary={c.key}

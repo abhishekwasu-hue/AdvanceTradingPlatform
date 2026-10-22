@@ -68,7 +68,7 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
   const L = (cls: string) => (big ? "" : cls);
   const cell = (n: number) => (n === 2 ? (big ? "col-span-2 sm:col-span-1" : "col-span-2 min-[380px]:col-span-1") : "");
   return (
-    <section aria-label="Market" data-block="strip" className={`${CARD} grid gap-space-4 p-space-4 md:p-space-5 ${L("xl:grid-cols-[repeat(3,minmax(0,1fr))_auto_auto] xl:gap-0 xl:p-0")}`}>
+    <section aria-label="Market" data-block="strip" data-tour="dashboard-strip" className={`${CARD} grid gap-space-4 p-space-4 md:p-space-5 ${L("xl:grid-cols-[repeat(3,minmax(0,1fr))_auto_auto] xl:gap-0 xl:p-0")}`}>
       {/* Item 1: on the narrowest phones (under 380 px; any phone at the larger text sizes) the two indices share a row
           and VIX takes the next one, so the prices stay large without spilling out of their cells. */}
       <div className={`grid grid-cols-2 gap-space-3 ${big ? "sm:grid-cols-3" : "min-[380px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.8fr)] xl:contents"}`}>

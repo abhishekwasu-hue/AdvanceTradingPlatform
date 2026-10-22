@@ -2188,3 +2188,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   in `docs/adr/README.md`); `docs/OPEN_QUESTIONS.md` LAB-9 records it. G-LAB still gates every code-mode flag. The ADR
   note also records that order 11e overrides AMW_PORT C-3 (AI may write code for every Lab mode, as untrusted code).
 - CLAUDE.md and `docs/owner-orders/` not touched (owner-orders lives on its own branch).
+## 2026-10-22 - MO2 parts C (page tours) and B (AI key guides), behind ui_v2
+
+- Branch `claude/mo2-tours-keyguides` (merged with main after #335 text size and the F&O baskets).
+- Part C: a welcome tour (4 cards, ends on "Connect your broker") and first-visit tips on every v2 USER page
+  (Dashboard, Broker, Charts, Option chain, Signals, Positions, Portfolio, Risk, Settings), one English content file per
+  page in `frontend/src/tours/content/`, phone-specific steps, a "?" next to the page title to replay, Settings → Help
+  "Show all tips again" / "Skip all tips". Never blocking (no modal, no focus trap; Esc or a tap outside closes).
+  State on the server: new strict prefs namespace `tours` (welcome_done_at, skip_all_at, seen per allow-listed page id),
+  compare-and-set like the others; localStorage is only a paint cache; nothing opens until the server answered.
+  The engine is a lazy chunk. Existing e2e mocks do not return `tours`, so no tip and no "?" appear in older baselines.
+- Part B: Settings → AI "Get an AI key": the explainer line, "Start with free Google Gemini", a guide per provider
+  (key page button, numbered steps with marked screenshot placeholders, what the key looks like, "Is it free?", common
+  problems, last-checked date; a vitest fails 120 days after a guide's check date), a paste helper (trim, detect,
+  wrong-provider warning with a one-tap switch) and "Save and test" on the existing BYOK save + test endpoints.
+- Tests: backend `test_tours_prefs.py` (+ the prefs allow-list), vitest `tours.test.tsx`, `aiKeys.test.tsx`; e2e
+  `tours-v2.e2e.ts` (the CI check: every step's target visible on 1440 and 390, every step played) and
+  `key-guides-v2.e2e.ts`, baselines `tour-welcome-v2-*`, `tour-step-v2-*`, `key-guide-v2-*`. No migration.

@@ -132,7 +132,7 @@ export default function BrokerAdvanced({ entries = [], canChange = true, onConne
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <details data-broker-advanced className="rounded-panel border border-subtle bg-surface-1"
+    <details data-broker-advanced data-tour="broker-advanced" className="rounded-panel border border-subtle bg-surface-1"
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-space-2 px-space-4 text-t14 font-semibold text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
         <ChevronRight size={16} aria-hidden className={`transition-transform ${open ? "rotate-90" : ""}`} />

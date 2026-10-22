@@ -10,6 +10,8 @@ middleware (no BaseHTTPMiddleware: it must not buffer streaming responses or bre
   `Deprecation: true` and a `Link: </api/v1/...>; rel="successor-version"` header so clients can
   find the canonical path (the alias itself is not scheduled for removal).
 * **Metrics**: request count and latency by method, *route template* and status class.
+* **Recent errors** (MO3): an API answer of 5xx is kept in memory (request id, method, route template, status) for the
+  admin Diagnostics drawer (app/observability/recent_errors.py).
 """
 import re
 import time
@@ -18,6 +20,7 @@ import uuid
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.logging_config import bind_log_context
+from app.observability import recent_errors
 from app.observability.metrics import observe_http
 
 API_VERSION = "1"
@@ -69,4 +72,8 @@ class ObservabilityMiddleware:
             finally:
                 route = scope.get("route")
                 template = getattr(route, "path", None) or ("/api/*" if is_api else scope["path"])
-                observe_http(scope.get("method", "GET"), template, status_holder["status"], time.perf_counter() - started)
+                elapsed = time.perf_counter() - started
+                observe_http(scope.get("method", "GET"), template, status_holder["status"], elapsed)
+                if is_api and status_holder["status"] >= 500:
+                    # MO3: the admin Diagnostics drawer's "recent server errors" (request id + route template only).
+                    recent_errors.record(request_id, scope.get("method", "GET"), template, status_holder["status"], elapsed * 1000)

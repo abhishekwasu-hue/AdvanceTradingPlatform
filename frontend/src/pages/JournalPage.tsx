@@ -12,6 +12,7 @@ import {
 import type { DisciplineScore, DisciplineSettings, JournalEntry, JournalSettingsResponse, JournalTag, JournalWeek, TagStatus, WeeklyReview } from "../journal/types";
 import type { PageProps } from "../routes";
 import DisciplineCardV2 from "../growth/DisciplineCardV2";
+import PageDishV2 from "../growth/PageDishV2";
 import { useFeatures } from "../ui/useFeatures";
 
 const OFF_TEXT = "The discipline engine is turned off for this organisation. A platform operator can turn on the discipline_engine feature.";
@@ -291,6 +292,8 @@ export default function JournalPage(_props: PageProps) {
       <PageHeader title="Journal & discipline"
         description="Every trade journaled automatically, behaviour tags you confirm or dismiss, and a weekly discipline score. Your own data only; numbers, not advice."
         actions={off ? undefined : nav} />
+      {/* MO4 slice 4: the page's ready-made dish (ui_v2 + growth_v2; the server sends nothing while the journal is off). */}
+      {shareCard && <PageDishV2 page="journal" className="mb-space-4" />}
       {shareCard && <DisciplineCardV2 />}
       {off ? <EmptyState icon={<NotebookPen size={20} />} title="Not enabled" body={OFF_TEXT} /> : !data ? <Skeleton className="h-40 w-full" /> : (
         <Tabs value={tab} onChange={setTab} items={[

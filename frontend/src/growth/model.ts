@@ -1,5 +1,6 @@
 import { hasCallWords } from "../chartAnalyze/signalLanguage";
-import type { CardFact, DisciplineCard, PlanMeter } from "./types";
+import { cleanSection } from "../rhythm/model";
+import type { CardFact, DishPage, DisciplineCard, PageDish, PlanMeter } from "./types";
 
 /**
  * MO4 slice 3: the plan page's and the share card's pure parts.
@@ -115,4 +116,45 @@ export function resolveTokens(svg: string, read: (token: string) => string): str
     const value = read(token).trim();
     return value ? `rgb(${value})` : whole;
   });
+}
+
+// --- MO4 slice 4: the page dishes ---------------------------------------------------------------------------------------
+
+/** How often a dish reads again while the page is open and visible (none: it changes only with the page itself). */
+export const DISH_REFRESH_MS: Partial<Record<DishPage, number>> = {
+  signals: 2 * 60_000,
+  positions: 2 * 60_000,
+  screener: 5 * 60_000,
+};
+
+/**
+ * The dish as shown: every line checked again for call words (a line that fails is left out, never rewritten), the
+ * headline left out of the sections below it (a section that held only the headline goes too, since the headline says
+ * it), and a headline that fails the check dropped.
+ */
+export function dishShown(dish: PageDish): PageDish {
+  const headline = dish.headline && !hasCallWords(dish.headline) ? dish.headline : null;
+  const sections = dish.sections.map(cleanSection).flatMap((s) => {
+    if (!headline || !s.lines.includes(headline)) return [s];
+    const lines = s.lines.filter((l) => l !== headline);
+    return lines.length ? [{ ...s, lines }] : [];
+  });
+  return { ...dish, headline, sections };
+}
+
+const DISH_OPEN_KEY = "atp_dish_open:";
+
+/** Whether he left this page's dish open or folded (this device only; `fallback` when nothing is stored or storage is
+ * unavailable). */
+export function readDishOpen(page: DishPage, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(DISH_OPEN_KEY + page);
+    return v === null ? fallback : v === "1";
+  } catch {
+    return fallback;
+  }
+}
+
+export function writeDishOpen(page: DishPage, open: boolean): void {
+  try { localStorage.setItem(DISH_OPEN_KEY + page, open ? "1" : "0"); } catch { /* storage unavailable: not remembered */ }
 }

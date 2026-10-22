@@ -3,7 +3,9 @@ import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { cx } from "../components/primitives";
+import PageDishV2 from "../growth/PageDishV2";
 import { formatTimeIST } from "../ui/format";
+import { useFeatures } from "../ui/useFeatures";
 import { PageIntro } from "../ui/PageIntro";
 import {
   SOURCES, TABS, canDecide, canTradeRole, countLabel, defaultTab, itemForProposal, missingProposalMessage, sourceCaption,
@@ -68,6 +70,8 @@ export default function SignalsV2() {
   const [message, setMessage] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const feed = useSignalFeed(tab, source, symbol);
+  // MO4 slice 4: the page's ready-made dish (ui_v2 + growth_v2).
+  const dishOn = useFeatures().on("growth_v2");
   const { items } = feed;
 
   useEffect(() => {
@@ -101,6 +105,8 @@ export default function SignalsV2() {
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Signals</h1>
         <p className="hidden text-t14 text-fg-muted md:mt-space-1 md:block">Trades your paper bots, scans and Copilot suggest. Nothing is placed until you approve it.</p>
       </header>
+
+      {dishOn && <PageDishV2 page="signals" />}
 
       <div role="tablist" aria-label="Signals" data-tour="signals-tabs"
         className="grid grid-cols-3 gap-space-1 rounded-panel bg-surface-2 p-space-1 md:flex md:gap-space-6 md:rounded-none md:border-b md:border-subtle md:bg-transparent md:p-0">

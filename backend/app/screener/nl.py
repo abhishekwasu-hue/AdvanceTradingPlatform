@@ -163,6 +163,17 @@ def _tf_multiple(names: Mapping[str, str]) -> Optional[str]:
     return f"{spec.name}: {arg.name} must be a whole number of @{tf} bars" if arg is not None and tf else None
 
 
+def _argument_order(names: Mapping[str, str]) -> Optional[str]:
+    """TPL-1: an argument pair the registry orders (MACD fast below slow; PSAR start / step at most max)."""
+    spec = _function(names)
+    if spec is None:
+        return None
+    pair = next((p for p in spec.ordered_args if p[0] == names.get("arg") and p[1] == names.get("other")), None)
+    if pair is None:
+        return None
+    return f"{spec.name}: {pair[0]} must be {'at most' if pair[2] else 'below'} {pair[1]}"
+
+
 def _flag_off(names: Mapping[str, str]) -> Optional[str]:
     from app.screener.registry import FUNCTIONS
     known = [f for f in (names.get("functions") or "").split(",") if f in FUNCTIONS]
@@ -210,6 +221,7 @@ def _templates() -> Dict[str, Render]:
         "argument_type": _with_arg(lambda s, a: f"{s.name}: argument {a.name} must be {'a whole number of bars' if a.type == 'window' else a.type}"),
         "price_argument": _with_arg(lambda s, a: f"{s.name}: {a.name} must be a price"),
         "tf_multiple": _tf_multiple,
+        "argument_order": _argument_order,
         "not_condition": _fixed(NOT_A_CONDITION),
         "cost": _fixed("the screen is over the cost cap of this organisation; use fewer functions or shorter windows"),
         "flag_off": _flag_off,

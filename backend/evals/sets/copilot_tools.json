@@ -1,0 +1,1207 @@
+{
+ "_note": "Synthetic, hand-made tool results for the Copilot chat evals (backend/evals/build_copilot_fixtures.py). Not market data.",
+ "default": {
+  "get_chart_structure:BANKNIFTY": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "as_of": "2026-10-21T03:30:00+00:00",
+    "bars": 740,
+    "chart_state": {
+     "direction": "up",
+     "last_event": "BOS",
+     "last_event_price": 51950.0,
+     "protected": 51200.0,
+     "range_high": null,
+     "range_low": null
+    },
+    "instrument": "NSE_INDEX:NIFTYBANK",
+    "last_close": 52100.0,
+    "levels": [
+     {
+      "degree": 2,
+      "kind": "resistance",
+      "price": 52260.0,
+      "status": "live"
+     },
+     {
+      "degree": 2,
+      "kind": "support",
+      "price": 51850.0,
+      "status": "live"
+     }
+    ],
+    "reason": null,
+    "symbol": "BANKNIFTY",
+    "tf": "1d",
+    "timeframes": [
+     {
+      "as_of": "2026-10-21T03:30:00+00:00",
+      "bars": 150,
+      "direction": "range",
+      "last_event": null,
+      "last_event_price": null,
+      "protected": null,
+      "tf": "1w"
+     },
+     {
+      "as_of": "2026-10-21T03:30:00+00:00",
+      "bars": 740,
+      "direction": "up",
+      "last_event": "BOS",
+      "last_event_price": 51950.0,
+      "protected": 51200.0,
+      "tf": "1d"
+     },
+     {
+      "as_of": "2026-10-21T03:30:00+00:00",
+      "bars": 900,
+      "direction": "down (weak)",
+      "last_event": "CHoCH",
+      "last_event_price": 52150.0,
+      "protected": 52480.0,
+      "tf": "1h"
+     },
+     {
+      "as_of": "2026-10-21T03:30:00+00:00",
+      "bars": 1000,
+      "direction": "up",
+      "last_event": null,
+      "last_event_price": null,
+      "protected": 51980.0,
+      "tf": "15m"
+     }
+    ]
+   },
+   "ok": true,
+   "source": "price_action_layer:nse_bhav"
+  },
+  "get_chart_structure:NIFTY": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "as_of": "2026-10-21T03:30:00+00:00",
+    "bars": 740,
+    "chart_state": {
+     "direction": "up",
+     "last_event": "BOS",
+     "last_event_price": 24790.0,
+     "protected": 24310.0,
+     "range_high": null,
+     "range_low": null
+    },
+    "instrument": "NSE_INDEX:NIFTY50",
+    "last_close": 24850.5,
+    "levels": [
+     {
+      "degree": 2,
+      "kind": "resistance",
+      "price": 25010.5,
+      "status": "live"
+     },
+     {
+      "degree": 2,
+      "kind": "support",
+      "price": 24600.5,
+      "status": "live"
+     }
+    ],
+    "reason": null,
+    "symbol": "NIFTY",
+    "tf": "1d",
+    "timeframes": [
+     {
+      "as_of": "2026-10-21T03:30:00+00:00",
+      "bars": 150,
+      "direction": "range",
+      "last_event": null,
+      "last_event_price": null,
+      "protected": null,
+      "tf": "1w"
+     },
+     {
+      "as_of": "2026-10-21T03:30:00+00:00",
+      "bars": 740,
+      "direction": "up",
+      "last_event": "BOS",
+      "last_event_price": 24790.0,
+      "protected": 24310.0,
+      "tf": "1d"
+     },
+     {
+      "as_of": "2026-10-21T03:30:00+00:00",
+      "bars": 900,
+      "direction": "down (weak)",
+      "last_event": "CHoCH",
+      "last_event_price": 24900.5,
+      "protected": 25020.0,
+      "tf": "1h"
+     },
+     {
+      "as_of": "2026-10-21T03:30:00+00:00",
+      "bars": 1000,
+      "direction": "up",
+      "last_event": null,
+      "last_event_price": null,
+      "protected": 24730.5,
+      "tf": "15m"
+     }
+    ]
+   },
+   "ok": true,
+   "source": "price_action_layer:nse_bhav"
+  },
+  "get_market_context": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "as_of": "2026-10-21T03:30:00+00:00",
+    "breadth": {
+     "advances": 1210,
+     "as_of": "2026-10-20",
+     "declines": 840,
+     "ratio": 1.44,
+     "status": "ok",
+     "unchanged": 60
+    },
+    "events": {
+     "count": 1,
+     "items": [
+      {
+       "date": "2026-10-27",
+       "description": "NIFTY monthly expiry",
+       "kind": "EXPIRY",
+       "scope": "NIFTY",
+       "start_time": null,
+       "today": false
+      }
+     ],
+     "status": "ok"
+    },
+    "fii_dii": {
+     "reason": "No FII / DII source with clear terms of use is configured yet",
+     "status": "na"
+    },
+    "global": {
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "markets": [
+      {
+       "change_pct": 0.42,
+       "group": "US",
+       "key": "SP500",
+       "last": 5800.2,
+       "name": "S&P 500"
+      },
+      {
+       "change_pct": 0.65,
+       "group": "US",
+       "key": "NASDAQ",
+       "last": 18310.0,
+       "name": "Nasdaq Composite"
+      },
+      {
+       "change_pct": -0.5,
+       "group": "RATES",
+       "key": "US10Y",
+       "last": 4.21,
+       "name": "US 10-year yield"
+      },
+      {
+       "change_pct": 0.1,
+       "group": "FX",
+       "key": "DXY",
+       "last": 103.1,
+       "name": "US dollar index"
+      }
+     ],
+     "status": "ok"
+    },
+    "structure": {
+     "as_of": "2026-10-20",
+     "close": 24850.5,
+     "daily": "UPTREND",
+     "market": "NIFTY 50",
+     "status": "ok",
+     "weekly": "RANGE"
+    },
+    "vix": {
+     "as_of": "2026-10-20",
+     "change_pct": -3.1,
+     "close": 12.4,
+     "percentile": 18.5,
+     "status": "ok"
+    }
+   },
+   "ok": true,
+   "source": "context_panel"
+  },
+  "get_market_zones:NIFTY": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "as_of": "2026-10-21T03:30:00+00:00",
+    "bands": [
+     {
+      "distance_pct": 0.92,
+      "family": "zones",
+      "high": 25160.0,
+      "low": 25080.0,
+      "role": "supply",
+      "state": "fresh",
+      "timeframe": "1d",
+      "touches": 0,
+      "zone_type": "SUPPLY_ZONE"
+     },
+     {
+      "distance_pct": 0.97,
+      "family": "zones",
+      "high": 24610.0,
+      "low": 24520.0,
+      "role": "demand",
+      "state": "tested",
+      "timeframe": "1d",
+      "touches": 1,
+      "zone_type": "DEMAND_ZONE"
+     }
+    ],
+    "fallback": true,
+    "instrument": "NSE_INDEX:NIFTY50",
+    "live_count": 5,
+    "price": 24850.5,
+    "reason": null,
+    "symbol": "NIFTY"
+   },
+   "ok": true,
+   "source": "market_zones"
+  },
+  "get_option_chain_analyses:NIFTY": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "analyses": [
+     {
+      "chart": {
+       "marker": {
+        "label": "Spot",
+        "x": 24850.5
+       },
+       "series": [
+        {
+         "key": "put_oi",
+         "label": "Put OI",
+         "points": [
+          {
+           "x": 24600.0,
+           "y": 152000.0
+          },
+          {
+           "x": 24650.0,
+           "y": 74000.0
+          },
+          {
+           "x": 24700.0,
+           "y": 66000.0
+          },
+          {
+           "x": 24750.0,
+           "y": 58000.0
+          },
+          {
+           "x": 24800.0,
+           "y": 50000.0
+          },
+          {
+           "x": 24850.0,
+           "y": 42000.0
+          },
+          {
+           "x": 24900.0,
+           "y": 42000.0
+          },
+          {
+           "x": 24950.0,
+           "y": 42000.0
+          },
+          {
+           "x": 25000.0,
+           "y": 42000.0
+          },
+          {
+           "x": 25050.0,
+           "y": 42000.0
+          },
+          {
+           "x": 25100.0,
+           "y": 42000.0
+          }
+         ],
+         "tone": "up"
+        },
+        {
+         "key": "call_oi",
+         "label": "Call OI",
+         "points": [
+          {
+           "x": 24600.0,
+           "y": 40000.0
+          },
+          {
+           "x": 24650.0,
+           "y": 40000.0
+          },
+          {
+           "x": 24700.0,
+           "y": 40000.0
+          },
+          {
+           "x": 24750.0,
+           "y": 40000.0
+          },
+          {
+           "x": 24800.0,
+           "y": 40000.0
+          },
+          {
+           "x": 24850.0,
+           "y": 40000.0
+          },
+          {
+           "x": 24900.0,
+           "y": 49000.0
+          },
+          {
+           "x": 24950.0,
+           "y": 58000.0
+          },
+          {
+           "x": 25000.0,
+           "y": 67000.0
+          },
+          {
+           "x": 25050.0,
+           "y": 76000.0
+          },
+          {
+           "x": 25100.0,
+           "y": 145000.0
+          }
+         ],
+         "tone": "down"
+        }
+       ],
+       "type": "bar",
+       "x_kind": "strike",
+       "x_label": "Strike",
+       "y_label": "Open interest"
+      },
+      "key": "support_resistance",
+      "method": "Support is the strike with the highest put OI and resistance the strike with the highest call OI (a tie goes to the lower strike), over every strike of the chain now. The session path uses only the strikes stored in every snapshot, so its highest strikes can differ from the whole chain's.",
+      "sentences": [
+       "The highest put OI is at 24600 (1,52,000) and the highest call OI is at 25100 (1,45,000).",
+       "Spot 24,850.50 lies between them, 250.50 points above the put strike and 249.50 points below the call strike.",
+       "No earlier snapshot of this session is stored for this expiry yet, so the path through the session starts now."
+      ],
+      "state": "ok",
+      "tables": [
+       {
+        "columns": [
+         {
+          "key": "rank",
+          "kind": "number",
+          "label": "Rank"
+         },
+         {
+          "key": "put_strike",
+          "kind": "strike",
+          "label": "Put strike"
+         },
+         {
+          "key": "put_oi",
+          "kind": "oi",
+          "label": "Put OI"
+         },
+         {
+          "key": "call_strike",
+          "kind": "strike",
+          "label": "Call strike"
+         },
+         {
+          "key": "call_oi",
+          "kind": "oi",
+          "label": "Call OI"
+         }
+        ],
+        "rows": [
+         {
+          "call_oi": 145000.0,
+          "call_strike": 25100.0,
+          "put_oi": 152000.0,
+          "put_strike": 24600.0,
+          "rank": 1
+         },
+         {
+          "call_oi": 130000.0,
+          "call_strike": 25350.0,
+          "put_oi": 122000.0,
+          "put_strike": 24350.0,
+          "rank": 2
+         },
+         {
+          "call_oi": 121000.0,
+          "call_strike": 25300.0,
+          "put_oi": 114000.0,
+          "put_strike": 24400.0,
+          "rank": 3
+         }
+        ],
+        "title": "Highest OI now"
+       }
+      ],
+      "title": "Support / Resistance from OI",
+      "values": {
+       "resistance": 25100.0,
+       "spot": 24850.5,
+       "support": 24600.0
+      }
+     },
+     {
+      "chart": null,
+      "key": "build_up",
+      "method": "Each option's last price change and OI change since the session's first stored snapshot: price up and OI up is long build-up, price down and OI up is short build-up, price up and OI down is short covering, price down and OI down is long unwinding; a change of exactly zero is no clear change. Strikes: ATM and 5 strikes either side.",
+      "sentences": [
+       "Build-up compares each strike with an earlier snapshot of this session, and none is stored for this expiry yet.",
+       "It appears once the session has at least one earlier snapshot."
+      ],
+      "state": "no_data",
+      "tables": [],
+      "title": "OI build-up per strike",
+      "values": {}
+     },
+     {
+      "chart": {
+       "marker": null,
+       "series": [
+        {
+         "key": "pcr_near",
+         "label": "Near-ATM PCR",
+         "points": [
+          {
+           "x": "2026-10-21T03:30:00+00:00",
+           "y": 1.03
+          }
+         ],
+         "tone": "brand"
+        }
+       ],
+       "type": "line",
+       "x_kind": "time",
+       "x_label": "Time",
+       "y_label": "PCR"
+      },
+      "key": "pcr",
+      "method": "PCR is total put OI divided by total call OI: overall over every strike of the chain, and near the money over the ATM strike and the 5 strikes on each side of it. The session path is the near-ATM PCR at each snapshot.",
+      "sentences": [
+       "Overall PCR is 1.00: put OI 13,92,000 against call OI 13,95,000 across 21 strikes.",
+       "Near the money (the 11 strikes from 24600 to 25100 around ATM 24850) PCR is 1.03, so put OI is larger than call OI there.",
+       "No earlier snapshot of this session is stored for this expiry yet, so the path through the session starts now."
+      ],
+      "state": "ok",
+      "tables": [
+       {
+        "columns": [
+         {
+          "key": "scope",
+          "kind": "text",
+          "label": "Strikes"
+         },
+         {
+          "key": "put_oi",
+          "kind": "oi",
+          "label": "Put OI"
+         },
+         {
+          "key": "call_oi",
+          "kind": "oi",
+          "label": "Call OI"
+         },
+         {
+          "key": "pcr",
+          "kind": "ratio",
+          "label": "PCR"
+         }
+        ],
+        "rows": [
+         {
+          "call_oi": 1395000.0,
+          "pcr": 1.0,
+          "put_oi": 1392000.0,
+          "scope": "Overall (21 strikes)"
+         },
+         {
+          "call_oi": 635000.0,
+          "pcr": 1.03,
+          "put_oi": 652000.0,
+          "scope": "Near ATM: the 11 strikes from 24600 to 25100 around ATM 24850"
+         }
+        ],
+        "title": "Now"
+       }
+      ],
+      "title": "PCR",
+      "values": {
+       "atm": 24850.0,
+       "near_atm": 1.0268,
+       "overall": 0.9978,
+       "window": [
+        24600.0,
+        24650.0,
+        24700.0,
+        24750.0,
+        24800.0,
+        24850.0,
+        24900.0,
+        24950.0,
+        25000.0,
+        25050.0,
+        25100.0
+       ]
+      }
+     },
+     {
+      "chart": {
+       "marker": {
+        "label": "Spot",
+        "x": 24850.5
+       },
+       "series": [
+        {
+         "key": "total",
+         "label": "Total value",
+         "points": [
+          {
+           "x": 24600.0,
+           "y": 290000000.0
+          },
+          {
+           "x": 24650.0,
+           "y": 266500000.0
+          },
+          {
+           "x": 24700.0,
+           "y": 248700000.0
+          },
+          {
+           "x": 24750.0,
+           "y": 236200000.0
+          },
+          {
+           "x": 24800.0,
+           "y": 228600000.0
+          },
+          {
+           "x": 24850.0,
+           "y": 225500000.0
+          },
+          {
+           "x": 24900.0,
+           "y": 226500000.0
+          },
+          {
+           "x": 24950.0,
+           "y": 232050000.0
+          },
+          {
+           "x": 25000.0,
+           "y": 242600000.0
+          },
+          {
+           "x": 25050.0,
+           "y": 258600000.0
+          },
+          {
+           "x": 25100.0,
+           "y": 280500000.0
+          }
+         ],
+         "tone": "brand"
+        }
+       ],
+       "type": "bar",
+       "x_kind": "strike",
+       "x_label": "Expiry at",
+       "y_label": "OI x points"
+      },
+      "key": "max_pain",
+      "method": "Max pain is the strike K where the total in-the-money value of open options at expiry, call OI x max(0, K - strike) plus put OI x max(0, strike - K) summed over every strike, is smallest (a tie goes to the lower strike). Distance is max pain minus spot.",
+      "sentences": [
+       "Max pain is 24850: an expiry there leaves the smallest total in-the-money value of open options (22,55,00,000 OI x points) among the 21 strikes.",
+       "Max pain is 0.50 points (0.00% of spot) below spot 24,850.50."
+      ],
+      "state": "ok",
+      "tables": [
+       {
+        "columns": [
+         {
+          "key": "strike",
+          "kind": "strike",
+          "label": "Expiry at"
+         },
+         {
+          "key": "call_value",
+          "kind": "oi",
+          "label": "Calls"
+         },
+         {
+          "key": "put_value",
+          "kind": "oi",
+          "label": "Puts"
+         },
+         {
+          "key": "total",
+          "kind": "oi",
+          "label": "Total"
+         }
+        ],
+        "rows": [
+         {
+          "call_value": 30000000.0,
+          "is_max_pain": false,
+          "put_value": 260000000.0,
+          "strike": 24600.0,
+          "total": 290000000.0
+         },
+         {
+          "call_value": 42000000.0,
+          "is_max_pain": false,
+          "put_value": 224500000.0,
+          "strike": 24650.0,
+          "total": 266500000.0
+         },
+         {
+          "call_value": 56000000.0,
+          "is_max_pain": false,
+          "put_value": 192700000.0,
+          "strike": 24700.0,
+          "total": 248700000.0
+         },
+         {
+          "call_value": 72000000.0,
+          "is_max_pain": false,
+          "put_value": 164200000.0,
+          "strike": 24750.0,
+          "total": 236200000.0
+         },
+         {
+          "call_value": 90000000.0,
+          "is_max_pain": false,
+          "put_value": 138600000.0,
+          "strike": 24800.0,
+          "total": 228600000.0
+         },
+         {
+          "call_value": 110000000.0,
+          "is_max_pain": true,
+          "put_value": 115500000.0,
+          "strike": 24850.0,
+          "total": 225500000.0
+         },
+         {
+          "call_value": 132000000.0,
+          "is_max_pain": false,
+          "put_value": 94500000.0,
+          "strike": 24900.0,
+          "total": 226500000.0
+         },
+         {
+          "call_value": 156450000.0,
+          "is_max_pain": false,
+          "put_value": 75600000.0,
+          "strike": 24950.0,
+          "total": 232050000.0
+         },
+         {
+          "call_value": 183800000.0,
+          "is_max_pain": false,
+          "put_value": 58800000.0,
+          "strike": 25000.0,
+          "total": 242600000.0
+         },
+         {
+          "call_value": 214500000.0,
+          "is_max_pain": false,
+          "put_value": 44100000.0,
+          "strike": 25050.0,
+          "total": 258600000.0
+         },
+         {
+          "call_value": 249000000.0,
+          "is_max_pain": false,
+          "put_value": 31500000.0,
+          "strike": 25100.0,
+          "total": 280500000.0
+         }
+        ],
+        "title": "Value of open options at expiry, around max pain (OI x points)"
+       }
+      ],
+      "title": "Max Pain",
+      "values": {
+       "distance": -0.5,
+       "distance_pct": -0.0,
+       "max_pain": 24850.0,
+       "spot": 24850.5
+      }
+     },
+     {
+      "chart": {
+       "marker": null,
+       "series": [
+        {
+         "key": "upper",
+         "label": "Upper",
+         "points": [
+          {
+           "x": "2026-10-21T03:30:00+00:00",
+           "y": 25081.0
+          }
+         ],
+         "tone": "muted"
+        },
+        {
+         "key": "spot",
+         "label": "Spot",
+         "points": [
+          {
+           "x": "2026-10-21T03:30:00+00:00",
+           "y": 24850.5
+          }
+         ],
+         "tone": "brand"
+        },
+        {
+         "key": "lower",
+         "label": "Lower",
+         "points": [
+          {
+           "x": "2026-10-21T03:30:00+00:00",
+           "y": 24620.0
+          }
+         ],
+         "tone": "muted"
+        }
+       ],
+       "type": "line",
+       "x_kind": "time",
+       "x_label": "Time",
+       "y_label": "Price"
+      },
+      "key": "expected_move",
+      "method": "Expected move to expiry = spot plus or minus the ATM straddle price (call + put last price at the strike nearest spot), with no adjustment factor. Under Black-Scholes an ATM straddle is about 0.8 of a one-standard-deviation move, so this is a rough range that option prices imply, not a forecast.",
+      "sentences": [
+       "The ATM straddle at 24850 is 230.50 (call 120.50 + put 110.00).",
+       "Taken as the move to expiry, it gives a range of 24,620.00 to 25,081.00, about 0.93% either side of spot 24,850.50, with 6 days to expiry.",
+       "No earlier snapshot of this session is stored for this expiry yet, so the path through the session starts now."
+      ],
+      "state": "ok",
+      "tables": [
+       {
+        "columns": [
+         {
+          "key": "atm",
+          "kind": "strike",
+          "label": "ATM strike"
+         },
+         {
+          "key": "call",
+          "kind": "price",
+          "label": "Call"
+         },
+         {
+          "key": "put",
+          "kind": "price",
+          "label": "Put"
+         },
+         {
+          "key": "straddle",
+          "kind": "price",
+          "label": "Straddle"
+         },
+         {
+          "key": "lower",
+          "kind": "price",
+          "label": "Lower"
+         },
+         {
+          "key": "upper",
+          "kind": "price",
+          "label": "Upper"
+         },
+         {
+          "key": "move_pct",
+          "kind": "pct",
+          "label": "Move %"
+         }
+        ],
+        "rows": [
+         {
+          "atm": 24850.0,
+          "call": 120.5,
+          "lower": 24620.0,
+          "move_pct": 0.93,
+          "put": 110.0,
+          "straddle": 230.5,
+          "upper": 25081.0
+         }
+        ],
+        "title": "Now"
+       }
+      ],
+      "title": "Expected move",
+      "values": {
+       "atm": 24850.0,
+       "dte": 6,
+       "lower": 24620.0,
+       "move_pct": 0.93,
+       "straddle": 230.5,
+       "upper": 25081.0
+      }
+     },
+     {
+      "chart": {
+       "marker": {
+        "label": "Spot",
+        "x": 24850.5
+       },
+       "series": [
+        {
+         "key": "put_iv",
+         "label": "Put IV",
+         "points": [
+          {
+           "x": 24600.0,
+           "y": 5.65
+          },
+          {
+           "x": 24650.0,
+           "y": 4.85
+          },
+          {
+           "x": 24700.0,
+           "y": 4.02
+          },
+          {
+           "x": 24750.0,
+           "y": 6.06
+          },
+          {
+           "x": 24800.0,
+           "y": 8.12
+          },
+          {
+           "x": 24850.0,
+           "y": 9.59
+          },
+          {
+           "x": 24900.0,
+           "y": 10.77
+          },
+          {
+           "x": 24950.0,
+           "y": 11.74
+          },
+          {
+           "x": 25000.0,
+           "y": 12.54
+          },
+          {
+           "x": 25050.0,
+           "y": 13.21
+          },
+          {
+           "x": 25100.0,
+           "y": 13.75
+          }
+         ],
+         "tone": "up"
+        },
+        {
+         "key": "call_iv",
+         "label": "Call IV",
+         "points": [
+          {
+           "x": 24600.0,
+           "y": 10.63
+          },
+          {
+           "x": 24650.0,
+           "y": 10.47
+          },
+          {
+           "x": 24700.0,
+           "y": 10.13
+          },
+          {
+           "x": 24750.0,
+           "y": 9.62
+          },
+          {
+           "x": 24800.0,
+           "y": 8.94
+          },
+          {
+           "x": 24850.0,
+           "y": 8.06
+          },
+          {
+           "x": 24900.0,
+           "y": 6.92
+          },
+          {
+           "x": 24950.0,
+           "y": 5.37
+          },
+          {
+           "x": 25000.0,
+           "y": 2.95
+          },
+          {
+           "x": 25050.0,
+           "y": 3.81
+          },
+          {
+           "x": 25100.0,
+           "y": 4.63
+          }
+         ],
+         "tone": "down"
+        }
+       ],
+       "type": "line",
+       "x_kind": "strike",
+       "x_label": "Strike",
+       "y_label": "IV %"
+      },
+      "key": "iv_skew",
+      "method": "Call and put implied volatility per strike for ATM and 5 strikes each side: the broker's quoted IV when it reprices the last price, otherwise solved from the last price (the quote alone when there is no last price). Skew is the average, over the 5 strike pairs either side of ATM, of the put IV k strikes below ATM minus the call IV k strikes above it, in IV points; within 0.5 points it reads about the same.",
+      "sentences": [
+       "ATM IV at 24850 is 8.82% (call 8.06%, put 9.59%).",
+       "Across 5 strike pairs either side of ATM, out-of-the-money put IV is 1.00 points above out-of-the-money call IV on average.",
+       "In this window IV is lowest at 25000 (call, 2.95%) and highest at 25100 (put, 13.75%)."
+      ],
+      "state": "ok",
+      "tables": [
+       {
+        "columns": [
+         {
+          "key": "strike",
+          "kind": "strike",
+          "label": "Strike"
+         },
+         {
+          "key": "call_iv",
+          "kind": "iv",
+          "label": "Call IV %"
+         },
+         {
+          "key": "put_iv",
+          "kind": "iv",
+          "label": "Put IV %"
+         }
+        ],
+        "rows": [
+         {
+          "call_iv": 10.63,
+          "put_iv": 5.65,
+          "strike": 24600.0
+         },
+         {
+          "call_iv": 10.47,
+          "put_iv": 4.85,
+          "strike": 24650.0
+         },
+         {
+          "call_iv": 10.13,
+          "put_iv": 4.02,
+          "strike": 24700.0
+         },
+         {
+          "call_iv": 9.62,
+          "put_iv": 6.06,
+          "strike": 24750.0
+         },
+         {
+          "call_iv": 8.94,
+          "put_iv": 8.12,
+          "strike": 24800.0
+         },
+         {
+          "call_iv": 8.06,
+          "put_iv": 9.59,
+          "strike": 24850.0
+         },
+         {
+          "call_iv": 6.92,
+          "put_iv": 10.77,
+          "strike": 24900.0
+         },
+         {
+          "call_iv": 5.37,
+          "put_iv": 11.74,
+          "strike": 24950.0
+         },
+         {
+          "call_iv": 2.95,
+          "put_iv": 12.54,
+          "strike": 25000.0
+         },
+         {
+          "call_iv": 3.81,
+          "put_iv": 13.21,
+          "strike": 25050.0
+         },
+         {
+          "call_iv": 4.63,
+          "put_iv": 13.75,
+          "strike": 25100.0
+         }
+        ],
+        "title": "Smile"
+       },
+       {
+        "columns": [
+         {
+          "key": "k",
+          "kind": "number",
+          "label": "Strikes from ATM"
+         },
+         {
+          "key": "put_strike",
+          "kind": "strike",
+          "label": "Put strike"
+         },
+         {
+          "key": "put_iv",
+          "kind": "iv",
+          "label": "Put IV %"
+         },
+         {
+          "key": "call_strike",
+          "kind": "strike",
+          "label": "Call strike"
+         },
+         {
+          "key": "call_iv",
+          "kind": "iv",
+          "label": "Call IV %"
+         },
+         {
+          "key": "difference",
+          "kind": "iv_diff",
+          "label": "Put - call"
+         }
+        ],
+        "rows": [
+         {
+          "call_iv": 6.92,
+          "call_strike": 24900.0,
+          "difference": 1.2,
+          "k": 1,
+          "put_iv": 8.12,
+          "put_strike": 24800.0
+         },
+         {
+          "call_iv": 5.37,
+          "call_strike": 24950.0,
+          "difference": 0.69,
+          "k": 2,
+          "put_iv": 6.06,
+          "put_strike": 24750.0
+         },
+         {
+          "call_iv": 2.95,
+          "call_strike": 25000.0,
+          "difference": 1.07,
+          "k": 3,
+          "put_iv": 4.02,
+          "put_strike": 24700.0
+         },
+         {
+          "call_iv": 3.81,
+          "call_strike": 25050.0,
+          "difference": 1.04,
+          "k": 4,
+          "put_iv": 4.85,
+          "put_strike": 24650.0
+         },
+         {
+          "call_iv": 4.63,
+          "call_strike": 25100.0,
+          "difference": 1.02,
+          "k": 5,
+          "put_iv": 5.65,
+          "put_strike": 24600.0
+         }
+        ],
+        "title": "Skew pairs"
+       }
+      ],
+      "title": "IV smile / skew",
+      "values": {
+       "atm": 24850.0,
+       "atm_iv": 8.82,
+       "skew": 1.0
+      }
+     }
+    ],
+    "data_as_of": "2026-10-21T03:30:00+00:00",
+    "expiry": "2026-10-27",
+    "message": null,
+    "spot": 24850.5,
+    "state": "ok",
+    "symbol": "NIFTY"
+   },
+   "ok": true,
+   "source": "option_chain_analyses:broker:paper"
+  },
+  "get_risk_limits": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "capital": 200000.0,
+    "lot_size": 75,
+    "max_consecutive_losses": 3,
+    "max_daily_loss_pct": 3.0,
+    "max_open_positions": 3,
+    "max_trades_per_day": 5,
+    "min_risk_reward": 1.5,
+    "risk_per_trade_pct": 1.0
+   },
+   "ok": true,
+   "source": "risk_settings"
+  }
+ },
+ "no_data": {
+  "get_chart_structure:BANKNIFTY": {
+   "error": "no lake bars for this instrument and timeframe in the window",
+   "ok": false
+  },
+  "get_chart_structure:NIFTY": {
+   "error": "no lake bars for this instrument and timeframe in the window",
+   "ok": false
+  },
+  "get_market_context": {
+   "error": "get_market_context is not enabled for this organisation (flag context_panel)",
+   "ok": false
+  },
+  "get_market_zones:NIFTY": {
+   "error": "no zones for this instrument",
+   "ok": false
+  },
+  "get_option_chain_analyses:NIFTY": {
+   "error": "Connect your broker and log in to it today to see these analyses. They use your own broker's option chain.",
+   "ok": false
+  },
+  "get_risk_limits": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "note": "the organisation has not set its own risk limits; platform defaults apply"
+   },
+   "ok": true,
+   "source": "risk_settings"
+  }
+ }
+}

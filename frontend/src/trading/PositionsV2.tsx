@@ -145,7 +145,7 @@ export default function PositionsV2(_props: PageProps = {}) {
       ]} />
       <PageTitleV2 title="My positions" subtitle="What you hold now and how it is doing." />
 
-      <section aria-label="Summary" data-block="summary">
+      <section aria-label="Summary" data-block="summary" data-tour="positions-summary">
         {positions.status === "loading" ? <LoadingRowsV2 rows={2} /> : (
           <TilesV2>
             <TileV2 testId="open" label="Open positions" value={positions.status === "ok" ? String(tiles.open) : EMPTY} sub={positions.status === "ok" ? openCaption(tiles) : undefined} />
@@ -161,7 +161,7 @@ export default function PositionsV2(_props: PageProps = {}) {
 
       {notice && <NoteV2 kind={notice.kind} testId="action">{notice.text}</NoteV2>}
 
-      <CardV2 title="Open positions" count={list?.length} testId="positions">
+      <CardV2 title="Open positions" count={list?.length} testId="positions" tour="positions-list">
         {positions.status === "loading" ? <LoadingRowsV2 /> : positions.status === "error" ? <LoadFailedV2 what="your positions" /> : rows.length === 0 ? (
           <EmptyStateV2 text="No open positions. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
         ) : (
@@ -174,7 +174,7 @@ export default function PositionsV2(_props: PageProps = {}) {
       <ClosedTradesV2 trades={trades} onSaved={reloadTrades} />
 
       <section aria-labelledby="paper-tools" className="space-y-space-4" data-block="tools">
-        <h2 id="paper-tools" className="text-t15 font-semibold text-fg">Paper account and tools</h2>
+        <h2 id="paper-tools" data-tour="positions-tools" className="text-t15 font-semibold text-fg">Paper account and tools</h2>
         <PaperAccountCard canTrade={canTrade} />
         <ExperienceCard canTrade={canTrade} />
         {portfolioRiskOn && <Suspense fallback={null}><PortfolioRiskCard /></Suspense>}

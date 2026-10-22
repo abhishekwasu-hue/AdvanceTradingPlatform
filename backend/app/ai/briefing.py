@@ -117,7 +117,7 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
     headlines = {
         "TREND_UP": "A trending-up day on the data: higher highs and higher lows; trend-family templates' filters are open, reversal ones mostly closed.",
         "TREND_DOWN": "A trending-down day on the data: lower highs and lower lows; trend-family templates' filters are open, reversal ones mostly closed.",
-        "RANGE": "A sideways day on the data: trend-family templates' regime filters keep them out; range and reversion templates' filters are open.",
+        "RANGE": "A sideways day on the data: trend-family templates fit it poorly; range and reversion templates' filters are open.",
         "VOLATILE": "A volatile day on the data: wide swings and gaps, so ATR-based stops are wider and position sizes come out smaller.",
         "UNKNOWN": "No market read yet - press \"Read now\" in Market memory (needs a broker session), or wait for the worker after 09:15.",
     }
@@ -126,7 +126,7 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
     if fam["fit"]:
         lines.append("Regime filters open today: " + ", ".join(FAMILY_TEXT[f][0] for f in fam["fit"]) + ".")
     if fam["avoid"]:
-        lines.append("Regime filters closed today: " + ", ".join(FAMILY_TEXT[f][0] for f in fam["avoid"]) + " - these templates would not enter.")
+        lines.append("Regime filters closed today: " + ", ".join(FAMILY_TEXT[f][0] for f in fam["avoid"]) + " - a poor fit for these templates (a diagnostic only; it never blocks an entry).")
     # P0.10: when the market figures are not a current read, no VIX or global-cue numbers are repeated as today's.
     hidden = freshness is not None and not freshness.get("figures_shown", True)
     vix = None if hidden else dt.get("vix")

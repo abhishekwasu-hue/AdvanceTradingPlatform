@@ -1,0 +1,29 @@
+{
+ "_comment": "WL1 (handover item 4): the system 'Sectors' watchlists. Each list is named for traders and defined on NSE's industry classification (the `classifications` table, scheme NSE): `level` is the classification level matched (sector or industry) and `values` the NSE spellings it takes. A list on the industry level is built only when a source gives that level (a full classification file, OPEN_QUESTIONS WL1-1); the constituent files carry the sector level only. A sector value not named here still gets its own list, under NSE's own name, so no classified company is left out.",
+ "lists": [
+  {"name": "Banking", "level": "industry", "values": ["Banks"]},
+  {"name": "Pharma", "level": "industry", "values": ["Pharmaceuticals & Biotechnology"]},
+  {"name": "Financial Services", "level": "sector", "values": ["Financial Services"]},
+  {"name": "IT", "level": "sector", "values": ["Information Technology"]},
+  {"name": "Automobile", "level": "sector", "values": ["Automobile and Auto Components", "Automobile & Auto Components"]},
+  {"name": "Healthcare", "level": "sector", "values": ["Healthcare"]},
+  {"name": "FMCG", "level": "sector", "values": ["Fast Moving Consumer Goods"]},
+  {"name": "Oil & Gas", "level": "sector", "values": ["Oil Gas & Consumable Fuels", "Oil, Gas & Consumable Fuels"]},
+  {"name": "Metals & Mining", "level": "sector", "values": ["Metals & Mining"]},
+  {"name": "Capital Goods", "level": "sector", "values": ["Capital Goods"]},
+  {"name": "Power", "level": "sector", "values": ["Power"]},
+  {"name": "Telecom", "level": "sector", "values": ["Telecommunication"]},
+  {"name": "Chemicals", "level": "sector", "values": ["Chemicals"]},
+  {"name": "Construction", "level": "sector", "values": ["Construction"]},
+  {"name": "Construction Materials", "level": "sector", "values": ["Construction Materials"]},
+  {"name": "Consumer Durables", "level": "sector", "values": ["Consumer Durables"]},
+  {"name": "Consumer Services", "level": "sector", "values": ["Consumer Services"]},
+  {"name": "Realty", "level": "sector", "values": ["Realty"]},
+  {"name": "Media", "level": "sector", "values": ["Media Entertainment & Publication", "Media, Entertainment & Publication"]},
+  {"name": "Services", "level": "sector", "values": ["Services"]},
+  {"name": "Textiles", "level": "sector", "values": ["Textiles"]},
+  {"name": "Utilities", "level": "sector", "values": ["Utilities"]},
+  {"name": "Forest Materials", "level": "sector", "values": ["Forest Materials"]},
+  {"name": "Diversified", "level": "sector", "values": ["Diversified"]}
+ ]
+}

@@ -8,6 +8,7 @@
 import { Code2, Layers, LayoutGrid, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { ApiError } from "../api/errors";
 import { Button, cx, Dialog } from "../components/primitives";
 import { useToast } from "../components/Toast";
@@ -31,6 +32,8 @@ import { useFeatures } from "../ui/useFeatures";
 import { ComingSoon } from "../ui/ComingSoon";
 import { ErrorState } from "../ui/ErrorState";
 import { COMING_SOON_MESSAGE } from "../api/errors";
+import { ideasApi } from "../ideas/api";
+import { ideaScanFromSearch, scanName } from "../ideas/model";
 
 // Handover 11c-1 (flag `strategy_lab_pine`): the Pine Script panel loads only when it is opened.
 const PinePanel = lazy(() => import("../lab/pine/PinePanel"));
@@ -126,6 +129,35 @@ export default function ScreenerPage(_props: PageProps) {
       setGalleryOpen(false);
     }).catch((e: unknown) => setOtherProblem(errorText(e)));
   };
+
+  // Idea library slice 1 (flag idea_library): "Try as a scan" opens `/screener?idea=T1&scan=up` - the idea's screen, its
+  // settings at their starting values, as builder blocks the trader sees and changes like any other. The server
+  // validates and gates it as usual (`/stages`); the address loses the query once it is handled.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const ideaAsk = useMemo(() => ideaScanFromSearch(location.search), [location.search]);
+  useEffect(() => {
+    if (!registry || !ideaAsk) return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const idea = await ideasApi.idea(ideaAsk.idea);
+        const scan = idea.scans.find((s) => s.id === ideaAsk.scan);
+        if (!scan || !scan.available) throw new Error("This idea's scan is not switched on for your account yet.");
+        const res = await screenerApi.stages({ source: scan.text, base_tf: scan.base_tf, params: scan.params });
+        if (!alive) return;
+        setStages(stagesFromServer(registry, res.stages));
+        setScanTf(res.base_tf);
+        setName(scanName(idea, scan));
+        setSavedId(undefined);
+      } catch (e) {
+        if (alive) toast.error(errorText(e));
+      } finally {
+        if (alive) navigate({ search: "" }, { replace: true });
+      }
+    })();
+    return () => { alive = false; };
+  }, [registry, ideaAsk, navigate, toast]);
 
   const symbols = useMemo(() => parseSymbols(symbolsText), [symbolsText]);
   const text = useMemo(() => (registry ? screenText(registry, stages) : ""), [registry, stages]);

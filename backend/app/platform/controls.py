@@ -190,6 +190,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # The Pine text is parsed, never executed (a host mode: no runner, ADR-0027). OFF: /api/lab/pine/* answers 404 and the
     # Screener shows no Pine button. Places no orders.
     "strategy_lab_pine": "Pine Script subset: paste a TradingView Pine script, see what translates, and run its signal condition as a screen (never executed; places no orders)",
+    # Idea library slice 1 (owner order ATP_SESSION_IDEA_LIBRARY.md, T1-T8): the Ideas page (v2 shell) - generic method
+    # ideas as white-box cards (plain words, structure words, the user's own settings, honest provenance; education, no
+    # performance claims) with "Try as a scan" built from the ScreenQL registry. OFF: /api/ideas answers 404 and the page
+    # and its navigation entry are hidden. Places no orders.
+    "idea_library": "Idea library: well-known chart-reading methods as plain-words cards, each with a ready scan to try (education only, places no orders)",
     # Z10-b (G5, docs/design/Z10_LAUNCH_HARDENING.md): stale data -> zero alerts. The bar-close engine, the rule flush and
     # the dispatcher hold back a screen / instrument alert whose bars are no longer current. Trade, exit, risk and
     # system notifications are never held back. OFF: unchanged.

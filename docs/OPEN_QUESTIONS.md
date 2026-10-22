@@ -916,6 +916,23 @@ Each has a provisional default the build uses until the owner answers.
 | MO3-A5 | "Support tickets": ATP has none; Support shows the "Send feedback" messages and one person's status. | Keep feedback as the support inbox until the owner wants a ticket system. | Support section | open |
 | MO3-A6 | Testing tools: sample data, test signals and debug panels still live on the user pages (Backtest, Custom scan, Factor Lab). | This slice shows the existing operator tools read-only (alert outbox, failed deliveries, retention, saved-screen check, history imports); moving the user-page tools here is a later slice. | Testing tools section | open |
 
+## Idea library slice 1 (22 Oct)
+
+Each has a provisional default the build uses until the owner answers.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| IDEA-1 | "Use this idea" / "Adopt as a paper strategy": the strategy templates core (#343) holds only D1 and is not wired to deployments, and no built-in strategy matches T1-T8 (the EMA pullback / breakout bots would misstate the idea). | No idea can be adopted in slice 1; every card says it comes later (PAPER only, the user sets every value). Slice 2 adds the T templates to the templates core (template ids are A-F today: T ids need a schema change) and the pre-fill into the Paper bot form. | `app/idea_library/ideas.json` header, cards | open |
+| IDEA-2 | The annotated example chart (older than 3 months, no security name) on each idea. | Not in slice 1: an anonymised example needs chart data and a review; ATP will not draw a made-up chart. Comes with slice 2 or 3. | cards | open |
+| IDEA-3 | T6 (channel) and T7 (double top / bottom, head and shoulders) need registry functions that do not exist (price at a channel line; swing patterns). | No scan; the card says "A scan for this idea comes later". No rule invented. | `ideas.json` T6, T7 | open |
+| IDEA-4 | T1 / T3 triggers: ScreenQL cannot read a timeframe lower than the scan's, and zones are not chosen by timeframe. | The scans read the reaction (a candle pattern or a change of character) on the scan's own timeframe; each card says the lower-timeframe read and the area timeframe come later. | T1, T3 scans | open |
+| IDEA-5 | T4's follow-up push (E4a) and equal highs / lows. | The scan finds the sweep and the close back inside an area; the follow-up push is checked on the chart for now (the card says so). | T4 scans | open |
+| IDEA-6 | Which group T5 (breakout and retest) and T6 (channel) belong to. | Trend (a structure flip continues or starts a move; a channel trade is in the trend's favour). | `ideas.json` groups | open |
+| IDEA-7 | The scans need `screener_v2`, `screener_builder_u2` and the function flags (`screener_breakouts`, `screener_breakouts_bk4`, `market_zones`, `screenql_amw_functions`). | A scan whose flags are not all on for the organisation is not offered ("not switched on for your account yet"); flag names are never shown to a user. | `/api/ideas` `available` | open |
+| IDEA-8 | Difficulty per idea. | Beginner: T1, T2, T5. Intermediate: T3, T4, T6, T7, T8. | `ideas.json` | open |
+| IDEA-9 | The beginner path's answers -> ideas. | Each answer's lead idea first, then the ideas most answers name, at most three; an option seller always sees T8. | `ideas.json` beginner, `src/ideas/model.ts` | open |
+
+
 ## Wave / correction templates (family G): the review's owner questions (WAVE, 22 Oct)
 
 From docs/design/WAVE_TEMPLATES_REVIEW.md. Each has a provisional default the build uses until the owner answers.

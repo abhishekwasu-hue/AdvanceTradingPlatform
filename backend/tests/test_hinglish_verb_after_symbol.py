@@ -176,8 +176,12 @@ def _strings(value):
 
 def test_knowledge_library_and_eval_texts_are_untouched_by_the_new_rule():
     texts = [t for c in knowledge.CONCEPTS for t in (c.en, c.body_en)]
-    rows = [json.loads(line) for path in sorted((BACKEND / "evals" / "sets").glob("*.jsonl"))
-            for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    # Same format as evals/runner.py load(): one JSON case per line; a line starting with "//" is a
+    # header comment. Comment text is still checked against the rule, as plain text.
+    lines = [line for path in sorted((BACKEND / "evals" / "sets").glob("*.jsonl"))
+             for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [json.loads(line) for line in lines if not line.startswith("//")]
+    texts += [line[2:].strip() for line in lines if line.startswith("//")]
     texts += [s for row in rows for s in _strings(row)]
     assert len(texts) > 300
     assert [t for t in texts if _new_rule_hits(t)] == []

@@ -105,11 +105,11 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
         {yTicks.map((v) => (
           <g key={v}>
             <line x1={M.left} x2={W - M.right} y1={sy(v)} y2={sy(v)} style={{ stroke: "rgb(var(--chart-grid))" }} />
-            <text x={M.left - 8} y={sy(v)} dy="0.32em" textAnchor="end" className="font-mono text-[11px]" style={{ fill: "rgb(var(--chart-text))" }}>{money(v)}</text>
+            <text x={M.left - 8} y={sy(v)} dy="0.32em" textAnchor="end" className="font-mono text-xs" style={{ fill: "rgb(var(--chart-text))" }}>{money(v)}</text>
           </g>
         ))}
         {xTicks.map((v, i) => (
-          <text key={v} x={sx(v)} y={H - M.bottom + 30} textAnchor={i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"} className="font-mono text-[11px]" style={{ fill: "rgb(var(--chart-text))" }}>{Math.round(v).toLocaleString("en-IN")}</text>
+          <text key={v} x={sx(v)} y={H - M.bottom + 30} textAnchor={i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"} className="font-mono text-xs" style={{ fill: "rgb(var(--chart-text))" }}>{Math.round(v).toLocaleString("en-IN")}</text>
         ))}
         {areas.profit.map((d, i) => <path key={`p${i}`} d={d} className="fill-up/15" />)}
         {areas.loss.map((d, i) => (
@@ -122,7 +122,7 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
         {lossY != null && e.extremes?.max_loss != null && (
           <g data-testid="max-loss-line" pointerEvents="none">
             <line x1={M.left} x2={W - M.right} y1={lossY} y2={lossY} className="stroke-down" strokeWidth={1.25} strokeDasharray="8 4" />
-            <text x={M.left + 6} y={lossY - 6} className="fill-down font-mono text-[11px] font-semibold">Max loss {money(e.extremes.max_loss)}</text>
+            <text x={M.left + 6} y={lossY - 6} className="fill-down font-mono text-xs font-semibold">Max loss {money(e.extremes.max_loss)}</text>
           </g>
         )}
         {e.at_expiry && <path d={linePath(xs, e.at_expiry, sx, sy)} className="fill-none stroke-fg" strokeWidth={2} data-testid="curve-expiry" />}
@@ -130,11 +130,11 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
         <path d={linePath(xs, e.on_date, sx, sy)} className="fill-none stroke-signal" strokeWidth={2.25} strokeDasharray={later ? "6 4" : undefined} data-testid="curve-date" />
         {/* the underlying's price */}
         <line x1={sx(spot)} x2={sx(spot)} y1={M.top} y2={H - M.bottom} className="stroke-info" strokeWidth={1.25} />
-        <text x={sx(spot)} y={M.top + 10} dx={4} className="fill-info font-mono text-[11px]">spot {Math.round(spot).toLocaleString("en-IN")}</text>
+        <text x={sx(spot)} y={M.top + 10} dx={4} className="fill-info font-mono text-xs">spot {Math.round(spot).toLocaleString("en-IN")}</text>
         {(e.breakevens ?? []).filter((b) => b >= xs[0] && b <= xs[xs.length - 1]).map((b, i) => (
           <g key={b} data-testid="breakeven">{/* alternate labels above / below zero so close breakevens stay readable */}
             <circle cx={sx(b)} cy={sy(0)} r={3.5} className="fill-surface stroke-fg" strokeWidth={1.5} />
-            <text x={sx(b)} y={i % 2 ? sy(0) + 16 : sy(0) - 8} textAnchor="middle" className="fill-fg font-mono text-[11px]">{Math.round(b).toLocaleString("en-IN")}</text>
+            <text x={sx(b)} y={i % 2 ? sy(0) + 16 : sy(0) - 8} textAnchor="middle" className="fill-fg font-mono text-xs">{Math.round(b).toLocaleString("en-IN")}</text>
           </g>
         ))}
         {/* strikes: drag on the axis, or focus and use the keys */}
@@ -151,7 +151,7 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
               <circle r={hit} fill="transparent" pointerEvents="all" data-testid="strike-hit" />
               <circle r={12} className="ring fill-none stroke-brand opacity-0" strokeWidth={2} />
               <Handle buy={buy} active={drag === l.id} />
-              <text dy="0.32em" textAnchor="middle" className="pointer-events-none fill-surface font-mono text-[9px] font-semibold">{n}</text>
+              <text dy="0.32em" textAnchor="middle" className="pointer-events-none fill-surface font-mono text-xs font-semibold">{n}</text>
             </g>
           );
         })}

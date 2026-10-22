@@ -30,6 +30,7 @@ from app.core.models import (
 )
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.routes import router as auth_router
+from app.auth.google_routes import router as google_auth_router
 from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
@@ -82,12 +83,16 @@ from app.trading.persistence import persist_signal_history
 from app.paper.routes import router as paper_router
 from app.decision_tools.routes import router as decision_tools_router
 from app.watchlists.routes import router as watchlists_router
+from app.watchlists.system_routes import admin_router as system_watchlists_admin_router
+from app.watchlists.system_routes import router as system_watchlists_router
+from app.chart_analyze.routes import admin_router as chart_analyze_admin_router, router as chart_analyze_router
 from app.signals_feed.routes import router as signals_feed_router
 from app.me.prefs import router as me_prefs_router
 from app.option_chain.ask_routes import router as oc_ask_router
 from app.me.setup import router as me_setup_router
 from app.context_panel.routes import router as context_panel_router
 from app.paper.ticket_routes import router as paper_ticket_router
+from app.paper.fno_routes import router as paper_fno_router
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
 from app.workers.routes import router as workers_router
@@ -113,6 +118,7 @@ from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
 from app.option_chain.analyses_routes import router as oc_analyses_router
+from app.option_chain.charts_routes import router as oc_charts_router
 from app.platform.readiness_routes import router as readiness_router
 from app.billing.routes import admin_router as billing_admin_router, router as billing_router, webhook_router as billing_webhook_router
 from app.billing.service import meter
@@ -134,6 +140,7 @@ from app.screener.evidence_routes import router as screener_evidence_router
 from app.screener.board import router as screener_board_router
 from app.screener.library_routes import router as screener_library_router
 from app.screener.etf_routes import router as screener_etf_router
+from app.lab.pine.routes import router as lab_pine_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.screener.then.routes import router as scan_then_router
 from app.alerts.links_routes import router as alert_links_router
@@ -228,6 +235,7 @@ app.add_middleware(
 
 
 app.include_router(auth_router)
+app.include_router(google_auth_router)   # GS-1: Google sign-in (404 until both credentials are set)
 app.include_router(broker_router)
 app.include_router(broker_connect_router)   # P2a: simple broker connect (catalog, connections, connect, renew)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart
@@ -281,6 +289,7 @@ app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill prog
 app.include_router(history_intraday_admin_router)  # HB2: owner intraday history progress (SUPER_ADMIN, read-only)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
 app.include_router(oc_analyses_router)     # OC2: the built-in option chain analyses, read-only (flag ui_v2, off)
+app.include_router(oc_charts_router)       # OC5: the Option chain "Charts" series, read-only (flag ui_v2)
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)
 app.include_router(controls_admin_router)
@@ -291,6 +300,7 @@ app.include_router(fx_router)
 app.include_router(fx_admin_router)
 app.include_router(incidents_router)
 app.include_router(screener_router)
+app.include_router(lab_pine_router)  # handover 11c-1: Pine Script subset -> ScreenQL, never executed (flag strategy_lab_pine, off)
 app.include_router(screener_history_router)  # N3 S6a: who passed on a date, screen fitness (flag screener_history, off)
 app.include_router(screener_rankings_router)  # N3 S7a: ranking systems (flag screener_rankings, off)
 app.include_router(screener_breakouts_router)
@@ -317,13 +327,18 @@ app.include_router(pwa_router)             # PW6: PWA install/update events (cou
 app.include_router(feedback_router)        # PW6: "Send feedback"
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
 app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and position what-if (flag decision_tools)
+app.include_router(system_watchlists_router)  # WL1: read-only system lists (indices, index stocks, sectors, F&O); before /{id}
 app.include_router(watchlists_router)  # AMW-2: the caller's own named watchlists (flag watchlists, off)
+app.include_router(system_watchlists_admin_router)  # WL1: the admin's view of the system lists' refresh (SUPER_ADMIN)
+app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a chart image, educational reading (flag chart_analyze, off)
+app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)
 app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
 app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress (stored marks + steps worked out; reads only)
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
+app.include_router(paper_fno_router)       # FNO-1: trading from the option chain, PAPER only (flags ui_v2 + paper_account)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
 app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)
 

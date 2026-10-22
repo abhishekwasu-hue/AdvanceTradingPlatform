@@ -4,6 +4,7 @@ from app.core.models import RiskConfig, Signal
 from app.core.enums import SignalDirection, SignalGrade
 from app.db.models import TradeRecord, User
 from app.strategy_engine.registry import registry
+from tests.broker_fakes import KITE_KEY
 from tests.test_auth_api import _register, _session_factory, client
 from tests.utils import make_series
 
@@ -160,7 +161,7 @@ def test_mark_price_exit_creates_notification():
 def test_broker_auth_failure_creates_broker_disconnect_or_token_expired_notification(monkeypatch):
     token = _register("notif_broker@example.com")
     headers = {"Authorization": f"Bearer {token}"}
-    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k", "access_token": "t"})
+    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": KITE_KEY, "access_token": "t"})
 
     class _FailingAdapter:
         async def authenticate(self):
@@ -178,7 +179,7 @@ def test_broker_auth_failure_creates_broker_disconnect_or_token_expired_notifica
 def test_broker_generic_auth_failure_creates_broker_disconnect_notification(monkeypatch):
     token = _register("notif_broker2@example.com")
     headers = {"Authorization": f"Bearer {token}"}
-    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k", "access_token": "t"})
+    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": KITE_KEY, "access_token": "t"})
 
     class _FailingAdapter:
         async def authenticate(self):
@@ -206,7 +207,7 @@ def test_emergency_exit_creates_emergency_notification():
 def test_reconciliation_failure_creates_system_failure_notification(monkeypatch):
     token = _register("notif_reconfail@example.com")
     headers = {"Authorization": f"Bearer {token}"}
-    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k", "access_token": "t"})
+    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": KITE_KEY, "access_token": "t"})
 
     class _FailingAdapter:
         async def get_positions(self):

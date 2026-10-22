@@ -93,7 +93,7 @@ export function AskChart({ chart, title }: { chart: ResultChart; title: string }
         {ticks.map((t, i) => (
           <g key={i}>
             <line x1={padLeft} x2={width - padRight} y1={yPixel(t, scale)} y2={yPixel(t, scale)} className="stroke-border-subtle" strokeWidth={1} />
-            <text x={padLeft - 4} y={yPixel(t, scale) + 3} textAnchor="end" className="fill-fg-muted text-[9px]">{formatCell(t)}</text>
+            <text x={padLeft - 4} y={yPixel(t, scale) + 3} textAnchor="end" className="fill-fg-muted text-xs">{formatCell(t)}</text>
           </g>
         ))}
         {chart.type === "bar" && <line x1={padLeft} x2={width - padRight} y1={zero} y2={zero} className="stroke-fg-muted" strokeWidth={1} />}
@@ -128,7 +128,7 @@ export function AskChart({ chart, title }: { chart: ResultChart; title: string }
           );
         })}
         {xs.map((x, i) => (i % labelEvery === 0 || i === n - 1) && (
-          <text key={i} x={xPixel(i, n)} y={height - 6} textAnchor="middle" className="fill-fg-muted text-[9px]">{formatStrike(x)}</text>
+          <text key={i} x={xPixel(i, n)} y={height - 6} textAnchor="middle" className="fill-fg-muted text-xs">{formatStrike(x)}</text>
         ))}
       </svg>
       <figcaption className="flex flex-wrap gap-x-space-3 gap-y-space-1 text-t12 text-fg-muted">

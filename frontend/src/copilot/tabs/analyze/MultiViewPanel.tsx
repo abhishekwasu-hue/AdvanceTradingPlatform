@@ -34,7 +34,7 @@ function ViewCard({ view }: { view: MultiView }) {
       {view.ok ? <p className="text-sm text-fg">{view.report}</p> : <p className="text-xs text-fg-muted">{view.error ?? t("analyze.notRead")}</p>}
       {view.untrusted && news.length > 0 && (
         <div className="mt-2">
-          <p className="flex items-center gap-1 text-[11px] text-fg-muted"><Newspaper size={11} aria-hidden />{t("analyze.untrusted")}</p>
+          <p className="flex items-center gap-1 text-xs text-fg-muted"><Newspaper size={11} aria-hidden />{t("analyze.untrusted")}</p>
           <ul className="mt-1 space-y-0.5 text-xs text-fg-muted">
             {news.map((h, i) => (
               <li key={i}>· {h.headline}{h.source ? ` (${h.source}${h.verified ? `, ${t("analyze.verified")}` : ""})` : ""}</li>
@@ -50,7 +50,7 @@ function ViewCard({ view }: { view: MultiView }) {
           </dl>
         </details>
       )}
-      <p className="mt-2 text-[11px] text-fg-muted">
+      <p className="mt-2 text-xs text-fg-muted">
         {view.as_of ? t("analyze.asOf", { when: new Date(view.as_of).toLocaleString("en-IN") }) : t("analyze.noTime")}
         {view.sources.length > 0 ? ` · ${view.sources.join(", ")}` : ""}
       </p>
@@ -116,8 +116,8 @@ export default function MultiViewPanel({ initialSymbol = "NIFTY 50" }: { initial
             </div>
           </div>
           <div className="grid gap-2 md:grid-cols-2">{result.views.map((v) => <ViewCard key={v.id} view={v} />)}</div>
-          {result.limits_note && <p className="text-[11px] text-fg-muted">{result.limits_note}</p>}
-          <p className="text-[11px] text-fg-muted">{result.note}</p>
+          {result.limits_note && <p className="text-xs text-fg-muted">{result.limits_note}</p>}
+          <p className="text-xs text-fg-muted">{result.note}</p>
         </div>
       )}
     </Panel>

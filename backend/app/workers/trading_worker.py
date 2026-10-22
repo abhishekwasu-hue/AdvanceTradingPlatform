@@ -136,6 +136,7 @@ class CycleReport:
     ai_snoozes_woken: int = 0     # PW5: snoozed proposals announced again this cycle
     master_synced: Optional[Dict[str, int]] = None
     universe_synced: Optional[Dict[str, int]] = None      # U1-a
+    system_lists: Optional[Dict[str, int]] = None         # WL1: the system watchlists refresh
     history_eod_started: bool = False                     # HB1: the nightly EOD bhavcopy job was started this cycle
     stale_skips: int = 0
     reconciled: int = 0
@@ -237,6 +238,8 @@ class TradingWorker:
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
+        self._last_system_lists_day = None    # WL1: the system watchlists refresh (the evening run)
+        self._system_lists_started = False    # WL1: the one run when the worker starts with NSE closed (a deploy)
         # HB1: the nightly EOD bhavcopy job (IST date of the last start) and its background task.
         self._last_history_eod_day = None
         self._history_eod_task: Optional["asyncio.Task[None]"] = None
@@ -642,9 +645,33 @@ class TradingWorker:
                             fo = await fo_eod.sync_fo_and_index_eod(session, NseArchiveSource(fo_eod.dated_urls(ist_now.date())), ist_now.date())
                             report.universe_synced.update(index_closes=fo.index_rows, fo_changes=len(fo.fo_entered) + len(fo.fo_exited) + len(fo.lot_changes),
                                                           banned=len(fo.banned), fo_refused=len(fo.refused))
+                            from app.universe import classification                                  # WL1: the full NSE classification,
+                            cls = await classification.sync_classification(session, NseArchiveSource(), ist_now.date())  # when its URL is set
+                            if cls is not None:
+                                report.universe_synced.update(classified=cls.changed, classification_refused=int(bool(cls.refused)))
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Universe sync failed")
                         report.errors.append(f"universe sync: {exc}")
+                # WL1 (handover item 4): the read-only system watchlists (indices, index stocks, sectors, F&O stocks), rebuilt
+                # once per IST day after UNIVERSE_SYNC_HOUR_IST from the tables already held - no download, so it runs whether or
+                # not the universe sync is on (with it off, the lists are as current as the last sync or upload). NSE closed.
+                # Also once when the worker starts with NSE closed (a deploy), so new lists do not wait for the evening.
+                # That start-up run does not count as the day's run, so the evening one still follows the universe sync.
+                from app.watchlists import system as system_lists
+                run_lists, evening = system_lists.refresh_due(nse_open=nse.is_open, hour=ist_now.hour, today=ist_now.date(),
+                                                              sync_hour=app_config.UNIVERSE_SYNC_HOUR_IST,
+                                                              last_day=self._last_system_lists_day, started=self._system_lists_started)
+                if run_lists:
+                    self._system_lists_started = True
+                    if evening:
+                        self._last_system_lists_day = ist_now.date()    # success or failure: next try is tomorrow
+                    try:
+                        async with guarded(session):
+                            sl = await system_lists.refresh(session)
+                            report.system_lists = {"lists": sl.lists_total, "changed": sl.lists_changed, "unmapped": sl.unmapped}
+                    except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
+                        logger.exception("System watchlists refresh failed")
+                        report.errors.append(f"system watchlists: {exc}")
                 # HB1: the nightly EOD job - once per IST day from HISTORY_BACKFILL_HOUR_IST, only while the
                 # `history_backfill` flag is on; it runs in its own task, so a slow archive never holds up a cycle.
                 try:
@@ -741,6 +768,26 @@ class TradingWorker:
                     return broker
         return None
 
+    @staticmethod
+    async def _oi_future_quote(session: AsyncSession, broker: Any, underlying: str, now: datetime) -> Tuple[Optional[float], Optional[float]]:
+        """OC5: the near-month future's (last price, OI) through the same broker session, for the Option chain charts.
+        (None, None) when the master has no future, the adapter has no single-symbol quote or the read fails - the
+        chain's slot is stored either way."""
+        from app.option_chain import chain_view
+        try:
+            async with guarded(session):              # a failed master read never leaves the slot's transaction aborted
+                contract = await chain_view.near_future(session, underlying, now.astimezone(IST).date())
+            reader = getattr(broker, "get_quote_for_symbol", None)
+            if contract is None or reader is None:
+                return None, None
+            quote = await reader(contract.symbol, contract.exchange)
+        except Exception as exc:  # noqa: BLE001 - the future is extra; the chain's slot never waits on it
+            logger.info("OI snapshot of %s: the future's quote could not be read: %s", underlying, type(exc).__name__)
+            return None, None
+        if quote is None:
+            return None, None
+        return getattr(quote, "ltp", None), getattr(quote, "oi", None)
+
     async def _oi_banner(self, session: AsyncSession, now: datetime) -> int:
         """OI Banner O2: for every underlying some tenant enabled, one option-chain read per collector slot while its
         venue is open, through the first of those tenants with a usable broker session. The rows are platform-wide
@@ -773,7 +820,9 @@ class TradingWorker:
                                 continue
                             expiries = await master.expiries(own, underlying, on_or_after=now.astimezone(IST).date())
                             chain = await broker.get_option_chain(master.INDEX_SYMBOLS.get(underlying, underlying), expiries[0] if expiries else None)
-                            result = await oi_snapshots.collect(own, underlying, chain, now, source=broker.name)
+                            future_price, future_oi = await self._oi_future_quote(own, broker, underlying, now)
+                            result = await oi_snapshots.collect(own, underlying, chain, now, source=broker.name,
+                                                                future_price=future_price, future_oi=future_oi)
                             await own.commit()
                             stored += 1 if result.status == "OK" else 0
                             break

@@ -18,6 +18,7 @@ import { useWaitCap } from "./shell/shellWait";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./shell/common";
 import { usePaperOnly } from "./setup/paperOnly";
 import { setV2ThemeDefault } from "./theme";
+import { useTextSizeSync } from "./appearanceSync";
 import { FeaturesProvider, useFeatures, useUiV2, v2ThemeDefaultFrom } from "./ui/useFeatures";
 import type { SystemStatus } from "./types";
 
@@ -72,19 +73,19 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
       <div className="flex h-14 items-center justify-between pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] md:px-6">
       <div className="flex items-center gap-3 min-w-0">
         <button onClick={onMenu} aria-label="Open navigation menu" aria-controls="app-navigation" className="-ml-2 flex h-11 w-11 items-center justify-center rounded-md text-slate-200 hover:bg-panel2 md:hidden"><Menu size={18} /></button>
-        <span className="min-w-0 shrink truncate text-[15px] font-semibold text-fg">{title}</span>
+        <span className="min-w-0 shrink truncate text-sm font-semibold text-fg">{title}</span>
         {status?.maintenance_mode && (
-          <span className="truncate rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300" title={status.maintenance_message ?? ""}>
+          <span className="truncate rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-300" title={status.maintenance_message ?? ""}>
             MAINTENANCE: no new entries{status.maintenance_message ? ` - ${status.maintenance_message}` : ""}
           </span>
         )}
         {user && user.email_verified === false && !paperOnly && (
-          <Link to={pathFor("account")} className="truncate rounded-md border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 text-[11px] font-bold text-sky-300 hover:bg-sky-500/20" title="LIVE trading and broker credentials may require a verified address">
+          <Link to={pathFor("account")} className="truncate rounded-md border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 text-xs font-bold text-sky-300 hover:bg-sky-500/20" title="LIVE trading and broker credentials may require a verified address">
             <span className="sm:hidden">Verify</span><span className="hidden sm:inline">Verify your email</span>
           </Link>
         )}
         {status && status.disabled_brokers.length > 0 && !paperOnly && (
-          <span className="rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[11px] font-bold text-rose-300">
+          <span className="rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-xs font-bold text-rose-300">
             LIVE paused on {status.disabled_brokers.join(", ")}
           </span>
         )}
@@ -238,6 +239,7 @@ function Shell() {
  * user. With `ui_v2` on, the theme default follows the system (UI-1); with it off nothing changes. */
 function ShellFeatures({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  useTextSizeSync(user?.id ?? null);                  // item 1: the user's Text size, stored on the server
   return (
     <FeaturesProvider userKey={user?.id ?? null}>
       <FeaturesFreshness />

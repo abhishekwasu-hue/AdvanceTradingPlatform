@@ -77,6 +77,8 @@ export interface ColumnPrefs {
   quotes: boolean;
   /** Phone: OI change, IV and volume next to OI and LTP (a desktop always shows them). */
   more: boolean;
+  /** FNO-1: OI change in percent of the earlier OI instead of the count. */
+  pct?: boolean;
 }
 
 export const DEFAULT_COLUMNS: ColumnPrefs = { greeks: false, quotes: false, more: false };
@@ -85,7 +87,7 @@ export const COLUMNS_KEY = "atp_option_chain_columns";
 export function readColumns(): ColumnPrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(COLUMNS_KEY) ?? "{}") as Partial<ColumnPrefs>;
-    return { greeks: raw.greeks === true, quotes: raw.quotes === true, more: raw.more === true };
+    return { greeks: raw.greeks === true, quotes: raw.quotes === true, more: raw.more === true, pct: raw.pct === true };
   } catch {
     return { ...DEFAULT_COLUMNS };
   }
@@ -179,6 +181,16 @@ export function formatCountChange(v: number | null | undefined): string {
   if (typeof v !== "number" || !Number.isFinite(v)) return EMPTY;
   const text = formatCount(v);
   return v > 0 ? `+${text}` : text;
+}
+
+/** FNO-1: an OI change in percent of the OI before it ("+12.5%", "−4.0%"); "–" when the earlier OI is not known or 0. */
+export function formatOiChangePct(oi: number | null | undefined, change: number | null | undefined): string {
+  if (typeof oi !== "number" || typeof change !== "number" || !Number.isFinite(oi) || !Number.isFinite(change)) return EMPTY;
+  const before = oi - change;
+  if (before <= 0) return EMPTY;
+  const pct = (change / before) * 100;
+  const text = formatNumber(Math.abs(pct), 1);
+  return pct > 0 ? `+${text}%` : pct < 0 ? `${MINUS}${text}%` : "0.0%";
 }
 
 /** IV in percent: "13.2%". */

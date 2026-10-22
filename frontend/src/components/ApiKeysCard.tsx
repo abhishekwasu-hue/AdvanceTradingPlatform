@@ -59,7 +59,7 @@ export default function ApiKeysCard() {
             <input className={input} placeholder="Requests / minute (max 600)" value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} />
             <input className={input} placeholder="Expires in days (blank = never)" value={form.expires} onChange={(e) => setForm({ ...form, expires: e.target.value })} />
           </div>
-          <div className="flex flex-wrap gap-2 text-[11px]">
+          <div className="flex flex-wrap gap-2 text-xs">
             {Object.entries(scopes).map(([s, d]) => (
               <label key={s} title={d} className={`flex items-center gap-1 rounded border px-2 py-0.5 cursor-pointer ${form.scopes.includes(s) ? "border-brand/50 text-brand bg-brand/10" : "border-border text-fg-muted"}`}>
                 <input type="checkbox" className="hidden" checked={form.scopes.includes(s)} onChange={() => toggle(s)} />{s}

@@ -1,5 +1,8 @@
 import { Moon, Sun } from "lucide-react";
-import { useAppearance, type ThemeChoice } from "../theme";
+import { useState } from "react";
+import { useOptionalAuth } from "../auth/AuthContext";
+import { setTextSize } from "../appearanceSync";
+import { TEXT_SIZES, useAppearance, type TextSize, type ThemeChoice } from "../theme";
 import { Button } from "./primitives";
 import { Card } from "./ui";
 
@@ -7,13 +10,32 @@ const THEMES: { value: ThemeChoice; label: string }[] = [
   { value: "dark", label: "Dark" }, { value: "light", label: "Light" }, { value: "system", label: "Follow the device" },
 ];
 
-/** P1.2: theme and the colour-blind option, saved in this browser. Copilot redesign: reduce motion. ATP is English only:
+/** P1.2: theme and the colour-blind option, saved in this browser. Copilot redesign: reduce motion. Item 1: the text
+ * size, saved for the user on the server so every device shows the same size. ATP is English only:
  * the strategy interview's second-language line is switched on the interview screen, not here. */
 export default function AppearanceCard() {
   const [a, save] = useAppearance();
+  const user = useOptionalAuth()?.user ?? null;
+  const [sizeNote, setSizeNote] = useState<string | null>(null);
+  const pickSize = async (size: TextSize) => {
+    setSizeNote(null);
+    const saved = await setTextSize(size, user != null);
+    if (!saved) setSizeNote("Saved on this device only. Check your connection to keep it on your other devices.");
+  };
   return (
     <Card title="Appearance">
       <div className="space-y-4">
+        <div role="group" aria-labelledby="appearance-text-size-label">
+          <div id="appearance-text-size-label" className="mb-2 text-xs font-medium text-fg-muted">Text size</div>
+          <div className="flex flex-wrap gap-2">
+            {TEXT_SIZES.map((t) => (
+              <Button key={t.value} size="sm" variant={a.textSize === t.value ? "primary" : "secondary"} aria-pressed={a.textSize === t.value}
+                onClick={() => void pickSize(t.value)}>{t.label}</Button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-fg-muted">Makes all text, numbers and charts bigger on every device you use.</p>
+          {sizeNote && <p role="status" className="mt-1 text-xs text-warn">{sizeNote}</p>}
+        </div>
         <div role="group" aria-labelledby="appearance-theme-label">
           <div id="appearance-theme-label" className="mb-2 text-xs font-medium text-fg-muted">Theme</div>
           <div className="flex flex-wrap gap-2">

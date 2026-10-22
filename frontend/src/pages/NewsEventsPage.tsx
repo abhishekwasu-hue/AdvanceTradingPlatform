@@ -58,7 +58,7 @@ function FeedSourcesCard({ isAdmin }: { isAdmin: boolean }) {
           </div>
         ))}
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-fg-muted">
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-fg-muted">
         {status.last_run.at && <span>last fetch {new Date(status.last_run.at).toLocaleString()} · {status.last_run.new ?? 0} new · {status.last_run.alerts ?? 0} alerts · {(status.last_run.errors ?? []).length} errors</span>}
         {isAdmin && status.enabled && <button disabled={busy} onClick={refresh} className="rounded border border-border px-2 py-0.5 text-fg hover:bg-surface-2 disabled:opacity-50">Fetch now</button>}
       </div>
@@ -200,19 +200,19 @@ export default function NewsEventsPage() {
               <div key={e.id} className="rounded border border-border px-3 py-2 text-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-fg-muted mr-2">
+                    <span className="rounded border border-border px-1.5 py-0.5 text-xs text-fg-muted mr-2">
                       {NEWS_EVENT_CATEGORY_LABELS[e.category]}
                     </span>
-                    <span className={`inline-block rounded border px-1.5 py-0.5 text-[11px] font-semibold ${sentimentClass(e.sentiment)}`}>
+                    <span className={`inline-block rounded border px-1.5 py-0.5 text-xs font-semibold ${sentimentClass(e.sentiment)}`}>
                       {e.sentiment}
                     </span>
                     {e.origin === "FEED" && (
-                      <span className="ml-2 inline-block rounded border border-warn/50 bg-warn/10 px-1.5 py-0.5 text-[11px] text-warn" title="From a public feed; not verified by the platform">
+                      <span className="ml-2 inline-block rounded border border-warn/50 bg-warn/10 px-1.5 py-0.5 text-xs text-warn" title="From a public feed; not verified by the platform">
                         unverified feed
                       </span>
                     )}
                     {e.classification && (
-                      <span className={`ml-2 inline-block rounded border px-1.5 py-0.5 text-[11px] ${severityClass(e.classification.severity)}`} title={e.classification.one_line_en}>
+                      <span className={`ml-2 inline-block rounded border px-1.5 py-0.5 text-xs ${severityClass(e.classification.severity)}`} title={e.classification.one_line_en}>
                         {e.classification.type.toLowerCase().replace("_", " ")} · severity {e.classification.severity}{e.classification.method === "ai" ? " · AI" : ""}
                       </span>
                     )}
@@ -221,11 +221,11 @@ export default function NewsEventsPage() {
                     {e.affected_symbols.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {e.affected_symbols.map((s) => (
-                          <span key={s} className="rounded border border-border px-1 py-0.5 text-[10px] text-fg-muted">{s}</span>
+                          <span key={s} className="rounded border border-border px-1 py-0.5 text-xs text-fg-muted">{s}</span>
                         ))}
                       </div>
                     )}
-                    <div className="mt-1 text-[11px] text-fg-muted">
+                    <div className="mt-1 text-xs text-fg-muted">
                       {e.event_date} · Source:{" "}
                       {e.source.source_url ? (
                         <a href={e.source.source_url} target="_blank" rel="noreferrer" className="text-brand hover:underline">
@@ -242,7 +242,7 @@ export default function NewsEventsPage() {
                     </button>
                   )}
                   {user && feedOn && e.origin === "FEED" && (
-                    <div className="flex shrink-0 flex-col items-end gap-1 text-[11px]" title="Your verdict teaches the thesis how much to trust the feed (organisation-wide, after 10 verdicts)">
+                    <div className="flex shrink-0 flex-col items-end gap-1 text-xs" title="Your verdict teaches the thesis how much to trust the feed (organisation-wide, after 10 verdicts)">
                       {(["useful", "noise", "wrong_direction"] as NewsVerdict[]).map((v) => (
                         <button key={v} onClick={() => void vote(e.id, v)} aria-pressed={verdicts[String(e.id)] === v}
                                 className={`rounded border px-1.5 py-0.5 ${verdicts[String(e.id)] === v ? "border-brand bg-brand/15 text-fg" : "border-border text-fg-muted hover:text-fg"}`}>

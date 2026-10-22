@@ -313,6 +313,23 @@ def test_ownership_functions_n3_s8a():
     assert np.isnan(_ev('DaysToEvent("results")', d).iloc[0]) and _ev('DaysToEvent("any")', d).iloc[-1] == 3.0
 
 
+def test_tpl1_indicator_functions():
+    # deeper checks (reference parity, truncation, bounds, the argument order) are in tests/test_tpl1_indicators.py
+    d = _sym([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])                      # high = close + 1, low = close - 1
+    assert np.isnan(_ev("WMA(close, 3)", d).iloc[1]) and _ev("WMA(close, 3)", d).iloc[2] == pytest.approx(14 / 6)
+    hull = _ev("HMA(close, 4)", d)                                 # a straight line: the Hull average has no lag
+    assert hull.iloc[:4].isna().all() and hull.iloc[4:].tolist() == pytest.approx([5.0, 6.0])
+    flat = _sym([10.0] * 8)
+    assert _ev("MACD(2, 3, 2)", flat).iloc[2:].tolist() == [0.0] * 6 and np.isnan(_ev("MACDSignal(2, 3, 2)", flat).iloc[2])
+    assert _ev("MACDHist(2, 3, 2)", flat).iloc[3:].tolist() == [0.0] * 5
+    s = _sym([10.0, 11.0, 12.0, 13.0])
+    assert _ev("StochK(3, 1)", s).iloc[2:].tolist() == [75.0, 75.0] and _ev("StochD(3, 1, 2)", s).iloc[-1] == 75.0
+    assert _ev("PSAR(0.02, 0.02, 0.2)", s).iloc[1:].tolist() == pytest.approx([9.0, 9.0, 9.16])
+    assert _ev("PSARDir()", s).iloc[1:].tolist() == [1.0, 1.0, 1.0] and np.isnan(_ev("PSARDir()", s).iloc[0])
+    up = _ev("SupertrendDir(3, 1)", d)
+    assert up.iloc[:3].isna().all() and up.iloc[3:].tolist() == [1.0, 1.0, 1.0]
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

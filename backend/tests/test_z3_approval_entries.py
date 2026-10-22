@@ -300,7 +300,13 @@ def test_every_order_entry_point_is_reviewed_for_approval():
                                    "app/public_api/routes.py": {"execute_signal_for_user"}, "app/execution/approval.py": {"execute_signal_for_user"},
                                    "app/workers/trading_worker.py": {"execute_signal_for_user", "execute_structure"},
                                    "app/paper/ticket.py": {"execute_signal_for_user"},
+                                   "app/paper/fno_ticket.py": {"execute_signal_for_user"},
                                    "app/execution/core/dispatcher.py": {"execute_signal_for_user"}}
+    # FNO-1: the option chain's manual PAPER ticket refuses under approval-only mode (it cannot raise a proposal yet,
+    # OPEN_QUESTIONS FNO-1-4): `assess` asks the gate, `place` places only what `assess` allowed, PAPER only.
+    fno_src = (BACKEND / "app" / "paper" / "fno_ticket.py").read_text()
+    assert fno_src.index("approval.gate_refusal(") < fno_src.index("execute_signal_for_user(")
+    assert 'if not view["can_place"]:' in fno_src and 'MODE = "PAPER"' in fno_src
     # N1 X2: the core's Auto PAPER route asks approval-only mode again right before the pipeline (falls back to a
     # proposal), PAPER only and without a broker (tests/test_n1_e1_execution_core.py checks the call).
     core = (BACKEND / "app" / "execution" / "core" / "dispatcher.py").read_text()

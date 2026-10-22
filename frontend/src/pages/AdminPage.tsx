@@ -8,6 +8,7 @@ import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import HolidaysCard from "../components/HolidaysCard";
+import SystemListsCard from "../components/SystemListsCard";
 import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, EncryptionStatus, FeatureFlags, Incident, PlatformAuditLog, RiskCeilings, SystemStatus } from "../types";
 import { PageHeader } from "../components/primitives";
 import { useFeatures } from "../ui/useFeatures";
@@ -106,6 +107,8 @@ export default function AdminPage() {
 
       <HolidaysCard />
 
+      <SystemListsCard />
+
       <Card title="Global kill switch">
         {overview?.global_kill_switch_engaged ? (
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -151,7 +154,7 @@ export default function AdminPage() {
         <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
           {ceilings && Object.keys(ceilings).map((key) => (
             <div key={key}>
-              <label className="block text-[10px] text-fg-muted mb-0.5 font-mono">{key}</label>
+              <label className="block text-xs text-fg-muted mb-0.5 font-mono">{key}</label>
               <input type="number" step="0.1" min={0} className="w-full rounded bg-surface-2 border border-border px-2 py-1" value={ceilingDraft[key] ?? ""} onChange={(e) => setCeilingDraft({ ...ceilingDraft, [key]: e.target.value })} />
             </div>
           ))}
@@ -162,11 +165,11 @@ export default function AdminPage() {
       <Card title="Feature flags">
         <p className="text-xs text-fg-muted mb-3">Kill flags: every feature is on unless turned off here. Turning one off with a tenant allow-list keeps it on for those tenants only (staged rollouts, beta access). Exits and PAPER trading are never behind a flag.</p>
         <table className="w-full text-xs">
-          <thead className="text-fg-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Flag</th><th className="py-1 pr-3">State</th><th className="py-1 pr-3">Allow-listed tenant ids</th><th className="py-1 text-right">Actions</th></tr></thead>
+          <thead className="text-fg-muted uppercase text-xs tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Flag</th><th className="py-1 pr-3">State</th><th className="py-1 pr-3">Allow-listed tenant ids</th><th className="py-1 text-right">Actions</th></tr></thead>
           <tbody>
             {flags && Object.entries(flags).map(([name, f]) => (
               <tr key={name} className="border-t border-border">
-                <td className="py-1.5 pr-3"><div className="font-mono text-fg">{name}</div><div className="text-[10px] text-fg-muted">{f.description}</div></td>
+                <td className="py-1.5 pr-3"><div className="font-mono text-fg">{name}</div><div className="text-xs text-fg-muted">{f.description}</div></td>
                 <td className={`py-1.5 pr-3 font-bold ${f.on ? "text-up" : "text-down"}`}>{f.on ? "ON" : `OFF${f.tenants.length ? ` (${f.tenants.length} allowed)` : ""}`}</td>
                 <td className="py-1.5 pr-3"><input className="w-full rounded bg-surface-2 border border-border px-2 py-1" placeholder="e.g. 3, 17" value={flagTenants[name] ?? ""} onChange={(e) => setFlagTenants({ ...flagTenants, [name]: e.target.value })} /></td>
                 <td className="py-1.5 text-right whitespace-nowrap">
@@ -182,7 +185,7 @@ export default function AdminPage() {
           </tbody>
         </table>
         {encryption && (
-          <div className="mt-3 text-[11px] text-fg-muted">
+          <div className="mt-3 text-xs text-fg-muted">
             Secrets at rest: {encryption.tenant_keys} tenant data keys, {encryption.secrets_total - encryption.secrets_legacy}/{encryption.secrets_total} secrets under tenant keys
             {encryption.secrets_legacy > 0 && <span className="text-warn"> - {encryption.secrets_legacy} still under the master key (run scripts/reencrypt_secrets.py reencrypt)</span>}.
           </div>
@@ -221,7 +224,7 @@ export default function AdminPage() {
         <input className="w-full sm:w-80 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm mb-3" placeholder="search by name or member email" value={query} onChange={(e) => setQuery(e.target.value)} />
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+            <thead className="text-fg-muted uppercase text-xs tracking-wide">
               <tr className="text-left"><th className="py-1 pr-3">#</th><th className="py-1 pr-3">Organisation</th><th className="py-1 pr-3">Owners</th><th className="py-1 pr-3">Plan</th><th className="py-1 pr-3">Status</th><th className="py-1 pr-3">Members</th><th className="py-1 pr-3">Deployments (LIVE)</th><th className="py-1 pr-3">Open</th><th /></tr>
             </thead>
             <tbody>
@@ -259,7 +262,7 @@ export default function AdminPage() {
         <Card title={`Tenant #${selected.id}: ${selected.name}`}>
           <div className="grid md:grid-cols-3 gap-4 text-xs">
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-fg-muted mb-1">Usage / limits</div>
+              <div className="text-xs uppercase tracking-wider text-fg-muted mb-1">Usage / limits</div>
               {Object.entries(selected.usage).map(([k, v]) => (
                 <div key={k} className="flex justify-between border-t border-border py-1"><span className="text-fg-muted">{k.replace("_", " ")}</span><span className="font-tabular text-fg">{v} / {String(selected.limits[k] ?? "-")}</span></div>
               ))}
@@ -267,18 +270,18 @@ export default function AdminPage() {
               <div className="flex justify-between border-t border-border py-1"><span className="text-fg-muted">tenant kill switch</span><span className={selected.tenant_kill_switch_engaged ? "text-down" : "text-fg"}>{selected.tenant_kill_switch_engaged ? "engaged" : "off"}</span></div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-fg-muted mb-1">Users</div>
+              <div className="text-xs uppercase tracking-wider text-fg-muted mb-1">Users</div>
               {selected.users.map((u) => (
                 <div key={u.id} className="flex justify-between border-t border-border py-1"><span className={u.is_active ? "text-fg" : "text-fg-muted line-through"}>{u.email}</span><span className="text-fg-muted">{u.role}</span></div>
               ))}
-              <div className="text-[10px] uppercase tracking-wider text-fg-muted mt-3 mb-1">Brokers</div>
+              <div className="text-xs uppercase tracking-wider text-fg-muted mt-3 mb-1">Brokers</div>
               {selected.brokers.length === 0 && <div className="text-fg-muted">none stored</div>}
               {selected.brokers.map((b) => (
                 <div key={b.broker_name} className="flex justify-between border-t border-border py-1"><span className="capitalize text-fg">{b.broker_name}</span><span className={b.token_status === "VALID" ? "text-up" : "text-warn"}>{b.token_status}</span></div>
               ))}
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-fg-muted mb-1">Deployments</div>
+              <div className="text-xs uppercase tracking-wider text-fg-muted mb-1">Deployments</div>
               {selected.deployments.length === 0 && <div className="text-fg-muted">none</div>}
               {selected.deployments.map((d) => (
                 <div key={d.id} className="border-t border-border py-1">
@@ -297,7 +300,7 @@ export default function AdminPage() {
       <Card title={selected ? `Audit trail: tenant #${selected.id}` : "Platform audit trail (latest 200)"}>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="text-fg-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Time</th><th className="py-1 pr-3">Tenant</th><th className="py-1 pr-3">User</th><th className="py-1 pr-3">Event</th><th className="py-1 pr-3">Detail</th></tr></thead>
+            <thead className="text-fg-muted uppercase text-xs tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Time</th><th className="py-1 pr-3">Tenant</th><th className="py-1 pr-3">User</th><th className="py-1 pr-3">Event</th><th className="py-1 pr-3">Detail</th></tr></thead>
             <tbody>
               {logs.map((l) => (
                 <tr key={l.id} className="border-t border-border">

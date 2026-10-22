@@ -11,7 +11,7 @@ import {
   supertrend, vwap, type IndicatorId, type IndicatorSettings, type Series,
 } from "../utils/indicators";
 import type { ChartMarker, PriceLineSpec } from "./CandleChart";
-import { THEME_EVENT, chartColors, resolveChartColor } from "../theme";
+import { THEME_EVENT, chartColors, chartFontSize, resolveChartColor } from "../theme";
 import { useChartStrategies } from "./ChartStrategies";
 import type { ChartEngine } from "../charting/engine";
 import { LightweightEngine } from "../charting/lightweight";
@@ -86,7 +86,7 @@ function baseOptions(height: number, showTime: boolean, attribution = true, zone
   return {
     height,
     // The TradingView attribution logo stays on the main pane (the library's licence asks for it once); the stacked indicator panes do not repeat it.
-    layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: COLORS.text, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, attributionLogo: attribution },
+    layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: COLORS.text, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: chartFontSize(), attributionLogo: attribution },
     grid: { vertLines: { color: COLORS.grid }, horzLines: { color: COLORS.grid } },
     crosshair: { mode: CrosshairMode.Normal },
     rightPriceScale: { borderColor: COLORS.border, minimumWidth: 72 },
@@ -278,7 +278,7 @@ export default function ProChart({
     const repaint = () => {
       refreshThemeColors();
       for (const chart of Object.values(charts.current)) {
-        chart?.applyOptions({ layout: { textColor: COLORS.text }, grid: { vertLines: { color: COLORS.grid }, horzLines: { color: COLORS.grid } },
+        chart?.applyOptions({ layout: { textColor: COLORS.text, fontSize: chartFontSize() }, grid: { vertLines: { color: COLORS.grid }, horzLines: { color: COLORS.grid } },
                               rightPriceScale: { borderColor: COLORS.border }, timeScale: { borderColor: COLORS.border } });
       }
       series.current.candles?.applyOptions({ upColor: COLORS.up, downColor: COLORS.down, wickUpColor: COLORS.up, wickDownColor: COLORS.down });
@@ -514,12 +514,12 @@ export default function ProChart({
     <div className={phone ? "flex flex-wrap items-center gap-2" : "ml-auto flex flex-wrap items-center gap-1"}>
       {[...OVERLAYS, ...PANES].map((id) => (
         <button key={id} onClick={() => toggle(id)} title={INDICATOR_LABELS[id]}
-                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${active.has(id) ? "bg-surface-3 text-fg ring-1 ring-brand/40" : "text-fg-muted hover:text-fg"}`}>
+                className={`rounded px-1.5 py-0.5 text-xs font-semibold ${active.has(id) ? "bg-surface-3 text-fg ring-1 ring-brand/40" : "text-fg-muted hover:text-fg"}`}>
           {INDICATOR_LABELS[id]}{id === "ema_fast" ? ` ${settings.emaFast}` : id === "ema_slow" ? ` ${settings.emaSlow}` : id === "sma" ? ` ${settings.smaPeriod}` : id === "rsi" ? ` ${settings.rsiPeriod}` : id === "adx" ? ` ${settings.adxPeriod}` : id === "supertrend" ? ` ${settings.stPeriod}/${settings.stMult}` : ""}
         </button>
       ))}
       <button onClick={() => { strat.setOpen(!strat.open); setToolsOpen(false); }} title="Strategies on this chart: draw their trades, deploy them"
-              className={`ml-1 flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${strat.open || strat.onCount ? "border-brand/40 bg-brand/15 text-brand" : "border-border text-fg hover:bg-surface-2"}`}>
+              className={`ml-1 flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs font-semibold ${strat.open || strat.onCount ? "border-brand/40 bg-brand/15 text-brand" : "border-border text-fg hover:bg-surface-2"}`}>
         <Layers size={11} /> Strategies{strat.onCount ? ` (${strat.onCount})` : ""}
       </button>
       <button onClick={() => { fit(); setToolsOpen(false); }} title="Fit all candles" aria-label="Fit all candles" className="rounded p-1 text-fg-muted hover:text-fg"><Scan size={12} /></button>
@@ -532,7 +532,7 @@ export default function ProChart({
       <div className={`flex flex-wrap items-center gap-2 ${compact ? "mb-1" : "mb-2"} text-xs`}>
         {(title || symbol) && <span className={`font-bold text-fg ${compact ? "text-sm" : "text-base"}`}>{title ?? symbol}</span>}
         {chartType !== "candles" && (
-          <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-fg-muted"
+          <span className="rounded border border-border px-1.5 py-0.5 text-xs font-semibold text-fg-muted"
                 title={view.synthetic ? "Built from closed bars only: a brick never changes once shown as bars arrive. Loading older history rebuilds every brick from the new first bar (same box size). Gaps are bridged by bricks at prices that may not have traded. No indicators or volume; a marker sits on the brick completed at or after its time." : undefined}>
             {CHART_TYPE_LABELS[chartType]}{view.size != null ? ` · ${view.synthetic && chartType === "range" ? "range" : "box"} ${view.size}` : ""}
           </span>
@@ -543,15 +543,15 @@ export default function ProChart({
           </span>
         )}
         {live && (
-          <span className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${live.stale ? "border-warn/40 bg-warn/10 text-warn" : "border-up/40 bg-up/10 text-up"}`}
+          <span className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${live.stale ? "border-warn/40 bg-warn/10 text-warn" : "border-up/40 bg-up/10 text-up"}`}
                 title={live.stale ? live.stale_reason ?? "stale quote" : `${live.source} via ${live.source_broker}`}>
             <Radio size={10} className={live.stale ? "" : "animate-pulse"} /> {live.stale ? `stale · ${live.age_seconds != null ? Math.round(live.age_seconds / 60) + "m old" : "no exchange time"}` : `LIVE${live.age_seconds != null ? ` · ${Math.round(live.age_seconds)}s` : ""}`}
           </span>
         )}
-        {liveError && <span className="max-w-[22rem] truncate text-[10px] text-down" title={liveError}>live price unavailable: {liveError.replace(/^Error:\s*/, "")}</span>}
+        {liveError && <span className="max-w-[22rem] truncate text-xs text-down" title={liveError}>live price unavailable: {liveError.replace(/^Error:\s*/, "")}</span>}
         {onLoadOlder && (loadingOlder
-          ? <span className="text-[10px] text-fg-muted">Loading older data…</span>
-          : olderExhausted ? <span className="text-[10px] text-fg-muted" title="The broker has no older history for this timeframe">No older history</span> : null)}
+          ? <span className="text-xs text-fg-muted">Loading older data…</span>
+          : olderExhausted ? <span className="text-xs text-fg-muted" title="The broker has no older history for this timeframe">No older history</span> : null)}
         {timeframes && timeframes.length > 1 && onTimeframeChange && (
           <div className="flex overflow-hidden rounded-md border border-border">
             {timeframes.map((tf) => (
@@ -561,7 +561,7 @@ export default function ProChart({
         )}
         {!compact && phone && (
           <button onClick={() => setToolsOpen(true)} title="Indicators, strategies and drawing tools"
-                  className="ml-auto flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] font-semibold text-fg hover:bg-surface-2">
+                  className="ml-auto flex items-center gap-1 rounded border border-border px-2 py-1 text-xs font-semibold text-fg hover:bg-surface-2">
             <SlidersHorizontal size={12} /> Tools{active.size || strat.onCount ? ` (${active.size + strat.onCount})` : ""}
           </button>
         )}
@@ -569,13 +569,13 @@ export default function ProChart({
         <div className={`${compact ? "ml-auto" : ""} flex items-center gap-1`}>
           {openUrl && (
             <a href={openUrl} target="_blank" rel="noopener" title="Open this chart in a new browser tab"
-               className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-fg hover:bg-surface-2">
+               className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs font-semibold text-fg hover:bg-surface-2">
               <ExternalLink size={11} /> New tab
             </a>
           )}
           {!fullWindow && (
             <button onClick={() => setExpanded((v) => !v)} title={expanded ? "Back to normal size (Esc)" : "Open the chart full screen"}
-                    className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-fg hover:bg-surface-2">
+                    className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs font-semibold text-fg hover:bg-surface-2">
               {expanded ? <><Minimize2 size={11} /> Close</> : <><Maximize2 size={11} /> Full screen</>}
             </button>
           )}
@@ -585,7 +585,7 @@ export default function ProChart({
       {strat.panel}
 
       {tools.view && tools.controller && !phone && <DrawingToolbar view={tools.view} controller={tools.controller} />}
-      {phone && tools.view?.tool && <div className="mb-1 text-[11px] text-fg-muted">Tap the chart to place it · Tools → the same tool to cancel</div>}
+      {phone && tools.view?.tool && <div className="mb-1 text-xs text-fg-muted">Tap the chart to place it · Tools → the same tool to cancel</div>}
       {phone && !compact && (
         <Sheet side="bottom" open={toolsOpen} onOpenChange={setToolsOpen} title="Chart tools">
           <div className="space-y-4 pb-[env(safe-area-inset-bottom)]">
@@ -599,7 +599,7 @@ export default function ProChart({
 
       {/* Legend */}
       {brick && !compact && (
-        <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 font-tabular text-[11px] text-fg-muted">
+        <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 font-tabular text-xs text-fg-muted">
           <span className="text-fg-muted">{fmtIst(brick.time, true)}</span>
           <span>{chartType === "range" ? "Range bar" : "Brick"}</span>
           <span>O <b className="text-fg">{fmt(brick.open)}</b></span><span>H <b className="text-fg">{fmt(brick.high)}</b></span>
@@ -608,7 +608,7 @@ export default function ProChart({
         </div>
       )}
       {bar && !compact && (
-        <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 font-tabular text-[11px] text-fg-muted">
+        <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 font-tabular text-xs text-fg-muted">
           <span className="text-fg-muted">{fmtIst(times[idx as number], true)}</span>
           <span>O <b className="text-fg">{fmt(bar.open)}</b></span><span>H <b className="text-fg">{fmt(bar.high)}</b></span>
           <span>L <b className="text-fg">{fmt(bar.low)}</b></span>
@@ -626,9 +626,9 @@ export default function ProChart({
       )}
 
       <div ref={mainRef} className="w-full" />
-      {showVolume && <div className="relative"><span className="absolute left-1 top-0 z-10 text-[10px] text-fg-muted">Volume</span><div ref={volRef} className="w-full" /></div>}
-      {showRsi && <div className="relative"><span className="absolute left-1 top-0 z-10 text-[10px]" style={{ color: COLORS.rsi }}>RSI {settings.rsiPeriod}</span><div ref={rsiRef} className="w-full" /></div>}
-      {showAdx && <div className="relative"><span className="absolute left-1 top-0 z-10 text-[10px]" style={{ color: COLORS.adx }}>ADX {settings.adxPeriod} · threshold {settings.adxMin}</span><div ref={adxRef} className="w-full" /></div>}
+      {showVolume && <div className="relative"><span className="absolute left-1 top-0 z-10 text-xs text-fg-muted">Volume</span><div ref={volRef} className="w-full" /></div>}
+      {showRsi && <div className="relative"><span className="absolute left-1 top-0 z-10 text-xs" style={{ color: COLORS.rsi }}>RSI {settings.rsiPeriod}</span><div ref={rsiRef} className="w-full" /></div>}
+      {showAdx && <div className="relative"><span className="absolute left-1 top-0 z-10 text-xs" style={{ color: COLORS.adx }}>ADX {settings.adxPeriod} · threshold {settings.adxMin}</span><div ref={adxRef} className="w-full" /></div>}
       {display.length === 0 && <div className="flex h-24 items-center justify-center text-xs text-fg-muted">No candles yet - the broker returned none for this window (market closed, or the session token has expired).</div>}
     </div>
   );

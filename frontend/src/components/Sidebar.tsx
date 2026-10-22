@@ -23,11 +23,12 @@ import {
   Users,
   Wand2,
   Zap,
-  type LucideIcon, Store, Sparkles, Sigma, ChartSpline, NotebookPen, Plug } from "lucide-react";
+  type LucideIcon, Store, Sparkles, Sigma, ChartSpline, NotebookPen, ScanSearch, Plug } from "lucide-react";
 import { useEffect } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { pathFor, preloadPage } from "../routes";
+import { useFeatures } from "../ui/useFeatures";
 import { brokerDot } from "../broker/brokerState";
 import { StatusDot } from "../broker/marks";
 import { useBrokerConnections } from "../broker/useBrokerConnections";
@@ -63,12 +64,15 @@ export type Page =
   | "admin"
   | "system-logs"
   | "notifications"
-  | "account";
+  | "account"
+  | "chart-analyze";
 
 interface NavItem {
   id: Page;
   label: string;
   icon: LucideIcon;
+  /** Hidden while this feature flag is off for the organisation (or not known yet). */
+  flag?: string;
 }
 
 interface NavGroup {
@@ -102,6 +106,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "instruments", label: "Instruments", icon: Boxes },
       { id: "news-events", label: "News & Events", icon: Newspaper },
       { id: "quant", label: "Factor Lab", icon: Sigma },
+      { id: "chart-analyze", label: "Analyze a Chart", icon: ScanSearch, flag: "chart_analyze" },
     ],
   },
   {
@@ -141,6 +146,7 @@ export const NAV: NavItem[] = [...NAV_GROUPS, ADMIN_GROUP].flatMap((g) => g.item
  * starts loading that page's code. */
 export default function Sidebar({ page, open = false, onClose }: { page: Page | null; open?: boolean; onClose?: () => void }) {
   const { user, loading } = useAuth();
+  const features = useFeatures();
   const dot = brokerDot(useBrokerConnections().rows);
   useEffect(() => {
     if (!open) return;
@@ -161,10 +167,10 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
       <nav className="flex-1 overflow-y-auto py-3 space-y-4">
         {[...NAV_GROUPS, ...(user?.role === "SUPER_ADMIN" ? [ADMIN_GROUP] : [])].map((group) => (
           <div key={group.title}>
-            <div className="px-4 mb-1 text-[10px] font-bold uppercase tracking-wider text-fg-muted">
+            <div className="px-4 mb-1 text-xs font-bold uppercase tracking-wider text-fg-muted">
               {group.title}
             </div>
-            {group.items.map((item) => {
+            {group.items.filter((item) => !item.flag || features.on(item.flag)).map((item) => {
               const Icon = item.icon;
               const active = page === item.id;
               return (
@@ -204,11 +210,11 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
         </div>
         <div className="mt-1.5 flex flex-wrap gap-1">
           {user && (
-            <span className="inline-flex items-center rounded-full bg-surface-2 border border-border px-2 py-0.5 text-[10px] font-medium text-fg">
+            <span className="inline-flex items-center rounded-full bg-surface-2 border border-border px-2 py-0.5 text-xs font-medium text-fg">
               {user.role.replace("_", " ")}
             </span>
           )}
-          <span className="inline-flex items-center gap-1 rounded-full bg-warn/10 border border-warn/30 px-2 py-0.5 text-[10px] font-medium text-warn">
+          <span className="inline-flex items-center gap-1 rounded-full bg-warn/10 border border-warn/30 px-2 py-0.5 text-xs font-medium text-warn">
             PAPER MODE
           </span>
         </div>

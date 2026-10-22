@@ -14,7 +14,7 @@ export default function SourceChips({ items }: { items: SourceItem[] }) {
   const t = useCopilotT();
   if (!items.length) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5 text-[11px]" aria-label={t("ask.basedOn")}>
+    <div className="flex flex-wrap items-center gap-1.5 text-xs" aria-label={t("ask.basedOn")}>
       <span className="text-fg-muted">{t("ask.basedOn")}</span>
       {items.map((s, i) => (
         <span key={`${s.kind}-${s.label ?? ""}-${i}`} className="inline-flex items-center gap-1 rounded-full border border-ai/30 bg-ai/10 px-2 py-0.5 text-fg">

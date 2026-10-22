@@ -43,6 +43,11 @@ TOKENS: Dict[str, str] = {
     "range_on_chart": "range on the {timeframe} chart",
     "lower_edge_rejection_formed": "the market reached the lower edge and a rejection formed",
     "upper_edge_rejection_formed": "the market reached the upper edge and a rejection formed",
+    # Family F option seller packs (F1, F2): the side or the edge in words, for the option structure the user set up
+    "pack_bullish_continuation": "read as a bullish continuation for the option structure in your own settings",
+    "pack_bearish_continuation": "read as a bearish continuation for the option structure in your own settings",
+    "pack_range_lower_edge": "read as the lower edge of the range for the option structure in your own settings",
+    "pack_range_upper_edge": "read as the upper edge of the range for the option structure in your own settings",
     # A5 structure flip retest (idea library T5)
     "resistance_flip_retested": "former resistance on the {timeframe} chart was broken and is being retested from above; rejection formed",
     "support_flip_retested": "former support on the {timeframe} chart was broken and is being retested from below; rejection formed",

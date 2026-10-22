@@ -747,6 +747,16 @@ blocks PR-A: each has a provisional default that is already in force.
 | CP5-3 | The indicator regime is now diagnostic only. The old Strategy Lab tab and `POST /api/ai/regime` still show it to users (old page, `ui_v2` off path). Remove it there too? | **Provisional: left as it is in the old page this slice**; the v2 chat never shows it (admin `diagnostics` only), and nothing blocks on it. Remove from the old page when the Trade reader's market state replaces it. | regime.py, StrategyLabTab | open |
 | CP5-4 | The chart reader reads the shared lake's daily bars via ATP's layers; until the lake holds intraday bars the 1-hour / 15-minute rows may say "no bars". | **Provisional: shown honestly as "I don't know"**; the answer names its source ("structure reading from ATP's zone layers") until the reader is ported. | job 2 | open |
 | CP5-5 | Pre-market brief "also to Telegram if the user wants it" (handover 5 B1). | **Provisional: not in this slice** (the page first); the brief's rule text is ready to be sent by the existing Telegram notifier in the next slice. | job 1 | open |
+## Item 5 Copilot, second slice: jobs 3, 4, 5 (22 Oct)
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| CP5-6 | The weekly review and the repeated habits come from the discipline engine, whose flag `discipline_engine` is OFF by default. | **Provisional: the flag stays as the owner set it.** While it is off, job 5 still reviews the last trade from the trade row and says "I don't know your weekly review and repeated habits" in plain words. Turning it on (admin console) fills the week, the score and the habits. | job 5 | open |
+| CP5-7 | "Repeated habits": what counts as repeated? | **Provisional: a behaviour tag that counts under the trader's own journal settings (dismissed tags never) in at least two of his last four IST weeks**, shown with the number of weeks and trades. A count, not a judgement; no threshold of ours on size or P&L. | job 5 | open |
+| CP5-8 | The pre-trade check reads the idea from the trader's words (side, entry, invalidation, size, optional objective, entry model). Which entry-model words does it recognise? | **Provisional: a short public list of structure words** (pullback, handover, break of structure, change of character, retest, rejection, divergence, ...). It only checks that the plan names one and never judges it; the private Method Pack vocabulary can replace the list when the Trade reader is ported. | job 3 | open |
+| CP5-9 | Position watch: when is something a "warning"? | **Provisional: only against the trader's own settings or a plain fact**, never a threshold of ours: open risk at the stops above his own `max_portfolio_risk_pct`, a loss on the day against his daily loss limit, open positions at / above his own limit, a stop moved further than when opened, a position in loss (how far towards the stop), all positions on one side (the portfolio page's rule), an event or an expiry this week, the price inside / near an area against the position (ATP's zone layer until the reader port). Explanation only; nothing is closed, changed or blocked. | job 4 | open |
+| CP5-10 | AI wording for jobs 3-5. | **Provisional: stricter than jobs 1, 2, 7, 8** - the weekly review's describe-only check (`journal.review.advice_in`) also applies, so "you should", "consider", "next time" or a sentence that opens with a command keeps the rule text. | `copilot_chat.narrate` | open |
+
 ## Pine Script subset (handover 11c-1, 22 Oct)
 
 Checked against CLAUDE.md, `docs/owner-orders/DECISIONS.md` and the handover pack section 11 before each default below:
@@ -850,3 +860,20 @@ contradicts them.
 | MO2-2 | The AI Copilot v2 page (#342) has no tour yet. | A Copilot tour is the next MO2 step; the tour id list is shared with the server allow-list (a test keeps them equal). | `src/tours/pages.ts` | open |
 | MO2-3 | Key guide screenshots. | Marked placeholders ("Screenshot coming: ...") until we take our own pictures of our own accounts; no third-party picture is fetched or committed. | `src/aiKeys/guides.ts` | open |
 | MO2-4 | Providers in the key guides. | The three BYOK takes today (Google Gemini, Anthropic, OpenAI). OpenRouter, Groq, Mistral and the rest come with part A; the helper already recognises their keys and says they are not taken yet. | `src/aiKeys/` | open |
+
+## Settings redesign: the review's owner questions (SR, 22 Oct)
+
+From docs/design/SETTINGS_REDESIGN_REVIEW.md. Each has a provisional default the build uses until the owner answers.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| SR-1 | One switch for "one key for every AI feature"? (`vision_byok` is OFF by default; its production state is not recorded.) | A new flag `ai_one_key`, OFF, needing `ui_v2`; while it is off everything behaves as today. | `app/platform/controls.py` | open |
+| SR-2 | Free-tier keys that may train on data, and ATP's private method. | Gemini counts as "may train". Chart analyze refuses such a key until the user ticks "My key is on a paid plan"; Copilot text and the screener are allowed, with the one-line warning. | `app/ai/resolve.py`, `chart_analyze/engine.py` | open |
+| SR-3 | Does a user's own key skip the plan's AI gate and the tenant data consent? | Yes: the user pays for it and accepts their own `byok_consent`. | `app/ai/resolve.py` | open |
+| SR-4 | A user's own key reaches its cap. | A plain hard stop; never a silent fallback to the tenant key. | `app/ai/resolve.py` | open |
+| SR-5 | The default caps ($1 a day, $10 a month) now cover every AI feature. | Keep them; show them in rupees. | `core/config.py` | open |
+| SR-6 | Which calls use the user's key. | User-started ones (Copilot, chart analyze, generator, screener NL, scanner plan, option-chain Ask, journal, support). Background jobs (news classification, research jobs) stay on the tenant key. | `app/ai/resolve.py` | open |
+| SR-7 | The key test fails right after saving. | Keep the key; show the plain error with Fix and Remove. | Connect AI panel | open |
+| SR-8 | Team members and the tenant key. | They keep using it as tier 2; only the OWNER who entered it sees "Use this key for your account too". | `app/ai/byok.py` | open |
+| SR-9 | An old `/settings#go-live` link during Phase 0. | Opens the Settings index; nothing about LIVE is shown. The admin keeps the platform checklist on `/admin`. | Settings index | open |
+| SR-10 | Part C: the time exits (`time_exit_at`, `time_exit_minutes`) and the "no time framing" rule. | Available as the user's own settings, empty by default, never pre-filled. | My trading defaults | open |

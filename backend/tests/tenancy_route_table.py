@@ -235,6 +235,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/alerts/telegram/link"): S_OWN_TELEGRAM,
     ("GET", "/api/alerts/telegram/link"): "member",
     ("POST", "/api/alerts/telegram/link-code"): S_OWN_TELEGRAM,
+    # UX2 (#350): Connect Telegram with the platform bot - the caller's own state (read) and link start (a trader write)
+    ("GET", "/api/alerts/telegram/connect"): "member",
+    ("POST", "/api/alerts/telegram/connect"): "trader",
+    ("POST", "/api/telegram/platform/webhook"): "public: the platform bot's Telegram webhook, authenticated by its secret header",
+    ("GET", "/api/admin/telegram/platform"): "admin",
+    ("POST", "/api/admin/telegram/platform/register"): "admin",
     ("GET", "/api/alerts/unsubscribe"): P_UNSUBSCRIBE,
     ("POST", "/api/alerts/unsubscribe"): P_UNSUBSCRIBE,
     ("GET", "/api/analytics/degradation"): "member",

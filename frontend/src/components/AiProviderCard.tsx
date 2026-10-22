@@ -65,7 +65,7 @@ export default function AiProviderCard() {
                 <tr key={t.task} className="border-t border-border/50">
                   <td className="py-1 text-fg">{t.label}</td>
                   <td className="text-fg-muted">{t.tier}</td>
-                  <td className="font-mono text-[11px] text-fg-muted">{t.model}</td>
+                  <td className="font-mono text-xs text-fg-muted">{t.model}</td>
                   <td className="text-right font-tabular text-fg" title={`$${t.price_per_mtok_usd.input}/$${t.price_per_mtok_usd.output} per million input/output tokens${t.estimated_price ? " (model not in the price table - most expensive row used)" : ""}`}>
                     ₹{t.est_inr_per_call.toFixed(2)}{t.estimated_price ? "*" : ""}
                   </td>
@@ -73,7 +73,7 @@ export default function AiProviderCard() {
               ))}
             </tbody>
           </table>
-          <div className="mt-1 text-[11px] text-fg-muted">
+          <div className="mt-1 text-xs text-fg-muted">
             Estimate for one typical call ({config.typical_call_tokens ? Object.entries(config.typical_call_tokens).map(([tier, v]) => `${tier}: ${v.input.toLocaleString()} in / ${v.output.toLocaleString()} out tokens`).join("; ") : "typical size"}); real calls are metered below. The cheap, fast and strong models are set by the operator (cheap = the smallest model, for frequent classification and scanner reads); a model typed here replaces the strong one for this organisation.
           </div>
         </div>

@@ -97,7 +97,7 @@ export function ExperiencePanel({ status, canTrade, onOptOut, error }: {
                     <label className="block text-fg-muted" htmlFor={`optout-${g.key}`}>{t("experience.optOut.reasonLabel", { min: status.min_reason_chars })}</label>
                     <textarea id={`optout-${g.key}`} value={reason} maxLength={300} rows={2} onChange={(e) => setReason(e.target.value)}
                               className="w-full rounded border border-border bg-surface-2 px-2 py-1 text-fg" />
-                    <p className="text-[11px] text-fg-muted">{t("experience.optOut.caveat")}</p>
+                    <p className="text-xs text-fg-muted">{t("experience.optOut.caveat")}</p>
                     <div className="flex flex-wrap gap-2">
                       <button type="button" disabled={busy || !reasonOk(reason, status.min_reason_chars)} onClick={() => void confirm(g.key, g.label)}
                               className="min-h-[44px] rounded border border-warn px-2 py-1 text-warn hover:bg-warn/10 disabled:opacity-50 sm:min-h-0">
@@ -120,13 +120,13 @@ export function ExperiencePanel({ status, canTrade, onOptOut, error }: {
           {t("experience.counts", { today: status.opt_outs.today, week: status.opt_outs.last_7_days, total: status.opt_outs.total })}
         </p>
         {status.opt_outs.recent.length > 0 && (
-          <ul className="space-y-0.5 text-[11px] text-fg-muted" aria-label={t("experience.recentLabel")}>
+          <ul className="space-y-0.5 text-xs text-fg-muted" aria-label={t("experience.recentLabel")}>
             {status.opt_outs.recent.map((o, i) => (
               <li key={`${o.day}-${o.gate}-${i}`}>{t("experience.recentRow", { day: o.day, gate: o.gate_label, level: o.level.toLowerCase(), reason: o.reason })}</li>
             ))}
           </ul>
         )}
-        <p className="text-[11px] text-fg-muted">{status.exits}</p>
+        <p className="text-xs text-fg-muted">{status.exits}</p>
       </div>
     </Card>
   );

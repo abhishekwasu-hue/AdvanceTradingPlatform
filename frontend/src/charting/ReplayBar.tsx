@@ -6,7 +6,7 @@
 import { useEffect } from "react";
 import { REPLAY_OFF, startReplay, stepReplay, type ReplayState } from "./replay";
 
-const btn = "rounded px-1.5 py-0.5 text-[10px] font-semibold text-fg-muted hover:text-fg disabled:opacity-40";
+const btn = "rounded px-1.5 py-0.5 text-xs font-semibold text-fg-muted hover:text-fg disabled:opacity-40";
 export const PLAY_MS = 1000;
 
 export function ReplayBar({ state, count, at, onChange }: { state: ReplayState; count: number; at: string | null; onChange: (s: ReplayState) => void }) {

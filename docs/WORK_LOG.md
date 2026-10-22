@@ -2028,3 +2028,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   day (deduped by title). `DELETE /api/broker/{name}/analytics-token` forgets the token.
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
+
+## Item 1 (handover pack): readable text size, and the "Text size" setting
+
+- Branch `claude/font-size` (from main). Fixed in the design system, not page by page.
+- One root scale: `html { font-size: calc(100% * var(--text-scale)) }` (tokens.css); `data-text-size` on <html>
+  (normal 1, large 1.125, xlarge 1.25). Every Tailwind size (xs..5xl and the t12..t32 tokens) is now in rem, and so
+  are the space tokens and the row / stage heights, so text, spacing and tap targets move together.
+- Sizes at Normal: body 16 px (`text-sm`, `t14`), secondary / captions and table / chain cells never below 14 px
+  (`text-xs`, `t12`, `t13`), headings and key numbers larger (t18 20, t24 28, t32 36). 103 files had their own
+  `text-[9px]`..`text-[13px]` (now `text-xs`) or `text-[15/16px]` (now `text-sm`); a test fails on any new
+  `text-[Npx]` below 14.
+- Settings > Appearance > "Text size": Normal (default) / Large / Extra large, stored per user on the server
+  (`/api/me/prefs`, new namespace `appearance`, no migration: the prefs table already takes any allow-listed
+  namespace); the browser copy paints it before the app loads (theme-init.js); applied on sign-in from the server; a
+  size chosen before this release is sent up once.
+- Charts: axis, price and crosshair labels follow it (`chartFontSize()`: 12 / 14 / 15 px), re-read on the theme event.
+- Tests: backend `tests/test_appearance_prefs.py`; vitest `src/textSize.test.ts` (scale in rem, 14 px floor, the
+  setting, theme-init, the server sync). e2e baselines regenerated at the new size.

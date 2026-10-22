@@ -30,7 +30,7 @@ export default function StrategiesPage() {
           <Card key={s.id}>
             <div className="flex items-center justify-between mb-2">
               <div className="font-semibold text-fg">{s.name}</div>
-              <span className="text-[11px] uppercase tracking-wide text-fg-muted border border-border rounded px-2 py-0.5">
+              <span className="text-xs uppercase tracking-wide text-fg-muted border border-border rounded px-2 py-0.5">
                 {s.category === "multi_timeframe" ? "Multi-timeframe" : "Indicator-based"}
               </span>
             </div>
@@ -44,7 +44,7 @@ export default function StrategiesPage() {
             )}
             <details className="text-xs text-fg-muted">
               <summary className="cursor-pointer text-fg-muted">Default parameters</summary>
-              <pre className="mt-2 overflow-x-auto rounded bg-surface-2 p-2 text-[11px]">
+              <pre className="mt-2 overflow-x-auto rounded bg-surface-2 p-2 text-xs">
                 {JSON.stringify(s.default_params, null, 2)}
               </pre>
             </details>

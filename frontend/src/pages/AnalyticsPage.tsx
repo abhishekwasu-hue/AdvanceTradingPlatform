@@ -34,15 +34,15 @@ function TaxReportCard() {
         {report && <span className="text-fg-muted">{report.trades} closed trades · net {money(report.net_pnl)}</span>}
         {report && <span className="text-fg-muted" title={report.turnover_method_label}>F&amp;O turnover: {report.turnover_method === "ABS_PNL" ? "absolute P&L" : "absolute P&L + option premium sold"}</span>}
       </div>
-      <div className="text-[11px] text-fg-muted mb-2">Not tax advice. Estimates from your own trades only, to reconcile with your broker&apos;s statement; verify with a chartered accountant.</div>
+      <div className="text-xs text-fg-muted mb-2">Not tax advice. Estimates from your own trades only, to reconcile with your broker&apos;s statement; verify with a chartered accountant.</div>
       {error && <div className="text-xs text-down">{error}</div>}
       {report && (
         <table className="w-full text-xs">
-          <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1 pr-3">Head</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Gross</th><th className="py-1 pr-3">Charges</th><th className="py-1 pr-3">Net</th><th className="py-1 pr-3">Turnover</th><th className="py-1 pr-3">STT/CTT est.</th><th className="py-1 pr-3">Crypto TDS / 30% tax</th></tr></thead>
+          <thead className="text-fg-muted uppercase text-xs"><tr className="text-left"><th className="py-1 pr-3">Head</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Gross</th><th className="py-1 pr-3">Charges</th><th className="py-1 pr-3">Net</th><th className="py-1 pr-3">Turnover</th><th className="py-1 pr-3">STT/CTT est.</th><th className="py-1 pr-3">Crypto TDS / 30% tax</th></tr></thead>
           <tbody>
             {(Object.entries(report.classes) as [string, TaxReport["classes"]["FNO"]][]).map(([k, c]) => (
               <tr key={k} className="border-t border-border/60">
-                <td className="py-1 pr-3"><div className="font-medium">{k.replace("_", " ")}</div><div className="text-[10px] text-fg-muted">{c.income_head}</div></td>
+                <td className="py-1 pr-3"><div className="font-medium">{k.replace("_", " ")}</div><div className="text-xs text-fg-muted">{c.income_head}</div></td>
                 <td className="py-1 pr-3">{c.trades}</td>
                 <td className={`py-1 pr-3 ${signClass(c.gross_pnl, 0)}`}>{money(c.gross_pnl)}</td>
                 <td className="py-1 pr-3">{money(c.charges)}</td>
@@ -55,7 +55,7 @@ function TaxReportCard() {
           </tbody>
         </table>
       )}
-      {report && <ul className="mt-2 space-y-0.5 text-[11px] text-fg-muted list-disc pl-4">{report.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
+      {report && <ul className="mt-2 space-y-0.5 text-xs text-fg-muted list-disc pl-4">{report.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
     </Card>
   );
 }
@@ -67,7 +67,7 @@ function GroupTable({ title, rows }: { title: string; rows: GroupStats[] }) {
         <div className="text-sm text-fg-muted py-2">No closed trades yet.</div>
       ) : (
         <table className="w-full text-xs">
-          <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+          <thead className="text-fg-muted uppercase text-xs tracking-wide">
             <tr className="text-left">
               <th className="py-1 pr-3">Key</th>
               <th className="py-1 pr-3">Trades</th>
@@ -127,7 +127,7 @@ export default function AnalyticsPage() {
       <PageHeader title="Analytics" description="Aggregated from your full persisted trade history (Positions/Trade Journal)." />
       {degradation && degradation.strategies.length > 0 && (
         <Card title={`Live vs backtest (${degradation.degraded} degraded, ${degradation.watch} on watch)`}>
-          <table className="w-full text-xs"><thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1 pr-3">Strategy</th><th className="py-1 pr-3">Status</th><th className="py-1 pr-3">Live trades</th><th className="py-1 pr-3">Live win rate</th><th className="py-1 pr-3">Recent-20 win rate</th><th className="py-1 pr-3">Backtest win rate</th><th className="py-1 pr-3">Live expectancy</th><th className="py-1 pr-3">Why</th></tr></thead>
+          <table className="w-full text-xs"><thead className="text-fg-muted uppercase text-xs"><tr className="text-left"><th className="py-1 pr-3">Strategy</th><th className="py-1 pr-3">Status</th><th className="py-1 pr-3">Live trades</th><th className="py-1 pr-3">Live win rate</th><th className="py-1 pr-3">Recent-20 win rate</th><th className="py-1 pr-3">Backtest win rate</th><th className="py-1 pr-3">Live expectancy</th><th className="py-1 pr-3">Why</th></tr></thead>
             <tbody>{degradation.strategies.map((r) => (
               <tr key={r.strategy_id} className="border-t border-border/60">
                 <td className="py-1 pr-3 font-medium">{r.strategy_id}</td>
@@ -140,7 +140,7 @@ export default function AnalyticsPage() {
                 <td className="py-1 pr-3 text-fg-muted">{r.reasons.join("; ")}</td>
               </tr>
             ))}</tbody></table>
-          <div className="text-[11px] text-fg-muted mt-2">{degradation.note}</div>
+          <div className="text-xs text-fg-muted mt-2">{degradation.note}</div>
         </Card>
       )}
       <TaxReportCard />

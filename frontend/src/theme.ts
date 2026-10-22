@@ -6,11 +6,19 @@ import { useEffect, useState } from "react";
 export type ThemeChoice = "dark" | "light" | "system";
 /** `reduceMotion`: the trader's "Reduce motion" setting - with the system's prefers-reduced-motion it turns off every
  * animation and the Copilot's 3D scene (`data-motion="reduce"` on <html>). */
-export interface Appearance { theme: ThemeChoice; colorBlind: boolean; reduceMotion: boolean }
+/** Handover item 1: `textSize` - the one root scale of every page (tokens.css `--text-scale`). Stored per user on the
+ * server (`/api/me/prefs`, namespace `appearance`, src/appearanceSync.ts); this browser keeps a copy for the first paint. */
+export type TextSize = "normal" | "large" | "xlarge";
+export const TEXT_SIZES: { value: TextSize; label: string; scale: number }[] = [
+  { value: "normal", label: "Normal", scale: 1 }, { value: "large", label: "Large", scale: 1.125 },
+  { value: "xlarge", label: "Extra large", scale: 1.25 },
+];
+export function isTextSize(v: unknown): v is TextSize { return v === "normal" || v === "large" || v === "xlarge"; }
+export interface Appearance { theme: ThemeChoice; colorBlind: boolean; reduceMotion: boolean; textSize: TextSize }
 
 const KEY = "atp_appearance";
 const EVENT = "atp-theme";
-const DEFAULTS: Appearance = { theme: "dark", colorBlind: false, reduceMotion: false };
+const DEFAULTS: Appearance = { theme: "dark", colorBlind: false, reduceMotion: false, textSize: "normal" };
 
 /** UI2-0 (UI v2 open question UI-1, owner default): while `ui_v2` is on, a trader who never chose a theme follows the
  * system, and light when the system says nothing; a theme the trader chose is kept. The shell sets this once it has
@@ -40,7 +48,8 @@ export function loadAppearance(): Appearance {
     const raw = localStorage.getItem(KEY);
     const v = raw ? (JSON.parse(raw) as Partial<Appearance>) : {};
     const theme: ThemeChoice = v.theme === "light" || v.theme === "system" || v.theme === "dark" ? v.theme : fallback.theme;
-    return { theme, colorBlind: v.colorBlind === true, reduceMotion: v.reduceMotion === true };
+    return { theme, colorBlind: v.colorBlind === true, reduceMotion: v.reduceMotion === true,
+             textSize: isTextSize(v.textSize) ? v.textSize : "normal" };
   } catch {
     return fallback;
   }
@@ -62,6 +71,7 @@ export function applyAppearance(a: Appearance = loadAppearance()): void {
   root.dataset.theme = theme;
   root.dataset.cvd = a.colorBlind ? "on" : "off";
   root.dataset.motion = a.reduceMotion ? "reduce" : "full";
+  root.dataset.textSize = a.textSize;
   root.classList.toggle("dark", theme === "dark");
   window.dispatchEvent(new CustomEvent(EVENT));
 }
@@ -95,6 +105,18 @@ export function useAppearance(): [Appearance, (a: Appearance) => void, "dark" | 
     return () => window.removeEventListener(EVENT, on);
   }, []);
   return [a, saveAppearance, resolved];
+}
+
+/** The current text scale (1 at Normal), read from <html>. */
+export function textScale(): number {
+  const size = typeof document !== "undefined" ? document.documentElement.dataset.textSize : undefined;
+  return TEXT_SIZES.find((t) => t.value === size)?.scale ?? 1;
+}
+
+/** The charts' axis, price and crosshair label size in px: 12 at Normal, following the Text size setting. Canvases
+ * cannot read rem, so the charts take this number and re-read it on THEME_EVENT (a text size change fires it too). */
+export function chartFontSize(): number {
+  return Math.round(12 * textScale());
 }
 
 /** A token's colour as a CSS colour string, read from the document (for canvases). */

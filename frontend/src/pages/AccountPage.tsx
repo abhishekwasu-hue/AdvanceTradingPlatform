@@ -132,9 +132,9 @@ export default function AccountPage() {
         {user.scopes && user.scopes.length > 0 && (
           <Card title="Your permissions">
             <div className="flex flex-wrap gap-1.5">
-              {user.scopes.map((s) => <span key={s} className="rounded-md border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-mono text-fg-muted">{s}</span>)}
+              {user.scopes.map((s) => <span key={s} className="rounded-md border border-border bg-surface-2 px-2 py-0.5 text-xs font-mono text-fg-muted">{s}</span>)}
             </div>
-            <p className="mt-2 text-[11px] text-fg-muted">Derived from your role; your organisation's owner can deny or grant individual permissions from the Team tab.</p>
+            <p className="mt-2 text-xs text-fg-muted">Derived from your role; your organisation's owner can deny or grant individual permissions from the Team tab.</p>
           </Card>
         )}
         <MfaCard status={mfaStatus} onChange={() => api.mfaStatus().then(setMfaStatus).catch(() => {})} />

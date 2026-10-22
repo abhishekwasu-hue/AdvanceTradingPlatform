@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
  */
 export function Secondary({ children, lang, inline = false }: { children?: string | null; lang?: string | null; inline?: boolean }) {
   if (!children || !lang) return null;
-  return <span lang={lang} className={`${inline ? "ml-1" : "block"} text-[11px] font-normal leading-snug text-fg-muted`}>{inline ? `/ ${children}` : children}</span>;
+  return <span lang={lang} className={`${inline ? "ml-1" : "block"} text-xs font-normal leading-snug text-fg-muted`}>{inline ? `/ ${children}` : children}</span>;
 }
 
 export default function BilingualQuestion({ en, secondary, lang, hint, hintSecondary, children }: {

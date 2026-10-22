@@ -218,7 +218,7 @@ function Filters({ source, symbol, open, onToggle, onSource, onSymbol, updated }
             <label htmlFor={fieldId} className="sr-only">Symbol</label>
             <input id={fieldId} value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus autoComplete="off" autoCapitalize="characters" spellCheck={false}
               placeholder="Symbol, e.g. NIFTY 50"
-              className="h-11 w-48 rounded-control border border-border bg-surface-2 px-space-3 text-[16px] text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9 md:text-t14" />
+              className="h-11 w-48 rounded-control border border-border bg-surface-2 px-space-3 text-sm text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9 md:text-t14" />
             <button type="submit" className="inline-flex min-h-11 items-center rounded-control border border-border bg-surface-1 px-space-3 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9">Show</button>
           </form>
         ) : symbol ? (

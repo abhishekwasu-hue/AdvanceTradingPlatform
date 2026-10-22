@@ -32,8 +32,8 @@ export const SETTINGS_ROWS: readonly SettingsRow[] = [
   { id: "broker", name: "Broker", to: BROKER_PATH, keywords: ["upstox", "zerodha", "connect broker", "renew", "login", "token"] },
   { id: "ai", name: "AI", to: SETTINGS_PATH.ai, tour: "settings-ai", keywords: ["ai key", "api key", "connect ai", "claude", "openai", "gemini", "copilot", "ai limits", "spend"] },
   { id: "alerts", name: "Alerts", to: SETTINGS_PATH.alerts, tour: "settings-alerts", keywords: ["telegram", "notifications", "email", "sms", "whatsapp", "push", "phone"] },
-  // Part C builds this page; until then the row says "Coming soon".
-  { id: "defaults", name: "My trading defaults", to: null, keywords: ["defaults", "lots", "exits", "presets"] },
+  // Part C: the user's own starting values for new paper bots and chain tickets (a pre-fill, never a rule).
+  { id: "defaults", name: "My trading defaults", to: "/settings/trading-defaults", keywords: ["defaults", "lots", "exits", "presets"] },
   { id: "appearance", name: "Appearance", to: SETTINGS_PATH.appearance, tour: "settings-appearance", keywords: ["theme", "dark", "light", "text size", "font", "colour-blind", "color blind", "reduce motion"] },
   { id: "help", name: "Help & tips", to: SETTINGS_PATH.help, tour: "settings-help", keywords: ["tips", "tours", "get started", "guide"] },
   { id: "setup", name: "Set up your account", to: "/settings/setup", keywords: ["setup", "setup wizard", "steps"] },
@@ -170,3 +170,5 @@ export function tipsChip(known: boolean, skipAllAt: string | null): Chip | null 
 }
 
 export const COMING_SOON: Chip = { text: "Coming soon", tone: "off" };
+/** My trading defaults: optional; nothing is used until the user saves a value. */
+export const DEFAULTS_CHIP: Chip = { text: "Optional", tone: "off" };

@@ -1,7 +1,7 @@
 import {
   BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Filter, GraduationCap, History, Layers,
   LayoutDashboard, Link2, ListChecks, ListTodo, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
-  ScanSearch, Sigma, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, Palette, LifeBuoy, Wrench, type LucideIcon,
+  ScanSearch, Sigma, SlidersHorizontal, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, Palette, LifeBuoy, Wrench, type LucideIcon,
 } from "lucide-react";
 import { needsAttention, type BrokerDot } from "../broker/brokerState";
 import { BROKER_PATH } from "../broker/paths";
@@ -19,8 +19,8 @@ import { SETTINGS_PATH, type SettingsSectionKey } from "../settings/paths";
  */
 
 /** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
- * Settings → Setup (`/settings/setup`, UI2-7), and the Settings section pages (`/settings/ai` ..., Settings redesign B). */
-export type ShellKey = Page | "charts" | "setup" | SettingsSectionKey;
+ * Settings → Setup (`/settings/setup`, UI2-7), My trading defaults (`/settings/trading-defaults`, part C) and the Settings section pages (`/settings/ai` ..., Settings redesign B). */
+export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | SettingsSectionKey;
 
 export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more";
 
@@ -142,6 +142,9 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   { ...item("account", "Account", "Account", "/settings/account", UserCircle2, { keywords: ["profile", "password", "two-factor", "sessions", "email"] }), section: "account" },
   // UI2-7: Settings → Setup, the setup wizard and the go-live checklist (§11); Settings v2 groups arrive with UI2-6.
   { ...item("setup", "Setup", "Setup", "/settings/setup", ListTodo, { keywords: ["set up your account", "setup wizard", "get started", "go-live checklist", "readiness"] }), section: "account" },
+  // Settings redesign part C: the user's own starting values for new bots and chain tickets (a pre-fill, never a rule).
+  { ...item("trading-defaults", "My trading defaults", "My trading defaults", "/settings/trading-defaults", SlidersHorizontal,
+    { keywords: ["defaults", "default lots", "presets", "order presets", "expiry rule", "strike rule", "trailing stop"] }), section: "account" },
   // Settings redesign B: the Settings section pages (src/settings), found by search too.
   { ...item("settings-ai", "AI", "AI", SETTINGS_PATH.ai, Sparkles, { keywords: ["ai key", "api key", "connect ai", "claude", "openai", "gemini", "ai limits"] }), section: "account" },
   { ...item("settings-alerts", "Alerts", "Alerts", SETTINGS_PATH.alerts, Bell, { keywords: ["telegram", "alert channels", "email alerts", "sms", "push notifications"] }), section: "account" },

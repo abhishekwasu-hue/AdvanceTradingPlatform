@@ -18,6 +18,11 @@
   `appearance` holds the text size (Normal / Large / Extra large) applied to every page.
   `tours` (MO2 part C) holds the first-time guidance marks: the welcome tour finished, the pages whose tips were seen and
   "Skip all tips". Only marks: what a tour says lives in the frontend (src/tours/content/).
+  `trading_defaults` (Settings redesign part C, docs/design/TRADING_DEFAULTS.md) holds "My trading defaults": values that
+  PRE-FILL a new paper bot, the full deployment form and the chain order ticket in the frontend, each marked "from your
+  defaults" and changeable there. Only existing deployment / ExitRules / ticket fields, with the same limits; every field
+  is empty (None) by default. The server never reads it to trade: no order path, worker or risk check imports it. Never
+  here: the mode (PAPER / LIVE), broker routing, the LIVE order style, or any LIVE field.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -209,8 +214,52 @@ class ToursPrefs(_Prefs):
         default_factory=dict, description="page tour id -> when its tips were finished or closed")
 
 
+# Settings redesign part C: "My trading defaults" - a pre-fill, never a hidden rule. The limits are the deployment API's
+# own (app/deployments/routes.py ContractRulesRequest, ExitRulesRequest) and the chain ticket's (app/paper/fno_ticket.py),
+# kept equal by a test. Every field is None by default: an empty namespace pre-fills nothing.
+class ExitDefaults(_Prefs):
+    """The user's own exit settings (ExitRules). The time exits are available but empty unless the user sets them (SR-10)."""
+    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, le=50, allow_inf_nan=False)
+    break_even_at_r: Optional[float] = Field(default=None, gt=0, le=10, allow_inf_nan=False)
+    time_exit_minutes: Optional[int] = Field(default=None, ge=1, le=375)
+    time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+class TicketDefaults(_Prefs):
+    """The chain order ticket's starting lots, product and order type (frontend src/fno/ticketModel.ts newDraft)."""
+    lots: Optional[int] = Field(default=None, ge=1, le=500)
+    product: Optional[Literal["MIS", "NRML"]] = None
+    order_type: Optional[Literal["MARKET", "LIMIT", "SL", "SL-M"]] = None
+
+
+OptionStrategyName = Literal["SINGLE", "BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY", "SHORT_STRADDLE",
+                             "SHORT_STRANGLE", "LONG_STRADDLE", "LONG_STRANGLE", "CALENDAR_SPREAD", "CALL_RATIO_SPREAD",
+                             "PUT_RATIO_SPREAD", "LONG_BUTTERFLY"]
+
+
+class TradingDefaultsPrefs(_Prefs):
+    """`trading_defaults`: the user's own starting values for new forms. Read by the frontend only, to pre-fill."""
+    instrument_kind: Optional[Literal["UNDERLYING", "OPTION", "FUTURE"]] = None
+    option_position: Optional[Literal["BUY", "WRITE"]] = None
+    expiry_rule: Optional[Literal["NEAREST", "NEXT", "MONTHLY"]] = None
+    strike_rule: Optional[Literal["ATM", "ITM", "OTM"]] = None
+    strike_offset: Optional[int] = Field(default=None, ge=0, le=10)
+    premium_stop_pct: Optional[float] = Field(default=None, ge=5, le=95, allow_inf_nan=False)
+    max_lots: Optional[int] = Field(default=None, ge=1, le=500)
+    # CUSTOM is left out: its legs are drawn per deployment on the full form, so there is nothing to pre-fill.
+    option_strategy: Optional[OptionStrategyName] = None
+    spread_width: Optional[int] = Field(default=None, ge=1, le=20)
+    target_credit_pct: Optional[float] = Field(default=None, ge=5, le=95, allow_inf_nan=False)
+    stop_credit_pct: Optional[float] = Field(default=None, ge=10, le=500, allow_inf_nan=False)
+    # APPROVAL is applied by a form only while the organisation's `approval_only_entries` flag allows it (the API's own rule).
+    entry_mode: Optional[Literal["AUTO", "APPROVAL"]] = None
+    exit_rules: Optional[ExitDefaults] = None
+    ticket: Optional[TicketDefaults] = None
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
-                                       "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs}
+                                       "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
+                                       "trading_defaults": TradingDefaultsPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -343,4 +392,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "TOUR_IDS", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "TOUR_IDS", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

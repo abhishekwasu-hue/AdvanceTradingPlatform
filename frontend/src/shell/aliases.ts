@@ -17,6 +17,9 @@ export const V2_ALIASES: readonly { path: string; page: Page; old: string }[] = 
 /** UI2-7: Settings → Setup, a v2-only page (the setup wizard). With the flag off it goes back to Settings. */
 export const SETUP_ADDRESS = "/settings/setup";
 
+/** Settings redesign part C: Settings → My trading defaults, a v2-only page. With the flag off it goes back to Settings. */
+export const TRADING_DEFAULTS_ADDRESS = "/settings/trading-defaults";
+
 /**
  * With `ui_v2` off (never turned on, turned off again as a kill switch, or the trader just signed out - flags are not
  * read while signed out): a v2-only address of a merged page goes back to today's address, so a bookmark or the page
@@ -27,7 +30,7 @@ export function flagOffFallback(pathname: string): string | null {
   const { path, malformed } = routerPath(pathname);
   if (malformed) return null;
   const clean = `/${path.replace(/^\/+|\/+$/g, "")}`;
-  if (clean === SETUP_ADDRESS) return "/settings";
+  if (clean === SETUP_ADDRESS || clean === TRADING_DEFAULTS_ADDRESS) return "/settings";
   // Settings redesign B: a section page goes back to today's Settings page, at the part that holds it.
   const section = settingsSectionAt(clean);
   if (section) return section.old;

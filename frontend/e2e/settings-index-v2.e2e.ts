@@ -86,8 +86,8 @@ test.describe("settings index behaviour", () => {
     await expect(row(page, "broker").locator("[data-chip]")).toHaveText("Connected (Upstox)");
     await expect(row(page, "broker").locator("a")).toHaveAttribute("href", "/broker");
     await expect(row(page, "alerts").locator("[data-chip]")).toHaveText("Telegram connected");
-    await expect(row(page, "defaults").locator("[data-chip]")).toHaveText("Coming soon");
-    await expect(row(page, "defaults").locator("a")).toHaveCount(0);
+    await expect(row(page, "defaults").locator("[data-chip]")).toHaveText("Optional");
+    await expect(row(page, "defaults").locator("a")).toHaveAttribute("href", "/settings/trading-defaults");
     await expect(row(page, "appearance").locator("[data-chip]")).toHaveText("Light · Normal text");
     await expect(row(page, "help").locator("[data-chip]")).toHaveText("Tips on");
     await expect(row(page, "account").locator("a")).toHaveAttribute("href", "/settings/account");

@@ -87,11 +87,11 @@ describe("B1: the v2 router", () => {
     }
   });
 
-  it("the rows: account, broker, AI, alerts, defaults (coming soon), appearance, help, setup, advanced", () => {
+  it("the rows: account, broker, AI, alerts, defaults (part C), appearance, help, setup, advanced", () => {
     expect(SETTINGS_ROWS.map((r) => r.id)).toEqual(["account", "broker", "ai", "alerts", "defaults", "appearance", "help", "setup", "advanced"]);
     expect(SETTINGS_ROWS.find((r) => r.id === "account")?.to).toBe("/settings/account");
     expect(SETTINGS_ROWS.find((r) => r.id === "broker")?.to).toBe("/broker");
-    expect(SETTINGS_ROWS.find((r) => r.id === "defaults")?.to).toBeNull();
+    expect(SETTINGS_ROWS.find((r) => r.id === "defaults")?.to).toBe("/settings/trading-defaults");
   });
 
   it("the four settings tour steps point at index rows", () => {
@@ -109,9 +109,11 @@ describe("B1: the v2 router", () => {
     expect(html).toContain("sm:flex-row");
     expect(html).toContain("Telegram connected");
     expect(html).toContain('data-chip="ok"');
-    const soon = renderToStaticMarkup(<MemoryRouter><ul><IndexRow row={SETTINGS_ROWS.find((r) => r.id === "defaults")!} chip={{ text: "Coming soon", tone: "off" }} /></ul></MemoryRouter>);
-    expect(soon).not.toContain("href=");
+    const soon = renderToStaticMarkup(<MemoryRouter><ul><IndexRow row={{ ...SETTINGS_ROWS.find((r) => r.id === "defaults")!, to: null }} chip={{ text: "Coming soon", tone: "off" }} /></ul></MemoryRouter>);
+    expect(soon).not.toContain("href=");                                    // a row not built yet has no link
     expect(soon).toContain("Coming soon");
+    const defaults = renderToStaticMarkup(<MemoryRouter><ul><IndexRow row={SETTINGS_ROWS.find((r) => r.id === "defaults")!} chip={{ text: "Optional", tone: "off" }} /></ul></MemoryRouter>);
+    expect(defaults).toContain('href="/settings/trading-defaults"');
     expect(renderToStaticMarkup(<StatusChip chip={{ text: "Not working", tone: "bad" }} />)).toContain("text-down");
   });
 });

@@ -1,5 +1,5 @@
 import { pageFromPath } from "../routes";
-import { SETUP_ADDRESS, V2_ALIASES, needsBrokerGate, routerPath } from "./aliases";
+import { SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS, V2_ALIASES, needsBrokerGate, routerPath } from "./aliases";
 import { navItemFor, type ShellKey } from "./navModel";
 import { settingsSectionAt } from "../settings/paths";
 
@@ -53,6 +53,7 @@ export function chartTabPath(symbol: string, exchange?: string | null, timeframe
 export function shellKeyFromPath(pathname: string): ShellKey | null {
   if (chartsSymbolFromPath(pathname) !== undefined) return "charts";
   if (clean(pathname) === SETUP_ADDRESS) return "setup";
+  if (clean(pathname) === TRADING_DEFAULTS_ADDRESS) return "trading-defaults";
   // Settings redesign B: the Settings section pages (v2 only).
   const section = settingsSectionAt(clean(pathname));
   if (section) return section.key;

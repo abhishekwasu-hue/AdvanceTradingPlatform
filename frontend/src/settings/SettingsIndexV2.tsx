@@ -18,7 +18,7 @@ import type { AiProviderConfig, AlertChannel, BillingOverview } from "../types";
 import { SIGN_IN_PATH } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
 import {
-  COMING_SOON, SETTINGS_ROWS, aiChip, aiProviderChip, alertsChip, appearanceChip, brokerChip, planChip, searchSettings, tipsChip,
+  COMING_SOON, DEFAULTS_CHIP, SETTINGS_ROWS, aiChip, aiProviderChip, alertsChip, appearanceChip, brokerChip, planChip, searchSettings, tipsChip,
   type Chip, type RowId, type SearchHit, type SettingsRow,
 } from "./model";
 import { GO_LIVE_PATH_V2, settingsHashTarget } from "./paths";
@@ -106,7 +106,7 @@ function useChips(oneKey: boolean): Partial<Record<RowId, Chip | null>> {
 
   const setup = setupChip(view, { ignoreDismissal: true });
   return {
-    account: plan, broker: brokerChip(brokers), ai, alerts, defaults: COMING_SOON, appearance: appearanceChip(appearance),
+    account: plan, broker: brokerChip(brokers), ai, alerts, defaults: DEFAULTS_CHIP, appearance: appearanceChip(appearance),
     help: tipsChip(tours.known, tours.marks.skip_all_at),
     setup: setup ? { text: setup.label, tone: "warn" } : view ? { text: "Done", tone: "ok" } : null,
     advanced: null,

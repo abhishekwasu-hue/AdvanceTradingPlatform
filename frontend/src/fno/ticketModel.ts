@@ -41,8 +41,27 @@ export const PRACTICE_TITLE = "Practice mode (PAPER)";
 export const PRACTICE_TEXT = "No real order is sent and no money moves.";
 export const MAX_LOTS = 500;
 
-export function newDraft(side: Side): Draft {
-  return { side, lots: 1, orderType: "MARKET", product: "MIS", price: "", trigger: "", stopLoss: "" };
+/** Settings part C: the lots / product / order type the user's own defaults start a ticket with (only the ones set). */
+export interface DraftDefaults { lots?: number; product?: Product; orderType?: OrderType }
+
+/** A fresh ticket. With the user's defaults (src/settings/tradingDefaults.ts ticketPrefill) those values start it - the side
+ * never comes from a default - and nothing else changes: no defaults gives today's draft exactly. */
+export function newDraft(side: Side, defaults?: DraftDefaults): Draft {
+  const draft: Draft = { side, lots: 1, orderType: "MARKET", product: "MIS", price: "", trigger: "", stopLoss: "" };
+  if (!defaults) return draft;
+  if (defaults.lots !== undefined) draft.lots = clampLots(defaults.lots);
+  if (defaults.orderType !== undefined) draft.orderType = defaults.orderType;
+  if (defaults.product !== undefined) draft.product = defaults.product;
+  return draft;
+}
+
+/** Which ticket fields still show the value they took from the defaults (a changed field loses its mark). */
+export function draftFromDefaults(d: Draft, defaults?: DraftDefaults): { lots: boolean; orderType: boolean; product: boolean } {
+  return {
+    lots: defaults?.lots !== undefined && clampLots(defaults.lots) === d.lots,
+    orderType: defaults?.orderType !== undefined && defaults.orderType === d.orderType,
+    product: defaults?.product !== undefined && defaults.product === d.product,
+  };
 }
 
 /** Units = lots x the instrument master's lot size; null while the lot size is not known. */

@@ -318,6 +318,12 @@ def test_wave_levels_lines_and_retest_w2_w4():
     for text in ("WaveBeyondOrigin(1)", 'WaveLineBreak(1, "channel_current", "up", 0)',
                  'RetestEntry("up", "wave_line", 20, FALSE, 1, "channel_current", "A", 0)'):
         assert _ev(text, walk).dtype == bool, text
+    # the wave companions (deeper checks in tests/test_wave6_companions.py): the volume, the zone edge, the hidden divergence
+    assert _ev('WaveVolumeLower(1, "current")', walk).dtype == bool
+    edge = _ev('SwingZoneEdge("low", 0, 1)', walk)
+    assert edge.dtype == float and edge.notna().any()
+    assert _ev('RsiDivergence("bullish", 60, 0, kind="regular")', walk).equals(_ev('RsiDivergence("bullish", 60)', walk))
+    assert _ev('RsiDivergence("bullish", 60, 0, kind="hidden")', walk).dtype == bool
 
 
 def test_rankscore_n3_s7a():

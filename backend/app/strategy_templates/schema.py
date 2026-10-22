@@ -22,6 +22,11 @@ member templates under its `source` setting, and a member may itself switch a pa
 * a variant may itself be a switch (nested `variants`: e.g. the pack's `source`, then D3's `trigger_bar`);
 * `signal_text` may be a switch (`SignalTextSwitch`: the member's own words per `source`);
 * `timeframes_by` limits the signal timeframes per choice of an enum setting (a member that does not run on Weekly).
+
+Family G version 2 (the wave templates' companions), still `atp.template/1` and without changing any existing template:
+* `confirmations`: optional confirmations of the trigger, each a switch on its own enum setting whose DEFAULT choice is
+  "no confirmation" (null). A chosen confirmation is AND-ed to the chosen trigger at compile time; with every one left at
+  its default the trigger compiles to exactly its own expression, so the signals are those of the template without them.
 """
 from __future__ import annotations
 
@@ -124,6 +129,13 @@ class Switch(_Strict):
     switch on another enum setting (a pack's member that switches the part on its own setting)."""
     by: str = Field(pattern=_KEY)
     variants: Dict[str, Optional[Union[Sided, "Switch"]]] = Field(min_length=1)
+
+
+class Confirmation(Switch):
+    """Family G version 2: an optional confirmation of the trigger per value of the enum setting `by` - an expression that
+    must also hold on the trigger bar, or null (no confirmation; the setting's default must be null, so it is off by
+    default). Never a nested switch."""
+    variants: Dict[str, Optional[Sided]] = Field(min_length=1)     # type: ignore[assignment]
 
 
 class SetupExtreme(_Strict):
@@ -261,6 +273,7 @@ class Template(_Strict):
     evidence: Tuple[Evidence, ...] = ()
     signal_text: Union[SignalText, SignalTextSwitch]
     timeframes_by: Optional[TimeframesBy] = None            # TPL-7: the signal timeframes per choice (family F version 2)
+    confirmations: Tuple[Confirmation, ...] = ()            # family G version 2: optional confirmations of the trigger
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True, populate_by_name=True)
 
@@ -304,6 +317,7 @@ class Template(_Strict):
             (what, sw) for what, part in (("context", self.context), ("setup", self.setup), ("trigger", self.trigger),
                                           ("invalidation", self.invalidation), ("exit_signal", self.exit_signal))
             for sw in nested(part)]
+        switches += [("confirmation", c) for c in self.confirmations]
         for what, sw in switches:
             spec = by_key.get(sw.by)
             if spec is None or spec.type != "enum":
@@ -316,6 +330,13 @@ class Template(_Strict):
                            ("invalidation", self.invalidation), ("exit_signal", self.exit_signal)):
             if _repeats(part, ()):                               # TPL-7: a nested switch never re-chooses by an outer setting
                 raise ValueError(f"{what}: a nested switch must choose by another setting")
+        if len({c.by for c in self.confirmations}) != len(self.confirmations):
+            raise ValueError("each confirmation needs its own setting")
+        for c in self.confirmations:
+            if c.variants.get(str(by_key[c.by].default)) is not None:
+                raise ValueError(f"confirmation {c.by}: the default choice must be no confirmation (off by default)")
+            if self.trigger is None:
+                raise ValueError("a confirmation needs a trigger")
         setups = [s_ for s_ in leaves(self.setup) if isinstance(s_, Setup)]
         for setup in setups:
             if isinstance(setup.expiry_bars, str):
@@ -357,8 +378,9 @@ Switch.model_rebuild()
 InvalidationSwitch.model_rebuild()
 SetupSwitch.model_rebuild()
 ContextSwitch.model_rebuild()
+Confirmation.model_rebuild()
 Template.model_rebuild()
 
 __all__ = ["SCHEMA_VERSION", "SIGNAL_TIMEFRAME", "MA_TYPES", "SOURCES", "ParamSpec", "Constraint", "Sided", "Context", "Setup",
            "Evidence", "TextPart", "SignalText", "Template", "Switch", "SetupSwitch", "ContextSwitch", "SetupExtreme",
-           "InvalidationSwitch", "SignalTextSwitch", "TimeframesBy", "nested", "leaves"]
+           "InvalidationSwitch", "SignalTextSwitch", "TimeframesBy", "Confirmation", "nested", "leaves"]

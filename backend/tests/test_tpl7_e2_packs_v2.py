@@ -477,7 +477,7 @@ def test_version_one_of_each_pack_is_kept_word_for_word():
         assert old.version == 1 and library.get(tid).version == 2 and library.get_version(tid, 2) is library.get(tid)
         assert old.param(packs.SOURCE).choices == (next(iter(packs.MEMBERS[tid])),)          # one member in version 1
         assert C.validate_template(old) == []
-    assert [(t.id, t.version) for t in library.archived()] == [("F1", 1), ("F2", 1)]
+    assert [(t.id, t.version) for t in library.archived() if t.family == "F"] == [("F1", 1), ("F2", 1)]   # G: the wave companions
     assert {t.id: t.version for t in library.templates()}["F1"] == 2 and len({t.id for t in library.templates()}) == len(library.templates())
     with pytest.raises(KeyError):
         library.get_version("F1", 3)

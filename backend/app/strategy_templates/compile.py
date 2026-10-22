@@ -17,7 +17,9 @@ Binding rules (owner order section 0 R1, section 1):
 * step 5: an invalidation that is the extreme since the setup bar (`SetupExtreme`) compiles no expression - the engine
   keeps it while it walks the bars (`Recipe.invalidation_since_setup`);
 * TPL-7 (family F version 2): a variant may itself be a switch, opened one level after the other (`chosen`); the signal
-  timeframe may be limited per choice (`Template.timeframes_by`).
+  timeframe may be limited per choice (`Template.timeframes_by`);
+* family G version 2 (the wave companions): each chosen optional confirmation is AND-ed to the chosen trigger
+  (`(trigger) AND (confirmation) ...`); with none chosen the trigger is compiled from exactly its own expression.
 """
 from __future__ import annotations
 
@@ -279,6 +281,9 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
     exit_signal: Optional[Sided] = chosen(template.exit_signal, settings)
     if trigger is None and not (setup.kind == "event" and setup.same_bar):
         problems.append("without a trigger the setup event is the signal: kind event with same_bar true")
+    confirmations: List[Sided] = [c for c in (chosen(cf, settings) for cf in template.confirmations) if c is not None]
+    if confirmations and trigger is None:
+        problems.append("a confirmation needs a trigger")
     context_on = ctx is not None and ctx_sided is not None and (ctx.enabled_by is None or bool(settings.params[ctx.enabled_by]))
     context_tf = str(settings.params[ctx.timeframe_param]) if ctx is not None and ctx.timeframe_param else None
     if context_on and context_tf is not None and _tf_minutes(context_tf) < _tf_minutes(settings.timeframe):
@@ -297,7 +302,10 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
                 problems.extend(exc.problems)
 
     add("setup", None, "bool", long_text=setup.long, short_text=setup.short)
-    if trigger is not None:
+    if trigger is not None and confirmations:                  # family G version 2: the trigger and its confirmations
+        add("trigger", None, "bool", long_text=" AND ".join(f"({x.long})" for x in (trigger, *confirmations)),
+            short_text=" AND ".join(f"({x.short})" for x in (trigger, *confirmations)))
+    elif trigger is not None:
         add("trigger", trigger, "bool")
     since_setup = isinstance(invalidation, SetupExtreme)
     if isinstance(invalidation, Sided):
@@ -350,7 +358,8 @@ def _switch_variants(template: Template) -> List[Dict[str, Any]]:
     are listed; a path that only names default choices is the default settings themselves and is left out."""
     defaults = {p.key: p.default for p in template.params}
     out: List[Dict[str, Any]] = []
-    for part in (template.context, template.setup, template.trigger, template.invalidation, template.exit_signal):
+    for part in (template.context, template.setup, template.trigger, template.invalidation, template.exit_signal,
+                 *template.confirmations):
         for path in _switch_paths(part):
             if any(defaults[k] != v for k, v in path.items()) and path not in out:
                 out.append(path)

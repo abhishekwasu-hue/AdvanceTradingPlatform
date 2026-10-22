@@ -3023,3 +3023,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   removed, both sides' text kept.
 - Tests: `tests/test_tpl7_e2_packs_v2.py`, `tests/test_tpl6_family_f.py` (reads version 2), runtime fixture, causal
   cases (lookahead job), history sweep. Questions TPL-Q50..TPL-Q57.
+## 22 Oct - Wave templates (family G): the volume, zone-edge and divergence companions, G1-G11 version 2 (behind strategy_templates + screener_waves, PAPER only)
+
+- Branch `claude/waves-companions`. No migration (templates are JSON in the repository; no new flag).
+- Every G template is version 2 with optional confirmations, all off by default: the RSI divergence (regular / hidden,
+  `RsiDivergence` `kind=`; left out = regular, byte-identical), the corrective wave's volume (`WaveVolumeLower`, a
+  comparison of two waves' mean volume) and the trigger bar's volume (`RelVolume`), and on G1 / G2 / G3 / G8 the area's
+  far side (`SwingZoneEdge`) as new invalidation choices. Version 1 is kept word for word in `templates/archive/`; an id
+  adopted on version 1 resolves to it; with the companions off version 2 gives the same parts and signals.
+- Schema: `confirmations` (each off by default, AND-ed to the chosen trigger). Ids: a template with confirmations leaves out
+  its trailing defaults (every older id unchanged). G12 not built (TPL-F7).
+- Tests: `tests/test_wave6_companions.py` (parity, must-fire / must-not per companion, mirror, truncation, the parity
+  harness, ids, schema, flags); earlier G tests read version 2. Questions WAVE-46..WAVE-52.

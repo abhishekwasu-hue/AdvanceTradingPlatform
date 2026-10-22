@@ -458,7 +458,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
     rows.push({ id: "lockout", icon: "lockout", tone: "warn", title: "New trades are paused for today", detail: lockout.reason, action: { label: "Risk limits", to: "/risk-management" } });
   }
   const warning = input.exposure?.warnings?.[0];
-  if (warning) rows.push({ id: "exposure", icon: "warning", tone: "warn", title: "Your exposure is high", detail: warning, action: { label: "Portfolio", to: "/portfolio" } });
+  if (warning) rows.push({ id: "exposure", icon: "warning", tone: "warn", title: "Your exposure is high", detail: warning, action: { label: "Portfolio", to: "/positions/money" } });
   if (health.data_feed) rows.push(health.data_feed);
   if (health.ai_key) rows.push(health.ai_key);
   const unread = input.unread ?? [];

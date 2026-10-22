@@ -9,9 +9,7 @@ import { OWN_BROKER_STATES } from "./pagesV2";
 import { CommandList, isApplePlatform, isCommandShortcut, moveActive, otherDialogOpen, shortcutLabel } from "./CommandBarV2";
 import { MoreSheetContent, moreSheetResults } from "./MoreSheetV2";
 import { searchPages, visibleSections, type NavContext } from "./navModel";
-import {
-  DEFAULT_OPEN, SidebarV2View, initialsOf, isSectionOpen, openForCurrent, parseSectionMemory, roleLabel,
-} from "./SidebarV2";
+import { SidebarV2View, initialsOf, roleLabel } from "./SidebarV2";
 import { v2RedirectFor } from "./shellRoutes";
 import { topBarNotices } from "./TopBarV2";
 
@@ -87,13 +85,15 @@ describe("UI2-1 More sheet", () => {
     const html = render("");
     expect(html).toContain('type="search"');
     expect(html).toContain("Search pages");
-    for (const s of ["Markets", "Strategies", "Trading", "Insights", "Account", "More"]) expect(html).toContain(`>${s}</h3>`);
+    for (const s of ["Markets", "Trading", "Insights", "Account"]) expect(html).toContain(`>${s}</h3>`);
+    expect(html).not.toContain(">Admin</h3>");                          // the platform operator's group only
     expect(html).toContain('href="/option-chain"');
-    expect(html).toContain('href="/system-logs"');
+    expect(html).toContain('href="/strategies"');
+    expect(html).not.toContain('href="/system-logs"');                  // UX3-9: found by search, not listed
     for (const inBar of ['href="/"', 'href="/charts"', 'href="/signals"', 'href="/positions"']) expect(html).not.toContain(inBar);
     expect(html).not.toContain('href="/admin"');
     expect(html).not.toContain('href="/journal"');                       // flag off
-    expect(html.match(/min-h-11/g)?.length).toBeGreaterThanOrEqual(15);  // every tile is a 44 px target
+    expect(html.match(/min-h-11/g)?.length).toBeGreaterThanOrEqual(7);   // every tile is a 44 px target
     // P2b: Broker is the first tile, above the sections.
     expect(html.indexOf('href="/broker"')).toBeGreaterThan(-1);
     expect(html.indexOf('href="/broker"')).toBeLessThan(html.indexOf(">Markets</h3>"));
@@ -102,7 +102,9 @@ describe("UI2-1 More sheet", () => {
   it("searches every visible page, the bar's included, and says when nothing matches", () => {
     expect(moreSheetResults(trader, "").kind).toBe("sections");
     const r = moreSheetResults(trader, "positions");
-    expect(r.kind === "matches" && r.items[0].label).toBe("My positions");
+    expect(r.kind === "matches" && r.items[0].label).toBe("My trades");
+    const logs = moreSheetResults(trader, "activity");
+    expect(logs.kind === "matches" && logs.items.map((i) => i.label)).toEqual(["Activity log"]);
     const html = render("screener", { ...trader, on: flags("screener_v2") });       // UX1: Find setups needs screener_v2
     expect(html).toContain('href="/screener"');
     expect(html).toContain("Markets");                                  // the section as a caption
@@ -111,45 +113,57 @@ describe("UI2-1 More sheet", () => {
 });
 
 describe("UI2-1 sidebar", () => {
-  it("remembers open sections; Markets and Trading start open; the current page's section opens", () => {
-    expect(DEFAULT_OPEN).toEqual({ markets: true, strategies: false, trading: true, insights: false, account: false, more: false });
-    expect(parseSectionMemory('{"strategies":true,"markets":false,"bogus":true,"more":"yes"}')).toEqual({ strategies: true, markets: false });
-    expect(parseSectionMemory("not json")).toEqual({});
-    expect(parseSectionMemory("[1]")).toEqual({});
-    expect(isSectionOpen({}, "trading")).toBe(true);
-    expect(isSectionOpen({ trading: false }, "trading")).toBe(false);
-    const m = { insights: false };
-    expect(openForCurrent(m, "insights")).toEqual({ insights: true });
-    expect(openForCurrent(m, "markets")).toBe(m);                       // already open: unchanged
-    expect(openForCurrent(m, null)).toBe(m);
-  });
+  const user = { id: 1, email: "abhi.wasu@example.com", tenant_id: 1, role: "OWNER" };
+  const sidebar = (ctx: NavContext, current: Parameters<typeof SidebarV2View>[0]["current"]) => renderToStaticMarkup(
+    <MemoryRouter>
+      <SidebarV2View sections={visibleSections(ctx)} current={current} user={user} accountPath="/settings/account" />
+    </MemoryRouter>,
+  );
+  const hrefs = (html: string) => [...html.matchAll(/<a [^>]*href="([^"]*)"/g)].map((m) => m[1]);
 
-  it("renders the visible sections, items of open sections only, and marks the current page", () => {
-    const html = renderToStaticMarkup(
-      <MemoryRouter>
-        <SidebarV2View sections={visibleSections(trader)} current="positions" memory={{}} onToggle={noop}
-          user={{ id: 1, email: "abhi.wasu@example.com", tenant_id: 1, role: "OWNER" }} accountPath="/settings/account" />
-      </MemoryRouter>,
-    );
-    expect(html.match(/aria-expanded="true"/g)).toHaveLength(2);         // Markets, Trading
-    expect(html.match(/aria-expanded="false"/g)).toHaveLength(4);
-    expect(html).toContain('href="/charts"');
-    expect(html).not.toContain('href="/strategies"');                    // Strategies closed
+  it("UX3-9: one flat list in task order, Broker first - no section headings, nothing folds", () => {
+    const html = sidebar(trader, "positions");
+    expect(html).not.toContain("aria-expanded");
+    expect(hrefs(html)).toEqual([
+      "/", "/broker", "/", "/charts", "/option-chain", "/signals", "/deployments", "/positions", "/analytics", "/strategies",
+      "/news-events", "/settings", "/settings/account",
+    ]);                                                                   // logo, the entries, the account footer
     expect(html).toMatch(/aria-current="page"[^>]*href="\/positions"|href="\/positions"[^>]*aria-current="page"/);
     expect(html).toContain(">AW<");
     expect(html).toContain("Owner");
     expect(html).toContain(">Paper<");
     expect(html).not.toContain("PAPER MODE");
-    // P2b: Broker first, above the sections, before any section header.
-    expect(html.indexOf('href="/broker"')).toBeGreaterThan(-1);
-    expect(html.indexOf('href="/broker"')).toBeLessThan(html.indexOf("aria-expanded"));
     expect(html).not.toContain("data-broker-dot");                       // no status known: no dot
+    expect(html).not.toContain("data-nav-admin");
+  });
+
+  it("UX3-9: 13 entries with every feature on; the Admin console set apart for the platform operator", () => {
+    const all = { on: () => true, role: "SUPER_ADMIN" };
+    const html = sidebar(all, "dashboard");
+    const entries = hrefs(html).slice(1, -1);
+    expect(entries).toEqual([
+      "/broker", "/", "/charts", "/option-chain", "/markets", "/screener", "/signals", "/deployments", "/positions",
+      "/analytics", "/strategies", "/copilot", "/news-events", "/settings", "/admin",
+    ]);
+    expect(html.indexOf("data-nav-admin")).toBeLessThan(html.indexOf('href="/admin"'));
+  });
+
+  it("UX3-9: a merged page's tab and a Settings sub-page light up their entry", () => {
+    const current = (key: Parameters<typeof SidebarV2View>[0]["current"]) =>
+      /<a [^>]*aria-current="page"[^>]*href="([^"]*)"|<a [^>]*href="([^"]*)"[^>]*aria-current="page"/.exec(sidebar(trader, key))?.slice(1).find(Boolean);
+    expect(current("orders")).toBe("/positions");
+    expect(current("portfolio")).toBe("/positions");
+    expect(current("backtest")).toBe("/strategies");
+    expect(current("strategy-builder")).toBe("/strategies");
+    expect(current("coach")).toBe("/analytics");
+    expect(current("risk-management")).toBe("/settings");
+    expect(current("settings-ai")).toBe("/settings");
   });
 
   it("P2b: the Broker entry carries the status dot (red only for 'not working')", () => {
     const at = (dot: "connected" | "needs_login" | "not_working") => renderToStaticMarkup(
       <MemoryRouter>
-        <SidebarV2View sections={visibleSections(trader)} current="dashboard" memory={{}} onToggle={noop} dot={dot}
+        <SidebarV2View sections={visibleSections(trader)} current="dashboard" dot={dot}
           user={{ id: 1, email: "abhi.wasu@example.com", tenant_id: 1, role: "OWNER" }} accountPath="/settings/account" />
       </MemoryRouter>,
     );
@@ -218,16 +232,17 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
   });
 
   it("gates percent-encoded and undecodable addresses too (review M1)", () => {
-    for (const path of ["/option%2Dchain", "/p%6Frtfolio", "/%63harts", "/%E0%A4"]) {
+    for (const path of ["/option%2Dchain", "/positions/m%6Fney", "/strategies/t%65st", "/%63harts", "/%E0%A4"]) {
       expect(render(path), path).toContain('data-broker-gate="loading"');
     }
     // UI2-9a: My positions shows the broker states itself (OWN_BROKER_STATES), at its encoded address too.
     expect(render("/%70ositions")).not.toContain("data-broker-gate");
-    expect(render("/%70ositions")).toContain("My positions");             // the title follows the router's reading
+    expect(render("/%70ositions")).toContain("My trades");                // the title follows the router's reading
+    expect(render("/positions/%6Frders")).not.toContain("data-broker-gate");   // UX3-9: Orders is the trader's own record
   });
 
   it("UX1: a page whose flag is off says 'Coming soon' at its address - no flag name, no gate, no page", () => {
-    for (const path of ["/screener", "/journal", "/marketplace"]) {
+    for (const path of ["/screener", "/analytics/journal", "/marketplace"]) {
       const html = render(path, { ui_v2: true });
       expect(html, path).toContain('data-state="coming-soon"');
       expect(html, path).toContain("Coming soon");
@@ -238,11 +253,25 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
   });
 
   it("does not gate Settings, Orders, Journal, Account or Team", () => {
-    for (const path of ["/settings", "/orders", "/journal", "/journal/coach", "/settings/account", "/team", "/notifications"]) {
+    for (const path of ["/settings", "/positions/orders", "/analytics/journal", "/analytics/coach", "/strategies/build", "/strategies",
+      "/analytics", "/settings/account", "/team", "/notifications", "/risk-management"]) {
       const html = render(path);
       expect(html, path).not.toContain("data-broker-gate");
       expect(html, path).toContain("Loading page");
     }
+  });
+
+  it("UX3-9: a merged page shows its tabs, the current one marked, each at its own address", () => {
+    const html = render("/positions/orders");
+    expect(html).toContain('data-page-tabs="my-trades"');
+    expect(html).toMatch(/<nav aria-label="My trades"[^>]*>.*href="\/positions".*>Positions<.*href="\/positions\/orders".*>Orders<.*href="\/positions\/money".*>Money</s);
+    expect(html).toMatch(/aria-current="page"[^>]*data-page-tab="orders"/);
+    const strategies = render("/strategies/test", { ui_v2: true, idea_library: true });
+    expect(strategies).toMatch(/>Library<.*>Ideas<.*>Build<.*>Test</s);
+    expect(render("/strategies/test", { ui_v2: true })).not.toContain(">Ideas<");      // a tab whose feature is off is left out
+    expect(render("/analytics", { ui_v2: true })).toMatch(/data-page-tabs="performance".*>Results<.*>Coach</s);
+    expect(render("/analytics", { ui_v2: true })).not.toContain('data-page-tab="journal"');
+    expect(render("/signals")).not.toContain("data-page-tabs");
   });
 
   it("is the v2 shell: sidebar sections, bottom bar of five, search", () => {
@@ -251,6 +280,6 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
     expect(html).toContain('aria-label="Quick navigation"');
     expect(html).toContain("Search pages");
     expect(html).toContain("Skip to content");
-    expect(html).toMatch(/>Home<.*>Charts<.*>Signals<.*>Positions<.*>More</s);
+    expect(html).toMatch(/>Today<.*>Charts<.*>Signals<.*>My trades<.*>More</s);
   });
 });

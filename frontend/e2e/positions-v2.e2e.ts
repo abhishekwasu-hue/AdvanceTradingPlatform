@@ -92,7 +92,7 @@ test.describe("v2 positions 1440 desktop", () => {
 
   test("the title, the tiles and every open position with its levels, price and P&L", async ({ page }) => {
     await open(page, "light");
-    await expect(page.locator("[data-shell='v2'] header").first()).toContainText("My positions");
+    await expect(page.locator("[data-shell='v2'] header").first()).toContainText("My trades");      // UX3-9: My trades › Positions
     await expect(page.getByRole("heading", { level: 1, name: "My positions" })).toBeVisible();
     const tiles = page.locator("[data-block='summary']");
     await expect(tiles.locator("[data-tile='open']")).toContainText("3");

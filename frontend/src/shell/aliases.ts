@@ -10,8 +10,22 @@ import { settingsSectionAt } from "../settings/paths";
 export const V2_ALIASES: readonly { path: string; page: Page; old: string }[] = [
   { path: "/screener/custom", page: "scanner", old: "/scanner" },
   { path: "/option-chain/plan", page: "options-builder", old: "/options-builder" },
-  { path: "/journal/coach", page: "coach", old: "/coach" },
   { path: "/settings/account", page: "account", old: "/account" },
+  // UX3-9 (UX audit section 5): the merged pages' tabs - My trades, Strategies, Performance.
+  { path: "/positions/orders", page: "orders", old: "/orders" },
+  { path: "/positions/money", page: "portfolio", old: "/portfolio" },
+  { path: "/strategies/build", page: "strategy-builder", old: "/strategy-builder" },
+  { path: "/strategies/test", page: "backtest", old: "/backtest" },
+  { path: "/analytics/journal", page: "journal", old: "/journal" },
+  { path: "/analytics/coach", page: "coach", old: "/coach" },
+];
+
+/**
+ * Addresses an earlier v2 slice used and the v2 shell now forwards (UX3-9: Coach moved from Journal to Performance).
+ * With `ui_v2` off they still go back to today's address, so an old bookmark never ends on "This page does not exist".
+ */
+export const V2_RETIRED_ALIASES: readonly { path: string; now: string; old: string }[] = [
+  { path: "/journal/coach", now: "/analytics/coach", old: "/coach" },
 ];
 
 /** UI2-7: Settings → Setup, a v2-only page (the setup wizard). With the flag off it goes back to Settings. */
@@ -38,7 +52,7 @@ export function flagOffFallback(pathname: string): string | null {
   // Settings redesign B: a section page goes back to today's Settings page, at the part that holds it.
   const section = settingsSectionAt(clean);
   if (section) return section.old;
-  return V2_ALIASES.find((a) => a.path === clean)?.old ?? null;
+  return (V2_ALIASES.find((a) => a.path === clean) ?? V2_RETIRED_ALIASES.find((a) => a.path === clean))?.old ?? null;
 }
 
 /**

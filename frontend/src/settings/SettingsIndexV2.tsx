@@ -1,5 +1,5 @@
 import {
-  Bell, ChevronRight, LifeBuoy, ListTodo, Palette, Plug, Search, SlidersHorizontal, Sparkles, UserCircle2, Wrench, X, type LucideIcon,
+  Bell, ChevronRight, LifeBuoy, ListTodo, Palette, Plug, Search, Shield, SlidersHorizontal, Sparkles, UserCircle2, Users, Wrench, X, type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router";
@@ -33,7 +33,7 @@ import { useLiveHidden } from "./useLiveHidden";
  */
 
 const ICONS: Record<RowId, LucideIcon> = {
-  account: UserCircle2, broker: Plug, ai: Sparkles, alerts: Bell, defaults: SlidersHorizontal, appearance: Palette,
+  account: UserCircle2, team: Users, broker: Plug, ai: Sparkles, alerts: Bell, defaults: SlidersHorizontal, risk: Shield, appearance: Palette,
   help: LifeBuoy, setup: ListTodo, advanced: Wrench,
 };
 
@@ -109,7 +109,7 @@ function useChips(oneKey: boolean): Partial<Record<RowId, Chip | null>> {
     account: plan, broker: brokerChip(brokers), ai, alerts, defaults: DEFAULTS_CHIP, appearance: appearanceChip(appearance),
     help: tipsChip(tours.known, tours.marks.skip_all_at),
     setup: setup ? { text: setup.label, tone: "warn" } : view ? { text: "Done", tone: "ok" } : null,
-    advanced: null,
+    team: null, risk: null, advanced: null,
   };
 }
 

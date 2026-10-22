@@ -16,9 +16,9 @@ const inr = (v: number, currency = "INR") => (v > 0 ? `${currency === "INR" ? "�
 
 function Performance({ l }: { l: MarketplaceListing }) {
   const p = l.performance;
-  if (!p) return <div className="text-[11px] text-fg-muted">No documented performance attached.</div>;
+  if (!p) return <div className="text-xs text-fg-muted">No documented performance attached.</div>;
   return (
-    <div className="text-[11px] text-fg-muted space-y-0.5">
+    <div className="text-xs text-fg-muted space-y-0.5">
       <div className="flex flex-wrap gap-3">
         <span>trades <b>{p.total_trades ?? "-"}</b></span>
         <span>win rate <b>{pct(p.win_rate)}</b></span>
@@ -36,7 +36,7 @@ function Performance({ l }: { l: MarketplaceListing }) {
 
 function StatusBadge({ status }: { status: MarketplaceListing["status"] }) {
   const cls = status === "PUBLISHED" ? "border-up/40 text-up" : status === "PENDING_REVIEW" ? "border-warn/40 text-warn" : status === "REJECTED" ? "border-down/40 text-down" : "border-border text-fg-muted";
-  return <span className={`rounded-md border px-2 py-0.5 text-[11px] font-bold ${cls}`}>{status.replace("_", " ")}</span>;
+  return <span className={`rounded-md border px-2 py-0.5 text-xs font-bold ${cls}`}>{status.replace("_", " ")}</span>;
 }
 
 /** Phase K2: discover published strategies, subscribe (a frozen copy lands in your own custom
@@ -104,17 +104,17 @@ export default function MarketplacePage() {
             {listings.map((l) => (
               <div key={l.id} className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="font-bold text-sm flex items-center gap-1.5"><Store size={14} className="text-brand" /> {l.title} <span className="text-fg-muted text-[11px]">v{l.version_number}</span></div>
-                  <span className="text-[11px] text-fg-muted flex items-center gap-1"><Users size={11} /> {l.subscriber_count} · <b className="text-fg">{inr(l.price, l.currency)}</b>{l.price > 0 ? " one-time" : ""}</span>
+                  <div className="font-bold text-sm flex items-center gap-1.5"><Store size={14} className="text-brand" /> {l.title} <span className="text-fg-muted text-xs">v{l.version_number}</span></div>
+                  <span className="text-xs text-fg-muted flex items-center gap-1"><Users size={11} /> {l.subscriber_count} · <b className="text-fg">{inr(l.price, l.currency)}</b>{l.price > 0 ? " one-time" : ""}</span>
                 </div>
                 <div className="text-xs text-fg-muted whitespace-pre-wrap">{l.description}</div>
-                {l.methodology && <div className="text-[11px] text-fg-muted whitespace-pre-wrap"><b>How it trades:</b> {l.methodology}</div>}
+                {l.methodology && <div className="text-xs text-fg-muted whitespace-pre-wrap"><b>How it trades:</b> {l.methodology}</div>}
                 <Performance l={l} />
                 <div className="flex items-center gap-2">
                   {subscribed(l.id) ? (
                     <>
-                      <span className="text-[11px] text-up flex items-center gap-1"><CheckCircle2 size={12} /> in your strategies as {subscribed(l.id)?.strategy_id}</span>
-                      <button disabled={busy} onClick={() => run("Unsubscribed. Your copy stays in your strategies.", () => api.marketplaceUnsubscribe(l.id))} className="text-[11px] text-down hover:underline">Unsubscribe</button>
+                      <span className="text-xs text-up flex items-center gap-1"><CheckCircle2 size={12} /> in your strategies as {subscribed(l.id)?.strategy_id}</span>
+                      <button disabled={busy} onClick={() => run("Unsubscribed. Your copy stays in your strategies.", () => api.marketplaceUnsubscribe(l.id))} className="text-xs text-down hover:underline">Unsubscribe</button>
                     </>
                   ) : (
                     <button disabled={busy} onClick={() => run(l.price > 0 ? "Purchase started." : "Subscribed - a copy is now under your custom strategies. Backtest and paper-trade it before going LIVE.", async () => {
@@ -144,7 +144,7 @@ export default function MarketplacePage() {
               <tr key={c.id} className="border-t border-border/60">
                 <td className="py-1 font-bold">{c.listing_title ?? `listing #${c.listing_id}`}</td>
                 <td className="py-1">{inr(c.amount, c.currency)}</td>
-                <td className="py-1"><span className={`rounded-md border px-2 py-0.5 text-[11px] font-bold ${c.status === "PAID" ? "border-up/40 text-up" : c.status === "OPEN" ? "border-warn/40 text-warn" : "border-border text-fg-muted"}`}>{c.status}</span></td>
+                <td className="py-1"><span className={`rounded-md border px-2 py-0.5 text-xs font-bold ${c.status === "PAID" ? "border-up/40 text-up" : c.status === "OPEN" ? "border-warn/40 text-warn" : "border-border text-fg-muted"}`}>{c.status}</span></td>
                 <td className="py-1 text-fg-muted">{c.status === "OPEN" ? (c.checkout_url ? <a className="text-brand underline" href={c.checkout_url} target="_blank" rel="noreferrer">pay now</a> : `awaiting operator confirmation (charge #${c.id})`) : c.payment_ref ? `ref ${c.payment_ref}` : ""}</td>
                 <td className="py-1 text-fg-muted text-right">{c.created_at ? new Date(c.created_at).toLocaleDateString() : ""}</td>
               </tr>
@@ -208,7 +208,7 @@ export default function MarketplacePage() {
         <Card title="Creator earnings">
           <div className="grid sm:grid-cols-5 gap-3 text-xs mb-3">
             {([["Sales", String(earnings.sales)], ["Gross", inr(earnings.gross)], [`Platform fee`, inr(earnings.platform_fees)], ["Available", inr(earnings.available)], ["Paid out", inr(earnings.paid_out)]] as const).map(([k, v]) => (
-              <div key={k} className="rounded border border-border p-2"><div className="text-[10px] uppercase tracking-wide text-fg-muted">{k}</div><div className="font-bold text-fg">{v}</div></div>
+              <div key={k} className="rounded border border-border p-2"><div className="text-xs uppercase tracking-wide text-fg-muted">{k}</div><div className="font-bold text-fg">{v}</div></div>
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -225,7 +225,7 @@ export default function MarketplacePage() {
             </tbody></table>
           )}
           {earnings.sales_rows.length > 0 && (
-            <table className="w-full text-xs mt-3"><thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1">Sale</th><th className="py-1">Gross</th><th className="py-1">Fee</th><th className="py-1">Your share</th><th className="py-1">Payout</th></tr></thead><tbody>
+            <table className="w-full text-xs mt-3"><thead className="text-fg-muted uppercase text-xs"><tr className="text-left"><th className="py-1">Sale</th><th className="py-1">Gross</th><th className="py-1">Fee</th><th className="py-1">Your share</th><th className="py-1">Payout</th></tr></thead><tbody>
               {earnings.sales_rows.map((c) => (
                 <tr key={c.id} className="border-t border-border/60"><td className="py-1">{c.listing_title} · buyer org #{c.buyer_tenant_id} · {c.paid_at ? new Date(c.paid_at).toLocaleDateString() : ""}</td><td className="py-1">{inr(c.amount, c.currency)}</td><td className="py-1 text-fg-muted">{c.platform_fee_pct}% = {inr(c.platform_fee, c.currency)}</td><td className="py-1 text-up">{inr(c.creator_net, c.currency)}</td><td className="py-1 text-fg-muted">{c.payout_id ? `#${c.payout_id}` : "available"}</td></tr>
               ))}
@@ -238,19 +238,19 @@ export default function MarketplacePage() {
         <Card title="Marketplace revenue and terms (platform admin)">
           <div className="grid sm:grid-cols-6 gap-3 text-xs mb-3">
             {([["Sales", String(revenue.sales)], ["Gross", inr(revenue.gross)], ["Platform fees", inr(revenue.platform_fees)], ["Creators' share", inr(revenue.creator_net)], ["Paid out", inr(revenue.paid_out)], ["Open charges", String(revenue.open_charges)]] as const).map(([k, v]) => (
-              <div key={k} className="rounded border border-border p-2"><div className="text-[10px] uppercase tracking-wide text-fg-muted">{k}</div><div className="font-bold text-fg">{v}</div></div>
+              <div key={k} className="rounded border border-border p-2"><div className="text-xs uppercase tracking-wide text-fg-muted">{k}</div><div className="font-bold text-fg">{v}</div></div>
             ))}
           </div>
           <div className="grid sm:grid-cols-4 gap-3 text-xs items-end">
             {Object.keys(revenue.terms).map((key) => (
-              <div key={key}><label className="block text-[10px] text-fg-muted mb-0.5 font-mono">{key}</label>
+              <div key={key}><label className="block text-xs text-fg-muted mb-0.5 font-mono">{key}</label>
                 <input type="number" min={0} step="0.5" className={input} value={termsDraft[key] ?? ""} onChange={(e) => setTermsDraft({ ...termsDraft, [key]: e.target.value })} /></div>
             ))}
             <button disabled={busy} onClick={() => run("Marketplace terms saved. Published listings keep the fee they were published under.", () => api.adminSetMarketplaceTerms(Object.fromEntries(Object.entries(termsDraft).map(([k, v]) => [k, Number(v)]))))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save terms</button>
           </div>
           {openCharges.length > 0 && (
             <div className="mt-3">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-1">Open charges (manual payments to confirm)</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-1">Open charges (manual payments to confirm)</div>
               <table className="w-full text-xs"><tbody>
                 {openCharges.map((c) => (
                   <tr key={c.id} className="border-t border-border/60"><td className="py-1">#{c.id} {c.listing_title} · buyer org #{c.buyer_tenant_id}</td><td className="py-1">{inr(c.amount, c.currency)} via {c.provider}</td>
@@ -264,7 +264,7 @@ export default function MarketplacePage() {
           )}
           {payoutQueue.length > 0 && (
             <div className="mt-3">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-1">Payout requests</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-1">Payout requests</div>
               <table className="w-full text-xs"><tbody>
                 {payoutQueue.map((p) => (
                   <tr key={p.id} className="border-t border-border/60"><td className="py-1">#{p.id} creator org #{p.tenant_id}</td><td className="py-1">{inr(p.amount, p.currency)} to {shownDestination[p.id] ? <span className="select-all font-mono text-fg">{shownDestination[p.id]}</span> : p.destination_hint}</td>
@@ -284,7 +284,7 @@ export default function MarketplacePage() {
         <Card title="Review queue (platform admin)">
           {pending.length === 0 ? <div className="text-xs text-fg-muted">No listings waiting for review.</div> : pending.map((l) => (
             <div key={l.id} className="rounded-lg border border-warn/30 p-3 mb-2 space-y-1">
-              <div className="font-bold text-sm">{l.title} <span className="text-fg-muted text-[11px]">v{l.version_number} · tenant listing #{l.id}</span></div>
+              <div className="font-bold text-sm">{l.title} <span className="text-fg-muted text-xs">v{l.version_number} · tenant listing #{l.id}</span></div>
               <div className="text-xs text-fg-muted">{l.description}</div>
               <Performance l={l} />
               <div className="flex gap-2 mt-1">

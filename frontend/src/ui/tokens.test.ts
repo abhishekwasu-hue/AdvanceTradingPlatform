@@ -84,7 +84,8 @@ describe("UI2-0 v2 tokens", () => {
     expect(css).toMatch(/--shadow-raised:\s*0 8px 24px rgba\(0, 0, 0, 0\.5\)/);
     expect(css).toMatch(/--shadow-raised:\s*0 8px 24px rgba\(15, 23, 42, 0\.12\)/);
     for (const [n, px] of [[1, 4], [2, 8], [3, 12], [4, 16], [5, 20], [6, 24], [8, 32], [10, 40], [12, 48]]) {
-      expect(css).toMatch(new RegExp(`--space-${n}:\\s*${px}px;`));
+      // item 1: in rem (the px at the Normal text size / 16), so spacing grows with the Text size setting
+      expect(css).toMatch(new RegExp(`--space-${n}:\\s*${px / 16}rem;`));
     }
     expect(css).toMatch(/--dur-fast:\s*120ms/);
     expect(css).toMatch(/--dur-base:\s*200ms/);

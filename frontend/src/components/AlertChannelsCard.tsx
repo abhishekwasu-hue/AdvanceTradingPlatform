@@ -158,7 +158,7 @@ export default function AlertChannelsCard() {
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
           <div className="flex items-center gap-2 text-sm font-bold text-fg"><Send size={14} /> Telegram</div>
-          <div className="text-[11px]">{status("TELEGRAM")}</div>
+          <div className="text-xs">{status("TELEGRAM")}</div>
           <input className={input} type="password" autoComplete="off" placeholder="Bot token from @BotFather (blank = keep stored)" value={tg.bot_token} onChange={(e) => setTg({ ...tg, bot_token: e.target.value })} />
           <input className={input} placeholder="Chat id (your user id or a group id)" value={tg.chat_id} onChange={(e) => setTg({ ...tg, chat_id: e.target.value })} />
           <div className="flex items-center gap-3 text-xs">
@@ -180,15 +180,15 @@ export default function AlertChannelsCard() {
                 <span className="font-semibold text-fg">Two-way Telegram (commands + PAPER approvals)</span>
                 <span className={inbound.inbound_enabled ? "text-up" : "text-fg-muted"}>{inbound.inbound_enabled ? "on" : "off"}</span>
               </div>
-              {inbound.flag_enabled === false && <div className="text-[11px] text-warn">Feature flag <code>telegram_inbound</code> is off for this organisation - ask the platform admin to enable it.</div>}
-              <p className="text-[11px] text-fg-muted">
+              {inbound.flag_enabled === false && <div className="text-xs text-warn">Feature flag <code>telegram_inbound</code> is off for this organisation - ask the platform admin to enable it.</div>}
+              <p className="text-xs text-fg-muted">
                 Chat commands: /brief /positions /risk /news /levels /thesis /why, or ask a question. Approve/Reject buttons appear on
                 monitor proposals for <b>PAPER</b> deployments only ({inbound.telegram_actions.join(", ")}); exits and every LIVE decision stay on the web with your authenticator.
               </p>
               <input className={input} placeholder="Extra allowed chat ids (comma separated, up to 10); the alert chat id is always allowed" value={inboundChats} onChange={(e) => setInboundChats(e.target.value)} />
               <textarea className={`${input} h-16 font-mono`} placeholder={"Approvers, one per line: <Telegram user id> <team member e-mail>. Empty = only a private chat with the owner can decide; in a group every other member is refused."}
                 value={inboundApprovers} onChange={(e) => setInboundApprovers(e.target.value)} />
-              {(inbound.approvers ?? []).length > 0 && <div className="text-[11px] text-fg-muted">Approvers: {inbound.approvers!.map((a) => `${a.telegram_user_id} → ${a.email}`).join(" · ")}</div>}
+              {(inbound.approvers ?? []).length > 0 && <div className="text-xs text-fg-muted">Approvers: {inbound.approvers!.map((a) => `${a.telegram_user_id} → ${a.email}`).join(" · ")}</div>}
               <div className="flex flex-wrap items-center gap-2">
                 <button disabled={busy || inbound.flag_enabled === false} onClick={() => run(inbound.inbound_enabled ? "Two-way Telegram switched off." : "Two-way Telegram switched on - now register the webhook.",
                   () => api.telegramInboundConfigure({ enabled: !inbound.inbound_enabled, allowed_chat_ids: inboundChats.split(",").map((c) => c.trim()).filter(Boolean) }))}
@@ -201,14 +201,14 @@ export default function AlertChannelsCard() {
                   if (!r.ok) throw new Error(r.description ?? "Telegram refused the webhook");
                 })} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 text-xs disabled:opacity-50">Register webhook</button>
               </div>
-              <div className="text-[11px] text-fg-muted break-all">Webhook: {inbound.webhook_url} (HTTPS required; the secret header is set automatically)</div>
+              <div className="text-xs text-fg-muted break-all">Webhook: {inbound.webhook_url} (HTTPS required; the secret header is set automatically)</div>
             </div>
           )}
         </div>
 
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
           <div className="flex items-center gap-2 text-sm font-bold text-fg"><Mail size={14} /> Email (SMTP)</div>
-          <div className="text-[11px]">{status("EMAIL")}</div>
+          <div className="text-xs">{status("EMAIL")}</div>
           <div className="grid grid-cols-3 gap-2">
             <input className={`${input} col-span-2`} placeholder="SMTP host" value={em.smtp_host} onChange={(e) => setEm({ ...em, smtp_host: e.target.value })} />
             <input className={input} placeholder="Port" value={em.smtp_port} onChange={(e) => setEm({ ...em, smtp_port: e.target.value })} />
@@ -250,8 +250,8 @@ export default function AlertChannelsCard() {
 
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2 lg:col-span-2">
           <div className="flex items-center gap-2 text-sm font-bold text-fg"><Webhook size={14} /> Webhook (signed JSON POST)</div>
-          <div className="text-[11px]">{status("WEBHOOK")}</div>
-          <p className="text-[11px] text-fg-muted">
+          <div className="text-xs">{status("WEBHOOK")}</div>
+          <p className="text-xs text-fg-muted">
             Every event is POSTed as JSON with <code>X-ATP-Signature: sha256=HMAC-SHA256(secret, timestamp + "." + body)</code> and
             <code> X-ATP-Timestamp</code>, so your receiver (a bot, n8n, Zapier, a Slack relay) can verify it came from here. HTTPS only.
           </p>
@@ -282,17 +282,17 @@ export default function AlertChannelsCard() {
 
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
           <div className="flex items-center gap-2 text-sm font-bold text-fg"><MessageSquare size={14} /> SMS (any HTTP gateway)</div>
-          <div className="text-[11px]">{status("SMS")}</div>
+          <div className="text-xs">{status("SMS")}</div>
           <div className="flex items-center gap-2 text-xs">
             <span className="text-fg-muted">Preset</span>
             <select className="rounded bg-surface-2 border border-border px-1 py-0.5" value={sms.preset} onChange={(e) => applyPreset(e.target.value)}>
               <option value="msg91">MSG91</option><option value="twilio">Twilio</option><option value="custom">Custom</option>
             </select>
-            <span className="text-[11px] text-fg-muted">{SMS_PRESETS[sms.preset]?.hint}</span>
+            <span className="text-xs text-fg-muted">{SMS_PRESETS[sms.preset]?.hint}</span>
           </div>
           <input className={input} placeholder="Gateway URL (https)" value={sms.url} onChange={(e) => setSms({ ...sms, url: e.target.value })} />
-          <textarea className={`${input} font-mono text-[11px]`} rows={2} placeholder={"Headers, one per line: Name: value (blank = keep stored)"} value={sms.headers} onChange={(e) => setSms({ ...sms, headers: e.target.value })} />
-          <textarea className={`${input} font-mono text-[11px]`} rows={2} placeholder="Body template with {to} and {text}" value={sms.body_template} onChange={(e) => setSms({ ...sms, body_template: e.target.value })} />
+          <textarea className={`${input} font-mono text-xs`} rows={2} placeholder={"Headers, one per line: Name: value (blank = keep stored)"} value={sms.headers} onChange={(e) => setSms({ ...sms, headers: e.target.value })} />
+          <textarea className={`${input} font-mono text-xs`} rows={2} placeholder="Body template with {to} and {text}" value={sms.body_template} onChange={(e) => setSms({ ...sms, body_template: e.target.value })} />
           <div className="grid grid-cols-3 gap-2">
             <input className={`${input} col-span-2`} placeholder="Recipients, comma separated (+91...)" value={sms.to_numbers} onChange={(e) => setSms({ ...sms, to_numbers: e.target.value })} />
             <input className={input} placeholder="Content type" value={sms.content_type} onChange={(e) => setSms({ ...sms, content_type: e.target.value })} />
@@ -302,7 +302,7 @@ export default function AlertChannelsCard() {
               <input className={input} placeholder="DLT entity id" value={sms.dlt_entity_id} onChange={(e) => setSms({ ...sms, dlt_entity_id: e.target.value })} />
               <input className={input} placeholder="DLT template id" value={sms.dlt_template_id} onChange={(e) => setSms({ ...sms, dlt_template_id: e.target.value })} />
               <input className={input} placeholder="Sender header" value={sms.sender_id} onChange={(e) => setSms({ ...sms, sender_id: e.target.value })} />
-              <p className="col-span-3 text-[11px] text-fg-muted">India: messages need your DLT registration; use {"{dlt_template_id} {dlt_entity_id} {sender_id}"} in the body template.</p>
+              <p className="col-span-3 text-xs text-fg-muted">India: messages need your DLT registration; use {"{dlt_template_id} {dlt_entity_id} {sender_id}"} in the body template.</p>
             </div>
           )}
           <div className="flex items-center gap-3 text-xs">
@@ -337,7 +337,7 @@ export default function AlertChannelsCard() {
 
       {deliveries.length > 0 && (
         <div className="mt-4">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-1.5"><BellRing size={12} /> Recent deliveries</div>
+          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-fg-muted mb-1.5"><BellRing size={12} /> Recent deliveries</div>
           <table className="w-full text-xs">
             <tbody>
               {deliveries.slice(0, 10).map((d) => (

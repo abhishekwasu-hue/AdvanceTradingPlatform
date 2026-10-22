@@ -11,6 +11,7 @@
   `oc_analyses` (OC3) holds the user's saved Option chain analyses ("My analyses"): a name and a validated analysis spec
   each (app/option_chain/ask_spec.py), at most MAX_SAVED_ANALYSES, sized so the most a user can save stays inside
   MAX_BODY_BYTES (no table, no migration).
+  `appearance` holds the text size (Normal / Large / Extra large) applied to every page.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -133,7 +134,14 @@ class OcAnalysesPrefs(_Prefs):
         return self
 
 
-NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs}
+class AppearancePrefs(_Prefs):
+    """`appearance` (handover item 1): the text size every page uses, so phone and desktop agree. One root scale on the
+    page (frontend `src/theme.ts`): normal = 100 %, large = 112.5 %, xlarge = 125 %."""
+    text_size: Literal["normal", "large", "xlarge"] = "normal"
+
+
+NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
+                                       "appearance": AppearancePrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -266,4 +274,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

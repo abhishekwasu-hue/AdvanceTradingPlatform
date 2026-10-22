@@ -67,7 +67,7 @@ export default function SupportDialog({ open, onOpenChange, onFeedback }: {
               {t.reply && (
                 <div className="max-w-[95%] rounded-lg bg-surface-2 px-3 py-2 text-sm text-fg">
                   <p className="whitespace-pre-wrap leading-relaxed">{t.reply.answer}</p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-muted">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
                     <span>{sourceLabel(t.reply)}</span>
                     {safeLinks(t.reply.links).map((l) => (
                       <Link key={l.url} to={l.url} onClick={() => onOpenChange(false)}
@@ -94,7 +94,7 @@ export default function SupportDialog({ open, onOpenChange, onFeedback }: {
             <Send size={13} aria-hidden="true" />
           </Button>
         </form>
-        <p className="text-[11px] text-fg-muted">For how-to questions only - never advice on what to buy or sell.</p>
+        <p className="text-xs text-fg-muted">For how-to questions only - never advice on what to buy or sell.</p>
       </div>
     </Dialog>
   );

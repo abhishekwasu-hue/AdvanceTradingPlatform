@@ -49,7 +49,7 @@ export default function WebPushSection({ channel, deliveries, busy, run, test }:
   return (
     <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2" data-testid="push-section">
       <div className="flex items-center gap-2 text-sm font-bold text-fg"><Smartphone size={14} /> Push notifications</div>
-      <p className="text-[11px] text-fg-muted">
+      <p className="text-xs text-fg-muted">
         Alerts as system notifications on this phone or computer, even with the app closed. Messages are encrypted to this
         device; the push service in between cannot read them. Tapping one opens the exact screen - the proposal, the position
         or the alert. Add each device you use.
@@ -99,7 +99,7 @@ export default function WebPushSection({ channel, deliveries, busy, run, test }:
       )}
 
       <fieldset className="space-y-1" disabled={busy || !channel}>
-        <legend className="text-[11px] font-semibold text-fg-muted">Send these to my devices{channel ? "" : " (enable a device first)"}</legend>
+        <legend className="text-xs font-semibold text-fg-muted">Send these to my devices{channel ? "" : " (enable a device first)"}</legend>
         {PUSH_CATEGORIES.map((c) => (
           <label key={c.id} className="flex items-center gap-2 text-xs text-fg">
             <input type="checkbox" checked={chosen.has(c.id)} onChange={() => toggleCategory(c.id)} /> {c.label}
@@ -108,7 +108,7 @@ export default function WebPushSection({ channel, deliveries, busy, run, test }:
       </fieldset>
 
       {pushDeliveries.length > 0 && (
-        <div className="text-[11px] text-fg-muted" data-testid="push-log">
+        <div className="text-xs text-fg-muted" data-testid="push-log">
           <div className="font-semibold">Last push deliveries</div>
           {pushDeliveries.map((d) => (
             <div key={d.id} className="flex justify-between gap-2">

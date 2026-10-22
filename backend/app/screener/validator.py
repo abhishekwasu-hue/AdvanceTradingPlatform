@@ -234,6 +234,28 @@ class _Checker:
         except (TypeError, ValueError):
             return int(spec.min_sessions)
 
+    def argument(self, arg_node: Any, sig: Any, owner: Any, own_tf: str) -> Tuple[Optional[int], Optional[str]]:
+        """One argument of a call against its signature: (its window when it is one, its unit)."""
+        if sig.type == "window":
+            w = self.window(arg_node, owner)
+            if sig.bounds:
+                self.bounded(arg_node, sig, owner)
+            return w, None
+        t, u = self.check(arg_node, own_tf)
+        if sig.type != t and not (sig.type == STR and t == STR):
+            self.err(f"{owner.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node, "argument_type",
+                     function=owner.name, arg=sig.name)
+        elif sig.choices:
+            self.choice(arg_node, sig, owner)
+        elif sig.pattern:
+            self.form(arg_node, sig, owner)
+        elif sig.literal_only or sig.bounds:
+            if sig.literal_only:
+                self.literal(arg_node, sig, owner)
+            if sig.bounds:
+                self.bounded(arg_node, sig, owner)
+        return None, u
+
     def check(self, node: Any, tf: Optional[str] = None) -> T:  # noqa: C901 - one switch over the node kinds
         tf = tf or self.base_tf
         if isinstance(node, n.Num):
@@ -389,36 +411,25 @@ class _Checker:
                      "timeframe_unsupported", function=spec.name)
         sigs = [spec.args[0]] * len(node.args) if spec.varargs else list(spec.args[:len(node.args)])
         for arg_node, sig in zip(node.args, sigs):
-            if sig.type == "window":
-                w = self.window(arg_node, node)
+            w, u = self.argument(arg_node, sig, node, own_tf)
+            units.append(u)
+            if w is not None:
                 windows.append(w)
                 window = max(window, w)
-                units.append(None)
-                if sig.bounds:
-                    self.bounded(arg_node, sig, node)
-                continue
-            t, u = self.check(arg_node, own_tf)
-            units.append(u)
-            if sig.type != t and not (sig.type == STR and t == STR):
-                self.err(f"{node.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node, "argument_type",
-                         function=spec.name, arg=sig.name)
-            elif sig.choices:
-                self.choice(arg_node, sig, node)
-            elif sig.pattern:
-                self.form(arg_node, sig, node)
-            elif sig.literal_only or sig.bounds:
-                if sig.literal_only:
-                    self.literal(arg_node, sig, node)
-                if sig.bounds:
-                    self.bounded(arg_node, sig, node)
+        # strategy templates R7: a named argument gets the same checks as a positional one (type, choices, bounds,
+        # literal-only, window)
+        positional = {a.name for a in spec.args[:len(node.args)]} if not spec.varargs else set()
         for key, arg_node in node.kwargs.items():
             kw_sig = known_kw.get(key)
             if kw_sig is None:
                 continue
-            t, _ = self.check(arg_node, own_tf)
-            if t != kw_sig.type:
-                self.err(f"{node.name}: argument {key!r} must be a {kw_sig.type}", arg_node, "argument_type",
-                         function=spec.name, arg=kw_sig.name)
+            if key in positional:
+                self.err(f"{node.name}: argument {key!r} given twice", arg_node, "argument_twice", function=spec.name, arg=key)
+                continue
+            w, _ = self.argument(arg_node, kw_sig, node, own_tf)
+            if w is not None:
+                windows.append(w)
+                window = max(window, w)
         for i in spec.price_args:
             if i < len(units) and units[i] not in ("price", ANY_UNIT) and self.strict_units:
                 self.err(f"{node.name}: {spec.args[i].name} must be a price, got {units[i] or 'no unit'}", node.args[i],

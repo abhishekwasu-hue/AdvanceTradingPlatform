@@ -9,9 +9,10 @@ Binding rules (owner order section 0 R1, section 1):
   (`validate_study`: arity, argument types, choices, bounds, literal-only settings, units, timeframes, look-ahead);
 * a function in `LAST_BAR_ONLY` is refused by name - read as a series it repeats the last answer backwards
   (look-ahead) and it takes no @timeframe; so is a cross-sectional rank;
-* a `$name` must be a declared setting; settings that are not ScreenQL values (yes / no switches, timeframes) never
-  reach an expression - a timeframe setting reaches one only as `@{name}` (family G, WB3), replaced by its value
-  (`@1h`) before parsing and then validated like a written timeframe;
+* a `$name` must be a declared setting; a timeframe setting is not a ScreenQL value and never reaches an expression as
+  `$name` - it reaches one only as `@{name}` (family G, WB3), replaced by its value (`@1h`) before parsing and then
+  validated like a written timeframe. A yes / no setting may be read where the registry takes a yes / no argument
+  (step 3, R7: RetestEntry's `reversal` - "wait for a reversal at the level"); the validator checks its type there;
 * a part with `variants` compiles only the expression of the chosen enum value (family G, WB3).
 """
 from __future__ import annotations
@@ -209,7 +210,7 @@ def compile_part(text: str, *, what: str, want: str, template: Template, setting
     for name in sorted(names):
         if name not in declared:
             problems.append(f"{what}: ${name} is not a setting of this template")
-        elif declared[name].type in ("bool", "timeframe"):
+        elif declared[name].type == "timeframe":
             problems.append(f"{what}: ${name} is a {declared[name].type} setting and cannot be read inside an expression")
     if problems:
         raise TemplateError(problems)

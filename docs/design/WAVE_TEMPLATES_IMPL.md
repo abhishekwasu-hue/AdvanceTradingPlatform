@@ -64,3 +64,33 @@ RsiDivergence `kind` (with the G templates that read them); the G parity harness
 parameters; the params hash already covers them).
 
 Owner questions: WAVE-17..WAVE-20 (step 2), WAVE-21..WAVE-26 (this step) in `docs/OPEN_QUESTIONS.md`.
+
+## The G parity harness and the templates G1, G3, G8 (the review's build steps 6 + 7, first part)
+
+No migration. The templates are JSON in the repository (`backend/app/strategy_templates/templates/G1.json`, `G3.json`,
+`G8.json`). They are listed and can be adopted (as a PAPER strategy pre-fill, nothing starts by itself) only while BOTH
+`strategy_templates` and `screener_waves` are on for the organisation; a G strategy id runs only with the flags of the
+functions it reads (`screener_waves`, `screener_breakouts`, and `screener_breakouts_bk4` for the retest style).
+G4-G7, G2, G9-G11 and G12 are not built yet.
+
+| Item | What | Where | Status |
+|---|---|---|---|
+| Step 6 | The G parity harness on the TPL-1 harness: the wave / higher timeframe frames built from the SAME trailing window W (`context_frames`, the runtime's resample); a frame with other history is refused (`check_frames`: a count reads its swings from its first bar, WB12); scan with the frames handed in = scan that resamples = backtest = options backtest = worker; `wave_history_ok` (the window holds the wave degree's history) | `app/strategy_templates/wave_parity.py` | done |
+| G1 | Wave three after wave two. Window: wave two of an impulse in the trade's direction, or wave three before it passed the end of wave one (`IMP_2`, or `IMP_3` with its running end not beyond wave one's end), the count not unclear (WAVE-5), the Fibonacci zone on wave two's depth when on; arm level the start of wave one (wick). Triggers: touch of the area / reversal candle at the running end of wave two at the area (both only while wave two runs), the smaller structure's CHoCH on the signal chart, the close beyond the channel of wave two by k ATR, its retest (R7). Invalidation: the start of wave one (`WaveInvalidation`, default) or the last smaller swing | `templates/G1.json` | done |
+| G3 | Wave C after wave B. Window: wave B (not a double three's X - that is G11), or wave C before it passed the end of wave A; wave A changed the swing structure on the wave timeframe (the Dow trend at the wave degree no longer points against wave C; a setting allows any A, WAVE-31); counter-trend allowed by default (WAVE-2). Triggers as G1 on the channel of wave B. Invalidation: the start of wave A, or the end of wave B if B went past it (`Least` / `Greatest` of the origin, the running end and the last wave-degree swing: exact in wave B and wave C, also for a flat B with no hard level) or the last smaller swing | `templates/G3.json` | done |
+| G8 | Correction complete, trend resumes. "May be complete": wave C of a zigzag / flat / expanded flat / double three whose running end reached the end of wave A, or a triangle's wave E, against the larger direction; the window holds `hold_bars` signal bars after it was last seen (the count is recomputed only on a confirmed swing, so the confirmation of C's end changes the state). Triggers: touch / candle while the last wave runs, CHoCH on the signal chart, the close beyond the channel of wave C (or E), its retest; never on an unclear count. Invalidation: the extreme of the last wave (`Least` / `Greatest` of the running end and the last wave-degree swing; for a contracting triangle the end of its wave C) or the last smaller swing | `templates/G8.json` | done |
+| Common | Every number a setting with bounds and the review's defaults (wave / higher timeframe 1 hour / Daily, wave size 1, smaller swing 0, trend relation per WAVE-2, area swing zones per WAVE-3, clarity "not unclear" per WAVE-5, first opportunity per WAVE-12, Fibonacci zone off, no exit signal per WAVE-11); a choice reaches an expression only as a compared word (`$area_source == "none" OR ...`), so no function is switched by a hidden number; the only number nodes are the one-bar offset of "a new smaller swing" and the zero of "seen at least once" (a test) | the three JSON files, `tests/test_wave4_templates.py` | done |
+| WB9 | Exit signals per template: none (default), the wave structure's CHoCH against the idea, and (G1 / G3) the count leaving the traded waves; inert until R5 (the form says it is not acted on yet); never true on the signal bar | the three JSON files | done |
+| WB7 | One sentence per template in structure words ("The wave two pullback on the 1-hour chart may be over; an upward wave three may be starting; the count is void beyond the start of wave one."): the text cannot vary by trigger style (tokens switch on yes / no settings only), so it says what holds for every style | `strategy_templates/language.py` | done |
+| ids | Family G choices are written as their position in the strategy id (`ids.COMPACT_FAMILIES`), so some twenty settings stay within the 80 characters; every other family's id is unchanged (a test) | `strategy_templates/ids.py` | done |
+| Flags | A family listed only with its own flag (`routes.FAMILY_FLAGS`: G -> `screener_waves`): hidden and 404 on adopt while off | `strategy_templates/routes.py` | done |
+
+Not built here (owner questions WAVE-27..WAVE-37): market zones as the area and the area's far side as an invalidation
+(no zone-edge series yet), the four wave ratio settings as template parameters (the ScreenQL wave functions do not take
+them yet), the RSI divergence and volume filters (RsiDivergence `kind` and WaveVolumeLower are not built), the
+projection target / exit (section 5: a migration and the owner's approval), the evidence lines (clarity, the alternate)
+in the signal text, a touch-only retest. Tests: `tests/test_wave4_templates.py` - must-fire per trigger style on pinned
+synthetic wave paths (G3's retest checked as its expression: the fixture's channel of wave B is too steep for a retest
+in the window), must-not (unclear count, disagreeing alternate, the higher trend, wave A's structure, the Fibonacci zone),
+mirror, truncation over many t (fixtures and random-walk bars), parity (fixtures; the 1-hour wave chart with the
+options backtest), property tests on random valid settings, the language guard, the flags, the id length.

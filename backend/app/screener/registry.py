@@ -148,13 +148,26 @@ _BK4 = (BREAKOUT_BK4_FLAG,)
 # swing break reads the D1 swings (250 bars, SWING_DEGREE_MIN_BARS); a gap reads the previous session (intraday: whole sessions)
 LINE_MIN_BARS = 125
 RETEST_MIN_BARS = 250
-RETEST_DOC = ("B9: after a range / swing / Donchian / trendline breakout, price left the level and came back within `bars` bars to"
+RETEST_DOC = ("B9: after a range / swing / Donchian / trendline / channel breakout, price left the level and came back within `bars` bars to"
               " hold it - a logical reversal at the level (reversal) or a touch - closing at or beyond it; once per breakout")
 RETEST_WAVE_DOC = ("; wave_line (flag screener_waves): after the first close beyond the wave line `line` of the degree-`degree` count"
                    " by k ATR, the retest of that broken line (its value at the retest bar); wave_end: the same after a close beyond"
                    " the end of wave `wave`")
 RETEST_WAVE_OF: Tuple[str, ...] = ("wave_line", "wave_end")
-RETEST_OF_CHOICES: Tuple[str, ...] = ("range", "swing", "donchian", "trendline") + RETEST_WAVE_OF
+RETEST_OF_CHOICES: Tuple[str, ...] = ("range", "swing", "donchian", "trendline", "channel") + RETEST_WAVE_OF
+# Strategy templates R7 (owner order section 0): RetestEntry forwards the base breakout's own settings, so a breakout +
+# retest template (family C) runs on the user's settings of the matching breakout template; `channel` follows the B5
+# channel breakout and reads the broken edge projected to each bar. Left out, each takes the breakout parameter's default:
+# the older calls run exactly as before.
+RETEST_FORWARD_DOC = ("; channel: the far edge of a rising (up) / falling (down) channel, read along the line at each bar after the"
+                      " breakout. Named arguments (the base breakout's own settings): k= the break distance in ATRs (or the"
+                      " eighth positional argument), n= range bars (range) / channel bars (donchian), v= / mode= the"
+                      " range breakout's volume expansion and range mode, touches= the trendline / channel touches")
+_RETEST_FORWARD = (_K, _bk("range_n", "n", "window"), _bk("vol_mult", "v", NUM), _bk("range_mode", "mode", STR),
+                   _bk("tl_min_touches", "touches", NUM))
+RETEST_REF_OF: Tuple[str, ...] = ("range", "swing", "donchian", "trendline", "channel")
+RETEST_REF_WHATS: Tuple[str, ...] = ("level", "retest_low", "base_high", "base_low", "held_level", "stop_level_atr", "stop_base",
+                                     "stop_midpoint")
 GAP_TFS = ("1m", "3m", "5m", "15m", "1d")
 GAP_CLASSES = ("GAP_AND_GO", "GAP_HOLD", "GAP_FILL")
 _TT_ARG = _bk("tt_filter", "template", BOOL)
@@ -482,8 +495,21 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
                                                _bk("retest_reversal", "reversal", BOOL), _WDEGREE,
                                                Arg("line", STR, "channel_B", False, choices=_wave_choices("LINES")),
                                                Arg("wave", STR, "A", False, choices=_wave_choices("FIXED_END_CHOICES")), _K),
+         kwargs=_RETEST_FORWARD,
          cost=4.0, min_bars=RETEST_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
-         doc=RETEST_DOC + RETEST_WAVE_DOC),
+         doc=RETEST_DOC + RETEST_WAVE_DOC + RETEST_FORWARD_DOC),
+    # Strategy templates R7 / R2: the retest's prices as a series (the same retest as RetestEntry with the same settings)
+    Spec("RetestEntryRef", "factor", NUM, "price", (Arg("what", STR, choices=RETEST_REF_WHATS), _SIDE,
+                                                    _bk("retest_of", "of", STR, choices=RETEST_REF_OF), _bk("retest_max_bars", "bars", NUM),
+                                                    _bk("retest_reversal", "reversal", BOOL), _STOP_MULT),
+         kwargs=_RETEST_FORWARD, cost=4.0, min_bars=RETEST_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
+         doc="B9 retest's prices - the same retest as RetestEntry with the same arguments (named: k=, n=, v=, mode=, touches=),"
+             " on its retest bars (missing elsewhere):"
+             " level (the broken level at the retest bar; a channel edge projected there), retest_low (the low of the pullback"
+             " from the bar after the breakout to the retest bar; the high for the down side), base_high / base_low (the"
+             " breakout's base), held_level (the latest retest's level, held - a channel edge projected - until the next"
+             " retest), stop_level_atr / stop_base / stop_midpoint (the breakout stop reference at the retest bar: the level"
+             " less stop_mult ATRs of the bar before, the base's far side, or the base's middle)"),
     # Z7a-3: market zones (demand / supply, order blocks, S/R, gaps with their lifecycle) - research only, places no orders
     # U7 LG3: point-in-time fundamentals (flag screener_fundamentals, off by default)
     Spec("EPSGrowthYoY", "factor", NUM, "pct", (), cost=2.0, min_bars=1, needs=("fundamentals",), flag=FUNDAMENTALS_FLAG,
@@ -620,4 +646,4 @@ __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg
            "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS", "BREAKOUT_BK4_FLAG", "BREAKOUT_BK4_FUNCTIONS",
            "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES",
-           "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_DOC", "describe_spec"]
+           "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec"]

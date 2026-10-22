@@ -32,6 +32,20 @@ TOKENS: Dict[str, str] = {
     # B3 channel breakout
     "channel_broken_upward": "the close broke out above the upper edge of a rising channel on the {timeframe} chart",
     "channel_broken_downward": "the close broke down below the lower edge of a falling channel on the {timeframe} chart",
+    # C1 range breakout and retest, C3 channel breakout and retest (step 3, R7)
+    "range_retest_held_from_above": "the close broke out above the range on the {timeframe} chart and the retest from above held",
+    "range_retest_held_from_below": "the close broke down below the range on the {timeframe} chart and the retest from below held",
+    "channel_retest_held_from_above": ("the close broke out above the upper edge of a rising channel on the {timeframe} chart and the"
+                                       " retest of that edge from above held"),
+    "channel_retest_held_from_below": ("the close broke down below the lower edge of a falling channel on the {timeframe} chart and"
+                                       " the retest of that edge from below held"),
+    # A2 range edges (idea library T2)
+    "range_on_chart": "range on the {timeframe} chart",
+    "lower_edge_rejection_formed": "the market reached the lower edge and a rejection formed",
+    "upper_edge_rejection_formed": "the market reached the upper edge and a rejection formed",
+    # A5 structure flip retest (idea library T5)
+    "resistance_flip_retested": "former resistance on the {timeframe} chart was broken and is being retested from above; rejection formed",
+    "support_flip_retested": "former support on the {timeframe} chart was broken and is being retested from below; rejection formed",
     # Family G (wave templates): structure words only - wave labels in words, no number, no price
     "wave_two_pullback_ended": "the wave two pullback ended at an area on the {wave_timeframe} chart",
     "wave_four_pullback_ended": "the wave four pullback ended at an area on the {wave_timeframe} chart",
@@ -66,6 +80,16 @@ TOKENS: Dict[str, str] = {
     "closed_beyond_end_of_wave_a": "the market closed beyond the end of wave A",
     "broken_wave_line_held_on_retest": "the market came back to the broken wave line and held",
     "end_of_wave_a_held_on_retest": "the market came back to the end of wave A and held",
+    # Build step 6 (the templates G1, G3, G8): one sentence per template, whatever trigger style the user picked
+    "wave_two_pullback_may_be_over": "the wave two pullback on the {wave_timeframe} chart may be over",
+    "upward_wave_three_may_start": "an upward wave three may be starting",
+    "downward_wave_three_may_start": "a downward wave three may be starting",
+    "wave_b_pullback_may_be_over": "the wave B pullback on the {wave_timeframe} chart may be over",
+    "upward_wave_c_may_start": "an upward wave C may be starting",
+    "downward_wave_c_may_start": "a downward wave C may be starting",
+    "void_beyond_a_start_or_b_end": "the count is void beyond the start of wave A, or beyond the end of wave B if B went past it",
+    "larger_trend_may_resume_up": "the larger upward trend may be resuming",
+    "larger_trend_may_resume_down": "the larger downward trend may be resuming",
 }
 
 # Wave labels, types and clarity in words (the counter's values: app/price_action/waves/counter.py)

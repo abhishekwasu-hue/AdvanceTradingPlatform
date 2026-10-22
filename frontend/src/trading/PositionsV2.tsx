@@ -10,8 +10,11 @@ import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2, toneClass } 
 import { signTone } from "../dashboard/model";
 import { dataOf, usePolled, type Loadable } from "../dashboard/useDashboardData";
 import {
-  addSide, adjustHref, contractsApi, groupRows, groupTitle, isFnoPosition, positionItem, positionTarget, type ContractFacts, type PositionGroup,
+  addSide, adjustHref, contractsApi, countdown, groupRows, groupTitle, isFnoPosition, known, positionItem, positionTarget, type ContractFacts, type GroupedLegs,
+  type PositionGroup,
 } from "../fno/contracts";
+import { CaptureLineV2, CompareButtonV2, StructureAlertV2 } from "../fno/PositionInsightsV2";
+import { posLeg, type PosLeg } from "../fno/positionInsights";
 import type { Side } from "../fno/api";
 import type { TicketTarget } from "../fno/ticketModel";
 import { itemKey } from "../chart/watchlistsV2";
@@ -36,6 +39,8 @@ import { PracticeFrame } from "../fno/OrderTicketV2";
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
 // FNO-4: the ONE order ticket (PAPER), loaded only when Add is tapped on an F&O position.
 const OrderTicketV2 = lazy(() => import("../fno/OrderTicketV2"));
+// 8b-g: "Compare a change", loaded only when it is opened.
+const AdjustCompareV2 = lazy(() => import("../fno/CompareV2").then((m) => ({ default: m.AdjustCompareV2 })));
 
 const REFRESH_MS = 30_000;
 const every = (ms: number) => () => ms;
@@ -113,9 +118,11 @@ export default function PositionsV2(_props: PageProps = {}) {
   const fnoOn = features.on("paper_account") && canTrade;
   const fno = useFnoPositions(list, fnoOn && signedIn);
   const [ticket, setTicket] = useState<{ target: TicketTarget; side: Side } | null>(null);
+  // 8b slice 2: "Tell me when" (an alert of the existing alert rules, `screener_v2`) and "Compare a change" - information only.
+  const [compare, setCompare] = useState<CompareTarget | null>(null);
   const actions: RowActions = {
     exitNowOn, canTrade, onExit: exitNow, onCheck: checkPrice,
-    fno: fnoOn ? { facts: fno.facts, onAdd: (target, side) => setTicket({ target, side }) } : undefined,
+    fno: fnoOn ? { facts: fno.facts, onAdd: (target, side) => setTicket({ target, side }), alertsOn: features.on("screener_v2"), onCompare: setCompare } : undefined,
   };
 
   if (!connected) {
@@ -192,6 +199,11 @@ export default function PositionsV2(_props: PageProps = {}) {
           <OrderTicketV2 open target={ticket.target} side={ticket.side} onClose={() => setTicket(null)} onPlaced={() => reload()} />
         </Suspense>
       )}
+      {compare && (
+        <Suspense fallback={null}>
+          <AdjustCompareV2 open title={compare.title} legs={compare.legs} adjust={compare.adjust} onClose={() => setCompare(null)} />
+        </Suspense>
+      )}
 
       {hasOptions && <GreeksCardV2 />}
 
@@ -215,9 +227,30 @@ export interface RowActions {
   canTrade: boolean;
   onExit: (p: TradeRecord) => void;
   onCheck: (p: TradeRecord, price: number) => void;
-  /** FNO-4: Add / Adjust on an F&O PAPER position (absent: the row is exactly as before). */
-  fno?: { facts: ReadonlyMap<string, ContractFacts>; onAdd: (target: TicketTarget, side: Side) => void };
+  /** FNO-4: Add / Adjust on an F&O PAPER position (absent: the row is exactly as before). 8b slice 2: the premium kept,
+   * "Tell me when" (`alertsOn`: the alert rules' flag) and "Compare a change" - information only, never in place of Exit. */
+  fno?: {
+    facts: ReadonlyMap<string, ContractFacts>; onAdd: (target: TicketTarget, side: Side) => void; alertsOn?: boolean; onCompare?: (target: CompareTarget) => void;
+  };
 }
+
+export interface CompareTarget { title: string; legs: PosLeg[]; adjust: string | null }
+
+/** The F&O PAPER legs of these rows as the 8b features read them; null unless every one is known and still trading. */
+function fnoLegs(rows: readonly HeldRow[], byId: Map<number, TradeRecord>, actions: RowActions): PosLeg[] | null {
+  if (!actions.fno) return null;
+  const out: PosLeg[] = [];
+  for (const r of rows) {
+    const p = byId.get(r.id);
+    if (!p || p.mode !== "PAPER" || !isFnoPosition(p)) return null;
+    const leg = posLeg(p, actions.fno.facts.get(itemKey(positionItem(p))), r.ltp);
+    if (!leg) return null;
+    out.push(leg);
+  }
+  return out.length ? out : null;
+}
+
+const daysLeftOf = (facts: ContractFacts | undefined): string | null => (known(facts) ? countdown(facts.days_left) : null);
 
 /** FNO-4: what the F&O PAPER positions are (for Add / Adjust) and which legs were placed together (one basket, one
  * structure). Read only; any failure reads as "nothing known", so the list is as before. */
@@ -243,9 +276,9 @@ function PositionList({ rows, byId, actions, prices = true, groups = [] }: {
   rows: HeldRow[]; byId: Map<number, TradeRecord>; actions: RowActions; prices?: boolean; groups?: PositionGroup[];
 }) {
   const { grouped, single } = groupRows(rows, groups);
-  const row = (r: HeldRow) => {
+  const row = (r: HeldRow, inGroup = false) => {
     const p = byId.get(r.id);
-    return p ? <PositionRowV2 key={r.id} row={r} position={p} actions={actions} prices={prices} /> : null;
+    return p ? <PositionRowV2 key={r.id} row={r} position={p} actions={actions} prices={prices} inGroup={inGroup} /> : null;
   };
   return (
     <div className="space-y-space-3">
@@ -263,15 +296,37 @@ function PositionList({ rows, byId, actions, prices = true, groups = [] }: {
               </span>
             )}
           </div>
-          <ul className="divide-y divide-subtle">{g.legs.map(row)}</ul>
+          {prices && <GroupInsights group={g} byId={byId} actions={actions} />}
+          <ul className="divide-y divide-subtle">{g.legs.map((r) => row(r, true))}</ul>
         </section>
       ))}
-      {single.length > 0 && <ul className="divide-y divide-subtle">{single.map(row)}</ul>}
+      {single.length > 0 && <ul className="divide-y divide-subtle">{single.map((r) => row(r))}</ul>}
     </div>
   );
 }
 
-export function PositionRowV2({ row, position, actions, prices = true }: { row: HeldRow; position: TradeRecord; actions: RowActions; prices?: boolean }) {
+/** 8b slice 2 on legs placed together: the premium kept (a net premium received), "Tell me when" on the group's own
+ * breakevens and short strikes, and "Compare a change". Shown only when every leg is a known F&O PAPER contract. */
+function GroupInsights({ group, byId, actions }: { group: GroupedLegs<HeldRow>; byId: Map<number, TradeRecord>; actions: RowActions }) {
+  const legs = fnoLegs(group.legs, byId, actions);
+  if (!legs || !actions.fno) return null;
+  const firstTrade = byId.get(legs[0].id);
+  const facts = firstTrade ? actions.fno.facts.get(itemKey(positionItem(firstTrade))) : undefined;
+  const onCompare = actions.fno.onCompare;
+  return (
+    <div className="mb-space-3 border-b border-subtle pb-space-3" data-group-insights>
+      <CaptureLineV2 legs={legs} daysLeft={daysLeftOf(facts)} />
+      <div className="mt-space-2 flex flex-wrap items-center gap-space-2">
+        {actions.fno.alertsOn && actions.canTrade && <StructureAlertV2 legs={legs} />}
+        {onCompare && <CompareButtonV2 onOpen={() => onCompare({ title: groupTitle(group), legs, adjust: adjustHref(facts) })} />}
+      </div>
+    </div>
+  );
+}
+
+export function PositionRowV2({ row, position, actions, prices = true, inGroup = false }: {
+  row: HeldRow; position: TradeRecord; actions: RowActions; prices?: boolean; inGroup?: boolean;
+}) {
   const tone = toneClass(signTone(row.pnl));
   const showExit = actions.exitNowOn && actions.canTrade && position.mode === "PAPER";
   // FNO-4: Add (the ticket on the same contract and side, PAPER) and Adjust (the chain of its expiry) - only for an F&O
@@ -279,6 +334,8 @@ export function PositionRowV2({ row, position, actions, prices = true }: { row: 
   const facts = actions.fno && position.mode === "PAPER" && isFnoPosition(position) ? actions.fno.facts.get(itemKey(positionItem(position))) : undefined;
   const target = actions.fno ? positionTarget(position, facts, row.ltp) : null;
   const adjust = actions.fno ? adjustHref(facts) : null;
+  // 8b slice 2 on a position of its own (legs placed together carry them on the group): the premium kept and "Tell me when".
+  const own = !inGroup && prices ? fnoLegs([row], new Map([[position.id, position]]), actions) : null;
   return (
     <li className="py-space-3 first:pt-0 last:pb-0" data-position={row.id}>
       <div className="flex items-start gap-space-3">
@@ -300,6 +357,7 @@ export function PositionRowV2({ row, position, actions, prices = true }: { row: 
           </p>
           {row.structureNote && <p className="mt-px text-t12 text-fg-muted">{row.structureNote}</p>}
           {row.strategy && <p className="mt-px text-t12 text-fg-muted">{row.strategy}</p>}
+          {own && <CaptureLineV2 legs={own} daysLeft={daysLeftOf(facts)} />}
         </div>
         {prices && (
           <>
@@ -336,6 +394,7 @@ export function PositionRowV2({ row, position, actions, prices = true }: { row: 
         <Link to={chartsPath(row.chartSymbol)} className={BUTTON_SECONDARY}>
           <ChartCandlestick size={16} aria-hidden />Chart
         </Link>
+        {own && actions.fno?.alertsOn && actions.canTrade && <StructureAlertV2 legs={own} />}
         {actions.exitNowOn && position.mode === "LIVE" && <span className="text-t12 text-fg-muted">Close a live position in your broker&apos;s app.</span>}
       </div>
     </li>

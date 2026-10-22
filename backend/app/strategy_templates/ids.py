@@ -11,6 +11,10 @@ FLOAT_DECIMALS decimals), choices as themselves. The id is CANONICAL: `decode` a
 the same settings, so the same template with the same settings is always the same id (the deployment uniqueness rule
 and the provenance rely on it).
 
+Family G (the wave templates) carries some twenty settings, so its choices are written as their POSITION in the setting's
+choices (`COMPACT_FAMILIES`; "aggressive" -> "0") to stay within the 80 characters; the template version pins the order.
+Every other family's id is written exactly as before.
+
 The id IS the stored provenance (open question TPL-Q2): the template id and version and every setting are on each
 deployment, order and trade that carries it, and the params hash is recomputed from it (`compile.params_hash`). Only the
 setup instance of a signal is not stored: it is on the Signal in memory (`Signal.provenance`, never shown to a user) and
@@ -28,15 +32,18 @@ PREFIX = "template:"
 MAX_LENGTH = 80                 # the shortest strategy_id column (execution_intents.strategy_id)
 FLOAT_DECIMALS = 6
 _SEPARATORS = (":", ",")
+COMPACT_FAMILIES = frozenset({"G"})   # choices written as their position (family G: many settings, see above)
 
 
 def is_template_id(strategy_id: str) -> bool:
     return strategy_id.startswith(PREFIX)
 
 
-def _write(spec: ParamSpec, value: Any) -> str:
+def _write(spec: ParamSpec, value: Any, compact: bool = False) -> str:
     if value == spec.default and type(value) is type(spec.default) or (spec.type == "float" and float(value) == float(spec.default)):
         return ""
+    if compact and spec.type == "enum":
+        return str(spec.choices.index(str(value)))
     if spec.type == "bool":
         return "1" if value else "0"
     if spec.type == "int":
@@ -49,9 +56,13 @@ def _write(spec: ParamSpec, value: Any) -> str:
     return text
 
 
-def _read(spec: ParamSpec, text: str) -> Any:
+def _read(spec: ParamSpec, text: str, compact: bool = False) -> Any:
     if text == "":
         return spec.default
+    if compact and spec.type == "enum":
+        if not text.isdigit() or int(text) >= len(spec.choices) or str(int(text)) != text:
+            raise ValueError(text)
+        return spec.choices[int(text)]
     if spec.type == "bool":
         if text not in ("0", "1"):
             raise ValueError(text)
@@ -70,7 +81,8 @@ def _rounded(template: Template, settings: Settings) -> Settings:
 
 def encode(template: Template, settings: Settings) -> str:
     """The strategy id of `template` with `settings` (already resolved). Raises TemplateError when it would not fit."""
-    values = [_write(p, settings.params[p.key]) for p in template.params]
+    compact = template.family in COMPACT_FAMILIES
+    values = [_write(p, settings.params[p.key], compact) for p in template.params]
     out = f"{PREFIX}{template.id}:{template.version}:{settings.timeframe}:{settings.sides}:{','.join(values)}"
     if len(out) > MAX_LENGTH:
         raise TemplateError(["These settings are too long to save: use fewer decimals"])
@@ -104,7 +116,8 @@ def decode(strategy_id: str) -> Tuple[Template, Settings]:
     if len(texts) != len(template.params):
         raise KeyError(f"Unknown strategy id: {strategy_id}")
     try:
-        params = {p.key: _read(p, t) for p, t in zip(template.params, texts)}
+        compact = template.family in COMPACT_FAMILIES
+        params = {p.key: _read(p, t, compact) for p, t in zip(template.params, texts)}
         settings = resolve_settings(template, timeframe, sides, params)
     except (ValueError, TemplateError):
         raise KeyError(f"Unknown strategy id: {strategy_id}") from None
@@ -113,4 +126,4 @@ def decode(strategy_id: str) -> Tuple[Template, Settings]:
     return template, settings
 
 
-__all__ = ["PREFIX", "MAX_LENGTH", "FLOAT_DECIMALS", "is_template_id", "encode", "decode", "adopt"]
+__all__ = ["PREFIX", "MAX_LENGTH", "FLOAT_DECIMALS", "COMPACT_FAMILIES", "is_template_id", "encode", "decode", "adopt"]

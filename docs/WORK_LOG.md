@@ -2837,3 +2837,56 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `shell-v2.e2e.ts` (the flat list, tabs, redirects, flag off, the tab pages on a phone). Baselines regenerated: the v2
   shots whose sidebar, bottom bar, top bar title or tab bar changed (list in the PR).
 - Owner questions UX4-1..UX4-8 (OPEN_QUESTIONS); UX3-9 marked done; owner-orders README row 8 updated.
+
+
+## 22 Oct - F&O workspace 8b, slice 2: premium kept, alerts on his own levels, the comparisons (behind ui_v2, PAPER only)
+
+- Branch `claude/fno8b-slice-2`. No migration, no new route, no backend code change. Owner questions FNO-8B-9..16
+  (OPEN_QUESTIONS). Information only: nothing here places, blocks or changes an order; no new order path; Exit now
+  untouched (ADR-0004); an alert only notifies (ADR-0006).
+- Frontend: `src/fno/positionInsights.ts` (the exact payoff at expiry and its outcome - max profit / loss, breakevens -,
+  the position as the features read it, the premium kept, the alert choices of his own levels and the rule body, the
+  change side and the engine asks) and `src/fno/PositionInsightsV2.tsx` (`CaptureLineV2`, `StructureAlertV2` +
+  `AlertChoicesView`, `CompareButtonV2`), `src/fno/CompareV2.tsx` (`CompareView` chart + sentences + figures,
+  `AdjustCompareV2` "Compare a change", `ChangeEditor`, `StrategyCompareV2` + `compareChoices` / `basketColumn`).
+  Wired into My positions (a sold option on its own: premium kept + Tell me when; legs placed together: premium kept,
+  Tell me when, Compare a change on the group; the legs inside keep Exit / Add / Adjust) and the basket panel (tool
+  "Compare": his basket, the ready strategies from his settings, his saved baskets).
+- Tests: backend `test_fno8b2_structure_alerts.py` (2: the page's alert bodies are plain instrument rules with no Then;
+  a firing records the event and places nothing); vitest `src/fno/positionInsights.test.tsx` (26: the maths from
+  fixtures, the words, the alert body, no order path, Exit never disabled); e2e `fno8b-slice2-v2.e2e.ts` (17) and the
+  basket compare in `basket-v2.e2e.ts` (6) with new baselines `fno8b2-positions-v2-*`, `fno8b2-compare-v2-*`,
+  `fno8b2-basket-compare-v2-*` (1440 / 390 / 360, light / dark); regenerated `fno4-positions-v2-*` (the premium kept and
+  the buttons on the group).
+
+
+## 22 Oct - Wave templates (family G): the G parity harness and the templates G1, G3, G8 (behind strategy_templates + screener_waves)
+
+- Branch `claude/wave4-g3-g8-g1`. No migration (templates are JSON in the repository; flags are registered in code).
+- Backend: `app/strategy_templates/templates/G1.json` (wave three after wave two), `G3.json` (wave C after wave B,
+  counter-trend allowed), `G8.json` (correction complete, the trend resumes) - five trigger styles each (touch of the
+  area, reversal candle, the smaller structure's CHoCH, the wave channel's break, its retest), every number a setting
+  with the review's defaults, invalidation in words, exits per WB9 (inert until R5); `wave_parity.py` (the G parity
+  harness: context frames from the one trailing window, scan with frames = scan = backtest = options = worker);
+  `language.py` (nine structure-word tokens); `routes.py` (a family listed only with its own flag: G needs
+  `screener_waves`); `ids.py` (family G choices written as their position, ids within 80 characters; other families
+  unchanged). PAPER only, signals only.
+- Tests: `tests/test_wave4_templates.py` (must-fire per style, must-not, mirror, truncation, parity incl. the 1-hour wave
+  chart and the options backtest, property tests, no number literal, defaults, words, flags, id length).
+- Questions WAVE-27..WAVE-37 (OPEN_QUESTIONS). Not built: G4-G7, G2, G9-G11, G12, the projection target (section 5).
+
+
+## 22 Oct - Strategy templates step 3 (TPL-3): R7, C1 / C3, family A (A2, A5) (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl3-c1-c3-family-a`. No migration.
+- R7: RetestEntry forwards the base breakout's own settings as named arguments (`k=`, `n=`, `v=`, `mode=`, `touches=`;
+  left out = the defaults, the older calls byte-identical); `of = "channel"` (B5 channel breakout, the broken edge
+  projected to each bar after the breakout) for RetestEntry and the B9 screen; the companion `RetestEntryRef` (level,
+  retest_low, base, held_level, the breakout stop references) read from the same `retest_events`. The validator checks
+  named arguments like positional ones. A trendline retest keeps its frozen level (TPL-Q18).
+- Templates: C1 range breakout and retest (B1's settings), C3 channel breakout and retest (B3's settings), A2 range
+  edges (idea T2), A5 structure flip retest (idea T5). Not built: A1 / A3 / A4 / A8 (no zone data in the template engine,
+  no area-edge price), A6 / A7 (no function) - TPL-Q23. Engine: a number function of a sparse series does not hold the
+  warm-up back; a yes / no setting may fill a yes / no argument.
+- Tests: `tests/test_tpl3_templates.py` (section 8 gate for the four templates + R7), runtime fixture, causal cases
+  (lookahead job), history sweep; updated registry coverage tests. Questions TPL-Q18..TPL-Q25; TPL-Q8 answered.

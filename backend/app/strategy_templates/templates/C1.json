@@ -1,0 +1,69 @@
+{
+  "schema": "atp.template/1",
+  "id": "C1",
+  "version": 1,
+  "name": "Range breakout and retest",
+  "family": "C",
+  "idea": "After a close beyond a range (the range breakout's own settings), wait for the market to come back to the broken edge and hold it; the idea has ended when the close is back through that level.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "range_mode", "label": "The range", "help": "Which range the break is measured from: the bars just before the break, or the consolidation found before it.",
+     "type": "enum", "default": "auto", "choices": ["fixed", "auto"],
+     "choice_labels": ["A set number of bars before the break", "The consolidation before the break"]},
+    {"key": "range_n", "label": "Range bars", "help": "For a set number of bars: how many bars before the break make the range.",
+     "type": "int", "default": 20, "min": 2, "max": 500, "step": 1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the range the breakout close must be, in average true ranges (0 means any close beyond).",
+     "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "vol_mult", "label": "Volume expansion", "help": "The breakout bar's volume must be at least this many times the average (0 means no volume condition; indices have no volume).",
+     "type": "float", "default": 0.0, "min": 0.0, "max": 20.0, "step": 0.1},
+    {"key": "retest_max_bars", "label": "Retest within (bars)", "help": "The return to the broken edge must come within this many bars after the breakout; a later return is a new base, not a retest.",
+     "type": "int", "default": 10, "min": 1, "max": 100, "step": 1},
+    {"key": "retest_reversal", "label": "Wait for a reversal at the level", "help": "On: the retest must show a reversal at the broken edge. Off: a touch of the edge with the close held beyond it is enough.",
+     "type": "bool", "default": true},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "Where the retest idea is wrong: beyond the pullback to the edge, beyond the breakout's own reference, or beyond whichever of the two is farther.",
+     "type": "enum", "default": "lower_of_both", "choices": ["retest_low", "level_minus_stop_ref", "lower_of_both"],
+     "choice_labels": ["The pullback to the edge", "The breakout's own reference", "Whichever of the two is farther"]},
+    {"key": "breakout_ref", "label": "The breakout's own reference", "help": "As in the range breakout: just beyond the broken edge, the range's far side, or its middle.",
+     "type": "enum", "default": "stop_level_atr", "choices": ["stop_level_atr", "stop_base", "stop_midpoint"],
+     "choice_labels": ["Just beyond the broken edge", "The far side of the range", "The middle of the range"]},
+    {"key": "stop_mult", "label": "Edge buffer", "help": "For 'just beyond the broken edge': how many average true ranges beyond the edge.",
+     "type": "float", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "RetestEntry(\"up\", \"range\", $retest_max_bars, $retest_reversal, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode)",
+    "short": "RetestEntry(\"down\", \"range\", $retest_max_bars, $retest_reversal, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "by": "invalidation",
+    "variants": {
+      "retest_low": {
+        "long": "RetestEntryRef(\"retest_low\", \"up\", \"range\", $retest_max_bars, $retest_reversal, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode)",
+        "short": "RetestEntryRef(\"retest_low\", \"down\", \"range\", $retest_max_bars, $retest_reversal, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode)"
+      },
+      "level_minus_stop_ref": {
+        "long": "RetestEntryRef($breakout_ref, \"up\", \"range\", $retest_max_bars, $retest_reversal, $stop_mult, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode)",
+        "short": "RetestEntryRef($breakout_ref, \"down\", \"range\", $retest_max_bars, $retest_reversal, $stop_mult, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode)"
+      },
+      "lower_of_both": {
+        "long": "Least(RetestEntryRef(\"retest_low\", \"up\", \"range\", $retest_max_bars, $retest_reversal, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode), RetestEntryRef($breakout_ref, \"up\", \"range\", $retest_max_bars, $retest_reversal, $stop_mult, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode))",
+        "short": "Greatest(RetestEntryRef(\"retest_low\", \"down\", \"range\", $retest_max_bars, $retest_reversal, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode), RetestEntryRef($breakout_ref, \"down\", \"range\", $retest_max_bars, $retest_reversal, $stop_mult, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode))"
+      }
+    }
+  },
+  "exit_signal": {
+    "long": "close < RetestEntryRef(\"held_level\", \"up\", \"range\", $retest_max_bars, $retest_reversal, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode)",
+    "short": "close > RetestEntryRef(\"held_level\", \"down\", \"range\", $retest_max_bars, $retest_reversal, k=$k, n=$range_n, v=$vol_mult, mode=$range_mode)"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "range_retest_held_from_above"}],
+    "short": [{"token": "range_retest_held_from_below"}]
+  }
+}

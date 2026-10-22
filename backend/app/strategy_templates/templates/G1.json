@@ -1,0 +1,155 @@
+{
+  "schema": "atp.template/1",
+  "id": "G1",
+  "version": 1,
+  "name": "Wave three after wave two",
+  "family": "G",
+  "idea": "A signal when the wave two pullback of an impulse may be over and wave three may be starting, by the trigger style you pick; the count is void beyond the start of wave one.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "wave_tf", "label": "Wave timeframe", "help": "The chart where the waves are counted (the minor trend). Not finer than your signal timeframe.", "type": "timeframe", "default": "1h", "choices": ["15m", "30m", "1h", "1d"]},
+    {"key": "higher_tf", "label": "Higher timeframe", "help": "The chart of the main trend. Not finer than the wave timeframe.", "type": "timeframe", "default": "1d", "choices": ["1h", "1d", "1w"]},
+    {"key": "wave_degree", "label": "Wave size", "help": "Which swings count as waves: 1 is the smallest, 3 the largest. Larger waves need more history.", "type": "int", "default": 1, "min": 1, "max": 3, "step": 1},
+    {"key": "area_degree", "label": "Smaller swing size", "help": "The smaller swings inside a wave: they mark the area, the turn of the smaller structure and each new pullback. Smaller than the wave size.", "type": "int", "default": 0, "min": 0, "max": 2, "step": 1},
+    {"key": "trend_relation", "label": "Higher trend", "help": "With the higher trend: the move the idea expects must point the same way as the swing trend on the higher timeframe.", "type": "enum", "default": "with", "choices": ["with", "any"], "choice_labels": ["Only with the higher trend", "Any higher trend"]},
+    {"key": "trend_degree", "label": "Higher trend swing size", "help": "Which swings on the higher timeframe decide its trend: 0 is the smallest, 3 the largest.", "type": "int", "default": 1, "min": 0, "max": 3, "step": 1},
+    {"key": "entry_style", "label": "Trigger style", "help": "What turns the setup into a signal. The touch and candle styles look for the area; the others for the smaller structure or the wave's own channel.", "type": "enum", "default": "choch", "choices": ["aggressive", "candle", "choch", "breakout", "retest"], "choice_labels": ["The first touch of the area", "A reversal candle at the area", "The smaller structure turns on your chart", "A close beyond the channel of the pullback", "The retest of the broken channel"]},
+    {"key": "area_source", "label": "Area", "help": "Where the touch and candle styles look for the end of the pullback: the zone of the last smaller swing, or no area (then turn on the Fibonacci zone).", "type": "enum", "default": "swing", "choices": ["swing", "none"], "choice_labels": ["Smaller swing zones", "No area"]},
+    {"key": "zone_width", "label": "Area width", "help": "How close to the zone the close must be, in median bar ranges.", "type": "float", "default": 1.0, "min": 0.1, "max": 10.0, "step": 0.1},
+    {"key": "fib_zone", "label": "Fibonacci zone", "help": "Only when wave two has retraced wave one into this zone (shares of wave one).", "type": "enum", "default": "none", "choices": ["none", "zone"], "choice_labels": ["Off", "Only inside the zone"]},
+    {"key": "fib_from", "label": "Wave two depth: from", "help": "The near edge of the zone, as a share of the wave it is measured against.", "type": "float", "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.001},
+    {"key": "fib_to", "label": "Wave two depth: to", "help": "The far edge of the zone, as a share of the wave it is measured against.", "type": "float", "default": 0.786, "min": 0.0, "max": 1.0, "step": 0.001},
+    {"key": "min_clarity", "label": "Count clarity", "help": "An unclear count never gives a signal. Optionally also skip a count whose alternate reading points the other way.", "type": "enum", "default": "any", "choices": ["any", "agree"], "choice_labels": ["Any count that is not unclear", "Not when the alternate count points the other way"]},
+    {"key": "window", "label": "Opportunities", "help": "Only the first opportunity in each wave two, or a new one at every new smaller swing inside it (the newest replaces the older one).", "type": "enum", "default": "first", "choices": ["first", "every"], "choice_labels": ["Only the first one per wave", "Every new smaller pullback inside the wave"]},
+    {"key": "expiry_bars", "label": "Pullback watch", "help": "With every new smaller pullback: how many bars of your chart each one is watched for its trigger.", "type": "int", "default": 20, "min": 1, "max": 500, "step": 1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the level a close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "retest_bars", "label": "Retest window", "help": "For the retest style: the bars after the break within which the retest must come.", "type": "int", "default": 10, "min": 1, "max": 100, "step": 1},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The count's own limit (the start of wave one), or the last smaller swing.", "type": "enum", "default": "wave_rule", "choices": ["wave_rule", "last_swing"], "choice_labels": ["The start of wave one", "The last smaller swing"]},
+    {"key": "exit_signal", "label": "Exit signal", "help": "Optional: when the idea has ended. It is not acted on yet; your own exit settings always apply.", "type": "enum", "default": "none", "choices": ["none", "choch", "leaves"], "choice_labels": ["None", "The wave structure turns against the idea", "The count leaves waves two and three"]}
+  ],
+  "constraints": [
+    {"left": "wave_tf", "op": ">=", "right": "signal_timeframe", "message": "The wave timeframe must not be finer than your signal timeframe."},
+    {"left": "higher_tf", "op": ">=", "right": "wave_tf", "message": "The higher timeframe must not be finer than the wave timeframe."},
+    {"left": "area_degree", "op": "<", "right": "wave_degree", "message": "The smaller swings must be smaller than the waves."},
+    {"left": "fib_from", "op": "<", "right": "fib_to", "message": "The Fibonacci zone must start before it ends."},
+    {"left": "area_source", "op": "!=", "right": "fib_zone", "message": "Pick an area or turn on the Fibonacci zone: the touch and candle styles need one."}
+  ],
+  "sides_default": "both",
+  "context": {
+    "by": "trend_relation",
+    "variants": {
+      "with": {
+        "long": "DowTrend($trend_degree)@{higher_tf} == \"UP\"",
+        "short": "DowTrend($trend_degree)@{higher_tf} == \"DOWN\""
+      },
+      "any": null
+    }
+  },
+  "setup": {
+    "by": "window",
+    "variants": {
+      "first": {
+        "kind": "state",
+        "long": "(WaveState($wave_degree)@{wave_tf} == \"IMP_2\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} <= WaveEnd($wave_degree, \"1\")@{wave_tf})) AND WaveEnd($wave_degree, \"1\")@{wave_tf} > WaveOrigin($wave_degree)@{wave_tf} AND (WaveClarity($wave_degree)@{wave_tf} != \"UNCLEAR\" AND ($min_clarity == \"any\" OR WaveClarity($wave_degree)@{wave_tf} != \"ALT_DISAGREES\")) AND ($fib_zone == \"none\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_2\" AND WaveRatio($wave_degree)@{wave_tf} >= $fib_from AND WaveRatio($wave_degree)@{wave_tf} <= $fib_to) OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveEnd($wave_degree, \"2\")@{wave_tf}) / (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) >= $fib_from AND (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveEnd($wave_degree, \"2\")@{wave_tf}) / (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) <= $fib_to))",
+        "short": "(WaveState($wave_degree)@{wave_tf} == \"IMP_2\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} >= WaveEnd($wave_degree, \"1\")@{wave_tf})) AND WaveEnd($wave_degree, \"1\")@{wave_tf} < WaveOrigin($wave_degree)@{wave_tf} AND (WaveClarity($wave_degree)@{wave_tf} != \"UNCLEAR\" AND ($min_clarity == \"any\" OR WaveClarity($wave_degree)@{wave_tf} != \"ALT_DISAGREES\")) AND ($fib_zone == \"none\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_2\" AND WaveRatio($wave_degree)@{wave_tf} >= $fib_from AND WaveRatio($wave_degree)@{wave_tf} <= $fib_to) OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveEnd($wave_degree, \"2\")@{wave_tf}) / (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) >= $fib_from AND (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveEnd($wave_degree, \"2\")@{wave_tf}) / (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) <= $fib_to))",
+        "same_bar": true,
+        "arm_level": {
+          "long": "WaveOrigin($wave_degree)@{wave_tf}",
+          "short": "WaveOrigin($wave_degree)@{wave_tf}"
+        },
+        "breach_on": "wick"
+      },
+      "every": {
+        "kind": "event",
+        "long": "(WaveState($wave_degree)@{wave_tf} == \"IMP_2\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} <= WaveEnd($wave_degree, \"1\")@{wave_tf})) AND WaveEnd($wave_degree, \"1\")@{wave_tf} > WaveOrigin($wave_degree)@{wave_tf} AND (WaveClarity($wave_degree)@{wave_tf} != \"UNCLEAR\" AND ($min_clarity == \"any\" OR WaveClarity($wave_degree)@{wave_tf} != \"ALT_DISAGREES\")) AND ($fib_zone == \"none\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_2\" AND WaveRatio($wave_degree)@{wave_tf} >= $fib_from AND WaveRatio($wave_degree)@{wave_tf} <= $fib_to) OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveEnd($wave_degree, \"2\")@{wave_tf}) / (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) >= $fib_from AND (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveEnd($wave_degree, \"2\")@{wave_tf}) / (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) <= $fib_to)) AND (SwingLow($area_degree)@{wave_tf} < Lag(SwingLow($area_degree)@{wave_tf}, 1) OR SwingLow($area_degree)@{wave_tf} > Lag(SwingLow($area_degree)@{wave_tf}, 1))",
+        "short": "(WaveState($wave_degree)@{wave_tf} == \"IMP_2\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} >= WaveEnd($wave_degree, \"1\")@{wave_tf})) AND WaveEnd($wave_degree, \"1\")@{wave_tf} < WaveOrigin($wave_degree)@{wave_tf} AND (WaveClarity($wave_degree)@{wave_tf} != \"UNCLEAR\" AND ($min_clarity == \"any\" OR WaveClarity($wave_degree)@{wave_tf} != \"ALT_DISAGREES\")) AND ($fib_zone == \"none\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_2\" AND WaveRatio($wave_degree)@{wave_tf} >= $fib_from AND WaveRatio($wave_degree)@{wave_tf} <= $fib_to) OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveEnd($wave_degree, \"2\")@{wave_tf}) / (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) >= $fib_from AND (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveEnd($wave_degree, \"2\")@{wave_tf}) / (WaveEnd($wave_degree, \"1\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) <= $fib_to)) AND (SwingHigh($area_degree)@{wave_tf} < Lag(SwingHigh($area_degree)@{wave_tf}, 1) OR SwingHigh($area_degree)@{wave_tf} > Lag(SwingHigh($area_degree)@{wave_tf}, 1))",
+        "expiry_bars": "$expiry_bars",
+        "same_bar": true,
+        "arm_level": {
+          "long": "WaveOrigin($wave_degree)@{wave_tf}",
+          "short": "WaveOrigin($wave_degree)@{wave_tf}"
+        },
+        "breach_on": "wick"
+      }
+    }
+  },
+  "trigger": {
+    "by": "entry_style",
+    "variants": {
+      "aggressive": {
+        "long": "WaveState($wave_degree)@{wave_tf} == \"IMP_2\" AND ($area_source == \"none\" OR (SwingZoneDistance(\"low\", $area_degree)@{wave_tf} <= $zone_width AND SwingZoneDistance(\"low\", $area_degree)@{wave_tf} >= -$zone_width))",
+        "short": "WaveState($wave_degree)@{wave_tf} == \"IMP_2\" AND ($area_source == \"none\" OR (SwingZoneDistance(\"high\", $area_degree)@{wave_tf} <= $zone_width AND SwingZoneDistance(\"high\", $area_degree)@{wave_tf} >= -$zone_width))"
+      },
+      "candle": {
+        "long": "WaveState($wave_degree)@{wave_tf} == \"IMP_2\" AND ($area_source == \"none\" OR (SwingZoneDistance(\"low\", $area_degree)@{wave_tf} <= $zone_width AND SwingZoneDistance(\"low\", $area_degree)@{wave_tf} >= -$zone_width)) AND ReversalAt(WaveEnd($wave_degree, \"current\")@{wave_tf}, \"bullish\")",
+        "short": "WaveState($wave_degree)@{wave_tf} == \"IMP_2\" AND ($area_source == \"none\" OR (SwingZoneDistance(\"high\", $area_degree)@{wave_tf} <= $zone_width AND SwingZoneDistance(\"high\", $area_degree)@{wave_tf} >= -$zone_width)) AND ReversalAt(WaveEnd($wave_degree, \"current\")@{wave_tf}, \"bearish\")"
+      },
+      "choch": {
+        "long": "(WaveState($wave_degree)@{wave_tf} == \"IMP_2\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} <= WaveEnd($wave_degree, \"1\")@{wave_tf})) AND SwingBreakType(\"up\", $area_degree, $k) == \"CHOCH\"",
+        "short": "(WaveState($wave_degree)@{wave_tf} == \"IMP_2\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} >= WaveEnd($wave_degree, \"1\")@{wave_tf})) AND SwingBreakType(\"down\", $area_degree, $k) == \"CHOCH\""
+      },
+      "breakout": {
+        "long": "(WaveState($wave_degree)@{wave_tf} == \"IMP_2\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} <= WaveEnd($wave_degree, \"1\")@{wave_tf})) AND WaveLineBreak($wave_degree, \"channel_2\", \"up\", $k)@{wave_tf}",
+        "short": "(WaveState($wave_degree)@{wave_tf} == \"IMP_2\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} >= WaveEnd($wave_degree, \"1\")@{wave_tf})) AND WaveLineBreak($wave_degree, \"channel_2\", \"down\", $k)@{wave_tf}"
+      },
+      "retest": {
+        "long": "(WaveState($wave_degree)@{wave_tf} == \"IMP_2\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} <= WaveEnd($wave_degree, \"1\")@{wave_tf})) AND RetestEntry(\"up\", \"wave_line\", $retest_bars, true, $wave_degree, \"channel_2\", \"A\", $k)@{wave_tf}",
+        "short": "(WaveState($wave_degree)@{wave_tf} == \"IMP_2\" OR (WaveState($wave_degree)@{wave_tf} == \"IMP_3\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} >= WaveEnd($wave_degree, \"1\")@{wave_tf})) AND RetestEntry(\"down\", \"wave_line\", $retest_bars, true, $wave_degree, \"channel_2\", \"A\", $k)@{wave_tf}"
+      }
+    }
+  },
+  "invalidation": {
+    "by": "invalidation",
+    "variants": {
+      "wave_rule": {
+        "long": "WaveInvalidation($wave_degree)@{wave_tf}",
+        "short": "WaveInvalidation($wave_degree)@{wave_tf}"
+      },
+      "last_swing": {
+        "long": "SwingLow($area_degree)@{wave_tf}",
+        "short": "SwingHigh($area_degree)@{wave_tf}"
+      }
+    }
+  },
+  "exit_signal": {
+    "by": "exit_signal",
+    "variants": {
+      "none": null,
+      "choch": {
+        "long": "SwingBreakType(\"down\", $wave_degree, $k)@{wave_tf} == \"CHOCH\"",
+        "short": "SwingBreakType(\"up\", $wave_degree, $k)@{wave_tf} == \"CHOCH\""
+      },
+      "leaves": {
+        "long": "WaveState($wave_degree)@{wave_tf} != \"IMP_2\" AND WaveState($wave_degree)@{wave_tf} != \"IMP_3\"",
+        "short": "WaveState($wave_degree)@{wave_tf} != \"IMP_2\" AND WaveState($wave_degree)@{wave_tf} != \"IMP_3\""
+      }
+    }
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "wave_two_pullback_may_be_over"
+      },
+      {
+        "token": "upward_wave_three_may_start"
+      },
+      {
+        "token": "void_beyond_start_of_wave_one"
+      }
+    ],
+    "short": [
+      {
+        "token": "wave_two_pullback_may_be_over"
+      },
+      {
+        "token": "downward_wave_three_may_start"
+      },
+      {
+        "token": "void_beyond_start_of_wave_one"
+      }
+    ]
+  }
+}

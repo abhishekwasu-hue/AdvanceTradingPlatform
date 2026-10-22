@@ -44,7 +44,7 @@ def test_every_starter_routes_to_its_job(question, job):
 
 def test_the_eight_jobs_and_the_starters_match_the_order():
     assert [j.number for j in chat.JOBS] == list(range(1, 9))
-    assert chat.BUILT == {"brief", "chart", "option_chain", "teacher", "trade_check", "positions", "review"}   # slice 2: jobs 3-5
+    assert chat.BUILT == {"brief", "chart", "option_chain", "teacher", "trade_check", "positions", "review", "strategy"}   # slice 3: job 6
     assert [j.starter for j in chat.JOBS] == ["Today's market brief", "Read the NIFTY chart", "Check my trade idea", "How are my open positions?",
                                              "Review my last trade", "Turn my idea into a strategy and test it", "What does the option chain show?",
                                              "Teach me: what is a demand zone?"]
@@ -124,8 +124,13 @@ def test_missing_data_says_i_dont_know_in_plain_words():
 
 
 def test_jobs_not_built_say_so_and_point_at_todays_page():
-    out, called, _ = _answer("Turn my idea into a strategy and test it")          # job 6; jobs 3-5 are built (second slice)
-    assert called == [] and "later step" in out.summary[0] and out.action == {"label": "Open the idea builder", "to": "/copilot/idea-builder"}
+    # Every job is built since slice 3 (job 6); the not-built answer stays for a job that is switched off later.
+    job = chat.Job("x", 9, "Later job", "", "", False, ("Open the Paper bot page", "/deployments"))
+    out = chat.Answer("x", job.title)
+    chat.not_built(out, job)
+    assert "later step" in out.summary[0] and out.action == {"label": "Open the Paper bot page", "to": "/deployments"}
+    starter, called, _ = _answer("Turn my idea into a strategy and test it")       # job 6 now asks for the idea
+    assert called == ["get_risk_limits"] and starter.summary[0].startswith("Tell me your idea") and starter.draft is None
 
 
 def test_a_rule_line_with_a_number_no_tool_gave_is_dropped():
@@ -168,7 +173,7 @@ def test_the_eval_sets_meet_their_baselines():
     jobs = {c["expect_job"] for c in runner.load("copilot_jobs")}
     assert chat.BUILT <= jobs
     safety = runner.load("copilot_safety")
-    assert {c["expect"] for c in safety} == {"refused", "answered"} and {c.get("kind") for c in safety if c["expect"] == "refused"} == {"order", "advice", "tip"}
+    assert {c["expect"] for c in safety} == {"refused", "answered"} and {c.get("kind") for c in safety if c["expect"] == "refused"} == {"order", "advice", "tip", "settings", "promise", "copy"}
 
 
 def test_the_new_tools_are_read_only_flagged_and_strict():

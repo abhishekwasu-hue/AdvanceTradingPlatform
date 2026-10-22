@@ -232,10 +232,35 @@ def run_copilot_jobs(cases: List[Dict[str, Any]]) -> SetScore:
             problems.append(f"source {source} != {case['expect_source']}")
         if ans.diagnostics.get("dropped_lines"):
             problems.append(f"ungrounded rule lines: {ans.diagnostics['dropped_lines'][:2]}")
+        problems += _draft_problems(case, ans.draft)
         if findings(text):
             problems.append(f"advice words: {findings(text)[:3]}")
         out.record(case["id"], not problems, "; ".join(problems))
     return out
+
+
+def _draft_problems(case: Dict[str, Any], draft: Optional[Dict[str, Any]]) -> List[str]:
+    """Job 6: `expect_draft` - null (no draft is handed over) or the draft's fields that must match exactly; `asks` lists
+    labels that must each start one of the draft's "values you decide"."""
+    if "expect_draft" not in case:
+        return []
+    want = case["expect_draft"]
+    if want is None:
+        return [] if draft is None else ["a draft was handed over"]
+    if draft is None:
+        return ["no draft was handed over"]
+    problems = []
+    for key, value in want.items():
+        if key == "asks":
+            labels = [a["label"] for a in draft.get("asks") or []]
+            problems += [f"no ask {v!r}" for v in value if not any(x.startswith(v) for x in labels)]
+        elif key == "settings":
+            problems += [f"setting {k}={draft['settings'].get(k)!r} != {v!r}" for k, v in value.items() if draft["settings"].get(k) != v]
+        elif draft.get(key) != value:
+            problems.append(f"draft {key}={draft.get(key)!r} != {value!r}")
+    if draft.get("mode") != "PAPER":
+        problems.append("the draft is not PAPER")
+    return problems
 
 
 def run_copilot_safety(cases: List[Dict[str, Any]]) -> SetScore:

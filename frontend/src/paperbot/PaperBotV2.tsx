@@ -1,6 +1,6 @@
 import { ChevronRight, Pause, Play, Square } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
-import { Link } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
@@ -13,9 +13,11 @@ import type { CustomStrategyResponse, Deployment, StrategyInfo } from "../types"
 import { DEFAULTS_PATH, appliedLine, useTradingDefaults, type TradingDefaults } from "../settings/tradingDefaults";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
+import { draftFromState, formSymbol } from "../copilot/strategyDraft";
+import CopilotDraftV2 from "./CopilotDraftV2";
 import {
   READY, SYMBOLS, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, paperBotRequestWithDefaults, sortBots, startSummary,
-  strategyLine, symbolProblem,
+  strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
 
 // The full form (options structures, exits, filters) loads only when "More ways to trade" is opened.
@@ -49,6 +51,12 @@ export default function PaperBotV2(_props: PageProps) {
   const [confirmStop, setConfirmStop] = useState<number | null>(null);
   const [botNote, setBotNote] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [stepUp, setStepUp] = useState<{ reason: string; retry: () => Promise<unknown> } | null>(null);
+  // Job 6: the Copilot's draft arrives in the navigation state (with the Copilot switch on); the trader saves it himself.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const draft = features.on("ai_copilot") ? draftFromState(location.state) : null;
+  const [preselect, setPreselect] = useState<Preselect | null>(null);
+  const [draftNote, setDraftNote] = useState<string | null>(null);
   const formRef = useRef<HTMLElement | null>(null);
   const firstField = useRef<HTMLSelectElement>(null);
 
@@ -154,10 +162,23 @@ export default function PaperBotV2(_props: PageProps) {
         )}
       </CardV2>
 
+      {canChange && draft && (
+        <CopilotDraftV2 key={draft.idea} draft={draft}
+          onDiscard={() => navigate(location.pathname, { replace: true, state: null })}
+          onSaved={(saved) => {
+            setCustom((all) => [...all.filter((c) => c.id !== saved.id), saved]);
+            setPreselect({ strategyId: saved.strategy_id, symbol: formSymbol(draft.symbol), lots: draft.lots });
+            setDraftNote(`Saved as your strategy "${saved.config.name}". It is picked below: check the symbol and press Start on paper when you are ready.`);
+            navigate(location.pathname, { replace: true, state: null });
+            goToForm();
+          }} />
+      )}
+
       {canChange && (
-        <section ref={formRef} className="scroll-mt-20">
+        <section ref={formRef} className="scroll-mt-20 space-y-space-3">
+          {draftNote && <NoteV2 kind="done" testId="draft-saved">{draftNote}</NoteV2>}
           <StartBotV2 library={library} custom={custom} hasBroker={hasBroker} firstField={firstField} onStarted={() => void loadBots()}
-            defaults={defaults} approvalAllowed={features.on("approval_only_entries")} />
+            defaults={defaults} approvalAllowed={features.on("approval_only_entries")} preselect={preselect} />
         </section>
       )}
 
@@ -237,11 +258,13 @@ function StepNo({ n }: { n: number }) {
   return <span aria-hidden className="mr-space-1 inline-flex h-5 w-5 items-center justify-center rounded-pill bg-surface-3 text-t12 font-semibold text-fg">{n}</span>;
 }
 
-export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, defaults = null, approvalAllowed = false }: {
+export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, defaults = null, approvalAllowed = false, preselect = null }: {
   library: StrategyInfo[] | null; custom: CustomStrategyResponse[]; hasBroker: boolean | null;
   firstField: RefObject<HTMLSelectElement>; onStarted: () => void;
   /** Settings part C: the user's own defaults (a pre-fill, shown and switchable here); null = none. */
   defaults?: TradingDefaults | null; approvalAllowed?: boolean;
+  /** Job 6: the strategy the trader just saved from the Copilot's draft, its symbol and the size his idea named. */
+  preselect?: Preselect | null;
 }) {
   const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId() };
   const [useDefaults, setUseDefaults] = useState(true);
@@ -254,6 +277,17 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [touched, setTouched] = useState(false);
+
+  // Job 6: the strategy the trader saved from the Copilot's draft, with the symbol his idea named (a pre-fill he can change).
+  useEffect(() => {
+    if (!preselect) return;
+    setStrategyId(preselect.strategyId);
+    if (preselect.symbol) {
+      if (SYMBOLS.includes(preselect.symbol)) setSymbolChoice(preselect.symbol);
+      else { setSymbolChoice(OTHER); setOtherSymbol(preselect.symbol); }
+    }
+    setResult(null);
+  }, [preselect]);
 
   // The first ready-made strategy, with the symbol it is shown with.
   useEffect(() => {
@@ -274,7 +308,9 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const problem = symbolProblem(symbol);
   const line = strategyLine(strategyId, info) || (custom.some((c) => c.strategy_id === strategyId) ? "Your own strategy from Build a strategy." : "");
   const offered = paperBotRequestWithDefaults(strategyId, symbol, info, defaults, approvalAllowed).applied;
-  const { request } = paperBotRequestWithDefaults(strategyId, symbol, info, defaults, approvalAllowed, useDefaults);
+  const base = paperBotRequestWithDefaults(strategyId, symbol, info, defaults, approvalAllowed, useDefaults).request;
+  const ideaLots = preselect && preselect.strategyId === strategyId ? preselect.lots : null;
+  const request = withIdeaLots(base, ideaLots);
 
   async function start() {
     setTouched(true);
@@ -333,6 +369,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
         </div>
         <div className="space-y-space-2">
           <p className="text-t14 text-fg-muted">{startSummary(symbol, info, request)}</p>
+          {request !== base && <p className="text-t13 text-fg-muted" data-idea-lots>The size comes from your idea.</p>}
           {offered.length > 0 && (
             <div className="space-y-space-1 rounded-control border border-subtle p-space-3" data-defaults>
               <label className="flex min-h-11 cursor-pointer items-center gap-space-2 text-t14 font-medium text-fg md:min-h-0">

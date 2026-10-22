@@ -109,9 +109,11 @@ class ParamSpec(_Strict):
 
 
 class Constraint(_Strict):
-    """`left op right` between two settings (or a setting and the signal timeframe). Timeframes compare by length."""
+    """`left op right` between two settings (or a setting and the signal timeframe). Timeframes compare by length.
+    TPL-8 (B10): `whole_bars` - the minutes setting `left` is a whole number of the timeframe `right`'s bars (a session
+    window such as the gap's opening window, checked in words before the expression ever runs)."""
     left: str = Field(pattern=_KEY)
-    op: Literal["<", "<=", ">", ">=", "!="]
+    op: Literal["<", "<=", ">", ">=", "!=", "whole_bars"]
     right: str = Field(pattern=_KEY)
     when: Optional[str] = Field(default=None, pattern=_KEY)       # a yes / no setting: the constraint applies when it is yes
     message: str = Field(min_length=1, max_length=200)
@@ -294,6 +296,9 @@ class Template(_Strict):
                     raise ValueError(f"constraint names an unknown setting {side!r}")
             if c.when is not None and (c.when not in by_key or by_key[c.when].type != "bool"):
                 raise ValueError(f"constraint 'when' must be a yes / no setting, got {c.when!r}")
+            if c.op == "whole_bars" and (c.left not in by_key or by_key[c.left].type != "int"
+                                         or (c.right != SIGNAL_TIMEFRAME and by_key[c.right].type != "timeframe")):
+                raise ValueError("a whole_bars constraint reads a whole-number minutes setting against a timeframe")
         refs: List[Tuple[str, Optional[str], str]] = []          # (what, key, required type)
         if self.context is not None:
             refs += [("context timeframe", self.context.timeframe_param, "timeframe"), ("context switch", self.context.enabled_by, "bool")]

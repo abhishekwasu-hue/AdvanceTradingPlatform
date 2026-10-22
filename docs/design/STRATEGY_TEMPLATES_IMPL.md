@@ -120,7 +120,7 @@ the history sweep and the breakout families' registry tests. No frontend change:
 from the API. No idea-library card gains an honest match (the T ideas read areas, rejections, divergences and sweeps;
 none of these templates does), so no `adopt` entry is added.
 
-Not built in step 4 (TPL-Q40): B10 gap and go (a gap companion on the session clock), C2 swing breakout + retest
+Not built in step 4 (TPL-Q40): B10 gap and go (a gap companion on the session clock; done in TPL-8 below), C2 swing breakout + retest
 (RetestEntry's `degree` is the wave degree: the swing degree is not forwarded yet), C4 trendline breakout + retest (the
 projected trendline retest, TPL-Q18, waits for the owner), D3 MA pullback, E1 RSI pullback, E3 Bollinger mean reversion and
 E5 VWAP reclaim (each invalidation is "the extreme since the setup": an engine piece the state machine does not have yet;
@@ -160,7 +160,7 @@ lookahead job). No frontend change: the Paper bot form lists the templates from 
 honest match (TPL-Q48).
 
 Not built in step 5 (TPL-Q49): E2 RSI divergence (an RSI period on RsiDivergence, an extreme companion and the
-lower-degree trigger: its own PR - done in TPL-7 below), B10 gap and go, C4 trendline breakout + retest (TPL-Q18), family F
+lower-degree trigger: its own PR - done in TPL-7 below), B10 gap and go (done in TPL-8 below), C4 trendline breakout + retest (TPL-Q18), family F
 (done in TPL-6 below).
 
 ## Family F (TPL-6): the option seller packs F1, F2
@@ -230,11 +230,39 @@ the strategy resolver, unknown versions refused; the new members equal to D3 / E
 version 2 (its version 1 cases are the default source). The new series are in the runtime fixtures, the no-look-ahead
 cases (lookahead job) and the history sweep. No frontend change: the Paper bot form lists the templates from the API.
 
+## TPL-8: R2 for the gap family, and B10 gap and go
+
+Same flag `strategy_templates` (OFF), PAPER only, signals only, no migration. Owner questions TPL-Q58..TPL-Q63.
+
+| Part | Where | Status |
+|---|---|---|
+| R2 for the gap family: `GapBreakoutRef(what, side, level, hold, stop_mult)` - the B8 gap screen's own columns on its signal bars (level = fail_level: the level the gap cleared; base_low / base_high: the other side of the session(s) the level came from), `held_level` forward, the stop references of `quality.stop_reference`; the same arguments, defaults, bounds, flags (`screener_breakouts` + `screener_breakouts_bk4`), timeframes (the registry's `GAP_TFS`), whole-bar window rule and two-session history as GapBreakout; sparse in the engine | `screener/registry.py`, `runtime.py` (`_breakout_ref` takes the gap's `tf` / session Bars; every other family unchanged), `strategy_templates/engine.py` | done |
+| The session clock (TPL-Q58): unchanged from the B8 screen - the exchange calendar's session for each bar's own timestamp, the opening window `hold` minutes from that session's open, the signal on the one bar that ends it; a session whose data starts after its open gives none; at most one signal per session, never later in the session | `screener/breakouts/gaps.py` (read only), `templates/B10.json` | done |
+| B10 gap and go ("Intraday (session-based)", 3 / 5 / 15 minutes, TPL-Q59): the setup event `GapType(side, level, hold) == "GAP_AND_GO"` (GapBreakout alone is also true for GAP_HOLD), the level the previous session's high / low or the recent month's (TPL-Q60), invalidation the level the gap cleared or that level with an ATR buffer, no exit (TPL-Q61) | `templates/B10.json` | done |
+| A settings rule `whole_bars` (TPL-Q62): the opening window must be a whole number of the chart's bars, refused in words before any expression runs; every earlier template unchanged | `strategy_templates/schema.py`, `compile.py` | done |
+| Signal text: two tokens (structure words; no prices, no buy / sell / target / stop words) | `language.py` | done |
+
+Tests: `tests/test_tpl8_b10_gap.py` - the companion against the B8 screen's own columns and the stop reference (both sides,
+3 / 5 / 15 minutes, both levels, `held_level` forward), on Daily gaps and their mirror, its arguments / flags / timeframes /
+whole-bar rule / history equal to GapBreakout's; B10 on hand-made sessions: must fire on a gap that kept going (long, and
+short on the mirror) with the level and the buffer by value, the opening window as a setting on the session clock (a longer
+window, the opening bar alone, data that starts after the open), the window refused in words when it is not whole bars,
+Daily refused; must not on a gap that faded (GAP_HOLD), filled (GAP_FILL) or an open inside the level, nor when the month's
+level was not cleared, nor during the warm-up; on random sessions "fires exactly" on the GAP_AND_GO bars (one per session,
+S6 on each) for several settings and timeframes; the shared gate - the mirror test (whole ticks), the truncation test over
+many t, scan = backtest = options backtest = worker on one trailing window that starts mid-session (the TPL-1 harness),
+property tests on random valid settings and sides, the language guard, "no number written into a rule", the ids round trip
+and fit, the adapter's signal (no target, risk_reward None, provenance), the flags, no order field, and the API (404 with the
+flag off; the card with the rule in words; adopt as a PAPER pre-fill; a window that is not whole bars refused). The
+companion is in the runtime fixtures (`test_s1b_screen_runtime.py`), the no-look-ahead cases (`app/quality/causal_cases.py`,
+lookahead job), the history sweep and the BK4 registry tests. No frontend change: the Paper bot form lists the templates
+from the API. No idea-library card (TPL-Q63).
+
 ## Not in this PR (next PRs)
 
 - Family A's area templates A1, A8, A3, A4 (an area companion + zone timelines in the template engine, TPL-Q23), A6 / A7
   (their functions); then the rest of B / C / D / E (TPL-Q40: an engine "extreme since the setup" invalidation for D3, E1,
-  E3, E5 and the swing degree for C2: done in step 5; the gap companion for B10; C4 after TPL-Q18; E2 after an RSI period
+  E3, E5 and the swing degree for C2: done in step 5; the gap companion for B10: done in TPL-8; C4 after TPL-Q18; E2 after an RSI period
   and an extreme companion, TPL-Q49: done in TPL-7), then F. Family F: F1 / F2 built (TPL-6 above); their further
   members D3 and E3 joined in pack version 2 (TPL-7); A1 waits for areas (TPL-Q50); G12 next (TPL-F7).
 - Section 5 "exits as settings" (stop_source / target_rule on the deployment's exit settings): needs a migration and
@@ -242,7 +270,7 @@ cases (lookahead job) and the history sweep. No frontend change: the Paper bot f
 - R4 rest: the stop_source rule per instrument_kind and the precedence table with tests (comes with section 5).
 - R5: the TEMPLATE_EXIT plumbing (both backtest engines and the position monitor read `TemplateStrategy.exit_signal`
   on each bar close of an open trade; reason "Template exit").
-- R2 for the gap family (B10), with its template.
+- R2 for the gap family (B10), with its template: done in TPL-8 above.
 - R7 rest: the projected trendline retest (TPL-Q18); R10 (NEXT_AREA target). (Forwarding the swing degree for C2: done
   in step 5.)
 - The stored copy in "My strategies" with provenance (a table: migration), the settings form, Templates page, compare (step 3).

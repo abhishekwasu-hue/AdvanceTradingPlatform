@@ -450,6 +450,22 @@ def test_tpl4_breakout_family_companions():
     assert v.notna().sum() == 1 and v.iloc[-1] < f["close"].iloc[-1]
 
 
+def test_tpl8_gap_companion():
+    """Strategy templates TPL-8 (R2 for the gap family): GapBreakoutRef gives the B8 gap's prices on the gap's signal bars
+    only, on the same session clock (tests/test_tpl8_b10_gap.py checks every output against the screen's own columns)."""
+    from app.quality.lookahead import synthetic_bars
+    walk = SymbolData("S", {"5m": synthetic_bars(3000, tf="5m", seed=1)})
+    seen = 0
+    for side in ("up", "down"):
+        fired = _ev(f'GapBreakout("{side}", "prev_day", 30)', walk)
+        level = _ev(f'GapBreakoutRef("level", "{side}", "prev_day", 30)', walk)
+        assert (level.notna() == fired).all(), side
+        held = _ev(f'GapBreakoutRef("held_level", "{side}", "prev_day", 30)', walk)
+        assert held[fired].tolist() == level[fired].tolist()
+        seen += int(fired.sum())
+    assert seen, "the fixture must carry gaps"
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

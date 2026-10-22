@@ -481,6 +481,10 @@ class _Eval:
                 "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, tf=tf, bars=self._gap_bars(tf)),
             "GapType": lambda: _breakout(f, "B8", str(self.ev(args[0], tf)), {
                 "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, "class", tf=tf, bars=self._gap_bars(tf)),
+            # Strategy templates TPL-8 (R2 for the gap family): the same B8 gaps on the same session Bars as GapBreakout
+            "GapBreakoutRef": lambda: _breakout_ref(f, "B8", _text(0, "level"), str(self.ev(args[1], tf)), {
+                "gap_level": _text(2, _bkd("gap_level")), "gap_hold_min": num(3, _bkd("gap_hold_min"))}, num(4, _bkd("stop_atr_mult")),
+                tf=tf, bars=self._gap_bars(tf)),
             "RetestEntry": lambda: retest_entry(),
             # Strategy templates R7 / R2: the retest's prices (the same B9 retests as RetestEntry with the same settings)
             "RetestEntryRef": lambda: _retest_ref(f, _text(0, "level"), str(self.ev(args[1], tf)), {
@@ -1012,16 +1016,19 @@ def _moving_average(x: pd.Series, n_: int, kind: str) -> pd.Series:
     raise ScreenRuntimeError(f"unknown moving average type {kind!r}")
 
 
-def _breakout_ref(f: pd.DataFrame, screen: str, what: str, side: str, overrides: Dict[str, Any], stop_mult: float) -> pd.Series:
+def _breakout_ref(f: pd.DataFrame, screen: str, what: str, side: str, overrides: Dict[str, Any], stop_mult: float,
+                  tf: Optional[str] = None, bars: Any = None) -> pd.Series:
     """Strategy templates step 2 (owner order R2): a breakout's prices as a series - the columns evaluate_screen keeps for
     the same breakout (one per leg, closed bars), on its signal bars only (NaN elsewhere); `held_level` holds the latest
-    signal's level until the next one; the stop references are the breakout quality overlay's own (quality.stop_reference)."""
+    signal's level until the next one; the stop references are the breakout quality overlay's own (quality.stop_reference).
+    `tf` / `bars` (TPL-8, the gap family): the bars' timeframe and the session Bars on the exchange clock, exactly as the
+    breakout's own function reads them (_breakout); left out, every other family runs as before."""
     from app.screener.breakouts.quality import stop_reference
     from app.screener.breakouts.screens import Bars, evaluate_screen
     if side not in ("up", "down"):
         raise ScreenRuntimeError(f"unknown breakout side {side!r}")
     p = _breakout_params(overrides)
-    b = Bars(f, p)
+    b = bars if bars is not None else Bars(f, p, tf=tf)
     try:
         out = evaluate_screen(f, screen, p, bars=b, sides=(side,), columns=("signal", "level", "fail_level", "base_high", "base_low"))[side]
     except ValueError as exc:

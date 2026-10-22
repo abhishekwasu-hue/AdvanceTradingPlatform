@@ -541,6 +541,13 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          flag=BREAKOUT_FLAG, also_flags=_BK4,
          doc="B8: on the bar that ends a gap's hold window, GAP_AND_GO (held, close at or beyond the open), GAP_HOLD (held, faded"
              " toward the level) or GAP_FILL (a close back inside the level); empty on other bars"),
+    # Strategy templates TPL-8 (owner order R2 for the gap family, B10 gap and go): the B8 gap's prices, on the same session
+    # clock as GapBreakout (the exchange calendar's sessions; the bar that ends the hold window) with the same arguments
+    Spec("GapBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("gap_level", "level", STR), _bk("gap_hold_min", "hold", NUM), _STOP_MULT),
+         cost=3.0, min_bars=BREAKOUT_MIN_BARS, min_sessions=2, timeframes=GAP_TFS, tf_multiple_args=("hold",), flag=BREAKOUT_FLAG,
+         also_flags=_BK4,
+         doc="B8 gap breakout's prices (level and fail_level: the level the gap cleared; base_low / base_high: the other side of"
+             " the session(s) the level came from)" + _REF_DOC.format(fn="GapBreakout")),
     # R7 (wave templates, flag screener_waves for the wave choices): `of` also takes wave_line / wave_end, with the wave
     # degree, the line, the wave and the break's k; the older choices read none of them and run exactly as before
     Spec("RetestEntry", "filter", BOOL, None, (_SIDE, _bk("retest_of", "of", STR, choices=RETEST_OF_CHOICES), _bk("retest_max_bars", "bars", NUM),

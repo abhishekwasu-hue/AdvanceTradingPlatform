@@ -3035,3 +3035,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   its trailing defaults (every older id unchanged). G12 not built (TPL-F7).
 - Tests: `tests/test_wave6_companions.py` (parity, must-fire / must-not per companion, mirror, truncation, the parity
   harness, ids, schema, flags); earlier G tests read version 2. Questions WAVE-46..WAVE-52.
+## 22 Oct - Strategy templates TPL-8: R2 for the gap family and B10 gap and go (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl8-b10-gap`. No migration (templates are JSON in the repository; no new flag).
+- ScreenQL: the gap companion `GapBreakoutRef(what, side, level, hold, stop_mult)` - the B8 gap screen's own prices on
+  its signal bars, on the same session clock and with the same arguments as GapBreakout (`_breakout_ref` takes the gap's
+  timeframe / session Bars; every other family unchanged).
+- B10 gap and go ("Intraday (session-based)", 3 / 5 / 15 minutes): GAP_AND_GO on the bar that ends the opening window
+  (a setting in minutes, whole bars of the chart); the level the previous session's or the recent month's; invalidation
+  the level the gap cleared or that level with a buffer; no exit. One signal per session at most, never later in the
+  session (the most conservative session-clock choice, TPL-Q58). A new settings rule `whole_bars` refuses a window that
+  is not whole bars in words.
+- Tests: `tests/test_tpl8_b10_gap.py` (companion, must fire / must not, session clock, mirror, truncation, scan =
+  backtest = options backtest = worker, property tests, words, ids, adapter, flags, API), runtime fixture, causal cases
+  (lookahead job), history sweep, BK registry tests. Questions TPL-Q58..TPL-Q63.

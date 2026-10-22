@@ -20,8 +20,9 @@ export function connectBrokerPath(known: (path: string) => boolean = (path) => p
   return known(BROKER_PATH) ? BROKER_PATH : BROKER_FALLBACK_PATH;
 }
 
-/** Settings → Alerts (the alert channels card) and Settings → Advanced → Go-live checklist. */
-export const ALERTS_PATH = "/settings#alerts";
+/** Settings → Alerts (Settings redesign B: its own page; with `ui_v2` off it goes back to `/settings#alerts`) and
+ * today's Settings → Advanced → Go-live checklist (v2: settings/paths.ts GO_LIVE_PATH_V2). */
+export const ALERTS_PATH = "/settings/alerts";
 export const GO_LIVE_PATH = "/settings#go-live";
 
 export interface GetStartedStep {

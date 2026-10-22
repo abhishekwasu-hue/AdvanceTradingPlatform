@@ -47,7 +47,7 @@ def test_a_click_opens_the_screen_the_event_is_about():
     assert app_path(_n(event_type=NotificationType.ENTRY.value, related_trade_id=11)) == "/positions?trade=11"
     assert app_path(_n(event_type=NotificationType.REJECTION.value, related_order_id=5)) == "/orders?order=5"
     assert app_path(_n(event_type=NotificationType.OI_BANNER.value)) == "/option-chain"
-    assert app_path(_n(event_type=NotificationType.TOKEN_EXPIRED.value)) == "/settings"
+    assert app_path(_n(event_type=NotificationType.TOKEN_EXPIRED.value)) == "/broker"
     assert app_path(_n(event_type=NotificationType.SCREEN_ALERT.value, id=9)) == "/notifications?n=9"
     assert app_path(_n(id=None)) == "/notifications"
 

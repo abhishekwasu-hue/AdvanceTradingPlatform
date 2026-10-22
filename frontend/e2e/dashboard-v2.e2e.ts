@@ -175,7 +175,7 @@ test.describe("v2 dashboard 1440 desktop", () => {
     const card = page.locator("[data-block='get-started']");
     await expect(card).toContainText("2 of 3 done");
     await expect(card.locator("[data-done='true']")).toHaveCount(2);
-    await expect(card.getByRole("link", { name: "Set up Telegram" })).toHaveAttribute("href", "/settings#alerts");
+    await expect(card.getByRole("link", { name: "Set up Telegram" })).toHaveAttribute("href", "/settings/alerts");
     await expect(page.locator("[data-block='setup']")).toHaveCount(0);
   });
 

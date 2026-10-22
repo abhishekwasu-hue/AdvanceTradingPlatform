@@ -85,7 +85,7 @@ REASON_NO_KEY = "no key"
 REASON_DAILY_CAP = "daily cap reached"
 REASON_MONTHLY_CAP = "monthly cap reached"
 
-VISION_OFF_NO_KEY = "Vision off - add your API key in Settings"
+VISION_OFF_NO_KEY = "Vision off - connect your AI key in Settings > AI"
 SUBSCRIPTION_NOTE = ("Subscription sign-in (for example Claude Pro or Max) is not supported - API keys only. Create an API key in the "
                      "provider's developer console; the provider bills you directly for what you use.")
 PRIVACY_NOTE = ("When Vision reviews a chart, the chart image and the minimal context needed (symbol, timeframe, whether it is a "

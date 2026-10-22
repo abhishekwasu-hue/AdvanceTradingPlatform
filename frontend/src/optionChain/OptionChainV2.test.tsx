@@ -313,7 +313,7 @@ describe("OC1 no sample data and no developer controls", () => {
     expect(chainProblem(new ApiError(409, "x"))).toEqual({ text: "Connect your broker on the", connect: true });
     expect(chainProblem(new ApiError(409, "x", "", "", null, "C")).text).toBe("This symbol is not available live on your plan.");
     expect(chainProblem(new Error("boom")).text).toBe("We could not load the option chain. Try again in a moment.");
-    expect(BROKER_PAGE_PATH).toBe("/settings");
+    expect(BROKER_PAGE_PATH).toBe("/broker");
     expect(flagOffSource).toContain('<p className="text-sm text-fg-muted" role="status">');
     expect(flagOffSource).not.toContain("text-down\">{error");
   });

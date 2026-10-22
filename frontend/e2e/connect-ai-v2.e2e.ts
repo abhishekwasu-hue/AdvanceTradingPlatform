@@ -88,7 +88,7 @@ for (const size of SIZES) {
       });
 
       test(`Settings → AI looks the same (${theme})`, async ({ page }) => {
-        await open(page, "/settings#ai", { theme, connected: true });
+        await open(page, "/settings/ai", { theme, connected: true });
         const section = page.locator("#ai");
         await expect(section.locator("[data-connected-line]")).toBeVisible();
         await section.scrollIntoViewIfNeeded();
@@ -123,10 +123,11 @@ test.describe("connect AI flow", () => {
     expect(calls.connect).toEqual([{ api_key: key, provider: "anthropic", consent: true }]);
 
     await page.goto("/settings#ai");
+    // Settings redesign B: the old link opens Settings → AI, its own page; the tour step is on the index row.
+    await expect(page).toHaveURL(/\/settings\/ai$/);
     const section = page.locator("#ai");
     await expect(section.locator("[data-connected-line]")).toContainText("Connected · Claude · key …a9F2");
     await expect(section.locator("[data-limits-line]")).toHaveText("AI this month: ₹42 of your ₹880 limit");
-    await expect(section).toHaveAttribute("data-tour", "settings-ai");
     await expect(section.locator("[data-key-guides]")).toHaveCount(0);
     await expect(section).not.toContainText(/model/i);
     await section.getByRole("button", { name: "Disconnect" }).click();

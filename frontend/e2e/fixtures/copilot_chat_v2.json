@@ -6,7 +6,7 @@
    "ready": false,
    "title": "Add a free AI key to start",
    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
-   "settings": "/settings#ai",
+   "settings": "/settings/ai",
    "reason": null
   },
   "market_line": {
@@ -314,7 +314,7 @@
     "ready": false,
     "title": "Add a free AI key to start",
     "line": "Until then I answer from ATP's own data in short, fixed sentences.",
-    "settings": "/settings#ai",
+    "settings": "/settings/ai",
     "reason": null
    }
   },
@@ -727,7 +727,7 @@
     "ready": false,
     "title": "Add a free AI key to start",
     "line": "Until then I answer from ATP's own data in short, fixed sentences.",
-    "settings": "/settings#ai",
+    "settings": "/settings/ai",
     "reason": null
    }
   },
@@ -1027,7 +1027,7 @@
     "ready": false,
     "title": "Add a free AI key to start",
     "line": "Until then I answer from ATP's own data in short, fixed sentences.",
-    "settings": "/settings#ai",
+    "settings": "/settings/ai",
     "reason": null
    }
   },
@@ -1059,7 +1059,7 @@
     "ready": false,
     "title": "Add a free AI key to start",
     "line": "Until then I answer from ATP's own data in short, fixed sentences.",
-    "settings": "/settings#ai",
+    "settings": "/settings/ai",
     "reason": null
    }
   },
@@ -1341,7 +1341,7 @@
     "ready": false,
     "title": "Add a free AI key to start",
     "line": "Until then I answer from ATP's own data in short, fixed sentences.",
-    "settings": "/settings#ai",
+    "settings": "/settings/ai",
     "reason": null
    }
   },
@@ -1526,7 +1526,7 @@
     "ready": false,
     "title": "Add a free AI key to start",
     "line": "Until then I answer from ATP's own data in short, fixed sentences.",
-    "settings": "/settings#ai",
+    "settings": "/settings/ai",
     "reason": null
    }
   },
@@ -1709,7 +1709,7 @@
     "ready": false,
     "title": "Add a free AI key to start",
     "line": "Until then I answer from ATP's own data in short, fixed sentences.",
-    "settings": "/settings#ai",
+    "settings": "/settings/ai",
     "reason": null
    }
   }

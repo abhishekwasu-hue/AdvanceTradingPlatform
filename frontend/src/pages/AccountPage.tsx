@@ -10,6 +10,8 @@ import MfaCard from "../components/MfaCard";
 import { Card } from "../components/ui";
 import { isAdminViewer } from "../ui/ComingSoon";
 import { ErrorState } from "../ui/ErrorState";
+import BillingCard from "../components/BillingCard";
+import { useFeatures } from "../ui/useFeatures";
 
 /** The signed-in trader's account: e-mail, two-factor, password, sessions. Signed out, App.tsx shows the sign-in screen
  * before any page; this page shows the same screen should it ever render without a user (UX1). */
@@ -24,6 +26,8 @@ export default function AccountPage() {
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
+  // Settings redesign B1: with `ui_v2`, Settings → Account & plan is this page, with the plan and billing below.
+  const v2 = useFeatures().on("ui_v2");
 
   useEffect(() => {
     if (!user) return;
@@ -54,7 +58,7 @@ export default function AccountPage() {
 
   if (!user) return <SignInScreen />;
 
-  return (
+  const account = (
     <div className="space-y-4 max-w-md">
       {error && <ErrorState variant="inline" message={error} />}
       <Card>
@@ -154,6 +158,13 @@ export default function AccountPage() {
           </table>
         )}
       </Card>
+    </div>
+  );
+  if (!v2) return account;
+  return (
+    <div className="space-y-4">
+      {account}
+      <div id="plan" className="scroll-mt-20"><BillingCard /></div>
     </div>
   );
 }

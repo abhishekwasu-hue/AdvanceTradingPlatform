@@ -71,7 +71,7 @@ def app_path(notification) -> str:
     if getattr(notification, "related_order_id", None):
         return "/orders?" + urlencode({"order": notification.related_order_id})
     if event == NotificationType.TOKEN_EXPIRED.value or event == NotificationType.BROKER_DISCONNECT.value:
-        return "/settings"
+        return "/broker"                                                # Settings redesign B: the Broker page
     if getattr(notification, "id", None):
         return "/notifications?" + urlencode({"n": notification.id})
     return "/notifications"

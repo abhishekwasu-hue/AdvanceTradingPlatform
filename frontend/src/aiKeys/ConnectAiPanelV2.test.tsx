@@ -132,7 +132,7 @@ describe("Connect AI panel: connected", () => {
   it("the Copilot chip", () => {
     const html = renderToStaticMarkup(<MemoryRouter><ConnectAiChip label="Claude" /></MemoryRouter>);
     expect(text(html)).toContain("AI connected · Claude");
-    expect(html).toContain('href="/settings#ai"');
+    expect(html).toContain('href="/settings/ai"');
   });
 });
 

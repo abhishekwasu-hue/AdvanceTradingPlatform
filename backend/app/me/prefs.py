@@ -12,6 +12,8 @@
   each (app/option_chain/ask_spec.py), at most MAX_SAVED_ANALYSES, sized so the most a user can save stays inside
   MAX_BODY_BYTES (no table, no migration).
   `appearance` holds the text size (Normal / Large / Extra large) applied to every page.
+  `tours` (MO2 part C) holds the first-time guidance marks: the welcome tour finished, the pages whose tips were seen and
+  "Skip all tips". Only marks: what a tour says lives in the frontend (src/tours/content/).
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -140,8 +142,28 @@ class AppearancePrefs(_Prefs):
     text_size: Literal["normal", "large", "xlarge"] = "normal"
 
 
+# MO2 part C: the pages that have a page tour (frontend src/tours/pages.ts TOUR_IDS, kept equal by a test). An allow-list,
+# so a stored mark is always one of these and the namespace stays small.
+TOUR_IDS: Tuple[str, ...] = ("dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings")
+TourId = Literal["dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings"]
+
+
+def _required_mark(value: datetime) -> datetime:
+    """A seen-page mark: the same time-zone and range rules as every other mark (never None: the type refuses it)."""
+    return _mark_time(value) or value
+
+
+class ToursPrefs(_Prefs):
+    """`tours` (MO2 part C): the first-time guidance marks, so a tip seen on the phone is not shown again on the desktop.
+    localStorage is only a paint cache. "Show all tips again" (Settings -> Help) clears all three."""
+    welcome_done_at: MarkTime = Field(default=None, description="the welcome tour was finished or closed")
+    skip_all_at: MarkTime = Field(default=None, description="'Skip all tips': no tour starts by itself (the ? button still replays)")
+    seen: Dict[TourId, Annotated[datetime, AfterValidator(_required_mark)]] = Field(
+        default_factory=dict, description="page tour id -> when its tips were finished or closed")
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
-                                       "appearance": AppearancePrefs}
+                                       "appearance": AppearancePrefs, "tours": ToursPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -274,4 +296,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "TOUR_IDS", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

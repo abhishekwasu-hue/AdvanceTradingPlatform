@@ -85,3 +85,27 @@ export interface AnalyzeStatus {
   disclaimer: string;
   link_message: string;
 }
+
+/** GET /chart-analyze/items/{id}/strikes: the option strikes the user's OWN deployment settings work out to at the
+ * setup's trigger level (backend app/chart_analyze/strikes.py). Always flagged "from your settings". */
+export interface StrikeLeg { label: string; right: "CE" | "PE"; strike: number; ratio: number }
+
+export interface StrikesItem {
+  id: number;
+  mode: string;
+  symbol: string;
+  settings: string;
+  expiry: string | null;
+  legs: StrikeLeg[] | null;
+  note: string | null;
+}
+
+export interface StrikesAnswer {
+  source: "your_settings";
+  side: "bull_put" | "bear_call" | "none";
+  symbol: string | null;
+  reference: { text: string; price: number | null; approximate: boolean };
+  approximate_note: string | null;
+  items: StrikesItem[];
+  message: string | null;
+}

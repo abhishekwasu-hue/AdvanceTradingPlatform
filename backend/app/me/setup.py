@@ -31,6 +31,10 @@ shows: see get_started_view.
 
 Like the other preferences this is not behind a flag: the trader's own data, computed from their own rows, places
 nothing. Every read filters on the caller's tenant (and user where the row has one).
+
+Settings redesign part D: the answer also carries `health` (app/me/setup_health.py) - what in the caller's setup needs an
+action now (an expiring data token, a failing AI key, Telegram not connected, delayed market data), cached per (tenant,
+user); null while `ui_v2` is off.
 """
 from __future__ import annotations
 
@@ -48,7 +52,7 @@ from app.db.models import (
     StrategyDeploymentRecord, User,
 )
 from app.db.session import get_session
-from app.me import prefs
+from app.me import prefs, setup_health
 
 STEPS = ("broker", "risk", "strategy", "alerts")
 GET_STARTED = ("broker", "paper_bot", "telegram")
@@ -145,7 +149,7 @@ def view(stored: Dict[str, Any], version: int, done: Dict[str, bool]) -> Dict[st
 async def get_setup(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """The caller's own setup progress: the four steps (done worked out now, skips stored) and the stored marks."""
     stored, version = await prefs.read_one(NAMESPACE, user, session)
-    return view(stored, version, await done_steps(session, user.tenant_id, user.id))
+    return {**view(stored, version, await done_steps(session, user.tenant_id, user.id)), "health": await setup_health.health(session, user)}
 
 
 @router.put("/setup")
@@ -155,7 +159,8 @@ async def put_setup(request: Request, version: Optional[int] = None, user: User 
     tenant_id, user_id = user.tenant_id, user.id        # read once: a failed save rolls back and expires `user`
     body = await prefs.read_body(request)
     stored, saved_version = await prefs.save(NAMESPACE, body, version, user, session)
-    return view(stored, saved_version, await done_steps(session, tenant_id, user_id))
+    return {**view(stored, saved_version, await done_steps(session, tenant_id, user_id)),
+            "health": await setup_health.health(session, setup_health.Caller(user_id, tenant_id))}
 
 
 __all__ = ["router", "STEPS", "GET_STARTED", "counts_as_done", "done_steps", "get_started_view", "view"]

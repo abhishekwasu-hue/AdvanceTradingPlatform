@@ -1,4 +1,4 @@
-import { Bell, CircleCheck, LogIn, PauseCircle, ShieldAlert, TriangleAlert, UserCircle2, Zap, type LucideIcon } from "lucide-react";
+import { Bell, CircleCheck, LogIn, PauseCircle, ShieldAlert, TriangleAlert, UserCircle2, X, Zap, type LucideIcon } from "lucide-react";
 import { Link } from "react-router";
 import { Button } from "../components/primitives";
 import { CodeForm, type BrokerLogin } from "../ui/BrokerGate";
@@ -14,6 +14,9 @@ import type { AttentionIcon, AttentionRow } from "./model";
  *
  * "Log in to <Broker>" runs that broker's existing login here (the broker gate's own login, shared through
  * useBrokerLogin), including the paste-the-code step for Zerodha and Fyers.
+ *
+ * Settings redesign D: a row marked `dismissible` (the broker login, a paused bot, the setup-health rows) has a quiet
+ * "Hide for today" button next to its action (`onHide`, src/dashboard/dismissToday.ts).
  */
 
 const ICONS: Record<AttentionIcon, LucideIcon> = {
@@ -25,15 +28,26 @@ export interface NeedsAttentionProps {
   /** The broker the "Log in" row is for, and the login in progress. */
   loginBroker: BrokerTokenInfo | null;
   login: BrokerLogin;
+  /** Hides a dismissible row until tomorrow; without it no row can be hidden. */
+  onHide?: (id: string) => void;
 }
 
-function Row({ row, primary, loginBroker, login }: { row: AttentionRow; primary: boolean; loginBroker: BrokerTokenInfo | null; login: BrokerLogin }) {
+const HIDE = "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted transition-colors duration-fast hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-9 md:w-9";
+
+function Row({ row, primary, loginBroker, login, onHide }: { row: AttentionRow; primary: boolean; loginBroker: BrokerTokenInfo | null; login: BrokerLogin; onHide?: (id: string) => void }) {
   const Icon = ICONS[row.icon];
   const action = row.action;
   const isLogin = !!action && "login" in action;
   const busy = isLogin && loginBroker !== null && login.busy !== null;
   const step = isLogin && login.codeStep ? login.codeStep : null;
   const detail = isLogin && loginBroker ? loginNote(loginBroker) : row.detail;
+  const hideable = !!row.dismissible && !!onHide;
+  const button = action && !step;
+  const hide = hideable ? (
+    <button type="button" className={HIDE} aria-label="Hide for today" title="Hide for today" data-hide={row.id} onClick={() => onHide?.(row.id)}>
+      <X size={18} aria-hidden />
+    </button>
+  ) : null;
   return (
     <li className="py-space-3 first:pt-0 last:pb-0" data-attention={row.id}>
       <div className="flex flex-col gap-space-3 sm:flex-row sm:items-center">
@@ -41,22 +55,29 @@ function Row({ row, primary, loginBroker, login }: { row: AttentionRow; primary:
           <span aria-hidden className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-control ${row.tone === "warn" ? "bg-warn-tint text-warn" : "bg-surface-2 text-fg-muted"}`}>
             <Icon size={18} />
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-t15 font-semibold text-fg">{row.title}</p>
             {detail && <p className="mt-px text-t13 text-fg-muted">{detail}</p>}
           </div>
+          {/* A notice with nothing to open: the hide button sits beside the words (no empty line on a phone). */}
+          {!button && hide && <span className="-my-space-1 shrink-0">{hide}</span>}
         </div>
-        {action && !step && (
-          "login" in action ? (
-            <Button variant={primary ? "primary" : "secondary"} icon={<LogIn size={16} aria-hidden />} loading={busy}
-              disabled={loginBroker === null || login.busy !== null} onClick={() => loginBroker && login.login(loginBroker)}
-              className="h-11 px-space-4 text-t14 sm:ml-auto md:h-9">
-              {action.label}
-            </Button>
-          ) : (
-            <Link to={action.to} className={`${primary ? LINK_PRIMARY : LINK_SECONDARY} sm:ml-auto`}>{action.label}</Link>
-          )
-        )}
+        {button ? (
+          <div className="flex items-center gap-space-2 sm:ml-auto">
+            {(
+              "login" in action ? (
+                <Button variant={primary ? "primary" : "secondary"} icon={<LogIn size={16} aria-hidden />} loading={busy}
+                  disabled={loginBroker === null || login.busy !== null} onClick={() => loginBroker && login.login(loginBroker)}
+                  className="h-11 flex-1 px-space-4 text-t14 sm:flex-none md:h-9">
+                  {action.label}
+                </Button>
+              ) : (
+                <Link to={action.to} className={`${primary ? LINK_PRIMARY : LINK_SECONDARY} flex-1 sm:flex-none`}>{action.label}</Link>
+              )
+            )}
+            {hide}
+          </div>
+        ) : null}
       </div>
       {step && (
         <div className="mt-space-3 rounded-control bg-surface-2 p-space-3 text-t14 text-fg-muted sm:ml-12">
@@ -72,7 +93,7 @@ function Row({ row, primary, loginBroker, login }: { row: AttentionRow; primary:
   );
 }
 
-export default function NeedsAttentionV2({ rows, loginBroker, login }: NeedsAttentionProps) {
+export default function NeedsAttentionV2({ rows, loginBroker, login, onHide }: NeedsAttentionProps) {
   if (rows !== null && rows.length === 0) {
     return (
       <section aria-label="Needs attention" data-block="attention" data-tour="dashboard-attention"
@@ -86,7 +107,7 @@ export default function NeedsAttentionV2({ rows, loginBroker, login }: NeedsAtte
     <CardV2 title="Needs attention" count={rows?.length} testId="attention" tour="dashboard-attention">
       {rows === null ? <LoadingRowsV2 /> : (
         <ul className="divide-y divide-subtle">
-          {rows.map((row, i) => <Row key={row.id} row={row} primary={i === 0} loginBroker={loginBroker} login={login} />)}
+          {rows.map((row, i) => <Row key={row.id} row={row} primary={i === 0} loginBroker={loginBroker} login={login} onHide={onHide} />)}
         </ul>
       )}
     </CardV2>

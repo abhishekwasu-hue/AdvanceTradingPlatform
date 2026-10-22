@@ -148,7 +148,8 @@ function Figure({ label, value, sub, tone, term }: { label: string; value: strin
   return (
     <div className="bg-surface-1 px-space-3 py-space-2">
       <dt className="flex items-center gap-space-1 text-t12 text-fg-muted">{label}{term && <TermTip term={term} />}</dt>
-      <dd className={cx("font-tabular text-t15 font-semibold", tone === "down" ? "text-down" : "text-fg")}>{value}</dd>
+      {/* No wrapping: a sign stays with its amount ("−₹5,250.00" never breaks after the minus, item 1). */}
+      <dd className={cx("whitespace-nowrap font-tabular text-t14 font-semibold", tone === "down" ? "text-down" : "text-fg")}>{value}</dd>
       {sub && <dd className="font-tabular text-t12 text-fg-muted">{sub}</dd>}
     </div>
   );

@@ -152,7 +152,7 @@ export default function SignalsV2() {
           )}
         </div>
       ) : wide ? (
-        <div className="grid grid-cols-[minmax(0,1fr)_430px] items-start gap-space-6">
+        <div className="grid grid-cols-[minmax(0,1fr)_400px] items-start gap-space-4">
           <SignalTable items={items} tab={tab} now={now} selectedId={selected?.id ?? null} onSelect={(id) => { setPicked(id); setMessage(null); }} />
           <div className="sticky top-space-6">
             {selected && <SignalDetail key={selected.id} item={selected} proposal={selected.action_id !== null ? feed.proposals.get(selected.action_id) : undefined}
@@ -247,17 +247,17 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
   // Every column but Setup sizes to its content (`w-px` + no wrapping); Setup takes the rest and wraps. When space runs
   // out (1440 px with an always-visible scrollbar and six-digit prices) it may break inside a word, hyphenated where
   // possible (`overflow-wrap: anywhere` + `hyphens: auto`), instead of a long word pushing Status past the edge. The price
-  // columns are at least 64 px of tabular figures (72 px with padding) and grow for a longer price ("1,35,000.00")
+  // columns are at least 3.5 rem of tabular figures (56 px at the Normal text size, item 1) and grow for a longer price ("1,35,000.00")
   // instead of clipping it. History shows its date above the time, so the Time column stays as narrow as on Today.
-  const th = "w-px whitespace-nowrap px-space-3 py-space-2 font-medium";
+  const th = "w-px whitespace-nowrap px-space-2 py-space-2 font-medium";
   const num = "w-px whitespace-nowrap px-space-1 text-right font-tabular";
-  const price = "inline-block min-w-[64px]";
+  const price = "inline-block min-w-[3.5rem]";
   return (
     <div className="overflow-hidden rounded-panel border border-subtle bg-surface-1 shadow-card">
       <table className="w-full table-auto text-t14" aria-label="Signals list">
         <thead>
           <tr className="border-b border-subtle text-left text-t12 text-fg-muted">
-            <th className={th}>Time</th><th className={th}>Symbol</th><th className="px-space-3 py-space-2 font-medium">Setup</th>
+            <th className={th}>Time</th><th className={th}>Symbol</th><th className="px-space-2 py-space-2 font-medium">Setup</th>
             {["Entry", "Stop", "Target"].map((h) => <th key={h} className={`${num} py-space-2 font-medium`}><span className={price}>{h}</span></th>)}
             <th className={th}>Status</th>
           </tr>
@@ -268,26 +268,26 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
             return (
               <tr key={item.id} onClick={() => onSelect(item.id)} data-row={item.id}
                 className={cx("cursor-pointer border-b border-subtle last:border-b-0 transition-colors duration-fast", on ? "bg-surface-2" : "hover:bg-surface-2")}>
-                <td className={cx("whitespace-nowrap border-l-2 px-space-3 py-space-3 font-tabular text-fg-muted", on ? "border-l-brand" : "border-l-transparent")}>{tab === "history" ? (
+                <td className={cx("whitespace-nowrap border-l-2 px-space-2 py-space-3 font-tabular text-fg-muted", on ? "border-l-brand" : "border-l-transparent")}>{tab === "history" ? (
                   <><span className="block">{signalDay(item.at)}</span><span className="block">{signalTime(item.at, "today")}</span></>   // two lines: the column stays narrow
                 ) : signalTime(item.at, tab)}</td>
-                <td className="px-space-3 py-space-3">
-                  <div className="w-[100px]">
+                <td className="px-space-2 py-space-3">
+                  <div className="whitespace-nowrap">
                     <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(item.id); }} aria-current={on || undefined} title={item.symbol}
-                      className="block max-w-full truncate rounded-control text-left font-semibold text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+                      className="block max-w-[10rem] truncate rounded-control text-left font-semibold text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
                       {item.symbol}
                     </button>
                     <Direction value={item.direction} className="block text-t12" />
                   </div>
                 </td>
-                <td className="px-space-3 py-space-3">
+                <td className="px-space-2 py-space-3">
                   <span className="block hyphens-auto text-fg [overflow-wrap:anywhere]">{item.setup}</span>
                   <span className="block hyphens-auto text-t12 text-fg-muted [overflow-wrap:anywhere]">{sourceCaption(item)}</span>
                 </td>
                 {[item.entry, item.stop, item.target].map((v, i) => (
                   <td key={i} className={`${num} py-space-3 text-fg`}><span className={price}>{formatPrice(v)}</span></td>
                 ))}
-                <td className="whitespace-nowrap px-space-3 py-space-3"><StatusChip item={item} now={now} short /></td>
+                <td className="whitespace-nowrap px-space-2 py-space-3"><StatusChip item={item} now={now} short /></td>
               </tr>
             );
           })}

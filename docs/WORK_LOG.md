@@ -2044,5 +2044,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   namespace); the browser copy paints it before the app loads (theme-init.js); applied on sign-in from the server; a
   size chosen before this release is sent up once.
 - Charts: axis, price and crosshair labels follow it (`chartFontSize()`: 12 / 14 / 15 px), re-read on the theme event.
+- Layout fixes the bigger text exposed (e2e): the market strip on a 360 px phone (two indices a row, VIX below); the
+  Signals list at 1440 (padding, symbol never cut, the detail pane 400 px, a sign never wraps away from its amount);
+  the phone bottom navigation comes back 300 ms after a field loses focus (a tap that blurs a field landed on it).
+  At the Large / Extra large sizes (`useBigText`) the dashboard keeps its stacked strip and one column until 2xl.
 - Tests: backend `tests/test_appearance_prefs.py`; vitest `src/textSize.test.ts` (scale in rem, 14 px floor, the
-  setting, theme-init, the server sync). e2e baselines regenerated at the new size.
+  setting, theme-init, the server sync); e2e `e2e/text-size-v2.e2e.ts` (Large and Extra large: phone layout rules,
+  no sideways scroll at 1440, nothing spills); all 106 changed e2e baselines regenerated at the new size.

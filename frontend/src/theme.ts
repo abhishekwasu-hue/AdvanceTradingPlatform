@@ -119,6 +119,14 @@ export function chartFontSize(): number {
   return Math.round(12 * textScale());
 }
 
+/** True at the Large and Extra large text sizes: a few dense layouts (the dashboard's market strip and its columns) then
+ * keep their stacked, roomier arrangement to a wider screen, so a figure never spills out of its box. Media queries are
+ * in px and do not grow with the text, so this is decided here. */
+export function useBigText(): boolean {
+  const [a] = useAppearance();
+  return a.textSize !== "normal";
+}
+
 /** A token's colour as a CSS colour string, read from the document (for canvases). */
 export function tokenColor(name: string, alpha = 1): string {
   const raw = getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();

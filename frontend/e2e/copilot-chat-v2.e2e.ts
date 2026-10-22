@@ -96,7 +96,7 @@ test.describe("v2 copilot chat 1440 desktop", () => {
     await expect(page.locator("[data-starters] button")).toHaveCount(8);
     await expect(page.locator("[data-job]")).toHaveCount(8);
     await expect(page.locator("[data-job='positions']")).toContainText("Ready");            // jobs 3-5: the second slice
-    await expect(page.locator("[data-job='strategy']")).toContainText("Coming later");
+    await expect(page.locator("[data-job='strategy']")).toContainText("Ready");                 // job 6: the third slice
     await expect(page.locator("[data-composer='inline']")).toBeVisible();
   });
 

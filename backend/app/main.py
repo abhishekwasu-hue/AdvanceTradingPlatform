@@ -92,6 +92,7 @@ from app.rhythm.routes import router as rhythm_router
 from app.option_chain.ask_routes import router as oc_ask_router
 from app.me.setup import router as me_setup_router
 from app.context_panel.routes import router as context_panel_router
+from app.markets.routes import router as markets_router
 from app.paper.ticket_routes import router as paper_ticket_router
 from app.paper.fno_routes import router as paper_fno_router
 from app.paper.fno_insights_routes import router as paper_fno_insights_router
@@ -350,6 +351,7 @@ app.include_router(rhythm_router)     # MO4: the daily rhythm - pre-market brief
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
 app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress (stored marks + steps worked out; reads only)
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
+app.include_router(markets_router)   # MO4 slice 2: the Sector & index view (flags ui_v2 + markets_view)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(paper_fno_router)       # FNO-1: trading from the option chain, PAPER only (flags ui_v2 + paper_account)
 app.include_router(paper_fno_insights_router)  # F&O 8b slice 1: risk budget + setup-aware strikes, read-only (ui_v2)

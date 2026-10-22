@@ -28,13 +28,14 @@ from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.market_data import candles_routes, entitlement
 from app.market_data.fanin import Priority
-from app.option_chain import analyses, snapshots
+from app.option_chain import analyses, dish, snapshots
 from app.option_chain.snapshots import IST
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/option-chain", tags=["option-chain"])
 FLAG = "ui_v2"
+DISH_FLAG = "markets_view"   # MO4 slice 2: the "What the chain shows" summary in the answer
 EXCHANGE = "NFO"            # an option chain is read in the F&O segment (as the option-chains route budgets it)
 
 NO_BROKER = "Connect your broker and log in to it today to see these analyses. They use your own broker's option chain."
@@ -105,12 +106,18 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
     chain = analyses.clean_spot(chain)                       # a spot of 0 (some brokers' "no price") is missing, not a number
     history = [] if byob else await _history(session, underlying, now)
     kept = analyses.session_history(chain, history)
-    return {**base, "state": "ok", "message": None, "spot": chain.underlying_ltp, "data_as_of": now.isoformat(),
-            "source": {"broker": record.broker_name, "account_label": record.account_label},
-            "session": {"snapshots": len(kept), "since": kept[0].at.isoformat() if kept else None,
-                        "note": NO_HISTORY_BYOB if byob else None},
-            "near_atm_strikes": analyses.NEAR_ATM_STRIKES,
-            "analyses": analyses.compute_all(chain, history, now, history_off=byob)}
+    results = analyses.compute_all(chain, history, now, history_off=byob)
+    out: Dict[str, Any] = {**base, "state": "ok", "message": None, "spot": chain.underlying_ltp, "data_as_of": now.isoformat(),
+                           "source": {"broker": record.broker_name, "account_label": record.account_label},
+                           "session": {"snapshots": len(kept), "since": kept[0].at.isoformat() if kept else None,
+                                       "note": NO_HISTORY_BYOB if byob else None},
+                           "near_atm_strikes": analyses.NEAR_ATM_STRIKES,
+                           "analyses": results}
+    # MO4 slice 2: "What the chain shows" (app/option_chain/dish.py) from the same six analyses - with `markets_view` on only.
+    from app.platform.controls import flag_enabled
+    if await flag_enabled(session, DISH_FLAG, user.tenant_id):
+        out["dish"] = dish.build(results, chain, history, history_off=byob)
+    return out
 
 
 async def _read_chain(record: BrokerCredentialRecord, underlying: str, expiry: Optional[date]) -> Tuple[Optional[OptionChain], Optional[str]]:

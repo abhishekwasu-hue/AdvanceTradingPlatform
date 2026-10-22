@@ -1,3 +1,4 @@
+import { fetchAnalysesShared } from "./analyses";
 import { AnalysisTabs } from "./AnalysisTabsV2";
 import { AskAi } from "./AskAiV2";
 import { MyAnalyses } from "./MyAnalysesV2";
@@ -23,7 +24,8 @@ export default function AnalysisSlotV2({ symbol, expiry, refreshKey }: AnalysisS
   return (
     <div className="space-y-space-4" data-analysis-mount="option-chain" data-underlying={symbol} data-expiry={expiry ?? ""}
       data-refresh-key={refreshKey ?? ""}>
-      <AnalysisTabs symbol={symbol} expiry={expiry} refreshKey={key} />
+      {/* MO4 slice 2: the shared read, so the summary on top of the page (ChainDishV2) costs no second chain read. */}
+      <AnalysisTabs symbol={symbol} expiry={expiry} refreshKey={key} load={fetchAnalysesShared} />
       <AskAi symbol={symbol} expiry={expiry} refreshKey={key} />
       <MyAnalyses symbol={symbol} expiry={expiry} refreshKey={key} />
     </div>

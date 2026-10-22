@@ -131,6 +131,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     # Settings redesign A: the AI key-format table and its cases (obviously fake keys only), backend + byte-identical copy
     "backend/tests/fixtures/key_formats.json": "9eca4977c4c6c89bf6876b40938aef29caabba46227e2266144958ee1462f5da",
     "frontend/src/aiKeys/__fixtures__/key_formats.json": "9eca4977c4c6c89bf6876b40938aef29caabba46227e2266144958ee1462f5da",
+    # Idea library slice 1: the server's own payload of the hand-written idea cards (no market data; synced by a backend test)
+    "frontend/e2e/fixtures/ideas_v2.json": "be47523431c5523509f1a46238ff6824da910a0c176b1609e5971a6c23373d7f",
     # made-up rows in NSE's file layouts (the universe importer's tests)
     "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
     "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",

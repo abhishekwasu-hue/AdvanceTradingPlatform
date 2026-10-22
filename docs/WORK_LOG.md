@@ -3092,3 +3092,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_tpl8_b10_gap.py` (companion, must fire / must not, session clock, mirror, truncation, scan =
   backtest = options backtest = worker, property tests, words, ids, adapter, flags, API), runtime fixture, causal cases
   (lookahead job), history sweep, BK registry tests. Questions TPL-Q58..TPL-Q63.
+
+## 22 Oct - Idea library slice 3: T7 scans, the second adopt review (behind ui_v2 + idea_library, + strategy_templates for adopt)
+
+- Branch `claude/idea-library-3`. No migration, no new flag, no new route.
+- T7 "Try as a scan": the double top / bottom at an area from existing registry functions only (DowTrend, ReversalAt at
+  the last confirmed swing high / low, NearZone); settings swing size and area tolerance. Head and shoulders and the
+  neckline retest come later (IDEA-14). T6 keeps "comes later": no function reads the trend-side channel line (IDEA-12).
+- Adopt review against families A-G: T2 -> A2, T5 -> A5 (T5 pre-filled with the breakout defaults its scan uses); each
+  mapping carries a guarded `note` shown on the card; T1 / T3 / T4 / T6 / T7 / T8 keep their reasons in `ADOPT_REVIEW`
+  (IDEA-13). T5's card now says that "a swing formed beyond" is not checked.
+- Tests: `tests/test_idea_library.py` (A2 / A5 signals equal the ideas' scans bar by bar, the mappings start from the
+  ideas' settings, the route offers T2 / T5 only with their functions on and the template adopt route accepts the
+  pre-fill as PAPER, T7 must fire / must not fire, no look-ahead, flags); vitest `src/ideas/ideas.test.tsx`; e2e
+  `e2e/idea-library-v2.e2e.ts` (the idea library baselines updated: T7 scans, T5 note, the adopt card on A5). The
+  fixture `e2e/fixtures/ideas_v2.json` is now the payload with strategy templates on; its pin is updated.

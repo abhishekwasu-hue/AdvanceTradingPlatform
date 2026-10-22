@@ -22,7 +22,8 @@ import { ALL_GROUPS, IDEA_FLAG, defaultText, ideasIn, rangeText, screenerPathFor
  * only. Slice 2 (IDEA-1): "Adopt as a paper strategy" appears only on an idea the server maps HONESTLY onto a strategy
  * template (`adopt.available`, with `strategy_templates` on too); it opens the Paper bot form with the template picked
  * and the idea's settings as the pre-fill, which the user reviews and saves himself (PAPER only). Every other idea says
- * it comes later. Nothing here places an order.
+ * it comes later. Slice 3: T2 (A2) and T5 (A5) are mapped; the card shows the mapping's note (where the paper strategy
+ * still reads less than the card). Nothing here places an order.
  */
 export default function IdeaLibraryV2(_props: PageProps = {}) {
   const features = useFeatures();
@@ -158,6 +159,7 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
   const titleId = useId();
   const open = idea.scans.filter((s) => s.available);
   const adoptPath = adoptOn ? adoptPathFor(idea) : null;
+  const adoptNote = adoptPath && idea.adopt.available ? idea.adopt.note ?? null : null;
   return (
     <article id={`idea-${idea.id}`} aria-labelledby={titleId} data-idea={idea.id} className={`${CARD} flex scroll-mt-space-6 flex-col p-space-4 md:p-space-5`}>
       <div className="flex flex-wrap items-center gap-space-2">
@@ -197,6 +199,7 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
             <Play size={14} aria-hidden />Adopt as a paper strategy
           </Link>
           <p className="mt-space-2 text-t12 text-fg-muted">{ADOPT_NOTE}</p>
+          {adoptNote && <p className="mt-space-1 text-t12 text-fg-muted" data-state="adopt-note">{adoptNote}</p>}
         </div>
       )}
 
@@ -259,7 +262,7 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
             </Part>
           )}
           <Part title="Use as a paper strategy">
-            {adoptPath ? <p className="text-fg-muted" data-state="adopt-ready">{ADOPT_NOTE}</p>
+            {adoptPath ? <p className="text-fg-muted" data-state="adopt-ready">{ADOPT_NOTE}{adoptNote ? ` ${adoptNote}` : ""}</p>
               : <p className="text-fg-muted" data-state="adopt-later">{adoptLater}</p>}
           </Part>
         </div>

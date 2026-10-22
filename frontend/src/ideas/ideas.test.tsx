@@ -25,11 +25,9 @@ function render(props: { initialGroup?: string; initialAnswers?: Record<string, 
   return renderToStaticMarkup(<MemoryRouter><IdeaLibraryView library={library} {...props} /></MemoryRouter>);
 }
 
-/** The library with one idea mapped onto a template (no idea is mapped on main today: IDEA-1 / IDEA-10). */
-function withMapping(id: string): IdeaLibrary {
-  return { ...LIB, ideas: LIB.ideas.map((i) => i.id === id
-    ? { ...i, adopt: { available: true as const, template: "D1", timeframe: "15m", params: { period: 12 } } } : i) };
-}
+/** The ideas the server maps onto a template (slice 3: T2 -> A2, T5 -> A5; the fixture is the payload with strategy
+ * templates on). */
+const ADOPTABLE = LIB.ideas.filter((i) => i.adopt.available).map((i) => i.id);
 
 /** The text a trader reads (markup stripped), without the scan formulas (ScreenQL code, shown folded for the curious). */
 function readable(html: string): string {
@@ -93,6 +91,10 @@ describe("the cards", () => {
     const t6 = html.slice(html.indexOf('data-idea="T6"'), html.indexOf('data-idea="T7"'));
     expect(t6).toContain("comes later");
     expect(t6).not.toContain("Try as a scan");
+    const t7 = html.slice(html.indexOf('data-idea="T7"'), html.indexOf('data-idea="T8"'));   // slice 3: T7 has scans (zones off here)
+    expect(t7).toContain('data-state="scan-off"');
+    expect(t7).toContain("Double top at supply");
+    expect(t7).toContain("Head and shoulders and the neckline break with its retest come later");
   });
 
   it("is a white box: the full logic, the settings with their starting values, the decisions and the scan formula", () => {
@@ -103,26 +105,30 @@ describe("the cards", () => {
     expect(t5).toContain("RetestEntry(&quot;up&quot;, $retest_of, $retest_max_bars, TRUE)");
   });
 
-  it("no idea can be used as a paper strategy yet: every card says it comes later, and nothing offers LIVE", () => {
-    expect(LIB.ideas.every((i) => i.adopt.available === false)).toBe(true);
+  it("without strategy templates on, every card says adopting comes later, and nothing offers LIVE", () => {
+    expect(ADOPTABLE).toEqual(["T2", "T5"]);
+    expect(html).not.toContain("data-adopt=");
     expect((html.match(/data-state="adopt-later"/g) ?? []).length).toBe(LIB.ideas.length);
     expect(readable(html)).not.toMatch(/\blive\b/i);
   });
 
-  it("slice 2: a mapped idea offers Adopt as a paper strategy into the Paper bot form, only with strategy templates on", () => {
-    const mapped = withMapping("T5");
-    const on = render({ adoptOn: true }, mapped);
+  it("slice 3: T2 and T5 offer Adopt as a paper strategy into the Paper bot form with their template and settings", () => {
+    const on = render({ adoptOn: true });
+    const t2 = on.slice(on.indexOf('data-idea="T2"'), on.indexOf('data-idea="T3"'));
+    expect(t2).toContain('data-adopt="A2"');
+    expect(t2).toContain('href="/deployments?template=A2&amp;timeframe=15m&amp;set.swing_degree=1"');
     const t5 = on.slice(on.indexOf('data-idea="T5"'), on.indexOf('data-idea="T6"'));
-    expect(t5).toContain('data-adopt="D1"');
-    expect(t5).toContain('href="/deployments?template=D1&amp;timeframe=15m&amp;set.period=12"');
-    expect(t5).toContain('data-state="adopt-ready"');
-    expect(readable(t5)).toContain("runs on paper only");
-    expect((on.match(/data-adopt=/g) ?? []).length).toBe(1);                       // the other ideas still come later
-    expect((on.match(/data-state="adopt-later"/g) ?? []).length).toBe(LIB.ideas.length - 1);
-    const off = render({ adoptOn: false }, mapped);                                 // strategy_templates off: no link
-    expect(off).not.toContain("data-adopt=");
-    expect((off.match(/data-state="adopt-later"/g) ?? []).length).toBe(LIB.ideas.length);
-    expect(render({ adoptOn: true })).not.toContain("data-adopt=");                 // main: nothing is mapped
+    expect(t5).toContain('data-adopt="A5"');
+    expect(t5).toContain('href="/deployments?template=A5&amp;timeframe=15m&amp;set.retest_of=swing&amp;set.retest_max_bars=10'
+      + '&amp;set.vol_mult=1.5&amp;set.range_mode=fixed"');
+    for (const card of [t2, t5]) {
+      expect(card).toContain('data-state="adopt-ready"');
+      expect(card).toContain('data-state="adopt-note"');
+      expect(readable(card)).toContain("runs on paper only");
+      expect(readable(card)).toContain("is not checked yet");                    // where the paper strategy reads less
+    }
+    expect((on.match(/data-adopt=/g) ?? []).length).toBe(2);                       // the other ideas still come later
+    expect((on.match(/data-state="adopt-later"/g) ?? []).length).toBe(LIB.ideas.length - 2);
     expect(adoptPathFor({ adopt: { available: false } })).toBeNull();
     expect(ADOPT_NOTE).not.toMatch(/\b(buy|sell|target|stop|profit|live)\b/i);
   });

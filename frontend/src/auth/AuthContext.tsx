@@ -3,6 +3,7 @@ import { api, clearToken, setToken, tryRefresh } from "../api/client";
 import type { UserResponse } from "../types";
 import type { LegalAckBody } from "../legal/legal";
 import { clearSignIn, markSignIn } from "../broker/signIn";
+import { readGoogleReturn } from "./google";
 
 interface AuthState {
   user: UserResponse | null;
@@ -25,12 +26,19 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  // GS-1: back from Google sign-in. Read during the first render, before any effect below can navigate (a redirect
+  // would drop the fragment that carries the two-factor challenge); the address bar is cleaned at once.
+  const [google] = useState(readGoogleReturn);
 
   useEffect(() => {
     // P0.3 / S6: nothing survives a reload in memory; the HttpOnly refresh cookie (or a token an older build
-    // left in storage) gets a fresh access token, then the profile.
+    // left in storage) gets a fresh access token, then the profile. After Google sign-in the refresh cookie is already
+    // set, and it counts as a real sign-in.
     tryRefresh()
-      .then((ok) => (ok ? api.me().then(setUser) : undefined))
+      .then((ok) => (ok ? api.me().then((me) => {
+        if (google?.kind === "signed_in") markSignIn(me.id, google.isNew);
+        setUser(me);
+      }) : undefined))
       .catch(() => clearToken())
       .finally(() => setLoading(false));
   }, []);

@@ -440,6 +440,10 @@ report_settings() {
   for k in R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET R2_ENDPOINT; do if env_set "$k"; then n=$((n + 1)); fi; done
   case "$n" in 0) info "history import (HB0) R2 token: not set (import stays off)";; 4) ok "history import (HB0) R2 token: set (read-only, used only by the importer)";;
     *) warn "history import (HB0): only $n of R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET / R2_ENDPOINT set";; esac
+  n=0
+  for k in GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do if env_set "$k"; then n=$((n + 1)); fi; done
+  case "$n" in 0) info "Google sign-in (GS-1): not set (optional; no Google button)";; 2) ok "Google sign-in (GS-1): both keys set (the button shows)";;
+    *) warn "Google sign-in (GS-1): only one of GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET set - the button stays hidden";; esac
 }
 
 lock() {

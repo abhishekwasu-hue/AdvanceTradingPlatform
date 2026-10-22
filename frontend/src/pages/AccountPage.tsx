@@ -9,6 +9,8 @@ import { Card } from "../components/ui";
 import { LogoMark } from "../components/Logo";
 import LegalConsentField from "../legal/LegalConsentField";
 import { acceptanceFor, type LegalSummary } from "../legal/legal";
+import GoogleSignInButton from "../auth/GoogleSignInButton";
+import { takeGoogleReturn } from "../auth/google";
 
 export default function AccountPage() {
   const { user, login, completeMfaLogin, register, acceptInvite, resetPassword, logout, refreshUser } = useAuth();
@@ -57,6 +59,15 @@ export default function AccountPage() {
   // Arriving via an owner's invite link (?invite=<token>): show who invited you, ask only for a
   // password, and join their organisation instead of creating a new one.
   useEffect(() => {
+    // GS-1: back from Google - the authenticator step, or why it did not work, in plain words.
+    const google = takeGoogleReturn();
+    if (google?.kind === "mfa") {
+      setMfaToken(google.mfaToken);
+      setMode("mfa");
+      setNotice("Google confirmed your e-mail. Enter your authenticator code to finish signing in.");
+    } else if (google?.kind === "error") {
+      setError(google.message);
+    }
     try {
       const verify = new URLSearchParams(window.location.search).get("verify");
       if (verify) {
@@ -335,6 +346,7 @@ export default function AccountPage() {
             {loading ? "Please wait…" : mode === "login" ? "Log in" : mode === "mfa" ? "Verify" : mode === "invite" ? "Join team" : mode === "forgot" ? "Send reset link" : mode === "reset" ? "Set new password" : "Create account"}
           </button>
         </form>
+        {mode === "login" && <GoogleSignInButton />}
         <div className="mt-3 flex flex-wrap gap-3">
           <button
             onClick={() => { setNotice(null); setMode(mode === "login" ? "register" : "login"); }}

@@ -457,6 +457,9 @@ export const api = {
 
   me: () => request<UserResponse>("/auth/me"),
 
+  // GS-1: which extra sign-in buttons to show (google: true only once the server has both credentials).
+  authProviders: () => request<{ google: boolean }>("/auth/providers"),
+
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 
   mfaVerifyLogin: (mfaToken: string, code: string) =>

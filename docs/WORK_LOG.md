@@ -2028,3 +2028,24 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   day (deduped by title). `DELETE /api/broker/{name}/analytics-token` forgets the token.
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
+
+## GS-1: Google sign-in, inert until the credentials are set
+- Owner decision (22 Oct): the "Continue with Google" button stays hidden until `GOOGLE_OAUTH_CLIENT_ID` and
+  `GOOGLE_OAUTH_CLIENT_SECRET` are on the server (docs/OPEN_QUESTIONS.md GS-1). Redirect URI
+  `https://aialgodesk.tech/api/auth/google/callback` (PUBLIC_BASE_URL + `/api/auth/google/callback`).
+- `GET /api/auth/providers` -> `{google: bool}`; `GET /api/auth/google/start` and `/callback` answer 404 until both keys
+  are set (and, in production/staging, PUBLIC_BASE_URL). OIDC code flow with PKCE (S256), `state` and `nonce` in a signed,
+  10-minute, HttpOnly, SameSite=Lax cookie on `/api/auth/google` (deleted on every callback). The ID token is verified
+  against Google's keys (cached an hour, refetched on an unknown key id): RS256, issuer, audience = client id, `azp`,
+  expiry, nonce and `email_verified`.
+- Accounts: with `self_signup` off (the owner's setting) it never creates one - it signs in the existing, active user
+  whose e-mail equals the verified Google e-mail, through the password login's tail (`_complete_login`: login event
+  `google`, new-device alert, audit, session, the same refresh cookie). MFA on: the same 5-minute challenge, handed in the
+  URL fragment and removed from the address bar at once. Unknown e-mail: "No account uses this Google e-mail. Ask your
+  organisation owner for an invite." With `self_signup` on, a new organisation under the register form's rules; a beta
+  gate or the legal acceptance sends the person to the form. Login protection (`refusal`) applies as for a password.
+- Never logged: uvicorn's access log now blanks `code`, `state`, `id_token`, `access_token`, `refresh_token` query values
+  (`app/core/logging_config.py`), which also covers the Upstox OAuth callback.
+- Web only: hidden inside the Android app (Google refuses embedded web views; ADR-0028 keeps the app on the password).
+- No migration (the e-mail match needs no new column). Tests: `tests/test_google_signin.py` (Google mocked, no network),
+  `frontend/src/auth/google.test.tsx`.

@@ -492,6 +492,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # UI2-7: the caller's own setup wizard progress (the `setup` preferences plus steps worked out from their own rows)
     ("GET", "/api/me/setup"): "member: the caller's own setup progress only (tenant and user)",
     ("PUT", "/api/me/setup"): S_OWN_PREFS,
+    # MO4: the daily rhythm - the caller's own digests (own trades, signals, journal; the organisation's market memory and
+    # events) and the caller's own Telegram choice
+    ("GET", "/api/rhythm/today"): "member: the caller's own digest (own trades, signals and journal; the organisation's market reads)",
+    ("GET", "/api/rhythm/settings"): "member: the caller's own daily-rhythm choice and whether Telegram reaches the caller's own chat",
+    ("PUT", "/api/rhythm/settings"): S_OWN_PREFS,
     ("GET", "/api/news-events"): P_NEWS_EVENTS,
     ("POST", "/api/news-events"): "trader",
     ("DELETE", "/api/news-events/{event_id}"): "trader",
@@ -557,6 +562,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/basket/preview"): "trader",
     ("POST", "/api/paper/fno/basket/execute"): "trader",       # FNO-2: every leg one PAPER order, hedge legs first
     ("POST", "/api/paper/fno/basket/broker-link"): S_COMPUTE,  # the legs pre-filled for the user's broker app; sends nothing
+    ("POST", "/api/paper/fno/contracts"): S_COMPUTE,         # FNO-4: saved contracts read from the instrument master (platform-wide data)
+    ("GET", "/api/paper/fno/positions/groups"): "member: the caller's own open PAPER legs grouped (tenant and user)",
     ("POST", "/api/paper/experience/opt-out"): "trader",
     ("PUT", "/api/paper/account"): "trader",
     ("GET", "/api/paper/ladder"): "member",
@@ -651,6 +658,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/lab/pine/templates"): "member",
     ("POST", "/api/lab/pine/translate"): S_COMPUTE,
     ("POST", "/api/lab/pine/run"): "trader",
+    # idea library slice 1 (flag idea_library): read-only method cards, the same content for every organisation
+    ("GET", "/api/ideas"): "member",
+    ("GET", "/api/ideas/{idea_id}"): "member",
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
                                     "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),

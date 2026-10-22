@@ -49,7 +49,7 @@ export const screenerApi = {
   /** U7 LG1: the Legends cards (flag `screener_legends`; 503 while it is off - the gallery then shows no card text). */
   legends: () => request<LegendsLibrary>("/screener/legends"),
   /** U2 (flag `screener_builder_u2`; 503 while off): a screen -> the funnel's stages (top-level conjuncts). */
-  stages: (body: { library_id?: string; source?: string; base_tf?: string }) =>
+  stages: (body: { library_id?: string; source?: string; base_tf?: string; params?: Record<string, number | string | boolean> }) =>
     request<StagesResponse>("/screener/stages", { method: "POST", body: JSON.stringify(body) }),
   /** U9 TX2 (flag `screener_tx2`; 503 while it is off - the page then shows no library tools). */
   libraryMirrors: () => request<MirrorsResponse>("/screener/library/mirrors"),

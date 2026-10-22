@@ -128,6 +128,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # user's own key, else the organisation's, else the rules / `ai_not_connected`). OFF: every AI call and page behaves
     # exactly as before and /api/ai/byok/connect* answers 404. Background jobs stay on the organisation's key. No orders.
     "ai_one_key": "One AI key for every AI feature: the Connect AI panel and the user's own key first for Copilot, chart analysis and the other AI tools",
+    # Master Order 4 slice 1 (app/rhythm; needs `ui_v2`): the daily rhythm - the pre-market brief, the mid-session pulse,
+    # the closing wrap and the weekly review as a card on the Dashboard, and on the user's own Telegram when the user
+    # turns it on (Settings > Alerts, OFF by default). Built from the user's own data and the market data ATP holds;
+    # structure words only, no buy / sell / target / stop wording. OFF: /api/rhythm/* answers 404 and nothing is sent.
+    "daily_rhythm": "Daily rhythm: the pre-market brief, mid-session pulse, closing wrap and weekly review on the Dashboard and, by choice, on Telegram",
     # PW6 (beta spec 4a, Phase 0): the closed-beta gate. ON: sign-up needs a SUPER_ADMIN-issued invite code and stops at
     # BETA_COHORT_CAP accounts. OFF: registration is exactly as before (self_signup still decides). OFF by default.
     "beta_cohort_gate": "Closed beta: sign-up needs an invite code and stops at the cohort cap (BETA_COHORT_CAP, default 500)",
@@ -195,6 +200,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # teacher's "on your chart" lines: structure words, no buy / sell / target / stop wording, no single price (the
     # user's own area as a range only). OFF: every one of these texts is exactly as before. Text only - places no orders.
     "signal_language_v2": "Signal language v2: structure words only on signals, alerts, the brief and the teacher (no buy / sell / target / stop wording, no single prices)",
+    # Idea library slice 1 (owner order ATP_SESSION_IDEA_LIBRARY.md, T1-T8): the Ideas page (v2 shell) - generic method
+    # ideas as white-box cards (plain words, structure words, the user's own settings, honest provenance; education, no
+    # performance claims) with "Try as a scan" built from the ScreenQL registry. OFF: /api/ideas answers 404 and the page
+    # and its navigation entry are hidden. Places no orders.
+    "idea_library": "Idea library: well-known chart-reading methods as plain-words cards, each with a ready scan to try (education only, places no orders)",
     # Z10-b (G5, docs/design/Z10_LAUNCH_HARDENING.md): stale data -> zero alerts. The bar-close engine, the rule flush and
     # the dispatcher hold back a screen / instrument alert whose bars are no longer current. Trade, exit, risk and
     # system notifications are never held back. OFF: unchanged.

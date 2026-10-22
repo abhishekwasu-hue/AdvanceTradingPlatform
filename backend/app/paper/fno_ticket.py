@@ -226,7 +226,8 @@ def position_stop(side: str, stop: Optional[float], tick: float) -> float:
 
 def max_loss(side: str, fill: float, stop: Optional[float], units: float, future: bool = False) -> Dict[str, Any]:
     if future:
-        assert stop is not None
+        if stop is None:          # ask_errors refuses a future without a stop before this is reached
+            return {"value": None, "basis": "A future needs a stop-loss: without one the loss has no limit."}
         value = (fill - stop) if side == "BUY" else (stop - fill)
         return {"value": round(value * units, 2), "basis": f"Down to your stop-loss {stop:,.2f}. A gap past the stop can lose more."
                 if side == "BUY" else f"Up to your stop-loss {stop:,.2f}. A gap past the stop can lose more."}

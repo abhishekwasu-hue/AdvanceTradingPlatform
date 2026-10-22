@@ -150,11 +150,12 @@ function RowPanelView({ row, panel, watchlists, on }: { row: FutureRow; panel: R
   );
 }
 
-function Signed({ value, pct, tick }: { value: number | null; pct: number | null; tick?: number }) {
+/** `stack`: the % on its own line (a phone card's narrow column). */
+function Signed({ value, pct, tick, stack = false }: { value: number | null; pct: number | null; tick?: number; stack?: boolean }) {
   if (value === null) return <span className="text-fg-muted">{EMPTY}</span>;
   return (
     <span className={tone(value)}>
-      {formatChange(value, tick)}{pct !== null && <span className="ml-space-1 text-t12">({formatPct(pct)})</span>}
+      {formatChange(value, tick)}{pct !== null && <span className={cx("text-t12", stack ? "block" : "ml-space-1")}>({formatPct(pct)})</span>}
     </span>
   );
 }
@@ -213,11 +214,11 @@ export function FuturesChainView({ data, problem, loading, trading, watchlistsOn
                       <span className="block font-semibold text-fg">{r.label}</span>
                       <span className="block text-t12 text-fg-muted">{monthWord(i)} · {expiryText(r)} · Lot {r.lot_size}</span>
                     </th>
-                    <td className="px-space-3 py-space-2 text-right font-tabular font-semibold text-fg" data-cell="ltp">{formatPrice(r.ltp, r.tick_size)}</td>
-                    <td className="px-space-3 py-space-2 text-right font-tabular" data-cell="change"><Signed value={r.change} pct={r.change_pct} tick={r.tick_size} /></td>
-                    <td className="px-space-3 py-space-2 text-right font-tabular text-fg" data-cell="oi">{formatCount(r.oi)}</td>
-                    <td className={cx("px-space-3 py-space-2 text-right font-tabular", tone(r.oi_change))} data-cell="oi-change">{formatCountChange(r.oi_change)}</td>
-                    <td className="px-space-3 py-space-2 text-right font-tabular" data-cell="basis"><Signed value={r.basis} pct={r.basis_pct} tick={r.tick_size} /></td>
+                    <td className="whitespace-nowrap px-space-3 py-space-2 text-right font-tabular font-semibold text-fg" data-cell="ltp">{formatPrice(r.ltp, r.tick_size)}</td>
+                    <td className="whitespace-nowrap px-space-3 py-space-2 text-right font-tabular" data-cell="change"><Signed value={r.change} pct={r.change_pct} tick={r.tick_size} /></td>
+                    <td className="whitespace-nowrap px-space-3 py-space-2 text-right font-tabular text-fg" data-cell="oi">{formatCount(r.oi)}</td>
+                    <td className={cx("whitespace-nowrap px-space-3 py-space-2 text-right font-tabular", tone(r.oi_change))} data-cell="oi-change">{formatCountChange(r.oi_change)}</td>
+                    <td className="whitespace-nowrap px-space-3 py-space-2 text-right font-tabular" data-cell="basis"><Signed value={r.basis} pct={r.basis_pct} tick={r.tick_size} /></td>
                     <td className="px-space-3 py-space-2"><RowActions row={r} trading={trading} watchlistsOn={watchlistsOn} timeframe={timeframe} panel={panel} on={on} /></td>
                   </tr>
                   {panel?.key === r.tradingsymbol && (
@@ -245,7 +246,7 @@ export function FuturesChainView({ data, problem, loading, trading, watchlistsOn
               <dl className="mt-space-2 grid grid-cols-3 gap-space-2 text-t12">
                 <div><dt className="text-fg-muted">OI</dt><dd className="font-tabular text-t13 text-fg">{formatCount(r.oi)}</dd></div>
                 <div><dt className="text-fg-muted">OI change</dt><dd className={cx("font-tabular text-t13", tone(r.oi_change))}>{formatCountChange(r.oi_change)}</dd></div>
-                <div><dt className="text-fg-muted">Basis</dt><dd className="font-tabular text-t13"><Signed value={r.basis} pct={r.basis_pct} tick={r.tick_size} /></dd></div>
+                <div><dt className="text-fg-muted">Basis</dt><dd className="font-tabular text-t13"><Signed value={r.basis} pct={r.basis_pct} tick={r.tick_size} stack /></dd></div>
               </dl>
               <div className="mt-space-2"><RowActions row={r} trading={trading} watchlistsOn={watchlistsOn} timeframe={timeframe} panel={panel} on={on} /></div>
               <RowPanelView row={r} panel={panel} watchlists={watchlists} on={on} />

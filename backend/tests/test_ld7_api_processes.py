@@ -128,19 +128,19 @@ def test_cpu_count_honours_a_containers_cpu_quota(tmp_path, monkeypatch):
     assert security._cpu_count() == 4
 
 
-def test_bcrypt_limit_is_shared_between_api_processes(monkeypatch):
+def test_bcrypt_threads_follow_the_cpus_not_the_process_count(monkeypatch):
+    """LD-9: each API process may run as many checks as the CPUs it may use, so a login never waits for its own
+    process's thread while a CPU is free (the processes do not get the logins evenly)."""
     from app.auth import security
     from app.core import config
     monkeypatch.setattr(security, "_cpu_count", lambda: 4)
-    monkeypatch.setattr(config, "API_WORKERS", 1)
-    assert security._bcrypt_concurrency() == 4
-    monkeypatch.setattr(config, "API_WORKERS", 2)
-    assert security._bcrypt_concurrency() == 2
-    monkeypatch.setattr(config, "API_WORKERS", 3)
-    assert security._bcrypt_concurrency() == 2                 # rounded up (the CI runner: 4 CPUs, 3 processes)
+    for workers in (1, 2, 3):
+        monkeypatch.setattr(config, "API_WORKERS", workers)
+        assert security._bcrypt_concurrency() == 4             # the CI runner: 4 CPUs, 1-3 processes
     monkeypatch.setattr(security, "_cpu_count", lambda: 2)
     monkeypatch.setattr(config, "API_WORKERS", 2)
-    assert security._bcrypt_concurrency() == 1                 # the KVM 2: one each
+    assert security._bcrypt_concurrency() == 2                 # the KVM 2: two each (at most 4 checks on its 2 CPUs)
+    monkeypatch.setattr(security, "_cpu_count", lambda: 1)
     monkeypatch.setattr(config, "API_WORKERS", 4)
     assert security._bcrypt_concurrency() == 1                 # never below one
 

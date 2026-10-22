@@ -119,13 +119,14 @@ class QuotesBody(BaseModel):
 
 def _missing(pair: Pair, reason: str, **extra: Any) -> dict:
     return {"symbol": pair[1], "exchange": pair[0], "ltp": None, "prev_close": None, "change": None, "change_pct": None,
-            "timestamp": None, "age_seconds": None, "stale": None, "stale_reason": None, "source": None, "missing": True,
+            "timestamp": None, "age_seconds": None, "stale": None, "stale_reason": None, "source": None, "missing": True, "oi": None,
             "error": reason, **extra}
 
 
 def _priced(pair: Pair, ltp: Any, *, prev_close: Any, timestamp: Optional[datetime], source: str, now: datetime,
-            unknown_age_is_stale: bool) -> Optional[dict]:
-    """The row for a real price, or None when there is none (no value, zero or negative: never shown as a price)."""
+            unknown_age_is_stale: bool, oi: Any = None) -> Optional[dict]:
+    """The row for a real price, or None when there is none (no value, zero or negative: never shown as a price).
+    FNO-4: `oi`, a contract's open interest when the broker's quote carries it (None otherwise; never 0 made up)."""
     try:
         price = float(ltp)
     except (TypeError, ValueError):
@@ -141,8 +142,17 @@ def _priced(pair: Pair, ltp: Any, *, prev_close: Any, timestamp: Optional[dateti
     row = {"symbol": pair[1], "exchange": pair[0], "ltp": price, "prev_close": None, "change": None, "change_pct": None,
            "timestamp": timestamp.isoformat() if timestamp is not None else None,
            "age_seconds": round((now - timestamp).total_seconds(), 1) if timestamp is not None else None,
-           "stale": reason is not None, "stale_reason": reason, "source": source, "missing": False, "error": None}
+           "stale": reason is not None, "stale_reason": reason, "source": source, "missing": False, "error": None,
+           "oi": _oi(oi)}
     return _with_prev_close(row, prev)
+
+
+def _oi(value: Any) -> Optional[float]:
+    try:
+        oi = float(value)
+    except (TypeError, ValueError):
+        return None
+    return oi if oi > 0 else None
 
 
 def _with_prev_close(row: dict, prev: Optional[float]) -> dict:
@@ -156,7 +166,7 @@ def _from_quote(pair: Pair, quote: Optional[Quote], source: str, now: datetime, 
     if quote is None:
         return None
     return _priced(pair, quote.ltp, prev_close=quote.prev_close, timestamp=quote.timestamp, source=source, now=now,
-                   unknown_age_is_stale=byob)
+                   unknown_age_is_stale=byob, oi=quote.oi)
 
 
 def _ltp_body(record: BrokerCredentialRecord, row: dict, quote: Optional[Quote], now: datetime) -> dict:
@@ -164,7 +174,8 @@ def _ltp_body(record: BrokerCredentialRecord, row: dict, quote: Optional[Quote],
     return {"symbol": row["symbol"], "exchange": row["exchange"], "source_broker": record.broker_name, "fetched_at": now.isoformat(),
             "ltp": row["ltp"], "timestamp": row["timestamp"], "age_seconds": row["age_seconds"], "stale": bool(row["stale"]),
             "stale_reason": row["stale_reason"], "source": row["source"], "bid": quote.bid if quote else None,
-            "ask": quote.ask if quote else None, "volume": (quote.volume or None) if quote else None, "prev_close": row["prev_close"]}
+            "ask": quote.ask if quote else None, "volume": (quote.volume or None) if quote else None, "prev_close": row["prev_close"],
+            "oi": row.get("oi")}
 
 
 # --- the previous close, per broker, symbol and IST trading day ----------------------------------------------------------
@@ -232,7 +243,7 @@ async def _from_cache(record: BrokerCredentialRecord, pair: Pair, now: datetime,
     except (TypeError, ValueError):
         ts = None
     row = _priced(pair, shared.get("ltp"), prev_close=shared.get("prev_close"), timestamp=ts, source=shared.get("source") or "quote",
-                  now=now, unknown_age_is_stale=byob)
+                  now=now, unknown_age_is_stale=byob, oi=shared.get("oi"))
     return {**row, "shared": True} if row is not None else None
 
 

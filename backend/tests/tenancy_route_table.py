@@ -557,6 +557,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/basket/preview"): "trader",
     ("POST", "/api/paper/fno/basket/execute"): "trader",       # FNO-2: every leg one PAPER order, hedge legs first
     ("POST", "/api/paper/fno/basket/broker-link"): S_COMPUTE,  # the legs pre-filled for the user's broker app; sends nothing
+    ("POST", "/api/paper/fno/contracts"): S_COMPUTE,         # FNO-4: saved contracts read from the instrument master (platform-wide data)
+    ("GET", "/api/paper/fno/positions/groups"): "member: the caller's own open PAPER legs grouped (tenant and user)",
     ("POST", "/api/paper/experience/opt-out"): "trader",
     ("PUT", "/api/paper/account"): "trader",
     ("GET", "/api/paper/ladder"): "member",

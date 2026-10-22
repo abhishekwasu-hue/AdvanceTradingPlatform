@@ -1,7 +1,18 @@
 # ADR-0027: Strategy Lab - user-authored strategy code runs only in an isolated runner (amends ADR-0005)
 
-**Date:** 2026-10 · **Status:** proposed (AMW-18; owner approval of the AMW port plan, `docs/design/AMW_PORT.md` section
-3) · **Amends:** ADR-0005 · **Extends:** ADR-0006 · **Threat model:** `docs/design/STRATEGY_LAB_THREAT_MODEL.md`
+**Date:** 2026-10 · **Status:** accepted (AMW-18, PR #264; approved by the owner on 2026-10-22, see "Owner approval"
+below) · **Amends:** ADR-0005 · **Extends:** ADR-0006 · **Threat model:** `docs/design/STRATEGY_LAB_THREAT_MODEL.md`
+
+## Owner approval (2026-10-22)
+- The owner (Abhi) approved this ADR and `docs/design/STRATEGY_LAB_THREAT_MODEL.md` as the design of the Strategy Lab
+  (owner order 11b, handover pack). This is the evidence for gate item G-1.
+- The approval is of the design only. It turns nothing on: gate G-LAB (threat model section 9, items G-1..G-19) still
+  gates every code-mode flag (`strategy_lab_python`, `strategy_lab_sql_lua`, `strategy_lab_js`, `strategy_lab_r`),
+  per family, through `set_flag` and the run-time re-check (decisions 8-9). Host modes (decision 1) need no runner.
+- Owner order 11e (same date) overrides the port plan's C-3: the AI may write code for every Lab mode, including
+  Python. AI-written code is untrusted exactly like user code (the same validator, the same runner, the same limits;
+  never published, scanned or run live automatically). The line "The AI generator emits the DSL ..., never code" below
+  is read with that change; the full wording follows with AMW-19 / AMW-20.
 
 ## Context
 - The owner wants AMW's Strategy Lab, with all eight authoring modes:

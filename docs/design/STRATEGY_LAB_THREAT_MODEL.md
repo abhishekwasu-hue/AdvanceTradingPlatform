@@ -1,7 +1,7 @@
 # Strategy Lab - threat model and gate G-LAB
 
-**Slice:** AMW-18 (docs only) · **Status:** proposed, with ADR-0027 · **Date:** 2026-10 (revised after the security
-review of PR #264)
+**Slice:** AMW-18 (docs only) · **Status:** accepted with ADR-0027 (approved by the owner on 2026-10-22; G-LAB still
+gates every code-mode flag) · **Date:** 2026-10 (revised after the security review of PR #264)
 
 **Related documents:**
 - [ADR-0027](../adr/0027-strategy-lab-isolated-runner.md): code modes run only in a gVisor runner; amends ADR-0005.

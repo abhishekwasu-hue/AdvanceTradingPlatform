@@ -22,7 +22,7 @@ export function Table<T>({ columns, rows, rowKey, empty, caption }: {
         <thead className="sticky top-0 bg-surface-2">
           <tr>
             {columns.map((c) => (
-              <th key={c.key} scope="col" className={cx("whitespace-nowrap px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-fg-muted", c.numeric && "text-right", c.className)}>
+              <th key={c.key} scope="col" className={cx("whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-fg-muted", c.numeric && "text-right", c.className)}>
                 {c.header}
               </th>
             ))}

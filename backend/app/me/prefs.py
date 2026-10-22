@@ -11,6 +11,11 @@
   `oc_analyses` (OC3) holds the user's saved Option chain analyses ("My analyses"): a name and a validated analysis spec
   each (app/option_chain/ask_spec.py), at most MAX_SAVED_ANALYSES, sized so the most a user can save stays inside
   MAX_BODY_BYTES (no table, no migration).
+  `fno_baskets` (FNO-2) holds the user's saved F&O baskets (Save / Load on the basket panel): a name, the underlying,
+  MIS / NRML and the legs (expiry, strike, CE / PE, Buy / Sell, lots, the planning price and a sold leg's stop), at most
+  MAX_SAVED_BASKETS of at most MAX_BASKET_LEGS legs, sized so the most a user can save stays inside MAX_BODY_BYTES. A
+  saved basket is a plan: loading it places nothing.
+  `appearance` holds the text size (Normal / Large / Extra large) applied to every page.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -18,8 +23,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Dict, Literal, Optional, Tuple, Type
+from datetime import date, datetime, timedelta, timezone
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Type
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, ValidationError, model_validator
@@ -133,7 +138,51 @@ class OcAnalysesPrefs(_Prefs):
         return self
 
 
-NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs}
+MAX_SAVED_BASKETS = 8
+MAX_BASKET_LEGS = 12                                     # the basket panel's own limit (app/paper/fno_basket.py)
+BASKET_ID = r"^[a-z0-9]{4,16}$"
+BASKET_NAME = r"^[A-Za-z0-9][A-Za-z0-9 &()+\-/.,:]{0,39}$"
+BASKET_SYMBOL = r"^[A-Z0-9&_\- ]{1,30}$"
+MAX_PRICE = 1e7
+
+
+class SavedBasketLeg(_Prefs):
+    expiry: date
+    strike: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    right: Literal["CE", "PE"]
+    side: Literal["BUY", "SELL"]
+    lots: int = Field(ge=1, le=500)
+    price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+
+
+class SavedBasket(_Prefs):
+    name: str = Field(pattern=BASKET_NAME, max_length=40)
+    underlying: str = Field(pattern=BASKET_SYMBOL)
+    product: Literal["MIS", "NRML"] = "MIS"
+    legs: List[SavedBasketLeg] = Field(min_length=1, max_length=MAX_BASKET_LEGS)
+    saved_at: MarkTime = Field(default=None)
+
+
+class FnoBasketsPrefs(_Prefs):
+    """`fno_baskets` (FNO-2): the user's saved baskets, by id. Loading one fills the basket panel; it places nothing."""
+    items: Dict[Annotated[str, StringConstraints(pattern=BASKET_ID)], SavedBasket] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _at_most(self) -> "FnoBasketsPrefs":
+        if len(self.items) > MAX_SAVED_BASKETS:
+            raise ValueError(f"at most {MAX_SAVED_BASKETS} saved baskets; delete one first")
+        return self
+
+
+class AppearancePrefs(_Prefs):
+    """`appearance` (handover item 1): the text size every page uses, so phone and desktop agree. One root scale on the
+    page (frontend `src/theme.ts`): normal = 100 %, large = 112.5 %, xlarge = 125 %."""
+    text_size: Literal["normal", "large", "xlarge"] = "normal"
+
+
+NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
+                                       "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -266,4 +315,7 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+
+
+__all__ = ["router", "NAMESPACES", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

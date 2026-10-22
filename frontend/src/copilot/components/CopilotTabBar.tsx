@@ -45,7 +45,7 @@ export default function CopilotTabBar({ active, onSelect, badges, busy }: { acti
               <Icon size={15} className={on ? "text-ai" : ""} aria-hidden />
               {t(`tabs.${tab}`)}
               {badge > 0 && (
-                <span className="ml-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full bg-ai px-1 text-[10px] font-bold leading-[18px] text-surface"
+                <span className="ml-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full bg-ai px-1 text-xs font-bold leading-[18px] text-surface"
                       aria-label={t(`tabs.badge.${tab}`, { count: badge })}>{badge > 99 ? "99+" : badge}</span>
               )}
             </button>

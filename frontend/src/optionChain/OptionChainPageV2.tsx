@@ -28,7 +28,7 @@ import { useOptionChain, type OptionChainData } from "./useOptionChain";
  *   in the middle; a row opens its full details.
  * - No sample data and no developer controls: without a broker session the shell's broker gate shows "Connect your
  *   broker" instead of this page (src/ui/dataPages.ts), and a chain that cannot be read says so in plain words.
- * - Below the chain: the mount point of the Analysis tabs (OC2).
+ * - Below the chain: the Analysis tabs, Ask AI and My analyses (AnalysisSlotV2).
  * - FNO-1: with the PAPER account on, a call or put cell opens its actions and the PAPER order ticket, held contracts
  *   show "P", and a bottom strip holds the key figures (src/fno/ChainTradingV2.tsx). The page itself places nothing.
  * - FNO-3: the symbol hub's tab row on top (Chart | Option chain | Futures | Overview, src/fno/SymbolHubTabsV2.tsx). The
@@ -95,7 +95,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
     ? chain.expiries.expiries
     : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const pickedRow: ChainRow | null = live?.rows.find((r) => r.strike === picked) ?? null;
-  const trading = useChainTrading({ symbol, live, prefs, onPrefs });
+  const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions });
 
   return (
     <div className="space-y-space-4" data-page="option-chain-v2">
@@ -165,7 +165,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       </section>
       {trading.layer}
 
-      {/* OC2: the Analysis tabs go here (AnalysisSlotV2 is the placeholder a follow-up wires to AnalysisTabsV2). */}
+      {/* OC4: the Analysis tabs, Ask AI and My analyses for the chain on screen. */}
       <AnalysisSlotV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />
 
       <RowDetailsV2 row={pickedRow} atm={live?.summary.atm_strike ?? null} underlying={symbol} onClose={() => setPicked(null)} />

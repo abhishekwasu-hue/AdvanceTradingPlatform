@@ -10,13 +10,13 @@ import type { ChainLeg } from "../optionChain/types";
 import { chartTabPath, chartsPath } from "../shell/shellRoutes";
 import { EMPTY, formatDateIST, formatPrice, formatSignedINR } from "../ui/format";
 import { fnoApi, type FnoApi, type FnoContract, type HeldLeg, type Right, type Side } from "./api";
-import { basket as defaultBasket, type BasketStore } from "./basket";
+import { MAX_LEGS, basket as defaultBasket, type BasketStore } from "./basket";
 import { PRACTICE_TITLE, heldPnl, heldText } from "./ticketModel";
 
 /**
  * FNO-1 (owner order section 3): tap a strike's call or put on the chain -> this sheet.
  * - Buy / Sell open the order ticket (the user's own manual order, PAPER);
- * - Add to basket (a Buy or a Sell leg of one lot, kept in this browser - the basket panel is the next PR);
+ * - Add to basket (a Buy or a Sell leg of one lot, kept in this browser; the basket panel is src/fno/BasketPanelV2.tsx);
  * - Chart of this strike (the contract's chart; the underlying's while the contract is not known);
  * - Add to watchlist (the contract, on the exchange it trades on; behind the `watchlists` flag);
  * - Price alert (an instrument rule on the contract's price; behind the `screener_v2` flag - a rule only notifies);
@@ -73,9 +73,9 @@ export function chartLink(target: ActionTarget, contract: FnoContract | null): s
 
 export function basketAdd(store: BasketStore, target: ActionTarget, contract: FnoContract | null, side: Side): Note {
   const ok = store.add({ underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right, side, lots: 1,
-    price: target.leg.ltp, label: contract?.label ?? null });
+    price: target.leg.ltp, label: contract?.label ?? null, iv: target.leg.iv });
   return ok ? { tone: "done", text: `Added to the basket: ${side === "BUY" ? "Buy" : "Sell"} 1 lot of ${labelOf(target, contract)}.` }
-    : { tone: "warn", text: "The basket is full (20 legs). Remove a leg first." };
+    : { tone: "warn", text: `The basket is full (${MAX_LEGS} legs). Remove a leg first.` };
 }
 
 /** Adds the contract to `list` (or to a new list "F&O" when the user has none). */

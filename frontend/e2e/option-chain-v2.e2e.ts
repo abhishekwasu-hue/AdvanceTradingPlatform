@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { DEMO_ANALYSES } from "../src/optionChain/analyses.fixture";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 
@@ -59,6 +60,14 @@ async function open(page: Page, theme: "light" | "dark", opts: {
     const body = { ...DATA.live, underlying: symbol, expiry: url.searchParams.get("expiry") ?? DATA.live.expiry, market_open: opts.marketOpen ?? true };
     return route.fulfill({ json: opts.live ? opts.live(body) : body });
   });
+  // OC4: the analyses below the chain (the OC2 fixture, renamed to the symbol on screen) and no saved analyses yet.
+  await page.route(/\/api(?:\/v1)?\/option-chain\/analyses/, (r) => {
+    const symbol = new URL(r.request().url()).searchParams.get("symbol") ?? "NIFTY";
+    return r.fulfill({ json: { ...DEMO_ANALYSES, symbol } });
+  });
+  await page.route(/\/api(?:\/v1)?\/me\/prefs$/, (r) => r.fulfill({ json: {
+    prefs: { chart: {}, setup: {}, oc_analyses: { items: {} }, appearance: { text_size: "normal" } },
+    versions: { chart: 0, setup: 0, oc_analyses: 0, appearance: 0 } } }));
   await page.goto(opts.path ?? "/option-chain");
   await page.addStyleTag({ content: [
     "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }",
@@ -194,6 +203,27 @@ test.describe("Option chain v2 at 390", () => {
     expect(Math.abs(strike!.x + strike!.width / 2 - 180)).toBeLessThanOrEqual(24);
   });
 });
+
+for (const [width, height] of [[1440, 900], [390, 844]] as const) {
+  test.describe(`Option chain v2 at ${width}: the analyses below the chain (OC4)`, () => {
+    test.use(width === 390 ? { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width, height } });
+    for (const theme of THEMES) {
+      test(`${theme}: Analysis tabs, Ask AI and My analyses`, async ({ page }) => {
+        await open(page, theme);
+        await chainReady(page);
+        const block = page.locator("[data-analysis-mount='option-chain']");
+        await block.scrollIntoViewIfNeeded();
+        await expect(block.locator("[data-oc-analyses='ok']")).toBeVisible();
+        await expect(block.getByRole("tab", { name: /Support/ })).toBeVisible();
+        await expect(block.getByRole("region", { name: "Ask AI about this option chain" })).toBeVisible();
+        await expect(block.getByText("No saved analyses yet.")).toBeVisible();
+        await expect(block).not.toContainText(/sample|lookback|manual ltp/i);
+        if (width === 390) await expectPhoneLayout(page);
+        await expect(block).toHaveScreenshot(`option-chain-v2-analyses-${width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+      });
+    }
+  });
+}
 
 test.describe("Option chain v2 states", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });

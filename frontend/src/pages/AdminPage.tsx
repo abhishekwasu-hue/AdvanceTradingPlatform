@@ -14,10 +14,20 @@ import SystemListsCard from "../components/SystemListsCard";
 import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, EncryptionStatus, FeatureFlags, Incident, PlatformAuditLog, RiskCeilings, SystemStatus } from "../types";
 import { PageHeader } from "../components/primitives";
 import { useFeatures } from "../ui/useFeatures";
+import { maskEmail, orgName, type AdminSection } from "../admin/consoleApi";
+import type { PageProps } from "../routes";
 
 const STATUSES = ["active", "suspended"];
 
-export default function AdminPage() {
+/**
+ * The admin console's existing cards. Without `section` (ui_v2 off) this is today's page, unchanged. MO3 (a): the v2
+ * console (src/admin/AdminConsoleV2.tsx) renders it once per section with `section` set - only that section's cards, no
+ * page header, e-mail addresses partly masked - so every card, its state and its server calls stay exactly as they are.
+ */
+export default function AdminPage({ section }: PageProps & { section?: AdminSection } = {}) {
+  const show = (s: AdminSection) => !section || section === s;
+  const email = (e: string | null | undefined) => (section ? maskEmail(e) : e ?? "-");
+  const org = (name: string) => (section ? orgName(name) : name);
   const { user, loading: authLoading } = useAuth();
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [plans, setPlans] = useState<AdminPlan[]>([]);
@@ -86,6 +96,7 @@ export default function AdminPage() {
   }
 
   if (authLoading) return null;
+  if (!isAdmin && section) return null;   // the v2 console shows its own "not found" card
   if (!isAdmin) {
     return (
       <div className="space-y-4">
@@ -96,27 +107,27 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <PageHeader title="Admin Console" description="Every organisation on the platform: plans, suspension, what the worker is running, the platform-wide audit trail, and the global kill switch. Every change here lands on the affected tenant's own audit trail and notifies them." />
+    <div className="space-y-4" data-admin-cards={section ?? "all"}>
+      {!section && <PageHeader title="Admin Console" description="Every organisation on the platform: plans, suspension, what the worker is running, the platform-wide audit trail, and the global kill switch. Every change here lands on the affected tenant's own audit trail and notifies them." />}
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      {show("system") && <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <StatTile icon={Building2} label="Tenants" value={overview?.tenants_total ?? "…"} />
         <StatTile icon={Users} label="Active users" value={overview?.users_total ?? "…"} />
         <StatTile icon={ShieldEllipsis} label="Active / LIVE deployments" value={overview ? `${overview.active_deployments} / ${overview.live_deployments}` : "…"} />
         <StatTile icon={ScrollText} label="Open positions (LIVE)" value={overview ? `${overview.open_positions} (${overview.open_live_positions})` : "…"} />
         <StatTile icon={Bot} label="Worker" value={overview === null ? "…" : overview.worker_running ? "Running" : "Down"} tone={overview === null ? "default" : overview.worker_running ? "up" : "down"} />
-      </div>
+      </div>}
 
       {error && <div className="text-sm text-down">{error}</div>}
       {message && <div className="text-sm text-up">{message}</div>}
 
-      <GoLiveChecklist kind="platform" />
+      {show("system") && <GoLiveChecklist kind="platform" />}
 
-      <HolidaysCard />
+      {show("system") && <HolidaysCard />}
 
-      <SystemListsCard />
+      {show("system") && <SystemListsCard />}
 
-      <Card title="Global kill switch">
+      {show("controls") && <Card title="Global kill switch">
         {overview?.global_kill_switch_engaged ? (
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="flex items-center gap-1.5 text-down font-bold"><OctagonX size={16} /> ENGAGED</span>
@@ -130,9 +141,9 @@ export default function AdminPage() {
             <button disabled={busy || !killReason} onClick={() => act("Global kill switch engaged.", () => api.engageGlobalKillSwitch(killReason))} className="rounded bg-down text-surface hover:brightness-110 font-semibold px-3 py-1 text-xs disabled:opacity-50">Engage</button>
           </div>
         )}
-      </Card>
+      </Card>}
 
-      <Card title="Platform controls">
+      {show("controls") && <Card title="Platform controls">
         <div className="grid lg:grid-cols-2 gap-4 text-xs">
           <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
             <div className="font-bold text-sm">Maintenance mode {controls?.maintenance_mode ? <span className="text-warn">ON</span> : <span className="text-fg-muted">off</span>}</div>
@@ -151,12 +162,12 @@ export default function AdminPage() {
             <button disabled={busy} onClick={() => act("Disabled brokers updated.", () => api.adminSetDisabledBrokers(brokerList.split(",").map((b) => b.trim()).filter(Boolean)).then(setControls))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1">Save</button>
           </div>
         </div>
-      </Card>
+      </Card>}
 
-      <BetaRolloutCard cohort={cohort} busy={busy}
-        onSetStage={(stage, reason) => void act(`Beta cohort moved to stage ${stage}.`, () => api.adminSetBetaStage(stage, reason).then(setCohort))} />
+      {show("users") && <BetaRolloutCard cohort={cohort} busy={busy}
+        onSetStage={(stage, reason) => void act(`Beta cohort moved to stage ${stage}.`, () => api.adminSetBetaStage(stage, reason).then(setCohort))} />}
 
-      <Card title="Risk ceilings (Risk Guardian)">
+      {show("controls") && <Card title="Risk ceilings (Risk Guardian)">
         <p className="text-xs text-fg-muted mb-3">Hard limits every tenant's risk settings stay under: a tenant cannot save a value above a ceiling, and the engine clamps older settings at runtime. Risk per trade 2% is the spec's hard ceiling; the minimum cool-down forces every tenant to wait at least this long after a stop-out.</p>
         <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
           {ceilings && Object.keys(ceilings).map((key) => (
@@ -167,16 +178,16 @@ export default function AdminPage() {
           ))}
         </div>
         <button disabled={busy || !ceilings} onClick={() => act("Risk ceilings saved.", () => api.adminSetRiskCeilings(Object.fromEntries(Object.entries(ceilingDraft).map(([k, v]) => [k, Number(v)]))).then(setCeilings))} className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save ceilings</button>
-      </Card>
+      </Card>}
 
-      <FeatureFlagsCard flags={flags} tenants={flagTenants} busy={busy}
+      {show("controls") && <FeatureFlagsCard flags={flags} tenants={flagTenants} busy={busy}
         onTenants={(name, value) => setFlagTenants({ ...flagTenants, [name]: value })}
         onSet={(name, on) => act(`${flags?.[name]?.plain ?? name} turned ${on ? "on" : "off"}.`, () => (on
           ? api.adminSetFlag(name, true).then(flagsChanged)
           : api.adminSetFlag(name, false, allowList(name)).then(flagsChanged)))}
-        onSaveList={(name) => act(`${flags?.[name]?.plain ?? name}: allow-list saved.`, () => api.adminSetFlag(name, false, allowList(name)).then(flagsChanged))} />
-      {oneKey && <div data-admin-ai-provider><AiProviderCard /></div>}
-      {encryption && (
+        onSaveList={(name) => act(`${flags?.[name]?.plain ?? name}: allow-list saved.`, () => api.adminSetFlag(name, false, allowList(name)).then(flagsChanged))} />}
+      {oneKey && show("users") && <div data-admin-ai-provider><AiProviderCard /></div>}
+      {show("system") && encryption && (
         <Card title="Secrets at rest">
           <div className="text-xs text-fg-muted">
             {encryption.tenant_keys} tenant data keys, {encryption.secrets_total - encryption.secrets_legacy}/{encryption.secrets_total} secrets under tenant keys
@@ -185,7 +196,7 @@ export default function AdminPage() {
         </Card>
       )}
 
-      <Card title={`Incidents (${incidents.filter((i) => i.status !== "RESOLVED").length} open)`}>
+      {show("system") && <Card title={`Incidents (${incidents.filter((i) => i.status !== "RESOLVED").length} open)`}>
         <div className="flex flex-wrap gap-2 text-xs mb-3">
           <input className="rounded bg-surface-2 border border-border px-2 py-1 w-72" placeholder="Title" value={incTitle} onChange={(e) => setIncTitle(e.target.value)} />
           <select className="rounded bg-surface-2 border border-border px-1 py-1" value={incSeverity} onChange={(e) => setIncSeverity(e.target.value)}>
@@ -211,9 +222,9 @@ export default function AdminPage() {
             ))}
           </tbody></table>
         )}
-      </Card>
+      </Card>}
 
-      <Card title={`Tenants (${tenants.length})`}>
+      {show("users") && <Card title={`Tenants (${tenants.length})`}>
         <input className="w-full sm:w-80 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm mb-3" placeholder="search by name or member email" value={query} onChange={(e) => setQuery(e.target.value)} />
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -224,8 +235,8 @@ export default function AdminPage() {
               {tenants.map((t) => (
                 <tr key={t.id} className={`border-t border-border ${selected?.id === t.id ? "bg-surface-2/60" : ""}`}>
                   <td className="py-1.5 pr-3 text-fg-muted">{t.id}</td>
-                  <td className="py-1.5 pr-3 text-fg font-medium">{t.name}</td>
-                  <td className="py-1.5 pr-3 text-fg-muted">{t.owners.join(", ") || "-"}</td>
+                  <td className="py-1.5 pr-3 text-fg font-medium">{org(t.name)}</td>
+                  <td className="py-1.5 pr-3 text-fg-muted">{t.owners.map((o) => email(o)).join(", ") || "-"}</td>
                   <td className="py-1.5 pr-3">
                     <select className="rounded bg-surface-2 border border-border px-1 py-0.5 text-xs" value={t.plan} disabled={busy} onChange={(e) => act(`${t.name}: plan set to ${e.target.value}.`, () => api.adminUpdateTenant(t.id, { plan: e.target.value }))}>
                       {plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -249,10 +260,10 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </Card>}
 
-      {selected && (
-        <Card title={`Tenant #${selected.id}: ${selected.name}`}>
+      {show("users") && selected && (
+        <Card title={`Tenant #${selected.id}: ${org(selected.name)}`}>
           <div className="grid md:grid-cols-3 gap-4 text-xs">
             <div>
               <div className="text-xs uppercase tracking-wider text-fg-muted mb-1">Usage / limits</div>
@@ -265,7 +276,7 @@ export default function AdminPage() {
             <div>
               <div className="text-xs uppercase tracking-wider text-fg-muted mb-1">Users</div>
               {selected.users.map((u) => (
-                <div key={u.id} className="flex justify-between border-t border-border py-1"><span className={u.is_active ? "text-fg" : "text-fg-muted line-through"}>{u.email}</span><span className="text-fg-muted">{u.role}</span></div>
+                <div key={u.id} className="flex justify-between border-t border-border py-1"><span className={u.is_active ? "text-fg" : "text-fg-muted line-through"}>{email(u.email)}</span><span className="text-fg-muted">{u.role}</span></div>
               ))}
               <div className="text-xs uppercase tracking-wider text-fg-muted mt-3 mb-1">Brokers</div>
               {selected.brokers.length === 0 && <div className="text-fg-muted">none stored</div>}
@@ -288,9 +299,9 @@ export default function AdminPage() {
         </Card>
       )}
 
-      <ExportCard scope="platform" tenantId={selected?.id} />
+      {show("users") && <ExportCard scope="platform" tenantId={selected?.id} />}
 
-      <Card title={selected ? `Audit trail: tenant #${selected.id}` : "Platform audit trail (latest 200)"}>
+      {show("users") && <Card title={selected ? `Audit trail: tenant #${selected.id}` : "Platform audit trail (latest 200)"}>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="text-fg-muted uppercase text-xs tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Time</th><th className="py-1 pr-3">Tenant</th><th className="py-1 pr-3">User</th><th className="py-1 pr-3">Event</th><th className="py-1 pr-3">Detail</th></tr></thead>
@@ -299,7 +310,7 @@ export default function AdminPage() {
                 <tr key={l.id} className="border-t border-border">
                   <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</td>
                   <td className="py-1 pr-3 text-fg-muted">{l.tenant_id ?? "-"}</td>
-                  <td className="py-1 pr-3 text-fg-muted">{l.user_email ?? "-"}</td>
+                  <td className="py-1 pr-3 text-fg-muted">{email(l.user_email)}</td>
                   <td className="py-1 pr-3 font-medium text-fg">{l.event}</td>
                   <td className="py-1 pr-3 text-fg-muted">{l.detail}</td>
                 </tr>
@@ -307,7 +318,7 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </Card>}
     </div>
   );
 }

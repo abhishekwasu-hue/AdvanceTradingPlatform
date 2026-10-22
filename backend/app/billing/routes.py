@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user, require_owner, require_role
+from app.auth.dependencies import get_current_user, require_mfa_session, require_owner, require_role
 from app.auth.scopes import require_scope
 from app.billing.service import (
     cancel, get_subscription, plans_catalogue, record_payment, subscribe, subscription_dict, usage_summary,
@@ -28,7 +28,7 @@ from app.plans.limits import limits, limits_v2, load_tenant, usage as plan_usage
 from app.plans.registry import PLANS, get_plan
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
-admin_router = APIRouter(prefix="/api/admin/billing", tags=["admin"], dependencies=[Depends(require_role())])
+admin_router = APIRouter(prefix="/api/admin/billing", tags=["admin"], dependencies=[Depends(require_role()), Depends(require_mfa_session)])  # MO3: two-factor like every admin router
 
 
 class SubscribeRequest(BaseModel):

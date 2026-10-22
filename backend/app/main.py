@@ -100,6 +100,7 @@ from app.deployments.routes import router as deployments_router
 from app.alerts.routes import router as alerts_router
 from app.team.routes import router as team_router
 from app.admin.routes import router as admin_router
+from app.admin.console import router as admin_console_router
 from app.exports.routes import router as exports_router
 from app.contract_notes.routes import router as contract_notes_router
 from app.observability.middleware import ObservabilityMiddleware
@@ -265,6 +266,7 @@ app.include_router(deployments_router)
 app.include_router(alerts_router)
 app.include_router(team_router)
 app.include_router(admin_router)
+app.include_router(admin_console_router)  # MO3 (a): the admin console's read-only sections (SUPER_ADMIN + two-factor)
 app.include_router(exports_router)
 app.include_router(contract_notes_router)
 app.include_router(observability_router)

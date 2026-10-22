@@ -17,6 +17,8 @@
 #                                                  report in /opt/atp/reports/ (docs/deploy/LOADTEST_REAL_HOST.md)
 #   /opt/atp/deploy/atp.sh loadtest-cleanup [STAMP | --all]
 #                                                  removes a load-test run's organisation / containers by hand
+#   /opt/atp/deploy/atp.sh reset-password EMAIL    sets a user's new password (asked twice, never shown or logged) and
+#                                                  signs out their sessions - until e-mail (SMTP) is configured
 #   /opt/atp/deploy/atp.sh schedule | releases | help
 #
 #   --dry-run (anywhere, or ATP_DRY_RUN=1): prints every step it would take; changes nothing on the host.
@@ -2037,7 +2039,33 @@ print("\n".join("%s %d" % (r["stamp"], r["tenant_id"]) for r in json.load(sys.st
   printf '\nloadtest-cleanup: done\n'
 }
 
-usage() { sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+# Handover 8d: the owner sets a user's password on the server (backend/scripts/reset_password.py). The password is
+# read from the terminal without echo, twice, and reaches the script on stdin only: never an argument (the process
+# list), never printed, never in a log. `set -x` is never on in this script.
+cmd_reset_password() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local email="${1:-}" pw pw2 rc=0
+  [ -n "$email" ] && [ $# -eq 1 ] || die "usage: atp.sh reset-password EMAIL" 2
+  case "$email" in *@*) ;; *) die "not an e-mail address: $email" 2 ;; esac
+  [ -t 0 ] || die "run this in a terminal: the password is typed, never piped or passed" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would ask for the new password twice and set it for %s\n' "$email"; return 0; fi
+  check_tools
+  IFS= read -r -s -p "New password for $email: " pw; printf '\n'
+  IFS= read -r -s -p "Type it again: " pw2; printf '\n'
+  [ -n "$pw" ] || die "no password typed - nothing changed" 2
+  [ "$pw" = "$pw2" ] || { pw=""; pw2=""; die "the two passwords differ - nothing changed" 2; }
+  pw2=""
+  printf '%s\n' "$pw" | dc exec -T backend python scripts/reset_password.py "$email" || rc=$?
+  pw=""
+  case "$rc" in
+    0) ok "done: $email can sign in with the new password" ;;
+    3) die "no active user with that e-mail - nothing changed" 3 ;;
+    4) die "the password breaks a rule (shown above) - nothing changed" 4 ;;
+    *) die "the password could not be set (is the backend running? atp.sh health)" "$rc" ;;
+  esac
+}
 
 main() {
   local args=() a
@@ -2060,6 +2088,7 @@ main() {
     releases)       cmd_releases ;;
     loadtest)       cmd_loadtest "$@" ;;
     loadtest-cleanup) cmd_loadtest_cleanup "$@" ;;
+    reset-password) cmd_reset_password "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac

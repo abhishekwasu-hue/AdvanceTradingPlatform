@@ -2051,3 +2051,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: backend `tests/test_appearance_prefs.py`; vitest `src/textSize.test.ts` (scale in rem, 14 px floor, the
   setting, theme-init, the server sync); e2e `e2e/text-size-v2.e2e.ts` (Large and Extra large: phone layout rules,
   no sideways scroll at 1440, nothing spills); all 106 changed e2e baselines regenerated at the new size.
+## Login fix (handover 8d): "Wrong email or password", and `atp.sh reset-password`
+
+- Branch `claude/login-error-reset` (from main).
+- Bug: a wrong email or password at sign-in showed "Sign in from the Account page to use this feature." The client's
+  anonymous-401 sentence (frontend/src/api/client.ts) also caught `/auth/login`, where a 401 comes before any token
+  exists. `/auth/*` routes now keep the server's own sentence; the server says "Wrong email or password." (the same
+  for an unknown email, so it reveals nothing).
+- `deploy/atp.sh reset-password EMAIL` (until SMTP is configured): asks for the new password twice without echo,
+  passes it on stdin to `backend/scripts/reset_password.py` (never an argument, never printed or logged), applies the
+  app's password rules, signs out every session of that user and writes an audit row (`password_reset_by_owner`).
+- Tests: vitest `src/api/loginError.test.ts`; backend `tests/test_reset_password_script.py`.

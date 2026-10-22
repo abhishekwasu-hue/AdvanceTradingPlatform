@@ -279,3 +279,69 @@ test.describe("flag off", () => {
     await expect(page.getByRole("button", { name: "Deploy a strategy" })).toBeVisible();
   });
 });
+
+// Settings redesign D ("Setup health", docs/design/SETTINGS_REDESIGN_REVIEW.md R8): the setup-health rows in Needs
+// attention, from `GET /api/me/setup` -> `health` (made-up states), with the Get started card hidden. Baselines
+// `dashboard-v2-health-<width>-<theme>.png` (the Needs attention block) at 360, 390 and 1440, on an account with nothing
+// else waiting, so the block shows the four rows.
+function healthAnswer() {
+  const base = setupAnswer("connected");
+  return {
+    ...base,
+    get_started: { ...base.get_started, hidden_at: "2026-10-12T09:00:00Z", visible: false },
+    stored: { ...base.stored, get_started_hidden_at: "2026-10-12T09:00:00Z" },
+    health: [
+      { key: "analytics_token", state: "expiring" },
+      { key: "ai_key", state: "no_credit", message: "This key has no credit left." },
+      { key: "telegram", state: "not_connected" },
+      { key: "data_feed", state: "delayed" },
+    ],
+  };
+}
+
+test.describe("v2 dashboard setup health", () => {
+  for (const size of [{ width: 360, height: 800, phone: true }, { width: 390, height: 844, phone: true }, { width: 1440, height: 900, phone: false }]) {
+    test.describe(`${size.width}`, () => {
+      test.use({ viewport: { width: size.width, height: size.height }, isMobile: size.phone, hasTouch: size.phone, deviceScaleFactor: 1 });
+      for (const theme of THEMES) {
+        test(`the rows with one fix each (${theme})`, async ({ page }) => {
+          await open(page, theme, { state: "empty", setup: healthAnswer() });
+          const attention = page.locator("[data-block='attention']");
+          await expect(attention.locator("[data-attention='renew-token']")).toContainText("Renew");
+          if (size.phone && theme === "dark") await expectPhoneLayout(page);
+          await attention.scrollIntoViewIfNeeded();
+          await expect(attention).toHaveScreenshot(`dashboard-v2-health-${size.width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+        });
+      }
+    });
+  }
+
+  test("each row opens its fix; a hidden row stays hidden today; Telegram waits for the Get started card", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const telegramGets: string[] = [];
+    page.on("request", (r) => { if (r.url().includes("/alerts/telegram/connect")) telegramGets.push(r.url()); });
+    await open(page, "light", { state: "empty", setup: healthAnswer() });
+    const attention = page.locator("[data-block='attention']");
+    await expect(attention.locator("[data-attention='ai-key'] a")).toHaveAttribute("href", "/settings#ai");
+    await expect(attention.locator("[data-attention='telegram'] a")).toHaveAttribute("href", "/settings#alerts");
+    await expect(attention.locator("[data-attention='renew-token'] a")).toHaveAttribute("href", "/broker");
+    await expect(attention.locator("[data-attention='data-delayed']")).toContainText("Live prices are delayed");
+    await attention.locator("[data-hide='ai-key']").click();
+    await expect(attention.locator("[data-attention='ai-key']")).toHaveCount(0);
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator("[data-attention='renew-token']")).toBeVisible();
+    await expect(page.locator("[data-attention='ai-key']")).toHaveCount(0);
+    expect(telegramGets).toEqual([]);
+  });
+
+  test("the Get started card on the page: no Telegram row; nothing to fix: no health rows", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, "light", { setup: { ...setupAnswer("connected"), health: [{ key: "telegram", state: "not_connected" }] } });
+    await expect(page.locator("[data-block='get-started']")).toBeVisible();
+    await expect(page.locator("[data-attention='telegram']")).toHaveCount(0);
+    await open(page, "light", { state: "empty", setup: { ...healthAnswer(), health: [] } });
+    await expect(page.locator("[data-block='attention']")).toContainText("All clear.");
+    for (const id of ["renew-token", "ai-key", "telegram", "data-delayed"]) await expect(page.locator(`[data-attention='${id}']`)).toHaveCount(0);
+  });
+});

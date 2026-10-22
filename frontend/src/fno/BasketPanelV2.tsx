@@ -78,7 +78,8 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   api?: BasketApi;
   fetcher?: Fetcher;
   /** After at least one leg filled (the chain re-reads its "P" markers). */
-  onPlaced?: () => void;
+  /** After at least one leg was placed (8b slice 3: with the result, so the chain can note the signal in the journal). */
+  onPlaced?: (result: BasketResult) => void;
 }) {
   const legs = useBasket(store);
   const [product, setProduct] = useState<Product>("MIS");
@@ -180,7 +181,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     try {
       const result = await api.execute({ ...basketAsk(step.legs, spot, product), basket_ref: ref.current });
       setStep({ kind: "done", result, legs: step.legs });
-      if (result.placed > 0) onPlaced?.();
+      if (result.placed > 0) onPlaced?.(result);
     } catch (e) {
       setNote({ tone: "warn", text: `${e instanceof Error ? e.message : String(e)} Check Positions before trying again.` });
       setStep({ kind: "edit" });

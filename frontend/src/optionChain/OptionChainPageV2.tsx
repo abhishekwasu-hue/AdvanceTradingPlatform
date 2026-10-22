@@ -1,11 +1,11 @@
 import { CalendarDays, ChartColumn, Info, Table2, TriangleAlert } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { useChainTrading } from "../fno/ChainTradingV2";
 import { readCarry } from "../fno/hubModel";
 import { SetupPanelV2, useSetupStrikes } from "../fno/InsightsV2";
-import { SIGNAL_PARAM, setupMarks } from "../fno/insights";
+import { SIGNAL_PARAM, TRADE_PARAM, setupMarks, setupTrade, type SetupItem } from "../fno/insights";
 import SymbolHubTabsV2 from "../fno/SymbolHubTabsV2";
 import type { PageProps } from "../routes";
 import { cx } from "../components/primitives/cx";
@@ -43,6 +43,10 @@ import { useOptionChain, type OptionChainData } from "./useOptionChain";
  *   address keeps the symbol and the expiry (`?underlying=&expiry=`, and the chart's `tf`), so the tabs carry them.
  * - F&O 8b-a: opened from one of the user's own signals (`?signal=action:12`), a panel says where his own deployment
  *   settings land and the chain shades those cells (src/fno/InsightsV2.tsx). Marks only: nothing is picked or placed.
+ * - F&O 8b-b: "Trade this setup" on each item of that panel opens the existing PAPER ticket / basket pre-filled with
+ *   those strikes (src/fno/ChainTradingV2.tsx); `?trade=1` (the signal card's "Trade this setup") opens it by itself
+ *   once, when exactly one of his deployments gives strikes on the expiry on screen. Nothing is placed by either: he
+ *   reviews it and places it himself.
  * - MO4 slice 2: with `markets_view` on, "What the chain shows" on top (ChainDishV2): five plain lines from the analyses.
  * Shown only while `ui_v2` is on (src/shell/pagesV2.ts).
  */
@@ -89,6 +93,7 @@ export default function OptionChainPageV2(_props: PageProps) {
     const v = params.get("signal") ?? "";
     return SIGNAL_PARAM.test(v) ? v : null;
   });
+  const [autoTrade] = useState(() => params.get(TRADE_PARAM) === "1");
   const market = useMarketStatus();
   const marketOpen = market.status?.sessions?.NSE?.is_open ?? null;
   const chain = useOptionChain(symbol, marketOpen, carried.expiry);
@@ -101,6 +106,7 @@ export default function OptionChainPageV2(_props: PageProps) {
       next.set("underlying", symbol);
       if (expiry) next.set("expiry", expiry); else next.delete("expiry");
       next.delete("basket");                       // read once on opening (the futures chain's basket badge)
+      next.delete(TRADE_PARAM);                    // 8b-b: read once on opening (a reload never reopens the ticket)
       if (!signal) next.delete("signal");
       return next.toString() === prev.toString() ? prev : next;
     }, { replace: true });
@@ -109,13 +115,13 @@ export default function OptionChainPageV2(_props: PageProps) {
     <>
       <SymbolHubTabsV2 symbol={symbol} current="option-chain" carry={{ expiry, timeframe: carried.timeframe }} />
       <OptionChainView symbol={symbol} onSymbol={setSymbol} chain={chain} marketOpen={marketOpen} prefs={prefs}
-        onPrefs={(next) => { setPrefs(next); writeColumns(next); }} signal={signal} onClearSignal={() => setSignal(null)} />
+        onPrefs={(next) => { setPrefs(next); writeColumns(next); }} signal={signal} onClearSignal={() => setSignal(null)} autoTrade={autoTrade} />
     </>
   );
 }
 
 /** The page's look for given data (no reads of its own), so tests render every state directly. */
-export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal }: {
+export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal, autoTrade = false }: {
   symbol: string;
   onSymbol: (symbol: string) => void;
   chain: OptionChainData;
@@ -126,6 +132,8 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   /** 8b-a: one of the user's own signals ("action:12"), to mark where his own settings land; null for none. */
   signal?: string | null;
   onClearSignal?: () => void;
+  /** 8b-b: opened from the signal card's "Trade this setup": open the pre-filled ticket / basket once, by itself. */
+  autoTrade?: boolean;
 }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [view, setView] = useState<ChainView>("chain");
@@ -139,10 +147,20 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
     ? chain.expiries.expiries
     : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const pickedRow: ChainRow | null = live?.rows.find((r) => r.strike === picked) ?? null;
-  const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions });
+  const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions, signal });
   const setupState = useSetupStrikes(signal, live?.summary.spot ?? null);
   const setupData = setupState.status === "ready" && setupState.data.underlying === symbol ? setupState.data : null;
   const marks = useMemo(() => setupMarks(setupData, live?.expiry ?? chain.expiry), [setupData, live?.expiry, chain.expiry]);
+  // 8b-b: "Trade this setup" - the existing ticket / basket pre-filled from one item (only with the PAPER account on).
+  const tradeSetup = trading.tradeSetup;
+  const tradeOf = live && tradeSetup ? (item: SetupItem) => setupTrade(item, symbol, live.expiry, live.rows) : undefined;
+  const autoDone = useRef(false);
+  useEffect(() => {
+    if (!autoTrade || autoDone.current || !setupData || !live || !tradeSetup) return;
+    autoDone.current = true;                       // once: a later refresh of the chain never reopens it
+    const ready = setupData.items.map((i) => setupTrade(i, symbol, live.expiry, live.rows)).filter((t) => t.kind !== "none");
+    if (ready.length === 1) tradeSetup(ready[0]);
+  }, [autoTrade, setupData, live, tradeSetup, symbol]);
   const dishOn = useFeatures().on("markets_view");
 
   return (
@@ -191,7 +209,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       {dishOn && <ChainDishV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />}
 
       <SetupPanelV2 state={setupState} symbol={symbol} expiry={live?.expiry ?? chain.expiry} onExpiry={(e) => { setPicked(null); chain.setExpiry(e); }}
-        onClear={() => onClearSignal?.()} />
+        onClear={() => onClearSignal?.()} tradeOf={tradeOf} onTrade={tradeSetup} />
 
       <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} />
 

@@ -91,6 +91,7 @@ async function openPositions(page: Page, theme: "light" | "dark", opts: { alerts
     return r.fulfill({ json: { items: items.map((i) => ({ ...i, ltp: i.symbol === "NIFTY 50" ? SPOT : null, change: null, change_pct: null, missing: i.symbol !== "NIFTY 50" })) } });
   });
   await page.route(api("/alerts/rules$"), (r) => {
+    if (r.request().method() === "GET") return r.fulfill({ json: [] });     // 8b slice 3: the cockpit lists his alerts
     const body = r.request().postDataJSON();
     record(r.request().method(), r.request().url(), body);
     seen.alerts.push(body);

@@ -75,7 +75,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
     ? chain.expiries.expiries
     : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const pickedRow: ChainRow | null = live?.rows.find((r) => r.strike === picked) ?? null;
-  const trading = useChainTrading({ symbol, live, prefs, onPrefs });
+  const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions });
 
   return (
     <div className="space-y-space-4" data-page="option-chain-v2">

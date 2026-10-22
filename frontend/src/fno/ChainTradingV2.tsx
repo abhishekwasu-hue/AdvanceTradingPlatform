@@ -6,9 +6,10 @@ import { formatNumber } from "../ui/format";
 import { useFeatures } from "../ui/useFeatures";
 import { closedText, failedText } from "../trading/model";
 import { daysText, formatIv, formatStrike, type ColumnPrefs } from "../optionChain/model";
-import type { ChainRow, ChainSummary, LiveChain } from "../optionChain/types";
+import type { ChainExpiry, ChainRow, ChainSummary, LiveChain } from "../optionChain/types";
 import { fnoApi, type FnoApi, type FnoContract, type HeldLeg, type Side } from "./api";
 import { useBasket } from "./basket";
+import BasketPanelV2 from "./BasketPanelV2";
 import ChainActionSheetV2, { type ActionTarget } from "./ChainActionSheetV2";
 import OrderTicketV2 from "./OrderTicketV2";
 import { heldKey, sideWord, type TicketTarget } from "./ticketModel";
@@ -23,7 +24,9 @@ import { heldKey, sideWord, type TicketTarget } from "./ticketModel";
  * - the "P" markers from the user's own open PAPER positions on this underlying and expiry, re-read every 30 s and
  *   after an order or an exit; Exit = the existing "Exit now" (confirmed, never disabled - ADR-0004);
  * - the bottom strip: PCR, max pain, ATM IV, days to expiry (IV percentile is not available yet, so it is left out),
- *   tap ATM to bring the ATM row back to the middle, OI change as a count or in %, the basket badge.
+ *   tap ATM to bring the ATM row back to the middle, OI change as a count or in %, the basket badge;
+ * - FNO-2: the badge opens the basket panel (src/fno/BasketPanelV2.tsx): the legs, the payoff, ready strategies and
+ *   Execute basket (PAPER, hedge legs first).
  */
 const HELD_EVERY_MS = 30_000;
 type Note = { kind: "done" | "warn"; text: string } | null;
@@ -43,9 +46,11 @@ export function spotSymbolOf(underlying: string): string {
   return map[underlying] ?? underlying;
 }
 
-export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, exitNow = api.exitNow }: {
+export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, exitNow = api.exitNow, expiries = [] }: {
   symbol: string;
   live: LiveChain | null;
+  /** The expiries the page lists (a Calendar's far leg reads the next one). */
+  expiries?: readonly ChainExpiry[];
   prefs: ColumnPrefs;
   onPrefs: (prefs: ColumnPrefs) => void;
   fno?: FnoApi;
@@ -60,6 +65,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
   const [note, setNote] = useState<Note>(null);
   const [recentre, setRecentre] = useState(0);
   const [round, setRound] = useState(0);
+  const [basketOpen, setBasketOpen] = useState(false);
   const legs = useBasket();
 
   const reloadHeld = useCallback(() => setRound((r) => r + 1), []);
@@ -107,7 +113,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
     centreSuffix: recentre ? `|${recentre}` : "",
     strip: live ? (
       <ChainBottomStripV2 summary={live.summary} pct={prefs.pct === true} onPct={(pct) => onPrefs({ ...prefs, pct })}
-        onRecentre={() => setRecentre((n) => n + 1)} basketCount={legs.length} />
+        onRecentre={() => setRecentre((n) => n + 1)} basketCount={legs.length} onBasket={() => setBasketOpen(true)} />
     ) : null,
     layer: (
       <>
@@ -121,14 +127,16 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
           watchlistsOn={features.on("watchlists")} alertsOn={features.on("screener_v2")} api={fno} />
         <OrderTicketV2 open={ticket !== null} target={ticket?.target ?? null} side={ticket?.side ?? "BUY"} api={fno}
           onClose={() => setTicket(null)} onPlaced={reloadHeld} />
+        <BasketPanelV2 open={basketOpen} onClose={() => setBasketOpen(false)} onPlaced={reloadHeld}
+          chain={{ symbol, live, expiries, loadChain: (e) => api.optionChainLive(symbol, e) }} />
       </>
     ),
   };
 }
 
 /** The bottom strip of the chain (FNO-1): the key figures, tap ATM to recentre, the change toggle, the basket badge. */
-export function ChainBottomStripV2({ summary, pct, onPct, onRecentre, basketCount }: {
-  summary: ChainSummary; pct: boolean; onPct: (pct: boolean) => void; onRecentre: () => void; basketCount: number;
+export function ChainBottomStripV2({ summary, pct, onPct, onRecentre, basketCount, onBasket }: {
+  summary: ChainSummary; pct: boolean; onPct: (pct: boolean) => void; onRecentre: () => void; basketCount: number; onBasket?: () => void;
 }) {
   const figures: [string, string, string][] = [
     ["pcr", "PCR", formatNumber(summary.pcr_oi, 2)],
@@ -156,11 +164,13 @@ export function ChainBottomStripV2({ summary, pct, onPct, onRecentre, basketCoun
         <button type="button" role="radio" aria-checked={!pct} onClick={() => onPct(false)} className={cx(seg, !pct ? "bg-surface-1 text-fg" : "text-fg-muted")}>Count</button>
         <button type="button" role="radio" aria-checked={pct} onClick={() => onPct(true)} className={cx(seg, pct ? "bg-surface-1 text-fg" : "text-fg-muted")}>%</button>
       </div>
-      <span data-strip="basket" className="inline-flex min-h-11 shrink-0 items-center gap-space-1 text-t13 font-semibold text-fg"
+      {/* FNO-2: the badge opens the basket panel; it looks as before (FNO-1's baselines), now a button. */}
+      <button type="button" data-strip="basket" onClick={onBasket} title="Open the basket"
+        className="inline-flex min-h-11 shrink-0 items-center gap-space-1 rounded-control text-t13 font-semibold text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
         aria-label={`Basket: ${basketCount} leg${basketCount === 1 ? "" : "s"}`}>
         <ShoppingBasket size={16} aria-hidden />
         <span className={cx("rounded-pill px-space-2 text-t12", basketCount ? "bg-brand text-on-brand" : "bg-surface-2 text-fg-muted")}>{basketCount}</span>
-      </span>
+      </button>
     </section>
   );
 }

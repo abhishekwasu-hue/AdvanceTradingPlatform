@@ -4,6 +4,7 @@
  * order through the ordinary pipeline. Exits use the existing `api.exitNow` (never blocked, ADR-0004).
  */
 import { request } from "../api/client";
+import type { Evaluation } from "../optionsBuilder/model";
 
 export type Side = "BUY" | "SELL";
 export type Right = "CE" | "PE";
@@ -106,3 +107,97 @@ export const fnoApi = {
   place: (ask: OrderAsk) => request<OrderResult>("/paper/fno/order", { method: "POST", body: JSON.stringify(ask) }),
 };
 export type FnoApi = typeof fnoApi;
+
+// --- FNO-2: the basket (backend app/paper/fno_basket.py). Each leg placed is one PAPER order through the same ticket. ---
+
+/** One leg as the basket routes take it (prices per unit; `iv` a fraction, 0.14 = 14 %). */
+export interface BasketLegAsk {
+  underlying: string;
+  expiry: string;
+  strike: number;
+  right: Right;
+  side: Side;
+  lots: number;
+  price?: number | null;
+  stop_loss?: number | null;
+  iv?: number | null;
+}
+
+export interface BasketAsk { legs: BasketLegAsk[]; spot?: number | null; product?: Product }
+
+export interface MarginLine { value: number | null; estimated: true; basis: string; note?: string }
+export interface HedgeMargin {
+  with_hedge: MarginLine;
+  without_hedge: MarginLine | null;
+  benefit: number | null;
+  hedged: boolean;
+  source: "estimate";
+  note: string;
+}
+
+/** The basket's numbers: the Options Builder's evaluation plus the lot sizes, labels and the hedge margin. */
+export type BasketNumbers = Evaluation & {
+  ok: true; errors: string[]; margin: Evaluation["margin"] & { hedge: HedgeMargin };
+  lot_sizes: (number | null)[]; labels: string[]; order: number[];
+};
+export type BasketEvaluation = BasketNumbers | { ok: false; errors: string[] };
+
+export interface BasketSettings { source: string | null; width_steps: number; lots: number; stop_pct: number; note: string }
+
+export interface BasketPreviewLeg extends OrderPreview { seq: number; leg: number; role: "hedge" | "short" }
+export interface BasketPreview {
+  mode: "PAPER";
+  practice: string;
+  legs: BasketPreviewLeg[];
+  refusals: string[];
+  totals: {
+    margin: Evaluation["margin"] & { hedge: HedgeMargin };
+    extremes: Evaluation["extremes"];
+    net_premium: number;
+    costs: number;
+    breakevens: number[] | null;
+  } | null;
+  totals_errors: string[];
+  can_execute: boolean;
+  product: Product;
+  confirm_label: string | null;
+  as_of: string;
+}
+
+export type LegStatus = "PLACED" | "REFUSED" | "FAILED" | "NOT_PLACED";
+export interface BasketResultLeg {
+  seq: number;
+  leg: number;
+  label: string;
+  side: Side;
+  lots: number;
+  status: LegStatus;
+  reasons: string[];
+  filled: { price: number; quantity: number; lots: number } | null;
+  order_id: number | null;
+  trade_id: number | null;
+}
+export interface BasketResult {
+  mode: "PAPER";
+  status: "PLACED" | "PARTIAL" | "REFUSED";
+  reasons: string[];
+  legs: BasketResultLeg[];
+  placed: number;
+  next_steps: string[];
+}
+
+export interface BrokerBasketOrder { tradingsymbol: string; exchange: string; transaction_type: Side; quantity: number }
+export type BasketBrokerLink =
+  | { available: true; broker: "zerodha"; publisher_api_key: string; orders: BrokerBasketOrder[] }
+  | { available: false; why: string };
+
+const post = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) });
+
+export const basketApi = {
+  evaluate: (ask: BasketAsk) => request<BasketEvaluation>("/paper/fno/basket/evaluate", post(ask)),
+  settings: (underlying: string) => request<BasketSettings>(`/paper/fno/basket/settings?${q({ underlying })}`),
+  preview: (ask: BasketAsk) => request<BasketPreview>("/paper/fno/basket/preview", post(ask)),
+  execute: (ask: BasketAsk & { basket_ref: string }) => request<BasketResult>("/paper/fno/basket/execute", post(ask)),
+  brokerLink: (ask: BasketAsk) => request<BasketBrokerLink>("/paper/fno/basket/broker-link", post(ask)),
+};
+export type BasketApi = typeof basketApi;

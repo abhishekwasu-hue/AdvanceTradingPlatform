@@ -2047,3 +2047,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `backend/tests/test_fno1_chain_ticket.py`, `frontend/src/fno/fno.test.tsx`, `frontend/e2e/chain-ticket-v2.e2e.ts`
   with new baselines `chain-actions-v2-*` and `order-ticket-v2-*` only (no existing baseline touched: without the PAPER
   account the chain renders exactly as before).
+
+## FNO-2: basket orders, PAPER only (owner order ATP_SESSION_FNO_WORKSPACE.md 5, 8b-c, 9)
+
+- Branch `claude/fno2-basket`, stacked on `claude/fno1-chain-ticket` (PR #338). Same flags (`ui_v2` + `paper_account`).
+  No migration, no new flag. Open questions FNO-2-1..10.
+- Backend: `app/paper/fno_basket.py` + routes in `fno_routes.py` (`/api/paper/fno/basket/evaluate`, `/settings`,
+  `/preview`, `/execute`, `/broker-link`, classified in `tests/tenancy_route_table.py`). The numbers come from the
+  Options Builder's engine (`options_builder.routes._evaluate`) with lot sizes from the instrument master; the margin is
+  ATP's labelled estimate with the hedge beside the sold legs alone. Execute: every leg checked first (nothing placed if
+  any leg or the open-position room refuses), then each leg ONE PAPER order through `fno_ticket.place` (which asserts
+  `phase0_lock.assert_paper`), hedge legs first; a sold leg is never placed after its hedge failed; per-leg results,
+  never retried. Saved baskets: prefs namespace `fno_baskets` (strict, size-capped).
+- Frontend: `src/fno/BasketPanelV2.tsx` (drawer / bottom sheet from the chain's badge: legs, ready strategies, the
+  builder's payoff canvas, the payoff in plain words, numbers, confirm, per-leg result, save / load, Options Builder
+  hand-over, Kite basket), `basketModel.ts` (pure parts), `basket.ts` (update / replace, 12 legs), `api.ts` (basket
+  calls), `brokerLinks.kiteFnoBasketLink`; the Options Builder page reads the hand-over once.
+- Tests: `backend/tests/test_fno2_basket.py`, `frontend/src/fno/basket.test.tsx`, `frontend/e2e/basket-v2.e2e.ts` with
+  NEW baselines `basket-panel-v2-{1440,390}-{light,dark}.png` only (the badge keeps its look; no baseline touched).

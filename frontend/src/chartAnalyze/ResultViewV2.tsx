@@ -1,8 +1,8 @@
-import { Bell, Check, Download, FileDown, Trash2, X } from "lucide-react";
+import { Bell, Check, Download, FileDown, Share2, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "../components/primitives";
 import { CANNOT_ALERT, alertCondition } from "./alerts";
-import AnnotatedChartV2 from "./AnnotatedChartV2";
+import AnnotatedChartV2, { StructureSketch } from "./AnnotatedChartV2";
 import type { AlertTarget } from "./AlertDialogV2";
 import { PRINT_HIDE } from "./printResult";
 import { guardResult } from "./signalLanguage";
@@ -15,6 +15,8 @@ import type { AnalysisResult, PriceRef } from "./types";
  * Image only: the label sits at the top, and every price carries "≈" (read from the picture).
  * Every text the engine wrote passes the signal-language check (signalLanguage.ts) before it is shown. The option
  * strikes block shows the user's own settings only, flagged "From your settings". PDF: the browser's print dialog.
+ * `shared` (PR-A4): the structure-only copy a share link opens - no name, no price, no date, no picture (the drawing over
+ * a plain background), and no buttons; the server has already removed all of it (backend share.py).
  */
 
 const card = "rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card md:p-space-5";
@@ -61,6 +63,8 @@ export function statusText(r: AnalysisResult): string {
   return "No setup";
 }
 
+export const SHARED_NOTE = "Shared by a member of your organisation. The chart's name, its prices, its dates and the picture are left out: this copy shows the structure only.";
+
 export const FALLBACK_DISCLAIMER = "Educational only. This is not investment advice or a recommendation to buy or sell, and ATP places no order from it.";
 
 export interface ResultViewProps {
@@ -71,9 +75,14 @@ export interface ResultViewProps {
   /** Set when the stored image is gone (retention): said in place of the drawing. */
   imageNote?: string | null;
   imageSrc: string | null;
-  onAlert: (target: AlertTarget) => void;
-  onExport: () => void;
-  onDelete: () => void;
+  onAlert?: (target: AlertTarget) => void;
+  onExport?: () => void;
+  onDelete?: () => void;
+  /** "Share with my organisation" (flag chart_analyze_share); `shareLive` marks a live link. */
+  onShare?: () => void;
+  shareLive?: boolean;
+  /** The structure-only copy a share link opens: no buttons, the drawing without the picture. */
+  shared?: boolean;
   /** "Download PDF": the browser's print dialog on the result block (printResult.ts). */
   onPdf?: () => void;
   /** The "Option strikes · from your settings" block (null: not shown). */
@@ -83,8 +92,10 @@ export interface ResultViewProps {
   deleting?: boolean;
 }
 
-export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, imageNote, imageSrc, onAlert, onExport, onDelete, onPdf, strikes,
-  onStrikesSymbol, exporting, deleting }: ResultViewProps) {
+const noop = () => undefined;
+
+export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, imageNote, imageSrc, onAlert = noop, onExport = noop, onDelete = noop,
+  onShare, shareLive, shared = false, onPdf, strikes, onStrikesSymbol, exporting, deleting }: ResultViewProps) {
   const result = guardResult(raw);
   const approx = result.approximate_prices;
   const label = result.label || itemLabel || null;
@@ -93,29 +104,39 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
   const areas = result.annotations.areas.filter((a) => a.price_low != null || a.price_high != null);
   const firstArea = areas[0] ?? null;
   const waitCondition = alertCondition(result.what_to_wait_for?.alert);
-  const title = [rec.symbol, rec.exchange, rec.timeframe].filter(Boolean).join(" · ") || "Your chart";
+  const title = shared ? "The reading" : [rec.symbol, rec.exchange, rec.timeframe].filter(Boolean).join(" · ") || "Your chart";
   const areaTarget = (low: number | null, high: number | null, name: string): AlertTarget =>
     ({ title: `Alert on ${name}`, symbol: rec.symbol, timeframe: rec.timeframe, band: { low, high }, approximate: approx });
 
   return (
-    <div className="space-y-space-4" data-testid="analysis-result" data-setup={result.setup.status}>
+    <div className="space-y-space-4" data-testid="analysis-result" data-setup={result.setup.status} data-shared={shared || undefined}>
       <div className={card}>
-        {label && <p className="mb-space-2 inline-flex rounded-pill bg-warn-tint px-space-3 py-space-1 text-t12 font-medium text-fg" data-testid="image-only-label">{label}</p>}
+        {label && !shared && <p className="mb-space-2 inline-flex rounded-pill bg-warn-tint px-space-3 py-space-1 text-t12 font-medium text-fg" data-testid="image-only-label">{label}</p>}
         <h2 className="text-t20 font-semibold text-fg md:text-t24">{title}</h2>
         {(rec.first_bar || rec.last_bar) && <p className="mt-space-1 text-t12 text-fg-muted">Visible range: {rec.first_bar ?? "?"} to {rec.last_bar ?? "?"}</p>}
         <p className="mt-space-2 text-t14 text-fg-muted">The situation and the possibilities, as the method reads this chart. Educational, not advice.</p>
-        <div className="mt-space-3 flex flex-col gap-space-2 sm:flex-row sm:flex-wrap" {...{ [PRINT_HIDE]: "" }}>
+        {shared && <p className="mt-space-2 text-t14 text-fg" data-testid="shared-note" role="note">{result.shared_note ?? SHARED_NOTE}</p>}
+        {!shared && <div className="mt-space-3 flex flex-col gap-space-2 sm:flex-row sm:flex-wrap" {...{ [PRINT_HIDE]: "" }}>
           <Button className="h-11 md:h-9" icon={<Bell size={16} aria-hidden />} disabled={!firstArea}
             onClick={() => firstArea && onAlert(areaTarget(firstArea.price_low, firstArea.price_high, `${firstArea.side} area`))}>
             Set an alert on this area
           </Button>
           <Button className="h-11 md:h-9" icon={<Download size={16} aria-hidden />} loading={exporting} onClick={onExport}>Download / share the result image</Button>
           {onPdf && <Button className="h-11 md:h-9" icon={<FileDown size={16} aria-hidden />} onClick={onPdf}>Download PDF</Button>}
+          {onShare && (
+            <Button className="h-11 md:h-9" icon={<Share2 size={16} aria-hidden />} onClick={onShare} data-testid="share-button">
+              {shareLive ? "Shared · manage link" : "Share with my organisation"}
+            </Button>
+          )}
           <Button className="h-11 md:h-9" variant="ghost" icon={<Trash2 size={16} aria-hidden />} loading={deleting} onClick={onDelete}>Delete</Button>
-        </div>
+        </div>}
       </div>
 
-      {imageSrc ? (
+      {shared ? (
+        <Section title="The structure, drawn" id="ca-annotated">
+          <StructureSketch width={result.image.width} height={result.image.height} annotations={result.annotations} />
+        </Section>
+      ) : imageSrc ? (
         <Section title="The chart, annotated" id="ca-annotated">
           <AnnotatedChartV2 src={imageSrc} width={result.image.width} height={result.image.height} annotations={result.annotations} />
         </Section>
@@ -181,7 +202,7 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
       {result.what_to_wait_for && (
         <Section title="What to wait for" id="ca-wait">
           <p className="text-t14 text-fg">{result.what_to_wait_for.condition}</p>
-          {waitCondition ? (
+          {shared ? null : waitCondition ? (
             <Button className="mt-space-3 h-11 md:h-9" icon={<Bell size={16} aria-hidden />} {...{ [PRINT_HIDE]: "" }}
               onClick={() => onAlert({ title: "Alert me when this happens", symbol: rec.symbol, timeframe: rec.timeframe, condition: waitCondition, approximate: approx })}>
               Alert me when this happens
@@ -193,11 +214,11 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
       {result.htf_context.length > 0 && (
         <Section title="Higher timeframes" id="ca-htf">
           <ul className="grid gap-space-2 sm:grid-cols-2 lg:grid-cols-3">
-            {result.htf_context.map((h) => (
-              <li key={h.timeframe} className="rounded-control bg-surface-2 p-space-3">
-                <p className="text-t14 font-semibold text-fg">{h.timeframe} · {TREND_TEXT[h.trend] ?? h.trend}</p>
+            {result.htf_context.map((h, hi) => (
+              <li key={`${h.timeframe ?? ""}-${hi}`} className="rounded-control bg-surface-2 p-space-3">
+                <p className="text-t14 font-semibold text-fg">{h.timeframe || "Higher timeframe"} · {TREND_TEXT[h.trend] ?? h.trend}</p>
                 {h.nearest_areas.map((a, i) => (
-                  <p key={i} className="text-t12 text-fg-muted">{a.side === "seller" ? "Seller" : "Buyer"} area {band(a.price_low, a.price_high, approx)}{a.state ? ` · ${a.state}` : ""}</p>
+                  <p key={i} className="text-t12 text-fg-muted">{a.side === "seller" ? "Seller" : "Buyer"} area{shared ? "" : ` ${band(a.price_low, a.price_high, approx)}`}{a.state ? ` · ${a.state}` : ""}</p>
                 ))}
               </li>
             ))}
@@ -209,15 +230,16 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
         <Section title="Key levels" id="ca-levels">
           <table className="hidden w-full text-left text-t14 md:table">
             <thead><tr className="text-t12 text-fg-muted"><th className="py-space-2 font-medium">Level</th><th className="font-medium">Kind</th>
-              <th className="pr-space-6 text-right font-medium">Price</th><th className="font-medium">State</th><th className="sr-only" {...{ [PRINT_HIDE]: "" }}>Alert</th></tr></thead>
+              {!shared && <th className="pr-space-6 text-right font-medium">Price</th>}<th className="font-medium">State</th>
+              {!shared && <th className="sr-only" {...{ [PRINT_HIDE]: "" }}>Alert</th>}</tr></thead>
             <tbody>
               {result.key_levels.map((lv, i) => (
                 <tr key={i} className="border-t border-subtle">
                   <td className="py-space-2 text-fg">{lv.name || (lv.kind === "area" ? "Area" : "Line")}</td>
                   <td className="text-fg-muted">{lv.kind === "area" ? `${lv.side === "seller" ? "Seller" : "Buyer"} area` : "Line"}</td>
-                  <td className="pr-space-6 text-right font-tabular text-fg">{band(lv.price_low, lv.price_high, approx)}</td>
+                  {!shared && <td className="pr-space-6 text-right font-tabular text-fg">{band(lv.price_low, lv.price_high, approx)}</td>}
                   <td className="text-fg-muted">{lv.state ?? "-"}</td>
-                  <td className="text-right" {...{ [PRINT_HIDE]: "" }}><Button size="sm" variant="ghost" onClick={() => onAlert(areaTarget(lv.price_low, lv.price_high, lv.name || "this level"))}>Set an alert</Button></td>
+                  {!shared && <td className="text-right" {...{ [PRINT_HIDE]: "" }}><Button size="sm" variant="ghost" onClick={() => onAlert(areaTarget(lv.price_low, lv.price_high, lv.name || "this level"))}>Set an alert</Button></td>}
                 </tr>
               ))}
             </tbody>
@@ -227,10 +249,11 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
               <li key={i} className="flex items-center justify-between gap-space-3 rounded-control bg-surface-2 p-space-3">
                 <div className="min-w-0">
                   <p className="text-t14 font-medium text-fg">{lv.name || (lv.kind === "area" ? "Area" : "Line")}</p>
-                  <p className="text-t12 text-fg-muted">{band(lv.price_low, lv.price_high, approx)}{lv.state ? ` · ${lv.state}` : ""}</p>
+                  <p className="text-t12 text-fg-muted">{shared ? (lv.kind === "area" ? `${lv.side === "seller" ? "Seller" : "Buyer"} area` : "Line")
+                    : band(lv.price_low, lv.price_high, approx)}{lv.state ? ` · ${lv.state}` : ""}</p>
                 </div>
-                <Button className="h-11" variant="ghost" {...{ [PRINT_HIDE]: "" }} aria-label={`Set an alert on ${lv.name || "this level"}`} icon={<Bell size={16} aria-hidden />}
-                  onClick={() => onAlert(areaTarget(lv.price_low, lv.price_high, lv.name || "this level"))} />
+                {!shared && <Button className="h-11" variant="ghost" {...{ [PRINT_HIDE]: "" }} aria-label={`Set an alert on ${lv.name || "this level"}`} icon={<Bell size={16} aria-hidden />}
+                  onClick={() => onAlert(areaTarget(lv.price_low, lv.price_high, lv.name || "this level"))} />}
               </li>
             ))}
           </ul>

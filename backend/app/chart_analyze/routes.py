@@ -11,6 +11,10 @@ caller's organisation every route below answers the platform's standard 503 with
                                                   at the setup's trigger level (flagged "from your settings"; reads only;
                                                   flag chart_analyze_strikes as well)
 - `DELETE /api/chart-analyze/items/{id}`          deletes the image and the result at once
+- `POST   /api/chart-analyze/items/{id}/share`    a new organisation-only link to the caller's own finished analysis
+- `DELETE /api/chart-analyze/items/{id}/share`    stops the link (flag chart_analyze_share as well, both)
+- `GET    /api/chart-analyze/shared/{token}`      the structure-only copy behind a link (no name, no price, no date, no
+                                                  picture), for a logged-in member of the owner's organisation only
 - `GET/PUT /api/admin/chart-analyze/settings`     SUPER_ADMIN (MFA): sizes, retention, limits, cost caps
 Every item route reads the caller's own rows only (tenant AND user). Upload, link and analyze share a per-user rate
 limit from the settings. Nothing here places, proposes or changes an order.
@@ -20,12 +24,12 @@ import weakref
 from typing import Any, Dict, Optional
 
 from fastapi.concurrency import run_in_threadpool
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Query, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_mfa_session, require_role
-from app.chart_analyze import FLAG, STRIKES_FLAG, contract, imaging, limits, linkfetch, service, storage, strikes
+from app.chart_analyze import FLAG, SHARE_FLAG, STRIKES_FLAG, contract, imaging, limits, linkfetch, service, share, storage, strikes
 from app.chart_analyze import provider as engine_provider
 from app.chart_analyze import settings as settings_mod
 from app.core.rate_limit import charge_user
@@ -198,6 +202,31 @@ async def item_strikes(item_id: int, symbol: Optional[str] = Query(default=None,
     if not isinstance(result, dict):
         raise HTTPException(status_code=409, detail={"message": "This chart is not analysed yet.", "code": "not_analysed"})
     return await strikes.for_result(session, user.tenant_id, result, symbol_override=symbol)
+
+
+@router.post("/items/{item_id}/share")
+async def share_item(item_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """A new link to the caller's own finished analysis that only logged-in members of the same organisation can open,
+    for `share_expiry_days`; an older link stops working. What it opens is structure only (share.py)."""
+    settings = await _gate(session, user)
+    await require_flag(session, SHARE_FLAG, user.tenant_id)
+    await _rate(user, settings)
+    return await service.start_sharing(session, user, item_id, settings)
+
+
+@router.delete("/items/{item_id}/share")
+async def unshare_item(item_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Stops the link at once. Always allowed while chart_analyze is on (stopping a share never needs the share flag)."""
+    await _gate(session, user)
+    return await service.stop_sharing(session, user, item_id)
+
+
+@router.get("/shared/{token}")
+async def shared_item(token: str = Path(max_length=share.TOKEN_MAX), user: User = Depends(get_current_user),
+                      session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _gate(session, user)
+    await require_flag(session, SHARE_FLAG, user.tenant_id)
+    return await service.open_shared(session, user, token)
 
 
 @router.delete("/items/{item_id}")

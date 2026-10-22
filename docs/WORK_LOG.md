@@ -2518,6 +2518,34 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   e2e `admin-console-v2.e2e.ts` with new baselines `admin-<section>-v2-*` and `admin-diagnostics-v2-*` (1440 / 390, light / dark).
 - Questions MO3-A1..A6 ("View as user" design note in MO3-A1).
 
+## 22 Oct - Copilot v2 slice 3: job 6, the strategy builder (handover item 5, behind ui_v2 + ai_copilot)
+
+- Branch `claude/copilot-job6-builder`. No migration. Owner questions CP6-1..9 (OPEN_QUESTIONS) on their provisional defaults.
+- Backend: `app/ai/strategy_builder.py` (new, pure, no model): the trader's own words -> a DRAFT paper strategy made only of
+  the `CustomStrategyConfig` building blocks (EMA / SMA crosses and comparisons, on a higher timeframe too; RSI, ADX, +DI /
+  -DI; Supertrend, VWAP, Bollinger bands; previous day's high / low / close, the day's open, the opening range; volume
+  against its average). A number the words state is used as written; one they do not state stays empty and is listed in
+  `asks` ("Values you decide") - never filled in. Only his OWN saved minimum reward to risk (risk limits) is taken, labelled.
+  "Not supported yet" for parts ATP cannot build (with the Screener when the ScreenQL registry has it, and a close ready-made
+  Library strategy); unreadable words quoted back. `app/ai/copilot_chat.py`: job 6 built (`strategy_builder`: one read tool,
+  `get_risk_limits`; sections in plain words; "I don't know how this idea did in the past"; the action "Review it on the
+  Paper bot page" with the draft in `draft`); refusals "settings" (his stop / objective / size / reward to risk), "promise"
+  and "copy", and the "order" refusal now covers saving / deploying / starting a strategy or a bot; "buy when ..." is a
+  rule, not an order; "what is a backtest?" stays a lesson. AI wording on job 6 is describe-only.
+- Frontend: `src/copilot/strategyDraft.ts` (types and pure rules: nothing saves while any value is open),
+  `src/paperbot/CopilotDraftV2.tsx` (the review card on the Paper bot page: empty fields for his values, his stated values,
+  what was left out, "Save as my strategy" - his own click on `POST /custom-strategies` - and "Discard the draft"),
+  `PaperBotV2.tsx` (reads the draft from the navigation state with `ai_copilot` on; after his save it picks the strategy,
+  the symbol and the size his idea named in "Start a paper bot"; he presses "Start on paper" himself), `AnswerV2.tsx` (the
+  hand-over is the answer's primary action), `chat/model.ts` (the `draft` and the new refusal kinds).
+- Evals: `copilot_jobs.jsonl` +11 job 6 cases (the old "not built" case now checks the starter), `copilot_safety.jsonl` +16
+  refusals and +4 controls; `expect_draft` checks in `evals/runner.py`; hashes re-pinned in `scripts/check_public_repo.py`.
+- Tests: `tests/test_copilot_v2_job6.py` (new), updated `test_copilot_v2_chat.py` / `test_copilot_v2_jobs345.py`; vitest
+  `src/copilot/strategyDraft.test.tsx`; e2e `copilot-builder-v2.e2e.ts` with new baselines `copilot-builder-v2-answer-*` and
+  `copilot-builder-v2-draft-*` (360 / 390 / 1440, light / dark); `copilot-chat-v2.e2e.ts` (job 6 "Ready"); fixture
+  `copilot_chat_v2.json` (+2 answers, job 6 built). No existing baseline changed. Before / after of the job 6 card:
+  docs/screenshots/cp6/.
+
 ## 22 Oct - F&O workspace 8b, slice 1: the ATP-only information features (behind ui_v2, PAPER only)
 
 - Branch `claude/fno8b-atp-only-1`. No migration. Owner questions FNO-8B-1..8 (OPEN_QUESTIONS) on their provisional
@@ -2691,3 +2719,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `markets-v2.e2e.ts` with new baselines `markets-v2-{360,390,1440}-{light,dark}`, `markets-v2-indices-1440-*`,
   `markets-v2-list-{390,1440}-*`, `chain-dish-v2-{390,1440}-*` (block only; the option chain's own baselines unchanged).
 
+
+## 22 Oct - Analyze a chart A4: the share link (design PR-D) and history filters (behind chart_analyze + chart_analyze_share)
+
+- Branch `claude/chart-analyze-a4`. No migration (the link state lives in `chart_analyses.result_json` under `_share`).
+- Backend: `app/chart_analyze/share.py` (signed, expiring, revocable link; the structure-only copy: no name, no price,
+  no date, no digit in any text, no picture); `service.py` (`start_sharing`, `stop_sharing`, `open_shared`, conditional
+  update so a delete wins; `as_dict` returns `share` and never the state inside `result`); routes `POST / DELETE
+  /items/{id}/share`, `GET /shared/{token}`; flag `chart_analyze_share` (OFF, catalog depends on `chart_analyze`);
+  setting `share_expiry_days` (7, 1-30); tenancy route table rows.
+- Frontend: `ShareDialogV2.tsx` (create / copy / new link / stop), `SharedAnalysisV2.tsx` (`/chart-analyze?shared=`),
+  `ResultViewV2` `shared` form (no buttons, `StructureSketch` instead of the picture), history filters with counts and
+  the "Shared" mark.
+- Tests: backend `test_chart_analyze_share.py` (15); vitest `share.test.tsx`; e2e `chart-analyze-v2.e2e.ts` (share flow,
+  shared copy, link problems, flag off, filters). New baselines `chart-analyze-shared-*`, `chart-analyze-share-dialog-*`;
+  `chart-analyze-{390,360,1440}-{light,dark}` regenerated (the history filters).
+- Questions CA-11..CA-14 (OPEN_QUESTIONS).

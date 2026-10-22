@@ -335,6 +335,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/chart-analyze/items/{item_id}/analyze"): S_OWN_CHART_ANALYSES,
     ("GET", "/api/chart-analyze/items/{item_id}/strikes"): "member: the caller's own analysis + the caller's organisation's deployment settings (reads only)",
     ("DELETE", "/api/chart-analyze/items/{item_id}"): S_OWN_CHART_ANALYSES,
+    ("POST", "/api/chart-analyze/items/{item_id}/share"): S_OWN_CHART_ANALYSES,
+    ("DELETE", "/api/chart-analyze/items/{item_id}/share"): S_OWN_CHART_ANALYSES,
+    ("GET", "/api/chart-analyze/shared/{token}"): ("member: a structure-only copy (no name, no price, no date, no picture) of an analysis its "
+                                                   "owner shared with the caller's own organisation; a link of another organisation is a 404"),
     ("GET", "/api/charts/drawings"): "member",
     ("POST", "/api/charts/drawings"): S_OWN_DRAWINGS,
     ("GET", "/api/charts/drawings/export"): "member",

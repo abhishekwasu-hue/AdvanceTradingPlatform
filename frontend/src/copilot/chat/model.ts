@@ -1,5 +1,6 @@
 import { request } from "../../api/client";
 import type { AnalysisChart, AnalysisTable } from "../../optionChain/analyses";
+import type { StrategyDraft } from "../strategyDraft";
 
 /**
  * Item 5 (owner's handover, the AI Copilot as a trader's brain), first slice: the chat-first Copilot page's data and its
@@ -33,13 +34,22 @@ export type AnswerBlock =
 export interface ChatAnswer {
   job: JobId | "refuse" | "help"; job_number: number | null; title: string;
   summary: string[]; answer: string; sections: { title: string; lines: string[] }[]; blocks: AnswerBlock[]; unknowns: string[];
-  worked: WorkedStep[]; action: { label: string; to: string } | null; refused: "order" | "advice" | "tip" | null; starters: string[];
+  worked: WorkedStep[]; action: { label: string; to: string } | null; refused: RefusalKind | null; starters: string[];
   concepts: { id: string; title: string }[]; notes: string[]; disclaimer: string; source: "rules" | "ai"; tool_calls: string[];
   ai?: AiState; note?: string;
+  /** Job 6: the draft paper strategy the Paper bot page's review card shows (never saved by the Copilot). */
+  draft?: StrategyDraft | null;
 }
+/** Job 6 added: the trader's own settings, a promise of returns, someone else's strategy. */
+export type RefusalKind = "order" | "advice" | "tip" | "settings" | "promise" | "copy";
 
 /** One turn of the conversation on the page (kept in memory only). */
 export interface Turn { id: number; question: string; answer: ChatAnswer | null; error: string | null }
+
+/** Where an answer's action goes: the draft rides along in the navigation state for the Paper bot page's review card. */
+export function actionState(answer: Pick<ChatAnswer, "draft">): { copilotDraft: StrategyDraft } | undefined {
+  return answer.draft ? { copilotDraft: answer.draft } : undefined;
+}
 
 export const chatApi = {
   home: () => request<ChatHome>("/ai/chat/home"),

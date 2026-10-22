@@ -135,6 +135,7 @@ class RateLimitedBroker(BrokerInterface):
         self.budget = budget
         self.name = inner.name
         self.history_by_date = bool(getattr(inner, "history_by_date", False))   # LD-10 (shared_candles)
+        self.daily_days_per_request = int(getattr(inner, "daily_days_per_request", 365))   # UI2-4a2 (daily chunks)
         # Z10-c: whose orders these are, for the Phase 0 PAPER-only lock (app/platform/phase0_lock.py).
         self.tenant_id = tenant_id
         # Part D2: the SEBI orders-per-second throttle (app/execution/ops_throttle.py), when OPS_THROTTLE_ENABLED.

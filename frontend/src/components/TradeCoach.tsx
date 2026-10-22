@@ -51,7 +51,7 @@ function EquityLine({ points }: { points: number[] }) {
           {hover === 0 ? "start" : `trade ${hover}`}: <b>{money(series[hover])}</b>
         </div>
       )}
-      <div className="mt-1 flex flex-wrap gap-x-4 text-[11px] text-fg-muted">
+      <div className="mt-1 flex flex-wrap gap-x-4 text-xs text-fg-muted">
         <span>Start ₹0</span><span>End <b className="text-fg">{money(last)}</b></span>
         <span>High <b className="text-fg">{money(max)}</b></span><span>Low <b className="text-fg">{money(min)}</b></span>
       </div>
@@ -122,16 +122,16 @@ export default function TradeCoach() {
         <>
           <div className="grid gap-3 md:grid-cols-[180px_1fr]">
             <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-surface-2 p-4 text-center">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">Discipline grade</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-fg-muted">Discipline grade</div>
               <div className="font-tabular text-5xl font-black text-fg">{review.grade}</div>
               <div className="text-xs text-fg-muted">{review.score}/100</div>
             </div>
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
               {tiles.map((t) => (
                 <div key={t.label} className="rounded-xl border border-border bg-surface-1 px-3 py-2">
-                  <div className="text-[11px] uppercase tracking-wider text-fg-muted">{t.label}</div>
+                  <div className="text-xs uppercase tracking-wider text-fg-muted">{t.label}</div>
                   <div className={`font-tabular text-xl font-extrabold ${t.tone || "text-fg"}`}>{t.value}</div>
-                  <div className="text-[11px] text-fg-muted">{t.sub}</div>
+                  <div className="text-xs text-fg-muted">{t.sub}</div>
                 </div>
               ))}
             </div>
@@ -150,7 +150,7 @@ export default function TradeCoach() {
               <div className="space-y-2">
                 {review.flags.map((f) => (
                   <div key={f.id} className={`rounded-lg border border-border border-l-4 p-2.5 ${SEV[f.severity].cls}`}>
-                    <div className="flex items-center gap-2 text-sm font-bold text-fg">{f.title}<span className="ml-auto text-[10px] font-normal uppercase tracking-wider text-fg-muted">{SEV[f.severity].label}</span></div>
+                    <div className="flex items-center gap-2 text-sm font-bold text-fg">{f.title}<span className="ml-auto text-xs font-normal uppercase tracking-wider text-fg-muted">{SEV[f.severity].label}</span></div>
                     <div className="mt-0.5 text-xs text-fg-muted">{f.text}</div>
                     <div className="mt-1 flex gap-1.5 text-xs text-fg"><Lightbulb size={13} className="mt-0.5 shrink-0 text-warn" />{f.tip}</div>
                   </div>

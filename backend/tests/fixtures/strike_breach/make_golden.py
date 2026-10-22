@@ -1,6 +1,9 @@
-"""Regenerates golden.json from the Trade repo's own `strike_breach_model.py` (run by hand; the tests only read the JSON).
+"""Regenerates golden.json.gz from the Trade repo's own `strike_breach_model.py` (run by hand; the tests only read the file).
 
-    python make_golden.py /path/to/trade | gzip -9 > golden.json.gz
+    python make_golden.py /path/to/trade | gzip -9 -n > $ATP_PRIVATE_FIXTURES/backend/tests/fixtures/strike_breach/golden.json.gz
+    # The golden file is Trade output (it also records the frozen coefficients): it lives only in the private fixtures
+    # store, never in this public repository (owner decision PR-2, docs/PUBLIC_REPO_POLICY.md section 5); its new sha256
+    # goes into backend/tests/private_fixtures_manifest.json in a reviewed change.
 
 Records, on a synthetic daily series (no market data): the Trade feature table (`daily_features`, without the structure
 column ATP does not port), breach probabilities from the frozen NIFTY coefficients through Trade's own `design` +
@@ -13,6 +16,7 @@ import sys
 
 import numpy as np
 import pandas as pd
+from synthetic_inputs import series  # this folder (before the Trade export goes on the path)
 
 sys.path.insert(0, sys.argv[1])
 import strike_breach_model as M  # noqa: E402
@@ -20,16 +24,6 @@ import strike_breach_model as M  # noqa: E402
 
 def nan_none(values):
     return [None if (v is None or (isinstance(v, float) and math.isnan(v))) else float(v) for v in values]
-
-
-def series(n=90, seed=7):
-    rng = np.random.default_rng(seed)
-    ts = pd.bdate_range("2023-01-02", periods=n)
-    c = 18000 * np.exp(np.cumsum(rng.normal(0, 0.009, n)))
-    o = np.r_[c[0], c[:-1]] * np.exp(rng.normal(0, 0.002, n))
-    h = np.maximum(o, c) * (1 + np.abs(rng.normal(0.003, 0.002, n)))
-    lo = np.minimum(o, c) * (1 - np.abs(rng.normal(0.003, 0.002, n)))
-    return pd.DataFrame({"timestamp": ts, "open": o, "high": h, "low": lo, "close": c})
 
 
 coef = json.load(open(M.FROZEN_PATH, encoding="utf-8"))["models"]

@@ -15,6 +15,7 @@ export interface DataPage {
 }
 
 export const DATA_PAGES: readonly DataPage[] = [
+  // UI2-2: the v2 dashboard shows these broker states itself, per block (src/shell/pagesV2.ts OWN_BROKER_STATES).
   { path: "/", why: "Market strip, today's P&L and open positions at live prices" },
   { path: "/charts", why: "Candles and the live price from the trader's broker" },
   { path: "/option-chain", why: "The option chain, OI and Greeks from the broker" },

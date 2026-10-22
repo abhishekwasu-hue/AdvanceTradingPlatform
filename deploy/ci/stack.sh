@@ -155,6 +155,13 @@ cmd_load() {
   local per=$(( (users + shards - 1) / shards )) i offset n pids=()
   local client_cpus; client_cpus="$(env_value ATP_CI_CLIENT_CPUS)"     # `stack.sh pin`: the clients off the server's CPUs
   step "load: $users users in $shards shards of up to $per (one client IP each), ramp ${ramp}s, then ${seconds}s, think ${think}s$([ "$in_step" = 1 ] && echo ', shards in step (login bursts)')"
+  # Informational, never a verdict: the runner's CPU and one bcrypt-12 check in the API's container with its own
+  # bcrypt, uncontended (before the load) - the login p95 follows the core's bcrypt speed. "unknown" when not measured.
+  local cpu_model bcrypt_ms
+  cpu_model="$(awk -F': *' '/^model name/ {print $2; exit}' /proc/cpuinfo 2>/dev/null || true)"
+  bcrypt_ms="$(dc exec -T backend python - < "$ROOT/backend/scripts/bcrypt_baseline.py" 2>/dev/null | tail -n 1 || true)"
+  case "$bcrypt_ms" in ""|*[!0-9]*) bcrypt_ms="unknown" ;; esac
+  echo "    host: ${cpu_model:-unknown}, $(nproc) vCPU; bcrypt-12 check: $bcrypt_ms ms (uncontended, before the load)"
   scrape_metrics > "$STATE/$name/metrics-before.prom" || true
   pg_statements_reset || true
   sample_stats "$STATE/$name/docker-stats.csv" & local sampler=$!
@@ -193,7 +200,8 @@ cmd_load() {
   [ "${#files[@]}" -gt 0 ] || die "no shard wrote its samples - see $STATE/$name/shard-*.log"
   local rc=0
   cmd_run /ci-scripts/loadtest.py --merge "${files[@]}" --json-out "/state/$name/result.json" --markdown "/state/$name/result.md" \
-    --label "${label:-$PROJECT on $(hostname)}" --stats "/state/$name/docker-stats.csv" || rc=$?
+    --label "${label:-$PROJECT on $(hostname)}" --stats "/state/$name/docker-stats.csv" \
+    --cpu-model "${cpu_model:-unknown}" --vcpus "$(nproc)" --bcrypt-ms "$bcrypt_ms" || rc=$?
   if [ -f "$STATE/$name/result.md" ]; then
     echo; cat "$STATE/$name/result.md"
     if [ -n "$report" ]; then cp "$STATE/$name/result.md" "$report"; fi

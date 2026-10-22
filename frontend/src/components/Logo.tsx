@@ -27,10 +27,7 @@ export default function Logo({ size = 34, showWordmark = true }: { size?: number
     <div className="flex items-center gap-2.5">
       <LogoMark size={size} />
       {showWordmark && (
-        <div className="leading-tight">
-          <div className="text-sm font-bold tracking-wide text-slate-50">Advance Trading</div>
-          <div className="text-[11px] text-muted">Platform Console</div>
-        </div>
+        <div className="text-sm font-bold leading-tight tracking-wide text-slate-50">AiAlgoDesk</div>
       )}
     </div>
   );

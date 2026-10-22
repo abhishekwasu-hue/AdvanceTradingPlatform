@@ -1,0 +1,566 @@
+{
+ "_note": "UI2-2 e2e fixture: hand-written, made-up figures for the v2 dashboard screenshots. No real account, price or id.",
+ "me": {
+  "id": 7,
+  "email": "trader@example.com",
+  "tenant_id": 3,
+  "role": "OWNER",
+  "mfa_enabled": false,
+  "email_verified": true,
+  "scopes": [
+   "trading:write",
+   "risk:write",
+   "brokers:write",
+   "alerts:write"
+  ]
+ },
+ "token_status": [
+  {
+   "broker_name": "upstox",
+   "account_label": "primary",
+   "token_status": "VALID",
+   "token_expires_at": null,
+   "last_verified_at": null,
+   "needs_login": false,
+   "oauth_supported": true,
+   "oauth_callback_url": null,
+   "login_url_supported": false,
+   "code_param": null
+  }
+ ],
+ "token_status_login": [
+  {
+   "broker_name": "upstox",
+   "account_label": "primary",
+   "token_status": "EXPIRED",
+   "token_expires_at": null,
+   "last_verified_at": null,
+   "needs_login": true,
+   "oauth_supported": true,
+   "oauth_callback_url": null,
+   "login_url_supported": false,
+   "code_param": null
+  }
+ ],
+ "features": {
+  "ui_v2": true,
+  "ai_copilot": true
+ },
+ "strip": {
+  "indices": [
+   {
+    "key": "NIFTY 50",
+    "label": "NIFTY 50",
+    "symbol": "NIFTY 50",
+    "exchange": "NSE",
+    "ltp": 24812.35,
+    "prev_close": 24693.95,
+    "change": 118.4,
+    "change_pct": 0.4795,
+    "as_of": "2026-10-19T05:29:58Z",
+    "stale": false,
+    "source": "live",
+    "missing": false
+   },
+   {
+    "key": "NIFTY BANK",
+    "label": "BANK NIFTY",
+    "symbol": "NIFTY BANK",
+    "exchange": "NSE",
+    "ltp": 53946.1,
+    "prev_close": 54158.65,
+    "change": -212.55,
+    "change_pct": -0.3925,
+    "as_of": "2026-10-19T05:29:58Z",
+    "stale": false,
+    "source": "live",
+    "missing": false
+   },
+   {
+    "key": "INDIA VIX",
+    "label": "INDIA VIX",
+    "symbol": "INDIA VIX",
+    "exchange": "NSE",
+    "ltp": 13.42,
+    "prev_close": 13.63,
+    "change": -0.21,
+    "change_pct": -1.5407,
+    "as_of": "2026-10-19T05:29:58Z",
+    "stale": false,
+    "source": "live",
+    "missing": false
+   }
+  ],
+  "source": "live",
+  "broker": {
+   "broker": "upstox",
+   "account_label": "primary"
+  },
+  "market": {
+   "exchange": "NSE",
+   "phase": "open",
+   "is_open": true,
+   "opens_at": "09:15",
+   "closes_at": "15:30",
+   "next_open": null,
+   "holiday": null,
+   "reason": null
+  },
+  "refresh_seconds": 15,
+  "fetched_at": "2026-10-19T05:30:00Z"
+ },
+ "strip_memory": {
+  "indices": [
+   {
+    "key": "NIFTY 50",
+    "label": "NIFTY 50",
+    "symbol": "NIFTY 50",
+    "exchange": "NSE",
+    "ltp": 24693.95,
+    "prev_close": 24601.1,
+    "change": 92.85,
+    "change_pct": 0.3774,
+    "as_of": "2026-10-16T10:00:00Z",
+    "stale": true,
+    "source": "memory",
+    "missing": false
+   },
+   {
+    "key": "NIFTY BANK",
+    "label": "BANK NIFTY",
+    "symbol": "NIFTY BANK",
+    "exchange": "NSE",
+    "ltp": 54158.65,
+    "prev_close": 54240.3,
+    "change": -81.65,
+    "change_pct": -0.1505,
+    "as_of": "2026-10-16T10:00:00Z",
+    "stale": true,
+    "source": "memory",
+    "missing": false
+   },
+   {
+    "key": "INDIA VIX",
+    "label": "INDIA VIX",
+    "symbol": "INDIA VIX",
+    "exchange": "NSE",
+    "ltp": null,
+    "prev_close": null,
+    "change": null,
+    "change_pct": null,
+    "as_of": null,
+    "stale": null,
+    "source": null,
+    "missing": true
+   }
+  ],
+  "source": "memory",
+  "broker": null,
+  "market": {
+   "exchange": "NSE",
+   "phase": "pre-open",
+   "is_open": false,
+   "opens_at": "09:15",
+   "closes_at": "15:30",
+   "next_open": "2026-10-19T09:15:00+05:30",
+   "holiday": null,
+   "reason": "before-open"
+  },
+  "refresh_seconds": 15,
+  "fetched_at": "2026-10-19T03:35:00Z"
+ },
+ "oi_banners": {
+  "banners": [
+   {
+    "underlying": "NIFTY",
+    "date": "2026-10-19",
+    "market_open": true,
+    "stale": false,
+    "age_minutes": 2,
+    "stale_after_minutes": 15,
+    "banner": {
+     "slot": "10:55",
+     "data_as_of": "2026-10-19T05:25:00Z",
+     "direction": "BULLISH",
+     "message": "Put writing rising → avoid shorting calls; NIFTY bias bullish",
+     "put_class": "WRITING",
+     "call_class": "NEUTRAL",
+     "signal": "BULLISH",
+     "diff": 0,
+     "delta_diff": 0,
+     "total_call_oi": 1000,
+     "total_put_oi": 1120,
+     "pcr": 1.12,
+     "pcr_band": "SIDEWAYS",
+     "pcr_label": "Sideways",
+     "underlying_price": 24812.35,
+     "atm_strike": 24800,
+     "strike_step": 50,
+     "max_pain": 24800,
+     "expiry": "2026-10-27",
+     "dte": 8,
+     "first_of_day": false
+    }
+   },
+   {
+    "underlying": "BANKNIFTY",
+    "date": "2026-10-19",
+    "market_open": true,
+    "stale": false,
+    "age_minutes": 2,
+    "stale_after_minutes": 15,
+    "banner": {
+     "slot": "10:55",
+     "data_as_of": "2026-10-19T05:25:00Z",
+     "direction": "BEARISH",
+     "message": "Call writing rising → avoid shorting puts; BANKNIFTY bias bearish",
+     "put_class": "WRITING",
+     "call_class": "NEUTRAL",
+     "signal": "BEARISH",
+     "diff": 0,
+     "delta_diff": 0,
+     "total_call_oi": 1000,
+     "total_put_oi": 860,
+     "pcr": 0.86,
+     "pcr_band": "SIDEWAYS",
+     "pcr_label": "Sideways",
+     "underlying_price": 53946.1,
+     "atm_strike": 54000,
+     "strike_step": 50,
+     "max_pain": 54000,
+     "expiry": "2026-10-27",
+     "dte": 8,
+     "first_of_day": false
+    }
+   }
+  ]
+ },
+ "positions": [
+  {
+   "id": 101,
+   "mode": "PAPER",
+   "symbol": "NIFTY 24800 CE",
+   "strategy_id": "orb_nifty",
+   "direction": "LONG",
+   "entry_time": "2026-10-19T04:05:00",
+   "entry_price": 121.8,
+   "quantity": 150,
+   "stop_loss": 119.36,
+   "target1": 125.45,
+   "target2": null,
+   "exit_time": null,
+   "exit_price": null,
+   "exit_reason": null,
+   "pnl": null,
+   "charges": 0,
+   "lot_size": 75,
+   "exchange": "NSE",
+   "instrument_kind": "OPTION"
+  },
+  {
+   "id": 102,
+   "mode": "PAPER",
+   "symbol": "BANKNIFTY FUT",
+   "strategy_id": "orb_nifty",
+   "direction": "SHORT",
+   "entry_time": "2026-10-19T04:05:00",
+   "entry_price": 54000.0,
+   "quantity": 35,
+   "stop_loss": 52920.0,
+   "target1": 55620.0,
+   "target2": null,
+   "exit_time": null,
+   "exit_price": null,
+   "exit_reason": null,
+   "pnl": null,
+   "charges": 0,
+   "lot_size": 35,
+   "exchange": "NSE",
+   "instrument_kind": "FUTURE"
+  },
+  {
+   "id": 103,
+   "mode": "LIVE",
+   "symbol": "RELIANCE",
+   "strategy_id": "orb_nifty",
+   "direction": "LONG",
+   "entry_time": "2026-10-19T04:05:00",
+   "entry_price": 2962.2,
+   "quantity": 50,
+   "stop_loss": 2902.96,
+   "target1": 3051.07,
+   "target2": null,
+   "exit_time": null,
+   "exit_price": null,
+   "exit_reason": null,
+   "pnl": null,
+   "charges": 0,
+   "lot_size": 1,
+   "exchange": "NSE",
+   "instrument_kind": "EQUITY"
+  }
+ ],
+ "exposure": {
+  "as_of": "2026-10-19T05:30:00Z",
+  "capital": 500000,
+  "open_positions": 3,
+  "gross_notional": 2056913.5,
+  "net_notional": -1719313.5,
+  "long_notional": 168800,
+  "short_notional": 1888113.5,
+  "gross_pct_of_capital": 411.38,
+  "unrealised_pnl": 4306.5,
+  "realised_today": 2540,
+  "risk_at_stops": 3850,
+  "risk_pct_of_capital": 0.77,
+  "largest_symbol_pct": 377.62,
+  "by_symbol": [
+   {
+    "symbol": "NIFTY 24800 CE",
+    "positions": 1,
+    "quantity": 150,
+    "notional": 21390,
+    "pct_of_capital": 4.28,
+    "unrealised_pnl": 3120,
+    "risk_at_stop": 365.4,
+    "strategies": [
+     "orb_nifty"
+    ]
+   },
+   {
+    "symbol": "BANKNIFTY FUT",
+    "positions": 1,
+    "quantity": -35,
+    "notional": 1888113.5,
+    "pct_of_capital": 377.62,
+    "unrealised_pnl": 1886.5,
+    "risk_at_stop": 0,
+    "strategies": [
+     "orb_nifty"
+    ]
+   },
+   {
+    "symbol": "RELIANCE",
+    "positions": 1,
+    "quantity": 50,
+    "notional": 147410,
+    "pct_of_capital": 29.48,
+    "unrealised_pnl": -700,
+    "risk_at_stop": 2262,
+    "strategies": [
+     "orb_nifty"
+    ]
+   }
+  ],
+  "by_strategy": {
+   "orb_nifty": 2056913.5
+  },
+  "by_mode": {
+   "PAPER": 1909503.5,
+   "LIVE": 147410
+  },
+  "warnings": [],
+  "price_source": "ltp",
+  "priced_symbols": [
+   "BANKNIFTY FUT",
+   "NIFTY 24800 CE",
+   "RELIANCE"
+  ]
+ },
+ "actions": [
+  {
+   "id": 503,
+   "deployment_id": null,
+   "trade_id": null,
+   "action": "ENTRY",
+   "rule": "Z3",
+   "reason": "LONG NIFTY 50",
+   "evidence": {
+    "proposal_price": 24790.0,
+    "stop_loss": 24720.0,
+    "target1": 24930.0,
+    "source": "deployment",
+    "symbol": "NIFTY 50",
+    "direction": "LONG",
+    "strategy_id": "orb_nifty",
+    "mode": "PAPER",
+    "signal": {
+     "reasons": [
+      "Opening-range breakout, retest held"
+     ]
+    }
+   },
+   "status": "PROPOSED",
+   "decided_by": null,
+   "decided_at": null,
+   "decision_note": null,
+   "executed_at": null,
+   "result": null,
+   "expires_at": "2026-10-19T05:38:00",
+   "created_at": "2026-10-19T05:12:00",
+   "mode": "PAPER"
+  },
+  {
+   "id": 502,
+   "deployment_id": null,
+   "trade_id": null,
+   "action": "ENTRY",
+   "rule": "Z3",
+   "reason": "SHORT NIFTY BANK",
+   "evidence": {
+    "proposal_price": 53980.0,
+    "stop_loss": 54120.0,
+    "target1": 53700.0,
+    "source": "scan",
+    "symbol": "NIFTY BANK",
+    "direction": "SHORT",
+    "strategy_id": "breakdown_retest",
+    "mode": "PAPER",
+    "signal": {
+     "reasons": [
+      "Breakdown retest"
+     ]
+    }
+   },
+   "status": "PROPOSED",
+   "decided_by": null,
+   "decided_at": null,
+   "decision_note": null,
+   "executed_at": null,
+   "result": null,
+   "expires_at": "2026-10-19T05:46:00",
+   "created_at": "2026-10-19T05:06:00",
+   "mode": "PAPER"
+  },
+  {
+   "id": 501,
+   "deployment_id": null,
+   "trade_id": null,
+   "action": "ENTRY",
+   "rule": "Z3",
+   "reason": "LONG HDFCBANK",
+   "evidence": {
+    "proposal_price": 1712.4,
+    "stop_loss": 1698.0,
+    "target1": 1741.0,
+    "source": "scan",
+    "symbol": "HDFCBANK",
+    "direction": "LONG",
+    "strategy_id": "trend_pullback",
+    "mode": "PAPER",
+    "signal": {
+     "reasons": [
+      "Pullback to 20 EMA"
+     ]
+    }
+   },
+   "status": "EXECUTED",
+   "decided_by": null,
+   "decided_at": null,
+   "decision_note": null,
+   "executed_at": null,
+   "result": null,
+   "expires_at": "2026-10-19T05:05:00",
+   "created_at": "2026-10-19T04:35:00",
+   "mode": "PAPER"
+  }
+ ],
+ "deployments": [
+  {
+   "id": 41,
+   "strategy_id": "mean_reversion",
+   "symbol": "BANKNIFTY",
+   "exchange": "NSE",
+   "timeframe": "5min",
+   "mode": "PAPER",
+   "broker_name": null,
+   "status": "PAUSED",
+   "pause_reason": "It hit your rule of 3 losses in a row at 10:21.",
+   "last_evaluated_at": null,
+   "last_signal_at": null,
+   "last_error": null,
+   "consecutive_failures": 0,
+   "open_positions": 0,
+   "created_by": 7,
+   "created_at": "2026-10-12T04:00:00",
+   "updated_at": "2026-10-19T04:51:00",
+   "instrument_kind": "EQUITY",
+   "option_position": null,
+   "expiry_rule": null,
+   "strike_rule": null,
+   "strike_offset": 0,
+   "premium_stop_pct": null,
+   "max_lots": null,
+   "contract_rules": ""
+  },
+  {
+   "id": 42,
+   "strategy_id": "orb_nifty",
+   "symbol": "NIFTY 50",
+   "exchange": "NSE",
+   "timeframe": "5min",
+   "mode": "PAPER",
+   "broker_name": null,
+   "status": "ACTIVE",
+   "pause_reason": null,
+   "last_evaluated_at": null,
+   "last_signal_at": null,
+   "last_error": null,
+   "consecutive_failures": 0,
+   "open_positions": 1,
+   "created_by": 7,
+   "created_at": "2026-10-12T04:00:00",
+   "updated_at": "2026-10-19T04:51:00",
+   "instrument_kind": "EQUITY",
+   "option_position": null,
+   "expiry_rule": null,
+   "strike_rule": null,
+   "strike_offset": 0,
+   "premium_stop_pct": null,
+   "max_lots": null,
+   "contract_rules": ""
+  }
+ ],
+ "paper_risk": {
+  "mode": "PAPER",
+  "today": {
+   "realised": 2540,
+   "open_marks": 4306.5,
+   "pnl": 6846.5,
+   "worst": -3850,
+   "limit": 10000,
+   "used": 0.385,
+   "entries": 3,
+   "max_entries": 10
+  },
+  "lockout": null
+ },
+ "notifications_unread": [
+  {
+   "id": 88,
+   "event_type": "NEWS_ALERT",
+   "severity": "INFO",
+   "title": "Your alert: NIFTY 50 crossed 24,800",
+   "message": "Sent to the app and Telegram.",
+   "related_trade_id": null,
+   "related_order_id": null,
+   "read": false,
+   "created_at": "2026-10-19T05:11:00"
+  }
+ ],
+ "analytics_summary": {
+  "total_trades": 44,
+  "closed_trades": 41,
+  "open_trades": 3,
+  "win_rate": 58.0,
+  "net_pnl": 18250,
+  "gross_profit": 41200,
+  "gross_loss": -22950,
+  "profit_factor": 1.8,
+  "avg_win": 1717,
+  "avg_loss": -1350,
+  "by_strategy": [],
+  "by_symbol": []
+ },
+ "alert_channels": []
+}

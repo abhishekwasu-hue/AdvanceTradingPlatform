@@ -29,8 +29,11 @@ FLAG = "chart_workspace"
 SCHEMA = "layout/1"
 GRIDS = (1, 2, 4, 6, 8)
 GROUPS = ("A", "B", "C", "D")
-TIMEFRAMES = ("1min", "3min", "5min", "15min", "30min", "60min", "day")
-CHART_TYPES = ("candles", "hollow", "heikin_ashi", "renko", "range", "line", "area")
+# UI2-4a2-pre: week, month and the "bars" (OHLC) chart type are accepted so the Charts page can save them; the W/M candles
+# themselves come with UI2-4a2. The short labels W, M and D are stored as their ids. Older layouts stay valid.
+TIMEFRAMES = ("1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month")
+TIMEFRAME_ALIASES = {"D": "day", "W": "week", "M": "month"}
+CHART_TYPES = ("candles", "hollow", "heikin_ashi", "renko", "range", "line", "area", "bars")
 MAX_PER_USER = 50
 Group = Literal["A", "B", "C", "D"]
 
@@ -39,9 +42,14 @@ class Cell(BaseModel):
     model_config = ConfigDict(extra="forbid")
     symbol: str = Field(pattern=SYMBOL_RE)
     exchange: str = Field(default="NSE", pattern=EXCHANGE_RE)
-    timeframe: Literal["1min", "3min", "5min", "15min", "30min", "60min", "day"] = "5min"
-    chart_type: Literal["candles", "hollow", "heikin_ashi", "renko", "range", "line", "area"] = "candles"
+    timeframe: Literal["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"] = "5min"
+    chart_type: Literal["candles", "hollow", "heikin_ashi", "renko", "range", "line", "area", "bars"] = "candles"
     group: Optional[Group] = None
+
+    @field_validator("timeframe", mode="before")
+    @classmethod
+    def _timeframe_id(cls, v: Any) -> Any:
+        return TIMEFRAME_ALIASES.get(v, v) if isinstance(v, str) else v
 
     @field_validator("symbol")
     @classmethod

@@ -1,5 +1,9 @@
 # Advance Trading Platform
 
+> **Licence:** proprietary, all rights reserved (see [`LICENSE`](LICENSE)). The repository being public does not grant
+> any licence to use, copy, modify or distribute it. No real data, credentials or private material belong in this
+> repository: see [`docs/PUBLIC_REPO_POLICY.md`](docs/PUBLIC_REPO_POLICY.md).
+
 An algorithmic trading platform for Indian markets (NSE cash, F&O, indices), built in phases.
 This delivers the **strategy, risk, execution, broker-abstraction, price-action, option-chain,
 signal-scoring, database/auth, and platform-operations core**: indicators, inbuilt

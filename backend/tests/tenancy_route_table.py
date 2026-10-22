@@ -21,6 +21,9 @@ from typing import Dict, Tuple
 # Why a route needs no login (public) or may be called by any member (self).
 P_SIGN_IN = ("public: sign-up, login, token refresh, password reset, invites and e-mail verification - the token in the path or "
              "body is the credential (rate limited)")
+P_GOOGLE_SIGN_IN = ("public: Google sign-in (GS-1) - the signed state cookie and Google's verified ID token are the credential "
+                    "(rate limited; 404 until both credentials are set)")
+P_SIGN_IN_PROVIDERS = "public: which extra sign-in buttons the sign-in page shows (one boolean, no data)"
 P_PAYMENT_WEBHOOK = "public: payment provider webhook, verified by its signature"
 P_PLANS = "public: the plan catalogue"
 P_OAUTH_CALLBACK = "public: the broker's OAuth redirect; the signed state parameter names the organisation"
@@ -67,7 +70,7 @@ S_FEEDBACK = "self: sends product feedback (rate limited)"
 S_NEWS_CLASSIFY = "self: classifies the organisation's pending feed items with its own AI key (metered, like a Copilot question)"
 S_OWN_VERDICTS = "self: the caller's own verdicts on feed items"
 S_PREVIEW = "self: previews the contract a deployment would trade; stores nothing"
-S_OWN_MARKET_DATA = ("self: reads candles / option chains through a broker session - the organisation's (its budget) or, with the "
+S_OWN_MARKET_DATA = ("self: reads candles / option chains / watchlist quotes through a broker session - the organisation's (its budget) or, with the "
                      "bring-your-own-broker tier on, the caller's own; nothing is stored; rate limited per user")
 S_OWN_WHATIF = "self: models the caller's OWN open positions at the spot and IVs in the request; stores nothing, changes no order"
 S_COMPUTE = "self: computes over the request body or the organisation's data and returns it; stores nothing"
@@ -230,6 +233,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/api-keys/{key_id}"): "owner",
     ("GET", "/api/audit-logs"): "member",
     ("GET", "/api/audit-logs/verify"): "admin",
+    ("GET", "/api/auth/google/callback"): P_GOOGLE_SIGN_IN,
+    ("GET", "/api/auth/google/start"): P_GOOGLE_SIGN_IN,
     ("GET", "/api/auth/invite/{token}"): P_SIGN_IN,
     ("POST", "/api/auth/invite/{token}/accept"): P_SIGN_IN,
     ("POST", "/api/auth/login"): P_SIGN_IN,
@@ -248,6 +253,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/auth/password/forgot"): P_SIGN_IN,
     ("GET", "/api/auth/password/reset/{token}"): P_SIGN_IN,
     ("POST", "/api/auth/password/reset/{token}"): P_SIGN_IN,
+    ("GET", "/api/auth/providers"): P_SIGN_IN_PROVIDERS,
     ("POST", "/api/auth/refresh"): P_SIGN_IN,
     ("POST", "/api/auth/register"): P_SIGN_IN,
     ("GET", "/api/auth/scopes"): "member",
@@ -272,10 +278,15 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/billing/usage"): "member",
     ("POST", "/api/billing/webhooks/razorpay"): P_PAYMENT_WEBHOOK,
     ("GET", "/api/broker/available"): P_BROKER_CATALOGUE,
+    ("GET", "/api/broker/catalog"): "member",
+    ("GET", "/api/broker/connections"): "member",
+    ("POST", "/api/broker/{broker}/connect"): "trader",
+    ("POST", "/api/broker/{broker}/renew"): "trader",
     ("GET", "/api/broker/credentials"): "member",
     ("GET", "/api/broker/token-status"): "member",
     ("GET", "/api/broker/upstox/oauth/callback"): P_OAUTH_CALLBACK,
     ("GET", "/api/broker/upstox/oauth/start"): "member",
+    ("GET", "/api/broker/upstox/redirect-url"): "member",
     ("POST", "/api/broker/{name}/analytics-token/check"): "trader",
     ("DELETE", "/api/broker/{name}/analytics-token"): "trader",
     ("POST", "/api/broker/{name}/authenticate"): "trader",
@@ -414,11 +425,13 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/market-data/data-tier"): "member",
     ("GET", "/api/market-data/history"): "member",
     ("GET", "/api/market-data/ltp"): "member",
+    ("POST", "/api/market-data/quotes"): S_OWN_MARKET_DATA,
     ("POST", "/api/market-data/option-chains"): S_OWN_MARKET_DATA,
     ("GET", "/api/market-data/sources"): "member",
     ("GET", "/api/market-holidays"): "member",
     ("POST", "/api/market-holidays"): "admin",
     ("DELETE", "/api/market-holidays/{holiday_id}"): "admin",
+    ("GET", "/api/market/strip"): "member",
     ("GET", "/api/marketplace"): "member",
     ("GET", "/api/marketplace/earnings"): "member",
     ("POST", "/api/marketplace/listings"): "trader",
@@ -437,6 +450,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours), per tenant and user
     ("GET", "/api/me/prefs"): "member: the caller's own preferences only (tenant and user)",
     ("PUT", "/api/me/prefs/{namespace}"): S_OWN_PREFS,
+    # UI2-7: the caller's own setup wizard progress (the `setup` preferences plus steps worked out from their own rows)
+    ("GET", "/api/me/setup"): "member: the caller's own setup progress only (tenant and user)",
+    ("PUT", "/api/me/setup"): S_OWN_PREFS,
     ("GET", "/api/news-events"): P_NEWS_EVENTS,
     ("POST", "/api/news-events"): "trader",
     ("DELETE", "/api/news-events/{event_id}"): "trader",
@@ -453,7 +469,15 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/notifications/read-all"): S_READ_MARKS,
     ("POST", "/api/notifications/{notification_id}/read"): S_READ_MARKS,
     ("POST", "/api/option-chain/analyze"): S_COMPUTE,
+    ("GET", "/api/option-chain/analyses"): ("member: the six option chain analyses from the organisation's broker session (or, with "
+                                            "the own-broker tier on, the caller's own) plus shared collector snapshots; stores only the "
+                                            "usage count (OC2, flag ui_v2)"),
+    # OC3 (flag ui_v2): the caller's question -> an analysis spec evaluated on the option chain read through a broker session
+    ("POST", "/api/option-chain/ask"): ("self: an Ask AI read for the caller - the AI writes an analysis spec, the server evaluates it on "
+                                        "the option chain; stores only the metered AI call and an audit row; no order (rate limited)"),
     ("GET", "/api/option-chain/banners"): "member",
+    ("POST", "/api/option-chain/eval"): ("self: evaluates the caller's own analysis spec on the option chain read through a broker "
+                                         "session; no AI, stores nothing (rate limited)"),
     ("POST", "/api/option-chain/greeks"): S_COMPUTE,
     ("GET", "/api/option-chain/{underlying}/alerts"): "member",
     ("POST", "/api/option-chain/{underlying}/alerts/mute-today"): "trader",
@@ -461,6 +485,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/option-chain/{underlying}/alerts/snooze"): "trader",
     ("POST", "/api/option-chain/{underlying}/alerts/test"): "trader",
     ("GET", "/api/option-chain/{underlying}/banner"): "member",
+    ("GET", "/api/option-chain/{underlying}/expiries"): "member",
+    ("GET", "/api/option-chain/{underlying}/live"): "member",
     ("GET", "/api/option-chain/{underlying}/history"): "member",
     ("GET", "/api/option-chain/{underlying}/settings"): "member",
     ("PUT", "/api/option-chain/{underlying}/settings"): "owner",
@@ -478,6 +504,15 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/orders/{order_id}/events"): "member",
     ("GET", "/api/paper/account"): "member",
     ("GET", "/api/paper/experience"): "member",
+    ("GET", "/api/paper/fno/contract"): "member",           # FNO-1: the instrument master's contract (platform-wide data)
+    ("GET", "/api/paper/fno/held"): "member: the caller's own open PAPER option positions only (tenant and user)",
+    ("POST", "/api/paper/fno/order"): "trader",              # FNO-1: one PAPER order from the chain's ticket
+    ("POST", "/api/paper/fno/order/preview"): "trader",
+    ("POST", "/api/paper/fno/basket/evaluate"): S_COMPUTE,     # FNO-2: the basket's numbers (instrument master + the body)
+    ("GET", "/api/paper/fno/basket/settings"): "member: the caller's own options settings (their deployments) only",
+    ("POST", "/api/paper/fno/basket/preview"): "trader",
+    ("POST", "/api/paper/fno/basket/execute"): "trader",       # FNO-2: every leg one PAPER order, hedge legs first
+    ("POST", "/api/paper/fno/basket/broker-link"): S_COMPUTE,  # the legs pre-filled for the user's broker app; sends nothing
     ("POST", "/api/paper/experience/opt-out"): "trader",
     ("PUT", "/api/paper/account"): "trader",
     ("GET", "/api/paper/ladder"): "member",
@@ -568,6 +603,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/stages"): S_COMPUTE,
     ("GET", "/api/screener/etf"): "member",
     ("GET", "/api/signal-history"): "member",
+    ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
+                                    "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),
     ("GET", "/api/status"): P_STATUS_PAGE,
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
     ("GET", "/api/strategies/{strategy_id}"): P_STRATEGY_CATALOGUE,

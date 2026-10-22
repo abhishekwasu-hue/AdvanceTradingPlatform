@@ -49,7 +49,7 @@ export default function WebPushSection({ channel, deliveries, busy, run, test }:
   return (
     <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2" data-testid="push-section">
       <div className="flex items-center gap-2 text-sm font-bold text-fg"><Smartphone size={14} /> Push notifications</div>
-      <p className="text-[11px] text-fg-muted">
+      <p className="text-xs text-fg-muted">
         Alerts as system notifications on this phone or computer, even with the app closed. Messages are encrypted to this
         device; the push service in between cannot read them. Tapping one opens the exact screen - the proposal, the position
         or the alert. Add each device you use.
@@ -58,7 +58,7 @@ export default function WebPushSection({ channel, deliveries, busy, run, test }:
       {readiness === "ios-install-first" && (
         <p className="rounded border border-warn/40 bg-warn/10 p-2 text-xs text-fg" data-testid="push-ios">
           On iPhone and iPad, notifications work only in the installed app: in Safari tap <b>Share</b>, then <b>Add to Home
-          Screen</b>, open Advance Trading Platform from the Home Screen and come back here. (iOS 16.4 or later.)
+          Screen</b>, open AiAlgoDesk from the Home Screen and come back here. (iOS 16.4 or later.)
         </p>
       )}
       {readiness === "unsupported" && <p className="text-xs text-fg-muted">This browser cannot receive push notifications. Telegram or email still work.</p>}
@@ -99,7 +99,7 @@ export default function WebPushSection({ channel, deliveries, busy, run, test }:
       )}
 
       <fieldset className="space-y-1" disabled={busy || !channel}>
-        <legend className="text-[11px] font-semibold text-fg-muted">Send these to my devices{channel ? "" : " (enable a device first)"}</legend>
+        <legend className="text-xs font-semibold text-fg-muted">Send these to my devices{channel ? "" : " (enable a device first)"}</legend>
         {PUSH_CATEGORIES.map((c) => (
           <label key={c.id} className="flex items-center gap-2 text-xs text-fg">
             <input type="checkbox" checked={chosen.has(c.id)} onChange={() => toggleCategory(c.id)} /> {c.label}
@@ -108,7 +108,7 @@ export default function WebPushSection({ channel, deliveries, busy, run, test }:
       </fieldset>
 
       {pushDeliveries.length > 0 && (
-        <div className="text-[11px] text-fg-muted" data-testid="push-log">
+        <div className="text-xs text-fg-muted" data-testid="push-log">
           <div className="font-semibold">Last push deliveries</div>
           {pushDeliveries.map((d) => (
             <div key={d.id} className="flex justify-between gap-2">

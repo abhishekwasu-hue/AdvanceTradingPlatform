@@ -32,7 +32,7 @@ NOT_PLANTED = frozenset({
 
 # Path parameters that are not row ids: the value the probe sends.
 PATH_VALUES: Dict[str, str] = {
-    "name": "upstox", "broker_name": "upstox", "provider": "openai", "symbol": "RELIANCE", "underlying": "NIFTY",
+    "name": "upstox", "broker_name": "upstox", "broker": "upstox", "provider": "openai", "symbol": "RELIANCE", "underlying": "NIFTY",
     "channel_type": "telegram", "strategy_id": "ema_rsi_scalper_1m", "sector": "Energy", "token": "z10c-not-a-token",
     "webhook_token": "z10c-not-a-token", "action": "pause", "kind": "ema", "timeframe": "1day", "key": "z10c",
     "version_number": "1", "exchange": "NSE", "flag": "phase0_paper_only", "instrument_key": "NSE_EQ|RELIANCE",

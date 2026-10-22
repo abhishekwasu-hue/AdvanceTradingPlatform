@@ -1,7 +1,12 @@
 # Installable app (PWA)
 
 Phase 0 ships the mobile and desktop app as a Progressive Web App (owner decision, `docs/BETA_LAUNCH_SPEC.md` PWA-first
-addendum). Store builds (Capacitor) and the desktop wrapper (Tauri) wait for Phase 1. This page covers PW1, the shell.
+addendum). The desktop wrapper (Tauri) waits for Phase 1. This page covers PW1, the shell.
+
+**Android app (owner decision 20 Oct 2026, `docs/design/MOBILE_APP_PLAN.md`):** a Capacitor shell around the same
+build is being added ahead of Phase 1 (slice B1: `frontend/capacitor.config.ts`, `frontend/android/`, the CI debug
+APK; how to build and install it: `docs/mobile/BUILD.md`). Inside the app none of this page applies: the files are
+bundled, so no service worker registers, no install offer is shown and the install / update counters are not sent.
 
 ## What is installed
 
@@ -36,6 +41,14 @@ activates. A redeploy of identical files keeps the same id and prompts nobody.
 - iPhone / iPad: Safari -> Share -> Add to Home Screen (the in-app guide says so). Web push on iOS works only in the
   installed app (iOS 16.4+), which PW3 relies on.
 - The service worker registers only in production builds (`npm run build`); the dev server is never cached.
+- Installing needs a trusted HTTPS origin: the production domain `https://aialgodesk.tech` (Let's Encrypt). D3
+  removed the old "needs a domain" notice of the bare-IP days: a refused service-worker registration is now an
+  ordinary failure, logged to the console and not shown. The v2 More sheet's "Install the app" always answers with the
+  browser's prompt or a plain reason (`installHelp` in `src/pwa/pwa.ts`; a page opened over plain http is told to use
+  https://).
+- Automated check: `frontend/e2e/pwa.e2e.ts` (preview build on localhost, a secure context) checks the manifest, that
+  the service worker registers and becomes active, and that Chromium's `Page.getInstallabilityErrors` is empty. The
+  real Android Chrome install is a manual check: `docs/deploy/HOSTINGER_RUNBOOK.md`, "PWA install on Android".
 
 ## Checks done for PW1
 

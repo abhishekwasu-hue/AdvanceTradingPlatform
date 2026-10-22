@@ -182,6 +182,7 @@ class ContractSymbolBroker(BrokerInterface):
         self.max_tag_length = getattr(inner, "max_tag_length", 20)
         # LD-10 review: a class attribute on BrokerInterface, so __getattr__ never forwards it - copy the inner's.
         self.history_by_date = bool(getattr(inner, "history_by_date", False))
+        self.daily_days_per_request = int(getattr(inner, "daily_days_per_request", 365))     # UI2-4a2, the same reason
         self._indexes: Dict[str, _Index] = {}
         self.translations = 0
 
@@ -291,6 +292,36 @@ class ContractSymbolBroker(BrokerInterface):
         for k, quote in quotes.items():
             original = back.get(k, k)
             out[original] = quote.model_copy(update={"symbol": original}) if quote.symbol != original else quote
+        return out
+
+    @property
+    def multi_quote(self) -> bool:  # type: ignore[override]
+        return bool(getattr(self.inner, "multi_quote", False))
+
+    @property
+    def budget_hook(self):  # type: ignore[override]
+        return getattr(self.inner, "budget_hook", None)
+
+    @budget_hook.setter
+    def budget_hook(self, hook) -> None:
+        self.inner.budget_hook = hook
+
+    async def get_quotes_batch(self, items):
+        """UI2-4a2-pre: each symbol in the broker's spelling (one that does not translate is left out, so the others
+        still load), the inner adapter's one call, the answer keyed by the pairs asked for."""
+        back: Dict[Tuple[str, str], List[Tuple[str, str]]] = {}     # two spellings may name one contract: both priced
+        for exchange, symbol in items:
+            try:
+                back.setdefault((exchange, await self._out(symbol, exchange)), []).append((exchange, symbol))
+            except BrokerAPIError:
+                continue
+        quotes = await self.inner.get_quotes_batch(list(back))
+        if quotes is None:
+            return None
+        out: Dict[Tuple[str, str], Quote] = {}
+        for pair, quote in quotes.items():
+            for original in back.get(pair) or [pair]:
+                out[original] = quote.model_copy(update={"symbol": original[1]}) if quote.symbol != original[1] else quote
         return out
 
     async def get_historical_data(self, symbol, exchange, interval, from_date, to_date):

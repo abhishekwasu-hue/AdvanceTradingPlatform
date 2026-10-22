@@ -15,6 +15,8 @@ import { CopilotDataProvider, useCopilotData } from "../copilot/data";
 import { copilotI18n, useCopilotT } from "../copilot/i18n";
 import { copilotPath, DEFAULT_TAB, isCopilotTab, type CopilotTab } from "../copilot/tabs";
 import { TabSkeleton } from "../copilot/tabs/shared";
+import { watchtowerSplit } from "../signals/watchtower";
+import { useUiV2 } from "../ui/useFeatures";
 
 /**
  * The AI Copilot (redesign): seven tabs with their own addresses (/copilot/<tab>), an "AI Core" hero coloured by
@@ -51,7 +53,7 @@ function Hero() {
     <section className="copilot-hero relative overflow-hidden rounded-2xl border border-border p-4 md:p-6" aria-labelledby="copilot-title">
       <div className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
-          <div className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-ai/40 bg-ai/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-ai">
+          <div className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-ai/40 bg-ai/10 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-ai">
             <Sparkles size={12} aria-hidden />{t("shell.badge")}
           </div>
           <h1 id="copilot-title" className="text-2xl font-bold tracking-tight text-fg md:text-3xl">{t("shell.title")}</h1>
@@ -72,7 +74,11 @@ function Hero() {
 function Tabs() {
   const params = useParams<{ tab?: string }>();
   const navigate = useNavigate();
-  const { pending, newHighNews } = useCopilotData();
+  const { pending: allPending, newHighNews, badgesLoading } = useCopilotData();
+  // UI2-3 (M7): with `ui_v2` on, the caller's own and organisation-wide entry approvals are counted in Signals, not on
+  // the Watchtower tab (another member's stay here). Flag off: unchanged.
+  const me = useAuth().user?.id;
+  const pending = watchtowerSplit(allPending, useUiV2(), me).others;
   const fromUrl = isCopilotTab(params.tab) ? params.tab : undefined;
   const tab: CopilotTab = fromUrl ?? storedTab();
   useEffect(() => {
@@ -82,7 +88,7 @@ function Tabs() {
   const Panel = TAB_COMPONENTS[tab];
   return (
     <>
-      <CopilotTabBar active={tab} onSelect={(next) => navigate(copilotPath(next))} badges={{ watchtower: pending.length, "news-radar": newHighNews }} />
+      <CopilotTabBar active={tab} onSelect={(next) => navigate(copilotPath(next))} badges={{ watchtower: pending.length, "news-radar": newHighNews }} busy={badgesLoading} />
       <AnimatePresence mode="wait" initial={false}>
         <m.div key={tab} role="tabpanel" id={`copilot-panel-${tab}`} aria-labelledby={`copilot-tab-${tab}`} className="mt-4"
                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}>
@@ -107,7 +113,7 @@ function Shell() {
             <Tabs />
           </CopilotDataProvider>
         </FirstUseModal>
-        <p className="text-[11px] leading-relaxed text-fg-muted">{t("compliance.footer")}</p>
+        <p className="text-xs leading-relaxed text-fg-muted">{t("compliance.footer")}</p>
       </div>
     </CopilotMotion>
   );

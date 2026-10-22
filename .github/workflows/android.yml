@@ -1,0 +1,125 @@
+name: Android
+
+# Mobile B1 (docs/design/MOBILE_APP_PLAN.md §3.2, ADR-0028 decision 10, docs/mobile/BUILD.md): builds the debug APK
+# of the Capacitor shell (frontend/android) on every change under frontend/, and on demand from the Actions tab. No
+# release signing and no secrets: the APK carries only the runner's throwaway Android debug signature.
+#
+# A debuggable APK never points at production (ADR-0028 decision 10): this job always builds against the `.invalid`
+# placeholder origin, so the APK is a layout smoke test that cannot reach any server and says so on screen. The
+# production-pointing internal build (not debuggable, non-public signing key, ATP_APP_DOMAIN) comes with the sign-in PR.
+on:
+  push:
+    branches: ["main", "claude/**"]
+    paths: ["frontend/**", ".github/workflows/android.yml"]
+  pull_request:
+    branches: ["main"]
+    paths: ["frontend/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+# As in ci.yml: one run per commit (pushes to in-repo branches; pull_request covers forks), a newer push to the same
+# branch cancels the older run, main is never cancelled.
+concurrency:
+  group: android-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# P0.7: every third-party action is pinned to a commit SHA (the tag it stands for is in the comment).
+jobs:
+  android-debug:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # The Android build rules (frontend/scripts/mobile-rules.mjs): a debug build, no API base -> the placeholder.
+      ATP_ANDROID_BUILD: debug
+      VITE_API_BASE_URL: ""
+      # MA-1 / MA-6: the repository variable (aialgodesk.tech). Internal and release builds take their API origin from
+      # it (https://<ATP_APP_DOMAIN>; https://aialgodesk.tech when unset); a debug build ignores it and keeps the
+      # placeholder (ADR-0028 decision 10). Checked by the lint either way: a host name, never an IP.
+      ATP_APP_DOMAIN: ${{ vars.ATP_APP_DOMAIN }}
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # The committed gradle-wrapper.jar must be a genuine Gradle release (it runs with the job's permissions).
+      - uses: gradle/actions/wrapper-validation@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+
+      # Capacitor 8's CLI needs Node 22 or later.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      # Capacitor 8's Android project compiles with Java 21 (android/app/capacitor.build.gradle). The runner image
+      # already has the Android SDK (ANDROID_HOME).
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ATP_APP_DOMAIN is checked when set (a host name, never an IP), but this debug build does not use it.
+      - name: Mobile config lint (API URLs, no IP addresses, build rules, package id, no secrets in android/)
+        run: npm run check:mobile
+
+      - name: Build the app's web bundle (vite --mode android)
+        run: npm run build:android
+
+      - name: Copy it into the Android project (cap sync)
+        run: npx cap sync android
+
+      - name: The bundle matches this build (kind, API origin, package id)
+        run: npm run check:mobile -- --bundle
+
+      - name: Assemble the debug APK
+        id: apk
+        run: |
+          name="$(node -p "require('./package.json').version")+$(git rev-parse --short HEAD)"
+          echo "version_name=$name" >> "$GITHUB_OUTPUT"
+          cd android
+          ./gradlew assembleDebug --no-daemon --stacktrace \
+            -PatpVersionCode="${{ github.run_number }}" -PatpVersionName="$name"
+
+      # Belt and braces: the APK really is the debug id (MA-6 + ".debug"), debuggable, with the placeholder bundle inside.
+      - name: Check the APK (package id, debuggable, bundled origin)
+        run: |
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          aapt2="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/aapt2"
+          "$aapt2" dump badging "$apk" | tee "$RUNNER_TEMP/badging.txt" | head -5
+          grep -q "package: name='tech.aialgodesk.app.debug'" "$RUNNER_TEMP/badging.txt"
+          grep -q "application-debuggable" "$RUNNER_TEMP/badging.txt"
+          unzip -p "$apk" assets/public/atp-native-build.json | tee "$RUNNER_TEMP/marker.json"
+          grep -q '"apiOrigin": "https://atp-not-configured.invalid"' "$RUNNER_TEMP/marker.json"
+          mkdir -p "$RUNNER_TEMP/out"
+          cp "$apk" "$RUNNER_TEMP/out/atp-debug-${{ steps.apk.outputs.version_name }}.apk"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: atp-android-debug-apk
+          path: ${{ runner.temp }}/out/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Summary
+        if: always()
+        env:
+          DOMAIN_SET: ${{ vars.ATP_APP_DOMAIN != '' }}
+          VERSION_NAME: ${{ steps.apk.outputs.version_name }}
+        run: |
+          {
+            echo "## Android debug APK"
+            echo
+            echo "- Package: \`tech.aialgodesk.app.debug\` (MA-6 id plus the debug suffix; never published). Version \`${VERSION_NAME:-?}-debug\`, build ${{ github.run_number }}."
+            echo "- **Layout smoke test only.** Built against the placeholder \`https://atp-not-configured.invalid\`: it cannot reach any server or sign in (a debuggable APK never points at production, ADR-0028 decision 10)."
+            echo "- ATP_APP_DOMAIN variable set: ${DOMAIN_SET} (internal and release builds use it, default https://aialgodesk.tech; debug builds never do)."
+            echo "- Install: download the \`atp-android-debug-apk\` artifact below, unzip it, open the APK on the phone (docs/mobile/BUILD.md)."
+          } >> "$GITHUB_STEP_SUMMARY"

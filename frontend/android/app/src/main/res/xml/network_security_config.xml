@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- D3 (MA-6): the app talks only to its API over https, checked against the system's certificate authorities.
+     - No cleartext (plain http) anywhere.
+     - No user-added certificate authorities and no self-signed certificates: the old bare-IP setup with Caddy's
+       internal certificate is not trusted, by design. The production domain has a Let's Encrypt certificate.
+     - The app's own pages come from the bundle (https://localhost, served inside the app, not over the network). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">aialgodesk.tech</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

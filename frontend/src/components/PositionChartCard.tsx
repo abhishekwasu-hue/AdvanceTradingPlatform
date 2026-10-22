@@ -73,7 +73,7 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
             {held != null && <span className="text-fg-muted">{derivative ? "premium" : "LTP"} <b className="text-fg">{held.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</b></span>}
             {pnl != null && <span className={`font-bold ${signClass(pnl, 0)}`}>{Math.round(pnl) > 0 ? "+" : Math.round(pnl) < 0 ? "-" : ""}₹{Math.abs(pnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })} unrealised</span>}
             {source.sources.filter((s) => s.usable).length > 1 && (
-              <select value={source.broker} onChange={(e) => source.setBroker(e.target.value)} className="rounded bg-surface-2 border border-border px-1 py-0.5 text-[11px] text-fg">
+              <select value={source.broker} onChange={(e) => source.setBroker(e.target.value)} className="rounded bg-surface-2 border border-border px-1 py-0.5 text-xs text-fg">
                 {source.sources.filter((s) => s.usable).map((s) => <option key={`${s.broker}:${s.account_label}`} value={s.broker}>{s.broker}</option>)}
               </select>
             )}
@@ -82,7 +82,7 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
       </div>
       {!usable ? (
         <div className="rounded-lg border border-warn/30 bg-warn/[0.06] px-3 py-2 text-xs text-warn">
-          Live chart needs a broker with a valid session. Add the API key under Settings &gt; Brokers (stored encrypted, never in chat or the environment) and log in; the chart, live price and P&amp;L then appear here.
+          Live chart needs a broker with a valid session. Connect your broker on the Broker page (stored encrypted, never in chat or the environment); the chart, live price and P&amp;L then appear here.
         </div>
       ) : (
         <>

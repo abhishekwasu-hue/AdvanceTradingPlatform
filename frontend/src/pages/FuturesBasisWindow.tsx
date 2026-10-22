@@ -58,7 +58,7 @@ export default function FuturesBasisWindow({ params }: { params: URLSearchParams
   const underlying = (params.get("basis") ?? "").trim().toUpperCase();
   const [series, setSeries] = useState<BasisSeries | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { document.title = `${underlying} futures basis · Advance Trading`; }, [underlying]);
+  useEffect(() => { document.title = `${underlying} futures basis · AiAlgoDesk`; }, [underlying]);
   useEffect(() => {
     if (!user || !underlying) return;
     let live = true;

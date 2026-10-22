@@ -9,6 +9,11 @@ const TABS = [
   ["watchtower", "Watchtower"], ["news-radar", "News Radar"], ["coach", "Coach & Scorecard"],
 ] as const;
 
+// The tests read words, buttons and requests, not motion, so the file runs with reduced motion: with software WebGL
+// (swiftshader) each worker otherwise renders the AI Core's 3D scene on the CPU, and under four workers the first render
+// of /copilot missed the 5 s expect timeout. The "3D and motion" tests below turn motion back on.
+test.use({ reducedMotion: "reduce" });
+
 test.beforeEach(async ({ page }) => { await mockApi(page); });
 
 for (const [slug, label] of TABS) {
@@ -66,16 +71,25 @@ test("Idea Builder: the second language can be switched off", async ({ page }) =
   await expect(page.locator('main [lang="mr"]')).toHaveCount(0);
 });
 
-test("no banned recommendation words on any tab", async ({ page }) => {
-  for (const [slug] of TABS) {
-    await page.goto(`/copilot/${slug}`);
-    await expect(page.getByTestId(`tab-panel-${slug}`)).toBeVisible();
-    const text = await page.locator("main").innerText();
-    expect(text).not.toMatch(/\brecommended\b|\bbest\b|\bfor you\b|\d+\s*% match/i);
-  }
+test.describe(() => {
+  test("no banned recommendation words on any tab", async ({ page }) => {
+    // One start of the app, then the tab bar, as a trader moves between tabs (each deep link has its own test above);
+    // seven cold starts - sign-in, flags, the Copilot chunk, the acknowledgement, the tab - did not fit in 30 s either.
+    // Each tab's text is read once its data is in (no aria-busy left), not while it still shows a skeleton.
+    await page.goto("/copilot/market-pulse");
+    for (const [slug] of TABS) {
+      await page.getByTestId(`tab-${slug}`).click();
+      await expect(page.getByTestId(`tab-panel-${slug}`)).toBeVisible();
+      await expect(page.locator("main [aria-busy='true']")).toHaveCount(0);
+      const text = await page.locator("main").innerText();
+      expect(text).not.toMatch(/\brecommended\b|\bbest\b|\bfor you\b|\d+\s*% match/i);
+    }
+  });
 });
 
 test.describe("3D and motion", () => {
+  test.use({ reducedMotion: "no-preference" });                                       // these tests are about the 3D core
+
   test("the WebGL AI Core loads when the browser is idle", async ({ page, browserName }) => {
     test.skip(browserName !== "chromium");
     await page.goto("/copilot/market-pulse");
@@ -244,6 +258,8 @@ async function chooseTemplate(page: import("@playwright/test").Page) {
 }
 
 test.describe("Idea Builder: risk gates", () => {
+  test.beforeEach(() => { test.slow(); });                                            // the long template-to-start flow
+
   test("Start in PAPER stays disabled until the loss is accepted, and sends the acceptance", async ({ page }) => {
     const calls = await mockApi(page);
     const chosen = await chooseTemplate(page);

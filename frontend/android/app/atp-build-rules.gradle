@@ -1,0 +1,30 @@
+// Mobile B1 (MA-6, ADR-0028 decision 10): refuse the builds the rules forbid, however the build was started. The same
+// rules run in Node before Gradle (frontend/scripts/mobile-rules.mjs, check-mobile-config.mjs); this is the last stop.
+// - A release build never uses the temporary, never-published package id (the final id is tech.aialgodesk.app).
+// - The bundled web files must come from `npm run build:android` for the same build kind: a debuggable APK never
+//   carries a bundle that points at a real server, and a release never carries a debug bundle.
+def TEMPORARY_APP_ID = "dev.atp.unpublished"
+def NATIVE_BUILD_MARKER = "src/main/assets/public/atp-native-build.json"
+gradle.taskGraph.whenReady { graph ->
+    def appTasks = graph.allTasks.findAll { it.project == project }
+    def wantsRelease = appTasks.any { it.name ==~ /^(assemble|bundle|package|sign|install)\w*Release\w*$/ }
+    def wantsDebug = appTasks.any { it.name ==~ /^(assemble|bundle|package|install)\w*Debug\w*$/ }
+    if (!wantsRelease && !wantsDebug) return
+    if (wantsRelease && android.defaultConfig.applicationId == TEMPORARY_APP_ID) {
+        throw new GradleException("Refused: a release build cannot use the temporary package id ${TEMPORARY_APP_ID} " +
+            "(MA-6: it is never published). Set the final id (tech.aialgodesk.app) first.")
+    }
+    def marker = file(NATIVE_BUILD_MARKER)
+    if (!marker.exists()) {
+        throw new GradleException("Refused: ${NATIVE_BUILD_MARKER} is missing. Run `npm run build:android` and " +
+            "`npx cap sync android` in frontend/ first (a plain web build is not the app's bundle).")
+    }
+    def made = new groovy.json.JsonSlurper().parse(marker)
+    if (wantsDebug && made.kind != "debug") {
+        throw new GradleException("Refused: a debuggable build cannot carry a '${made.kind}' web bundle " +
+            "(${made.apiOrigin}); ADR-0028 decision 10. Rebuild the web files with ATP_ANDROID_BUILD=debug.")
+    }
+    if (wantsRelease && made.kind != "release") {
+        throw new GradleException("Refused: a release build needs a 'release' web bundle, not '${made.kind}'.")
+    }
+}

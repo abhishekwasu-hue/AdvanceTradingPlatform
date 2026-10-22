@@ -18,6 +18,8 @@ const semantic = {
   "surface-inset": v("surface-inset"), signal: v("signal"), armed: v("armed"),
   // UI2-0 (UI v2 §8): the subtle outline / divider colour and the warning-note background
   "border-subtle": v("border-subtle"), "warn-tint": v("warn-tint"),
+  // UI2-1: the backdrop behind the More sheet and the command bar (with an alpha: `bg-scrim/50`)
+  scrim: v("scrim"),
   // aliases kept for pages not yet migrated
   bg: v("surface"), panel: v("surface-1"), panel2: v("surface-2"), panel3: v("surface-3"),
   "brand-dim": v("brand-strong"), accent: v("up"), danger: v("down"), muted: v("fg-muted"),
@@ -42,14 +44,21 @@ export default {
         sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
         mono: ['"JetBrains Mono"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
-      // U5: radii (controls 6, panels 10) and the type scale 12 / 13 / 15 / 18 / 24 / 32
-      // UI2-0: `rounded-pill` for chips and badges.
+      // U5: radii (controls 6, panels 10). UI2-0: `rounded-pill` for chips and badges.
       borderRadius: { control: "var(--radius-control)", panel: "var(--radius-panel)", pill: "var(--radius-pill)" },
+      // Handover item 1 (readable text): every size is in rem, so the one root scale (`--text-scale` on <html>, the
+      // Appearance "Text size" setting) moves all text, spacing and tap targets together. At the Normal size: body text
+      // 16 px (sm / t14), secondary text and table cells never below 14 px (xs / t12 / t13), headings and key numbers
+      // larger. The old token names keep their roles (t12 = caption, t14 = body ...) at the new sizes.
       fontSize: {
-        "t12": ["12px", { lineHeight: "16px" }], "t13": ["13px", { lineHeight: "18px" }], "t15": ["15px", { lineHeight: "20px" }],
-        // UI2-0: body text (the de-facto text-sm made a token) and the phone page title
-        "t14": ["14px", { lineHeight: "20px" }], "t20": ["20px", { lineHeight: "26px" }],
-        "t18": ["18px", { lineHeight: "24px" }], "t24": ["24px", { lineHeight: "30px" }], "t32": ["32px", { lineHeight: "38px" }],
+        xs: ["0.875rem", { lineHeight: "1.25rem" }], sm: ["1rem", { lineHeight: "1.5rem" }],
+        base: ["1.0625rem", { lineHeight: "1.625rem" }], lg: ["1.1875rem", { lineHeight: "1.75rem" }],
+        xl: ["1.375rem", { lineHeight: "1.875rem" }], "2xl": ["1.625rem", { lineHeight: "2.125rem" }],
+        "3xl": ["2rem", { lineHeight: "2.5rem" }], "4xl": ["2.5rem", { lineHeight: "2.875rem" }], "5xl": ["3.25rem", { lineHeight: "1" }],
+        "t12": ["0.875rem", { lineHeight: "1.25rem" }], "t13": ["0.875rem", { lineHeight: "1.25rem" }],
+        "t14": ["1rem", { lineHeight: "1.5rem" }], "t15": ["1.0625rem", { lineHeight: "1.5rem" }],
+        "t18": ["1.25rem", { lineHeight: "1.75rem" }], "t20": ["1.375rem", { lineHeight: "1.875rem" }],
+        "t24": ["1.75rem", { lineHeight: "2.25rem" }], "t32": ["2.25rem", { lineHeight: "2.75rem" }],
       },
       // UI2-0: the 4-pt spacing tokens, as `p-space-4`, `gap-space-6`, `px-space-8`...
       spacing: Object.fromEntries([1, 2, 3, 4, 5, 6, 8, 10, 12].map((n) => [`space-${n}`, `var(--space-${n})`])),

@@ -30,7 +30,7 @@ const TONE: Record<Tone, string> = {
 
 /** A small label. Tone carries meaning only: up / down for direction or P&L, warn for attention. */
 export function Badge({ tone = "neutral", children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
-  return <span className={cx("inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-semibold", TONE[tone], className)}>{children}</span>;
+  return <span className={cx("inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs font-semibold", TONE[tone], className)}>{children}</span>;
 }
 
 /** A number coloured by its sign (profit / loss), tabular digits, explicit + for gains. Colour-blind safe via tokens. */

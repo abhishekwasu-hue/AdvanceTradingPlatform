@@ -1,22 +1,26 @@
 """P1-a: the Options Strategy Builder core, ported from the Trade repo.
 
 1. Golden parity: every case in tests/fixtures/options_builder/golden.json.gz was produced by the Trade function itself
-   (make_golden.py); the ported function, given the same arguments, must give the same result.
+   (make_golden.py); the ported function, given the same arguments, must give the same result. The file is Trade
+   output, read from the private fixtures store (tests/private_fixtures.py): the public CI skips these cases with the
+   reason. The synthetic chains are built in code (fixtures/options_builder/synthetic_inputs.py), so the tests below
+   that only need a chain always run.
 2. The Trade repo's own unit tests (tests/test_strategy_selection.py, the strategy-result tests of
    tests/test_dashboard_strategy_builder.py), ported as they are.
 3. The rules the port adds or makes explicit: hedge first, equal lots, positive max loss, no NIFTY defaults.
 """
-import gzip
 import inspect
-import json
-from pathlib import Path
 
 import pytest
 
 from app import options_builder as ob
+from tests import private_fixtures as PF
+from tests.fixtures.options_builder.synthetic_inputs import CHAINS as SYNTHETIC
 
-GOLDEN = json.loads(gzip.decompress((Path(__file__).parent / "fixtures" / "options_builder" / "golden.json.gz").read_bytes()))
-CHAINS = {name: c["rows"] for name, c in GOLDEN["chains"].items()}
+GOLDEN_PATH = "backend/tests/fixtures/options_builder/golden.json.gz"
+GOLDEN = PF.load_or_none(GOLDEN_PATH)          # None when the private fixtures store is not mounted
+CHAINS = {name: rows for name, (_spot, _step, rows) in SYNTHETIC.items()}
+CASES = GOLDEN["cases"] if GOLDEN else []
 
 
 def _same(a, b, path="result"):
@@ -53,20 +57,35 @@ def _call(case):
     return list(out) if isinstance(out, tuple) else out
 
 
+def _golden():
+    if GOLDEN is None:
+        pytest.skip(PF.skip_reason(GOLDEN_PATH))
+    return GOLDEN
+
+
 def test_the_golden_set_comes_from_the_trade_repo_and_is_not_empty():
-    assert GOLDEN["source"].startswith("Trade@")
-    fns = {c["fn"] for c in GOLDEN["cases"]}
+    golden = _golden()
+    assert golden["source"].startswith("Trade@")
+    fns = {c["fn"] for c in golden["cases"]}
     assert {"select_iron_condor", "select_iron_butterfly", "select_credit_spread", "select_credit_spread_fixed_strikes",
             "select_credit_spread_itm", "select_naked_option_itm", "compute_position_size", "build_default_price_range",
             "build_ready_made_strategy", "payoff_bundle", "strategy_result"} <= fns
     for fn in ("select_iron_condor", "select_iron_butterfly", "select_credit_spread", "select_naked_option_itm"):
-        results = [c["result"] for c in GOLDEN["cases"] if c["fn"] == fn]
+        results = [c["result"] for c in golden["cases"] if c["fn"] == fn]
         assert any(r is None for r in results) and any(r is not None for r in results), fn   # both paths covered
 
 
-@pytest.mark.parametrize("i", range(len(GOLDEN["cases"])), ids=lambda i: f"{GOLDEN['cases'][i]['fn']}-{i}")
+def test_the_synthetic_chains_are_the_golden_s_chains():
+    """The chains built in code are the ones the Trade results were recorded on."""
+    golden = _golden()
+    assert {name: (c["spot"], c["step"], c["rows"]) for name, c in golden["chains"].items()} == {
+        name: (spot, step, rows) for name, (spot, step, rows) in SYNTHETIC.items()}
+
+
+@pytest.mark.parametrize("i", range(len(CASES)) if CASES else [pytest.param(-1, marks=pytest.mark.skip(reason=PF.skip_reason(GOLDEN_PATH)))],
+                         ids=lambda i: f"{CASES[i]['fn']}-{i}" if i >= 0 else "private-fixtures")
 def test_golden_parity(i):
-    case = GOLDEN["cases"][i]
+    case = CASES[i]
     _same(case["result"], _call(case))
 
 

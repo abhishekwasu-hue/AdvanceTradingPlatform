@@ -184,6 +184,27 @@ def test_load_test_shards_merge_into_one_verdict(tmp_path):
     assert "| login | 2 |" in md
 
 
+def test_each_profile_report_carries_the_runners_bcrypt_baseline_in_its_first_line(tmp_path):
+    """Informational only: a slow runner's login failure is not misread as a regression. It never changes the verdict."""
+    stats = loadtest.Stats()
+    stats.add("dashboard /api/auth/me", 20.0, "ok")
+    stats.add("login", 300.0, "ok")
+    stats.sessions["logged_in"] += 1
+    path = tmp_path / "shard-0.json"
+    path.write_text(json.dumps({"users": 1, "seconds": 30, **stats.raw()}))
+    merged = loadtest.merge([str(path)])
+    plain = loadtest.markdown(merged, "ci host")
+    merged["host_baseline"] = {"cpu_model": "AMD EPYC 9V45 96-Core Processor", "vcpus": "4", "bcrypt12_ms": 221}
+    first = loadtest.markdown(merged, "ci host").splitlines()[0]
+    assert "on ci host (AMD EPYC 9V45 96-Core Processor, 4 vCPU; bcrypt-12 check: 221 ms (CI reference: ~220 ms passes LD-9" in first
+    assert first.index("bcrypt-12") < 300 and "**SLO PASS**" in first and plain.splitlines()[1:] == loadtest.markdown(merged, "ci host").splitlines()[1:]
+    merged["host_baseline"] = {"cpu_model": "unknown", "vcpus": "4", "bcrypt12_ms": None}
+    assert "(unknown, 4 vCPU; bcrypt-12 check: unknown (CI reference" in loadtest.markdown(merged, "ci host").splitlines()[0]
+    stack = (CI / "stack.sh").read_text()
+    measured, started = stack.index("bcrypt_baseline.py"), stack.index('scrape_metrics > "$STATE/$name/metrics-before.prom"')
+    assert measured < started and '--bcrypt-ms "$bcrypt_ms"' in stack                     # before the load: uncontended
+
+
 def test_the_overlay_leaves_production_alone():
     atp = (ROOT / "deploy" / "atp.sh").read_text()
     assert "deploy/ci" not in atp and "compose.ci" not in atp

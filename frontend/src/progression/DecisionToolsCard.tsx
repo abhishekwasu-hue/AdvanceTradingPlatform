@@ -96,7 +96,7 @@ export function RuinResultView({ calc }: { calc: RuinCalc }) {
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] text-fg-muted">{calc.note}.</p>
+      <p className="text-xs text-fg-muted">{calc.note}.</p>
     </div>
   );
 }
@@ -186,7 +186,7 @@ export function WhatIfView({ result }: { result: WhatIfResult }) {
       <p className="text-fg-muted tabular-nums">{t("decision.whatIf.greeks", {
         delta: result.greeks.delta.toFixed(2), gamma: result.greeks.gamma.toFixed(4), theta: result.greeks.theta.toFixed(2), vega: result.greeks.vega.toFixed(2) })}</p>
       {result.skipped.map((x) => <p key={x.trade_id} className="text-warn">{t("decision.whatIf.skipped", { symbol: x.symbol, reason: x.reason })}</p>)}
-      <p className="text-[11px] text-fg-muted">{result.note}</p>
+      <p className="text-xs text-fg-muted">{result.note}</p>
     </div>
   );
 }

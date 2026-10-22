@@ -3,16 +3,18 @@
 A scan rule's match is watched by the ported level gate (Daily trend from the lake, Z7a zones as areas, closed
 confirmation bars); a CONFIRMED setup becomes an execution-core intent with the gate's ticket, which the core routes to
 a notification or a PAPER entry proposal. Nothing on this path reaches an order: the guard at the bottom walks the Z10-c
-call graph. The gate run here is the L1 golden case of a live entry (Trade's own output), so the setup is a real one."""
+call graph. The gate run here is the L1 golden case of a live entry, rebuilt from the golden's synthetic inputs
+(fixtures/level_gate/synthetic_inputs.py) with the ported gate, so the setup is a real one and the tests run without the
+golden file; test_the_setup_is_the_l1_golden_live_entry checks it against Trade's output when the private fixtures store
+is mounted (tests/private_fixtures.py)."""
 import ast
 import asyncio
-import gzip
 import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 import pytest
 from sqlalchemy import select
@@ -27,6 +29,8 @@ from app.price_action.level_gate import status as ST
 from app.screener.runtime import SymbolData
 from app.screener.then import areas as A
 from app.screener.then import runner, templates as T, trend
+from tests import private_fixtures as PF
+from tests.fixtures.level_gate import synthetic_inputs as LGI
 from tests.order_path_graph import CallGraph
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import _tenant
@@ -36,7 +40,7 @@ from tests.test_n1_e1_execution_core import _flag
 
 UTC = timezone.utc
 BACKEND = Path(__file__).resolve().parents[1]
-GOLDEN = BACKEND / "tests" / "fixtures" / "level_gate" / "golden.json.gz"
+GOLDEN = "backend/tests/fixtures/level_gate/golden.json.gz"      # a private fixture (manifest path)
 
 
 def _run(coro):
@@ -49,29 +53,59 @@ def _email(tag):
 
 # --- the L1 golden live entry the runner replays ----------------------------------------------------------------------
 
-def _golden():
-    with gzip.open(GOLDEN, "rt", encoding="utf-8") as fh:
-        return json.load(fh)
+def _live_entry():
+    """The golden's series 0 (seed 11) with the hand-made "up" Daily state, the area the golden replays for that context
+    (a confirmation first, as make_golden.py ranks them) and the first bar m whose closed bars give an entry - each
+    computed with the ported gate from the golden's synthetic inputs."""
+    seed, _volume = LGI.SERIES_SPECS[0]
+    df = LGI.session_bars(seed)
+    start = G.session_start_index(df)
+    areas = LGI.candidate_areas(df, start, np.random.default_rng(seed + 1000))
+    state = LGI.states_for(df)["up"]
+    ctx = G.context_from_state(state, {}, asof="2026-09-22")
+    ranked = []
+    for ai, area in enumerate(areas):
+        others = [a for j, a in enumerate(areas) if j != ai]
+        kinds = {e[1] for e in G.evaluate(df, area, ctx, others, start, {})["events"]}
+        score = 2 if G.CONFIRMED in kinds else (1 if G.ARMED in kinds else 0)
+        if score:
+            ranked.append((-score, ai, area, others))
+    _, _, area, others = sorted(ranked)[0]
+    for m in range(start, len(df)):
+        out = G.evaluate(df.iloc[:m + 1], area, ctx, others, start, {})
+        if out["entry"]:
+            break
+    else:
+        raise AssertionError("the golden's series 0 has no live entry in the up context")
+    return df, state, ctx, {"area": list(area), "others": [list(a) for a in others], "m": m, "settings": {}, "out": out}
 
 
-GOLD = _golden()
-CASE = next(c for c in GOLD["prefix"] if c["out"]["entry"] and c["series"] == 0 and c["ctx"] == "up" and not c["settings"])
-STATE = next(c["state"] for c in GOLD["contexts"] if c["series"] == 0 and c["name"] == "up" and not c["settings"])
-CTX = G.context_from_state(SimpleNamespace(trend=STATE["trend"], band=None, phase=STATE["phase"], counter=STATE["counter"],
-                                           protected=SimpleNamespace(price=STATE["protected"]), origin_risk=STATE["origin_risk"],
-                                           mature=STATE["mature"]), {}, asof="2026-09-22")
+SERIES, STATE, CTX, CASE = _live_entry()
 AREA = tuple(CASE["area"])
 OTHERS = [tuple(a) for a in CASE["others"]]
 
 
 def _bars(upto: int) -> pd.DataFrame:
-    bars = GOLD["series"][0]["bars"]
-    df = pd.DataFrame({k: v[:upto + 1] for k, v in bars.items() if k != "timestamp"})
-    df.index = pd.to_datetime(bars["timestamp"][:upto + 1]).tz_localize(IST)          # a broker frame: IST-aware bar starts
+    df = SERIES.iloc[:upto + 1].drop(columns=["timestamp"])
+    df.index = pd.DatetimeIndex(SERIES["timestamp"].iloc[:upto + 1]).tz_localize(IST)          # a broker frame: IST-aware bar starts
     return df
 
 
-LAST = pd.Timestamp(GOLD["series"][0]["bars"]["timestamp"][CASE["m"]]).tz_localize(IST)
+def test_the_setup_is_the_l1_golden_live_entry():
+    """With the private fixtures store mounted: the same bars, Daily state, area and bar m as the golden's first live
+    entry (series 0, up, default settings), and the same ticket as Trade's."""
+    golden = PF.load(GOLDEN)
+    bars = golden["series"][0]["bars"]
+    assert bars == {k: [str(x) for x in SERIES[k]] if k == "timestamp" else [float(x) for x in SERIES[k]] for k in SERIES.columns}
+    want = next(c for c in golden["prefix"] if c["out"]["entry"] and c["series"] == 0 and c["ctx"] == "up" and not c["settings"])
+    assert (want["area"], want["others"], want["m"], want["settings"]) == (CASE["area"], CASE["others"], CASE["m"], CASE["settings"])
+    for key in ("entry", "entry_price", "sl", "target", "confirm_ts"):
+        assert want["out"][key] == CASE["out"][key], key
+    state = next(c["state"] for c in golden["contexts"] if c["series"] == 0 and c["name"] == "up" and not c["settings"])
+    assert state == {**vars(STATE), "protected": STATE.protected.price}
+
+
+LAST = pd.Timestamp(SERIES["timestamp"].iloc[CASE["m"]]).tz_localize(IST)
 NOW = (LAST + pd.Timedelta(minutes=5, seconds=20)).to_pydatetime()                     # the commitment candle has just closed
 
 

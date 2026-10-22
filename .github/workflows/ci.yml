@@ -44,6 +44,12 @@ jobs:
       - name: English only (Devanagari only in the interview allowlist) - whole repo
         run: python scripts/check_english_only.py
 
+      # The repository is public (docs/PUBLIC_REPO_POLICY.md): no server IP, private e-mail address, Telegram token or
+      # chat id, private key, secret file type or new golden / parity / real-data fixture in the tree. Its test:
+      # backend/tests/test_public_repo_check.py. The full-history gitleaks scan is .github/workflows/secret-scan.yml.
+      - name: Public repository guard (scripts/check_public_repo.py) - whole repo
+        run: python scripts/check_public_repo.py
+
       - name: Install linters (pinned) and the application's dependencies (mypy reads them)
         working-directory: backend
         run: |
@@ -68,6 +74,7 @@ jobs:
       - name: Migration rollback safety (every migration declares ROLLBACK_SAFE; risky upgrades are not marked safe)
         run: python backend/scripts/migration_rollback_safety.py lint
 
+      # Only the commits of this push; secret-scan.yml scans the full history (push to main, weekly, on demand).
       - name: gitleaks secret scan (.gitleaks.toml)
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
@@ -130,7 +137,7 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          python -m pytest -q -rf --durations=25 -m "not lookahead" 2>&1 | tee pytest-output.txt || status=$?
+          python -m pytest -q -rfEs --durations=25 -m "not lookahead" 2>&1 | tee pytest-output.txt || status=$?
           grep -E '^(FAILED|ERROR) ' pytest-output.txt | head -50 | sed 's/^/::error title=pytest::/' || true
           exit $status
 
@@ -190,7 +197,7 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          python -m pytest -q -rf -m lookahead tests/test_z10a_no_lookahead.py tests/test_n1_l2_daily_trend.py 2>&1 | tee pytest-output.txt || status=$?
+          python -m pytest -q -rfEs -m lookahead tests/test_z10a_no_lookahead.py tests/test_n1_l2_daily_trend.py 2>&1 | tee pytest-output.txt || status=$?
           grep -E '^(FAILED|ERROR) ' pytest-output.txt | head -50 | sed 's/^/::error title=lookahead::/' || true
           exit $status
 
@@ -257,6 +264,11 @@ jobs:
       # UI2-0: v2 screens (*V2*.tsx, src/ui/*.tsx) use semantic colour tokens only - no raw palette hues.
       - name: UI v2 colour lint (no raw palette hues in v2 files)
         run: npm run check:v2-colours
+
+      # Mobile B1: API URLs only through src/api/base.ts, no IP address in src/ or android/, the Android build rules
+      # (scripts/mobile-rules.mjs) and one package id. The APK itself is built by .github/workflows/android.yml.
+      - name: Mobile config lint (API base, no IP addresses, Android build rules)
+        run: npm run check:mobile
 
       - name: Type-check + production build
         run: npm run build

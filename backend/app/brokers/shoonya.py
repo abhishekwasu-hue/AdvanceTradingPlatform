@@ -1,12 +1,14 @@
 import hashlib
 import json
-from datetime import date, datetime
-from typing import Dict, List, Optional
+from datetime import date, datetime, time
+from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import httpx
 
+from app.brokers import master_cache
 from app.brokers.base import BrokerInterface
-from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError, BrokerBudgetUsed
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.totp import totp_code
 from app.brokers.models import (
@@ -30,6 +32,11 @@ from app.core.models import OHLCVBar
 SHOONYA_INTERVAL_MINUTES = {
     "1min": "1", "3min": "3", "5min": "5", "10min": "10", "15min": "15", "30min": "30", "60min": "60",
 }
+# UI2-4a2-pre: daily bars come from NorenApi's EOD call (`/EODChartData`, `get_daily_price_series` in the broker's own
+# client library NorenRestApiPy), never from the minute series (`/TPSeries` has no daily `intrv`, so "day" used to fall
+# back to 1-minute bars).
+DAILY_INTERVALS = ("day", "1day", "1d", "D")
+IST = ZoneInfo("Asia/Kolkata")
 
 PRODUCT_MAP = {"MIS": "I", "CNC": "C", "NRML": "M"}
 # Platform order types -> NorenApi `prctyp` codes. SL-M (stop-loss market) is what the autonomous
@@ -63,9 +70,24 @@ class ShoonyaBroker(BrokerInterface):
             )
         self.credentials = credentials
         self._client = client or httpx.AsyncClient(base_url=self.BASE_URL, timeout=15.0)
-        self._session_token: Optional[str] = None
+        # The session (`susertoken`) lives in `_access_token`, the BrokerInterface convention, so a login's token is read
+        # back by token_lifecycle, stored encrypted and handed to the next adapter as `credentials.access_token` (P2a).
+        self._access_token: Optional[str] = credentials.access_token or None
         self._profile: Optional[BrokerProfile] = None
-        self._actid: Optional[str] = None
+        # Shoonya's account id is the user id for a retail account; a login replaces it with the `actid` it returns.
+        self._actid: Optional[str] = self._uid if self._access_token else None
+        # UI2-4a2-pre review: symbol -> token lookups shared by the process when built without a client (master_cache)
+        self._shared_master = client is None
+        self._tokens: Dict[str, Tuple[str, str]] = {}
+
+    @property
+    def _session_token(self) -> Optional[str]:
+        """The NorenApi `jKey` (kept as `_access_token`); the old attribute name still reads and writes it."""
+        return self._access_token
+
+    @_session_token.setter
+    def _session_token(self, value: Optional[str]) -> None:
+        self._access_token = value
 
     @property
     def _uid(self) -> str:
@@ -79,13 +101,13 @@ class ShoonyaBroker(BrokerInterface):
     def _imei(self) -> str:
         return getattr(self.credentials, "imei", None) or "abc1111"
 
-    async def _post(self, path: str, payload: dict, authenticated: bool = True) -> dict:
+    async def _post(self, path: str, payload: dict, authenticated: bool = True) -> Any:
         if authenticated and not self._session_token:
             raise BrokerAuthenticationError("Not authenticated - call authenticate() first")
 
         data = {"jData": json.dumps(payload)}
         if authenticated:
-            data["jKey"] = self._session_token
+            data["jKey"] = self._access_token or ""      # set: checked just above
 
         response = await self._client.post(path, data=data)
         try:
@@ -93,8 +115,11 @@ class ShoonyaBroker(BrokerInterface):
         except ValueError as exc:
             raise BrokerAPIError(f"Non-JSON response from Shoonya: {response.text[:200]}", response.status_code) from exc
 
-        if response.status_code >= 400 or body.get("stat") == "Not_Ok":
-            raise BrokerAPIError(body.get("emsg", "Shoonya API error"), response.status_code, response.text)
+        # The series and book calls (/TPSeries, /EODChartData, /OrderBook, /TradeBook, /PositionBook, /Holdings) answer a JSON list on success; only a dict carries `stat`.
+        failed = isinstance(body, dict) and body.get("stat") == "Not_Ok"
+        if response.status_code >= 400 or failed:
+            emsg = body.get("emsg", "Shoonya API error") if isinstance(body, dict) else "Shoonya API error"
+            raise BrokerAPIError(emsg, response.status_code, response.text)
         return body
 
     async def authenticate(self) -> BrokerProfile:
@@ -120,7 +145,11 @@ class ShoonyaBroker(BrokerInterface):
 
     async def get_profile(self) -> BrokerProfile:
         if self._profile is None:
-            raise BrokerAuthenticationError("Not authenticated - call authenticate() first")
+            if not self._access_token:
+                raise BrokerAuthenticationError("Not authenticated - call authenticate() first")
+            # A stored session: one authenticated read (`/Limits`) proves it is still alive before it is reported.
+            await self._post("/Limits", {"uid": self._uid, "actid": self._actid or self._uid})
+            self._profile = BrokerProfile(broker=self.name, user_id=self._uid)
         return self._profile
 
     async def get_instruments(self, exchange: Optional[str] = None) -> List[Instrument]:
@@ -146,6 +175,48 @@ class ShoonyaBroker(BrokerInterface):
         quotes = await self.get_quote(symbols)
         return {symbol: quote.ltp for symbol, quote in quotes.items()}
 
+    async def _lookup(self, symbol: str, exchange: str) -> Tuple[str, str]:
+        """Platform symbol -> (Shoonya token, Noren trading symbol) via `/SearchScrip` for that symbol: the exact `tsym`,
+        else `<symbol>-EQ` (an NSE/BSE equity is "RELIANCE-EQ" at Noren), else the only hit. Cached per process
+        (master_cache) - neither changes within a day. The lookup is a broker call: with a `budget_hook` set it takes
+        a token first (none -> BrokerBudgetUsed, no call)."""
+        exchange = (exchange or "NSE").upper()
+        wanted = symbol.strip().upper()
+
+        async def look_up() -> Tuple[str, str]:
+            if self.budget_hook is not None and not await self.budget_hook():
+                raise BrokerBudgetUsed(f"broker rate budget used - {exchange}:{symbol} not looked up this time")
+            body = await self._post("/SearchScrip", {"uid": self._uid, "exch": exchange, "stext": wanted})
+            values = [v for v in (body.get("values") or []) if v.get("token")] if isinstance(body, dict) else []
+            by_tsym = {str(v.get("tsym", "")).upper(): (str(v["token"]), str(v.get("tsym"))) for v in values}
+            hit = by_tsym.get(wanted) or by_tsym.get(f"{wanted}-EQ")
+            if hit is None and len(values) == 1:
+                hit = (str(values[0]["token"]), str(values[0].get("tsym") or wanted))
+            if hit is None:
+                raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found")
+            return hit
+        key = f"{exchange}:{wanted}"
+        if self._shared_master:
+            return await master_cache.shared(self.name, key, look_up)
+        if key not in self._tokens:
+            self._tokens[key] = await look_up()
+        return self._tokens[key]
+
+    async def _token(self, symbol: str, exchange: str) -> str:
+        return (await self._lookup(symbol, exchange))[0]
+
+    async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:
+        """UI2-4a2-pre review: one `/GetQuotes` call for one trading symbol (its token looked up first, cached), with
+        `c` - the previous session's close - as `prev_close` and `lut` (epoch seconds) as the quote's time."""
+        token = await self._token(symbol, exchange)
+        body = await self._post("/GetQuotes", {"uid": self._uid, "exch": exchange.upper(), "token": token})
+        return Quote(symbol=symbol, ltp=float(body.get("lp", 0) or 0), open=float(body.get("o", 0) or 0),
+                     high=float(body.get("h", 0) or 0), low=float(body.get("l", 0) or 0), close=float(body.get("c", 0) or 0),
+                     volume=float(body.get("v", 0) or 0), oi=float(body["oi"]) if body.get("oi") else None,
+                     bid=float(body["bp1"]) if body.get("bp1") else None, ask=float(body["sp1"]) if body.get("sp1") else None,
+                     prev_close=float(body["c"]) if body.get("c") not in (None, "", "0", 0) else None,
+                     timestamp=parse_broker_timestamp(body.get("lut")))
+
     async def get_quote(self, symbols: List[str]) -> Dict[str, Quote]:
         quotes: Dict[str, Quote] = {}
         for symbol in symbols:
@@ -165,13 +236,17 @@ class ShoonyaBroker(BrokerInterface):
     async def get_historical_data(
         self, symbol: str, exchange: str, interval: str, from_date: datetime, to_date: datetime
     ) -> List[OHLCVBar]:
-        instruments = await self.get_instruments(exchange)
-        match = next((i for i in instruments if i.tradingsymbol == symbol), None)
-        if match is None:
-            raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found")
+        if interval in DAILY_INTERVALS:
+            # /EODChartData names the symbol by Noren's trading symbol ("NSE:RELIANCE-EQ", not the platform's
+            # "RELIANCE" - that answers "no data", an empty chart), from the same cached lookup
+            _token, tradingsymbol = await self._lookup(symbol, exchange)
+            return await self._daily_bars(exchange.upper(), tradingsymbol, from_date, to_date)
+        # The symbol's own token (a /SearchScrip for it, cached) - get_instruments searches the exchange's name, which
+        # does not list every symbol.
+        token = await self._token(symbol, exchange)
 
         body = await self._post("/TPSeries", {
-            "uid": self._uid, "exch": exchange, "token": match.instrument_token,
+            "uid": self._uid, "exch": exchange, "token": token,
             "st": str(int(from_date.timestamp())), "et": str(int(to_date.timestamp())),
             "intrv": SHOONYA_INTERVAL_MINUTES.get(interval, "1"),
         })
@@ -184,6 +259,32 @@ class ShoonyaBroker(BrokerInterface):
             for row in rows
         ]
         return list(reversed(bars))
+
+    async def _daily_bars(self, exchange: str, tradingsymbol: str, from_date: datetime, to_date: datetime) -> List[OHLCVBar]:
+        """Daily bars from `/EODChartData` for the IST dates `from_date`..`to_date` (both whole days), oldest first, each
+        stamped at 00:00 IST of its trading date - like every other broker's daily bars here. The request names the
+        symbol as "EXCH:TSYM" and the range in epoch seconds; each row comes back as a JSON string (or an object) with
+        `time` "DD-MON-YYYY", `ssboe` (that date's midnight in epoch seconds), `into/inth/intl/intc` and `intv`."""
+        start = datetime.combine(_ist_date(from_date), time.min, tzinfo=IST)
+        end = datetime.combine(_ist_date(to_date), time.max, tzinfo=IST)
+        try:
+            body = await self._post("/EODChartData", {"uid": self._uid, "sym": f"{exchange}:{tradingsymbol}",
+                                                  "from": str(int(start.timestamp())), "to": str(int(end.timestamp()))})
+        except BrokerAPIError as exc:
+            if "no data" in str(exc).lower():         # a range with no sessions (a holiday stretch) is no bars, not an error
+                return []
+            raise
+        rows = body if isinstance(body, list) else (body.get("values") or [])
+        by_day: Dict[date, OHLCVBar] = {}
+        for raw in rows:
+            row = json.loads(raw) if isinstance(raw, str) else raw
+            day = _eod_date(row)
+            if day is None or not start.date() <= day <= end.date():
+                continue
+            by_day[day] = OHLCVBar(timestamp=datetime.combine(day, time.min, tzinfo=IST), open=float(row["into"]),
+                                   high=float(row["inth"]), low=float(row["intl"]), close=float(row["intc"]),
+                                   volume=float(row.get("intv", 0) or 0))
+        return [by_day[d] for d in sorted(by_day)]
 
     async def get_option_chain(self, underlying: str, expiry: Optional[date] = None) -> OptionChain:
         body = await self._post("/GetOptionChain", {
@@ -313,3 +414,26 @@ class ShoonyaBroker(BrokerInterface):
         cash = float(body.get("cash", 0) or 0)
         used = float(body.get("marginused", 0) or 0)
         return MarginInfo(available_cash=cash, used_margin=used, available_margin=cash - used)
+
+
+def _ist_date(value: datetime) -> date:
+    """The IST trading date of a request bound (a naive datetime is taken as IST wall time, as the service builds them)."""
+    if isinstance(value, datetime):
+        return value.astimezone(IST).date() if value.tzinfo else value.date()
+    return value
+
+
+def _eod_date(row: dict) -> Optional[date]:
+    """The trading date of one /EODChartData row: its `time` ("21-SEP-2022"), else its `ssboe` (that date's midnight) read in
+    IST - right whether the broker counts the midnight in UTC (05:30 IST, same date) or in IST (00:00 IST); a UTC reading
+    of an IST midnight would slip to the day before."""
+    text = str(row.get("time") or "").strip()
+    for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text.split(" ")[0].title(), fmt).date()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromtimestamp(int(float(row["ssboe"])), tz=IST).date()
+    except (KeyError, TypeError, ValueError):
+        return None

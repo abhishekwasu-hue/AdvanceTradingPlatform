@@ -11,13 +11,15 @@
 //  - opened in standalone display mode     -> launched_standalone (once per browser session)
 //  - installed app opens a new version     -> update_applied (this device had opened an older version before)
 
+import { apiUrl } from "../api/base";
+
 export const PWA_EVENTS = [
   "installed", "launched_standalone", "update_applied", "install_prompt_shown", "install_prompt_accepted", "install_prompt_dismissed",
 ] as const;
 export type PwaEvent = (typeof PWA_EVENTS)[number];
 export type PwaPlatform = "android" | "ios" | "desktop" | "other";
 
-const ENDPOINT = "/api/v1/pwa/events";
+const ENDPOINT = apiUrl("/pwa/events");
 const VERSION_KEY = "atp_pwa_last_version";
 const LAUNCH_KEY = "atp_pwa_launch_reported";
 const PROMPT_KEY = "atp_pwa_prompt_reported";

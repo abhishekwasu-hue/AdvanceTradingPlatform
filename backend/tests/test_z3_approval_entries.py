@@ -153,6 +153,12 @@ def test_requote_rule_percent_ticks_stricter_wins_and_levels_expire():
     # No limit configured: any price between the levels is placed.
     assert check("LONG", 100.0, 103.0, stop_loss=98, target1=104, max_drift_pct=0, max_drift_ticks=0, tick_size=0.05)[0] == "ok"
     assert check("LONG", 100.0, 0.0, stop_loss=98, target1=104, max_drift_pct=0.5, max_drift_ticks=0, tick_size=0.05)[0] == "expire"
+    # UI2-3 follow-up: a NaN compares false with everything, so it used to pass as "ok"; not finite is no price.
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        assert check("LONG", 100.0, bad, stop_loss=98, target1=104, max_drift_pct=0.5, max_drift_ticks=0, tick_size=0.05) == (
+            "expire", "No valid price to re-quote the entry")
+        assert check("SHORT", 100.0, bad, stop_loss=None, target1=None, max_drift_pct=0, max_drift_ticks=0, tick_size=0.05)[0] == "expire"
+        assert check("LONG", bad, 100.0, stop_loss=98, target1=104, max_drift_pct=0.5, max_drift_ticks=0, tick_size=0.05)[0] == "expire"
 
 
 def test_flag_is_registered_off_by_default():
@@ -294,7 +300,13 @@ def test_every_order_entry_point_is_reviewed_for_approval():
                                    "app/public_api/routes.py": {"execute_signal_for_user"}, "app/execution/approval.py": {"execute_signal_for_user"},
                                    "app/workers/trading_worker.py": {"execute_signal_for_user", "execute_structure"},
                                    "app/paper/ticket.py": {"execute_signal_for_user"},
+                                   "app/paper/fno_ticket.py": {"execute_signal_for_user"},
                                    "app/execution/core/dispatcher.py": {"execute_signal_for_user"}}
+    # FNO-1: the option chain's manual PAPER ticket refuses under approval-only mode (it cannot raise a proposal yet,
+    # OPEN_QUESTIONS FNO-1-4): `assess` asks the gate, `place` places only what `assess` allowed, PAPER only.
+    fno_src = (BACKEND / "app" / "paper" / "fno_ticket.py").read_text()
+    assert fno_src.index("approval.gate_refusal(") < fno_src.index("execute_signal_for_user(")
+    assert 'if not view["can_place"]:' in fno_src and 'MODE = "PAPER"' in fno_src
     # N1 X2: the core's Auto PAPER route asks approval-only mode again right before the pipeline (falls back to a
     # proposal), PAPER only and without a broker (tests/test_n1_e1_execution_core.py checks the call).
     core = (BACKEND / "app" / "execution" / "core" / "dispatcher.py").read_text()
@@ -353,6 +365,27 @@ def test_approval_after_drift_places_nothing_and_requotes_until_the_allowance_ru
     _price(monkeypatch, 97.5)
     body = client.post(f"/api/ai/actions/{third}/approve", headers=t["headers"], json={}).json()
     assert body["status"] == "EXPIRED" and "through the stop" in body["result"] and len(_actions(t["tenant_id"], "ENTRY")) == 3
+
+
+def test_a_requote_refused_for_its_price_says_so_not_that_entries_are_paused(monkeypatch):
+    """UI2-3 review nit: InvalidEntryPrice is a subclass of EntriesPaused; the re-quote path names the price, not a pause."""
+    t = _tenant(_email("requote-price"))
+    _flag_for(t["tenant_id"])
+    first, second = _propose(t, entry=100.0), _propose(t, entry=100.0)
+    _price(monkeypatch, 101.0)                                                          # +1% > 0.5%: a re-quote
+
+    async def refuse(*args, **kwargs):
+        raise approval.InvalidEntryPrice("The signal has no usable entry price")
+    monkeypatch.setattr(approval, "propose_entry", refuse)
+    body = client.post(f"/api/ai/actions/{first}/approve", headers=t["headers"], json={}).json()
+    assert body["status"] == "EXPIRED" and body["result"].endswith("No re-quote: the current price is not usable")
+    assert "paused" not in body["result"] and _orders(t["tenant_id"]) == []
+
+    async def paused(*args, **kwargs):
+        raise approval.EntriesPaused("Your PAPER entries are paused")
+    monkeypatch.setattr(approval, "propose_entry", paused)
+    body = client.post(f"/api/ai/actions/{second}/approve", headers=t["headers"], json={}).json()
+    assert body["status"] == "EXPIRED" and body["result"].endswith("No re-quote: PAPER entries are paused")
 
 
 def test_no_price_means_no_order_and_expired_proposals_cannot_be_approved(monkeypatch):

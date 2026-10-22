@@ -1,7 +1,21 @@
 # Phase AX: the public edge for one compose host (docker-compose.prod.yml). Caddy obtains and
-# renews the certificate for {$DOMAIN} on its own; nothing to install or rotate by hand.
+# renews the certificates for {$DOMAIN} and www.{$DOMAIN} on its own; nothing to install or rotate by hand.
 {
 	email {$ACME_EMAIL}
+}
+
+# The www name only sends visitors to the apex (permanent, path and query kept). Its DNS may be an A record or a CNAME
+# to the apex - either way it reaches this host, and Caddy gets www its own certificate over port 80 like the apex.
+# Plain http://www... is first sent to https://www... by Caddy itself, then here.
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
 }
 
 {$DOMAIN} {

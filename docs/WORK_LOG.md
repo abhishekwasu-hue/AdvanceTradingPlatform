@@ -2028,3 +2028,131 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   day (deduped by title). `DELETE /api/broker/{name}/analytics-token` forgets the token.
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
+
+## FNO-1: option chain trading + the one order ticket, PAPER only (owner order ATP_SESSION_FNO_WORKSPACE.md 3, 6, 8b-l, 9)
+
+- Branch `claude/fno1-chain-ticket` (from main). Behind `ui_v2` + `paper_account` (OPEN_QUESTIONS FNO-1-1). No
+  migration, no new flag.
+- Backend: `app/paper/fno_ticket.py` + `fno_routes.py` (`/api/paper/fno/contract`, `/held`, `/order/preview`, `/order`,
+  classified in `tests/tenancy_route_table.py`). The contract (lot size, tick size) from the instrument master; the
+  confirm figures (fill price, margin estimate, max loss, charges) and every risk check in plain words before placing;
+  placing sends ONE PAPER order through `execute_signal_for_user` (two small keyword arguments for a manual contract:
+  its spec and position meta). `phase0_lock.assert_paper` is asserted right before the pipeline; there is no mode in
+  any body. The census test of order entry points lists the new caller.
+- Frontend: `src/fno/` - `OrderTicketV2` (the reusable ticket: lots with units, Market / Limit / SL / SL-M, MIS / NRML,
+  price helper, stop-loss, Review -> confirm -> place, B / S keys, bottom sheet on a phone, the "Practice mode (PAPER)"
+  frame), `ChainActionSheetV2` (Buy / Sell, Add to basket, Chart of this strike, Add to watchlist, Price alert, "You
+  hold" with Add / Exit), `ChainTradingV2` (the hook the chain page mounts + the bottom strip), `basket.ts` (legs in this
+  browser, badge count). The chain table: call / put cell taps, "P" markers, OI change in %. Page change: a few lines.
+- Tests: `backend/tests/test_fno1_chain_ticket.py`, `frontend/src/fno/fno.test.tsx`, `frontend/e2e/chain-ticket-v2.e2e.ts`
+  with new baselines `chain-actions-v2-*` and `order-ticket-v2-*` only (no existing baseline touched: without the PAPER
+  account the chain renders exactly as before).
+
+## FNO-2: basket orders, PAPER only (owner order ATP_SESSION_FNO_WORKSPACE.md 5, 8b-c, 9)
+
+- Branch `claude/fno2-basket`, stacked on `claude/fno1-chain-ticket` (PR #338). Same flags (`ui_v2` + `paper_account`).
+  No migration, no new flag. Open questions FNO-2-1..10.
+- Backend: `app/paper/fno_basket.py` + routes in `fno_routes.py` (`/api/paper/fno/basket/evaluate`, `/settings`,
+  `/preview`, `/execute`, `/broker-link`, classified in `tests/tenancy_route_table.py`). The numbers come from the
+  Options Builder's engine (`options_builder.routes._evaluate`) with lot sizes from the instrument master; the margin is
+  ATP's labelled estimate with the hedge beside the sold legs alone. Execute: every leg checked first (nothing placed if
+  any leg or the open-position room refuses), then each leg ONE PAPER order through `fno_ticket.place` (which asserts
+  `phase0_lock.assert_paper`), hedge legs first; a sold leg is never placed after its hedge failed; per-leg results,
+  never retried. Saved baskets: prefs namespace `fno_baskets` (strict, size-capped).
+- Frontend: `src/fno/BasketPanelV2.tsx` (drawer / bottom sheet from the chain's badge: legs, ready strategies, the
+  builder's payoff canvas, the payoff in plain words, numbers, confirm, per-leg result, save / load, Options Builder
+  hand-over, Kite basket), `basketModel.ts` (pure parts), `basket.ts` (update / replace, 12 legs), `api.ts` (basket
+  calls), `brokerLinks.kiteFnoBasketLink`; the Options Builder page reads the hand-over once.
+- Tests: `backend/tests/test_fno2_basket.py`, `frontend/src/fno/basket.test.tsx`, `frontend/e2e/basket-v2.e2e.ts` with
+  NEW baselines `basket-panel-v2-{1440,390}-{light,dark}.png` only (the badge keeps its look; no baseline touched).
+## GS-1: Google sign-in, inert until the credentials are set
+- Owner decision (22 Oct): the "Continue with Google" button stays hidden until `GOOGLE_OAUTH_CLIENT_ID` and
+  `GOOGLE_OAUTH_CLIENT_SECRET` are on the server (docs/OPEN_QUESTIONS.md GS-1). Redirect URI
+  `https://aialgodesk.tech/api/auth/google/callback` (PUBLIC_BASE_URL + `/api/auth/google/callback`).
+- `GET /api/auth/providers` -> `{google: bool}`; `GET /api/auth/google/start` and `/callback` answer 404 until both keys
+  are set (and, in production/staging, PUBLIC_BASE_URL). OIDC code flow with PKCE (S256), `state` and `nonce` in a signed,
+  10-minute, HttpOnly, SameSite=Lax cookie on `/api/auth/google` (deleted on every callback). The ID token is verified
+  against Google's keys (cached an hour, refetched on an unknown key id): RS256, issuer, audience = client id, `azp`,
+  expiry, nonce and `email_verified`.
+- Accounts: with `self_signup` off (the owner's setting) it never creates one - it signs in the existing, active user
+  whose e-mail equals the verified Google e-mail, through the password login's tail (`_complete_login`: login event
+  `google`, new-device alert, audit, session, the same refresh cookie). MFA on: the same 5-minute challenge, handed in the
+  URL fragment and removed from the address bar at once. Unknown e-mail: "No account uses this Google e-mail. Ask your
+  organisation owner for an invite." With `self_signup` on, a new organisation under the register form's rules; a beta
+  gate or the legal acceptance sends the person to the form. Login protection (`refusal`) applies as for a password.
+- Never logged: uvicorn's access log now blanks `code`, `state`, `id_token`, `access_token`, `refresh_token` query values
+  (`app/core/logging_config.py`), which also covers the Upstox OAuth callback.
+- Web only: hidden inside the Android app (Google refuses embedded web views; ADR-0028 keeps the app on the password).
+- No migration (the e-mail match needs no new column). Tests: `tests/test_google_signin.py` (Google mocked, no network),
+  `frontend/src/auth/google.test.tsx`.
+## Login fix (handover 8d): "Wrong email or password", and `atp.sh reset-password`
+
+- Branch `claude/login-error-reset` (from main).
+- Bug: a wrong email or password at sign-in showed "Sign in from the Account page to use this feature." The client's
+  anonymous-401 sentence (frontend/src/api/client.ts) also caught `/auth/login`, where a 401 comes before any token
+  exists. `/auth/*` routes now keep the server's own sentence; the server says "Wrong email or password." (the same
+  for an unknown email, so it reveals nothing).
+- `deploy/atp.sh reset-password EMAIL` (until SMTP is configured): asks for the new password twice without echo,
+  passes it on stdin to `backend/scripts/reset_password.py` (never an argument, never printed or logged), applies the
+  app's password rules, signs out every session of that user and writes an audit row (`password_reset_by_owner`).
+- Tests: vitest `src/api/loginError.test.ts`; backend `tests/test_reset_password_script.py`.
+## Item 1 (handover pack): readable text size, and the "Text size" setting
+
+- Branch `claude/font-size` (from main). Fixed in the design system, not page by page.
+- One root scale: `html { font-size: calc(100% * var(--text-scale)) }` (tokens.css); `data-text-size` on <html>
+  (normal 1, large 1.125, xlarge 1.25). Every Tailwind size (xs..5xl and the t12..t32 tokens) is now in rem, and so
+  are the space tokens and the row / stage heights, so text, spacing and tap targets move together.
+- Sizes at Normal: body 16 px (`text-sm`, `t14`), secondary / captions and table / chain cells never below 14 px
+  (`text-xs`, `t12`, `t13`), headings and key numbers larger (t18 20, t24 28, t32 36). 103 files had their own
+  `text-[9px]`..`text-[13px]` (now `text-xs`) or `text-[15/16px]` (now `text-sm`); a test fails on any new
+  `text-[Npx]` below 14.
+- Settings > Appearance > "Text size": Normal (default) / Large / Extra large, stored per user on the server
+  (`/api/me/prefs`, new namespace `appearance`, no migration: the prefs table already takes any allow-listed
+  namespace); the browser copy paints it before the app loads (theme-init.js); applied on sign-in from the server; a
+  size chosen before this release is sent up once.
+- Charts: axis, price and crosshair labels follow it (`chartFontSize()`: 12 / 14 / 15 px), re-read on the theme event.
+- Layout fixes the bigger text exposed (e2e): the market strip on a 360 px phone (two indices a row, VIX below); the
+  Signals list at 1440 (padding, symbol never cut, the detail pane 400 px, a sign never wraps away from its amount);
+  the phone bottom navigation comes back 300 ms after a field loses focus (a tap that blurs a field landed on it).
+  At the Large / Extra large sizes (`useBigText`) the dashboard keeps its stacked strip and one column until 2xl.
+- Tests: backend `tests/test_appearance_prefs.py`; vitest `src/textSize.test.ts` (scale in rem, 14 px floor, the
+  setting, theme-init, the server sync); e2e `e2e/text-size-v2.e2e.ts` (Large and Extra large: phone layout rules,
+  no sideways scroll at 1440, nothing spills); all 106 changed e2e baselines regenerated at the new size.
+
+## Master Order 3, part 2: the UX audit report (docs only)
+
+- Branch `claude/ux-audit-report` from `claude/font-size` (PR #335), so every picture shows the new text size. No
+  product code changed; the page fixes follow in their own PRs, in the order the report gives.
+- `docs/design/UX_AUDIT_FULL.md`: 61 audited items (41 pages / views, 13 modals and sheets, 7 old pages still
+  reached while `ui_v2` is off), each scored against U1-U12 with the elements to remove / hide / move / merge / make
+  prominent, tagged User / Admin / Remove (handover 8a: two groups, no Simple / Pro), a primary action and a mock;
+  the merges and the new sidebar; the admin console and its server-side enforcement and tests; all 81 feature flags
+  in plain words with status and advice; the banned-words list for the future CI guard; the fresh-eyes walkthrough.
+- Screenshots: committed baselines reused; the rest captured by `frontend/e2e/ux-audit-capture.e2e.ts` (capture
+  only, `page.screenshot({ path })`, skipped in CI, registered in the phone project) into `docs/design/ux-audit/`
+  (64 PNGs, made-up fixture data). The Settings → AI block is masked in the pictures (it lists internal model
+  names). The Journal page's pictures are named `discipline-*.png`: the public-repo guard reads "journal" in a file
+  name as a real trade journal.
+- Fresh-eyes test: no sub-agent tool was available in this session, so it is a heuristic Playwright walkthrough by
+  the auditor on a fresh mocked account (stated with its limits in section 9 of the report).
+## OC4: the Analysis tabs, Ask AI and My analyses below the v2 chain (handover 2a)
+
+- Branch `claude/oc4-wire-analyses` (stacked on `claude/font-size`).
+- `AnalysisSlotV2` now mounts the built pieces for the symbol and expiry on screen, in order: the Analysis tabs (OC2),
+  Ask AI (OC3) and My analyses (OC3); each refreshes with the chain's own answer (`fetched_at`). Behind `ui_v2` like
+  the page and the routes. Information only; nothing places an order.
+- Tests: vitest (the order below the chain, no developer words); e2e `option-chain-v2.e2e.ts` OC4 cases with new
+  baselines `option-chain-v2-analyses-{1440,390}-{light,dark}.png`, phone layout rules at 390.
+## 2026-10-22 - AMW port status audit (owner order 11a) and Strategy Lab design approval (11b)
+
+- Branch `claude/amw-port-audit` (from main at 15f619f). Docs only: no code, no migration, no deploy.
+- `docs/design/AMW_PORT_STATUS.md`: every P-, L-, AI- and C- row and every slice AMW-1..AMW-25 of
+  `docs/design/AMW_PORT.md`, checked against the code on `main` (registry, flags in `platform/controls.py`, routes,
+  pages, merged PRs) rather than the plan's own status column. 85 items: 18 ported, 25 partial, 42 missing. Slices:
+  AMW-1, AMW-2, AMW-3, AMW-18 ported; AMW-6 (S9 AI drafting only, no no-key parser) and AMW-16 (context panel and
+  market strip, no data-health view) partial; the other 19 missing (no `strategy_lab*` flag, no `backend/app/lab/`).
+  Ends with the missing items in order of value for a retail / beginner trader.
+- 11b: ADR-0027 and the threat model marked **accepted** (owner approval of 2026-10-22, dated note in the ADR; index row
+  in `docs/adr/README.md`); `docs/OPEN_QUESTIONS.md` LAB-9 records it. G-LAB still gates every code-mode flag. The ADR
+  note also records that order 11e overrides AMW_PORT C-3 (AI may write code for every Lab mode, as untrusted code).
+- CLAUDE.md and `docs/owner-orders/` not touched (owner-orders lives on its own branch).

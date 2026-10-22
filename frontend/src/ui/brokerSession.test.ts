@@ -139,8 +139,8 @@ describe("UI2-0 'Log in to <Broker>' calls the broker's existing login path", ()
 
   it("explains a failure as what happened and what to do next, never raw error text", () => {
     expect(loginErrorText(new ApiError(502, "x", "Broker authentication failed: Traceback..."), "angel_one"))
-      .toBe("Angel One did not accept the login. Try again; if it repeats, check your Angel One keys in Settings.");
-    expect(loginErrorText(new ApiError(404, "x"), "upstox")).toBe("Your Upstox keys are no longer stored. Connect Upstox again in Settings.");
+      .toBe("Angel One did not accept the login. Try again; if it repeats, check your Angel One keys on the Broker page.");
+    expect(loginErrorText(new ApiError(404, "x"), "upstox")).toBe("Your Upstox keys are no longer stored. Connect Upstox again on the Broker page.");
     expect(loginErrorText(new ApiError(0, NETWORK_MESSAGE), "upstox")).toBe(NETWORK_MESSAGE);
     expect(loginErrorText(new TypeError("Failed to fetch"), "upstox")).toBe(NETWORK_MESSAGE);
     expect(loginErrorText(new Error("boom: stack"), "dhan")).toBe("The Dhan login did not finish. Try again in a moment.");
@@ -151,15 +151,15 @@ describe("UI2-0 review fixes: login errors never show server text (L5)", () => {
   const RAW = "Broker authentication failed: HTTPSConnectionPool(host='api.kite.trade') token_status registry adapter";
   it("maps every status to a fixed plain-English sentence", () => {
     const cases: [number, string][] = [
-      [400, "Your Zerodha keys are incomplete. Check them in Settings, then try again."],
+      [400, "Your Zerodha keys are incomplete. Check them on the Broker page, then try again."],
       [401, "Your sign-in has ended. Sign in again, then log in to Zerodha."],
       [403, "You do not have permission to log in to Zerodha. Ask the owner of your organisation."],
-      [404, "Your Zerodha keys are no longer stored. Connect Zerodha again in Settings."],
+      [404, "Your Zerodha keys are no longer stored. Connect Zerodha again on the Broker page."],
       [409, "Your Zerodha connection changed while you were logging in. Try again."],
       [422, "The Zerodha login did not finish. Try again in a moment."],
       [429, "Too many attempts. Wait a minute, then try again."],
       [500, "The Zerodha login did not finish. Try again in a moment."],
-      [502, "Zerodha did not accept the login. Try again; if it repeats, check your Zerodha keys in Settings."],
+      [502, "Zerodha did not accept the login. Try again; if it repeats, check your Zerodha keys on the Broker page."],
       [503, "The Zerodha login did not finish. Try again in a moment."],
     ];
     for (const [status, text] of cases) {

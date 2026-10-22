@@ -1,0 +1,244 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router";
+import { describe, expect, it } from "vitest";
+import { AuthProvider } from "../auth/AuthContext";
+import { DATA_PAGES } from "../ui/dataPages";
+import { FeaturesProvider } from "../ui/useFeatures";
+import AppShellV2 from "./AppShellV2";
+import { OWN_BROKER_STATES } from "./pagesV2";
+import { CommandList, isApplePlatform, isCommandShortcut, moveActive, otherDialogOpen, shortcutLabel } from "./CommandBarV2";
+import { MoreSheetContent, moreSheetResults } from "./MoreSheetV2";
+import { searchPages, visibleSections, type NavContext } from "./navModel";
+import {
+  DEFAULT_OPEN, SidebarV2View, initialsOf, isSectionOpen, openForCurrent, parseSectionMemory, roleLabel,
+} from "./SidebarV2";
+import { v2RedirectFor } from "./shellRoutes";
+import { topBarNotices } from "./TopBarV2";
+
+const flags = (...on: string[]) => (f: string) => on.includes(f);
+const trader: NavContext = { on: flags(), role: "OWNER" };
+const noop = () => undefined;
+
+describe("UI2-1 command bar", () => {
+  const key = (k: string, mods: Partial<Record<"ctrlKey" | "metaKey" | "altKey" | "shiftKey", boolean>> = {}) =>
+    ({ key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
+
+  it("opens on Ctrl K elsewhere and Cmd K on Apple devices - never the other modifier (review M6)", () => {
+    expect(isCommandShortcut(key("k", { ctrlKey: true }), false)).toBe(true);
+    expect(isCommandShortcut(key("K", { ctrlKey: true }), false)).toBe(true);
+    expect(isCommandShortcut(key("k", { metaKey: true }), false)).toBe(false);
+    expect(isCommandShortcut(key("k", { metaKey: true }), true)).toBe(true);
+    expect(isCommandShortcut(key("k", { ctrlKey: true }), true)).toBe(false);          // Mac Ctrl K: delete to end of line
+    expect(isCommandShortcut(key("k"), false)).toBe(false);
+    expect(isCommandShortcut(key("k", { ctrlKey: true, shiftKey: true }), false)).toBe(false);
+    expect(isCommandShortcut(key("k", { ctrlKey: true, altKey: true }), false)).toBe(false);
+    expect(isCommandShortcut(key("j", { ctrlKey: true }), false)).toBe(false);
+    expect(isApplePlatform("MacIntel")).toBe(true);
+    expect(isApplePlatform("macOS")).toBe(true);
+    expect(isApplePlatform("Win32")).toBe(false);
+  });
+
+  it("leaves the shortcut alone while another dialog is open", () => {
+    const doc = (hit: string | null) => ({ querySelector: (sel: string) => (hit && sel.includes(hit) ? {} : null) }) as unknown as Document;
+    expect(otherDialogOpen(doc(null))).toBe(false);
+    expect(otherDialogOpen(doc('[role="dialog"]'))).toBe(true);
+    // The selector itself excludes the command bar and the More sheet.
+    let asked = "";
+    otherDialogOpen({ querySelector: (sel: string) => { asked = sel; return null; } } as unknown as Document);
+    expect(asked).toContain(":not([data-command-bar])");
+    expect(asked).toContain(":not([data-more-sheet])");
+    expect(asked).toContain('[role="alertdialog"]');
+  });
+
+  it("moves the highlight with the arrow keys, wrapping around", () => {
+    expect(moveActive(0, 1, 3)).toBe(1);
+    expect(moveActive(2, 1, 3)).toBe(0);
+    expect(moveActive(0, -1, 3)).toBe(2);
+    expect(moveActive(-1, 1, 3)).toBe(0);
+    expect(moveActive(-1, -1, 3)).toBe(2);
+    expect(moveActive(0, 1, 0)).toBe(-1);
+  });
+
+  it("names the shortcut for the platform", () => {
+    expect(shortcutLabel("MacIntel")).toBe("⌘K");
+    expect(shortcutLabel("iPhone")).toBe("⌘K");
+    expect(shortcutLabel("Win32")).toBe("Ctrl K");
+    expect(shortcutLabel("Linux x86_64")).toBe("Ctrl K");
+  });
+
+  it("lists the matches as options with the highlighted one selected, or says nothing matched", () => {
+    const results = searchPages("orders", trader);
+    const html = renderToStaticMarkup(
+      <CommandList query="orders" results={results} active={0} listId="l" optionId={(i) => `o${i}`} onPick={noop} onHover={noop} />,
+    );
+    expect(html).toContain('role="listbox"');
+    expect(html).toMatch(/id="o0" role="option" aria-selected="true"[^>]*>.*Orders/);
+    const none = renderToStaticMarkup(<CommandList query="zz" results={[]} active={-1} listId="l" optionId={String} onPick={noop} onHover={noop} />);
+    expect(none).toContain("No page matches &quot;zz&quot;.");
+  });
+});
+
+describe("UI2-1 More sheet", () => {
+  const render = (query: string, ctx = trader) => renderToStaticMarkup(
+    <MemoryRouter><MoreSheetContent ctx={ctx} current="dashboard" query={query} onQuery={noop} onPick={noop} /></MemoryRouter>,
+  );
+
+  it("shows every other page grouped by section, with a search box", () => {
+    const html = render("");
+    expect(html).toContain('type="search"');
+    expect(html).toContain("Search pages");
+    for (const s of ["Markets", "Strategies", "Trading", "Insights", "Account", "More"]) expect(html).toContain(`>${s}</h3>`);
+    expect(html).toContain('href="/option-chain"');
+    expect(html).toContain('href="/system-logs"');
+    for (const inBar of ['href="/"', 'href="/charts"', 'href="/signals"', 'href="/positions"']) expect(html).not.toContain(inBar);
+    expect(html).not.toContain('href="/admin"');
+    expect(html).not.toContain('href="/journal"');                       // flag off
+    expect(html.match(/min-h-11/g)?.length).toBeGreaterThanOrEqual(15);  // every tile is a 44 px target
+    // P2b: Broker is the first tile, above the sections.
+    expect(html.indexOf('href="/broker"')).toBeGreaterThan(-1);
+    expect(html.indexOf('href="/broker"')).toBeLessThan(html.indexOf(">Markets</h3>"));
+  });
+
+  it("searches every visible page, the bar's included, and says when nothing matches", () => {
+    expect(moreSheetResults(trader, "").kind).toBe("sections");
+    const r = moreSheetResults(trader, "positions");
+    expect(r.kind === "matches" && r.items[0].label).toBe("My positions");
+    const html = render("screener");
+    expect(html).toContain('href="/screener"');
+    expect(html).toContain("Markets");                                  // the section as a caption
+    expect(render("nothing-like-this")).toContain("No page matches &quot;nothing-like-this&quot;.");
+  });
+});
+
+describe("UI2-1 sidebar", () => {
+  it("remembers open sections; Markets and Trading start open; the current page's section opens", () => {
+    expect(DEFAULT_OPEN).toEqual({ markets: true, strategies: false, trading: true, insights: false, account: false, more: false });
+    expect(parseSectionMemory('{"strategies":true,"markets":false,"bogus":true,"more":"yes"}')).toEqual({ strategies: true, markets: false });
+    expect(parseSectionMemory("not json")).toEqual({});
+    expect(parseSectionMemory("[1]")).toEqual({});
+    expect(isSectionOpen({}, "trading")).toBe(true);
+    expect(isSectionOpen({ trading: false }, "trading")).toBe(false);
+    const m = { insights: false };
+    expect(openForCurrent(m, "insights")).toEqual({ insights: true });
+    expect(openForCurrent(m, "markets")).toBe(m);                       // already open: unchanged
+    expect(openForCurrent(m, null)).toBe(m);
+  });
+
+  it("renders the visible sections, items of open sections only, and marks the current page", () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <SidebarV2View sections={visibleSections(trader)} current="positions" memory={{}} onToggle={noop}
+          user={{ id: 1, email: "abhi.wasu@example.com", tenant_id: 1, role: "OWNER" }} accountPath="/settings/account" />
+      </MemoryRouter>,
+    );
+    expect(html.match(/aria-expanded="true"/g)).toHaveLength(2);         // Markets, Trading
+    expect(html.match(/aria-expanded="false"/g)).toHaveLength(4);
+    expect(html).toContain('href="/charts"');
+    expect(html).not.toContain('href="/strategies"');                    // Strategies closed
+    expect(html).toMatch(/aria-current="page"[^>]*href="\/positions"|href="\/positions"[^>]*aria-current="page"/);
+    expect(html).toContain(">AW<");
+    expect(html).toContain("Owner");
+    expect(html).toContain(">Paper<");
+    expect(html).not.toContain("PAPER MODE");
+    // P2b: Broker first, above the sections, before any section header.
+    expect(html.indexOf('href="/broker"')).toBeGreaterThan(-1);
+    expect(html.indexOf('href="/broker"')).toBeLessThan(html.indexOf("aria-expanded"));
+    expect(html).not.toContain("data-broker-dot");                       // no status known: no dot
+  });
+
+  it("P2b: the Broker entry carries the status dot (red only for 'not working')", () => {
+    const at = (dot: "connected" | "needs_login" | "not_working") => renderToStaticMarkup(
+      <MemoryRouter>
+        <SidebarV2View sections={visibleSections(trader)} current="dashboard" memory={{}} onToggle={noop} dot={dot}
+          user={{ id: 1, email: "abhi.wasu@example.com", tenant_id: 1, role: "OWNER" }} accountPath="/settings/account" />
+      </MemoryRouter>,
+    );
+    expect(at("connected")).toMatch(/href="\/broker"[^]*?data-broker-dot="connected"[^>]*bg-up/);
+    expect(at("needs_login")).toMatch(/data-broker-dot="needs_login"[^>]*bg-warn/);
+    expect(at("not_working")).toMatch(/data-broker-dot="not_working"[^>]*bg-down/);
+    expect(at("needs_login")).toContain(", needs login");                // the words, for screen readers
+    expect(at("connected").match(/data-broker-dot/g)).toHaveLength(1);
+  });
+
+  it("labels roles and initials plainly", () => {
+    expect(roleLabel("SUPER_ADMIN")).toBe("Platform operator");
+    expect(roleLabel("OWNER")).toBe("Owner");
+    expect(roleLabel("RISK_MANAGER")).toBe("Risk manager");
+    expect(initialsOf("abhi.wasu@example.com")).toBe("AW");
+    expect(initialsOf("demo@example.com")).toBe("DE");
+    expect(initialsOf("@x")).toBe("?");
+  });
+});
+
+describe("UI2-1 top bar notices", () => {
+  it("uses plain words: maintenance and LIVE paused are warnings, verify email is a link", () => {
+    const status = { maintenance_mode: true, maintenance_message: "Back at 10:00", disabled_brokers: ["zerodha"] } as never;
+    expect(topBarNotices(status, { id: 1, email: "a@b.c", tenant_id: 1, role: "OWNER", email_verified: false })).toEqual([
+      { kind: "warn", text: "Maintenance: new trades are paused. Back at 10:00" },
+      { kind: "warn", text: "Live trading is paused on zerodha" },
+      { kind: "link", text: "Verify your email", title: "Live trading and broker keys may need a verified address" },
+    ]);
+    expect(topBarNotices(null, null)).toEqual([]);
+  });
+});
+
+describe("UI2-1 the v2 shell puts the broker gate in front of every data page", () => {
+  // Rendered once on the server: the auth check has not answered yet, so a gated page shows the gate's
+  // "checking" state - never the page - while a page outside DATA_PAGES goes straight to its (lazy) content.
+  const render = (path: string) => renderToStaticMarkup(
+    <MemoryRouter initialEntries={[path]}>
+      <AuthProvider>
+        <FeaturesProvider userKey={1} value={{ ui_v2: true }}>
+          <AppShellV2 />
+        </FeaturesProvider>
+      </AuthProvider>
+    </MemoryRouter>,
+  );
+
+  it("gates every data page and its v2 sub-addresses", () => {
+    // An old address that forwards (/scanner, /options-builder) is checked at the address it forwards to.
+    const at = (p: string) => v2RedirectFor(p, "", { signedIn: true, on: flags() }) ?? p;
+    // UI2-2: the v2 dashboard (`/`) shows the broker states itself (src/shell/pagesV2.ts OWN_BROKER_STATES) - see below.
+    const paths = [...DATA_PAGES.filter((p) => !OWN_BROKER_STATES.includes(p.path)).map((p) => at(p.path === "/copilot" ? "/copilot/market-pulse" : p.path)),
+      "/charts/RELIANCE", "/screener/custom", "/option-chain/plan"];
+    expect(paths).toContain("/charts");
+    expect(paths).not.toContain("/");
+    for (const path of paths) {
+      const html = render(path);
+      expect(html, path).toContain('data-broker-gate="loading"');
+      expect(html, path).not.toContain("Loading page");                 // the page itself is not even loading
+    }
+  });
+
+  it("UI2-2: the dashboard is not wrapped by the shell - its v2 page shows the gate's states itself", () => {
+    const html = render("/");
+    expect(html).not.toContain("data-broker-gate");
+    expect(html).toContain("Loading page");                               // the v2 dashboard's own chunk
+  });
+
+  it("gates percent-encoded and undecodable addresses too (review M1)", () => {
+    for (const path of ["/option%2Dchain", "/p%6Frtfolio", "/%63harts", "/%E0%A4"]) {
+      expect(render(path), path).toContain('data-broker-gate="loading"');
+    }
+    // UI2-9a: My positions shows the broker states itself (OWN_BROKER_STATES), at its encoded address too.
+    expect(render("/%70ositions")).not.toContain("data-broker-gate");
+    expect(render("/%70ositions")).toContain("My positions");             // the title follows the router's reading
+  });
+
+  it("does not gate Settings, Orders, Journal, Account or Team", () => {
+    for (const path of ["/settings", "/orders", "/journal", "/journal/coach", "/settings/account", "/team", "/notifications"]) {
+      const html = render(path);
+      expect(html, path).not.toContain("data-broker-gate");
+      expect(html, path).toContain("Loading page");
+    }
+  });
+
+  it("is the v2 shell: sidebar sections, bottom bar of five, search", () => {
+    const html = render("/settings");
+    expect(html).toContain('data-shell="v2"');
+    expect(html).toContain('aria-label="Quick navigation"');
+    expect(html).toContain("Search pages");
+    expect(html).toContain("Skip to content");
+    expect(html).toMatch(/>Home<.*>Charts<.*>Signals<.*>Positions<.*>More</s);
+  });
+});

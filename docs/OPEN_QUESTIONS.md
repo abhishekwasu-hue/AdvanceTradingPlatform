@@ -453,6 +453,7 @@ applies. When answered: mark **answered**, note the answer, and fix the code if 
 | LAB-6 | Memory for code modes on the 8 GB host. The sum of limits is about 6.6 GB without the research worker; adding it (512 MB), the gateway (128 MB) and one Python or Node runner (384 MB) gives about 7.6 GB, above the 7 GB rule. | Code modes stay unavailable on this host until the owner approves a rebalance of existing `MEM_*` limits, based on peaks measured in G-10, or a larger host. Only one family runner is up at a time. R needs a larger host unless measurement proves otherwise (AMW-Q6). | ADR-0027 consequences, threat model section 7 | **answered 2026-10-20 (owner):** stay on KVM 2. Measure memory (per container and host) in the market-hours load test from 21 Oct and report it; code modes stay unavailable until the measured peaks fit. |
 | LAB-7 | Per-slot uids, or one uid, in the runner? | One uid. Distinct uids would need `CAP_SETUID`/`CAP_SETGID` or a setuid `newuidmap`, which conflicts with a non-root runner with `cap_drop: ALL` and no setuid binaries. The jail is separated from the supervisor by the PID and mount namespaces, a read-only root-owned supervisor and a default-deny seccomp filter. Concurrency 1 and container recycling bound what an escape can reach. The missing second uid barrier is residual risk RR-8. | ADR-0027 decision 3, threat model G-5 | open |
 | LAB-8 | How often to recycle a runner container. | After 50 runs, and after any run that ended abnormally (timeout, kill, OOM, output cap, contract failure). No pooled workers; a fresh jail and process per run. The gateway enforces it by refusing further calls on that runner session (one session per host-written start record), and a host-side agent stops the old container before writing the next start record; the runner is never trusted to exit. Revisit N once AMW-21 measures container start time under runsc. | ADR-0027 decision 2, threat model RR-9 | open |
+| LAB-9 | Does the owner approve ADR-0027 and the Strategy Lab threat model (AMW-18, PR #264) as the Strategy Lab design? | Provisional: treat both as proposed until the owner says so; nothing of the Lab is built on them. | ADR-0027, `docs/design/STRATEGY_LAB_THREAT_MODEL.md`, gate item G-1, AMW-19..AMW-25 | **answered 2026-10-22 (owner, order 11b):** approved as the design; ADR-0027 and the threat model are now accepted (G-1 evidence). The approval turns nothing on: the G-LAB checklist (G-1..G-19, per family) still gates every code-mode flag through `set_flag` and the run-time re-check. Same day, order 11e overrides AMW_PORT C-3 (the AI may write code for every Lab mode, treated as untrusted user code). |
 
 ## HC4-5: H-C4 round cap (13 Oct)
 
@@ -516,3 +517,222 @@ interview is the one trilingual exception. Built in `claude/english-only-cleanup
 | AMW-L2 | The name "Strategy Lab" is already a Copilot tab label (AMW-Q2). | **Parked for Abhi.** Meanwhile the port plan's default stands: the new page is "Strategy Lab", the Copilot tab becomes "AI Drafts". | AMW-19 | parked |
 | AMW-L3 | FYERS minute-data terms need written consent (AMW-Q5). | **Parked for Abhi.** `fyers_minute_feed` stays off; `set_flag` refuses it until the terms file says `allowed`. | AMW-17 | parked |
 | AMW-L4 | PDF export needs a new dependency (AMW-Q4). | **Parked for Abhi.** JSON, CSV, PNG and a standard-library XLSX ship first; PDF waits for his OK on the dependency. | AMW-14 | parked |
+| UI4C-1 | A default "Indices" watchlist on a user's first open (Charts page plan CHP-7). | **Not built.** Neither the backend nor the frontend creates a first-open list, so the watchlist panel's empty state offers "Create a list". If wanted, a backend first-open default (one list: NIFTY 50, NIFTY BANK, FINNIFTY, SENSEX) is a small follow-up. | UI2-4c (#313) | open |
+| UI4C-2 | Where the Charts page keeps "hide all drawings", the watchlist column state, the chosen list, and the Chart tab's EMA / SMA / VWAP, timeframe and chart type. | **Per user, in this browser** (the `atp_charts_view` entry), because the server's chart prefs (`ChartPrefs`) accept only theme, grid, candle colours, Volume / RSI and the reader overlay. Moving them to the server needs new, additive `ChartPrefs` fields. | UI2-4b2 (#311), UI2-4c (#313) | open |
+
+## Mobile app - what Abhi must provide (owner, 20 Oct)
+
+- **Mobile brought forward (owner decision).** Phase A makes every page phone-first, with each UI2 PR. Phase B is the
+  Android app (Capacitor, the same React app); B1 starts after UI2-1 merges. Phase C (iOS) comes later. The plan is
+  `docs/design/MOBILE_APP_PLAN.md`.
+- **Only Abhi can do these items** (accounts, keys, payments). The how-to for each is below the table.
+- **Never paste a secret** into a PR, issue, chat, e-mail or this file. Secrets go only into the GitHub secret store
+  or the server's `/opt/atp/.env`.
+- **Safe to share in chat or a PR:** fingerprints, package names and domain names.
+
+| # | What Abhi provides or decides | Why / used by | Where it goes (names the build or server reads) | Status |
+|---|---|---|---|---|
+| MA-1 | A domain, and a DNS `A` record for the app host pointing to the server's IP (`<server-ip>`, in Abhi's own notes; never in this public repo). | Browsers install the app and run web push and service workers only with a trusted HTTPS certificate. Caddy's internal certificate on the bare IP is not trusted, and Let's Encrypt gives none for the IP in our setup. Also needed for App Links (B2) and every Android build that signs in. | `/opt/atp/.env`: `DOMAIN`, `ACME_EMAIL`, `CADDYFILE=Caddyfile`. GitHub repository **variable** (not a secret): `ATP_APP_DOMAIN`. | **closed 2026-10-21 (owner):** `aialgodesk.tech` is live (apex `A` record; `www` redirects to the apex). `.env` has `DOMAIN=aialgodesk.tech` and `CADDYFILE=Caddyfile`. Still for Abhi: the `ATP_APP_DOMAIN` GitHub variable = `aialgodesk.tech`. |
+| MA-2 | A Firebase project with the Android app registered; its `google-services.json`; and a service account key for the server. | FCM push to the phone (B2). The Android WebView has no web push. | GitHub secret (environment `android-release`): `ANDROID_GOOGLE_SERVICES_JSON_BASE64`. Server `/opt/atp/.env`: `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_FILE` (a path to the key file on the server, never in CI or git). | open (a test registration can use the temporary MA-6 id; the final one waits for the final id) |
+| MA-3 | An upload keystore for signing Android releases, with two offline backups. | Signed APK / AAB (B4). Its SHA-256 fingerprint also goes into `assetlinks.json` (B2). | GitHub secrets (environment `android-release`): `ANDROID_UPLOAD_KEYSTORE_BASE64`, `ANDROID_UPLOAD_KEYSTORE_PASSWORD`, `ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_KEY_PASSWORD`. | open (before B4) |
+| MA-4 | A Google Play Console account. | Internal testing track and, later, the store listing (BT7). | None in CI yet. The Play app-signing SHA-256 fingerprint goes into `assetlinks.json`. | later: after company registration |
+| MA-5 | An Apple Developer Program membership. | iOS app (Phase C). | Names decided in Phase C. Proposed: `IOS_DIST_CERT_P12_BASE64`, `IOS_DIST_CERT_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64`, `APPSTORE_CONNECT_API_KEY_ID`, `APPSTORE_CONNECT_API_ISSUER_ID`, `APPSTORE_CONNECT_API_KEY_P8_BASE64`. | later: Phase C |
+| MA-6 | The Android application ID (package name). It is permanent once the app is on Play. | `capacitor.config.ts` `appId`, Firebase registration (MA-2), `assetlinks.json`. | Committed in `frontend/capacitor.config.ts` (not a secret). | **answered 2026-10-21 (owner): `tech.aialgodesk.app`**, the reverse of the production domain `aialgodesk.tech`. Set in `frontend/scripts/mobile-rules.mjs` (`APP_ID`), `capacitor.config.ts`, `android/app/build.gradle` (`namespace`, `applicationId`), `strings.xml` and the `MainActivity` package; debug builds install as `tech.aialgodesk.app.debug`. Permanent once on Play. **Firebase (MA-2) needs this id registered** (Add app → Android → package name `tech.aialgodesk.app`). **The debug app `tech.aialgodesk.app.debug` must be registered too, in the same Firebase project and so in the same `google-services.json`:** once that file is in the build, the debug build fails at `processDebugGoogleServices` if the file has no entry for `tech.aialgodesk.app.debug`. The earlier temporary id `dev.atp.unpublished` (answer of 2026-10-20) is no longer built; release builds still refuse it. A phone with a build of the temporary id needs a fresh install. The app's API origin is a build setting: internal and release builds use `https://aialgodesk.tech` (or `https://<ATP_APP_DOMAIN>`, or `VITE_API_BASE_URL`), https only, never an IP; debug builds keep the `.invalid` placeholder (ADR-0028 decision 10). |
+| MA-7 | What a phone push may say. FCM messages pass through Google's servers unencrypted end to end, unlike web push. | B2 payload. | Server code; no setting. | **answered 2026-10-20 (owner): minimal content.** For example "A trade is waiting for your approval" or "Broker login needed". No symbol, price, quantity or P&L in the payload; the details show only inside the app, after unlock. One line in the privacy / AI-usage disclosure. |
+| MA-8 | A phone with no screen lock (no PIN, pattern or biometrics). | B3 biometric unlock. | Server code; no setting. | **answered 2026-10-20 (owner): no persistent session.** On a phone without a screen lock the app does not keep the session (sign in each time). Approve shows the confirm dialog only. The app explains how to set a screen lock. Exits are never blocked. |
+| MA-9 | Where Abhi gets a new sideloaded APK, and where "Update available" links to before Play exists. | B4 update prompt. | Server `/opt/atp/.env`: `ANDROID_APP_LATEST_VERSION_CODE`, `ANDROID_APP_LATEST_VERSION_NAME`, `ANDROID_APP_MIN_SUPPORTED_VERSION_CODE` (0 = no prompt), `ANDROID_APP_DOWNLOAD_URL`. | **answered 2026-10-20 (owner):** the `android-release` workflow run's downloads (artifacts) on GitHub (Abhi signed in); no public download link. |
+
+### MA-1: domain and DNS, then a trusted certificate
+
+**Done 2026-10-21.** The production name is the apex `aialgodesk.tech` (not `atp.<domain>` as below), with `www`
+redirecting to it (`deploy/Caddyfile`). The steps below are kept for a future move; `atp.sh health` now checks the
+public name, its headers and the www redirect (`docs/deploy/HOSTINGER_RUNBOOK.md` section 5).
+
+1. **Buy a domain** at any registrar. The app host is `atp.<domain>`, the name `docs/DEPLOY_HOSTINGER.md` already
+   uses.
+2. **Add the DNS record.** In the registrar's DNS page add an `A` record: name `atp`, value `<server-ip>` (the server's IP, from your own notes), TTL
+   300. Add no `AAAA` record unless the server's IPv6 is set up and open on ports 80 / 443. A wrong `AAAA` record
+   makes certificate issuance fail.
+3. **Wait and check.** Wait 5-30 minutes, then check from any computer that `dig +short atp.<domain>` prints
+   `<server-ip>`.
+4. **Ports.** Ports 80 and 443 must stay open on the server. Let's Encrypt checks the domain through them.
+5. **Switch the server.** Outside market hours, edit `/opt/atp/.env` with `nano`:
+   - `DOMAIN=atp.<domain>`;
+   - `ACME_EMAIL=<an address that gets certificate expiry notices>`;
+   - `CADDYFILE=Caddyfile`;
+   - if `PUBLIC_BASE_URL` is set, `PUBLIC_BASE_URL=https://atp.<domain>`.
+
+   Then run `/opt/atp/deploy/atp.sh deploy`. `ALLOWED_ORIGINS` and `FRONTEND_URL` follow `DOMAIN` by themselves
+   (`docker-compose.prod.yml`).
+6. **Caddy gets the certificate.** It obtains a Let's Encrypt certificate for the domain on its own and renews it
+   (`deploy/Caddyfile`, automatic HTTPS). Nothing is installed or rotated by hand.
+7. **Verify:**
+   - `curl -sI https://atp.<domain>/api/system/health` (no `-k`) answers 200;
+   - the browser shows no certificate warning;
+   - Chrome on Android offers "Install app";
+   - Settings → Alert delivery → Push notifications can be enabled.
+8. **Follow-ups:**
+   - Update the Upstox app's redirect URL to `https://atp.<domain>/api/broker/upstox/oauth/callback`.
+   - Register the two-way Telegram webhook if wanted (`docs/GO_LIVE_RUNBOOK.md` step 1.9; it needs an HTTPS domain).
+   - Everyone signs in once on the new address. The login cookie belongs to the host name.
+   - The bare IP stops being the address; use the domain everywhere.
+9. **GitHub variable.** In GitHub → repository → Settings → Secrets and variables → Actions → **Variables**, add
+   `ATP_APP_DOMAIN` = `atp.<domain>`. It is not a secret. The Android build refuses an empty value, an IP or a
+   non-https address.
+
+### MA-2: Firebase project, Android app, `google-services.json`, server key
+
+1. **Use the MA-6 id.** Firebase registers the app by its package name: `tech.aialgodesk.app` (answered 2026-10-21). **Also register the debug app, `tech.aialgodesk.app.debug`, in the same project** (repeat step 3 with that package name), then download `google-services.json` after both are added. If the file has no entry for `tech.aialgodesk.app.debug`, every debug build fails at the Gradle task `processDebugGoogleServices` once the file is in the build.
+2. **Create the project.** Open the Firebase console (console.firebase.google.com) → **Add project** → name "ATP".
+   Google Analytics is not needed: turn it off.
+3. **Register the Android app.** Project settings → General → **Add app** → Android → package name = MA-6, nickname
+   "ATP Android". The SHA-1 field is not needed for push.
+4. **Download `google-services.json`** and base64 it (the commands are the same as in MA-3, with this file name).
+5. **Store it in GitHub.** GitHub → repository → Settings → Environments → `android-release` (created in MA-3) →
+   **Add secret** `ANDROID_GOOGLE_SERVICES_JSON_BASE64` = the base64 text. Or run
+   `gh secret set ANDROID_GOOGLE_SERVICES_JSON_BASE64 --env android-release < google-services.json.b64`.
+   Delete the `.b64` file afterwards.
+6. **Check the API.** In Project settings → **Cloud Messaging**, check that "Firebase Cloud Messaging API (V1)" is
+   enabled. The console's layout may differ; the build PR will say what it found.
+7. **Server key, for the server only:**
+   1. In Project settings → **Service accounts**, choose **Generate new private key** and download the JSON file.
+   2. Copy it to the server only: `scp <file> root@<your-server-ip>:/opt/atp/secrets/fcm-service-account.json` (or the
+      domain once MA-1 is done).
+   3. On the server: `chmod 600` and owner root.
+   4. In `/opt/atp/.env`: `FCM_PROJECT_ID=<the project id shown in Project settings>` and
+      `FCM_SERVICE_ACCOUNT_FILE=/opt/atp/secrets/fcm-service-account.json`. The mount path is final in B2.
+   5. Keep one backup in the password manager and delete the downloaded copy.
+   6. It never goes into git, GitHub secrets, chat or e-mail.
+8. **Turn push on.** Push stays off until the `mobile_push` flag is turned on for the organisation.
+
+### MA-3: upload keystore (Android signing)
+
+1. **Get `keytool`.** It ships with any JDK, including the one inside Android Studio.
+2. **Create the keystore.** Replace the `<...>` parts. Type the password when `keytool` asks, not on the command line,
+   so it stays out of the shell history.
+
+   ```
+   keytool -genkeypair -v \
+     -keystore atp-upload.jks -storetype PKCS12 \
+     -alias <KEY_ALIAS> \
+     -keyalg RSA -keysize 4096 -validity 10000 \
+     -dname "CN=<YOUR NAME>, O=<COMPANY OR YOUR NAME>, C=IN"
+   ```
+
+   A PKCS12 keystore uses one password for the store and the key, so `ANDROID_UPLOAD_KEY_PASSWORD` is the same value
+   as `ANDROID_UPLOAD_KEYSTORE_PASSWORD`.
+3. **Fingerprint (public, safe to share).** Run `keytool -list -v -keystore atp-upload.jks -alias <KEY_ALIAS>` and
+   copy the `SHA256:` line into the B2 PR for `assetlinks.json`.
+4. **Base64 the file:**
+   - Linux: `base64 -w0 atp-upload.jks > atp-upload.jks.b64`
+   - macOS: `base64 -i atp-upload.jks -o atp-upload.jks.b64`
+   - Windows PowerShell:
+     `[Convert]::ToBase64String([IO.File]::ReadAllBytes("atp-upload.jks")) | Set-Content -NoNewline atp-upload.jks.b64`
+5. **Create the GitHub environment.** GitHub → repository → Settings → Environments → **New environment**
+   `android-release`. Under "Required reviewers" add yourself, so no release build runs without your click.
+6. **Add the four secrets to that environment:**
+   - `ANDROID_UPLOAD_KEYSTORE_BASE64`: the content of `atp-upload.jks.b64`;
+   - `ANDROID_UPLOAD_KEYSTORE_PASSWORD`;
+   - `ANDROID_UPLOAD_KEY_ALIAS`;
+   - `ANDROID_UPLOAD_KEY_PASSWORD`.
+
+   With the CLI: `gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64 --env android-release < atp-upload.jks.b64`, and for the
+   others `gh secret set <NAME> --env android-release`, which prompts without echoing the value.
+7. **Delete `atp-upload.jks.b64`.**
+8. **Backups.** Keep the keystore and its password in two places that are not online together: a password manager
+   entry (the file as an attachment, plus the password and alias) and an encrypted USB drive kept elsewhere.
+   - Never put them in git, e-mail, chat or an unencrypted cloud folder.
+   - Do not reuse the key for anything else.
+   - **Why it matters:** before Play, a lost key means the installed app cannot be updated. You must uninstall it and
+     reinstall a build signed with a new key, which loses the app's local data. After Play App Signing (MA-4), Google
+     can reset a lost upload key through Play support.
+
+### MA-4: Google Play Console (later, after company registration)
+
+1. **Wait.** Start only after the company is registered and the BT7 compliance pack is under way. The store listing
+   is prepared but **not published** until Abhi says so.
+2. **Sign up.** Go to play.google.com/console and sign up as an **organisation**. Check the current requirements
+   when you do this: Google has asked for a D-U-N-S number, a one-time registration fee and identity verification for
+   organisation accounts. Personal accounts have had extra closed-testing rules before production.
+3. **Create the app** with the final MA-6 package name (`tech.aialgodesk.app`, never the temporary id) and keep **Play App Signing** on (the default for new apps).
+4. **Upload a test build.** Upload the AAB from the `android-release` job to the **Internal testing** track only.
+5. **Send the fingerprint.** From Play Console → App integrity → "App signing key certificate", copy the SHA-256
+   fingerprint into a PR, so `assetlinks.json` lists it next to the upload key's.
+
+### MA-5: Apple Developer Program (Phase C, later)
+
+Nothing is needed now. When iOS starts:
+
+1. Enrol as an organisation. Check the current requirements: a D-U-N-S number and an annual fee.
+2. Create the app record in App Store Connect with a bundle id matching MA-6.
+3. Create an APNs auth key (`.p8`) and upload it to the Firebase project from MA-2 (Cloud Messaging → Apple app
+   configuration), so the server's FCM sender also reaches iPhones.
+4. Create the signing certificate and provisioning profile, or an App Store Connect API key. They go into the
+   Phase C secrets named in the table, in a GitHub environment `ios-release` with Abhi as the required reviewer.
+5. A macOS CI runner is also needed: either GitHub-hosted (billed at a higher per-minute rate; check the current
+   price) or Abhi's own Mac as a self-hosted runner.
+
+## Public repository (20 Oct)
+
+- **The repository is public** (owner decision, 2026-10-20, to restore the GitHub Actions minutes). The code stays
+  proprietary: `LICENSE` (all rights reserved; public visibility is not a licence). The rules, the guards and the list
+  of private fixtures are in `docs/PUBLIC_REPO_POLICY.md`.
+- **Scanned before it went public:** gitleaks over the full history found no real secret (only known fake test values,
+  now allowlisted exactly). The production server IP was in three docs and three frontend tests (and its first two
+  octets in the mobile config check); it is replaced in the tree (`<server-ip>` / a documentation address) and stays in
+  the history (PR-4: no rewrite).
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| PR-1 | Chart Reader / KB port: the KB, the Method Pack and the reader method are strategy-sensitive and must not be public. Make the repository private again (paid Actions minutes with a spending limit), or keep the Chart Reader and the KB in a separate private package? | **Decided (owner, 2026-10-20): a separate private package.** A private repository holds the Chart Reader, the KB and the Method Pack; it is installed on the host (read-only deploy key) and tested by a private CI job in its own repository; ATP stays public and nothing from the reader or the KB is committed here. Trade's public tree carries the KB, the Method Pack and the method docs today: they move into the same private package as part of the Trade takeover, and Trade removes them from its public tree only after the private package holds a checked copy (never delete before). Plan: `docs/design/PRIVATE_PACKAGE.md`; the Trade session order: `docs/design/TRADE_ORDER_KB_MOVE.md`. The read-only deploy keys are for the host and, during the move, Trade's VPS; the private CI job runs inside the private repository and needs no key. Licensed-data parity fixtures stay on the host, never in a git repository. Owner action: create the private repository and the host's deploy key (PRIVATE_PACKAGE section 6). | Trade takeover T1-T6, KB / Method Pack (`docs/design/TRADE_TAKEOVER.md` sections 3 and 8) | decided |
+| PR-2 | The existing golden / parity fixtures (listed in `docs/PUBLIC_REPO_POLICY.md` section 5: 8 Trade-output goldens grandfathered, the synthetic-input ones pinned in `ALLOWED_TEST_DATA`): move them to a private store (CI fetches them with a secret) or regenerate them from synthetic data? | **Decided (owner, 2026-10-20): as recommended.** The synthetic fixtures are regenerated (and stay pinned in `ALLOWED_TEST_DATA`); the 8 Trade-derived goldens, including the strike-breach file, move to the private fixtures store (the private package's `fixtures/`, exported from the history with a committed paths-and-sha256 manifest); public CI skips the tests that need them with a visible reason, and the private CI job runs them. The `COEF` numbers in the strike-breach code are PR-6, still open. | `backend/tests/fixtures/**`, `frontend/src/**/__fixtures__/**`, `backend/tests/golden/` | decided |
+| PR-3 | `docs/reference/amw-screener-v2.9/` is third-party code (licence unknown, AMW-L1) that is now public. Remove it from the tree? | **Decided (owner, 2026-10-20): removed from the tree** (this change). Abhi keeps his private copy; the AMW port keeps working from behaviour and the port docs (AMW-L1). The history keeps the old copy (PR-4). | AMW port | decided |
+| PR-4 | Rewrite history, to purge the server IP, the fixtures and the AMW code from every commit? | **Decided (owner, 2026-10-20): no history rewrite** (nothing secret was found). Nobody force-pushes. If a real secret ever slips: rotate it first (`docs/PUBLIC_REPO_POLICY.md` section 6); a rewrite is again the owner's call. | whole repository | decided |
+| PR-5 | Commit author e-mail: commits show the author's e-mail address publicly. | **Decided (owner, 2026-10-20):** Abhi turns on "Keep my email addresses private" and "Block command line pushes that expose my email" in his GitHub settings; sessions commit with a `noreply` address (each session checks `git config user.email` before committing); merges made on GitHub use Abhi's GitHub `noreply` address once the first setting is on. Past commits keep theirs (PR-4). | git configuration | decided (owner action: the two GitHub settings) |
+| PR-6 | `backend/app/options_builder/strike_breach.py` (`COEF`, about lines 46-55) holds frozen logistic coefficients fitted on real NIFTY daily data (2015-2021, calibrated 2022-2024): a banned category in `docs/PUBLIC_REPO_POLICY.md`. Move them to the private store, refit on synthetic data, or accept them as public? | **Decided (owner, 2026-10-20): accept as public for now.** The `COEF` table stays in `strike_breach.py`; it is already in the history and every clone. If the owner later treats the fit as strategy-sensitive, it moves to the private package and is loaded at run time, with synthetic coefficients for the public tests. | `options_builder/strike_breach.py`, `tests/fixtures/strike_breach/` | decided |
+| PR-7 | Trade's method code (the Chart Reader being rebuilt: `swings2/`, `decision3/`, `facts/`, `rsi2/`, `vision/` and the rest named in `docs/TRADE_PORT_MAP.md` T1-T8) is in Trade's public tree too. PR-1 moves the KB, the Method Pack and the method docs; does the method code also leave Trade's public tree (make Trade private, or move the code into the private package), or stay public until the switch-over? | **Decided (owner, 2026-10-20): yes, the Trade repository becomes private.** Abhi changes its visibility and checks that the DigitalOcean VPS can still fetch it (a deploy key or token with read access, since anonymous fetches stop working). Trade's earlier public history and any copies already made stay out there (PR-4: no rewrite). The KB move of PR-1 (`docs/design/TRADE_ORDER_KB_MOVE.md`) is no longer needed for secrecy; it still gives the KB one source of truth in the private package, and Abhi decides when to run it. Trade's own GitHub Actions now use the account's private-repository minutes. | Trade repository, takeover T1-T11 | decided (owner action: Trade visibility, VPS fetch check) |
+
+## F&O workspace, first slice: chain trading and the one order ticket (FNO-1, 22 Oct)
+
+Checked against CLAUDE.md (PAPER only, exits never blocked, AI never places orders, signals not advice), the order file
+`docs/owner-orders/ATP_SESSION_FNO_WORKSPACE.md` (safety frame, sections 3, 6, 8b-l, 9) and DECISIONS.md: none of the
+defaults below contradicts them.
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| FNO-1-1 | Chain trading needs a manual exit path for its positions. Which flag gates it? | `ui_v2` **and** `paper_account`: the PAPER account's "Exit now" is how these positions are closed by hand, and the backend routes answer 404 without it. Without `paper_account` the chain is exactly OC1's (a row opens its details), so no existing screen changes. | `app/paper/fno_routes.py`, `src/fno/ChainTradingV2.tsx` | open |
+| FNO-1-2 | The exchange's freeze quantity is not in the instrument master. Where should it come from? | Not shown and not checked yet (`freeze_quantity: null`); a ticket's own cap is 500 lots. Add a `freeze_qty` column to the master (NSE publishes it per underlying) in a later PR with a migration; the ticket then splits or refuses above it. | instrument master, ticket | open |
+| FNO-1-3 | PAPER keeps no resting order. What should a Limit / SL / SL-M that the price has not reached do? | Refused with plain words ("Practice mode fills an order only when the price reaches it now"). A marketable one fills at once at the live price. A resting PAPER order book (with a cancel / modify) is a later slice. | `fno_ticket.paper_fill` | open |
+| FNO-1-4 | Under approval-only mode, should a manual chain order go to the approval queue? | Refused in plain words for now ("orders from the chain cannot be sent for approval yet"). A manual order is the user's own decision, so raising a proposal for himself adds a tap; owner to decide whether approval-only applies to manual orders at all. | `fno_ticket.assess`, `approval.gate_refusal` | open |
+| FNO-1-5 | A sold option's margin in PAPER. | Not estimated (the Options Builder's rule: a naked short needs the broker's SPAN + exposure margin; nothing is made up). A sold option needs a stop-loss on the ticket, so the max loss is known; the broker's margin API comes with LIVE or a read-only margin call later. | ticket confirm step | open |
+| FNO-1-6 | A bought option with no stop-loss: what does the risk engine size against? | The whole premium (the position's stop is one tick), so the risk-per-trade check is "one lot risks the full premium". Setting a stop-loss narrows it. The position then exits only by hand or at its stop. | `fno_ticket.position_stop` | open |
+| FNO-1-7 | IV percentile on the bottom strip. | Left out: ATP has no stored IV history per underlying yet; it appears once one is recorded (no made-up number). | bottom strip | open |
+| FNO-1-8 | "Swipe to change the expiry" (section 3). | Not in this slice: the expiry select stays; a swipe gesture on the chain conflicts with the table's sideways scroll on a phone. To decide with the hub tabs (section 1). | chain page | open |
+| FNO-1-9 | Market fill price in PAPER: the LTP or the ask / bid? | The live LTP on the user's own session (the same as the existing PAPER ticket and approvals), plus the paper broker's own slippage model; bid / ask are shown as the price helper. | `fno_ticket.paper_fill` | open |
+| FNO-1-10 | A price alert on an option contract: does the alert loop read 1-minute candles for an NFO trading symbol on every broker? | The alert is saved as an instrument rule (`close >= level`, 1 m, NFO); whether it fires depends on the creator's broker serving that contract's candles. To verify on the host with Upstox. | `ChainActionSheetV2.alertSave` | open |
+
+## F&O workspace, second slice: basket orders (FNO-2, 22 Oct)
+
+Checked against CLAUDE.md (PAPER only, exits never blocked, AI never places orders, signals not advice), the order file
+`docs/owner-orders/ATP_SESSION_FNO_WORKSPACE.md` (safety frame, section 5, 8b-c, 9) and DECISIONS.md: none of the
+defaults below contradicts them.
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| FNO-2-1 | The margin WITH the hedge benefit: the broker's margin API or ATP's estimate? | ATP's estimate, labelled "estimate" everywhere: the Options Builder's rule on the whole basket (a defined-risk basket needs at least its max loss) beside the same rule on the sold legs alone (uncovered: "needs the broker's margin", never a made-up number). No broker margin API is called: Kite's and Upstox's adapters expose `get_order_margin` for ONE order only (Upstox's `/charges/margin` takes several instruments and returns the hedged total; Kite has `/margins/basket`) - a read-only basket-margin call per adapter is a later PR, once the owner agrees a margin read is allowed in Phase 0. | `fno_basket.hedge_margin` | open |
+| FNO-2-2 | Every sold leg needs a stop-loss (the ticket's rule). For a hedged short leg too? | Yes, kept as on the ticket (each leg is its own PAPER position, exited by its own stop or by hand). Ready strategies prefill it from the user's own `premium_stop_pct` (their options deployment), else the platform's written-option default of 50 % above the price, said so on the panel; the user edits it. | ready strategies, `fno_basket.preview` | open |
+| FNO-2-3 | "Straddle" and "Strangle" in the ready strategies: bought or sold? | Built as bought (defined risk); "Flip Buy / Sell" turns the whole basket in one tap (the user's own control). Calendar: sell this expiry's ATM call, buy the next expiry's. To revisit with the owner's preferred defaults. | `basketModel.readyStrategy` | open |
+| FNO-2-4 | The leg's price on the panel: a limit price or a planning price? | A planning price (the chain's LTP, editable) for the payoff and the numbers; Execute basket places every leg as a MARKET PAPER order at the live price (the confirm step shows each fill price first). A per-leg limit needs PAPER's resting order book (FNO-1-3). | basket panel, `fno_basket.execute` | open |
+| FNO-2-5 | A basket opens one position per leg. What if the user's open-position or trades-per-day limit leaves room for fewer? | Refused before anything is placed, in plain words ("This basket opens 4 positions ... leaves room for 3"), so a limit never splits a hedged basket. A failure after the check (price gone, a limit reached by another order meanwhile) is a partial fill: shown per leg, nothing retried or undone, "Place the remaining legs" is the user's own tap. | `fno_basket._room`, `execute` | open |
+| FNO-2-6 | A hedge leg fails mid-basket. Place the sold legs anyway? | No: a sold leg is never placed after a hedge leg failed (it would be uncovered); it is shown "Not placed" with that reason. Legs already filled stay open (exit with Exit now). | `fno_basket.execute` | open |
+| FNO-2-7 | Where do saved baskets live? | The prefs store, new strict namespace `fno_baskets` (at most 8 baskets of at most 12 legs; the largest possible list is tested to fit the 16 KB cap). No table, no migration. | `app/me/prefs.py` | open |
+| FNO-2-8 | "Trade in your broker app" for a basket. | Kite only (the only documented basket link, docs/BROKER_DATA_TERMS.md), with `broker_app_links` on, the organisation's broker Zerodha and Kite's own contract symbols in the instrument master; otherwise the panel says why. Other brokers: not verified, no link guessed. | `fno_basket.broker_link`, `brokerLinks.kiteFnoBasketLink` | open |
+| FNO-2-9 | The ready strategies' spread width / lots: which of the user's settings? | The user's own options deployment (`created_by` the user, or organisation-wide), on this underlying first, else their latest: `spread_width` (strike steps), `max_lots`, `premium_stop_pct`. A teammate's deployment is never used. No settings: 2 strikes, 1 lot, said so. A dedicated "options defaults" setting can replace this later. | `fno_basket.settings` | open |
+| FNO-2-10 | Strategy comparison (8b-j) side by side. | Not in this slice (the order allowed it "if small"); saved baskets are the input it will compare. | basket panel | open |
+## Owner answers to the session plan (22 Oct)
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| GS-1 | Google sign-in: the OAuth credentials. | **The "Sign in with Google" button stays hidden until the credentials are on the server** (owner, 22 Oct). Steps for the owner: (1) console.cloud.google.com → create (or pick) a project "AiAlgoDesk". (2) APIs & Services → OAuth consent screen: External, app name "AiAlgoDesk", support e-mail, the domain `aialgodesk.tech`, scopes `openid`, `email`, `profile` only; add yourself as a test user while it is in Testing; publish it when ready. (3) APIs & Services → Credentials → Create credentials → OAuth client ID → Web application. Authorised JavaScript origin `https://aialgodesk.tech`; authorised redirect URI `https://aialgodesk.tech/api/auth/google/callback`. (4) Copy the Client ID and the Client secret into `/opt/atp/.env` on the host as `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` (never in git or chat), then run the deploy line. The button appears once both are set. | Google sign-in (handover "also open") | open (owner action) |
+| GS-2 | Google sign-in while `self_signup` is ON: a new account made through Google. | It is marked e-mail verified (Google verified it) and has no usable password until the person uses "Forgot password?". Never applies while `self_signup` stays off (the owner's setting today: an unknown Google e-mail is refused with "Ask your organisation owner for an invite"). | #336 | open |
+| LAB-10 | Strategy Lab runner host: sizing and monthly cost (handover 11c-2, LAB-6). | **Recommended: a separate small VPS for the lab runner + gateway only**, so user code never competes with the trading worker on the 2 vCPU / 8 GB KVM 2. Sizing: 2 vCPU, 4 GB RAM, 40-80 GB disk, Ubuntu LTS with gVisor (`runsc`); one runner at a time (concurrency 1, LAB-1), recycled every 50 runs (LAB-8). It reaches the main host only through the gateway's narrow API over a private link / WireGuard; no database credentials beyond the `lab_*` role (LAB-5). Cost (check the current price before buying; prices change): a Hostinger KVM 1 / KVM 2 class VPS, about ₹500-1,000 a month on a 12-24 month term; or Hetzner CX22 class, about €4-6 a month. Until the owner decides, the Pine subset (translated to ScreenQL, never executed) needs no runner and continues; the runner is built and tested so it works on either host. | ADR-0027, AMW-21 / AMW-22, LAB-6 | open (owner decision) |

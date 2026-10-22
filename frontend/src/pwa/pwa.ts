@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { isNativeApp } from "../native/platform";
 
 /** PW1: the installable app. Registers the service worker (production builds only - the dev server's modules must
  * never be cached), tracks a waiting new version ("A new version is ready - Reload") and the install offer
@@ -15,12 +16,63 @@ export interface PwaState {
   updateReady: boolean;
   /** "prompt": the browser can install (button). "ios": show the Add to Home Screen guide. null: nothing to offer. */
   install: "prompt" | "ios" | null;
+  /** Why this browser cannot install the app here, when known (see installBlockReason). */
+  blocked: InstallBlock | null;
+  /** True while the browser's own install prompt is waiting to be shown (`beforeinstallprompt` arrived). */
+  canPrompt: boolean;
+}
+
+/**
+ * Why the app cannot be installed from this page, when the page can tell before trying (the More sheet's "Install the
+ * app" entry says so; no banner):
+ * - "insecure": the page is not a secure context (opened over plain http);
+ * - "no-service-worker": this browser has no service workers (an old browser, some private windows).
+ * D3: the app is served on its domain with a trusted certificate, so a refused service-worker registration is an
+ * ordinary failure (logged, nothing shown), not a reason to send anyone to the owner.
+ */
+export type InstallBlock = "insecure" | "no-service-worker";
+
+export const INSTALL_NEEDS_HTTPS =
+  "Install works only on the app's secure address. Open this page with https:// and try again.";
+export const INSTALL_NEEDS_BROWSER =
+  "This browser cannot install the app. Open this page in Chrome, Edge or Safari to install it.";
+export const INSTALL_NOT_OFFERED =
+  "Your browser has not offered to install the app yet. Open the browser menu and choose \"Install app\" or \"Add to Home screen\".";
+export const INSTALL_IOS =
+  "On iPhone or iPad: tap Share in Safari, then Add to Home Screen.";
+export const INSTALL_DONE = "The app is installed on this device.";
+
+/** What the page can tell before trying: not a secure context, or no service workers at all. */
+export function installBlockReason(win: Pick<Window, "isSecureContext" | "navigator">): InstallBlock | null {
+  if (win.isSecureContext === false) return "insecure";
+  if (!("serviceWorker" in win.navigator)) return "no-service-worker";
+  return null;
+}
+
+/** The install entry's answer (More sheet "Install the app"): prompt when the browser offers it, otherwise the plain
+ * reason - never nothing. */
+export type InstallHelp = { kind: "prompt" } | { kind: "message"; text: string };
+
+export function installHelp(s: { blocked: InstallBlock | null; canPrompt: boolean; ios: boolean; standalone: boolean }): InstallHelp {
+  if (s.standalone) return { kind: "message", text: INSTALL_DONE };
+  if (s.blocked === "insecure") return { kind: "message", text: INSTALL_NEEDS_HTTPS };
+  if (s.canPrompt) return { kind: "prompt" };
+  if (s.ios) return { kind: "message", text: INSTALL_IOS };
+  if (s.blocked === "no-service-worker") return { kind: "message", text: INSTALL_NEEDS_BROWSER };
+  return { kind: "message", text: INSTALL_NOT_OFFERED };
+}
+
+/** The banner state at start-up: the iPhone guide (Safari has no install prompt), unless closed before or already
+ * installed. Android / desktop wait for the browser's `beforeinstallprompt`. */
+export function initialInstall(s: { dismissed: boolean; standalone: boolean; ios: boolean }): PwaState["install"] {
+  if (s.standalone || s.dismissed) return null;
+  return s.ios ? "ios" : null;
 }
 
 const DISMISS_KEY = "atp_install_dismissed";
 const UPDATE_CHECK_MS = 30 * 60_000;
 
-let state: PwaState = { updateReady: false, install: null };
+let state: PwaState = { updateReady: false, install: null, blocked: null, canPrompt: false };
 let deferredPrompt: BeforeInstallPromptEvent | null = null;
 let waiting: ServiceWorker | null = null;
 const listeners = new Set<() => void>();
@@ -47,6 +99,7 @@ function dismissed(): boolean {
   try { return localStorage.getItem(DISMISS_KEY) === "1"; } catch { return false; }
 }
 
+/** Closes the banner on screen and remembers it. */
 export function dismissInstall(): void {
   try { localStorage.setItem(DISMISS_KEY, "1"); } catch { /* storage unavailable: hidden for this visit only */ }
   set({ install: null });
@@ -56,6 +109,7 @@ export async function promptInstall(): Promise<void> {
   const event = deferredPrompt;
   if (!event) return;
   deferredPrompt = null;
+  set({ canPrompt: false });
   await event.prompt();
   const choice = await event.userChoice.catch(() => ({ outcome: "dismissed" as const }));
   if (choice.outcome === "dismissed") dismissInstall();
@@ -84,18 +138,24 @@ function watchRegistration(reg: ServiceWorkerRegistration) {
 
 let started = false;
 
-/** Called once from main.tsx. */
+/** Called once from main.tsx. Mobile B1: does nothing inside the Android app - its files are bundled (no service
+ * worker), it is already installed (no install offer) and a WebView has no web push. */
 export function initPwa(): void {
-  if (started || typeof window === "undefined") return;
+  if (started || typeof window === "undefined" || isNativeApp()) return;
   started = true;
 
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();                                // our own button, not the browser's mini-infobar
     deferredPrompt = e as BeforeInstallPromptEvent;
+    set({ canPrompt: true, blocked: null });
     if (!dismissed() && !isStandalone()) set({ install: "prompt" });
   });
-  window.addEventListener("appinstalled", () => { deferredPrompt = null; set({ install: null }); });
-  if (!dismissed() && !isStandalone() && isIosSafari(navigator.userAgent, navigator.maxTouchPoints)) set({ install: "ios" });
+  window.addEventListener("appinstalled", () => { deferredPrompt = null; set({ install: null, canPrompt: false }); });
+  const blocked = installBlockReason(window);
+  if (blocked) set({ blocked });
+  const first = initialInstall({ dismissed: dismissed(), standalone: isStandalone(),
+    ios: isIosSafari(navigator.userAgent, navigator.maxTouchPoints) });
+  if (first) set({ install: first });
 
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
   let reloading = false;
@@ -105,7 +165,11 @@ export function initPwa(): void {
     window.location.reload();
   });
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").then(watchRegistration).catch(() => undefined);
+    navigator.serviceWorker.register("/sw.js").then(watchRegistration).catch((e: unknown) => {
+      // An ordinary failure (offline, a deploy in progress, a private window): the app keeps working without the
+      // worker and the next visit tries again. Logged for whoever looks at the console; nothing on screen.
+      console.info("Service worker registration failed:", e instanceof Error ? e.message : String(e));
+    });
   });
 }
 

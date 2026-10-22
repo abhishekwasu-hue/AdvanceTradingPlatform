@@ -8,6 +8,8 @@ describe("OAuth error words (BT1b)", () => {
     expect(oauthErrorText("changed_during_login")).toContain("nothing was stored");
   });
   it("shows unknown codes as they are", () => {
-    expect(oauthErrorText("something_new")).toBe("something_new");
+    expect(oauthErrorText("something_new")).toBe("the login did not finish. Start it again from the Broker page.");
+    expect(oauthErrorText("<script>")).not.toContain("<script>");          // text from the address is never echoed
+    expect(oauthErrorText("toString")).toBe("the login did not finish. Start it again from the Broker page.");
   });
 });

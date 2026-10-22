@@ -4,12 +4,11 @@ import {
   sessionBreaks, sessionBreaksCache, venueZone, type OhlcBar,
 } from "./chartTypes";
 
-// Node built-ins for the gzip golden, imported at run time so the browser build never sees them.
+// Node's fs for the golden file, imported at run time so the browser build never sees it.
 const node = async () => ({
   fs: (await import(/* @vite-ignore */ `node:${"fs"}`)) as { readFileSync(p: URL): Uint8Array; writeFileSync(p: URL, d: Uint8Array): void },
-  zlib: (await import(/* @vite-ignore */ `node:${"zlib"}`)) as { gunzipSync(b: Uint8Array): Uint8Array; gzipSync(b: Uint8Array, o?: { level: number }): Uint8Array },
 });
-const GOLDEN = new URL("./__fixtures__/chart_types_golden.json.gz", import.meta.url);
+const GOLDEN = new URL("./__fixtures__/chart_types_golden.json", import.meta.url);
 
 const T0 = 1_772_430_300;                                    // a bar start (epoch s); every test counts from here
 
@@ -134,14 +133,17 @@ describe("goldens (CH5-b)", () => {
     const box = 20;
     const now = { input_seed: 7, bars: data.length, box, heikin_ashi: heikinAshi(data), renko: renko(data, box), range: rangeBars(data, box) };
     // Regenerate after a deliberate change: UPDATE_GOLDEN=1 npx vitest run src/charting/chartTypes.test.ts
-    // (stored gzipped: the golden is ~116 KB of JSON).
+    // Then pin it (public repo guard): python3 ../scripts/check_public_repo.py --hash src/charting/__fixtures__/chart_types_golden.json
+    // and replace its line in ALLOWED_TEST_DATA (scripts/check_public_repo.py).
+    // Stored as plain JSON (~116 KB): a gzip of it differs byte for byte between zlib builds (Node's and the system's),
+    // so a regeneration would not reproduce the pinned file; the JSON text does.
     const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
-    const { fs, zlib } = await node();
+    const { fs } = await node();
     if (env.UPDATE_GOLDEN === "1") {
-      fs.writeFileSync(GOLDEN, zlib.gzipSync(new TextEncoder().encode(`${JSON.stringify(now)}\n`), { level: 9 }));
+      fs.writeFileSync(GOLDEN, new TextEncoder().encode(`${JSON.stringify(now)}\n`));
       return;
     }
-    const golden = JSON.parse(new TextDecoder().decode(zlib.gunzipSync(fs.readFileSync(GOLDEN))));
+    const golden = JSON.parse(new TextDecoder().decode(fs.readFileSync(GOLDEN)));
     expect(golden.renko.length).toBeGreaterThan(0);
     expect(now).toEqual(golden);
   });

@@ -26,7 +26,7 @@ function Shell({ children }: { children: ReactNode }) {
       >
         <header className="flex items-center gap-3">
           <LogoMark size={28} />
-          <h1 id="status-title" className="text-lg font-bold">Advance Trading status</h1>
+          <h1 id="status-title" className="text-lg font-bold">AiAlgoDesk status</h1>
         </header>
         {children}
         <footer className="pt-2 text-xs text-fg-muted">

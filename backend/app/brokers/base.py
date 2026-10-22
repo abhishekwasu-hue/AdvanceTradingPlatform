@@ -3,7 +3,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
@@ -126,6 +126,11 @@ class BrokerInterface(ABC):
     # LD-10: True when get_historical_data reads only the IST dates of from/to (the same bars for any time of the same
     # day), so a shared candle copy can be keyed by the dates (app/market_data/shared_candles.window_anchor).
     history_by_date: bool = False
+    # UI2-4a2: the longest range of daily bars one history request may ask for; longer ranges (weekly and monthly charts)
+    # go out as whole-date chunks of at most this many days. Conservative where the broker publishes no limit.
+    daily_days_per_request: int = 365
+    # The session token this adapter uses (read back by `access_token`); adapters set it in __init__ / authenticate().
+    _access_token: Optional[str] = None
 
     @abstractmethod
     async def authenticate(self) -> BrokerProfile: ...
@@ -202,6 +207,24 @@ class BrokerInterface(ABC):
         timestamp, the price is accepted as real-time and only its availability is checked."""
         return None
 
+    # UI2-4a2-pre: True when `get_quotes_batch` is the broker's multi-quote call (one call for a whole watchlist).
+    multi_quote: bool = False
+    # UI2-4a2-pre review: set by a caller that budgets broker calls - awaited before a lookup call the adapter makes on
+    # its own (Shoonya's /SearchScrip); False = no token, the adapter raises BrokerBudgetUsed. None = not budgeted.
+    budget_hook: Optional[Callable[[], Awaitable[bool]]] = None
+
+    async def get_quotes_batch(self, items: Sequence[Tuple[str, str]]) -> Optional[Dict[Tuple[str, str], Quote]]:
+        """UI2-4a2-pre: quotes for many (exchange, plain trading symbol) pairs in ONE broker call (the watchlist), keyed
+        by the pair asked for. A pair the broker returns nothing for is left out. Default None: this adapter has no
+        multi-quote call, so the caller uses the live feed's ticks and per-symbol quotes within its budget instead."""
+        return None
+
+    async def _quotes_batch_by_keys(self, items: Sequence[Tuple[str, str]]) -> Dict[Tuple[str, str], Quote]:
+        """`get_quotes_batch` for an adapter whose `get_quote` takes "EXCHANGE:SYMBOL" keys and serves them in one call."""
+        keys = {f"{exchange}:{symbol}": (exchange, symbol) for exchange, symbol in items}
+        quotes = await self.get_quote(list(keys))
+        return {keys[key]: quote for key, quote in quotes.items() if key in keys}
+
     async def get_balance(self) -> MarginInfo:
         """Free funds and margin (V3.14 rule 2: every adapter answers "how much can I trade").
         Alias of `get_margins` so callers have one obvious name; adapters override when their
@@ -233,7 +256,7 @@ class BrokerInterface(ABC):
         """Invalidate this session token at the broker (Upstox `DELETE /logout`, Kite
         `DELETE /session/token`) and forget it locally. Default: forget only - the adapter has no
         server-side logout - so a caller can always call this and then drop the adapter."""
-        self._access_token = None  # type: ignore[attr-defined]
+        self._access_token = None
 
     async def get_ltp_for_symbol(self, symbol: str, exchange: str = "NSE") -> float:
         """Last traded price for one plain trading symbol (RELIANCE, NIFTY 50, ...). `get_ltp`

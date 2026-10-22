@@ -40,6 +40,17 @@ describe("UI2-0 BrokerGate: the three states", () => {
     expect(notYet).toContain("PIN and TOTP secret you stored, encrypted");
   });
 
+  it("UI2-9a: on My positions (positions listed under the gate) the sentences name live prices only", () => {
+    const login = render([tokenRow("angel_one", { token_status: "UNKNOWN" })], {}, { positionsShown: true });
+    expect(login).toContain("Log in to Angel One to see live prices.");
+    expect(login).not.toContain("your positions");
+    const expired = render([tokenRow("upstox")], {}, { positionsShown: true });
+    expect(expired).toContain("Your Upstox session has ended. Log in to see live prices.");
+    const none = render([], {}, { positionsShown: true });
+    expect(none).toContain("Connect your broker to see live prices and charts.");
+    expect(render([])).toContain("Connect your broker to see live prices, charts and your positions.");   // every other page
+  });
+
   it("connected: renders the children exactly, nothing added", () => {
     const html = render([tokenRow("upstox", { needs_login: false, token_status: "VALID" })]);
     expect(html).toBe("<p>REAL PAGE CONTENT</p>");
@@ -110,7 +121,7 @@ describe("UI2-0 BrokerGate: details", () => {
   });
 
   it("keeps the Connect and Sign-in paths on today's routes", () => {
-    expect(CONNECT_BROKER_PATH).toBe(pathFor("settings"));
+    expect(CONNECT_BROKER_PATH).toBe(pathFor("broker"));      // P2b: the Broker page
     expect(SIGN_IN_PATH).toBe(pathFor("account"));
   });
 });

@@ -7,11 +7,14 @@ detectors/patterns.find_trendline -> app/price_action/trendlines.py, decision3/l
 app/price_action/liquidity.py.
 
 Fixtures: the frozen synthetic bars of tests/fixtures/zones (seeded, BANKNIFTY-like; no real data, nothing from the
-sealed NIFTY holdout). GOLDEN (tests/fixtures/price_action/golden_trade_1e6c9ac_ch3b.json.gz) is Trade's output, so CI
-checks ATP == Trade without Trade on disk. Normalisation only drops Trade's Marathi `reasons` texts (ATP's are English).
+sealed NIFTY holdout). GOLDEN (tests/fixtures/price_action/golden_trade_1e6c9ac_ch3b.json.gz) is Trade's output, so
+ATP == Trade is checked without Trade on disk. Normalisation only drops Trade's Marathi `reasons` texts (ATP's are English).
 
 Regenerate (only on a deliberate Trade re-sync), from backend/:
-    TRADE_REPO_PATH=/path/to/trade python -m tests.ch3b_golden --write
+    ATP_PRIVATE_FIXTURES=<store> TRADE_REPO_PATH=/path/to/trade python -m tests.ch3b_golden --write
+The golden file is Trade output, so it lives only in the private fixtures store (owner decision PR-2,
+docs/PUBLIC_REPO_POLICY.md section 5; tests/private_fixtures.py): the public CI skips the parity check with the reason,
+--write writes the file there, and its new sha256 goes into tests/private_fixtures_manifest.json in a reviewed change.
 The Trade files are read with `git archive` at TRADE_COMMIT into a temporary directory - the checkout is never changed.
 """
 import importlib
@@ -28,11 +31,12 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from tests import private_fixtures as PF
 from tests import zones_golden as G
 
 TRADE_COMMIT = "1e6c9ac"
 TRADE_PATH = os.environ.get("TRADE_REPO_PATH", "/home/user/trade")
-GOLDEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "price_action", f"golden_trade_{TRADE_COMMIT}_ch3b.json.gz")
+GOLDEN = f"backend/tests/fixtures/price_action/golden_trade_{TRADE_COMMIT}_ch3b.json.gz"      # a private fixture (manifest path)
 TRADE_FILES = ("signals.py", "htf_alignment.py", "sr_dynamic.py", "opportunity_engine/__init__.py", "opportunity_engine/config.py",
                "opportunity_engine/measures.py", "opportunity_engine/structure.py", "opportunity_engine/detectors/__init__.py",
                "opportunity_engine/detectors/base.py", "opportunity_engine/detectors/patterns.py", "price_action/__init__.py",
@@ -177,7 +181,8 @@ def outputs(side: types.SimpleNamespace, is_trade: bool) -> Dict[str, Any]:
 
 
 def load_golden() -> Dict[str, Any]:
-    return G.read_golden(GOLDEN)
+    """The frozen Trade output from the private fixtures store; skips the calling test when the store is not mounted."""
+    return G.read_golden(str(PF.path(GOLDEN)))
 
 
 if __name__ == "__main__":
@@ -185,6 +190,6 @@ if __name__ == "__main__":
         trade = import_trade()
         if trade is None:
             raise SystemExit(f"no Trade repository at {TRADE_PATH}")
-        os.makedirs(os.path.dirname(GOLDEN), exist_ok=True)
-        G.write_golden(GOLDEN, outputs(trade, True))
-        print(f"wrote {GOLDEN}")
+        out = PF.write_path(GOLDEN)
+        G.write_golden(str(out), outputs(trade, True))
+        print(f"wrote {out} - put its sha256 in tests/private_fixtures_manifest.json")

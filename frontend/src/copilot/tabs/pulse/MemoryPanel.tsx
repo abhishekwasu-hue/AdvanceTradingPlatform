@@ -46,7 +46,7 @@ export default function MemoryPanel() {
   const sign = (v: number | null | undefined, d = 2) => `${(v ?? 0) > 0 ? "+" : ""}${(v ?? 0).toFixed(d)}%`;
 
   return (
-    <Panel title={t("memory.title")} icon={<Brain size={15} />} testId="pulse-memory"
+    <Panel title={t("memory.title")} icon={<Brain size={15} />} testId="pulse-memory" busy={busy || (memory === null && error === null)}
            action={(
              <>
                <span className="hidden text-xs text-fg-muted sm:inline">{t("memory.updated", { ago: ago(minutesAgo(memory?.updated_at)) })}</span>
@@ -109,7 +109,7 @@ export default function MemoryPanel() {
             })}
           </div>
         ) : <p className="text-xs text-fg-muted">{memory?.global_enabled === false ? t("memory.globalOff") : t("memory.globalEmpty")}</p>}
-        <p className="mt-1 text-[11px] text-fg-muted">{t("memory.globalNote")}</p>
+        <p className="mt-1 text-xs text-fg-muted">{t("memory.globalNote")}</p>
       </div>
     </Panel>
   );

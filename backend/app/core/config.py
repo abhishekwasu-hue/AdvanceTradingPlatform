@@ -137,7 +137,8 @@ _AI_RATE_LIMITS_DEFAULT = {"free": {"user": 60, "tenant": 120}, "pro": {"user": 
 _AI_RATE_WEIGHTS_DEFAULT = {"POST strategist/build": 20, "POST strategist/study": 10, "POST interview/plan": 10, "POST interview/refine": 10,
                             "POST drafts": 5, "POST drafts/{draft_id}/backtest": 5, "POST copilot": 3, "POST ask": 3,
                             "POST market-memory/refresh": 10, "POST plan": 3, "POST read": 3,
-                            "POST support/ask": 1, "POST analyze": 8}
+                            "POST support/ask": 1, "POST analyze": 8,
+                            "POST /api/option-chain/ask": 2}   # OC3: Ask AI may make a repair call (two AI calls)
 
 
 def _json_table(name: str, default: dict) -> dict:
@@ -503,6 +504,11 @@ SCREENER_COST_CAP = float(os.environ.get("SCREENER_COST_CAP", "200"))
 # S3b-2: the public https origin of this deployment (e.g. https://atp.example.com), used for the unsubscribe link in
 # screen-alert emails. Empty = no link is added (the mails still go).
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+# GS-1: Google sign-in (OpenID Connect). Both empty (the default) = the feature does not exist: GET /api/auth/providers says
+# google: false, the sign-in page shows no Google button and the /api/auth/google/* routes answer 404. The redirect URI
+# registered at Google is PUBLIC_BASE_URL + "/api/auth/google/callback". The secret is never returned or logged.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
 # PW5: the Zerodha Kite Publisher api_key for "Trade in your broker app" basket links (docs/BROKER_DATA_TERMS.md). A
 # public per-app identifier that sits in the page's HTML form, not a secret - but never committed with a value. Empty =
 # no Zerodha link. Only read when the `broker_app_links` flag is on (off by default). ATP places no order with it.

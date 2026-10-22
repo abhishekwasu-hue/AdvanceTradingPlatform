@@ -189,26 +189,33 @@ async def register(request: RegisterRequest, http_request: Request, response: Re
         from app.beta.invites import redeem
         beta_code = await redeem(session, request.invite_code)
 
-    tenant = Tenant(name=request.email, webhook_token=None, webhook_token_hash=hash_webhook_token(secrets.token_urlsafe(24)))
+    user = await new_owner_account(session, request.email, hashed_password)
+    if legal_versions is not None:
+        await legal_acceptance.accept(session, user, legal_versions, source="signup", request=http_request, require_all=True)
+    if beta_code is not None:
+        await write_audit_log(session, user.tenant_id, user.id, "beta_invite_redeemed", f"code #{beta_code.id}")
+    await verification.send_link(session, user, http_request)  # Phase N3: best effort, logged when no mailer
+    issued = await start_session(session, user, http_request)
+    await session.commit()
+    return _token_response(issued, response)
+
+
+async def new_owner_account(session: AsyncSession, email: str, hashed_password: str, *, source: Optional[str] = None) -> User:
+    """A new tenant with this user as its OWNER (or SUPER_ADMIN for a configured platform administrator) - the
+    shared part of a self sign-up (the form, or Google sign-in while `self_signup` is on)."""
+    tenant = Tenant(name=email, webhook_token=None, webhook_token_hash=hash_webhook_token(secrets.token_urlsafe(24)))
     session.add(tenant)
     await session.flush()
     await ensure_tenant_key(session, tenant.id)  # Phase N1: every tenant gets its own data key
 
     user = User(
-        tenant_id=tenant.id, email=request.email, hashed_password=hashed_password,
-        role=UserRole.SUPER_ADMIN.value if is_configured_super_admin(request.email) else UserRole.OWNER.value,
+        tenant_id=tenant.id, email=email, hashed_password=hashed_password,
+        role=UserRole.SUPER_ADMIN.value if is_configured_super_admin(email) else UserRole.OWNER.value,
     )
     session.add(user)
     await session.flush()
-    await write_audit_log(session, tenant.id, user.id, "user_registered", request.email)
-    if legal_versions is not None:
-        await legal_acceptance.accept(session, user, legal_versions, source="signup", request=http_request, require_all=True)
-    if beta_code is not None:
-        await write_audit_log(session, tenant.id, user.id, "beta_invite_redeemed", f"code #{beta_code.id}")
-    await verification.send_link(session, user, http_request)  # Phase N3: best effort, logged when no mailer
-    issued = await start_session(session, user, http_request)
-    await session.commit()
-    return _token_response(issued, response)
+    await write_audit_log(session, tenant.id, user.id, "user_registered", f"{email} ({source})" if source else email)
+    return user
 
 
 @router.post("/login", response_model=TokenResponse, dependencies=[Depends(login_rate_limit)])
@@ -237,7 +244,7 @@ async def login(request: LoginRequest, http_request: Request, response: Response
         reason = "unknown_email" if user is None else "inactive" if not user.is_active else "bad_password"
         await record_login_event(session, email=email, user=user, success=False, reason=reason, request=http_request)
         await session.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Wrong email or password.")
 
     if user.mfa_enabled:
         # Password is right; the session only starts once the authenticator code checks out.
@@ -536,7 +543,7 @@ async def _email_reset_link(session: AsyncSession, user: User, link: str) -> boo
     if channel is None:
         from app.notifications import mailer
         return await mailer.send(
-            user.email, "Reset your Advance Trading Platform password",
+            user.email, "Reset your AiAlgoDesk password",
             f"Someone (hopefully you) asked to reset the password for {user.email}.\n\n"
             f"Open this link within {RESET_TTL_MINUTES} minutes to choose a new password:\n{link}\n\n"
             "If you did not ask for this, ignore this email - the link works only once and your password is unchanged.",
@@ -544,7 +551,7 @@ async def _email_reset_link(session: AsyncSession, user: User, link: str) -> boo
     try:
         config = decrypt_config(channel).model_copy(update={"to_addresses": [user.email]})
         await send_email(
-            config, "Reset your Advance Trading Platform password",
+            config, "Reset your AiAlgoDesk password",
             f"Someone (hopefully you) asked to reset the password for {user.email}.\n\n"
             f"Open this link within {RESET_TTL_MINUTES} minutes to choose a new password:\n{link}\n\n"
             "If you did not ask for this, ignore this email - the link works only once and your password is unchanged.",

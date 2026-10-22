@@ -257,7 +257,9 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
         verdict, why = approval.requote_check(view["direction"], float(plan.entry), price, stop_loss=plan.stop_loss, target1=plan.target,
                                               max_drift_pct=app_config.APPROVAL_REQUOTE_MAX_DRIFT_PCT,
                                               max_drift_ticks=app_config.APPROVAL_REQUOTE_MAX_DRIFT_TICKS, tick_size=approval.tick_size_for(view["symbol"]))
-        if verdict != "ok":
+        if why == approval.NO_VALID_PRICE:
+            reasons.append(f"The live price for {view['symbol']} is not usable - nothing was placed")
+        elif verdict != "ok":
             reasons.append(f"{why} - update the plan to the current price; nothing was placed")
     if reasons:
         row.status, row.reasons_json = "REFUSED", json.dumps(reasons)

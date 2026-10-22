@@ -69,7 +69,7 @@ export default function CandidateCard({ c, symbol, sample }: { c: StrategyCandid
         <div className="space-y-2 text-sm">
           {/* Rules in words: always visible on every strategy card. */}
           <div className="rounded-xl border border-ai/25 bg-ai/5 p-3" data-testid="rules-in-words">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ai">{t("lab.candidate.rulesInWords")}</div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-ai">{t("lab.candidate.rulesInWords")}</div>
             {sides.map((side) => (
               <div key={side} className="mb-1.5 last:mb-0">
                 <div className="text-xs font-semibold text-fg">{t(`lab.candidate.when.${side}`)}</div>
@@ -84,7 +84,7 @@ export default function CandidateCard({ c, symbol, sample }: { c: StrategyCandid
           </button>
           {showDsl && (
             <div className="flex flex-wrap gap-1" data-testid="rules-dsl">
-              {sides.flatMap((side) => c.rules[side].map((r) => <code key={`${side}-${r}`} className="rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-fg">{side === "long" ? "L" : "S"}: {r}</code>))}
+              {sides.flatMap((side) => c.rules[side].map((r) => <code key={`${side}-${r}`} className="rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-fg">{side === "long" ? "L" : "S"}: {r}</code>))}
             </div>
           )}
           <div className="text-fg-muted"><Target size={13} className="mr-1 inline text-ai" />{c.exits}</div>
@@ -100,7 +100,7 @@ export default function CandidateCard({ c, symbol, sample }: { c: StrategyCandid
         <div className="relative">
           <div className={sample ? "select-none blur-sm" : ""} aria-hidden={sample}>
             <TiltCard depth glow="none" className="!p-3">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{t("lab.candidate.backtest")}</div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-muted">{t("lab.candidate.backtest")}</div>
               <table className="w-full text-xs">
                 <thead><tr className="text-fg-muted">
                   <th className="text-left font-normal">{t("lab.candidate.check")}</th><th className="text-right font-normal">{t("lab.candidate.trades")}</th>
@@ -113,7 +113,7 @@ export default function CandidateCard({ c, symbol, sample }: { c: StrategyCandid
                 </tbody>
               </table>
               {c.trades.length > 1 && <EquityCurve trades={c.trades} splitAt={splitAt >= 0 ? splitAt : null} label={t("lab.candidate.curveAria", { n: c.trades.length })} />}
-              <p className="mt-1 text-[11px] text-fg-muted">{c.verdict_text}</p>
+              <p className="mt-1 text-xs text-fg-muted">{c.verdict_text}</p>
             </TiltCard>
           </div>
           {sample && <SampleStamp />}

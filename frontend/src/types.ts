@@ -1165,10 +1165,78 @@ export interface BrokerTokenInfo {
   needs_login: boolean;
   oauth_supported: boolean;
   oauth_callback_url: string | null;
+  // D2 (Upstox): the account's saved Redirect URI differs from oauth_callback_url (the login sends the saved one).
+  redirect_uri_mismatch?: boolean | null;
+  // D2 (Upstox): the saved Redirect URI is left over on an IP address or plain http; the next login uses
+  // oauth_callback_url instead and saves it.
+  redirect_uri_will_be_replaced?: boolean | null;
   // Fyers / Kite: the platform opens the broker's login page and takes the pasted one-time code.
   login_url_supported?: boolean;
   code_param?: string | null;
   account_label?: string;
+}
+
+/** P2b: the Broker page's contract (GET /api/broker/catalog, GET /api/broker/connections, POST connect / renew). */
+export interface BrokerCatalogField {
+  key: string;
+  label: string;
+  kind: "secret" | "text";
+  placeholder?: string;
+}
+
+export interface BrokerCatalogEntry {
+  broker: string;
+  name: string;
+  /** "analytics_token" (Upstox), "access_token" (Dhan), "login_code" (Zerodha, Fyers), "totp_auto" (Angel One,
+   * Shoonya), "api_key_secret" (CoinDCX). */
+  method: string;
+  fields: BrokerCatalogField[];
+  /** Three short steps: where the trader finds the fields above. */
+  how_to: string[];
+  doc_url: string;
+  /** True when the broker ends the session every day, so the connection needs a daily renewal. */
+  daily_renewal: boolean;
+  available: boolean;
+  /** What POST /renew takes each day: [] is one click (or no daily renewal); `request_token` is the address the
+   * trader lands on after the broker's own login (method "login_code": Zerodha, Fyers). */
+  renew_fields: BrokerCatalogField[];
+}
+
+export type BrokerConnectionStatus = "connected" | "needs_login" | "not_working";
+
+export interface BrokerConnection {
+  broker: string;
+  account_label: string;
+  name: string;
+  status: BrokerConnectionStatus;
+  /** One plain sentence from the server about this connection. */
+  message: string;
+  /** True for a data-only connection (an Upstox analytics token): charts work, nothing to log in to each day. */
+  data_only: boolean;
+  /** True when "Renew" applies to this connection (a broker with a daily login). */
+  renew: boolean;
+}
+
+export interface BrokerConnectResult {
+  status: string;
+  message: string;
+}
+
+/** D2: GET /broker/upstox/redirect-url - the Redirect URL to register on the Upstox developer app, and a flag for each
+ * stored Upstox account whose stored Redirect URI differs from it (booleans only, never a stored value). */
+export interface UpstoxRedirectAccount {
+  account_label: string;
+  redirect_uri_set: boolean;
+  redirect_uri_mismatch: boolean;
+  /** Left over on an IP address or plain http: the next login uses `redirect_url` and saves it (not a mismatch). */
+  redirect_uri_will_be_replaced?: boolean;
+}
+
+export interface UpstoxRedirectInfo {
+  redirect_url: string;
+  redirect_uri_mismatch: boolean;
+  accounts: UpstoxRedirectAccount[];
+  redirect_uri_will_be_replaced?: boolean;
 }
 
 export interface BrokerLoginUrl {
@@ -1839,6 +1907,9 @@ export interface AiAction {
   created_at: string | null;
   /** PW5: hidden from the pending list until this time (never later than expires_at). */
   snoozed_until?: string | null;
+  /** UI2-3 (M7): whose proposal it is (null: organisation-wide). Signals lists the caller's own and the organisation-wide
+   * entries; another member's stay on the Watchtower. */
+  owner_user_id?: number | null;
   /** PW5: the deployment's or position's mode; the approval itself still decides LIVE vs PAPER on the server. */
   mode?: "PAPER" | "LIVE" | null;
   /** PW5: the closing order's facts for "Trade in your broker app" (flag broker_app_links, exits on open positions only). */
@@ -1869,6 +1940,8 @@ export interface SystemStatus {
   maintenance_mode: boolean;
   maintenance_message: string | null;
   disabled_brokers: string[];
+  /** Phase O2: the regular session of each exchange family (NSE, MCX, CDS, CRYPTO); `next_open` in IST, null while open. */
+  sessions?: Record<string, { is_open: boolean; reason: string; next_open: string | null }>;
 }
 
 // ---- Phase N: scopes, email verification, feature flags, encryption status ------------------------
@@ -1919,6 +1992,8 @@ export interface PortfolioExposure {
   short_notional: number; gross_pct_of_capital: number; unrealised_pnl: number; realised_today: number; risk_at_stops: number;
   risk_pct_of_capital: number; largest_symbol_pct: number; by_symbol: SymbolExposure[]; by_strategy: Record<string, number>;
   by_mode: Record<string, number>; warnings: string[]; price_source: "ltp" | "entry"; priced_symbols: string[];
+  /** Phase P3: the base currency and the conversions applied (a non-INR symbol is converted before aggregating). */
+  base_currency?: string; fx_rates_used?: Record<string, number>; fx_missing?: string[];
 }
 
 export interface DegradationMetrics {
@@ -2035,9 +2110,12 @@ export interface DataTierResponse {
   enabled: boolean; badge?: DataTierBadgeInfo; market_wide?: DataTierBadgeInfo; eod_date?: string | null; sessions?: DataTierSession[];
 }
 export interface CandleSourcesResponse { sources: CandleSource[]; usable: boolean; timeframes: string[]; max_symbols: number; intraday_max_lookback_days: number; daily_max_lookback_days: number }
+export interface CandleVolumeSource { symbol: string; expiry: string; exchange: string; underlying: string; from: string | null; label: string }
 export interface CandlesResponse {
   source: { broker: string; account_label: string }; exchange: string; timeframe: string; base_interval: string; lookback_days: number; before?: string | null; fetched_at: string;
-  symbols: Record<string, { bars: OHLCVBar[]; count: number; first: string | null; last: string | null; error: string | null; data_tier?: DataTierBadgeInfo | null }>; warnings: string[]; note: string;
+  symbols: Record<string, { bars: (OHLCVBar & { forming?: boolean })[]; count: number; first: string | null; last: string | null; error: string | null; data_tier?: DataTierBadgeInfo | null;
+    /** UI2-4a2: an index's volume from its near-month future (asked for with `volume_from_future`). */
+    volume_source?: CandleVolumeSource | null }>; warnings: string[]; note: string;
   data_tier?: DataTierBadgeInfo;
 }
 

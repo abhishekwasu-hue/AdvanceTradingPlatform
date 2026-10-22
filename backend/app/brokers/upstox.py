@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import httpx
 
 from app.instruments.master import normalise_expiry
+from app.brokers import master_cache
 from app.brokers import upstox_analytics
 from app.brokers.base import BrokerCapabilities, BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
@@ -123,13 +124,17 @@ class UpstoxBroker(BrokerInterface):
         return BrokerCapabilities(stop_market_on_options=not config.LIVE_UPSTOX_OPTION_STOP_LIMIT)
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:
-        if not credentials.api_key and not credentials.analytics_token:
-            # A row holding only the analytics token can still read market data; logins and orders need the API key.
+        if not credentials.api_key and not credentials.analytics_token and not credentials.access_token:
+            # A row holding only the analytics token can still read market data, and one holding only a pasted daily
+            # access token (P2a connect) can use it until it expires; the OAuth login needs the API key.
             raise BrokerAuthenticationError("Upstox adapter requires credentials.api_key (client_id)")
         self.credentials = credentials
         self._access_token = credentials.access_token
         self._client = client or httpx.AsyncClient(base_url=self.BASE_URL, timeout=15.0)
         self._instruments_cache: Dict[str, Tuple[float, List[Instrument]]] = {}
+        # UI2-4a2-pre review: built without a client (the app's path, an adapter per request), the instrument master is
+        # shared by the process (master_cache) instead of downloaded again for every request.
+        self._shared_master = client is None
         # The optional Analytics Token (app/brokers/upstox_analytics.py): used only for GET market-data classes its last
         # probe marked `works`, only until its expiry; everything else goes with the daily login token.
         self._analytics_token = credentials.analytics_token
@@ -219,7 +224,15 @@ class UpstoxBroker(BrokerInterface):
         cached = self._instruments_cache.get(exchange)
         if cached is not None and (time.monotonic() - cached[0]) < _INSTRUMENT_CACHE_TTL_SECONDS:
             return cached[1]
+        if self._shared_master:
+            instruments = await master_cache.shared(self.name, exchange, lambda: self._download_instruments(exchange),
+                                                    ttl=_INSTRUMENT_CACHE_TTL_SECONDS)
+        else:
+            instruments = await self._download_instruments(exchange)
+        self._instruments_cache[exchange] = (time.monotonic(), instruments)
+        return instruments
 
+    async def _download_instruments(self, exchange: str) -> List[Instrument]:
         response = await self._client.get(INSTRUMENTS_URL_TEMPLATE.format(exchange=exchange))
         if response.status_code >= 400:
             raise BrokerAPIError("Failed to fetch instrument master", response.status_code, response.text)
@@ -240,7 +253,6 @@ class UpstoxBroker(BrokerInterface):
             )
             for row in raw
         ]
-        self._instruments_cache[exchange] = (time.monotonic(), instruments)
         return instruments
 
     async def _resolve_instrument(self, symbol: str, exchange: str) -> Instrument:
@@ -331,8 +343,37 @@ class UpstoxBroker(BrokerInterface):
                 volume=entry.get("volume", 0.0), oi=entry.get("oi"),
                 bid=best_buy.get("price"), ask=best_sell.get("price"),
                 bid_qty=best_buy.get("quantity"), ask_qty=best_sell.get("quantity"),
+                prev_close=_prev_close(entry),
             )
         return quotes
+
+    multi_quote = True
+
+    async def get_quotes_batch(self, items):
+        """UI2-4a2-pre: one `/market-quote/quotes` call for the whole list (Upstox serves up to 500 instrument keys per
+        call). Upstox keys its answer by "EXCHANGE_SEGMENT:TRADINGSYMBOL", so each entry is matched back by its
+        `instrument_token`. A symbol the instrument master does not know is left out (the others still load)."""
+        by_key: Dict[str, List[Tuple[str, str]]] = {}      # two pairs may name one instrument: each gets the quote
+        for exchange, symbol in items:
+            try:
+                instrument = await self._resolve_instrument(symbol, exchange)
+            except BrokerAPIError:
+                continue
+            by_key.setdefault(instrument.instrument_token, []).append((exchange, symbol))
+        if not by_key:
+            return {}
+        data = await self._request("GET", "/market-quote/quotes", params={"instrument_key": ",".join(by_key)})
+        out: Dict[Tuple[str, str], Quote] = {}
+        for entry in data.values():
+            if entry.get("last_price") is None:
+                continue
+            ohlc = entry.get("ohlc") or {}
+            for pair in by_key.get(entry.get("instrument_token")) or []:
+                out[pair] = Quote(symbol=pair[1], ltp=float(entry["last_price"]), open=float(ohlc.get("open") or 0),
+                                  high=float(ohlc.get("high") or 0), low=float(ohlc.get("low") or 0), close=float(ohlc.get("close") or 0),
+                                  volume=float(entry.get("volume") or 0), oi=entry.get("oi"), prev_close=_prev_close(entry),
+                                  timestamp=parse_broker_timestamp(entry.get("last_trade_time") or entry.get("timestamp")))
+        return out
 
     async def get_historical_data(
         self, symbol: str, exchange: str, interval: str, from_date: datetime, to_date: datetime
@@ -534,3 +575,13 @@ class UpstoxBroker(BrokerInterface):
             available_margin=equity.get("available_margin", 0.0),
             total_margin=equity.get("total_margin"),
         )
+
+
+def _prev_close(entry: dict) -> Optional[float]:
+    """The previous session's close from an Upstox full quote: `last_price - net_change` (Upstox documents net_change as
+    the change from the previous close); None when either is missing."""
+    try:
+        value = float(entry["last_price"]) - float(entry["net_change"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return value if value > 0 else None

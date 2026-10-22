@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -41,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import write_audit_log
 from app.core import config as app_config
 from app.core.enums import NotificationSeverity, NotificationType
+from app.core.json_finite import dumps as finite_dumps
 from app.core.models import Signal
 from app.db.models import AiActionRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.market_data.calendar import IST
@@ -66,6 +68,12 @@ PriceLookup = Callable[..., Awaitable[float]]       # (symbol, exchange="NSE") -
 class EntriesPaused(ValueError):
     """Z3-b: the user the proposal is for paused their PAPER entries (/pause), or (Z5 / P1-d, flag risk_by_default) is
     locked out for the day by their daily loss limit or entries-per-day limit: no proposal is raised."""
+
+
+class InvalidEntryPrice(EntriesPaused):
+    """UI2-3 review: the signal's entry price is missing, zero, negative or not a finite number (a NaN from an alert):
+    no proposal is raised. A refusal like EntriesPaused - every caller answers it with the reason (no 500, and the
+    worker does not count it as a failure)."""
 
 
 def _utc(dt: datetime) -> datetime:
@@ -150,13 +158,20 @@ def tick_size_for(symbol: str) -> float:
     return tick if tick > 0 else 0.05
 
 
+# The reason requote_check gives when the live (or proposal) price is not a usable number: callers word it as a quote
+# problem, not as "the price moved".
+NO_VALID_PRICE = "No valid price to re-quote the entry"
+
+
 def requote_check(direction: str, proposal_price: float, current_price: float, *, stop_loss: Optional[float],
                   target1: Optional[float], max_drift_pct: float, max_drift_ticks: int, tick_size: float) -> Tuple[str, str]:
     """("ok" | "requote" | "expire", why). Pure: the rule the approval applies to the price it sees at the moment of
     Approve. A price through the stop or target 1 has no trade left in it ("expire"); a move beyond the stricter of the
     percent and tick limits is re-proposed at the new price ("requote"); anything else is placed at the new price."""
-    if current_price is None or current_price <= 0 or proposal_price is None or proposal_price <= 0:
-        return "expire", "No valid price to re-quote the entry"
+    # A NaN compares false with everything, so it would pass every check below as "ok": not finite is no price.
+    if (current_price is None or proposal_price is None or not math.isfinite(current_price) or not math.isfinite(proposal_price)
+            or current_price <= 0 or proposal_price <= 0):
+        return "expire", NO_VALID_PRICE
     long = (direction or "").upper() == "LONG"
     if stop_loss is not None and ((long and current_price <= stop_loss) or (not long and current_price >= stop_loss)):
         return "expire", f"Price {current_price:g} is already through the stop {stop_loss:g}"
@@ -179,7 +194,7 @@ def requote_check(direction: str, proposal_price: float, current_price: float, *
 # --- proposals ----------------------------------------------------------------------------------------------------------
 
 def _money(value: Optional[float]) -> str:
-    return "-" if value is None else f"{value:,.2f}"
+    return "-" if value is None or not math.isfinite(value) else f"{value:,.2f}"
 
 
 async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal, strategy_id: str, source: str,
@@ -190,13 +205,14 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     """Raises one ENTRY proposal (PROPOSED, expiring after APPROVAL_ENTRY_TTL_MINUTES) and announces it through the
     ordinary notification service (in-app, push, Telegram with Approve / Reject / Snooze). None when the same signal (or,
     for a deployment, another open entry proposal) is already there. `user_id` is the proposal's owner; raises
-    EntriesPaused when that user paused their PAPER entries (Z3-b) or is locked out by risk by default (Z5 / P1-d).
+    InvalidEntryPrice (an EntriesPaused) for a missing or non-finite entry price, and EntriesPaused when that user
+    paused their PAPER entries (Z3-b) or is locked out by risk by default (Z5 / P1-d).
     `strike_breach` (Z5): the short strikes' breach chances of an option proposal (app/options_builder/strike_breach.py
     ::report), shown on the card. `ticket` (Z5 / P1-d): a PAPER ticket's checked limits ({plan_id, max_quantity,
     risk_cap_amount}) - the approved order keeps them. Places nothing."""
     now = _utc(now or datetime.now(timezone.utc)).astimezone(timezone.utc)      # stored as UTC (SQLite drops the zone)
-    if signal.entry is None or signal.entry <= 0:
-        raise ValueError("An entry proposal needs the signal's entry price")
+    if signal.entry is None or not math.isfinite(signal.entry) or signal.entry <= 0:
+        raise InvalidEntryPrice("The signal has no usable entry price (missing, zero or not a number) - nothing was proposed")
     from app.paper.service import paused_reason
     paused = await paused_reason(session, user_id)
     if paused:
@@ -233,7 +249,7 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                 "exchange": (exchange or "NSE").upper(),
                 "signal": signal.model_dump(mode="json"), "strike_breach": strike_breach, "ticket": ticket}
     row = AiActionRecord(tenant_id=tenant_id, deployment_id=deployment.id if deployment is not None else None, trade_id=None,
-                         action=ACTION_ENTRY, rule=RULE_ENTRY, reason=reason, evidence_json=json.dumps(evidence, default=str),
+                         action=ACTION_ENTRY, rule=RULE_ENTRY, reason=reason, evidence_json=finite_dumps(evidence),
                          status="PROPOSED", expires_at=expires, idempotency_key=idempotency_key[:200], owner_user_id=user_id)
     try:
         async with session.begin_nested():       # a duplicate is dropped alone; the caller's objects stay intact
@@ -409,6 +425,11 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
                                         holding=str(evidence.get("holding") or "INTRADAY"), user_id=owner_id, now=now,
                                         requotes=requotes + 1, requoted_from=action.id, exchange=str(evidence.get("exchange") or "NSE"),
                                         ticket=evidence.get("ticket"))
+        except InvalidEntryPrice:
+            # UI2-3 review: a subclass of EntriesPaused, but the reason is the price, not a pause. Defensive only:
+            # requote_check already answers a non-finite or non-positive price with "expire", so this is not reached today.
+            fresh = None
+            result = f"Not placed: {why}. No re-quote: the current price is not usable"
         except EntriesPaused:
             fresh = None
             result = f"Not placed: {why}. No re-quote: PAPER entries are paused"
@@ -472,9 +493,9 @@ async def propose_exit(session: AsyncSession, trade: TradeRecord, reason: str, p
         text = (f"Exit now? {trade.direction} {trade.symbol} (position #{trade.id}, {trade.mode}) reached {reason} - last price {price:,.2f}, "
                 f"entry {trade.entry_price:,.2f}. Approve to exit at the price then. The stop and the time exits stay automatic.")
         row = AiActionRecord(tenant_id=trade.tenant_id, deployment_id=trade.deployment_id, trade_id=trade.id, action="EXIT_POSITION", rule=rule,
-                             reason=text, evidence_json=json.dumps({"reason": reason, "price": price, "entry_price": trade.entry_price,
+                             reason=text, evidence_json=finite_dumps({"reason": reason, "price": price, "entry_price": trade.entry_price,
                                                                     "stop_loss": trade.stop_loss, "target1": trade.target1, "target2": trade.target2,
-                                                                    "mode": trade.mode}, default=str),
+                                                                    "mode": trade.mode}),
                              status="PROPOSED", expires_at=expires, owner_user_id=trade.user_id)
         async with session.begin_nested():       # a concurrent duplicate drops this row alone
             session.add(row)

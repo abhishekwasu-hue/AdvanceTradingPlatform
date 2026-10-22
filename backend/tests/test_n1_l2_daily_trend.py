@@ -6,12 +6,15 @@ extreme, maturity, targets, parent, counter, leg start, correction bars, origin 
 zone, leg origin, target passed, wave A, alt count, pivots) for the default settings and setting variants; `state_at`;
 the pivots and sigma_D; the leg reader (classify, read_counter, structure, reductions, unfolded 1-2-3, leg points, C
 class); the wave rules; `prepare` / `prepare_daily`; the settings defaults. The free-text `why` is English in ATP and
-only its presence is compared."""
+only its presence is compared.
+
+The golden file is Trade output, read from the private fixtures store (tests/private_fixtures.py): the public CI skips
+the parity tests with the reason. The series are built in code from the golden's synthetic inputs
+(fixtures/daily_trend/synthetic_inputs.py; test_the_series_built_in_code_are_the_golden_s ties the two), so the
+no-look-ahead tests always run."""
 import ast
-import gzip
 import subprocess
 import sys
-import json
 import math
 from functools import lru_cache
 from pathlib import Path
@@ -25,16 +28,24 @@ from app.price_action.daily_trend import fold as DD
 from app.price_action.daily_trend import legs as DL
 from app.price_action.daily_trend import rules as PR
 from app.price_action.daily_trend import settings as S3
+from tests import private_fixtures as PF
+from tests.fixtures.daily_trend import synthetic_inputs as DTI
 
 BACKEND = Path(__file__).resolve().parents[1]
-GOLDEN = BACKEND / "tests" / "fixtures" / "daily_trend" / "golden.json.gz"
+GOLDEN = "backend/tests/fixtures/daily_trend/golden.json.gz"      # a private fixture (manifest path)
 PACKAGE = BACKEND / "app" / "price_action" / "daily_trend"
 
 
 @lru_cache(maxsize=1)
 def golden() -> Dict[str, Any]:
-    with gzip.open(GOLDEN, "rt", encoding="utf-8") as fh:
-        return json.load(fh)
+    """The golden file from the private fixtures store; skips the calling test when the store is not mounted."""
+    return PF.load(GOLDEN)
+
+
+@lru_cache(maxsize=1)
+def synthetic() -> list:
+    """The golden's series, built in code: [(label, raw bars)] in golden order."""
+    return DTI.all_series()
 
 
 def num(x: Any) -> Any:
@@ -83,15 +94,28 @@ def frame(bars: Dict[str, list]) -> pd.DataFrame:
     return df
 
 
+def bars_json(df: pd.DataFrame) -> Dict[str, list]:
+    return {"timestamp": [str(x) for x in df["timestamp"]], **{k: [float(x) for x in df[k]] for k in ("open", "high", "low", "close")}}
+
+
 @lru_cache(maxsize=None)
 def daily(sid: int) -> pd.DataFrame:
-    return DD.prepare(frame(golden()["series"][sid]["bars"]))
+    return DD.prepare(frame(bars_json(synthetic()[sid][1])))
 
 
 @lru_cache(maxsize=None)
 def folded(sid: int, variant: str) -> tuple:
-    over = next(f["settings"] for f in golden()["folds"] if f["series"] == sid and f["variant"] == variant)
-    return tuple(DD.fold(daily(sid), over))
+    return tuple(DD.fold(daily(sid), DTI.VARIANTS[variant]))
+
+
+def test_the_series_built_in_code_are_the_golden_s():
+    """The bars, labels and setting variants built in code are the ones Trade's outputs were recorded on."""
+    g = golden()
+    assert [s["seed"] for s in g["series"]] == [label for label, _ in synthetic()]
+    for sid, (entry, (_, raw)) in enumerate(zip(g["series"], synthetic())):
+        assert entry["bars"] == bars_json(raw), sid
+    for f in g["folds"]:
+        assert f["settings"] == DTI.VARIANTS[f["variant"]], f["variant"]
 
 
 # --- provenance and settings ---------------------------------------------------------------------------------------------
@@ -190,7 +214,7 @@ def test_truncated_runs_match_trade_and_the_full_run():
 
 
 def series_of(kind: str) -> list:
-    return [i for i, s in enumerate(golden()["series"]) if str(s["seed"]).startswith(kind)]
+    return [i for i, (label, _) in enumerate(synthetic()) if str(label).startswith(kind)]
 
 
 def causal_bars(states: Any, every: int = 0, cap: int = 0) -> list:
@@ -254,7 +278,7 @@ def test_no_state_depends_on_a_later_candle_dense(sid):
     """The dense version (the Z10-a no-look-ahead CI job), on every golden series: `dense_bars` (every bar of a short
     series; flips, state changes and a stride on a long one - a prefix fold costs ~1 ms per bar, so every bar of a
     1,000-bar series would take minutes)."""
-    if sid >= len(golden()["series"]):
+    if sid >= len(synthetic()):
         pytest.skip("no such series")
     bars = dense_bars(folded(sid, "default"))
     assert len(bars) >= 4

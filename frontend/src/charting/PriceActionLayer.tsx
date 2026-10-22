@@ -13,7 +13,7 @@ import {
 import { windowStart } from "./replay";
 
 const IST = "Asia/Kolkata";
-const btn = "rounded px-1.5 py-0.5 text-[10px] font-semibold";
+const btn = "rounded px-1.5 py-0.5 text-xs font-semibold";
 const MTF_LABEL: Record<string, string> = { "1w": "W", "1d": "D", "1h": "1H", "15m": "15m" };
 
 function asOfText(iso: string | null): string {

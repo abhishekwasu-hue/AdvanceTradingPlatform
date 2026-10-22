@@ -56,7 +56,7 @@ from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarch
 from app.risk_engine import by_default
 from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
 from app.platform.controls import clamp_config, risk_ceilings
-from app.risk_engine.risk_manager import RiskManager
+from app.risk_engine.risk_manager import RiskManager, nonfinite_levels
 from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
 
@@ -126,6 +126,10 @@ async def execute_structure(
     # N2-2 (flag experience_levels): an unhedged short side or a futures leg needs the level, or the day's opt-out.
     from app.paper import experience
     refusals.extend(await experience.entry_refusals(session, user, experience.structure_gates(structure.legs)))
+    # #309 review: the underlying levels are stored on every leg's trade after its fill; refuse them before any leg moves.
+    bad = nonfinite_levels(signal)
+    if bad:
+        refusals.append(f"Underlying signal {bad} is not a finite number")
     if refusals:
         await _reject_all(session, orders, refusals)
         await notify(session, user.tenant_id, NotificationType.REJECTION, title=f"Structure rejected: {structure.underlying_symbol}",

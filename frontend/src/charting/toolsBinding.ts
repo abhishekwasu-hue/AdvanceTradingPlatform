@@ -16,6 +16,9 @@ export interface ToolEngine {
   paneOffsetX(): number;
   candleTimes(): readonly number[];
   setPanning(enabled: boolean): void;
+  /** UI2-4b1: the price pane's height when other panes (volume, RSI) sit under it on the same chart; null or absent:
+   * the whole element is the price pane. */
+  pricePaneHeight?(): number | null;
   addDrawing(id: string, drawing: DrawingV1): void;
   removeDrawing(id: string): void;
 }
@@ -69,6 +72,11 @@ export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: S
     const r = surface.getBoundingClientRect();
     return { x: e.clientX - r.left - engine.paneOffsetX(), y: e.clientY - r.top };
   };
+  // v5 native panes: y below the price pane is a volume or RSI value, not a price - the tools leave it to the chart.
+  const belowPricePane = (e: PointerLike) => {
+    const h = engine.pricePaneHeight?.();
+    return h != null && local(e).y > h;
+  };
   const point = (e: PointerLike) => {
     const { x, y } = local(e);
     return engine.toData(x, y);
@@ -99,7 +107,7 @@ export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: S
   };
 
   const down = (e: PointerLike) => {
-    if (e.button != null && e.button !== 0) return;
+    if ((e.button != null && e.button !== 0) || belowPricePane(e)) return;
     const pt = point(e);
     if (ctl.view().tool) {
       e.preventDefault();
@@ -128,7 +136,7 @@ export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: S
       if (pt) ctl.dragTo(pt, engine.candleTimes());
       return;
     }
-    ctl.pointerMove(pt);
+    ctl.pointerMove(belowPricePane(e) ? null : pt);
   };
   const up = (e: PointerLike) => stopDrag(e);
   const leave = () => { if (!dragging) ctl.pointerMove(null); };

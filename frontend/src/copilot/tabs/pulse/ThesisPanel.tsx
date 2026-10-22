@@ -29,10 +29,15 @@ export default function ThesisPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [off, setOff] = useState(false);
+  // The symbol whose thesis and history have both been answered, and whether the watchlist has: until then the panel
+  // is still loading (aria-busy) - its watchlist can still switch the symbol, and its history still add a line.
+  const [doneFor, setDoneFor] = useState<string | null>(null);
+  const [watchlistDone, setWatchlistDone] = useState(false);
 
   const latest = useRef(0);
   async function load(refresh = false) {
     const id = ++latest.current;               // switching symbols quickly: only the newest answer is shown
+    const forSymbol = symbol;
     setBusy(true); setError(null);
     try {
       const th = await api.aiThesis(symbol, "en", refresh);
@@ -45,7 +50,7 @@ export default function ThesisPanel() {
       if (id !== latest.current) return;
       if (e instanceof ApiError && e.status === 503 && e.body.includes("market_thesis")) { setOff(true); setThesis(null); }
       else { setError(friendlyError(e, t)); setThesis(null); }
-    } finally { if (id === latest.current) setBusy(false); }
+    } finally { if (id === latest.current) { setBusy(false); setDoneFor(forSymbol); } }
   }
   useEffect(() => { void load(); }, [symbol]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -53,7 +58,7 @@ export default function ThesisPanel() {
       const list = m.watchlist ?? [];
       setWatchlist(list);
       if (list.length && !list.includes(symbol)) setSymbol(list[0]);
-    }).catch(() => undefined);
+    }).catch(() => undefined).finally(() => setWatchlistDone(true));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const Icon = thesis ? DIR_ICON[thesis.direction] ?? Eye : Eye;
@@ -64,7 +69,7 @@ export default function ThesisPanel() {
   const sb = history?.scoreboard;
 
   return (
-    <Panel title={t("thesis.title")} icon={<Eye size={15} />} testId="pulse-thesis"
+    <Panel title={t("thesis.title")} icon={<Eye size={15} />} testId="pulse-thesis" busy={busy || doneFor !== symbol || !watchlistDone}
            action={(
              <>
                {/* a native select: the default tab stays light (the Radix Select is ~17 KB) */}
@@ -116,7 +121,7 @@ export default function ThesisPanel() {
               {sb.hit_rate != null && <> · <b className="text-fg">{t("thesis.hitRate", { pct: Math.round(sb.hit_rate * 100) })}</b></>}
             </p>
           )}
-          <p className="text-[11px] text-fg-muted">{t("thesis.footer")}</p>
+          <p className="text-xs text-fg-muted">{t("thesis.footer")}</p>
         </div>
       )}
     </Panel>

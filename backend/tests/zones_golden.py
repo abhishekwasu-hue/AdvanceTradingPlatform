@@ -3,14 +3,18 @@ through ATP, both normalised to one JSON shape.
 
   * `trade_outputs(T)` - Trade@eafc872 functions on the fixtures (T = the imported Trade modules, see `import_trade`).
   * `atp_outputs()`    - the ATP port on the same fixtures with the equivalent settings.
-  * GOLDEN             - the frozen `trade_outputs` (tests/fixtures/zones/golden_trade_eafc872.json.gz), so CI checks
-                         ATP == Trade without the Trade repository on disk.
+  * GOLDEN             - the frozen `trade_outputs` (tests/fixtures/zones/golden_trade_eafc872.json.gz in the private
+                         fixtures store, tests/private_fixtures.py), so ATP == Trade is checked without the Trade
+                         repository on disk; the public CI skips that check with the reason.
 
 Normalisation only absorbs the deliberate, documented differences: ATP timeframe labels ("15m" for Trade's "15M" /
 "15minute", "1h" for "60M" / "1hour" / "1H" frames), ASCII tags in sr_v3, zone status FILLED/ACTIVE -> state
 tested/fresh (compared on ATP's `first_touch` event - its `state` is the ATP lifecycle since Z7a-2), and a dynamic S/R
 row's formed time (not compared). Regenerate the golden file (after a deliberate Trade
-re-sync) from backend/ with:  python -m tests.zones_golden --write
+re-sync) from backend/ with:  ATP_PRIVATE_FIXTURES=<store> python -m tests.zones_golden --write
+The golden file is Trade output, so it lives only in the private fixtures store (owner decision PR-2,
+docs/PUBLIC_REPO_POLICY.md section 5): --write writes it there; its new sha256 goes into
+tests/private_fixtures_manifest.json in a reviewed change.
 """
 import gzip
 import importlib
@@ -24,10 +28,12 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from tests import private_fixtures as PF
+
 TRADE_COMMIT = "eafc872"
 TRADE_PATH = os.environ.get("TRADE_REPO_PATH", "/home/user/trade")
 FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "zones")
-GOLDEN = os.path.join(FIXTURE_DIR, f"golden_trade_{TRADE_COMMIT}.json.gz")
+GOLDEN = f"backend/tests/fixtures/zones/golden_trade_{TRADE_COMMIT}.json.gz"      # a private fixture (manifest path)
 TRADE_MODULES = ("market_zones", "signals", "sr_dynamic", "sr_levels_v3", "mtf_pullback_strategy")
 
 
@@ -471,7 +477,8 @@ def write_golden(path: str, data: Any) -> None:
 
 
 def load_golden() -> Dict[str, Any]:
-    return read_golden(GOLDEN)
+    """The frozen Trade output from the private fixtures store; skips the calling test when the store is not mounted."""
+    return read_golden(str(PF.path(GOLDEN)))
 
 
 if __name__ == "__main__":
@@ -480,8 +487,9 @@ if __name__ == "__main__":
         sys.exit(f"Trade checkout not found at {TRADE_PATH} (set TRADE_REPO_PATH)")
     data = to_json(trade_outputs(T))
     if "--write" in sys.argv:
-        write_golden(GOLDEN, data)
-        print("wrote", GOLDEN)
+        out = PF.write_path(GOLDEN)
+        write_golden(str(out), data)
+        print("wrote", out, "- put its sha256 in tests/private_fixtures_manifest.json")
     st: Dict[str, int] = {"exact": 0, "approx": 0}
     problems = diff(data, to_json(atp_outputs()), stats=st)
     print(f"leaves: {st}; mismatches: {len(problems)}")

@@ -1,0 +1,243 @@
+[
+ {
+  "broker": "upstox",
+  "name": "Upstox",
+  "method": "analytics_token",
+  "fields": [
+   {
+    "key": "analytics_token",
+    "label": "Analytics Token",
+    "kind": "secret",
+    "placeholder": "Paste your Upstox Analytics Token"
+   }
+  ],
+  "how_to": [
+   "Sign in to Upstox and open Developer Apps.",
+   "Open the Analytics tab and generate a token; it is valid for one year.",
+   "Copy the token and paste it here."
+  ],
+  "doc_url": "https://upstox.com/developer/api-documentation/analytics-token/",
+  "daily_renewal": false,
+  "available": true,
+  "renew_fields": []
+ },
+ {
+  "broker": "dhan",
+  "name": "Dhan",
+  "method": "access_token",
+  "fields": [
+   {
+    "key": "client_id",
+    "label": "Client ID",
+    "kind": "text",
+    "placeholder": "Your Dhan Client ID"
+   },
+   {
+    "key": "access_token",
+    "label": "Access token",
+    "kind": "secret",
+    "placeholder": "Paste the access token"
+   }
+  ],
+  "how_to": [
+   "Sign in to web.dhan.co and open My Profile, then Access DhanHQ APIs.",
+   "Generate an access token (it lasts 24 hours) and copy it with your Client ID.",
+   "Paste both here; on later days paste only the new token."
+  ],
+  "doc_url": "https://dhanhq.co/docs/v2/authentication/",
+  "daily_renewal": true,
+  "available": true,
+  "renew_fields": [
+   {
+    "key": "access_token",
+    "label": "Today's access token",
+    "kind": "secret",
+    "placeholder": "Paste today's access token"
+   }
+  ]
+ },
+ {
+  "broker": "zerodha",
+  "name": "Zerodha (Kite)",
+  "method": "login_code",
+  "fields": [
+   {
+    "key": "api_key",
+    "label": "API key",
+    "kind": "text",
+    "placeholder": "Your Kite Connect API key"
+   },
+   {
+    "key": "api_secret",
+    "label": "API secret",
+    "kind": "secret",
+    "placeholder": "Your Kite Connect API secret"
+   }
+  ],
+  "how_to": [
+   "Sign in to developers.kite.trade and open your Kite Connect app.",
+   "Copy the API key and the API secret and paste them here.",
+   "Each morning press Log in, sign in to Kite and paste the address you land on."
+  ],
+  "doc_url": "https://kite.trade/docs/connect/v3/user/",
+  "daily_renewal": true,
+  "available": true,
+  "renew_fields": [
+   {
+    "key": "request_token",
+    "label": "Address after login",
+    "kind": "secret",
+    "placeholder": "Paste the whole address from the browser bar"
+   }
+  ]
+ },
+ {
+  "broker": "fyers",
+  "name": "Fyers",
+  "method": "login_code",
+  "fields": [
+   {
+    "key": "api_key",
+    "label": "App ID",
+    "kind": "text",
+    "placeholder": "For example ABCD1234-100"
+   },
+   {
+    "key": "api_secret",
+    "label": "Secret ID",
+    "kind": "secret",
+    "placeholder": "Your app's Secret ID"
+   },
+   {
+    "key": "redirect_uri",
+    "label": "Redirect URL",
+    "kind": "text",
+    "placeholder": "Exactly as saved on your Fyers app"
+   }
+  ],
+  "how_to": [
+   "Sign in to myapi.fyers.in and open your app.",
+   "Copy the App ID, the Secret ID and the Redirect URL and paste them here.",
+   "Each morning press Log in, sign in to Fyers and paste the address you land on."
+  ],
+  "doc_url": "https://myapi.fyers.in/docsv3",
+  "daily_renewal": true,
+  "available": true,
+  "renew_fields": [
+   {
+    "key": "request_token",
+    "label": "Address after login",
+    "kind": "secret",
+    "placeholder": "Paste the whole address from the browser bar"
+   }
+  ]
+ },
+ {
+  "broker": "angel_one",
+  "name": "Angel One",
+  "method": "totp_auto",
+  "fields": [
+   {
+    "key": "api_key",
+    "label": "SmartAPI key",
+    "kind": "text",
+    "placeholder": "From your SmartAPI app"
+   },
+   {
+    "key": "client_id",
+    "label": "Client code",
+    "kind": "text",
+    "placeholder": "Your Angel One client code"
+   },
+   {
+    "key": "pin",
+    "label": "PIN",
+    "kind": "secret",
+    "placeholder": "Your Angel One login PIN"
+   },
+   {
+    "key": "totp_secret",
+    "label": "TOTP secret",
+    "kind": "secret",
+    "placeholder": "The key shown when you enabled TOTP"
+   }
+  ],
+  "how_to": [
+   "Sign in to smartapi.angelone.in, create an app and copy its API key.",
+   "Enable TOTP for SmartAPI and copy the secret key it shows (not the six-digit code).",
+   "Paste the key, your client code, your PIN and the TOTP secret here; each morning press Log in."
+  ],
+  "doc_url": "https://smartapi.angelbroking.com/docs",
+  "daily_renewal": true,
+  "available": true,
+  "renew_fields": []
+ },
+ {
+  "broker": "shoonya",
+  "name": "Shoonya (Finvasia)",
+  "method": "totp_auto",
+  "fields": [
+   {
+    "key": "client_id",
+    "label": "User ID",
+    "kind": "text",
+    "placeholder": "Your Shoonya user ID"
+   },
+   {
+    "key": "api_secret",
+    "label": "Password",
+    "kind": "secret",
+    "placeholder": "Your Shoonya login password"
+   },
+   {
+    "key": "api_key",
+    "label": "API key",
+    "kind": "secret",
+    "placeholder": "From prism.shoonya.com, API key section"
+   },
+   {
+    "key": "totp_secret",
+    "label": "TOTP secret",
+    "kind": "secret",
+    "placeholder": "The key shown when you enabled TOTP"
+   }
+  ],
+  "how_to": [
+   "Sign in to prism.shoonya.com and generate an API key in your profile.",
+   "Enable TOTP and copy the secret key it shows (not the six-digit code).",
+   "Paste your user ID, password, API key and TOTP secret here; each morning press Log in."
+  ],
+  "doc_url": "https://www.shoonya.com/api-documentation",
+  "daily_renewal": true,
+  "available": true,
+  "renew_fields": []
+ },
+ {
+  "broker": "coindcx",
+  "name": "CoinDCX",
+  "method": "api_key_secret",
+  "fields": [
+   {
+    "key": "api_key",
+    "label": "API key",
+    "kind": "text",
+    "placeholder": "Your CoinDCX API key"
+   },
+   {
+    "key": "api_secret",
+    "label": "API secret",
+    "kind": "secret",
+    "placeholder": "Your CoinDCX API secret"
+   }
+  ],
+  "how_to": [
+   "Sign in to CoinDCX and open API Dashboard.",
+   "Create an API key; copy the key and the secret (the secret is shown only once).",
+   "Paste both here; no daily login is needed."
+  ],
+  "doc_url": "https://docs.coindcx.com/",
+  "daily_renewal": false,
+  "available": true,
+  "renew_fields": []
+ }
+]

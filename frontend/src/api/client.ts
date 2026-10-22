@@ -31,6 +31,7 @@ import type {
   BacktestResult,
   BrokerCredentialsInput,
   BrokerTokenInfo,
+  UpstoxRedirectInfo,
   ChartRunResponse,
   Deployment,
   DeploymentCreateRequest,
@@ -154,6 +155,9 @@ import type {
   NewsFeedSource,
   NewsFeedStatus,
   BrokerLoginUrl,
+  BrokerCatalogEntry,
+  BrokerConnection,
+  BrokerConnectResult,
   AiAcknowledgement,
   StaticIp,
   StaticIpOverview,
@@ -162,16 +166,20 @@ import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut,
 import type { ThenBody, ThenIntent, ThenTemplate } from "../screener/then/model";
 import type { BetaCohort } from "../beta/rollout";
 
+import { API_V1 } from "./base";
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 import type { LegalAckBody, LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
 import type { SupportReply } from "../support/support";
+import type { MarketStrip } from "../dashboard/types";
+import type { ChainExpiries, LiveChain } from "../optionChain/types";
 
 export { ApiError, friendlyError } from "./errors";
 
 /** P0.8-D: fired when an AI route answers 428 ai_acknowledgement_required. */
 export const AI_ACK_REQUIRED_EVENT = "atp:ai-ack-required";
 
-const BASE = "/api/v1";
+// Mobile B1: "/api/v1" on the web, "https://<domain>/api/v1" in the Android app (api/base.ts).
+const BASE = API_V1;
 // P0.3 / S6: the access token lives in memory only (a script injected into the page cannot read it from
 // storage, and it expires in minutes); the refresh token lives in an HttpOnly cookie the browser sends to
 // /api/* by itself. A reload asks /auth/refresh with that cookie to get a new access token. Tokens an older
@@ -238,6 +246,9 @@ export async function tryRefresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
+/** UI2-1: GET /system/features gives up after this long (see myFeatures). */
+export const FEATURES_TIMEOUT_MS = 10_000;
+
 /** P1.1: `fetch` itself rejects (offline, DNS, the server down) with a bare TypeError - turn it into a sentence. */
 async function send(url: string, init?: RequestInit): Promise<Response> {
   try {
@@ -270,7 +281,9 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const error = await apiErrorFrom(response);
     // P0.1: the analysis endpoints (backtest, scanner, S/R zones, option chain) need a login now; an anonymous
     // visitor gets a plain sentence instead of a raw 401 body.
-    if (response.status === 401 && !getToken()) {
+    // Handover 8d: never on the sign-in routes themselves - a wrong email or password at login is a 401 before any
+    // token exists, and must show the server's own sentence ("Wrong email or password."), not "sign in".
+    if (response.status === 401 && !getToken() && !path.startsWith("/auth/")) {
       throw new ApiError(401, "Sign in from the Account page to use this feature.", error.detail, error.body, error.requestId);
     }
     // P0.8-D: an AI route before the first-use acknowledgement - every open acknowledgement gate re-reads its state
@@ -406,6 +419,11 @@ export const api = {
   saveOiSettings: (underlying: string, body: { enabled?: boolean; exchange?: string; overrides?: Record<string, unknown> }) =>
     request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`, { method: "PUT", body: JSON.stringify(body) }),
 
+  // OC1: the automatic Option chain page (v2): the expiry list with its default, and one chain ready to show.
+  optionChainExpiries: (underlying: string) => request<ChainExpiries>(`/option-chain/${encodeURIComponent(underlying)}/expiries`),
+  optionChainLive: (underlying: string, expiry?: string | null) =>
+    request<LiveChain>(`/option-chain/${encodeURIComponent(underlying)}/live${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`),
+
   analyzeOptionChain: (chain: OptionChain) =>
     request<OptionChainAnalysis>("/option-chain/analyze", {
       method: "POST",
@@ -440,6 +458,9 @@ export const api = {
     request<TokenResponse>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
 
   me: () => request<UserResponse>("/auth/me"),
+
+  // GS-1: which extra sign-in buttons to show (google: true only once the server has both credentials).
+  authProviders: () => request<{ google: boolean }>("/auth/providers"),
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 
@@ -566,7 +587,8 @@ export const api = {
   updateRiskSettings: (config: RiskConfig) =>
     request<RiskConfig>("/risk-settings", { method: "PUT", body: JSON.stringify(config) }),
 
-  getAnalyticsSummary: () => request<AnalyticsSummary>("/analytics/summary"),
+  /** `days`: only the trades closed in the last `days` days (the dashboard's 30-day win rate); open trades always count. */
+  getAnalyticsSummary: (days?: number) => request<AnalyticsSummary>(days ? `/analytics/summary?days=${days}` : "/analytics/summary"),
 
   listAuditLogs: () => request<AuditLogEntry[]>("/audit-logs"),
 
@@ -590,6 +612,19 @@ export const api = {
 
   storeBrokerCredentials: (name: string, credentials: BrokerCredentialsInput, accountLabel = "primary") =>
     request<void>(`/broker/${name}/credentials?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST", body: JSON.stringify(credentials) }),
+
+  // P2b: the Broker page. The catalog says which 1-2 fields each broker needs and where to find them; connections
+  // are this organisation's brokers with one plain status each. Remove uses deleteBrokerCredentials below.
+  brokerCatalog: () => request<BrokerCatalogEntry[]>("/broker/catalog"),
+  brokerConnections: () => request<BrokerConnection[]>("/broker/connections"),
+  brokerConnect: (name: string, fields: Record<string, string>, accountLabel?: string) =>
+    request<BrokerConnectResult>(`/broker/${encodeURIComponent(name)}/connect`, {
+      method: "POST", body: JSON.stringify(accountLabel ? { fields, account_label: accountLabel } : { fields }),
+    }),
+  brokerRenew: (name: string, fields: Record<string, string>, accountLabel?: string) =>
+    request<BrokerConnectResult>(`/broker/${encodeURIComponent(name)}/renew`, {
+      method: "POST", body: JSON.stringify(accountLabel ? { fields, account_label: accountLabel } : { fields }),
+    }),
 
   listAccounts: () => request<BrokerAccount[]>("/accounts"),
   syncAccount: (id: number) => request<BrokerAccount>(`/accounts/${id}/sync`, { method: "POST" }),
@@ -643,8 +678,11 @@ export const api = {
   marketDataLtp: (symbol: string, exchange = "NSE", broker?: string) =>
     request<LtpResponse>(`/market-data/ltp?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}${broker ? `&broker=${encodeURIComponent(broker)}` : ""}`),
   /** `before` (YYYY-MM-DD, IST): older history ending the day before it - a chart scrolled back past its oldest bar. */
-  marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string, before?: string) =>
-    request<CandlesResponse>("/market-data/candles", { method: "POST", body: JSON.stringify({ symbols, timeframe, lookback_days: lookbackDays, exchange, broker: broker ?? null, before: before ?? null }) }),
+  /** UI2-4a2 `v2` (the v2 chart only): `forming` adds today's day / week / month bar, `volume_from_future` an index's
+   * volume from its near-month future. Left out, the request is exactly as before. */
+  marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string, before?: string,
+                      v2?: { forming: boolean; volume_from_future: boolean }) =>
+    request<CandlesResponse>("/market-data/candles", { method: "POST", body: JSON.stringify({ symbols, timeframe, lookback_days: lookbackDays, exchange, broker: broker ?? null, before: before ?? null, ...v2 }) }),
   // Phase Z: factor and risk models.
   quantFactors: (symbols: QuantSymbolInput[], weights?: Record<string, number>, useFundamentals = true) =>
     request<FactorTable>("/quant/factors", { method: "POST", body: JSON.stringify({ symbols, weights: weights ?? null, use_fundamentals: useFundamentals }) }),
@@ -696,6 +734,7 @@ export const api = {
 
   brokerTokenStatus: () => request<BrokerTokenInfo[]>("/broker/token-status"),
 
+  upstoxRedirectUrl: () => request<UpstoxRedirectInfo>("/broker/upstox/redirect-url"),
   upstoxOAuthStart: (accountLabel = "primary") =>
     request<{ authorization_url: string }>(`/broker/upstox/oauth/start?account_label=${encodeURIComponent(accountLabel)}`),
   // Paste-the-code daily login (Fyers, Kite): open the broker's page, then exchange the pasted code.
@@ -765,7 +804,11 @@ export const api = {
   resendVerification: () => request<VerificationSendResult>("/auth/verify-email/resend", { method: "POST" }),
   verifyEmail: (token: string) => request<UserResponse>(`/auth/verify-email/${encodeURIComponent(token)}`, { method: "POST" }),
   adminVerifyEmail: (memberId: number) => request<{ id: number; email_verified: boolean }>(`/team/members/${memberId}/verify-email`, { method: "POST" }),
-  myFeatures: () => request<TenantFeatures>("/system/features"),
+  // UI2-1 review R2-1: the shell waits on this read; a server that never answers makes it fail (and so answer "off",
+  // today's shell) instead of hanging. AbortSignal.timeout is missing only in old browsers (no limit there; the shell's
+  // own SHELL_WAIT_MS cap still applies).
+  myFeatures: () => request<TenantFeatures>("/system/features",
+    typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? { signal: AbortSignal.timeout(FEATURES_TIMEOUT_MS) } : undefined),
   adminFlags: () => request<FeatureFlags>("/admin/controls/flags"),
   adminSetFlag: (name: string, on: boolean, tenants: number[] = []) =>
     request<FeatureFlags>(`/admin/controls/flags/${name}`, { method: "PUT", body: JSON.stringify({ on, tenants }) }),
@@ -775,6 +818,8 @@ export const api = {
   enableMemberTrading: (memberId: number) =>
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-enable`, { method: "POST" }),
   portfolioExposure: (livePrices = true) => request<PortfolioExposure>(`/portfolio/exposure?live_prices=${livePrices}`),
+  // UI2-2: the v2 dashboard's market strip - three indices and the market state in one read-only call.
+  marketStrip: () => request<MarketStrip>("/market/strip"),
   analyticsDegradation: () => request<DegradationReport>("/analytics/degradation"),
   updateTradeJournal: (tradeId: number, body: { notes?: string | null; tags?: string[] | null }) =>
     request<TradeRecord>(`/trades/${tradeId}/journal`, { method: "PATCH", body: JSON.stringify(body) }),

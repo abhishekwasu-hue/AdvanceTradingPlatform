@@ -1,7 +1,11 @@
 """Captures golden cases for app/option_chain/oi_regime.py from the Trade repo's own oi_analysis.py.
 
 Run by hand from a checkout of the Trade repo (never in CI):
-    cd <trade checkout> && PYTHONPATH=. python <atp>/backend/tests/fixtures/oi_regime/capture_from_trade.py > <atp>/backend/tests/fixtures/oi_regime/golden.json
+    cd <trade checkout> && PYTHONPATH=. python <atp>/backend/tests/fixtures/oi_regime/capture_from_trade.py \
+        > $ATP_PRIVATE_FIXTURES/backend/tests/fixtures/oi_regime/golden.json
+The golden file is Trade output, so it lives only in the private fixtures store, never in this public repository (owner
+decision PR-2, docs/PUBLIC_REPO_POLICY.md section 5); a re-capture's new sha256 goes into
+backend/tests/private_fixtures_manifest.json in a reviewed change.
 
 Inputs are drawn from a fixed seed, so a re-run gives the same file. Labels are stored as Trade prints them; the test
 reads them with OISignal.parse / the class names, so the Marathi strings never reach ATP's code or UI.

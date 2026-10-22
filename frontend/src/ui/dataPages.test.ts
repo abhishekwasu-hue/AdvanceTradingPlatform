@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { PAGES, pathFor } from "../routes";
+import { shellKeyFromPath } from "../shell/shellRoutes";
 import { DATA_PAGES, isDataPath } from "./dataPages";
 
 describe("UI2-0 data pages (the broker gate's list for UI2-1)", () => {
-  it("names real routes only (plus /charts, which UI2-1 adds)", () => {
-    const known = new Set([...PAGES.map(pathFor), "/charts"]);
+  it("names real routes only (/charts is the v2 shell's, UI2-1)", () => {
+    const known = new Set(PAGES.map(pathFor));
     for (const { path, why } of DATA_PAGES) {
-      expect(known.has(path), path).toBe(true);
+      expect(known.has(path) || shellKeyFromPath(path) !== null, path).toBe(true);
       expect(why.length, path).toBeGreaterThan(10);
     }
     expect(new Set(DATA_PAGES.map((p) => p.path)).size).toBe(DATA_PAGES.length);

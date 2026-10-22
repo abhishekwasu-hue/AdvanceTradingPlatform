@@ -2,7 +2,8 @@
 
 * structure_tracker (BOS / CHoCH / sweeps / states), legs (impulse vs corrective), trendlines (+ find_trendline, ref_range)
   and liquidity (pools, sweeps, marks) give exactly Trade's output on the frozen fixtures (tests/ch3b_golden.py; the
-  golden file is Trade's own output; with the Trade repository on disk the file is also checked against Trade live);
+  golden file is Trade's own output, read from the private fixtures store - the public CI skips these checks with the
+  reason; with the Trade repository on disk the file is also checked against Trade live);
 * causal: each is computed from bars up to t only - cutting the bars at t, or changing every bar after t, leaves what
   is known at t unchanged.
 Synthetic fixtures only - no broker, no network, no NIFTY data.

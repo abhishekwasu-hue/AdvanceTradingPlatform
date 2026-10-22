@@ -18,12 +18,13 @@ export function TabSkeleton() {
   );
 }
 
-/** A plain glass panel with a title row (the tilt is reserved for a tab's main cards). */
-export function Panel({ title, icon, action, children, className, testId }: {
-  title?: ReactNode; icon?: ReactNode; action?: ReactNode; children: ReactNode; className?: string; testId?: string;
+/** A plain glass panel with a title row (the tilt is reserved for a tab's main cards). `busy`: the panel's own data is
+ * still loading (aria-busy), so assistive technology - and the browser tests - wait for its final content. */
+export function Panel({ title, icon, action, children, className, testId, busy }: {
+  title?: ReactNode; icon?: ReactNode; action?: ReactNode; children: ReactNode; className?: string; testId?: string; busy?: boolean;
 }) {
   return (
-    <section className={cx("copilot-glass rounded-2xl p-4", className)} data-testid={testId}>
+    <section className={cx("copilot-glass rounded-2xl p-4", className)} data-testid={testId} aria-busy={busy || undefined}>
       {(title || action) && (
         <div className="mb-3 flex items-center gap-2">
           {icon && <span className="text-ai" aria-hidden>{icon}</span>}

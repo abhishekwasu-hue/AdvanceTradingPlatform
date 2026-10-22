@@ -248,7 +248,7 @@ def test_every_direct_redis_write_sets_an_expiry():
     assert "redis.call('expire'" in (backend / "app/core/rate_limit.py").read_text(encoding="utf-8")
     budget = (backend / "app/market_data/api_budget.py").read_text(encoding="utf-8")   # CH5-a: every window key expires
     assert "redis.call('expire', KEYS[i], math.ceil(tonumber(ARGV[2 * i - 1])) + 1)" in budget             # window + 1 s
-    assert "cache_set(key, raw, QUOTE_CACHE_SECONDS)" in budget
+    assert "seconds = QUOTE_CACHE_SECONDS if ttl is None else ttl" in budget and "cache_set(key, raw, seconds)" in budget
     cache = (backend / "app/cache/client.py").read_text(encoding="utf-8")
     assert "nx=True, ex=ttl_seconds" in cache and "await client.expire(key, ttl_seconds)" in cache
 

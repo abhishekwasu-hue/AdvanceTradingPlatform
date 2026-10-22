@@ -32,6 +32,7 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
+from app.brokers import master_cache
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
@@ -154,6 +155,7 @@ def _exchange_of(ticker: str, segment=None) -> str:
 
 class FyersBroker(BrokerInterface):
     name = "fyers"
+    daily_days_per_request = 365    # UI2-4a2: the history API serves at most 366 days of "D" candles per request
     BASE_URL = API_URL
     max_tag_length = 20
 
@@ -169,6 +171,8 @@ class FyersBroker(BrokerInterface):
         self._masters: Dict[str, Tuple[float, List[Instrument]]] = {}
         # (exchange, platform symbol) -> Fyers ticker such as "NSE:SBIN-EQ"
         self._tickers: Dict[Tuple[str, str], str] = {}
+        # UI2-4a2-pre review: the symbol master shared by the process when built without a client (master_cache)
+        self._shared_master = client is None
 
     # --- transport ------------------------------------------------------------------------------
     def _headers(self, authenticated: bool) -> Dict[str, str]:
@@ -235,6 +239,18 @@ class FyersBroker(BrokerInterface):
         cached = self._masters.get(exchange)
         if cached and (time.monotonic() - cached[0]) < MASTER_CACHE_TTL_SECONDS:
             return cached[1]
+        if self._shared_master:
+            out, tickers = await master_cache.shared(self.name, exchange, lambda: self._download_master(exchange),
+                                                     ttl=MASTER_CACHE_TTL_SECONDS)
+        else:
+            out, tickers = await self._download_master(exchange)
+        self._tickers.update(tickers)
+        self._masters[exchange] = (time.monotonic(), out)
+        return out
+
+    async def _download_master(self, exchange: str) -> Tuple[List[Instrument], Dict[Tuple[str, str], str]]:
+        """One exchange's symbol master: its instruments and (exchange, platform symbol) -> ticker."""
+        tickers: Dict[Tuple[str, str], str] = {}
         segment = SEGMENTS.get(exchange, exchange)
         response = await self._client.get(SYMBOL_MASTER_URL.format(segment=segment))
         if response.status_code >= 400:
@@ -263,9 +279,8 @@ class FyersBroker(BrokerInterface):
                 tick = 0.05
             out.append(Instrument(instrument_token=str(row[0]).strip(), exchange=exchange, tradingsymbol=symbol, name=underlying or (row[1].strip() or None),
                                   segment=segment, instrument_type=instrument_type, lot_size=lot or 1.0, tick_size=tick or 0.05, expiry=expiry, strike=strike))
-            self._tickers[(exchange, symbol)] = ticker
-        self._masters[exchange] = (time.monotonic(), out)
-        return out
+            tickers[(exchange, symbol)] = ticker
+        return out, tickers
 
     async def _ticker(self, symbol: str, exchange: str = "NSE") -> str:
         """Platform symbol (or EXCHANGE:SYMBOL key) -> Fyers ticker. Indices resolve without the master."""
@@ -294,20 +309,39 @@ class FyersBroker(BrokerInterface):
         return Quote(symbol=symbol, ltp=float(v.get("lp") or 0), open=float(v.get("open_price") or 0), high=float(v.get("high_price") or 0),
                      low=float(v.get("low_price") or 0), close=float(v.get("prev_close_price") or 0), volume=float(v.get("volume") or 0),
                      oi=float(v["oi"]) if v.get("oi") not in (None, "") else None, bid=float(v["bid"]) if v.get("bid") not in (None, "") else None,
-                     ask=float(v["ask"]) if v.get("ask") not in (None, "") else None, timestamp=_parse_time(v.get("tt")))
+                     ask=float(v["ask"]) if v.get("ask") not in (None, "") else None, timestamp=_parse_time(v.get("tt")),
+                     prev_close=float(v["prev_close_price"]) if v.get("prev_close_price") not in (None, "", 0) else None)
+
+    multi_quote = True
+
+    async def get_quotes_batch(self, items):
+        """UI2-4a2-pre: one `/quotes` call for up to QUOTE_BATCH symbols; a symbol the master does not know is left out
+        (the others still load)."""
+        if len(items) > QUOTE_BATCH:
+            return None
+        known: List[Tuple[str, str]] = []
+        for exchange, symbol in items:
+            try:
+                await self._ticker(symbol, exchange)
+            except BrokerAPIError:
+                continue
+            known.append((exchange, symbol))
+        return await self._quotes_batch_by_keys(known) if known else {}
 
     async def _quotes(self, keys: List[str]) -> Dict[str, Quote]:
-        tickers: Dict[str, str] = {}
+        # UI2-4a2-pre review: two keys may name one ticker (an index and its alias): each gets the quote
+        tickers: Dict[str, List[str]] = {}
         for key in keys:
             exchange, plain = (key.split(":", 1) if ":" in key and not key.upper().endswith(("-EQ", "-INDEX")) else ("NSE", key))
-            tickers[await self._ticker(plain, exchange)] = key
+            tickers.setdefault(await self._ticker(plain, exchange), []).append(key)
         out: Dict[str, Quote] = {}
         ordered = list(tickers)
         for i in range(0, len(ordered), QUOTE_BATCH):
             body = await self._request("GET", f"{DATA_URL}/quotes", params={"symbols": ",".join(ordered[i:i + QUOTE_BATCH])})
             for entry in body.get("d") or []:
-                key = tickers.get(str(entry.get("n")))
-                if key is not None and entry.get("s", "ok") == "ok":
+                if entry.get("s", "ok") != "ok":
+                    continue
+                for key in tickers.get(str(entry.get("n"))) or []:
                     out[key] = self._quote_from(entry, key)
         return out
 

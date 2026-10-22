@@ -73,7 +73,7 @@ function Field({ label, value, tone }: { label: string; value: number | null; to
   const color = tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-fg";
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wide text-fg-muted">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-fg-muted">{label}</div>
       <div className={`text-sm font-semibold ${color}`}>{value?.toFixed(2) ?? "-"}</div>
     </div>
   );

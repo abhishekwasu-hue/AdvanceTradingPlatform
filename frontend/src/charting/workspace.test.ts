@@ -5,7 +5,7 @@ import type { ChartEngine, EngineEvent } from "./engine";
 import { LightweightEngine, type CandleSeriesLike, type ChartLike } from "./lightweight";
 import { SHORTCUTS, nextChartType, shortcutFor, type ShortcutKey } from "./shortcuts";
 import {
-  CHART_TYPES, DEFAULT_SYNC, GRIDS, LayoutConflict, cell, defaultLayout, gridShape, layoutProblem, layoutsApi, linkedPeers, moveActive,
+  CH5_TIMEFRAMES, CHART_TYPES, DEFAULT_SYNC, GRIDS, LayoutConflict, cell, ch5Cell, defaultLayout, defaultLayoutV2, gridShape, layoutProblem, layoutsApi, linkedPeers, moveActive,
   nextGroup, setActive, setChartType, setGrid, setGroup, setGroupSync, setSymbol, setTimeframe, stepTimeframe, type LayoutV1, type StoredLayout,
 } from "./workspace";
 
@@ -85,9 +85,34 @@ describe("layout/1 model (CH5)", () => {
     expect(moveActive(l, -1).active).toBe(3);
     expect(moveActive(l, 5).active).toBe(1);
     expect(stepTimeframe("5min", 1)).toBe("15min");
-    expect(stepTimeframe("day", 1)).toBe("day");
+    expect(stepTimeframe("day", 1)).toBe("week");                                   // UI2-4d: week and month follow day
+    expect(stepTimeframe("month", 1)).toBe("month");
+    expect(stepTimeframe("day", 1, CH5_TIMEFRAMES)).toBe("day");                    // the CH5 page still stops at day
     expect(stepTimeframe("1min", -1)).toBe("1min");
     expect(setActive(l, 9)).toBe(l);
+  });
+
+  it("UI2-4d: the v2 default is two charts of one symbol, unlinked; the CH5 default stays one", () => {
+    const v2 = defaultLayoutV2("NIFTY BANK", "NSE", "15min");
+    expect(v2.grid).toBe(2);
+    expect(v2.cells).toEqual([cell("NIFTY BANK", "NSE", "15min"), cell("NIFTY BANK", "NSE", "15min")]);
+    expect(v2.groups).toEqual({});
+    expect(layoutProblem(v2)).toBeNull();
+    expect(defaultLayout().grid).toBe(1);
+  });
+
+  it("UI2-4d: week, month and the bars type are valid layouts; the CH5 page shows them as day and candles", () => {
+    let l = setGrid(defaultLayout(), 4);
+    l = setTimeframe(l, 0, "week");
+    l = setTimeframe(l, 1, "month");
+    l = setChartType(l, 2, "bars");
+    expect(layoutProblem(l)).toBeNull();
+    expect(layoutProblem({ ...l, cells: [{ ...l.cells[0], timeframe: "year" }, ...l.cells.slice(1)] })).toMatch(/timeframe/);
+    expect(ch5Cell(l.cells[0])).toMatchObject({ timeframe: "day", chart_type: "candles" });
+    expect(ch5Cell(l.cells[1]).timeframe).toBe("day");
+    expect(ch5Cell(l.cells[2])).toMatchObject({ timeframe: "5min", chart_type: "candles" });
+    expect(ch5Cell(l.cells[3])).toEqual(l.cells[3]);                                  // an old cell is shown as it is
+    expect(l.cells.map((c) => c.timeframe)).toEqual(["week", "month", "5min", "5min"]); // the layout itself keeps them
   });
 });
 

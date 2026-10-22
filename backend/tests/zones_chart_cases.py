@@ -6,6 +6,8 @@ The expected bands in tests/fixtures/zones/chart_bands_cases.json come from the 
 checks Python against the file and marketZones.test.ts checks TypeScript against it, so the two can never drift.
 
 Rebuild after a deliberate rule change (from backend/): python -m tests.zones_chart_cases --write
+Then pin the new content (public repo guard, ALLOWED_TEST_DATA in scripts/check_public_repo.py):  python3 ../scripts/check_public_repo.py --hash
+tests/fixtures/zones/chart_bands_cases.json ../frontend/src/charting/__fixtures__/chart_bands_cases.json
 """
 import json
 import random

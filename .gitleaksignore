@@ -1,6 +1,23 @@
-# Exact findings only (never a pattern). Each is a fake value in an older commit that the current tree has replaced.
-# Z11: test sentinels in backend/tests/test_z11_deploy_bundle.py at 04b9bb2 ("SENTINEL-..." stand-ins for .env values,
-# renamed to FAKEFAKE-... in 570aa6b); the commit is already on the branch, so it cannot be rewritten without a force push.
+# Exact findings only (never a pattern): <commit>:<file>:<rule>:<line>. Each is a fake value in an older commit; the same
+# values are allowlisted exactly in .gitleaks.toml. History is not rewritten (that needs a force push), so the
+# full-history scan (.github/workflows/secret-scan.yml) would otherwise report them on every run.
+# Z11: test sentinels in backend/tests/test_z11_deploy_bundle.py ("SENTINEL-..." stand-ins for .env values, renamed to
+# FAKEFAKE-... in 570aa6b).
 04b9bb2e05892ec42d112c567e726c1bfe728262:backend/tests/test_z11_deploy_bundle.py:generic-api-key:31
 04b9bb2e05892ec42d112c567e726c1bfe728262:backend/tests/test_z11_deploy_bundle.py:generic-api-key:32
 04b9bb2e05892ec42d112c567e726c1bfe728262:backend/tests/test_z11_deploy_bundle.py:generic-api-key:38
+# BYOK-V1: the fake JWT ({"sub":"FAKE"}, signature FAKEFAKEsig / FAKEFAKEsignature) in the provider-key shape tests.
+6c82e9f74714a0d3b242e73f5c5b7a0b6d3609f3:frontend/src/components/visionByok.test.ts:jwt:33
+575fa0503758d4a1240a4f30f562d7f57c8680e8:frontend/src/components/visionByok.test.ts:jwt:33
+6c82e9f74714a0d3b242e73f5c5b7a0b6d3609f3:backend/tests/test_byok_v1.py:jwt:394
+575fa0503758d4a1240a4f30f562d7f57c8680e8:backend/tests/test_byok_v1.py:jwt:394
+# .env.example: the empty JWT_PREVIOUS_SECRET_KEYS= line, read together with the JWT_ACCEPT_LEGACY=true line below it.
+d842627b9a913e646a8f394428ac7868a7070099:.env.example:generic-api-key:43
+# test_alerts.py: the fake Telegram token that proves the API never echoes a token.
+62fba0b9ddaa7cdebb560a174a6b6469d7adbbb0:backend/tests/test_alerts.py:generic-api-key:277
+# P2a (first push, superseded by claude/p2a-broker-connect-v2): made-up broker sentinels in
+# backend/tests/test_p2a_broker_connect.py on the unmerged branch claude/p2a-broker-connect (rebuilt at run time since).
+5ded68f71733ca26432601bc8c9a8fa61326bb8b:backend/tests/test_p2a_broker_connect.py:generic-api-key:28
+5ded68f71733ca26432601bc8c9a8fa61326bb8b:backend/tests/test_p2a_broker_connect.py:generic-api-key:29
+5ded68f71733ca26432601bc8c9a8fa61326bb8b:backend/tests/test_p2a_broker_connect.py:generic-api-key:32
+5ded68f71733ca26432601bc8c9a8fa61326bb8b:backend/tests/test_p2a_broker_connect.py:generic-api-key:34

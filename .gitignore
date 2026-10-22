@@ -19,3 +19,5 @@ dist/
 
 # Z11: deploy/atp.sh state on the server (releases, key fingerprint, logs - no secrets)
 .deploy/
+# deploy/atp.sh loadtest: the reports it writes on the server (/opt/atp/reports)
+/reports/

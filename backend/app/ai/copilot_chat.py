@@ -286,6 +286,7 @@ class Answer:
     notes: List[str] = field(default_factory=list)
     diagnostics: Dict[str, Any] = field(default_factory=dict)
     trusted_text: List[str] = field(default_factory=list)     # tool texts + calculations: where the rule numbers may come from
+    signal_v2: bool = False                                     # handover 11l: flag `signal_language_v2` (never served)
 
     def section(self, title: str, lines: Sequence[str]) -> None:
         kept = [x for x in lines if x]
@@ -606,6 +607,15 @@ def _size_check(answer: Answer, risk: ToolResult, straddle: Optional[Dict[str, A
 CHART_CONCEPTS = {"demand_supply", "support_resistance", "market_structure", "trend", "order_block", "gap_risk", "breakout", "pullback"}
 
 
+def _teacher_zone_v2(symbol: str, band: Dict[str, Any]) -> str:
+    """Handover 11l (flag `signal_language_v2`): the zone on the user's own chart in the signal language - its side in
+    structure words and the area as a range ("Buyer area: 23,000–23,100"), never a single price."""
+    from app.signals.language import area_label
+    side = "buyer" if band.get("role") in BUYER_ROLES else "seller"
+    state = f" ({band.get('state')})" if band.get("state") else ""
+    return f"On your {symbol} chart right now, ATP's zone layer marks a {side} area{state}. {area_label(side, band['low'], band['high'])}."
+
+
 async def teacher(answer: Answer, run: Runner, message: str) -> None:
     from app.ai import knowledge
     found = knowledge.find_concepts(message, limit=2)
@@ -631,13 +641,17 @@ async def teacher(answer: Answer, run: Runner, message: str) -> None:
         wanted = "demand" if "demand" in _norm(message) else "supply" if "supply" in _norm(message) else None
         pick = next((b for b in bands if wanted is None or b.get("role") == wanted), None)
         if pick:
-            shown.append(f"On your {symbol} chart right now, ATP's zone layer has a {pick.get('role')} area at {_f(pick['low'])} - "
+            shown.append(_teacher_zone_v2(symbol, pick) if answer.signal_v2 else
+                         f"On your {symbol} chart right now, ATP's zone layer has a {pick.get('role')} area at {_f(pick['low'])} - "
                          f"{_f(pick['high'])} ({pick.get('state')}).")
     if res.ok:
         rows = {r["tf"]: r for r in _structure_rows(res)}
         day = rows.get("1d")
         if day and day.get("protected") is not None:
-            shown.append(f"The daily structure reads {day.get('direction')}, with the protected level at {_f(day['protected'])}.")
+            # handover 11l (flag signal_language_v2): no single price - the protected swing is named, not quoted
+            shown.append(f"The daily structure reads {day.get('direction')}; its protected swing is marked on your chart."
+                         if answer.signal_v2 else
+                         f"The daily structure reads {day.get('direction')}, with the protected level at {_f(day['protected'])}.")
     if shown:
         answer.section(f"On your {symbol} chart", shown)
         answer.notes.append(CHART_NOTE)
@@ -1274,8 +1288,9 @@ def _filtered(answer: Answer) -> None:
     answer.summary = [x for x in answer.summary if output_filter.check(x, "en", where="copilot_chat")[0]] or ["Here is what ATP's data shows."]
 
 
-async def answer(message: str, run: Runner) -> Answer:
-    """The rule answer for `message`, from the tools `run` reaches. Never raises on a tool failure (it says what is missing)."""
+async def answer(message: str, run: Runner, *, signal_v2: bool = False) -> Answer:
+    """The rule answer for `message`, from the tools `run` reaches. Never raises on a tool failure (it says what is missing).
+    `signal_v2`: flag `signal_language_v2` (handover 11l) - the teacher's "on your chart" lines in the signal language."""
     job_id = route(message)
     if job_id == "refuse":
         out = Answer("refuse", "I can't do that")
@@ -1286,7 +1301,7 @@ async def answer(message: str, run: Runner) -> Answer:
         help_answer(out)
         return out
     job = BY_ID[job_id]
-    out = Answer(job.id, job.title)
+    out = Answer(job.id, job.title, signal_v2=signal_v2)
     if not job.built:
         not_built(out, job)
         return out

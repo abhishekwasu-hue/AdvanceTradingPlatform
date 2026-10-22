@@ -140,8 +140,10 @@ def _is_intrabar(event: AlertEventRecord) -> bool:
         return False
 
 
-def _message(rule: AlertRuleRecord, events: Sequence[AlertEventRecord], bucket: Optional[str]) -> Tuple[str, str]:
+def _message(rule: AlertRuleRecord, events: Sequence[AlertEventRecord], bucket: Optional[str], *, signal_v2: bool = False) -> Tuple[str, str]:
     symbols = sorted({e.symbol for e in events})
+    if signal_v2:
+        return _message_v2(rule, events, bucket, symbols)
     shown = ", ".join(symbols[:MAX_SYMBOLS_IN_MESSAGE]) + (f" and {len(symbols) - MAX_SYMBOLS_IN_MESSAGE} more" if len(symbols) > MAX_SYMBOLS_IN_MESSAGE else "")
     bars = sorted({_utc(e.bar_time) for e in events})
     when = bars[-1].strftime("%Y-%m-%d %H:%M UTC")
@@ -153,6 +155,17 @@ def _message(rule: AlertRuleRecord, events: Sequence[AlertEventRecord], bucket: 
     if any(_is_intrabar(e) for e in events):
         on = f"the bar still forming at {when} (intrabar: it may not hold at the close)"
     body = f"Matched on {on}: {shown}. Matches passed the rule's filters; they are not recommendations."
+    return title[:200], body
+
+
+def _message_v2(rule: AlertRuleRecord, events: Sequence[AlertEventRecord], bucket: Optional[str], symbols: List[str]) -> Tuple[str, str]:
+    """Handover 11l (flag `signal_language_v2`): the alert in the signal language - his own rule and his own symbols, no
+    count, clock time or other number in the text (the Telegram / e-mail envelope carries the time in IST) and no
+    "recommendation" wording."""
+    shown = ", ".join(symbols[:MAX_SYMBOLS_IN_MESSAGE]) + (" and others (all on the Signals page)" if len(symbols) > MAX_SYMBOLS_IN_MESSAGE else "")
+    title = f"{rule.name}: matches in this digest" if bucket else f"{rule.name}: new matches"
+    on = "the bar still forming (it may not hold at the close)" if any(_is_intrabar(e) for e in events) else "the bar close"
+    body = f"Matched on {on}: {shown}. These symbols passed your own rule's conditions; this is information, not advice."
     return title[:200], body
 
 
@@ -170,7 +183,9 @@ def group_marker(group_id: str) -> str:
 async def _send(session: AsyncSession, rule: AlertRuleRecord, events: List[AlertEventRecord], now: datetime, group_id: str,
                 bucket: Optional[str], marker: Optional[str] = None) -> NotificationRecord:
     from app.notifications.service import notify
-    title, body = _message(rule, events, bucket)
+    from app.platform.controls import flag_enabled
+    from app.signals.language import FLAG as SIGNAL_LANGUAGE_FLAG
+    title, body = _message(rule, events, bucket, signal_v2=await flag_enabled(session, SIGNAL_LANGUAGE_FLAG, rule.tenant_id))
     # BT1b: addressed to the rule's creator (with byob_data_tier on, the feed shows it to them only - its values come
     # from their own broker feed). Z10-b: `marker` (flag alerts_reliable_outbox) tags it with its alert group.
     note = await notify(session, rule.tenant_id, NotificationType.SCREEN_ALERT, title=title, message=body, severity=SEVERITY[rule.priority],

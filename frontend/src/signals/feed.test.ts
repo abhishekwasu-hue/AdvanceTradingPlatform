@@ -71,7 +71,9 @@ describe("UI2-3 statuses and labels", () => {
   });
 
   it("the caption names the source kind and its name once", () => {
-    expect(sourceCaption(feedItem())).toBe("Autopilot · Deployment #4");
+    expect(sourceCaption(feedItem())).toBe("Paper bot");                       // UX3: "Deployment #4" is never shown
+    expect(sourceCaption(feedItem({ source: { kind: "autopilot", name: "deployment 12" } }))).toBe("Paper bot");
+    expect(sourceCaption(feedItem({ source: { kind: "autopilot", name: "Morning ORB" } }))).toBe("Paper bot · Morning ORB");
     expect(sourceCaption(feedItem({ source: { kind: "scan", name: "Gap scan" } }))).toBe("Scan · Gap scan");
     expect(sourceCaption(feedItem({ source: { kind: "library", name: "Signal generator" } }))).toBe("Signal generator");
     expect(sourceCaption(feedItem({ source: { kind: "scan", name: "Scan setup" } }))).toBe("Scan");

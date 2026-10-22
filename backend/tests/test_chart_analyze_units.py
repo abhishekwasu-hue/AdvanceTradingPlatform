@@ -169,10 +169,10 @@ def test_no_number_in_the_logic_modules_duplicates_a_setting_default():
     """Settings-driven: sizes, retention, limits and costs come from settings.DEFAULTS only."""
     base = Path(__file__).resolve().parents[1] / "app" / "chart_analyze"
     d = settings_mod.DEFAULTS
-    defaults = {d["max_image_bytes"], d["max_image_width"], d["max_image_height"], d["max_image_pixels"], d["retention_days"],
+    defaults = {d["share_expiry_days"], d["max_image_bytes"], d["max_image_width"], d["max_image_height"], d["max_image_pixels"], d["retention_days"],
                 d["counter_keep_days"], d["max_output_tokens"], d["estimate_input_tokens"], d["estimate_output_tokens"]}
     defaults |= {tier["monthly"] for tier in d["limits"].values() if tier["monthly"] > 5}
-    for name in ("imaging.py", "linkfetch.py", "storage.py", "limits.py", "engine.py", "service.py", "routes.py"):
+    for name in ("imaging.py", "linkfetch.py", "storage.py", "limits.py", "engine.py", "service.py", "routes.py", "share.py"):
         tree = ast.parse((base / name).read_text())
         digits = {id(c.args[1]) for c in ast.walk(tree) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "round" and len(c.args) > 1}
         digits |= {id(sl.upper) for sl in ast.walk(tree) if isinstance(sl, ast.Slice) and sl.upper is not None}   # [:20] column widths

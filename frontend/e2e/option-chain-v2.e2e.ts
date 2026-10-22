@@ -176,10 +176,14 @@ test.describe("Option chain v2 at 390", () => {
     const strike = await page.locator("[data-chain-scroll] thead th", { hasText: "Strike" }).boundingBox();
     expect(Math.abs(strike!.x + strike!.width / 2 - 195)).toBeLessThanOrEqual(24);
     await expectAtmCentred(page);
-    // The summary is a strip that swipes sideways.
-    const strip = await page.locator("[data-block='chain-summary']").evaluate((e) => ({ sw: e.scrollWidth, cw: e.clientWidth, x: getComputedStyle(e).overflowX }));
-    expect(strip.x).toBe("auto");
-    expect(strip.sw).toBeGreaterThan(strip.cw);
+    // UX3: the summary is two rows of two (the rest under More), never a sideways strip.
+    const summary = page.locator("[data-block='chain-summary']");
+    const strip = await summary.evaluate((e) => ({ sw: e.scrollWidth, cw: e.clientWidth }));
+    expect(strip.sw).toBeLessThanOrEqual(strip.cw);
+    await expect(summary.locator("[data-summary]:visible")).toHaveCount(4);
+    await summary.getByRole("button", { name: /More: futures/ }).tap();
+    await expect(summary.locator("[data-summary]:visible")).toHaveCount(7);
+    await summary.getByRole("button", { name: "Show less" }).tap();
     await page.locator("tr[data-strike='24500']").tap();
     const sheet = page.locator("[data-row-details]");
     await expect(sheet).toBeVisible();

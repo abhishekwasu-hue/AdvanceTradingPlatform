@@ -20,6 +20,7 @@ that changes an item. Never delete a row; mark it done / superseded with the PR.
 | 12 | Idea library templates T1–T8 | ATP_SESSION_IDEA_LIBRARY.md | pending |
 | 13 | Strategy template library (independently reviewed; section 0 corrections are binding) | ATP_SESSION_STRATEGY_TEMPLATES.md | pending |
 
+| 14 | Wave / correction templates (family G, G1–G12) | ATP_SESSION_WAVE_TEMPLATES.md | step 1 (independent review of the spec against the code) in progress |
 | — | Login error message + `atp.sh reset-password` | ATP_HANDOVER_PACK.md §8d | PR #332 (draft) |
 | — | Google sign-in | ATP_HANDOVER_PACK.md (also open) | PR #336 (draft): inert, button hidden until the owner's OAuth credentials (OPEN_QUESTIONS GS-1, GS-2) |
 | — | Upstox OAuth redirect from PUBLIC_BASE_URL | ATP_HANDOVER_PACK.md (also open) | done: #319 / #321 |

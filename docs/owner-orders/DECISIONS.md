@@ -20,3 +20,5 @@
 | 2026-10-22 | Broker logos: initials until official permission. |
 | 2026-10-22 | Strategy Lab runner server: sizing and monthly cost go to OPEN_QUESTIONS; Pine continues meanwhile. |
 | 2026-10-22 | Migrations are announced with the deploy line; the owner runs them after 15:30 IST. |
+| 2026-10-22 | Wave / correction templates (family G, G1–G12) as specified in ATP_SESSION_WAVE_TEMPLATES.md: every style choice a user parameter; generic method only (no private Trade method); an independent spec review first; the templates spec section 0 (R1–R10) wins where they differ. |
+| 2026-10-22 | Finished PRs (CI green apart from checks red on main too) are merged without asking again; the owner runs the deploy line (migrations after 15:30 IST). |

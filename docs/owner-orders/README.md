@@ -13,7 +13,7 @@ that changes an item. Never delete a row; mark it done / superseded with the PR.
 | 5 | AI Copilot: a professional trader's brain | ATP_HANDOVER_PACK.md §5 | in progress: slice 1 (page + jobs 1, 2, 7, 8; regime admin-only) `claude/copilot-v2-chat` |
 | 6 | Master Order 2: AI keys + page tours | ATP_HANDOVER_PACK.md §6 | pending |
 | 7 | Front page P3 | ATP_HANDOVER_PACK.md (priority 7) | done: #329 merged |
-| 8 | Master Order 3: full UX audit + additions | ATP_SESSION_UX_AUDIT_MASTER.md + ATP_HANDOVER_PACK.md §8 | pending (USER / ADMIN only; no Simple / Pro) |
+| 8 | Master Order 3: full UX audit + additions | ATP_SESSION_UX_AUDIT_MASTER.md + ATP_HANDOVER_PACK.md §8 | audit report PR #340 (61 pages, 10 biggest problems, sidebar, admin console, flags); fixes 1–2 (sign-in screen, Coming soon) `claude/ux1-signin-comingsoon` in progress; 8d login PR #332 |
 | 9 | Master Order 4: the ready-made dish, the daily rhythm, plans | ATP_SESSION_GROWTH_MASTER.md | pending |
 | 10 | Analyze a chart | ATP_HANDOVER_PACK.md §10 (#304 / #305 drafts) | drafts open |
 | 11 | Strategy Lab (Pine + Python), idea → code / scan, idea library, compliance, signal language | ATP_HANDOVER_PACK.md §11 (a–l) | in progress: 11a AMW port audit + 11b ADR-0027 approval in #334 (18 ported / 25 partial / 42 missing); signal language rule in CLAUDE.md |

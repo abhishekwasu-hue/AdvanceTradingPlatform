@@ -8,7 +8,7 @@ that changes an item. Never delete a row; mark it done / superseded with the PR.
 | 0 | Step 0: read the repo state; CLAUDE.md | ATP_HANDOVER_PACK.md (STEP 0) | done: CLAUDE.md (#331 + the #330 fold-in, #333); repo-state check done 22 Oct (status per item below) |
 | 1 | Font size | ATP_HANDOVER_PACK.md §1 | PR #335 (draft, ready for review): rem scale, Text size setting, layout fixes, new baselines |
 | 2 | Option chain: analysis + Sensibull-style charts | ATP_HANDOVER_PACK.md §2 | partial (#324 / #326 / #327 merged; 2a wiring PR #337 (stacked on #335); 2b + 2c Charts tab `claude/oc5-chain-charts`, migration) |
-| 3 | F&O workspace | ATP_SESSION_FNO_WORKSPACE.md | in progress: slice 1 chain trading + order ticket `claude/fno1-chain-ticket` |
+| 3 | F&O workspace | ATP_SESSION_FNO_WORKSPACE.md | slice 1 chain trading + order ticket PR #338 (draft; OPEN_QUESTIONS FNO-1-1..10); slice 2 basket `claude/fno2-basket` in progress |
 | 4 | Default watchlists (indices / index stocks / sectors) | ATP_HANDOVER_PACK.md §4 | in progress: `claude/wl1-system-lists` |
 | 5 | AI Copilot: a professional trader's brain | ATP_HANDOVER_PACK.md §5 | in progress: slice 1 (page + jobs 1, 2, 7, 8; regime admin-only) `claude/copilot-v2-chat` |
 | 6 | Master Order 2: AI keys + page tours | ATP_HANDOVER_PACK.md §6 | pending |

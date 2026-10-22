@@ -115,7 +115,6 @@ async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), sess
     """The question -> a validated analysis spec -> its table (and chart) on the caller's own chain, with "How this was
     calculated" and the educational disclaimer. An unsupported request gets one plain sentence and the closest analysis."""
     from app.ai import metering
-    from app.ai import settings as ai_settings
     from app.ai.providers import RuleBasedProvider
     from app.audit.log import write_audit_log
     from app.platform.controls import require_flag
@@ -126,8 +125,11 @@ async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), sess
     if tenant is None:
         raise HTTPException(status_code=404, detail="Organisation not found")
     expiry_text = body.expiry.isoformat() if body.expiry else None
-    provider = await ai_settings.provider_for(session, tenant, task=ask_ai.TASK, user_id=user.id)
+    from app.ai import resolve as ai_resolve
+    provider = await ai_resolve.provider_for_user(session, user, tenant, ask_ai.TASK)
     if isinstance(provider, RuleBasedProvider):
+        if await ai_resolve.one_key_on(session, tenant.id):             # Settings redesign A1: the Connect AI panel opens
+            return {**_base(underlying, expiry_text, "ai_off", ai_resolve.NOT_CONNECTED_MESSAGE), "code": ai_resolve.NOT_CONNECTED_CODE}
         state, message = await _ai_off_message(session, tenant, provider)
         return _base(underlying, expiry_text, state, message)           # nothing read, nothing spent
     now = datetime.now(timezone.utc)
@@ -135,6 +137,8 @@ async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), sess
     if read.state != "ok":
         return _base(underlying, read.expiry, read.state, read.message)  # no chain: the AI is not asked
     async def budget_left() -> bool:                       # asked before the repair turn: a second call needs budget too
+        if ai_resolve.is_user_key(provider):               # the user's own key: its own cap is checked before each call
+            return True
         return not await metering.budget_exhausted(session, tenant)
 
     found = ask_ai.Translation("error")
@@ -144,7 +148,7 @@ async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), sess
         logger.warning("OC3 ask: translation failed (%s)", type(exc).__name__)
     finally:
         # the call was paid for: the provider's last use, the audit row and the metered usage are always kept
-        await ai_settings.mark_used(session, user.tenant_id, error="Ask AI: the provider did not answer" if found.state == "error" else None)
+        await ai_resolve.mark_used(session, user.tenant_id, provider, error="Ask AI: the provider did not answer" if found.state == "error" else None)
         await write_audit_log(session, user.tenant_id, user.id, "option_chain_ask",
                               f"{getattr(provider, 'name', 'ai')}: {found.state} after {found.attempts} call(s); {underlying}; "
                               f"question {len(body.question)} chars")

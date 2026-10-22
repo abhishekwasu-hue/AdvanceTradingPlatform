@@ -16,8 +16,15 @@ for anybody else. Behind the `vision_byok` operator flag (off by default).
 * **Errors** - the text recorded for a failed test is sanitised: the key, and anything that looks like a key or token,
   is removed before it is stored or returned.
 
+Settings redesign part A ("Connect AI in one paste", docs/design/SETTINGS_REDESIGN_REVIEW.md R2-R6, behind the
+`ai_one_key` flag): the key format comes from ONE table (`app.ai.key_formats`); "connected" means a `user_ai_keys` row
+exists (`prefs.enabled` and the audit scopes only switch the background Vision reviews); the connect test also sends one
+tiny image; a failure is stored and shown as one plain sentence per error kind (`PLAIN_ERRORS`); `connection()` is the
+panel's summary; `copy_tenant_key()` lets the OWNER who entered the organisation's key use it for their own account too.
+
 Vision only comments; it never places, blocks or changes an order (ADR-0006).
 """
+import base64
 import json
 import logging
 import re
@@ -27,15 +34,15 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import pricing
+from app.ai import key_formats, pricing
 from app.ai import providers as ai_providers
 from app.ai.metering import log_call, month_start
 from app.ai.providers import BYOK_PROVIDERS, Completion, ProviderError
 from app.audit.log import write_audit_log
 from app.core import config
-from app.db.models import LlmCallRecord, User, UserAiKeyRecord, UserVisionPrefsRecord
+from app.db.models import AiProviderConfigRecord, LlmCallRecord, User, UserAiKeyRecord, UserVisionPrefsRecord
 from app.secrets_store.encryption import decrypt_text, encrypt_text
-from app.secrets_store.envelope import PURPOSE_BYOK_AI_KEY
+from app.secrets_store.envelope import PURPOSE_AI_PROVIDER_KEY, PURPOSE_BYOK_AI_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +52,28 @@ TEST_PROMPT_VERSION = "byok-test-v1"
 TEST_SYSTEM = "You are a connectivity check for a trading dashboard. Answer with the single word OK."
 TEST_USER = "Reply with OK."
 TEST_MAX_TOKENS = 16
+TEST_IMAGE_PROMPT_VERSION = "byok-test-v2-image"
+TEST_IMAGE_USER = "This is a tiny test picture. Reply with OK."
+# A constant 8 x 8 white PNG with one dark diagonal (109 bytes): the connect test checks the key can read a chart image.
+TEST_IMAGE_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAANElEQVR42m3OQQoAQAgCQPX/f3YPQkRul4KpkABso0q2SX4gF21Ka9NMx7S3tum8HlPniT2bBxgNciqs8AAAAABJRU5ErkJggg==")
+
+# Settings redesign A (R6 / A4): the one plain sentence per error kind (app.ai.providers.ERROR_KINDS). Never the
+# provider's own text.
+PLAIN_ERRORS = {
+    "auth": "This key did not work. Check that you copied all of it.",
+    "no_credit": "This key has no credit left.",
+    "rate": "Too many requests. Try again in a minute.",
+    "no_vision": "This provider cannot read charts. Vision needs Gemini, Claude or OpenAI.",
+    "model": "This provider could not answer right now. Try again later.",
+    "unreachable": "The AI service could not be reached. Try again in a minute.",
+    "other": "The AI service did not answer. Try again in a minute.",
+    "binding": "Your saved key could not be opened. Paste it again.",
+}
+
+
+def plain_error(kind: Optional[str]) -> str:
+    return PLAIN_ERRORS.get(kind or "other", PLAIN_ERRORS["other"])
 
 PROVIDER_LABELS = {"anthropic": "Anthropic (Claude)", "openai": "OpenAI", "gemini": "Google Gemini"}
 CONSOLE_URLS = {"anthropic": "https://console.anthropic.com/settings/keys", "openai": "https://platform.openai.com/api-keys",
@@ -68,11 +97,8 @@ SESSION_TOKEN_MESSAGE = ("This looks like a sign-in session, cookie or OAuth tok
 MIN_KEY_LENGTH = 20
 MAX_KEY_LENGTH = 256
 _KEY_CHARS = re.compile(r"^[A-Za-z0-9_-]+$")
-# Prefixes of things people paste that are not API keys: Claude.ai session keys and OAuth tokens (subscription sign-in),
-# Google OAuth access / refresh tokens, legacy OpenAI browser session tokens.
-_SESSION_PREFIXES = ("sk-ant-sid", "sk-ant-oat", "sk-ant-ort", "ya29.", "1//", "sess-", "eyj", "bearer ")
-_SESSION_MARKERS = ("session", "cookie", "oauth", "refresh_token", "access_token")
-_ADMIN_PREFIXES = ("sk-ant-admin", "sk-admin-")
+# The prefixes of things people paste that are not API keys (sign-in sessions, OAuth tokens, admin keys) and of every
+# provider's keys live in ONE table: app/ai/key_formats.py (review R5).
 _SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_\-]{4,}"),
     re.compile(r"AIza[0-9A-Za-z_\-]{8,}"),
@@ -100,12 +126,8 @@ class CapReached(RuntimeError):
 # --- key shape, hint, sealing -------------------------------------------------------------------------------------------
 
 def _looks_like_session_token(key: str) -> bool:
-    lower = key.lower()
-    if lower.startswith(_SESSION_PREFIXES) or any(marker in lower for marker in _SESSION_MARKERS):
-        return True
-    if "=" in key or ";" in key or key.count(".") >= 2:          # a cookie header, a JWT
-        return True
-    return False
+    """A cookie header, a JWT, an OAuth token or a sign-in session (the one table: app.ai.key_formats)."""
+    return key_formats.looks_like_session(key)
 
 
 def validate_key_shape(provider: str, raw: Optional[str]) -> str:
@@ -123,16 +145,23 @@ def validate_key_shape(provider: str, raw: Optional[str]) -> str:
         raise ByokError(f"An API key is {MIN_KEY_LENGTH} to {MAX_KEY_LENGTH} characters long")
     if not _KEY_CHARS.match(key):
         raise ByokError("An API key contains only letters, digits, '-' and '_' - paste the key alone, without quotes or spaces")
-    lower = key.lower()
-    if lower.startswith(_ADMIN_PREFIXES):
+    found = key_formats.detect_provider(key)
+    if found.kind == "admin":
         raise ByokError("This is an organisation admin key. Use a standard API key from the provider's console")
-    if provider == "anthropic" and not key.startswith("sk-ant-"):
+    if found.kind == "unsupported":
+        raise ByokError(unsupported_message(found.name))
+    if provider == "anthropic" and found.provider != "anthropic":
         raise ByokError("An Anthropic API key starts with 'sk-ant-'")
-    if provider == "openai" and (not key.startswith("sk-") or key.startswith("sk-ant-")):
+    if provider == "openai" and found.provider != "openai":
         raise ByokError("An OpenAI API key starts with 'sk-'")
-    if provider == "gemini" and key.startswith("sk-"):
+    if provider == "gemini" and found.provider in ("anthropic", "openai"):
         raise ByokError("This looks like an Anthropic or OpenAI key, not a Google Gemini key")
     return key
+
+
+def unsupported_message(name: str) -> str:
+    article = "an" if name[:1].upper() in "AEIOU" else "a"
+    return f"This looks like {article} {name} key. AiAlgoDesk cannot use {name} keys yet. Use a Claude, OpenAI or Google Gemini key."
 
 
 def key_hint(key: str) -> str:
@@ -338,9 +367,11 @@ async def delete_key(session: AsyncSession, user: User, provider: str) -> bool:
 
 
 async def test_key(session: AsyncSession, user: User, provider: str, *, client: Optional[Any] = None,
-                   now: Optional[datetime] = None) -> Dict[str, Any]:
+                   now: Optional[datetime] = None, with_image: bool = False, plain: bool = False) -> Dict[str, Any]:
     """One tiny call through the provider seam with the caller's own key; the outcome is stored on the key row and the
-    call is metered as billed to the user's key. Raises LookupError (no key) or CapReached (hard stop)."""
+    call is metered as billed to the user's key. Raises LookupError (no key) or CapReached (hard stop).
+    Settings redesign A: `with_image` sends the tiny constant PNG along when the provider reads images (A2); `plain`
+    stores the plain sentence of the error kind on the row instead of the sanitised provider text (the connect panel)."""
     provider = (provider or "").lower()
     record = await get_key(session, user, provider)
     if record is None:
@@ -354,22 +385,30 @@ async def test_key(session: AsyncSession, user: User, provider: str, *, client: 
     ok = False
     error: Optional[str] = None
     called = False
+    kind: Optional[str] = None
+    image = with_image and provider in ai_providers.VISION_PROVIDERS
+    prompt_version, test_user = (TEST_IMAGE_PROMPT_VERSION, TEST_IMAGE_USER) if image else (TEST_PROMPT_VERSION, TEST_USER)
     try:
         key = open_key(record, user=user)
         llm = ai_providers.build_byok_provider(provider, key, model, client=client)
         called = True
-        result = await llm.complete_full(TEST_SYSTEM, TEST_USER, max_tokens=TEST_MAX_TOKENS)
+        if image:
+            result = await llm.complete_full(TEST_SYSTEM, test_user, max_tokens=TEST_MAX_TOKENS, image_png=TEST_IMAGE_PNG)
+        else:
+            result = await llm.complete_full(TEST_SYSTEM, test_user, max_tokens=TEST_MAX_TOKENS)
         ok = True
     except KeyBindingError as exc:
-        error = sanitize_error(str(exc), [key])
+        error, kind = sanitize_error(str(exc), [key]), "binding"
     except ProviderError as exc:
-        error = sanitize_error(str(exc), [key])
+        error, kind = sanitize_error(str(exc), [key]), exc.kind
         result = exc.usage
     except Exception as exc:  # noqa: BLE001 - an unexpected failure is reported by class name only (never its text)
         logger.warning("BYOK key test for user %s (%s) failed: %s", user.id, provider, exc.__class__.__name__)
-        error = sanitize_error(f"Test failed: {exc.__class__.__name__}", [key])
+        error, kind = sanitize_error(f"Test failed: {exc.__class__.__name__}", [key]), "other"
     finally:
         key = ""
+    if not ok and plain:
+        error = plain_error(kind)
     cost = 0.0
     if result is not None and (result.input_tokens or result.output_tokens or result.cache_read_tokens):
         cost = pricing.cost_usd(provider, result.model or model, input_tokens=result.input_tokens, output_tokens=result.output_tokens,
@@ -377,8 +416,8 @@ async def test_key(session: AsyncSession, user: User, provider: str, *, client: 
     if called:
         try:
             await log_call(session, tenant_id=user.tenant_id, user_id=user.id, feature=FEATURE_TEST, provider=provider,
-                           model=(result.model if result is not None and result.model else model), prompt_version=TEST_PROMPT_VERSION,
-                           system=TEST_SYSTEM, user=TEST_USER, response=(result.text if ok and result is not None else None),
+                           model=(result.model if result is not None and result.model else model), prompt_version=prompt_version,
+                           system=TEST_SYSTEM, user=test_user, response=(result.text if ok and result is not None else None),
                            status="ok" if ok else f"error: {error}", result=result, cost_usd=cost, billed_to_user_key=True)
         except Exception as exc:  # noqa: BLE001 - the outcome is still stored on the key row
             logger.warning("BYOK test call not logged for user %s: %s", user.id, exc.__class__.__name__)
@@ -390,7 +429,8 @@ async def test_key(session: AsyncSession, user: User, provider: str, *, client: 
     record.last_test_error = None if ok else error
     await write_audit_log(session, user.tenant_id, user.id, "byok_key_tested", f"{provider}: {'ok' if ok else 'failed'}")
     await session.commit()
-    return {"provider": provider, "ok": ok, "error": None if ok else error, "model": model, "cost_usd": round(cost, 8)}
+    return {"provider": provider, "ok": ok, "error": None if ok else error, "kind": None if ok else (kind or "other"),
+            "model": model, "cost_usd": round(cost, 8), "image": image}
 
 
 async def save_prefs(session: AsyncSession, user: User, *, enabled: Optional[bool] = None, provider: Optional[str] = None,
@@ -506,3 +546,196 @@ async def status(session: AsyncSession, user: User, *, now: Optional[datetime] =
                   "daily_review_timezone": "Asia/Kolkata", "daily_review_max_symbols": int(config.BYOK_DAILY_REVIEW_MAX_SYMBOLS),
                   "daily_review_timeframe": config.BYOK_DAILY_REVIEW_TIMEFRAME},
     }
+
+
+# --- Settings redesign part A: "Connect AI in one paste" (flag `ai_one_key`) ------------------------------------------------
+
+CONNECT_LABELS = key_formats.PROVIDER_NAMES          # the plain names the panel shows: Claude / OpenAI / Google Gemini
+FREE_TIER_WARNING = ("Free keys from {name} may be used to train its models. Do not paste anything private into the chat. "
+                     "Chart analysis waits until you confirm the key is on a paid plan.")
+
+
+def _hint_tail(hint: Optional[str]) -> str:
+    """The last four characters of the stored hint (the panel shows "key ...a9F2")."""
+    return (hint or "")[-4:]
+
+
+async def connected_key(session: AsyncSession, user: User) -> Optional[UserAiKeyRecord]:
+    """The key every AI feature of this user runs on: the provider chosen in the prefs, else the first one with a key.
+    "Connected" is only this - a row in `user_ai_keys` (review R2); the Vision switch plays no part."""
+    keys = await list_keys(session, user)
+    provider = active_provider(await get_prefs(session, user), keys)
+    return next((k for k in keys if k.provider == provider), None) if provider else None
+
+
+async def consent_accepted(session: AsyncSession, user: User, provider: str) -> bool:
+    from app.ai import compliance_terms as terms
+    return await terms.latest(session, terms.KIND_BYOK, tenant_id=user.tenant_id, user_id=user.id,
+                              version=terms.byok_consent_version(provider)) is not None
+
+
+async def paid_plan_confirmed(session: AsyncSession, user: User, record: UserAiKeyRecord) -> bool:
+    """True for a provider that does not train on its free tier, or once the user confirmed THIS key is on a paid plan."""
+    from app.ai import compliance_terms as terms
+    if not key_formats.MAY_TRAIN_ON_FREE_TIER.get(record.provider, True):
+        return True
+    return await terms.latest(session, terms.KIND_BYOK_PAID, tenant_id=user.tenant_id, user_id=user.id,
+                              version=terms.byok_paid_plan_version(record.key_hint)) is not None
+
+
+async def accept_consent(session: AsyncSession, user: User, provider: str, *, request: Optional[Any] = None) -> None:
+    """Records the own-key consent for `provider` (once per text version and provider); does not commit."""
+    from app.ai import compliance_terms as terms
+    if not await consent_accepted(session, user, provider):
+        await terms.accept(session, user, terms.KIND_BYOK, terms.byok_consent_version(provider), request=request)
+
+
+async def confirm_paid_plan(session: AsyncSession, user: User, *, request: Optional[Any] = None) -> None:
+    from app.ai import compliance_terms as terms
+    record = await connected_key(session, user)
+    if record is None:
+        raise LookupError("No key is connected")
+    if not await paid_plan_confirmed(session, user, record):
+        await terms.accept(session, user, terms.KIND_BYOK_PAID, terms.byok_paid_plan_version(record.key_hint), request=request)
+    await session.commit()
+
+
+async def _tenant_key_offer(session: AsyncSession, user: User) -> Optional[AiProviderConfigRecord]:
+    """The organisation's key that this user may copy to their own account: only the OWNER who entered it (review R1 /
+    SR-8), only an Anthropic / OpenAI key that is set and enabled, and only while the user has no key of that provider."""
+    from app.ai.settings import get_config
+    from app.core.enums import UserRole
+    if user.role != UserRole.OWNER.value:
+        return None
+    record = await get_config(session, user.tenant_id)
+    if (record is None or not record.enabled or not record.encrypted_api_key or record.provider not in BYOK_PROVIDERS
+            or record.updated_by is None or int(record.updated_by) != int(user.id)):
+        return None
+    if await get_key(session, user, record.provider) is not None:
+        return None
+    return record
+
+
+async def connection(session: AsyncSession, user: User, *, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """The Connect AI panel's summary - the caller's own rows only; never a key, only the last four characters."""
+    from app.ai import compliance_terms as terms
+    record = await connected_key(session, user)
+    prefs = await get_prefs(session, user)
+    daily_cap, monthly_cap = _caps(prefs)
+    rate = pricing.usd_inr_rate()
+    month = await byok_spend(session, user.id, None, month_start(now), tenant_id=user.tenant_id)
+    today = await byok_spend(session, user.id, None, day_start(now), tenant_id=user.tenant_id)
+    blocked = await cap_block(session, user, prefs, now=now) if record is not None else None
+    limits = {"month_inr": round(month * rate, 2), "monthly_cap_inr": round(monthly_cap * rate, 2),
+              "today_inr": round(today * rate, 2), "daily_cap_inr": round(daily_cap * rate, 2),
+              "max_cap_inr": round(float(config.BYOK_MAX_CAP_USD) * rate, 2),
+              "line": f"AI this month: ₹{month * rate:,.0f} of your ₹{monthly_cap * rate:,.0f} limit",
+              "reached": None if blocked is None else ("day" if blocked == REASON_DAILY_CAP else "month")}
+    offer = await _tenant_key_offer(session, user)
+    out: Dict[str, Any] = {"connected": record is not None, "provider": None, "label": None, "key_end": None, "ok": None, "error": None,
+                           "tested_at": None, "consent": None, "may_train": False, "paid_plan": True, "free_tier_warning": None,
+                           "limits": limits,
+                           "copy_tenant_key": ({"label": CONNECT_LABELS.get(offer.provider, offer.provider)} if offer is not None else None)}
+    if record is None:
+        return out
+    label = CONNECT_LABELS.get(record.provider, record.provider)
+    consent_ok = await consent_accepted(session, user, record.provider)
+    may_train = bool(key_formats.MAY_TRAIN_ON_FREE_TIER.get(record.provider, True))
+    error = None
+    if record.last_test_ok is False:
+        # A test from before the plain sentences (the Vision card) stored the provider's sanitised text: never shown here.
+        error = record.last_test_error if record.last_test_error in PLAIN_ERRORS.values() else PLAIN_ERRORS["other"]
+    out.update(provider=record.provider, label=label, key_end=_hint_tail(record.key_hint), ok=record.last_test_ok, error=error,
+               tested_at=_iso(record.last_tested_at),
+               consent={"accepted": consent_ok, "text": terms.byok_text(terms.KIND_BYOK, label)},
+               may_train=may_train, paid_plan=await paid_plan_confirmed(session, user, record),
+               paid_plan_text=terms.byok_text(terms.KIND_BYOK_PAID, label) if may_train else None,
+               free_tier_warning=FREE_TIER_WARNING.format(name=label) if may_train else None)
+    return out
+
+
+def consent_line(provider: str) -> str:
+    from app.ai import compliance_terms as terms
+    return terms.byok_text(terms.KIND_BYOK, CONNECT_LABELS.get(provider, provider))
+
+
+async def connect(session: AsyncSession, user: User, *, api_key: str, provider: Optional[str] = None, consent: bool = False,
+                  client: Optional[Any] = None, request: Optional[Any] = None, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Paste -> detect -> consent -> save (encrypted) -> test (text + one tiny image) -> the summary. The key becomes the
+    one every AI feature of this user runs on. A failed test keeps the key (SR-7: the panel shows the plain error with
+    Fix and Remove). Raises ByokError (a plain refusal) or ConsentRequired."""
+    found = key_formats.detect_provider(api_key)
+    if found.kind == "empty":
+        raise ByokError("Paste an API key")
+    if found.kind == "session":
+        raise ByokError(SESSION_TOKEN_MESSAGE)
+    if found.kind == "admin":
+        raise ByokError("This is an organisation admin key. Use a standard API key from the provider's console")
+    if found.kind == "unsupported":
+        raise ByokError(unsupported_message(found.name))
+    chosen = found.provider or (provider or "").lower()
+    if not chosen:
+        raise ProviderNeeded("Pick the service this key is from")
+    if found.provider and provider and provider.lower() != found.provider:
+        chosen = found.provider                          # the key's own format wins over a stale picker choice
+    key = validate_key_shape(chosen, key_formats.clean(api_key))
+    if not await consent_accepted(session, user, chosen):
+        if not consent:
+            raise ConsentRequired(consent_line(chosen))
+        await accept_consent(session, user, chosen, request=request)
+    await save_key(session, user, provider=chosen, api_key=key)
+    key = ""
+    prefs = await _prefs_or_new(session, user)
+    prefs.provider = chosen                              # the newest key is the one in use; Vision's own switch is untouched
+    await session.commit()
+    try:
+        await test_key(session, user, chosen, client=client, now=now, with_image=True, plain=True)
+    except CapReached:
+        pass                                             # nothing more may be spent today: the key stays, untested
+    return await connection(session, user, now=now)
+
+
+async def disconnect(session: AsyncSession, user: User) -> bool:
+    record = await connected_key(session, user)
+    if record is None:
+        return False
+    return await delete_key(session, user, record.provider)
+
+
+async def save_limits_inr(session: AsyncSession, user: User, *, daily_inr: Optional[float], monthly_inr: Optional[float]) -> None:
+    """The Limits row: the caps are typed in rupees and stored in USD (review A6)."""
+    rate = pricing.usd_inr_rate()
+    await save_prefs(session, user, daily_cap_usd=None if daily_inr is None else round(float(daily_inr) / rate, 6),
+                     monthly_cap_usd=None if monthly_inr is None else round(float(monthly_inr) / rate, 6))
+
+
+async def copy_tenant_key(session: AsyncSession, user: User, *, consent: bool = False, request: Optional[Any] = None) -> UserAiKeyRecord:
+    """"Use this key for your account too" (one tap, never automatic): the organisation's key, entered by this OWNER, is
+    re-sealed as this user's own key (bound to the user, tenant and provider) and audited. The organisation's row is not
+    changed. Raises LookupError when there is nothing this user may copy."""
+    offer = await _tenant_key_offer(session, user)
+    if offer is None or not offer.encrypted_api_key:
+        raise LookupError("There is no organisation key you can use here")
+    if not consent and not await consent_accepted(session, user, offer.provider):
+        raise ConsentRequired(consent_line(offer.provider))
+    plain = decrypt_text(offer.encrypted_api_key, PURPOSE_AI_PROVIDER_KEY, offer.tenant_id)
+    try:
+        key = validate_key_shape(offer.provider, plain)
+    finally:
+        plain = ""
+    await accept_consent(session, user, offer.provider, request=request)
+    record = await save_key(session, user, provider=offer.provider, api_key=key)
+    key = ""
+    prefs = await _prefs_or_new(session, user)
+    prefs.provider = offer.provider
+    await write_audit_log(session, user.tenant_id, user.id, "byok_key_copied_from_tenant", offer.provider)
+    await session.commit()
+    return record
+
+
+class ConsentRequired(ValueError):
+    """The own-key consent line must be confirmed before the first save (A3). The message is the line to show."""
+
+
+class ProviderNeeded(ValueError):
+    """The key's format did not say which service it is from: the panel shows the small picker."""

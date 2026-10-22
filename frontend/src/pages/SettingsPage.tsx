@@ -19,6 +19,7 @@ import GoLiveChecklistV2 from "../setup/GoLiveChecklistV2";
 import ShowGetStartedV2 from "../setup/ShowGetStartedV2";
 import { useFeatures } from "../ui/useFeatures";
 import KeyGuidesV2 from "../aiKeys/KeyGuidesV2";
+import ConnectAiPanelV2 from "../aiKeys/ConnectAiPanelV2";
 import TipsButtonsV2 from "../tours/TipsButtonsV2";
 
 /**
@@ -52,7 +53,10 @@ export function BrokerLinkCard() {
 }
 
 export default function SettingsPage() {
-  const v2 = useFeatures().on("ui_v2");
+  const features = useFeatures();
+  const v2 = features.on("ui_v2");
+  // Settings redesign A: one key for every AI feature - Settings → AI shows only the Connect AI panel.
+  const oneKey = v2 && features.on("ai_one_key");
   const { user, loading: authLoading } = useAuth();
   // P3: Settings → Advanced holds the Go-live checklist; "Prepare for LIVE" (/settings#go-live) opens it, and the
   // Get started card's Telegram step leads to /settings#alerts.
@@ -110,9 +114,13 @@ export default function SettingsPage() {
 
       {/* MO2 part B: the beginner key guides first, then the cards that use a key. */}
       <Section id="ai" title="AI" tour="settings-ai">
-        <KeyGuidesV2 />
-        <AiProviderCard />
-        <VisionByokCard />
+        {oneKey ? <ConnectAiPanelV2 /> : (
+          <>
+            <KeyGuidesV2 />
+            <AiProviderCard />
+            <VisionByokCard />
+          </>
+        )}
       </Section>
 
       {(user.role !== "VIEWER" || v2) && (

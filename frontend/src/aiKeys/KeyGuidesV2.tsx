@@ -31,16 +31,24 @@ function errorText(e: unknown): string {
   return e instanceof ApiError && e.detail ? e.detail : "The key could not be saved. Check your connection and try again.";
 }
 
-export default function KeyGuidesV2() {
-  const [open, setOpen] = useState<ByokProviderName | null>(null);
+export interface KeyGuidesV2Props {
+  /** Settings redesign A: false inside the Connect AI drawer - the panel itself takes the paste. */
+  pasteHelper?: boolean;
+  /** The guide open at first (the drawer opens free Google Gemini). */
+  startOpen?: ByokProviderName | null;
+}
+
+export default function KeyGuidesV2({ pasteHelper = true, startOpen = null }: KeyGuidesV2Props = {}) {
+  const [open, setOpen] = useState<ByokProviderName | null>(startOpen);
   const [byokOn, setByokOn] = useState<boolean | null>(null);
   const guideRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!pasteHelper) return;
     let live = true;
     api.byokStatus().then(() => { if (live) setByokOn(true); }).catch(() => { if (live) setByokOn(false); });
     return () => { live = false; };
-  }, []);
+  }, [pasteHelper]);
 
   const show = (p: ByokProviderName) => {
     setOpen(p);
@@ -77,13 +85,13 @@ export default function KeyGuidesV2() {
       </ul>
 
       <div ref={guideRef}>
-        {open && <Guide key={open} guide={guideFor(open)} byokOn={byokOn} onSwitch={show} />}
+        {open && <Guide key={open} guide={guideFor(open)} byokOn={byokOn} onSwitch={show} pasteHelper={pasteHelper} />}
       </div>
     </section>
   );
 }
 
-function Guide({ guide, byokOn, onSwitch }: { guide: KeyGuide; byokOn: boolean | null; onSwitch: (p: ByokProviderName) => void }) {
+function Guide({ guide, byokOn, onSwitch, pasteHelper }: { guide: KeyGuide; byokOn: boolean | null; onSwitch: (p: ByokProviderName) => void; pasteHelper: boolean }) {
   return (
     <div id={`key-guide-${guide.provider}`} data-key-guide={guide.provider} className="mt-space-4 space-y-space-4 border-t border-subtle pt-space-4">
       <div className="flex flex-wrap items-center justify-between gap-space-3">
@@ -121,7 +129,7 @@ function Guide({ guide, byokOn, onSwitch }: { guide: KeyGuide; byokOn: boolean |
         </div>
       </dl>
 
-      <PasteHelper guide={guide} byokOn={byokOn} onSwitch={onSwitch} />
+      {pasteHelper && <PasteHelper guide={guide} byokOn={byokOn} onSwitch={onSwitch} />}
 
       <details className="rounded-control border border-subtle">
         <summary className="flex min-h-11 cursor-pointer items-center px-space-3 text-t14 font-semibold text-fg">Common problems and fixes</summary>

@@ -1,0 +1,237 @@
+{
+  "_about": "Settings redesign A (review R5): the AI key-format table and its cases. Synthetic, obviously fake keys only. backend/app/ai/key_formats.py and frontend/src/aiKeys/keyFormats.ts must agree with every row; frontend/src/aiKeys/__fixtures__/key_formats.json is a byte-identical copy.",
+  "table": [
+    {
+      "prefix": "sk-ant-sid",
+      "kind": "session",
+      "provider": null,
+      "name": "Claude sign-in session"
+    },
+    {
+      "prefix": "sk-ant-oat",
+      "kind": "session",
+      "provider": null,
+      "name": "Claude sign-in token"
+    },
+    {
+      "prefix": "sk-ant-ort",
+      "kind": "session",
+      "provider": null,
+      "name": "Claude sign-in token"
+    },
+    {
+      "prefix": "ya29.",
+      "kind": "session",
+      "provider": null,
+      "name": "Google sign-in token"
+    },
+    {
+      "prefix": "1//",
+      "kind": "session",
+      "provider": null,
+      "name": "Google sign-in token"
+    },
+    {
+      "prefix": "sess-",
+      "kind": "session",
+      "provider": null,
+      "name": "OpenAI sign-in session"
+    },
+    {
+      "prefix": "eyj",
+      "kind": "session",
+      "provider": null,
+      "name": "sign-in token"
+    },
+    {
+      "prefix": "bearer ",
+      "kind": "session",
+      "provider": null,
+      "name": "sign-in token"
+    },
+    {
+      "prefix": "sk-ant-admin",
+      "kind": "admin",
+      "provider": null,
+      "name": "Anthropic admin key"
+    },
+    {
+      "prefix": "sk-admin-",
+      "kind": "admin",
+      "provider": null,
+      "name": "OpenAI admin key"
+    },
+    {
+      "prefix": "sk-or-",
+      "kind": "unsupported",
+      "provider": null,
+      "name": "OpenRouter"
+    },
+    {
+      "prefix": "gsk_",
+      "kind": "unsupported",
+      "provider": null,
+      "name": "Groq"
+    },
+    {
+      "prefix": "xai-",
+      "kind": "unsupported",
+      "provider": null,
+      "name": "xAI"
+    },
+    {
+      "prefix": "sk-ant-",
+      "kind": "provider",
+      "provider": "anthropic",
+      "name": "Claude"
+    },
+    {
+      "prefix": "sk-proj-",
+      "kind": "provider",
+      "provider": "openai",
+      "name": "OpenAI"
+    },
+    {
+      "prefix": "sk-svcacct-",
+      "kind": "provider",
+      "provider": "openai",
+      "name": "OpenAI"
+    },
+    {
+      "prefix": "sk-",
+      "kind": "provider",
+      "provider": "openai",
+      "name": "OpenAI"
+    },
+    {
+      "prefix": "AIza",
+      "kind": "provider",
+      "provider": "gemini",
+      "name": "Google Gemini"
+    }
+  ],
+  "session_markers": [
+    "session",
+    "cookie",
+    "oauth",
+    "refresh_token",
+    "access_token"
+  ],
+  "may_train_on_free_tier": {
+    "anthropic": false,
+    "openai": false,
+    "gemini": true
+  },
+  "cases": [
+    {
+      "key": "sk-ant-api03-FAKEFAKE-test-only-aaaaaaaaaaaaaaaaaaaa-1111",
+      "kind": "provider",
+      "provider": "anthropic"
+    },
+    {
+      "key": "sk-proj-FAKEFAKE-test-only-cccccccccccccccccccc-3333",
+      "kind": "provider",
+      "provider": "openai"
+    },
+    {
+      "key": "sk-svcacct-FAKEFAKE-test-only-cccccccccccccccccc-3333",
+      "kind": "provider",
+      "provider": "openai"
+    },
+    {
+      "key": "sk-FAKEFAKE-test-only-legacy-cccccccccccccccc-3333",
+      "kind": "provider",
+      "provider": "openai"
+    },
+    {
+      "key": "AIzaFAKEFAKE-test-only-dddddddddddddddddd-4444",
+      "kind": "provider",
+      "provider": "gemini"
+    },
+    {
+      "key": "  \"sk-ant-api03-FAKEFAKE-test-only-aaaaaaaaaaaaaaaaaaaa-1111\"\n",
+      "kind": "provider",
+      "provider": "anthropic"
+    },
+    {
+      "key": "sk-or-v1-FAKEFAKE-test-only-eeeeeeeeeeeeeeeeeeee-5555",
+      "kind": "unsupported",
+      "provider": null
+    },
+    {
+      "key": "gsk_FAKEFAKE-test-only-ffffffffffffffffffffffff-6666",
+      "kind": "unsupported",
+      "provider": null
+    },
+    {
+      "key": "xai-FAKEFAKE-test-only-gggggggggggggggggggggggg-7777",
+      "kind": "unsupported",
+      "provider": null
+    },
+    {
+      "key": "sk-ant-admin01-FAKEFAKE-test-only-hhhhhhhhhhhhhhhh",
+      "kind": "admin",
+      "provider": null
+    },
+    {
+      "key": "sk-admin-FAKEFAKE-test-only-hhhhhhhhhhhhhhhhhhhhhh",
+      "kind": "admin",
+      "provider": null
+    },
+    {
+      "key": "sk-ant-sid01-FAKEFAKE-test-only-session-iiiiiiiiii",
+      "kind": "session",
+      "provider": null
+    },
+    {
+      "key": "sk-ant-oat01-FAKEFAKE-test-only-oauth-iiiiiiiiiiii",
+      "kind": "session",
+      "provider": null
+    },
+    {
+      "key": "sk-ant-ort01-FAKEFAKE-test-only-refresh-iiiiiiiiii",
+      "kind": "session",
+      "provider": null
+    },
+    {
+      "key": "ya29.FAKEFAKE-test-only-google-oauth-jjjjjjjjjjjjjj",
+      "kind": "session",
+      "provider": null
+    },
+    {
+      "key": "1//FAKEFAKE-test-only-google-refresh-jjjjjjjjjjjj",
+      "kind": "session",
+      "provider": null
+    },
+    {
+      "key": "sess-FAKEFAKE-test-only-browser-session-kkkkkkkkk",
+      "kind": "session",
+      "provider": null
+    },
+    {
+      "key": "sessionKey=sk-ant-sid01-FAKEFAKE-test-only-cookie",
+      "kind": "session",
+      "provider": null
+    },
+    {
+      "key": "Bearer sk-ant-api03-FAKEFAKE-test-only-aaaaaaaaaaaa",
+      "kind": "session",
+      "provider": null
+    },
+    {
+      "key": "header.FAKEFAKE.test-only-three-part-token",
+      "kind": "session",
+      "provider": null
+    },
+    {
+      "key": "FAKEFAKE-test-only-no-known-prefix-llllllllllll",
+      "kind": "unknown",
+      "provider": null
+    },
+    {
+      "key": "   ",
+      "kind": "empty",
+      "provider": null
+    }
+  ]
+}

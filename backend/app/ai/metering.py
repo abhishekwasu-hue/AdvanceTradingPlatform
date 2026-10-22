@@ -225,8 +225,10 @@ class MeteredProvider:
 
 def spent_by(provider: Any) -> Optional[Dict[str, Any]]:
     """The tokens and rupees one metered provider spent (its calls in this request), or None for the rule-based
-    provider or when no call reported usage - the Copilot's per-answer cost chip."""
-    spent = getattr(provider, "spent", None) if isinstance(provider, MeteredProvider) else None
+    provider or when no call reported usage - the Copilot's per-answer cost chip. Settings redesign A: a user's own key
+    (`app.ai.resolve.UserKeyProvider`) reports the same way."""
+    from app.ai.resolve import UserKeyProvider
+    spent = getattr(provider, "spent", None) if isinstance(provider, (MeteredProvider, UserKeyProvider)) else None
     if not spent or not spent.get("calls"):
         return None
     return {"calls": int(spent["calls"]), "tokens_input": int(spent["tokens_input"]), "tokens_output": int(spent["tokens_output"]),

@@ -1,7 +1,11 @@
 import { KeyRound, SendHorizontal, Sparkles } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../../auth/AuthContext";
+import { api } from "../../api/client";
+import ConnectAiPanelV2, { ConnectAiChip } from "../../aiKeys/ConnectAiPanelV2";
+import { AI_CONNECTION_CHANGED_EVENT } from "../../aiKeys/connect";
+import { useFeatures } from "../../ui/useFeatures";
 import { CARD } from "../../dashboard/CardV2";
 import { PageIntro } from "../../ui/PageIntro";
 import { friendlyError } from "../aiTask";
@@ -35,6 +39,10 @@ export interface ChatViewProps {
   placement: "bottom" | "inline";
   onDraft: (text: string) => void;
   onAsk: (question: string) => void;
+  /** Settings redesign A (ai_one_key): the Connect AI panel, shown in place of the no-key card. */
+  connect?: ReactNode;
+  /** Settings redesign A: the small "AI connected" chip once the user's own key answers. */
+  aiChip?: ReactNode;
 }
 
 export function Composer({ draft, busy, placement, onDraft, onAsk }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk">) {
@@ -60,7 +68,7 @@ export function Composer({ draft, busy, placement, onDraft, onAsk }: Pick<ChatVi
   );
 }
 
-export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk }: ChatViewProps) {
+export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, connect, aiChip }: ChatViewProps) {
   const t = useCopilotT();
   const line = marketLineText(home);
   const starters = home?.starters ?? [];
@@ -72,9 +80,12 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
         <p className="flex items-center gap-space-2 text-t20 font-semibold text-fg md:text-t24" data-top-line>
           <Sparkles size={20} aria-hidden className="shrink-0 text-brand" />{home?.top_line ?? t("chat.topLine")}
         </p>
+        {aiChip && !needsKey(home) && <div className="pt-space-1">{aiChip}</div>}
       </header>
 
-      {needsKey(home) && (
+      {needsKey(home) && connect && <div data-connect-slot>{connect}</div>}
+
+      {needsKey(home) && !connect && (
         <section className={`${CARD} flex flex-col gap-space-3 p-space-4 md:flex-row md:items-center md:justify-between`} data-no-key>
           <div className="flex min-w-0 items-start gap-space-3">
             <KeyRound size={18} aria-hidden className="mt-0.5 shrink-0 text-fg-muted" />
@@ -184,10 +195,28 @@ export function CopilotChatV2() {
   const [busy, setBusy] = useState(false);
   const next = useRef(1);
   const placement = usePlacement();
+  const features = useFeatures();
+  const oneKey = features.on("ui_v2") && features.on("ai_one_key");
+  const [aiLabel, setAiLabel] = useState<string | null>(null);
 
-  useEffect(() => {
-    chatApi.home().then(setHome).catch((e: unknown) => setHomeError(friendlyError(e, t)));
+  const loadHome = useCallback(() => {
+    chatApi.home().then((h) => { setHome(h); setHomeError(null); }).catch((e: unknown) => setHomeError(friendlyError(e, t)));
   }, [t]);
+  useEffect(() => { loadHome(); }, [loadHome]);
+
+  // Settings redesign A: the page reads the AI state again after the panel connected or removed the key.
+  useEffect(() => {
+    if (!oneKey) return;
+    window.addEventListener(AI_CONNECTION_CHANGED_EVENT, loadHome);
+    return () => window.removeEventListener(AI_CONNECTION_CHANGED_EVENT, loadHome);
+  }, [oneKey, loadHome]);
+  const ownKey = oneKey && !!home?.ai.ready && !!home.ai.own_key;
+  useEffect(() => {
+    if (!ownKey) { setAiLabel(null); return; }
+    let live = true;
+    api.aiConnection().then((c) => { if (live) setAiLabel(c.connected ? c.label : null); }).catch(() => { if (live) setAiLabel(null); });
+    return () => { live = false; };
+  }, [ownKey]);
 
   async function ask(question: string) {
     const id = next.current++;
@@ -208,7 +237,8 @@ export function CopilotChatV2() {
   return (
     <>
       <PageIntro id="copilot-chat" title={t("chat.introTitle")} lines={[t("chat.intro1"), t("chat.intro2")]} />
-      <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={placement} onDraft={setDraft} onAsk={(q) => void ask(q)} />
+      <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={placement} onDraft={setDraft} onAsk={(q) => void ask(q)}
+        connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined} />
     </>
   );
 }

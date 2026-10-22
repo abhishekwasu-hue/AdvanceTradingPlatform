@@ -123,6 +123,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # H-C3 (spec C3): the strategy research loop - AI drafts backtested on server bars, every trial in a ledger, a
     # deflated report. Nothing deploys. OFF until the operator turns it on.
     "ai_research": "Strategy research loop: AI drafts are backtested in-sample on server bars, recorded as trials, and reported deflated",
+    # Settings redesign A (docs/design/SETTINGS_REDESIGN_REVIEW.md R2, SR-1; needs `ui_v2`): one AI key for every
+    # user-started AI feature - the Connect AI panel (paste, detect, consent, save, test) and app/ai/resolve.py (the
+    # user's own key, else the organisation's, else the rules / `ai_not_connected`). OFF: every AI call and page behaves
+    # exactly as before and /api/ai/byok/connect* answers 404. Background jobs stay on the organisation's key. No orders.
+    "ai_one_key": "One AI key for every AI feature: the Connect AI panel and the user's own key first for Copilot, chart analysis and the other AI tools",
     # PW6 (beta spec 4a, Phase 0): the closed-beta gate. ON: sign-up needs a SUPER_ADMIN-issued invite code and stops at
     # BETA_COHORT_CAP accounts. OFF: registration is exactly as before (self_signup still decides). OFF by default.
     "beta_cohort_gate": "Closed beta: sign-up needs an invite code and stops at the cohort cap (BETA_COHORT_CAP, default 500)",

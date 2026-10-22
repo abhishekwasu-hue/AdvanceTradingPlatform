@@ -2398,6 +2398,29 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: backend `test_tours_prefs.py` (+ the prefs allow-list), vitest `tours.test.tsx`, `aiKeys.test.tsx`; e2e
   `tours-v2.e2e.ts` (the CI check: every step's target visible on 1440 and 390, every step played) and
   `key-guides-v2.e2e.ts`, baselines `tour-welcome-v2-*`, `tour-step-v2-*`, `key-guide-v2-*`. No migration.
+## 2026-10-22 - Settings redesign part A: "Connect AI in one paste" (one key for every AI feature), behind ui_v2 + ai_one_key
+
+- Branch `claude/settings-a-connect-ai`. No migration. Plan of record: the independent review (SETTINGS_REDESIGN_REVIEW.md,
+  PR #353) R1-R6 and A1-A6; owner questions SR-1..SR-8 on their provisional defaults.
+- New flag `ai_one_key` (OFF, needs `ui_v2`; flag catalog entry). OFF: every AI call and page is as before (tested).
+- Backend: `app/ai/key_formats.py` (the one key-format table; sessions / admin keys refused first; `sk-or-` / `gsk_` /
+  `xai-` "not supported yet", never OpenAI) + the shared fixture `tests/fixtures/key_formats.json` (byte-identical
+  frontend copy); `ProviderError.kind` set at every raise site from the provider's code; Gemini tier models;
+  tier-aware `build_byok_provider(task=)`; byok.py: the table in `validate_key_shape`, the connect test with a tiny
+  constant PNG, plain errors per kind, `connection()` summary (rupee limits), `connect()`, `copy_tenant_key()` (OWNER who
+  entered the organisation's key only, re-sealed, audited); consent kinds `byok_consent` (per provider) and
+  `byok_paid_plan` (per key) in `ai_acknowledgements`; `app/ai/resolve.py` (`provider_for_user`, `UserKeyProvider`: cap
+  per call, hard stop, `billed_to_user_key`, no plan usage rows, no organisation `mark_used`); routes
+  `/api/ai/byok/connection|connect|limits|acknowledge|copy-tenant-key` (app/ai/connect_routes.py). User-started callers
+  (Copilot chat and routes, generator, screener NL, scanner plan, option-chain Ask, journal, support, chart analysis) go
+  through the resolver; background jobs stay on the organisation's key. Chart analysis refuses a "may train" key until
+  "My key is on a paid plan". One refusal `detail.code = "ai_not_connected"`.
+- Frontend: `src/aiKeys/keyFormats.ts`, `errors.ts`, `connect.ts`, `ConnectAiPanelV2.tsx` (paste, detect / picker,
+  consent line, free-tier line, auto save + test, Connected / Disconnect, Fix / Remove, Limits bar in rupees, "Get a
+  free key" drawer), `ConnectAiHostV2.tsx` (opens the panel on `ai_not_connected`); Copilot v2 empty state + chip;
+  Settings → AI only the panel; the AI provider card on /admin. Tests: backend `test_settings_a_connect_ai.py`, vitest
+  `keyFormats.test.ts`, `ConnectAiPanelV2.test.tsx`, `connectAiError.test.ts`; e2e `connect-ai-v2.e2e.ts` with baselines
+  `connect-ai-v2-*` (360 / 390 / 1440, light / dark).
 
 ## 2026-10-22 - Item 5 (owner's handover): the AI Copilot, second slice - jobs 3, 4, 5 (behind `ui_v2`)
 

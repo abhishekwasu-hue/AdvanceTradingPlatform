@@ -128,6 +128,9 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/tests/fixtures/zones/walk_1m.csv": "9d0fa549c0df43a2e8b1dfe087e74e533bfe968de718accd0f003c100695719a",
     "backend/tests/fixtures/zones/chart_bands_cases.json": "66a90beb9b4e75201b937005f46ad53e81494bdc19b5520458b25958eb7c3436",
     "frontend/src/charting/__fixtures__/chart_bands_cases.json": "66a90beb9b4e75201b937005f46ad53e81494bdc19b5520458b25958eb7c3436",
+    # Settings redesign A: the AI key-format table and its cases (obviously fake keys only), backend + byte-identical copy
+    "backend/tests/fixtures/key_formats.json": "6d8d82749a43606325a0341641074f3461d3958345a348de07a2bd09d10ebdb0",
+    "frontend/src/aiKeys/__fixtures__/key_formats.json": "6d8d82749a43606325a0341641074f3461d3958345a348de07a2bd09d10ebdb0",
     # made-up rows in NSE's file layouts (the universe importer's tests)
     "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
     "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",

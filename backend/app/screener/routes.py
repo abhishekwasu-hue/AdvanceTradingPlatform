@@ -692,7 +692,6 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
                            _ack: None = Depends(_ai_acknowledged), _limit: None = Depends(_ai_rate_limit)) -> Dict[str, Any]:
     """N3 S9: plain language -> a ScreenQL draft the trader checks, edits and runs (app/screener/nl.py). Nothing runs and
     nothing is stored here; flags `screener_copilot` and `ai_copilot`."""
-    from app.ai import settings as ai_settings
     from app.ai.prompt_versions import stamp
     from app.ai.providers import ProviderError, RuleBasedProvider
     from app.ai.tools.screener import free_text_in
@@ -706,7 +705,9 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
     tenant = await session.get(Tenant, user.tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Organisation not found")
-    provider = await ai_settings.provider_for(session, tenant, task="screener_nl", user_id=user.id)
+    from app.ai import resolve as ai_resolve
+    provider = await ai_resolve.provider_for_user(session, user, tenant, "screener_nl")
+    await ai_resolve.refuse_if_not_connected(session, tenant.id, provider)      # Settings redesign A1 (flag on only)
     if isinstance(provider, RuleBasedProvider):
         raise HTTPException(status_code=409, detail="No AI provider is set up for this organisation (Settings > AI); write the screen in the "
                                                     "builder or the query editor instead" + (f" ({provider.reason})" if provider.reason else ""))
@@ -721,7 +722,7 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
         try:
             draft = nl.parse(await provider.complete(system, prompt, max_tokens=1200))
         except (ProviderError, ValueError, json.JSONDecodeError) as exc:
-            await ai_settings.mark_used(session, user.tenant_id, error=str(exc)[:200])
+            await ai_resolve.mark_used(session, user.tenant_id, provider, error=str(exc)[:200])
             raise HTTPException(status_code=502, detail="The AI did not answer usably; write the screen in the builder") from exc
         at = nl.non_ascii_at(draft["text"])
         if at is not None:
@@ -742,7 +743,7 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
         # the repair turn goes back to the model only, so it carries the validator's own messages (they quote its draft)
         prompt = (f"REQUEST:\n{body.text.strip()}\n\nYour screen {draft['text']!r} has problems: "
                   + "; ".join(p.message for p in problems)[:800] + "\nAnswer again with a corrected screen, same JSON shape.")
-    await ai_settings.mark_used(session, user.tenant_id)
+    await ai_resolve.mark_used(session, user.tenant_id, provider)
     if draft is None or validated is None:
         raise HTTPException(status_code=502, detail="The AI did not answer; write the screen in the builder")
     ok = bool(validated.ok) and not problems

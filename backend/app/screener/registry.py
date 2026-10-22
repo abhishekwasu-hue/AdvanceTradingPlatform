@@ -116,6 +116,8 @@ _SIDE = Arg("side", STR, choices=("up", "down"))
 _CONFIRM = Arg("confirm", STR, "any", False, choices=CONFIRM_STATES)
 _CONFIRM_BARS = tuple(("confirm", state, 1) for state in CONFIRM_STATES[1:])
 _HHMM = r"([01][0-9]|2[0-3]):[0-5][0-9]"
+_RSI_PERIOD = Arg("period", "window", 14, False)          # strategy templates E2: the RSI period of a divergence
+RSI_DIVERGENCE_REF_WHATS: Tuple[str, ...] = ("extreme", "confirm_bar")
 BREAKOUT_FLAG = "screener_breakouts"
 BREAKOUT_BK3_FLAG = "screener_breakouts_bk3"        # U6 BK3: VCP + indicator breakouts, on top of `screener_breakouts`
 BREAKOUT_BK4_FLAG = "screener_breakouts_bk4"        # U6 BK4: trendline / pattern / gap / retest, on top of `screener_breakouts`
@@ -351,10 +353,22 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     # AMW-3 (flag `screenql_amw_functions`): the AMW screener's predicates as series - closed bars, causal
     Spec("StDev", "factor", NUM, "same", (_X, _N), flag=AMW_FLAG,
          doc="population standard deviation of x over n bars (divides by n, like Pine's ta.stdev)"),
+    # strategy templates E2 (TPL-7): the named argument period= is the RSI's period (left out: 14, so every older call is
+    # byte-identical)
     Spec("RsiDivergence", "filter", BOOL, None, (Arg("side", STR, choices=("bullish", "bearish")), Arg("lookback", "window", 15, False), _DEGREE),
-         cost=3.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=AMW_FLAG,
+         kwargs=(_RSI_PERIOD,), cost=3.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=AMW_FLAG,
          doc="regular RSI(14) divergence between the last two CONFIRMED swing lows (bullish: a lower low with a higher RSI) or"
-             " highs (bearish: a higher high with a lower RSI), the latest swing's extreme at most `lookback` bars before this bar"),
+             " highs (bearish: a higher high with a lower RSI), the latest swing's extreme at most `lookback` bars before this bar"
+             " (named: period= the RSI's period, default 14)"),
+    # strategy templates E2 (TPL-7, owner order R2 style): the divergence's prices as a series - the same divergences as
+    # RsiDivergence with the same degree and period
+    Spec("RsiDivergenceRef", "factor", NUM, "price", (Arg("what", STR, choices=RSI_DIVERGENCE_REF_WHATS),
+                                                      Arg("side", STR, choices=("bullish", "bearish")), _DEGREE),
+         kwargs=(_RSI_PERIOD,), cost=3.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=AMW_FLAG,
+         doc="the latest regular RSI divergence's prices (the same divergences as RsiDivergence with the same degree and"
+             " period=), held from the bar that confirmed its swing until the next divergence of that side is confirmed"
+             " (missing before the first one): extreme (the divergent swing's own low - bullish - or high - bearish),"
+             " confirm_bar (the far side of the bar that confirmed that swing: its high - bullish - or its low - bearish)"),
     Spec("SwingLabel", "classifier", CAT, None, (Arg("kind", STR, choices=("high", "low")), _DEGREE), cost=2.0, min_bars=SWING_MIN_BARS,
          degree_min_bars=SWING_DEGREE_MIN_BARS, values=("HH", "LH", "HL", "LL"), flag=AMW_FLAG,
          doc="HH / LH (kind high) or HL / LL (kind low): the last CONFIRMED swing of that kind against the one before it (an equal"

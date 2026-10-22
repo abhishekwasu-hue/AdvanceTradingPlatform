@@ -123,6 +123,7 @@ DRAWN_AS: Dict[str, str] = {
     # AMW-3: StDev is a number drawn through its comparison; the divergence, the swing label and the time window are a
     # filter / category with no geometry of their own (the strip, with the reason)
     "StDev": "series", "RsiDivergence": "strip", "SwingLabel": "strip", "TimeOfDay": "strip",
+    "RsiDivergenceRef": "series",                              # strategy templates E2: the divergence's price, drawn as its line
 }
 
 

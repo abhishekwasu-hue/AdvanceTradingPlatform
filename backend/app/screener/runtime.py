@@ -365,7 +365,9 @@ class _Eval:
             "Pattern": lambda: _pattern_series(f, str(self.ev(args[0], tf)), _text(1, "any")),
             # AMW-3 (flag screenql_amw_functions): the AMW screener's predicates as causal series
             "StDev": lambda: self.series(args[0], tf).rolling(win(1)).std(ddof=0),
-            "RsiDivergence": lambda: _rsi_divergence(f, _text(0, "bullish"), win(1, 15), int(num(2, 0))),
+            "RsiDivergence": lambda: _rsi_divergence(f, _text(0, "bullish"), win(1, 15), int(num(2, 0)), int(kw("period") or RSI_DIVERGENCE_PERIOD)),
+            "RsiDivergenceRef": lambda: _rsi_divergence_ref(f, _text(0, "extreme"), _text(1, "bullish"), int(num(2, 0)),
+                                                            int(kw("period") or RSI_DIVERGENCE_PERIOD)),
             "SwingLabel": lambda: _swing_label(f, _text(0, "high"), int(num(1, 0))),
             "TimeOfDay": lambda: pd.Series(time_of_day(f.index, _text(0, ""), _text(1, "")), index=f.index),
             # Wave templates W1 (flag screener_waves): the causal wave count (app/price_action/waves), close-only in alerts
@@ -601,32 +603,72 @@ def _swing_label(f: pd.DataFrame, kind: str, degree: int) -> pd.Series:
     return pd.Series(out, index=f.index, dtype=object).ffill()
 
 
-def _rsi_divergence(f: pd.DataFrame, side: str, lookback: int, degree: int) -> pd.Series:
-    """AMW-3: a regular RSI(14) divergence on every bar, from the swings CONFIRMED by that bar. Bullish: the last swing low
-    is lower than the one before and RSI(14) at it is higher; bearish: a higher swing high with a lower RSI. RSI is read
-    at each swing's extreme bar (known by the confirmation bar). True while the latest swing's extreme is at most
-    `lookback` bars before the bar; false before two swings of the kind or where RSI has no value yet."""
+RSI_DIVERGENCE_PERIOD = 14         # RsiDivergence's RSI period when `period=` is left out (AMW-3: always 14)
+
+
+@dataclass(frozen=True)
+class _Divergence:
+    """One confirmed swing of the divergence's kind (strategy templates E2): where it was confirmed, its extreme bar and
+    price, and whether it diverged from the swing of the same kind before it."""
+    confirmed: int
+    bar: int
+    price: float
+    diverges: bool
+
+
+def _divergence_swings(f: pd.DataFrame, side: str, degree: int, period: int) -> List[_Divergence]:
+    """Every confirmed swing low (bullish) / high (bearish) of the degree, in confirmation order, with its divergence state
+    against the one before (a lower low with a higher RSI(period) / a higher high with a lower RSI(period); RSI read at
+    each swing's extreme bar, known by the confirmation bar). Shared by RsiDivergence and RsiDivergenceRef."""
     if side not in ("bullish", "bearish"):
         raise ScreenRuntimeError(f"unknown divergence side {side!r}")
     k = "L" if side == "bullish" else "H"
-    rsi = _rsi(f["close"].astype(float), 14).to_numpy(float)
-    n_ = len(f)
-    div = np.zeros(n_, dtype=bool)                      # the divergence state from each confirmation on
-    last_bar = np.full(n_, -1, dtype=np.int64)          # the latest swing's extreme bar, known at each bar
+    rsi = _rsi(f["close"].astype(float), period).to_numpy(float)
+    out: List[_Divergence] = []
     prev: Optional[Any] = None
     for p in _swing_pivots(f, degree):
         if p.kind != k:
             continue
-        c, b = int(p.confirmed_idx), int(p.bar_idx)
+        b = int(p.bar_idx)
         state = False
         if prev is not None:
             r0, r1 = rsi[int(prev.bar_idx)], rsi[b]
             if np.isfinite(r0) and np.isfinite(r1):
                 state = bool(p.price < prev.price and r1 > r0) if k == "L" else bool(p.price > prev.price and r1 < r0)
-        div[c:], last_bar[c:] = state, b
+        out.append(_Divergence(int(p.confirmed_idx), b, float(p.price), state))
         prev = p
+    return out
+
+
+def _rsi_divergence(f: pd.DataFrame, side: str, lookback: int, degree: int, period: int = RSI_DIVERGENCE_PERIOD) -> pd.Series:
+    """AMW-3: a regular RSI divergence on every bar, from the swings CONFIRMED by that bar. Bullish: the last swing low
+    is lower than the one before and the RSI at it is higher; bearish: a higher swing high with a lower RSI. RSI is read
+    at each swing's extreme bar (known by the confirmation bar). True while the latest swing's extreme is at most
+    `lookback` bars before the bar; false before two swings of the kind or where RSI has no value yet. The RSI period is
+    `period` (strategy templates E2; 14 when left out, as before)."""
+    n_ = len(f)
+    div = np.zeros(n_, dtype=bool)                      # the divergence state from each confirmation on
+    last_bar = np.full(n_, -1, dtype=np.int64)          # the latest swing's extreme bar, known at each bar
+    for d in _divergence_swings(f, side, degree, period):
+        div[d.confirmed:], last_bar[d.confirmed:] = d.diverges, d.bar
     age = np.arange(n_) - last_bar
     return pd.Series(div & (last_bar >= 0) & (age <= lookback), index=f.index)
+
+
+def _rsi_divergence_ref(f: pd.DataFrame, what: str, side: str, degree: int, period: int = RSI_DIVERGENCE_PERIOD) -> pd.Series:
+    """Strategy templates E2: the latest divergence's prices, held from the bar that confirmed its swing until the next
+    divergence of the side is confirmed (a later swing that does not diverge leaves it as it is); missing before the first
+    one. `extreme`: the divergent swing's own price (its low - bullish - or high - bearish); `confirm_bar`: the far side of
+    the bar that confirmed it (its high - bullish - or its low - bearish). Reads only bars up to each bar (the swings are
+    used from their confirmation bar on)."""
+    if what not in ("extreme", "confirm_bar"):
+        raise ScreenRuntimeError(f"unknown divergence price {what!r}")
+    far = f["high" if side == "bullish" else "low"].to_numpy(float)
+    out = np.full(len(f), np.nan)
+    for d in _divergence_swings(f, side, degree, period):
+        if d.diverges:
+            out[d.confirmed:] = d.price if what == "extreme" else far[d.confirmed]
+    return pd.Series(out, index=f.index)
 
 
 def time_of_day(index: pd.DatetimeIndex, start: str, end: str) -> np.ndarray:

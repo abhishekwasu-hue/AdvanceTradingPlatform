@@ -2978,3 +2978,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   property tests, words, ids, adapter, the API with an OPTION paper bot).
 - Not built: F1's members A1 / D3 and F2's E3 (not in the library yet), G12 (needs a pack composition). Found: A2's
   DowTrend / reversal check is not exactly mirror-symmetric on some synthetic series (pre-existing). Questions TPL-F1..F8.
+## 22 Oct - Strategy templates TPL-7: E2 RSI divergence, and the option seller packs version 2 (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl7-e2-packs-v2`. No migration (templates are JSON in the repository; no new flag).
+- ScreenQL: `RsiDivergence` takes `period=` (the RSI period; left out = RSI 14, byte-identical to main, tested); the new
+  companion `RsiDivergenceRef(extreme | confirm_bar, side, degree, period=)` (the divergence's prices, held from the bar
+  that confirmed the divergent swing; flag `screenql_amw_functions`).
+- E2 RSI divergence (generic): the rising edge of a regular divergence, then a change of character on smaller swings or
+  a close beyond the confirming bar (a setting), within a number of bars; the divergence's extreme is the invalidation and
+  a close beyond it first voids the setup. Every number a setting with a default; signal text in structure words.
+- Packs version 2: F1 + D3 (moving-average pullback in trend, not on Weekly), F2 + E3 (Bollinger mean reversion in a
+  range) as new `source` choices; the schema gained nested switches, a signal text per choice and timeframes per choice
+  (every earlier template unchanged). Version 1 is kept word for word in `templates/archive/`; an id adopted on version
+  1 resolves to exactly its behaviour. A1 is not in the library yet, so F1 has no A1 source (TPL-Q50).
+- Docs: the committed conflict markers in `docs/design/STRATEGY_TEMPLATES_IMPL.md` (from the step 5 / family F merges)
+  removed, both sides' text kept.
+- Tests: `tests/test_tpl7_e2_packs_v2.py`, `tests/test_tpl6_family_f.py` (reads version 2), runtime fixture, causal
+  cases (lookahead job), history sweep. Questions TPL-Q50..TPL-Q57.

@@ -310,6 +310,7 @@ SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false 
     "RetestEntryRef": 'close > RetestEntryRef("held_level", "up", "range", 20, FALSE, k=0, v=0)',     # step 3 (R7)
     # step 4 (R2 for the other breakout families): the same reading for each family's companion
     "SwingBreakoutRef": 'close > SwingBreakoutRef("held_level", "up", 0, 0)',
+    "RsiDivergenceRef": 'close > RsiDivergenceRef("extreme", "bullish")',          # strategy templates E2 (TPL-7)
     "NRBreakoutRef": 'close > NRBreakoutRef("held_level", "up", "nr7", 0, 0)',
     "VolumeBreakoutRef": 'close > VolumeBreakoutRef("held_level", "up", 1.5)',
     "DonchianBreakoutRef": 'close > DonchianBreakoutRef("held_level", "up", 20, 0)',

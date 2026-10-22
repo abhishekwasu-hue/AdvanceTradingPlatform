@@ -15,6 +15,9 @@ Family G (the wave templates) carries some twenty settings, so its choices are w
 choices (`COMPACT_FAMILIES`; "aggressive" -> "0") to stay within the 80 characters; the template version pins the order.
 Every other family's id is written exactly as before.
 
+An id naming an older version of a template resolves to that version when the library keeps it (TPL-7:
+`templates/archive/`), else it reads "adopt it again".
+
 The id IS the stored provenance (open question TPL-Q2): the template id and version and every setting are on each
 deployment, order and trade that carries it, and the params hash is recomputed from it (`compile.params_hash`). Only the
 setup instance of a signal is not stored: it is on the Signal in memory (`Signal.provenance`, never shown to a user) and
@@ -111,7 +114,13 @@ def decode(strategy_id: str) -> Tuple[Template, Settings]:
     except KeyError:
         raise KeyError(f"Unknown strategy id: {strategy_id}") from None
     if version != str(template.version):
-        raise KeyError("This strategy template has been updated since it was adopted: adopt it again")
+        # TPL-7: a kept earlier version (e.g. a pack before it gained members) resolves to itself, word for word
+        if not (version.isdigit() and str(int(version)) == version):
+            raise KeyError(f"Unknown strategy id: {strategy_id}")
+        try:
+            template = library.get_version(template_id, int(version))
+        except KeyError:
+            raise KeyError("This strategy template has been updated since it was adopted: adopt it again") from None
     texts = values.split(",") if template.params else ([] if values == "" else [values])
     if len(texts) != len(template.params):
         raise KeyError(f"Unknown strategy id: {strategy_id}")

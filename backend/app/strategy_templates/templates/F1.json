@@ -1,28 +1,193 @@
 {
   "schema": "atp.template/1",
   "id": "F1",
-  "version": 1,
+  "version": 2,
   "name": "Directional seller pack",
   "family": "F",
   "idea": "For option sellers: a trend recipe's signals read as a bullish or bearish continuation side; the spread, its strikes and the lots come only from your own bot settings.",
   "difficulty": "Intermediate",
   "style": "Both",
-  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d", "1w"],
+  "allowed_timeframes": [
+    "5m",
+    "15m",
+    "30m",
+    "1h",
+    "1d",
+    "1w"
+  ],
+  "timeframes_by": {
+    "by": "source",
+    "allowed": {
+      "ma_pullback": [
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "1d"
+      ]
+    }
+  },
   "params": [
-    {"key": "source", "label": "Signals from", "help": "The trend recipe whose signals give the side. Its settings are below; the recipe runs exactly as on its own.",
-     "type": "enum", "default": "supertrend_flip", "choices": ["supertrend_flip"], "choice_labels": ["Supertrend flip"]},
-    {"key": "period", "label": "Supertrend period", "help": "Bars of the average true range behind the Supertrend line.",
-     "type": "int", "default": 10, "min": 1, "max": 100, "step": 1},
-    {"key": "multiplier", "label": "Supertrend multiplier", "help": "How many average true ranges the line keeps from the middle of the bar.",
-     "type": "float", "default": 3.0, "min": 0.5, "max": 10.0, "step": 0.1},
-    {"key": "use_context", "label": "Higher-timeframe filter", "help": "Only signal when the Supertrend on the context timeframe points the same way.",
-     "type": "bool", "default": false},
-    {"key": "context_timeframe", "label": "Context timeframe", "help": "The higher timeframe the filter reads (closed bars only).",
-     "type": "timeframe", "default": "1d", "choices": ["15m", "30m", "1h", "1d", "1w"]}
+    {
+      "key": "source",
+      "label": "Signals from",
+      "help": "The trend recipe whose signals give the side. Its settings are below; the recipe runs exactly as on its own.",
+      "type": "enum",
+      "default": "supertrend_flip",
+      "choices": [
+        "supertrend_flip",
+        "ma_pullback"
+      ],
+      "choice_labels": [
+        "Supertrend flip",
+        "Moving-average pullback in trend"
+      ]
+    },
+    {
+      "key": "period",
+      "label": "Supertrend period",
+      "help": "Bars of the average true range behind the Supertrend line.",
+      "type": "int",
+      "default": 10,
+      "min": 1,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "multiplier",
+      "label": "Supertrend multiplier",
+      "help": "How many average true ranges the line keeps from the middle of the bar.",
+      "type": "float",
+      "default": 3.0,
+      "min": 0.5,
+      "max": 10.0,
+      "step": 0.1
+    },
+    {
+      "key": "use_context",
+      "label": "Higher-timeframe filter",
+      "help": "Only signal when the Supertrend on the context timeframe points the same way.",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "context_timeframe",
+      "label": "Context timeframe",
+      "help": "The higher timeframe the filter reads (closed bars only).",
+      "type": "timeframe",
+      "default": "1d",
+      "choices": [
+        "15m",
+        "30m",
+        "1h",
+        "1d",
+        "1w"
+      ]
+    },
+    {
+      "key": "ma_type",
+      "label": "Average type",
+      "help": "How both averages are calculated.",
+      "type": "ma_type",
+      "default": "EMA",
+      "choices": [
+        "EMA",
+        "SMA",
+        "WMA",
+        "HMA"
+      ],
+      "choice_labels": [
+        "Exponential",
+        "Simple",
+        "Weighted",
+        "Hull"
+      ]
+    },
+    {
+      "key": "fast",
+      "label": "Pullback average",
+      "help": "Bars in the fast average the pullback comes back to.",
+      "type": "int",
+      "default": 20,
+      "min": 2,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "slow",
+      "label": "Trend average",
+      "help": "Bars in the slow average that defines the trend.",
+      "type": "int",
+      "default": 50,
+      "min": 3,
+      "max": 500,
+      "step": 1
+    },
+    {
+      "key": "slope_bars",
+      "label": "Trend slope over (bars)",
+      "help": "The trend average must be higher (rising trend) or lower (falling trend) than it was this many bars before.",
+      "type": "int",
+      "default": 5,
+      "min": 1,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "trigger_bar",
+      "label": "Reversal on the pullback bar",
+      "help": "Whether the bar that first reaches the fast average may itself be the reversal bar, or the reversal must come on a later bar.",
+      "type": "enum",
+      "default": "later",
+      "choices": [
+        "later",
+        "same"
+      ],
+      "choice_labels": [
+        "Only on a later bar",
+        "The same bar may count"
+      ]
+    },
+    {
+      "key": "pullback_max_bars",
+      "label": "Reversal within (bars)",
+      "help": "The reversal must come within this many bars after the pullback first reached the fast average.",
+      "type": "int",
+      "default": 20,
+      "min": 1,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "exit_rule",
+      "label": "The idea has ended",
+      "help": "When the close goes back across the trend average, or no exit signal from this template.",
+      "type": "enum",
+      "default": "slow_average",
+      "choices": [
+        "slow_average",
+        "none"
+      ],
+      "choice_labels": [
+        "A close back across the trend average",
+        "No exit signal"
+      ]
+    }
   ],
   "constraints": [
-    {"left": "context_timeframe", "op": ">", "right": "signal_timeframe", "when": "use_context",
-     "message": "The context timeframe must be higher than the signal timeframe."}
+    {
+      "left": "context_timeframe",
+      "op": ">",
+      "right": "signal_timeframe",
+      "when": "use_context",
+      "message": "The context timeframe must be higher than the signal timeframe."
+    },
+    {
+      "left": "fast",
+      "op": "<",
+      "right": "slow",
+      "message": "The pullback average must be shorter than the trend average."
+    }
   ],
   "sides_default": "both",
   "context": {
@@ -31,7 +196,8 @@
       "supertrend_flip": {
         "long": "SupertrendDir($period, $multiplier) == 1",
         "short": "SupertrendDir($period, $multiplier) == -1"
-      }
+      },
+      "ma_pullback": null
     },
     "timeframe_param": "context_timeframe",
     "enabled_by": "use_context"
@@ -44,16 +210,47 @@
         "long": "SupertrendDir($period, $multiplier) == 1 AND SupertrendDir($period, $multiplier)[1] == -1",
         "short": "SupertrendDir($period, $multiplier) == -1 AND SupertrendDir($period, $multiplier)[1] == 1",
         "same_bar": true
+      },
+      "ma_pullback": {
+        "by": "trigger_bar",
+        "variants": {
+          "later": {
+            "kind": "event",
+            "long": "close > MA(close, $slow, $ma_type) AND MA(close, $slow, $ma_type) > Lag(MA(close, $slow, $ma_type), $slope_bars) AND low <= MA(close, $fast, $ma_type) AND low[1] > MA(close, $fast, $ma_type)[1]",
+            "short": "close < MA(close, $slow, $ma_type) AND MA(close, $slow, $ma_type) < Lag(MA(close, $slow, $ma_type), $slope_bars) AND high >= MA(close, $fast, $ma_type) AND high[1] < MA(close, $fast, $ma_type)[1]",
+            "expiry_bars": "$pullback_max_bars",
+            "same_bar": false
+          },
+          "same": {
+            "kind": "event",
+            "long": "close > MA(close, $slow, $ma_type) AND MA(close, $slow, $ma_type) > Lag(MA(close, $slow, $ma_type), $slope_bars) AND low <= MA(close, $fast, $ma_type) AND low[1] > MA(close, $fast, $ma_type)[1]",
+            "short": "close < MA(close, $slow, $ma_type) AND MA(close, $slow, $ma_type) < Lag(MA(close, $slow, $ma_type), $slope_bars) AND high >= MA(close, $fast, $ma_type) AND high[1] < MA(close, $fast, $ma_type)[1]",
+            "expiry_bars": "$pullback_max_bars",
+            "same_bar": true
+          }
+        }
       }
     }
   },
-  "trigger": null,
+  "trigger": {
+    "by": "source",
+    "variants": {
+      "supertrend_flip": null,
+      "ma_pullback": {
+        "long": "ReversalAt(MA(close, $fast, $ma_type), \"bullish\") AND close > MA(close, $fast, $ma_type)",
+        "short": "ReversalAt(MA(close, $fast, $ma_type), \"bearish\") AND close < MA(close, $fast, $ma_type)"
+      }
+    }
+  },
   "invalidation": {
     "by": "source",
     "variants": {
       "supertrend_flip": {
         "long": "Supertrend($period, $multiplier)",
         "short": "Supertrend($period, $multiplier)"
+      },
+      "ma_pullback": {
+        "extreme": "since_setup"
       }
     }
   },
@@ -63,14 +260,67 @@
       "supertrend_flip": {
         "long": "SupertrendDir($period, $multiplier) == -1 AND SupertrendDir($period, $multiplier)[1] == 1",
         "short": "SupertrendDir($period, $multiplier) == 1 AND SupertrendDir($period, $multiplier)[1] == -1"
+      },
+      "ma_pullback": {
+        "by": "exit_rule",
+        "variants": {
+          "slow_average": {
+            "long": "close < MA(close, $slow, $ma_type)",
+            "short": "close > MA(close, $slow, $ma_type)"
+          },
+          "none": null
+        }
       }
     }
   },
   "evidence": [],
   "signal_text": {
-    "long": [{"token": "supertrend_turned_bullish"}, {"token": "context_supertrend_agrees", "when": "use_context"},
-             {"token": "pack_bullish_continuation"}],
-    "short": [{"token": "supertrend_turned_bearish"}, {"token": "context_supertrend_agrees", "when": "use_context"},
-              {"token": "pack_bearish_continuation"}]
+    "by": "source",
+    "variants": {
+      "supertrend_flip": {
+        "long": [
+          {
+            "token": "supertrend_turned_bullish"
+          },
+          {
+            "token": "context_supertrend_agrees",
+            "when": "use_context"
+          },
+          {
+            "token": "pack_bullish_continuation"
+          }
+        ],
+        "short": [
+          {
+            "token": "supertrend_turned_bearish"
+          },
+          {
+            "token": "context_supertrend_agrees",
+            "when": "use_context"
+          },
+          {
+            "token": "pack_bearish_continuation"
+          }
+        ]
+      },
+      "ma_pullback": {
+        "long": [
+          {
+            "token": "pullback_to_fast_ma_reversed_up"
+          },
+          {
+            "token": "pack_bullish_continuation"
+          }
+        ],
+        "short": [
+          {
+            "token": "rally_to_fast_ma_reversed_down"
+          },
+          {
+            "token": "pack_bearish_continuation"
+          }
+        ]
+      }
+    }
   }
 }

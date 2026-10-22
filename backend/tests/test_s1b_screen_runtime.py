@@ -285,6 +285,15 @@ def test_amw3_functions_amw_port():
     labels = _ev('SwingLabel("high")', walk)
     assert set(labels.dropna()) <= {"HH", "LH"} and labels.notna().any()
     assert _ev('RsiDivergence("bullish", 60)', walk).dtype == bool
+    # strategy templates E2 (TPL-7): period= left out is RSI 14; the divergence's prices held from its confirmation bar
+    assert _ev('RsiDivergence("bullish", 60)', walk).equals(_ev('RsiDivergence("bullish", 60, 0, period=14)', walk))
+    for side in ("bullish", "bearish"):
+        ext = _ev(f'RsiDivergenceRef("extreme", "{side}", 0, period=5)', walk)
+        far = _ev(f'RsiDivergenceRef("confirm_bar", "{side}", 0, period=5)', walk)
+        assert ext.notna().any() and (ext.notna() == far.notna()).all(), side
+        rising = _ev(f'RsiDivergence("{side}", 300, 0, period=5)', walk)
+        first = int(np.flatnonzero(rising.to_numpy())[0])
+        assert ext.iloc[:first].isna().all() and ext.iloc[first:].notna().all(), side
 
 
 

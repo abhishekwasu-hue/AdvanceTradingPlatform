@@ -127,7 +127,6 @@ E5 VWAP reclaim (each invalidation is "the extreme since the setup": an engine p
 E5 also needs "the same session" for the cross-under), E2 RSI divergence (RsiDivergence reads a fixed RSI 14 and its
 extreme has no companion), and family F.
 
-<<<<<<< HEAD
 ## Step 5 (TPL-5): the extreme since the setup bar, a session-bound setup, the swing degree for the retest; C2, D3, E1, E3, E5
 
 Same flag `strategy_templates` (OFF), PAPER only, signals only, no migration. Owner questions TPL-Q41..TPL-Q49.
@@ -161,8 +160,9 @@ lookahead job). No frontend change: the Paper bot form lists the templates from 
 honest match (TPL-Q48).
 
 Not built in step 5 (TPL-Q49): E2 RSI divergence (an RSI period on RsiDivergence, an extreme companion and the
-lower-degree trigger: its own PR), B10 gap and go, C4 trendline breakout + retest (TPL-Q18), family F.
-=======
+lower-degree trigger: its own PR - done in TPL-7 below), B10 gap and go, C4 trendline breakout + retest (TPL-Q18), family F
+(done in TPL-6 below).
+
 ## Family F (TPL-6): the option seller packs F1, F2
 
 Same flag `strategy_templates` (OFF), PAPER only, signals only, no migration. Owner questions TPL-F1..TPL-F8.
@@ -183,7 +183,7 @@ user's settings); a pack has no field for any of them and the adopt pre-fill car
 | F2 range seller pack: `source` = range edges (A2: its swing size), read as "the lower / upper edge of the range ..."; invalidation the edge, no exit (A2 has none) | `templates/F2.json` | done (member A2) |
 | The pack mapping (pack -> source -> member), the adopt note | `packs.py`; `routes.py` (`_notes`, one line) | done |
 | Signal text: four tokens (structure words; no buy / sell / target / stop words, no numbers) | `language.py` | done |
-| F1's other members A1 (areas, TPL-Q23) and D3 (the "extreme since the setup" piece), F2's member E3 (the same piece) | - | next: new `source` choices in a new pack version once those templates are in the library (TPL-F1, TPL-F2) |
+| F1's other members A1 (areas, TPL-Q23) and D3 (the "extreme since the setup" piece), F2's member E3 (the same piece) | - | D3 and E3: done in TPL-7 below (pack version 2); A1 waits (TPL-Q50) |
 | G12 (the wave seller pack, labels over G1-G11) | - | not built: G1-G11 already switch their parts on their own settings (trigger style, window) and share setting keys with different defaults / choices, so one pack template cannot hold them with today's one-level `variants`; needs a pack composition (TPL-F7, WAVE-10) |
 
 Tests: `tests/test_tpl6_family_f.py` - every pack variant compiles to its member's own parts (every allowed timeframe, the
@@ -200,20 +200,43 @@ guard, "no number written into a rule", the ids, the adapter's signal (no target
 the API: the cards ("Option seller packs"), adopt as a pre-fill with the note and no option field, an OPTION bull put
 deployment on PAPER from the pre-fill keeping the user's width, LIVE refused. No frontend change: the Paper bot form lists
 the templates from the API.
->>>>>>> origin/main
+
+## TPL-7: E2 RSI divergence, and the packs version 2 (F1 + D3, F2 + E3)
+
+Same flag `strategy_templates` (OFF), PAPER only, signals only, no migration. Owner questions TPL-Q50..TPL-Q57.
+
+| Part | Where | Status |
+|---|---|---|
+| `RsiDivergence(side, lookback, degree, period=)`: the RSI's period as a named argument; left out = RSI 14, so every older call (screens, alerts, the idea library) is byte-identical - tested against main's implementation; validated like the other named arguments, a long period asks for its history (TPL-Q54) | `screener/registry.py`, `runtime.py` | done |
+| The divergence's prices `RsiDivergenceRef(what, side, degree, period=)`: `extreme` (the divergent swing's own low / high) and `confirm_bar` (the far side of the bar that confirmed it), held from that confirmation bar until the next divergence of the side, missing before the first one; the same swings and RSI as RsiDivergence (one shared reading); flag `screenql_amw_functions`; sparse in the engine; drawn as a line in the evidence (TPL-Q51) | `screener/registry.py`, `runtime.py`, `evidence.py`, `amw_functions.py`, `strategy_templates/engine.py` | done |
+| E2 RSI divergence (generic): the setup the rising edge of a regular divergence (instance: the bar that confirmed the swing), the trigger a setting - a change of character on smaller swings (`SwingBreakType`, the smaller size below the divergence's) or a close beyond the confirming bar - within `confirm_max_bars`, the confirming bar itself allowed; invalidation and arm level the divergence's extreme (a close beyond it first voids the setup); RSI period, swing size, divergence age, smaller swing size, break distance all settings; no exit (the order names none) (TPL-Q51..Q53). A3 stays the area-bound version (TPL-Q23) | `templates/E2.json` | done |
+| Schema (still `atp.template/1`; every earlier template unchanged): a variant may itself be a switch (nested `variants`, opened one level after the other; a nested switch never re-chooses by an outer setting; every leaf of an invalidation has an expression); `signal_text` may be chosen by an enum setting (`SignalTextSwitch`); `timeframes_by` limits the signal timeframes per choice (a plain message names them in words); `validate_template` compiles every path of nested choices | `schema.py`, `compile.py`, `library.py` | done |
+| Packs version 2: F1 `source` = Supertrend flip (D1) or moving-average pullback in trend (D3, not on Weekly); F2 `source` = range edges (A2) or Bollinger mean reversion in a range (E3; the swing size shared with A2 is one setting with the same default and bounds). Each member's parts, settings, switches, timeframes and words are its own (generated from the member JSON; tests hold them equal part by part and series by series) | `templates/F1.json`, `F2.json`, `packs.py` | done |
+| Version 1 kept: `templates/archive/F1.v1.json`, `F2.v1.json` are main's version 1 files word for word (their hashes pinned in a test); `library.get_version`, and `ids.decode` resolves an id adopted on version 1 to version 1 - the same signals, words and params hash; the library lists and adopts the newest only (TPL-Q55) | `library.py`, `ids.py` | done |
+| A1 as an F1 member | - | not built: A1 is not in the library (areas, TPL-Q23, TPL-Q50) |
+
+Tests: `tests/test_tpl7_e2_packs_v2.py` - RsiDivergence without `period=` equal to main's implementation (seeds, sides, lookbacks,
+degrees) and to `period=14`; each period against a reference with that period; the companion against the swings by value
+(held, a non-divergent swing leaves it), its validation and history, both read no later bar; E2 "fires exactly" against an
+independent walk of S4 / S5 / S6 / R8 with the arm-level breach (both triggers, several settings, swing size 2), both sides,
+the must-not cases (no rising edge, late, the extreme closed through first, a flat market), the constraints and the
+warm-up by swing size, the mirror test (whole ticks), the truncation test over many t, scan = backtest = options backtest
+= worker on one trailing window, property tests on random valid settings, the language guard, "no number written into a
+rule", the ids, the adapter's signal, provenance and flags; the nested switch, the signal-text switch and `timeframes_by`
+(accepted and refused), every earlier template without them; the version 1 files word for word, version 1 ids resolving
+to exactly their behaviour (equal to the member and to version 2's first source; the hash records the version), through
+the strategy resolver, unknown versions refused; the new members equal to D3 / E3 on their own; no option field; the API
+(cards with two sources, E2 listed, adopt of the new source as a PAPER pre-fill). `tests/test_tpl6_family_f.py` reads
+version 2 (its version 1 cases are the default source). The new series are in the runtime fixtures, the no-look-ahead
+cases (lookahead job) and the history sweep. No frontend change: the Paper bot form lists the templates from the API.
 
 ## Not in this PR (next PRs)
 
 - Family A's area templates A1, A8, A3, A4 (an area companion + zone timelines in the template engine, TPL-Q23), A6 / A7
   (their functions); then the rest of B / C / D / E (TPL-Q40: an engine "extreme since the setup" invalidation for D3, E1,
-<<<<<<< HEAD
   E3, E5 and the swing degree for C2: done in step 5; the gap companion for B10; C4 after TPL-Q18; E2 after an RSI period
-  and an extreme companion, TPL-Q49), then F.
-=======
-  E3, E5; the gap companion for B10; the swing degree forwarded for C2; C4 after TPL-Q18; E2 after an RSI period and an
-  extreme companion). Family F: F1 / F2 built (TPL-6 above); their further members (A1, D3, E3) and G12 next
-  (TPL-F1, TPL-F2, TPL-F7).
->>>>>>> origin/main
+  and an extreme companion, TPL-Q49: done in TPL-7), then F. Family F: F1 / F2 built (TPL-6 above); their further
+  members D3 and E3 joined in pack version 2 (TPL-7); A1 waits for areas (TPL-Q50); G12 next (TPL-F7).
 - Section 5 "exits as settings" (stop_source / target_rule on the deployment's exit settings): needs a migration and
   the owner's approval. Until then the adapter's Signal carries only the invalidation as its stop.
 - R4 rest: the stop_source rule per instrument_kind and the precedence table with tests (comes with section 5).

@@ -123,7 +123,11 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     # session-time window (a bar's own start time)
     "StDev": ["StDev(close, 20)", "StDev(close, 5)@1h", "StDev(RSI(14), 10)"],
     "RsiDivergence": ['RsiDivergence("bullish", 30)', 'RsiDivergence("bearish", 30)', 'RsiDivergence("bullish", 60, 1)',
-                      'RsiDivergence("bullish", 40)@15m'],
+                      'RsiDivergence("bullish", 40)@15m',
+                      # strategy templates E2 (TPL-7): the RSI period as a named argument, and the divergence's prices
+                      'RsiDivergence("bullish", 30, 0, period=7)', 'RsiDivergence("bearish", 40, 0, period=21)'],
+    "RsiDivergenceRef": ['RsiDivergenceRef("extreme", "bullish")', 'RsiDivergenceRef("confirm_bar", "bearish", 0, period=9)',
+                         'RsiDivergenceRef("extreme", "bullish", 0, period=7)@15m'],
     "SwingLabel": ['SwingLabel("high")', 'SwingLabel("low", 1)', 'SwingLabel("high", 0)@15m'],
     "TimeOfDay": ['TimeOfDay("09:30", "14:45")', 'TimeOfDay("15:00", "09:30")', 'TimeOfDay("10:15", "13:15")@1h'],
     # Wave templates W1 (flag screener_waves): the causal wave count from CONFIRMED swings, recomputed on new swings only

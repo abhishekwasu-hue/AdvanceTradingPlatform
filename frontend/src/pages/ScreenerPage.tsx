@@ -5,7 +5,7 @@
  *
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
-import { Code2, Layers, LayoutGrid, Play, Save } from "lucide-react";
+import { Code2, Layers, LayoutGrid, Lightbulb, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -22,7 +22,7 @@ import { ResultViews } from "../screener/ResultViews";
 import { EtfPanel } from "../screener/EtfPanel";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import { isLegends, type LegendsLibrary } from "../screener/legends";
-import { stagesFromServer } from "../screener/importStages";
+import { stagesFromServer, type ServerStage } from "../screener/importStages";
 import { isMirrors, isWatchLists, mirrorsByScreen, type MirrorsResponse, type WatchListsResponse } from "../screener/library";
 import { LibraryTools } from "../screener/LibraryTools";
 import { WatchlistPicker } from "../screener/WatchlistPicker";
@@ -37,6 +37,8 @@ import { ideaScanFromSearch, scanName } from "../ideas/model";
 
 // Handover 11c-1 (flag `strategy_lab_pine`): the Pine Script panel loads only when it is opened.
 const PinePanel = lazy(() => import("../lab/pine/PinePanel"));
+// Handover 11j (flag `screener_copilot`, behind `ui_v2`): a scan from a plain idea, part by part, as editable blocks.
+const IdeaPanel = lazy(() => import("../screener/IdeaPanel"));
 
 const VALIDATE_DELAY_MS = 350;
 /** D2 live counts: a preview run (not stored) once the trader pauses editing, on bars the server caches per symbol. */
@@ -97,6 +99,9 @@ export default function ScreenerPage(_props: PageProps) {
   // Handover 11c-1 (flag `strategy_lab_pine`): paste a Pine script, see what translates, run its condition as a screen.
   const pineOn = features.on("strategy_lab_pine");
   const [pineOpen, setPineOpen] = useState(false);
+  // Handover 11j (flag `screener_copilot`, behind `ui_v2`): "From an idea".
+  const ideaOn = features.on("screener_copilot") && features.on("ui_v2");
+  const [ideaOpen, setIdeaOpen] = useState(false);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries))
@@ -128,6 +133,15 @@ export default function ScreenerPage(_props: PageProps) {
       setName(s.name);
       setGalleryOpen(false);
     }).catch((e: unknown) => setOtherProblem(errorText(e)));
+  };
+
+  const openIdea = (server: ServerStage[], baseTf: string) => {
+    if (!registry) return;
+    if (stages.length > 0 && !window.confirm("Replace the current conditions with the scan from your idea?")) return;
+    setStages(stagesFromServer(registry, server));
+    setScanTf(baseTf);
+    setName("Scan from my idea");
+    setIdeaOpen(false);
   };
 
   // Idea library slice 1 (flag idea_library): "Try as a scan" opens `/screener?idea=T1&scan=up` - the idea's screen, its
@@ -262,7 +276,7 @@ export default function ScreenerPage(_props: PageProps) {
     <div className="screener-page pb-20 sm:pb-0">
       {/* Header strip: name (edit in place), freshness, Run (primary) / Save */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label className="min-w-0 flex-1">
+        <label className={cx("min-w-0 flex-1", ideaOn && "basis-full sm:basis-0")}>
           <span className="sr-only">Scan name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120}
                  className="w-full max-w-md rounded-control border border-transparent bg-transparent px-1 text-t24 font-semibold text-fg hover:border-border focus:border-border focus:outline-none focus:ring-2 focus:ring-brand" />
@@ -277,6 +291,7 @@ export default function ScreenerPage(_props: PageProps) {
           <Button size="sm" onClick={() => setToolsOpen(true)} data-testid="library-tools-open"><Layers size={14} /> Library tools</Button>
         )}
         {etfOn && <Button size="sm" onClick={() => setEtfOpen(true)} data-testid="etf-open"><LayoutGrid size={14} /> ETFs</Button>}
+        {ideaOn && <Button size="sm" onClick={() => setIdeaOpen(true)} data-testid="idea-open-dialog"><Lightbulb size={14} /> From an idea</Button>}
         {pineOn && <Button size="sm" onClick={() => setPineOpen(true)} data-testid="pine-open"><Code2 size={14} /> Pine Script</Button>}
         <div className="hidden items-center gap-2 sm:flex">
           <Button size="sm" onClick={() => void doSave()} disabled={!text}><Save size={14} /> Save</Button>
@@ -370,6 +385,17 @@ export default function ScreenerPage(_props: PageProps) {
           {pineOpen && (
             <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
               <PinePanel symbols={symbols} baseTf={scanTf} />
+            </Suspense>
+          )}
+        </Dialog>
+      )}
+
+      {ideaOn && (
+        <Dialog wide open={ideaOpen} onOpenChange={setIdeaOpen} title="A scan from your idea"
+                description="Write the idea in plain words. Each part becomes a block you can check and edit; anything ATP cannot read yet is listed, never guessed.">
+          {ideaOpen && (
+            <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
+              <IdeaPanel baseTf={scanTf} onOpen={openIdea} />
             </Suspense>
           )}
         </Dialog>

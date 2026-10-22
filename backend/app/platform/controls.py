@@ -195,6 +195,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # The Pine text is parsed, never executed (a host mode: no runner, ADR-0027). OFF: /api/lab/pine/* answers 404 and the
     # Screener shows no Pine button. Places no orders.
     "strategy_lab_pine": "Pine Script subset: paste a TradingView Pine script, see what translates, and run its signal condition as a screen (never executed; places no orders)",
+    # Handover 11l (docs/OPEN_QUESTIONS.md LAB-11..): the one signal language (app/signals/language.py) on the texts users
+    # read - the Signals inbox's "why" lines, scan alert / Telegram texts, the brief's day headline and the Copilot
+    # teacher's "on your chart" lines: structure words, no buy / sell / target / stop wording, no single price (the
+    # user's own area as a range only). OFF: every one of these texts is exactly as before. Text only - places no orders.
+    "signal_language_v2": "Signal language v2: structure words only on signals, alerts, the brief and the teacher (no buy / sell / target / stop wording, no single prices)",
     # Idea library slice 1 (owner order ATP_SESSION_IDEA_LIBRARY.md, T1-T8): the Ideas page (v2 shell) - generic method
     # ideas as white-box cards (plain words, structure words, the user's own settings, honest provenance; education, no
     # performance claims) with "Try as a scan" built from the ScreenQL registry. OFF: /api/ideas answers 404 and the page

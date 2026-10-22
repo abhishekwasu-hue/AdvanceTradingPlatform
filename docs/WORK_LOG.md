@@ -2518,6 +2518,34 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   e2e `admin-console-v2.e2e.ts` with new baselines `admin-<section>-v2-*` and `admin-diagnostics-v2-*` (1440 / 390, light / dark).
 - Questions MO3-A1..A6 ("View as user" design note in MO3-A1).
 
+## 22 Oct - Strategy Lab slice 2: the signal language (11l) and idea -> scan (11e/j first slice)
+
+- Branch `claude/lab2-signal-language`. No migration. Owner questions LAB-11..17 (OPEN_QUESTIONS). New flag
+  `signal_language_v2` (OFF): with it off every text below is byte-identical (tests freeze the former formulas).
+- 11l: `backend/app/signals/language.py` - ONE formatter (`SignalStructure` token ids -> structure words; the user's OWN
+  signal shows his symbol and "Seller area: 23,000–23,100" in Indian digit grouping; a public one never shows either)
+  and ONE checker (`check(text, surface)`: signal_own / signal_public / education - call words, numbers outside the
+  area range or a timeframe name, currency amounts, security names). Frontend mirror `frontend/src/signals/language.ts`;
+  both run `backend/tests/fixtures/signal_language.json` (byte-identical copy in `frontend/src/signals/__fixtures__/`).
+- Pure refactors (identical outputs on a corpus, against frozen copies of the former code): Analyze a chart's call words
+  (`app/chart_analyze/signal_language.py`, `frontend/src/chartAnalyze/signalLanguage.ts`) and the strategy templates'
+  token guard (`app/strategy_templates/language.py`; schema untouched).
+- Behind the flag: the Signals inbox keeps only "why" lines in the signal language; scan alert texts (in-app, Telegram,
+  e-mail) without counts, clock times or "recommendation" wording; notify-only setups without entry / stop / target
+  prices (`setup_notice`); the brief's VOLATILE headline and high-VIX line without stop wording; the Copilot teacher's
+  "on your chart" lines with the area as a range and no protected-level price.
+- CI guard `backend/tests/test_signal_language_guard.py`: every surface above on fixtures (flag on: clean; flag off:
+  identical), every strategy-template text, every concept of the teacher's library (education), and no share-card
+  producer without the module.
+- 11e/j: `backend/app/screener/idea.py` + `POST /api/screener/copilot/idea` (flag `screener_copilot`): a plain idea ->
+  parts, each ONE condition from registry functions (28 rules), validated and flag-gated like a typed screen; unknown
+  words come back "not supported yet", trade wording never becomes a condition; no AI key needed; nothing stored or run.
+  Frontend: "From an idea" on the Screener (behind `ui_v2`), `src/screener/IdeaPanel.tsx`, "Open as blocks" into the
+  funnel (`stagesFromServer`).
+- Tests: backend `test_signal_language.py`, `test_signal_language_guard.py`, `test_idea_to_scan.py` (+ tenancy route
+  table); vitest `src/signals/language.test.ts`, `src/screener/IdeaPanel.test.tsx`; e2e `screener-idea-v2.e2e.ts` with new
+  baselines `screener-idea-v2-<360|390|1440>-<light|dark>.png`; before / after shots in `docs/screenshots/lab2/`.
+
 ## 22 Oct - Master Order 4 slice 1: the daily rhythm (behind ui_v2 + daily_rhythm)
 
 - Branch `claude/mo4-daily-rhythm`. No migration: the user's choice is the `user_prefs` namespace `daily_rhythm`

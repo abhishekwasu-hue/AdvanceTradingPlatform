@@ -639,6 +639,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/history/backtest"): "trader",    # N3 S6b: a simulation; writes one trial to the ledger
     ("GET", "/api/screener/venues"): "member",               # N3 S8c: the venue matrix (reference data)
     ("POST", "/api/screener/copilot/nl"): "trader",          # N3 S9: a ScreenQL draft from plain language; stores nothing
+    ("POST", "/api/screener/copilot/idea"): "trader",        # handover 11j: a ScreenQL draft from an idea, registry rules only; stores nothing
     ("GET", "/api/screener/rankings"): "member",             # N3 S7a: the platform systems and the organisation's own
     ("POST", "/api/screener/rankings"): "trader",
     ("PUT", "/api/screener/rankings/{system_id}"): "trader",

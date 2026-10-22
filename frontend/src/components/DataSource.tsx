@@ -133,7 +133,7 @@ export function DataSourceBar({ source, note }: { source: CandleSourceState; not
       <span className="font-semibold">Data</span>
       <div className="flex rounded border border-border overflow-hidden">
         <button onClick={() => source.setMode("sample")} className={`px-2 py-0.5 ${!brokerMode ? "bg-surface-2 text-fg" : "text-fg-muted"}`}>Sample</button>
-        <button onClick={() => source.setMode("broker")} disabled={!source.usable} title={source.usable ? "" : user ? "No broker with a valid session today - add the API key under Settings > Brokers and log in" : "Log in first"}
+        <button onClick={() => source.setMode("broker")} disabled={!source.usable} title={source.usable ? "" : user ? "No broker with a valid session today - connect it on the Broker page" : "Log in first"}
           className={`px-2 py-0.5 border-l border-border ${brokerMode ? "bg-surface-2 text-fg" : "text-fg-muted"} disabled:opacity-40`}>Broker candles</button>
       </div>
       {brokerMode && (
@@ -151,7 +151,7 @@ export function DataSourceBar({ source, note }: { source: CandleSourceState; not
       <span className="text-fg-muted">
         {brokerMode
           ? "Real candles through your own broker session (history + today, cached 60 s). The backend computes on them exactly as on sample data."
-          : `Deterministic sample OHLCV; the backend computes everything for real on it. Switch to broker candles once a broker is logged in under Settings.${note ? " " + note : ""}`}
+          : `Deterministic sample OHLCV; the backend computes everything for real on it. Switch to broker candles once a broker is logged in on the Broker page.${note ? " " + note : ""}`}
       </span>
     </div>
   );

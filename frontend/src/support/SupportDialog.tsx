@@ -4,13 +4,15 @@ import { Link } from "react-router";
 import { api } from "../api/client";
 import { Button } from "../components/primitives/Button";
 import { Dialog } from "../components/primitives/Dialog";
+import ShowGetStartedV2 from "../setup/ShowGetStartedV2";
 import { QUESTION_MAX_CHARS, SUGGESTED_QUESTIONS, safeLinks, sourceLabel, supportQuestion, type SupportReply } from "./support";
 
 interface Turn { q: string; reply?: SupportReply; error?: string }
 
 /** Z10-f: the help desk. How-to answers from the help and legal pages; it never reads positions or orders and never
  * places, changes or cancels anything. When it cannot answer, "Send feedback" opens the feedback form with the
- * question filled in. Shown only while the `support_bot` flag is on for the organisation. */
+ * question filled in. Shown only while the `support_bot` flag is on for the organisation. P3: it also offers "Show Get
+ * started" (the Dashboard's three setup steps), as Settings → Help does. */
 export default function SupportDialog({ open, onOpenChange, onFeedback }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -47,6 +49,7 @@ export default function SupportDialog({ open, onOpenChange, onFeedback }: {
       description="How-to answers from the help pages and the legal pages. The help desk cannot see your account, give trading advice or touch orders."
     >
       <div className="space-y-3">
+        <ShowGetStartedV2 onDone={() => onOpenChange(false)} />
         {turns.length === 0 && (
           <ul className="flex flex-wrap gap-1.5" aria-label="Suggested questions">
             {SUGGESTED_QUESTIONS.map((q) => (

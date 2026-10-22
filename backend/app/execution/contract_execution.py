@@ -27,6 +27,7 @@ from app.core.enums import AssetClass, InstrumentKind, OptionPosition, OrderSide
 from app.core.models import Signal
 from app.instruments.contracts import ContractRules, ResolvedContract
 from app.instruments.models import ContractSpec
+from app.risk_engine.risk_manager import nonfinite_levels
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,11 @@ async def contract_ltp(broker: BrokerInterface, contract: ResolvedContract) -> f
 def build_order_plan(signal: Signal, contract: ResolvedContract, rules: ContractRules, ltp: float) -> OrderPlan:
     if signal.entry is None or signal.stop_loss is None:
         raise ContractExecutionError("Underlying signal has no entry/stop to derive contract levels from")
+    # #309 review: an option's order levels come from its premium, so the risk check never sees the underlying ones -
+    # but they are stored on the trade and drive its exits (a NaN stop would never fire). Refuse them here.
+    bad = nonfinite_levels(signal)
+    if bad:
+        raise ContractExecutionError(f"Underlying signal {bad} is not a finite number")
     spec = ContractSpec(
         symbol=contract.tradingsymbol, exchange=contract.exchange, asset_class=AssetClass.INDEX_OPTION,
         description=f"{contract.underlying} {contract.kind.value.lower()} ({contract.exchange})",

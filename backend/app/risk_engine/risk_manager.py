@@ -1,8 +1,17 @@
+import math
 from dataclasses import dataclass
 from typing import Optional
 
 from app.core.models import RiskConfig, RiskDecision, Signal
 from app.instruments.models import ContractSpec
+
+
+def nonfinite_levels(signal: Signal) -> str:
+    """The signal's price levels that are set but not finite numbers (NaN or infinite), as "entry nan, target1 inf";
+    empty when every set level is usable. Shared by the risk check and the contract / option plans, which derive their
+    own levels from these and store the underlying ones on the trade."""
+    levels = (("entry", signal.entry), ("stop loss", signal.stop_loss), ("target1", signal.target1), ("target2", signal.target2))
+    return ", ".join(f"{name} {value!r}" for name, value in levels if value is not None and not math.isfinite(value))
 
 
 @dataclass
@@ -40,6 +49,11 @@ class RiskManager:
             return RiskDecision(approved=False, reasons=["Signal is NO_TRADE"])
         if signal.entry is None or signal.stop_loss is None:
             return RiskDecision(approved=False, reasons=["Signal missing entry/stop loss"])
+        # A NaN level (an alert's "nan", a broken quote) would size to NaN and crash the int() below, leaving the order
+        # at RISK_CHECK; an infinite target would fill and then fail to store. Refuse it like any other unusable signal.
+        bad = nonfinite_levels(signal)
+        if bad:
+            return RiskDecision(approved=False, reasons=[f"Signal {bad} is not a finite number"])
         if signal.risk_reward is not None and signal.risk_reward < self.config.min_risk_reward:
             reasons.append(
                 f"Risk/Reward {signal.risk_reward:.2f} below configured minimum {self.config.min_risk_reward:.2f}"

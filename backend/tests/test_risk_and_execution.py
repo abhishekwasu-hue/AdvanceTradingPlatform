@@ -37,6 +37,36 @@ def test_risk_manager_approves_valid_signal_and_sizes_position():
     assert decision.quantity == 500
 
 
+@pytest.mark.parametrize("field,value", [("entry", float("nan")), ("stop_loss", float("nan")), ("entry", float("inf")),
+                                         ("stop_loss", float("-inf")), ("target1", float("inf")), ("target2", float("nan"))])
+def test_risk_manager_refuses_a_level_that_is_not_a_finite_number(field, value):
+    """#308 review: a NaN level used to crash the sizing (int(NaN)) and leave the order at RISK_CHECK; an infinite target
+    filled and then could not be stored. The reason names the level and its value."""
+    signal = _sample_signal().model_copy(update={field: value})
+    decision = RiskManager(RiskConfig()).validate_and_size(signal, TradingDayState())
+    name = {"stop_loss": "stop loss"}.get(field, field)
+    assert decision.approved is False and decision.reasons == [f"Signal {name} {value!r} is not a finite number"]
+
+
+def test_contract_plan_refuses_an_underlying_level_that_is_not_a_finite_number():
+    """#309 review: an option's order levels come from its premium, so only the plan sees the underlying ones - which
+    are stored on the trade and drive its exits."""
+    from datetime import date
+
+    from app.core.enums import InstrumentKind, OptionPosition, OrderSide
+    from app.execution.contract_execution import ContractExecutionError, build_order_plan
+    from app.instruments.contracts import ContractRules, ResolvedContract
+
+    contract = ResolvedContract(kind=InstrumentKind.OPTION, underlying="NIFTY", underlying_symbol="NIFTY 50",
+                                tradingsymbol="NIFTY24JAN21500CE", exchange="NFO", instrument_key="NSE_FO|1", lot_size=50,
+                                tick_size=0.05, expiry=date(2024, 1, 25), strike=21500.0, right="CE", entry_side=OrderSide.BUY,
+                                trade_direction=SignalDirection.LONG, position=OptionPosition.BUY)
+    rules = ContractRules(kind=InstrumentKind.OPTION, position=OptionPosition.BUY)
+    with pytest.raises(ContractExecutionError, match="stop loss nan is not a finite number"):
+        build_order_plan(_sample_signal().model_copy(update={"stop_loss": float("nan")}), contract, rules, ltp=120.0)
+    assert build_order_plan(_sample_signal(), contract, rules, ltp=120.0).order_signal.entry == 120.0
+
+
 def test_risk_manager_rejects_when_daily_loss_limit_breached():
     config = RiskConfig(capital=100_000, max_daily_loss_pct=2.0)
     manager = RiskManager(config)

@@ -2,13 +2,22 @@
 // in one place. Plain JavaScript without dependencies, so capacitor.config.ts, vite.config.ts, the CI check
 // (scripts/check-mobile-config.mjs) and the unit tests (test/mobile-rules.test.ts) all read the same code.
 
-/** MA-6 (owner, 2026-10-20): the temporary package id, never published to any store. Debug builds add ".debug". The
- * final id (`com.<domain>.app`) comes after the domain (MA-1); a release build refuses this one. */
+/** MA-6 (owner, 2026-10-20): the temporary package id of the first builds, never published to any store. Kept so a
+ * release build can still refuse it (and Gradle's copy in android/app/atp-build-rules.gradle). */
 export const TEMPORARY_APP_ID = "dev.atp.unpublished";
 
-/** The package id this checkout builds (capacitor.config.ts `appId`; android/app/build.gradle `applicationId` must
- * match - scripts/check-mobile-config.mjs checks). Changing it later means a new install on every phone. */
-export const APP_ID = TEMPORARY_APP_ID;
+/** MA-6 (owner, 2026-10-21): the final package id, the reverse of the production domain (MA-1). Debug builds add
+ * ".debug". capacitor.config.ts `appId`; android/app/build.gradle `namespace` / `applicationId`, strings.xml and the
+ * MainActivity package must match (scripts/check-mobile-config.mjs checks). Permanent once on Play: changing it means a
+ * new install on every phone and a new Firebase registration (MA-2). */
+export const APP_ID = "tech.aialgodesk.app";
+
+/** MA-6 (owner, 2026-10-21): the API origin of the builds that talk to a real server (internal, release) when nothing
+ * else is set - the production domain, https only. At build time, in this order: VITE_API_BASE_URL (an https origin),
+ * then ATP_APP_DOMAIN (a host name, the GitHub repository variable), then this default. Whatever is chosen passes the
+ * same checks (https, no IP, origin only). A debug build uses none of them (ADR-0028 decision 10): it keeps the
+ * `.invalid` placeholder below. */
+export const PRODUCTION_API_ORIGIN = "https://aialgodesk.tech";
 
 /** Written into the native web build (dist/) by vite.config.ts: which build kind and API origin it was made for, so
  * `cap sync`, the CI check and Gradle can refuse a mismatch (a production bundle inside a debuggable APK). */
@@ -100,7 +109,7 @@ export function nativeBuildProblems({ kind, appId, apiBase }) {
     );
   }
   if (kind !== "debug" && (!base || base === PLACEHOLDER_API_ORIGIN)) {
-    problems.push(`A ${kind} build needs the real API origin: set VITE_API_BASE_URL (from ATP_APP_DOMAIN, MA-1).`);
+    problems.push(`A ${kind} build needs the real API origin: leave VITE_API_BASE_URL unset (${PRODUCTION_API_ORIGIN}) or set it to the server's https origin.`);
   }
   if (kind === "release" && (appId === TEMPORARY_APP_ID || String(appId).startsWith(`${TEMPORARY_APP_ID}.`))) {
     problems.push(
@@ -111,11 +120,18 @@ export function nativeBuildProblems({ kind, appId, apiBase }) {
   return problems;
 }
 
-/** The checked settings of one Android build, from the environment. Throws with every problem at once. */
+/** The API origin a build kind uses when VITE_API_BASE_URL is not set: the placeholder for a debug build, the
+ * production domain otherwise. */
+export function defaultApiBase(kind) {
+  return kind === "debug" ? PLACEHOLDER_API_ORIGIN : PRODUCTION_API_ORIGIN;
+}
+
+/** The checked settings of one Android build, from the environment. Throws with every problem at once.
+ * API origin: VITE_API_BASE_URL, else (not for a debug build) https://<ATP_APP_DOMAIN>, else defaultApiBase(kind). */
 export function resolveNativeBuild(env, appId) {
   const kind = buildKindFrom(env);
-  const configured = normaliseApiBase(env?.VITE_API_BASE_URL);
-  const apiBase = configured || (kind === "debug" ? PLACEHOLDER_API_ORIGIN : "");
+  const configured = normaliseApiBase(env?.VITE_API_BASE_URL) || (kind === "debug" ? "" : apiBaseFromDomain(env?.ATP_APP_DOMAIN));
+  const apiBase = configured || defaultApiBase(kind);
   const problems = nativeBuildProblems({ kind, appId, apiBase });
   if (problems.length) throw new Error(`Android build refused:\n- ${problems.join("\n- ")}`);
   return {

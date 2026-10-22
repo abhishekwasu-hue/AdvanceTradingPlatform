@@ -154,11 +154,11 @@ def test_group_exit_for_debit_structures():
     assert "Lower breakeven 24270" in group_exit(shorts, {3: 120.0, 4: 110.0}, 24269.0)
 
 
-def _execute(t, structure, *, mode="PAPER", broker=None, key, capital=1_000_000, target=None, stop=None, rules=None):
+def _execute(t, structure, *, mode="PAPER", broker=None, key, capital=1_000_000, target=None, stop=None, rules=None, signal=None):
     async def go():
         async with _session_factory() as session:
             user = await session.get(User, t["user_id"])
-            return await execute_structure(session, user, mode=mode, strategy_id="ema_rsi_scalper_1m", signal=_signal(), structure=structure,
+            return await execute_structure(session, user, mode=mode, strategy_id="ema_rsi_scalper_1m", signal=signal or _signal(), structure=structure,
                                            rules=rules or _rules(), target_credit_pct=target, stop_credit_pct=stop, idempotency_key=key,
                                            broker=broker if mode == "LIVE" else None, quote_broker=broker or _OptionBroker(),
                                            risk_config=RiskConfig(capital=capital, risk_per_trade_pct=1.0))
@@ -180,6 +180,19 @@ def test_paper_long_straddle_sized_off_the_debit():
     assert any("Net debit 230/unit" in r for r in result.reasons)
     # Per-leg informational stop for a bought leg is the debit stop %, never zero.
     assert all(tr.stop_loss > 0 for tr in trades)
+
+
+@pytest.mark.parametrize("field,value", [("stop_loss", float("nan")), ("target1", float("inf"))])
+def test_a_structure_with_a_non_finite_underlying_level_is_refused_before_any_leg(field, value):
+    """#309 review: the underlying levels are stored on every leg's trade after its fill (an infinite one would fail to
+    store after the first leg filled), so the structure is refused before any leg moves."""
+    _load_master()
+    t = _tenant(f"r-nonfinite-{field}@example.com")
+    result = _execute(t, _resolve(OptionStrategy.LONG_STRADDLE), key=f"r-nf-{field}", capital=5_000_000,
+                      signal=_signal().model_copy(update={field: value}))
+    name = {"stop_loss": "stop loss"}.get(field, field)
+    assert not result.executed and f"Underlying signal {name} {value!r} is not a finite number" in result.reasons
+    assert _trades(t["tenant_id"]) == [] and {o.status for o in result.orders} == {"REJECTED"}
 
 
 def test_paper_short_straddle_sized_off_the_stop_not_a_max_loss():

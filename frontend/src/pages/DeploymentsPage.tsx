@@ -723,7 +723,7 @@ export default function DeploymentsPage() {
             <Plus size={14} /> {mode === "LIVE" ? "Deploy LIVE" : "Deploy paper"}
           </button>
           {brokers.length === 0 && (
-            <span className="text-xs text-warn">Store broker credentials in Settings first - even paper trading needs a broker session for live candles.</span>
+            <span className="text-xs text-warn">Connect a broker on the Broker page first - even paper trading needs a broker session for live candles.</span>
           )}
         </div>
 

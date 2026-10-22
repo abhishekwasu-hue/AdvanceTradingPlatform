@@ -34,6 +34,7 @@ from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, Opt
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
+from app.brokers.connect import router as broker_connect_router
 from app.live.routes import router as live_router
 from app.cache.client import cache_get, cache_set
 from app.custom_strategies.resolver import custom_strategy_info, resolve_strategy
@@ -82,7 +83,10 @@ from app.paper.routes import router as paper_router
 from app.decision_tools.routes import router as decision_tools_router
 from app.watchlists.routes import router as watchlists_router
 from app.chart_analyze.routes import admin_router as chart_analyze_admin_router, router as chart_analyze_router
+from app.signals_feed.routes import router as signals_feed_router
 from app.me.prefs import router as me_prefs_router
+from app.option_chain.ask_routes import router as oc_ask_router
+from app.me.setup import router as me_setup_router
 from app.context_panel.routes import router as context_panel_router
 from app.paper.ticket_routes import router as paper_ticket_router
 from app.trading.routes import router as trading_router
@@ -103,11 +107,13 @@ from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
 from app.market_data.candles_routes import router as market_candles_router
 from app.market_data.quotes_routes import router as market_quotes_router
+from app.market_data.strip_routes import router as market_strip_router
 from app.market_lake.import_routes import backfill_router as history_backfill_admin_router
 from app.market_lake.import_routes import intraday_router as history_intraday_admin_router
 from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
+from app.option_chain.analyses_routes import router as oc_analyses_router
 from app.platform.readiness_routes import router as readiness_router
 from app.billing.routes import admin_router as billing_admin_router, router as billing_router, webhook_router as billing_webhook_router
 from app.billing.service import meter
@@ -215,11 +221,15 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
+    # OC1: a cross-origin page (the Android app) may read these response headers - the request id support asks for, and
+    # the data tier of a refused market-data read ("C": not live on this plan).
+    expose_headers=["X-Request-ID", "X-Data-Tier"],
 )
 
 
 app.include_router(auth_router)
 app.include_router(broker_router)
+app.include_router(broker_connect_router)   # P2a: simple broker connect (catalog, connections, connect, renew)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart
 app.include_router(trading_router)
 app.include_router(journal_router)  # Z6 / P1-e: journal, behaviour tags, discipline score (flag discipline_engine, off)
@@ -263,11 +273,13 @@ app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(quant_router)        # Phase Z: factor and risk models
 app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages
 app.include_router(market_quotes_router)  # UI2-4a2-pre: batch watchlist quotes (one multi-quote broker call)
+app.include_router(market_strip_router)  # UI2-2: the v2 dashboard's market strip (read-only, one call)
 app.include_router(market_lake_router)  # Part B5: point-in-time history from the market data lake
 app.include_router(history_import_admin_router)  # HB0: R2 history import progress (SUPER_ADMIN, read-only)
 app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill progress + manual uploads (SUPER_ADMIN, flag)
 app.include_router(history_intraday_admin_router)  # HB2: owner intraday history progress (SUPER_ADMIN, read-only)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
+app.include_router(oc_analyses_router)     # OC2: the built-in option chain analyses, read-only (flag ui_v2, off)
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)
 app.include_router(controls_admin_router)
@@ -307,7 +319,10 @@ app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and p
 app.include_router(watchlists_router)  # AMW-2: the caller's own named watchlists (flag watchlists, off)
 app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a chart image, educational reading (flag chart_analyze, off)
 app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)
+app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
+app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
+app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress (stored marks + steps worked out; reads only)
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance

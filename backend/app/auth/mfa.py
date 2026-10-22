@@ -23,7 +23,7 @@ from app.db.models import MfaBackupCodeRecord, User
 from app.secrets_store.encryption import decrypt_text, encrypt_text
 from app.secrets_store.envelope import PURPOSE_MFA_SECRET
 
-ISSUER = "Advance Trading Platform"
+ISSUER = "AiAlgoDesk"
 MFA_TOKEN_TTL_MINUTES = 5
 BACKUP_CODE_COUNT = 8
 TOTP_VALID_WINDOW = 1  # accept the previous/next 30s step for clock drift

@@ -32,7 +32,7 @@ class Store implements DrawingsStore {
   async remove(stored: StoredDrawing) { this.rows.delete(stored.id); return { deleted: stored.id }; }
 }
 
-function harness() {
+function harness(pricePaneHeight: number | null = null) {
   const drawn = new Map<string, DrawingV1>();
   const panning: boolean[] = [];
   const engine: ToolEngine = {
@@ -41,6 +41,7 @@ function harness() {
     paneOffsetX: () => 40,
     candleTimes: () => times,
     setPanning: (on) => { panning.push(on); },
+    pricePaneHeight: () => pricePaneHeight,
     addDrawing: (id, d) => { drawn.set(id, d); },
     removeDrawing: (id) => { drawn.delete(id); },
   };
@@ -153,6 +154,28 @@ describe("bindTools", () => {
     h.unbind();
     expect([...h.listeners.values()].every((l) => l.length === 0)).toBe(true);
     expect(h.drawn.size).toBe(0);
+  });
+
+  it("UI2-4b1: with volume / RSI panes under the price pane, a pointer below it places nothing and selects nothing", async () => {
+    const h = harness(520);                                             // price pane 0..520 px; volume / RSI below
+    h.ctl.setTool("trendline");
+    h.fire("pointerdown", 20, 600);                                     // in the volume pane: not an anchor
+    expect(h.drawn.has(PREVIEW_ID)).toBe(false);
+    expect(h.stopped()).toBe(0);                                        // the chart gets the press (pans as usual)
+    h.fire("pointerdown", 20, 500);                                     // in the price pane: the first anchor
+    h.fire("pointermove", 60, 480);
+    expect(h.drawn.get(PREVIEW_ID)?.anchors.map((a) => a.p)).toEqual([100, 102]);
+    h.fire("pointermove", 60, 560);                                     // the preview does not follow into a lower pane
+    expect(h.drawn.has(PREVIEW_ID)).toBe(false);
+    h.fire("pointerdown", 80, 470);
+    await h.settle();
+    expect(h.store.rows.size).toBe(1);
+    h.ctl.setTool("hline");
+    h.fire("pointerdown", 100, 490);                                    // an hline at 101 (selected)
+    await h.settle();
+    h.fire("pointerdown", 100, 700);                                    // a press in the RSI pane keeps the selection
+    expect(h.ctl.view().selected).toBe("2");
+    expect(h.panning).toEqual([]);
   });
 
   it("the selected look never changes the drawing that is saved", () => {

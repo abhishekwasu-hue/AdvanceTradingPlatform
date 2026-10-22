@@ -157,7 +157,9 @@ async def run(
     for record in usable:
         label = f"{record.broker_name} ({record.account_label or 'primary'})"
         try:
-            smoke_report = await smoke_runner(adapter_factory(record), account_label=record.account_label or "primary")
+            # The check's own day (IST), not the host clock's UTC date: the contract the smoke test probes must be listed on it.
+            smoke_report = await smoke_runner(adapter_factory(record), account_label=record.account_label or "primary",
+                                              today=now.astimezone(IST).date())
         except Exception as exc:  # noqa: BLE001 - the probe itself must never abort the check
             report.checks.append(Check(f"broker_smoke.{record.id}", f"Broker read-only smoke test - {label}", "fail", f"could not run: {exc}"[:300],
                                        "Check the broker session and the network from the host; see OPERATIONS 1.6aa.", "probe"))

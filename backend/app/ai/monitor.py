@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
 from app.core.enums import NotificationSeverity, NotificationType
+from app.core.json_finite import dumps as finite_dumps
 from app.db.models import AiActionRecord, BacktestRunRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.market_data.calendar import IST
 from app.notifications.service import notify
@@ -151,7 +152,7 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
             except Exception:  # noqa: BLE001 - phrasing is optional
                 pass
         row = AiActionRecord(tenant_id=tenant_id, deployment_id=p.deployment_id, trade_id=p.trade_id, action=p.action, rule=p.rule, reason=reason,
-                             evidence_json=json.dumps(p.evidence, default=str), status="PROPOSED", expires_at=now + timedelta(hours=TTL_HOURS),
+                             evidence_json=finite_dumps(p.evidence), status="PROPOSED", expires_at=now + timedelta(hours=TTL_HOURS),
                              owner_user_id=p.owner_user_id)
         try:
             # P0.8 / A5: the insert runs in a savepoint, so when the partial unique index on open proposals (tenant,

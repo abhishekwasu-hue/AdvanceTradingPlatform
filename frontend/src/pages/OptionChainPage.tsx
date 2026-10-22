@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
+import { ApiError } from "../api/errors";
 import { Card, StatTile } from "../components/ui";
-import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import type { OptionChainAnalysis } from "../types";
-import { generateSampleOptionChain } from "../utils/sampleData";
 import { PageHeader } from "../components/primitives";
 import OiBanner from "../components/OiBanner";
 import OiHistoryTable from "../components/OiHistoryTable";
@@ -20,90 +19,96 @@ const BIAS_COLOR: Record<string, string> = {
   NEUTRAL: "text-fg-muted",
 };
 
+/** Where "the Broker page" is: Settings -> Brokers until the Broker page's own `/broker` route ships (a literal, as
+ * the broker gate's CONNECT_BROKER_PATH; that change moves both). */
+export const BROKER_PAGE_PATH = "/settings";
+
+/** OC1: what the page says when the chain cannot be read - plain words, never the server's own text. `connect`: the
+ * words end with a link to the Broker page. */
+export function chainProblem(e: unknown): { text: string; connect: boolean } {
+  if (e instanceof ApiError && e.status === 401) return { text: "Sign in to see the option chain.", connect: false };
+  if (e instanceof ApiError && e.status === 409 && e.dataTier) return { text: "This symbol is not available live on your plan.", connect: false };
+  if (e instanceof ApiError && e.status === 409) return { text: "Connect your broker on the", connect: true };
+  return { text: "We could not load the option chain. Try again in a moment.", connect: false };
+}
+
+/**
+ * The Option chain page (today's layout, `ui_v2` off). OC1: the chain is read from the trader's own broker session
+ * as soon as the page opens; there is no other source of data and no price to type in. The v2 page (src/optionChain)
+ * replaces it once the owner switches it on.
+ */
 export default function OptionChainPage() {
   // A deep link (?underlying=, e.g. from an OI alert) opens that underlying; otherwise the page default.
   const [underlying, setUnderlying] = useState(() => new URLSearchParams(window.location.search).get("underlying")?.trim() || "NIFTY");
-  const [ltp, setLtp] = useState(22000);
-  const [tilt, setTilt] = useState<"bullish" | "bearish" | "mixed">("bullish");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ text: string; connect: boolean } | null>(null);
   const [analysis, setAnalysis] = useState<OptionChainAnalysis | null>(null);
-  const source = useCandleSource();            // Phase AD: live chain through the broker session
-  const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   // OI Banner (O3): the collector's view of the underlying last analysed (stored 5-minute snapshots, not this fetch).
   const [oiUnderlying, setOiUnderlying] = useState(underlying.trim().toUpperCase());
-  // N4 CH4b: chain -> chart links (flag chart_contracts; a live chain only - a sample chain's contracts are not real)
+  // N4 CH4b: chain -> chart links (flag chart_contracts; a live chain only)
   const [linkChain, setLinkChain] = useState<{ underlying: string; expiry: string } | null>(null);
 
   async function analyze() {
-    setOiUnderlying(underlying.trim().toUpperCase());
+    const name = underlying.trim().toUpperCase();
+    if (!name) return;
+    setOiUnderlying(name);
     setLoading(true);
     setError(null);
     try {
-      const fetched = await source.fetchChains([underlying], () => generateSampleOptionChain(underlying, ltp, tilt));
-      setDataWarnings(fetched.warnings);
-      const chain = fetched.chains[underlying.trim().toUpperCase()];
-      if (!chain) throw new Error(`No option chain for ${underlying}`);
+      const fetched = await api.marketDataOptionChains([name]);
+      const chain = fetched.symbols[name]?.chain;
+      if (!chain || !chain.rows.length) throw new Error("no chain");
       const result = await api.analyzeOptionChain(chain);
       setAnalysis(result);
-      const live = source.mode !== "sample" && (await contractsAvailable(chain.underlying));
-      setLinkChain(live ? { underlying: chain.underlying, expiry: chain.expiry } : null);
+      setLinkChain((await contractsAvailable(chain.underlying)) ? { underlying: chain.underlying, expiry: chain.expiry } : null);
     } catch (e) {
-      setError(String(e));
+      setAnalysis(null);
+      setError(chainProblem(e));
     } finally {
       setLoading(false);
     }
   }
 
+  // Everything happens on its own: the chain of the page's underlying is read once on open.
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    if (getToken()) void analyze();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="space-y-4">
       <PageHeader title="Option Chain" description="PCR, Max Pain, ATM/ITM/OTM and a bias that never relies on PCR alone." />
 
-      <DataSourceBar source={source} note="Underlying LTP and tilt shape the sample chain only." />
-      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-warn">{w}</div>)}
-
       <Card>
-        <div className="grid sm:grid-cols-4 gap-3 items-end">
-          <div>
-            <label className="block text-xs text-fg-muted mb-1">Underlying</label>
+        <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); void analyze(); }}>
+          <div className="min-w-0 flex-1 sm:max-w-xs">
+            <label htmlFor="option-chain-underlying" className="block text-xs text-fg-muted mb-1">Underlying</label>
             <input
+              id="option-chain-underlying"
               className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={underlying}
               onChange={(e) => setUnderlying(e.target.value)}
             />
           </div>
-          <div>
-            <label className="block text-xs text-fg-muted mb-1">Underlying LTP</label>
-            <input
-              type="number"
-              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-              value={ltp}
-              onChange={(e) => setLtp(Number(e.target.value))}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-fg-muted mb-1">Sample OI tilt</label>
-            <select
-              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-              value={tilt}
-              onChange={(e) => setTilt(e.target.value as typeof tilt)}
-            >
-              <option value="bullish">Bullish (PCR + OI agree)</option>
-              <option value="bearish">Bearish (PCR + OI agree)</option>
-              <option value="mixed">Mixed (PCR vs OI disagree)</option>
-            </select>
-          </div>
           <button
-            onClick={analyze}
+            type="submit"
             disabled={loading}
             className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
-            {loading ? "Analyzing…" : "Analyze Chain"}
+            {loading ? "Loading…" : "Show chain"}
           </button>
-        </div>
+        </form>
       </Card>
 
-      {error && <div className="text-sm text-down">{error}</div>}
+      {error && (
+        <p className="text-sm text-fg-muted" role="status">
+          {error.text}
+          {error.connect && <> <a href={BROKER_PAGE_PATH} className="text-brand underline">Broker page</a>.</>}
+        </p>
+      )}
 
       {getToken() && oiUnderlying && (
         <>

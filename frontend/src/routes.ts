@@ -6,6 +6,8 @@ import type { Page } from "./components/Sidebar";
 export interface PageProps { onNavigate?: (page: Page) => void }
 
 const loaders: Record<Page, () => Promise<{ default: ComponentType<PageProps> }>> = {
+  // P2b: the Broker page (connect, renew, remove), the first entry of the navigation in both shells.
+  broker: () => import("./broker/BrokerPage"),
   dashboard: () => import("./pages/DashboardPage"),
   strategies: () => import("./pages/StrategiesPage"),
   "strategy-builder": () => import("./pages/StrategyBuilderPage"),

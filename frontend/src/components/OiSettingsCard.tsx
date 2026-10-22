@@ -8,7 +8,7 @@ const FIELDS: { key: string; label: string; step: string }[] = [
   { key: "confirm_count", label: "Snapshots to confirm a flip", step: "1" },
   { key: "oi_threshold_pct", label: "OI change threshold %", step: "0.1" },
   { key: "premium_threshold_pct", label: "Premium change threshold %", step: "0.1" },
-  { key: "stale_after_minutes", label: "Stale after (minutes)", step: "1" },
+  { key: "stale_after_minutes", label: "Late after (minutes)", step: "1" },
 ];
 
 /** OI Banner (O3): follow an underlying and tune the main thresholds (organisation owner; the server validates). */
@@ -17,9 +17,9 @@ export default function OiSettingsCard({ underlying }: { underlying: string }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [note, setNote] = useState<string | null>(null);
   useEffect(() => {
-    api.oiSettings(underlying).then((d) => { setData(d); setDraft({}); setNote(null); }).catch((e) => setNote(String(e?.message ?? e)));
+    api.oiSettings(underlying).then((d) => { setData(d); setDraft({}); setNote(null); }).catch(() => setNote("The OI settings are not available right now."));
   }, [underlying]);
-  if (!data) return note ? <div className="text-xs text-down">{note}</div> : null;
+  if (!data) return note ? <div className="text-xs text-fg-muted">{note}</div> : null;
 
   async function save(enabled?: boolean) {
     if (!data) return;

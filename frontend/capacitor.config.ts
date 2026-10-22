@@ -6,16 +6,19 @@ import { APP_ID, NATIVE_BUILD_MARKER, resolveNativeBuild } from "./scripts/mobil
 /**
  * Mobile B1 (docs/design/MOBILE_APP_PLAN.md §3.2, ADR-0028 decision 10): the Android shell around the same Vite build.
  *
- * - appId: MA-6, the temporary never-published id `dev.atp.unpublished` until the domain (MA-1) and company name are
- *   settled; then `com.<domain>.app`, permanent once on Play. Set in scripts/mobile-rules.mjs (APP_ID); it must match
- *   `applicationId` in android/app/build.gradle. A release build with the temporary id is refused.
+ * - appId: MA-6, `tech.aialgodesk.app` (the reverse of the production domain), permanent once on Play. Set in
+ *   scripts/mobile-rules.mjs (APP_ID); it must match `namespace` / `applicationId` in android/app/build.gradle,
+ *   strings.xml and the MainActivity package. Debug builds install as `tech.aialgodesk.app.debug`.
+ * - The API origin is a build setting (scripts/mobile-rules.mjs): internal and release builds use
+ *   https://aialgodesk.tech unless VITE_API_BASE_URL overrides it; a debug build uses the `.invalid` placeholder.
+ *   https only, never an IP. No cleartext and no `allowNavigation`: the WebView navigates only inside the bundle.
  * - webDir: the bundled web files. There is deliberately no `server.url`: the app never loads the live site into the
  *   shell (that would hand the native bridge to whatever the site serves).
  * - Bridge logging and WebView debugging only in a debug build, which can never reach a real server (its API origin is
  *   the `.invalid` placeholder).
  *
- * ATP_ANDROID_BUILD (debug | internal | release) and VITE_API_BASE_URL come from the environment, the same for
- * `npm run build:android` and `npx cap sync android`. A bad combination, or a web build in dist/ made for another
+ * ATP_ANDROID_BUILD (debug | internal | release), VITE_API_BASE_URL and ATP_APP_DOMAIN come from the environment, the
+ * same for `npm run build:android` and `npx cap sync android`. A bad combination, or a web build in dist/ made for another
  * build kind, makes this file throw, so no Capacitor command runs with it.
  */
 const build = resolveNativeBuild(process.env, APP_ID);
@@ -27,14 +30,14 @@ if (existsSync(markerPath)) {
   if (made.kind !== build.kind || made.apiOrigin !== build.apiBase) {
     throw new Error(
       `dist/ was built for a ${made.kind} build against ${made.apiOrigin}, but this is a ${build.kind} build against ` +
-      `${build.apiBase}. Run \`npm run build:android\` with the same ATP_ANDROID_BUILD and VITE_API_BASE_URL first.`,
+      `${build.apiBase}. Run \`npm run build:android\` with the same ATP_ANDROID_BUILD, VITE_API_BASE_URL and ATP_APP_DOMAIN first.`,
     );
   }
 }
 
 const config: CapacitorConfig = {
   appId: APP_ID,
-  appName: "ATP",
+  appName: "AiAlgoDesk",
   webDir: "dist",
   // Capacitor's "debug" logs bridge calls only in a debuggable build; a build that can reach a server logs nothing.
   loggingBehavior: build.debuggable ? "debug" : "none",

@@ -23,15 +23,19 @@ import {
   Users,
   Wand2,
   Zap,
-  type LucideIcon, Store, Sparkles, Sigma, ChartSpline, NotebookPen, ScanSearch } from "lucide-react";
+  type LucideIcon, Store, Sparkles, Sigma, ChartSpline, NotebookPen, ScanSearch, Plug } from "lucide-react";
 import { useEffect } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { pathFor, preloadPage } from "../routes";
 import { useFeatures } from "../ui/useFeatures";
+import { brokerDot } from "../broker/brokerState";
+import { StatusDot } from "../broker/marks";
+import { useBrokerConnections } from "../broker/useBrokerConnections";
 import Logo from "./Logo";
 
 export type Page =
+  | "broker"
   | "dashboard"
   | "strategies"
   | "strategy-builder"
@@ -76,8 +80,9 @@ interface NavGroup {
   items: NavItem[];
 }
 
+/** P2b: "Broker" is the first entry (with a status dot); on a phone it is the first entry of More (this drawer). */
 export const NAV_GROUPS: NavGroup[] = [
-  { title: "Overview", items: [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }] },
+  { title: "Overview", items: [{ id: "broker", label: "Broker", icon: Plug }, { id: "dashboard", label: "Dashboard", icon: LayoutDashboard }] },
   {
     title: "Trade",
     items: [
@@ -142,6 +147,7 @@ export const NAV: NavItem[] = [...NAV_GROUPS, ADMIN_GROUP].flatMap((g) => g.item
 export default function Sidebar({ page, open = false, onClose }: { page: Page | null; open?: boolean; onClose?: () => void }) {
   const { user, loading } = useAuth();
   const features = useFeatures();
+  const dot = brokerDot(useBrokerConnections().rows);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose?.(); };
@@ -183,6 +189,7 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
                 >
                   <Icon size={16} strokeWidth={2} className={active ? "text-brand" : "text-fg-muted"} />
                   {item.label}
+                  {item.id === "broker" && dot && <StatusDot dot={dot} announce className="ml-auto" />}
                 </Link>
               );
             })}

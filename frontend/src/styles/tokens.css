@@ -125,3 +125,85 @@
 @media (prefers-reduced-motion: reduce) {
   :root { --dur-fast: 0ms; --dur-base: 0ms; }
 }
+
+/* UI2-4b1 (Charts page plan, owner's chart theme switch): the chart tokens. A chart follows the app theme by default;
+   the trader may pick Light or Dark for charts alone, set as `data-chart-theme` on the chart's root, so the scoped
+   blocks below repeat every chart token for that theme (and its colour-blind swap). Space-separated RGB as above.
+   - chart-bg: the solid background; chart-axis: scale borders and pane separators; chart-grid: only when the grid is on;
+   - chart-crosshair: the crosshair lines; chart-crosshair-label: their axis labels (white text on it);
+   - chart-up / chart-down: candles and bars (volume at 28 % alpha), = up / down;
+   - chart-drawing: a drawing's default colour; chart-rsi / chart-rsi-band: the RSI line and its 30 / 50 / 70 lines;
+   - chart-ov-1..4: EMA fast, EMA slow, VWAP, SMA. */
+:root {
+  --chart-bg: 9 12 18;
+  --chart-axis: 36 44 63;
+  --chart-crosshair: 148 163 184;
+  --chart-crosshair-label: 100 116 139;
+  --chart-up: 34 197 94;
+  --chart-down: 239 68 68;
+  --chart-drawing: 96 165 250;
+  --chart-rsi: 56 189 248;
+  --chart-rsi-band: 148 163 184;
+  --chart-ov-1: 56 189 248;
+  --chart-ov-2: 245 158 11;
+  --chart-ov-3: 232 121 249;
+  --chart-ov-4: 167 139 250;
+}
+
+:root[data-theme="light"] {
+  --chart-bg: 255 255 255;
+  --chart-axis: 211 217 227;
+  --chart-crosshair: 100 116 139;
+  --chart-crosshair-label: 15 23 42;
+  --chart-up: 21 128 61;
+  --chart-down: 185 28 28;
+  --chart-drawing: 29 78 216;
+  --chart-rsi: 2 132 199;
+  --chart-rsi-band: 100 116 139;
+  --chart-ov-1: 3 105 161;
+  --chart-ov-2: 180 83 9;
+  --chart-ov-3: 162 28 175;
+  --chart-ov-4: 109 40 217;
+}
+
+:root[data-cvd="on"] { --chart-up: 86 180 233; --chart-down: 249 115 22; }
+:root[data-theme="light"][data-cvd="on"] { --chart-up: 0 114 178; --chart-down: 194 65 12; }
+
+[data-chart-theme="dark"] {
+  --chart-bg: 9 12 18;
+  --chart-text: 194 202 216;
+  --chart-grid: 26 35 51;
+  --chart-axis: 36 44 63;
+  --chart-crosshair: 148 163 184;
+  --chart-crosshair-label: 100 116 139;
+  --chart-up: 34 197 94;
+  --chart-down: 239 68 68;
+  --chart-drawing: 96 165 250;
+  --chart-rsi: 56 189 248;
+  --chart-rsi-band: 148 163 184;
+  --chart-ov-1: 56 189 248;
+  --chart-ov-2: 245 158 11;
+  --chart-ov-3: 232 121 249;
+  --chart-ov-4: 167 139 250;
+}
+
+[data-chart-theme="light"] {
+  --chart-bg: 255 255 255;
+  --chart-text: 71 85 105;
+  --chart-grid: 229 233 240;
+  --chart-axis: 211 217 227;
+  --chart-crosshair: 100 116 139;
+  --chart-crosshair-label: 15 23 42;
+  --chart-up: 21 128 61;
+  --chart-down: 185 28 28;
+  --chart-drawing: 29 78 216;
+  --chart-rsi: 2 132 199;
+  --chart-rsi-band: 100 116 139;
+  --chart-ov-1: 3 105 161;
+  --chart-ov-2: 180 83 9;
+  --chart-ov-3: 162 28 175;
+  --chart-ov-4: 109 40 217;
+}
+
+:root[data-cvd="on"] [data-chart-theme="dark"] { --chart-up: 86 180 233; --chart-down: 249 115 22; }
+:root[data-cvd="on"] [data-chart-theme="light"] { --chart-up: 0 114 178; --chart-down: 194 65 12; }

@@ -1,4 +1,4 @@
-/* Advance Trading Platform service worker.
+/* AiAlgoDesk service worker.
  * Phase O3: Web Push - receives encrypted pushes from the platform (RFC 8291 payloads are decrypted by the browser
  * before this runs) and shows them as system notifications; clicking opens the page the push names.
  * PW1: the app-shell cache - static files only. The build (vite.config.ts, atpServiceWorker) replaces the version
@@ -58,7 +58,7 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  let data = { title: "Advance Trading Platform", body: "New alert", url: "/" };
+  let data = { title: "AiAlgoDesk", body: "New alert", url: "/" };
   try { data = { ...data, ...event.data.json() }; } catch (_) { /* plain-text fallback */ if (event.data) data.body = event.data.text(); }
   const options = {
     body: data.body,

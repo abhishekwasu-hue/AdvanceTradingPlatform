@@ -101,6 +101,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/admin/billing/{tenant_id}/payment"): "admin",
     ("GET", "/api/admin/chart-analyze/settings"): "admin",   # Analyze a chart: sizes, retention, plan limits, cost caps
     ("PUT", "/api/admin/chart-analyze/settings"): "admin",
+    # MO3 (a): the admin console's read-only sections (app/admin/console.py).
+    ("GET", "/api/admin/console/ai-cost"): "admin",
+    ("GET", "/api/admin/console/diagnostics"): "admin",
+    ("GET", "/api/admin/console/support/users/{user_id}"): "admin",
+    ("GET", "/api/admin/console/system"): "admin",
+    ("GET", "/api/admin/console/users"): "admin",
     ("GET", "/api/admin/controls"): "admin",
     ("PUT", "/api/admin/controls/brokers"): "admin",
     ("GET", "/api/admin/controls/flags"): "admin",

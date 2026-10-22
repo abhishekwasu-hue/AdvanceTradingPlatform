@@ -35,6 +35,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   copilot: lazy(() => import("../copilot/chat/CopilotPageV2")),
   // Settings redesign B: Settings is a short index with status (src/settings); each row opens its own small page.
   settings: lazy(() => import("../settings/SettingsIndexV2")),
+  // MO3 addition (a): the admin console in sections (src/admin) at /admin; SUPER_ADMIN only (the server is the gate).
+  admin: lazy(() => import("../admin/AdminConsoleV2")),
   ...Object.fromEntries(SETTINGS_SECTIONS.map((s) => [s.key, SettingsSection])),
 };
 

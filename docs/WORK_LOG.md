@@ -2503,3 +2503,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   (+ updated aiKeys / keyFormats / ConnectAiPanelV2 tests); e2e `connect-ai-v2.e2e.ts` (MO2 A flows; the consent tick
   uses click, the panel saves at once) and `key-guides-v2.e2e.ts` (flags-off case). New baselines
   `connect-ai-v2-paste-groq-*`, `connect-ai-v2-guides-drawer-*` (360 / 390 / 1440, light / dark); no existing baseline changed.
+## 22 Oct - MO3 addition (a): the admin console in sections (behind ui_v2)
+
+- Branch `claude/mo3-admin-console`. No migration. `/admin` under `ui_v2` is `src/admin/AdminConsoleV2.tsx`: sections System /
+  Controls / Users & business / Testing tools / Support in the address (`/admin?section=...`) and a Diagnostics drawer. A
+  non-admin gets the plain not-found card. Each section shows new read-only panels (`src/admin/AdminSectionsV2.tsx`) and then
+  the existing cards that belong to it (`pages/AdminPage.tsx` with a `section` prop; without it the page is unchanged).
+  E-mail addresses (and organisations named after one) are masked in the console.
+- Backend: `app/admin/console.py` (`/api/admin/console/system|users|ai-cost|support/users/{id}|diagnostics`, GET only,
+  SUPER_ADMIN + two-factor), `app/observability/recent_errors.py` (the last 5xx answers by request id, in memory). Two-factor
+  added to the billing, FX-rate, marketplace and system-watchlist admin routers (they had role only).
+- Tests: `tests/test_admin_console.py` (every admin route x OWNER / USER / STRATEGY_CREATOR / VIEWER -> 403; every
+  `/api/admin` route without two-factor -> 403; each section's data and masks); vitest `src/admin/adminConsole.test.tsx`;
+  e2e `admin-console-v2.e2e.ts` with new baselines `admin-<section>-v2-*` and `admin-diagnostics-v2-*` (1440 / 390, light / dark).
+- Questions MO3-A1..A6 ("View as user" design note in MO3-A1).

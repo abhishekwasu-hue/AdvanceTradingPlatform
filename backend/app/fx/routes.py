@@ -6,13 +6,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user, require_role
+from app.auth.dependencies import get_current_user, require_mfa_session, require_role
 from app.db.models import FxRateRecord, User
 from app.db.session import get_session
 from app.fx import service as fx
 
 router = APIRouter(prefix="/api/fx", tags=["fx"])
-admin_router = APIRouter(prefix="/api/admin/fx-rates", tags=["admin"], dependencies=[Depends(require_role())])
+admin_router = APIRouter(prefix="/api/admin/fx-rates", tags=["admin"], dependencies=[Depends(require_role()), Depends(require_mfa_session)])  # MO3: two-factor like every admin router
 
 
 class RateBody(BaseModel):

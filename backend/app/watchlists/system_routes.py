@@ -21,15 +21,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user, require_role
-from app.core.enums import UserRole
+from app.auth.dependencies import get_current_user, require_mfa_session, require_role
 from app.db.models import User
 from app.db.session import get_session
 from app.watchlists import service, system
 from app.watchlists.routes import _duplicate, _enabled, _lock_user
 
 router = APIRouter(prefix="/api/watchlists/system", tags=["watchlists"])
-admin_router = APIRouter(prefix="/api/admin/system-watchlists", tags=["admin"])
+# MO3: SUPER_ADMIN with a two-factor-verified session, like every admin router.
+admin_router = APIRouter(prefix="/api/admin/system-watchlists", tags=["admin"], dependencies=[Depends(require_role()), Depends(require_mfa_session)])
 
 READ_ONLY = 'System lists are read-only. Use "Copy to my list" to make your own copy you can change.'
 
@@ -123,12 +123,12 @@ async def copy_system(key: str, body: Optional[CopyBody] = None, user: User = De
 
 
 @admin_router.get("")
-async def system_status(user: User = Depends(require_role(UserRole.SUPER_ADMIN)), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def system_status(user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     return await system.status(session)
 
 
 @admin_router.post("/refresh")
-async def system_refresh(user: User = Depends(require_role(UserRole.SUPER_ADMIN)), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def system_refresh(user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Rebuilds the system lists now from the universe tables and the instrument master already held (no download)."""
     report = await system.refresh(session)
     return {"refresh_id": report.refresh_id, "lists_total": report.lists_total, "lists_changed": report.lists_changed,

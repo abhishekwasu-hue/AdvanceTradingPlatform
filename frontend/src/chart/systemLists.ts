@@ -55,6 +55,9 @@ export function browserGroups(system: readonly SystemGroup[], own: readonly Watc
   return groups.map((g) => ({ ...g, entries: g.entries.filter((e) => has(e.name, query)) })).filter((g) => g.entries.length > 0);
 }
 
+/** True when a list's name already ends with its count ("NIFTY 50 stocks (50)"), so the count is not shown twice. */
+export const namesCount = (name: string): boolean => /\(\d+\)$/.test(name.trim());
+
 /** The group a list belongs to (to open it in the browser). */
 export function groupOf(ref: ListRef | null, system: readonly SystemGroup[]): string | null {
   if (!ref) return null;

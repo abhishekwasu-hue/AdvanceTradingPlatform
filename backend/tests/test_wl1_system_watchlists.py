@@ -384,3 +384,17 @@ def test_names_and_keys():
     specs = system.sector_specs()
     assert len({s["name"] for s in specs}) == len(specs) and {"Banking", "IT", "Automobile", "Pharma"} <= {s["name"] for s in specs}
     assert all(s["level"] in ("sector", "industry") and s["values"] for s in specs)
+
+
+def test_the_worker_refresh_gate_runs_at_start_and_every_evening():
+    from datetime import date as _date
+    today, yesterday = _date(2026, 10, 22), _date(2026, 10, 21)
+    due = lambda **k: system.refresh_due(**{"nse_open": False, "hour": 8, "today": today, "sync_hour": 18, "last_day": None, "started": False, **k})  # noqa: E731
+    assert due() == (True, False)                                          # a morning deploy: one start-up run, not the day's
+    assert due(started=True) == (False, False)                             # ...and not again before the evening
+    assert due(started=True, hour=18) == (True, True)                      # the evening run still follows the universe sync
+    assert due(started=True, hour=19, last_day=today) == (False, False)    # once per day
+    assert due(started=True, hour=19, last_day=yesterday) == (True, True)
+    assert due(hour=20) == (True, True)                                    # an evening deploy: one run, it is the day's
+    assert due(nse_open=True) == (False, False)                            # never while NSE is open
+    assert due(nse_open=True, hour=19, started=True) == (False, False)

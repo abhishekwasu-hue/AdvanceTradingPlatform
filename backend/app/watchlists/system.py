@@ -29,7 +29,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -380,4 +380,14 @@ async def status(session: AsyncSession, *, history: int = 10) -> Dict[str, Any]:
             "refresh_hour_ist": config.UNIVERSE_SYNC_HOUR_IST}
 
 
-__all__ = ["GROUPS", "GROUP_LABELS", "build", "refresh", "list_all", "get", "summary", "as_dict", "watch_items", "status", "slug"]
+def refresh_due(*, nse_open: bool, hour: int, today: date, sync_hour: int, last_day: Optional[date], started: bool) -> Tuple[bool, bool]:
+    """The worker's gate: (run now, it is the day's evening run). With NSE closed: once per IST day from `sync_hour` (after
+    the universe sync), and once when the worker starts (a deploy) - that start-up run is not the day's run, so the
+    evening one still follows the sync. Never while NSE is open."""
+    if nse_open:
+        return False, False
+    evening = hour >= sync_hour and last_day != today
+    return evening or not started, evening
+
+
+__all__ = ["GROUPS", "refresh_due", "GROUP_LABELS", "build", "refresh", "list_all", "get", "summary", "as_dict", "watch_items", "status", "slug"]

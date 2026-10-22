@@ -6,7 +6,7 @@ import { SymbolPicker } from "../ui/SymbolPicker";
 import { ConfirmBox } from "./ConfirmBox";
 import { ListBrowser } from "./ListBrowser";
 import {
-  MY_LISTS, ROW_SORTS, browserGroups, copyNote, filterRows, groupOf, pickList, sortRows, systemListsApi,
+  MY_LISTS, ROW_SORTS, browserGroups, copyNote, filterRows, groupOf, namesCount, pickList, sortRows, systemListsApi,
   type ListRef, type RowSort, type SystemGroup, type SystemItem, type SystemList,
 } from "./systemLists";
 import {
@@ -247,7 +247,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
             <button type="button" aria-expanded={browsing} aria-label={`Choose a list. Shown: ${currentName}`} onClick={openBrowser}
               className={cx("flex h-11 min-w-0 flex-1 items-center gap-space-1 rounded-control border border-border bg-surface-2 px-space-2 text-left text-t14 font-semibold text-fg", !touch && "md:h-9", focus)}>
               {systemSummary && <Lock size={12} aria-hidden className="shrink-0 text-fg-muted" />}
-              <span className="min-w-0 flex-1 truncate">{currentName} <span className="font-normal text-fg-muted">({currentCount})</span></span>
+              <span className="min-w-0 flex-1 truncate">{currentName}{!namesCount(currentName) && <> <span className="font-normal text-fg-muted">({currentCount})</span></>}</span>
               <ChevronDown size={14} aria-hidden className="shrink-0 text-fg-muted" />
             </button>
             <button type="button" aria-label="New list" title="New list" className={iconBtn} onClick={() => startNaming("new")}><Plus size={16} aria-hidden /></button>
@@ -401,7 +401,7 @@ export function SystemListView({ summary, list, rows, total, matching, query, on
   return (
     <div data-system-list={summary.key} className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-space-2 border-b border-subtle px-space-3 py-space-2">
-        <p className="inline-flex min-w-0 flex-1 items-center gap-space-1 text-t12 text-fg-muted">
+        <p className="inline-flex min-w-0 flex-1 basis-48 items-center gap-space-1 text-t12 text-fg-muted">
           <Lock size={12} aria-hidden className="shrink-0" />
           <span>Read-only list{summary.refreshed_at ? ` · updated ${formatDateIST(summary.refreshed_at)}` : ""}</span>
         </p>

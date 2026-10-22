@@ -238,7 +238,8 @@ class TradingWorker:
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
-        self._last_system_lists_day = None    # WL1: the system watchlists refresh
+        self._last_system_lists_day = None    # WL1: the system watchlists refresh (the evening run)
+        self._system_lists_started = False    # WL1: the one run when the worker starts with NSE closed (a deploy)
         # HB1: the nightly EOD bhavcopy job (IST date of the last start) and its background task.
         self._last_history_eod_day = None
         self._history_eod_task: Optional["asyncio.Task[None]"] = None
@@ -655,12 +656,17 @@ class TradingWorker:
                 # once per IST day after UNIVERSE_SYNC_HOUR_IST from the tables already held - no download, so it runs whether or
                 # not the universe sync is on (with it off, the lists are as current as the last sync or upload). NSE closed.
                 # Also once when the worker starts with NSE closed (a deploy), so new lists do not wait for the evening.
-                if not nse.is_open and self._last_system_lists_day != ist_now.date() \
-                        and (ist_now.hour >= app_config.UNIVERSE_SYNC_HOUR_IST or self._last_system_lists_day is None):
-                    self._last_system_lists_day = ist_now.date()        # success or failure: next try is tomorrow
+                # That start-up run does not count as the day's run, so the evening one still follows the universe sync.
+                from app.watchlists import system as system_lists
+                run_lists, evening = system_lists.refresh_due(nse_open=nse.is_open, hour=ist_now.hour, today=ist_now.date(),
+                                                              sync_hour=app_config.UNIVERSE_SYNC_HOUR_IST,
+                                                              last_day=self._last_system_lists_day, started=self._system_lists_started)
+                if run_lists:
+                    self._system_lists_started = True
+                    if evening:
+                        self._last_system_lists_day = ist_now.date()    # success or failure: next try is tomorrow
                     try:
                         async with guarded(session):
-                            from app.watchlists import system as system_lists
                             sl = await system_lists.refresh(session)
                             report.system_lists = {"lists": sl.lists_total, "changed": sl.lists_changed, "unmapped": sl.unmapped}
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading

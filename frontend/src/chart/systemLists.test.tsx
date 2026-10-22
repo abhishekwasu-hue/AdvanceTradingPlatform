@@ -4,7 +4,7 @@ import { ListBrowser } from "./ListBrowser";
 import { SystemListView } from "./WatchlistPanel";
 import { cleanView } from "./chartsPage";
 import {
-  MY_LISTS, browserGroups, copyNote, filterRows, groupOf, pickList, sortRows, type SystemGroup, type SystemItem, type SystemList,
+  namesCount, MY_LISTS, browserGroups, copyNote, filterRows, groupOf, pickList, sortRows, type SystemGroup, type SystemItem, type SystemList,
 } from "./systemLists";
 import type { QuoteRow, WatchlistV2 } from "./watchlistsV2";
 
@@ -140,5 +140,14 @@ describe("WL1 system list view (read-only, copy)", () => {
     expect(view({ rows: [], query: "zz", matching: 0 })).toContain("No symbol or company in this list matches &quot;zz&quot;.");
     expect(view({ rows: ROWS.slice(0, 1), matching: 1 })).toContain("1 of 4 symbols match.");
     expect(view({ copying: true })).toContain("Copying…");
+  });
+});
+
+describe("WL1 list names that carry their count", () => {
+  it("is recognised, so the chooser does not show the count twice", () => {
+    expect(namesCount("NIFTY 50 stocks (50)")).toBe(true);
+    expect(namesCount("F&O stocks (182) ")).toBe(true);
+    expect(namesCount("Banking")).toBe(false);
+    expect(namesCount("NIFTY (Made-up)")).toBe(false);
   });
 });

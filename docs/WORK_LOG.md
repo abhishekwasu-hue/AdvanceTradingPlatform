@@ -2070,6 +2070,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   existing baseline changed. `app/watchlists` joins the mypy gate.
 - Owner questions: WL1-1 (the full classification source), WL1-2 (refresh schedule), WL1-3 (terms), WL1-4 (production
   settings), WL1-5 to WL1-8 in docs/OPEN_QUESTIONS.md.
+- Admin console: a "System watchlists" card (`components/SystemListsCard.tsx`): last refresh, lists per group, the
+  changes per list with the symbols added / removed, the unmapped symbols with the reason, the recent runs and
+  "Refresh now" (WL1-8 answered). The worker also rebuilds the lists once when it starts with NSE closed (a deploy);
+  that run is not the day's, so the evening run still follows the universe sync (`system.refresh_due`, tested).
+- After merging main (the rem text scale): the list chooser no longer shows a count twice for names that carry it
+  ("NIFTY 50 stocks (50)"); the read-only note keeps one line above "Copy to my list" in the side panel; the 1440 WL1
+  baseline regenerated at the new text size.
 ## FNO-1: option chain trading + the one order ticket, PAPER only (owner order ATP_SESSION_FNO_WORKSPACE.md 3, 6, 8b-l, 9)
 
 - Branch `claude/fno1-chain-ticket` (from main). Behind `ui_v2` + `paper_account` (OPEN_QUESTIONS FNO-1-1). No

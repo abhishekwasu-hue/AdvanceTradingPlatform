@@ -9,7 +9,7 @@ that changes an item. Never delete a row; mark it done / superseded with the PR.
 | 1 | Font size | ATP_HANDOVER_PACK.md §1 | PR #335 (draft, ready for review): rem scale, Text size setting, layout fixes, new baselines |
 | 2 | Option chain: analysis + Sensibull-style charts | ATP_HANDOVER_PACK.md §2 | partial (#324 / #326 / #327 merged; 2a wiring PR #337 (stacked on #335); 2b + 2c Charts tab PR #339 (draft; migration, deploy after 15:30 IST; OPEN_QUESTIONS OC5-1..4)) |
 | 3 | F&O workspace | ATP_SESSION_FNO_WORKSPACE.md | slice 1 chain trading + order ticket PR #338 (draft; OPEN_QUESTIONS FNO-1-1..10); slice 2 basket PR #341 (draft, stacked on #338; FNO-2-1..10); slice 3 hub + futures chain in progress |
-| 4 | Default watchlists (indices / index stocks / sectors) | ATP_HANDOVER_PACK.md §4 | in progress: `claude/wl1-system-lists` |
+| 4 | Default watchlists (indices / index stocks / sectors) | ATP_HANDOVER_PACK.md §4 | PR (ready for review) from `claude/wl1-system-lists`: Indices / Index stocks / Sectors / F&O system lists, daily refresh, admin card, Copy to my list (migration; deploy after 15:30 IST; OPEN_QUESTIONS WL1-1..8) |
 | 5 | AI Copilot: a professional trader's brain | ATP_HANDOVER_PACK.md §5 | slice 1 PR #342 (draft): chat page + jobs 1, 2, 7, 8, regime admin-only (regime_blocks no longer skips PAPER entries); jobs 3–5 next |
 | 6 | Master Order 2: AI keys + page tours | ATP_HANDOVER_PACK.md §6 | pending |
 | 7 | Front page P3 | ATP_HANDOVER_PACK.md (priority 7) | done: #329 merged |

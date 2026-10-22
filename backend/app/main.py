@@ -30,6 +30,7 @@ from app.core.models import (
 )
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.routes import router as auth_router
+from app.auth.google_routes import router as google_auth_router
 from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
@@ -227,6 +228,7 @@ app.add_middleware(
 
 
 app.include_router(auth_router)
+app.include_router(google_auth_router)   # GS-1: Google sign-in (404 until both credentials are set)
 app.include_router(broker_router)
 app.include_router(broker_connect_router)   # P2a: simple broker connect (catalog, connections, connect, renew)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart

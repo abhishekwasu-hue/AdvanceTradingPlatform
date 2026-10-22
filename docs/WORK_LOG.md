@@ -2908,3 +2908,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Also fixes main: the Copilot screen-draft template for the validator's "argument given twice" (named arguments, #391).
 - Tests: `tests/test_tpl4_templates.py` (section 8 gate for the fourteen templates + the companions), runtime fixture,
   causal cases (lookahead job), history sweep, the breakout families' registry tests. Questions TPL-Q26..TPL-Q40.
+## 22 Oct - Wave templates (family G): G4-G7, G2, G9-G11 (behind strategy_templates + screener_waves)
+
+- Branch `claude/wave5-g4-g7-g2-g9`. No migration (templates are JSON in the repository).
+- Backend: eight templates in `app/strategy_templates/templates/` - G4 (wave C on the break of wave B's channel), G5 (the
+  thrust out of a triangle through its B-D side), G6 (wave C's close beyond the end of wave A, and its retest), G7 (the
+  expanded-flat sweep: wave B of a flat beyond the start of wave A and back, armed on FLAT + WaveBeyondOrigin, WB5), G2
+  (wave five after wave four), G9 (the end of the fifth wave), G10 (the ending diagonal's 2-4 line), G11 (wave Y after wave
+  X of a double three). Every number a bounded setting, invalidation in words, exits per WB9 (inert until R5), no
+  projection target. `language.py`: twenty structure-word tokens. No other shared file changed. PAPER only, signals only.
+- Tests: `tests/test_wave5_templates.py` (must-fire per style, must-not per count type, mirror, truncation, parity incl.
+  the 1-hour wave chart, property tests, no number literal, defaults, words, flags, id length).
+- Questions WAVE-38..WAVE-45 (OPEN_QUESTIONS). Not built: G12 (after family F), the RSI / volume filters, the UI.

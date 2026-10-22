@@ -94,3 +94,40 @@ synthetic wave paths (G3's retest checked as its expression: the fixture's chann
 in the window), must-not (unclear count, disagreeing alternate, the higher trend, wave A's structure, the Fibonacci zone),
 mirror, truncation over many t (fixtures and random-walk bars), parity (fixtures; the 1-hour wave chart with the
 options backtest), property tests on random valid settings, the language guard, the flags, the id length.
+
+## The templates G4-G7, G2, G9-G11 (the review's build step 7, second part)
+
+No migration. Eight more JSON templates in `backend/app/strategy_templates/templates/` (`G2`, `G4`-`G7`, `G9`-`G11`), with
+the same flags and gates as G1 / G3 / G8: listed and adoptable (a PAPER pre-fill, nothing starts by itself) only while
+`strategy_templates` and `screener_waves` are on; a strategy id runs only with the flags of the functions it reads. Signals
+only; exits per WB9 (computed, not acted on until R5); no projection target (section 5 needs a migration and the owner's
+approval). G12 waits for family F (WAVE-10).
+
+| Template | Setup (the window) | Trigger styles | Invalidation (default first) | Status |
+|---|---|---|---|---|
+| G4 Wave C: the break of wave B's channel | G3's window: wave B, or wave C before it passed the end of wave A; not a double three's X; Fibonacci zone on wave B's depth (off) | the close beyond the channel of wave B by k ATR (default), its retest (R7) | the start of wave A, or wave B's end beyond it; the last smaller swing | done |
+| G5 Thrust out of a triangle | a triangle's wave E (type TRIANGLE) against its first wave, held `hold_bars` signal bars after the count last showed it (as G8) | the close beyond the triangle side through the ends of waves B and D (`two_four`), its retest | the far end of the triangle on wave E's side (the end of C or E, whichever is further); the last smaller swing | done |
+| G6 Wave C: the close beyond the end of wave A | wave C (not a double three's Y) | the wave chart's close beyond the end of wave A by k x ATR(`atr_n`) of the bars before (default), the retest of that level (R7 `wave_end`) | the end of wave B (`WaveInvalidation`); the last smaller swing | done |
+| G7 Expanded flat: the sweep beyond the start of wave A | wave B of a FLAT beyond the start of wave A (`WaveBeyondOrigin`, any amount: WB5 / WAVE-8; the type stays FLAT during B) | the close back on the near side of the start of wave A by k ATR (default), a reversal candle at it, the smaller structure's CHoCH | the extreme of wave B (the sweep); the last smaller swing | done |
+| G2 Wave five after wave four | wave four of an IMPULSE (wave four not into wave one), or the fifth wave before it passed the end of wave three; arm level the end of wave one (wick); window first / every pullback; Fibonacci zone on wave four's depth of wave three (off) | G1's five: touch / candle at the area (while wave four runs), CHoCH, the channel of wave four's break, its retest | the end of wave one; the last smaller swing | done |
+| G9 End of the fifth wave: a reversal | the fifth wave (impulse or diagonal) beyond the end of wave three, held `hold_bars` bars | the smaller structure's CHoCH (default), the 2-4 line's break (WAVE-7), its retest | the extreme of the fifth wave; the last smaller swing | done (no RSI filter yet, WAVE-29) |
+| G10 Ending diagonal: the break of its line | the fifth wave of a DIAGONAL beyond the end of wave three, held `hold_bars` bars | the diagonal's 2-4 line break (default), its retest | the extreme of the fifth wave; the last smaller swing | done |
+| G11 Double three: wave Y after wave X | wave Y of a DOUBLE before it passed the end of wave W (X is the main count only once finished, WB8); Fibonacci zone on X's depth of W (off) | CHoCH (default), the channel of wave X's break, its retest | the end of wave X; the last smaller swing | done |
+
+Common: every number a setting with bounds (trend relation per WAVE-2: with for G2, counter-trend allowed for G4-G7 / G11,
+any for G9 / G10); the only number nodes in any expression are `Lag(x, 1)` (a new smaller swing since the bar before; the
+ATR of the bars before) and the zero of `Count(...) > 0` (a test). The hold-window templates (G5, G9, G10) never signal on
+an unclear count (`WaveState != "UNCLEAR"` in each trigger, as G8). One sentence per template in structure words (twenty
+new tokens), e.g. G7: "Wave B of a flat on the 1-hour chart went beyond the start of wave A and came back; a downward wave
+C may be starting; the count is void beyond the extreme of wave B." Shared files touched: `strategy_templates/language.py`
+(the tokens) only.
+
+Tests: `tests/test_wave5_templates.py` - must-fire per trigger style on pinned synthetic wave paths (an impulse, a
+contracting diagonal, a zigzag, a flat with B beyond A's start, a contracting triangle, a double three) with the count's own
+invalidation and S6; must-not on another count type (G5 without a triangle, G10 on an impulse, G2 on a diagonal, G11 on a
+zigzag, G7 without the sweep, G4 / G6 on a double three, G9 without a fifth wave), a disagreeing alternate, the higher
+trend, the counter-trend C leg, the Fibonacci zone, the window; mirror per case; truncation over many t on the fixtures and
+on random-walk bars; property tests on random valid settings; parity (scan = backtest = options backtest = worker) on the
+fixtures and with the 1-hour wave / Daily higher frames; exits never on the signal bar; the words; the flags; the id length.
+
+Owner questions WAVE-38..WAVE-45 in `docs/OPEN_QUESTIONS.md`.

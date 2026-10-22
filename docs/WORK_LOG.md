@@ -2246,6 +2246,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: backend `tests/test_appearance_prefs.py`; vitest `src/textSize.test.ts` (scale in rem, 14 px floor, the
   setting, theme-init, the server sync); e2e `e2e/text-size-v2.e2e.ts` (Large and Extra large: phone layout rules,
   no sideways scroll at 1440, nothing spills); all 106 changed e2e baselines regenerated at the new size.
+## Login fix (handover 8d): "Wrong email or password", and `atp.sh reset-password`
+
+- Branch `claude/login-error-reset` (from main).
+- Bug: a wrong email or password at sign-in showed "Sign in from the Account page to use this feature." The client's
+  anonymous-401 sentence (frontend/src/api/client.ts) also caught `/auth/login`, where a 401 comes before any token
+  exists. `/auth/*` routes now keep the server's own sentence; the server says "Wrong email or password." (the same
+  for an unknown email, so it reveals nothing).
+- `deploy/atp.sh reset-password EMAIL` (until SMTP is configured): asks for the new password twice without echo,
+  passes it on stdin to `backend/scripts/reset_password.py` (never an argument, never printed or logged), applies the
+  app's password rules, signs out every session of that user and writes an audit row (`password_reset_by_owner`).
+- Tests: vitest `src/api/loginError.test.ts`; backend `tests/test_reset_password_script.py`.
 
 ## Master Order 3, part 2: the UX audit report (docs only)
 
@@ -2284,6 +2295,27 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   in `docs/adr/README.md`); `docs/OPEN_QUESTIONS.md` LAB-9 records it. G-LAB still gates every code-mode flag. The ADR
   note also records that order 11e overrides AMW_PORT C-3 (AI may write code for every Lab mode, as untrusted code).
 - CLAUDE.md and `docs/owner-orders/` not touched (owner-orders lives on its own branch).
+## 2026-10-22 - UX1: sign-in screen, "Coming soon" for flag-off pages, friendly errors, admin flag list (MO3 fixes 1-2)
+
+- Branch `claude/ux1-signin-comingsoon` (merged with main; keeps #332 login wording and #336 Google sign-in, whose
+  button now sits on the new sign-in screen and still renders nothing until the server reports the credentials).
+- Sign-in (audit P01, problem 2): a signed-out visitor at any address gets one sign-in card (`auth/SignInScreen.tsx`,
+  App.tsx `SignInGate`) - no sidebar, no data reads. Labels tied to every field, show / hide password, the two-factor
+  step, invite / reset / verify links. "Create an account" shows only while sign-up is open (new public
+  `GET /api/auth/sign-up-open`, answers only open / closed). After sign-in the visitor stays on the address asked
+  for; only `/account` and `/settings/account` move on to Today (fixed paths, no open redirect).
+- Coming soon (8b, problem 4): one map `shell/pageFlags.ts` (Copilot, Journal, Marketplace, Plan an options trade,
+  Find setups); both shells show "Coming soon" at the address of a page whose flag is off, and Find setups leaves the
+  v2 navigation while `screener_v2` is off. A SUPER_ADMIN also sees a small "Admin: <flag>" note.
+- Errors: a bare "Not found", a switched-off feature and an unhandled 5xx now read as one plain sentence
+  (`api/errors.ts`, `ui/ErrorState.tsx`); a switched-off feature never shows its flag name or a reference id.
+- Account page: the permission codes show only to a SUPER_ADMIN (audit P27); no mailer variable names in its text.
+- Admin Feature flags (audit section 7): `backend/app/platform/flag_catalog.py` gives every one of the 81 flags a plain
+  description, area, what turns on, the flags it needs and its status (ready / behind the scenes / unfinished /
+  owner decision); GET and PUT `/api/admin/controls/flags` (SUPER_ADMIN + two-factor) serve it with the default. The
+  list (`admin/FeatureFlagsCard.tsx`) is grouped by area with a search box; a flag whose dependency is off cannot be
+  turned on there ("Needs ... first"). The server does not refuse that order (operators may stage flags).
+- No migration.
 ## 2026-10-22 - UI2-5 brought up to main (P2a / P2b broker pages, D2 redirect URL, GS-1)
 
 - Merge of origin/main into `claude/ui2-5-broker-field-map`. Kept both sides:

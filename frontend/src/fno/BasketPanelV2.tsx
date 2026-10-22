@@ -1,5 +1,5 @@
 import * as RD from "@radix-ui/react-dialog";
-import { ArrowLeftRight, ExternalLink, FolderOpen, Layers, Minus, Plus, Save, Trash2, X } from "lucide-react";
+import { ArrowLeftRight, ExternalLink, FolderOpen, Layers, Minus, Plus, Save, Scale, Trash2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { request } from "../api/client";
 import { cx } from "../components/primitives/cx";
@@ -18,6 +18,7 @@ import {
   type SavedState, type StrategyName,
 } from "./basketModel";
 import { PracticeFrame } from "./OrderTicketV2";
+import { StrategyCompareV2 } from "./CompareV2";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
 import { riskLine, structureOf, type RiskBudget } from "./insights";
 import { moneyText, newClientRef, sideWord } from "./ticketModel";
@@ -38,6 +39,8 @@ import { moneyText, newClientRef, sideWord } from "./ticketModel";
  *   user's own tap. Exits stay on Positions / the chain ("Exit now", never blocked).
  * - Save / load baskets (the user's own preferences), "Open in Options Builder", "Trade in your broker app" (pre-filled
  *   in the user's own broker app; ATP places nothing there).
+ * - 8b-j "Compare": two baskets side by side (his basket, a ready strategy from his settings, a saved basket) - the
+ *   payoff at expiry on one scale, max profit / loss, breakevens, margin (estimate) and PoP. Information only.
  * The AI never opens this with legs (ADR-0006). `BasketBody`, `ConfirmView` and `ResultView` hold no state (tests render them).
  */
 export interface BasketChain {
@@ -53,7 +56,7 @@ export type PanelStep =
   | { kind: "edit" }
   | { kind: "confirm"; preview: BasketPreview | null; legs: NewLeg[] }
   | { kind: "done"; result: BasketResult; legs: NewLeg[] };
-type Tool = null | "save" | "load";
+type Tool = null | "save" | "load" | "compare";
 type Note = { tone: "done" | "warn"; text: string } | null;
 
 const FIELD = "h-11 w-full min-w-0 rounded-control border border-border bg-surface-2 px-space-2 text-t14 text-fg font-tabular focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
@@ -278,7 +281,11 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           </div>
           {step.kind === "edit" && (
             <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} rows={rows} pick={pick} atm={atm} spot={spot}
-              product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} />
+              product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget}
+              compare={tool === "compare" ? (
+                <StrategyCompareV2 underlying={chain.symbol} legs={legs.map(strip)} saved={saved} rows={rows} expiry={live?.expiry ?? null} around={pick}
+                  settings={settings} spot={spot} product={product} api={api} />
+              ) : null} />
           )}
           {step.kind === "confirm" && (
             <ConfirmView preview={step.preview} busy={busy} budget={budget} onBack={() => setStep({ kind: "edit" })} onPlace={() => { void execute(); }} />
@@ -331,12 +338,14 @@ function Figure({ label, children, sub, testId }: { label: string; children: Rea
 }
 
 /** The panel's edit view: ready strategies, the legs, the numbers and the tools (no state, no hooks). */
-export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget }: {
+export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare }: {
   legs: readonly BasketLeg[]; numbers: BasketNumbers | null; problems: string[]; settings: BasketSettings | null; rows: LiveChain["rows"];
   pick: number | null; atm: number | null; spot: number | null; product: Product; note: Note; tool: Tool; saved: SavedState | null;
   saveName: string; idPrefix: string; on: BodyHandlers;
   /** 8b-d: the user's own risk budget for the risk line (null: the line is left out). */
   budget?: RiskBudget | null;
+  /** 8b-j: the comparison, shown while the Compare tool is open. */
+  compare?: ReactNode;
 }) {
   const step = strikeStep(rows);
   const ext = numbers?.extremes ?? null;
@@ -464,9 +473,12 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
           </section>
         )}
 
+        {tool === "compare" && compare}
+
         <div className="flex flex-wrap gap-space-2" data-basket="tools">
           <button type="button" className={TOOL} onClick={() => on.onTool("save")} disabled={!legs.length} aria-expanded={tool === "save"} data-tool="save"><Save size={16} aria-hidden />Save</button>
           <button type="button" className={TOOL} onClick={() => on.onTool("load")} aria-expanded={tool === "load"} data-tool="load"><FolderOpen size={16} aria-hidden />Load</button>
+          <button type="button" className={TOOL} onClick={() => on.onTool("compare")} disabled={!rows.length && !legs.length} aria-expanded={tool === "compare"} data-tool="compare"><Scale size={16} aria-hidden />Compare</button>
           <button type="button" className={TOOL} onClick={on.onBuilder} disabled={!numbers} data-tool="builder"><Layers size={16} aria-hidden />Open in Options Builder</button>
           <button type="button" className={TOOL} onClick={on.onBrokerApp} disabled={!legs.length} data-tool="broker-app"><ExternalLink size={16} aria-hidden />Trade in your broker app</button>
           <button type="button" className={TOOL} onClick={on.onFlip} disabled={!legs.length} data-tool="flip"><ArrowLeftRight size={16} aria-hidden />Flip Buy / Sell</button>

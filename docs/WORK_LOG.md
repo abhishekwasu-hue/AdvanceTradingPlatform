@@ -2535,3 +2535,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `idea-library-v2.e2e.ts` with new baselines `idea-library-v2-{1440,390,360}-{light,dark}.png`; navModel / pagesV2
   count tests updated.
 
+
+## 22 Oct - Wave / correction templates (family G), step 1: the independent spec review
+
+- Branch `claude/wave1-review`. Docs only. No migration.
+- `docs/design/WAVE_TEMPLATES_REVIEW.md`: ATP_SESSION_WAVE_TEMPLATES.md reviewed against main 89fa1490 (#360). What
+  exists per shared rule, W1-W4 and G1-G12 (file:line), findings and resolutions; 14 blocking findings (WB1-WB14):
+  `read_counter` classifies a given finished move, so W1 needs a new causal counter on the generic rules; nothing from
+  the Daily trend fold (the owner's method); the schema cannot express family G (id / family, enum variants, timeframe
+  settings in expressions); hard-rule details (the 3-not-shortest cap, flat B without a level, EXPANDED_FLAT only after
+  C); W4 needs lines anchored to the wave pivots plus R7; the text guard refuses "wave 2"; G1 / G3 and G8 / G11
+  overlap; exits wait for R5; zones default; degree, intrabar and public-test gaps.
+- Migrations: none for W1-W4 and G1-G11; WAVE_PROJECTION waits for the templates spec section 5 (migration + owner
+  approval).
+- Owner questions WAVE-1..WAVE-16 in docs/OPEN_QUESTIONS.md; README row 14 updated. Build next, in the review's order.

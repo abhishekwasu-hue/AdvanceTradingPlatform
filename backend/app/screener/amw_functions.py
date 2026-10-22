@@ -1,7 +1,8 @@
 """AMW-3 (docs/design/AMW_PORT.md section 4): the ScreenQL functions ported from the AMW screener's predicates, and their
 flag gate.
 
-* New registry functions (Spec.flag `screenql_amw_functions`): StDev, RsiDivergence, SwingLabel, TimeOfDay.
+* New registry functions (Spec.flag `screenql_amw_functions`): StDev, RsiDivergence, SwingLabel, TimeOfDay (and, strategy
+  templates E2, RsiDivergenceRef: the divergence's prices).
 * New arguments and values of existing functions: the v2 candles in `Pattern(name)` (bullish / bearish strong body and
   gap reversal) and the `confirm` argument of Pattern / PatternBullish / PatternBearish (confirmed / failed /
   unconfirmed on the bar after the pattern). `confirm "any"` is the old behaviour and is never gated.
@@ -25,7 +26,7 @@ from app.screener.registry import AMW_FLAG, CONFIRM_STATES, FUNCTIONS, PATTERN_N
 
 FLAG = AMW_FLAG
 PATTERN_CALLS = ("Pattern", "PatternBullish", "PatternBearish")
-INTRABAR_FUNCTIONS = ("RsiDivergence", "SwingLabel")    # read swings a forming bar can confirm and then take back
+INTRABAR_FUNCTIONS = ("RsiDivergence", "RsiDivergenceRef", "SwingLabel")    # read swings a forming bar can confirm and take back
 _UNKNOWN = object()
 
 

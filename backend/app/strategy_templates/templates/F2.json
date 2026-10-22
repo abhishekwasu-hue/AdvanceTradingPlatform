@@ -1,18 +1,115 @@
 {
   "schema": "atp.template/1",
   "id": "F2",
-  "version": 1,
+  "version": 2,
   "name": "Range seller pack",
   "family": "F",
   "idea": "For option sellers: a range recipe's signals read as the range's lower or upper edge; the spread, its strikes and the lots come only from your own bot settings.",
   "difficulty": "Intermediate",
   "style": "Both",
-  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "allowed_timeframes": [
+    "5m",
+    "15m",
+    "30m",
+    "1h",
+    "1d"
+  ],
   "params": [
-    {"key": "source", "label": "Signals from", "help": "The range recipe whose signals give the edge. Its settings are below; the recipe runs exactly as on its own.",
-     "type": "enum", "default": "range_edges", "choices": ["range_edges"], "choice_labels": ["Range edges"]},
-    {"key": "swing_degree", "label": "Swing size", "help": "How big a swing must be to count when the range and its edges are read. Bigger swings give wider, slower ranges.",
-     "type": "int", "default": 1, "min": 0, "max": 3, "step": 1}
+    {
+      "key": "source",
+      "label": "Signals from",
+      "help": "The range recipe whose signals give the edge. Its settings are below; the recipe runs exactly as on its own.",
+      "type": "enum",
+      "default": "range_edges",
+      "choices": [
+        "range_edges",
+        "band_reversion"
+      ],
+      "choice_labels": [
+        "Range edges",
+        "Bollinger mean reversion in a range"
+      ]
+    },
+    {
+      "key": "swing_degree",
+      "label": "Swing size",
+      "help": "How big a swing must be to count when the range and its edges are read. Bigger swings give wider, slower ranges.",
+      "type": "int",
+      "default": 1,
+      "min": 0,
+      "max": 3,
+      "step": 1
+    },
+    {
+      "key": "bb_n",
+      "label": "Band period",
+      "help": "Bars in the average the bands are built around.",
+      "type": "int",
+      "default": 20,
+      "min": 2,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "bb_k",
+      "label": "Band width",
+      "help": "How many standard deviations the bands keep from their middle.",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.5,
+      "max": 5.0,
+      "step": 0.1
+    },
+    {
+      "key": "regime",
+      "label": "Range regime",
+      "help": "What tells a range: ADX below its threshold, or the swing structure reading a range.",
+      "type": "enum",
+      "default": "adx",
+      "choices": [
+        "adx",
+        "structure"
+      ],
+      "choice_labels": [
+        "ADX below its threshold",
+        "The swing structure is a range"
+      ]
+    },
+    {
+      "key": "adx_period",
+      "label": "ADX period",
+      "help": "Bars the ADX is calculated over.",
+      "type": "int",
+      "default": 14,
+      "min": 2,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "adx_threshold",
+      "label": "ADX threshold",
+      "help": "Below this ADX level the market counts as ranging.",
+      "type": "float",
+      "default": 20.0,
+      "min": 5.0,
+      "max": 60.0,
+      "step": 1.0
+    },
+    {
+      "key": "exit_at",
+      "label": "The idea has ended",
+      "help": "When the market touches the middle band, or the opposite band.",
+      "type": "enum",
+      "default": "middle",
+      "choices": [
+        "middle",
+        "opposite"
+      ],
+      "choice_labels": [
+        "A touch of the middle band",
+        "A touch of the opposite band"
+      ]
+    }
   ],
   "constraints": [],
   "sides_default": "both",
@@ -22,6 +119,19 @@
       "range_edges": {
         "long": "DowTrend($swing_degree) == \"RANGE\"",
         "short": "DowTrend($swing_degree) == \"RANGE\""
+      },
+      "band_reversion": {
+        "by": "regime",
+        "variants": {
+          "adx": {
+            "long": "ADX($adx_period) < $adx_threshold",
+            "short": "ADX($adx_period) < $adx_threshold"
+          },
+          "structure": {
+            "long": "DowTrend($swing_degree) == \"RANGE\"",
+            "short": "DowTrend($swing_degree) == \"RANGE\""
+          }
+        }
       }
     }
   },
@@ -33,23 +143,108 @@
         "long": "ReversalAt(SwingLow($swing_degree), \"bullish\")",
         "short": "ReversalAt(SwingHigh($swing_degree), \"bearish\")",
         "same_bar": true
+      },
+      "band_reversion": {
+        "kind": "event",
+        "long": "CrossBelow(close, BBLower($bb_n, $bb_k))",
+        "short": "CrossAbove(close, BBUpper($bb_n, $bb_k))",
+        "same_bar": false
       }
     }
   },
-  "trigger": null,
+  "trigger": {
+    "by": "source",
+    "variants": {
+      "range_edges": null,
+      "band_reversion": {
+        "long": "CrossAbove(close, BBLower($bb_n, $bb_k))",
+        "short": "CrossBelow(close, BBUpper($bb_n, $bb_k))"
+      }
+    }
+  },
   "invalidation": {
     "by": "source",
     "variants": {
       "range_edges": {
         "long": "SwingLow($swing_degree)",
         "short": "SwingHigh($swing_degree)"
+      },
+      "band_reversion": {
+        "extreme": "since_setup"
       }
     }
   },
-  "exit_signal": null,
+  "exit_signal": {
+    "by": "source",
+    "variants": {
+      "range_edges": null,
+      "band_reversion": {
+        "by": "exit_at",
+        "variants": {
+          "middle": {
+            "long": "high >= BBMid($bb_n, $bb_k)",
+            "short": "low <= BBMid($bb_n, $bb_k)"
+          },
+          "opposite": {
+            "long": "high >= BBUpper($bb_n, $bb_k)",
+            "short": "low <= BBLower($bb_n, $bb_k)"
+          }
+        }
+      }
+    }
+  },
   "evidence": [],
   "signal_text": {
-    "long": [{"token": "range_on_chart"}, {"token": "lower_edge_rejection_formed"}, {"token": "pack_range_lower_edge"}],
-    "short": [{"token": "range_on_chart"}, {"token": "upper_edge_rejection_formed"}, {"token": "pack_range_upper_edge"}]
+    "by": "source",
+    "variants": {
+      "range_edges": {
+        "long": [
+          {
+            "token": "range_on_chart"
+          },
+          {
+            "token": "lower_edge_rejection_formed"
+          },
+          {
+            "token": "pack_range_lower_edge"
+          }
+        ],
+        "short": [
+          {
+            "token": "range_on_chart"
+          },
+          {
+            "token": "upper_edge_rejection_formed"
+          },
+          {
+            "token": "pack_range_upper_edge"
+          }
+        ]
+      },
+      "band_reversion": {
+        "long": [
+          {
+            "token": "back_inside_from_lower_band"
+          },
+          {
+            "token": "range_regime"
+          },
+          {
+            "token": "pack_range_lower_edge"
+          }
+        ],
+        "short": [
+          {
+            "token": "back_inside_from_upper_band"
+          },
+          {
+            "token": "range_regime"
+          },
+          {
+            "token": "pack_range_upper_edge"
+          }
+        ]
+      }
+    }
   }
 }

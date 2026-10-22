@@ -54,7 +54,7 @@ def test_the_flag_is_registered_off_and_names_every_new_function():
     from app.platform.controls import DEFAULT_OFF_FLAGS, FEATURE_FLAGS
     assert AMW_FLAG == amw.FLAG == barclose.AMW_FLAG == "screenql_amw_functions"
     assert AMW_FLAG in DEFAULT_OFF_FLAGS and "places no orders" in FEATURE_FLAGS[AMW_FLAG]
-    assert set(AMW_FUNCTIONS) == {"StDev", "RsiDivergence", "SwingLabel", "TimeOfDay"}
+    assert set(AMW_FUNCTIONS) == {"StDev", "RsiDivergence", "SwingLabel", "TimeOfDay", "RsiDivergenceRef"}     # + strategy templates E2
     assert PATTERN_NAMES_V2 == cp.V2_PATTERN_NAMES and CONFIRM_STATES == cp.CONFIRM_STATES
     assert "StDev" in READS_HISTORY
     for name in ("Pattern", "PatternBullish", "PatternBearish"):

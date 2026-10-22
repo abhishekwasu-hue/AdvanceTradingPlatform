@@ -15,7 +15,9 @@ Binding rules (owner order section 0 R1, section 1):
   (step 3, R7: RetestEntry's `reversal` - "wait for a reversal at the level"); the validator checks its type there;
 * a part with `variants` compiles only the expression of the chosen enum value (family G, WB3);
 * step 5: an invalidation that is the extreme since the setup bar (`SetupExtreme`) compiles no expression - the engine
-  keeps it while it walks the bars (`Recipe.invalidation_since_setup`).
+  keeps it while it walks the bars (`Recipe.invalidation_since_setup`);
+* TPL-7 (family F version 2): a variant may itself be a switch, opened one level after the other (`chosen`); the signal
+  timeframe may be limited per choice (`Template.timeframes_by`).
 """
 from __future__ import annotations
 
@@ -88,8 +90,8 @@ class Recipe:
     def chosen_setup(self) -> Setup:
         if self.setup is not None:
             return self.setup
-        setup = self.template.setup
-        return setup if isinstance(setup, Setup) else setup.variants[str(self.settings.params[setup.by])]
+        setup: Setup = chosen(self.template.setup, self.settings)
+        return setup
 
     def part(self, name: str, side: Side) -> Optional[Part]:
         return self.parts.get((name, side))
@@ -126,9 +128,9 @@ def fill_timeframes(text: str, template: Template, settings: "Settings", what: s
 
 def chosen(part: Any, settings: "Settings") -> Any:
     """A part as the user's settings choose it: a Switch / SetupSwitch / ContextSwitch gives the variant of its enum value
-    (None when that value has no expression); anything else is itself."""
-    if isinstance(part, (Switch, SetupSwitch, ContextSwitch)):
-        return part.variants[str(settings.params[part.by])]
+    (None when that value has no expression), a nested switch opened in turn (TPL-7); anything else is itself."""
+    while isinstance(part, (Switch, SetupSwitch, ContextSwitch)):
+        part = part.variants[str(settings.params[part.by])]
     return part
 
 
@@ -170,6 +172,13 @@ def resolve_settings(template: Template, timeframe: Optional[str] = None, sides:
             ok = {"<": left < right, "<=": left <= right, ">": left > right, ">=": left >= right, "!=": left != right}[c.op]
             if not ok:
                 problems.append(c.message)
+    by_tf = template.timeframes_by
+    if not problems and by_tf is not None and tf in template.allowed_timeframes:
+        allowed = by_tf.allowed.get(str(values[by_tf.by]))
+        if allowed is not None and tf not in allowed:                # TPL-7: e.g. a pack member that has no Weekly chart
+            spec = template.param(by_tf.by)
+            label = spec.choice_labels[spec.choices.index(str(values[by_tf.by]))] if spec.choice_labels else str(values[by_tf.by])
+            problems.append(f"{label} runs on the {', '.join(language.TIMEFRAME_WORDS[t] for t in allowed)} timeframes only")
     if problems:
         raise TemplateError(problems)
     return Settings(tf, side_choice, values)  # type: ignore[arg-type]
@@ -301,7 +310,7 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
         add("context", None, "bool", context_tf, long_text=ctx_sided.long, short_text=ctx_sided.short)
     for ev in template.evidence:
         add(f"evidence:{ev.name}", None, "bool", long_text=ev.long, short_text=ev.short)
-    for part in (*template.signal_text.long, *template.signal_text.short):
+    for part in template.text_parts():
         if part.token not in language.TOKENS:
             problems.append(f"signal text: unknown token {part.token!r}")
     expiry: Optional[int] = None
@@ -328,12 +337,23 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
     return recipe
 
 
-def _switch_settings(template: Template) -> List[str]:
-    """The enum settings that choose a part's variant (family G, WB3), in the order the parts are listed."""
-    out: List[str] = []
+def _switch_paths(part: Any) -> List[Dict[str, str]]:
+    """The choices that reach each leaf variant of a part (TPL-7: through every nested switch), e.g.
+    [{source: supertrend_flip}, {source: ma_pullback, trigger_bar: later}, {source: ma_pullback, trigger_bar: same}]."""
+    if not isinstance(part, (Switch, SetupSwitch, ContextSwitch)):
+        return [{}]
+    return [{part.by: choice, **inner} for choice, v in part.variants.items() for inner in _switch_paths(v)]
+
+
+def _switch_variants(template: Template) -> List[Dict[str, Any]]:
+    """The settings that exercise every variant of every switch (family G, WB3), one path at a time, in the order the parts
+    are listed; a path that only names default choices is the default settings themselves and is left out."""
+    defaults = {p.key: p.default for p in template.params}
+    out: List[Dict[str, Any]] = []
     for part in (template.context, template.setup, template.trigger, template.invalidation, template.exit_signal):
-        if isinstance(part, (Switch, SetupSwitch, ContextSwitch)) and part.by not in out:
-            out.append(part.by)
+        for path in _switch_paths(part):
+            if any(defaults[k] != v for k, v in path.items()) and path not in out:
+                out.append(path)
     return out
 
 
@@ -342,7 +362,7 @@ def validate_template(template: Template) -> List[str]:
     (a context timeframe default finer than the signal timeframe is skipped - the constraint refuses that pair)."""
     problems: List[str] = []
     declared = {p.key: p.type for p in template.params}
-    for part in (*template.signal_text.long, *template.signal_text.short):
+    for part in template.text_parts():
         if part.token not in language.TOKENS:
             problems.append(f"signal text: unknown token {part.token!r}")
         else:
@@ -361,8 +381,7 @@ def validate_template(template: Template) -> List[str]:
                 on = {**on, ctx.timeframe_param: above[0]} if above else None     # no context timeframe above this one
             if on:
                 variants.append(on)
-        for by in _switch_settings(template):         # family G (WB3): every variant of every switch, one at a time
-            variants += [{by: choice} for choice in template.param(by).choices if choice != template.param(by).default]
+        variants += _switch_variants(template)        # family G (WB3): every variant of every switch, one at a time
         for params in variants:
             try:
                 settings = resolve_settings(template, tf, params=params)

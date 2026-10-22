@@ -1,0 +1,175 @@
+{
+  "schema": "atp.template/1",
+  "id": "E2",
+  "version": 1,
+  "name": "RSI divergence",
+  "family": "E",
+  "idea": "A regular RSI divergence between the last two confirmed swings (a lower low with a higher RSI, or a higher high with a lower RSI), then a change of character on smaller swings or a close beyond the confirming bar; the idea is wrong beyond the divergence's extreme.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": [
+    "5m",
+    "15m",
+    "30m",
+    "1h",
+    "1d"
+  ],
+  "params": [
+    {
+      "key": "rsi_period",
+      "label": "RSI period",
+      "help": "Bars the RSI is calculated over.",
+      "type": "int",
+      "default": 14,
+      "min": 2,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "swing_degree",
+      "label": "Swing size",
+      "help": "Which swings the divergence is read between: 1 is small, 3 the largest. Larger swings need more history.",
+      "type": "int",
+      "default": 1,
+      "min": 1,
+      "max": 3,
+      "step": 1
+    },
+    {
+      "key": "divergence_bars",
+      "label": "Divergence counts for (bars)",
+      "help": "A divergence starts the setup only while its latest swing is at most this many bars old.",
+      "type": "int",
+      "default": 15,
+      "min": 1,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "trigger",
+      "label": "Confirmation",
+      "help": "What confirms the turn after the divergence: a change of character on the smaller swings, or a close beyond the bar that confirmed the divergence's swing.",
+      "type": "enum",
+      "default": "choch",
+      "choices": [
+        "choch",
+        "confirm_bar"
+      ],
+      "choice_labels": [
+        "A change of character on smaller swings",
+        "A close beyond the confirming bar"
+      ]
+    },
+    {
+      "key": "trigger_degree",
+      "label": "Smaller swing size",
+      "help": "For the change of character: which smaller swings are read (smaller than the divergence's swings).",
+      "type": "int",
+      "default": 0,
+      "min": 0,
+      "max": 2,
+      "step": 1
+    },
+    {
+      "key": "break_k",
+      "label": "Break distance",
+      "help": "For the change of character: how far beyond the smaller swing the close must be, in average true ranges (0 means any close beyond).",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.05
+    },
+    {
+      "key": "confirm_max_bars",
+      "label": "Confirmation within (bars)",
+      "help": "The confirmation must come within this many bars after the divergence was confirmed.",
+      "type": "int",
+      "default": 10,
+      "min": 1,
+      "max": 200,
+      "step": 1
+    }
+  ],
+  "constraints": [
+    {
+      "left": "trigger_degree",
+      "op": "<",
+      "right": "swing_degree",
+      "message": "The smaller swing size must be smaller than the divergence's swing size."
+    }
+  ],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "RsiDivergence(\"bullish\", $divergence_bars, $swing_degree, period=$rsi_period) AND NOT RsiDivergence(\"bullish\", $divergence_bars, $swing_degree, period=$rsi_period)[1]",
+    "short": "RsiDivergence(\"bearish\", $divergence_bars, $swing_degree, period=$rsi_period) AND NOT RsiDivergence(\"bearish\", $divergence_bars, $swing_degree, period=$rsi_period)[1]",
+    "expiry_bars": "$confirm_max_bars",
+    "same_bar": true,
+    "arm_level": {
+      "long": "RsiDivergenceRef(\"extreme\", \"bullish\", $swing_degree, period=$rsi_period)",
+      "short": "RsiDivergenceRef(\"extreme\", \"bearish\", $swing_degree, period=$rsi_period)"
+    },
+    "breach_on": "close"
+  },
+  "trigger": {
+    "by": "trigger",
+    "variants": {
+      "choch": {
+        "long": "SwingBreakType(\"up\", $trigger_degree, $break_k) == \"CHOCH\"",
+        "short": "SwingBreakType(\"down\", $trigger_degree, $break_k) == \"CHOCH\""
+      },
+      "confirm_bar": {
+        "long": "close > RsiDivergenceRef(\"confirm_bar\", \"bullish\", $swing_degree, period=$rsi_period)",
+        "short": "close < RsiDivergenceRef(\"confirm_bar\", \"bearish\", $swing_degree, period=$rsi_period)"
+      }
+    }
+  },
+  "invalidation": {
+    "long": "RsiDivergenceRef(\"extreme\", \"bullish\", $swing_degree, period=$rsi_period)",
+    "short": "RsiDivergenceRef(\"extreme\", \"bearish\", $swing_degree, period=$rsi_period)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "by": "trigger",
+    "variants": {
+      "choch": {
+        "long": [
+          {
+            "token": "rsi_bullish_divergence"
+          },
+          {
+            "token": "smaller_swings_choch_up"
+          }
+        ],
+        "short": [
+          {
+            "token": "rsi_bearish_divergence"
+          },
+          {
+            "token": "smaller_swings_choch_down"
+          }
+        ]
+      },
+      "confirm_bar": {
+        "long": [
+          {
+            "token": "rsi_bullish_divergence"
+          },
+          {
+            "token": "close_beyond_confirming_bar_up"
+          }
+        ],
+        "short": [
+          {
+            "token": "rsi_bearish_divergence"
+          },
+          {
+            "token": "close_beyond_confirming_bar_down"
+          }
+        ]
+      }
+    }
+  }
+}

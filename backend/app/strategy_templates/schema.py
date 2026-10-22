@@ -16,11 +16,17 @@ any existing template:
   compiled, so an unchosen variant never runs and never holds the warm-up back;
 * `@{key}` in an expression: the timeframe of a timeframe setting (`WaveState(1)@{wave_tf}`), filled in at compile time
   and then validated like a written `@1h`.
+
+Family F version 2 (TPL-7), still `atp.template/1` and without changing any existing template: a pack holds several
+member templates under its `source` setting, and a member may itself switch a part on its own setting. So
+* a variant may itself be a switch (nested `variants`: e.g. the pack's `source`, then D3's `trigger_bar`);
+* `signal_text` may be a switch (`SignalTextSwitch`: the member's own words per `source`);
+* `timeframes_by` limits the signal timeframes per choice of an enum setting (a member that does not run on Weekly).
 """
 from __future__ import annotations
 
 import json
-from typing import Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
 
@@ -114,9 +120,10 @@ class Sided(_Strict):
 
 class Switch(_Strict):
     """One expression per value of the enum setting `by` (every value covered); null means "no expression" for that value
-    (allowed for a trigger, a context and an exit signal, never for an invalidation)."""
+    (allowed for a trigger, a context and an exit signal, never for an invalidation). TPL-7: a variant may itself be a
+    switch on another enum setting (a pack's member that switches the part on its own setting)."""
     by: str = Field(pattern=_KEY)
-    variants: Dict[str, Optional[Sided]] = Field(min_length=1)
+    variants: Dict[str, Optional[Union[Sided, "Switch"]]] = Field(min_length=1)
 
 
 class SetupExtreme(_Strict):
@@ -129,8 +136,9 @@ class SetupExtreme(_Strict):
 
 
 class InvalidationSwitch(Switch):
-    """An invalidation per value of the enum setting `by`: an expression, or the extreme since the setup bar."""
-    variants: Dict[str, Optional[Union[Sided, SetupExtreme]]] = Field(min_length=1)   # type: ignore[assignment]
+    """An invalidation per value of the enum setting `by`: an expression, or the extreme since the setup bar (TPL-7: or a
+    nested invalidation switch)."""
+    variants: Dict[str, Optional[Union[Sided, SetupExtreme, "InvalidationSwitch"]]] = Field(min_length=1)   # type: ignore[assignment]
 
 
 class Context(_Strict):
@@ -164,15 +172,16 @@ class Setup(_Strict):
 
 class SetupSwitch(_Strict):
     """A whole setup per value of the enum setting `by` (e.g. the window: one opportunity per wave is a state setup,
-    every pullback an event setup)."""
+    every pullback an event setup). TPL-7: a variant may itself be a setup switch."""
     by: str = Field(pattern=_KEY)
-    variants: Dict[str, Setup] = Field(min_length=1)
+    variants: Dict[str, Union[Setup, "SetupSwitch"]] = Field(min_length=1)
 
 
 class ContextSwitch(_Strict):
-    """A context filter per value of the enum setting `by` (null: no filter for that value, e.g. trend relation "any")."""
+    """A context filter per value of the enum setting `by` (null: no filter for that value, e.g. trend relation "any").
+    TPL-7: a variant may itself be a switch (`Switch`) on another enum setting."""
     by: str = Field(pattern=_KEY)
-    variants: Dict[str, Optional[Sided]] = Field(min_length=1)
+    variants: Dict[str, Optional[Union[Sided, Switch]]] = Field(min_length=1)
     timeframe_param: Optional[str] = Field(default=None, pattern=_KEY)
     enabled_by: Optional[str] = Field(default=None, pattern=_KEY)
 
@@ -191,6 +200,43 @@ class TextPart(_Strict):
 class SignalText(_Strict):
     long: Tuple[TextPart, ...] = Field(min_length=1)
     short: Tuple[TextPart, ...] = Field(min_length=1)
+
+
+class SignalTextSwitch(_Strict):
+    """TPL-7 (family F version 2): the signal text per value of the enum setting `by` (a pack's member's own words)."""
+    by: str = Field(pattern=_KEY)
+    variants: Dict[str, SignalText] = Field(min_length=1)
+
+
+class TimeframesBy(_Strict):
+    """TPL-7 (family F version 2): the signal timeframes allowed per value of the enum setting `by` (each a subset of the
+    template's allowed timeframes; a choice left out allows them all)."""
+    by: str = Field(pattern=_KEY)
+    allowed: Dict[str, Tuple[str, ...]] = Field(min_length=1)
+
+
+def nested(part: object) -> List[object]:
+    """Every switch in a part, the outer one first, then each nested one (TPL-7); empty for a part without a switch."""
+    if not isinstance(part, (Switch, SetupSwitch, ContextSwitch)):
+        return []
+    out: List[object] = [part]
+    for v in part.variants.values():
+        out += nested(v)
+    return out
+
+
+def _repeats(part: object, outer: Tuple[str, ...]) -> bool:
+    """Whether a nested switch chooses by a setting an outer switch on its path already chose by."""
+    if not isinstance(part, (Switch, SetupSwitch, ContextSwitch)):
+        return False
+    return part.by in outer or any(_repeats(v, (*outer, part.by)) for v in part.variants.values())
+
+
+def leaves(part: object) -> List[object]:
+    """A part's leaf variants (every nested switch opened; None kept): the expressions / setups the settings can choose."""
+    if not isinstance(part, (Switch, SetupSwitch, ContextSwitch)):
+        return [part]
+    return [leaf for v in part.variants.values() for leaf in leaves(v)]
 
 
 class Template(_Strict):
@@ -213,7 +259,8 @@ class Template(_Strict):
     invalidation: Union[Sided, SetupExtreme, InvalidationSwitch]
     exit_signal: Optional[Union[Sided, Switch]] = None
     evidence: Tuple[Evidence, ...] = ()
-    signal_text: SignalText
+    signal_text: Union[SignalText, SignalTextSwitch]
+    timeframes_by: Optional[TimeframesBy] = None            # TPL-7: the signal timeframes per choice (family F version 2)
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True, populate_by_name=True)
 
@@ -237,14 +284,26 @@ class Template(_Strict):
         refs: List[Tuple[str, Optional[str], str]] = []          # (what, key, required type)
         if self.context is not None:
             refs += [("context timeframe", self.context.timeframe_param, "timeframe"), ("context switch", self.context.enabled_by, "bool")]
-        refs += [(f"text part {p.token}", p.when, "bool") for p in (*self.signal_text.long, *self.signal_text.short)]
+        refs += [(f"text part {p.token}", p.when, "bool") for p in self.text_parts()]
+        texts = self.signal_text
+        if isinstance(texts, SignalTextSwitch):
+            spec = by_key.get(texts.by)
+            if spec is None or spec.type != "enum" or set(texts.variants) != set(spec.choices):
+                raise ValueError(f"signal text variants must cover exactly the choices of an enum setting, got {texts.by!r}")
+        if self.timeframes_by is not None:
+            spec = by_key.get(self.timeframes_by.by)
+            if spec is None or spec.type != "enum" or not set(self.timeframes_by.allowed) <= set(spec.choices):
+                raise ValueError(f"timeframes_by must name choices of an enum setting, got {self.timeframes_by.by!r}")
+            for choice, tfs in self.timeframes_by.allowed.items():
+                if not tfs or not set(tfs) <= set(self.allowed_timeframes):
+                    raise ValueError(f"timeframes_by {choice}: a non-empty subset of the allowed timeframes")
         for what, key, kind in refs:
             if key is not None and (key not in by_key or by_key[key].type != kind):
                 raise ValueError(f"{what} must name a {kind} setting, got {key!r}")
-        switches: List[Tuple[str, Union[Switch, SetupSwitch, ContextSwitch]]] = [
-            (what, part) for what, part in (("context", self.context), ("setup", self.setup), ("trigger", self.trigger),
-                                            ("invalidation", self.invalidation), ("exit_signal", self.exit_signal))
-            if isinstance(part, (Switch, SetupSwitch, ContextSwitch))]
+        switches: List[Tuple[str, Any]] = [
+            (what, sw) for what, part in (("context", self.context), ("setup", self.setup), ("trigger", self.trigger),
+                                          ("invalidation", self.invalidation), ("exit_signal", self.exit_signal))
+            for sw in nested(part)]
         for what, sw in switches:
             spec = by_key.get(sw.by)
             if spec is None or spec.type != "enum":
@@ -253,7 +312,11 @@ class Template(_Strict):
                 raise ValueError(f"{what} variants must cover exactly the choices of {sw.by}: {', '.join(spec.choices)}")
             if what == "invalidation" and any(v is None for v in sw.variants.values()):
                 raise ValueError("every invalidation variant needs an expression")
-        setups = list(self.setup.variants.values()) if isinstance(self.setup, SetupSwitch) else [self.setup]
+        for what, part in (("context", self.context), ("setup", self.setup), ("trigger", self.trigger),
+                           ("invalidation", self.invalidation), ("exit_signal", self.exit_signal)):
+            if _repeats(part, ()):                               # TPL-7: a nested switch never re-chooses by an outer setting
+                raise ValueError(f"{what}: a nested switch must choose by another setting")
+        setups = [s_ for s_ in leaves(self.setup) if isinstance(s_, Setup)]
         for setup in setups:
             if isinstance(setup.expiry_bars, str):
                 key = setup.expiry_bars.removeprefix("$")
@@ -279,7 +342,23 @@ class Template(_Strict):
     def param(self, key: str) -> ParamSpec:
         return next(p for p in self.params if p.key == key)
 
+    def text_parts(self) -> List[TextPart]:
+        """Every signal text part, of every signal text variant (TPL-7)."""
+        texts = list(self.signal_text.variants.values()) if isinstance(self.signal_text, SignalTextSwitch) else [self.signal_text]
+        return [p for t in texts for p in (*t.long, *t.short)]
+
+    def chosen_text(self, params: Dict[str, Any]) -> SignalText:
+        """The signal text the settings choose (TPL-7: a signal text switch gives its variant)."""
+        texts = self.signal_text
+        return texts.variants[str(params[texts.by])] if isinstance(texts, SignalTextSwitch) else texts
+
+
+Switch.model_rebuild()
+InvalidationSwitch.model_rebuild()
+SetupSwitch.model_rebuild()
+ContextSwitch.model_rebuild()
+Template.model_rebuild()
 
 __all__ = ["SCHEMA_VERSION", "SIGNAL_TIMEFRAME", "MA_TYPES", "SOURCES", "ParamSpec", "Constraint", "Sided", "Context", "Setup",
            "Evidence", "TextPart", "SignalText", "Template", "Switch", "SetupSwitch", "ContextSwitch", "SetupExtreme",
-           "InvalidationSwitch"]
+           "InvalidationSwitch", "SignalTextSwitch", "TimeframesBy", "nested", "leaves"]

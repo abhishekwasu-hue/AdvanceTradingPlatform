@@ -23,9 +23,12 @@ from app.screener.runtime import SymbolData, evaluate, resample
 from app.strategy_templates import compile as C
 from app.strategy_templates import engine, ids, language, library, packs, parity
 from app.strategy_templates.adapter import ENGINE_LABEL, TemplateStrategy
-from app.strategy_templates.schema import Template
+from app.strategy_templates.schema import Template, leaves
 
 F1, F2, D1, A2 = (library.get(t) for t in ("F1", "F2", "D1", "A2"))
+# TPL-7: version 2 of each pack added members (F1: D3, F2: E3); these tests read the newest version, whose first `source`
+# (the default) is version 1's only member, so every version 1 case below runs unchanged. The version 1 files themselves
+# and their ids are tested in tests/test_tpl7_e2_packs_v2.py.
 PACKS = ("F1", "F2")
 RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5)
 K = 400.0                                                     # mirror axis: price -> K - price
@@ -67,13 +70,19 @@ def same_series(a, b):
 def _member_cases():
     out = []
     for pack_id, sources in packs.MEMBERS.items():
-        pack = library.get(pack_id)
-        for source in sources:
-            for tf in pack.allowed_timeframes:
+        for source, member_id in sources.items():
+            for tf in library.get(member_id).allowed_timeframes:
                 out.append((pack_id, source, tf, {}))
-            if pack_id == "F1":
+            if member_id == "D1":
                 out += [("F1", source, "15m", {"use_context": True, "context_timeframe": "1h"}),
                         ("F1", source, "1h", {"period": 7, "multiplier": 2.5, "use_context": True, "context_timeframe": "1w"})]
+            elif member_id == "D3":                                     # TPL-7: D3's own switches, nested under `source`
+                out += [("F1", source, "15m", {"trigger_bar": "same", "exit_rule": "none"}),
+                        ("F1", source, "1h", {"ma_type": "SMA", "fast": 10, "slow": 30, "slope_bars": 3, "pullback_max_bars": 8}),
+                        ("F1", source, "15m", {"use_context": True, "context_timeframe": "1h"})]   # D1's filter: no part for D3
+            elif member_id == "E3":
+                out += [("F2", source, "15m", {"regime": "structure", "swing_degree": 0, "exit_at": "opposite"}),
+                        ("F2", source, "1h", {"bb_n": 30, "bb_k": 2.5, "adx_period": 10, "adx_threshold": 25.0})]
             else:
                 out += [("F2", source, "15m", {"swing_degree": 0}), ("F2", source, "1d", {"swing_degree": 3})]
     return out
@@ -93,23 +102,45 @@ def test_every_pack_variant_compiles_to_its_members_own_parts(pack_id, source, t
 
 
 def test_the_packs_settings_are_the_members_own():
+    """TPL-7 (version 2): the pack's settings are its members' own, in member order (a key two members share - F2's swing
+    size - is one setting with the same type, default and bounds; only its help is the first member's); the constraints
+    are the members'; each member keeps its own timeframes and its own words, followed by the pack's reading."""
     for pack_id, sources in packs.MEMBERS.items():
         pack = library.get(pack_id)
         source = pack.param(packs.SOURCE)
-        assert source.type == "enum" and set(source.choices) == set(sources) and len(source.choice_labels) == len(source.choices)
-        for member_id in sources.values():
+        assert source.type == "enum" and list(source.choices) == list(sources) and len(source.choice_labels) == len(source.choices)
+        assert pack.params[0].key == packs.SOURCE and source.default == source.choices[0]
+        union, constraints = [], []
+        for choice, member_id in sources.items():
             member = library.get(member_id)
-            assert [p for p in pack.params if p.key != packs.SOURCE] == list(member.params)       # keys, labels, defaults, bounds
-            assert pack.constraints == member.constraints and pack.sides_default == member.sides_default
-            assert set(pack.allowed_timeframes) == set(member.allowed_timeframes)
-            mine = [p.token for p in pack.signal_text.long]
-            assert mine[:-1] == [p.token for p in member.signal_text.long]                          # the member's words first
-            assert [p.token for p in pack.signal_text.short][:-1] == [p.token for p in member.signal_text.short]
+            for p in member.params:                                             # keys, labels, defaults, bounds
+                mine = pack.param(p.key)
+                assert mine.model_dump(exclude={"help"}) == p.model_dump(exclude={"help"}), (pack_id, p.key)
+                if p.key not in {q.key for q in union}:
+                    assert mine == p
+                    union.append(p)
+            constraints += [c for c in member.constraints if c not in constraints]
+            assert pack.sides_default == member.sides_default
+            allowed = pack.timeframes_by.allowed.get(choice, pack.allowed_timeframes) if pack.timeframes_by else pack.allowed_timeframes
+            assert set(allowed) == set(member.allowed_timeframes) and set(allowed) <= set(pack.allowed_timeframes)
+            text = pack.chosen_text({packs.SOURCE: choice})
+            for side in ("long", "short"):
+                mine_tokens = [(p.token, p.when) for p in getattr(text, side)]
+                theirs = [(p.token, p.when) for p in getattr(member.chosen_text(C.resolve_settings(member).params), side)]
+                assert mine_tokens[:-1] == theirs and mine_tokens[-1][0].startswith("pack_")    # the member's words first
+        assert list(pack.params[1:]) == union and list(pack.constraints) == constraints
+        assert set(pack.allowed_timeframes) == {tf for m in sources.values() for tf in library.get(m).allowed_timeframes}
 
 
 @pytest.mark.parametrize("pack_id, params, seed", [("F1", {}, 1), ("F1", {"use_context": True, "context_timeframe": "1h"}, 3),
                                                    ("F1", {"period": 5, "multiplier": 1.5}, 7), ("F2", {"swing_degree": 0}, 1),
-                                                   ("F2", {}, 2), ("F2", {"swing_degree": 0}, 12)])
+                                                   ("F2", {}, 2), ("F2", {"swing_degree": 0}, 12),
+                                                   # TPL-7: the version 2 members, with their own switches
+                                                   ("F1", {"source": "ma_pullback"}, 1),
+                                                   ("F1", {"source": "ma_pullback", "trigger_bar": "same", "ma_type": "SMA"}, 4),
+                                                   ("F2", {"source": "band_reversion"}, 1),
+                                                   ("F2", {"source": "band_reversion", "regime": "structure", "swing_degree": 0,
+                                                           "exit_at": "opposite"}, 2)])
 def test_the_pack_signals_exactly_where_its_member_does(pack_id, params, seed):
     df = bars(seed, 800)
     pack = library.get(pack_id)
@@ -168,7 +199,10 @@ def test_f1_warm_up_and_settings_refused_in_plain_words():
     with pytest.raises(C.TemplateError, match="higher than the signal"):
         C.resolve_settings(F1, "1h", params={"use_context": True, "context_timeframe": "1h"})
     with pytest.raises(C.TemplateError, match="Signals from must be one of"):
-        C.resolve_settings(F1, "15m", params={"source": "ma_pullback"})                  # D3 is not a member yet (TPL-F1)
+        C.resolve_settings(F1, "15m", params={"source": "area_pullback"})                # A1 is not a member yet (TPL-Q50)
+    with pytest.raises(C.TemplateError, match="Moving-average pullback in trend runs on the .* timeframes only"):
+        C.resolve_settings(F1, "1w", params={"source": "ma_pullback"})                   # TPL-7: D3 has no Weekly chart
+    assert C.resolve_settings(F1, "1w").timeframe == "1w"                               # the Supertrend flip still has
     with pytest.raises(C.TemplateError, match="between 1 and 100"):
         C.resolve_settings(F1, "15m", params={"period": 0})
 
@@ -217,7 +251,10 @@ def test_f2_s6_no_signal_with_the_edge_on_the_wrong_side():
 
 # ====================================================================================== shared gate: both packs
 CASES = [("F1", {}, 1), ("F1", {"use_context": True, "context_timeframe": "1h"}, 3), ("F1", {"period": 5, "multiplier": 1.5}, 2),
-         ("F2", {"swing_degree": 0}, 1), ("F2", {}, 2), ("F2", {"swing_degree": 0}, 10)]
+         ("F2", {"swing_degree": 0}, 1), ("F2", {}, 2), ("F2", {"swing_degree": 0}, 10),
+         # TPL-7: the version 2 members (the Bollinger one with its ADX regime: the swing-structure regime breaks ties one
+         # way, so E3's own mirror test leaves it out too)
+         ("F1", {"source": "ma_pullback"}, 1), ("F2", {"source": "band_reversion"}, 1)]
 # F2's seeds: fixtures where the member A2 is mirror-exact. On some random series the member's DowTrend / ReversalAt are
 # not (a tie broken one way on both sides; pre-existing, OPEN_QUESTIONS TPL-F6) - the pack is the member there too.
 IDS = [f"{tid}-{i}" for i, (tid, _, _) in enumerate(CASES)]
@@ -232,7 +269,7 @@ def test_mirror_short_equals_long_on_mirrored_prices(tid, params, seed):
     template, axis = library.get(tid), K * 20
     s, m = run(template, df, **params), run(template, mirror(df, axis), **params)
     start = 0
-    if tid == "F1":
+    if tid == "F1" and params.get("source", "supertrend_flip") == "supertrend_flip":
         p = {"period": 10, "multiplier": 3.0, **params}
         a, b = supertrend_dir(df, p["period"], p["multiplier"]), supertrend_dir(mirror(df, axis), p["period"], p["multiplier"])
         start = int(np.flatnonzero((a == -b).to_numpy())[0]) + 1
@@ -276,7 +313,8 @@ def _window(seed):
 STRUCTURES = [OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2),
               OptionBacktestConfig(option_strategy=OptionStrategy.BEAR_CALL_SPREAD, implied_volatility=0.14, spread_width=3),
               OptionBacktestConfig(option_strategy=OptionStrategy.IRON_CONDOR, implied_volatility=0.14, spread_width=2, strike_offset=2)]
-PARITY = [("F1", {}, 1), ("F1", {"use_context": True, "context_timeframe": "1h"}, 3), ("F2", {"swing_degree": 0}, 1), ("F2", {}, 3)]
+PARITY = [("F1", {}, 1), ("F1", {"use_context": True, "context_timeframe": "1h"}, 3), ("F2", {"swing_degree": 0}, 1), ("F2", {}, 3),
+          ("F1", {"source": "ma_pullback"}, 1), ("F2", {"source": "band_reversion"}, 1)]                 # TPL-7
 
 
 @pytest.mark.parametrize("tid, params, seed", PARITY, ids=[f"{p[0]}-{i}" for i, p in enumerate(PARITY)])
@@ -405,10 +443,10 @@ def test_library_template_validates_and_its_text_passes_the_guard(tid):
 
 def _texts(template):
     out = []
-    for part in (template.setup, template.invalidation, template.exit_signal, template.context):
+    for part in (template.setup, template.trigger, template.invalidation, template.exit_signal, template.context):
         if part is None:
             continue
-        variants = [v for v in part.variants.values() if v] if hasattr(part, "variants") else [part]
+        variants = [v for v in leaves(part) if v is not None and hasattr(v, "long")]     # TPL-7: nested switches opened
         out += [x for v in variants for x in (v.long, v.short)]
     return out
 
@@ -425,7 +463,7 @@ def test_template_ids_round_trip_and_fit(tid):
     template = library.get(tid)
     for tf in [t for t in template.allowed_timeframes if t in ENGINE_LABEL]:
         sid, settings = ids.adopt(template, tf)
-        assert ids.decode(sid) == (template, settings) and sid.startswith(f"template:{tid}:1:")
+        assert ids.decode(sid) == (template, settings) and sid.startswith(f"template:{tid}:{template.version}:")
     worst = {"F1": {"period": 100, "multiplier": 9.876543, "use_context": True, "context_timeframe": "1w"}, "F2": {"swing_degree": 3}}[tid]
     sid, settings = ids.adopt(template, template.allowed_timeframes[0], "short", worst)
     assert len(sid) <= ids.MAX_LENGTH and ids.decode(sid) == (template, settings)
@@ -458,9 +496,9 @@ def test_the_packs_are_listed_adopted_as_a_pre_fill_and_run_on_the_users_option_
     assert cards["A2"]["available"] == cards["F2"]["available"]
     for tid in PACKS:
         assert cards[tid]["family_name"] == "Option seller packs"
-        assert cards[tid]["params"][0]["key"] == "source" and len(cards[tid]["params"][0]["choices"]) == 1
+        assert cards[tid]["params"][0]["key"] == "source" and len(cards[tid]["params"][0]["choices"]) == 2     # TPL-7: version 2
     body = client.post("/api/strategy-templates/F1/adopt", headers=org["headers"], json={"timeframe": "15m"}).json()
-    assert body["strategy_id"] == "template:F1:1:15m:both:,,,,"
+    assert body["strategy_id"] == "template:F1:2:15m:both:,,,,,,,,,,,"
     assert body["deployment"] == {"strategy_id": body["strategy_id"], "timeframe": "15min", "holding": "INTRADAY", "mode": "PAPER"}
     assert packs.STRUCTURE_NOTE in body["notes"]                                      # no option field in the pre-fill
     d1 = client.post("/api/strategy-templates/D1/adopt", headers=org["headers"], json={"timeframe": "15m"}).json()

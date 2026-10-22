@@ -101,6 +101,15 @@ TOKENS: Dict[str, str] = {
     "ctx_trend_filter_agrees": "the {context_timeframe} trend filter agrees",
     "back_inside_from_lower_band": "the close came back inside the Bollinger bands from below the lower band on the {timeframe} chart",
     "back_inside_from_upper_band": "the close came back inside the Bollinger bands from above the upper band on the {timeframe} chart",
+    # E2 RSI divergence (TPL-7): the divergence between the last two confirmed swings, and what confirmed the turn
+    "rsi_bullish_divergence": ("a bullish RSI divergence formed on the {timeframe} chart, a lower swing low with a higher RSI"
+                               " than the swing low before"),
+    "rsi_bearish_divergence": ("a bearish RSI divergence formed on the {timeframe} chart, a higher swing high with a lower RSI"
+                               " than the swing high before"),
+    "smaller_swings_choch_up": "the smaller swings changed character upward",
+    "smaller_swings_choch_down": "the smaller swings changed character downward",
+    "close_beyond_confirming_bar_up": "the close went above the bar that confirmed the swing low",
+    "close_beyond_confirming_bar_down": "the close went below the bar that confirmed the swing high",
     "range_regime": "the market is in a range regime",
     "vwap_reclaimed_in_session": "the close moved back above the session VWAP after trading below it in the same session on the {timeframe} chart",
     "vwap_lost_in_session": "the close moved back below the session VWAP after trading above it in the same session on the {timeframe} chart",

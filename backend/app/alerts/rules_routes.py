@@ -118,6 +118,24 @@ async def _zone_check(session: AsyncSession, user: User, ast: Any, fire_on: str)
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+async def _wave_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
+    """Wave templates W1 (the Z7a-3 pattern): a rule using a wave count function needs `screener_waves` on, and fires on
+    bar close only - never intrabar (a forming bar can confirm a swing and take it back)."""
+    from app.screener import nodes
+    from app.screener import waves as waves_gate
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    names = waves_gate.flagged_calls(tree)
+    if not names:
+        return
+    why = None
+    if await waves_gate.blocked_calls(session, user.tenant_id, tree):
+        why = waves_gate.refusal(names)
+    elif fire_on == "intrabar":
+        why = waves_gate.intrabar_refusal(names)
+    if why:
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 async def _amw_check(session: AsyncSession, user: User, ast: Any, fire_on: str, params: Optional[Dict[str, Any]] = None) -> None:
     """AMW-3: a rule (instrument condition or saved screen) using an AMW-3 function, a v2 candle or a confirmation status
     needs `screenql_amw_functions` on; a confirmation status, RsiDivergence and SwingLabel fire on bar close only."""
@@ -174,6 +192,7 @@ async def screen_rule_checks(session: AsyncSession, user: User, ast: Any, fire_o
     `params` (the screen's own) resolves a `$parameter` pattern name for the AMW-3 check."""
     await _breakout_check(session, user, ast, fire_on, exchange)
     await _zone_check(session, user, ast, fire_on)
+    await _wave_check(session, user, ast, fire_on)
     await _amw_check(session, user, ast, fire_on, params)
     await _fundamentals_check(ast)
     _ranking_check(ast)
@@ -209,6 +228,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         raise HTTPException(status_code=422, detail="an instrument rule cannot rank across a universe; use a screen rule")
     await _breakout_check(session, user, ast, body.fire_on, body.exchange)
     await _zone_check(session, user, ast, body.fire_on)
+    await _wave_check(session, user, ast, body.fire_on)
     await _fundamentals_check(ast)
     await _amw_check(session, user, ast, body.fire_on)
     _ownership_check(ast)

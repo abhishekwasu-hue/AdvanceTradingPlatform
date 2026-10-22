@@ -329,6 +329,11 @@ class _Eval:
             "RsiDivergence": lambda: _rsi_divergence(f, _text(0, "bullish"), win(1, 15), int(num(2, 0))),
             "SwingLabel": lambda: _swing_label(f, _text(0, "high"), int(num(1, 0))),
             "TimeOfDay": lambda: pd.Series(time_of_day(f.index, _text(0, ""), _text(1, "")), index=f.index),
+            # Wave templates W1 (flag screener_waves): the causal wave count (app/price_action/waves), close-only in alerts
+            "WaveState": lambda: _wave(f, int(num(0, 1)), "state"),
+            "WaveType": lambda: _wave(f, int(num(0, 1)), "type"),
+            "WaveAlt": lambda: _wave(f, int(num(0, 1)), "alt"),
+            "WaveClarity": lambda: _wave(f, int(num(0, 1)), "clarity"),
             "SwingHigh": lambda: _swings(f, int(num(0, 0)))[0],
             "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
             "SwingDirection": lambda: _swings(f, int(num(0, 0)))[2],
@@ -561,6 +566,17 @@ def time_of_day(index: pd.DatetimeIndex, start: str, end: str) -> np.ndarray:
     local = (idx.tz_localize("UTC") if idx.tz is None else idx).tz_convert(EXCHANGE_TZ)
     m = np.asarray(local.hour * 60 + local.minute)
     return (m >= lo) & (m <= hi) if lo <= hi else (m >= lo) | (m <= hi)
+
+
+def _wave(f: pd.DataFrame, degree: int, what: str) -> pd.Series:
+    """Wave templates W1: one column of the causal wave count (state / type / alt / clarity) on every bar - computed once
+    per frame and degree for every wave function of a screen (app/price_action/waves/series.py). Missing (None) before
+    the first count and, for the alternate, when there is none: never matches."""
+    from app.price_action.waves.series import WAVE_DEGREES, cached_wave_series
+    if degree not in WAVE_DEGREES:
+        raise ScreenRuntimeError(f"wave degree {degree} is not one of {', '.join(map(str, WAVE_DEGREES))}")
+    values = getattr(cached_wave_series(f, degree), what)
+    return pd.Series(np.array(values, dtype=object, copy=True), index=f.index, dtype=object)
 
 
 def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Series]:

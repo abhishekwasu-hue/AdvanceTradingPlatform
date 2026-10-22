@@ -303,6 +303,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     "screener_copilot": "Screener in the Copilot: build, run, explain screens and propose alerts from the agent, plus the plain-language screen box",
     "screener_venues": "Screener venue matrix: refuse fields and functions a venue's data does not carry, and list what each venue supports",
     "screener_ownership": "Ownership and event screens: promoter / pledge / FII / DII stakes and their changes, days to results, board meetings and ex-dates (point in time; information only)",
+    # Wave templates W1 (docs/design/WAVE_TEMPLATES_REVIEW.md WB13, owner question WAVE-16): the causal wave count in
+    # ScreenQL - WaveState / WaveType / WaveAlt / WaveClarity from confirmed swings (degrees 1-3), recomputed only on a
+    # newly confirmed swing. OFF: the registry hides them and a screen, study or alert rule using one is refused with the
+    # reason; wave alerts fire on bar close only. Information only - places no orders.
+    "screener_waves": "Wave count in screens: the running wave, its type, the alternate count and the clarity, from confirmed swings (information only)",
     "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
     "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",

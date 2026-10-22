@@ -287,6 +287,17 @@ def test_amw3_functions_amw_port():
     assert _ev('RsiDivergence("bullish", 60)', walk).dtype == bool
 
 
+
+def test_wave_count_functions_w1():
+    # deeper checks (per count type, causality, mirror, the flag) are in tests/test_wave2_counter.py / test_wave2_recipe.py
+    from app.price_action.waves import counter as wc
+    walk = _sym(list(100 + np.cumsum(np.random.default_rng(4).normal(0, 1, 600))))
+    state, typ = _ev("WaveState(1)", walk), _ev("WaveType(1)", walk)
+    alt, clarity = _ev("WaveAlt(1)", walk), _ev("WaveClarity(1)", walk)
+    assert state.notna().any() and set(state.dropna()) <= set(wc.STATES) and set(typ.dropna()) <= set(wc.TYPES)
+    assert set(alt.dropna()) <= set(wc.STATES) and set(clarity.dropna()) <= set(wc.CLARITY)
+
+
 def test_rankscore_n3_s7a():
     # deeper checks (scoring, no look-ahead against cut bars, the routes) are in tests/test_n3_s7a_rankings.py
     from app.screener import ranking as RK

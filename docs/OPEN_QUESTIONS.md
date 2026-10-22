@@ -915,3 +915,15 @@ Each has a provisional default the build uses until the owner answers.
 | MO3-A4 | The per-page Diagnostics button in the top bar (UX audit section 6). | This slice puts the drawer in the admin console only; the per-page drawer (the reads the page made, data ages, flags) is the next slice. | `src/admin/AdminConsoleV2.tsx` | open |
 | MO3-A5 | "Support tickets": ATP has none; Support shows the "Send feedback" messages and one person's status. | Keep feedback as the support inbox until the owner wants a ticket system. | Support section | open |
 | MO3-A6 | Testing tools: sample data, test signals and debug panels still live on the user pages (Backtest, Custom scan, Factor Lab). | This slice shows the existing operator tools read-only (alert outbox, failed deliveries, retention, saved-screen check, history imports); moving the user-page tools here is a later slice. | Testing tools section | open |
+
+## Wave / correction templates (family G), build step 2: the counter's provisional defaults (WAVE, 22 Oct)
+
+From docs/design/WAVE_TEMPLATES_IMPL.md (the review's owner questions WAVE-1..WAVE-16 are in PR #361). Each has a
+provisional default the build uses until the owner answers.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| WAVE-17 | One degree-d swing = one wave, or are larger waves built by merging smaller swings of the same degree? | One swing of the wave degree is one wave; a larger structure is read one degree up (degree d + 1). Inner structure is read one degree down. | `app/price_action/waves/counter.py` | open |
+| WAVE-18 | Two readings from the same origin with the same larger direction (zigzag and flat B; flat and double three): which is the main type? | The simpler type first (impulse, diagonal, zigzag, flat, expanded flat, triangle, double three); the other is the alternate. The alternate prefers the competing label from the same origin (wave two against wave B); a one-wave reading from the last swing is never the alternate. | `counter.count`, `counter._alternate` | open |
+| WAVE-19 | The count is recomputed only on a newly confirmed swing. Between two confirmations a running wave can pass a rule level (wave two beyond the start of wave one) while the label still says wave two. | Keep the label until the next confirmation (no repainting, R3); the rule level itself is the invalidation series of the next step (WaveInvalidation), which templates read. | `app/price_action/waves/series.py` | open |
+| WAVE-20 | The wave ratio settings (WAVE-6) reach the ScreenQL functions how? | The functions use today's values now; the G templates expose the four ratios as Advanced template parameters (the params hash already records them for family G). | registry, G templates | open |

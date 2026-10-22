@@ -276,7 +276,7 @@ def test_the_library_validates_against_the_registry():
     {"setup.order": "market"},
     {"id": "Z1"},
     {"version": 0},
-    {"family": "G"},
+    {"family": "H"},                                    # family G is the wave templates' (tests/test_wave2_recipe.py)
     {"allowed_timeframes": ["2h"]},
     {"trigger": None},                                  # no trigger needs an event setup with same_bar
     {"setup.expiry_bars": "$missing"},

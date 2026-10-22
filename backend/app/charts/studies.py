@@ -192,15 +192,17 @@ def admit(studies: Sequence[Dict[str, Any]], bars: int) -> List[Dict[str, Any]]:
 async def gate(session: AsyncSession, tenant_id: Any, studies: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """The screener's function flags, per study (as `screener.routes._gate` does for a screen): a study using a U6
     breakout function while `screener_breakouts` is off, a market-zone function while `market_zones` is off, or an AMW-3
-    function / v2 candle / confirmation status while `screenql_amw_functions` is off, is refused with the flag's reason.
+    function / v2 candle / confirmation status while `screenql_amw_functions` is off, or a wave count function while
+    `screener_waves` is off, is refused with the flag's reason.
     The others still draw."""
     from app.screener import amw_functions as amw_gate
+    from app.screener import waves as waves_gate
     from app.screener import zones as zone_gate
     from app.screener.breakouts import gate as breakout_gate
     out: List[Dict[str, Any]] = []
     for st in studies:
         if st["ok"] and st["ast"] is not None:
-            for g in (breakout_gate, zone_gate):
+            for g in (breakout_gate, zone_gate, waves_gate):
                 blocked = await g.blocked_calls(session, tenant_id, st["ast"])
                 if blocked:
                     st = _refuse(st, g.refusal(blocked))

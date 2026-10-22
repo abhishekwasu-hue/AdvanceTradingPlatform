@@ -34,9 +34,13 @@ from app.screener.registry import BOOL, FIELDS, FUNCTIONS
 from app.screener.runtime import SymbolData, _Eval
 from app.strategy_templates.compile import SIDES, Recipe, Side
 
-# Series that are legitimately missing between their events (none yet; the R2 breakout level companions will be): they
-# do not hold the warm-up back.
-SPARSE_SERIES: frozenset = frozenset()
+# Series that are legitimately missing between their events: they do not hold the warm-up back. Family G (review finding
+# WB4): the alternate wave count (missing when there is no second reading) and the wave level companions - the wave's
+# origin / ends, the hard-rule invalidation and the cap, the ratio levels and the anchored wave lines (NaN off their
+# waves; registered with the W2-W4 step). The R2 breakout level companions join the same way.
+WAVE_SPARSE_SERIES: Tuple[str, ...] = ("WaveAlt", "WaveOrigin", "WaveEnd", "WaveInvalidation", "WaveCap", "WaveRetrace",
+                                       "WaveProjection", "WaveLineLevel")
+SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES)
 
 REASON_WARMUP = "warmup"
 REASON_CONFLICT = "conflict"
@@ -157,7 +161,7 @@ def compute(recipe: Recipe, frames: Dict[str, pd.DataFrame], symbol: str = "S") 
     close = ev.frame(tf)["close"].to_numpy(dtype=float)
     low = ev.frame(tf)["low"].to_numpy(dtype=float)
     high = ev.frame(tf)["high"].to_numpy(dtype=float)
-    setup_t = recipe.template.setup
+    setup_t = recipe.chosen_setup
     direction = np.zeros(size, dtype=np.int8)
     invalidation = np.full(size, np.nan)
     setup_bar = np.full(size, -1, dtype=np.int64)
@@ -192,7 +196,7 @@ def compute(recipe: Recipe, frames: Dict[str, pd.DataFrame], symbol: str = "S") 
             s0 = armed[side]
             if s0 < 0 or (t == s0 and not setup_t.same_bar):
                 continue
-            hit = (t == s0) if recipe.template.trigger is None else bool(d["trigger"][t])
+            hit = (t == s0) if not recipe.has_trigger else bool(d["trigger"][t])
             if hit and d["context"][t]:
                 fired[side] = s0
         if not fired:
@@ -226,4 +230,5 @@ def _num_or_category(value: Any, index: pd.Index) -> np.ndarray:
     return _num(value, index)
 
 
-__all__ = ["SignalSeries", "compute", "REASON_WARMUP", "REASON_CONFLICT", "REASON_GEOMETRY", "REASON_NO_LEVEL", "SPARSE_SERIES"]
+__all__ = ["SignalSeries", "compute", "REASON_WARMUP", "REASON_CONFLICT", "REASON_GEOMETRY", "REASON_NO_LEVEL", "SPARSE_SERIES",
+           "WAVE_SPARSE_SERIES"]

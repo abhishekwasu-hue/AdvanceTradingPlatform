@@ -2517,3 +2517,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `/api/admin` route without two-factor -> 403; each section's data and masks); vitest `src/admin/adminConsole.test.tsx`;
   e2e `admin-console-v2.e2e.ts` with new baselines `admin-<section>-v2-*` and `admin-diagnostics-v2-*` (1440 / 390, light / dark).
 - Questions MO3-A1..A6 ("View as user" design note in MO3-A1).
+
+## 22 Oct - Wave / correction templates (family G), build step 2: recipe extensions and the W1 causal counter
+
+- Branch `claude/wave2-counter-recipe`. Backend only. No migration. No G template yet. Status table:
+  `docs/design/WAVE_TEMPLATES_IMPL.md` (the review is PR #361, not merged yet).
+- Recipe extensions (WB3, WB4, WB7): family G; `variants` per part keyed by an enum setting (only the chosen one compiled
+  and in the warm-up); `@{timeframe_setting}` placeholders; family G's params hash records the wave settings; D1 stays
+  byte-identical (test); `engine.SPARSE_SERIES` holds the wave series; wave labels in words, `{wave_timeframe}` /
+  `{higher_timeframe}`, wave tokens with the invalidation in words.
+- W1 (WB1, WB2, WB12, WB14): `app/price_action/waves/` - the causal counter on the generic rules (`done=False` for the
+  running wave) and `read_counter` for finished waves only; main count by the larger-degree context, then the oldest
+  origin; UNCLEAR on a tie; alternate and clarity as evidence; recomputed only on a newly confirmed swing; degrees 1-3.
+  `read_counter` gained an optional ratio-settings argument (WAVE-6; the Daily trend's default path is unchanged).
+- ScreenQL (WB13): WaveState / WaveType / WaveAlt / WaveClarity behind the new flag `screener_waves` (OFF), gated in screens,
+  studies and alert rules; bar close only in alerts; no-look-ahead cases added.
+- Tests: `tests/test_wave2_counter.py`, `tests/test_wave2_recipe.py`; the lookahead job covers the new functions.
+- Questions WAVE-17..WAVE-20.

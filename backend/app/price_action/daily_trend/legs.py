@@ -28,7 +28,7 @@ COMPLETE = ("zigzag", "flat", "triangle", "combination")      # combination = W 
 _LOCAL = threading.local()
 
 
-def _read_cache() -> Dict[Tuple[float, ...], Dict[str, Any]]:
+def _read_cache() -> Dict[Tuple[Any, ...], Dict[str, Any]]:
     cache = getattr(_LOCAL, "read", None)
     if cache is None:
         cache = _LOCAL.read = {}
@@ -166,19 +166,28 @@ def _segments(prices: Sequence[float], counts: Sequence[int]) -> List[List[float
     return out
 
 
-def _is_motive(seg: Sequence[float]) -> bool:
-    return len(seg) - 1 == 1 or read_counter(seg)["family"] in MOTIVE
+def _is_motive(seg: Sequence[float], s: Optional[Mapping[str, Any]] = None) -> bool:
+    return len(seg) - 1 == 1 or read_counter(seg, s)["family"] in MOTIVE
 
 
-def _is_corrective(seg: Sequence[float]) -> bool:
-    return len(seg) - 1 == 1 or read_counter(seg)["family"] in CORRECTIVE
+def _is_corrective(seg: Sequence[float], s: Optional[Mapping[str, Any]] = None) -> bool:
+    return len(seg) - 1 == 1 or read_counter(seg, s)["family"] in CORRECTIVE
 
 
-def read_counter(prices: Sequence[float]) -> Dict[str, Any]:
+def _settings_key(s: Optional[Mapping[str, Any]]) -> Tuple[Any, ...]:
+    """The memo key part of the type ratios: empty for the defaults (the Daily trend's key stays the prices alone)."""
+    if s is None or all(s.get(k) == v for k, v in PATTERN_DEFAULTS.items()):
+        return ()
+    return ("ratios",) + tuple((k, float(s[k])) for k in sorted(PATTERN_DEFAULTS))
+
+
+def read_counter(prices: Sequence[float], s: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """One whole move (extreme to extreme, one degree lower pivots) read by the Elliott rules, every wave's subdivision
     read recursively: impulse 5-3-5-3-5, diagonal, triangle, combination, zigzag 5-3-5, flat 3-3-5. A one-leg wave fits
-    both. No ratios. Returns {"family", "n"}: impulse / diagonal / triangle / combination / zigzag / flat / 3-wave / single."""
-    key = tuple(round(float(v), 6) for v in prices)
+    both. The zigzag / flat type reads the B/A ratios of `s` (the `PATTERN_DEFAULTS` keys; default: those values, as the
+    Daily trend reads them - WAVE-6 makes them settings of the wave reading). Returns {"family", "n"}: impulse / diagonal
+    / triangle / combination / zigzag / flat / 3-wave / single."""
+    key = tuple(round(float(v), 6) for v in prices) + _settings_key(s)
     cache = _read_cache()
     if key in cache:
         return cache[key]
@@ -189,22 +198,22 @@ def read_counter(prices: Sequence[float]) -> Dict[str, Any]:
         return {"family": "single", "n": max(n, 0)}
     cache[key] = {"family": "3-wave", "n": n}                             # recursion guard
     red = reduce_counted(prices)
-    s2 = PATTERN_DEFAULTS
+    s2 = PATTERN_DEFAULTS if s is None else s
     fam: Optional[str] = None
     p5 = red.get(5)
     if p5 is not None and n >= 5:
         x5, c5 = p5
         seg5 = _segments(prices, c5)
-        corr_all = all(_is_corrective(g) for g in seg5)
-        if PR.impulse(x5, done=True) and all(_is_motive(seg5[k]) for k in (0, 2, 4)) and all(_is_corrective(seg5[k]) for k in (1, 3)):
+        corr_all = all(_is_corrective(g, s2) for g in seg5)
+        if PR.impulse(x5, done=True) and all(_is_motive(seg5[k], s2) for k in (0, 2, 4)) and all(_is_corrective(seg5[k], s2) for k in (1, 3)):
             fam = "impulse"
-        elif (corr_all or (all(_is_motive(seg5[k]) for k in (0, 2, 4)) and all(_is_corrective(seg5[k]) for k in (1, 3)))) and \
+        elif (corr_all or (all(_is_motive(seg5[k], s2) for k in (0, 2, 4)) and all(_is_corrective(seg5[k], s2) for k in (1, 3)))) and \
                 (PR.wedge(x5, done=True, kind="contracting") or PR.wedge(x5, done=True, kind="expanding")):
             fam = "diagonal"
         elif corr_all and any(PR.triangle(x5, done=True, kind=k)[0] for k in ("contracting", "expanding")) and not PR.impulse(x5, True):
             fam = "triangle"
-        elif all(len(seg5[k]) > 2 and read_counter(seg5[k])["family"] in COMPLETE for k in (0, 2, 4)) and \
-                all(_is_corrective(seg5[k]) for k in (1, 3)):
+        elif all(len(seg5[k]) > 2 and read_counter(seg5[k], s2)["family"] in COMPLETE for k in (0, 2, 4)) and \
+                all(_is_corrective(seg5[k], s2) for k in (1, 3)):
             fam = "combination"
     p9 = red.get(9)
     if fam is None and p9 is not None and n >= 9:                          # an extended wave: 9 waves
@@ -218,20 +227,20 @@ def read_counter(prices: Sequence[float]) -> Dict[str, Any]:
                 continue
             x5e = [x9[0]] + [x9[w[-1] + 1] for w in waves]
             segs = [sum((seg9[k][1:] if t else seg9[k] for t, k in enumerate(w)), []) for w in waves]
-            if PR.impulse(x5e, done=True) and all(_is_motive(segs[k]) for k in (0, 2, 4)) and \
-                    all(_is_corrective(segs[k]) for k in (1, 3)):
+            if PR.impulse(x5e, done=True) and all(_is_motive(segs[k], s2) for k in (0, 2, 4)) and \
+                    all(_is_corrective(segs[k], s2) for k in (1, 3)):
                 fam = "impulse"
                 break
     p3 = red.get(3)
     if fam is None and p3 is not None:
         x3, c3 = p3
         a_seg, _, c_seg = _segments(prices, c3)
-        if len(a_seg) > 2 and len(c_seg) > 2 and read_counter(a_seg)["family"] in COMPLETE and \
-                read_counter(c_seg)["family"] in COMPLETE:
+        if len(a_seg) > 2 and len(c_seg) > 2 and read_counter(a_seg, s2)["family"] in COMPLETE and \
+                read_counter(c_seg, s2)["family"] in COMPLETE:
             fam = "combination"
-        elif PR.zigzag(x3, True, s2)[0] and _is_motive(a_seg) and _is_motive(c_seg):
+        elif PR.zigzag(x3, True, s2)[0] and _is_motive(a_seg, s2) and _is_motive(c_seg, s2):
             fam = "zigzag"
-        elif PR.flat(x3, True, s2)[0] and _is_corrective(a_seg) and _is_motive(c_seg):
+        elif PR.flat(x3, True, s2)[0] and _is_corrective(a_seg, s2) and _is_motive(c_seg, s2):
             fam = "flat"
         if fam is None:                                                    # B does not end at the most extreme point
             ia = c3[0]
@@ -240,12 +249,12 @@ def read_counter(prices: Sequence[float]) -> Dict[str, Any]:
                 b_seg, c2 = list(prices[ia:ib + 1]), list(prices[ib:])
                 if (prices[ib] - prices[0]) * (prices[n] - prices[0]) < 0 or len(c2) < 2:
                     continue
-                if not (_is_corrective(b_seg) and _is_motive(c2)):
+                if not (_is_corrective(b_seg, s2) and _is_motive(c2, s2)):
                     continue
-                if PR.zigzag(xb, True, s2)[0] and _is_motive(a_seg):
+                if PR.zigzag(xb, True, s2)[0] and _is_motive(a_seg, s2):
                     fam = "zigzag"
                     break
-                if PR.flat(xb, True, s2)[0] and _is_corrective(a_seg):
+                if PR.flat(xb, True, s2)[0] and _is_corrective(a_seg, s2):
                     fam = "flat"
                     break
     out = {"family": fam or "3-wave", "n": n}

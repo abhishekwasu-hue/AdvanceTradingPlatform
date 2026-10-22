@@ -124,6 +124,11 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
                       'RsiDivergence("bullish", 40)@15m'],
     "SwingLabel": ['SwingLabel("high")', 'SwingLabel("low", 1)', 'SwingLabel("high", 0)@15m'],
     "TimeOfDay": ['TimeOfDay("09:30", "14:45")', 'TimeOfDay("15:00", "09:30")', 'TimeOfDay("10:15", "13:15")@1h'],
+    # Wave templates W1 (flag screener_waves): the causal wave count from CONFIRMED swings, recomputed on new swings only
+    "WaveState": ["WaveState(1)", "WaveState(2)", "WaveState(1)@15m", 'WaveState(1) == "IMP_3"'],
+    "WaveType": ["WaveType(1)", "WaveType(3)"],
+    "WaveAlt": ["WaveAlt(1)", "WaveAlt(2)"],
+    "WaveClarity": ["WaveClarity(1)", "WaveClarity(1)@15m"],
     # U6 BK1 breakout screens (one signal per leg) and their factors; volume and distance conditions off so they fire
     "RangeBreakout": ['RangeBreakout("up", 20, 0, 0)', 'RangeBreakout("down", 10, 0.1, 0, "auto")', 'RangeBreakout("up", 10, 0, 0)@1h'],
     "SwingBreakout": ['SwingBreakout("up", 0, 0)', 'SwingBreakout("down", 0, 0)@1h'],
@@ -185,6 +190,7 @@ SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "clos
                              'TrendlineBreakout("down", "line", 2, 0)', 'PatternBreakout("down", "flag", 0, 0)',      # U6 BK4
                              'RetestEntry("up", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)',   # daily synthetic bars open at the last close: no gaps
                              "StDev(close, 10)@1w", 'RsiDivergence("bullish", 40)', 'SwingLabel("low", 0)@1w',                     # AMW-3
+                             "WaveState(1)", "WaveClarity(2)",                                                                    # waves W1
                              'Pattern("bullish_strong_body", "unconfirmed")']
 # Answered for the last bar only (not series): causal by construction, kept out of history-reading functions.
 SCREENQL_LAST_BAR: Dict[str, List[str]] = {
@@ -511,7 +517,7 @@ def _register_screenql() -> None:
     for exprs in SCREENQL_SERIES.values():
         for text in exprs:
             heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType", "VCPReady", "Gap", "Retest",
-                                            "RsiDivergence", "SwingLabel"))
+                                            "RsiDivergence", "SwingLabel", "Wave"))
             register(f"screenql.{text}", _screenql(text), group="screenql", samples=4 if heavy else 8)
     for text in SCREENQL_FIELDS:
         register(f"screenql.{text}", _screenql(text), group="screenql")

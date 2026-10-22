@@ -65,6 +65,12 @@ class Spec:
     ordered_args: Tuple[Tuple[str, str, bool], ...] = ()
 
 
+def _wave_values(name: str) -> Tuple[str, ...]:
+    """The wave counter's labels (app/price_action/waves/counter.py), so the registry and the counter never drift."""
+    from app.price_action.waves import counter
+    return tuple(getattr(counter, name))
+
+
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
     Spec("open", "factor", NUM, "price", doc="bar open"),
     Spec("high", "factor", NUM, "price", doc="bar high"),
@@ -159,6 +165,17 @@ _ZFAMILY = Arg("family", STR, "all", False, choices=("all", "zones", "levels"))
 _ZDOC = (" - the live zone nearest to the close within tolerance_pct % of it (role by the close: demand below, supply above;"
          " family zones = order blocks / demand-supply bases / gaps, levels = S/R lines), from the stored snapshot as of this"
          " bar's close")
+
+# Wave templates W1 (docs/design/WAVE_TEMPLATES_REVIEW.md, flag `screener_waves`, off by default): the causal wave count
+# (app/price_action/waves) - degrees 1-3 only (degree 0 has no lower degree to read a wave's inner structure, WB12); the
+# count changes only on a bar that confirmed a new swing of the degree. Close-only in alerts (a forming bar can confirm a
+# swing and take it back, WB13). Degrees 2 and 3 are fetch-dependent like the swings they read.
+WAVES_FLAG = "screener_waves"
+WAVE_DEGREE_CHOICES: Tuple[int, ...] = (1, 2, 3)
+_WDEGREE = Arg("degree", NUM, 1, False, choices=WAVE_DEGREE_CHOICES)
+_WDOC = (" - from CONFIRMED swings of that degree (the last wave still running); the count is recomputed only when a new"
+         " swing is confirmed and never rewrites an earlier bar; missing before the first count")
+
 
 # TPL-1: the add-indicator work's arguments. Windows are whole bars (1..MAX_WINDOW by the validator); the acceleration
 # factors of the parabolic SAR are read once for the whole series (literal_only) within their bounds.
@@ -440,6 +457,23 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          needs=("zones",), flag=ZONES_FLAG, doc="FRESH / TESTED / FLIPPED: that zone's lifecycle state (missing when there is none)" + _ZDOC),
     Spec("ZoneStrength", "factor", NUM, "index", (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
          doc="0-100 strength of that zone (family, timeframe, state, touches; NaN when there is none)" + _ZDOC),
+    # Wave templates W1: the wave count as categorical series (flag screener_waves)
+    Spec("WaveState", "classifier", CAT, None, (_WDEGREE,), cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         values=_wave_values("STATES"), flag=WAVES_FLAG,
+         doc="the running wave of the main count: IMP_1-IMP_5 in an impulse, COR_A-COR_E in a correction (D / E only in a"
+             " triangle), UNCLEAR when two readings tie" + _WDOC),
+    Spec("WaveType", "classifier", CAT, None, (_WDEGREE,), cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         values=_wave_values("TYPES"), flag=WAVES_FLAG,
+         doc="the main count's type: IMPULSE, DIAGONAL, ZIGZAG, FLAT, EXPANDED_FLAT, TRIANGLE, DOUBLE (W-X-Y read as A-B-C);"
+             " UNCLEAR while only wave A has started or when the state is UNCLEAR" + _WDOC),
+    Spec("WaveAlt", "classifier", CAT, None, (_WDEGREE,), cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         values=_wave_values("STATES")[:-1], flag=WAVES_FLAG,
+         doc="the alternate count's running wave (evidence only); missing when there is no second reading" + _WDOC),
+    Spec("WaveClarity", "classifier", CAT, None, (_WDEGREE,), cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         values=_wave_values("CLARITY"), flag=WAVES_FLAG,
+         doc="CLEAR (every finished wave's inner structure reads and fits, no other reading), ALT_AGREES / ALT_DISAGREES (an"
+             " alternate implying the same / the opposite larger direction), UNCLEAR (a tie, or a finished wave with no inner"
+             " swings)" + _WDOC),
     # N3 S8a: ownership and events (category E; flag screener_ownership, off by default) - research only, places no orders
     Spec("Holding", "factor", NUM, "pct", (_HOLDER,), cost=2.0, min_bars=1, needs=("ownership",), flag=OWNERSHIP_FLAG,
          doc="the holder's stake in the latest shareholding pattern, % (pledge: % of promoter shares pledged; stale after 200 days)" + _ODOC),
@@ -466,6 +500,7 @@ BREAKOUT_BK4_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS
 LAST_BAR_ONLY = frozenset(name for name, spec in FUNCTIONS.items() if not spec.timeframed and not spec.varargs)
 READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag", "StDev"})
 AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == AMW_FLAG)
+WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WAVES_FLAG)
 
 
 def describe() -> Dict[str, Dict[str, object]]:
@@ -489,4 +524,4 @@ def describe() -> Dict[str, Dict[str, object]]:
 __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "ZONE_FUNCTIONS",
            "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS", "BREAKOUT_BK4_FLAG", "BREAKOUT_BK4_FUNCTIONS",
            "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
-           "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]
+           "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES"]

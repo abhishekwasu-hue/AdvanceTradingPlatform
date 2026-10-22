@@ -6,6 +6,7 @@ The state machine is driven by a test recipe whose setup and trigger read contro
 triggers it), so every case below - expiry, same bar, replacement, conflict, invalid geometry, gaps through the arm
 level, context, state setups, warm-up - is a few marks on flat synthetic bars, and each expected bar is stated."""
 import copy
+import re
 
 import numpy as np
 import pandas as pd
@@ -265,7 +266,7 @@ def test_the_library_validates_against_the_registry():
                 continue
             sided = [v for v in part.variants.values() if v is not None] if hasattr(part, "variants") else [part]   # step 2: D2 switches
             for text in [x for v in sided for x in (v.long, v.short)]:
-                for name in [w for w in FUNCTIONS if f"{w}(" in text]:
+                for name in [w for w in FUNCTIONS if re.search(rf"(?<![A-Za-z]){w}\(", text)]:      # DowTrend( is not Trend(
                     assert name not in LAST_BAR_ONLY
 
 

@@ -30,6 +30,9 @@ FLAG = "strategy_templates"
 FAMILY_NAMES: Dict[str, str] = {"A": "Price action", "B": "Breakout", "C": "Breakout and retest", "D": "Trend following",
                                 "E": "Momentum and mean reversion", "F": "Option seller packs", "G": "Waves"}
 FETCH_DEPENDENT_DEGREE = 2      # swings of this degree and larger depend on how much history is loaded (registry SC-14)
+# A family that is listed only while its own flag is on as well (family G, the wave templates: `screener_waves`). While
+# that flag is off its templates are not shown and cannot be adopted (404), not merely shown as unavailable.
+FAMILY_FLAGS: Dict[str, str] = {"G": "screener_waves"}
 
 router = APIRouter(prefix="/api/strategy-templates", tags=["strategy-templates"])
 
@@ -45,6 +48,13 @@ async def _enabled(session: AsyncSession, user: User) -> None:
     from app.platform.controls import flag_enabled
     if not await flag_enabled(session, FLAG, user.tenant_id):
         raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": FLAG})
+
+
+async def _listed(session: AsyncSession, user: User, template: Template) -> bool:
+    """The template is shown at all: its family's own flag (FAMILY_FLAGS) is on for the organisation, or it has none."""
+    from app.platform.controls import flag_enabled
+    flag = FAMILY_FLAGS.get(template.family)
+    return flag is None or await flag_enabled(session, flag, user.tenant_id)
 
 
 async def _available(session: AsyncSession, user: User, template: Template) -> bool:
@@ -98,7 +108,8 @@ def _notes(template: Template, strategy: TemplateStrategy) -> List[str]:
 @router.get("")
 async def list_templates(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _enabled(session, user)
-    cards = [_card(t, await _available(session, user, t)) for t in sorted(library.templates(), key=lambda t: (t.family, t.id))]
+    cards = [_card(t, await _available(session, user, t)) for t in sorted(library.templates(), key=lambda t: (t.family, t.id))
+             if await _listed(session, user, t)]
     return {"templates": cards}
 
 
@@ -111,6 +122,8 @@ async def adopt(template_id: str, body: AdoptBody, user: User = Depends(get_curr
         template = library.get(template_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="No such strategy template") from None
+    if not await _listed(session, user, template):
+        raise HTTPException(status_code=404, detail="No such strategy template")
     if body.timeframe in template.allowed_timeframes and body.timeframe not in ENGINE_LABEL:
         raise HTTPException(status_code=422, detail={"problems": ["This timeframe is for scans only; pick an intraday or a Daily one"]})
     try:
@@ -132,4 +145,4 @@ async def adopt(template_id: str, body: AdoptBody, user: User = Depends(get_curr
     }
 
 
-__all__ = ["router", "FLAG", "AdoptBody"]
+__all__ = ["router", "FLAG", "AdoptBody", "FAMILY_FLAGS"]

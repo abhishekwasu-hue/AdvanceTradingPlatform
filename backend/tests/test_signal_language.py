@@ -119,7 +119,7 @@ def _old_guard(text: str) -> List[str]:
         if word.lower() in _OLD_FORBIDDEN:
             problems.append(f"forbidden word {word!r}")
     for name in _OLD_PLACEHOLDER.findall(text):
-        if name not in ("timeframe", "context_timeframe"):
+        if name not in ("timeframe", "context_timeframe", "wave_timeframe", "higher_timeframe"):   # + family G's two (WB7)
             problems.append(f"unknown placeholder {{{name}}}")
     rest = _OLD_TF_DIGITS.sub("", _OLD_PLACEHOLDER.sub("", text))
     if re.search(r"[0-9]", rest):

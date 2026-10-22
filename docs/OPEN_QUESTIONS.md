@@ -1000,6 +1000,24 @@ From docs/design/WAVE_TEMPLATES_IMPL.md. Each has a provisional default the buil
 | WAVE-25 | The "wave three is never the shortest" cap for a contracting diagonal's fifth wave? | Not built: WaveCap is for an impulse only (the counter does not record the diagonal's contracting / expanding kind). Added if the owner wants it. | `levels.WaveLevels.cap` | open |
 | WAVE-26 | "Beyond the origin" (G7's arm) for which waves? | Only a wave running against the first one (two / four, B / D) whose end so far is beyond the count's start, by any amount (WAVE-8); a C / wave three passing the start says nothing. | `levels.WaveLevels.beyond_origin` | open |
 
+## Wave / correction templates (family G), build steps 6 + 7: the parity harness and the templates G1, G3, G8 (WAVE, 22 Oct)
+
+From docs/design/WAVE_TEMPLATES_IMPL.md. Each has a provisional default the build uses until the owner answers.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| WAVE-27 | What is "the area" of the swing-zone source for the touch and candle styles? | The zone of the last confirmed smaller swing on the wave timeframe (the low for an upward idea, the high for a downward one): the close within `zone_width` median bar ranges of it. Market zones are not offered yet (stored snapshots behind their own flag, missing in older backtests, WAVE-3); "the area's far side" as an invalidation needs a zone-edge series that is not built. | `templates/G1.json`, `G3.json`, `G8.json` | open |
+| WAVE-28 | The four wave ratio settings (WAVE-6, WAVE-20) as template parameters? | Not exposed yet: the ScreenQL wave functions do not take them, so a template setting would change nothing (the params hash already records them). Added when the functions take them as an optional argument. | registry, G templates | open |
+| WAVE-29 | The RSI divergence and volume filters of the common parameters? | Not in G1 / G3 / G8 yet: RsiDivergence has no `kind` (hidden) and the corrective-wave volume companion (WaveVolumeLower) is not built (WAVE-14, WAVE-15). They join with the step that builds them. | G templates | open |
+| WAVE-30 | How long may the trigger come after the setup? | G1: wave two, or wave three before it passed the end of wave one. G3: wave B, or wave C before it passed the end of wave A (after that it is G6's break of A's end). G8: while the correction's last wave may be complete, and `hold_bars` signal bars (default 30) after it was last seen, because the count changes on the swing that confirms its end. The touch and candle styles only while the pullback runs. | G templates | open |
+| WAVE-31 | G3 "after an A that broke the wave timeframe structure (CHoCH)": how is it read? | The Dow swing trend on the wave timeframe at the wave degree no longer points against wave C (not down for an upward C) on the bar; a setting ("Any wave A") turns it off. | `templates/G3.json` | open |
+| WAVE-32 | Which trigger styles read the area? | The touch and the candle styles; the CHoCH, breakout and retest styles are confirmed by the structure / the wave's channel. The settings rule "pick an area or turn on the Fibonacci zone" applies whatever the style. | G templates | open |
+| WAVE-33 | The invalidation choices per template? | G1: the start of wave one (default) or the last smaller swing. G3: the start of wave A, or the end of wave B if B went past it (default) or the last smaller swing. G8: the extreme of the correction's last wave (default; for a contracting triangle the end of its wave C) or the last smaller swing. "The area's far side" and "the lower / higher of both" are not offered yet (WAVE-27). | G templates | open |
+| WAVE-34 | The retest style: a reversal at the broken channel, or a touch that holds? | A reversal (the registry's retest default, as B9); a touch-only retest is not offered. | G templates | open |
+| WAVE-35 | The signal text per trigger style and count type, and the evidence (clarity, the alternate count)? | One sentence per template that holds for every style (the text switches on yes / no settings only); the clarity and the alternate count are not in the text yet (the evidence names are not words). The UI step shows them. | `strategy_templates/language.py` | open |
+| WAVE-36 | Fibonacci zone defaults (off by default)? | G1: wave two 0.5-0.786 of wave one. G3: wave B 0.382-0.786 of wave A. G8: wave C 0.618-1.618 times wave A (a triangle is not measured). | G templates | open |
+| WAVE-37 | G8 includes a double three's last wave (Y) while G11 is "the same as G3 / G8 with type DOUBLE": keep both? | Yes: G8 reads any correction type the spec lists (zigzag, flat, triangle, double); G3 excludes a double three's X (that is G11's wave B). | G3, G8, G11 | open |
+
 ## Copilot job 6: the strategy builder (CP6, 22 Oct)
 
 Each has a provisional default the build uses until the owner answers.

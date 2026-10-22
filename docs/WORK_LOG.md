@@ -2808,3 +2808,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   shared copy, link problems, flag off, filters). New baselines `chart-analyze-shared-*`, `chart-analyze-share-dialog-*`;
   `chart-analyze-{390,360,1440}-{light,dark}` regenerated (the history filters).
 - Questions CA-11..CA-14 (OPEN_QUESTIONS).
+
+
+## 22 Oct - Wave templates (family G): the G parity harness and the templates G1, G3, G8 (behind strategy_templates + screener_waves)
+
+- Branch `claude/wave4-g3-g8-g1`. No migration (templates are JSON in the repository; flags are registered in code).
+- Backend: `app/strategy_templates/templates/G1.json` (wave three after wave two), `G3.json` (wave C after wave B,
+  counter-trend allowed), `G8.json` (correction complete, the trend resumes) - five trigger styles each (touch of the
+  area, reversal candle, the smaller structure's CHoCH, the wave channel's break, its retest), every number a setting
+  with the review's defaults, invalidation in words, exits per WB9 (inert until R5); `wave_parity.py` (the G parity
+  harness: context frames from the one trailing window, scan with frames = scan = backtest = options = worker);
+  `language.py` (nine structure-word tokens); `routes.py` (a family listed only with its own flag: G needs
+  `screener_waves`); `ids.py` (family G choices written as their position, ids within 80 characters; other families
+  unchanged). PAPER only, signals only.
+- Tests: `tests/test_wave4_templates.py` (must-fire per style, must-not, mirror, truncation, parity incl. the 1-hour wave
+  chart and the options backtest, property tests, no number literal, defaults, words, flags, id length).
+- Questions WAVE-27..WAVE-37 (OPEN_QUESTIONS). Not built: G4-G7, G2, G9-G11, G12, the projection target (section 5).

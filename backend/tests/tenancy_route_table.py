@@ -151,6 +151,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/ai/analyze"): S_COPILOT,
     ("POST", "/api/ai/ask"): S_COPILOT,
     ("GET", "/api/ai/brief"): "member",
+    ("POST", "/api/ai/chat"): S_COPILOT,
+    ("GET", "/api/ai/chat/home"): "member",
     ("PUT", "/api/ai/byok/key"): S_OWN_AI_KEY,
     ("DELETE", "/api/ai/byok/key/{provider}"): S_OWN_AI_KEY,
     ("PUT", "/api/ai/byok/prefs"): S_OWN_AI_KEY,

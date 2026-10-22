@@ -121,6 +121,7 @@ from app.billing.service import meter
 from app.marketplace.routes import admin_router as marketplace_admin_router, router as marketplace_router
 from app.public_api.routes import keys_router as api_keys_router, public_router as public_api_router
 from app.ai.routes import router as ai_router
+from app.ai.chat_routes import router as ai_chat_router
 from app.ai.byok_routes import router as ai_byok_router
 from app.platform.routes import admin_router as controls_admin_router, status_router as system_status_router, users_router as trading_disable_router
 from app.portfolio.routes import router as portfolio_router
@@ -272,6 +273,7 @@ app.include_router(api_keys_router)
 app.include_router(public_api_router)
 app.include_router(ai_byok_router)       # BYOK-V1: the user's own AI key for Vision (flag vision_byok, off by default)
 app.include_router(ai_router)
+app.include_router(ai_chat_router)   # handover item 5: the chat-first Copilot (flag ui_v2, off)
 app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(quant_router)        # Phase Z: factor and risk models
 app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages

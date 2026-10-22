@@ -1027,6 +1027,23 @@ Each has a provisional default the build uses until the owner answers.
 | MO4-9 | A digest with nothing in it (no market read, no trades, no events). | Not sent to Telegram (marked as done for the day); on the Dashboard each section says plainly that there is nothing yet. | `app/rhythm/deliver.py` | open |
 | MO4-10 | Sector leader / laggard list. | Fourteen NSE sectoral indices from the shared daily lake (IT, Banking, Auto, Pharma, FMCG, Metal, Realty, Energy, Media, PSU banks, Financial services, Oil & gas, Healthcare, Consumer durables); an index with no bars is skipped. | `app/rhythm/build.py` `SECTOR_INDICES` | open |
 
+## MO4 slice 2: the Sector & index view and the Option chain dish (22 Oct)
+
+Each has a provisional default the build uses until the owner answers. Both parts are behind `ui_v2` + `markets_view` (OFF).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| MO4-11 | Live (intraday) moves on the Sector & index view. | End-of-day only: the moves are the last stored close against 1 / 5 / 21 sessions back, from the shared daily history (no broker session, the same for every user, cached five minutes); the page says "At the close of <date>" and warns when the latest close is not in yet. Live moves would need ~2,000 quotes through each user's own broker session (rate budget) - a later slice, indices first. | `app/markets/service.py` | open |
+| MO4-12 | A sector's move: the sector lists have no index (and no free-float weights). | The plain average of its stocks' moves (each stock counts the same), and the page says so. An NSE sectoral index, where one exists, is shown with its own move under Indices. | `app/markets/service.py` `group` | open |
+| MO4-13 | The periods. | Day = the last close against the session before; week = 5 sessions back; month = 21 sessions back (sessions, not calendar days). A period without that much stored history says "I don't know". | `app/markets/service.py` `PERIODS` | open |
+| MO4-14 | Heat-map colour scale. | Four tint steps each way, full colour at a 2% day, 4% week or 8% month move; flat and unknown are the plain surface. | `src/markets/model.ts` `HEAT_SCALE` | open |
+| MO4-15 | Strongest / weakest stocks by name on the Sector & index view. | Shown (the user's own market data view, not an education surface), with no buy / sell wording and never on a share card. | `/markets` | open |
+| MO4-16 | Option chain dish: the PCR zone's edges and words. | The OI banner's default band edges (0.70 / 0.90 / 1.00 / 1.30) with neutral words - very low / low / balanced / high / very high and which side holds more open interest; never bullish / bearish. | `app/option_chain/dish.py` `PCR_ZONES` | open |
+| MO4-17 | Option chain dish: the IV change is measured against what. | The session's first stored snapshot of the same expiry (the OI collector's); without one the line says when it will show; with the own-broker data setting on it says why it is not shown. Not against the previous day's close (no stored daily IV per expiry). | `app/option_chain/dish.py` | open |
+| MO4-18 | Where the page sits. | "Sectors & indices" in the Markets section after Option chain (and in search). No page tour yet (a tour needs the server's tour list and content); the first-visit card explains the page. | `src/shell/navModel.ts` | open |
+| MO4-19 | The master order's paid parts of this page (industry-level rotation, history). | Not built; they wait for the plans (PART 4). | - | open |
+| MO4-20 | One flag for both parts. | `markets_view` switches the page and the Option chain summary together, as ordered; it needs `ui_v2`. | `app/platform/controls.py` | open |
+
 ## Idea library slice 1 (22 Oct)
 
 Each has a provisional default the build uses until the owner answers.

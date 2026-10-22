@@ -35,6 +35,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   copilot: lazy(() => import("../copilot/chat/CopilotPageV2")),
   // Settings redesign B: Settings is a short index with status (src/settings); each row opens its own small page.
   settings: lazy(() => import("../settings/SettingsIndexV2")),
+  // MO4 slice 2: the Sector & index view (src/markets) at /markets - v2 only, flag `markets_view`.
+  markets: lazy(() => import("../markets/MarketsPageV2")),
   // MO3 addition (a): the admin console in sections (src/admin) at /admin; SUPER_ADMIN only (the server is the gate).
   admin: lazy(() => import("../admin/AdminConsoleV2")),
   // Idea library slice 1 (src/ideas) at /ideas - a v2-only page behind `idea_library`.

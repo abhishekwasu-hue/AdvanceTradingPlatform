@@ -2518,6 +2518,25 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   e2e `admin-console-v2.e2e.ts` with new baselines `admin-<section>-v2-*` and `admin-diagnostics-v2-*` (1440 / 390, light / dark).
 - Questions MO3-A1..A6 ("View as user" design note in MO3-A1).
 
+## 22 Oct - F&O workspace 8b, slice 1: the ATP-only information features (behind ui_v2, PAPER only)
+
+- Branch `claude/fno8b-atp-only-1`. No migration. Owner questions FNO-8B-1..8 (OPEN_QUESTIONS) on their provisional
+  defaults. Nothing here places, blocks or changes an order; no new order path; exits untouched (ADR-0004).
+- Backend: `app/paper/fno_insights.py` + `fno_insights_routes.py` (GET only): `/api/paper/fno/risk-budget` (the caller's
+  own effective capital, risk per trade, daily loss limit; `blocks: false`; flags `ui_v2` + `paper_account`) and
+  `/api/paper/fno/setup-strikes?signal=action:N|history:N&spot=` (the strikes the caller's OWN option deployment rules land
+  on for HIS signal; a teammate's or another organisation's signal / deployment marks nothing; flag `ui_v2`).
+  `chart_analyze/strikes.py` gains the public `deployment_legs` (same rule as Analyze a chart). Route table entries.
+- Frontend: `src/fno/insights.ts` (ticket payoff sentence, risk line, structure detection + Explain texts, Greek lines,
+  setup marks, chain link) and `src/fno/InsightsV2.tsx` (`RiskLineV2`, `ExplainV2`, `SetupPanelV2`, `SetupChainLinkV2`,
+  `useRiskBudget`, `useSetupStrikes`). Wired into the ticket's confirm step (plain words, risk line, Explain), the basket
+  panel and its confirm step (risk line, Explain with the Greeks), the option chain page (`?signal=`: panel + shaded cells
+  with "Main" / "Wing" under the strike, "Hide marks"), the signal detail and phone card ("Your strikes on the chain"),
+  and the positions page (PAPER frame while every position shown is PAPER).
+- Tests: backend `test_fno8b_insights.py` (8); vitest `src/fno/insights.test.tsx` (23); e2e `fno-insights-v2.e2e.ts`
+  (15) with new baselines `fno8b-setup-chain-v2-*` and `fno8b-ticket-review-v2-*` (1440 / 390 / 360, light / dark);
+  regenerated `signals-v2-{360,390}-*` (the new link). The chain-ticket and hub-futures mocks answer the budget read 404.
+
 ## 22 Oct - UX3: the remaining Master Order 3 audit fixes (behind ui_v2)
 
 - Branch `claude/ux3-audit-fixes`. Frontend only, no migration, no backend change, no trading-logic or order-path change.

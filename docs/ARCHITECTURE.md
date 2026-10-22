@@ -3684,8 +3684,8 @@ docs are English. The one exception is the Copilot strategy interview - trilingu
 own screen: `app/ai/interview.py` and `app/ai/advisor.py` on the server, the `interview` namespace
 (`i18n/interviewSecondary.ts`: `INTERVIEW_MR`, and `INTERVIEW_HI` for the Hindi bundle) in the frontend, its second-line
 switch on the interview screen (`InterviewLanguageSwitch`; not in Settings). Outside the interview every AI route
-answers in English whatever the message's language or a `language` field says (`routes._ai_language`, the prompts say
-"English only"; `/api/ai/preferences` offers English only), and AI text passes the English filter
+answers in English whatever the message's language or a `language` field says (`routes.AI_LANGUAGE`, the prompts say
+"English only"; `/api/ai/preferences` offers English only; `users.ai_language` was dropped, EO-4), and AI text passes the English filter
 (`output_filter`: English word lists plus a fixed `romanised` list of Latin-script Hinglish advice, read always; Indic
 or other scripts withheld; `grounding` on the supplied data; the AI news one-liner too, before the news push). The Marathi /
 Hindi advice-filter lists, the Marathi "Read in Marathi" translations of the acknowledgement and of the data consent

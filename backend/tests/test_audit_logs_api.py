@@ -1,3 +1,4 @@
+from tests.broker_fakes import KITE_KEY, KITE_SECRET
 from tests.test_auth_api import _register, client
 
 
@@ -32,7 +33,7 @@ def test_broker_credential_actions_are_audited():
 
     store = client.post(
         "/api/broker/zerodha/credentials", headers=headers,
-        json={"api_key": "k", "api_secret": "s", "access_token": "t"},
+        json={"api_key": KITE_KEY, "api_secret": KITE_SECRET, "access_token": "t"},
     )
     assert store.status_code == 204
 

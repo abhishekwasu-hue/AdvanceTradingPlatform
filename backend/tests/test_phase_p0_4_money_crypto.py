@@ -13,6 +13,7 @@ from cryptography.fernet import Fernet
 from app.core import config
 from app.db.models import BrokerCredentialRecord, Money, Price, TradeRecord
 from app.secrets_store import encryption, envelope
+from tests.broker_fakes import FYERS_APP_ID, FYERS_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 
 
@@ -169,7 +170,7 @@ def test_reencrypt_moves_rows_to_the_configured_format_and_status_reports_it(mon
     _run(go())
     # The API path round-trips through the same helpers: credentials saved in aesgcm mode come back for the broker.
     monkeypatch.setattr(config, "SECRETS_WRITE_FORMAT", "aesgcm")
-    saved = client.post("/api/broker/fyers/credentials", headers=headers, json={"api_key": "appid", "api_secret": "sec"})
+    saved = client.post("/api/broker/fyers/credentials", headers=headers, json={"api_key": FYERS_APP_ID, "api_secret": FYERS_SECRET})
     assert saved.status_code in (200, 201, 204), saved.text
 
     async def stored():
@@ -178,7 +179,7 @@ def test_reencrypt_moves_rows_to_the_configured_format_and_status_reports_it(mon
                                                                             BrokerCredentialRecord.broker_name == "fyers"))
             return rec.encrypted_payload
     payload = _run(stored())
-    assert payload.startswith("t2:") and json.loads(encryption.decrypt_text(payload, envelope.PURPOSE_BROKER_CREDENTIAL))["api_key"] == "appid"
+    assert payload.startswith("t2:") and json.loads(encryption.decrypt_text(payload, envelope.PURPOSE_BROKER_CREDENTIAL))["api_key"] == FYERS_APP_ID
 
 
 def test_passphrase_master_scrypt_follows_the_rollout_and_sha256_wraps_always_open(monkeypatch):

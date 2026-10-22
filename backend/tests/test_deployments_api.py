@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from app.db.models import BrokerCredentialRecord, TradeRecord, User
+from tests.broker_fakes import fake_credentials
 from tests.test_auth_api import _register, _session_factory, client
 
 STRATEGY = "ema_rsi_scalper_1m"
@@ -38,7 +39,7 @@ def _me(headers):
 
 
 def _store_broker(headers, name="upstox", token_status=None):
-    assert client.post(f"/api/broker/{name}/credentials", headers=headers, json={"api_key": "k", "api_secret": "s", "access_token": "t"}).status_code == 204
+    assert client.post(f"/api/broker/{name}/credentials", headers=headers, json=fake_credentials(name, access_token="t")).status_code == 204
     if token_status is not None:
         tenant_id = _me(headers)["tenant_id"]
 

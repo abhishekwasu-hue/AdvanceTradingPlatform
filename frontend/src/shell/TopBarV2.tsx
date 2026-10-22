@@ -1,4 +1,4 @@
-import { Bell, LifeBuoy, MessageSquarePlus, Search, TriangleAlert } from "lucide-react";
+import { Bell, CircleHelp, LifeBuoy, MessageSquarePlus, Search, TriangleAlert } from "lucide-react";
 import { Link } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { ThemeToggle } from "../components/AppearanceCard";
@@ -12,6 +12,8 @@ import { initialsOf } from "./SidebarV2";
  *   `support_bot`), feedback, theme, notifications and the account avatar.
  * - Phone: the app mark and the page title, then search, notifications and the avatar (44 px each); help, feedback
  *   and the theme move to the More sheet.
+ * MO2 part C: a "?" right after the page title replays that page's tips (`onTour`: only on a page that has tips, once
+ * the tips' state is known).
  * Notices sit in one row under the bar, in plain words (§3 R18): maintenance and LIVE paused are warnings (amber,
  * with an icon); "Verify your email" is a neutral link. P3: on the front page in PAPER (`paperOnly`) the LIVE-paused and
  * e-mail notices are left out; every other page keeps them.
@@ -31,6 +33,8 @@ export interface TopBarV2Props {
   onFeedback?: () => void;
   /** P3: the front page in PAPER (no LIVE deployment, src/setup/paperOnly.ts): no LIVE or e-mail notice. */
   paperOnly?: boolean;
+  /** MO2 part C: replays this page's tips (present only on a page that has them). */
+  onTour?: () => void;
 }
 
 /** The notices under the top bar, in plain words. `paperOnly` (the front page in PAPER) leaves out the LIVE ones. */
@@ -45,7 +49,7 @@ export function topBarNotices(status: SystemStatus | null, user: UserResponse | 
   return out;
 }
 
-export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false }: TopBarV2Props) {
+export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour }: TopBarV2Props) {
   // UI2-4e: the one shared status read (the Charts page and the charts on other pages read the same).
   const { status } = useMarketStatus();
   const notices = topBarNotices(status, user, paperOnly);
@@ -59,6 +63,12 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
           <span aria-hidden className="flex h-7 w-7 items-center justify-center rounded-control bg-fg text-t12 font-bold text-surface">AT</span>
         </Link>
         <span className="min-w-0 shrink truncate text-t18 font-semibold text-fg md:text-t15">{title}</span>
+        {onTour && (
+          <button type="button" onClick={onTour} title="Tips for this page" aria-label="Show the tips for this page" data-tour="tour-replay"
+            className={`${iconButton} -ml-space-2 shrink-0`}>
+            <CircleHelp size={18} aria-hidden />
+          </button>
+        )}
         <button type="button" onClick={onSearch} aria-label={`Search pages (${shortcut})`} aria-haspopup="dialog"
           className="ml-space-4 hidden h-9 w-full max-w-[420px] items-center gap-space-2 rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg-muted transition-colors duration-fast hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:flex">
           <Search size={16} aria-hidden className="shrink-0" />

@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, User
 from app.plans.registry import PLANS, get_plan
+from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 
 STRATEGY = "ema_rsi_scalper_1m"
@@ -36,7 +37,7 @@ def _set_tenant(tenant_id: int, **fields):
 
 
 def _store_broker(headers, valid=True):
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "api_secret": "s", "access_token": "t"})
+    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"})
     if valid:
         me = client.get("/api/auth/me", headers=headers).json()
 

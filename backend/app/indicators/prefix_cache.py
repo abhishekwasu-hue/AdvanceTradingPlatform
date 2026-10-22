@@ -104,6 +104,19 @@ def prefix_cached(fn: Callable) -> Callable:
     return wrapper
 
 
+def whole_frame(df: pd.DataFrame) -> Optional[Tuple[pd.DataFrame, int]]:
+    """Inside a run's cache: (the registered frame `df` is a row-0 prefix of, the prefix length), else None. For a
+    causal computation that is not one indicator call (a strategy template's whole signal series) to be computed once
+    on the whole frame and read at the prefix's last bar."""
+    reg = _active.get()
+    if reg is None or not isinstance(df, pd.DataFrame):
+        return None
+    hit = _prefix_of(reg, df)
+    if hit is None or hit[1] is not None:
+        return None
+    return hit[0], hit[2]
+
+
 def register_frames(frames: Iterable[pd.DataFrame]) -> None:
     """Adds the run's frames to the active cache (no-op outside one)."""
     reg = _active.get()
@@ -142,4 +155,4 @@ def prefix_cache(frames: Iterable[pd.DataFrame]) -> Iterator[None]:
         _active.reset(token)
 
 
-__all__ = ["prefix_cache", "prefix_cached", "register_frames", "run_stats", "with_prefix_cache"]
+__all__ = ["prefix_cache", "prefix_cached", "register_frames", "run_stats", "whole_frame", "with_prefix_cache"]

@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.brokers.models import BrokerPosition, BrokerProfile, MarginInfo
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord
+from tests.broker_fakes import UPSTOX_KEY, UPSTOX_KEY_2, UPSTOX_SECRET, UPSTOX_SECRET_2
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _create, _me, _store_broker
 from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker
@@ -48,9 +49,9 @@ class _AccountBroker(_FakeBroker):
 def test_credentials_with_labels_create_accounts_and_sync(monkeypatch):
     headers = _auth("acct-owner@example.com")
     me = _me(headers)
-    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "api_secret": "s", "access_token": "t"}).status_code == 204
-    assert client.post("/api/broker/upstox/credentials?account_label=hedge", headers=headers, json={"api_key": "k2", "api_secret": "s2", "access_token": "t2"}).status_code == 204
-    assert client.post("/api/broker/upstox/credentials?account_label=bad label!", headers=headers, json={"api_key": "k"}).status_code == 422
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials?account_label=hedge", headers=headers, json={"api_key": UPSTOX_KEY_2, "api_secret": UPSTOX_SECRET_2, "access_token": "t2"}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials?account_label=bad label!", headers=headers, json={"api_key": UPSTOX_KEY}).status_code == 422
 
     stored = client.get("/api/broker/credentials", headers=headers).json()
     assert sorted(s["account_label"] for s in stored) == ["hedge", "primary"]
@@ -91,7 +92,7 @@ def test_live_deployment_routes_to_an_account_and_refuses_a_disabled_one():
     headers = _auth("acct-deploy@example.com")
     me = _me(headers)
     _store_broker(headers, token_status="VALID")
-    assert client.post("/api/broker/upstox/credentials?account_label=second", headers=headers, json={"api_key": "k", "api_secret": "s", "access_token": "t"}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials?account_label=second", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"}).status_code == 204
     accounts = client.get("/api/accounts", headers=headers).json()
     second = next(a for a in accounts if a["account_label"] == "second")
 
@@ -116,7 +117,7 @@ def test_worker_uses_the_routed_accounts_adapter_and_skips_a_disabled_account(mo
 
     t = _tenant("acct-worker@example.com")
     assert client.post("/api/broker/upstox/credentials?account_label=second", headers=t["headers"],
-                       json={"api_key": "k", "api_secret": "s", "access_token": "t"}).status_code == 204
+                       json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"}).status_code == 204
     _mark_valid(t["tenant_id"], "second")
     accounts = client.get("/api/accounts", headers=t["headers"]).json()
     second = next(a for a in accounts if a["account_label"] == "second")

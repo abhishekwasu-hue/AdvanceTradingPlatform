@@ -180,6 +180,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # studies and alert rules (an active rule pauses with the reason). A confirmation status, RsiDivergence and
     # SwingLabel fire on bar close only (intrabar rules refused); places no orders.
     "screenql_amw_functions": "AMW screener functions in ScreenQL: StDev, RSI divergence, swing labels, time of day, strong-body and gap-reversal candles, next-bar candle confirmation (research only, places no orders)",
+    # Handover 11c-1 (AMW-20 first slice, docs/design/PINE_SUBSET.md): the Pine Script subset - pasted Pine translated to
+    # ScreenQL signal conditions with line-numbered diagnostics, and "Run as screen" through the Screener's own run path.
+    # The Pine text is parsed, never executed (a host mode: no runner, ADR-0027). OFF: /api/lab/pine/* answers 404 and the
+    # Screener shows no Pine button. Places no orders.
+    "strategy_lab_pine": "Pine Script subset: paste a TradingView Pine script, see what translates, and run its signal condition as a screen (never executed; places no orders)",
     # Z10-b (G5, docs/design/Z10_LAUNCH_HARDENING.md): stale data -> zero alerts. The bar-close engine, the rule flush and
     # the dispatcher hold back a screen / instrument alert whose bars are no longer current. Trade, exit, risk and
     # system notifications are never held back. OFF: unchanged.
@@ -304,6 +309,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # bucket, max open positions; each 0 = no limit, set in the PAPER risk settings) refuse new PAPER entries before a
     # proposal and at Approve. Acts only while portfolio_risk is on too. Exits are never refused (ADR-0004).
     "portfolio_risk_caps": "Portfolio caps on new PAPER entries: sector exposure, open risk per bucket, open positions (entries only; exits never refused)",
+    # Analyze a chart (docs/design/CHART_ANALYZE.md, PR-A): a user uploads a chart image or pastes a chart link and gets
+    # an educational reading of it (the situation and the possibilities, never advice), from the analysis engine in the
+    # private package. Beta tenants only (the allow-list). OFF: every /api/chart-analyze route answers 503 and the page
+    # and the Charts-page button are hidden. Places no orders.
+    "chart_analyze": "Analyze a chart: upload a chart image or paste a chart link for an educational reading (beta; places no orders)",
     # N4 CH6 (docs/design/CHARTING.md): ScreenQL expressions drawn as chart studies, computed by the screener's own runtime
     # from the shared lake bars as of a time (lines for numbers, marks for conditions). OFF: GET /api/charts/studies
     # answers 503 and the chart shows no study panel. Reference only - places no orders.

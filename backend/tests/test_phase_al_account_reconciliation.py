@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.brokers.models import BrokerPosition
 from app.db.models import BrokerAccountRecord, BrokerCredentialRecord, Tenant, TradeRecord
 from app.reconciliation.service import reconcile_accounts, run_reconciliation, trades_in_account
+from tests.broker_fakes import UPSTOX_KEY, UPSTOX_KEY_2, UPSTOX_SECRET
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _me
 from tests.test_safety_gates import _PositionBroker
@@ -22,9 +23,9 @@ def _run(coro):
 def _two_accounts(email):
     headers = _auth(email)
     me = _me(headers)
-    for label, key in (("primary", "k1"), ("hedge", "k2")):
+    for label, key in (("primary", UPSTOX_KEY), ("hedge", UPSTOX_KEY_2)):
         assert client.post(f"/api/broker/upstox/credentials?account_label={label}", headers=headers,
-                           json={"api_key": key, "api_secret": "s", "access_token": "t"}).status_code == 204
+                           json={"api_key": key, "api_secret": UPSTOX_SECRET, "access_token": "t"}).status_code == 204
     accounts = client.get("/api/accounts", headers=headers).json()
     by_label = {a["account_label"]: a for a in accounts}
 
@@ -101,8 +102,8 @@ def test_route_reconciles_every_account_at_the_broker_or_one_by_label(monkeypatc
     headers, me, acct = _two_accounts("al-route@example.com")
     _seed(me, "RELIANCE", 10, acct["primary"]["id"])
     _seed(me, "TCS", 5, acct["hedge"]["id"])
-    books = {"k1": [BrokerPosition(symbol="RELIANCE", quantity=10, average_price=100.0)],
-             "k2": [BrokerPosition(symbol="TCS", quantity=4, average_price=100.0)]}
+    books = {UPSTOX_KEY: [BrokerPosition(symbol="RELIANCE", quantity=10, average_price=100.0)],
+             UPSTOX_KEY_2: [BrokerPosition(symbol="TCS", quantity=4, average_price=100.0)]}
     monkeypatch.setattr("app.reconciliation.routes.get_broker_adapter", lambda name, creds: _PositionBroker(books[creds.api_key]))
 
     body = client.post("/api/reconciliation/upstox", headers=headers).json()
@@ -119,7 +120,7 @@ def test_route_reconciles_every_account_at_the_broker_or_one_by_label(monkeypatc
         async def get_positions(self):
             raise RuntimeError("socket closed")
     monkeypatch.setattr("app.reconciliation.routes.get_broker_adapter",
-                        lambda name, creds: _PositionBroker(books["k1"]) if creds.api_key == "k1" else _Broken())
+                        lambda name, creds: _PositionBroker(books[UPSTOX_KEY]) if creds.api_key == UPSTOX_KEY else _Broken())
     resp = client.post("/api/reconciliation/upstox", headers=headers)
     assert resp.status_code == 502 and "hedge" in resp.json()["detail"]
 
@@ -128,8 +129,8 @@ def test_worker_start_up_reconciles_each_account_through_its_own_session(monkeyp
     headers, me, acct = _two_accounts("al-worker@example.com")
     _seed(me, "RELIANCE", 10, acct["primary"]["id"])
     _seed(me, "TCS", 5, acct["hedge"]["id"])
-    by_key = {"k1": _PositionBroker([BrokerPosition(symbol="RELIANCE", quantity=10, average_price=100.0)]),
-              "k2": _PositionBroker([BrokerPosition(symbol="TCS", quantity=5, average_price=100.0)])}
+    by_key = {UPSTOX_KEY: _PositionBroker([BrokerPosition(symbol="RELIANCE", quantity=10, average_price=100.0)]),
+              UPSTOX_KEY_2: _PositionBroker([BrokerPosition(symbol="TCS", quantity=5, average_price=100.0)])}
     worker = _worker(monkeypatch, _FakeBroker())
 
     def per_record(record, client=None):
@@ -144,7 +145,7 @@ def test_worker_start_up_reconciles_each_account_through_its_own_session(monkeyp
     assert _run(worker.reconcile_on_start()) >= 2
     assert _tenant_row(me["tenant_id"]).broker_uncertain_since is None
 
-    by_key["k2"] = _PositionBroker([])          # the hedge session now reports nothing
+    by_key[UPSTOX_KEY_2] = _PositionBroker([])          # the hedge session now reports nothing
     assert _run(worker.reconcile_on_start()) >= 2
     tenant = _tenant_row(me["tenant_id"])
     assert tenant.broker_uncertain_since is not None and "TCS [hedge]" in tenant.broker_uncertain_reason

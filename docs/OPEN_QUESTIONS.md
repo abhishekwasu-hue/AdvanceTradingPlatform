@@ -768,6 +768,17 @@ defaults below contradicts them.
 | GS-2 | Google sign-in while `self_signup` is ON: a new account made through Google. | It is marked e-mail verified (Google verified it) and has no usable password until the person uses "Forgot password?". Never applies while `self_signup` stays off (the owner's setting today: an unknown Google e-mail is refused with "Ask your organisation owner for an invite"). | #336 | open |
 | LAB-10 | Strategy Lab runner host: sizing and monthly cost (handover 11c-2, LAB-6). | **Recommended: a separate small VPS for the lab runner + gateway only**, so user code never competes with the trading worker on the 2 vCPU / 8 GB KVM 2. Sizing: 2 vCPU, 4 GB RAM, 40-80 GB disk, Ubuntu LTS with gVisor (`runsc`); one runner at a time (concurrency 1, LAB-1), recycled every 50 runs (LAB-8). It reaches the main host only through the gateway's narrow API over a private link / WireGuard; no database credentials beyond the `lab_*` role (LAB-5). Cost (check the current price before buying; prices change): a Hostinger KVM 1 / KVM 2 class VPS, about ₹500-1,000 a month on a 12-24 month term; or Hetzner CX22 class, about €4-6 a month. Until the owner decides, the Pine subset (translated to ScreenQL, never executed) needs no runner and continues; the runner is built and tested so it works on either host. | ADR-0027, AMW-21 / AMW-22, LAB-6 | open (owner decision) |
 
+## Strategy templates, step 1: recipe core + indicators (TPL-1, 22 Oct)
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| TPL-Q1 | A template signal's score / grade. | A fixed 70 (grade VALID), as the Strategy Builder's own signals: a template makes no quality claim. | `strategy_templates/adapter.py` | open |
+| TPL-Q2 | Where the provenance (template id + version, params hash, setup instance) lives on a signal. | The last line of the signal's reasons for now (Signal has no metadata field); when templates are wired to deployments it moves to a stored field and the UI hides it from users. | `adapter.py` | open |
+| TPL-Q3 | Parabolic SAR conventions. | The steps of TradingView's `ta.sar` (the first trend from the second close), so a user comparing with that chart sees the same line. | `indicators/trend.py` | open |
+| TPL-Q4 | Stochastic on a window without range (highest high = lowest low). | No value (NaN), so a condition on it never matches, instead of an arbitrary 50. | `indicators/momentum.py` | open |
+| TPL-Q5 | History a template deployment fetches (R6). | The recipe's needs on every timeframe it reads (context bars converted to signal bars) x 3. | `strategy_templates/parity.py` | open |
+| TPL-Q6 | A "state" setup that is already true when the history starts. | It does not arm (its start is unknown, and a trailing window would arm it on a different bar than the full history); it arms on its next rising edge. | `strategy_templates/engine.py` | open |
+| TPL-Q7 | Weekly / monthly signal timeframes. | Scans only for now: the backtest engines and the worker have no weekly bar label, so the adapter refuses them with a plain message. | `adapter.py` | open |
 ## MO2 parts C and B (22 Oct)
 
 | # | Question | Provisional decision + reason | Applies to | Status |

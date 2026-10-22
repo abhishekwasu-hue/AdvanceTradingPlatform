@@ -86,11 +86,14 @@ export interface ChartsView {
   watchlist_open: boolean;
   /** UI2-4c: the watchlist last shown (null: the first one). */
   watchlist_id: number | null;
+  /** WL1: the read-only system list last shown (its key; null: one of the trader's own lists). */
+  watchlist_system: string | null;
 }
 
 export const VIEW_KEY = "atp_charts_view";
 export const DEFAULT_VIEW: ChartsView = {
   timeframe: DEFAULT_TIMEFRAME, type: "candles", overlays: [], layers: [], drawings_hidden: false, watchlist_open: true, watchlist_id: null,
+  watchlist_system: null,
 };
 
 /** Any stored value as a valid view: a field that is missing or wrong takes its default. */
@@ -105,6 +108,7 @@ export function cleanView(raw: unknown): ChartsView {
     drawings_hidden: v.drawings_hidden === true,
     watchlist_open: v.watchlist_open !== false,
     watchlist_id: typeof v.watchlist_id === "number" && Number.isInteger(v.watchlist_id) ? v.watchlist_id : null,
+    watchlist_system: typeof v.watchlist_system === "string" && /^[a-z0-9-]{1,80}$/.test(v.watchlist_system) ? v.watchlist_system : null,
   };
 }
 

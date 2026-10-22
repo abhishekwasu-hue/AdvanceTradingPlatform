@@ -9,6 +9,9 @@ import { expectPhoneLayout } from "./phoneLayout";
  *   The old pages' baselines are untouched: with the flag off nothing changes (the last test, and mobile.e2e.ts).
  * - Every timeframe loads, full screen enters and leaves, no grid by default, the gate with no broker, the chart theme
  *   saved on the server and read back after a reload, and the chart built once (React wiring).
+ * - WL1: the read-only system lists (groups `charts-v2-watchlist-system-1440-light.png`, phone sheet
+ *   `charts-v2-390-sheet-system-light.png`): a first open shows Indices, search, sort, Copy to my list. Without system
+ *   lists (every older test: the route answers 404) the panel is as before, so the UI2-4c baselines are unchanged.
  * - UI2-4c: the watchlist (column `charts-v2-watchlist-1440-<theme>.png`, phone sheet `charts-v2-390-sheet-light.png`),
  *   versioned saves, the batch quotes, the drawing rail (a new drawing sends its timeframe; Delete all asks first) and
  *   the phone's drawing menu. The watchlist only with the `watchlists` flag on.
@@ -93,6 +96,28 @@ const LISTS = [
   { id: 2, name: "Banks", items: [{ symbol: "HDFCBANK", exchange: "NSE" }, { symbol: "ICICIBANK", exchange: "NSE" }] },
 ];
 const WATCH: Setup = { watch: true, watchlists: LISTS };
+
+/** WL1: made-up system lists (read-only), as `GET /watchlists/system` and `/watchlists/system/{key}` answer them. */
+const sysList = (key: string, group: string, label: string, name: string, items: { symbol: string; exchange: string; name: string }[]) =>
+  ({ key, group, group_label: label, name, count: items.length, read_only: true, refreshed_at: "2026-10-18T13:00:00Z", items });
+const SYS_LISTS = [
+  sysList("indices", "INDICES", "Indices", "Indices", [{ symbol: "NIFTY 50", exchange: "NSE", name: "NIFTY 50" },
+    { symbol: "NIFTY BANK", exchange: "NSE", name: "NIFTY BANK" }, { symbol: "SENSEX", exchange: "BSE", name: "SENSEX" }]),
+  sysList("index-niftybank", "INDEX_STOCKS", "Index stocks", "NIFTY BANK stocks (3)", [{ symbol: "HDFCBANK", exchange: "NSE", name: "Made-up Bank A" },
+    { symbol: "ICICIBANK", exchange: "NSE", name: "Made-up Bank B" }, { symbol: "AXISBANK", exchange: "NSE", name: "Made-up Bank C" }]),
+  sysList("sector-banking", "SECTORS", "Sectors", "Banking", [{ symbol: "AXISBANK", exchange: "NSE", name: "Made-up Bank C" },
+    { symbol: "HDFCBANK", exchange: "NSE", name: "Made-up Bank A" }, { symbol: "ICICIBANK", exchange: "NSE", name: "Made-up Bank B" },
+    { symbol: "SBIN", exchange: "NSE", name: "Made-up Bank D" }]),
+  sysList("sector-it", "SECTORS", "Sectors", "IT", [{ symbol: "INFY", exchange: "NSE", name: "Made-up Software A" },
+    { symbol: "TCS", exchange: "NSE", name: "Made-up Software B" }]),
+];
+const SYSTEM = {
+  groups: ["INDICES", "INDEX_STOCKS", "SECTORS"].map((g) => {
+    const lists = SYS_LISTS.filter((l) => l.group === g);
+    return { group: g, label: lists[0].group_label, lists: lists.map(({ items, ...summary }) => ({ ...summary, count: items.length })) };
+  }),
+  lists: Object.fromEntries(SYS_LISTS.map((l) => [l.key, l])),
+};
 const symbols = (body: Record<string, unknown> | null) => (body?.items as { symbol: string }[]).map((i) => i.symbol);
 
 /** The watchlist's rows, as shown. */
@@ -551,6 +576,71 @@ async function cellsReady(page: Page, n: number) {
   await expect(page.getByText("Loading prices…")).toHaveCount(0);
 }
 
+test.describe("v2 Charts 1440: system watchlists (WL1)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+  const chooser = (page: Page) => page.getByRole("button", { name: /^Choose a list\. Shown: / });
+
+  test("a first open with no list of one's own shows the read-only Indices list; the groups open and close", async ({ page }) => {
+    const calls = await open(page, "light", { watch: true, watchlists: [], systemLists: SYSTEM });
+    await chartReady(page);
+    await expect(chooser(page)).toContainText("Indices (3)");
+    await expect(page.getByText(/^Read-only list/)).toBeVisible();
+    await expect(rows(page)).toHaveText([/NIFTY 50/, /NIFTY BANK/, /SENSEX/]);
+    await expect(rows(page).getByRole("button", { name: /^Remove / })).toHaveCount(0);
+    await expect(rows(page).getByRole("button", { name: /^Move / })).toHaveCount(0);
+    await expect(rows(page).first()).toContainText(/\d/);                           // the batch quote came
+    await chooser(page).click();
+    const groups = page.locator("[data-list-browser] [data-group]");
+    await expect(groups).toHaveCount(4);
+    await expect(groups.locator("h3 button")).toHaveText([/Indices/, /Index stocks/, /Sectors/, /My lists/]);
+    const sectors = page.getByRole("button", { name: /^Sectors/ });
+    await expect(sectors).toHaveAttribute("aria-expanded", "false");
+    await sectors.click();
+    await expect(sectors).toHaveAttribute("aria-expanded", "true");
+    await page.mouse.move(0, 0);
+    await expect(page).toHaveScreenshot("charts-v2-watchlist-system-1440-light.png", SHOT);
+    await page.getByRole("list", { name: "Sectors lists" }).getByRole("button", { name: /^Banking/ }).click();
+    await expect(chooser(page)).toContainText("Banking (4)");
+    // Search and sort inside a system list.
+    await page.getByRole("searchbox", { name: "Search in Banking" }).fill("made-up bank b");
+    await expect(rows(page)).toHaveText([/ICICIBANK/]);
+    await page.getByRole("searchbox", { name: "Search in Banking" }).fill("");
+    await page.getByRole("combobox", { name: "Sort the list" }).selectOption({ label: "A to Z" });
+    await expect(rows(page)).toHaveText([/AXISBANK/, /HDFCBANK/, /ICICIBANK/, /SBIN/]);
+    // A list is found by name across the groups.
+    await chooser(page).click();
+    await page.getByRole("searchbox", { name: "Find a list" }).fill("bank");
+    await expect(page.locator("[data-list-browser] li button")).toHaveText([/NIFTY BANK stocks/, /Banking/]);
+    await page.getByRole("button", { name: /^NIFTY BANK stocks/ }).click();
+    await expect(chooser(page)).toContainText("NIFTY BANK stocks (3)");
+    expect(calls.systemCalls).toEqual(["GET", "GET indices", "GET sector-banking", "GET index-niftybank"]);
+    expect(calls.watchlistWrites).toEqual([]);                                         // nothing written to a system list
+  });
+
+  test("Copy to my list makes a list of one's own, which can then be changed; the choice is kept after a reload", async ({ page }) => {
+    const calls = await open(page, "light", { watch: true, watchlists: LISTS, systemLists: SYSTEM });
+    await chartReady(page);
+    await expect(chooser(page)).toContainText("Indices (4)");                          // the trader's own first list, as before
+    await chooser(page).click();
+    await page.getByRole("button", { name: /^Index stocks/ }).click();
+    await page.getByRole("button", { name: /^NIFTY BANK stocks/ }).click();
+    await page.getByRole("button", { name: "Copy to my list" }).click();
+    await expect(page.getByRole("status")).toContainText('Copied to your list "NIFTY BANK stocks". You can change it.');
+    await expect(chooser(page)).toContainText("NIFTY BANK stocks (3)");
+    await expect(rows(page).getByRole("button", { name: /^Remove / })).toHaveCount(3);  // now the trader's own: editable
+    await rows(page).filter({ hasText: "AXISBANK" }).getByRole("button", { name: "Remove AXISBANK" }).click();
+    await expect.poll(() => calls.watchlistWrites.map((w) => [w.method, w.id])).toEqual([["PUT", 100]]);
+    expect(calls.systemCalls).toContain("POST index-niftybank/copy");
+    // A system list shown is remembered on this browser.
+    await chooser(page).click();
+    await page.getByRole("button", { name: /^Sectors/ }).click();
+    await page.getByRole("button", { name: /^IT/ }).click();
+    await page.reload();
+    await chartReady(page);
+    await expect(chooser(page)).toContainText("IT (2)");
+  });
+});
+
 test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -876,6 +966,30 @@ test.describe("v2 Charts 390 phone", () => {
     await open(page, "dark", { intro: true });
     await chartReady(page);
     await expectPhoneLayout(page);
+  });
+
+  test("WL1: the watchlist sheet shows the list groups, collapsible, with 44 px targets", async ({ page }) => {
+    await open(page, "light", { watch: true, watchlists: LISTS, systemLists: SYSTEM });
+    await chartReady(page);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.getByRole("button", { name: "Watchlist", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Watchlist" });
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole("button", { name: /^Choose a list\. Shown: / }).click();
+    await expect(sheet.locator("[data-group]")).toHaveCount(4);
+    await expect(sheet.getByRole("button", { name: /^My lists/ })).toHaveAttribute("aria-expanded", "true");   // the list shown is there
+    await expect(sheet.getByRole("button", { name: /^Indices/ }).first()).toHaveAttribute("aria-expanded", "false");
+    await sheet.getByRole("button", { name: /^Index stocks/ }).click();
+    await expect(sheet.getByRole("button", { name: /^NIFTY BANK stocks/ })).toBeVisible();
+    const small = await sheet.locator("button, select, input").evaluateAll((els) => els
+      .filter((e) => e.getBoundingClientRect().height > 0 && e.getBoundingClientRect().height < 43.5 && !e.closest("[aria-label='Close']"))
+      .map((e) => e.getAttribute("aria-label") ?? e.textContent));
+    expect(small).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await expect(page).toHaveScreenshot("charts-v2-390-sheet-system-light.png", SHOT);
+    await sheet.getByRole("button", { name: /^NIFTY BANK stocks/ }).click();
+    await expect(sheet.getByText(/^Read-only list/)).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "Copy to my list" })).toBeVisible();
   });
 
   test("UI2-4c: the watchlist sheet - opens from the top bar, a row opens its symbol and closes the sheet", async ({ page }) => {

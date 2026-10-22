@@ -3278,6 +3278,45 @@ class WatchlistRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+class SystemWatchlistRecord(Base):
+    """WL1 (handover item 4): one read-only system watchlist every user sees first - the indices, one index's stocks, one
+    sector's stocks or the F&O stocks. Platform-wide reference data (no tenant): built by the server job
+    (app/watchlists/system.py) from the U1 universe tables mapped to the instrument master; users read and copy it, never
+    change it. `key` is the stable slug the routes use ("indices", "index-nifty50", "sector-it", "fno-stocks")."""
+
+    __tablename__ = "system_watchlists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    group: Mapped[str] = mapped_column(String(16), nullable=False, index=True)        # INDICES / INDEX_STOCKS / SECTORS / FNO
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # `[{"symbol", "exchange", "name"}]` in display order (the watchlist item shape plus the company name).
+    items_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)    # content last changed
+    refreshed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)  # last refresh that built it
+
+
+class SystemWatchlistRefreshRecord(Base):
+    """WL1: one run of the system-watchlist refresh - when, what changed (the reconstitution diff: per list the symbols
+    added and removed, lists created and dropped) and which source symbols could not be mapped to the instrument master.
+    Read by the admin (SUPER_ADMIN) only."""
+
+    __tablename__ = "system_watchlist_refreshes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    lists_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lists_changed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    changes_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    unmapped_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    unmapped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
 class UserPrefsRecord(Base):
     """UI2-4a1: one namespace of one user's UI preferences (`chart` today: chart theme, grid, candle colours, default
     panes, reader overlay; UI-8 adds more namespaces). The value is JSON validated against the namespace's schema

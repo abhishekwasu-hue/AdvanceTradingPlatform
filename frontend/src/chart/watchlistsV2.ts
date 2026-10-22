@@ -283,6 +283,12 @@ export class WatchlistsStore {
     });
   }
 
+  /** WL1: a list the server made outside this store ("Copy to my list") joins the lists shown. */
+  adopt(list: WatchlistV2): void {
+    this.put(list);
+    this.emit({ error: null, note: null });
+  }
+
   create(name: string, items: WatchItem[] = []): Promise<WatchlistV2 | null> {
     return this.run(async () => {
       try {

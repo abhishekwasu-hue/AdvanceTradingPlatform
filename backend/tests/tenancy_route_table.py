@@ -652,6 +652,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/lab/pine/templates"): "member",
     ("POST", "/api/lab/pine/translate"): S_COMPUTE,
     ("POST", "/api/lab/pine/run"): "trader",
+    # idea library slice 1 (flag idea_library): read-only method cards, the same content for every organisation
+    ("GET", "/api/ideas"): "member",
+    ("GET", "/api/ideas/{idea_id}"): "member",
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
                                     "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),

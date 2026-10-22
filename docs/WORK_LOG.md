@@ -2537,6 +2537,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: backend `tests/test_fno4_watchlist_positions.py`; vitest `src/fno/contracts.test.tsx`; e2e
   `fno-workspace-v2.e2e.ts` with new baselines `fno4-watchlist-v2-*` and `fno4-positions-v2-*` (360 / 390 / 1440, light /
   dark); no existing baseline changed.
+## 22 Oct - Idea library slice 1 (owner order ATP_SESSION_IDEA_LIBRARY.md, T1-T8; behind ui_v2 + idea_library)
+
+- Branch `claude/idea-library-1`. No migration (content as data: `backend/app/idea_library/ideas.json`). New flag
+  `idea_library` (OFF; controls.py + flag_catalog.py). Owner questions IDEA-1..9.
+- Backend: `app/idea_library/content.py` (strict schema; the content guard: no security names, numbers, currency, buy /
+  sell / target / stop wording or performance claims in any readable line; scans checked against the ScreenQL registry
+  at their defaults and every setting edge; `available` per scan from the organisation's flags), `routes.py`
+  (`GET /api/ideas`, `GET /api/ideas/{id}`, 404 while off). mypy gate includes `app/idea_library`.
+- Scans (existing registry only): T1 DowTrend@1d + NearZone + bullish / bearish candle or CHoCH; T2 DowTrend RANGE +
+  ReversalAt(SwingHigh / SwingLow); T3 RsiDivergence + NearZone + reaction; T4 sweep beyond a swing and close back inside
+  near an area; T5 RetestEntry; T8 = T1 + T2 by direction. T6 / T7: "comes later". Adopt: comes later for all (IDEA-1).
+- Frontend: `src/ideas/` (IdeaLibraryV2 page at `/ideas`, Strategies -> Ideas; frame, "Not sure where to start?",
+  group filter, cards with "Read the full idea"), the Screener opens `?idea=..&scan=..` through `/screener/stages`.
+- Tests: backend `tests/test_idea_library.py` (+ tenancy table / probe); vitest `src/ideas/ideas.test.tsx`; e2e
+  `idea-library-v2.e2e.ts` with new baselines `idea-library-v2-{1440,390,360}-{light,dark}.png`; navModel / pagesV2
+  count tests updated.
+
 
 ## 22 Oct - Wave / correction templates (family G), step 1: the independent spec review
 

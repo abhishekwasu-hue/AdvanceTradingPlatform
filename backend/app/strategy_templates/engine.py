@@ -47,10 +47,11 @@ WAVE_SPARSE_SERIES: Tuple[str, ...] = ("WaveAlt", "WaveOrigin", "WaveEnd", "Wave
                                        "WaveProjection", "WaveRatio", "WaveLineLevel")
 # Strategy templates step 2 (R2): the breakout level companions are prices on their signal bars only (held_level: from the
 # first signal on), so they never hold the warm-up back either; so are the retest's (R7, RetestEntryRef) and, step 4, the
-# companions of the other breakout families (swing, inside / NR, volume, Donchian, moving average, pattern, VCP).
+# companions of the other breakout families (swing, inside / NR, volume, Donchian, moving average, pattern, VCP) and, TPL-8,
+# the gap's (B10).
 BREAKOUT_SPARSE_SERIES: Tuple[str, ...] = ("RangeBreakoutRef", "LineBreakoutRef", "RetestEntryRef", "SwingBreakoutRef", "NRBreakoutRef",
                                            "VolumeBreakoutRef", "DonchianBreakoutRef", "MABreakoutRef", "PatternBreakoutRef",
-                                           "VCPBreakoutRef")
+                                           "VCPBreakoutRef", "GapBreakoutRef")
 # E2 (TPL-7): the divergence's prices are missing before the first divergence of the side
 DIVERGENCE_SPARSE_SERIES: Tuple[str, ...] = ("RsiDivergenceRef",)
 SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES + BREAKOUT_SPARSE_SERIES + DIVERGENCE_SPARSE_SERIES)

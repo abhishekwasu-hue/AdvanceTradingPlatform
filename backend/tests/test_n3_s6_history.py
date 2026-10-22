@@ -317,6 +317,7 @@ SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false 
     "MABreakoutRef": 'close > MABreakoutRef("held_level", "up", 5, "sma", 0)',
     "PatternBreakoutRef": 'close > PatternBreakoutRef("held_level", "up", "triangle", 0, 0)',
     "VCPBreakoutRef": 'close > VCPBreakoutRef("held_level", "up", 2, 1, 0, 0, FALSE, FALSE)',
+    "GapBreakoutRef": 'close > GapBreakoutRef("held_level", "down", "prev_day", 15)',     # TPL-8 (R2 for the gap family)
     "Least": "Least(open, close, low) < SMA(close, 5)",
     "NearSupport": "NearSupport(0.05, 3)",
     "NearResistance": "NearResistance(0.05, 3)",

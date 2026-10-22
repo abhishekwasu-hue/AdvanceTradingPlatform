@@ -28,13 +28,19 @@ import { WatchlistPicker } from "../screener/WatchlistPicker";
 import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
 import "../screener/screener.css";
 import { useFeatures } from "../ui/useFeatures";
+import { ComingSoon } from "../ui/ComingSoon";
+import { ErrorState } from "../ui/ErrorState";
+import { COMING_SOON_MESSAGE } from "../api/errors";
 
 const VALIDATE_DELAY_MS = 350;
 /** D2 live counts: a preview run (not stored) once the trader pauses editing, on bars the server caches per symbol. */
 const PREVIEW_DELAY_MS = 900;
 
+/** UX1: the screener's routes answer 404 while `screener_v2` is off - the page then shows "Coming soon". */
+const SCREENER_OFF = "screener-off";
+
 function errorText(e: unknown): string {
-  if (e instanceof ApiError && e.status === 404) return "The screener is not turned on for this organisation yet.";
+  if (e instanceof ApiError && e.status === 404) return COMING_SOON_MESSAGE;
   if (e instanceof ApiError && e.status === 409) return "Connect a broker on the Broker page - the scan reads its bars from there.";
   return e instanceof Error ? e.message : String(e);
 }
@@ -84,7 +90,8 @@ export default function ScreenerPage(_props: PageProps) {
   const watchlistsOn = features.on("watchlists");
 
   useEffect(() => {
-    screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
+    screenerApi.registry().then((r) => setRegistry(r.entries))
+      .catch((e: unknown) => setLoadError(e instanceof ApiError && e.status === 404 ? SCREENER_OFF : errorText(e)));
     screenerApi.taxonomy().then((t) => setTaxonomy(isTaxonomy(t) ? t : null)).catch(() => setTaxonomy(null));
     screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));
     screenerApi.libraryMirrors().then((m) => setMirrors(isMirrors(m) ? m : null)).catch(() => setMirrors(null));
@@ -210,9 +217,8 @@ export default function ScreenerPage(_props: PageProps) {
   const killer = rows.find((r) => r.kills);
   const matchedNow = shown ? shown.matched : null;
 
-  if (loadError) {
-    return <div className="rounded-panel border border-border bg-surface-1 p-4 text-t13 text-fg-muted">{loadError}</div>;
-  }
+  if (loadError === SCREENER_OFF) return <ComingSoon flag="screener_v2" />;
+  if (loadError) return <ErrorState message={loadError} />;
 
   return (
     <div className="screener-page pb-20 sm:pb-0">

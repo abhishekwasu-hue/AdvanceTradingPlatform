@@ -18,6 +18,8 @@ import MoreSheetV2 from "./MoreSheetV2";
 import { sectionOf, visiblePinned, visibleSections, type NavContext } from "./navModel";
 import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
 import { SETUP_ADDRESS } from "./aliases";
+import { closedFlag } from "./pageFlags";
+import { ComingSoon } from "../ui/ComingSoon";
 import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
 import SidebarV2 from "./SidebarV2";
 import TopBarV2 from "./TopBarV2";
@@ -135,9 +137,13 @@ export default function AppShellV2() {
     </ErrorBoundary>
   );
 
+  // UX1 (handover 8b): a page whose feature flag is off shows "Coming soon" at its address (it is not in the nav).
+  const closed = closedFlag(key, features);
+
   let content: ReactNode;
   if (legacy) content = <Navigate to={`${pathFor(legacy)}${withoutPageParam(location.search)}`} replace />;
   else if (redirect) content = <Navigate to={redirect} replace />;
+  else if (closed) content = <ComingSoon flag={closed} />;
   // The gate stays mounted while the trader moves between data pages, so the broker status is not re-read per click.
   // A page that shows the broker states itself (UI2-2: the dashboard) is not wrapped (src/shell/pagesV2.ts).
   else if (shellGates(location.pathname, OWN_BROKER_STATES)) content = <BrokerGate>{routes}</BrokerGate>;

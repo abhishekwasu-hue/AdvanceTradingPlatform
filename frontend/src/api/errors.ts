@@ -29,13 +29,29 @@ export class ApiError extends Error {
 }
 
 export const NETWORK_MESSAGE = "Cannot reach the server. Check your connection and try again.";
+/** UX1 (audit problem 4): a 404 without a sentence of its own - the server's bare "Not found" never reaches a trader. */
+export const NOT_AVAILABLE_MESSAGE = "This is not available right now. Try again later.";
+/** UX1 (handover 8b): a feature the operator has switched off - never its flag name, never a reference id. */
+export const COMING_SOON_MESSAGE = "This feature is coming soon.";
+/** UX1: an unhandled server error - what happened and what to do, without the status code. */
+export const SERVER_ERROR_MESSAGE = "Something went wrong on our side. Try again in a moment.";
+
+/** The server's generic "Not found" / "Not Found" (FastAPI's unmatched route, a route with no sentence of its own). */
+const BARE_NOT_FOUND = /^not\s*found\.?$/i;
+/** `require_flag`'s refusal: "The '<flag>' feature is currently disabled by the platform operator" (503). */
+const FEATURE_OFF = /feature is (currently )?disabled/i;
+
+/** True for a refusal because an operator feature switch is off (503 with X-Feature-Disabled, or its sentence). */
+export function isFeatureOff(status: number, detail: string, featureHeader: string | null = null): boolean {
+  return status === 503 && (!!featureHeader || FEATURE_OFF.test(detail));
+}
 
 const GENERIC: Record<number, string> = {
   400: "The request was not accepted. Check the values and try again.",
   401: "Your session has ended. Sign in again from the Account page.",
   402: "This needs a higher plan.",
   403: "You do not have permission to do this.",
-  404: "Not found. It may have been removed.",
+  404: NOT_AVAILABLE_MESSAGE,
   409: "This conflicts with the current state. Refresh and try again.",
   413: "The upload is too large.",
   422: "Some values are not valid. Check the form and try again.",
@@ -87,13 +103,16 @@ export async function apiErrorFrom(response: Response): Promise<ApiError> {
   const status = response.status;
   const requestId = response.headers.get("x-request-id");
   const detail = readableDetail(body);
-  let message = detail;
+  const featureOff = isFeatureOff(status, detail, response.headers.get("x-feature-disabled"));
+  // UX1: a bare "Not found" and a switched-off feature never show the server's text (the detail and body stay on the
+  // error for code that branches on them).
+  let message = featureOff ? COMING_SOON_MESSAGE : status === 404 && BARE_NOT_FOUND.test(detail) ? NOT_AVAILABLE_MESSAGE : detail;
   if (!message) {
-    message = status >= 500 ? `The server could not complete this request (error ${status}). Try again in a moment.`
-      : GENERIC[status] ?? `The request failed (error ${status}).`;
+    message = status >= 500 ? SERVER_ERROR_MESSAGE : GENERIC[status] ?? `The request failed (error ${status}).`;
   }
-  // Every server error carries the reference support needs to find the log line, readable detail or not.
-  if (status >= 500 && requestId) message += `${/[.!?]$/.test(message) ? "" : "."} Reference: ${requestId}.`;
+  // Every server error carries the reference support needs to find the log line, readable detail or not - except a
+  // switched-off feature, which is not an error (handover 8b: "Coming soon", never a reference id).
+  if (status >= 500 && requestId && !featureOff) message += `${/[.!?]$/.test(message) ? "" : "."} Reference: ${requestId}.`;
   return new ApiError(status, message, detail, body.slice(0, 2000), requestId, response.headers.get("x-data-tier"));
 }
 
@@ -104,4 +123,13 @@ export function friendlyError(e: unknown): string {
   if (e instanceof TypeError && /fetch|network|load failed/i.test(e.message)) return NETWORK_MESSAGE;
   if (e instanceof Error) return e.message;
   return String(e).replace(/^Error:\s*/, "");
+}
+
+/** UX1: the one sentence an error state shows for anything a page caught - friendlyError, plus the raw texts an older
+ * caller may still hold as a string (a bare "Not found", require_flag's sentence with the flag name). */
+export function errorSentence(e: unknown): string {
+  const text = friendlyError(e).trim();
+  if (!text || BARE_NOT_FOUND.test(text) || /^not found\. it may have been removed\.?$/i.test(text)) return NOT_AVAILABLE_MESSAGE;
+  if (FEATURE_OFF.test(text)) return COMING_SOON_MESSAGE;
+  return text;
 }

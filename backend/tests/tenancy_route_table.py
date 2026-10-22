@@ -250,6 +250,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/auth/password/reset/{token}"): P_SIGN_IN,
     ("POST", "/api/auth/refresh"): P_SIGN_IN,
     ("POST", "/api/auth/register"): P_SIGN_IN,
+    ("GET", "/api/auth/sign-up-open"): P_SIGN_IN,
     ("GET", "/api/auth/scopes"): "member",
     ("GET", "/api/auth/sessions"): "member",
     ("DELETE", "/api/auth/sessions/{target_id}"): S_OWN_ACCOUNT,

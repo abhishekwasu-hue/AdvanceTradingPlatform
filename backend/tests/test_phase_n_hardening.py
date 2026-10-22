@@ -345,7 +345,11 @@ def test_live_trading_flag_blocks_live_not_paper_and_self_signup_flag():
     assert client.post("/api/deployments", headers=headers, json={"strategy_id": STRATEGY, "symbol": "reliance"}).status_code == 201
     client.put("/api/admin/controls/flags/self_signup", headers=admin_headers, json={"on": False})
     assert client.post("/api/auth/register", json={"email": "n4-blocked@example.com", "password": "S3cur3Pass!"}).status_code == 403
+    # UX1: the sign-in screen asks (without a login) whether to offer "Create an account" - only open / closed.
+    closed = client.get("/api/auth/sign-up-open")
+    assert closed.status_code == 200 and closed.json() == {"open": False}
     _reset_controls()
+    assert client.get("/api/auth/sign-up-open").json() == {"open": True}
     assert client.post("/api/auth/register", json={"email": "n4-allowed@example.com", "password": "S3cur3Pass!"}).status_code == 201
 
 

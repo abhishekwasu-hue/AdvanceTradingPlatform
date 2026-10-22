@@ -479,6 +479,9 @@ export const api = {
   mfaDisable: (password: string, code: string) =>
     request<void>("/auth/mfa/disable", { method: "POST", body: JSON.stringify({ password, code }) }),
 
+  /** UX1: whether the sign-in screen offers "Create an account" (public; the platform's `self_signup` switch). */
+  signUpOpen: () => request<{ open: boolean }>("/auth/sign-up-open"),
+
   forgotPassword: (email: string) =>
     request<{ detail: string }>("/auth/password/forgot", { method: "POST", body: JSON.stringify({ email }) }),
 

@@ -69,7 +69,7 @@ describe("Connect AI panel: not connected", () => {
 
   it("an xAI key gets the plain not-supported line and no consent (MO2 A: OpenRouter and Groq keys are taken)", () => {
     const html = view({ raw: ["xai", "-", "FAKEFAKE0000000000000000"].join("") });
-    expect(text(html)).toContain("AiAlgoDesk cannot use xAI keys. Use a key from Google Gemini, Claude, OpenAI, OpenRouter, Groq, Mistral or Z.ai.");
+    expect(text(html)).toContain("AiAlgoDesk cannot use xAI keys. Use a key from Google Gemini, Claude, OpenAI, OpenRouter, Groq, Mistral, Z.ai or Cloudflare Workers AI.");
     expect(html).not.toContain("data-consent");
   });
 

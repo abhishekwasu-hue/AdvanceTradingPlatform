@@ -9,13 +9,18 @@ import formats from "./__fixtures__/key_formats.json";
  * Mistral and Z.ai keys have no prefix: they come out "unknown" and the picker asks. The server checks again and is the
  * authority. Nothing here keeps or logs a key.
  *
+ * MO2A-2: Cloudflare Workers AI needs its API token (`cfut_` / `cfat_`; older tokens have no prefix) AND the 32-character
+ * Account ID. Both may come in one paste, side by side in either order (`splitAccountId`, the same rule as the server's
+ * `split_account_id`, checked by the fixture's `account_id_cases`); otherwise the panel asks for the Account ID. The
+ * Global API Key (`cfk_`) opens the whole Cloudflare account and is refused.
+ *
  * Master Order 2 part A: `PROVIDER_FACTS` (the same table as backend/app/ai/key_formats.py) says what each provider is:
  * its plain name, the "Free tier" and "Reads charts (vision)" tags, whether its free tier may train on what it is sent,
  * and its one-line data term.
  */
 
 /** Every provider "Connect AI in one paste" takes (behind `ai_one_key`). The Vision card keeps ByokProviderName's three. */
-export type AiProviderName = "gemini" | "anthropic" | "openai" | "openrouter" | "groq" | "mistral" | "zai";
+export type AiProviderName = "gemini" | "anthropic" | "openai" | "openrouter" | "groq" | "mistral" | "zai" | "cloudflare";
 
 export interface ProviderFacts { name: string; free_tier: boolean; vision: boolean; may_train: boolean; privacy: string }
 
@@ -54,9 +59,28 @@ export function looksLikeSession(key: string): boolean {
   return key.includes("=") || key.includes(";") || key.split(".").length - 1 >= 2;
 }
 
+/** A Cloudflare Account ID as the dashboard shows it. */
+export const ACCOUNT_ID = /^[0-9a-fA-F]{32}$/;
+
+/** MO2A-2: { account id (lower-case), the rest } when the paste is exactly two parts (spaces, a line break or a comma
+ * between them) and one of them is a Cloudflare Account ID; else { null, the paste }. */
+export function splitAccountId(raw: string | null | undefined): { accountId: string | null; rest: string } {
+  const key = cleanKey(raw);
+  const parts = key.split(/[\s,]+/).filter((p) => p !== "").map((p) => p.replace(/^["'`]+|["'`]+$/g, ""));
+  if (parts.length !== 2) return { accountId: null, rest: key };
+  const ids = parts.filter((p) => ACCOUNT_ID.test(p));
+  if (ids.length !== 1) return { accountId: null, rest: key };
+  return { accountId: ids[0].toLowerCase(), rest: parts.find((p) => p !== ids[0]) ?? "" };
+}
+
 export function detectProvider(raw: string | null | undefined): Detection {
   const key = cleanKey(raw);
   if (!key) return { kind: "empty", provider: null, name: "" };
+  const pair = splitAccountId(key);
+  if (pair.accountId !== null) {
+    const found = detectProvider(pair.rest);
+    return found.kind === "unknown" ? { kind: "provider", provider: "cloudflare", name: PROVIDER_FACTS.cloudflare.name } : found;
+  }
   if (looksLikeSession(key)) {
     const row = KEY_FORMATS.find((r) => r.kind === "session" && key.toLowerCase().startsWith(r.prefix));
     return { kind: "session", provider: null, name: row?.name ?? "sign-in token" };
@@ -73,6 +97,9 @@ export function detectProvider(raw: string | null | undefined): Detection {
 /** The one line the panel shows for a key it cannot take, or null. */
 export function refusalFor(found: Detection): string | null {
   if (found.kind === "session") return "This looks like a sign-in token, not an API key. Create an API key on the provider's key page and paste that.";
+  if (found.kind === "admin" && found.name === "Cloudflare Global API Key") {
+    return "This is your Cloudflare Global API Key, which opens your whole Cloudflare account. Create a Workers AI API token instead.";
+  }
   if (found.kind === "admin") return "This is an organisation admin key. Use a standard API key from the provider's key page.";
   if (found.kind === "unsupported") {
     const article = /^[AEIOU]/i.test(found.name) ? "an" : "a";
@@ -82,4 +109,4 @@ export function refusalFor(found: Detection): string | null {
 }
 
 /** The same line as the server's (app/ai/byok.py ONE_KEY_PROVIDERS_LINE). */
-export const ONE_KEY_PROVIDERS_LINE = "Use a key from Google Gemini, Claude, OpenAI, OpenRouter, Groq, Mistral or Z.ai.";
+export const ONE_KEY_PROVIDERS_LINE = "Use a key from Google Gemini, Claude, OpenAI, OpenRouter, Groq, Mistral, Z.ai or Cloudflare Workers AI.";

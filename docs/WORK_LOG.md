@@ -3079,3 +3079,28 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_tpl8_b10_gap.py` (companion, must fire / must not, session clock, mirror, truncation, scan =
   backtest = options backtest = worker, property tests, words, ids, adapter, flags, API), runtime fixture, causal cases
   (lookahead job), history sweep, BK registry tests. Questions TPL-Q58..TPL-Q63.
+
+## 22 Oct - MO2A-2: Cloudflare Workers AI as a user-key AI provider (behind ui_v2 + ai_one_key)
+
+- Branch `claude/mo2a-cloudflare`. No migration: the token and the Account ID are sealed as ONE secret
+  "<account id>:<token>" in the existing `user_ai_keys.encrypted_key` (Text); `provider` "cloudflare" fits String(20);
+  the hint is the token's (String(16)); the consent version "2026-10-22:cloudflare" fits String(24). No new flag.
+- Sources (22 Oct): developers.cloudflare.com could not be opened from the build machine (WebFetch: host not found), so
+  everything was read from Cloudflare's docs source github.com/cloudflare/cloudflare-docs (production): the OpenAI
+  compatible endpoint `.../client/v4/accounts/{account_id}/ai/v1/chat/completions` with `Authorization: Bearer`, the
+  REST API get-started steps, the errors table, pricing (10,000 free Neurons a day), limits, data usage (no retention,
+  no training), token formats (`cfut_` / `cfat_` / `cfk_`) and the Llama 4 Scout model page (vision, `image_url` data
+  URLs, `max_tokens`). Recorded in `OPENAI_COMPATIBLE`, the guides' header and OPEN_QUESTIONS MO2A-11.
+- Backend: key-format rows `cfut_` / `cfat_` (provider) and `cfk_` (refused with its own line); `split_account_id`
+  (a token next to an Account ID in one paste, either order); facts: free tier yes, vision yes, may train no;
+  `build_byok_provider` opens the two-part secret and puts the Account ID in the address only; plain errors from the
+  Cloudflare envelope codes (3036 / 5035 no credit, 3040 rate, 5007 / 3042 / 5016 model, 10000 / 7003 / 3023 key or
+  Account ID wrong); list prices for the Workers AI models; `POST /api/ai/byok/connect` takes `account_id` and answers
+  `account_id_needed` for a token alone. The no-vision sentence and the providers line now name Cloudflare Workers AI.
+- Frontend: the shared table (vitest parity + `account_id_cases`), the "Cloudflare Account ID" box in the Connect AI
+  panel (nothing is sent until it holds an id; a line break in a paste is kept as a space), the Cloudflare key guide
+  (Workers AI page -> Use REST API -> Create a Workers AI API Token -> Copy, then Get Account ID).
+- Tests: `tests/test_mo2a_cloudflare.py` with the recorded answers `tests/fixtures/cloudflare_workers_ai.json` (no live
+  call); vitest `src/aiKeys/cloudflareProvider.test.tsx`; e2e `connect-ai-v2.e2e.ts` (the flow, new baselines
+  `connect-ai-v2-paste-cloudflare-*`; `connect-ai-v2-paste-groq-*` re-taken for the longer no-vision sentence).
+  Questions MO2A-9..12.

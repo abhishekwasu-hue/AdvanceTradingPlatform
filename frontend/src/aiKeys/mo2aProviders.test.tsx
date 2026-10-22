@@ -17,7 +17,7 @@ const noop = () => undefined;
 const fill = (n: number) => "x1Y2".repeat(Math.ceil(n / 4)).slice(0, n);
 const openrouterKey = () => ["sk", "-or-", "v1-", fill(40)].join("");
 const groqKey = () => ["gsk", "_", fill(40)].join("");
-const NEW: AiProviderName[] = ["openrouter", "groq", "mistral", "zai"];
+const NEW: AiProviderName[] = ["openrouter", "groq", "mistral", "zai", "cloudflare"];
 
 const LIMITS = { month_inr: 0, monthly_cap_inr: 880, today_inr: 0, daily_cap_inr: 88, max_cap_inr: 44000, line: "AI this month: ₹0 of your ₹880 limit", reached: null };
 const NONE: AiConnection = {
@@ -36,13 +36,13 @@ function view(props: Partial<ConnectAiViewProps> = {}): string {
 describe("MO2 A: the one provider table", () => {
   it("the browser reads the server's facts and orders (the fixture is the backend's byte-identical copy)", () => {
     expect(PROVIDER_FACTS).toEqual(formats.provider_facts);
-    expect(CONNECT_ORDER).toEqual(["gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai"]);
-    expect(PICKER_ORDER).toEqual(["gemini", "anthropic", "openai", "mistral", "zai"]);
+    expect(CONNECT_ORDER).toEqual(["gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai", "cloudflare"]);
+    expect(PICKER_ORDER).toEqual(["gemini", "anthropic", "openai", "mistral", "zai", "cloudflare"]);
     expect(PROVIDER_LABELS.zai).toBe("Z.ai GLM");
   });
 
   it("the no-vision sentence names every provider that reads charts, and only those", () => {
-    expect(VISION_NAMES).toEqual(["Google Gemini", "Claude", "OpenAI", "OpenRouter", "Mistral"]);
+    expect(VISION_NAMES).toEqual(["Google Gemini", "Claude", "OpenAI", "OpenRouter", "Mistral", "Cloudflare Workers AI"]);
     for (const name of VISION_NAMES) expect(PLAIN_ERRORS.no_vision).toContain(name.replace("Google ", ""));
     expect(PLAIN_ERRORS.no_vision).not.toMatch(/Groq|Z\.ai/);
   });

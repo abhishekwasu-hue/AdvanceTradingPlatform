@@ -26,7 +26,7 @@ describe("MO2 key guides: the content", () => {
   });
 
   it("a guide per provider ATP takes, Google Gemini first and the only one recommended; the Vision card keeps its three", () => {
-    expect(KEY_GUIDES.map((g) => g.provider)).toEqual(["gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai"]);
+    expect(KEY_GUIDES.map((g) => g.provider)).toEqual(["gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai", "cloudflare"]);
     expect(VISION_CARD_GUIDES.map((g) => g.provider)).toEqual(["gemini", "anthropic", "openai"]);
     expect([...VISION_CARD_GUIDES.map((g) => g.provider)].sort()).toEqual([...BYOK_PROVIDERS].sort());
     expect(KEY_GUIDES.filter((g) => g.recommended).map((g) => g.provider)).toEqual(["gemini"]);
@@ -42,6 +42,7 @@ describe("MO2 key guides: the content", () => {
       groq: "https://console.groq.com/keys",
       mistral: "https://console.mistral.ai/api-keys",
       zai: "https://z.ai/manage-apikey/apikey-list",
+      cloudflare: "https://dash.cloudflare.com/?to=/:account/ai/workers-ai",
     });
     for (const g of KEY_GUIDES) expect(g.key_page.label).toMatch(/^Open .+ key page$/);
   });

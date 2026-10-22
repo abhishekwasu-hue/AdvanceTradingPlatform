@@ -192,7 +192,7 @@ def test_the_plain_sentences_are_the_ones_the_order_names():
     assert byok.PLAIN_ERRORS["auth"] == "This key did not work. Check that you copied all of it."
     assert byok.PLAIN_ERRORS["no_credit"] == "This key has no credit left."
     assert byok.PLAIN_ERRORS["rate"] == "Too many requests. Try again in a minute."
-    assert byok.PLAIN_ERRORS["no_vision"] == "This provider cannot read charts. Vision needs Gemini, Claude, OpenAI, OpenRouter or Mistral."
+    assert byok.PLAIN_ERRORS["no_vision"] == "This provider cannot read charts. Vision needs Gemini, Claude, OpenAI, OpenRouter, Mistral or Cloudflare Workers AI."
 
 
 def test_a_user_key_runs_the_tasks_tier_model_and_gemini_has_tiers():
@@ -284,7 +284,7 @@ async def _allowed(user_id):
     ("auth", "anthropic", A_KEY, "This key did not work. Check that you copied all of it."),
     ("no_credit", "openai", OPENAI_KEY, "This key has no credit left."),
     ("rate", "openai", OPENAI_KEY, "Too many requests. Try again in a minute."),
-    ("no_vision", "gemini", GEMINI_KEY, "This provider cannot read charts. Vision needs Gemini, Claude, OpenAI, OpenRouter or Mistral."),
+    ("no_vision", "gemini", GEMINI_KEY, "This provider cannot read charts. Vision needs Gemini, Claude, OpenAI, OpenRouter, Mistral or Cloudflare Workers AI."),
 ])
 def test_a_failed_test_keeps_the_key_and_shows_one_plain_sentence(one_key, monkeypatch, fail, provider, key, sentence):
     Mocks(fail=fail).install(monkeypatch)
@@ -306,7 +306,7 @@ def test_an_unknown_format_asks_for_the_provider_and_unsupported_keys_get_a_plai
     # MO2 A: OpenRouter and Groq are taken now; an xAI key still gets the plain line, naming the services that work.
     refused = _connect(headers, "xai-FAKEFAKE-test-only-gggggggggggggggggggggggg-7777", consent=True)
     assert refused.status_code == 400 and "cannot use xAI keys" in refused.json()["detail"]["message"]
-    assert "OpenRouter, Groq, Mistral or Z.ai" in refused.json()["detail"]["message"]
+    assert "OpenRouter, Groq, Mistral, Z.ai or Cloudflare Workers AI" in refused.json()["detail"]["message"]
     session_token = _connect(headers, "sk-ant-sid01-FAKEFAKE-test-only-session-iiiiiiiiii", consent=True)
     assert session_token.status_code == 400 and "not an API key" in session_token.json()["detail"]["message"]
 

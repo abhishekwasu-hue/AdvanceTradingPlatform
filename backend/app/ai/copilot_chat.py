@@ -46,6 +46,7 @@ NO_KEY_TITLE = "Add a free AI key to start"
 NO_KEY_LINE = "Until then I answer from ATP's own data in short, fixed sentences."
 KEY_SETTINGS = "/settings/ai"                                # Settings redesign B: the AI section page
 DEFAULT_SYMBOL = "NIFTY"
+MAX_MESSAGE = 1000                                           # the chat route's question limit (chat_routes.ChatBody)
 
 
 @dataclass(frozen=True)
@@ -111,7 +112,7 @@ _ORDER = [
     r"\bauto[- ]?trade\b",
     # Job 6: the Copilot never saves, deploys or starts a strategy or a bot - the trader does that himself.
     r"\b(start|deploy|launch|activate|switch on|turn on|save)\b[\w\s,'-]{0,25}\b(bot|bots|deployment|strategy|it|auto ?trading)\b[\w\s,'-]{0,15}\bfor me\b",
-    r"\b(can|could|will|would) you\b[\w\s,'-]{0,10}\b(start|deploy|launch|activate|save)\b[\w\s,'-]{0,20}\b(bot|bots|deployment|strategy|it)\b",
+    r"\b(can|could|will|would) you\b[\w\s,'-]{0,30}\b(start|deploy|launch|activate|save)\b[\w\s,'-]{0,20}\b(bot|bots|deployment|strategy|it)\b",
 ]
 _SETTINGS = [
     r"\b(pick|choose|decide|set|give|suggest|tell|recommend|find)\b[\w\s,'-]{0,20}\b(stop|stops|stop-loss|stoploss|sl|target|targets|objective|"
@@ -121,6 +122,9 @@ _SETTINGS = [
     r"\bshould (i|we) (use|pick|choose|set|keep|put|trade|take)\b[\w\s,'-]{0,20}\b(stop|stop-loss|stoploss|sl|target|objective|lots?|size|"
     r"risk reward|reward to risk|r:r|rr)\b",
     r"\b(you|u) (choose|pick|decide|set)\b[\w\s,'-]{0,20}\b(stop|stop-loss|sl|target|objective|lots?|size|risk reward|r:r)\b",
+    # CP6-2: tuning his draft's values on past data is choosing them for him (and fitting the test to the past)
+    r"\b(optimi[sz]e|tune|fine[- ]tune|curve[- ]fit|find the best|pick the best|choose the best)\b[\w\s,'-]{0,30}\b(values?|settings?|parameters?|"
+    r"params|lengths?|periods?|numbers?|stop|stops|objective|levels?|inputs?)\b",
 ]
 _PROMISE = [
     r"\b(guarantee|guaranteed|guarantees|assured|promise|promised|risk[- ]free)\b",
@@ -281,6 +285,7 @@ class Answer:
     action: Optional[Dict[str, str]] = None
     refused: Optional[str] = None
     draft: Optional[Dict[str, Any]] = None                    # job 6: the draft paper strategy the review card shows (never saved here)
+    followup: Optional[Dict[str, str]] = None                 # CP6-2: a next question the page offers as a button ({label, question})
     starters: List[str] = field(default_factory=list)
     concepts: List[Dict[str, Any]] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
@@ -302,6 +307,7 @@ class Answer:
                 "answer": "\n".join(self.summary), "sections": self.sections, "blocks": self.blocks, "unknowns": self.unknowns,
                 "worked": [s.as_dict() for s in self.worked], "action": self.action, "refused": self.refused, "starters": self.starters,
                 "concepts": self.concepts, "notes": self.notes, "disclaimer": DISCLAIMER, "source": "rules", "draft": self.draft,
+                "followup": self.followup,
                 "tool_calls": [s.tool for s in self.worked if not s.tool.startswith("calc:") and s.tool not in NOT_TOOLS]}
 
 
@@ -1231,8 +1237,116 @@ async def strategy_builder(answer: Answer, run: Runner, message: str) -> None:
     answer.section("Close to a ready-made strategy", [f"{names[i]}: a ready-made strategy with its own fixed rules (not your idea). Read them on the "
                                                        "Paper bot page before you use it." for i in draft.ready_made if i in names])
     answer.section("How I build it", [sb.HOW_I_BUILD])
-    answer.unknowns.append(sb.NO_BACKTEST)
     answer.action = {"label": "Review it on the Paper bot page", "to": PAPER_BOT_PATH}
+    await _draft_test(answer, run, message, draft)
+
+
+# --- job 6 follow-up (CP6-2): the honest test of the draft on past data ------------------------------------------------
+
+TEST_TITLE = "Your draft on past data"
+TEST_NEEDS_VALUES = ("I can test the draft once every value is yours: put the values listed under \"Values you decide\" in your idea, then "
+                     "ask me to test it again.")
+TEST_NEEDS_SYMBOL = "Name the symbol in your idea (for example NIFTY) and I will test the draft on its past candles."
+TEST_HOW = ("I ran your draft, exactly as it is above, through ATP's own backtest engine (the same one as the Backtesting page) on the "
+            "server's candles, with your risk limits applied as on paper (they can stop new trades in the test too). Nothing was saved "
+            "or started.")
+TEST_NOT_FORECAST = "Past results do not say what happens next. Watch it on paper and judge it yourself before you trust it."
+
+
+def _plain_money(value: Any) -> str:
+    return _f(value) if value is not None else "none"
+
+
+def _part_line(name: str, part: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not part:
+        return None
+    trades = part.get("trades") or 0
+    return (f"{name} ({part.get('from_day')} to {part.get('to_day')}): {trades} {'trade' if trades == 1 else 'trades'}, net result after "
+            f"costs {_plain_money(part.get('net_pnl'))}, deepest drop {_plain_money(part.get('max_drawdown'))}.")
+
+
+TEST_PARTIAL = ("This tests the draft only: the parts listed under \"Not supported yet\" or \"Parts I could not read\" are not in it, so it "
+                "is not a test of your whole idea.")
+
+
+def _test_lines(answer: Answer, data: Dict[str, Any], partial: bool = False) -> None:
+    """The test's facts in plain lines - the sample size, costs and the drawdown always, ratios only on enough trades.
+    `partial`: parts of his idea are not in the draft (said first)."""
+    from app.ai import strategy_builder as sb
+    whole = data.get("whole")
+    tf = data.get("timeframe")
+    chart = f" on the {sb.TF_WORDS.get(str(tf), str(tf))} chart" if tf else ""
+    if not whole or data.get("sample") == "no_data":
+        answer.section(TEST_TITLE, [f"There were not enough {data.get('symbol')} candles{chart} in the window to test the draft."])
+        answer.unknowns.append(sb.NO_BACKTEST)
+        return
+    trades, need = int(whole.get("trades") or 0), data.get("min_trades_for_statistics")
+    lines = [TEST_PARTIAL] if partial else []
+    lines.append(f"{data.get('symbol')}{chart}, {whole.get('from_day')} to {whole.get('to_day')} ({_f(whole.get('bars'), 0)} candles).")
+    if trades == 0:
+        lines.append("Your rules found no trade in this window.")
+    else:
+        lines.append(f"Trades: {trades} ({whole.get('wins')} won, {whole.get('losses')} lost).")
+        lines.append(f"Net result after costs: {_plain_money(whole.get('net_pnl'))}.")
+        lines.append(f"Costs inside that result: {_plain_money(whole.get('costs'))} (brokerage and statutory charges, plus slippage of "
+                     f"{_f(data.get('slippage_pct_per_fill'), 4)}% on every fill).")
+        lines.append(f"Deepest drop from a peak: {_plain_money(whole.get('max_drawdown'))} ({_f(whole.get('max_drawdown_pct'))}% of the "
+                     f"capital of {_plain_money(data.get('capital'))} in your risk limits).")
+    if data.get("sample") == "ok":
+        lines.append(f"Trades won: {_f(whole.get('win_rate'))}%." + (f" Gains against losses: {_f(whole.get('profit_factor'))}."
+                                                                   if whole.get("profit_factor") is not None else ""))
+    answer.section(TEST_TITLE, lines)
+    if data.get("sample") == "ok":
+        answer.section("Is it enough to judge?", [f"{trades} trades: enough for a first reading (ATP asks for at least {need}), still not proof."])
+    else:
+        answer.section("Is it enough to judge?", [f"Too few trades to judge: {trades}, and at least {need} are needed before these numbers say "
+                                                  "much. Treat this as a first look only."])
+    held = [f"Nothing was tuned on this data: every value is yours. The last {data.get('later_share_pct')}% of the window is tested on its "
+            "own, to see whether the result held on candles the earlier part did not see."]
+    held += [x for x in (_part_line("Earlier part", data.get("earlier")), _part_line("Later part", data.get("later"))) if x]
+    wf = data.get("walk_forward")
+    if wf and wf.get("windows"):
+        held.append(f"In {wf['windows']} back-to-back windows with the same values, {wf['profitable_windows']} ended above zero after costs.")
+    ds = data.get("deflated")
+    if data.get("sample") == "ok" and ds and ds.get("chance_above_zero_pct") is not None:
+        held.append(f"How sure the result per trade is above zero, allowing for luck: {_f(ds['chance_above_zero_pct'])}%. This counts as one "
+                    "try: every change you test is another try, and many tries make a good-looking result more likely by chance.")
+    if data.get("sealed_holdout_bars"):
+        held.append(f"The newest {data['sealed_holdout_bars']} candles are kept sealed by ATP for a final check and were not used.")
+    answer.section("Did it hold over time?", held)
+    answer.section("How I tested it", [TEST_HOW])
+    answer.unknowns.append(f"The test covers about {data.get('days_requested')} days of candles; a longer history can give a different result.")
+    answer.unknowns.append(TEST_NOT_FORECAST)
+
+
+async def _draft_test(answer: Answer, run: Runner, message: str, draft: Any) -> None:
+    """CP6-2: on his ask, the draft (exactly as built from his words) goes through ATP's backtest engine; without the ask
+    the page offers the test as a button. An open value or a missing symbol is said, never filled in."""
+    from app.ai import strategy_builder as sb
+    config = sb.config_of(draft)
+    if not sb.test_asked(message):
+        if config is not None and draft.symbol and len(message) + len(sb.TEST_SUFFIX) <= MAX_MESSAGE:
+            answer.unknowns.append(sb.NOT_TESTED)
+            answer.followup = {"label": sb.TEST_LABEL, "question": message.rstrip() + sb.TEST_SUFFIX}
+        else:
+            answer.unknowns.append(sb.NO_BACKTEST)
+        return
+    if config is None:
+        answer.section(TEST_TITLE, [TEST_NEEDS_VALUES])
+        answer.unknowns.append(sb.NO_BACKTEST)
+        return
+    if not draft.symbol:
+        answer.section(TEST_TITLE, [TEST_NEEDS_SYMBOL])
+        answer.unknowns.append(sb.NO_BACKTEST)
+        return
+    res = await _call(answer, run, "backtest_draft", "Your draft on past data (ATP's backtest engine)",
+                      {"config": config.model_dump(mode="json"), "symbol": draft.symbol},
+                      ("whole.trades", "whole.net_pnl", "whole.costs", "whole.max_drawdown", "min_trades_for_statistics"))
+    if not res.ok or not isinstance(res.data, dict):
+        answer.unknowns.append(f"I can't test it right now: {plain_reason(res.error)}. Save it and test it on the Backtesting page, or ask me "
+                               "again later.")
+        return
+    _test_lines(answer, res.data, partial=bool(draft.unsupported or draft.unread))
 
 
 # --- the jobs not built yet, refusals and help -------------------------------------------------------------------------

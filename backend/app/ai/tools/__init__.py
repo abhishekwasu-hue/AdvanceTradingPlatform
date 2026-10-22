@@ -73,6 +73,9 @@ class Tool:
     cost_units: int = 1
     timeout_seconds: float = 10.0
     flag: Optional[str] = None              # N3 S9: offered and run only while this operator flag is on for the organisation
+    # CP6-2: False for a tool only ATP's own rules call (the Copilot chat's jobs), never offered to the agent's model - e.g.
+    # the draft test, whose every value must be the trader's own words, never a model's guess.
+    agent: bool = True
 
     def schema(self) -> Dict[str, Any]:
         """The JSON schema the provider sees (additionalProperties false, so strict mode can be used)."""
@@ -106,8 +109,9 @@ def specs(names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     return [{"name": t.name, "description": t.description, "input_schema": t.schema()} for n, t in sorted(tools.items()) if names is None or n in names]
 
 
-def names(kind: str) -> List[str]:
-    return sorted(n for n, t in registry().items() if t.kind == kind)
+def names(kind: str, *, agent: bool = False) -> List[str]:
+    """The tools of `kind`; `agent=True`: only those the agent's model may be offered."""
+    return sorted(n for n, t in registry().items() if t.kind == kind and (t.agent or not agent))
 
 
 async def available(ctx: ToolContext, wanted: List[str]) -> List[str]:

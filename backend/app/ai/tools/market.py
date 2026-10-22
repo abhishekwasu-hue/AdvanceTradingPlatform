@@ -206,13 +206,47 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
     return ToolResult(True, data, _iso(df.index[-1]), source, {"first_bar": _iso(df.index[0]), "last_bar": _iso(df.index[-1])})
 
 
+class _DraftBacktestArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    config: Dict[str, Any] = Field(description="The draft strategy (CustomStrategyConfig) with every value the trader's own")
+    symbol: str = SYMBOL
+    exchange: str = EXCHANGE
+
+
+async def backtest_draft(ctx: ToolContext, args: _DraftBacktestArgs) -> ToolResult:
+    """CP6-2: the Copilot's draft paper strategy (never saved) on server candles through ATP's backtest engine - the whole
+    window, its earlier and later parts, the walk-forward windows, costs, drawdown and the sample size. Called only by the
+    Copilot chat's rules with a complete draft built from the trader's own words (never offered to the agent's model)."""
+    from pydantic import ValidationError
+
+    from app.ai import draft_backtest as dbt
+    from app.core.models import RiskConfig
+    from app.risk_engine.routes import get_tenant_risk_config
+    from app.strategy_engine.declarative import CustomStrategyConfig
+    try:
+        config = CustomStrategyConfig.model_validate(args.config)
+    except ValidationError as exc:
+        return ToolResult(False, None, None, "backtest", error=f"the draft is not a complete strategy: {exc.errors()[:2]}"[:300])
+    fetch_tf = dbt.FETCH_TIMEFRAME.get(config.timeframe, config.timeframe)
+    try:
+        df, source = await _frame(ctx, args.symbol, args.exchange, fetch_tf, dbt.TEST_DAYS)
+    except HTTPException as exc:
+        return _failed("backtest", exc)
+    risk = await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()
+    data = await asyncio.to_thread(dbt.honest_test, config, df, args.symbol, fetch_tf, risk)    # CPU-bound: off the event loop
+    data["exchange"] = args.exchange
+    return ToolResult(True, data, _iso(df.index[-1]), source, {"first_bar": _iso(df.index[0]), "last_bar": _iso(df.index[-1])})
+
+
 for _tool in (
     Tool("get_candles", get_candles.__doc__ or "", _CandleArgs, get_candles, cost_units=2, timeout_seconds=20),
     Tool("get_quote", get_quote.__doc__ or "", _QuoteArgs, get_quote, cost_units=1, timeout_seconds=10),
     Tool("get_option_chain", get_option_chain.__doc__ or "", _ChainArgs, get_option_chain, cost_units=3, timeout_seconds=20),
     Tool("get_market_regime", get_market_regime.__doc__ or "", _CandleArgs, get_market_regime, cost_units=2, timeout_seconds=20),
     Tool("run_backtest", run_backtest.__doc__ or "", _BacktestArgs, run_backtest, cost_units=5, timeout_seconds=45),
+    Tool("backtest_draft", backtest_draft.__doc__ or "", _DraftBacktestArgs, backtest_draft, cost_units=8, timeout_seconds=90, flag="ai_copilot",
+         agent=False),
 ):
     register(_tool)
 
-__all__ = ["get_candles", "get_quote", "get_option_chain", "get_market_regime", "run_backtest", "summarise_frame", "summarise_chain"]
+__all__ = ["get_candles", "get_quote", "get_option_chain", "get_market_regime", "run_backtest", "backtest_draft", "summarise_frame", "summarise_chain"]

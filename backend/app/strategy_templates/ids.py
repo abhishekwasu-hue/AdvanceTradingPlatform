@@ -15,6 +15,11 @@ Family G (the wave templates) carries some twenty settings, so its choices are w
 choices (`COMPACT_FAMILIES`; "aggressive" -> "0") to stay within the 80 characters; the template version pins the order.
 Every other family's id is written exactly as before.
 
+A template with optional confirmations (family G version 2, the wave companions: some twenty-five settings) leaves out the
+trailing values that are the default (`template:G1:2:15m:both:,,,,,,0` instead of `...,0,,,,,,`), so its id stays within
+the 80 characters; a missing value at the end reads as the default. Every template without confirmations is written
+exactly as before.
+
 An id naming an older version of a template resolves to that version when the library keeps it (TPL-7:
 `templates/archive/`), else it reads "adopt it again".
 
@@ -86,6 +91,9 @@ def encode(template: Template, settings: Settings) -> str:
     """The strategy id of `template` with `settings` (already resolved). Raises TemplateError when it would not fit."""
     compact = template.family in COMPACT_FAMILIES
     values = [_write(p, settings.params[p.key], compact) for p in template.params]
+    if template.confirmations:                    # family G version 2: the trailing defaults are left out
+        while values and values[-1] == "":
+            values.pop()
     out = f"{PREFIX}{template.id}:{template.version}:{settings.timeframe}:{settings.sides}:{','.join(values)}"
     if len(out) > MAX_LENGTH:
         raise TemplateError(["These settings are too long to save: use fewer decimals"])
@@ -122,6 +130,8 @@ def decode(strategy_id: str) -> Tuple[Template, Settings]:
         except KeyError:
             raise KeyError("This strategy template has been updated since it was adopted: adopt it again") from None
     texts = values.split(",") if template.params else ([] if values == "" else [values])
+    if template.confirmations and len(texts) < len(template.params):
+        texts += [""] * (len(template.params) - len(texts))      # family G version 2: trailing defaults left out
     if len(texts) != len(template.params):
         raise KeyError(f"Unknown strategy id: {strategy_id}")
     try:

@@ -54,7 +54,9 @@ BREAKOUT_SPARSE_SERIES: Tuple[str, ...] = ("RangeBreakoutRef", "LineBreakoutRef"
                                            "VCPBreakoutRef", "GapBreakoutRef")
 # E2 (TPL-7): the divergence's prices are missing before the first divergence of the side
 DIVERGENCE_SPARSE_SERIES: Tuple[str, ...] = ("RsiDivergenceRef",)
-SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES + BREAKOUT_SPARSE_SERIES + DIVERGENCE_SPARSE_SERIES)
+# The wave templates' zone-edge companion: the far side of the smaller swing zone's area, missing before the first swing
+ZONE_EDGE_SPARSE_SERIES: Tuple[str, ...] = ("SwingZoneEdge",)
+SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES + BREAKOUT_SPARSE_SERIES + DIVERGENCE_SPARSE_SERIES + ZONE_EDGE_SPARSE_SERIES)
 
 REASON_WARMUP = "warmup"
 REASON_CONFLICT = "conflict"
@@ -261,4 +263,5 @@ def _num_or_category(value: Any, index: pd.Index) -> np.ndarray:
 
 
 __all__ = ["SignalSeries", "compute", "REASON_WARMUP", "REASON_CONFLICT", "REASON_GEOMETRY", "REASON_NO_LEVEL", "SPARSE_SERIES",
-           "WAVE_SPARSE_SERIES", "BREAKOUT_SPARSE_SERIES", "DIVERGENCE_SPARSE_SERIES"]
+           "WAVE_SPARSE_SERIES", "BREAKOUT_SPARSE_SERIES", "DIVERGENCE_SPARSE_SERIES",
+           "ZONE_EDGE_SPARSE_SERIES"]

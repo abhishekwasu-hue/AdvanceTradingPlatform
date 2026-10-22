@@ -131,3 +131,39 @@ on random-walk bars; property tests on random valid settings; parity (scan = bac
 fixtures and with the 1-hour wave / Daily higher frames; exits never on the signal bar; the words; the flags; the id length.
 
 Owner questions WAVE-38..WAVE-45 in `docs/OPEN_QUESTIONS.md`.
+
+## The companions: the volume, zone-edge and divergence confirmations of G1-G11 (version 2)
+
+No migration, no new flag. Branch `claude/waves-companions`. The same gates as before: a G template is listed and
+adoptable (a PAPER pre-fill, nothing starts by itself) only while `strategy_templates` and `screener_waves` are on; a
+strategy id runs only with the flags of the functions it reads (the divergence choice reads `RsiDivergence`, which keeps
+its own flag `screenql_amw_functions`, as E2 does). G12 is not built (it needs the pack composition, TPL-F7).
+
+| Item | What | Where | Status |
+|---|---|---|---|
+| Versioning | Every G template is now version 2; version 1 is kept word for word in `templates/archive/G<n>.v1.json` (SHA-256 pinned against main) and a strategy id adopted on version 1 resolves to exactly it (the #402 pattern). The cards and "Adopt" offer version 2 only | `templates/G1.json`..`G11.json`, `templates/archive/` | done |
+| Parity | With the companions off (their defaults), version 2 compiles to the same parts expression for expression as version 1, for every variant of every version 1 switch, with the same flags, lookback and watch; the signals, invalidation, exits, reasons, warm-up and instances are identical on every pinned fixture and on random-walk bars; only the params hash differs (the version is in the provenance) | `tests/test_wave6_companions.py` | done |
+| Schema | `confirmations`: optional confirmations of the trigger, each a switch on its own enum setting whose default choice is null ("off by default", refused otherwise; one setting per confirmation; never nested; needs a trigger). A chosen one is AND-ed to the chosen trigger at compile time (`(trigger) AND (confirmation)`); with all off the trigger is its own expression. `validate_template` compiles every choice | `strategy_templates/schema.py` (`Confirmation`), `compile.py` | done |
+| Strategy id | A template with confirmations leaves out the trailing default values (`template:G1:2:15m:both:` for the defaults); a missing value at the end reads as the default; canonical (a written trailing default is refused). Every template without confirmations, and every version 1 id, is written exactly as before | `strategy_templates/ids.py` | done |
+| Divergence (WAVE-14, WAVE-29, WAVE-42) | `RsiDivergence(..., kind=)` and `RsiDivergenceRef(..., kind=)`: `regular` (left out: byte-identical to before) or `hidden` (bullish: a higher low with a lower RSI; bearish: a lower high with a higher RSI), checked against an independent reading of the swings. Settings `divergence` (off / regular / hidden), `div_degree` (the swings compared: 0 for the swings inside a wave; G9 / G10 default 1, the fifth wave against the third), `div_bars` (15), `rsi_period` (14); the divergence of the signal's side on the wave chart must hold on the trigger bar | registry, `runtime.py`, every G template | done |
+| Volume (WAVE-15) | `WaveVolumeLower(degree, wave, base_wave)`: the mean volume of `wave` (finished, or the running one up to the bar before - a trigger bar's own volume never counts in the wave it may end) below the finished base wave's; a comparison, no number; false where either wave is not in the reading or a bar has no volume. Settings `volume` (off / the pullback wave lower / the trigger bar higher / both) and `vol_mult` (1.0: `RelVolume() >= vol_mult`, the breakout screens' average length). Per template: G1 two vs one, G2 four vs three, G3 / G4 / G6 / G7 B vs A, G11 X vs W; the hold-window templates read it while the count showed the wave (`Count(hold_bars, ...) > 0`): G5 E vs A, G8 the correction's last wave vs A, G9 / G10 the fifth wave vs the third | `waves/levels.py volume_lower`, registry, `runtime.py`, every G template | done |
+| Zone edge (WAVE-27, WAVE-33) | `SwingZoneEdge(side, degree, width)`: the far side of the band the area reads (`SwingZoneDistance` within +/- width): the zone mid less / plus width median ranges (the same median range). New invalidation choices on the templates that read an area (G1, G2, G3, G8): `area` (the far side of the area) and `further` (whichever is further: the count's limit / the last wave's extreme, or the area's far side). Swing zones only (market zones are still not an area source, WAVE-3) | registry (flag `screener_waves`), `runtime._swing_zone`, `engine.ZONE_EDGE_SPARSE_SERIES`, G1 / G2 / G3 / G8 | done |
+| No look-ahead | Causal cases for `WaveVolumeLower`, `SwingZoneEdge` and the hidden divergence (the Z10-a harness); truncation of every companion on random-walk bars | `app/quality/causal_cases.py`, tests | done |
+
+Tests: `tests/test_wave6_companions.py` - version 1 kept (digests), version 2 = version 1 with the companions off (parts,
+flags, lookback; signals on every fixture of the earlier G tests and on random walks), a version 1 id's behaviour, the id
+within 80 characters (trailing defaults left out, canonical), the schema rules, the AND of a chosen confirmation, no
+number literal in any companion expression; the divergence kinds (regular byte-identical, hidden against an oracle);
+WaveVolumeLower (lower / not lower / equal, the running wave without this bar, no volume, truncation); SwingZoneEdge
+against SwingZoneDistance; must-fire / must-not per companion on the pinned wave paths (volume: falling / equal volume,
+the trigger bar's volume, both; divergence: regular and hidden cases that fire and the other kind that does not, fixtures
+without a divergence; zone edge: `area` / `further` levels and S6), mirror, truncation and parity (scan = backtest =
+options backtest = worker) with the companions on; the flags. Updated: `tests/test_wave4_templates.py`,
+`tests/test_wave5_templates.py` (version 2, the adopt id prefix), `tests/test_tpl7_e2_packs_v2.py` (the archive also
+holds the G versions), `tests/test_wave2_recipe.py` (the wave functions), `tests/test_s1b_screen_runtime.py` (runtime
+fixtures).
+
+Not built here (owner questions WAVE-46..WAVE-52): market zones as the area and their edge (still not an area source),
+the companions in the signal text (the text switches on yes / no settings only), the volume filter refused with a message
+on a symbol without volume (it never confirms instead), G12 (TPL-F7), the projection target / exit (section 5), the UI.
+

@@ -1,0 +1,116 @@
+{
+  "schema": "atp.template/1",
+  "id": "G4",
+  "version": 1,
+  "name": "Wave C: the break of wave B's channel",
+  "family": "G",
+  "idea": "A signal when the channel of the wave B pullback breaks in the direction of wave C, as a close beyond it or its retest; wave C may run against the higher trend.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "wave_tf", "label": "Wave timeframe", "help": "The chart where the waves are counted (the minor trend). Not finer than your signal timeframe.", "type": "timeframe", "default": "1h", "choices": ["15m", "30m", "1h", "1d"]},
+    {"key": "higher_tf", "label": "Higher timeframe", "help": "The chart of the main trend. Not finer than the wave timeframe.", "type": "timeframe", "default": "1d", "choices": ["1h", "1d", "1w"]},
+    {"key": "wave_degree", "label": "Wave size", "help": "Which swings count as waves: 1 is the smallest, 3 the largest. Larger waves need more history.", "type": "int", "default": 1, "min": 1, "max": 3, "step": 1},
+    {"key": "area_degree", "label": "Smaller swing size", "help": "The smaller swings inside a wave: they mark the turn of the smaller structure and the last smaller swing. Smaller than the wave size.", "type": "int", "default": 0, "min": 0, "max": 2, "step": 1},
+    {"key": "trend_relation", "label": "Higher trend", "help": "Wave C may run against the higher trend, so this template allows it by default; pick the first choice to keep only moves with the higher trend.", "type": "enum", "default": "counter", "choices": ["with", "counter"], "choice_labels": ["Only with the higher trend", "Also against the higher trend (a counter-trend wave C)"]},
+    {"key": "trend_degree", "label": "Higher trend swing size", "help": "Which swings on the higher timeframe decide its trend: 0 is the smallest, 3 the largest.", "type": "int", "default": 1, "min": 0, "max": 3, "step": 1},
+    {"key": "entry_style", "label": "Trigger style", "help": "What turns the setup into a signal: the close beyond the channel of wave B, or the retest of that broken channel.", "type": "enum", "default": "breakout", "choices": ["breakout", "retest"], "choice_labels": ["A close beyond the channel of wave B", "The retest of the broken channel"]},
+    {"key": "fib_zone", "label": "Fibonacci zone", "help": "Only when wave B has retraced wave A into this zone (shares of wave A).", "type": "enum", "default": "none", "choices": ["none", "zone"], "choice_labels": ["Off", "Only inside the zone"]},
+    {"key": "fib_from", "label": "Wave B depth: from", "help": "The near edge of the zone, as a share of the wave it is measured against.", "type": "float", "default": 0.382, "min": 0.0, "max": 1.0, "step": 0.001},
+    {"key": "fib_to", "label": "Wave B depth: to", "help": "The far edge of the zone, as a share of the wave it is measured against.", "type": "float", "default": 0.786, "min": 0.0, "max": 1.0, "step": 0.001},
+    {"key": "min_clarity", "label": "Count clarity", "help": "An unclear count never gives a signal. Optionally also skip a count whose alternate reading points the other way.", "type": "enum", "default": "any", "choices": ["any", "agree"], "choice_labels": ["Any count that is not unclear", "Not when the alternate count points the other way"]},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the level a close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "retest_bars", "label": "Retest window", "help": "For the retest style: the bars after the break within which the retest must come.", "type": "int", "default": 10, "min": 1, "max": 100, "step": 1},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The count's own limit (the start of wave A, or the end of wave B if B went past it), or the last smaller swing.", "type": "enum", "default": "wave_rule", "choices": ["wave_rule", "last_swing"], "choice_labels": ["The start of wave A, or wave B's end beyond it", "The last smaller swing"]},
+    {"key": "exit_signal", "label": "Exit signal", "help": "Optional: when the idea has ended. It is not acted on yet; your own exit settings always apply.", "type": "enum", "default": "none", "choices": ["none", "choch", "leaves"], "choice_labels": ["None", "The wave structure turns against the idea", "The count leaves waves B and C"]}
+  ],
+  "constraints": [
+    {"left": "wave_tf", "op": ">=", "right": "signal_timeframe", "message": "The wave timeframe must not be finer than your signal timeframe."},
+    {"left": "higher_tf", "op": ">=", "right": "wave_tf", "message": "The higher timeframe must not be finer than the wave timeframe."},
+    {"left": "area_degree", "op": "<", "right": "wave_degree", "message": "The smaller swings must be smaller than the waves."},
+    {"left": "fib_from", "op": "<", "right": "fib_to", "message": "The Fibonacci zone must start before it ends."}
+  ],
+  "sides_default": "both",
+  "context": {
+    "by": "trend_relation",
+    "variants": {
+      "counter": null,
+      "with": {
+        "long": "DowTrend($trend_degree)@{higher_tf} == \"UP\"",
+        "short": "DowTrend($trend_degree)@{higher_tf} == \"DOWN\""
+      }
+    }
+  },
+  "setup": {
+    "kind": "state",
+    "long": "(WaveState($wave_degree)@{wave_tf} == \"COR_B\" OR (WaveState($wave_degree)@{wave_tf} == \"COR_C\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} <= WaveEnd($wave_degree, \"A\")@{wave_tf})) AND WaveEnd($wave_degree, \"A\")@{wave_tf} > WaveOrigin($wave_degree)@{wave_tf} AND WaveType($wave_degree)@{wave_tf} != \"DOUBLE\" AND (WaveClarity($wave_degree)@{wave_tf} != \"UNCLEAR\" AND ($min_clarity == \"any\" OR WaveClarity($wave_degree)@{wave_tf} != \"ALT_DISAGREES\")) AND ($fib_zone == \"none\" OR (WaveState($wave_degree)@{wave_tf} == \"COR_B\" AND WaveRatio($wave_degree)@{wave_tf} >= $fib_from AND WaveRatio($wave_degree)@{wave_tf} <= $fib_to) OR (WaveState($wave_degree)@{wave_tf} == \"COR_C\" AND (WaveEnd($wave_degree, \"A\")@{wave_tf} - WaveEnd($wave_degree, \"B\")@{wave_tf}) / (WaveEnd($wave_degree, \"A\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) >= $fib_from AND (WaveEnd($wave_degree, \"A\")@{wave_tf} - WaveEnd($wave_degree, \"B\")@{wave_tf}) / (WaveEnd($wave_degree, \"A\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) <= $fib_to))",
+    "short": "(WaveState($wave_degree)@{wave_tf} == \"COR_B\" OR (WaveState($wave_degree)@{wave_tf} == \"COR_C\" AND WaveEnd($wave_degree, \"current\")@{wave_tf} >= WaveEnd($wave_degree, \"A\")@{wave_tf})) AND WaveEnd($wave_degree, \"A\")@{wave_tf} < WaveOrigin($wave_degree)@{wave_tf} AND WaveType($wave_degree)@{wave_tf} != \"DOUBLE\" AND (WaveClarity($wave_degree)@{wave_tf} != \"UNCLEAR\" AND ($min_clarity == \"any\" OR WaveClarity($wave_degree)@{wave_tf} != \"ALT_DISAGREES\")) AND ($fib_zone == \"none\" OR (WaveState($wave_degree)@{wave_tf} == \"COR_B\" AND WaveRatio($wave_degree)@{wave_tf} >= $fib_from AND WaveRatio($wave_degree)@{wave_tf} <= $fib_to) OR (WaveState($wave_degree)@{wave_tf} == \"COR_C\" AND (WaveEnd($wave_degree, \"A\")@{wave_tf} - WaveEnd($wave_degree, \"B\")@{wave_tf}) / (WaveEnd($wave_degree, \"A\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) >= $fib_from AND (WaveEnd($wave_degree, \"A\")@{wave_tf} - WaveEnd($wave_degree, \"B\")@{wave_tf}) / (WaveEnd($wave_degree, \"A\")@{wave_tf} - WaveOrigin($wave_degree)@{wave_tf}) <= $fib_to))",
+    "same_bar": true
+  },
+  "trigger": {
+    "by": "entry_style",
+    "variants": {
+      "breakout": {
+        "long": "WaveLineBreak($wave_degree, \"channel_B\", \"up\", $k)@{wave_tf}",
+        "short": "WaveLineBreak($wave_degree, \"channel_B\", \"down\", $k)@{wave_tf}"
+      },
+      "retest": {
+        "long": "RetestEntry(\"up\", \"wave_line\", $retest_bars, true, $wave_degree, \"channel_B\", \"A\", $k)@{wave_tf}",
+        "short": "RetestEntry(\"down\", \"wave_line\", $retest_bars, true, $wave_degree, \"channel_B\", \"A\", $k)@{wave_tf}"
+      }
+    }
+  },
+  "invalidation": {
+    "by": "invalidation",
+    "variants": {
+      "wave_rule": {
+        "long": "Least(WaveOrigin($wave_degree)@{wave_tf}, WaveEnd($wave_degree, \"current\")@{wave_tf}, SwingLow($wave_degree)@{wave_tf})",
+        "short": "Greatest(WaveOrigin($wave_degree)@{wave_tf}, WaveEnd($wave_degree, \"current\")@{wave_tf}, SwingHigh($wave_degree)@{wave_tf})"
+      },
+      "last_swing": {
+        "long": "SwingLow($area_degree)@{wave_tf}",
+        "short": "SwingHigh($area_degree)@{wave_tf}"
+      }
+    }
+  },
+  "exit_signal": {
+    "by": "exit_signal",
+    "variants": {
+      "none": null,
+      "choch": {
+        "long": "SwingBreakType(\"down\", $wave_degree, $k)@{wave_tf} == \"CHOCH\"",
+        "short": "SwingBreakType(\"up\", $wave_degree, $k)@{wave_tf} == \"CHOCH\""
+      },
+      "leaves": {
+        "long": "WaveState($wave_degree)@{wave_tf} != \"COR_B\" AND WaveState($wave_degree)@{wave_tf} != \"COR_C\"",
+        "short": "WaveState($wave_degree)@{wave_tf} != \"COR_B\" AND WaveState($wave_degree)@{wave_tf} != \"COR_C\""
+      }
+    }
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "wave_b_channel_broke_on_chart"
+      },
+      {
+        "token": "upward_wave_c_may_start"
+      },
+      {
+        "token": "void_beyond_a_start_or_b_end"
+      }
+    ],
+    "short": [
+      {
+        "token": "wave_b_channel_broke_on_chart"
+      },
+      {
+        "token": "downward_wave_c_may_start"
+      },
+      {
+        "token": "void_beyond_a_start_or_b_end"
+      }
+    ]
+  }
+}

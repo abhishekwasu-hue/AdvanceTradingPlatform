@@ -8,7 +8,7 @@ import { thumbnailShape, type TemplateInfo } from "./model";
 
 function Thumb({ t }: { t: TemplateInfo }) {
   const ys = thumbnailShape(t);
-  if (!ys) return <span className="flex h-10 items-center justify-center text-[10px] text-fg-muted">two expiries</span>;
+  if (!ys) return <span className="flex h-10 items-center justify-center text-xs text-fg-muted">two expiries</span>;
   const lo = Math.min(...ys, 0);
   const hi = Math.max(...ys, 0);
   const span = hi - lo || 1;

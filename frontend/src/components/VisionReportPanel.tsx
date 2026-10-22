@@ -28,7 +28,7 @@ export function VisionReportView({ resp, onChanged }: { resp: VisionReportsRespo
     try { await api.byokDeleteReport(id); onChanged(); } catch { /* the list reload shows the truth */ } finally { setBusy(false); }
   }
   const deleteButton = (id: number | null) => id == null ? null : (
-    <button type="button" className="ml-auto text-[11px] text-fg-muted hover:text-down hover:underline disabled:opacity-50" disabled={busy}
+    <button type="button" className="ml-auto text-xs text-fg-muted hover:text-down hover:underline disabled:opacity-50" disabled={busy}
             onClick={() => void remove(id)}>Delete report</button>
   );
 
@@ -48,10 +48,10 @@ export function VisionReportView({ resp, onChanged }: { resp: VisionReportsRespo
           const part = splitJudgement(line);
           return part ? (
             <li key={i} className="text-fg"><span aria-hidden>{part.mark}</span> <b>{part.heading}</b> {part.rest}</li>
-          ) : <li key={i} className="text-[11px] text-fg-muted">{line}</li>;
+          ) : <li key={i} className="text-xs text-fg-muted">{line}</li>;
         })}
       </ul>
-      {view.telegram === "sent" && <p className="text-[11px] text-fg-muted">Also sent to your linked Telegram chat.</p>}
+      {view.telegram === "sent" && <p className="text-xs text-fg-muted">Also sent to your linked Telegram chat.</p>}
     </div>
   );
 }

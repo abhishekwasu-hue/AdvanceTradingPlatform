@@ -118,7 +118,7 @@ export function AutoPaperBox({ template, busy, onArm, onDisarm }: {
           <Button size="sm" onClick={() => onArm(confirm)} disabled={busy || confirm.trim() !== ARM_CONFIRM}>{t("auto.arm")}</Button>
         </div>
       )}
-      <p className="text-[11px] text-fg-muted">{t("auto.note")}</p>
+      <p className="text-xs text-fg-muted">{t("auto.note")}</p>
     </div>
   );
 }

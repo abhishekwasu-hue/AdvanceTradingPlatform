@@ -23,7 +23,7 @@ export function resultOf(score: number): "hit" | "miss" | "flat" {
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <TiltCard className="h-full">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{label}</div>
+      <div className="text-xs font-semibold uppercase tracking-wider text-fg-muted">{label}</div>
       <div className="mt-1 font-tabular text-2xl font-bold text-fg">{value}</div>
       {hint && <div className="mt-0.5 text-xs text-fg-muted">{hint}</div>}
     </TiltCard>
@@ -88,7 +88,7 @@ export default function CoachTab() {
             </table>
           </div>
         )}
-        <p className="mt-2 text-[11px] text-warn"><Target size={11} className="mr-1 inline" />{t("coach.shadowNote")}</p>
+        <p className="mt-2 text-xs text-warn"><Target size={11} className="mr-1 inline" />{t("coach.shadowNote")}</p>
       </Panel>
 
       <TradeCoach />

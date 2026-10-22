@@ -9,7 +9,7 @@ import { buildTimeframeData, generateSampleCandles } from "../utils/sampleData";
 import type { SignalFeedItem } from "./feed";
 import { Direction, LevelTiles } from "./SignalPartsV2";
 
-const FIELD = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-[16px] text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9 md:text-t14";
+const FIELD = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-sm text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9 md:text-t14";
 const BUTTON = "inline-flex min-h-11 items-center justify-center rounded-control px-space-4 text-t14 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50 md:min-h-9";
 
 /**

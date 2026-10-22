@@ -132,7 +132,7 @@ export default function AskCopilotTab() {
                         </Button>
                       )}
                     </div>
-                    {m.reply.note && <p className="text-[11px] text-fg-muted">{m.reply.note}</p>}
+                    {m.reply.note && <p className="text-xs text-fg-muted">{m.reply.note}</p>}
                   </div>
                 )}
               </div>
@@ -154,7 +154,7 @@ export default function AskCopilotTab() {
         </form>
         {turns.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {suggestions.map((s) => <button key={s} onClick={() => void ask(s)} disabled={task.busy} className="rounded-full border border-border px-2.5 py-1 text-[11px] text-fg-muted hover:text-fg disabled:opacity-50">{s}</button>)}
+            {suggestions.map((s) => <button key={s} onClick={() => void ask(s)} disabled={task.busy} className="rounded-full border border-border px-2.5 py-1 text-xs text-fg-muted hover:text-fg disabled:opacity-50">{s}</button>)}
           </div>
         )}
       </Panel>

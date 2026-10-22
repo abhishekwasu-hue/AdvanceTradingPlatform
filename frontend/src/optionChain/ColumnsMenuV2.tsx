@@ -4,12 +4,13 @@ import type { ColumnPrefs } from "./model";
 
 /**
  * OC1: "Columns" - the optional columns of the chain, off by default: the Greeks, bid and ask, and (a phone only) OI
- * change, IV and volume next to OI and LTP. The choice is kept on this browser. Escape or a tap elsewhere closes it.
+ * change, IV and volume next to OI and LTP; FNO-1: OI change as a count or in %. The choice is kept on this browser. Escape or a tap elsewhere closes it.
  */
 const CHOICES: { key: keyof ColumnPrefs; label: string; phoneOnly?: boolean }[] = [
   { key: "more", label: "OI change, IV and volume", phoneOnly: true },
   { key: "greeks", label: "Greeks (delta, gamma, theta, vega)" },
   { key: "quotes", label: "Bid and ask" },
+  { key: "pct", label: "OI change in %" },
 ];
 
 export default function ColumnsMenuV2({ prefs, onChange }: { prefs: ColumnPrefs; onChange: (prefs: ColumnPrefs) => void }) {
@@ -35,7 +36,7 @@ export default function ColumnsMenuV2({ prefs, onChange }: { prefs: ColumnPrefs;
           <legend className="sr-only">Columns to show</legend>
           {CHOICES.map((c) => (
             <label key={c.key} className={`flex min-h-11 cursor-pointer items-center gap-space-3 rounded-control px-space-2 text-t14 text-fg hover:bg-surface-2 ${c.phoneOnly ? "md:hidden" : ""}`}>
-              <input type="checkbox" checked={prefs[c.key]} onChange={(e) => onChange({ ...prefs, [c.key]: e.target.checked })}
+              <input type="checkbox" checked={prefs[c.key] === true} onChange={(e) => onChange({ ...prefs, [c.key]: e.target.checked })}
                 className="h-4 w-4 accent-brand" />
               {c.label}
             </label>

@@ -515,6 +515,11 @@ SCREENER_COST_CAP = float(os.environ.get("SCREENER_COST_CAP", "200"))
 # S3b-2: the public https origin of this deployment (e.g. https://atp.example.com), used for the unsubscribe link in
 # screen-alert emails. Empty = no link is added (the mails still go).
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+# GS-1: Google sign-in (OpenID Connect). Both empty (the default) = the feature does not exist: GET /api/auth/providers says
+# google: false, the sign-in page shows no Google button and the /api/auth/google/* routes answer 404. The redirect URI
+# registered at Google is PUBLIC_BASE_URL + "/api/auth/google/callback". The secret is never returned or logged.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
 # PW5: the Zerodha Kite Publisher api_key for "Trade in your broker app" basket links (docs/BROKER_DATA_TERMS.md). A
 # public per-app identifier that sits in the page's HTML form, not a secret - but never committed with a value. Empty =
 # no Zerodha link. Only read when the `broker_app_links` flag is on (off by default). ATP places no order with it.

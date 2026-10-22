@@ -96,3 +96,23 @@ export default function AnnotatedChartV2({ src, width, height, annotations }: { 
     </div>
   );
 }
+
+/**
+ * The shared copy (share link): the drawing alone over a plain background, in the stored image's pixel space. The
+ * user's picture is never part of a shared copy - it shows the chart's name and its price axis (CLAUDE.md, SEBI).
+ */
+export function StructureSketch({ width, height, annotations }: { width: number; height: number; annotations: Annotations }) {
+  const shapes = shapesFor(annotations, width);
+  return (
+    <div className="space-y-space-3">
+      <div className="relative w-full overflow-hidden rounded-control border border-subtle bg-surface-2" data-testid="structure-sketch"
+        style={{ aspectRatio: `${Math.max(1, width)} / ${Math.max(1, height)}` }}>
+        <svg viewBox={`0 0 ${width} ${height}`} className="absolute inset-0 h-full w-full" role="img"
+          aria-label="The structure the method sees, drawn without the chart" preserveAspectRatio="none" data-shapes={shapes.length}>
+          {shapes.map((s, i) => <ShapeSvg key={i} s={s} />)}
+        </svg>
+      </div>
+      <Legend annotations={annotations} />
+    </div>
+  );
+}

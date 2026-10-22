@@ -45,9 +45,24 @@ export interface AnalysisResult {
   evidence: { name: string; present: boolean; reason: string }[];
   scenarios: { primary: string; alternative: string; primary_invalidated_at: PriceRef };
   what_to_wait_for: { condition: string; alert: AlertSpec | null } | null;
-  htf_context: { timeframe: string; trend: string; nearest_areas: { side: AreaSide | null; state: AreaState | null; price_low: number | null; price_high: number | null }[] }[];
+  htf_context: { timeframe: string | null; trend: string; nearest_areas: { side: AreaSide | null; state: AreaState | null; price_low: number | null; price_high: number | null }[] }[];
   key_levels: { kind: "area" | "line"; name: string; side: AreaSide | null; state: AreaState | null; price_low: number | null; price_high: number | null }[];
   annotations: Annotations;
+  /** Set on the structure-only copy a share link opens (backend share.py): no name, no price, no date, no picture. */
+  shared?: boolean;
+  shared_note?: string;
+}
+
+/** The owner's live share link (null: not shared, stopped or expired). */
+export interface ItemShare { token: string; expires_at: string }
+
+/** GET /chart-analyze/shared/{token}: the structure-only copy a member of the owner's organisation opens. */
+export interface SharedAnalysis {
+  result: AnalysisResult;
+  mode: "image_only" | "hybrid";
+  expires_at: string;
+  is_yours: boolean;
+  disclaimer: string;
 }
 
 export type ItemStatus = "ready" | "running" | "done" | "failed" | "deleted";
@@ -69,6 +84,8 @@ export interface AnalysisItem {
   analysed_at: string | null;
   summary: { setup_status: SetupStatus; trend: string; symbol: string | null } | null;
   result: AnalysisResult | null;
+  /** The live share link (organisation only), when the owner made one. Absent on older answers. */
+  share?: ItemShare | null;
   label: string | null;
   disclaimer: string;
 }

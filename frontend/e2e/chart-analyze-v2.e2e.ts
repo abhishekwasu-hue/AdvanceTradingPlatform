@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { deflateSync } from "node:zlib";
-import { fixtureItem, fixtureStatus, fixtureStrikes } from "../src/chartAnalyze/fixtures";
+import { fixtureItem, fixtureSharedResult, fixtureStatus, fixtureStrikes } from "../src/chartAnalyze/fixtures";
 import type { SetupStatus } from "../src/chartAnalyze/types";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
@@ -13,12 +13,15 @@ import { expectPhoneLayout } from "./phoneLayout";
  * - The flow: upload -> Analyze -> the result blocks; an unreadable link -> "Please upload a screenshot instead";
  *   "Alert me when this happens" -> an ordinary alert rule; the annotated PNG export opens (decoded in the browser).
  * - Flag off: no page, no Charts-page button. Phone: no sideways scroll, 44 px targets, nothing behind the bottom bar.
+ * - PR-A4: "Share with my organisation" (flag chart_analyze_share) and the structure-only copy a link opens
+ *   (`/chart-analyze?shared=<link>`; baselines `chart-analyze-shared-{390,360,1440}-{light,dark}.png`); history filters.
  * After an intended change: `npx playwright test --project=phone e2e/chart-analyze-v2.e2e.ts --update-snapshots`.
  */
 
 const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_status: "VALID", token_expires_at: null, last_verified_at: null,
   needs_login: false, oauth_supported: true, oauth_callback_url: null, login_url_supported: false, code_param: null }];
 const ON: MockOptions = { features: { ui_v2: true, chart_analyze: true, chart_analyze_strikes: true }, brokers: CONNECTED };
+const SHARE_ON: MockOptions = { ...ON, features: { ...ON.features, chart_analyze_share: true } };
 const OFF: MockOptions = { features: { ui_v2: true }, brokers: CONNECTED };
 
 // --- a drawn placeholder PNG (no real chart) ---------------------------------------------------------------------------
@@ -50,10 +53,12 @@ const PNG = drawnChartPng();
 
 // --- the mocked chart-analyze API ---------------------------------------------------------------------------------------
 
-interface Calls { adds: number; analyzes: number; alerts: unknown[] }
+interface Calls { adds: number; analyzes: number; alerts: unknown[]; shares: string[] }
+const SHARED_TOKEN = "made-up-link.0000";
 
-async function mockChartAnalyze(page: Page, setup: SetupStatus, { history = true, unreadable = false, imageGone = false } = {}): Promise<Calls> {
-  const calls: Calls = { adds: 0, analyzes: 0, alerts: [] };
+async function mockChartAnalyze(page: Page, setup: SetupStatus, { history = true, unreadable = false, imageGone = false, linkProblem = "" } = {}): Promise<Calls> {
+  const calls: Calls = { adds: 0, analyzes: 0, alerts: [], shares: [] };
+  let link: { token: string; expires_at: string } | null = null;
   const past = history ? [fixtureItem(7, "none", "2026-10-19T08:15:00+00:00"), fixtureItem(6, null, "2026-10-18T11:05:00+00:00")] : [];
   let added = false;
   await page.route(/\/api(?:\/v1)?\/alerts\/rules$/, async (route: Route) => {
@@ -83,6 +88,17 @@ async function mockChartAnalyze(page: Page, setup: SetupStatus, { history = true
       const typed = url.searchParams.get("symbol");
       if (setup === "none") return route.fulfill({ json: { ...fixtureStrikes(), side: "none", items: [], message: "No setup is formed or forming, so there are no strikes to work out." } });
       return route.fulfill({ json: typed ? { ...fixtureStrikes(), symbol: typed.toUpperCase() } : fixtureStrikes() });
+    }
+    if (path === "/items/8/share") {
+      calls.shares.push(method);
+      link = method === "POST" ? { token: SHARED_TOKEN, expires_at: "2026-10-27T05:00:00+00:00" } : null;
+      return route.fulfill({ json: { ...fixtureItem(8, setup), share: link } });
+    }
+    if (path.startsWith("/shared/")) {
+      if (linkProblem === "link_expired") return route.fulfill({ status: 410, json: { detail: { message: "expired", code: "link_expired" } } });
+      if (linkProblem) return route.fulfill({ status: 404, json: { detail: { message: "gone", code: "link_gone" } } });
+      return route.fulfill({ json: { result: fixtureSharedResult(), mode: "image_only", expires_at: "2026-10-27T05:00:00+00:00", is_yours: false,
+        disclaimer: fixtureSharedResult().disclaimer } });
     }
     if (path === "/items/8/analyze") { calls.analyzes += 1; return route.fulfill({ json: fixtureItem(8, setup) }); }
     const one = /^\/items\/(\d+)$/.exec(path);
@@ -137,7 +153,34 @@ for (const size of SIZES) {
       });
     }
 
+    for (const theme of THEMES) {
+      test(`the shared copy (structure only) looks the same (${theme})`, async ({ page }) => {
+        await open(page, "/chart-analyze", theme, SHARE_ON);
+        await mockChartAnalyze(page, "forming");
+        await page.goto(`/chart-analyze?shared=${SHARED_TOKEN}`);
+        await expect(page.getByTestId("structure-sketch")).toBeVisible();
+        await settle(page);
+        await expect(page).toHaveScreenshot(`chart-analyze-shared-${size.width}-${theme}.png`, { fullPage: true, animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 20_000 });
+      });
+    }
+
     if (size.phone) {
+      test("phone layout of the shared copy and of the share dialog", async ({ page }) => {
+        await open(page, "/chart-analyze", "light", SHARE_ON);
+        await mockChartAnalyze(page, "forming");
+        await page.goto(`/chart-analyze?shared=${SHARED_TOKEN}`);
+        await expect(page.getByTestId("structure-sketch")).toBeVisible();
+        await settle(page);
+        await expectPhoneLayout(page);
+        await page.goto("/chart-analyze");
+        await analyzeUpload(page);
+        await page.getByTestId("share-button").click();
+        await page.getByRole("dialog").getByRole("button", { name: "Create link" }).click();
+        await expect(page.getByTestId("share-link")).toBeVisible();
+        // The link holds the test server's address (it differs between runs), so it is masked.
+        await expect(page).toHaveScreenshot(`chart-analyze-share-dialog-${size.width}-light.png`, { mask: [page.getByTestId("share-link")], animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 20_000 });
+      });
+
       test("phone layout: no sideways scroll, 44 px targets, nothing behind the bottom bar (before and after a result)", async ({ page }) => {
         await open(page, "/chart-analyze", "dark");
         await mockChartAnalyze(page, "formed");
@@ -342,6 +385,76 @@ test.describe("Analyze a chart: the flow", () => {
     await page.getByRole("link", { name: "Analyze a chart" }).click();
     await expect(page).toHaveURL(/\/chart-analyze$/);
     await expect(page.getByTestId("chart-analyze-page")).toBeVisible();
+  });
+
+  test("share: the owner makes an organisation-only link, copies it and stops it; the dialog says what is left out", async ({ page }) => {
+    await open(page, "/chart-analyze", "light", SHARE_ON);
+    const calls = await mockChartAnalyze(page, "forming");
+    await page.goto("/chart-analyze");
+    await analyzeUpload(page);
+    await page.getByRole("button", { name: "Share with my organisation" }).click();
+    const dialog = page.getByRole("dialog", { name: "Share with my organisation" });
+    await expect(dialog).toContainText("the chart's name, its prices, its dates and your picture are left out");
+    await dialog.getByRole("button", { name: "Create link" }).click();
+    await expect(dialog.getByTestId("share-link")).toHaveValue(new RegExp(`/chart-analyze\\?shared=${SHARED_TOKEN.replace(".", "\\.")}$`));
+    await expect(dialog).toContainText("Open until");
+    await dialog.getByRole("button", { name: "Stop sharing" }).click();
+    await expect(dialog).toContainText("Not shared");
+    expect(calls.shares).toEqual(["POST", "DELETE"]);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Share with my organisation" })).toBeVisible();
+  });
+
+  test("share: the shared copy shows the structure only - no name, no price, no picture, no buttons in the result", async ({ page }) => {
+    await open(page, "/chart-analyze", "light", SHARE_ON);
+    await mockChartAnalyze(page, "forming");
+    await page.goto(`/chart-analyze?shared=${SHARED_TOKEN}`);
+    const result = page.getByTestId("analysis-result");
+    await expect(result).toHaveAttribute("data-shared", "true");
+    await expect(page.getByTestId("shared-note")).toContainText("left out");
+    await expect(result.locator("img")).toHaveCount(0);
+    await expect(result.getByRole("button")).toHaveCount(0);
+    const text = await result.innerText();
+    expect(text).not.toMatch(/DEMO|NSE|15m|≈|\d{2,}/);
+    for (const title of ["The structure, drawn", "The story", "What the method sees", "Evidence", "Scenarios", "What to wait for", "Higher timeframes", "Key levels"]) {
+      await expect(result.getByRole("heading", { name: title, exact: true })).toBeVisible();
+    }
+    await expect(page.getByTestId("disclaimer")).toContainText("not investment advice");
+    await page.getByRole("button", { name: "Your analyses" }).click();
+    await expect(page).toHaveURL(/\/chart-analyze$/);
+    await expect(page.getByTestId("chart-analyze-page")).toBeVisible();
+  });
+
+  for (const problem of ["link_gone", "link_expired"] as const) {
+    test(`share: a ${problem === "link_gone" ? "stopped" : "expired"} link says so plainly`, async ({ page }) => {
+      await open(page, "/chart-analyze", "light", SHARE_ON);
+      await mockChartAnalyze(page, "forming", { linkProblem: problem });
+      await page.goto(`/chart-analyze?shared=${SHARED_TOKEN}`);
+      await expect(page.getByTestId("shared-problem")).toContainText(problem === "link_gone" ? "was stopped" : "has expired");
+    });
+  }
+
+  test("share: no Share button while chart_analyze_share is off", async ({ page }) => {
+    await open(page, "/chart-analyze", "light");
+    await mockChartAnalyze(page, "forming");
+    await page.goto("/chart-analyze");
+    await analyzeUpload(page);
+    await expect(page.getByTestId("analysis-result")).toBeVisible();
+    await expect(page.getByTestId("share-button")).toHaveCount(0);
+  });
+
+  test("history: the filters show the user's analyses by what the method saw", async ({ page }) => {
+    await open(page, "/chart-analyze", "light");
+    await mockChartAnalyze(page, "formed");
+    await page.goto("/chart-analyze");
+    const history = page.getByRole("region", { name: "Your analyses" });
+    await expect(history).toContainText("Each is kept for 30 days");
+    await history.getByRole("button", { name: /^Not analysed/ }).click();
+    await expect(history.getByRole("listitem")).toHaveCount(1);
+    await history.getByRole("button", { name: /^Formed/ }).click();
+    await expect(history).toContainText("None of your analyses match this filter.");
+    await history.getByRole("button", { name: /^All/ }).click();
+    await expect(history.getByRole("listitem")).toHaveCount(2);
   });
 
   test("flag off: no Charts-page button and the page is not there", async ({ page }) => {

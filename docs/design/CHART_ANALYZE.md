@@ -1,9 +1,10 @@
 # Analyze a chart
 
-Status: **PR-A built, PR-A3 built** (behind the flag `chart_analyze`, off; the strikes block also behind
-`chart_analyze_strikes`, off). PR-B to PR-D are planned below. Owner brief: 2026-10-20
+Status: **PR-A built, PR-A3 built, PR-A4 built** (behind the flag `chart_analyze`, off; the strikes block also behind
+`chart_analyze_strikes`, off; the share link also behind `chart_analyze_share`, off). PR-A4 is PR-D's share link
+(section 4b) and history filters; PR-D's server-side PDF is not built (CA-10). PR-B and PR-C (Hybrid) are planned below. Owner brief: 2026-10-20
 (the feature brief, then the result-screen addition). Open questions: `docs/OPEN_QUESTIONS.md`, section "Analyze a chart
-(20 Oct)", CA-1 to CA-10.
+(20 Oct)", CA-1 to CA-14.
 
 The same working rules apply as everywhere in ATP: draft PRs, self-review, tests, PAPER only, LIVE untouched, English
 only, tenant-safe, settings-driven, behind a feature flag. This page **places no order and has no order button**; the
@@ -22,7 +23,10 @@ package (`docs/design/PRIVATE_PACKAGE.md`), and ATP's public code holds only the
 3. Picks a **mode** - **Image only** or **Hybrid** - and presses **Analyze**. A progress line shows while it runs.
 4. Reads the result (section 4), and can **Set an alert on this area**, **Alert me when this happens**, **Download /
    share the result image**, **Delete**, and (hybrid only) **Open in Chart tab**.
-5. **History**: the user's own past analyses, newest first; each opens its result again.
+5. **History**: the user's own past analyses, newest first; each opens its result again. Filters (PR-A4): All /
+   Formed / Forming / No setup / Not analysed, each with its count; a shared analysis is marked "Shared".
+6. **Share with my organisation** (PR-A4, flag `chart_analyze_share`): a link that only logged-in members of the same
+   organisation can open, showing a structure-only copy (section 4b).
 
 Phone first (UI v2 §8 / §9, MOBILE_APP_PLAN §2): one column under 768 px with a 16 px gutter, 44 px targets, no
 sideways scroll, nothing behind the bottom bar; on a desktop the original and the annotated image sit side by side.
@@ -130,6 +134,29 @@ out of the money · wing 2 strikes away · nearest expiry") with the strikes its
 from ATP's instrument master (no broker call). Image only: approximate, and it says so. No symbol read: the user types
 it. No SL, target or lots, and no order button.
 
+### 4b. The share link (PR-A4; design PR-D, CA-5)
+
+Decided per this note's PR-D proposal and CLAUDE.md (logged as CA-11 to CA-14):
+
+- **Who opens it**: only a logged-in member of the owner's own organisation, while `chart_analyze` and
+  `chart_analyze_share` are on for it. Never public (CA-5). Another organisation, a forged, stopped or replaced link
+  and a deleted analysis all get the same 404 `link_gone`; an expired link 410 `link_expired`.
+- **What it shows: structure only** (`share.py`, CA-11). Someone other than the owner reads it, so it is treated as a
+  public / education surface even inside the organisation: no security name (the symbol and exchange are removed, and
+  every text naming them is left out), no price (every price field, the one-click alert), no date (the visible range,
+  the analysis date, the higher timeframes' labels) and **not the picture** (it shows the name and the price axis); any
+  text with a digit is replaced by a neutral line. The drawing is shown over a plain background ("The structure,
+  drawn"). No buttons, the disclaimer at the end.
+- **The link**: `/chart-analyze?shared=<payload>.<mac>`, an HMAC-SHA256 signature (a key derived from the server's
+  secret) over the item, its owner, the organisation, the link's version and its expiry. Expiry: the admin setting
+  `share_expiry_days` (default 7, 1-30). Revocable: "Stop sharing" and "Make a new link" raise the version, so an older
+  link stops at once. One live link per analysis.
+- **Storage: no migration.** The link's state (`version`, `active`, `expires_at`) is stored with the result it belongs
+  to, under the `_share` key of `chart_analyses.result_json` (never returned inside `result`; written with a
+  conditional update, so a delete or a purge that ran meanwhile always wins). Deleting the analysis or retention removes
+  the result and so every link to it (CA-12).
+- **No server-side PDF** (CA-10): the owner's "Download PDF" stays the browser's print dialog.
+
 ## 5. The API (PR-A)
 
 | Route | What |
@@ -142,6 +169,8 @@ it. No SL, target or lots, and no order button.
 | `POST /api/chart-analyze/items/{id}/analyze` | runs Image only (hybrid: 409 "coming soon"); a done item is returned, not re-run |
 | `GET /api/chart-analyze/items/{id}/strikes?symbol=` | PR-A3, flag `chart_analyze_strikes` too: the strikes block (409 `not_analysed` before a result) |
 | `DELETE /api/chart-analyze/items/{id}` | deletes the image and the result |
+| `POST / DELETE /api/chart-analyze/items/{id}/share` | PR-A4: a new organisation-only link (flag `chart_analyze_share` too) / stop it (always allowed) |
+| `GET /api/chart-analyze/shared/{token}` | PR-A4: the structure-only copy behind a link, for a logged-in member of the owner's organisation |
 | `GET / PUT /api/admin/chart-analyze/settings` | SUPER_ADMIN with MFA |
 
 Errors are JSON `{message, code}`: `link_unreadable` (422, message "Please upload a screenshot instead" plus a short
@@ -233,7 +262,8 @@ Admin settings (`GET / PUT /api/admin/chart-analyze/settings`, stored as the pla
 | `running_timeout_minutes` | 10 |
 | `link_connect_timeout_seconds` / `link_read_timeout_seconds` / `link_total_timeout_seconds` | 5 / 10 / 20 |
 | `link_max_redirects` | 3 |
-| `rate_limit_per_minute` (per user: add + analyze) | 6 |
+| `rate_limit_per_minute` (per user: add + analyze + share) | 6 |
+| `share_expiry_days` (PR-A4) | 7 (1-30) |
 | `max_output_tokens`, `estimate_input_tokens`, `estimate_output_tokens` | 3000, 3000, 2500 |
 | `limits.free` (daily / monthly / cost cap USD a month) | 0 / 0 / 0 - not included |
 | `limits.trial` | 2 / 10 / 1 |
@@ -261,6 +291,7 @@ and the page, its navigation entry and the Charts-page button are hidden. The st
 | **PR-C** | Hybrid analysis: the AI on the rebuilt chart plus real-bar facts, then each reader layer plugged in as it is ported (same contract); the reader's zones and lines on the rebuilt chart; "the checklist matches the reader evidence" tests |
 | **PR-A3** | The result screen's remaining items (owner order 10): "Option strikes · from your settings" (section 4a, flag `chart_analyze_strikes`), "Download PDF" (browser print), the signal-language check on the server and on render. No migration |
 | **PR-D** | The PDF report and the share link. Proposal: a link is private by default - a signed token (HMAC of item id, owner, tenant and expiry), expiring after an admin setting (propose 7 days), revocable (a per-item token version), and it opens only for a logged-in member of the same organisation; making a link public is a later owner decision (CA-5). The PDF is rendered server-side from the stored result, never with account data |
+| **PR-A4** | PR-D's share link, built as proposed: organisation-only, signed, expiring, revocable, structure only (section 4b), flag `chart_analyze_share`; history filters. No migration (the link state lives in the stored result). The server-side PDF is not built (CA-10) |
 | **PR-E** | Folded into PR-A3 (the strikes block). Left for later: showing the user's own SL / target / lots settings next to it, if the owner wants them (CA-8) |
 
 ## 12. Tests
@@ -282,5 +313,11 @@ and the page, its navigation entry and the Charts-page button are hidden. The st
   symbol typed or read, 409 / 404 / 422, both flags), structure words only, the signal-language check (call words found,
   structure words pass, contract withholds); vitest for every result block and the guard; Playwright for the strikes
   block, the flag off, and the PDF print (what the frame would print); the baselines updated.
+- **PR-A4**: the flag (off, depends on `chart_analyze`; 503 on share / open, stopping always works); owner makes, replaces
+  and stops a link; a member opens it, another organisation / a forged / a stopped / a replaced link gets 404, an
+  expired one 410; the copy has no name, price, date or digit in any text, no picture address; a late share never
+  brings a deleted result back; the link state never appears in `result`; the setting's bounds; vitest for the shared
+  view and the history filters; Playwright for the share dialog, the shared copy, the link problems, the flag off and
+  the filters, baselines `chart-analyze-shared-{390,360,1440}-{light,dark}` and `chart-analyze-share-dialog-{390,360}-light`.
 - **PR-B / PR-C**: field correction; match succeeds / fails; no broker and no stored data gives the right prompt; the
   checklist matches the reader evidence.

@@ -339,6 +339,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Acts only while chart_analyze is on too; owner's tenant first. OFF: GET /api/chart-analyze/items/{id}/strikes answers
     # 503 and the block is hidden. Reads only - places no orders.
     "chart_analyze_strikes": "Analyze a chart: option strikes worked out from your own deployment settings at the setup's trigger level (reads only, places no orders)",
+    # Analyze a chart PR-A4 (PR-D's share link, CA-5): a private link to the owner's own analysis that only logged-in
+    # members of the same organisation can open, expiring (admin setting share_expiry_days) and revocable. The shared
+    # copy carries NO security name, NO price, NO date and NOT the chart picture (CLAUDE.md, SEBI): the structure only.
+    # Acts only while chart_analyze is on too. OFF: the share routes answer 503 and the Share button is hidden.
+    "chart_analyze_share": "Analyze a chart: share a structure-only copy of your analysis with your organisation (no names, no prices; places no orders)",
     # N4 CH6 (docs/design/CHARTING.md): ScreenQL expressions drawn as chart studies, computed by the screener's own runtime
     # from the shared lake bars as of a time (lines for numbers, marks for conditions). OFF: GET /api/charts/studies
     # answers 503 and the chart shows no study panel. Reference only - places no orders.

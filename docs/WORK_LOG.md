@@ -2664,3 +2664,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Migrations: none for W1-W4 and G1-G11; WAVE_PROJECTION waits for the templates spec section 5 (migration + owner
   approval).
 - Owner questions WAVE-1..WAVE-16 in docs/OPEN_QUESTIONS.md; README row 14 updated. Build next, in the review's order.
+
+## 22 Oct - Analyze a chart A4: the share link (design PR-D) and history filters (behind chart_analyze + chart_analyze_share)
+
+- Branch `claude/chart-analyze-a4`. No migration (the link state lives in `chart_analyses.result_json` under `_share`).
+- Backend: `app/chart_analyze/share.py` (signed, expiring, revocable link; the structure-only copy: no name, no price,
+  no date, no digit in any text, no picture); `service.py` (`start_sharing`, `stop_sharing`, `open_shared`, conditional
+  update so a delete wins; `as_dict` returns `share` and never the state inside `result`); routes `POST / DELETE
+  /items/{id}/share`, `GET /shared/{token}`; flag `chart_analyze_share` (OFF, catalog depends on `chart_analyze`);
+  setting `share_expiry_days` (7, 1-30); tenancy route table rows.
+- Frontend: `ShareDialogV2.tsx` (create / copy / new link / stop), `SharedAnalysisV2.tsx` (`/chart-analyze?shared=`),
+  `ResultViewV2` `shared` form (no buttons, `StructureSketch` instead of the picture), history filters with counts and
+  the "Shared" mark.
+- Tests: backend `test_chart_analyze_share.py` (15); vitest `share.test.tsx`; e2e `chart-analyze-v2.e2e.ts` (share flow,
+  shared copy, link problems, flag off, filters). New baselines `chart-analyze-shared-*`, `chart-analyze-share-dialog-*`;
+  `chart-analyze-{390,360,1440}-{light,dark}` regenerated (the history filters).
+- Questions CA-11..CA-14 (OPEN_QUESTIONS).

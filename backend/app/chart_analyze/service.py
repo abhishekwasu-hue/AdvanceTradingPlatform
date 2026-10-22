@@ -16,7 +16,7 @@ from sqlalchemy import and_, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.chart_analyze import contract, imaging, limits, storage
+from app.chart_analyze import contract, imaging, limits, share, storage
 from app.chart_analyze import provider as engine_provider
 from app.chart_analyze.engine import EngineUnavailable, ask
 from app.db.models import ChartAnalysisRecord, Tenant, User
@@ -39,28 +39,25 @@ def _iso(value: Optional[datetime]) -> Optional[str]:
     return (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).isoformat()
 
 
-def as_dict(row: ChartAnalysisRecord, *, with_result: bool = True) -> Dict[str, Any]:
-    result = None
-    if with_result and row.result_json:
-        try:
-            result = json.loads(row.result_json)
-        except ValueError:
-            result = None
+def as_dict(row: ChartAnalysisRecord, *, with_result: bool = True, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """The owner's view of one item. The share link's state (stored with the result, share.py) is never part of
+    `result`; the owner sees it as `share` (the live link's token and expiry, or None)."""
+    parsed, state = share.split(row.result_json)
     summary = None
-    if row.result_json:
+    if parsed is not None:
         try:
-            parsed = result if result is not None else json.loads(row.result_json)
             summary = {"setup_status": parsed["setup"]["status"], "trend": parsed["trend"]["side"],
                        "symbol": (parsed.get("recognised") or {}).get("symbol")}
-        except (ValueError, KeyError, TypeError):
+        except (KeyError, TypeError):
             summary = None
+    link = share.owner_view(row.id, row.user_id, row.tenant_id, state, now or _utcnow()) if row.status == DONE else None
     return {"id": row.id, "mode": row.mode, "source": row.source, "source_host": row.source_host, "status": row.status,
             "image": {"width": row.image_width, "height": row.image_height, "url": f"/api/chart-analyze/items/{row.id}/image"},
             "error": row.error, "provider": row.provider, "model": row.model, "engine_version": row.engine_version,
             "billed_to_user_key": bool(row.billed_to_user_key), "cost_usd": round(float(row.cost_usd or 0.0), 6),
             "created_at": _iso(row.created_at), "analysed_at": _iso(row.analysed_at), "summary": summary,
-            "result": result, "label": contract.IMAGE_ONLY_LABEL if row.mode == "image_only" else None,
-            "disclaimer": contract.DISCLAIMER}
+            "result": parsed if with_result else None, "share": link,
+            "label": contract.IMAGE_ONLY_LABEL if row.mode == "image_only" else None, "disclaimer": contract.DISCLAIMER}
 
 
 def ai_floor_minutes() -> int:
@@ -213,6 +210,74 @@ async def _finish(session: AsyncSession, item_id: int, claimed_at: datetime, sta
         logger.warning("Chart analysis %s: this run no longer owns the row (re-claimed, deleted or purged); its %s result is dropped",
                        item_id, status)
     return owned
+
+
+# --- the share link (PR-A4; share.py) ------------------------------------------------------------------------------------
+
+NOT_SHAREABLE = "Only a finished analysis can be shared."
+LINK_GONE = "This link does not open: it was stopped, replaced by a newer link, or the analysis was deleted."
+LINK_EXPIRED = "This link has expired. Ask the person who shared it for a new one."
+
+
+async def _set_share_state(session: AsyncSession, row: ChartAnalysisRecord, state: Dict[str, Any]) -> None:
+    """Writes the link state only while the row is still the finished analysis we read (a delete or a purge that ran
+    meanwhile wins: no stored result is brought back)."""
+    old = row.result_json
+    if row.status != DONE or not old:
+        raise HTTPException(status_code=409, detail={"message": NOT_SHAREABLE, "code": "not_analysed"})
+    done = await session.execute(update(ChartAnalysisRecord).where(
+        ChartAnalysisRecord.id == row.id, ChartAnalysisRecord.status == DONE, ChartAnalysisRecord.result_json == old)
+        .values(result_json=share.with_state(old, state)).execution_options(synchronize_session=False))
+    if getattr(done, "rowcount", 0) != 1:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail={"message": "This analysis changed meanwhile. Open it again.", "code": "changed"})
+
+
+async def start_sharing(session: AsyncSession, user: User, item_id: int, settings: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+    """A new organisation-only link for the caller's own finished analysis (any older link stops working)."""
+    now = (now or _utcnow()).replace(microsecond=0)
+    row = await own(session, user, item_id)
+    _, state = share.split(row.result_json)
+    await _set_share_state(session, row, share.new_state(state, now, int(settings["share_expiry_days"])))
+    await write_audit_log(session, user.tenant_id, user.id, "chart_analyze_shared", f"#{item_id}")
+    await session.commit()
+    return as_dict(await own(session, user, item_id), now=now)
+
+
+async def stop_sharing(session: AsyncSession, user: User, item_id: int, now: Optional[datetime] = None) -> Dict[str, Any]:
+    row = await own(session, user, item_id)
+    _, state = share.split(row.result_json)
+    if row.status == DONE and row.result_json and state:
+        await _set_share_state(session, row, share.stopped_state(state))
+        await write_audit_log(session, user.tenant_id, user.id, "chart_analyze_share_stopped", f"#{item_id}")
+        await session.commit()
+    return as_dict(await own(session, user, item_id), now=now)
+
+
+async def open_shared(session: AsyncSession, viewer: User, token: str, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """The structure-only copy behind a link, for a logged-in member of the owner's organisation. Another organisation,
+    a forged, stopped or replaced link, and a deleted analysis all answer the same 404 (nothing about the item leaks)."""
+    now = now or _utcnow()
+    link = share.read_token(token)
+    gone = HTTPException(status_code=404, detail={"message": LINK_GONE, "code": "link_gone"})
+    if link is None:
+        raise gone
+    item_id, owner_id, tenant_id, version, expires_at = link
+    if tenant_id != viewer.tenant_id:
+        raise gone
+    row = await session.scalar(select(ChartAnalysisRecord).where(
+        ChartAnalysisRecord.id == item_id, ChartAnalysisRecord.tenant_id == tenant_id, ChartAnalysisRecord.user_id == owner_id,
+        ChartAnalysisRecord.status == DONE))
+    result, state = share.split(row.result_json if row is not None else None)
+    if row is None or result is None or int(state.get("version") or 0) != version:
+        raise gone
+    if expires_at <= now:
+        raise HTTPException(status_code=410, detail={"message": LINK_EXPIRED, "code": "link_expired"})
+    if not share.opens(state, version, expires_at, now):
+        raise gone
+    # No item id, no picture address and no analysis date: the copy names nothing about the chart (share.py).
+    return {"result": share.redact(result), "mode": row.mode, "expires_at": expires_at.isoformat(),
+            "is_yours": viewer.id == owner_id, "disclaimer": contract.DISCLAIMER}
 
 
 async def history(session: AsyncSession, user: User, limit: int = HISTORY_MAX) -> List[Dict[str, Any]]:

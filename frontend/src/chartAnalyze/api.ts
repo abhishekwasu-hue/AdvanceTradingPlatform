@@ -1,7 +1,7 @@
 import { ApiError, getToken, request, tryRefresh } from "../api/client";
 import { API_V1 } from "../api/base";
 import { apiErrorFrom, NETWORK_MESSAGE } from "../api/errors";
-import type { AnalysisItem, AnalyzeStatus, StrikesAnswer } from "./types";
+import type { AnalysisItem, AnalyzeStatus, SharedAnalysis, StrikesAnswer } from "./types";
 
 /**
  * Analyze a chart: the calls the page makes (backend app/chart_analyze/routes.py). JSON routes go through the shared
@@ -52,6 +52,12 @@ export const chartAnalyzeApi = {
   strikes: (id: number, symbol?: string) =>
     request<StrikesAnswer>(`${PATH}/items/${id}/strikes${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ""}`),
   remove: (id: number) => request<{ deleted: number }>(`${PATH}/items/${id}`, { method: "DELETE" }),
+  /** A new organisation-only link to the caller's own analysis (an older link stops working). */
+  share: (id: number) => request<AnalysisItem>(`${PATH}/items/${id}/share`, { method: "POST" }),
+  /** Stops the link at once. */
+  unshare: (id: number) => request<AnalysisItem>(`${PATH}/items/${id}/share`, { method: "DELETE" }),
+  /** The structure-only copy behind a link (no name, no price, no date, no picture). */
+  shared: (token: string) => request<SharedAnalysis>(`${PATH}/shared/${encodeURIComponent(token)}`),
   /** One chart: a file or a link (never both). */
   add: async (source: { file?: Blob; fileName?: string; link?: string }, mode: "image_only" | "hybrid"): Promise<AnalysisItem> => {
     const form = new FormData();

@@ -2028,3 +2028,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   day (deduped by title). `DELETE /api/broker/{name}/analytics-token` forgets the token.
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
+
+## Login fix (handover 8d): "Wrong email or password", and `atp.sh reset-password`
+
+- Branch `claude/login-error-reset` (from main).
+- Bug: a wrong email or password at sign-in showed "Sign in from the Account page to use this feature." The client's
+  anonymous-401 sentence (frontend/src/api/client.ts) also caught `/auth/login`, where a 401 comes before any token
+  exists. `/auth/*` routes now keep the server's own sentence; the server says "Wrong email or password." (the same
+  for an unknown email, so it reveals nothing).
+- `deploy/atp.sh reset-password EMAIL` (until SMTP is configured): asks for the new password twice without echo,
+  passes it on stdin to `backend/scripts/reset_password.py` (never an argument, never printed or logged), applies the
+  app's password rules, signs out every session of that user and writes an audit row (`password_reset_by_owner`).
+- Tests: vitest `src/api/loginError.test.ts`; backend `tests/test_reset_password_script.py`.

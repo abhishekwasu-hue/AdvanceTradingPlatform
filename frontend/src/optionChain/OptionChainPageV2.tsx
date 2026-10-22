@@ -1,11 +1,13 @@
-import { CalendarDays, Info, TriangleAlert } from "lucide-react";
+import { CalendarDays, ChartColumn, Info, Table2, TriangleAlert } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import type { PageProps } from "../routes";
+import { cx } from "../components/primitives/cx";
 import { formatDateIST, formatTimeIST } from "../ui/format";
 import { PageIntro } from "../ui/PageIntro";
 import AnalysisSlotV2 from "./AnalysisSlotV2";
 import ChainTableV2 from "./ChainTableV2";
+import ChainCharts from "./ChartsViewV2";
 import ColumnsMenuV2 from "./ColumnsMenuV2";
 import {
   INDEX_SYMBOLS, STOCK_SYMBOLS, TEXT, chainNotes, initialSymbol, readColumns, writeColumns, type ColumnPrefs,
@@ -24,10 +26,34 @@ import { useOptionChain, type OptionChainData } from "./useOptionChain";
  *   in the middle; a row opens its full details.
  * - No sample data and no developer controls: without a broker session the shell's broker gate shows "Connect your
  *   broker" instead of this page (src/ui/dataPages.ts), and a chain that cannot be read says so in plain words.
+ * - "Chain | Charts" (OC5): the Charts view shows the chain's OI, PCR, max pain, straddle, IV and futures charts in
+ *   place of the chain (ChartsViewV2.tsx), for the same symbol and expiry, refreshed with the chain.
  * - Below the chain: the mount point of the Analysis tabs (OC2).
  * Shown only while `ui_v2` is on (src/shell/pagesV2.ts). Read-only: nothing here places an order.
  */
 const SELECT = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 font-semibold text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9";
+
+export type ChainView = "chain" | "charts";
+
+/** "Chain | Charts": which view sits under the summary. Two 44 px targets on a phone (no padding around them, so the
+ * toggle fits the 44 px gap above the chain), 28 px from md. */
+export function ViewToggle({ view, onView, className }: { view: ChainView; onView: (v: ChainView) => void; className?: string }) {
+  const items: { key: ChainView; label: string; Icon: typeof Table2 }[] = [
+    { key: "chain", label: "Chain", Icon: Table2 },
+    { key: "charts", label: "Charts", Icon: ChartColumn },
+  ];
+  return (
+    <div role="group" aria-label="View" data-view-toggle className={cx("inline-flex items-center gap-space-1 rounded-panel bg-surface-2 p-0 md:p-space-1", className)}>
+      {items.map(({ key, label, Icon }) => (
+        <button key={key} type="button" aria-pressed={view === key} onClick={() => onView(key)}
+          className={cx("inline-flex h-11 items-center gap-space-1 rounded-control px-space-2 text-t13 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-7",
+            view === key ? "bg-surface-1 font-semibold text-fg shadow-card" : "text-fg-muted hover:text-fg")}>
+          <Icon size={14} aria-hidden />{label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function Note({ tone, children }: { tone: "neutral" | "warn"; children: string }) {
   const Icon = tone === "warn" ? TriangleAlert : Info;
@@ -62,6 +88,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   onPrefs: (prefs: ColumnPrefs) => void;
 }) {
   const [picked, setPicked] = useState<number | null>(null);
+  const [view, setView] = useState<ChainView>("chain");
   const symbolId = useId();
   const expiryId = useId();
 
@@ -118,7 +145,16 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
 
       <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} />
 
-      <section aria-label="Chain" data-block="chain">
+      {view === "charts" && (
+        <section aria-label="Charts" data-block="charts" className="space-y-space-3">
+          <div className="flex justify-center"><ViewToggle view={view} onView={setView} /></div>
+          <ChainCharts symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />
+        </section>
+      )}
+
+      {view === "chain" && <section aria-label="Chain" data-block="chain" className="relative">
+        {/* The toggle sits in the gap above the chain, centred over the strike column, so the chain does not move. */}
+        {!(live && live.rows.length > 0) && <div className="mb-space-3 flex justify-center"><ViewToggle view={view} onView={setView} /></div>}
         {chain.problem && !live && <Note tone="warn">{chain.problem === "no-session" ? TEXT.noSession : chain.problem === "plan" ? TEXT.plan : TEXT.loadFailed}</Note>}
         {chain.loading && !live && !chain.problem && (
           <div aria-busy="true" className="space-y-space-2 rounded-panel border border-subtle bg-surface-1 p-space-4">
@@ -132,11 +168,12 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
             <div aria-hidden className="mb-space-2 flex justify-between text-t12 font-semibold uppercase text-fg-muted">
               <span>Calls</span><span>Puts</span>
             </div>
+            <ViewToggle view={view} onView={setView} className="absolute -top-space-5 left-1/2 z-10 -translate-x-1/2 md:-top-space-4" />
             <ChainTableV2 live={live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}`} onPick={(row) => setPicked(row.strike)} />
             {chain.problem && <p className="mt-space-2 text-t12 text-fg-muted">{TEXT.loadFailed}</p>}
           </>
         )}
-      </section>
+      </section>}
 
       {/* OC2: the Analysis tabs go here (AnalysisSlotV2 is the placeholder a follow-up wires to AnalysisTabsV2). */}
       <AnalysisSlotV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />

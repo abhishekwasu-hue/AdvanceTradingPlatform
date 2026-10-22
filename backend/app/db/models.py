@@ -2041,6 +2041,10 @@ class OISnapshotRecord(Base):
     underlying_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     strikes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")
+    # OC5: the near-month future's last price and open interest read in the same slot (None when the broker's quote
+    # does not carry them, and for every slot stored before this column existed).
+    future_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    future_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class StrikeOISnapshotRecord(Base):

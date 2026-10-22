@@ -2028,3 +2028,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   day (deduped by title). `DELETE /api/broker/{name}/analytics-token` forgets the token.
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
+
+## OC5: Option chain "Charts" view + the remaining analyses (handover 2b + 2c, under ui_v2)
+
+- Branch `claude/oc5-chain-charts` (from main). **Migration: yes** (`a7c9e1f3b5d8_oc5_oi_snapshot_futures`: two nullable
+  columns `oi_snapshots.future_price` / `future_oi`, ROLLBACK_SAFE, reversible) - deploy after 15:30 IST.
+- 2b parity: every item of the order's list was already in `app/option_chain/oi_regime.py` (hysteresis OI diff,
+  rotation, walls, OI + price matrix, PCR zone label, max pain, rollover proxy, DTE, IV change, 5 / 10 / 15-minute
+  aggregation). What was not shown anywhere is now in the Charts view's facts: PCR zone (the organisation's bands), days
+  to expiry, the IV change against the last sessions' closing ATM IV (plus the Trade sideways baseline), and the
+  5 / 10 / 15-minute views of every session chart. Information only; no gate, no buy / sell wording.
+- 2c backend: `app/option_chain/charts.py` (pure) + `charts_routes.py`: `GET /api/option-chain/charts?symbol=&expiry=
+  &strikes=10&interval=5` (flag `ui_v2`, 404 off; the chains rate limit; usage metered; plain states; own-broker tier
+  reads no shared rows). Ten charts; "Builds through the session" before two readings, never sample data. The collector
+  also stores the near-month future's price / OI (`_oi_future_quote`, never blocks the slot).
+- 2c frontend: `ChartsViewV2.tsx` + `charts.ts`; "Chain | Charts" toggle on `OptionChainPageV2.tsx` (it sits in the
+  gap above the chain, so the chain baselines are unchanged); strike range ATM ± 5/10/15/20 (default 10), 5/10/15 min,
+  refresh with the chain; phone: one chart at a time (scroll snap + arrows). AnalysisSlotV2 untouched.
+- Tests: `backend/tests/test_oc5_option_chain_charts.py`, `frontend/src/optionChain/ChartsViewV2.test.tsx`, OC5 cases in
+  `e2e/option-chain-v2.e2e.ts` with 4 new baselines `option-chain-charts-v2-{1440,390}-{light,dark}.png`.
+- Questions: OC5-1..4 in OPEN_QUESTIONS.

@@ -226,3 +226,119 @@ test.describe("Option chain v2 states", () => {
     expect(words).not.toMatch(/sample|lookback|cached|Underlying LTP|tilt|RuntimeError|Insufficient data|Stale/i);
   });
 });
+
+// ---------------------------------------------------------------- OC5: the Charts view
+// The made-up answer of GET /api/option-chain/charts (e2e/fixtures/option_chain_charts.json: the backend's own output for
+// the chain above plus 8 made-up stored readings; e2e/fixtures/make_option_chain_charts.py writes it). New baselines
+// `option-chain-charts-v2-<width>-<theme>.png`; the chain's own baselines above are unchanged.
+const CHARTS = JSON.parse(readFileSync(new URL("./fixtures/option_chain_charts.json", import.meta.url), "utf8")) as Record<string, unknown> & {
+  charts: { key: string; title: string; caption: string; x_kind: string }[];
+};
+
+async function openCharts(page: Page, theme: "light" | "dark", body: (b: typeof CHARTS) => Record<string, unknown> = (b) => b) {
+  // Each chain answer carries its own read time, as the server's does (the charts read again when it changes).
+  let reads = 0;
+  const calls = await open(page, theme, { live: (b) => ({ ...b, fetched_at: new Date(Date.parse(String(b.fetched_at)) + 1000 * reads++).toISOString() }) });
+  const asked: URLSearchParams[] = [];
+  await page.route(/\/api(?:\/v1)?\/option-chain\/charts\?/, (route) => {
+    asked.push(new URL(route.request().url()).searchParams);
+    return route.fulfill({ json: body(CHARTS) });
+  });
+  await chainReady(page);
+  await page.getByRole("button", { name: "Charts", exact: true }).click();
+  await expect(page.locator("[data-oc-charts]")).toBeVisible();
+  await expect(page.locator("[aria-busy='true']")).toHaveCount(0);
+  return { calls, asked };
+}
+
+test.describe("Option chain v2 Charts at 1440", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  for (const theme of THEMES) {
+    test(`Charts looks the same (${theme})`, async ({ page }) => {
+      await openCharts(page, theme);
+      await expect(page.locator("[data-chart-card]")).toHaveCount(10);
+      await expect(page).toHaveScreenshot(`option-chain-charts-v2-1440-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+    });
+  }
+
+  test("Charts reads the shared expiry, ATM ± 10 and 5-minute readings; the range and the view are the trader's; it refreshes with the chain", async ({ page }) => {
+    const { asked, calls } = await openCharts(page, "light");
+    await expect.poll(() => asked.length).toBeGreaterThan(0);
+    expect(Object.fromEntries(asked[0])).toEqual({ symbol: "NIFTY", strikes: "10", interval: "5", expiry: "2026-11-03" });
+    await expect(page.locator("[data-block='chain']")).toHaveCount(0);
+    for (const c of CHARTS.charts) {
+      const card = page.locator(`[data-chart-card='${c.key}']`);
+      await expect(card.getByRole("heading", { name: c.title })).toBeVisible();
+      await expect(card).toContainText(c.caption);
+    }
+    await expect(page.locator("[data-charts-facts]")).toContainText("7 days to expiry.");
+    await page.getByLabel("Strikes around ATM").selectOption("15");
+    await expect.poll(() => asked[asked.length - 1].get("strikes")).toBe("15");
+    await page.getByRole("button", { name: "10 min" }).click();
+    await expect.poll(() => asked[asked.length - 1].get("interval")).toBe("10");
+    const before = asked.length;
+    const chainReads = calls.live.length;
+    await page.clock.runFor(16_000);
+    await expect.poll(() => calls.live.length).toBeGreaterThan(chainReads);
+    await expect.poll(() => asked.length).toBeGreaterThan(before);
+    // Back to the chain: the table again, the ATM row in the middle.
+    await page.getByRole("button", { name: "Chain", exact: true }).click();
+    await chainReady(page);
+    const words = await page.locator("main").innerText();
+    expect(words).not.toMatch(/sample|lookback|RuntimeError|\bbuy\b|\bsell\b/i);
+  });
+
+  test("early in the session a chart says it builds through the session, never a number", async ({ page }) => {
+    await openCharts(page, "light", (b) => ({ ...b, session: { readings: 0, since: null, note: null },
+      charts: b.charts.map((c) => c.x_kind === "time" ? { ...c, state: "building", series: [],
+        message: "Builds through the session: a reading of the chain is stored every 5 minutes while the market is open, so this chart fills in as the day goes on." } : c) }));
+    await expect(page.locator("[data-chart-building]").first()).toContainText("Builds through the session");
+    await expect(page.locator("[data-chart-card='oi_by_strike'] svg")).toBeVisible();
+  });
+});
+
+test.describe("Option chain v2 Charts at 390", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  for (const theme of THEMES) {
+    test(`Charts looks the same (${theme})`, async ({ page }) => {
+      await openCharts(page, theme);
+      // The first chart in view (the controls and the facts sit above it).
+      await page.locator("[data-charts-pager]").evaluate((e) => window.scrollTo(0, e.getBoundingClientRect().top + window.scrollY - 120));
+      await expect(page).toHaveScreenshot(`option-chain-charts-v2-390-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+    });
+  }
+
+  test("phone: one chart at a time, swiped sideways or moved with the arrows; the layout rules hold", async ({ page }) => {
+    await openCharts(page, "dark");
+    const deck = page.locator("[data-charts-deck]");
+    const pager = page.locator("[data-charts-pager]");
+    await expect(pager).toContainText("OI by strike · 1 of 10");
+    // Exactly one card is in view.
+    const inView = () => page.locator("[data-chart-card]").evaluateAll((cards) => cards.filter((c) => {
+      const r = c.getBoundingClientRect();
+      return r.left >= -1 && r.right <= window.innerWidth + 1;
+    }).length);
+    expect(await inView()).toBe(1);
+    await page.getByRole("button", { name: "Next chart" }).tap();
+    await expect(pager).toContainText("Change in OI by strike · 2 of 10");
+    // A swipe: the deck scrolls sideways and snaps to the next card.
+    await deck.evaluate((e) => { const cards = e.children as HTMLCollectionOf<HTMLElement>; e.scrollTo({ left: cards[2].offsetLeft - cards[0].offsetLeft }); });
+    await expect(pager).toContainText("3 of 10");
+    // Every card is exactly the deck's width, so a snapped deck shows one chart at a time.
+    const widths = await deck.evaluate((e) => [...e.children].map((c) => Math.round(c.getBoundingClientRect().width) - e.clientWidth));
+    expect(widths.every((d) => d === 0)).toBe(true);
+    await expectPhoneLayout(page);
+  });
+
+  test("phone: the chain view's toggle is a 44 px target in the gap above the chain", async ({ page }) => {
+    await open(page, "light");
+    await chainReady(page);
+    const toggle = await page.locator("[data-view-toggle]").boundingBox();
+    const table = await page.locator("[data-chain-scroll]").boundingBox();
+    expect(toggle!.height).toBeGreaterThanOrEqual(44);
+    expect(toggle!.y + toggle!.height).toBeLessThanOrEqual(table!.y + 1);
+    await expectPhoneLayout(page);
+  });
+});

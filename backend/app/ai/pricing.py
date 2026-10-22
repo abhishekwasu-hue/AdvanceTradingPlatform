@@ -10,7 +10,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +31,18 @@ _LIST_PRICES: Dict[str, Price] = {
     "gpt-5-mini": (0.25, 2.0, 0.025), "gpt-5-nano": (0.05, 0.4, 0.005), "gpt-5-pro": (15.0, 120.0, 15.0), "gpt-5": (1.25, 10.0, 0.125),
     # Google Gemini (BYOK only - a user's own key; prompts up to 200k tokens)
     "gemini-2.5-flash-lite": (0.10, 0.40, 0.025), "gemini-2.5-flash": (0.30, 2.50, 0.075), "gemini-2.5-pro": (1.25, 10.0, 0.31),
+    # Master Order 2 part A (a user's own key only). Free models cost nothing: OpenRouter's Free Models Router and any
+    # `:free` model (openrouter.ai/docs/guides/routing/model-variants/free) and Z.ai's GLM-4.5-Flash
+    # (docs.z.ai/guides/llm/glm-4.5). The paid rows are UPPER BOUNDS, set at or above the list prices last known, because
+    # the provider price pages could not be re-checked on 2026-10-22: a user's own limit is never under-counted.
+    # AI_MODEL_PRICES_JSON replaces any of them without a release.
+    "openrouter/free": (0.0, 0.0, 0.0), "glm-4.5-flash": (0.0, 0.0, 0.0),
+    "openai/gpt-oss-120b": (0.5, 2.0, 0.5), "openai/gpt-oss-20b": (0.25, 1.0, 0.25),
+    "mistral-large": (2.0, 6.0, 0.2), "mistral-medium": (1.0, 4.0, 0.1), "mistral-small": (0.3, 1.0, 0.03),
+    "glm-4.6": (1.0, 4.0, 0.2),
 }
-_PROVIDER_PREFIX = {"anthropic": "claude-", "openai": ("gpt-", "o1", "o3", "o4"), "gemini": "gemini-"}
+_PROVIDER_PREFIX: Dict[str, Union[str, Tuple[str, ...]]] = {"anthropic": "claude-", "openai": ("gpt-", "o1", "o3", "o4"), "gemini": "gemini-",
+                    "groq": "openai/gpt-oss", "mistral": "mistral-", "zai": "glm-"}
 _prices: Dict[str, Price] = {}
 
 
@@ -65,6 +75,8 @@ def price_for(provider: str, model: str) -> Tuple[Optional[Price], bool]:
     `claude-opus-5-5`), else the provider's most expensive row."""
     model = (model or "").lower()
     if provider == "rule_based" or not model:
+        return (0.0, 0.0, 0.0), False
+    if provider == "openrouter" and model.endswith(":free"):
         return (0.0, 0.0, 0.0), False
     best = max((name for name in _prices if model.startswith(name.lower())), key=len, default=None)
     if best is not None:

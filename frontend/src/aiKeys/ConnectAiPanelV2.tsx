@@ -6,16 +6,21 @@ import { Link } from "react-router";
 import { api } from "../api/client";
 import { ApiError, friendlyError } from "../api/errors";
 import { CARD, LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
-import type { ByokProviderName } from "../types";
 import { AI_CONNECTION_CHANGED_EVENT, type AiConnection, type AiLimits } from "./connect";
+import { plainError } from "./errors";
+import { FREE_TIER_NOTICE } from "./guides";
 import KeyGuidesV2 from "./KeyGuidesV2";
-import { MAY_TRAIN_ON_FREE_TIER, PICKER_ORDER, PROVIDER_LABELS, cleanKey, detectProvider, refusalFor, type Detection } from "./keyFormats";
+import { MAY_TRAIN_ON_FREE_TIER, PICKER_ORDER, PROVIDER_FACTS, PROVIDER_LABELS, cleanKey, detectProvider, refusalFor, type AiProviderName,
+  type Detection } from "./keyFormats";
 
 /**
  * Settings redesign part A ("Connect AI in one paste", behind `ui_v2` + `ai_one_key`): ONE key for every AI feature.
  * - Paste: the key is trimmed and its provider read from its format (src/aiKeys/keyFormats.ts); an unknown format gets a
- *   small picker of the three services; a sign-in token, an admin key or a service ATP cannot use yet gets one line.
+ *   small picker (Google Gemini, Claude, OpenAI, Mistral, Z.ai GLM - MO2 part A); a sign-in token, an admin key or a
+ *   service ATP cannot use gets one line.
  * - Before the first save: the consent line and its checkbox. A free tier that may train on data gets a one-line warning.
+ *   MO2 part A: a free-tier provider also shows the privacy notice, every provider its one-line data term, and a
+ *   provider that does not read charts says so before it is saved (and once connected).
  * - Then it saves (encrypted) and tests (one text call and one tiny image) by itself - there is no Save button, no model,
  *   no provider dropdown and no on/off switch here. "Connected · Claude · key …a9F2" and Disconnect.
  * - A failed test keeps the key: the plain sentence, Fix (paste again) and Remove.
@@ -33,13 +38,13 @@ type Step = "idle" | "busy";
 export interface ConnectAiViewProps {
   conn: AiConnection;
   raw: string;
-  picked: ByokProviderName | null;
+  picked: AiProviderName | null;
   consent: boolean;
   step: Step;
   notice: string | null;
   fixing: boolean;
   onRaw: (raw: string) => void;
-  onPick: (p: ByokProviderName) => void;
+  onPick: (p: AiProviderName) => void;
   onConsent: (on: boolean) => void;
   onDisconnect: () => void;
   onFix: () => void;
@@ -50,14 +55,14 @@ export interface ConnectAiViewProps {
 }
 
 /** The provider the next save goes to: the key's own format, else the picker. */
-export function chosenProvider(found: Detection, picked: ByokProviderName | null): ByokProviderName | null {
+export function chosenProvider(found: Detection, picked: AiProviderName | null): AiProviderName | null {
   if (found.kind === "provider") return found.provider;
   if (found.kind === "unknown") return picked;
   return null;
 }
 
 /** True when the panel may save and test by itself now. */
-export function readyToConnect(raw: string, picked: ByokProviderName | null, consent: boolean, step: Step): boolean {
+export function readyToConnect(raw: string, picked: AiProviderName | null, consent: boolean, step: Step): boolean {
   return step === "idle" && consent && cleanKey(raw) !== "" && chosenProvider(detectProvider(raw), picked) !== null;
 }
 
@@ -110,6 +115,8 @@ function Connected({ conn, step, fixing, onDisconnect, onFix, onAcknowledge }: C
         </label>
       )}
       {conn.may_train && conn.free_tier_warning && <p className="text-t13 text-warn" data-free-tier>{conn.free_tier_warning}</p>}
+      {conn.privacy && <p className="text-t13 text-fg-muted" data-privacy>{conn.privacy}</p>}
+      {conn.vision === false && <p className="text-t13 text-fg-muted" data-no-vision>{plainError("no_vision")}</p>}
       {conn.may_train && !conn.paid_plan && (
         <label className="flex items-start gap-space-2 text-t14 text-fg" data-paid-plan>
           <input type="checkbox" className={CHECK} onChange={(e) => { if (e.target.checked) onAcknowledge("paid_plan"); }} />
@@ -142,7 +149,7 @@ function Paste({ conn, raw, picked, consent, step, notice, onRaw, onPick, onCons
           className="h-11 w-full min-w-0 rounded-control border border-border bg-surface-1 px-space-3 text-t14 text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-60" />
       </div>
       <div id={noteId} aria-live="polite" className="space-y-space-2">
-        {found.kind === "provider" && label && <p className="text-t13 text-fg-muted" data-detected={provider}>This is a {label} key.</p>}
+        {found.kind === "provider" && label && <p className="text-t13 text-fg-muted" data-detected={provider}>This is {/^[AEIOU]/i.test(label) ? "an" : "a"} {label} key.</p>}
         {refusal && <p className="text-t13 text-warn" data-key-refused>{refusal}</p>}
         {found.kind === "unknown" && (
           <fieldset className="space-y-space-2" data-picker>
@@ -164,6 +171,7 @@ function Paste({ conn, raw, picked, consent, step, notice, onRaw, onPick, onCons
           </label>
         )}
         {provider && MAY_TRAIN_ON_FREE_TIER[provider] && <p className="text-t13 text-warn" data-free-tier>{FREE_TIER(PROVIDER_LABELS[provider])}</p>}
+        {provider && <ProviderTerms provider={provider} />}
         {busy && <p role="status" className="text-t13 text-fg-muted" data-busy>Connecting and testing your key…</p>}
         {notice && <p role="alert" className="text-t13 text-fg" data-notice>{notice}</p>}
       </div>
@@ -182,6 +190,19 @@ function Paste({ conn, raw, picked, consent, step, notice, onRaw, onPick, onCons
       <button type="button" onClick={onGuides} className={LINE_BTN} data-action="get-free-key">
         <KeyRound size={16} aria-hidden className="mr-space-1" /> Get a free key
       </button>
+    </div>
+  );
+}
+
+/** MO2 part A: before a key is saved - the privacy notice for a free tier, the provider's data term (a provider that may
+ * train already has its own warning line above), and whether it reads charts. */
+export function ProviderTerms({ provider }: { provider: AiProviderName }) {
+  const facts = PROVIDER_FACTS[provider];
+  return (
+    <div className="space-y-space-1 text-t13 text-fg-muted" data-provider-terms={provider}>
+      {facts.free_tier && <p data-privacy-notice>{FREE_TIER_NOTICE}</p>}
+      {!facts.may_train && <p data-privacy>{facts.privacy}</p>}
+      {!facts.vision && <p data-no-vision>{plainError("no_vision")}</p>}
     </div>
   );
 }
@@ -264,7 +285,7 @@ export default function ConnectAiPanelV2({ onChange }: ConnectAiPanelV2Props) {
   const [conn, setConn] = useState<AiConnection | null>(null);
   const [off, setOff] = useState(false);
   const [raw, setRaw] = useState("");
-  const [picked, setPicked] = useState<ByokProviderName | null>(null);
+  const [picked, setPicked] = useState<AiProviderName | null>(null);
   const [consent, setConsent] = useState(false);
   const [step, setStep] = useState<Step>("idle");
   const [notice, setNotice] = useState<string | null>(null);
@@ -302,7 +323,7 @@ export default function ConnectAiPanelV2({ onChange }: ConnectAiPanelV2Props) {
   useEffect(() => {
     if (!readyToConnect(raw, picked, consent, step)) return;
     const key = cleanKey(raw);
-    const provider = chosenProvider(detectProvider(raw), picked) as ByokProviderName;
+    const provider = chosenProvider(detectProvider(raw), picked) as AiProviderName;
     setRaw("");                                            // never kept in the form once sent
     void run(() => api.aiConnect({ api_key: key, provider, consent: true }), () => { setFixing(false); setPicked(null); });
   }, [raw, picked, consent, step, run]);

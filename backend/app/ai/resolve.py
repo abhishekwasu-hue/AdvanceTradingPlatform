@@ -190,10 +190,14 @@ async def user_key_provider(session: AsyncSession, user: User, task: str, *, nee
     blocked = await byok.cap_block(session, user, await byok.get_prefs(session, user))
     if blocked:
         raise limit_reached(blocked)
+    extra: Dict[str, Any] = {"vision": True} if need_vision else {}
+    if ai_providers.paid_model(record.provider) and await byok.paid_plan_confirmed(session, user, record):
+        extra["paid"] = True                              # MO2 A: a confirmed paid plan runs on paid models, never free ones
     await ensure_tenant_key(session, user.tenant_id)
     key = byok.open_key(record, user=user)
     try:
-        inner = ai_providers.build_byok_provider(record.provider, key, byok.effective_model(record, record.provider), client=client, task=task)
+        inner = ai_providers.build_byok_provider(record.provider, key, byok.effective_model(record, record.provider), client=client, task=task,
+                                                 **extra)
     finally:
         key = ""
     return UserKeyProvider(inner=inner, session=session, user=_Who(int(user.id), int(user.tenant_id)), feature=task, record_id=int(record.id))

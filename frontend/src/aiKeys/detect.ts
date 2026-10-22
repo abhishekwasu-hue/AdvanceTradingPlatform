@@ -25,8 +25,15 @@ export type Detected = { kind: "provider"; provider: ByokProviderName } | { kind
 export function detectKey(key: string): Detected {
   const found = detectProvider(key);
   if (found.kind === "unsupported") return { kind: "other", name: found.name };
-  if (found.kind === "provider" && found.provider) return { kind: "provider", provider: found.provider };
+  // MO2 part A: OpenRouter / Groq keys are taken by the Connect AI panel only; this helper (the Vision card's save path)
+  // still says it cannot use them, as before.
+  if (found.kind === "provider" && found.provider && !isVisionCardProvider(found.provider)) return { kind: "other", name: found.name };
+  if (found.kind === "provider" && found.provider && isVisionCardProvider(found.provider)) return { kind: "provider", provider: found.provider };
   return { kind: "unknown" };
+}
+
+function isVisionCardProvider(p: string): p is ByokProviderName {
+  return p in PROVIDER_NAMES;
 }
 
 export interface PasteCheck {

@@ -1,4 +1,4 @@
-import { CheckCircle2, ExternalLink, ImageIcon, KeyRound, Sparkles } from "lucide-react";
+import { CheckCircle2, ExternalLink, Eye, ImageIcon, KeyRound, ShieldAlert, Sparkles } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
@@ -6,7 +6,8 @@ import { LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import { formatDateIST } from "../ui/format";
 import type { ByokProviderName } from "../types";
 import { BYOK_CHANGED_EVENT, PROVIDER_NAMES, checkPastedKey } from "./detect";
-import { KEY_GUIDES, fixFor, guideFor, type KeyGuide } from "./guides";
+import { KEY_GUIDES, VISION_CARD_GUIDES, fixFor, guideFor, guideTags, type KeyGuide } from "./guides";
+import type { AiProviderName } from "./keyFormats";
 
 /**
  * MO2 part B: Settings → AI, "Get an AI key" - the beginner guides (src/aiKeys/guides.ts) and the paste helper.
@@ -18,6 +19,10 @@ import { KEY_GUIDES, fixFor, guideFor, type KeyGuide } from "./guides";
  *   encrypted (`PUT /api/ai/byok/key`) and tested with one tiny call (`POST /api/ai/byok/test/{provider}`); the key is
  *   cleared from the box once sent and never shown again. With BYOK off for the organisation the guides still show and
  *   the helper says the key cannot be saved yet.
+ * - MO2 part A: inside the Connect AI drawer (`pasteHelper={false}`, behind `ai_one_key`) every provider the panel takes
+ *   is listed (free Google Gemini first), each with its tags - "Free tier" / "Paid", "Reads charts (vision)", "May
+ *   train on free keys" - and, in its guide, the provider's one-line data term. With the paste helper (the Vision card's
+ *   path, no `ai_one_key`) the list is the three that card takes, as before.
  */
 
 export const EXPLAINER = "An API key is like a password that lets AiAlgoDesk use an AI service on your account. Free keys take about 2 minutes to create.";
@@ -35,11 +40,12 @@ export interface KeyGuidesV2Props {
   /** Settings redesign A: false inside the Connect AI drawer - the panel itself takes the paste. */
   pasteHelper?: boolean;
   /** The guide open at first (the drawer opens free Google Gemini). */
-  startOpen?: ByokProviderName | null;
+  startOpen?: AiProviderName | null;
 }
 
 export default function KeyGuidesV2({ pasteHelper = true, startOpen = null }: KeyGuidesV2Props = {}) {
-  const [open, setOpen] = useState<ByokProviderName | null>(startOpen);
+  const [open, setOpen] = useState<AiProviderName | null>(startOpen);
+  const guides = pasteHelper ? VISION_CARD_GUIDES : KEY_GUIDES;
   const [byokOn, setByokOn] = useState<boolean | null>(null);
   const guideRef = useRef<HTMLDivElement>(null);
 
@@ -50,7 +56,7 @@ export default function KeyGuidesV2({ pasteHelper = true, startOpen = null }: Ke
     return () => { live = false; };
   }, [pasteHelper]);
 
-  const show = (p: ByokProviderName) => {
+  const show = (p: AiProviderName) => {
     setOpen(p);
     window.setTimeout(() => guideRef.current?.scrollIntoView({ block: "nearest" }), 0);
   };
@@ -70,11 +76,12 @@ export default function KeyGuidesV2({ pasteHelper = true, startOpen = null }: Ke
       </button>
 
       <ul className="mt-space-4 divide-y divide-subtle rounded-control border border-subtle" aria-label="AI providers">
-        {KEY_GUIDES.map((g) => (
+        {guides.map((g) => (
           <li key={g.provider} className="flex flex-wrap items-center gap-x-space-3 gap-y-space-2 px-space-3 py-space-3" data-provider={g.provider}>
             <span className="text-t14 font-semibold text-fg">{g.name}</span>
-            <span className={`${TAG} ${g.cost === "Free tier" ? "bg-brand/10 text-brand" : "bg-surface-2 text-fg-muted"}`}>{g.cost}</span>
+            <span className={`${TAG} ${g.cost === "Paid" ? "bg-surface-2 text-fg-muted" : "bg-brand/10 text-brand"}`}>{g.cost}</span>
             {g.recommended && <span className={`${TAG} border border-brand text-brand`}>Recommended</span>}
+            {!pasteHelper && <ProviderTags guide={g} />}
             <button type="button" onClick={() => (open === g.provider ? setOpen(null) : show(g.provider))} aria-expanded={open === g.provider}
               aria-controls={`key-guide-${g.provider}`}
               className="ml-auto inline-flex min-h-11 items-center rounded-control px-space-2 text-t14 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9">
@@ -85,13 +92,27 @@ export default function KeyGuidesV2({ pasteHelper = true, startOpen = null }: Ke
       </ul>
 
       <div ref={guideRef}>
-        {open && <Guide key={open} guide={guideFor(open)} byokOn={byokOn} onSwitch={show} pasteHelper={pasteHelper} />}
+        {open && guides.some((g) => g.provider === open) && (
+          <Guide key={open} guide={guideFor(open)} byokOn={byokOn} onSwitch={show} pasteHelper={pasteHelper} />
+        )}
       </div>
     </section>
   );
 }
 
+/** MO2 part A: "Reads charts (vision)" and the may-train mark, next to the cost tag. */
+function ProviderTags({ guide }: { guide: KeyGuide }) {
+  const tags = guideTags(guide);
+  return (
+    <>
+      {tags.vision && <span className={`${TAG} bg-surface-2 text-fg`} data-tag="vision"><Eye size={12} aria-hidden className="mr-space-1" />Reads charts (vision)</span>}
+      {tags.may_train && <span className={`${TAG} bg-warn/10 text-warn`} data-tag="may-train">May train on free keys</span>}
+    </>
+  );
+}
+
 function Guide({ guide, byokOn, onSwitch, pasteHelper }: { guide: KeyGuide; byokOn: boolean | null; onSwitch: (p: ByokProviderName) => void; pasteHelper: boolean }) {
+  const tags = guideTags(guide);
   return (
     <div id={`key-guide-${guide.provider}`} data-key-guide={guide.provider} className="mt-space-4 space-y-space-4 border-t border-subtle pt-space-4">
       <div className="flex flex-wrap items-center justify-between gap-space-3">
@@ -129,6 +150,13 @@ function Guide({ guide, byokOn, onSwitch, pasteHelper }: { guide: KeyGuide; byok
         </div>
       </dl>
 
+      {!pasteHelper && (
+        <div className="space-y-space-1 rounded-control border border-subtle p-space-3 text-t13 text-fg-muted" data-provider-terms>
+          <p className="flex items-start gap-space-2"><ShieldAlert size={14} aria-hidden className="mt-0.5 shrink-0" /><span>{tags.privacy}</span></p>
+          {!tags.vision && <p data-no-vision>{guide.name} does not read charts here. Chart analysis needs Google Gemini, Claude, OpenAI, OpenRouter or Mistral.</p>}
+        </div>
+      )}
+
       {pasteHelper && <PasteHelper guide={guide} byokOn={byokOn} onSwitch={onSwitch} />}
 
       <details className="rounded-control border border-subtle">
@@ -156,7 +184,8 @@ function PasteHelper({ guide, byokOn, onSwitch }: { guide: KeyGuide; byokOn: boo
   const [raw, setRaw] = useState("");
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const check = checkPastedKey(guide.provider, raw);
+  const provider = guide.provider as ByokProviderName;          // the paste helper only shows the Vision card's three
+  const check = checkPastedKey(provider, raw);
 
   async function saveAndTest() {
     if (!check.ok || busy) return;
@@ -165,8 +194,8 @@ function PasteHelper({ guide, byokOn, onSwitch }: { guide: KeyGuide; byokOn: boo
     setBusy(true);
     setOutcome(null);
     try {
-      await api.byokSaveKey(guide.provider, key);
-      const r = await api.byokTestKey(guide.provider);
+      await api.byokSaveKey(provider, key);
+      const r = await api.byokTestKey(provider);
       window.dispatchEvent(new Event(BYOK_CHANGED_EVENT));
       if (r.result.ok) setOutcome({ ok: true, text: `Your ${guide.name} key works. It is stored encrypted; only its first and last four characters are ever shown.` });
       else {

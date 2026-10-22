@@ -4,7 +4,8 @@ import settingsSource from "../pages/SettingsPage.tsx?raw";
 import guideSource from "./KeyGuidesV2.tsx?raw";
 import { BYOK_PROVIDERS } from "../components/visionByok";
 import { checkPastedKey, cleanPastedKey, detectKey } from "./detect";
-import { GUIDE_MAX_AGE_DAYS, KEY_GUIDES, fixFor, guideAgeDays, guideFor } from "./guides";
+import { GUIDE_MAX_AGE_DAYS, KEY_GUIDES, VISION_CARD_GUIDES, fixFor, guideAgeDays, guideFor } from "./guides";
+import { detectProvider } from "./keyFormats";
 import KeyGuidesV2, { EXPLAINER } from "./KeyGuidesV2";
 
 /** MO2 part B: the beginner AI-key guides (Settings → AI) and the paste helper. Key-shaped strings are built here at run
@@ -24,9 +25,10 @@ describe("MO2 key guides: the content", () => {
     expect(EXPLAINER).toBe("An API key is like a password that lets AiAlgoDesk use an AI service on your account. Free keys take about 2 minutes to create.");
   });
 
-  it("a guide per provider ATP takes today, Google Gemini first and recommended (the only one with a free tier)", () => {
-    expect(KEY_GUIDES.map((g) => g.provider)).toEqual(["gemini", "anthropic", "openai"]);
-    expect([...KEY_GUIDES.map((g) => g.provider)].sort()).toEqual([...BYOK_PROVIDERS].sort());
+  it("a guide per provider ATP takes, Google Gemini first and the only one recommended; the Vision card keeps its three", () => {
+    expect(KEY_GUIDES.map((g) => g.provider)).toEqual(["gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai"]);
+    expect(VISION_CARD_GUIDES.map((g) => g.provider)).toEqual(["gemini", "anthropic", "openai"]);
+    expect([...VISION_CARD_GUIDES.map((g) => g.provider)].sort()).toEqual([...BYOK_PROVIDERS].sort());
     expect(KEY_GUIDES.filter((g) => g.recommended).map((g) => g.provider)).toEqual(["gemini"]);
     expect(guideFor("gemini").cost).toBe("Free tier");
   });
@@ -36,6 +38,10 @@ describe("MO2 key guides: the content", () => {
       gemini: "https://aistudio.google.com/apikey",
       anthropic: "https://console.anthropic.com/settings/keys",
       openai: "https://platform.openai.com/api-keys",
+      openrouter: "https://openrouter.ai/settings/keys",
+      groq: "https://console.groq.com/keys",
+      mistral: "https://console.mistral.ai/api-keys",
+      zai: "https://z.ai/manage-apikey/apikey-list",
     });
     for (const g of KEY_GUIDES) expect(g.key_page.label).toMatch(/^Open .+ key page$/);
   });
@@ -49,7 +55,9 @@ describe("MO2 key guides: the content", () => {
       expect(g.is_it_free.length).toBeGreaterThan(20);
       expect(g.errors.length).toBeGreaterThanOrEqual(2);
       for (const e of g.errors) { expect(e.problem).toBeTruthy(); expect(e.fix).toBeTruthy(); }
-      expect(detectKey(g.looks_like.prefix + fill(40))).toEqual({ kind: "provider", provider: g.provider });
+      if (g.looks_like.prefix) expect(detectProvider(g.looks_like.prefix + fill(40))).toMatchObject({ kind: "provider", provider: g.provider });
+      else expect(detectProvider(fill(32)).kind).toBe("unknown");                 // no prefix: the picker asks
+      if (VISION_CARD_GUIDES.includes(g)) expect(detectKey(g.looks_like.prefix + fill(40))).toEqual({ kind: "provider", provider: g.provider });
     }
   });
 

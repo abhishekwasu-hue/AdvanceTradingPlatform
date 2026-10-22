@@ -19,7 +19,9 @@ const TF = [{ value: "5m", label: "5-minute" }, { value: "15m", label: "15-minut
 const TEMPLATES = [
   { id: "D2", version: 1, name: "Moving-average crossover", family: "D", family_name: "Trend following",
     idea: "A signal when a fast moving average crosses a slow one on a closed bar; optionally only when the close is on the same side of a slower trend average.",
-    difficulty: "Beginner", style: "Both", timeframes: TF, default_timeframe: "5m", sides_default: "both", params: [], rules: [], available: true },
+    difficulty: "Beginner", style: "Both", timeframes: TF, default_timeframe: "5m", sides_default: "both",
+    params: [{ key: "fast", label: "Fast average", help: "Bars in the fast average.", type: "int", default: 9, min: 2, max: 200, step: 1 }],
+    rules: [], available: true },
   { id: "B1", version: 1, name: "Range breakout", family: "B", family_name: "Breakout",
     idea: "A signal on the first close beyond a range or a consolidation by a set distance; the idea has ended when the close is back inside the range.",
     difficulty: "Beginner", style: "Both", timeframes: TF, default_timeframe: "5m", sides_default: "both", params: [], rules: [], available: true },
@@ -130,6 +132,20 @@ test.describe("Strategy templates behaviour", () => {
     const post = server.sent.find((c) => c.url === "/deployments");
     expect(post?.body).toEqual({ strategy_id: "template:B1:1:1d:both:,,,,,,", symbol: "RELIANCE", exchange: "NSE", timeframe: "day",
       mode: "PAPER", holding: "SWING", instrument_kind: "UNDERLYING" });
+  });
+
+  test("opened from an idea's Adopt link: its timeframe and settings are the pre-fill the server checks; nothing starts", async ({ page }) => {
+    const server = await open(page, { path: "/deployments?template=D2&timeframe=1h&set.fast=5&set.unknown=1&set.slow=x" });
+    await expect(form(page).getByLabel("Pick a strategy")).toHaveValue("template-pick:D2");
+    await expect(form(page).getByLabel("Chart timeframe")).toHaveValue("1h");
+    await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the settings from the idea.");
+    // only the template's own settings, typed as it declares them, reach the adopt request
+    expect(server.sent.filter((c) => c.url.endsWith("/adopt")).at(-1)).toEqual(
+      { method: "POST", url: "/strategy-templates/D2/adopt", body: { timeframe: "1h", params: { fast: 5 } } });
+    expect(server.sent.filter((c) => c.url === "/deployments")).toHaveLength(0);
+    await form(page).getByLabel("Pick a strategy").selectOption({ label: "Range breakout" });
+    await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
+    expect(server.sent.at(-1)?.body).toEqual({ timeframe: "1h" });
   });
 
   test("a bot on a template shows the template's name; no ids or internal words on the page", async ({ page }) => {

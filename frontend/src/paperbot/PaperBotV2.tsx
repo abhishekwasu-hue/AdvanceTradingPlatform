@@ -20,6 +20,7 @@ import {
   startSummary, strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
 import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
+import { templateLinkFromSearch, typedSettings, type TemplateLink } from "../strategyTemplates/link";
 
 // The full form (options structures, exits, filters) loads only when "More ways to trade" is opened.
 const MoreWaysToTrade = lazy(() => import("../pages/DeploymentsPage"));
@@ -30,10 +31,11 @@ const PICK = "template-pick:";
 /** The chart timeframe a template starts on when it offers it (a template's settings stay its own defaults here). */
 const TEMPLATE_TIMEFRAME = "15m";
 
-/** Strategy templates step 2: `?template=D2` opens the form with that template picked (the idea library's "Adopt"). */
-function templateFromUrl(): string | null {
+/** Strategy templates step 2: `?template=D2` opens the form with that template picked; the idea library's "Adopt as a
+ * paper strategy" (IDEA-1) adds `timeframe` and `set.<key>` settings as the pre-fill (strategyTemplates/link.ts). */
+function templateFromUrl(): TemplateLink | null {
   try {
-    return new URLSearchParams(window.location.search).get("template");
+    return templateLinkFromSearch(window.location.search);
   } catch {
     return null;
   }
@@ -289,7 +291,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   /** Settings part C: the user's own defaults (a pre-fill, shown and switchable here); null = none. */
   defaults?: TradingDefaults | null; approvalAllowed?: boolean;
   /** Strategy templates step 2: templates the user can adopt here (empty while the flag is off). */
-  templates?: StrategyTemplate[]; initialTemplate?: string | null;
+  templates?: StrategyTemplate[]; initialTemplate?: TemplateLink | null;
   /** Job 6: the strategy the trader just saved from the Copilot's draft, its symbol and the size his idea named. */
   preselect?: Preselect | null;
 }) {
@@ -313,9 +315,11 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const urlTemplateApplied = useRef(false);
 
   useEffect(() => {
-    if (urlTemplateApplied.current || !initialTemplate || !templates.some((t) => t.id === initialTemplate)) return;
+    const t = initialTemplate ? templates.find((x) => x.id === initialTemplate.template) : undefined;
+    if (urlTemplateApplied.current || !initialTemplate || !t) return;
     urlTemplateApplied.current = true;
-    setStrategyId(PICK + initialTemplate);
+    setStrategyId(PICK + t.id);
+    if (initialTemplate.timeframe && t.timeframes.some((x) => x.value === initialTemplate.timeframe)) setTemplateTimeframe(initialTemplate.timeframe);
   }, [templates, initialTemplate]);
 
   useEffect(() => {
@@ -325,16 +329,23 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     }
   }, [picked, templateTimeframe]);
 
+  // The link's settings (the idea library's pre-fill) apply to the template the link named, typed as it declares them.
+  const linkSettings = useMemo(() => (picked && initialTemplate && picked.id === initialTemplate.template
+    ? typedSettings(picked, initialTemplate.params) : {}), [picked, initialTemplate]);
+  const settingsKey = JSON.stringify(linkSettings);
+  const fromLink = settingsKey !== "{}";
+
   const pickedId = picked?.id ?? null;
   useEffect(() => {
     setAdoption(null); setAdoptFailed(false);
     if (!pickedId || !templateTimeframe) return;
     let live = true;
-    templatesApi.adopt(pickedId, { timeframe: templateTimeframe })
+    const params = JSON.parse(settingsKey) as Record<string, number | string | boolean>;
+    templatesApi.adopt(pickedId, fromLink ? { timeframe: templateTimeframe, params } : { timeframe: templateTimeframe })
       .then((a) => { if (live) setAdoption(a); })
       .catch(() => { if (live) setAdoptFailed(true); });
     return () => { live = false; };
-  }, [pickedId, templateTimeframe]);
+  }, [pickedId, templateTimeframe, settingsKey, fromLink]);
 
   // Job 6: the strategy the trader saved from the Copilot's draft, with the symbol his idea named (a pre-fill he can change).
   useEffect(() => {
@@ -430,7 +441,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             </select>
             <p className="mt-space-1 text-t13 text-fg-muted" data-template-notes>
               {adoptFailed ? "This template cannot be set up just now. Try again in a moment."
-                : adoption ? `Starts with the template's usual settings. ${adoption.notes.join(" ")}` : "Getting the template ready…"}
+                : adoption ? `${fromLink ? "Starts with the settings from the idea." : "Starts with the template's usual settings."} ${adoption.notes.join(" ")}`
+                : "Getting the template ready…"}
             </p>
           </div>
         )}

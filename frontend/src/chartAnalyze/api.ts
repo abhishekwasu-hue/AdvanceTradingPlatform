@@ -1,7 +1,7 @@
 import { ApiError, getToken, request, tryRefresh } from "../api/client";
 import { API_V1 } from "../api/base";
 import { apiErrorFrom, NETWORK_MESSAGE } from "../api/errors";
-import type { AnalysisItem, AnalyzeStatus } from "./types";
+import type { AnalysisItem, AnalyzeStatus, StrikesAnswer } from "./types";
 
 /**
  * Analyze a chart: the calls the page makes (backend app/chart_analyze/routes.py). JSON routes go through the shared
@@ -48,6 +48,9 @@ export const chartAnalyzeApi = {
   list: () => request<{ items: AnalysisItem[] }>(`${PATH}/items`),
   get: (id: number) => request<AnalysisItem>(`${PATH}/items/${id}`),
   analyze: (id: number) => request<AnalysisItem>(`${PATH}/items/${id}/analyze`, { method: "POST" }),
+  /** The option strikes from the user's own settings for this analysis; `symbol` when the picture's symbol was not read. */
+  strikes: (id: number, symbol?: string) =>
+    request<StrikesAnswer>(`${PATH}/items/${id}/strikes${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ""}`),
   remove: (id: number) => request<{ deleted: number }>(`${PATH}/items/${id}`, { method: "DELETE" }),
   /** One chart: a file or a link (never both). */
   add: async (source: { file?: Blob; fileName?: string; link?: string }, mode: "image_only" | "hybrid"): Promise<AnalysisItem> => {

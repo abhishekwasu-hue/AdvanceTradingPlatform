@@ -114,6 +114,9 @@ async def configure(session: AsyncSession, tenant: Tenant, user: User, *, enable
     if record is None:
         raise LookupError("No Telegram alert channel configured")
     raw = decrypt_raw(record)
+    if raw.get("platform_bot"):
+        # UX2 fix 5: the platform's shared bot only sends alerts; commands and approvals need the organisation's own bot.
+        raise ValueError("Two-way Telegram needs your organisation's own bot. Add its token under Alert delivery first.")
     raw["inbound_enabled"] = bool(enabled)
     raw["allowed_chat_ids"] = sorted({str(c).strip() for c in allowed_chat_ids if str(c).strip()})[:10]
     if approvers is not None:

@@ -61,7 +61,8 @@ DB_POOL_SIZE = max(1, int(os.environ.get("DB_POOL_SIZE", "5")))
 DB_MAX_OVERFLOW = max(0, int(os.environ.get("DB_MAX_OVERFLOW", "10")))
 DB_POOL_TIMEOUT_SECONDS = max(1.0, float(os.environ.get("DB_POOL_TIMEOUT_SECONDS", "30")))
 # LD-7: how many API processes uvicorn runs (scripts/serve_api.sh reads the same variable). Sizes per-process limits
-# that are meant to be per host, such as the bcrypt thread limit (app/auth/security.py).
+# that are meant to be per host, such as the broker API budget (app/market_data/api_budget.py); not the bcrypt threads
+# (LD-9: those follow the CPUs, app/auth/security.py).
 API_WORKERS = max(1, int(os.environ.get("API_WORKERS", "1") or "1"))
 
 _INSECURE_DEFAULT_JWT_SECRET = "dev-only-insecure-secret-change-me"
@@ -428,6 +429,17 @@ EMAIL_VERIFICATION_REQUIRED = os.environ.get("EMAIL_VERIFICATION_REQUIRED", "fal
 # `python -m app.alerts.webpush` and keep it stable: rotating it invalidates every subscription.
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "").strip() or None
 VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "mailto:ops@example.com").strip()
+
+# --- The platform's Telegram bot (UX2 fix 5: "Telegram in one tap") --------------------------------
+# One bot for every organisation, created once by the operator with @BotFather. A user taps "Connect Telegram", the app
+# opens t.me/<bot>?start=<one-time code>, the user presses Start and the chat is linked - no token or chat id to type.
+# Unset = the Connect button says "Telegram alerts are not set up on this server yet" (the organisation's own bot under
+# Advanced keeps working). The username is read from Telegram (getMe) when not given. With the webhook secret set the
+# bot is reached by webhook (`POST /api/telegram/platform/webhook`, registered from the admin route); without it the
+# app asks Telegram for new messages (getUpdates) while a user waits on the Connect screen.
+ATP_TELEGRAM_BOT_TOKEN = os.environ.get("ATP_TELEGRAM_BOT_TOKEN", "").strip()
+ATP_TELEGRAM_BOT_USERNAME = os.environ.get("ATP_TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
+ATP_TELEGRAM_WEBHOOK_SECRET = os.environ.get("ATP_TELEGRAM_WEBHOOK_SECRET", "").strip()
 
 # --- Billing gateway (Phase K1b) ----------------------------------------------------------
 # "manual" = the operator records bank/UPI payments; "razorpay" = Razorpay Subscriptions with

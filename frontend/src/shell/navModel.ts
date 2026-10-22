@@ -6,6 +6,7 @@ import {
 import { needsAttention, type BrokerDot } from "../broker/brokerState";
 import { BROKER_PATH } from "../broker/paths";
 import type { Page } from "../components/Sidebar";
+import { PAGE_FLAGS } from "./pageFlags";
 
 /**
  * UI2-1 (UI v2 proposal §2 navigation map, §4 bottom bar): the one navigation model the v2 shell reads - the sidebar,
@@ -54,7 +55,7 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
       item("dashboard", "Dashboard", "Today", "/", LayoutDashboard, { keywords: ["home", "overview", "today"] }),
       item("charts", "Charts", "Charts", "/charts", ChartCandlestick, { keywords: ["chart", "candles", "price"] }),
       item("option-chain", "Option chain", "Option chain", "/option-chain", Link2, { keywords: ["options", "oi", "pcr", "max pain"] }),
-      item("screener", "Find setups", "Find setups", "/screener", Filter, { keywords: ["screener", "screens", "scan"] }),
+      item("screener", "Find setups", "Find setups", "/screener", Filter, { flag: PAGE_FLAGS.screener, keywords: ["screener", "screens", "scan"] }),
     ],
   },
   {
@@ -63,7 +64,7 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
       item("strategy-builder", "Build a strategy", "Build a strategy", "/strategy-builder", Pencil, { keywords: ["strategy builder", "create"] }),
       item("backtest", "Test a strategy", "Test a strategy", "/backtest", History, { keywords: ["backtest", "backtesting"] }),
       item("copilot", "AI Copilot", "AI Copilot", "/copilot", Sparkles, { flag: "ai_copilot", keywords: ["ai", "assistant", "watchtower"] }),
-      item("deployments", "Autopilot", "Autopilot", "/deployments", Bot, { keywords: ["deployments", "deploy", "running"] }),
+      item("deployments", "Paper bot", "Paper bot", "/deployments", Bot, { keywords: ["autopilot", "deployments", "deploy", "running", "bots"] }),
     ],
   },
   {

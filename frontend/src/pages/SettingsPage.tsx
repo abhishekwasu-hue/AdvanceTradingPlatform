@@ -4,6 +4,7 @@ import { Link, useLocation } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { BROKER_PATH } from "../broker/paths";
 import AlertChannelsCard from "../components/AlertChannelsCard";
+import TelegramConnectV2 from "../alerts/TelegramConnectV2";
 import AiProviderCard from "../components/AiProviderCard";
 import ApiKeysCard from "../components/ApiKeysCard";
 import BillingCard from "../components/BillingCard";
@@ -92,8 +93,14 @@ export default function SettingsPage() {
       <div data-tour="settings-appearance"><AppearanceCard /></div>
       <BrokerLinkCard />
       <BillingCard />
-      <div id="alerts" data-tour="settings-alerts" className="scroll-mt-4">
-        <AlertChannelsCard />
+      <div id="alerts" data-tour="settings-alerts" className="scroll-mt-4 space-y-4">
+        {/* UX2 fix 5: with ui_v2, Telegram in one tap first; the bot token and chat id move into the card's "own bot" part. */}
+        {v2 && (
+          <Card title="Alerts on your phone">
+            <TelegramConnectV2 />
+          </Card>
+        )}
+        <AlertChannelsCard ownBotOnly={v2} />
       </div>
 
       <Section id="integrations" title="Integrations">

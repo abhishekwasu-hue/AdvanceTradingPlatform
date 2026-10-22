@@ -1,5 +1,5 @@
 import { BellRing, Mail, MessageSquare, Send, Webhook } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import WebPushSection from "../alerts/WebPushSection";
 import WhatsAppSection from "../alerts/WhatsAppSection";
@@ -17,7 +17,20 @@ const input = "w-full rounded bg-surface-2 border border-border px-2 py-1.5 text
  * write-only: the API returns a masked summary and keeps the stored secret when a field is
  * saved blank.
  */
-export default function AlertChannelsCard() {
+/** UX2 fix 5: the organisation's own bot, folded away when Telegram is connected in one tap elsewhere on the page. */
+function OwnBotFold({ fold, open, children }: { fold: boolean; open: boolean; children: ReactNode }) {
+  if (!fold) return <>{children}</>;
+  return (
+    <details open={open} className="space-y-2" data-own-bot>
+      <summary className="flex min-h-11 cursor-pointer items-center text-xs font-semibold text-fg md:min-h-0">Use your organisation&apos;s own bot</summary>
+      <div className="space-y-2 pt-2">{children}</div>
+    </details>
+  );
+}
+
+/** `ownBotOnly` (UX2 fix 5, ui_v2): Telegram is connected in one tap above this card, so here the Telegram block is only
+ * the organisation's own bot, folded away under "Use your organisation's own bot". */
+export default function AlertChannelsCard({ ownBotOnly = false }: { ownBotOnly?: boolean } = {}) {
   const [channels, setChannels] = useState<AlertChannel[]>([]);
   const [deliveries, setDeliveries] = useState<AlertDelivery[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +59,9 @@ export default function AlertChannelsCard() {
     smtp_host: "", smtp_port: "587", username: "", password: "", use_tls: true, from_address: "", to_addresses: "",
     min_severity: "CRITICAL" as NotificationSeverity, enabled: true,
   });
+
+  // UX2 fix 5: the organisation's Telegram goes through the app's own bot (connected in one tap).
+  const platformTelegram = !!channels.find((c) => c.channel_type === "TELEGRAM")?.config.platform_bot;
 
   function refresh() {
     api.listAlertChannels().then((list) => {
@@ -158,6 +174,10 @@ export default function AlertChannelsCard() {
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
           <div className="flex items-center gap-2 text-sm font-bold text-fg"><Send size={14} /> Telegram</div>
+          {ownBotOnly && platformTelegram ? (
+            <p className="text-xs text-fg-muted">Connected with the app&apos;s own Telegram bot. Manage it under Alerts on your phone, above.</p>
+          ) : (
+          <OwnBotFold fold={ownBotOnly} open={!!stored("TELEGRAM")}>
           <div className="text-xs">{status("TELEGRAM")}</div>
           <input className={input} type="password" autoComplete="off" placeholder="Bot token from @BotFather (blank = keep stored)" value={tg.bot_token} onChange={(e) => setTg({ ...tg, bot_token: e.target.value })} />
           <input className={input} placeholder="Chat id (your user id or a group id)" value={tg.chat_id} onChange={(e) => setTg({ ...tg, chat_id: e.target.value })} />
@@ -203,6 +223,8 @@ export default function AlertChannelsCard() {
               </div>
               <div className="text-xs text-fg-muted break-all">Webhook: {inbound.webhook_url} (HTTPS required; the secret header is set automatically)</div>
             </div>
+          )}
+          </OwnBotFold>
           )}
         </div>
 

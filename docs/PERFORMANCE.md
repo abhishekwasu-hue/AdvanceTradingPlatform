@@ -234,8 +234,10 @@ What each process keeps for itself, checked for N processes:
   - the status-page cache (15 s);
   - the chart layer caches (keyed by their data);
   - the public `/api/system/status` (5 s, dropped by an admin change in the process that made it).
-- **Shared out:** bcrypt's thread limit is the CPU count divided by `API_WORKERS` (at least 1), so a login wave still
-  runs about one check per CPU on the host.
+- **Not shared out:** bcrypt's thread limit is the CPU count of each process (at least 1), not divided by
+  `API_WORKERS` (LD-9): the processes do not get the logins evenly (Caddy's keep-alive connections each stay with one
+  process), and with one thread per process a login waited behind its own process's check while a CPU was free.
+  The kernel shares the CPUs between the checks; `BCRYPT_NICE` keeps them behind the other requests.
 - **Merged:** with more than one process, `PROMETHEUS_MULTIPROC_DIR` is set and emptied at start-up. `/metrics`
   (whichever process answers) sums the counters and histograms, and gives each gauge its most recently set value.
 - **Pools:** each process has its own database pool (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`: 5 + 10 by default, 10 + 5

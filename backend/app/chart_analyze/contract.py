@@ -67,10 +67,14 @@ class ContractError(ValueError):
 
 def _screen(text: str) -> str:
     from app.ai import output_filter
+    from app.chart_analyze import signal_language
     checked = output_filter.screen(text, where="chart_analyze")
     # A blocked text AND a text the filter would only frame as a specific call (an action next to a price) are withheld:
-    # this page describes conditions, it never carries a call, framed or not.
-    return WITHHELD if (not checked.ok or checked.framed) else checked.text
+    # this page describes conditions, it never carries a call, framed or not. Then the word-level signal-language check:
+    # any buy / sell / target / stop word withholds the text too (structure words only).
+    if not checked.ok or checked.framed:
+        return WITHHELD
+    return checked.text if signal_language.is_clean(checked.text) else WITHHELD
 
 
 def text(value: Any, limit: int = TEXT_MAX) -> str:

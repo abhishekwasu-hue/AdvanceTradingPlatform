@@ -1,49 +1,29 @@
-import { LogOut, Lock, Mail, ShieldCheck } from "lucide-react";
+import { LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { api, setToken } from "../api/client";
-import { ApiError } from "../api/errors";
+import { friendlyError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
-import { ROLE_LABELS, type InviteInfo, type MfaStatus, type SessionInfo } from "../types";
+import SignInScreen from "../auth/SignInScreen";
+import { type MfaStatus, type SessionInfo } from "../types";
 import MfaCard from "../components/MfaCard";
 import { Card } from "../components/ui";
-import { LogoMark } from "../components/Logo";
-import LegalConsentField from "../legal/LegalConsentField";
-import { acceptanceFor, type LegalSummary } from "../legal/legal";
-import GoogleSignInButton from "../auth/GoogleSignInButton";
-import { takeGoogleReturn } from "../auth/google";
+import { isAdminViewer } from "../ui/ComingSoon";
+import { ErrorState } from "../ui/ErrorState";
 
+/** The signed-in trader's account: e-mail, two-factor, password, sessions. Signed out, App.tsx shows the sign-in screen
+ * before any page; this page shows the same screen should it ever render without a user (UX1). */
 export default function AccountPage() {
-  const { user, login, completeMfaLogin, register, acceptInvite, resetPassword, logout, refreshUser } = useAuth();
-  const [mode, setMode] = useState<"login" | "register" | "invite" | "forgot" | "reset" | "mfa">("login");
-  const [mfaToken, setMfaToken] = useState<string | null>(null);
-  const [mfaCode, setMfaCode] = useState("");
+  const { user, logout, refreshUser } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [mfaStatus, setMfaStatus] = useState<MfaStatus | null>(null);
-  const [resetToken, setResetToken] = useState<string | null>(null);
-  const [resetHint, setResetHint] = useState<{ email_hint: string; valid: boolean; reason: string | null } | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNew, setPwNew] = useState("");
   const [pwMessage, setPwMessage] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [inviteToken, setInviteToken] = useState<string | null>(null);
-  const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
-  // PW6: the closed-beta invite code - the field opens when the server asks for one (or the visitor says they have one).
-  const [betaCode, setBetaCode] = useState("");
-  const [betaField, setBetaField] = useState(false);
-  // Z10-f: the legal documents' current versions, accepted with the account. The box shows (and is required) only when
-  // the server publishes the documents - flag `legal_pages`; while it is off the list answers 404 and the form is as before.
-  const [legalDocs, setLegalDocs] = useState<LegalSummary[] | null>(null);
-  const [legalAccepted, setLegalAccepted] = useState(false);
-  const needsLegal = mode === "register" || mode === "invite";
-  useEffect(() => {
-    if (!needsLegal || legalDocs) return;
-    api.legalDocuments().then((r) => setLegalDocs(r.documents)).catch(() => setLegalDocs(null));
-  }, [needsLegal, legalDocs]);
 
   useEffect(() => {
     if (!user) return;
@@ -52,314 +32,127 @@ export default function AccountPage() {
   }, [user]);
 
   async function revoke(id: number) {
-    await api.revokeSession(id).catch((e) => setError(String(e)));
+    setError(null);
+    await api.revokeSession(id).catch((e) => setError(friendlyError(e)));
     api.listSessions().then(setSessions).catch(() => {});
   }
 
-  // Arriving via an owner's invite link (?invite=<token>): show who invited you, ask only for a
-  // password, and join their organisation instead of creating a new one.
+  // An e-mail verification link opened while signed in (`?verify=<token>`): verify, then take the token out of the
+  // address through the router. (Signed out, the sign-in screen handles it, and the invite / reset links.)
   useEffect(() => {
-    // GS-1: back from Google - the authenticator step, or why it did not work, in plain words.
-    const google = takeGoogleReturn();
-    if (google?.kind === "mfa") {
-      setMfaToken(google.mfaToken);
-      setMode("mfa");
-      setNotice("Google confirmed your e-mail. Enter your authenticator code to finish signing in.");
-    } else if (google?.kind === "error") {
-      setError(google.message);
-    }
-    try {
-      const verify = new URLSearchParams(window.location.search).get("verify");
-      if (verify) {
-        window.history.replaceState(window.history.state, "", window.location.pathname);
-        api.verifyEmail(verify)
-          .then((u) => { setVerifyMessage(`${u.email} is verified.`); void refreshUser(); })
-          .catch((e) => setVerifyMessage(String(e)));
-      }
-      const reset = new URLSearchParams(window.location.search).get("reset");
-      if (reset) {
-        setResetToken(reset);
-        setMode("reset");
-        api.resetInfo(reset).then(setResetHint).catch((e) => setError(String(e)));
-        window.history.replaceState(window.history.state, "", window.location.pathname);
-        return;
-      }
-      const token = new URLSearchParams(window.location.search).get("invite");
-      if (!token) return;
-      setInviteToken(token);
-      setMode("invite");
-      api.inviteInfo(token).then((info) => { setInvite(info); setEmail(info.email); }).catch((e) => setError(String(e)));
-      window.history.replaceState(window.history.state, "", window.location.pathname);
-    } catch {
-      // no URL API - ordinary login
-    }
-  }, []);
+    if (!user) return;
+    const params = new URLSearchParams(location.search);
+    const verify = params.get("verify");
+    if (!verify) return;
+    params.delete("verify");
+    const rest = params.toString();
+    navigate({ pathname: location.pathname, search: rest ? `?${rest}` : "" }, { replace: true });
+    api.verifyEmail(verify)
+      .then((u) => { setVerifyMessage(`${u.email} is verified.`); void refreshUser(); })
+      .catch((e) => setVerifyMessage(friendlyError(e)));
+  }, [user]);
 
-  if (user) {
-    return (
-      <div className="space-y-4 max-w-md">
-        <Card>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-11 h-11 rounded-full bg-brand/15 border border-brand/30 flex items-center justify-center text-brand font-semibold">
-              {user.email[0]?.toUpperCase()}
-            </div>
-            <div>
-              <div className="text-xs text-fg-muted">Signed in as</div>
-              <div className="text-sm font-medium text-fg">{user.email}</div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={logout}
-              className="flex items-center gap-2 rounded border border-border hover:bg-surface-2 text-fg px-4 py-1.5 text-sm transition-colors"
-            >
-              <LogOut size={14} /> Log out
-            </button>
-            <button
-              onClick={() => api.logoutEverywhere().catch(() => {}).finally(logout)}
-              className="rounded border border-down/40 hover:bg-down/10 text-down px-4 py-1.5 text-sm transition-colors"
-              title="Ends every session of your account on every device"
-            >
-              Log out everywhere
-            </button>
-          </div>
-        </Card>
-        <Card title="Email verification">
-          {user.email_verified ? (
-            <div className="text-xs text-up flex items-center gap-2"><ShieldCheck size={14} /> {user.email} is verified.</div>
-          ) : (
-            <div className="space-y-2 text-xs">
-              <p className="text-fg-muted">Confirm that {user.email} is yours. Open the link we emailed you, or send a fresh one. LIVE trading and broker credentials may require it.</p>
-              <button
-                className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5"
-                onClick={() => api.resendVerification().then((r) => setVerifyMessage(r.already_verified ? "Already verified." : r.sent ? "Verification email sent - check your inbox." : "No platform mailer is configured - ask the operator to verify your address or configure PLATFORM_SMTP_*.")).catch((e) => setVerifyMessage(String(e)))}
-              >
-                Resend verification email
-              </button>
-            </div>
-          )}
-          {verifyMessage && <div className="mt-2 text-xs text-fg-muted">{verifyMessage}</div>}
-        </Card>
-        {user.scopes && user.scopes.length > 0 && (
-          <Card title="Your permissions">
-            <div className="flex flex-wrap gap-1.5">
-              {user.scopes.map((s) => <span key={s} className="rounded-md border border-border bg-surface-2 px-2 py-0.5 text-xs font-mono text-fg-muted">{s}</span>)}
-            </div>
-            <p className="mt-2 text-xs text-fg-muted">Derived from your role; your organisation's owner can deny or grant individual permissions from the Team tab.</p>
-          </Card>
-        )}
-        <MfaCard status={mfaStatus} onChange={() => api.mfaStatus().then(setMfaStatus).catch(() => {})} />
-        <Card title="Change password">
-          <form
-            className="space-y-2"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setPwMessage(null);
-              try {
-                const res = await api.changePassword(pwCurrent, pwNew);
-                setToken(res.access_token, res.refresh_token);
-                setPwMessage("Password changed. Every other session has been logged out.");
-                setPwCurrent("");
-                setPwNew("");
-                api.listSessions().then(setSessions).catch(() => {});
-              } catch (err) {
-                setPwMessage(String(err));
-              }
-            }}
-          >
-            <input type="password" required autoComplete="current-password" placeholder="Current password" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} />
-            <input type="password" required minLength={10} autoComplete="new-password" placeholder="New password (10+ characters, not too common)" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={pwNew} onChange={(e) => setPwNew(e.target.value)} />
-            <div className="flex items-center gap-3">
-              <button type="submit" className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm">Change password</button>
-              {pwMessage && <span className={`text-xs ${pwMessage.startsWith("Password changed") ? "text-up" : "text-down"}`}>{pwMessage}</span>}
-            </div>
-          </form>
-        </Card>
-        <Card title={`Active sessions (${sessions.length})`}>
-          {sessions.length === 0 ? (
-            <div className="text-xs text-fg-muted">No session data.</div>
-          ) : (
-            <table className="w-full text-xs">
-              <tbody>
-                {sessions.map((s) => (
-                  <tr key={s.id} className="border-t border-border">
-                    <td className="py-1.5 pr-3 text-fg">{s.current ? "This device" : "Other device"}</td>
-                    <td className="py-1.5 pr-3 text-fg-muted">{s.ip_address ?? "-"}</td>
-                    <td className="py-1.5 pr-3 text-fg-muted truncate max-w-[12rem]" title={s.user_agent ?? ""}>{s.user_agent ?? "-"}</td>
-                    <td className="py-1.5 pr-3 text-fg-muted whitespace-nowrap">active {new Date(s.last_used_at).toLocaleString()}</td>
-                    <td className="py-1.5 text-right">{!s.current && <button onClick={() => revoke(s.id)} className="text-down hover:underline">revoke</button>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Card>
-        <p className="text-xs text-fg-muted leading-relaxed">
-          Broker credentials and paper trades are tied to this account. Anonymous use of Signals
-          and Backtesting still works without logging in - signing in additionally saves your
-          paper-execute fills to the Positions tab.
-        </p>
-      </div>
-    );
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      if (mode === "login") {
-        const challenge = await login(email, password);
-        if (challenge) {
-          setMfaToken(challenge);
-          setMode("mfa");
-        }
-      } else if (mode === "mfa" && mfaToken) {
-        await completeMfaLogin(mfaToken, mfaCode);
-      } else if (mode === "invite" && inviteToken) {
-        await acceptInvite(inviteToken, password, legalDocs && legalAccepted ? acceptanceFor(legalDocs) : undefined);
-      } else if (mode === "reset" && resetToken) {
-        await resetPassword(resetToken, password);
-      } else if (mode === "forgot") {
-        const result = await api.forgotPassword(email);
-        setNotice(result.detail);
-      } else {
-        await register(email, password, betaCode.trim() || undefined, legalDocs && legalAccepted ? acceptanceFor(legalDocs) : undefined);
-      }
-    } catch (err) {
-      if (mode === "register" && err instanceof ApiError && /"code"\s*:\s*"beta_(invite|cohort)_/.test(err.body)) setBetaField(true);
-      // Z10-f: a document changed while the form was open - load the new versions and ask to read them again.
-      // (or the list did not load although the server now requires the acceptance - load it and show the box).
-      if (err instanceof ApiError && (err.body.includes("legal_version_changed") || err.body.includes("legal_acceptance_required"))) {
-        setLegalAccepted(false);
-        setLegalDocs(null);
-      }
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  }
+  if (!user) return <SignInScreen />;
 
   return (
-    <div className="max-w-sm space-y-5">
-      <div className="flex flex-col items-center text-center gap-3 pt-4">
-        <LogoMark size={44} />
-        <div>
-          <h1 className="text-lg font-semibold text-fg">
-            {mode === "login" ? "Welcome back" : mode === "mfa" ? "Two-factor check" : mode === "invite" ? "Join your team" : mode === "forgot" ? "Forgot your password?" : mode === "reset" ? "Choose a new password" : "Create your account"}
-          </h1>
-          <p className="text-xs text-fg-muted mt-0.5">
-            {mode === "login"
-              ? "Log in to your trading console"
-              : mode === "mfa"
-                ? "Enter the 6-digit code from your authenticator app, or one of your backup codes."
-              : mode === "forgot"
-                ? "Enter your email. If your organisation has an email channel you get a link; otherwise ask your owner for one."
-                : mode === "reset"
-                  ? resetHint
-                    ? resetHint.valid ? `Resetting the password for ${resetHint.email_hint}. Every other session will be ended.` : resetHint.reason ?? "This link is no longer valid."
-                    : "Checking your link…"
-              : mode === "invite"
-                ? invite
-                  ? invite.valid
-                    ? `You were invited to ${invite.tenant_name} as ${ROLE_LABELS[invite.role] ?? invite.role}. Choose a password to join.`
-                    : invite.reason ?? "This invitation is no longer valid."
-                  : "Checking your invitation…"
-                : "Start building and running strategies"}
-          </p>
+    <div className="space-y-4 max-w-md">
+      {error && <ErrorState variant="inline" message={error} />}
+      <Card>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-11 h-11 rounded-full bg-brand/15 border border-brand/30 flex items-center justify-center text-brand font-semibold">
+            {user.email[0]?.toUpperCase()}
+          </div>
+          <div>
+            <div className="text-xs text-fg-muted">Signed in as</div>
+            <div className="text-sm font-medium text-fg">{user.email}</div>
+          </div>
         </div>
-      </div>
-      <Card className="shadow-card">
-        <form onSubmit={handleSubmit} className="space-y-3">
-          {mode === "mfa" && (
-            <div>
-              <label className="block text-xs text-fg-muted mb-1">Authenticator code</label>
-              <input
-                autoFocus
-                required
-                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm font-mono tracking-widest focus:outline-none focus:ring-1 focus:ring-brand"
-                value={mfaCode}
-                onChange={(e) => setMfaCode(e.target.value)}
-                placeholder="123 456"
-              />
-            </div>
-          )}
-          {mode !== "reset" && mode !== "mfa" && (
-          <div>
-            <label className="block text-xs text-fg-muted mb-1">Email</label>
-            <div className="relative">
-              <Mail size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted" />
-              <input
-                type="email"
-                required
-                readOnly={mode === "invite"}
-                className="w-full rounded bg-surface-2 border border-border pl-8 pr-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-colors read-only:text-fg-muted"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-          </div>
-          )}
-          {notice && <div className="text-xs text-up">{notice}</div>}
-          {mode !== "forgot" && mode !== "mfa" && (
-          <div>
-            <label className="block text-xs text-fg-muted mb-1">{mode === "reset" ? "New password" : "Password"}</label>
-            <div className="relative">
-              <Lock size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted" />
-              <input
-                type="password"
-                required
-                minLength={mode === "login" ? 1 : 10}
-                className="w-full rounded bg-surface-2 border border-border pl-8 pr-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-colors"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
-          )}
-          {mode === "register" && (betaField ? (
-            <div>
-              <label htmlFor="beta-invite-code" className="block text-xs text-fg-muted mb-1">Beta invite code</label>
-              <input
-                id="beta-invite-code"
-                autoComplete="off"
-                spellCheck={false}
-                maxLength={64}
-                placeholder="XXXX-XXXX-XXXX-XXXX"
-                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm font-mono tracking-wider uppercase focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-colors"
-                value={betaCode}
-                onChange={(e) => setBetaCode(e.target.value)}
-              />
-            </div>
-          ) : (
-            <button type="button" onClick={() => setBetaField(true)} className="text-xs text-fg-muted hover:text-fg hover:underline">
-              Have a beta invite code?
-            </button>
-          ))}
-          {needsLegal && legalDocs && <LegalConsentField checked={legalAccepted} onChange={setLegalAccepted} />}
-          {error && <div className="text-xs text-down">{error}</div>}
+        <div className="flex flex-wrap gap-2">
           <button
-            type="submit"
-            disabled={loading || (needsLegal && legalDocs !== null && !legalAccepted) || (mode === "invite" && !(invite && invite.valid)) || (mode === "reset" && !(resetHint && resetHint.valid))}
-            className="w-full rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50 transition-colors"
+            onClick={logout}
+            className="flex items-center gap-2 rounded border border-border hover:bg-surface-2 text-fg px-4 py-1.5 text-sm transition-colors"
           >
-            {loading ? "Please wait…" : mode === "login" ? "Log in" : mode === "mfa" ? "Verify" : mode === "invite" ? "Join team" : mode === "forgot" ? "Send reset link" : mode === "reset" ? "Set new password" : "Create account"}
+            <LogOut size={14} /> Log out
           </button>
+          <button
+            onClick={() => api.logoutEverywhere().catch(() => {}).finally(logout)}
+            className="rounded border border-down/40 hover:bg-down/10 text-down px-4 py-1.5 text-sm transition-colors"
+            title="Ends every session of your account on every device"
+          >
+            Log out everywhere
+          </button>
+        </div>
+      </Card>
+      <Card title="Email verification">
+        {user.email_verified ? (
+          <div className="text-xs text-up flex items-center gap-2"><ShieldCheck size={14} /> {user.email} is verified.</div>
+        ) : (
+          <div className="space-y-2 text-xs">
+            <p className="text-fg-muted">Confirm that {user.email} is yours. Open the link we emailed you, or send a fresh one. LIVE trading and broker credentials may require it.</p>
+            <button
+              className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5"
+              onClick={() => api.resendVerification().then((r) => setVerifyMessage(r.already_verified ? "Already verified." : r.sent ? "Verification email sent - check your inbox." : "We could not send the email right now. Ask support to verify your address.")).catch((e) => setVerifyMessage(friendlyError(e)))}
+            >
+              Resend verification email
+            </button>
+          </div>
+        )}
+        {verifyMessage && <div className="mt-2 text-xs text-fg-muted">{verifyMessage}</div>}
+      </Card>
+      {/* UX1 (audit P27): permission codes are for platform administrators only, never a trader's Account page. */}
+      {isAdminViewer(user.role) && user.scopes && user.scopes.length > 0 && (
+        <Card title="Your permissions">
+          <div className="flex flex-wrap gap-1.5">
+            {user.scopes.map((s) => <span key={s} className="rounded-md border border-border bg-surface-2 px-2 py-0.5 text-xs font-mono text-fg-muted">{s}</span>)}
+          </div>
+          <p className="mt-2 text-xs text-fg-muted">Derived from your role; your organisation's owner can deny or grant individual permissions from the Team tab.</p>
+        </Card>
+      )}
+      <MfaCard status={mfaStatus} onChange={() => api.mfaStatus().then(setMfaStatus).catch(() => {})} />
+      <Card title="Change password">
+        <form
+          className="space-y-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setPwMessage(null);
+            try {
+              const res = await api.changePassword(pwCurrent, pwNew);
+              setToken(res.access_token, res.refresh_token);
+              setPwMessage("Password changed. Every other session has been logged out.");
+              setPwCurrent("");
+              setPwNew("");
+              api.listSessions().then(setSessions).catch(() => {});
+            } catch (err) {
+              setPwMessage(friendlyError(err));
+            }
+          }}
+        >
+          <input type="password" required autoComplete="current-password" placeholder="Current password" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} />
+          <input type="password" required minLength={10} autoComplete="new-password" placeholder="New password (10+ characters, not too common)" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={pwNew} onChange={(e) => setPwNew(e.target.value)} />
+          <div className="flex items-center gap-3">
+            <button type="submit" className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm">Change password</button>
+            {pwMessage && <span className={`text-xs ${pwMessage.startsWith("Password changed") ? "text-up" : "text-down"}`}>{pwMessage}</span>}
+          </div>
         </form>
-        {mode === "login" && <GoogleSignInButton />}
-        <div className="mt-3 flex flex-wrap gap-3">
-          <button
-            onClick={() => { setNotice(null); setMode(mode === "login" ? "register" : "login"); }}
-            className="text-xs text-brand hover:underline"
-          >
-            {mode === "login" ? "Need an account? Register" : "Already have an account? Log in"}
-          </button>
-          {mode === "login" && (
-            <button onClick={() => { setNotice(null); setMode("forgot"); }} className="text-xs text-fg-muted hover:text-fg hover:underline">
-              Forgot password?
-            </button>
-          )}
-        </div>
+      </Card>
+      <Card title={`Active sessions (${sessions.length})`}>
+        {sessions.length === 0 ? (
+          <div className="text-xs text-fg-muted">No session data.</div>
+        ) : (
+          <table className="w-full text-xs">
+            <tbody>
+              {sessions.map((s) => (
+                <tr key={s.id} className="border-t border-border">
+                  <td className="py-1.5 pr-3 text-fg">{s.current ? "This device" : "Other device"}</td>
+                  <td className="py-1.5 pr-3 text-fg-muted">{s.ip_address ?? "-"}</td>
+                  <td className="py-1.5 pr-3 text-fg-muted truncate max-w-[12rem]" title={s.user_agent ?? ""}>{s.user_agent ?? "-"}</td>
+                  <td className="py-1.5 pr-3 text-fg-muted whitespace-nowrap">active {new Date(s.last_used_at).toLocaleString()}</td>
+                  <td className="py-1.5 text-right">{!s.current && <button onClick={() => revoke(s.id)} className="text-down hover:underline">Sign out</button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Card>
     </div>
   );

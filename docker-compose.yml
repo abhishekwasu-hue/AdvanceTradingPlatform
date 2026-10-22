@@ -81,6 +81,10 @@ services:
       # GS-1: Google sign-in. Both empty = no Google button and the /api/auth/google/* routes answer 404.
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      # UX2 fix 5: the platform's Telegram bot ("Connect Telegram"). Empty = the Connect button says it is not set up yet.
+      ATP_TELEGRAM_BOT_TOKEN: ${ATP_TELEGRAM_BOT_TOKEN:-}
+      ATP_TELEGRAM_BOT_USERNAME: ${ATP_TELEGRAM_BOT_USERNAME:-}
+      ATP_TELEGRAM_WEBHOOK_SECRET: ${ATP_TELEGRAM_WEBHOOK_SECRET:-}
       GLOBAL_CUES_ENABLED: ${GLOBAL_CUES_ENABLED:-true}
       MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-8388608}
       APP_VERSION: ${APP_VERSION:-1.0.0}
@@ -153,6 +157,8 @@ services:
       UNIVERSE_FILE_URLS: ${UNIVERSE_FILE_URLS:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@example.com}
+      # UX2 fix 5: the worker sends the alerts, so it reads the platform bot's token too.
+      ATP_TELEGRAM_BOT_TOKEN: ${ATP_TELEGRAM_BOT_TOKEN:-}
       STREAMING_QUOTES_ENABLED: ${STREAMING_QUOTES_ENABLED:-false}
       TICK_MAX_AGE_SECONDS: ${TICK_MAX_AGE_SECONDS:-120}
       GLOBAL_CUES_ENABLED: ${GLOBAL_CUES_ENABLED:-true}

@@ -79,8 +79,6 @@ class User(Base):
     # Deactivated (removed from the team) users keep their rows for attribution/audit history
     # but can no longer log in or use an existing token - see get_current_user.
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
-    # P0.9: the language the AI writes its answers in (chat, guide). The dashboard itself is English only.
-    ai_language: Mapped[str] = mapped_column(String(4), nullable=False, default="en", server_default="en")
     # Phase M / V4.13: an OWNER or platform admin can stop one member from opening new positions
     # without deactivating the account (they can still watch, exit and report).
     trading_disabled_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -2041,6 +2039,10 @@ class OISnapshotRecord(Base):
     underlying_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     strikes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")
+    # OC5: the near-month future's last price and open interest read in the same slot (None when the broker's quote
+    # does not carry them, and for every slot stored before this column existed).
+    future_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    future_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class StrikeOISnapshotRecord(Base):
@@ -2370,6 +2372,41 @@ class VisionReportRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class ChartAnalysisRecord(Base):
+    """Analyze a chart (docs/design/CHART_ANALYZE.md, flag `chart_analyze`): one chart image a user uploaded or linked,
+    and its analysis. Owned by one user of one organisation; nobody else reads it. The image is stored privately on the
+    host's data volume: `image_path` is relative to the private store and built from server-generated ids only, and the
+    original bytes are never kept (only a re-encoded PNG without metadata). `status`: ready (stored, not analysed),
+    running, done, failed, deleted. A deleted or expired row keeps only its counters (created_at, mode, cost) so the
+    plan's daily / monthly limits cannot be reset by deleting; its file and result are gone."""
+
+    __tablename__ = "chart_analyses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, default="image_only", server_default="image_only")
+    source: Mapped[str] = mapped_column(String(10), nullable=False, default="upload", server_default="upload")   # upload / link
+    source_host: Mapped[str | None] = mapped_column(String(255), nullable=True)               # a link's host only, never the URL
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="ready", server_default="ready", index=True)
+    image_path: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    image_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    image_width: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    image_height: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    image_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    engine_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    billed_to_user_key: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)       # when the running analysis was claimed
+    analysed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
 
 
 class PaperAccountRecord(Base):

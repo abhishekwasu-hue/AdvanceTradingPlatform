@@ -451,6 +451,13 @@ class _Checker:
             if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 < step < n.TF_MINUTES["1d"] and float(value) % step:
                 self.err(f"{node.name}: {name} {value:g} is not a whole number of @{own_tf} bars ({step} minutes each)", arg or node,
                          "tf_multiple", function=spec.name, arg=name, tf=own_tf)
+        for low_name, high_name, equal_ok in spec.ordered_args:      # TPL-1: e.g. MACD fast below slow
+            lo_v, hi_v = self.arg_value(node, spec, low_name), self.arg_value(node, spec, high_name)
+            numbers = all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (lo_v, hi_v))
+            if numbers and (lo_v > hi_v or (lo_v == hi_v and not equal_ok)):
+                rel = "at most" if equal_ok else "below"
+                self.err(f"{node.name}: {low_name} must be {rel} {high_name}, got {lo_v:g} and {hi_v:g}", node, "argument_order",
+                         function=spec.name, arg=low_name, other=high_name)
         sessions = self.sessions_needed(node, spec)
         if sessions and n.TF_MINUTES[own_tf] < n.TF_MINUTES["1d"]:    # whole sessions in this timeframe's bars
             min_bars = max(min_bars, sessions * math.ceil(n.TF_MINUTES["1d"] / n.TF_MINUTES[own_tf]))

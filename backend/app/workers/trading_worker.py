@@ -60,7 +60,7 @@ from app.workers import eod_summary
 from app.workers.redis_guard import RedisGuard
 from app.news_feed import service as news_feed
 from app.platform import controls as platform_controls
-from app.ai.regime import classify_regime, parse_filter, regime_blocks
+from app.ai.regime import classify_regime, parse_filter, regime_note
 from app.observability.metrics import RETENTION_DELETED, observe_cycle
 from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
 from app.instruments import master
@@ -768,6 +768,26 @@ class TradingWorker:
                     return broker
         return None
 
+    @staticmethod
+    async def _oi_future_quote(session: AsyncSession, broker: Any, underlying: str, now: datetime) -> Tuple[Optional[float], Optional[float]]:
+        """OC5: the near-month future's (last price, OI) through the same broker session, for the Option chain charts.
+        (None, None) when the master has no future, the adapter has no single-symbol quote or the read fails - the
+        chain's slot is stored either way."""
+        from app.option_chain import chain_view
+        try:
+            async with guarded(session):              # a failed master read never leaves the slot's transaction aborted
+                contract = await chain_view.near_future(session, underlying, now.astimezone(IST).date())
+            reader = getattr(broker, "get_quote_for_symbol", None)
+            if contract is None or reader is None:
+                return None, None
+            quote = await reader(contract.symbol, contract.exchange)
+        except Exception as exc:  # noqa: BLE001 - the future is extra; the chain's slot never waits on it
+            logger.info("OI snapshot of %s: the future's quote could not be read: %s", underlying, type(exc).__name__)
+            return None, None
+        if quote is None:
+            return None, None
+        return getattr(quote, "ltp", None), getattr(quote, "oi", None)
+
     async def _oi_banner(self, session: AsyncSession, now: datetime) -> int:
         """OI Banner O2: for every underlying some tenant enabled, one option-chain read per collector slot while its
         venue is open, through the first of those tenants with a usable broker session. The rows are platform-wide
@@ -800,7 +820,9 @@ class TradingWorker:
                                 continue
                             expiries = await master.expiries(own, underlying, on_or_after=now.astimezone(IST).date())
                             chain = await broker.get_option_chain(master.INDEX_SYMBOLS.get(underlying, underlying), expiries[0] if expiries else None)
-                            result = await oi_snapshots.collect(own, underlying, chain, now, source=broker.name)
+                            future_price, future_oi = await self._oi_future_quote(own, broker, underlying, now)
+                            result = await oi_snapshots.collect(own, underlying, chain, now, source=broker.name,
+                                                                future_price=future_price, future_oi=future_oi)
                             await own.commit()
                             stored += 1 if result.status == "OK" else 0
                             break
@@ -1421,18 +1443,16 @@ class TradingWorker:
             logger.warning("Deployment %s: %s", dep.id, stale)
             return False
 
-        # Phase L3: the regime filter - a deployment that only trades trends sits out ranges, and
-        # says so. Classified on the base frame the strategy is about to read.
+        # Phase L3 -> handover item 5 C: the indicator regime is an admin diagnostic only. It is classified and logged;
+        # it never blocks an entry (and never touched exits). The old filter's verdict is logged for the admin.
         allowed = parse_filter(dep.regime_filter)
         regime = classify_regime(base) if (allowed or dep.id in self._regime_wanted or len(base) >= 60) else None
         if regime is not None:
             self._regimes[dep.id] = regime.kind
-        if allowed:
-            blocked = regime_blocks(regime, allowed)
-            if blocked:
-                dep.last_error = blocked
-                await session.commit()
-                return False
+        if allowed and regime is not None:
+            note = regime_note(regime, allowed)
+            if note:
+                logger.info("Deployment %s: regime diagnostic (never blocks): %s", dep.id, note)
 
         signal = strategy.analyze(frames, dep.symbol)
         if not signal.is_tradeable:

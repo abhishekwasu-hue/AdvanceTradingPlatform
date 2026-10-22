@@ -1,7 +1,7 @@
 """WL1 (handover item 4): read-only system watchlists (indices, index stocks, sectors, F&O stocks) and their refresh log.
 
 Revision ID: a4c6e8f0b2d4
-Revises: d9f1b3c5e7a2 (UI2-4a1 prefs / watchlists / drawings, main's head)
+Revises: c4e6a8b0d2f4 (Analyze a chart - main's head when WL1 merged)
 Create Date: 2026-10-22 12:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'a4c6e8f0b2d4'
-down_revision: Union[str, Sequence[str], None] = 'd9f1b3c5e7a2'
+down_revision: Union[str, Sequence[str], None] = 'c4e6a8b0d2f4'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - two new tables that no earlier release reads or writes, so the previous release runs unchanged

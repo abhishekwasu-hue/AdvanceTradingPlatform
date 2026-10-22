@@ -131,6 +131,10 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     # Settings redesign A: the AI key-format table and its cases (obviously fake keys only), backend + byte-identical copy
     "backend/tests/fixtures/key_formats.json": "9eca4977c4c6c89bf6876b40938aef29caabba46227e2266144958ee1462f5da",
     "frontend/src/aiKeys/__fixtures__/key_formats.json": "9eca4977c4c6c89bf6876b40938aef29caabba46227e2266144958ee1462f5da",
+    # Handover 11l: the signal-language cases (made-up texts; symbol names only as examples of what a public text may not
+    # carry), backend + byte-identical frontend copy
+    "backend/tests/fixtures/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
+    "frontend/src/signals/__fixtures__/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
     # made-up rows in NSE's file layouts (the universe importer's tests)
     "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
     "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",

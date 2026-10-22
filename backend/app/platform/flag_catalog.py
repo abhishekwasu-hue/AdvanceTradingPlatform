@@ -85,6 +85,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "screener_vectorized": FlagInfo("Faster screens (same results)", "screens", "nothing visible", ("screener_v2",), "", "behind_the_scenes"),
     "screenql_amw_functions": FlagInfo("Extra screen functions (divergence, swings, candles)", "screens", "builder functions", ("screener_v2",), "", "ready"),
     "strategy_lab_pine": FlagInfo("Paste a TradingView Pine script and run its signal condition as a screen (never executed)", "screens", "Pine Script button on the Screener", (), "", "unfinished"),
+    "signal_language_v2": FlagInfo("Signals, alerts, the brief and the teacher in structure words only (no buy / sell / target / stop wording, no single prices)", "ai", "reworded signal and alert texts", (), "", "ready"),
     "alerts_stale_guard": FlagInfo("No alert is sent on old data", "data", "nothing visible", (), "", "behind_the_scenes"),
     "alerts_reliable_outbox": FlagInfo("Alerts never sent twice, retried if lost", "data", "nothing visible", (), "", "behind_the_scenes"),
     "support_bot": FlagInfo("How-to help bot", "ai", "Help button", (), "help pages", "unfinished"),

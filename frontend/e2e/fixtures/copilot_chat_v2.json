@@ -40,7 +40,7 @@
     "title": "Pre-trade check",
     "line": "Checks a trade idea against your own risk settings and lists what is missing.",
     "starter": "Check my trade idea",
-    "built": false,
+    "built": true,
     "page": {
      "label": "Open your risk limits",
      "to": "/risk-management"
@@ -52,7 +52,7 @@
     "title": "Position watch",
     "line": "Warns when the risk on your open positions rises, and explains why.",
     "starter": "How are my open positions?",
-    "built": false,
+    "built": true,
     "page": {
      "label": "Open My positions",
      "to": "/positions"
@@ -64,7 +64,7 @@
     "title": "Post-trade coach",
     "line": "Reviews each trade, your repeated habits and your week.",
     "starter": "Review my last trade",
-    "built": false,
+    "built": true,
     "page": {
      "label": "Open the trade coach",
      "to": "/copilot/coach"
@@ -1055,6 +1055,656 @@
    "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
    "source": "rules",
    "tool_calls": [],
+   "ai": {
+    "ready": false,
+    "title": "Add a free AI key to start",
+    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "settings": "/settings#ai",
+    "reason": null
+   }
+  },
+  "How are my open positions?": {
+   "job": "positions",
+   "job_number": 4,
+   "title": "Position watch",
+   "summary": [
+    "You have 2 open positions; the warnings below explain where the risk has risen."
+   ],
+   "answer": "You have 2 open positions; the warnings below explain where the risk has risen.",
+   "sections": [
+    {
+     "title": "Your open positions",
+     "lines": [
+      "BANKNIFTY26OCT52000CE (bullish, PAPER): entry 410, stop 300, last price 455, marked P&L 1,350.",
+      "NIFTY26OCTFUT (bullish, PAPER): entry 24,900, stop 24,700, last price 24,850.5, marked P&L -3,712.5."
+     ]
+    },
+    {
+     "title": "NIFTY areas",
+     "lines": [
+      "A supply area 25,080 - 25,160 (fresh) sits above the price of your bullish NIFTY position."
+     ]
+    },
+    {
+     "title": "Warnings",
+     "lines": [
+      "NIFTY26OCTFUT is in a loss: the price has moved 24.8% of the way from your entry to your stop.",
+      "NIFTY26OCTFUT: your stop is further from the entry than when you opened it (24,760 then, 24,700 now), so the loss if it is hit is larger than you planned.",
+      "If every stop is hit, the loss would be 18,300: 9.15% of your capital; your own limit for this is 6%: above it.",
+      "Today so far (realised plus open): -3,907.5, which is 65.1% of your daily loss limit of 6,000.",
+      "Your 2 directional positions are all bullish: one large move against that side hits them together.",
+      "2026-10-27: NIFTY monthly expiry is listed this week; it touches your NIFTY position.",
+      "BANKNIFTY26OCT52000CE expires on 2026-10-23, this week."
+     ]
+    },
+    {
+     "title": "How I check",
+     "lines": [
+      "I only explain the risk from your own positions and settings. I never close, change or block anything; every decision stays yours."
+     ]
+    }
+   ],
+   "blocks": [
+    {
+     "type": "table",
+     "table": {
+      "title": "Your open positions",
+      "columns": [
+       {
+        "key": "symbol",
+        "label": "Symbol",
+        "kind": "text"
+       },
+       {
+        "key": "side",
+        "label": "Side",
+        "kind": "text"
+       },
+       {
+        "key": "entry",
+        "label": "Entry",
+        "kind": "price"
+       },
+       {
+        "key": "stop",
+        "label": "Stop",
+        "kind": "price"
+       },
+       {
+        "key": "last",
+        "label": "Last price",
+        "kind": "price"
+       },
+       {
+        "key": "pnl",
+        "label": "Marked P&L",
+        "kind": "number"
+       },
+       {
+        "key": "at_risk",
+        "label": "Loss if stop hit",
+        "kind": "number"
+       }
+      ],
+      "rows": [
+       {
+        "symbol": "BANKNIFTY26OCT52000CE",
+        "side": "bullish",
+        "entry": 410.0,
+        "stop": 300.0,
+        "last": 455.0,
+        "pnl": 1350.0,
+        "at_risk": 3300.0
+       },
+       {
+        "symbol": "NIFTY26OCTFUT",
+        "side": "bullish",
+        "entry": 24900.0,
+        "stop": 24700.0,
+        "last": 24850.5,
+        "pnl": -3712.5,
+        "at_risk": 15000.0
+       }
+      ]
+     }
+    }
+   ],
+   "unknowns": [],
+   "worked": [
+    {
+     "tool": "get_my_positions",
+     "label": "Your open positions",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "trades",
+     "numbers": [
+      {
+       "label": "count",
+       "value": 2
+      },
+      {
+       "label": "total_loss_if_stops_hit",
+       "value": 18300.0
+      },
+      {
+       "label": "total_marked_pnl",
+       "value": -2362.5
+      },
+      {
+       "label": "realised_today",
+       "value": -1545.0
+      }
+     ],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "get_risk_limits",
+     "label": "Your own risk settings",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "risk_settings",
+     "numbers": [
+      {
+       "label": "capital",
+       "value": 200000.0
+      },
+      {
+       "label": "max_daily_loss_pct",
+       "value": 3.0
+      },
+      {
+       "label": "max_open_positions",
+       "value": 3
+      },
+      {
+       "label": "max_portfolio_risk_pct",
+       "value": 6.0
+      }
+     ],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "get_market_context",
+     "label": "This week's events",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "context_panel",
+     "numbers": [],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "calc:open_risk_share",
+     "label": "Open risk = the loss if every stop is hit, as % of your capital",
+     "ok": true,
+     "as_of": null,
+     "source": "calculation",
+     "numbers": [
+      {
+       "label": "loss_if_stops_hit",
+       "value": 18300.0
+      },
+      {
+       "label": "capital",
+       "value": 200000.0
+      },
+      {
+       "label": "open_risk_pct",
+       "value": 9.15
+      }
+     ],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "calc:daily_loss_used",
+     "label": "Daily loss used = (realised today + open marked P&L) / your daily loss limit",
+     "ok": true,
+     "as_of": null,
+     "source": "calculation",
+     "numbers": [
+      {
+       "label": "realised_today",
+       "value": -1545.0
+      },
+      {
+       "label": "open_marked_pnl",
+       "value": -2362.5
+      },
+      {
+       "label": "daily_loss_limit",
+       "value": 6000.0
+      },
+      {
+       "label": "today",
+       "value": -3907.5
+      },
+      {
+       "label": "used_pct",
+       "value": 65.1
+      }
+     ],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "get_market_zones",
+     "label": "BANKNIFTY market zones",
+     "ok": false,
+     "as_of": null,
+     "source": "get_market_zones",
+     "numbers": [],
+     "note": "no recorded result",
+     "args": {
+      "symbol": "BANKNIFTY"
+     }
+    },
+    {
+     "tool": "get_market_zones",
+     "label": "NIFTY market zones",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "market_zones",
+     "numbers": [
+      {
+       "label": "price",
+       "value": 24850.5
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "NIFTY",
+      "price": 24850.5
+     }
+    }
+   ],
+   "action": {
+    "label": "Open My positions",
+    "to": "/positions"
+   },
+   "refused": null,
+   "starters": [],
+   "concepts": [],
+   "notes": [],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "tool_calls": [
+    "get_my_positions",
+    "get_risk_limits",
+    "get_market_context",
+    "get_market_zones",
+    "get_market_zones"
+   ],
+   "ai": {
+    "ready": false,
+    "title": "Add a free AI key to start",
+    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "settings": "/settings#ai",
+    "reason": null
+   }
+  },
+  "Review my last trade": {
+   "job": "review",
+   "job_number": 5,
+   "title": "Post-trade coach",
+   "summary": [
+    "Your last trade: NIFTY26OCTFUT, bullish side, PAPER, setup pullback-to-demand; closed on 2026-10-20: you closed it by hand."
+   ],
+   "answer": "Your last trade: NIFTY26OCTFUT, bullish side, PAPER, setup pullback-to-demand; closed on 2026-10-20: you closed it by hand.",
+   "sections": [
+    {
+     "title": "Your last trade",
+     "lines": [
+      "Opened at 24,625 (planned 24,620) and closed at 24,605, quantity 75.",
+      "Result: P&L -1,545 after charges of 45; that is -0.32R of the 4,875 you planned to risk.",
+      "Your stop as opened was 24,560; at the exit it was 24,540 (1 change).",
+      "While open, it moved up to 0.4R in your favour and 0.9R against you.",
+      "Held for 95 minutes.",
+      "The discipline engine tagged it: stop moved against the position."
+     ]
+    },
+    {
+     "title": "Your week (2026-W43)",
+     "lines": [
+      "2026-W43: 4 trades, 4 closed and 0 still open.",
+      "Closed trades: 2 won, 2 lost, win rate 50%; net P&L \u20b92,055.00 after \u20b9158.00 in charges.",
+      "Average result 0.36R over 4 trades with a stop; expectancy \u20b9513.75 per closed trade.",
+      "Setup pullback-to-demand made \u20b91,575.00 over 2 closed trades.",
+      "Setup handover-continuation made \u20b9480.00 over 2 closed trades.",
+      "Tagged stop moved against the position: 1 trade, net -\u20b91,545.00 on the closed ones.",
+      "Tagged revenge trade: 1 trade, net -\u20b9980.00 on the closed ones.",
+      "The behaviour with the largest loss this week was stop moved against the position (\u20b91,545.00 lost over 1 closed trade).",
+      "Discipline score 88 out of 100; the lowest component was emotional control at 75% of decisions untagged.",
+      "Compared with 2026-W42 (score 78), the score is up by 10."
+     ]
+    },
+    {
+     "title": "Repeated habits",
+     "lines": [
+      "Stop moved against the position: tagged in 3 of your last 4 weeks (4 trades).",
+      "Revenge trade: tagged in 2 of your last 4 weeks (2 trades)."
+     ]
+    },
+    {
+     "title": "How I review",
+     "lines": [
+      "I describe what happened, from your own records only. I don't tell you what to trade next."
+     ]
+    }
+   ],
+   "blocks": [
+    {
+     "type": "table",
+     "table": {
+      "title": "Your weeks",
+      "columns": [
+       {
+        "key": "week",
+        "label": "Week",
+        "kind": "text"
+       },
+       {
+        "key": "score",
+        "label": "Discipline score",
+        "kind": "number"
+       },
+       {
+        "key": "trades",
+        "label": "Trades",
+        "kind": "number"
+       },
+       {
+        "key": "net_pnl",
+        "label": "Net P&L",
+        "kind": "number"
+       },
+       {
+        "key": "avg_r",
+        "label": "Average R",
+        "kind": "number"
+       }
+      ],
+      "rows": [
+       {
+        "week": "2026-W43",
+        "score": 88,
+        "trades": 4,
+        "net_pnl": 2055.0,
+        "avg_r": 0.36
+       },
+       {
+        "week": "2026-W42",
+        "score": 78,
+        "trades": 6,
+        "net_pnl": 2310.0,
+        "avg_r": 0.35
+       },
+       {
+        "week": "2026-W41",
+        "score": 71,
+        "trades": 5,
+        "net_pnl": -840.0,
+        "avg_r": -0.12
+       },
+       {
+        "week": "2026-W40",
+        "score": 85,
+        "trades": 4,
+        "net_pnl": 1220.0,
+        "avg_r": 0.41
+       }
+      ]
+     }
+    }
+   ],
+   "unknowns": [],
+   "worked": [
+    {
+     "tool": "get_weekly_review",
+     "label": "Your weekly review (discipline engine)",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "journal",
+     "numbers": [
+      {
+       "label": "trades",
+       "value": 4
+      },
+      {
+       "label": "net_pnl",
+       "value": 2055.0
+      },
+      {
+       "label": "score",
+       "value": 88
+      }
+     ],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "get_my_last_trade",
+     "label": "Your last closed trade",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "trades",
+     "numbers": [
+      {
+       "label": "pnl",
+       "value": -1545.0
+      },
+      {
+       "label": "r_multiple",
+       "value": -0.32
+      },
+      {
+       "label": "risk_planned",
+       "value": 4875.0
+      }
+     ],
+     "note": null,
+     "args": {}
+    }
+   ],
+   "action": {
+    "label": "Open the trade coach",
+    "to": "/copilot/coach"
+   },
+   "refused": null,
+   "starters": [],
+   "concepts": [],
+   "notes": [],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "tool_calls": [
+    "get_weekly_review",
+    "get_my_last_trade"
+   ],
+   "ai": {
+    "ready": false,
+    "title": "Add a free AI key to start",
+    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "settings": "/settings#ai",
+    "reason": null
+   }
+  },
+  "Check my trade idea": {
+   "job": "trade_check",
+   "job_number": 3,
+   "title": "Pre-trade check",
+   "summary": [
+    "Your NIFTY idea, checked against the chart and your own settings.",
+    "Tell me the idea in one line and I can check more: the symbol, the side, your entry, where the idea is wrong, the size and your entry model."
+   ],
+   "answer": "Your NIFTY idea, checked against the chart and your own settings.\nTell me the idea in one line and I can check more: the symbol, the side, your entry, where the idea is wrong, the size and your entry model.",
+   "sections": [
+    {
+     "title": "Your idea as I read it",
+     "lines": [
+      "NIFTY: nothing else stated yet."
+     ]
+    },
+    {
+     "title": "Trend side",
+     "lines": [
+      "Daily: the structure reads up.",
+      "Weekly: the structure reads range."
+     ]
+    },
+    {
+     "title": "Area",
+     "lines": [
+      "The price 24,850.5 is not inside any of ATP's stored areas.",
+      "Nearby: the supply area 25,080 - 25,160 (fresh).",
+      "Nearby: the demand area 24,520 - 24,610 (tested)."
+     ]
+    },
+    {
+     "title": "Risk against your own settings",
+     "lines": [
+      "Your own risk per trade is 2,000 (1% of your capital of 200,000)."
+     ]
+    },
+    {
+     "title": "Event risk this week",
+     "lines": [
+      "2026-10-27: NIFTY monthly expiry"
+     ]
+    },
+    {
+     "title": "What your plan does not say yet",
+     "lines": [
+      "The side: bullish or bearish.",
+      "Your entry price.",
+      "Your entry model: what on the chart makes you enter (for example a pullback into an area, a handover, a break of structure).",
+      "Where the idea is wrong: your invalidation price.",
+      "The size: how many lots or shares."
+     ]
+    },
+    {
+     "title": "How I check",
+     "lines": [
+      "I compare your idea only with the chart's structure, ATP's stored areas and your own settings; I don't add rules of my own, and the decision is yours."
+     ]
+    }
+   ],
+   "blocks": [],
+   "unknowns": [],
+   "worked": [
+    {
+     "tool": "get_chart_structure",
+     "label": "NIFTY structure per timeframe",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "price_action_layer:nse_bhav",
+     "numbers": [
+      {
+       "label": "last_close",
+       "value": 24850.5
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "NIFTY",
+      "timeframe": "1d"
+     }
+    },
+    {
+     "tool": "get_market_zones",
+     "label": "NIFTY market zones",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "market_zones",
+     "numbers": [
+      {
+       "label": "price",
+       "value": 24850.5
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "NIFTY",
+      "price": 24850.5
+     }
+    },
+    {
+     "tool": "get_risk_limits",
+     "label": "Your own risk settings",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "risk_settings",
+     "numbers": [
+      {
+       "label": "capital",
+       "value": 200000.0
+      },
+      {
+       "label": "risk_per_trade_pct",
+       "value": 1.0
+      },
+      {
+       "label": "lot_size",
+       "value": 75
+      },
+      {
+       "label": "min_risk_reward",
+       "value": 1.5
+      }
+     ],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "get_market_context",
+     "label": "This week's events",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "context_panel",
+     "numbers": [],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "calc:risk_budget",
+     "label": "Your risk per trade = capital x risk per trade %",
+     "ok": true,
+     "as_of": null,
+     "source": "calculation",
+     "numbers": [
+      {
+       "label": "capital",
+       "value": 200000.0
+      },
+      {
+       "label": "risk_per_trade_pct",
+       "value": 1.0
+      },
+      {
+       "label": "risk_per_trade",
+       "value": 2000.0
+      }
+     ],
+     "note": null,
+     "args": {}
+    }
+   ],
+   "action": null,
+   "refused": null,
+   "starters": [],
+   "concepts": [],
+   "notes": [
+    "Structure reading from ATP's zone layers (the full Price Action reader is not in ATP yet)."
+   ],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "tool_calls": [
+    "get_chart_structure",
+    "get_market_zones",
+    "get_risk_limits",
+    "get_market_context"
+   ],
    "ai": {
     "ready": false,
     "title": "Add a free AI key to start",

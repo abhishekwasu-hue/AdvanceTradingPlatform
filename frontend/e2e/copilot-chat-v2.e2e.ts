@@ -9,6 +9,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  *   touched).
  * - The top line, the no-key card, today's market line, the starters, a starter's answer with its table and "How I
  *   worked this out", a refusal in plain words, the phone layout (the question box above the bottom bar).
+ * - Second slice: the position watch (job 4) with its warnings and table, the post-trade coach (job 5) with the week
+ *   and the repeated habits, and the pre-trade check (job 3) listing what the idea does not state yet.
  * Every reply is made-up data (e2e/fixtures/copilot_chat_v2.json, the backend's rule answers on its synthetic eval
  * fixtures). After an intended change: `npx playwright test --project=phone e2e/copilot-chat-v2.e2e.ts --update-snapshots`.
  */
@@ -93,7 +95,8 @@ test.describe("v2 copilot chat 1440 desktop", () => {
     await expect(page.locator("[data-market-line='ok']")).toContainText("NIFTY 50 last closed at 24,850.5");
     await expect(page.locator("[data-starters] button")).toHaveCount(8);
     await expect(page.locator("[data-job]")).toHaveCount(8);
-    await expect(page.locator("[data-job='positions']")).toContainText("Coming later");
+    await expect(page.locator("[data-job='positions']")).toContainText("Ready");            // jobs 3-5: the second slice
+    await expect(page.locator("[data-job='strategy']")).toContainText("Coming later");
     await expect(page.locator("[data-composer='inline']")).toBeVisible();
   });
 
@@ -108,6 +111,30 @@ test.describe("v2 copilot chat 1440 desktop", () => {
     await expect(answer.locator("[data-step='get_chart_structure']")).toContainText("last close 24850.5");
     await expect(answer.locator("[data-disclaimer]")).toContainText("not advice");
     expect(asked).toEqual(["Read the NIFTY chart"]);
+  });
+
+  test("the position watch warns from the user's own positions and settings", async ({ page }) => {
+    const asked = await open(page, "light");
+    await page.locator("[data-starters] button", { hasText: "How are my open positions?" }).click();
+    const answer = page.locator("[data-answer='positions']");
+    await expect(answer).toContainText("You have 2 open positions");
+    await expect(answer.locator("[data-section='Warnings']")).toContainText("your own limit for this is 6%: above it");
+    await expect(answer.locator("[data-block='table']").first()).toContainText("NIFTY26OCTFUT");
+    await expect(answer.locator("a", { hasText: "Open My positions" })).toHaveAttribute("href", "/positions");
+    await answer.locator("[data-worked] summary").click();
+    await expect(answer.locator("[data-step='get_my_positions']")).toContainText("total loss if stops hit 18300");
+    expect(asked).toEqual(["How are my open positions?"]);
+  });
+
+  test("the post-trade coach and the pre-trade check describe; they never advise", async ({ page }) => {
+    await open(page, "light");
+    await page.locator("[data-starters] button", { hasText: "Review my last trade" }).click();
+    const review = page.locator("[data-answer='review']");
+    await expect(review.locator("[data-section='Repeated habits']")).toContainText("tagged in 3 of your last 4 weeks");
+    await page.locator("[data-starters] button", { hasText: "Check my trade idea" }).click();
+    const check = page.locator("[data-answer='trade_check']");
+    await expect(check.locator("[data-section='What your plan does not say yet']")).toContainText("your invalidation price");
+    await expect(check).toContainText("I don't add rules of my own");
   });
 
   test("a buy question is refused in plain words", async ({ page }) => {

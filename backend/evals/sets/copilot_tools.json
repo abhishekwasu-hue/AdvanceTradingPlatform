@@ -270,6 +270,110 @@
    "ok": true,
    "source": "market_zones"
   },
+  "get_my_last_trade": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "trade": {
+     "charges": 45.0,
+     "entry_date": "2026-10-20",
+     "entry_price": 24625.0,
+     "exit_date": "2026-10-20",
+     "exit_price": 24605.0,
+     "exit_reason": "MANUAL",
+     "exit_words": "you closed it by hand",
+     "held_minutes": 95,
+     "id": 41,
+     "initial_stop": 24560.0,
+     "mae_r": 0.9,
+     "mfe_r": 0.4,
+     "mode": "PAPER",
+     "planned_entry": 24620.0,
+     "planned_rr": 2.0,
+     "pnl": -1545.0,
+     "quantity": 75.0,
+     "r_multiple": -0.32,
+     "risk_planned": 4875.0,
+     "setup": "pullback-to-demand",
+     "side": "bullish",
+     "stop_at_exit": 24540.0,
+     "stop_changes": 1,
+     "symbol": "NIFTY26OCTFUT",
+     "tags": [
+      {
+       "label": "stop moved against the position",
+       "source": "AUTO",
+       "status": "SUGGESTED",
+       "tag": "moved_stop_against"
+      }
+     ]
+    }
+   },
+   "ok": true,
+   "source": "trades"
+  },
+  "get_my_positions": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "bearish": 0,
+    "bullish": 2,
+    "closed_today": 1,
+    "count": 2,
+    "neutral": 0,
+    "positions": [
+     {
+      "entry_price": 410.0,
+      "entry_time": "2026-10-21T04:00:00+00:00",
+      "expiry": "2026-10-23",
+      "group": null,
+      "id": 52,
+      "initial_stop": 300.0,
+      "kind": "OPTION",
+      "loss_if_stop_hit": 3300.0,
+      "mark_price": 455.0,
+      "mark_time": "2026-10-21T03:30:00+00:00",
+      "marked_pnl": 1350.0,
+      "mode": "PAPER",
+      "moved_to_stop_pct": null,
+      "quantity": 30.0,
+      "setup": "handover-continuation",
+      "side": "bullish",
+      "stop_now": 300.0,
+      "stop_widened": false,
+      "symbol": "BANKNIFTY26OCT52000CE",
+      "underlying": "BANKNIFTY"
+     },
+     {
+      "entry_price": 24900.0,
+      "entry_time": "2026-10-20T05:00:00+00:00",
+      "expiry": "2026-10-27",
+      "group": null,
+      "id": 51,
+      "initial_stop": 24760.0,
+      "kind": "FUT",
+      "loss_if_stop_hit": 15000.0,
+      "mark_price": 24850.5,
+      "mark_time": "2026-10-21T03:30:00+00:00",
+      "marked_pnl": -3712.5,
+      "mode": "PAPER",
+      "moved_to_stop_pct": 24.8,
+      "quantity": 75.0,
+      "setup": "pullback-to-demand",
+      "side": "bullish",
+      "stop_now": 24700.0,
+      "stop_widened": true,
+      "symbol": "NIFTY26OCTFUT",
+      "underlying": "NIFTY"
+     }
+    ],
+    "read_at": "2026-10-21T03:30:00+00:00",
+    "realised_today": -1545.0,
+    "total_loss_if_stops_hit": 18300.0,
+    "total_marked_pnl": -2362.5,
+    "unpriced": 0
+   },
+   "ok": true,
+   "source": "trades"
+  },
   "get_option_chain_analyses:NIFTY": {
    "as_of": "2026-10-21T03:30:00+00:00",
    "data": {
@@ -1166,12 +1270,173 @@
     "max_consecutive_losses": 3,
     "max_daily_loss_pct": 3.0,
     "max_open_positions": 3,
+    "max_portfolio_risk_pct": 6.0,
     "max_trades_per_day": 5,
     "min_risk_reward": 1.5,
     "risk_per_trade_pct": 1.0
    },
    "ok": true,
    "source": "risk_settings"
+  },
+  "get_weekly_review": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "behaviours": [
+     {
+      "avg_r": -0.32,
+      "closed": 1,
+      "label": "stop moved against the position",
+      "net_pnl": -1545.0,
+      "tag": "moved_stop_against",
+      "trades": 1
+     },
+     {
+      "avg_r": -0.65,
+      "closed": 1,
+      "label": "revenge trade",
+      "net_pnl": -980.0,
+      "tag": "revenge_trade",
+      "trades": 1
+     }
+    ],
+    "costliest": {
+     "avg_r": -0.32,
+     "closed": 1,
+     "label": "stop moved against the position",
+     "net_pnl": -1545.0,
+     "tag": "moved_stop_against",
+     "trades": 1
+    },
+    "discipline": {
+     "score": 88
+    },
+    "history": [
+     {
+      "avg_r": 0.35,
+      "net_pnl": 2310.0,
+      "score": 78,
+      "trades": 6,
+      "week": "2026-W42",
+      "win_rate": 50.0
+     },
+     {
+      "avg_r": -0.12,
+      "net_pnl": -840.0,
+      "score": 71,
+      "trades": 5,
+      "week": "2026-W41",
+      "win_rate": 40.0
+     },
+     {
+      "avg_r": 0.41,
+      "net_pnl": 1220.0,
+      "score": 85,
+      "trades": 4,
+      "week": "2026-W40",
+      "win_rate": 50.0
+     }
+    ],
+    "lines": [
+     "2026-W43: 4 trades, 4 closed and 0 still open.",
+     "Closed trades: 2 won, 2 lost, win rate 50%; net P&L \u20b92,055.00 after \u20b9158.00 in charges.",
+     "Average result 0.36R over 4 trades with a stop; expectancy \u20b9513.75 per closed trade.",
+     "Setup pullback-to-demand made \u20b91,575.00 over 2 closed trades.",
+     "Setup handover-continuation made \u20b9480.00 over 2 closed trades.",
+     "Tagged stop moved against the position: 1 trade, net -\u20b91,545.00 on the closed ones.",
+     "Tagged revenge trade: 1 trade, net -\u20b9980.00 on the closed ones.",
+     "The behaviour with the largest loss this week was stop moved against the position (\u20b91,545.00 lost over 1 closed trade).",
+     "Discipline score 88 out of 100; the lowest component was emotional control at 75% of decisions untagged.",
+     "Compared with 2026-W42 (score 78), the score is up by 10."
+    ],
+    "patterns": [
+     {
+      "label": "stop moved against the position",
+      "of_weeks": 4,
+      "tag": "moved_stop_against",
+      "trades": 4,
+      "weeks": 3
+     },
+     {
+      "label": "revenge trade",
+      "of_weeks": 4,
+      "tag": "revenge_trade",
+      "trades": 2,
+      "weeks": 2
+     }
+    ],
+    "totals": {
+     "avg_holding_minutes": 123.8,
+     "avg_r": 0.36,
+     "charges": 158.0,
+     "closed": 4,
+     "decisions": 4,
+     "expectancy": 513.75,
+     "flat": 0,
+     "gross_pnl": 2213.0,
+     "largest_loss": -1545.0,
+     "largest_win": 3120.0,
+     "legs": 4,
+     "losses": 2,
+     "net_pnl": 2055.0,
+     "open": 0,
+     "profit_factor": 1.81,
+     "r_trades": 4,
+     "trades": 4,
+     "win_rate": 50.0,
+     "wins": 2
+    },
+    "week": "2026-W43",
+    "weeks_read": 4,
+    "what_lost": [],
+    "what_worked": [
+     {
+      "avg_holding_minutes": 152.5,
+      "avg_r": 0.44,
+      "charges": 85.0,
+      "closed": 2,
+      "decisions": 2,
+      "expectancy": 787.5,
+      "flat": 0,
+      "gross_pnl": 1660.0,
+      "largest_loss": -1545.0,
+      "largest_win": 3120.0,
+      "legs": 2,
+      "losses": 1,
+      "net_pnl": 1575.0,
+      "open": 0,
+      "profit_factor": 2.02,
+      "r_trades": 2,
+      "setup": "pullback-to-demand",
+      "trades": 2,
+      "win_rate": 50.0,
+      "wins": 1
+     },
+     {
+      "avg_holding_minutes": 95.0,
+      "avg_r": 0.28,
+      "charges": 73.0,
+      "closed": 2,
+      "decisions": 2,
+      "expectancy": 240.0,
+      "flat": 0,
+      "gross_pnl": 553.0,
+      "largest_loss": -980.0,
+      "largest_win": 1460.0,
+      "legs": 2,
+      "losses": 1,
+      "net_pnl": 480.0,
+      "open": 0,
+      "profit_factor": 1.49,
+      "r_trades": 2,
+      "setup": "handover-continuation",
+      "trades": 2,
+      "win_rate": 50.0,
+      "wins": 1
+     }
+    ]
+   },
+   "ok": true,
+   "source": "journal"
   }
  },
  "no_data": {
@@ -1191,6 +1456,33 @@
    "error": "no zones for this instrument",
    "ok": false
   },
+  "get_my_last_trade": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "reason": "you have no closed trade yet",
+    "trade": null
+   },
+   "ok": true,
+   "source": "trades"
+  },
+  "get_my_positions": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "bearish": 0,
+    "bullish": 0,
+    "closed_today": 0,
+    "count": 0,
+    "neutral": 0,
+    "positions": [],
+    "read_at": "2026-10-21T03:30:00+00:00",
+    "realised_today": 0.0,
+    "total_loss_if_stops_hit": 0.0,
+    "total_marked_pnl": null,
+    "unpriced": 0
+   },
+   "ok": true,
+   "source": "trades"
+  },
   "get_option_chain_analyses:NIFTY": {
    "error": "Connect your broker and log in to it today to see these analyses. They use your own broker's option chain.",
    "ok": false
@@ -1202,6 +1494,10 @@
    },
    "ok": true,
    "source": "risk_settings"
+  },
+  "get_weekly_review": {
+   "error": "get_weekly_review is not enabled for this organisation (flag discipline_engine)",
+   "ok": false
   }
  }
 }

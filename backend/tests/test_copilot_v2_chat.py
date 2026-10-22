@@ -44,7 +44,7 @@ def test_every_starter_routes_to_its_job(question, job):
 
 def test_the_eight_jobs_and_the_starters_match_the_order():
     assert [j.number for j in chat.JOBS] == list(range(1, 9))
-    assert chat.BUILT == {"brief", "chart", "option_chain", "teacher"}
+    assert chat.BUILT == {"brief", "chart", "option_chain", "teacher", "trade_check", "positions", "review"}   # slice 2: jobs 3-5
     assert [j.starter for j in chat.JOBS] == ["Today's market brief", "Read the NIFTY chart", "Check my trade idea", "How are my open positions?",
                                              "Review my last trade", "Turn my idea into a strategy and test it", "What does the option chain show?",
                                              "Teach me: what is a demand zone?"]
@@ -124,8 +124,8 @@ def test_missing_data_says_i_dont_know_in_plain_words():
 
 
 def test_jobs_not_built_say_so_and_point_at_todays_page():
-    out, called, _ = _answer("Review my last trade")
-    assert called == [] and "later step" in out.summary[0] and out.action == {"label": "Open the trade coach", "to": "/copilot/coach"}
+    out, called, _ = _answer("Turn my idea into a strategy and test it")          # job 6; jobs 3-5 are built (second slice)
+    assert called == [] and "later step" in out.summary[0] and out.action == {"label": "Open the idea builder", "to": "/copilot/idea-builder"}
 
 
 def test_a_rule_line_with_a_number_no_tool_gave_is_dropped():

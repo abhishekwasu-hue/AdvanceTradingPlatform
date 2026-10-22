@@ -768,6 +768,52 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
             "disclaimer": nl.DISCLAIMER}
 
 
+class IdeaBody(BaseModel):
+    text: str = Field(min_length=3, max_length=1000, description="The scan idea in plain words")
+    base_tf: str = Field(default="1d", pattern=r"^(1m|3m|5m|15m|30m|1h|1d|1w|1M)$")
+
+
+@router.post("/copilot/idea")
+async def idea_to_scan(body: IdeaBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Handover 11j "idea -> scan": a plain idea -> a ScreenQL draft from registry functions only (app/screener/idea.py),
+    with no AI call. Each recognised part is validated and flag-gated like a typed screen; a part with a problem comes
+    back with the validator's fixed reason (nl.shown_problem), and words no rule knows come back as "not supported yet".
+    The draft opens as editable blocks (`stages`, the shape of POST /stages). Nothing runs, nothing is stored. Flag
+    `screener_copilot` (the plain-language screen box) on top of `screener_v2`."""
+    from app.audit.log import write_audit_log
+    from app.screener import idea, nl
+    from app.screener import stages as st
+    await _flag(session, user)
+    await require_flag(session, nl.FLAG, user.tenant_id)
+    draft = idea.read_idea(body.text.strip(), body.base_tf)
+    parts: List[Dict[str, Any]] = []
+    for part in draft.parts:
+        ast, validated = _compiled(part.condition, body.base_tf, {})
+        await _gate(session, user, ast, validated, {})
+        problems = [nl.shown_problem(p) for p in validated.problems] if ast is None or not validated.ok else []
+        parts.append({**part.as_dict(), "condition": nodes.to_text(ast) if ast is not None and not problems else part.condition,
+                      "ok": not problems, "problems": problems})
+    usable = [p["condition"] for p in parts if p["ok"]]
+    text: Optional[str] = None
+    stages: List[Dict[str, Any]] = []
+    if usable:
+        ast, validated = _compiled(idea.joined(usable), body.base_tf, {})
+        await _gate(session, user, ast, validated, {})
+        if ast is not None and validated.ok:
+            text, stages = nodes.to_text(ast), st.split(ast)
+        else:                                  # each part passed alone; together they did not (the cost cap): say so
+            for p in parts:
+                if p["ok"]:
+                    p["ok"], p["problems"] = False, [nl.shown_problem(q) for q in validated.problems][:1] or [
+                        {"kind": "unusable", "message": nl.UNUSABLE, "pos": None}]
+    await write_audit_log(session, user.tenant_id, user.id, "screener_idea_drafted",
+                          f"{sum(1 for p in parts if p['ok'])} of {len(parts)} parts usable, {len(draft.unsupported)} not supported, "
+                          f"from {len(body.text)} chars")
+    await session.commit()
+    return {"ok": text is not None, "text": text, "base_tf": body.base_tf, "stages": stages, "parts": parts,
+            "not_supported": draft.unsupported, "disclaimer": idea.DISCLAIMER}
+
+
 @router.get("/runs/{run_id}")
 async def get_run(run_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)

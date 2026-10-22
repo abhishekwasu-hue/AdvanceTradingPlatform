@@ -38,6 +38,7 @@ from sqlalchemy.sql import Select
 from app.db.models import (AiActionRecord, AlertEventRecord, AlertRuleRecord, ExecutionIntentRecord, SignalHistoryRecord, StrategyDeploymentRecord,
                            TradeRecord, User)
 from app.market_data.calendar import IST
+from app.signals import language as signal_language
 
 TABS = ("waiting", "today", "history")
 SOURCE_FILTERS = ("all", "autopilot", "scan", "copilot")
@@ -256,6 +257,14 @@ def _from_history(row: SignalHistoryRecord) -> Dict[str, Any]:
                  name=KIND_LABELS["library"], mode=None, status="info", reasons=reasons)
 
 
+def signal_text(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Handover 11l (flag `signal_language_v2`): a row's "why" lines are signal text, so only lines in the signal
+    language stay (structure words; the area as a range; no other number, no buy / sell / target / stop wording) - a
+    line with a value ("rsi: 41.2") or a call word is left out, never rewritten. The row's other fields are the factual
+    record of the user's own proposal / position (what his automation did) and are unchanged."""
+    return {**item, "reasons": signal_language.shown_lines(item.get("reasons") or [], "signal_own", own_symbols=[str(item.get("symbol") or "")])}
+
+
 # --- reading -------------------------------------------------------------------------------------------------------
 
 @dataclass
@@ -469,6 +478,8 @@ async def feed(session: AsyncSession, user: User, *, tab: str = "today", source:
     q = FeedQuery(user=user, tab=tab, source=source, symbol=sym, now=now, flags=flags, dialect=dialect)
     at = decode_cursor(cursor) if cursor else None
     items, nxt = await _page(session, q, at, max(1, min(int(limit), MAX_LIMIT)))
+    if flags.get(signal_language.FLAG):
+        items = [signal_text(i) for i in items]
     counts: Optional[Dict[str, Any]] = None
     if at is None:                            # the tab counts come with the first page only
         waiting, waiting_capped = await _count(session, FeedQuery(user, "waiting", source, sym, now, flags, dialect))

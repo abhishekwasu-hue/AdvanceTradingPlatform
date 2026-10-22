@@ -2543,3 +2543,105 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   merges and the new sidebar wait for #362 / #363 / MO4 (UX3-9). Fix 3: the owner's flag (UX3-1).
 - Tests: vitest `src/ux/ux3.test.tsx`, `src/ux/bannedUiWords.test.ts`; updated Signals, feed, chart levels, dashboard,
   option chain, broker session tests. Baselines regenerated: see the PR.
+
+## 22 Oct - Strategy Lab slice 2: the signal language (11l) and idea -> scan (11e/j first slice)
+
+- Branch `claude/lab2-signal-language`. No migration. Owner questions LAB-11..17 (OPEN_QUESTIONS). New flag
+  `signal_language_v2` (OFF): with it off every text below is byte-identical (tests freeze the former formulas).
+- 11l: `backend/app/signals/language.py` - ONE formatter (`SignalStructure` token ids -> structure words; the user's OWN
+  signal shows his symbol and "Seller area: 23,000–23,100" in Indian digit grouping; a public one never shows either)
+  and ONE checker (`check(text, surface)`: signal_own / signal_public / education - call words, numbers outside the
+  area range or a timeframe name, currency amounts, security names). Frontend mirror `frontend/src/signals/language.ts`;
+  both run `backend/tests/fixtures/signal_language.json` (byte-identical copy in `frontend/src/signals/__fixtures__/`).
+- Pure refactors (identical outputs on a corpus, against frozen copies of the former code): Analyze a chart's call words
+  (`app/chart_analyze/signal_language.py`, `frontend/src/chartAnalyze/signalLanguage.ts`) and the strategy templates'
+  token guard (`app/strategy_templates/language.py`; schema untouched).
+- Behind the flag: the Signals inbox keeps only "why" lines in the signal language; scan alert texts (in-app, Telegram,
+  e-mail) without counts, clock times or "recommendation" wording; notify-only setups without entry / stop / target
+  prices (`setup_notice`); the brief's VOLATILE headline and high-VIX line without stop wording; the Copilot teacher's
+  "on your chart" lines with the area as a range and no protected-level price.
+- CI guard `backend/tests/test_signal_language_guard.py`: every surface above on fixtures (flag on: clean; flag off:
+  identical), every strategy-template text, every concept of the teacher's library (education), and no share-card
+  producer without the module.
+- 11e/j: `backend/app/screener/idea.py` + `POST /api/screener/copilot/idea` (flag `screener_copilot`): a plain idea ->
+  parts, each ONE condition from registry functions (28 rules), validated and flag-gated like a typed screen; unknown
+  words come back "not supported yet", trade wording never becomes a condition; no AI key needed; nothing stored or run.
+  Frontend: "From an idea" on the Screener (behind `ui_v2`), `src/screener/IdeaPanel.tsx`, "Open as blocks" into the
+  funnel (`stagesFromServer`).
+- Tests: backend `test_signal_language.py`, `test_signal_language_guard.py`, `test_idea_to_scan.py` (+ tenancy route
+  table); vitest `src/signals/language.test.ts`, `src/screener/IdeaPanel.test.tsx`; e2e `screener-idea-v2.e2e.ts` with new
+  baselines `screener-idea-v2-<360|390|1440>-<light|dark>.png`; before / after shots in `docs/screenshots/lab2/`.
+
+## 22 Oct - Master Order 4 slice 1: the daily rhythm (behind ui_v2 + daily_rhythm)
+
+- Branch `claude/mo4-daily-rhythm`. No migration: the user's choice is the `user_prefs` namespace `daily_rhythm`
+  (Telegram OFF by default; pre-market / closing / weekly on, the pulse off), the worker's "sent" marks the internal row
+  `daily_rhythm_sent`. New flag `daily_rhythm` (OFF; controls.py + flag_catalog.py, needs `ui_v2`).
+- Backend `app/rhythm/`: `schedule.py` (IST phase for the Dashboard; Telegram windows on NSE trading days incl. holidays,
+  the weekly review on the weekend; once per day / ISO week), `words.py` (every line passes the Analyze-a-chart call-word
+  list plus an advice filter; a setup line carries no number; structure words for trend, BOS / CHoCH and where price sits
+  between the buyer and seller areas, no level shown), `build.py` (the four digests from the organisation's market memory,
+  the shared daily lake through the context panel's readers, global cues, events and holidays, and the user's own
+  signals feed, PAPER positions with marks, his day against his own limits, the journal's score when it is on; a section
+  with nothing says so), `deliver.py` (Telegram to the user's own chat only; an empty digest is not sent), `routes.py`
+  (`GET /api/rhythm/today[?kind=]`, `GET|PUT /api/rhythm/settings`; 404 with either flag off). The trading worker calls
+  `send_due` every 5 minutes in its own session. Routes classified in `tests/tenancy_route_table.py`; `app/rhythm` added
+  to the mypy gate.
+- Frontend `src/rhythm/`: `DailyRhythmCardV2.tsx` on the v2 Dashboard (after Needs attention; tabs Morning / Pulse /
+  Wrap / Week, the moment's one marked; every line re-checked on render), `RhythmTelegramV2.tsx` on Settings → Alerts
+  ("Daily briefs on Telegram", `#daily-briefs`, in the Settings search with the flag).
+- Tests: backend `tests/test_mo4_daily_rhythm.py` (schedule, words, each digest from fixtures, no data = nothing,
+  discipline not trade count, flags off = 404 / nothing sent, Telegram opt-in, once, never on a holiday, never another
+  member's chat); vitest `src/rhythm/rhythm.test.tsx`; e2e `daily-rhythm-v2.e2e.ts` with new baselines
+  `daily-rhythm-v2-<360|390|1440>-<light|dark>.png`. No existing baseline changed. Questions MO4-1..10.
+
+## 22 Oct - F&O workspace slice 4: contracts in watchlists, positions Add / Adjust / Exit and grouping (behind ui_v2)
+
+- Branch `claude/fno4-watchlist-chart-positions`. No migration. No new order path: Add opens the existing ONE ticket
+  (`/api/paper/fno/order`, `phase0_lock.assert_paper`); Exit is today's "Exit now" (never blocked); Roll only edits the
+  watchlist. Owner questions FNO-4-1..10 (OPEN_QUESTIONS).
+- Backend: `app/paper/fno_contracts.py` (what a saved contract is - master first, else the Upstox / Kite trading symbol
+  itself; Expired from the expiry day's close; the roll target = same strike in the next listed expiry, monthly to monthly;
+  basket legs from their orders' idempotency keys + `leg_group_id` structures), routes `POST /api/paper/fno/contracts`
+  (`ui_v2`, read only) and `GET /api/paper/fno/positions/groups` (`ui_v2` + `paper_account`, own legs only); the batch
+  quote rows carry `oi` when the broker's quote has it. Route table: both classified.
+- Frontend: `src/fno/contracts.ts` (lookup client, row words, Expired split, roll edit, Add target, Adjust link, grouping
+  maths); `chart/watchlistsV2.ts` ListEdit "replace" + `oi`; `chart/WatchlistPanel.tsx` (contract name + days left + OI,
+  the "Expired (n)" block with "Roll to next expiry"; the price poll unchanged); `trading/PositionsV2.tsx` (Add / Adjust on
+  F&O PAPER positions with `paper_account`, the ticket as a lazy chunk, legs of one basket in one box with the combined P&L).
+- Not built: chart SL / target drag (no PAPER modify path exists - FNO-4-10, owner go-ahead needed), quick Buy / Sell on a
+  watchlist row (FNO-4-7), the group's payoff chart (FNO-4-9).
+- Tests: backend `tests/test_fno4_watchlist_positions.py`; vitest `src/fno/contracts.test.tsx`; e2e
+  `fno-workspace-v2.e2e.ts` with new baselines `fno4-watchlist-v2-*` and `fno4-positions-v2-*` (360 / 390 / 1440, light /
+  dark); no existing baseline changed.
+## 22 Oct - Idea library slice 1 (owner order ATP_SESSION_IDEA_LIBRARY.md, T1-T8; behind ui_v2 + idea_library)
+
+- Branch `claude/idea-library-1`. No migration (content as data: `backend/app/idea_library/ideas.json`). New flag
+  `idea_library` (OFF; controls.py + flag_catalog.py). Owner questions IDEA-1..9.
+- Backend: `app/idea_library/content.py` (strict schema; the content guard: no security names, numbers, currency, buy /
+  sell / target / stop wording or performance claims in any readable line; scans checked against the ScreenQL registry
+  at their defaults and every setting edge; `available` per scan from the organisation's flags), `routes.py`
+  (`GET /api/ideas`, `GET /api/ideas/{id}`, 404 while off). mypy gate includes `app/idea_library`.
+- Scans (existing registry only): T1 DowTrend@1d + NearZone + bullish / bearish candle or CHoCH; T2 DowTrend RANGE +
+  ReversalAt(SwingHigh / SwingLow); T3 RsiDivergence + NearZone + reaction; T4 sweep beyond a swing and close back inside
+  near an area; T5 RetestEntry; T8 = T1 + T2 by direction. T6 / T7: "comes later". Adopt: comes later for all (IDEA-1).
+- Frontend: `src/ideas/` (IdeaLibraryV2 page at `/ideas`, Strategies -> Ideas; frame, "Not sure where to start?",
+  group filter, cards with "Read the full idea"), the Screener opens `?idea=..&scan=..` through `/screener/stages`.
+- Tests: backend `tests/test_idea_library.py` (+ tenancy table / probe); vitest `src/ideas/ideas.test.tsx`; e2e
+  `idea-library-v2.e2e.ts` with new baselines `idea-library-v2-{1440,390,360}-{light,dark}.png`; navModel / pagesV2
+  count tests updated.
+
+
+## 22 Oct - Wave / correction templates (family G), step 1: the independent spec review
+
+- Branch `claude/wave1-review`. Docs only. No migration.
+- `docs/design/WAVE_TEMPLATES_REVIEW.md`: ATP_SESSION_WAVE_TEMPLATES.md reviewed against main 89fa1490 (#360). What
+  exists per shared rule, W1-W4 and G1-G12 (file:line), findings and resolutions; 14 blocking findings (WB1-WB14):
+  `read_counter` classifies a given finished move, so W1 needs a new causal counter on the generic rules; nothing from
+  the Daily trend fold (the owner's method); the schema cannot express family G (id / family, enum variants, timeframe
+  settings in expressions); hard-rule details (the 3-not-shortest cap, flat B without a level, EXPANDED_FLAT only after
+  C); W4 needs lines anchored to the wave pivots plus R7; the text guard refuses "wave 2"; G1 / G3 and G8 / G11
+  overlap; exits wait for R5; zones default; degree, intrabar and public-test gaps.
+- Migrations: none for W1-W4 and G1-G11; WAVE_PROJECTION waits for the templates spec section 5 (migration + owner
+  approval).
+- Owner questions WAVE-1..WAVE-16 in docs/OPEN_QUESTIONS.md; README row 14 updated. Build next, in the review's order.

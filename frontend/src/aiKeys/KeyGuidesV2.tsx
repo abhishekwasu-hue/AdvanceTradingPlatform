@@ -153,7 +153,7 @@ function Guide({ guide, byokOn, onSwitch, pasteHelper }: { guide: KeyGuide; byok
       {!pasteHelper && (
         <div className="space-y-space-1 rounded-control border border-subtle p-space-3 text-t13 text-fg-muted" data-provider-terms>
           <p className="flex items-start gap-space-2"><ShieldAlert size={14} aria-hidden className="mt-0.5 shrink-0" /><span>{tags.privacy}</span></p>
-          {!tags.vision && <p data-no-vision>{guide.name} does not read charts here. Chart analysis needs Google Gemini, Claude, OpenAI, OpenRouter or Mistral.</p>}
+          {!tags.vision && <p data-no-vision>{guide.name} does not read charts here. Chart analysis needs Google Gemini, Claude, OpenAI, OpenRouter, Mistral or Cloudflare Workers AI.</p>}
         </div>
       )}
 

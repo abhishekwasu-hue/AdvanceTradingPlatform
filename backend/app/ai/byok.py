@@ -64,7 +64,7 @@ PLAIN_ERRORS = {
     "auth": "This key did not work. Check that you copied all of it.",
     "no_credit": "This key has no credit left.",
     "rate": "Too many requests. Try again in a minute.",
-    "no_vision": "This provider cannot read charts. Vision needs Gemini, Claude, OpenAI, OpenRouter or Mistral.",
+    "no_vision": "This provider cannot read charts. Vision needs Gemini, Claude, OpenAI, OpenRouter, Mistral or Cloudflare Workers AI.",
     "model": "This provider could not answer right now. Try again later.",
     "unreachable": "The AI service could not be reached. Try again in a minute.",
     "other": "The AI service did not answer. Try again in a minute.",
@@ -104,6 +104,7 @@ _ZAI_KEY_CHARS = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 _SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_\-]{4,}"),
     re.compile(r"\bgsk_[A-Za-z0-9_\-]{4,}"),
+    re.compile(r"\bcf(?:ut|at|k)_[A-Za-z0-9_\-]{4,}"),
     re.compile(r"AIza[0-9A-Za-z_\-]{8,}"),
     re.compile(r"ya29\.[0-9A-Za-z_\-.]+"),
     re.compile(r"(?i)bearer\s+\S+"),
@@ -152,7 +153,7 @@ def validate_key_shape(provider: str, raw: Optional[str], *, one_key: bool = Fal
         raise ByokError("An API key contains only letters, digits, '-' and '_' - paste the key alone, without quotes or spaces")
     found = key_formats.detect_provider(key)
     if found.kind == "admin":
-        raise ByokError("This is an organisation admin key. Use a standard API key from the provider's console")
+        raise ByokError(admin_message(found.name))
     if found.kind == "unsupported":
         raise ByokError(unsupported_message(found.name, one_key=one_key))
     if found.provider and found.provider not in BYOK_PROVIDERS and not one_key:
@@ -177,7 +178,25 @@ def unsupported_message(name: str, *, one_key: bool = False) -> str:
     return f"This looks like {article} {name} key. AiAlgoDesk cannot use {name} keys yet. Use a Claude, OpenAI or Google Gemini key."
 
 
-ONE_KEY_PROVIDERS_LINE = "Use a key from Google Gemini, Claude, OpenAI, OpenRouter, Groq, Mistral or Z.ai."
+ONE_KEY_PROVIDERS_LINE = "Use a key from Google Gemini, Claude, OpenAI, OpenRouter, Groq, Mistral, Z.ai or Cloudflare Workers AI."
+ADMIN_MESSAGE = "This is an organisation admin key. Use a standard API key from the provider's console"
+# MO2A-2: the Cloudflare Global API Key opens the whole Cloudflare account (and does not work as a Bearer token).
+_ADMIN_MESSAGES = {"Cloudflare Global API Key": ("This is your Cloudflare Global API Key, which opens your whole Cloudflare account. "
+                                                 "Create a Workers AI API token instead")}
+ACCOUNT_ID_NEEDED = "Cloudflare also needs your Account ID. Copy it from the Workers AI page (Use REST API) and paste it next to the token."
+ACCOUNT_ID_INVALID = "A Cloudflare Account ID is 32 letters and numbers. Copy it again from the Workers AI page."
+
+
+def admin_message(name: str) -> str:
+    return _ADMIN_MESSAGES.get(name, ADMIN_MESSAGE)
+
+
+def clean_account_id(raw: Optional[str]) -> str:
+    """MO2A-2: the Cloudflare Account ID, lower-case, or ByokError."""
+    value = key_formats.clean(raw)
+    if not key_formats.ACCOUNT_ID.match(value):
+        raise ByokError(ACCOUNT_ID_INVALID)
+    return value.lower()
 _KEY_PREFIX_LINES = {"openrouter": "An OpenRouter key starts with 'sk-or-'", "groq": "A Groq key starts with 'gsk_'"}
 
 
@@ -188,7 +207,7 @@ def _check_compatible_key(provider: str, found: "key_formats.Detection") -> None
         if found.provider != provider:
             raise ByokError(_KEY_PREFIX_LINES[provider])
         return
-    if found.provider is not None:
+    if found.provider is not None and found.provider != provider:
         name = key_formats.PROVIDER_NAMES.get(provider, provider)
         article = "an" if found.name[:1].upper() in "AEIOU" else "a"
         raise ByokError(f"This looks like {article} {found.name} key, not a {name} key")
@@ -218,6 +237,11 @@ def open_key(record: UserAiKeyRecord, *, user: User) -> str:
             or data.get("p") != record.provider or not isinstance(data.get("k"), str) or not data.get("k")):
         raise KeyBindingError("The stored key is bound to another user, organisation or provider - refusing to use it")
     return str(data["k"])
+
+
+def _secret_parts(key: str) -> List[str]:
+    """The stored secret and, for a two-part one (Cloudflare: "<account id>:<token>"), each part - all masked in errors."""
+    return [key, *key.split(ai_providers.CLOUDFLARE_SEPARATOR)] if key else []
 
 
 def sanitize_error(text: Any, secrets: Iterable[str] = ()) -> str:
@@ -372,15 +396,23 @@ def _forget_health(user: User) -> None:
 
 
 async def save_key(session: AsyncSession, user: User, *, provider: str, api_key: str, model: Optional[str] = None,
-                   one_key: bool = False) -> UserAiKeyRecord:
+                   one_key: bool = False, account_id: Optional[str] = None) -> UserAiKeyRecord:
+    """MO2A-2: a Cloudflare key also needs `account_id`; both are sealed as one secret ("<account id>:<token>", the same
+    `encrypted_key` column, no migration) and the hint is the token's."""
     provider = (provider or "").lower()
     key = validate_key_shape(provider, api_key, one_key=one_key)
+    secret = key
+    if provider == "cloudflare":
+        if not account_id:
+            raise AccountIdNeeded(ACCOUNT_ID_NEEDED)
+        secret = ai_providers.cloudflare_secret(clean_account_id(account_id), key)
     chosen = clean_model(provider, model)
     record = await get_key(session, user, provider)
     if record is None:
         record = UserAiKeyRecord(tenant_id=user.tenant_id, user_id=user.id, provider=provider, model="")
         session.add(record)
-    record.encrypted_key = seal_key(key, tenant_id=user.tenant_id, user_id=user.id, provider=provider)
+    record.encrypted_key = seal_key(secret, tenant_id=user.tenant_id, user_id=user.id, provider=provider)
+    secret = ""
     record.key_hint = key_hint(key)
     if chosen is not None:
         record.model = chosen
@@ -440,13 +472,13 @@ async def test_key(session: AsyncSession, user: User, provider: str, *, client: 
             result = await llm.complete_full(TEST_SYSTEM, test_user, max_tokens=TEST_MAX_TOKENS)
         ok = True
     except KeyBindingError as exc:
-        error, kind = sanitize_error(str(exc), [key]), "binding"
+        error, kind = sanitize_error(str(exc), _secret_parts(key)), "binding"
     except ProviderError as exc:
-        error, kind = sanitize_error(str(exc), [key]), exc.kind
+        error, kind = sanitize_error(str(exc), _secret_parts(key)), exc.kind
         result = exc.usage
     except Exception as exc:  # noqa: BLE001 - an unexpected failure is reported by class name only (never its text)
         logger.warning("BYOK key test for user %s (%s) failed: %s", user.id, provider, exc.__class__.__name__)
-        error, kind = sanitize_error(f"Test failed: {exc.__class__.__name__}", [key]), "other"
+        error, kind = sanitize_error(f"Test failed: {exc.__class__.__name__}", _secret_parts(key)), "other"
     finally:
         key = ""
     if not ok and plain:
@@ -707,17 +739,19 @@ def consent_line(provider: str) -> str:
 
 
 async def connect(session: AsyncSession, user: User, *, api_key: str, provider: Optional[str] = None, consent: bool = False,
-                  client: Optional[Any] = None, request: Optional[Any] = None, now: Optional[datetime] = None) -> Dict[str, Any]:
+                  client: Optional[Any] = None, request: Optional[Any] = None, now: Optional[datetime] = None,
+                  account_id: Optional[str] = None) -> Dict[str, Any]:
     """Paste -> detect -> consent -> save (encrypted) -> test (text + one tiny image) -> the summary. The key becomes the
     one every AI feature of this user runs on. A failed test keeps the key (SR-7: the panel shows the plain error with
-    Fix and Remove). Raises ByokError (a plain refusal) or ConsentRequired."""
+    Fix and Remove). Raises ByokError (a plain refusal), ConsentRequired, ProviderNeeded or AccountIdNeeded.
+    MO2A-2: a Cloudflare token comes with its Account ID - in the same paste (side by side) or as `account_id`."""
     found = key_formats.detect_provider(api_key)
     if found.kind == "empty":
         raise ByokError("Paste an API key")
     if found.kind == "session":
         raise ByokError(SESSION_TOKEN_MESSAGE)
     if found.kind == "admin":
-        raise ByokError("This is an organisation admin key. Use a standard API key from the provider's console")
+        raise ByokError(admin_message(found.name))
     if found.kind == "unsupported":
         raise ByokError(unsupported_message(found.name, one_key=True))
     chosen = found.provider or (provider or "").lower()
@@ -725,12 +759,20 @@ async def connect(session: AsyncSession, user: User, *, api_key: str, provider: 
         raise ProviderNeeded("Pick the service this key is from")
     if found.provider and provider and provider.lower() != found.provider:
         chosen = found.provider                          # the key's own format wins over a stale picker choice
-    key = validate_key_shape(chosen, key_formats.clean(api_key), one_key=True)
+    pasted_account, rest = key_formats.split_account_id(api_key)
+    account: Optional[str] = None
+    if chosen == "cloudflare":
+        account = clean_account_id(pasted_account or account_id) if (pasted_account or account_id) else None
+        if account is None:
+            raise AccountIdNeeded(ACCOUNT_ID_NEEDED)
+        key = validate_key_shape(chosen, rest, one_key=True)
+    else:
+        key = validate_key_shape(chosen, key_formats.clean(api_key), one_key=True)
     if not await consent_accepted(session, user, chosen):
         if not consent:
             raise ConsentRequired(consent_line(chosen))
         await accept_consent(session, user, chosen, request=request)
-    await save_key(session, user, provider=chosen, api_key=key, one_key=True)
+    await save_key(session, user, provider=chosen, api_key=key, one_key=True, account_id=account)
     key = ""
     prefs = await _prefs_or_new(session, user)
     prefs.provider = chosen                              # the newest key is the one in use; Vision's own switch is untouched
@@ -786,3 +828,7 @@ class ConsentRequired(ValueError):
 
 class ProviderNeeded(ValueError):
     """The key's format did not say which service it is from: the panel shows the small picker."""
+
+
+class AccountIdNeeded(ByokError):
+    """MO2A-2: a Cloudflare token came without its Account ID: the panel shows the Account ID box."""

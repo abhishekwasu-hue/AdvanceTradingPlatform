@@ -7,6 +7,7 @@ never comes back: responses carry its last four characters only. Errors are one 
 * `GET    /api/ai/byok/connection`      - the panel's summary (connected, provider, key end, test result, consent line,
                                            the free-tier warning, the rupee limits line, the "use the organisation's key" offer).
 * `POST   /api/ai/byok/connect`         - paste -> detect -> consent -> save (encrypted) -> test (text + a tiny image) -> summary.
+                                           A Cloudflare token also needs its Account ID (in the paste or `account_id`).
 * `DELETE /api/ai/byok/connection`      - Disconnect (the key row is deleted; nothing else is).
 * `PUT    /api/ai/byok/limits`          - the daily / monthly limits, typed in rupees (stored in USD).
 * `POST   /api/ai/byok/acknowledge`     - the consent line for a key saved before it existed, or "My key is on a paid plan".
@@ -47,9 +48,11 @@ async def connect_owner(user: User = Depends(require_owner), session: AsyncSessi
 class ConnectBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     api_key: str = Field(min_length=1, max_length=512, repr=False)
-    provider: Optional[str] = Field(default=None, pattern=r"^(anthropic|openai|gemini|openrouter|groq|mistral|zai)$",
+    provider: Optional[str] = Field(default=None, pattern=r"^(anthropic|openai|gemini|openrouter|groq|mistral|zai|cloudflare)$",
                                     description="only when the key's format did not say (the small picker)")
     consent: bool = False
+    # MO2A-2: Cloudflare Workers AI's Account ID, when it was not pasted next to the token (the panel's second box).
+    account_id: Optional[str] = Field(default=None, max_length=64, repr=False)
 
 
 class LimitsBody(BaseModel):
@@ -81,11 +84,14 @@ async def get_connection(user: User = Depends(connect_user), session: AsyncSessi
 async def post_connect(body: ConnectBody, request: Request, user: User = Depends(connect_user),
                        session: AsyncSession = Depends(get_session)) -> dict:
     try:
-        return await byok.connect(session, user, api_key=body.api_key, provider=body.provider, consent=body.consent, request=request)
+        return await byok.connect(session, user, api_key=body.api_key, provider=body.provider, consent=body.consent, request=request,
+                                  account_id=body.account_id)
     except byok.ConsentRequired as exc:
         raise _plain(400, str(exc), "consent_required") from None       # `from None`: no traceback carries the body
     except byok.ProviderNeeded as exc:
         raise _plain(400, str(exc), "provider_needed") from None
+    except byok.AccountIdNeeded as exc:
+        raise _plain(400, str(exc), "account_id_needed") from None
     except byok.ByokError as exc:
         raise _plain(400, str(exc), "key_refused") from None
 

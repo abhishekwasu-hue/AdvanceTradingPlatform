@@ -145,8 +145,10 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/tests/fixtures/zones/chart_bands_cases.json": "66a90beb9b4e75201b937005f46ad53e81494bdc19b5520458b25958eb7c3436",
     "frontend/src/charting/__fixtures__/chart_bands_cases.json": "66a90beb9b4e75201b937005f46ad53e81494bdc19b5520458b25958eb7c3436",
     # Settings redesign A: the AI key-format table and its cases (obviously fake keys only), backend + byte-identical copy
-    "backend/tests/fixtures/key_formats.json": "9eca4977c4c6c89bf6876b40938aef29caabba46227e2266144958ee1462f5da",
-    "frontend/src/aiKeys/__fixtures__/key_formats.json": "9eca4977c4c6c89bf6876b40938aef29caabba46227e2266144958ee1462f5da",
+    "backend/tests/fixtures/key_formats.json": "aeddf3fe84caf4396f3104d7d05ca09b04e263351bb9bf043113134110f2e8f1",
+    "frontend/src/aiKeys/__fixtures__/key_formats.json": "aeddf3fe84caf4396f3104d7d05ca09b04e263351bb9bf043113134110f2e8f1",
+    # MO2A-2: Cloudflare Workers AI answers for the mocked transport, written from its docs source (fake token only)
+    "backend/tests/fixtures/cloudflare_workers_ai.json": "31aa8e15b0c249c99edfb103d46fbdfc1a9a41cced1f56f67f9e04a02cc1a48d",
     # Handover 11l: the signal-language cases (made-up texts; symbol names only as examples of what a public text may not
     # carry), backend + byte-identical frontend copy
     "backend/tests/fixtures/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",

@@ -10,8 +10,8 @@ import { AI_CONNECTION_CHANGED_EVENT, type AiConnection, type AiLimits } from ".
 import { plainError } from "./errors";
 import { FREE_TIER_NOTICE } from "./guides";
 import KeyGuidesV2 from "./KeyGuidesV2";
-import { MAY_TRAIN_ON_FREE_TIER, PICKER_ORDER, PROVIDER_FACTS, PROVIDER_LABELS, cleanKey, detectProvider, refusalFor, type AiProviderName,
-  type Detection } from "./keyFormats";
+import { ACCOUNT_ID, MAY_TRAIN_ON_FREE_TIER, PICKER_ORDER, PROVIDER_FACTS, PROVIDER_LABELS, cleanKey, detectProvider, refusalFor,
+  splitAccountId, type AiProviderName, type Detection } from "./keyFormats";
 
 /**
  * Settings redesign part A ("Connect AI in one paste", behind `ui_v2` + `ai_one_key`): ONE key for every AI feature.
@@ -26,12 +26,16 @@ import { MAY_TRAIN_ON_FREE_TIER, PICKER_ORDER, PROVIDER_FACTS, PROVIDER_LABELS, 
  * - A failed test keeps the key: the plain sentence, Fix (paste again) and Remove.
  * - Limits: "AI this month: ₹X of your ₹Y limit" with a bar, and the daily / monthly limits in rupees.
  * - "Get a free key" opens the key guides in a drawer, free Google Gemini first.
+ * - MO2A-2: Cloudflare Workers AI needs its Account ID next to the token. Pasted together (side by side) it goes in one
+ *   paste; a token alone opens one more box, "Cloudflare Account ID", and the panel waits for it.
  * The key is cleared from the box once sent and never shown again (only its last four characters).
  */
 
 export const CONSENT_LINE = (label: string) => `Your questions and chart images are sent to ${label} to answer you. Never your broker login or passwords.`;
 const INTRO = "Paste one AI key and every AI feature works: the Copilot, chart analysis and the idea tools.";
 const FREE_TIER = (label: string) => `Free keys from ${label} may be used to train its models. Do not paste anything private into the chat.`;
+export const ACCOUNT_ID_HELP = "Cloudflare also needs your Account ID. It is on the Workers AI page, under Use REST API.";
+const ACCOUNT_ID_HELP_BAD = "An Account ID is 32 letters and numbers. Copy it again from the Workers AI page.";
 
 type Step = "idle" | "busy";
 
@@ -39,6 +43,9 @@ export interface ConnectAiViewProps {
   conn: AiConnection;
   raw: string;
   picked: AiProviderName | null;
+  /** MO2A-2: the Cloudflare Account ID box (only shown for a Cloudflare token pasted without it). */
+  accountId?: string;
+  onAccountId?: (value: string) => void;
   consent: boolean;
   step: Step;
   notice: string | null;
@@ -61,9 +68,21 @@ export function chosenProvider(found: Detection, picked: AiProviderName | null):
   return null;
 }
 
+/** MO2A-2: true for a Cloudflare token pasted without its Account ID (the panel shows the Account ID box). */
+export function needsAccountId(raw: string, picked: AiProviderName | null): boolean {
+  return chosenProvider(detectProvider(raw), picked) === "cloudflare" && splitAccountId(raw).accountId === null;
+}
+
 /** True when the panel may save and test by itself now. */
-export function readyToConnect(raw: string, picked: AiProviderName | null, consent: boolean, step: Step): boolean {
+export function readyToConnect(raw: string, picked: AiProviderName | null, consent: boolean, step: Step, accountId = ""): boolean {
+  if (needsAccountId(raw, picked) && !ACCOUNT_ID.test(accountId.trim())) return false;
   return step === "idle" && consent && cleanKey(raw) !== "" && chosenProvider(detectProvider(raw), picked) !== null;
+}
+
+/** What a paste becomes in the box: trimmed, and a line break between a token and an Account ID kept as one space
+ * (a one-line box would otherwise join the two). */
+export function pastedText(text: string): string {
+  return cleanKey(text).replace(/\s*[\r\n]+\s*/g, " ");
 }
 
 const CHECK = "mt-0.5 h-5 w-5 shrink-0 accent-brand";
@@ -127,17 +146,20 @@ function Connected({ conn, step, fixing, onDisconnect, onFix, onAcknowledge }: C
   );
 }
 
-function Paste({ conn, raw, picked, consent, step, notice, onRaw, onPick, onConsent, onGuides, onCopy }: ConnectAiViewProps) {
+function Paste({ conn, raw, picked, consent, step, notice, onRaw, onPick, onConsent, onGuides, onCopy, accountId = "", onAccountId }: ConnectAiViewProps) {
   const fieldId = useId();
   const noteId = useId();
+  const accountFieldId = useId();
+  const accountNoteId = useId();
   const found = detectProvider(raw);
   const provider = chosenProvider(found, picked);
   const refusal = refusalFor(found);
   const label = provider ? PROVIDER_LABELS[provider] : null;
+  const askAccount = needsAccountId(raw, picked);
   const busy = step === "busy";
   const onPaste = (e: ClipboardEvent<HTMLInputElement>) => {
     const text = e.clipboardData?.getData("text");
-    if (text) { e.preventDefault(); onRaw(cleanKey(text)); }
+    if (text) { e.preventDefault(); onRaw(pastedText(text)); }
   };
   const copyLabel = conn.copy_tenant_key?.label ?? null;
   return (
@@ -149,7 +171,16 @@ function Paste({ conn, raw, picked, consent, step, notice, onRaw, onPick, onCons
           className="h-11 w-full min-w-0 rounded-control border border-border bg-surface-1 px-space-3 text-t14 text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-60" />
       </div>
       <div id={noteId} aria-live="polite" className="space-y-space-2">
-        {found.kind === "provider" && label && <p className="text-t13 text-fg-muted" data-detected={provider}>This is {/^[AEIOU]/i.test(label) ? "an" : "a"} {label} key.</p>}
+        {found.kind === "provider" && label && <p className="text-t13 text-fg-muted" data-detected={provider}>This is {/^[AEIOU]/i.test(label) ? "an" : "a"} {label} key{provider === "cloudflare" && !askAccount ? " with its Account ID" : ""}.</p>}
+        {askAccount && (
+          <div className="space-y-space-1" data-account-id>
+            <label htmlFor={accountFieldId} className="block text-t14 font-semibold text-fg">Cloudflare Account ID</label>
+            <input id={accountFieldId} type="text" autoComplete="off" spellCheck={false} autoCapitalize="off" value={accountId} disabled={busy}
+              onChange={(e) => onAccountId?.(e.target.value)} aria-describedby={accountNoteId} placeholder="Paste the Account ID here"
+              className="h-11 w-full min-w-0 rounded-control border border-border bg-surface-1 px-space-3 text-t14 text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-60" />
+            <p id={accountNoteId} className="text-t13 text-fg-muted">{accountId.trim() && !ACCOUNT_ID.test(accountId.trim()) ? ACCOUNT_ID_HELP_BAD : ACCOUNT_ID_HELP}</p>
+          </div>
+        )}
         {refusal && <p className="text-t13 text-warn" data-key-refused>{refusal}</p>}
         {found.kind === "unknown" && (
           <fieldset className="space-y-space-2" data-picker>
@@ -286,6 +317,7 @@ export default function ConnectAiPanelV2({ onChange }: ConnectAiPanelV2Props) {
   const [off, setOff] = useState(false);
   const [raw, setRaw] = useState("");
   const [picked, setPicked] = useState<AiProviderName | null>(null);
+  const [accountId, setAccountId] = useState("");
   const [consent, setConsent] = useState(false);
   const [step, setStep] = useState<Step>("idle");
   const [notice, setNotice] = useState<string | null>(null);
@@ -321,17 +353,21 @@ export default function ConnectAiPanelV2({ onChange }: ConnectAiPanelV2Props) {
 
   // No Save button: once the key's service is known and the consent line is ticked, it saves and tests by itself.
   useEffect(() => {
-    if (!readyToConnect(raw, picked, consent, step)) return;
+    if (!readyToConnect(raw, picked, consent, step, accountId)) return;
     const key = cleanKey(raw);
     const provider = chosenProvider(detectProvider(raw), picked) as AiProviderName;
+    const account = needsAccountId(raw, picked) ? accountId.trim() : undefined;
     setRaw("");                                            // never kept in the form once sent
-    void run(() => api.aiConnect({ api_key: key, provider, consent: true }), () => { setFixing(false); setPicked(null); });
-  }, [raw, picked, consent, step, run]);
+    setAccountId("");
+    void run(() => api.aiConnect({ api_key: key, provider, consent: true, ...(account ? { account_id: account } : {}) }),
+      () => { setFixing(false); setPicked(null); });
+  }, [raw, picked, consent, step, accountId, run]);
 
   if (off || !conn) return null;
   return (
     <>
       <ConnectAiView conn={conn} raw={raw} picked={picked} consent={consent} step={step} notice={notice} fixing={fixing}
+        accountId={accountId} onAccountId={(v) => { setAccountId(v); setNotice(null); }}
         onRaw={(v) => { setRaw(v); setNotice(null); }} onPick={setPicked} onConsent={setConsent}
         onDisconnect={() => void run(() => api.aiDisconnect(), () => { setConsent(false); setFixing(false); })}
         onFix={() => setFixing(true)} onGuides={() => setGuides(true)}

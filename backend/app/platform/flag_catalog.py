@@ -116,6 +116,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "portfolio_risk": FlagInfo("Risk view of your paper book", "trading", "a card on My positions", (), "", "ready"),
     "portfolio_risk_caps": FlagInfo("Caps on new paper entries by sector and open risk", "trading", "blocked-entry messages", ("portfolio_risk",), "", "ready"),
     "chart_analyze": FlagInfo("Analyze a chart: an educational reading of an uploaded chart image or link", "charts", "Analyze a chart page and its Charts button", (), "an AI key with image support", "unfinished"),
+    "chart_analyze_strikes": FlagInfo("Analyze a chart: the option strikes your own options bots would use at the setup", "charts", "a strikes block on the Analyze a chart result", ("chart_analyze",), "an options paper bot", "unfinished"),
     "chart_studies": FlagInfo("Screen formulas drawn on the chart", "screens", "a chart layer", ("screener_v2",), "", "ready"),
     "chart_price_action": FlagInfo("Swings, legs and trend drawn on the chart", "charts", "a chart layer", (), "", "ready"),
     "ai_multiview": FlagInfo("Technical, options, news and macro views of a symbol", "ai", "a Copilot view", ("ai_copilot",), "", "ready"),

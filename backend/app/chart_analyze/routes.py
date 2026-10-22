@@ -7,6 +7,9 @@ caller's organisation every route below answers the platform's standard 503 with
 - `GET    /api/chart-analyze/items/{id}`          one item with its result
 - `GET    /api/chart-analyze/items/{id}/image`    the stored (cleaned) image, private, never cached by a proxy
 - `POST   /api/chart-analyze/items/{id}/analyze`  runs the analysis (Image only in PR-A)
+- `GET    /api/chart-analyze/items/{id}/strikes`  the option strikes the caller's OWN deployment settings work out to
+                                                  at the setup's trigger level (flagged "from your settings"; reads only;
+                                                  flag chart_analyze_strikes as well)
 - `DELETE /api/chart-analyze/items/{id}`          deletes the image and the result at once
 - `GET/PUT /api/admin/chart-analyze/settings`     SUPER_ADMIN (MFA): sizes, retention, limits, cost caps
 Every item route reads the caller's own rows only (tenant AND user). Upload, link and analyze share a per-user rate
@@ -17,12 +20,12 @@ import weakref
 from typing import Any, Dict, Optional
 
 from fastapi.concurrency import run_in_threadpool
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_mfa_session, require_role
-from app.chart_analyze import FLAG, contract, imaging, limits, linkfetch, service, storage
+from app.chart_analyze import FLAG, STRIKES_FLAG, contract, imaging, limits, linkfetch, service, storage, strikes
 from app.chart_analyze import provider as engine_provider
 from app.chart_analyze import settings as settings_mod
 from app.core.rate_limit import charge_user
@@ -34,6 +37,7 @@ router = APIRouter(prefix="/api/chart-analyze", tags=["chart-analyze"])
 admin_router = APIRouter(prefix="/api/admin/chart-analyze", tags=["admin"], dependencies=[Depends(require_role()), Depends(require_mfa_session)])
 
 RATE_NAME = "chart_analyze"
+STRIKES_SYMBOL = r"^[A-Za-z0-9 &._:-]{1,40}$"
 READ_CHUNK = 64 * 1024
 # Process resource guard (not a plan limit): image decodes running at once in one API process. The gate is taken on the
 # event loop BEFORE a thread is used, so waiting decodes never sit in anyio's shared worker threads. One gate per event
@@ -180,6 +184,20 @@ async def analyze(item_id: int, user: User = Depends(get_current_user), session:
     await _rate(user, settings)
     tenant = await _tenant(session, user)
     return service.as_dict(await service.analyze(session, user, tenant, settings, item_id))
+
+
+@router.get("/items/{item_id}/strikes")
+async def item_strikes(item_id: int, symbol: Optional[str] = Query(default=None, max_length=40, pattern=STRIKES_SYMBOL),
+                       user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Option strikes from the caller's own settings for this analysis (`symbol` overrides the symbol read from the picture).
+    Reads only: the analysis never picks a strike, and nothing here creates or changes an order. Needs its own flag too."""
+    await _gate(session, user)
+    await require_flag(session, STRIKES_FLAG, user.tenant_id)
+    row = await service.own(session, user, item_id)
+    result = service.as_dict(row).get("result")
+    if not isinstance(result, dict):
+        raise HTTPException(status_code=409, detail={"message": "This chart is not analysed yet.", "code": "not_analysed"})
+    return await strikes.for_result(session, user.tenant_id, result, symbol_override=symbol)
 
 
 @router.delete("/items/{item_id}")

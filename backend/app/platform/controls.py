@@ -314,6 +314,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # private package. Beta tenants only (the allow-list). OFF: every /api/chart-analyze route answers 503 and the page
     # and the Charts-page button are hidden. Places no orders.
     "chart_analyze": "Analyze a chart: upload a chart image or paste a chart link for an educational reading (beta; places no orders)",
+    # Analyze a chart PR-A3 (the result screen's "Option strikes · from your settings"): what the organisation's OWN option
+    # deployment settings on the chart's symbol work out to at the setup's trigger level; the analysis never picks a strike.
+    # Acts only while chart_analyze is on too; owner's tenant first. OFF: GET /api/chart-analyze/items/{id}/strikes answers
+    # 503 and the block is hidden. Reads only - places no orders.
+    "chart_analyze_strikes": "Analyze a chart: option strikes worked out from your own deployment settings at the setup's trigger level (reads only, places no orders)",
     # N4 CH6 (docs/design/CHARTING.md): ScreenQL expressions drawn as chart studies, computed by the screener's own runtime
     # from the shared lake bars as of a time (lines for numbers, marks for conditions). OFF: GET /api/charts/studies
     # answers 503 and the chart shows no study panel. Reference only - places no orders.

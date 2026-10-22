@@ -9,3 +9,5 @@ on ATP's existing AI path), `service` (items, history, delete, retention) and `r
 Nothing here places, changes or proposes an order.
 """
 FLAG = "chart_analyze"
+# The "Option strikes · from your settings" block (PR-A3): its own flag, on top of FLAG (owner's tenant first).
+STRIKES_FLAG = "chart_analyze_strikes"

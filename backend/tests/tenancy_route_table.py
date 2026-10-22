@@ -315,6 +315,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/chart-analyze/items/{item_id}"): "member: the caller's own chart analysis only (tenant and user)",
     ("GET", "/api/chart-analyze/items/{item_id}/image"): "member: the caller's own chart image only (tenant and user)",
     ("POST", "/api/chart-analyze/items/{item_id}/analyze"): S_OWN_CHART_ANALYSES,
+    ("GET", "/api/chart-analyze/items/{item_id}/strikes"): "member: the caller's own analysis + the caller's organisation's deployment settings (reads only)",
     ("DELETE", "/api/chart-analyze/items/{item_id}"): S_OWN_CHART_ANALYSES,
     ("GET", "/api/charts/drawings"): "member",
     ("POST", "/api/charts/drawings"): S_OWN_DRAWINGS,

@@ -1,0 +1,63 @@
+{
+  "schema": "atp.template/1",
+  "id": "D2",
+  "version": 1,
+  "name": "Moving-average crossover",
+  "family": "D",
+  "idea": "A signal when a fast moving average crosses a slow one on a closed bar; optionally only when the close is on the same side of a slower trend average.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "ma_type", "label": "Average type", "help": "How both averages (and the trend average) are calculated.",
+     "type": "ma_type", "default": "EMA", "choices": ["EMA", "SMA", "WMA", "HMA"],
+     "choice_labels": ["Exponential", "Simple", "Weighted", "Hull"]},
+    {"key": "fast", "label": "Fast average", "help": "Bars in the fast average.",
+     "type": "int", "default": 9, "min": 2, "max": 200, "step": 1},
+    {"key": "slow", "label": "Slow average", "help": "Bars in the slow average: more than the fast one.",
+     "type": "int", "default": 21, "min": 3, "max": 400, "step": 1},
+    {"key": "use_trend", "label": "Trend filter", "help": "Only signal when the close is on the same side of a slower trend average.",
+     "type": "bool", "default": false},
+    {"key": "trend_period", "label": "Trend average", "help": "Bars in the trend average: more than the slow one.",
+     "type": "int", "default": 200, "min": 10, "max": 1000, "step": 1},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The level that says the idea is wrong: the latest confirmed swing, or the slow average. When it is not on the losing side of the close, there is no signal.",
+     "type": "enum", "default": "swing", "choices": ["swing", "slow_average"],
+     "choice_labels": ["The latest confirmed swing", "The slow average"]},
+    {"key": "swing_degree", "label": "Swing size", "help": "Which swings count: 0 is the smallest, 3 the largest. Larger swings need more history.",
+     "type": "int", "default": 1, "min": 0, "max": 3, "step": 1}
+  ],
+  "constraints": [
+    {"left": "fast", "op": "<", "right": "slow", "message": "The fast average must have fewer bars than the slow one."},
+    {"left": "slow", "op": "<", "right": "trend_period", "when": "use_trend",
+     "message": "The trend average must have more bars than the slow one."}
+  ],
+  "sides_default": "both",
+  "context": {
+    "long": "close > MA(close, $trend_period, $ma_type)",
+    "short": "close < MA(close, $trend_period, $ma_type)",
+    "enabled_by": "use_trend"
+  },
+  "setup": {
+    "kind": "event",
+    "long": "CrossAbove(MA(close, $fast, $ma_type), MA(close, $slow, $ma_type))",
+    "short": "CrossBelow(MA(close, $fast, $ma_type), MA(close, $slow, $ma_type))",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "by": "invalidation",
+    "variants": {
+      "swing": {"long": "SwingLow($swing_degree)", "short": "SwingHigh($swing_degree)"},
+      "slow_average": {"long": "MA(close, $slow, $ma_type)", "short": "MA(close, $slow, $ma_type)"}
+    }
+  },
+  "exit_signal": {
+    "long": "CrossBelow(MA(close, $fast, $ma_type), MA(close, $slow, $ma_type))",
+    "short": "CrossAbove(MA(close, $fast, $ma_type), MA(close, $slow, $ma_type))"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "fast_average_crossed_above"}, {"token": "close_above_trend_average", "when": "use_trend"}],
+    "short": [{"token": "fast_average_crossed_below"}, {"token": "close_below_trend_average", "when": "use_trend"}]
+  }
+}

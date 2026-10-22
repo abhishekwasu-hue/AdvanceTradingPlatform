@@ -16,14 +16,28 @@ import { useFeatures } from "../ui/useFeatures";
 import { draftFromState, formSymbol } from "../copilot/strategyDraft";
 import CopilotDraftV2 from "./CopilotDraftV2";
 import {
-  READY, SYMBOLS, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, paperBotRequestWithDefaults, sortBots, startSummary,
-  strategyLine, symbolProblem, withIdeaLots, type Preselect,
+  READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, paperBotRequestWithDefaults, sortBots,
+  startSummary, strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
+import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
 
 // The full form (options structures, exits, filters) loads only when "More ways to trade" is opened.
 const MoreWaysToTrade = lazy(() => import("../pages/DeploymentsPage"));
 
 const OTHER = "__other__";
+/** A strategy template in the strategy list (its strategy id comes from the server once the template is picked). */
+const PICK = "template-pick:";
+/** The chart timeframe a template starts on when it offers it (a template's settings stay its own defaults here). */
+const TEMPLATE_TIMEFRAME = "15m";
+
+/** Strategy templates step 2: `?template=D2` opens the form with that template picked (the idea library's "Adopt"). */
+function templateFromUrl(): string | null {
+  try {
+    return new URLSearchParams(window.location.search).get("template");
+  } catch {
+    return null;
+  }
+}
 
 /**
  * UX2 fix 4 ("Paper bot in three taps", docs/design/UX_AUDIT_FULL.md P18): the v2 page at /deployments, shown only while
@@ -51,6 +65,9 @@ export default function PaperBotV2(_props: PageProps) {
   const [confirmStop, setConfirmStop] = useState<number | null>(null);
   const [botNote, setBotNote] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [stepUp, setStepUp] = useState<{ reason: string; retry: () => Promise<unknown> } | null>(null);
+  // Strategy templates step 2 (ui_v2 + strategy_templates): the templates the organisation can adopt as paper strategies.
+  const templatesOn = features.on("ui_v2") && features.on("strategy_templates");
+  const [templates, setTemplates] = useState<StrategyTemplate[]>([]);
   // Job 6: the Copilot's draft arrives in the navigation state (with the Copilot switch on); the trader saves it himself.
   const location = useLocation();
   const navigate = useNavigate();
@@ -79,10 +96,16 @@ export default function PaperBotV2(_props: PageProps) {
     return () => window.clearInterval(timer);
   }, [user, loadBots]);
 
+  useEffect(() => {
+    if (!user || !templatesOn) { setTemplates([]); return; }
+    templatesApi.list().then((r) => setTemplates(r.templates.filter((t) => t.available))).catch(() => setTemplates([]));
+  }, [user, templatesOn]);
+
   const names = useMemo(() => new Map<string, string>([
     ...(library ?? []).map((s) => [s.id, s.name] as [string, string]),
     ...custom.map((c) => [c.strategy_id, c.config.name] as [string, string]),
-  ]), [library, custom]);
+    ...templates.map((t) => [TEMPLATE_ID_PREFIX + t.id, t.name] as [string, string]),
+  ]), [library, custom, templates]);
 
   async function act(bot: Deployment, kind: "pause" | "resume" | "stop") {
     setBusyBot(bot.id); setBotNote(null);
@@ -178,7 +201,8 @@ export default function PaperBotV2(_props: PageProps) {
         <section ref={formRef} className="scroll-mt-20 space-y-space-3">
           {draftNote && <NoteV2 kind="done" testId="draft-saved">{draftNote}</NoteV2>}
           <StartBotV2 library={library} custom={custom} hasBroker={hasBroker} firstField={firstField} onStarted={() => void loadBots()}
-            defaults={defaults} approvalAllowed={features.on("approval_only_entries")} preselect={preselect} />
+            defaults={defaults} approvalAllowed={features.on("approval_only_entries")} templates={templates} initialTemplate={templateFromUrl()}
+            preselect={preselect} />
         </section>
       )}
 
@@ -258,15 +282,18 @@ function StepNo({ n }: { n: number }) {
   return <span aria-hidden className="mr-space-1 inline-flex h-5 w-5 items-center justify-center rounded-pill bg-surface-3 text-t12 font-semibold text-fg">{n}</span>;
 }
 
-export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, defaults = null, approvalAllowed = false, preselect = null }: {
+export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, defaults = null, approvalAllowed = false, templates = [],
+  initialTemplate = null, preselect = null }: {
   library: StrategyInfo[] | null; custom: CustomStrategyResponse[]; hasBroker: boolean | null;
   firstField: RefObject<HTMLSelectElement>; onStarted: () => void;
   /** Settings part C: the user's own defaults (a pre-fill, shown and switchable here); null = none. */
   defaults?: TradingDefaults | null; approvalAllowed?: boolean;
+  /** Strategy templates step 2: templates the user can adopt here (empty while the flag is off). */
+  templates?: StrategyTemplate[]; initialTemplate?: string | null;
   /** Job 6: the strategy the trader just saved from the Copilot's draft, its symbol and the size his idea named. */
   preselect?: Preselect | null;
 }) {
-  const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId() };
+  const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), timeframe: useId() };
   const [useDefaults, setUseDefaults] = useState(true);
   const ready = useMemo(() => (library ?? []).filter((s) => READY.some((r) => r.id === s.id))
     .sort((a, b) => READY.findIndex((r) => r.id === a.id) - READY.findIndex((r) => r.id === b.id)), [library]);
@@ -277,6 +304,37 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [touched, setTouched] = useState(false);
+  // Strategy templates step 2: the picked template, its chart timeframe and the server's pre-fill for them (nothing is
+  // created until "Start on paper"; the template keeps its usual settings here).
+  const picked = strategyId.startsWith(PICK) ? templates.find((t) => t.id === strategyId.slice(PICK.length)) ?? null : null;
+  const [templateTimeframe, setTemplateTimeframe] = useState("");
+  const [adoption, setAdoption] = useState<TemplateAdoption | null>(null);
+  const [adoptFailed, setAdoptFailed] = useState(false);
+  const urlTemplateApplied = useRef(false);
+
+  useEffect(() => {
+    if (urlTemplateApplied.current || !initialTemplate || !templates.some((t) => t.id === initialTemplate)) return;
+    urlTemplateApplied.current = true;
+    setStrategyId(PICK + initialTemplate);
+  }, [templates, initialTemplate]);
+
+  useEffect(() => {
+    if (!picked) return;
+    if (!picked.timeframes.some((t) => t.value === templateTimeframe)) {
+      setTemplateTimeframe(picked.timeframes.some((t) => t.value === TEMPLATE_TIMEFRAME) ? TEMPLATE_TIMEFRAME : picked.default_timeframe ?? "");
+    }
+  }, [picked, templateTimeframe]);
+
+  const pickedId = picked?.id ?? null;
+  useEffect(() => {
+    setAdoption(null); setAdoptFailed(false);
+    if (!pickedId || !templateTimeframe) return;
+    let live = true;
+    templatesApi.adopt(pickedId, { timeframe: templateTimeframe })
+      .then((a) => { if (live) setAdoption(a); })
+      .catch(() => { if (live) setAdoptFailed(true); });
+    return () => { live = false; };
+  }, [pickedId, templateTimeframe]);
 
   // Job 6: the strategy the trader saved from the Copilot's draft, with the symbol his idea named (a pre-fill he can change).
   useEffect(() => {
@@ -291,7 +349,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
 
   // The first ready-made strategy, with the symbol it is shown with.
   useEffect(() => {
-    if (strategyId || !library?.length) return;
+    // (a template from the link, picked in this same commit, wins: the effect above already set it)
+    if (strategyId || !library?.length || urlTemplateApplied.current) return;
     const first = ready[0] ?? library[0];
     setStrategyId(first.id);
     const r = READY.find((x) => x.id === first.id);
@@ -303,18 +362,25 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     return <CardV2 title="Start a paper bot"><LoadFailedV2 what="the strategy library" /></CardV2>;
   }
 
-  const info = library.find((s) => s.id === strategyId) ?? null;
+  const templateInfo = adoption && picked ? { timeframes: [adoption.deployment.timeframe], description: picked.idea } : null;
+  const info = picked ? templateInfo : library.find((s) => s.id === strategyId) ?? null;
+  // A template's id is the server's (with its settings); a pick whose template is gone starts nothing.
+  const effectiveId = strategyId.startsWith(PICK) ? (picked && adoption?.strategy_id) || "" : strategyId;
   const symbol = symbolChoice === OTHER ? otherSymbol : symbolChoice;
   const problem = symbolProblem(symbol);
-  const line = strategyLine(strategyId, info) || (custom.some((c) => c.strategy_id === strategyId) ? "Your own strategy from Build a strategy." : "");
-  const offered = paperBotRequestWithDefaults(strategyId, symbol, info, defaults, approvalAllowed).applied;
-  const base = paperBotRequestWithDefaults(strategyId, symbol, info, defaults, approvalAllowed, useDefaults).request;
+  const line = picked ? picked.idea
+    : strategyLine(strategyId, info) || (custom.some((c) => c.strategy_id === strategyId) ? "Your own strategy from Build a strategy." : "");
+  const offered = paperBotRequestWithDefaults(effectiveId, symbol, info, defaults, approvalAllowed).applied;
+  const built = paperBotRequestWithDefaults(effectiveId, symbol, info, defaults, approvalAllowed, useDefaults).request;
+  // Job 6: the size the trader's own idea named (his saved strategy only).
   const ideaLots = preselect && preselect.strategyId === strategyId ? preselect.lots : null;
-  const request = withIdeaLots(base, ideaLots);
+  const withLots = withIdeaLots(built, ideaLots);
+  // A template reads its own candles (the adopted timeframe) and holds as the server said (Daily: for days).
+  const request = picked && adoption ? { ...withLots, timeframe: adoption.deployment.timeframe, holding: adoption.deployment.holding } : withLots;
 
   async function start() {
     setTouched(true);
-    if (problem || !strategyId) return;
+    if (problem || !effectiveId) return;
     setBusy(true); setResult(null);
     try {
       await api.createDeployment(request);
@@ -349,9 +415,25 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             {ready.length > 0 && <optgroup label="Ready-made">{ready.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>}
             {custom.length > 0 && <optgroup label="My strategies">{custom.map((c) => <option key={c.strategy_id} value={c.strategy_id}>{c.config.name}</option>)}</optgroup>}
             {others.length > 0 && <optgroup label="More from the Library">{others.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>}
+            {templates.length > 0 && (
+              <optgroup label="Strategy templates">{templates.map((t) => <option key={t.id} value={PICK + t.id}>{t.name}</option>)}</optgroup>
+            )}
           </select>
           {line && <p id={ids.line} className="mt-space-1 text-t14 text-fg-muted">{line}</p>}
         </div>
+        {picked && (
+          <div data-template={picked.id}>
+            <label htmlFor={ids.timeframe} className={LABEL}>Chart timeframe</label>
+            <select id={ids.timeframe} className={FIELD} value={templateTimeframe}
+              onChange={(e) => { setTemplateTimeframe(e.target.value); setResult(null); }}>
+              {picked.timeframes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+            <p className="mt-space-1 text-t13 text-fg-muted" data-template-notes>
+              {adoptFailed ? "This template cannot be set up just now. Try again in a moment."
+                : adoption ? `Starts with the template's usual settings. ${adoption.notes.join(" ")}` : "Getting the template ready…"}
+            </p>
+          </div>
+        )}
         <div>
           <label htmlFor={ids.symbol} className={LABEL}><StepNo n={2} />Pick a symbol</label>
           <select id={ids.symbol} className={FIELD} value={symbolChoice} onChange={(e) => { setSymbolChoice(e.target.value); setResult(null); }}>
@@ -383,7 +465,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
               </p>
             </div>
           )}
-          <button type="button" className={`${BUTTON_PRIMARY} w-full sm:w-auto`} disabled={busy || !strategyId} aria-busy={busy || undefined} onClick={() => void start()}>
+          <button type="button" className={`${BUTTON_PRIMARY} w-full sm:w-auto`} disabled={busy || !effectiveId} aria-busy={busy || undefined} onClick={() => void start()}>
             {busy && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}
             Start on paper
           </button>

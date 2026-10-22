@@ -37,7 +37,9 @@ def test_the_bk4_functions_take_the_parameter_defaults_and_need_both_flags():
     want = {"TrendlineBreakout": {"mode": "tl_mode", "touches": "tl_min_touches", "k": "min_break_atr"},
             "PatternBreakout": {"pattern": "pattern", "v": "vol_mult", "k": "min_break_atr"},
             "GapBreakout": {"level": "gap_level", "hold": "gap_hold_min"}, "GapType": {"level": "gap_level", "hold": "gap_hold_min"},
-            "RetestEntry": {"of": "retest_of", "bars": "retest_max_bars", "reversal": "retest_reversal"}}
+            "RetestEntry": {"of": "retest_of", "bars": "retest_max_bars", "reversal": "retest_reversal"},
+            # strategy templates step 2 (R2): the trendline / channel breakout's level companion
+            "LineBreakoutRef": {"mode": "tl_mode", "touches": "tl_min_touches", "k": "min_break_atr", "stop_mult": "stop_atr_mult"}}
     assert set(want) == set(BREAKOUT_BK4_FUNCTIONS)
     for fn, args in want.items():
         spec = FUNCTIONS[fn]

@@ -2518,6 +2518,61 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   e2e `admin-console-v2.e2e.ts` with new baselines `admin-<section>-v2-*` and `admin-diagnostics-v2-*` (1440 / 390, light / dark).
 - Questions MO3-A1..A6 ("View as user" design note in MO3-A1).
 
+## 22 Oct - Wave / correction templates (family G), build step 2: recipe extensions and the W1 causal counter
+
+- Branch `claude/wave2-counter-recipe`. Backend only. No migration. No G template yet. Status table:
+  `docs/design/WAVE_TEMPLATES_IMPL.md` (the review is PR #361, not merged yet).
+- Recipe extensions (WB3, WB4, WB7): family G; `variants` per part keyed by an enum setting (only the chosen one compiled
+  and in the warm-up); `@{timeframe_setting}` placeholders; family G's params hash records the wave settings; D1 stays
+  byte-identical (test); `engine.SPARSE_SERIES` holds the wave series; wave labels in words, `{wave_timeframe}` /
+  `{higher_timeframe}`, wave tokens with the invalidation in words.
+- W1 (WB1, WB2, WB12, WB14): `app/price_action/waves/` - the causal counter on the generic rules (`done=False` for the
+  running wave) and `read_counter` for finished waves only; main count by the larger-degree context, then the oldest
+  origin; UNCLEAR on a tie; alternate and clarity as evidence; recomputed only on a newly confirmed swing; degrees 1-3.
+  `read_counter` gained an optional ratio-settings argument (WAVE-6; the Daily trend's default path is unchanged).
+- ScreenQL (WB13): WaveState / WaveType / WaveAlt / WaveClarity behind the new flag `screener_waves` (OFF), gated in screens,
+  studies and alert rules; bar close only in alerts; no-look-ahead cases added.
+- Tests: `tests/test_wave2_counter.py`, `tests/test_wave2_recipe.py`; the lookahead job covers the new functions.
+- Questions WAVE-17..WAVE-20.
+
+## 22 Oct - Wave / correction templates (family G): W2 / W3 levels and ratios, W4 anchored wave lines, R7 RetestEntry
+
+- Branch `claude/wave3-levels-lines`, stacked on #367 (`claude/wave2-counter-recipe`). Backend only. No migration. No G
+  template yet. Status table: `docs/design/WAVE_TEMPLATES_IMPL.md`.
+- W2 / W3 (WB4, WB5): `app/price_action/waves/levels.py` - per-bar origin, wave ends, the hard-rule invalidation per
+  type (a flat B has none; wave three's cap is the separate `WaveCap`; the zigzag limit stays a ratio setting), "B beyond
+  A's start" for G7, the retracement / projection levels and the running wave's ratio (ratios only from the caller).
+- W4 (WB6): lines anchored to the count's own pivots (0-2, 1-3, 2-4, each wave's corrective channel; triangle sides incl.
+  flat ones), their break by k ATR once per line, no volume; R7: RetestEntry `of = "wave_line"` / `"wave_end"`, the older
+  choices byte-identical (pinned hash).
+- ScreenQL: WaveOrigin, WaveEnd, WaveInvalidation, WaveCap, WaveBeyondOrigin, WaveRetrace, WaveProjection, WaveRatio,
+  WaveLineLevel, WaveLineBreak and the RetestEntry wave choices behind `screener_waves` (hidden / refused while off, bar
+  close only in alerts); no-look-ahead cases added.
+- Tests: `tests/test_wave3_levels_lines.py`; #367's allow-list and ratio-literal tests extended.
+- Questions WAVE-21..WAVE-26.
+
+## 22 Oct - Strategy templates step 2: wiring, D2 / B1 / B3, adopt as a paper strategy (behind ui_v2 + strategy_templates)
+
+- Branch `claude/tpl2-templates-wiring`, stacked on `claude/wave2-counter-recipe` (its schema changes kept). No migration.
+  New flag `strategy_templates` (OFF; controls.py + flag_catalog.py). Status: `docs/design/STRATEGY_TEMPLATES_IMPL.md`.
+- Wiring: a template with the user's settings is ONE strategy id (`app/strategy_templates/ids.py`, canonical, <= 80
+  characters); `resolve_strategy` builds the template adapter behind the flag and the flags of the functions it reads, so
+  the deployment and backtest routes and the worker run it; the worker fetches `history_days` of candles (R6, from
+  `parity.fetch_bars`); template deployments are PAPER only. TPL-Q2: the provenance moved off the reasons to
+  `Signal.provenance` (never serialised); the strategy id is the stored provenance.
+- R2: `RangeBreakoutRef` / `LineBreakoutRef` (level, fail level, base high / low, held level, the three stop references -
+  `quality.stop_reference`, shared with the breakout overlay); `MA(x, n, type)` for D2's average-type setting.
+- Templates: D2 moving-average crossover, B1 range breakout, B3 channel breakout - every number a setting with a default,
+  structure-word tokens. C1 / C3 wait for R7 (TPL-Q8).
+- Adopt: `GET /api/strategy-templates`, `POST /api/strategy-templates/{id}/adopt` (a pre-fill; creates nothing). The v2
+  Paper bot form lists the templates (chart timeframe, usual settings, `?template=` link) and starts the same PAPER request.
+- Tests: `tests/test_tpl2_templates.py` (must fire / must not, warm-up, truncation over many t, mirror, scan = backtest =
+  options = worker, property tests, ids, provenance, resolver, worker history), `tests/test_tpl2_routes.py`; runtime,
+  causal (lookahead job), history-sweep and BK tests extended; the D1 property test now allows an S6 refusal (a case the
+  random search found). vitest `src/strategyTemplates/templates.test.tsx`; e2e `strategy-templates-v2.e2e.ts` with new
+  baselines `strategy-templates-v2-{1440,390,360}-{light,dark}.png`.
+- Questions TPL-Q8..TPL-Q17 (TPL-Q2 answered).
+
 ## 22 Oct - Copilot v2 slice 3: job 6, the strategy builder (handover item 5, behind ui_v2 + ai_copilot)
 
 - Branch `claude/copilot-job6-builder`. No migration. Owner questions CP6-1..9 (OPEN_QUESTIONS) on their provisional defaults.

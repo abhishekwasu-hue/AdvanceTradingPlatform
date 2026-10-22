@@ -129,6 +129,19 @@ def _status(b: Bars, j: int, sign: int, level: float, fail_level: float, p: Dict
     return "unconfirmed", retest, None
 
 
+def stop_reference(level: float, base_low: float, base_high: float, atr_prev: float, side: str, mode: str, mult: float) -> float:
+    """The breakout's stop reference (spec section 5): `base` - the base low (up) / high (down); `midpoint` - the middle of
+    the base (B16: the opening-range midpoint); otherwise, and whenever the base is missing, `level_atr` - the level less
+    (up) / plus (down) `mult` ATRs of the bar before the signal (no ATR yet: the level itself). The strategy templates'
+    level companions (ScreenQL RangeBreakoutRef / LineBreakoutRef, owner order R2) call this same function."""
+    sign = 1 if side == "up" else -1
+    if mode == "base" and np.isfinite(base_low if side == "up" else base_high):
+        return float(base_low if side == "up" else base_high)
+    if mode == "midpoint" and np.isfinite(base_low) and np.isfinite(base_high):
+        return (float(base_low) + float(base_high)) / 2.0
+    return float(level - sign * mult * (atr_prev if np.isfinite(atr_prev) else 0.0))
+
+
 def grade_signal(b: Bars, j: int, side: str, row: pd.Series, trends: Dict[str, Optional[str]], p: Dict[str, Any]) -> Dict[str, Any]:
     """Checklist points, grade and the reasons, from bars 0..j only (deterministic: same bars + parameters -> same grade)."""
     sign = 1 if side == "up" else -1
@@ -183,13 +196,8 @@ def grade_signal(b: Bars, j: int, side: str, row: pd.Series, trends: Dict[str, O
         why.append(f"high-volatility regime (ATR percentile {pct:.0f})")
     level = float(row["level"])
     close = float(b.c[j])
-    a = b.atr_prev[j]
-    if p["stop_mode"] == "base" and np.isfinite(row["base_low" if side == "up" else "base_high"]):
-        stop = float(row["base_low" if side == "up" else "base_high"])
-    elif p["stop_mode"] == "midpoint" and np.isfinite(row["base_low"]) and np.isfinite(row["base_high"]):
-        stop = (float(row["base_low"]) + float(row["base_high"])) / 2.0      # B16: the opening-range midpoint
-    else:
-        stop = level - sign * p["stop_atr_mult"] * (a if np.isfinite(a) else 0.0)
+    stop = stop_reference(level, float(row["base_low"]), float(row["base_high"]), float(b.atr_prev[j]), side, p["stop_mode"],
+                          float(p["stop_atr_mult"]))
     risk = (close - stop) * sign
     nxt = _opposing_level(b, j, side, p)
     room_r = float("inf") if nxt is None else ((nxt - close) * sign / risk if risk > 0 else float("nan"))

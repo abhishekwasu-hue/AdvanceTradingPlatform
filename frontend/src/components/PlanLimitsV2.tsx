@@ -52,7 +52,7 @@ export function PlanLimitsV2({ limits, usage }: { limits: Record<string, number>
   if (rows.length === 0) return null;
   return (
     <div className="mt-3 text-xs" data-testid="plan-limits-v2">
-      <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-1">Your plan&apos;s feature limits</div>
+      <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-1">Your plan&apos;s feature limits</div>
       <table className="w-full text-xs">
         <tbody>
           {rows.map((r) => (
@@ -63,7 +63,7 @@ export function PlanLimitsV2({ limits, usage }: { limits: Record<string, number>
           ))}
         </tbody>
       </table>
-      <div className="mt-1 text-[11px] text-fg-muted">Counts are your own. A limit with no count belongs to a feature that is not available yet.</div>
+      <div className="mt-1 text-xs text-fg-muted">Counts are your own. A limit with no count belongs to a feature that is not available yet.</div>
     </div>
   );
 }

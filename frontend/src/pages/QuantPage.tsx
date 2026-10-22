@@ -94,7 +94,7 @@ export default function QuantPage() {
         <div className="grid sm:grid-cols-4 lg:grid-cols-7 gap-3 text-xs">
           {Object.keys(FACTOR_LABELS).map((f) => (
             <div key={f}>
-              <label className="block text-[11px] text-fg-muted mb-0.5">{FACTOR_LABELS[f]} <span className="text-fg">{weights[f]}%</span></label>
+              <label className="block text-xs text-fg-muted mb-0.5">{FACTOR_LABELS[f]} <span className="text-fg">{weights[f]}%</span></label>
               <input type="range" min={0} max={60} step={5} value={weights[f]} onChange={(e) => setWeights({ ...weights, [f]: Number(e.target.value) })} className="w-full" />
             </div>
           ))}
@@ -105,10 +105,10 @@ export default function QuantPage() {
             <input type="checkbox" checked={useFundamentals} onChange={(e) => setUseFundamentals(e.target.checked)} />
             Fill value/quality from Fundamentals
           </label>
-          <span className="text-[11px] text-fg-muted">Weights are renormalised; a factor a symbol has no data for carries no weight in its composite. Value and quality use the latest stored annual financials (PE and PB at the last close of the window).</span>
+          <span className="text-xs text-fg-muted">Weights are renormalised; a factor a symbol has no data for carries no weight in its composite. Value and quality use the latest stored annual financials (PE and PB at the last close of the window).</span>
         </div>
         {table?.fundamentals && (
-          <div className="mt-2 text-[11px] text-fg-muted">
+          <div className="mt-2 text-xs text-fg-muted">
             {table.fundamentals.note}
             {Object.values(table.fundamentals.filled).some((f) => f.missing.length > 0) && (
               <ul className="mt-1 space-y-0.5">
@@ -128,7 +128,7 @@ export default function QuantPage() {
           {table.warnings.map((w, i) => <div key={i} className="text-xs text-warn mb-1">{w}</div>)}
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="text-fg-muted uppercase text-[10px] tracking-wide"><tr className="text-left">
+              <thead className="text-fg-muted uppercase text-xs tracking-wide"><tr className="text-left">
                 <th className="py-1 pr-3">#</th><th className="py-1 pr-3">Symbol</th><th className="py-1 pr-3">Bucket</th><th className="py-1 pr-3">Composite</th>
                 {table.factors.map((f) => <th key={f} className="py-1 pr-3">{FACTOR_LABELS[f] ?? f}</th>)}<th className="py-1 pr-3">Coverage</th>
               </tr></thead>
@@ -137,7 +137,7 @@ export default function QuantPage() {
                   <tr key={r.symbol} className="border-t border-border">
                     <td className="py-1 pr-3 text-fg-muted">{r.rank ?? "-"}</td>
                     <td className="py-1 pr-3 font-bold text-fg">{r.symbol} <span className="text-fg-muted font-normal">{r.close.toFixed(2)}</span></td>
-                    <td className="py-1 pr-3"><span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${r.bucket === "LONG" ? "border-up/40 text-up" : r.bucket === "SHORT" ? "border-down/40 text-down" : "border-border text-fg-muted"}`}>{r.bucket}</span></td>
+                    <td className="py-1 pr-3"><span className={`rounded-md border px-1.5 py-0.5 text-xs font-bold ${r.bucket === "LONG" ? "border-up/40 text-up" : r.bucket === "SHORT" ? "border-down/40 text-down" : "border-border text-fg-muted"}`}>{r.bucket}</span></td>
                     <td className={`py-1 pr-3 ${zClass(r.composite)}`}>{r.composite?.toFixed(2) ?? "-"}</td>
                     {table.factors.map((f) => <td key={f} className={`py-1 pr-3 ${zClass(r.z[f])}`} title={r.raw[f] != null ? `raw ${r.raw[f]?.toFixed(4)}` : "no data"}>{r.z[f]?.toFixed(2) ?? "-"}</td>)}
                     <td className="py-1 pr-3 text-fg-muted">{r.coverage}/{table.factors.length}</td>
@@ -146,7 +146,7 @@ export default function QuantPage() {
               </tbody>
             </table>
           </div>
-          <div className="mt-2 text-[11px] text-fg-muted">z-scores across this universe, winsorised at ±3. LONG/SHORT = top/bottom quintile by composite. Momentum skips the last bars; low volatility and reversal are sign-flipped so higher is more attractive.</div>
+          <div className="mt-2 text-xs text-fg-muted">z-scores across this universe, winsorised at ±3. LONG/SHORT = top/bottom quintile by composite. Momentum skips the last bars; low volatility and reversal are sign-flipped so higher is more attractive.</div>
         </Card>
       )}
 
@@ -171,8 +171,8 @@ export default function QuantPage() {
           )}
           <div className="grid lg:grid-cols-2 gap-4 text-xs">
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-fg-muted mb-1">Weights, volatility, beta vs {risk.benchmark ?? "-"}</div>
-              <table className="w-full"><thead className="text-fg-muted text-[10px] uppercase"><tr className="text-left"><th className="py-1 pr-2">Symbol</th><th className="py-1 pr-2">Weight</th><th className="py-1 pr-2">Vol</th><th className="py-1 pr-2">Beta</th><th className="py-1 pr-2">Max DD</th></tr></thead>
+              <div className="text-xs uppercase tracking-wide text-fg-muted mb-1">Weights, volatility, beta vs {risk.benchmark ?? "-"}</div>
+              <table className="w-full"><thead className="text-fg-muted text-xs uppercase"><tr className="text-left"><th className="py-1 pr-2">Symbol</th><th className="py-1 pr-2">Weight</th><th className="py-1 pr-2">Vol</th><th className="py-1 pr-2">Beta</th><th className="py-1 pr-2">Max DD</th></tr></thead>
                 <tbody>
                   {risk.symbols.map((s) => (
                     <tr key={s} className="border-t border-border/60"><td className="py-0.5 pr-2 text-fg">{s}</td><td className="py-0.5 pr-2">{pct(chosenWeights[s] ?? 0)}</td><td className="py-0.5 pr-2">{pct(risk.volatility[s])}</td><td className="py-0.5 pr-2">{risk.betas[s]?.toFixed(2) ?? "-"}</td><td className="py-0.5 pr-2">{risk.max_drawdown_pct[s]?.toFixed(1) ?? "-"}%</td></tr>
@@ -180,8 +180,8 @@ export default function QuantPage() {
                 </tbody></table>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-fg-muted mb-1">Correlation of log returns</div>
-              <div className="overflow-x-auto"><table className="text-[10px]"><thead><tr><th></th>{risk.symbols.map((s) => <th key={s} className="px-1 text-fg-muted font-normal">{s.slice(0, 6)}</th>)}</tr></thead>
+              <div className="text-xs uppercase tracking-wide text-fg-muted mb-1">Correlation of log returns</div>
+              <div className="overflow-x-auto"><table className="text-xs"><thead><tr><th></th>{risk.symbols.map((s) => <th key={s} className="px-1 text-fg-muted font-normal">{s.slice(0, 6)}</th>)}</tr></thead>
                 <tbody>
                   {risk.symbols.map((a) => (
                     <tr key={a}><td className="pr-1 text-fg-muted">{a.slice(0, 8)}</td>{risk.symbols.map((b) => <td key={b} className={`px-1 py-0.5 text-center ${corrClass(risk.correlation[a]?.[b] ?? null)}`}>{risk.correlation[a]?.[b]?.toFixed(2) ?? "-"}</td>)}</tr>
@@ -189,7 +189,7 @@ export default function QuantPage() {
                 </tbody></table></div>
             </div>
           </div>
-          <div className="mt-2 text-[11px] text-fg-muted">{risk.disclaimer}</div>
+          <div className="mt-2 text-xs text-fg-muted">{risk.disclaimer}</div>
         </Card>
       )}
     </div>

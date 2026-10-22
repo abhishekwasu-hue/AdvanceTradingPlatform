@@ -82,23 +82,23 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
         {canEdit && (
           <div className="grid sm:grid-cols-5 gap-2 items-end text-xs mb-3">
             <div>
-              <label className="block text-[10px] text-fg-muted mb-0.5">Scope</label>
+              <label className="block text-xs text-fg-muted mb-0.5">Scope</label>
               <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={scope} onChange={(e) => setScope(e.target.value as RiskScope)}>
                 {SCOPES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-[10px] text-fg-muted mb-0.5">{needsId ?? "Scope id"}</label>
+              <label className="block text-xs text-fg-muted mb-0.5">{needsId ?? "Scope id"}</label>
               <input className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 disabled:opacity-40" disabled={!needsId} placeholder={needsId ?? "-"} value={scopeId} onChange={(e) => setScopeId(e.target.value)} />
             </div>
             <div>
-              <label className="block text-[10px] text-fg-muted mb-0.5">Limit</label>
+              <label className="block text-xs text-fg-muted mb-0.5">Limit</label>
               <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={type} onChange={(e) => setType(e.target.value as RiskLimitType)}>
                 {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-[10px] text-fg-muted mb-0.5">Value <span className="text-fg-muted">({TYPES.find((t) => t.value === type)?.unit})</span></label>
+              <label className="block text-xs text-fg-muted mb-0.5">Value <span className="text-fg-muted">({TYPES.find((t) => t.value === type)?.unit})</span></label>
               <input type="number" step="any" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={value} onChange={(e) => setValue(e.target.value)} />
             </div>
             <button onClick={add} disabled={busy || !value} className="flex items-center justify-center gap-1 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 disabled:opacity-50">
@@ -111,7 +111,7 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
           <div className="text-xs text-fg-muted">No limits yet - the risk settings above are the only guard.</div>
         ) : (
           <table className="w-full text-xs">
-            <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+            <thead className="text-fg-muted uppercase text-xs tracking-wide">
               <tr className="text-left"><th className="py-1 pr-3">Scope</th><th className="py-1 pr-3">Limit</th><th className="py-1 pr-3">Value</th><th className="py-1 pr-3">Note</th><th className="py-1 pr-3"></th></tr>
             </thead>
             <tbody>
@@ -139,7 +139,7 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+              <thead className="text-fg-muted uppercase text-xs tracking-wide">
                 <tr className="text-left"><th className="py-1 pr-3">Time</th><th className="py-1 pr-3">Result</th><th className="py-1 pr-3">Strategy</th><th className="py-1 pr-3">Detail</th></tr>
               </thead>
               <tbody>

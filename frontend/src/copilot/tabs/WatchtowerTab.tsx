@@ -145,7 +145,7 @@ export default function WatchtowerTab() {
                 <div className="flex items-center gap-2"><span className="text-fg-muted">{t("watch.tgBot")}</span><Badge className="ml-auto" tone={telegram.configured ? "up" : "neutral"}>{telegram.configured ? t("watch.linked") : t("watch.notLinked")}</Badge></div>
                 <div className="flex items-center gap-2"><span className="text-fg-muted">{t("watch.tgApprovals")}</span><Badge className="ml-auto" tone={telegram.inbound_enabled ? "up" : "neutral"}>{telegram.inbound_enabled ? t("watch.on") : t("watch.off")}</Badge></div>
                 <div className="flex items-center gap-2"><span className="text-fg-muted">{t("watch.tgApprovers")}</span><span className="ml-auto font-tabular text-fg">{telegram.approvers?.length ?? 0}</span></div>
-                <p className="text-[11px] text-fg-muted">{t("watch.tgHint")}</p>
+                <p className="text-xs text-fg-muted">{t("watch.tgHint")}</p>
               </div>
             )}
           </Panel>

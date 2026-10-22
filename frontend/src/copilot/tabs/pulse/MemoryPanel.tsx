@@ -109,7 +109,7 @@ export default function MemoryPanel() {
             })}
           </div>
         ) : <p className="text-xs text-fg-muted">{memory?.global_enabled === false ? t("memory.globalOff") : t("memory.globalEmpty")}</p>}
-        <p className="mt-1 text-[11px] text-fg-muted">{t("memory.globalNote")}</p>
+        <p className="mt-1 text-xs text-fg-muted">{t("memory.globalNote")}</p>
       </div>
     </Panel>
   );

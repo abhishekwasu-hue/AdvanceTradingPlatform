@@ -50,7 +50,7 @@ export function AnotherAccount({ entries, canChange, onConnect }: {
           <label htmlFor={`${ids}-n`} className="block text-t13 font-medium text-fg">Account name</label>
           <input id={`${ids}-n`} value={name} onChange={(e) => setName(e.target.value)} disabled={!canChange} maxLength={32}
             autoComplete="off" spellCheck={false} placeholder="family"
-            className="h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-[16px] text-fg md:text-t14" />
+            className="h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-sm text-fg md:text-t14" />
         </div>
         <button type="submit" disabled={!ok} className={BTN_SECONDARY}>Connect</button>
       </div>

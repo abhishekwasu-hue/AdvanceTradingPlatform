@@ -53,7 +53,7 @@ export default function ExportCard({ scope, tenantId }: { scope: "tenant" | "pla
           <div key={d.id} className="rounded-lg border border-border bg-surface-2/40 p-3 flex items-center justify-between gap-2">
             <div>
               <div className="text-sm font-semibold text-fg">{d.label}</div>
-              <div className="text-[11px] text-fg-muted">{d.hint}</div>
+              <div className="text-xs text-fg-muted">{d.hint}</div>
             </div>
             <div className="flex gap-1">
               {(["csv", "json"] as const).map((f) => (
@@ -68,7 +68,7 @@ export default function ExportCard({ scope, tenantId }: { scope: "tenant" | "pla
       </div>
       {error && <div className="mt-2 text-xs text-down">{error}</div>}
       {last && (
-        <div className="mt-3 text-[11px] text-fg-muted font-mono break-all">
+        <div className="mt-3 text-xs text-fg-muted font-mono break-all">
           <div>{last.name} - {last.rows} rows{last.chain ? ` - audit chain intact: ${last.chain}` : ""}</div>
           <div>sha256 {last.sha}</div>
         </div>

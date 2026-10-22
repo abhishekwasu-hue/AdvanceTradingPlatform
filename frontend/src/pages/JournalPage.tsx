@@ -41,7 +41,7 @@ function ScoreCard({ score }: { score: DisciplineScore }) {
           ))}
         </div>
       </div>
-      <p className="mt-3 text-[11px] text-fg-muted">
+      <p className="mt-3 text-xs text-fg-muted">
         Each component is the share of this week's decisions with none of its tags; the score weights them by your settings.
         {score.count_unconfirmed ? " Suggested tags count until you dismiss them." : " Only confirmed tags count."}
       </p>
@@ -57,8 +57,8 @@ function TagChip({ tag, countUnconfirmed, onDecide }: { tag: JournalTag; countUn
         <span title={TAG_HELP[tag.tag] ?? ""}>{tagLabel(tag.tag)}</span>
         <span className="font-normal opacity-80">{tag.status === "SUGGESTED" ? "?" : tag.status === "CONFIRMED" ? "✓" : ""}</span>
       </Badge>
-      {tag.status !== "CONFIRMED" && <button className="text-[11px] text-fg-muted underline" onClick={() => onDecide(tag.id, "CONFIRMED")}>confirm</button>}
-      {tag.status !== "DISMISSED" && <button className="text-[11px] text-fg-muted underline" onClick={() => onDecide(tag.id, "DISMISSED")}>dismiss</button>}
+      {tag.status !== "CONFIRMED" && <button className="text-xs text-fg-muted underline" onClick={() => onDecide(tag.id, "CONFIRMED")}>confirm</button>}
+      {tag.status !== "DISMISSED" && <button className="text-xs text-fg-muted underline" onClick={() => onDecide(tag.id, "DISMISSED")}>dismiss</button>}
     </span>
   );
 }
@@ -144,19 +144,19 @@ function ReviewTab({ week, version }: { week: string | undefined; version: numbe
       <div className="grid gap-4 md:grid-cols-2">
         <Card title="Setups">
           {review.by_setup.length === 0 ? <p className="text-xs text-fg-muted">No closed trades.</p> : (
-            <table className="w-full text-xs"><thead className="text-left text-[10px] uppercase text-fg-muted"><tr><th className="py-1">Setup</th><th>Closed</th><th>Win rate</th><th>Net</th></tr></thead>
+            <table className="w-full text-xs"><thead className="text-left text-xs uppercase text-fg-muted"><tr><th className="py-1">Setup</th><th>Closed</th><th>Win rate</th><th>Net</th></tr></thead>
               <tbody>{review.by_setup.map((g) => <tr key={g.setup} className="border-t border-border/60"><td className="py-1">{g.setup}</td><td>{g.closed}</td><td>{g.win_rate ?? "-"}{g.win_rate != null ? "%" : ""}</td><td><Signed value={g.net_pnl} format={(v) => money(v)} /></td></tr>)}</tbody></table>
           )}
         </Card>
         <Card title="Behaviours and their cost">
           {review.behaviours.length === 0 ? <p className="text-xs text-fg-muted">No counted behaviour tags this week.</p> : (
-            <table className="w-full text-xs"><thead className="text-left text-[10px] uppercase text-fg-muted"><tr><th className="py-1">Tag</th><th>Trades</th><th>Net (closed)</th><th>Avg R</th></tr></thead>
+            <table className="w-full text-xs"><thead className="text-left text-xs uppercase text-fg-muted"><tr><th className="py-1">Tag</th><th>Trades</th><th>Net (closed)</th><th>Avg R</th></tr></thead>
               <tbody>{review.behaviours.map((b) => <tr key={b.tag} className="border-t border-border/60"><td className="py-1">{tagLabel(b.tag)}</td><td>{b.trades}</td><td><Signed value={b.net_pnl} format={(v) => money(v)} /></td><td>{rText(b.avg_r)}</td></tr>)}</tbody></table>
           )}
         </Card>
       </div>
       <Card title="Your previous weeks">
-        <table className="w-full text-xs"><thead className="text-left text-[10px] uppercase text-fg-muted"><tr><th className="py-1">Week</th><th>Score</th><th>Trades</th><th>Net</th><th>Avg R</th></tr></thead>
+        <table className="w-full text-xs"><thead className="text-left text-xs uppercase text-fg-muted"><tr><th className="py-1">Week</th><th>Score</th><th>Trades</th><th>Net</th><th>Avg R</th></tr></thead>
           <tbody>
             <tr className="border-t border-border/60 font-semibold"><td className="py-1">{review.week}</td><td>{review.discipline.score ?? "-"}</td><td>{t.trades}</td><td><Signed value={t.net_pnl} format={(v) => money(v)} /></td><td>{rText(t.avg_r)}</td></tr>
             {review.history.map((h) => <tr key={h.week} className="border-t border-border/60"><td className="py-1">{h.week}</td><td>{h.score ?? "-"}</td><td>{h.trades}</td><td><Signed value={h.net_pnl} format={(v) => money(v)} /></td><td>{rText(h.avg_r)}</td></tr>)}
@@ -164,12 +164,12 @@ function ReviewTab({ week, version }: { week: string | undefined; version: numbe
       </Card>
       <Card title="What the numbers say">
         <div className="whitespace-pre-line text-sm text-fg">{review.explanation.text}</div>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-fg-muted">
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
           <Badge tone={review.explanation.source === "ai" ? "brand" : "neutral"}>{review.explanation.source === "ai" ? "Explained by the Copilot (numbers checked)" : "From the journal rules"}</Badge>
           {review.explanation.note && <span>{review.explanation.note}</span>}
           {review.totals.trades > 0 && <Button size="sm" onClick={explain} loading={busy}>Explain in plain language</Button>}
         </div>
-        <p className="mt-3 text-[11px] text-fg-muted">{review.disclaimer}</p>
+        <p className="mt-3 text-xs text-fg-muted">{review.disclaimer}</p>
       </Card>
     </div>
   );
@@ -247,7 +247,7 @@ function SettingsTab() {
               value={texts[`w:${c}`] ?? ""} onChange={(ev) => setText(`w:${c}`, ev.target.value)} />
           ))}
         </div>
-        <p className="mt-2 text-[11px] text-fg-muted">Only the proportions matter. The defaults and the reasoning behind each one are in the discipline engine's design note.</p>
+        <p className="mt-2 text-xs text-fg-muted">Only the proportions matter. The defaults and the reasoning behind each one are in the discipline engine's design note.</p>
       </Card>
       <div className="flex gap-2">
         <Button variant="primary" onClick={save}>Save settings</Button>

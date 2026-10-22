@@ -30,15 +30,15 @@ export default function LadderEvidence({ evidence }: { evidence: Evidence }) {
           </dl>
           <div className="space-y-1 text-xs" data-testid="evidence-kelly">
             <p><span className="font-medium text-fg">{t("evidence.kelly.label")}: </span><span className="text-fg">{kellyLine(ev, t)}</span></p>
-            <p className="text-[11px] text-fg-muted">{t("evidence.kelly.caveat")}</p>
+            <p className="text-xs text-fg-muted">{t("evidence.kelly.caveat")}</p>
           </div>
           <div className="space-y-1 text-xs" data-testid="evidence-ruin">
             <p><span className="font-medium text-fg">{t("evidence.ruin.label")}: </span><span className="text-fg">{ruinLine(ev, t)}</span></p>
-            <p className="text-[11px] text-fg-muted">{t("evidence.ruin.caveat")}</p>
+            <p className="text-xs text-fg-muted">{t("evidence.ruin.caveat")}</p>
           </div>
         </>
       )}
-      <p className="text-[11px] text-fg-muted">{t("evidence.basis")}</p>
+      <p className="text-xs text-fg-muted">{t("evidence.basis")}</p>
     </section>
   );
 }
@@ -59,7 +59,7 @@ export function DisciplineWeeks({ criterion }: { criterion: LadderCriterion }) {
   const weeks = criterion.weeks ?? [];
   if (!weeks.length && !note) return null;
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px]" data-testid="discipline-weeks">
+    <div className="mt-1 flex flex-wrap items-center gap-1 text-xs" data-testid="discipline-weeks">
       {weeks.length > 0 && (
         <ul className="flex flex-wrap gap-1" aria-label={t("discipline.weeksLabel")}>
           {weeks.map((w) => (

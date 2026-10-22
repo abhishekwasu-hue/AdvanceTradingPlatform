@@ -138,7 +138,7 @@ function ExposureCard() {
           ]}
         />
       )}
-      <div className="text-[11px] text-fg-muted mt-2">Set portfolio-wide caps (max gross exposure, max symbol concentration) under Risk Management → limits, scope "Portfolio".</div>
+      <div className="text-xs text-fg-muted mt-2">Set portfolio-wide caps (max gross exposure, max symbol concentration) under Risk Management → limits, scope "Portfolio".</div>
     </Card>
   );
 }

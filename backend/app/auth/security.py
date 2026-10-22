@@ -70,12 +70,18 @@ def _cpu_count() -> int:
 
 
 def _bcrypt_concurrency() -> int:
-    """The CPUs this process may use, shared among the API processes of the host, rounded up (LD-7: with API_WORKERS
-    processes, each takes its share, so the host runs about one bcrypt check per CPU at a time - one more where the
-    CPUs do not divide evenly, which its lower priority (BCRYPT_NICE) keeps out of the other requests' way; never
-    below one). 4 CPUs, 3 processes: 2 each; 2 CPUs, 2 processes: 1 each."""
-    workers = max(1, config.API_WORKERS)
-    return max(1, -(-_cpu_count() // workers))
+    """The CPUs this process may use, never below one - not divided among the API processes (2 CPUs, 2 processes: 2
+    each).
+
+    LD-9: the pool is per process, and the processes do not get the logins evenly: Caddy keeps a few keep-alive
+    connections to the API, and every request on one goes to the process that accepted it. With the CPUs divided
+    among the processes (before: 2 CPUs, 2 processes, 1 thread each) a login waited for its own process's only check
+    while the other process's thread and a CPU stood idle; near the box's capacity that queue is what pushed the
+    login p95 past its 2 s (CI runners at 268 ms a check). Sized to the CPUs, a free CPU takes the next check whichever
+    process it arrived on; the kernel shares the CPUs between the checks and BCRYPT_NICE keeps them behind the other
+    requests. The work is the same: one check per login at the unchanged cost. At most API_WORKERS x CPUs checks run
+    at once (4 on the KVM 2), each a little slower only while more of them than CPUs overlap."""
+    return max(1, _cpu_count())
 
 
 BCRYPT_CONCURRENCY = _bcrypt_concurrency()

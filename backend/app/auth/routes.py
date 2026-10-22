@@ -162,6 +162,17 @@ def _user_response(user: User) -> UserResponse:
                         email_verified=user.email_verified_at is not None, scopes=scopes_for(user))
 
 
+class SignUpOpenResponse(BaseModel):
+    open: bool
+
+
+@router.get("/sign-up-open", response_model=SignUpOpenResponse)
+async def sign_up_open(session: AsyncSession = Depends(get_session)) -> SignUpOpenResponse:
+    """UX1: whether the sign-in screen offers "Create an account" (the platform-wide `self_signup` flag). Public, like
+    /register itself: it answers only open or closed - no flag name, no other flag, nothing about any organisation."""
+    return SignUpOpenResponse(open=await flag_enabled(session, "self_signup"))
+
+
 @router.post(
     "/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(register_rate_limit)],

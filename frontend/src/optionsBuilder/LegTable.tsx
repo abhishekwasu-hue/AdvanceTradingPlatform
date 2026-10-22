@@ -88,7 +88,7 @@ export function LegTable({ legs, rows, step, onChange, onAdd, compact = false }:
         <div className="flex items-center gap-1">
           <NumberCell aria-label={`Leg ${n} premium`} className={w("w-24")} min={0} step={0.05} value={l.premium}
                       valid={(v) => v >= 0} onCommit={(v) => v != null && set(l.id, { premium: v, premium_source: "manual" })} />
-          {l.premium_source === "model" && <span className="rounded-full border border-warn/50 px-1.5 text-[10px] text-warn" title="Priced by the model - type the real price">model</span>}
+          {l.premium_source === "model" && <span className="rounded-full border border-warn/50 px-1.5 text-xs text-warn" title="Priced by the model - type the real price">model</span>}
         </div>
       ),
       iv: (
@@ -119,7 +119,7 @@ export function LegTable({ legs, rows, step, onChange, onAdd, compact = false }:
           {legs.map((l, i) => {
             const f = fields(l, i);
             const label = (text: string, node: ReactNode) => (
-              <div className="min-w-0"><div className="mb-1 text-[11px] text-fg-muted">{text}</div>{node}</div>
+              <div className="min-w-0"><div className="mb-1 text-xs text-fg-muted">{text}</div>{node}</div>
             );
             return (
               <li key={l.id} className="space-y-2 px-4 py-3" data-testid="leg-row">
@@ -132,7 +132,7 @@ export function LegTable({ legs, rows, step, onChange, onAdd, compact = false }:
                   {label("Strike", f.strike)}{label("Premium", f.premium)}{label("IV %", f.iv)}
                 </div>
                 {label("Expiry", f.expiry)}
-                <dl className="grid grid-cols-4 gap-2 font-mono text-[11px] tabular-nums">
+                <dl className="grid grid-cols-4 gap-2 font-mono text-xs tabular-nums">
                   {(["delta", "gamma", "theta", "vega"] as const).map((k) => (
                     <div key={k}><dt className="text-fg-muted">{k === "theta" ? "Theta/day" : k[0].toUpperCase() + k.slice(1)}</dt><dd className="text-fg">{f[k]}</dd></div>
                   ))}

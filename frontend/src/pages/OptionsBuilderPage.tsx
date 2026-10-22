@@ -250,7 +250,7 @@ export default function OptionsBuilderPage(_props: PageProps) {
               <Button variant="primary" icon={<Layers size={14} />} disabled={!legs.length} onClick={() => setBasketOpen(true)} data-testid="place-basket">Place as basket</Button>
               <Button icon={<Save size={14} />} disabled={saved !== "on"} onClick={() => setSaveOpen(true)} data-testid="save-strategy">Save strategy</Button>
             </div>
-            <p className="text-[11px] leading-snug text-fg-muted">
+            <p className="text-xs leading-snug text-fg-muted">
               Placing goes to PAPER with the plan-before-trade ticket; this page places no order.
               {saved === "off" && " Saving strategies is not turned on for your organisation yet."}
             </p>

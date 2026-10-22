@@ -5,7 +5,7 @@ export function Card({ title, children, className = "" }: { title?: string; chil
   return (
     <div className={`rounded-xl border border-border bg-surface-1 shadow-card p-4 ${className}`}>
       {title && (
-        <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-3">{title}</div>
+        <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-3">{title}</div>
       )}
       {children}
     </div>
@@ -32,7 +32,7 @@ export function CollapsibleCard({ title, subtitle, children, storageKey, default
   return (
     <div className={`rounded-xl border border-border bg-surface-1 shadow-card ${open ? "p-4" : "px-4 py-2.5"} ${className}`}>
       <button onClick={toggle} aria-expanded={open} className="flex w-full items-center gap-2 text-left">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">{title}</span>
+        <span className="text-xs font-bold uppercase tracking-wider text-fg-muted">{title}</span>
         {!open && subtitle && <span className="truncate text-xs text-fg-muted/80">{subtitle}</span>}
         <ChevronDown size={14} className={`ml-auto shrink-0 text-fg-muted transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
@@ -70,7 +70,7 @@ export function StatTile({
   const iconToneClass = tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-fg-muted";
   return (
     <div className="rounded-xl border border-border bg-surface-1 shadow-card px-4 py-3">
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
         {Icon && <Icon size={12} className={iconToneClass} />}
         {label}
       </div>
@@ -130,7 +130,7 @@ export function Disclaimer({ kind }: { kind: "backtest" | "signals" | "ai" | "sc
       "Scores and ratings summarise the inputs entered; they are analytical aids, not recommendations to buy, sell or hold any security.",
   }[kind];
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2 text-[11px] text-fg-muted">
+    <div className="flex items-start gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2 text-xs text-fg-muted">
       <Info size={13} className="shrink-0 mt-0.5" />
       <span>
         {lead} Trading in equities and derivatives involves substantial risk of loss and is not suitable for

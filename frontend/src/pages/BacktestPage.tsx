@@ -279,7 +279,7 @@ export default function BacktestPage() {
           </button>
         </div>
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-2">Dynamic exits (same rules the live monitor applies)</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">Dynamic exits (same rules the live monitor applies)</div>
           <div className="grid sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs text-fg-muted mb-1">Trailing stop %</label>
@@ -302,12 +302,12 @@ export default function BacktestPage() {
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
           <div className="flex flex-wrap items-center gap-3 mb-2">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">Trade as</div>
+            <div className="text-xs font-bold uppercase tracking-wider text-fg-muted">Trade as</div>
             <select className="rounded bg-surface-2 border border-border px-2 py-1 text-sm" value={tradeAs} onChange={(e) => setTradeAs(e.target.value as "UNDERLYING" | "OPTION")}>
               <option value="UNDERLYING">Underlying (cash / index level)</option>
               <option value="OPTION">Options (historical option-chain backtest)</option>
             </select>
-            {tradeAs === "OPTION" && <span className="text-[11px] text-fg-muted">Same structures, strikes, expiries, exits and lot sizing a deployment uses - priced bar by bar.</span>}
+            {tradeAs === "OPTION" && <span className="text-xs text-fg-muted">Same structures, strikes, expiries, exits and lot sizing a deployment uses - priced bar by bar.</span>}
           </div>
           {tradeAs === "OPTION" && (
             <div className="space-y-3">
@@ -385,7 +385,7 @@ export default function BacktestPage() {
 
               {structure === "CUSTOM" && (
                 <div className="rounded border border-border p-2">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-1">Legs ({customLegs.length}/{MAX_CUSTOM_LEGS})</div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-1">Legs ({customLegs.length}/{MAX_CUSTOM_LEGS})</div>
                   <div className="space-y-1 text-xs">
                     {customLegs.map((leg, i) => (
                       <div key={i} className="grid grid-cols-6 gap-2 items-center">
@@ -452,7 +452,7 @@ export default function BacktestPage() {
                     <>Recorded: {coverage.map((c) => `${c.underlying} ${c.rows} quotes, ${c.expiries} expiries, ${c.from?.slice(0, 10)} to ${c.to?.slice(0, 10)}`).join(" · ")}</>}
                 </div>
               )}
-              <div className="text-[11px] text-fg-muted">
+              <div className="text-xs text-fg-muted">
                 Synthetic premiums approximate the market (no smile, no bid/ask, no liquidity): use them to study structure mechanics - strikes, expiries, exits, sizing - not to claim an edge. Recorded quotes are what the market actually showed.
               </div>
             </div>
@@ -504,7 +504,7 @@ export default function BacktestPage() {
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
-                  <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+                  <thead className="text-fg-muted uppercase text-xs tracking-wide">
                     <tr className="text-left"><th className="py-1 pr-3">Structure</th><th className="py-1 pr-3">Legs (entry → exit)</th><th className="py-1 pr-3">Lots</th><th className="py-1 pr-3">Credit / debit</th><th className="py-1 pr-3">Max loss</th><th className="py-1 pr-3">Exit</th><th className="py-1 pr-3">P&amp;L</th></tr>
                   </thead>
                   <tbody>
@@ -523,7 +523,7 @@ export default function BacktestPage() {
                   </tbody>
                 </table>
               </div>
-              <div className="mt-2 text-[11px] text-fg-muted">{result.options.disclaimer}</div>
+              <div className="mt-2 text-xs text-fg-muted">{result.options.disclaimer}</div>
             </Card>
           )}
 
@@ -538,7 +538,7 @@ export default function BacktestPage() {
               <div className="grid md:grid-cols-2 gap-4 text-xs">
                 {([["Monthly", result.analytics.monthly], ["Day of week", result.analytics.day_of_week], ["Hour of day", result.analytics.hour_of_day], ["Exit reasons", result.analytics.exit_reasons]] as const).map(([title, rows]) => (
                   <div key={title}>
-                    <div className="text-[10px] uppercase tracking-wide text-fg-muted mb-1">{title}</div>
+                    <div className="text-xs uppercase tracking-wide text-fg-muted mb-1">{title}</div>
                     {rows.length === 0 ? <div className="text-fg-muted">-</div> : (
                       <table className="w-full">
                         <tbody>
@@ -556,7 +556,7 @@ export default function BacktestPage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-3 text-[11px] text-fg-muted">
+              <div className="mt-3 text-xs text-fg-muted">
                 Charges {result.analytics.costs.total_charges.toFixed(0)} ({result.analytics.costs.charges_pct_of_gross ?? "-"}% of gross)
                 {result.analytics.slippage.avg_per_unit != null ? ` · avg slippage ${result.analytics.slippage.avg_per_unit}/unit` : ""}
                 {result.run_id ? ` · saved as run #${result.run_id}` : ""}
@@ -578,11 +578,11 @@ export default function BacktestPage() {
               <div className="text-xs">
                 <div className="text-fg-muted mb-1">{optResult.combinations} combinations · {optResult.in_sample_bars} in-sample / {optResult.out_of_sample_bars} out-of-sample bars · {optResult.robust_count} robust
                   {optResult.best_confirmed_out_of_sample != null && (
-                    <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] ${optResult.best_confirmed_out_of_sample ? "bg-up/10 text-up" : "bg-warn/10 text-warn"}`}>
+                    <span className={`ml-2 rounded px-1.5 py-0.5 text-xs ${optResult.best_confirmed_out_of_sample ? "bg-up/10 text-up" : "bg-warn/10 text-warn"}`}>
                       {optResult.best_confirmed_out_of_sample ? "winner confirmed out-of-sample" : "winner NOT confirmed out-of-sample (in-sample ranking only)"}
                     </span>
                   )}</div>
-                <table className="w-full"><thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1 pr-3">Params</th><th className="py-1 pr-3">In-sample {optResult.metric}</th><th className="py-1 pr-3">Out-of-sample {optResult.metric}</th><th className="py-1 pr-3">OOS trades</th><th className="py-1 pr-3">Overfit gap</th><th className="py-1 pr-3">Flags</th></tr></thead>
+                <table className="w-full"><thead className="text-fg-muted uppercase text-xs"><tr className="text-left"><th className="py-1 pr-3">Params</th><th className="py-1 pr-3">In-sample {optResult.metric}</th><th className="py-1 pr-3">Out-of-sample {optResult.metric}</th><th className="py-1 pr-3">OOS trades</th><th className="py-1 pr-3">Overfit gap</th><th className="py-1 pr-3">Flags</th></tr></thead>
                   <tbody>{optResult.results.slice(0, 12).map((r: OptimizeResult["results"][number], i: number) => {
                     const key = optResult.metric as keyof OptimizeResult["results"][number]["in_sample"];
                     const ins = r.in_sample[key]; const oos = r.out_of_sample[key];
@@ -597,7 +597,7 @@ export default function BacktestPage() {
                       </tr>
                     );
                   })}</tbody></table>
-                <div className="text-[11px] text-fg-muted mt-1">{optResult.note}</div>
+                <div className="text-xs text-fg-muted mt-1">{optResult.note}</div>
               </div>
             )}
           </Card>
@@ -623,7 +623,7 @@ export default function BacktestPage() {
                 <div className="text-xs">
                   <div className="mb-1 text-fg-muted">Consistency {walkForward.consistency_pct}% ({walkForward.profitable_windows}/{walkForward.folds} windows profitable) · mean window P&L {walkForward.mean_window_pnl}</div>
                   <table className="w-full">
-                    <thead className="text-fg-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Window</th><th className="py-1 pr-3">Bars</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Net P&L</th><th className="py-1 pr-3">Win %</th><th className="py-1 pr-3">Max DD</th></tr></thead>
+                    <thead className="text-fg-muted uppercase text-xs tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Window</th><th className="py-1 pr-3">Bars</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Net P&L</th><th className="py-1 pr-3">Win %</th><th className="py-1 pr-3">Max DD</th></tr></thead>
                     <tbody>
                       {walkForward.windows.map((w) => (
                         <tr key={w.window} className="border-t border-border">
@@ -643,7 +643,7 @@ export default function BacktestPage() {
           <Card title={`Trades (${result.trades.length})`}>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+                <thead className="text-fg-muted uppercase text-xs tracking-wide">
                   <tr className="text-left">
                     <th className="py-1 pr-3">Direction</th>
                     <th className="py-1 pr-3">Entry</th>
@@ -684,7 +684,7 @@ export default function BacktestPage() {
         <Card title={`Backtest history (${runs.length})`}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+              <thead className="text-fg-muted uppercase text-xs tracking-wide">
                 <tr className="text-left"><th className="py-1 pr-3">When</th><th className="py-1 pr-3">Strategy</th><th className="py-1 pr-3">Symbol</th><th className="py-1 pr-3">Data</th><th className="py-1 pr-3">Exits</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Net P&L</th><th className="py-1 pr-3">Win %</th><th className="py-1 pr-3">Max DD</th></tr>
               </thead>
               <tbody>

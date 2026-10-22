@@ -65,7 +65,7 @@ export function MoreSheetContent({ ctx, current, query, onQuery, onPick, dot = n
         <Search size={16} aria-hidden className="pointer-events-none absolute left-space-3 top-1/2 -translate-y-1/2 text-fg-muted" />
         <input id={searchId} type="search" value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Search pages"
           autoComplete="off" spellCheck={false}
-          className="h-11 w-full rounded-control border border-border bg-surface-2 pl-space-10 pr-space-3 text-[16px] text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+          className="h-11 w-full rounded-control border border-border bg-surface-2 pl-space-10 pr-space-3 text-sm text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
       </div>
       {results.kind === "sections" && pinned.length > 0 && (
         <div className="grid grid-cols-2 gap-space-2" data-sheet-pinned>

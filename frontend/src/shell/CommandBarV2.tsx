@@ -129,7 +129,7 @@ export default function CommandBarV2({ open, onOpenChange, ctx, onGo }: CommandB
               aria-activedescendant={active >= 0 && results.length ? optionId(active) : undefined}
               value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown}
               placeholder="Search pages" autoComplete="off" spellCheck={false}
-              className="h-12 min-w-0 flex-1 bg-transparent text-[16px] text-fg placeholder:text-fg-muted focus:outline-none md:text-t15" />
+              className="h-12 min-w-0 flex-1 bg-transparent text-sm text-fg placeholder:text-fg-muted focus:outline-none md:text-t15" />
             <kbd className="hidden shrink-0 rounded-control border border-border px-space-1 text-t12 text-fg-muted md:inline">Esc</kbd>
           </div>
           <CommandList query={query} results={results} active={active} listId={listId} optionId={optionId} onPick={pick} onHover={setActive} />

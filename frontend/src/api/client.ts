@@ -31,6 +31,7 @@ import type {
   BacktestResult,
   BrokerCredentialsInput,
   BrokerTokenInfo,
+  UpstoxRedirectInfo,
   ChartRunResponse,
   Deployment,
   DeploymentCreateRequest,
@@ -154,6 +155,9 @@ import type {
   NewsFeedSource,
   NewsFeedStatus,
   BrokerLoginUrl,
+  BrokerCatalogEntry,
+  BrokerConnection,
+  BrokerConnectResult,
   AiAcknowledgement,
   StaticIp,
   StaticIpOverview,
@@ -166,6 +170,8 @@ import { API_V1 } from "./base";
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 import type { LegalAckBody, LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
 import type { SupportReply } from "../support/support";
+import type { MarketStrip } from "../dashboard/types";
+import type { ChainExpiries, LiveChain } from "../optionChain/types";
 
 export { ApiError, friendlyError } from "./errors";
 
@@ -411,6 +417,11 @@ export const api = {
   saveOiSettings: (underlying: string, body: { enabled?: boolean; exchange?: string; overrides?: Record<string, unknown> }) =>
     request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`, { method: "PUT", body: JSON.stringify(body) }),
 
+  // OC1: the automatic Option chain page (v2): the expiry list with its default, and one chain ready to show.
+  optionChainExpiries: (underlying: string) => request<ChainExpiries>(`/option-chain/${encodeURIComponent(underlying)}/expiries`),
+  optionChainLive: (underlying: string, expiry?: string | null) =>
+    request<LiveChain>(`/option-chain/${encodeURIComponent(underlying)}/live${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`),
+
   analyzeOptionChain: (chain: OptionChain) =>
     request<OptionChainAnalysis>("/option-chain/analyze", {
       method: "POST",
@@ -571,7 +582,8 @@ export const api = {
   updateRiskSettings: (config: RiskConfig) =>
     request<RiskConfig>("/risk-settings", { method: "PUT", body: JSON.stringify(config) }),
 
-  getAnalyticsSummary: () => request<AnalyticsSummary>("/analytics/summary"),
+  /** `days`: only the trades closed in the last `days` days (the dashboard's 30-day win rate); open trades always count. */
+  getAnalyticsSummary: (days?: number) => request<AnalyticsSummary>(days ? `/analytics/summary?days=${days}` : "/analytics/summary"),
 
   listAuditLogs: () => request<AuditLogEntry[]>("/audit-logs"),
 
@@ -595,6 +607,19 @@ export const api = {
 
   storeBrokerCredentials: (name: string, credentials: BrokerCredentialsInput, accountLabel = "primary") =>
     request<void>(`/broker/${name}/credentials?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST", body: JSON.stringify(credentials) }),
+
+  // P2b: the Broker page. The catalog says which 1-2 fields each broker needs and where to find them; connections
+  // are this organisation's brokers with one plain status each. Remove uses deleteBrokerCredentials below.
+  brokerCatalog: () => request<BrokerCatalogEntry[]>("/broker/catalog"),
+  brokerConnections: () => request<BrokerConnection[]>("/broker/connections"),
+  brokerConnect: (name: string, fields: Record<string, string>, accountLabel?: string) =>
+    request<BrokerConnectResult>(`/broker/${encodeURIComponent(name)}/connect`, {
+      method: "POST", body: JSON.stringify(accountLabel ? { fields, account_label: accountLabel } : { fields }),
+    }),
+  brokerRenew: (name: string, fields: Record<string, string>, accountLabel?: string) =>
+    request<BrokerConnectResult>(`/broker/${encodeURIComponent(name)}/renew`, {
+      method: "POST", body: JSON.stringify(accountLabel ? { fields, account_label: accountLabel } : { fields }),
+    }),
 
   listAccounts: () => request<BrokerAccount[]>("/accounts"),
   syncAccount: (id: number) => request<BrokerAccount>(`/accounts/${id}/sync`, { method: "POST" }),
@@ -648,8 +673,11 @@ export const api = {
   marketDataLtp: (symbol: string, exchange = "NSE", broker?: string) =>
     request<LtpResponse>(`/market-data/ltp?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}${broker ? `&broker=${encodeURIComponent(broker)}` : ""}`),
   /** `before` (YYYY-MM-DD, IST): older history ending the day before it - a chart scrolled back past its oldest bar. */
-  marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string, before?: string) =>
-    request<CandlesResponse>("/market-data/candles", { method: "POST", body: JSON.stringify({ symbols, timeframe, lookback_days: lookbackDays, exchange, broker: broker ?? null, before: before ?? null }) }),
+  /** UI2-4a2 `v2` (the v2 chart only): `forming` adds today's day / week / month bar, `volume_from_future` an index's
+   * volume from its near-month future. Left out, the request is exactly as before. */
+  marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string, before?: string,
+                      v2?: { forming: boolean; volume_from_future: boolean }) =>
+    request<CandlesResponse>("/market-data/candles", { method: "POST", body: JSON.stringify({ symbols, timeframe, lookback_days: lookbackDays, exchange, broker: broker ?? null, before: before ?? null, ...v2 }) }),
   // Phase Z: factor and risk models.
   quantFactors: (symbols: QuantSymbolInput[], weights?: Record<string, number>, useFundamentals = true) =>
     request<FactorTable>("/quant/factors", { method: "POST", body: JSON.stringify({ symbols, weights: weights ?? null, use_fundamentals: useFundamentals }) }),
@@ -701,6 +729,7 @@ export const api = {
 
   brokerTokenStatus: () => request<BrokerTokenInfo[]>("/broker/token-status"),
 
+  upstoxRedirectUrl: () => request<UpstoxRedirectInfo>("/broker/upstox/redirect-url"),
   upstoxOAuthStart: (accountLabel = "primary") =>
     request<{ authorization_url: string }>(`/broker/upstox/oauth/start?account_label=${encodeURIComponent(accountLabel)}`),
   // Paste-the-code daily login (Fyers, Kite): open the broker's page, then exchange the pasted code.
@@ -784,6 +813,8 @@ export const api = {
   enableMemberTrading: (memberId: number) =>
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-enable`, { method: "POST" }),
   portfolioExposure: (livePrices = true) => request<PortfolioExposure>(`/portfolio/exposure?live_prices=${livePrices}`),
+  // UI2-2: the v2 dashboard's market strip - three indices and the market state in one read-only call.
+  marketStrip: () => request<MarketStrip>("/market/strip"),
   analyticsDegradation: () => request<DegradationReport>("/analytics/degradation"),
   updateTradeJournal: (tradeId: number, body: { notes?: string | null; tags?: string[] | null }) =>
     request<TradeRecord>(`/trades/${tradeId}/journal`, { method: "PATCH", body: JSON.stringify(body) }),

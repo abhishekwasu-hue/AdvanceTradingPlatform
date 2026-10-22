@@ -283,3 +283,62 @@ def test_validation_errors_never_echo_the_secret():
     assert r.status_code == 422
     assert secret not in r.text
     assert r.json()["detail"][0]["loc"][-1] == "config"
+
+
+# --- UI2-7: a changed destination must deliver again (the setup wizard's "alerts verified") --------------------------
+
+def _set_delivered(tenant_id: int, kind: str) -> None:
+    async def go():
+        async with _session_factory() as session:
+            rec = await session.scalar(select(AlertChannelRecord).where(AlertChannelRecord.tenant_id == tenant_id,
+                                                                        AlertChannelRecord.channel_type == kind))
+            rec.last_delivered_at = datetime.now(timezone.utc)
+            await session.commit()
+    _run(go())
+
+
+def test_changing_the_destination_clears_the_last_good_send():
+    headers, me = _auth("alert-moved@example.com")
+    assert _put(headers, "telegram", TELEGRAM).status_code == 200
+    _set_delivered(me["tenant_id"], "TELEGRAM")
+    moved = _put(headers, "telegram", {"bot_token": "", "chat_id": "111"})
+    assert moved.status_code == 200 and moved.json()["last_delivered_at"] is None
+
+    assert _put(headers, "email", EMAIL).status_code == 200
+    _set_delivered(me["tenant_id"], "EMAIL")
+    other_host = _put(headers, "email", {**EMAIL, "smtp_host": "smtp2.example.com"})
+    assert other_host.status_code == 200, other_host.text
+    assert other_host.json()["last_delivered_at"] is None
+
+
+def test_changing_only_severity_or_enabled_keeps_the_last_good_send():
+    headers, me = _auth("alert-same@example.com")
+    assert _put(headers, "telegram", TELEGRAM).status_code == 200
+    _set_delivered(me["tenant_id"], "TELEGRAM")
+    same = {"bot_token": "", "chat_id": TELEGRAM["chat_id"]}
+    assert _put(headers, "telegram", same, min_severity="CRITICAL").json()["last_delivered_at"] is not None
+    assert _put(headers, "telegram", same, enabled=False).json()["last_delivered_at"] is not None
+
+
+def test_adding_a_push_device_keeps_the_last_good_send():
+    """PUSH upserts add or remove one member's device; the organisation's last good send stays."""
+    import os
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    from app.alerts import webpush
+
+    def keys():
+        pub = ec.generate_private_key(ec.SECP256R1()).public_key()
+        return (webpush.b64url(pub.public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)),
+                webpush.b64url(os.urandom(16)))
+
+    headers, me = _auth("alert-push-keep@example.com")
+    p1, a1 = keys()
+    assert _put(headers, "push", {"subscription": {"endpoint": "https://push.example/one", "p256dh": p1, "auth": a1}}).status_code == 200
+    _set_delivered(me["tenant_id"], "PUSH")
+    p2, a2 = keys()
+    added = _put(headers, "push", {"subscription": {"endpoint": "https://push.example/two", "p256dh": p2, "auth": a2}})
+    assert added.status_code == 200, added.text
+    assert added.json()["config"]["count"] == 2 and added.json()["last_delivered_at"] is not None

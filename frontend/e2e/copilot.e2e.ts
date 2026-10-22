@@ -9,6 +9,11 @@ const TABS = [
   ["watchtower", "Watchtower"], ["news-radar", "News Radar"], ["coach", "Coach & Scorecard"],
 ] as const;
 
+// The tests read words, buttons and requests, not motion, so the file runs with reduced motion: with software WebGL
+// (swiftshader) each worker otherwise renders the AI Core's 3D scene on the CPU, and under four workers the first render
+// of /copilot missed the 5 s expect timeout. The "3D and motion" tests below turn motion back on.
+test.use({ reducedMotion: "reduce" });
+
 test.beforeEach(async ({ page }) => { await mockApi(page); });
 
 for (const [slug, label] of TABS) {
@@ -67,11 +72,6 @@ test("Idea Builder: the second language can be switched off", async ({ page }) =
 });
 
 test.describe(() => {
-  // This test reads words, not motion (the 3D core and the animations have their own tests below), so it runs with
-  // reduced motion: on a runner with software WebGL and three other workers, the 60 fps scene and the tab transitions
-  // took most of its 30 s. The words are the same either way.
-  test.use({ reducedMotion: "reduce" });
-
   test("no banned recommendation words on any tab", async ({ page }) => {
     // One start of the app, then the tab bar, as a trader moves between tabs (each deep link has its own test above);
     // seven cold starts - sign-in, flags, the Copilot chunk, the acknowledgement, the tab - did not fit in 30 s either.
@@ -88,6 +88,8 @@ test.describe(() => {
 });
 
 test.describe("3D and motion", () => {
+  test.use({ reducedMotion: "no-preference" });                                       // these tests are about the 3D core
+
   test("the WebGL AI Core loads when the browser is idle", async ({ page, browserName }) => {
     test.skip(browserName !== "chromium");
     await page.goto("/copilot/market-pulse");
@@ -256,6 +258,8 @@ async function chooseTemplate(page: import("@playwright/test").Page) {
 }
 
 test.describe("Idea Builder: risk gates", () => {
+  test.beforeEach(() => { test.slow(); });                                            // the long template-to-start flow
+
   test("Start in PAPER stays disabled until the loss is accepted, and sends the acceptance", async ({ page }) => {
     const calls = await mockApi(page);
     const chosen = await chooseTemplate(page);

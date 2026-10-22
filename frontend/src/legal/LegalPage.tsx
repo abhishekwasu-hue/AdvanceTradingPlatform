@@ -40,7 +40,7 @@ export default function LegalPage() {
     setDoc(null);
     setError(null);
     if (!isLegalSlug(slug)) { setError("This page does not exist."); return; }
-    document.title = `${LEGAL_TITLES[slug]} · Advance Trading`;
+    document.title = `${LEGAL_TITLES[slug]} · AiAlgoDesk`;
     let live = true;
     api.legalDocument(slug)
       .then((d) => { if (live) setDoc(d); })
@@ -54,7 +54,7 @@ export default function LegalPage() {
     <div className="min-h-screen text-fg">
       <header className="border-b border-border bg-panel/80 pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4">
-          <Link to="/" className="text-sm font-semibold text-fg hover:text-brand">Advance Trading</Link>
+          <Link to="/" className="text-sm font-semibold text-fg hover:text-brand">AiAlgoDesk</Link>
           <ThemeToggle />
         </div>
       </header>

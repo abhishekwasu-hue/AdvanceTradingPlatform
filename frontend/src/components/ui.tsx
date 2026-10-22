@@ -107,7 +107,7 @@ export function DemoDataBanner() {
       <span>
         Using deterministic sample OHLCV data. Every strategy, score and chart below is computed for
         real by the backend against this data; pages with a Data switch can use your broker's candles
-        instead once a broker is logged in under Settings.
+        instead once a broker is logged in on the Broker page.
       </span>
     </div>
   );

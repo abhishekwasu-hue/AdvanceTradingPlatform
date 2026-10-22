@@ -1,0 +1,35 @@
+{
+  "_note": "UI2-7 e2e fixture: hand-written, made-up replies for the setup wizard screenshots and tests. No real account, price or id.",
+  "strategies": [
+    { "id": "vwap_supertrend_5m", "name": "VWAP + Supertrend", "description": "Trend entries above or below VWAP.", "category": "indicator_based", "timeframes": ["5m"], "default_params": {} },
+    { "id": "swing_ema_pullback_d", "name": "Swing EMA Pullback (daily)", "description": "Pullbacks to the EMA in a daily uptrend.", "category": "indicator_based", "timeframes": ["day"], "default_params": {} },
+    { "id": "orb_15m_5m", "name": "Opening Range Breakout", "description": "Breaks of the first 15 minutes' range.", "category": "multi_timeframe", "timeframes": ["15m", "5m"], "default_params": {} },
+    { "id": "ema_rsi_scalper_1m", "name": "EMA + RSI Scalper", "description": "Short scalps.", "category": "indicator_based", "timeframes": ["1m"], "default_params": {} }
+  ],
+  "sources": { "sources": [{ "broker": "upstox", "account_label": "primary", "token_status": "VALID", "token_expires_at": null, "usable": true }],
+               "usable": true, "timeframes": ["1m", "5m", "15m", "day"], "max_symbols": 20, "intraday_max_lookback_days": 30, "daily_max_lookback_days": 365 },
+  "candles": { "source": { "broker": "upstox", "account_label": "primary" }, "exchange": "NSE", "timeframe": "5m", "base_interval": "5m", "lookback_days": 30,
+               "fetched_at": "2026-10-21T09:00:00Z", "warnings": [], "note": "",
+               "symbols": { "NIFTY 50": { "bars": [
+                 { "timestamp": "2026-10-20T09:15:00+05:30", "open": 100, "high": 101, "low": 99, "close": 100.5, "volume": 1000 },
+                 { "timestamp": "2026-10-20T09:20:00+05:30", "open": 100.5, "high": 102, "low": 100, "close": 101.5, "volume": 1200 }
+               ], "count": 2, "first": "2026-10-20T09:15:00+05:30", "last": "2026-10-20T09:20:00+05:30", "error": null } } },
+  "backtest": { "strategy_id": "vwap_supertrend_5m", "symbol": "NIFTY 50", "total_trades": 12, "winning_trades": 7, "losing_trades": 5, "win_rate": 58.33,
+                "net_pnl": 4250, "gross_profit": 9100, "gross_loss": -4850, "profit_factor": 1.88, "max_drawdown": 2100, "avg_win": 1300, "avg_loss": -970,
+                "expectancy": 354, "trades": [] },
+  "paper_risk": { "mode": "PAPER", "settings": { "risk_per_trade_pct": 1, "risk_per_trade_amount": 0, "daily_loss_pct": 2, "max_trades_per_day": 10, "min_rr": 1.5 },
+                  "capital_basis": 100000, "today": { "realised": 0, "open_marks": 0, "pnl": 0, "worst": 0, "limit": 2000, "used": 0, "entries": 0, "max_entries": 10 },
+                  "lockout": null },
+  "alert_channels": [
+    { "channel_type": "TELEGRAM", "enabled": true, "min_severity": "WARNING", "config": { "chat_id": "masked" }, "last_delivered_at": null, "last_error": null,
+      "updated_at": "2026-10-20T10:00:00Z" }
+  ],
+  "readiness": { "target": "PAPER", "ready": false, "summary": { "ok": 2, "todo": 1, "warn": 0, "info": 1 }, "checked_at": "2026-10-21T09:00:00Z",
+                 "note": "Read-only checks of this organisation's setup.",
+                 "items": [
+                   { "key": "broker", "title": "Broker connected", "status": "ok", "detail": "1 broker stored", "fix": "", "link": "settings", "scope": "PAPER" },
+                   { "key": "risk", "title": "Risk limits", "status": "todo", "detail": "No limits saved yet", "fix": "Save your limits.", "link": "risk-management", "scope": "PAPER" },
+                   { "key": "alerts", "title": "Alert channel", "status": "ok", "detail": "Telegram on", "fix": "", "link": "settings", "scope": "PAPER" },
+                   { "key": "team", "title": "Team members", "status": "info", "detail": "Only you", "fix": "Invite a teammate.", "link": "team", "scope": "OPTIONAL" }
+                 ] }
+}

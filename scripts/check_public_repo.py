@@ -152,6 +152,10 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/brief.json": "f0791d9852a6412195c3735959059e32f526477c8b78746e176504b443324aa9",
     "frontend/e2e/fixtures/coach.json": "27695969bdfbc8781b68e088fcc86315926ab34a4e9e68350e05a3e1a04bd814",
     "frontend/e2e/fixtures/copilot_reply.json": "9d0013cced7fe29e99d3c2c25e231d96bee15cbd4960f169194abc1247d77bcd",
+    # UI2-2: hand-written, made-up dashboard replies for the v2 dashboard screenshots (frontend/e2e/dashboard-v2.e2e.ts)
+    "frontend/e2e/fixtures/dashboard_v2.json": "6e9629add17dd3b9801e2db91a4aebc984b2a00055c5e7b137e93653782a110f",
+    # P2b: P2a's broker catalog (static, public broker names and how-to steps; no account data).
+    "frontend/e2e/fixtures/broker_catalog.json": "075bd516ec146878bbca8bbfcfe3db046527510c7a080f44f71e58eb387eeb20",
     "frontend/e2e/fixtures/drafts.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "frontend/e2e/fixtures/interview_plan.json": "3b582f587c25dfe0f99ab25fafb34f77d458e1910cbaba5747c964997fbdb42c",
     "frontend/e2e/fixtures/interview_start.json": "b702f8734442fd26183eb52ae508de6e55edfc0df57ee406c75776cc1ecc4453",
@@ -160,12 +164,18 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/news_items.json": "81d5a6eb8342a64eb397baac6de4f1378c54707f78e57380e5f87b28b3d9f7ee",
     "frontend/e2e/fixtures/news_status.json": "be5ac693f289f43bc2bfeb790c22a9390a985a0715f8193670de81c64245e7bd",
     "frontend/e2e/fixtures/notifications.json": "be5ded0116ca5c0f8f71caa2170c75eba590783ad737fdd99d14db74c4af4faa",
+    "frontend/e2e/fixtures/option_chain_v2.json": "c37438deaa26205fcc03016050fae76b6e181a2f9911587e4ac51d81e2a98848",
     "frontend/e2e/fixtures/options_builder.json": "bf6df3ea9f5caddb5e3acc1d2f8360875a3cd72550f194156b21266fd550e1f0",
     "frontend/e2e/fixtures/provider.json": "6aabdd6f537fd8ce0a735b8ec21ed11e8f590ea3718263cc470f0916e53c7b32",
+    "frontend/e2e/fixtures/setup_v2.json": "cff0561b071bfa9bfb79e7e4b85029ddc0cbb3f395a64cd7d0c209aebdd419e7",
+    # P3: hand-written, made-up replies for the front page and the go-live checklist (no real account, broker or token)
+    "frontend/e2e/fixtures/front_page.json": "a2a51de38eec31a2a2735557596a4599d3a1efd73c4bd39d929ca822447d850d",
+    "frontend/e2e/fixtures/signals_v2.json": "8a8c59c855e923dd02db351c5f8753d26851310cd5af5e2f405b9c78339338a8",
     "frontend/e2e/fixtures/system_status.json": "1e6eb9fa4f6aadbabc6128522a423a6697471cb4f71dd6c548c0b4bbe788bb91",
     "frontend/e2e/fixtures/thesis.json": "fafc2234d7b94bb57a0a860e95d3d3cf8052796ef9d9011db2d12cf486b3bac7",
     "frontend/e2e/fixtures/thesis_history.json": "f3226989acc68ddf2bbfa69ff8a5353011a90a480befc57c0bfa0c988ccd5a6c",
     "frontend/e2e/fixtures/thesis_report.json": "e85180cb3f957bf048f9bffe63e3237bb760333376e255f1ae76f6d9df2e287d",
+    "frontend/e2e/fixtures/trading_v2.json": "46bc6543f0f50524ef77c82ee261b19afe100722ee8c49d5a6a3fb6cda207265",
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

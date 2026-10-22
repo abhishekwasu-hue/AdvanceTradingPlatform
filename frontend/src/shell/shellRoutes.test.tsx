@@ -5,7 +5,7 @@ import { afterEach, vi } from "vitest";
 import { shellMode } from "./aliases";
 import ShellWaitingV2 from "./ShellWaitingV2";
 import { SHELL_WAIT_MS, startWaitCap } from "./shellWait";
-import { DEFAULT_SYMBOL, chartsSymbol } from "./ChartsPageV2";
+import { DEFAULT_SYMBOL, chartsSymbol } from "../chart/chartsPage";
 import { V2_ALIASES, chartsPath, flagOffFallback, routerPath, chartsSymbolFromPath, isGatedPath, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
 
 const flags = (...on: string[]) => (f: string) => on.includes(f);

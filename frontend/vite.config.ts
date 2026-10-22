@@ -58,8 +58,8 @@ function atpNativeBuildMarker(marker: { kind: string; apiOrigin: string; appId: 
 }
 
 export default defineConfig(({ mode }) => {
-  // The Android build reads ATP_ANDROID_BUILD and VITE_API_BASE_URL from the process environment only (not .env
-  // files), exactly as `cap sync` does (capacitor.config.ts), so the two can never disagree. A bad value stops here.
+  // The Android build reads ATP_ANDROID_BUILD, VITE_API_BASE_URL and ATP_APP_DOMAIN from the process environment only
+  // (not .env files), exactly as `cap sync` does (capacitor.config.ts), so the two can never disagree. A bad value stops here.
   const native = mode === "android" ? resolveNativeBuild(process.env, APP_ID) : null;
   return {
     plugins: [

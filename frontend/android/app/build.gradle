@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "dev.atp.unpublished"
+    namespace = "tech.aialgodesk.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "dev.atp.unpublished"
+        applicationId "tech.aialgodesk.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Mobile B1: CI passes -PatpVersionCode (always increasing) and -PatpVersionName (package version + short
@@ -19,7 +19,7 @@ android {
     }
     buildTypes {
         debug {
-            // MA-6: a debug build installs beside a later release build (dev.atp.unpublished.debug).
+            // MA-6: a debug build installs beside a release build (tech.aialgodesk.app.debug).
             applicationIdSuffix ".debug"
             versionNameSuffix "-debug"
         }

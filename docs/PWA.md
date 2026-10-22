@@ -41,10 +41,14 @@ activates. A redeploy of identical files keeps the same id and prompts nobody.
 - iPhone / iPad: Safari -> Share -> Add to Home Screen (the in-app guide says so). Web push on iOS works only in the
   installed app (iOS 16.4+), which PW3 relies on.
 - The service worker registers only in production builds (`npm run build`); the dev server is never cached.
-- Installing needs a trusted HTTPS origin. On a bare IP (plain http, or Caddy's internal certificate) the browser
-  refuses the service worker and never offers to install; the app then says so once (dismissable): "Install needs the
-  app's web address (domain) with a trusted certificate. Ask the owner to set up the domain." The v2 More sheet's
-  "Install the app" always answers with the browser's prompt or the plain reason (`installHelp` in `src/pwa/pwa.ts`).
+- Installing needs a trusted HTTPS origin: the production domain `https://aialgodesk.tech` (Let's Encrypt). D3
+  removed the old "needs a domain" notice of the bare-IP days: a refused service-worker registration is now an
+  ordinary failure, logged to the console and not shown. The v2 More sheet's "Install the app" always answers with the
+  browser's prompt or a plain reason (`installHelp` in `src/pwa/pwa.ts`; a page opened over plain http is told to use
+  https://).
+- Automated check: `frontend/e2e/pwa.e2e.ts` (preview build on localhost, a secure context) checks the manifest, that
+  the service worker registers and becomes active, and that Chromium's `Page.getInstallabilityErrors` is empty. The
+  real Android Chrome install is a manual check: `docs/deploy/HOSTINGER_RUNBOOK.md`, "PWA install on Android".
 
 ## Checks done for PW1
 

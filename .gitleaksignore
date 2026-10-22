@@ -15,3 +15,9 @@
 d842627b9a913e646a8f394428ac7868a7070099:.env.example:generic-api-key:43
 # test_alerts.py: the fake Telegram token that proves the API never echoes a token.
 62fba0b9ddaa7cdebb560a174a6b6469d7adbbb0:backend/tests/test_alerts.py:generic-api-key:277
+# P2a (first push, superseded by claude/p2a-broker-connect-v2): made-up broker sentinels in
+# backend/tests/test_p2a_broker_connect.py on the unmerged branch claude/p2a-broker-connect (rebuilt at run time since).
+5ded68f71733ca26432601bc8c9a8fa61326bb8b:backend/tests/test_p2a_broker_connect.py:generic-api-key:28
+5ded68f71733ca26432601bc8c9a8fa61326bb8b:backend/tests/test_p2a_broker_connect.py:generic-api-key:29
+5ded68f71733ca26432601bc8c9a8fa61326bb8b:backend/tests/test_p2a_broker_connect.py:generic-api-key:32
+5ded68f71733ca26432601bc8c9a8fa61326bb8b:backend/tests/test_p2a_broker_connect.py:generic-api-key:34

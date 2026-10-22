@@ -1,16 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
-  APP_ID, PLACEHOLDER_API_ORIGIN, TEMPORARY_APP_ID, apiBaseFromDomain, apiBaseProblems, buildKindFrom, isIpHost,
-  nativeBuildProblems, normaliseApiBase, resolveNativeBuild,
+  APP_ID, PLACEHOLDER_API_ORIGIN, PRODUCTION_API_ORIGIN, TEMPORARY_APP_ID, apiBaseFromDomain, apiBaseProblems, buildKindFrom,
+  defaultApiBase, isIpHost, nativeBuildProblems, normaliseApiBase, resolveNativeBuild,
   // @ts-expect-error - a plain .mjs module without type declarations (test/ is outside the app's tsconfig)
 } from "../scripts/mobile-rules.mjs";
 
 /** Mobile B1: the Android build rules (scripts/mobile-rules.mjs), shared by capacitor.config.ts, vite.config.ts, the
  * CI lint and Gradle's own copy (android/app/atp-build-rules.gradle). */
 describe("mobile build rules", () => {
-  it("uses the temporary MA-6 package id until the final one is chosen", () => {
+  it("uses the final MA-6 package id and still knows the temporary one (release builds refuse it)", () => {
+    expect(APP_ID).toBe("tech.aialgodesk.app");
     expect(TEMPORARY_APP_ID).toBe("dev.atp.unpublished");
-    expect(APP_ID).toBe(TEMPORARY_APP_ID);
+    expect(nativeBuildProblems({ kind: "release", appId: APP_ID, apiBase: PRODUCTION_API_ORIGIN })).toEqual([]);
+  });
+
+  it("MA-6: the production API origin is the domain over https, never an IP, and passes every rule", () => {
+    expect(PRODUCTION_API_ORIGIN).toBe("https://aialgodesk.tech");
+    expect(apiBaseProblems(PRODUCTION_API_ORIGIN)).toEqual([]);
+    expect(defaultApiBase("debug")).toBe(PLACEHOLDER_API_ORIGIN);
+    expect(defaultApiBase("internal")).toBe(PRODUCTION_API_ORIGIN);
+    expect(defaultApiBase("release")).toBe(PRODUCTION_API_ORIGIN);
   });
 
   it("normalises the API base: blanks and trailing slashes go, unset is empty", () => {
@@ -84,8 +93,31 @@ describe("mobile build rules", () => {
     expect(resolveNativeBuild({ VITE_API_BASE_URL: PLACEHOLDER_API_ORIGIN }, APP_ID).apiBase).toBe(PLACEHOLDER_API_ORIGIN);
   });
 
-  it("needs the real API origin for internal and release builds, and never makes them debuggable", () => {
-    expect(() => resolveNativeBuild({ ATP_ANDROID_BUILD: "internal" }, APP_ID)).toThrow(/needs the real API origin/);
+  it("internal and release builds use the production domain by default, VITE_API_BASE_URL overrides it", () => {
+    expect(resolveNativeBuild({ ATP_ANDROID_BUILD: "internal" }, APP_ID))
+      .toEqual({ kind: "internal", appId: APP_ID, apiBase: "https://aialgodesk.tech", debuggable: false });
+    expect(resolveNativeBuild({ ATP_ANDROID_BUILD: "release", VITE_API_BASE_URL: " " }, APP_ID).apiBase).toBe("https://aialgodesk.tech");
+    expect(resolveNativeBuild({ ATP_ANDROID_BUILD: "release", VITE_API_BASE_URL: "https://staging.example.com" }, APP_ID).apiBase)
+      .toBe("https://staging.example.com");
+    expect(() => resolveNativeBuild({ ATP_ANDROID_BUILD: "release", VITE_API_BASE_URL: "http://aialgodesk.tech" }, APP_ID))
+      .toThrow(/must use https/);
+  });
+
+  it("ATP_APP_DOMAIN (the repository variable) sets the origin of internal and release builds; never of a debug build", () => {
+    expect(resolveNativeBuild({ ATP_ANDROID_BUILD: "release", ATP_APP_DOMAIN: "aialgodesk.tech" }, APP_ID).apiBase).toBe("https://aialgodesk.tech");
+    expect(resolveNativeBuild({ ATP_ANDROID_BUILD: "internal", ATP_APP_DOMAIN: "staging.example.com." }, APP_ID).apiBase)
+      .toBe("https://staging.example.com");
+    // VITE_API_BASE_URL wins over the variable
+    expect(resolveNativeBuild({ ATP_ANDROID_BUILD: "release", ATP_APP_DOMAIN: "staging.example.com", VITE_API_BASE_URL: "https://aialgodesk.tech" }, APP_ID).apiBase)
+      .toBe("https://aialgodesk.tech");
+    // a debug build ignores it and keeps the placeholder (ADR-0028 decision 10)
+    expect(resolveNativeBuild({ ATP_APP_DOMAIN: "aialgodesk.tech" }, APP_ID).apiBase).toBe(PLACEHOLDER_API_ORIGIN);
+    // the same checks: never an IP, a host name only
+    expect(() => resolveNativeBuild({ ATP_ANDROID_BUILD: "release", ATP_APP_DOMAIN: "203.0.113.10" }, APP_ID)).toThrow(/IP address/);
+    expect(() => resolveNativeBuild({ ATP_ANDROID_BUILD: "release", ATP_APP_DOMAIN: "http://aialgodesk.tech" }, APP_ID)).toThrow(/host name only/);
+  });
+
+  it("needs a real API origin for internal and release builds, and never makes them debuggable", () => {
     expect(() => resolveNativeBuild({ ATP_ANDROID_BUILD: "internal", VITE_API_BASE_URL: PLACEHOLDER_API_ORIGIN }, APP_ID))
       .toThrow(/needs the real API origin/);
     const internal = resolveNativeBuild({ ATP_ANDROID_BUILD: "internal", VITE_API_BASE_URL: "https://atp.example.com/" }, APP_ID);

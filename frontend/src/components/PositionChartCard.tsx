@@ -82,7 +82,7 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
       </div>
       {!usable ? (
         <div className="rounded-lg border border-warn/30 bg-warn/[0.06] px-3 py-2 text-xs text-warn">
-          Live chart needs a broker with a valid session. Add the API key under Settings &gt; Brokers (stored encrypted, never in chat or the environment) and log in; the chart, live price and P&amp;L then appear here.
+          Live chart needs a broker with a valid session. Connect your broker on the Broker page (stored encrypted, never in chat or the environment); the chart, live price and P&amp;L then appear here.
         </div>
       ) : (
         <>

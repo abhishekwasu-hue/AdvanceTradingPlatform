@@ -206,6 +206,19 @@ _PSAR_ARGS = (Arg("start", NUM, 0.02, False, literal_only=True, bounds=(0.001, 1
               Arg("step", NUM, 0.02, False, literal_only=True, bounds=(0.001, 1.0)),
               Arg("max", NUM, 0.2, False, literal_only=True, bounds=(0.001, 1.0)))
 
+# Strategy templates step 2: the kinds MA(x, n, type) computes, and the R2 level companions' outputs (owner order R2:
+# BreakoutLevel / BreakoutFailLevel / BreakoutBaseHigh / BreakoutBaseLow / BreakoutStopRef as `what` values of one function
+# per breakout family, so every argument keeps its breakout parameter's own bounds and choices).
+MA_KINDS: Tuple[str, ...] = ("EMA", "SMA", "WMA", "HMA")
+BREAKOUT_REF_WHATS: Tuple[str, ...] = ("level", "fail_level", "base_high", "base_low", "held_level", "stop_level_atr", "stop_base",
+                                       "stop_midpoint")
+_WHAT = Arg("what", STR, choices=BREAKOUT_REF_WHATS)
+_STOP_MULT = _bk("stop_atr_mult", "stop_mult", NUM)
+_REF_DOC = (" - the same breakout as {fn} with the same arguments (one per leg, closed bars): what = level / fail_level / base_high"
+            " / base_low on its signal bars (missing elsewhere), held_level (the latest signal's level, held until the next"
+            " one), stop_level_atr / stop_base / stop_midpoint (the breakout stop reference on its signal bars: the level less"
+            " stop_mult ATRs of the bar before, the base's far side, or the base's middle)")
+
 FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("SMA", "factor", NUM, "same", (_X, _N), doc="simple moving average of x over n bars"),
     Spec("EMA", "factor", NUM, "same", (_X, _N), doc="exponential moving average"),
@@ -253,6 +266,10 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("WMA", "factor", NUM, "same", (_X, _N), doc="linearly weighted moving average of x over n bars (the newest weighs n)"),
     Spec("HMA", "factor", NUM, "same", (_X, Arg("n", "window", bounds=(2, MAX_WINDOW))),
          doc="Hull moving average: WMA(2 x WMA(x, n / 2) - WMA(x, n), sqrt(n)), n at least 2"),
+    # Strategy templates step 2 (D2): one moving average whose kind is a setting, so a template's "MA type" choice reaches
+    # the expression (EMA / SMA / WMA / HMA - the same series as those functions; HMA needs n of at least 2)
+    Spec("MA", "factor", NUM, "same", (_X, _N, Arg("type", STR, "EMA", False, choices=MA_KINDS)),
+         doc="moving average of x over n bars of the chosen type: EMA, SMA, WMA or HMA (the same values as those functions)"),
     Spec("StochK", "factor", NUM, "index", _STOCH_ARGS[:2], window_sum=True,
          doc="stochastic %K (0-100): the smooth-bar average of 100 x (close - lowest low) / (highest high - lowest low) over n"
              " bars (smooth 1 = the fast stochastic; missing when the n bars have no range)"),
@@ -365,6 +382,15 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("VolumeBreakout", "filter", BOOL, None, (_SIDE, _bk("shock_mult", "v", NUM), _bk("range_n", "n", "window")), cost=3.0,
          min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
          doc="B14: volume >= v x average with a directional candle at or through the n-bar high (up) / low (down)"),
+    # Strategy templates step 2 (owner order R2): the level companions of B1 and B5 - prices, NaN off the signal bars
+    Spec("RangeBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("range_n", "n", "window"), _bk("min_break_atr", "k", NUM),
+                                                      _bk("vol_mult", "v", NUM), _bk("range_mode", "mode", STR), _STOP_MULT),
+         cost=4.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG, doc="B1 range breakout's prices" + _REF_DOC.format(fn="RangeBreakout")),
+    Spec("LineBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("tl_mode", "mode", STR), _bk("tl_min_touches", "touches", NUM), _K,
+                                                     _STOP_MULT),
+         cost=4.0, min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
+         doc="B5 trendline / channel breakout's prices (base_high: the broken edge; base_low: the line's other side)"
+             + _REF_DOC.format(fn="TrendlineBreakout")),
     Spec("RelVolume", "factor", NUM, "ratio", (_bk("vol_avg_n", "n", "window"),), extra_bars=1, flag=BREAKOUT_FLAG,
          doc="volume / the mean volume of the n bars before this one"),
     Spec("ATRPercentile", "factor", NUM, "pct", (_bk("atr_n", "n", "window"), _bk("atr_pct_lookback", "lookback", "window")), cost=2.0,

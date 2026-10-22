@@ -650,6 +650,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/lab/pine/templates"): "member",
     ("POST", "/api/lab/pine/translate"): S_COMPUTE,
     ("POST", "/api/lab/pine/run"): "trader",
+    # strategy templates step 2 (flag strategy_templates): the built-in template cards, and the paper bot form's pre-fill
+    ("GET", "/api/strategy-templates"): "member",
+    ("POST", "/api/strategy-templates/{template_id}/adopt"): S_COMPUTE,
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
                                     "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),

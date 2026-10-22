@@ -2550,3 +2550,25 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   close only in alerts); no-look-ahead cases added.
 - Tests: `tests/test_wave3_levels_lines.py`; #367's allow-list and ratio-literal tests extended.
 - Questions WAVE-21..WAVE-26.
+
+## 22 Oct - Strategy templates step 2: wiring, D2 / B1 / B3, adopt as a paper strategy (behind ui_v2 + strategy_templates)
+
+- Branch `claude/tpl2-templates-wiring`, stacked on `claude/wave2-counter-recipe` (its schema changes kept). No migration.
+  New flag `strategy_templates` (OFF; controls.py + flag_catalog.py). Status: `docs/design/STRATEGY_TEMPLATES_IMPL.md`.
+- Wiring: a template with the user's settings is ONE strategy id (`app/strategy_templates/ids.py`, canonical, <= 80
+  characters); `resolve_strategy` builds the template adapter behind the flag and the flags of the functions it reads, so
+  the deployment and backtest routes and the worker run it; the worker fetches `history_days` of candles (R6, from
+  `parity.fetch_bars`); template deployments are PAPER only. TPL-Q2: the provenance moved off the reasons to
+  `Signal.provenance` (never serialised); the strategy id is the stored provenance.
+- R2: `RangeBreakoutRef` / `LineBreakoutRef` (level, fail level, base high / low, held level, the three stop references -
+  `quality.stop_reference`, shared with the breakout overlay); `MA(x, n, type)` for D2's average-type setting.
+- Templates: D2 moving-average crossover, B1 range breakout, B3 channel breakout - every number a setting with a default,
+  structure-word tokens. C1 / C3 wait for R7 (TPL-Q8).
+- Adopt: `GET /api/strategy-templates`, `POST /api/strategy-templates/{id}/adopt` (a pre-fill; creates nothing). The v2
+  Paper bot form lists the templates (chart timeframe, usual settings, `?template=` link) and starts the same PAPER request.
+- Tests: `tests/test_tpl2_templates.py` (must fire / must not, warm-up, truncation over many t, mirror, scan = backtest =
+  options = worker, property tests, ids, provenance, resolver, worker history), `tests/test_tpl2_routes.py`; runtime,
+  causal (lookahead job), history-sweep and BK tests extended; the D1 property test now allows an S6 refusal (a case the
+  random search found). vitest `src/strategyTemplates/templates.test.tsx`; e2e `strategy-templates-v2.e2e.ts` with new
+  baselines `strategy-templates-v2-{1440,390,360}-{light,dark}.png`.
+- Questions TPL-Q8..TPL-Q17 (TPL-Q2 answered).

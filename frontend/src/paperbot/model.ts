@@ -126,9 +126,25 @@ export function botStatusText(d: Pick<Deployment, "status" | "pause_reason">): s
 }
 
 /** The bot's name: the strategy's Library name, else its id in words. */
+/** Strategy templates step 2: a template strategy id ("template:<id>:<version>:..." - the settings travel in it). */
+export const TEMPLATE_ID_PREFIX = "template:";
+
+export function isTemplateId(id: string): boolean {
+  return id.startsWith(TEMPLATE_ID_PREFIX);
+}
+
+/** The template a template strategy id names ("D2"), or null. */
+export function templateOf(id: string): string | null {
+  if (!isTemplateId(id)) return null;
+  const part = id.slice(TEMPLATE_ID_PREFIX.length).split(":")[0];
+  return part || null;
+}
+
 export function botName(d: Pick<Deployment, "strategy_id">, names: ReadonlyMap<string, string>): string {
   const name = names.get(d.strategy_id);
   if (name) return name;
+  const template = templateOf(d.strategy_id);
+  if (template) return names.get(TEMPLATE_ID_PREFIX + template) ?? "Strategy template";   // never the id itself
   const words = d.strategy_id.replace(/^custom[:_-]?/i, "").replace(/[_-]+/g, " ").trim();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : "My strategy";
 }

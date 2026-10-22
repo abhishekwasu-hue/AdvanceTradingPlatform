@@ -10,6 +10,7 @@ from app.strategy_engine.declarative import CustomStrategyConfig, DeclarativeStr
 from app.strategy_engine.registry import registry
 
 CUSTOM_PREFIX = "custom:"
+TEMPLATE_PREFIX = "template:"   # strategy templates step 2 (app/strategy_templates/ids.py PREFIX, tested equal)
 LEGACY_CUSTOM_PREFIX = "custom_"   # P0.8 / A4: the spelling the AI draft / marketplace routes handed out before this release
 
 
@@ -61,11 +62,37 @@ async def load_custom_strategy(strategy_id: str, user: Optional[User], session: 
     return DeclarativeStrategy(strategy_id, config)
 
 
+async def load_template_strategy(strategy_id: str, user: Optional[User], session: AsyncSession) -> BaseStrategy:
+    """Strategy templates step 2: a "template:<id>:<version>:..." id (app/strategy_templates/ids.py) as the template
+    adapter with the settings the id carries. Behind the flag `strategy_templates` and the flags of the functions the
+    recipe reads (e.g. the breakout screens); off - or an id the library no longer matches - reads as an unknown strategy
+    (KeyError), so a deployment created while it was on stops with a plain reason rather than trading something else."""
+    from app.platform.controls import flag_enabled
+    from app.strategy_templates import ids
+    from app.strategy_templates.adapter import TemplateStrategy
+    from app.strategy_templates.compile import TemplateError
+    tenant_id = user.tenant_id if user is not None else None
+    if not await flag_enabled(session, "strategy_templates", tenant_id):
+        raise KeyError(f"Unknown strategy id: {strategy_id}")
+    template, settings = ids.decode(strategy_id)
+    try:
+        strategy = TemplateStrategy(template, settings)
+    except (TemplateError, ValueError) as exc:
+        raise KeyError(f"This strategy template cannot run with these settings: {exc}") from exc
+    for flag in sorted(strategy.recipe.required_flags):
+        if not await flag_enabled(session, flag, tenant_id):
+            raise KeyError("This strategy template is not switched on for your account yet")
+    return strategy
+
+
 async def resolve_strategy(strategy_id: str, user: Optional[User], session: AsyncSession) -> BaseStrategy:
     """The single lookup path every /strategies/{id}/... route uses: a built-in strategy by id,
-    or - for a "custom:<id>" id - a saved DeclarativeStrategy owned by the calling user.
+    or - for a "custom:<id>" id - a saved DeclarativeStrategy owned by the calling user, or - for a "template:..." id - a
+    strategy template with the settings the id carries (step 2, flag `strategy_templates`).
     """
     strategy_id = normalize_strategy_id(strategy_id)
     if strategy_id.startswith(CUSTOM_PREFIX):
         return await load_custom_strategy(strategy_id, user, session)
+    if strategy_id.startswith(TEMPLATE_PREFIX):
+        return await load_template_strategy(strategy_id, user, session)
     return registry.get(strategy_id)

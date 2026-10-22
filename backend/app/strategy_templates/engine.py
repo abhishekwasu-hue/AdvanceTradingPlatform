@@ -41,7 +41,10 @@ from app.strategy_templates.compile import SIDES, Recipe, Side
 # WaveLineBreak) are never missing. The R2 breakout level companions join the same way.
 WAVE_SPARSE_SERIES: Tuple[str, ...] = ("WaveAlt", "WaveOrigin", "WaveEnd", "WaveInvalidation", "WaveCap", "WaveRetrace",
                                        "WaveProjection", "WaveRatio", "WaveLineLevel")
-SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES)
+# Strategy templates step 2 (R2): the breakout level companions are prices on their signal bars only (held_level: from the
+# first signal on), so they never hold the warm-up back either.
+BREAKOUT_SPARSE_SERIES: Tuple[str, ...] = ("RangeBreakoutRef", "LineBreakoutRef")
+SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES + BREAKOUT_SPARSE_SERIES)
 
 REASON_WARMUP = "warmup"
 REASON_CONFLICT = "conflict"
@@ -232,4 +235,4 @@ def _num_or_category(value: Any, index: pd.Index) -> np.ndarray:
 
 
 __all__ = ["SignalSeries", "compute", "REASON_WARMUP", "REASON_CONFLICT", "REASON_GEOMETRY", "REASON_NO_LEVEL", "SPARSE_SERIES",
-           "WAVE_SPARSE_SERIES"]
+           "WAVE_SPARSE_SERIES", "BREAKOUT_SPARSE_SERIES"]

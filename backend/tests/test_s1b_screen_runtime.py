@@ -354,6 +354,38 @@ def test_tpl1_indicator_functions():
     assert up.iloc[:3].isna().all() and up.iloc[3:].tolist() == [1.0, 1.0, 1.0]
 
 
+def test_tpl2_moving_average_and_breakout_companions():
+    """Strategy templates step 2: MA(x, n, type) is exactly SMA / EMA / WMA / HMA; RangeBreakoutRef / LineBreakoutRef give
+    the breakout's prices on its signal bars only (R2), held_level holds the level forward, the stop references are the
+    quality overlay's (level - stop_mult x ATR of the bar before, the base's far side, its middle), mirrored down."""
+    d = _sym([10, 11, 13, 12, 15, 14, 16, 18, 17, 19, 21, 20])
+    for kind, plain in (("SMA", "SMA(close, 4)"), ("EMA", "EMA(close, 4)"), ("WMA", "WMA(close, 4)"), ("HMA", "HMA(close, 4)")):
+        pd.testing.assert_series_equal(_ev(f'MA(close, 4, "{kind}")', d), _ev(plain, d), check_names=False)
+    pd.testing.assert_series_equal(_ev("MA(close, 4)", d), _ev("EMA(close, 4)", d), check_names=False)    # EMA when left out
+    up = _sym([100.0] * 60 + [110.0, 111.0], vol=[100.0] * 62)          # a flat range (high 101, low 99, ATR 2), then a break
+    assert _ev('RangeBreakout("up", 20, 0, 0)', up).iloc[-3:].tolist() == [False, True, False]
+    want = {"level": 101.0, "fail_level": 101.0, "base_high": 101.0, "base_low": 99.0, "stop_level_atr": 99.0, "stop_base": 99.0,
+            "stop_midpoint": 100.0}
+    for what, value in want.items():
+        v = _ev(f'RangeBreakoutRef("{what}", "up", 20, 0, 0)', up)
+        assert v.iloc[-2] == pytest.approx(value) and v.drop(v.index[-2]).isna().all(), what
+    assert _ev('RangeBreakoutRef("stop_level_atr", "up", 20, 0, 0, "fixed", 2)', up).iloc[-2] == pytest.approx(97.0)
+    held = _ev('RangeBreakoutRef("held_level", "up", 20, 0, 0)', up)
+    assert held.iloc[:-2].isna().all() and held.iloc[-2:].tolist() == [101.0, 101.0]
+    down = _sym([100.0] * 60 + [90.0, 89.0], vol=[100.0] * 62)
+    for what, value in {"level": 99.0, "stop_level_atr": 101.0, "stop_base": 101.0, "stop_midpoint": 100.0}.items():
+        assert _ev(f'RangeBreakoutRef("{what}", "down", 20, 0, 0)', down).iloc[-2] == pytest.approx(value), what
+    assert _ev('RangeBreakoutRef("level", "down", 20, 0, 0)', up).isna().all()
+    rng = np.random.default_rng(3)
+    walk = _sym(list(100 + np.cumsum(rng.normal(0, 1, 400))))
+    for side in ("up", "down"):
+        fired = _ev(f'TrendlineBreakout("{side}", "channel", 2, 0)', walk)
+        level = _ev(f'LineBreakoutRef("level", "{side}", "channel", 2, 0)', walk)
+        assert fired.any() and (level.notna() == fired).all(), side
+        stop = _ev(f'LineBreakoutRef("stop_level_atr", "{side}", "channel", 2, 0, 0)', walk)
+        assert np.allclose(stop[fired], level[fired])                  # no buffer: the broken edge itself
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

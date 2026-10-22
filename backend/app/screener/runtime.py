@@ -313,6 +313,7 @@ class _Eval:
             "MACDHist": lambda: _macd(f["close"].astype(float), win(0, 12), win(1, 26), win(2, 9))["hist"],
             "WMA": lambda: _wma(self.series(args[0], tf), win(1)),
             "HMA": lambda: _hma(self.series(args[0], tf), win(1)),
+            "MA": lambda: _moving_average(self.series(args[0], tf), win(1), _text(2, "EMA")),
             "StochK": lambda: _stochastic(f, win(0, 14), win(1, 3), 1)["k"],
             "StochD": lambda: _stochastic(f, win(0, 14), win(1, 3), win(2, 3))["d"],
             "PSAR": lambda: _psar(f, num(0, 0.02), num(1, 0.02), num(2, 0.2))["sar"],
@@ -374,6 +375,13 @@ class _Eval:
                                                                                       "min_break_atr": num(3, 0.2)}),
             "RangeExpansion": lambda: _breakout(f, "B13", str(self.ev(args[0], tf)), {"expansion_k": num(1, 2.0), "vol_mult": num(2, 1.5)}),
             "VolumeBreakout": lambda: _breakout(f, "B14", str(self.ev(args[0], tf)), {"shock_mult": num(1, 2.0), "range_n": win(2, 20)}),
+            # Strategy templates step 2 (owner order R2): the level companions of RangeBreakout / TrendlineBreakout
+            "RangeBreakoutRef": lambda: _breakout_ref(f, "B1", _text(0, "level"), str(self.ev(args[1], tf)), {
+                "range_n": win(2, _bkd("range_n")), "min_break_atr": num(3, _bkd("min_break_atr")), "vol_mult": num(4, _bkd("vol_mult")),
+                "range_mode": _text(5, _bkd("range_mode"))}, num(6, _bkd("stop_atr_mult"))),
+            "LineBreakoutRef": lambda: _breakout_ref(f, "B5", _text(0, "level"), str(self.ev(args[1], tf)), {
+                "tl_mode": _text(2, _bkd("tl_mode")), "tl_min_touches": num(3, _bkd("tl_min_touches")),
+                "min_break_atr": num(4, _bkd("min_break_atr"))}, num(5, _bkd("stop_atr_mult"))),
             "RelVolume": lambda: _rel_volume(f, win(0, 20)),
             "ATRPercentile": lambda: _atr_percentile(f, win(0, 14), win(1, 100)),
             "DowTrend": lambda: _dow_trend(f, int(num(0, 0))),
@@ -859,6 +867,49 @@ def _breakout(f: pd.DataFrame, screen: str, side: str, overrides: Dict[str, Any]
         from app.screener.breakouts.gaps import CLASSES
         return out["event"].where(out["event"].isin(CLASSES), "").astype(object)
     return out["signal"].astype(bool)
+
+
+def _moving_average(x: pd.Series, n_: int, kind: str) -> pd.Series:
+    """Strategy templates step 2: MA(x, n, type) - exactly the series of SMA / EMA / WMA / HMA."""
+    if kind == "SMA":
+        return x.rolling(n_).mean()
+    if kind == "EMA":
+        return _ema(x, n_)
+    if kind == "WMA":
+        return _wma(x, n_)
+    if kind == "HMA":
+        return _hma(x, n_)
+    raise ScreenRuntimeError(f"unknown moving average type {kind!r}")
+
+
+def _breakout_ref(f: pd.DataFrame, screen: str, what: str, side: str, overrides: Dict[str, Any], stop_mult: float) -> pd.Series:
+    """Strategy templates step 2 (owner order R2): a breakout's prices as a series - the columns evaluate_screen keeps for
+    the same breakout (one per leg, closed bars), on its signal bars only (NaN elsewhere); `held_level` holds the latest
+    signal's level until the next one; the stop references are the breakout quality overlay's own (quality.stop_reference)."""
+    from app.screener.breakouts.quality import stop_reference
+    from app.screener.breakouts.screens import Bars, evaluate_screen
+    if side not in ("up", "down"):
+        raise ScreenRuntimeError(f"unknown breakout side {side!r}")
+    p = _breakout_params(overrides)
+    b = Bars(f, p)
+    try:
+        out = evaluate_screen(f, screen, p, bars=b, sides=(side,), columns=("signal", "level", "fail_level", "base_high", "base_low"))[side]
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    on = np.flatnonzero(out["signal"].to_numpy(dtype=bool))
+    res = np.full(len(f), np.nan)
+    if what in ("level", "fail_level", "base_high", "base_low"):
+        res[on] = out[what].to_numpy(dtype=float)[on]
+    elif what == "held_level":
+        res[on] = out["level"].to_numpy(dtype=float)[on]
+        return pd.Series(res, index=f.index).ffill()
+    elif what in ("stop_level_atr", "stop_base", "stop_midpoint"):
+        level, low, high = (out[k].to_numpy(dtype=float) for k in ("level", "base_low", "base_high"))
+        for j in on:
+            res[j] = stop_reference(level[j], low[j], high[j], float(b.atr_prev[j]), side, what.removeprefix("stop_"), stop_mult)
+    else:
+        raise ScreenRuntimeError(f"unknown breakout reference {what!r}")
+    return pd.Series(res, index=f.index)
 
 
 def _rel_volume(f: pd.DataFrame, n_: int) -> pd.Series:

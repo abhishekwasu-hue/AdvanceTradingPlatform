@@ -91,6 +91,8 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "MACDHist": ["MACDHist(12, 26, 9)"],
     "WMA": ["WMA(close, 10)", "WMA(close, 5)@1h"],
     "HMA": ["HMA(close, 16)"],
+    # Strategy templates step 2: one moving average whose type is a setting
+    "MA": ['MA(close, 10, "EMA")', 'MA(close, 10, "SMA")@1h', 'MA(close, 8, "WMA")', 'MA(close, 16, "HMA")'],
     "StochK": ["StochK(14, 3)", "StochK(5, 1)@1h"],
     "StochD": ["StochD(14, 3, 3)"],
     "PSAR": ["PSAR(0.02, 0.02, 0.2)", "PSAR()@1h"],
@@ -152,6 +154,11 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "NewHighBreakout": ['NewHighBreakout("down", 1, 0, 0)'],          # Daily / Weekly in screens; daily cases below
     "RangeExpansion": ['RangeExpansion("up", 1.5, 0)', 'RangeExpansion("down", 1.5, 0)@1h'],
     "VolumeBreakout": ['VolumeBreakout("up", 1.5)', 'VolumeBreakout("down", 1.5, 10)'],
+    # Strategy templates step 2 (owner order R2): the breakout level companions (prices on signal bars; held_level forward)
+    "RangeBreakoutRef": ['RangeBreakoutRef("level", "up", 20, 0, 0)', 'RangeBreakoutRef("stop_base", "down", 10, 0.1, 0, "auto")',
+                         'RangeBreakoutRef("held_level", "up", 10, 0, 0, "fixed")', 'RangeBreakoutRef("stop_level_atr", "up", 10, 0, 0)@1h'],
+    "LineBreakoutRef": ['LineBreakoutRef("level", "up", "line", 2, 0)', 'LineBreakoutRef("stop_midpoint", "down", "channel", 2, 0)',
+                        'LineBreakoutRef("held_level", "up", "line", 2, 0)'],
     "RelVolume": ["RelVolume(20)", "RelVolume(10)@1h"],
     "ATRPercentile": ["ATRPercentile(14, 50)", "ATRPercentile(14, 20)@1h"],
     "DowTrend": ["DowTrend(0)", "DowTrend(0)@15m"],                    # @1h: 50 bars here, too few confirmed swings to read

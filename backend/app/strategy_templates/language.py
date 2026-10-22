@@ -20,6 +20,17 @@ TOKENS: Dict[str, str] = {
     "supertrend_turned_bullish": "Supertrend turned bullish on the {timeframe} chart",
     "supertrend_turned_bearish": "Supertrend turned bearish on the {timeframe} chart",
     "context_supertrend_agrees": "the {context_timeframe} Supertrend direction agrees",
+    # D2 moving-average crossover
+    "fast_average_crossed_above": "the fast moving average crossed above the slow one on the {timeframe} chart",
+    "fast_average_crossed_below": "the fast moving average crossed below the slow one on the {timeframe} chart",
+    "close_above_trend_average": "the close is above the trend average",
+    "close_below_trend_average": "the close is below the trend average",
+    # B1 range breakout
+    "range_broken_upward": "the close broke out above the range on the {timeframe} chart",
+    "range_broken_downward": "the close broke down below the range on the {timeframe} chart",
+    # B3 channel breakout
+    "channel_broken_upward": "the close broke out above the upper edge of a rising channel on the {timeframe} chart",
+    "channel_broken_downward": "the close broke down below the lower edge of a falling channel on the {timeframe} chart",
     # Family G (wave templates): structure words only - wave labels in words, no number, no price
     "wave_two_pullback_ended": "the wave two pullback ended at an area on the {wave_timeframe} chart",
     "wave_four_pullback_ended": "the wave four pullback ended at an area on the {wave_timeframe} chart",

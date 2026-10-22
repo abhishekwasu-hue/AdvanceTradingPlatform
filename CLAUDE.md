@@ -87,3 +87,9 @@ again AFTER every compaction, before acting. Begin each report to Abhi with: "Ru
     Tailwind tokens (rem; never `text-[Npx]` below 14 px); colours only from the tokens.
   - Guards: `scripts/check_english_only.py`, `scripts/check_public_repo.py`.
   - Deploy: `deploy/atp.sh`; runbook `docs/deploy/HOSTINGER_RUNBOOK.md`. Working rules: `docs/WORKING_RULES.md`.
+
+## 8. Keep what was built (owner, 22 Oct)
+- Much work was done before this session. Never delete existing files or features, and never rewrite working logic.
+- Before any MAJOR change that alters existing behaviour (trading logic, order paths, auth, data model / migrations,
+  removing or replacing a page), say what changes and get Abhi's approval first. Small fixes and additions behind a
+  flag need no extra approval. We improve; we never break.

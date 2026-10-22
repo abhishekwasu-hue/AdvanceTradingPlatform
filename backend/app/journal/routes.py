@@ -102,7 +102,6 @@ async def weekly_review(week: Optional[str] = Query(default=None, pattern=WEEK_P
 
 async def _narrate(session: AsyncSession, user: User, facts: List[str]) -> Dict[str, Any]:
     from app.ai import copilot, metering
-    from app.ai import settings as ai_settings
     from app.ai.compliance_terms import KIND_COPILOT, latest
     from app.db.models import Tenant
     if await latest(session, KIND_COPILOT, tenant_id=user.tenant_id, user_id=user.id) is None:
@@ -113,7 +112,8 @@ async def _narrate(session: AsyncSession, user: User, facts: List[str]) -> Dict[
     tenant = await session.get(Tenant, user.tenant_id)
     if tenant is None:
         return {"note": "No organisation record; the numbers are explained from the rules"}
-    provider = await ai_settings.provider_for(session, tenant, task="knowledge", user_id=user.id)
+    from app.ai import resolve as ai_resolve
+    provider = await ai_resolve.provider_for_user(session, user, tenant, "knowledge")
     if provider.name == "rule_based":
         reason = getattr(provider, "reason", "") or "no AI provider configured"
         return {"note": f"AI not used ({reason}); the numbers are explained from the rules"}
@@ -124,7 +124,7 @@ async def _narrate(session: AsyncSession, user: User, facts: List[str]) -> Dict[
         advice = review_advice_in(text)
         if why == "framed" or advice:
             text, why = None, "it gave advice: " + (", ".join(f'"{a}"' for a in advice[:3]) if advice else "a specific trade call")
-    await ai_settings.mark_used(session, user.tenant_id, error=None if text else f"weekly review explanation not used ({why})")
+    await ai_resolve.mark_used(session, user.tenant_id, provider, error=None if text else f"weekly review explanation not used ({why})")
     await session.commit()
     if not text:
         return {"note": f"AI explanation not used ({why}); the numbers are explained from the rules", "usage": metering.spent_by(provider)}

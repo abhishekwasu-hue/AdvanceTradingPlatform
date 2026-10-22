@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import legal
 from app.ai import compliance_terms as terms
-from app.ai import settings as ai_settings
 from app.ai.rate_limit import ai_rate_limit
 from app.auth.dependencies import get_current_user
 from app.core.rate_limit import user_rate_limit
@@ -65,7 +64,8 @@ async def organisation_provider(session: AsyncSession, user: User):
     tenant = await session.get(Tenant, user.tenant_id)
     if tenant is None:
         return None
-    provider = await ai_settings.provider_for(session, tenant, task="support", user_id=user.id)
+    from app.ai import resolve as ai_resolve
+    provider = await ai_resolve.provider_for_user(session, user, tenant, "support")
     return None if getattr(provider, "name", "rule_based") == "rule_based" else provider
 
 
@@ -75,6 +75,7 @@ async def ask(body: AskBody, user: User = Depends(support_user), session: AsyncS
     out = await bot.reply(body.question, provider=provider, include_legal=await legal.enabled(session, user.tenant_id))
     called, error = out.pop("_ai_called", False), out.pop("_ai_error", None)
     if provider is not None and called:
-        await ai_settings.mark_used(session, user.tenant_id, error=error)
+        from app.ai import resolve as ai_resolve
+        await ai_resolve.mark_used(session, user.tenant_id, provider, error=error)
         await session.commit()
     return out

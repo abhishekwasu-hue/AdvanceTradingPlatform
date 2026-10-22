@@ -95,6 +95,18 @@ describe("the chat-first Copilot page", () => {
     expect(needsKey(null)).toBe(false);
   });
 
+  it("Settings redesign A: shows the Connect AI panel in place of the no-key card, and a small chip once connected", () => {
+    const html = view({ connect: <div data-panel-stub />, aiChip: <span data-chip-stub /> });
+    expect(html).toContain("data-connect-slot");
+    expect(html).toContain("data-panel-stub");
+    expect(html).not.toContain("data-no-key");
+    expect(html).not.toContain("data-chip-stub");
+    const ready = view({ home: { ...HOME, ai: { ...HOME.ai, ready: true, title: null, line: null, own_key: true } }, connect: <div data-panel-stub />,
+      aiChip: <span data-chip-stub /> });
+    expect(ready).toContain("data-chip-stub");
+    expect(ready).not.toContain("data-panel-stub");
+  });
+
   it("shows today's market line, or the reason it is empty", () => {
     expect(text(view())).toContain("NIFTY 50 last closed at 24,850.5");
     const empty = view({ home: { ...HOME, market_line: { line: null, reason: "Today's market line is not ready: this data is not available on your account yet.", as_of: null } } });

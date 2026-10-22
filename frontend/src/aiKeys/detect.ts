@@ -1,4 +1,5 @@
 import { keyShapeError } from "../components/visionByok";
+import { detectProvider } from "./keyFormats";
 import type { ByokProviderName } from "../types";
 
 /**
@@ -12,12 +13,6 @@ export const BYOK_CHANGED_EVENT = "atp:byok-changed";
 
 export const PROVIDER_NAMES: Record<ByokProviderName, string> = { gemini: "Google Gemini", anthropic: "Anthropic (Claude)", openai: "OpenAI" };
 
-/** Keys of services ATP does not take yet, recognised so the message can say so instead of "wrong key". */
-const OTHER_SERVICES: readonly { prefix: string; name: string }[] = [
-  { prefix: "sk-or-", name: "OpenRouter" },
-  { prefix: "gsk_", name: "Groq" },
-  { prefix: "xai-", name: "xAI" },
-];
 
 /** The key as pasted, without the spaces, line breaks and quotes a copy often brings along. */
 export function cleanPastedKey(raw: string): string {
@@ -26,13 +21,11 @@ export function cleanPastedKey(raw: string): string {
 
 export type Detected = { kind: "provider"; provider: ByokProviderName } | { kind: "other"; name: string } | { kind: "unknown" };
 
-/** Which service a key belongs to, from its prefix. */
+/** Which service a key belongs to, from its prefix - Settings redesign A (R5): the one shared table (keyFormats.ts). */
 export function detectKey(key: string): Detected {
-  const k = key.trim();
-  for (const o of OTHER_SERVICES) if (k.startsWith(o.prefix)) return { kind: "other", name: o.name };
-  if (k.startsWith("sk-ant-")) return { kind: "provider", provider: "anthropic" };
-  if (k.startsWith("AIza")) return { kind: "provider", provider: "gemini" };
-  if (k.startsWith("sk-")) return { kind: "provider", provider: "openai" };
+  const found = detectProvider(key);
+  if (found.kind === "unsupported") return { kind: "other", name: found.name };
+  if (found.kind === "provider" && found.provider) return { kind: "provider", provider: found.provider };
   return { kind: "unknown" };
 }
 

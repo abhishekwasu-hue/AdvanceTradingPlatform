@@ -296,7 +296,8 @@ def rule_based_plan(text: str) -> ScanPlan:
 
 async def plan_scan(session: AsyncSession, tenant: Tenant, user: User, text: str, *, language: str = "en",
                     provider: Optional[LLMProvider] = None) -> ScanPlan:
-    provider = provider or await ai_settings.provider_for(session, tenant, task="scanner_plan", user_id=user.id)
+    from app.ai import resolve as ai_resolve
+    provider = provider or await ai_resolve.provider_for_user(session, user, tenant, "scanner_plan")
     if isinstance(provider, RuleBasedProvider):
         plan = rule_based_plan(text)
     else:
@@ -306,10 +307,10 @@ async def plan_scan(session: AsyncSession, tenant: Tenant, user: User, text: str
             AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="ok").inc()
             plan = parse_plan(_extract_json(raw))
             plan.provider, plan.model = provider.name, provider.model
-            await ai_settings.mark_used(session, tenant.id)
+            await ai_resolve.mark_used(session, tenant.id, provider)
         except (ProviderError, ValueError, json.JSONDecodeError) as exc:
             AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="error").inc()
-            await ai_settings.mark_used(session, tenant.id, error=str(exc))
+            await ai_resolve.mark_used(session, tenant.id, provider, error=str(exc))
             plan = rule_based_plan(text)
             plan.warnings.insert(0, f"{provider.name} did not answer usably ({str(exc)[:120]}); deterministic parse used instead")
     await write_audit_log(session, tenant.id, user.id, "ai_scan_planned",

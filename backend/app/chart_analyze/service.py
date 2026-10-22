@@ -167,7 +167,7 @@ async def _run(session: AsyncSession, user: User, tenant: Tenant, settings: Dict
         answer = await ask(session, user, tenant, instr, png, settings, now=now, client=client)
     except EngineUnavailable as exc:
         await _finish(session, row.id, now, FAILED, error=str(exc)[:300])
-        raise HTTPException(status_code=409, detail={"message": str(exc), "code": "no_ai"}) from None
+        raise HTTPException(status_code=409, detail={"message": str(exc), "code": getattr(exc, "code", "no_ai")}) from None
     except HTTPException:
         await _finish(session, row.id, now, READY)
         raise

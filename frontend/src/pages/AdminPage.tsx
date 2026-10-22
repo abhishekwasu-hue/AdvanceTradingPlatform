@@ -7,6 +7,7 @@ import BetaRolloutCard from "../components/BetaRolloutCard";
 import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
 import FeatureFlagsCard from "../admin/FeatureFlagsCard";
+import AiProviderCard from "../components/AiProviderCard";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import HolidaysCard from "../components/HolidaysCard";
 import SystemListsCard from "../components/SystemListsCard";
@@ -34,6 +35,10 @@ export default function AdminPage() {
   // UI2-0: after a flag change, the app's shared flags (useFeatures) are read again, so this console's own
   // organisation sees the change at once.
   const { refresh: refreshFeatures } = useFeatures();
+  // Settings redesign A (review R1): with one AI key per user, the organisation's AI provider card (tasks, tiers, models,
+  // prices) leaves the user's Settings and lives here, for the admin's own organisation only.
+  const { on: flagOn } = useFeatures();
+  const oneKey = flagOn("ui_v2") && flagOn("ai_one_key");
   const flagsChanged = (next: FeatureFlags) => { setFlags(next); refreshFeatures(); };
   const [flagTenants, setFlagTenants] = useState<Record<string, string>>({});
   const allowList = (name: string) => (flagTenants[name] ?? "").split(",").map((t) => parseInt(t.trim(), 10)).filter((n) => !Number.isNaN(n));
@@ -170,6 +175,7 @@ export default function AdminPage() {
           ? api.adminSetFlag(name, true).then(flagsChanged)
           : api.adminSetFlag(name, false, allowList(name)).then(flagsChanged)))}
         onSaveList={(name) => act(`${flags?.[name]?.plain ?? name}: allow-list saved.`, () => api.adminSetFlag(name, false, allowList(name)).then(flagsChanged))} />
+      {oneKey && <div data-admin-ai-provider><AiProviderCard /></div>}
       {encryption && (
         <Card title="Secrets at rest">
           <div className="text-xs text-fg-muted">

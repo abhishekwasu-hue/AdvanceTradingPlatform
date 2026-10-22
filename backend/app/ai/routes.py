@@ -15,6 +15,7 @@ from app.ai import evidence
 from app.ai.rate_limit import ai_rate_limit
 from app.ai import advisor, briefing, proposal_card, coach, copilot, generator, market_study, strategist, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings, thesis
 from app.ai import compliance_terms as terms
+from app.ai import resolve as ai_resolve
 from app.ai.compliance_terms import ai_acknowledged, require_ai_acknowledged
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
@@ -580,14 +581,14 @@ async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), sess
     lang = AI_LANGUAGE          # English only, whatever `language` the client sends
     memory = await market_memory.latest(session, user.tenant_id)
     saved, _ = await advisor.load_profile(session, user)
-    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge", user_id=user.id)
+    provider = await ai_resolve.provider_for_user(session, user, await _tenant(session, user), "knowledge")
     if provider.name == "rule_based":
         out = knowledge.answer(body.question, lang, memory)
         if getattr(provider, "reason", ""):
             out["note"] = f"AI not used ({provider.reason}); answered from the concept library"
         return out
     result = await knowledge.ai_answer(provider, body.question, lang, memory, saved)
-    await ai_settings.mark_used(session, user.tenant_id, error=result.get("note"))
+    await ai_resolve.mark_used(session, user.tenant_id, provider, error=result.get("note"))
     await session.commit()
     return result
 
@@ -773,7 +774,7 @@ async def thesis_for(symbol: str, language: str = Query(default="en", pattern=r"
     provider = None
     if narrate:
         try:
-            provider = await ai_settings.provider_for(session, await _tenant(session, user), task="thesis", user_id=user.id)
+            provider = await ai_resolve.provider_for_user(session, user, await _tenant(session, user), "thesis")
         except ProviderError:                       # a stale provider record: the rule-based narrative, with the reason
             provider = None
     news_items = []
@@ -784,7 +785,7 @@ async def thesis_for(symbol: str, language: str = Query(default="en", pattern=r"
     if out is None:
         raise HTTPException(status_code=404, detail=f"No market read of {symbol.upper()} yet - add it to the watchlist and refresh the market memory")
     if narrate and out.get("narrative_source") == "model":
-        await ai_settings.mark_used(session, user.tenant_id)
+        await ai_resolve.mark_used(session, user.tenant_id, provider)
     if provider is not None:
         await session.commit()            # P0.8-C: the metered usage of the narration, grounded or not
     return out
@@ -833,10 +834,10 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
             facts = briefing.summary_lines(lang, brief)[:2] + facts
         out.update(answer="\n".join(facts), brief={"day_type": brief["day_type"], "plan": brief["plan"], "checklist": brief["checklist"],
                                                    "deployments": brief["deployments"]})
-    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge", user_id=user.id)
+    provider = await ai_resolve.provider_for_user(session, user, await _tenant(session, user), "knowledge")
     if provider.name != "rule_based" and name != "interview":
         text, why = await copilot.narrate(provider, lang, name, message, facts)
-        await ai_settings.mark_used(session, user.tenant_id, error=None if text else f"AI answer not used ({why}); answered from the rules")
+        await ai_resolve.mark_used(session, user.tenant_id, provider, error=None if text else f"AI answer not used ({why}); answered from the rules")
         await session.commit()
         if text:
             out.update(answer=text, source="ai", numbers=copilot.number_sources(text, facts, message))      # H-C1 d
@@ -865,7 +866,7 @@ async def agent_ask(body: AgentAskBody, user: User = Depends(require_ai_acknowle
     await require_flag(session, "ai_copilot", user.tenant_id)
     await require_flag(session, "ai_agent", user.tenant_id)
     lang = AI_LANGUAGE          # English only, whatever `language` the client sends
-    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge", user_id=user.id)
+    provider = await ai_resolve.provider_for_user(session, user, await _tenant(session, user), "knowledge")
     if not getattr(provider, "supports_tools", False):
         out = await copilot_answer(session, user, body.question, lang)
         out["agent"] = {"used": False, "reason": "the configured AI provider does not support tools here; ordinary Copilot answer"}
@@ -1099,10 +1100,10 @@ async def strategist_build(body: StrategistBody, user: User = Depends(require_ai
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
     extra = []
-    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="strategist", user_id=user.id)
+    provider = await ai_resolve.provider_for_user(session, user, await _tenant(session, user), "strategist")
     if provider.name != "rule_based":
         extra = await strategist.ai_proposals(provider, study, body.style)
-        await ai_settings.mark_used(session, user.tenant_id, error=None)
+        await ai_resolve.mark_used(session, user.tenant_id, provider, error=None)
         await session.commit()
     result = await run_in_threadpool(strategist.build, df, study, body.language, style=body.style, direction=body.direction, risk=cfg,
                                      real_data=str(source).startswith("broker"),

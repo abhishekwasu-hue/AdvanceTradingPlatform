@@ -171,6 +171,7 @@ import { API_V1 } from "./base";
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 import type { LegalAckBody, LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
 import type { SupportReply } from "../support/support";
+import { CONNECT_AI_EVENT, isNotConnected, type AiConnection } from "../aiKeys/connect";
 import type { MarketStrip } from "../dashboard/types";
 import type { ChainExpiries, LiveChain } from "../optionChain/types";
 
@@ -293,6 +294,8 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       window.dispatchEvent(new Event(AI_ACK_REQUIRED_EVENT));
       throw new ApiError(428, "Accept the AI Copilot acknowledgement first (AI Copilot page).", error.detail, error.body, error.requestId);
     }
+    // Settings redesign A1: an AI call that needs a key answers `ai_not_connected` - the shell opens the Connect AI panel.
+    if (response.status === 409 && isNotConnected(error.body)) window.dispatchEvent(new Event(CONNECT_AI_EVENT));
     throw error;
   }
   if (response.status === 204) return undefined as T;
@@ -864,6 +867,15 @@ export const api = {
     return request<VisionReportsResponse>(`/ai/byok/reports?${params.toString()}`);
   },
   byokDeleteReport: (id: number) => request<{ deleted: number }>(`/ai/byok/reports/${id}`, { method: "DELETE" }),
+  // Settings redesign A: "Connect AI in one paste" (404 while ai_one_key is off). The key is sent once and never comes back.
+  aiConnection: () => request<AiConnection>("/ai/byok/connection"),
+  aiConnect: (body: { api_key: string; provider?: ByokProviderName; consent: boolean }) =>
+    request<AiConnection>("/ai/byok/connect", { method: "POST", body: JSON.stringify(body) }),
+  aiDisconnect: () => request<AiConnection>("/ai/byok/connection", { method: "DELETE" }),
+  aiSaveLimits: (body: { daily_inr?: number; monthly_inr?: number }) =>
+    request<AiConnection>("/ai/byok/limits", { method: "PUT", body: JSON.stringify(body) }),
+  aiAcknowledge: (kind: "consent" | "paid_plan") => request<AiConnection>("/ai/byok/acknowledge", { method: "POST", body: JSON.stringify({ kind }) }),
+  aiCopyTenantKey: (consent: boolean) => request<AiConnection>("/ai/byok/copy-tenant-key", { method: "POST", body: JSON.stringify({ consent }) }),
   aiGenerate: (prompt: string, opts: { language?: "en"; regime?: string | null; symbol?: string | null } = {}, signal?: AbortSignal) =>
     request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt, ...opts }), signal }),
   aiContext: (language?: "en", regime?: string | null, symbol?: string | null) => {

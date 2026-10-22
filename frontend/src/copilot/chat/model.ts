@@ -14,7 +14,11 @@ export interface ChatJob {
   id: JobId; number: number; title: string; line: string; starter: string; built: boolean;
   page: { label: string; to: string } | null;
 }
-export interface AiState { ready: boolean; title: string | null; line: string | null; settings: string; reason: string | null }
+export interface AiState {
+  ready: boolean; title: string | null; line: string | null; settings: string; reason: string | null;
+  /** Settings redesign A (ai_one_key on only): the refusal code when nothing is connected, and whether the key is the user's own. */
+  code?: string | null; own_key?: boolean;
+}
 export interface MarketLine { line: string | null; reason: string | null; as_of: string | null }
 export interface ChatHome {
   top_line: string; ai: AiState; market_line: MarketLine; disclaimer: string; jobs: ChatJob[]; starters: string[];

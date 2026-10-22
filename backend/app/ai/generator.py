@@ -18,7 +18,6 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.wording import banned_terms
-from app.ai import settings as ai_settings
 from app.ai.providers import LLMProvider, ProviderError
 from app.audit.log import write_audit_log
 from app.custom_strategies import versioning
@@ -97,7 +96,8 @@ def text_problem(explanation: Optional[str], warnings: List[str], config, sugges
 async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: str, *, client: Optional[httpx.AsyncClient] = None,
                    provider: Optional[LLMProvider] = None, regime: Optional[str] = None, language: str = "en",
                    symbol: Optional[str] = None) -> AiStrategyDraftRecord:
-    provider = provider or await ai_settings.provider_for(session, tenant, client=client, task="strategy_generation", user_id=user.id)
+    from app.ai import resolve as ai_resolve
+    provider = provider or await ai_resolve.provider_for_user(session, user, tenant, "strategy_generation", client=client)
     if hasattr(provider, "prompt_version"):
         provider.prompt_version = PROMPT_VERSION        # P0.8-D: the llm_calls row names the guardian prompt that answered
     cfg, ceilings = await _effective_risk(session, tenant.id)
@@ -116,7 +116,7 @@ async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: st
         except ProviderError as exc:
             AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="error").inc()
             draft.status, draft.explanation = "FAILED", str(exc)
-            await ai_settings.mark_used(session, tenant.id, error=str(exc))
+            await ai_resolve.mark_used(session, tenant.id, provider, error=str(exc))
             await session.commit()
             await session.refresh(draft)
             return draft
@@ -165,7 +165,7 @@ async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: st
         break
     else:
         draft.status, draft.explanation = "FAILED", f"The model did not return a valid strategy: {last_error}"
-    await ai_settings.mark_used(session, tenant.id, error=None if draft.status == "DRAFT" else draft.explanation)
+    await ai_resolve.mark_used(session, tenant.id, provider, error=None if draft.status == "DRAFT" else draft.explanation)
     await write_audit_log(session, tenant.id, user.id, "ai_strategy_generated", f"draft {draft.status} via {provider.name}/{provider.model}")
     await session.commit()
     await session.refresh(draft)

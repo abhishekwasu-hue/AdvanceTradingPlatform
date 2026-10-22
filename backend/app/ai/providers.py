@@ -59,6 +59,8 @@ EFFORT_FOR_TIER = {"strong": "medium", "fast": "low", "cheap": "low"}
 THINKING_HEADROOM = {"low": 2000, "medium": 6000, "high": 12000, "xhigh": 24000, "max": 32000}
 _FALLBACK_MODELS = {"anthropic": {"strong": "claude-opus-5-5", "fast": "claude-sonnet-5-5", "cheap": "claude-haiku-5-5"},
                     "openai": {"strong": "gpt-4.1", "fast": "gpt-4.1-mini", "cheap": "gpt-4.1-nano"},
+                    # Settings redesign A (R3): a user's own Gemini key runs the same tiers (only ever a user's key).
+                    "gemini": {"strong": "gemini-2.5-pro", "fast": "gemini-2.5-flash", "cheap": "gemini-2.5-flash-lite"},
                     "rule_based": {"strong": RULE_BASED_MODEL, "fast": RULE_BASED_MODEL, "cheap": RULE_BASED_MODEL}}
 
 
@@ -184,13 +186,92 @@ class ToolTurn:
     stop_reason: str = "end_turn"
 
 
+# Settings redesign A (R6): what kind of failure a provider error is, read from the provider's own error code, so the
+# user reads one plain sentence (app/ai/byok.py PLAIN_ERRORS) instead of the provider's text.
+ERROR_KINDS = ("auth", "no_credit", "rate", "model", "unreachable", "no_vision", "other")
+
+
 class ProviderError(RuntimeError):
     """A provider failure the caller shows as "AI unavailable" and answers from the rules. `usage` carries the tokens
-    of the failed attempts when the provider reported them (they are billed)."""
+    of the failed attempts when the provider reported them (they are billed). `kind` is one of ERROR_KINDS."""
 
-    def __init__(self, message: str, *, usage: Optional[Completion] = None) -> None:
+    def __init__(self, message: str, *, usage: Optional[Completion] = None, kind: str = "other") -> None:
         super().__init__(message)
         self.usage = usage
+        self.kind = kind if kind in ERROR_KINDS else "other"
+
+
+_IMAGE_WORDS = ("image", "vision", "inline_data", "inlinedata", "multimodal")
+
+
+def _mentions_image(text: str) -> bool:
+    low = (text or "").lower()
+    return any(word in low for word in _IMAGE_WORDS) and ("support" in low or "not" in low or "invalid" in low)
+
+
+def _anthropic_status_kind(exc: Any) -> str:
+    """Anthropic: a 400 "credit balance is too low" is no credit; 402 too; 403 a key without permission; 529 overloaded."""
+    status = int(getattr(exc, "status_code", 0) or 0)
+    text = f"{getattr(exc, 'type', '') or ''} {getattr(exc, 'message', '') or ''}".lower()
+    if status == 402 or "credit balance" in text or "billing" in text:
+        return "no_credit"
+    if status in (401, 403):
+        return "auth"
+    if status in (429, 529) or "overloaded" in text:
+        return "rate"
+    if status == 404:
+        return "model"
+    if status == 400 and _mentions_image(text):
+        return "no_vision"
+    return "other"
+
+
+def _openai_error_code(response: httpx.Response) -> str:
+    try:
+        body = response.json()
+    except ValueError:
+        return ""
+    err = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(err, dict):
+        return ""
+    return f"{err.get('code') or ''} {err.get('type') or ''}".strip().lower()
+
+
+def _openai_kind(response: httpx.Response, detail: str = "") -> str:
+    """OpenAI: 429 `insufficient_quota` is no credit, any other 429 a rate limit; `model_not_found` a model problem."""
+    status = response.status_code
+    code = _openai_error_code(response)
+    if status == 401 or "invalid_api_key" in code:
+        return "auth"
+    if "insufficient_quota" in code or "billing" in code or status == 402:
+        return "no_credit"
+    if status == 429:
+        return "rate"
+    if status == 404 or "model_not_found" in code:
+        return "model"
+    if status == 403:
+        return "auth"
+    if status == 400 and _mentions_image(detail):
+        return "no_vision"
+    return "other"
+
+
+def _gemini_kind(status: int, detail: str) -> str:
+    """Gemini: 429 RESOURCE_EXHAUSTED is a per-minute rate limit or a used-up quota (the text says which)."""
+    low = (detail or "").lower()
+    if status in (401, 403) or (status == 400 and "api key" in low):
+        return "auth"
+    if status == 429:
+        if "per minute" in low or "perminute" in low:
+            return "rate"
+        if "quota" in low or "billing" in low or "credit" in low:
+            return "no_credit"
+        return "rate"
+    if status == 404:
+        return "model"
+    if status == 400 and _mentions_image(low):
+        return "no_vision"
+    return "other"
 
 
 def _b64(data: bytes) -> str:
@@ -302,15 +383,16 @@ class AnthropicProvider:
             try:
                 response = await client.with_options(timeout=timeout_for(budget)).beta.messages.create(**self._request(system, user, budget, image_png))
             except anthropic.AuthenticationError as exc:
-                raise ProviderError("Anthropic rejected the API key (401) - re-enter it under Settings", usage=spent) from exc
+                raise ProviderError("Anthropic rejected the API key (401) - re-enter it under Settings", usage=spent, kind="auth") from exc
             except anthropic.RateLimitError as exc:
-                raise ProviderError("Anthropic rate limit (429) - try again shortly", usage=spent) from exc
+                raise ProviderError("Anthropic rate limit (429) - try again shortly", usage=spent, kind="rate") from exc
             except anthropic.NotFoundError as exc:
-                raise ProviderError(f"Anthropic does not know model '{self.model}' - pick another under Settings", usage=spent) from exc
+                raise ProviderError(f"Anthropic does not know model '{self.model}' - pick another under Settings", usage=spent, kind="model") from exc
             except anthropic.APIStatusError as exc:
-                raise ProviderError(f"Anthropic error HTTP {exc.status_code}: {exc.type or exc.message}", usage=spent) from exc
+                raise ProviderError(f"Anthropic error HTTP {exc.status_code}: {exc.type or exc.message}", usage=spent,
+                                    kind=_anthropic_status_kind(exc)) from exc
             except anthropic.APIConnectionError as exc:
-                raise ProviderError(f"Anthropic unreachable: {exc.__class__.__name__}", usage=spent) from exc
+                raise ProviderError(f"Anthropic unreachable: {exc.__class__.__name__}", usage=spent, kind="unreachable") from exc
             result = _usage_of(response)
             spent.add_usage(result)
             if response.stop_reason == "refusal":
@@ -342,13 +424,13 @@ class AnthropicProvider:
         try:
             response = await client.with_options(timeout=timeout_for(budget)).beta.messages.create(**body)
         except anthropic.AuthenticationError as exc:
-            raise ProviderError("Anthropic rejected the API key (401) - re-enter it under Settings") from exc
+            raise ProviderError("Anthropic rejected the API key (401) - re-enter it under Settings", kind="auth") from exc
         except anthropic.RateLimitError as exc:
-            raise ProviderError("Anthropic rate limit (429) - try again shortly") from exc
+            raise ProviderError("Anthropic rate limit (429) - try again shortly", kind="rate") from exc
         except anthropic.APIStatusError as exc:
-            raise ProviderError(f"Anthropic error HTTP {exc.status_code}: {exc.type or exc.message}") from exc
+            raise ProviderError(f"Anthropic error HTTP {exc.status_code}: {exc.type or exc.message}", kind=_anthropic_status_kind(exc)) from exc
         except anthropic.APIConnectionError as exc:
-            raise ProviderError(f"Anthropic unreachable: {exc.__class__.__name__}") from exc
+            raise ProviderError(f"Anthropic unreachable: {exc.__class__.__name__}", kind="unreachable") from exc
         usage = _usage_of(response)
         usage.model, usage.provider = str(getattr(response, "model", "") or self.model), self.name
         if response.stop_reason == "refusal":
@@ -414,16 +496,17 @@ class OpenAIProvider:
                 response = await client.post(f"{self.base_url}/v1/chat/completions", json=self._payload(system, user, budget, image_png), headers=headers,
                                              timeout=timeout_for(budget))
             except httpx.HTTPError as exc:
-                raise ProviderError(f"Provider unreachable: {exc.__class__.__name__}", usage=spent) from exc
+                raise ProviderError(f"Provider unreachable: {exc.__class__.__name__}", usage=spent, kind="unreachable") from exc
             if response.status_code == 401:
-                raise ProviderError("Provider rejected the API key (401) - re-enter it under Settings", usage=spent)
+                raise ProviderError("Provider rejected the API key (401) - re-enter it under Settings", usage=spent, kind="auth")
             if response.status_code == 429:
-                raise ProviderError("Provider rate limit (429) - try again shortly", usage=spent)
+                raise ProviderError("Provider rate limit (429) - try again shortly", usage=spent, kind=_openai_kind(response))
             if response.status_code >= 400:
                 detail = _error_detail(response, self.api_key)
                 # C3: the body says which parameter the model rejected; the key is in the header, never in the body.
                 logger.warning("OpenAI HTTP %s for model %s: %s", response.status_code, self.model, detail)
-                raise ProviderError(f"Provider error HTTP {response.status_code}: {detail}" if detail else f"Provider error HTTP {response.status_code}", usage=spent)
+                raise ProviderError(f"Provider error HTTP {response.status_code}: {detail}" if detail else f"Provider error HTTP {response.status_code}",
+                                    usage=spent, kind=_openai_kind(response, detail))
             try:
                 body = response.json()
             except ValueError as exc:
@@ -488,14 +571,15 @@ class OpenAIProvider:
         try:
             response = await client.post(f"{self.base_url}/v1/chat/completions", json=payload, headers=headers, timeout=timeout_for(budget))
         except httpx.HTTPError as exc:
-            raise ProviderError(f"Provider unreachable: {exc.__class__.__name__}") from exc
+            raise ProviderError(f"Provider unreachable: {exc.__class__.__name__}", kind="unreachable") from exc
         if response.status_code == 401:
-            raise ProviderError("Provider rejected the API key (401) - re-enter it under Settings")
+            raise ProviderError("Provider rejected the API key (401) - re-enter it under Settings", kind="auth")
         if response.status_code == 429:
-            raise ProviderError("Provider rate limit (429) - try again shortly")
+            raise ProviderError("Provider rate limit (429) - try again shortly", kind=_openai_kind(response))
         if response.status_code >= 400:
             detail = _error_detail(response, self.api_key)
-            raise ProviderError(f"Provider error HTTP {response.status_code}: {detail}" if detail else f"Provider error HTTP {response.status_code}")
+            raise ProviderError(f"Provider error HTTP {response.status_code}: {detail}" if detail else f"Provider error HTTP {response.status_code}",
+                                kind=_openai_kind(response, detail))
         try:
             body = response.json()
             choice = body["choices"][0]
@@ -575,7 +659,7 @@ class GeminiProvider:
 
     async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000, image_png: Optional[bytes] = None) -> Completion:
         if not _GEMINI_MODEL_ID.match(self.model or ""):
-            raise ProviderError("Gemini model id is not valid - pick another under Settings")
+            raise ProviderError("Gemini model id is not valid - pick another under Settings", kind="model")
         headers = {"x-goog-api-key": self.api_key, "content-type": "application/json"}
         client = self.client or _openai_client()
         budget = self._budget(max_tokens)
@@ -585,16 +669,18 @@ class GeminiProvider:
             try:
                 response = await client.post(url, json=self._payload(system, user, budget, image_png), headers=headers, timeout=timeout_for(budget))
             except httpx.HTTPError as exc:
-                raise ProviderError(f"Gemini unreachable: {exc.__class__.__name__}", usage=spent) from exc
+                raise ProviderError(f"Gemini unreachable: {exc.__class__.__name__}", usage=spent, kind="unreachable") from exc
             detail = _error_detail(response, self.api_key) if response.status_code >= 400 else ""
+            kind = _gemini_kind(response.status_code, detail) if response.status_code >= 400 else "other"
             if response.status_code in (401, 403) or (response.status_code == 400 and "api key" in detail.lower()):
-                raise ProviderError(f"Gemini rejected the API key (HTTP {response.status_code}) - re-enter it under Settings", usage=spent)
+                raise ProviderError(f"Gemini rejected the API key (HTTP {response.status_code}) - re-enter it under Settings", usage=spent, kind=kind)
             if response.status_code == 429:
-                raise ProviderError("Gemini rate limit or quota (429) - try again later", usage=spent)
+                raise ProviderError("Gemini rate limit or quota (429) - try again later", usage=spent, kind=kind)
             if response.status_code == 404:
-                raise ProviderError(f"Gemini does not know model '{self.model}' - pick another under Settings", usage=spent)
+                raise ProviderError(f"Gemini does not know model '{self.model}' - pick another under Settings", usage=spent, kind=kind)
             if response.status_code >= 400:
-                raise ProviderError(f"Gemini error HTTP {response.status_code}: {detail}" if detail else f"Gemini error HTTP {response.status_code}", usage=spent)
+                raise ProviderError(f"Gemini error HTTP {response.status_code}: {detail}" if detail else f"Gemini error HTTP {response.status_code}",
+                                    usage=spent, kind=kind)
             try:
                 body = response.json()
             except ValueError as exc:
@@ -628,18 +714,28 @@ class GeminiProvider:
 BYOK_PROVIDERS = ("anthropic", "openai", "gemini")
 
 
-def build_byok_provider(name: str, api_key: str, model: str, client: Optional[Any] = None) -> VisionProvider:
+# The BYOK providers that read chart images (all three today; a text-only provider would be left out).
+VISION_PROVIDERS = ("anthropic", "openai", "gemini")
+
+
+def build_byok_provider(name: str, api_key: str, model: str, client: Optional[Any] = None, *, task: Optional[str] = None) -> VisionProvider:
     """BYOK-V1: one user's provider, on that user's key and chosen model, at the cheap tier (low effort). `client` is the
-    Anthropic SDK http client or an `httpx.AsyncClient` (tests hand in mock transports). Never falls back to another key."""
+    Anthropic SDK http client or an `httpx.AsyncClient` (tests hand in mock transports). Never falls back to another key.
+    Settings redesign A (R3): with `task`, the model and effort follow the task's tier (TASK_TIERS, the same tiers as the
+    organisation's key; Gemini has its own tier models) and `model` is ignored - a user never picks a model."""
     name = (name or "").lower()
     if not api_key:
-        raise ProviderError("No API key stored for this provider")
+        raise ProviderError("No API key stored for this provider", kind="auth")
+    tier = "cheap"
+    if task is not None:
+        tier = TASK_TIERS.get(task, "strong")
+        model = default_models().get(name, {}).get(tier) or model
     if name == "anthropic":
-        return AnthropicProvider(api_key=api_key, model=model, http_client=client, effort=EFFORT_FOR_TIER["cheap"], tier="cheap")
+        return AnthropicProvider(api_key=api_key, model=model, http_client=client, effort=EFFORT_FOR_TIER[tier], tier=tier)
     if name == "openai":
-        return OpenAIProvider(api_key=api_key, model=model, client=client, tier="cheap")
+        return OpenAIProvider(api_key=api_key, model=model, client=client, tier=tier)
     if name == "gemini":
-        return GeminiProvider(api_key=api_key, model=model, client=client, tier="cheap")
+        return GeminiProvider(api_key=api_key, model=model, client=client, tier=tier)
     raise ProviderError(f"Unknown provider '{name}'; one of {BYOK_PROVIDERS}")
 
 

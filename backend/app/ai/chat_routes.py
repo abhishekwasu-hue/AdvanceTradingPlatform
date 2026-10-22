@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import copilot_chat as chat
-from app.ai import settings as ai_settings
+from app.ai import resolve as ai_resolve
 from app.ai.compliance_terms import require_ai_acknowledged
 from app.ai.rate_limit import ai_rate_limit
 from app.ai.tools import ToolContext, ToolResult, run_tool
@@ -61,13 +61,21 @@ async def _provider(session: AsyncSession, tenant_id: int, user_id: int) -> Any:
     tenant = await session.get(Tenant, tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Organisation not found")
-    return await ai_settings.provider_for(session, tenant, task="copilot", user_id=user_id)
+    # Settings redesign A: the user's own key first when `ai_one_key` is on (app/ai/resolve.py); off, exactly today's.
+    user = await session.get(User, user_id, populate_existing=True)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return await ai_resolve.provider_for_user(session, user, tenant, "copilot")
 
 
-def _ai_state(provider: Any) -> Dict[str, Any]:
+def _ai_state(provider: Any, one_key: bool = False) -> Dict[str, Any]:
     ready = getattr(provider, "name", "rule_based") != "rule_based"
-    return {"ready": ready, "title": None if ready else chat.NO_KEY_TITLE, "line": None if ready else chat.NO_KEY_LINE,
-            "settings": chat.KEY_SETTINGS, "reason": None if ready else (getattr(provider, "reason", "") or None)}
+    out = {"ready": ready, "title": None if ready else chat.NO_KEY_TITLE, "line": None if ready else chat.NO_KEY_LINE,
+           "settings": chat.KEY_SETTINGS, "reason": None if ready else (getattr(provider, "reason", "") or None)}
+    if one_key:
+        # The Connect AI panel reads its own status; the page only needs to know the key is the user's own.
+        out.update(code=None if ready else ai_resolve.NOT_CONNECTED_CODE, own_key=ai_resolve.is_user_key(provider), reason=None)
+    return out
 
 
 
@@ -77,8 +85,9 @@ async def chat_home(user: User = Depends(get_current_user), session: AsyncSessio
     await _flags(session, user)
     tenant_id, user_id = int(user.tenant_id), int(user.id)         # plain values: the tools may expire the ORM user
     provider = await _provider(session, tenant_id, user_id)
+    one_key = await ai_resolve.one_key_on(session, tenant_id)
     line = await chat.market_line(_runner(session, tenant_id, user_id))
-    return {"top_line": chat.TOP_LINE, "ai": _ai_state(provider), "market_line": line, "disclaimer": chat.DISCLAIMER,
+    return {"top_line": chat.TOP_LINE, "ai": _ai_state(provider, one_key), "market_line": line, "disclaimer": chat.DISCLAIMER,
             "jobs": [{"id": j.id, "number": j.number, "title": j.title, "line": j.line, "starter": j.starter, "built": j.built,
                       "page": {"label": j.page[0], "to": j.page[1]} if j.page else None} for j in chat.JOBS],
             "starters": [j.starter for j in chat.JOBS]}
@@ -92,10 +101,10 @@ async def chat_ask(body: ChatBody, user: User = Depends(require_ai_acknowledged)
     out = await chat.answer(body.message, run)
     result = out.as_dict()
     provider = await _provider(session, tenant_id, user_id)
-    result["ai"] = _ai_state(provider)
+    result["ai"] = _ai_state(provider, await ai_resolve.one_key_on(session, tenant_id))
     if out.job in chat.BUILT and result["ai"]["ready"]:
         text, why = await chat.narrate(provider, out, body.message)
-        await ai_settings.mark_used(session, tenant_id, error=None if text else f"AI answer not used ({why}); answered from the rules")
+        await ai_resolve.mark_used(session, tenant_id, provider, error=None if text else f"AI answer not used ({why}); answered from the rules")
         await session.commit()                       # P0.8-C: the metered call, used or not
         if text:
             from app.ai import grounding

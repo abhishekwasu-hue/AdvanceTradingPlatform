@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import BrokerPromptHost from "../broker/BrokerPromptHost";
+import ConnectAiHostV2 from "../aiKeys/ConnectAiHostV2";
 import { brokerDot } from "../broker/brokerState";
 import { useBrokerConnections } from "../broker/useBrokerConnections";
 import ErrorBoundary from "../components/ErrorBoundary";
@@ -181,6 +182,7 @@ export default function AppShellV2() {
       <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key} dot={dot}
         onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
       <BrokerPromptHost />
+      {user && <ConnectAiHostV2 />}
       {user && <TourHost userKey={user.id} role={user.role ?? null} tourId={tourId} />}
       <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} />
       {supportOn && supportLoaded && (

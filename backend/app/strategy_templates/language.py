@@ -40,6 +40,20 @@ TOKENS: Dict[str, str] = {
     "void_beyond_start_of_wave_a": "the count is void beyond the start of wave A",
     "void_beyond_end_of_wave_b": "the count is void beyond the end of wave B",
     "void_beyond_corrective_extreme": "the count is void beyond the extreme of the corrective wave",
+    # Build steps 3 / 4 (W2-W4, R7): the levels and the anchored wave lines in words (no number, no price)
+    "void_beyond_end_of_wave_two": "the count is void beyond the end of wave two",
+    "void_beyond_end_of_wave_four": "the count is void beyond the end of wave four",
+    "void_beyond_end_of_wave_c": "the count is void beyond the end of wave C",
+    "flat_has_no_hard_level": "a flat wave B has no hard limit",
+    "fifth_wave_is_limited": "the fifth wave is limited, as wave three is never the shortest",
+    "flat_b_beyond_start_of_wave_a": "wave B of a flat went beyond the start of wave A",
+    "wave_b_channel_broke": "the channel of wave B broke in the direction of wave C",
+    "corrective_channel_broke": "the channel of the corrective wave broke",
+    "two_four_line_broke": "the line through the ends of wave two and wave four broke",
+    "triangle_side_broke": "the triangle side broke",
+    "closed_beyond_end_of_wave_a": "the market closed beyond the end of wave A",
+    "broken_wave_line_held_on_retest": "the market came back to the broken wave line and held",
+    "end_of_wave_a_held_on_retest": "the market came back to the end of wave A and held",
 }
 
 # Wave labels, types and clarity in words (the counter's values: app/price_action/waves/counter.py)
@@ -50,6 +64,16 @@ TYPE_WORDS: Dict[str, str] = {"IMPULSE": "impulse", "DIAGONAL": "diagonal", "ZIG
                               "TRIANGLE": "triangle", "DOUBLE": "double three", "UNCLEAR": "type not clear yet"}
 CLARITY_WORDS: Dict[str, str] = {"CLEAR": "the count is clear", "ALT_AGREES": "the alternate count points the same way",
                                  "ALT_DISAGREES": "the alternate count points the other way", "UNCLEAR": "the count is not clear"}
+# The anchored wave lines (app/price_action/waves/levels.py LINES) and wave names in words
+_WAVE_NAME_WORDS: Dict[str, str] = {"1": "wave one", "2": "wave two", "3": "wave three", "4": "wave four", "5": "the fifth wave",
+                                    "A": "wave A", "B": "wave B", "C": "wave C", "D": "wave D", "E": "wave E",
+                                    "current": "the running wave"}
+LINE_WORDS: Dict[str, str] = {
+    "zero_two": "the line from the start of the count through the end of its second wave",
+    "one_three": "the line through the ends of the first and the third wave",
+    "two_four": "the line through the ends of the second and the fourth wave",
+    **{f"channel_{k}": f"the channel of {v}" for k, v in _WAVE_NAME_WORDS.items()},
+}
 
 TIMEFRAME_WORDS: Dict[str, str] = {"1m": "1-minute", "3m": "3-minute", "5m": "5-minute", "15m": "15-minute", "30m": "30-minute",
                                    "1h": "1-hour", "1d": "Daily", "1w": "Weekly", "1M": "Monthly"}
@@ -102,11 +126,11 @@ def unknown_tokens(tokens: Iterable[str]) -> List[str]:
 
 
 def wave_words(label: Optional[str]) -> str:
-    """A wave label, type or clarity value in words (empty for a missing value)."""
+    """A wave label, type, clarity value or wave line in words (empty for a missing value)."""
     if not label:
         return ""
-    return WAVE_WORDS.get(label) or TYPE_WORDS.get(label) or CLARITY_WORDS.get(label) or ""
+    return WAVE_WORDS.get(label) or TYPE_WORDS.get(label) or CLARITY_WORDS.get(label) or LINE_WORDS.get(label) or ""
 
 
 __all__ = ["TOKENS", "TIMEFRAME_WORDS", "FORBIDDEN_WORDS", "PLACEHOLDERS", "TIMEFRAME_SETTING_PLACEHOLDERS", "WAVE_WORDS", "TYPE_WORDS",
-           "CLARITY_WORDS", "guard", "render", "unknown_tokens", "wave_words"]
+           "CLARITY_WORDS", "LINE_WORDS", "guard", "render", "unknown_tokens", "wave_words"]

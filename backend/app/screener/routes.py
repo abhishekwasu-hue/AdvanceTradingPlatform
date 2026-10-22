@@ -156,6 +156,8 @@ async def registry(user: User = Depends(get_current_user), session: AsyncSession
                    if not (k in FUNCTIONS and ({FUNCTIONS[k].flag, *FUNCTIONS[k].also_flags} & off))}
         if amw_gate.FLAG in off:                  # AMW-3: the v2 candles and Pattern's `confirm` argument hide too
             entries = amw_gate.hide(entries)
+        if waves_gate.FLAG in off:                # wave templates R7: RetestEntry without its wave choices
+            entries = waves_gate.hide(entries)
     return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries}
 
 
@@ -293,7 +295,9 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
     if amw_gate.uses_patterns(ast) and not await amw_gate.enabled(session, user.tenant_id):
         amw_gate.flag_off_validation(ast, validated, params or {})
     for gate in (breakout_gate, zone_gate, fundamentals_gate, ownership_gate, waves_gate):
-        blocked = await gate.blocked_calls(session, user.tenant_id, ast)
+        # the wave gate resolves a `$parameter` RetestEntry choice (R7: of wave_line / wave_end) from the screen's parameters
+        blocked = await (waves_gate.blocked_calls(session, user.tenant_id, ast, params or {}) if gate is waves_gate
+                         else gate.blocked_calls(session, user.tenant_id, ast))
         if blocked:
             validated.ok = False
             validated.problems.append(Problem(gate.refusal(blocked), kind="flag_off", names={"functions": ",".join(blocked)}))

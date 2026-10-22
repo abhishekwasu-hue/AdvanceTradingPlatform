@@ -358,10 +358,13 @@ def test_incremental_within_the_performance_budget():
 # --- WB2: generic method only; WAVE-6: no ratio literal -------------------------------------------------------------------
 
 ALLOWED_IMPORTS = {
-    "__future__", "collections", "dataclasses", "hashlib", "typing", "numpy", "pandas",
+    "__future__", "bisect", "collections", "dataclasses", "hashlib", "typing", "numpy", "pandas",
     "app.price_action.causal_swings", "app.price_action.pa_settings",
     "app.price_action.daily_trend.rules", "app.price_action.daily_trend.legs",
+    # build step 4 (W4): the straight-line math of the generic trendlines (`Trendline.at`)
+    "app.price_action.trendlines",
     "app.price_action.waves", "app.price_action.waves.counter", "app.price_action.waves.series", "app.price_action.waves.settings",
+    "app.price_action.waves.levels",
 }
 ALLOWED_FROM_LEGS = {"CORRECTIVE", "MOTIVE", "leg_points", "read_counter", "reduce_counted", "reduce_waves", "motive_segs"}
 
@@ -381,7 +384,7 @@ def _imports(path: Path):
 
 def test_the_wave_modules_import_only_the_generic_pieces():
     files = sorted(WAVES_DIR.glob("*.py"))
-    assert {f.name for f in files} >= {"__init__.py", "counter.py", "series.py", "settings.py"}
+    assert {f.name for f in files} >= {"__init__.py", "counter.py", "series.py", "settings.py", "levels.py"}
     for path in files:
         for mod, name in _imports(path):
             assert mod in ALLOWED_IMPORTS, f"{path.name} imports {mod}"
@@ -397,10 +400,14 @@ def test_importing_the_waves_never_loads_the_daily_trend_fold():
     assert done.returncode == 0, done.stdout + done.stderr
 
 
+# Build steps 3 / 4: the wave line break and its retest read no ratio of their own either
+WAVE_READING_FILES = (Path(__file__).resolve().parents[1] / "app" / "screener" / "breakouts" / "wave_breaks.py",)
+
+
 def test_no_ratio_literal_in_the_reading_rules():
     """Ratios are settings (WAVE-6): a decimal number appears only in settings.py, where the defaults are declared."""
     literal = re.compile(r"(?<![\w.])\d*\.\d+(?![\w.])")
-    for path in WAVES_DIR.glob("*.py"):
+    for path in [*WAVES_DIR.glob("*.py"), *WAVE_READING_FILES]:
         if path.name == "settings.py":
             continue
         code = "\n".join(line.split("#", 1)[0] for line in path.read_text(encoding="utf-8").splitlines())

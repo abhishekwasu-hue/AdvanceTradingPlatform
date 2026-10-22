@@ -317,7 +317,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             rule.last_problem = zone_gate.refusal(zone_calls) if not zones_enabled else zone_gate.intrabar_refusal(zone_calls)
             return "unsupported", 0
         from app.screener import waves as waves_gate
-        wave_calls = waves_gate.flagged_calls(ast)
+        wave_calls = waves_gate.flagged_calls(ast, params)            # R7: params resolve a RetestEntry choice
         if wave_calls and (not waves_enabled or intrabar):
             # Wave templates W1: the rule stays active and resumes when the flag is back; wave rules fire on bar close only
             rule.last_problem = waves_gate.refusal(wave_calls) if not waves_enabled else waves_gate.intrabar_refusal(wave_calls)

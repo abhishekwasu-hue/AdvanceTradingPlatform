@@ -33,7 +33,7 @@ from app.indicators.trend import wma as _wma
 from app.indicators.volatility import atr as _atr
 from app.indicators.volatility import supertrend_dir as _supertrend_dir
 from app.screener import nodes as n
-from app.screener.registry import FUNCTIONS
+from app.screener.registry import FUNCTIONS, RETEST_WAVE_OF
 from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
@@ -286,6 +286,15 @@ class _Eval:
         def _bool(i: int, default: bool) -> bool:
             return bool(_last(self.ev(args[i], tf))) if len(args) > i else default
 
+        def retest_entry() -> pd.Series:
+            side, of = str(self.ev(args[0], tf)), _text(1, _bkd("retest_of"))
+            if of not in RETEST_WAVE_OF:                     # range / swing / donchian / trendline: the B9 path, unchanged
+                return _breakout(f, "B9", side, {"retest_of": of, "retest_max_bars": num(2, _bkd("retest_max_bars")),
+                                                 "retest_reversal": _bool(3, _bkd("retest_reversal"))})
+            # R7 (wave templates): the retest of a broken wave line / wave end (app/screener/breakouts/wave_breaks.py)
+            return _wave_retest(f, side, of, int(num(2, _bkd("retest_max_bars"))), _bool(3, _bkd("retest_reversal")), int(num(4, 1)),
+                                _text(5, "channel_B"), _text(6, "A"), num(7, _bkd("min_break_atr")))
+
         impl: Dict[str, Callable[[], Any]] = {
             "SMA": lambda: self.series(args[0], tf).rolling(win(1)).mean(),
             "EMA": lambda: _ema(self.series(args[0], tf), win(1)),
@@ -334,6 +343,17 @@ class _Eval:
             "WaveType": lambda: _wave(f, int(num(0, 1)), "type"),
             "WaveAlt": lambda: _wave(f, int(num(0, 1)), "alt"),
             "WaveClarity": lambda: _wave(f, int(num(0, 1)), "clarity"),
+            # Wave templates W2 / W3 / W4 (same flag): the main count's levels, ratios and anchored lines (NaN off their waves)
+            "WaveOrigin": lambda: _wave_level(f, int(num(0, 1)), "origin"),
+            "WaveEnd": lambda: _wave_level(f, int(num(0, 1)), "end", _text(1, "current")),
+            "WaveInvalidation": lambda: _wave_level(f, int(num(0, 1)), "invalidation"),
+            "WaveCap": lambda: _wave_level(f, int(num(0, 1)), "cap"),
+            "WaveBeyondOrigin": lambda: _wave_level(f, int(num(0, 1)), "beyond_origin"),
+            "WaveRetrace": lambda: _wave_level(f, int(num(0, 1)), "retrace", num(1, float("nan"))),
+            "WaveProjection": lambda: _wave_level(f, int(num(0, 1)), "projection", _text(1, "previous"), num(2, float("nan"))),
+            "WaveRatio": lambda: _wave_level(f, int(num(0, 1)), "ratio", _text(1, "previous")),
+            "WaveLineLevel": lambda: _wave_level(f, int(num(0, 1)), "line", _text(1, "")),
+            "WaveLineBreak": lambda: _wave_line_break(f, int(num(0, 1)), _text(1, ""), _text(2, "up"), num(3, _bkd("min_break_atr"))),
             "SwingHigh": lambda: _swings(f, int(num(0, 0)))[0],
             "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
             "SwingDirection": lambda: _swings(f, int(num(0, 0)))[2],
@@ -398,9 +418,7 @@ class _Eval:
                 "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, tf=tf, bars=self._gap_bars(tf)),
             "GapType": lambda: _breakout(f, "B8", str(self.ev(args[0], tf)), {
                 "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, "class", tf=tf, bars=self._gap_bars(tf)),
-            "RetestEntry": lambda: _breakout(f, "B9", str(self.ev(args[0], tf)), {
-                "retest_of": _text(1, _bkd("retest_of")), "retest_max_bars": num(2, _bkd("retest_max_bars")),
-                "retest_reversal": _bool(3, _bkd("retest_reversal"))}),
+            "RetestEntry": lambda: retest_entry(),
             # Z7a-3: market zones - the stored snapshot as of each bar's close (app/screener/zones.py)
             "NearZone": lambda: _zone(self.data, f, tf, "near", _text(0, "any"), num(1, 0.5), _text(2, "all")),
             "ZoneRole": lambda: _zone(self.data, f, tf, "role", "any", num(0, 0.5), _text(1, "all")),
@@ -577,6 +595,64 @@ def _wave(f: pd.DataFrame, degree: int, what: str) -> pd.Series:
         raise ScreenRuntimeError(f"wave degree {degree} is not one of {', '.join(map(str, WAVE_DEGREES))}")
     values = getattr(cached_wave_series(f, degree), what)
     return pd.Series(np.array(values, dtype=object, copy=True), index=f.index, dtype=object)
+
+
+def _wave_levels(f: pd.DataFrame, degree: int) -> Any:
+    from app.price_action.waves.levels import cached_wave_levels
+    from app.price_action.waves.series import WAVE_DEGREES
+    if degree not in WAVE_DEGREES:
+        raise ScreenRuntimeError(f"wave degree {degree} is not one of {', '.join(map(str, WAVE_DEGREES))}")
+    return cached_wave_levels(f, degree)
+
+
+def _wave_level(f: pd.DataFrame, degree: int, what: str, *args: Any) -> pd.Series:
+    """Wave templates W2 / W3 / W4: one level, ratio or line of the main count on every bar (app/price_action/waves/
+    levels.py) - NaN (FALSE for WaveBeyondOrigin) where it does not apply; one count per frame and degree."""
+    levels = _wave_levels(f, degree)
+    try:
+        values = getattr(levels, what)(*args)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if what == "line":
+        values = values[0]
+    if values.dtype == bool:
+        return pd.Series(values.copy(), index=f.index, dtype=bool)
+    return pd.Series(np.array(values, dtype=float, copy=True), index=f.index, dtype=float)
+
+
+def _wave_bars(f: pd.DataFrame, side: str) -> Tuple[Any, Any]:
+    from app.screener.breakouts.screens import Bars
+    if side not in ("up", "down"):
+        raise ScreenRuntimeError(f"unknown breakout side {side!r}")
+    b = Bars(f, _breakout_params({}))
+    return b, b.side(1 if side == "up" else -1)
+
+
+def _wave_breaks(f: pd.DataFrame, degree: int, of: str, line: str, wave: str, side: str, k: float) -> Tuple[Any, Any, List[Any]]:
+    from app.screener.breakouts import wave_breaks as wb
+    levels = _wave_levels(f, degree)
+    b, s = _wave_bars(f, side)
+    try:
+        values, anchors = levels.line(line) if of == "wave_line" else levels.end_line(wave)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    return b, s, wb.line_breaks(b, s, values, anchors, k)
+
+
+def _wave_line_break(f: pd.DataFrame, degree: int, line: str, side: str, k: float) -> pd.Series:
+    """Wave templates W4: the first close beyond a wave line by k ATR, once per line (app/screener/breakouts/wave_breaks.py)."""
+    from app.screener.breakouts import wave_breaks as wb
+    b, _, breaks = _wave_breaks(f, degree, "wave_line", line, "", side, k)
+    return pd.Series(wb.break_series(b.n, breaks), index=f.index, dtype=bool)
+
+
+def _wave_retest(f: pd.DataFrame, side: str, of: str, max_bars: int, reversal: bool, degree: int, line: str, wave: str,
+                 k: float) -> pd.Series:
+    """Wave templates R7: RetestEntry of a broken wave line (`of` wave_line) or wave end (`of` wave_end) - the B9 rule with
+    the broken line's value at each bar (app/screener/breakouts/wave_breaks.py)."""
+    from app.screener.breakouts import wave_breaks as wb
+    b, s, breaks = _wave_breaks(f, degree, of, line, wave, side, k)
+    return pd.Series(wb.retests(b, s, breaks, max_bars, reversal, float(b.p["retest_tol_atr"])), index=f.index, dtype=bool)
 
 
 def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Series]:

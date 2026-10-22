@@ -38,6 +38,13 @@ WAVE_LABELS: Dict[str, str] = {
 }
 
 
+# The area a wave template reads at the end of a corrective wave (review finding WB11, owner question WAVE-3): swing zones
+# by default - computed from the bars, so every backtest period has them - market zones only when the user picks them
+# (stored snapshots behind their own flag: no snapshot, no area, never a refusal), or none.
+AREA_SOURCES: Tuple[str, ...] = ("swing_zones", "market_zones", "none")
+AREA_SOURCE_DEFAULT = "swing_zones"
+
+
 def validate(overrides: Optional[Mapping[str, Any]] = None) -> Tuple[Dict[str, float], List[str]]:
     """The defaults updated with `overrides`, checked: unknown keys and values outside their bounds are problems (the
     default stays in place), and a zigzag limit below the flat minimum leaves a gap no correction reads - also a problem."""
@@ -68,4 +75,4 @@ def settings(overrides: Optional[Mapping[str, Any]] = None) -> Dict[str, float]:
     return out
 
 
-__all__ = ["WAVE_DEFAULTS", "WAVE_BOUNDS", "WAVE_LABELS", "validate", "settings"]
+__all__ = ["WAVE_DEFAULTS", "WAVE_BOUNDS", "WAVE_LABELS", "AREA_SOURCES", "AREA_SOURCE_DEFAULT", "validate", "settings"]

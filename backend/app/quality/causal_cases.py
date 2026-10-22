@@ -129,6 +129,21 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "WaveType": ["WaveType(1)", "WaveType(3)"],
     "WaveAlt": ["WaveAlt(1)", "WaveAlt(2)"],
     "WaveClarity": ["WaveClarity(1)", "WaveClarity(1)@15m"],
+    # Wave templates W2-W4 (same flag): the main count's levels, ratios and anchored lines, the line break and its retest
+    "WaveOrigin": ["WaveOrigin(1)", "WaveOrigin(2)", "WaveOrigin(1)@15m"],
+    "WaveEnd": ['WaveEnd(1, "current")', 'WaveEnd(1, "A")', 'WaveEnd(1, "2")', 'WaveEnd(2, "A")', 'WaveEnd(1, "B")@15m'],
+    "WaveInvalidation": ["WaveInvalidation(1)", "WaveInvalidation(2)", "WaveInvalidation(1)@15m"],
+    # the synthetic bars hold no fifth wave with a short wave three: the cap is counted (tests/test_wave3_levels_lines.py
+    # checks it by truncation on a hand-made fifth wave)
+    "WaveCap": ["Count(20, WaveCap(1) > 0)", "Count(20, WaveCap(2) > 0)"],
+    "WaveBeyondOrigin": ["WaveBeyondOrigin(1)", "WaveBeyondOrigin(1) AND close > open"],
+    "WaveRetrace": ["WaveRetrace(1, 0.5)", "WaveRetrace(2, 0.618)@15m"],
+    "WaveProjection": ['WaveProjection(1, "previous", 1)', 'WaveProjection(1, "A", 1.618)'],
+    "WaveRatio": ["WaveRatio(1)", 'WaveRatio(1, "A")', "WaveRatio(2)@15m"],
+    "WaveLineLevel": ['WaveLineLevel(1, "channel_current")', 'WaveLineLevel(1, "zero_two")', 'WaveLineLevel(1, "channel_B")',
+                      'WaveLineLevel(2, "two_four")'],
+    "WaveLineBreak": ['WaveLineBreak(1, "channel_current", "up", 0)', 'WaveLineBreak(1, "zero_two", "down", 0)',
+                      'WaveLineBreak(1, "channel_B", "down", 0)'],
     # U6 BK1 breakout screens (one signal per leg) and their factors; volume and distance conditions off so they fire
     "RangeBreakout": ['RangeBreakout("up", 20, 0, 0)', 'RangeBreakout("down", 10, 0.1, 0, "auto")', 'RangeBreakout("up", 10, 0, 0)@1h'],
     "SwingBreakout": ['SwingBreakout("up", 0, 0)', 'SwingBreakout("down", 0, 0)@1h'],
@@ -162,7 +177,10 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     # the synthetic 5m sessions open where the previous one closed or with a gap: only some sessions gap (down here)
     "GapBreakout": ['GapBreakout("down", "prev_day", 15)', 'GapBreakout("down", "prev_day", 5)', 'GapBreakout("down", "prev_day", 60)@15m'],
     "GapType": ['GapType("down", "prev_day", 15)', 'GapType("up", "prev_day", 30)@15m'],
-    "RetestEntry": ['RetestEntry("down", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)', 'RetestEntry("up", "trendline", 20, TRUE)'],
+    "RetestEntry": ['RetestEntry("down", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)', 'RetestEntry("up", "trendline", 20, TRUE)',
+                    # wave templates R7: the retest of a broken wave line / wave end
+                    'RetestEntry("up", "wave_line", 20, FALSE, 1, "channel_current", "A", 0)',
+                    'RetestEntry("down", "wave_end", 20, FALSE, 1, "channel_B", "B", 0)'],
     # Z7a-3: market zones from stored snapshots - the case builds a causal snapshot timeline from the bars (_zone_timeline)
     "NearZone": ['NearZone("demand", 0.5)', "NearZone()@1h", 'NearZone("supply", 1.0, "zones")'],
     "ZoneRole": ["ZoneRole(0.5)", "ZoneRole(1.0)@1h"],

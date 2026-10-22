@@ -38,6 +38,7 @@ class WaveSeries:
     alt: np.ndarray                      # the alternate's label, None when there is none
     clarity: np.ndarray
     counts: List[wc.WaveCount] = field(default_factory=list)
+    inner: List[wc.Swing] = field(default_factory=list)    # the degree d - 1 swings (each read only once confirmed by a bar)
 
     @property
     def event_bars(self) -> List[int]:
@@ -90,6 +91,7 @@ def wave_series(bars: pd.DataFrame, degree: int = 1, settings: Optional[Mapping[
     frame = _pivot_frame(bars)
     high, low = frame["high"].to_numpy(float), frame["low"].to_numpy(float)
     main, inner, outer = _swings(frame, degree, p), _swings(frame, degree - 1, p), _swings(frame, degree + 1, p)
+    out.inner = inner
     last_at: Dict[int, int] = {}                       # confirm bar -> the last degree-d swing confirmed on it
     for k, sw in enumerate(main):
         last_at[sw.confirm_bar] = k

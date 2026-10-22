@@ -52,11 +52,14 @@ UNUSABLE = "the draft could not be used"
 
 def registry_text(hidden_flags: Sequence[str] = ()) -> str:
     """The registry the model may use: one line per entry (name(args): returns, doc), flagged-off entries left out."""
-    from app.screener.registry import FIELDS, FUNCTIONS
+    from app.screener.registry import FIELDS, FUNCTIONS, WAVES_FLAG
     lines: List[str] = []
     for spec in (*FIELDS.values(), *FUNCTIONS.values()):
         if spec.flag and spec.flag in hidden_flags:
             continue
+        if spec.name == "RetestEntry" and WAVES_FLAG in hidden_flags:      # wave templates R7: without its wave choices
+            from app.screener.waves import legacy_retest_spec
+            spec = legacy_retest_spec()
         args = ", ".join(a.name if a.required else f"{a.name}={a.default!r}" for a in spec.args)
         sig = spec.name if spec.name in FIELDS else f"{spec.name}({args}{', ...' if spec.varargs else ''})"
         lines.append(f"- {sig}: {spec.returns}{f' ({spec.unit})' if spec.unit else ''} - {spec.doc[:140]}")

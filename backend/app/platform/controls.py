@@ -307,7 +307,8 @@ FEATURE_FLAGS: Dict[str, str] = {
     # ScreenQL - WaveState / WaveType / WaveAlt / WaveClarity from confirmed swings (degrees 1-3), recomputed only on a
     # newly confirmed swing. OFF: the registry hides them and a screen, study or alert rule using one is refused with the
     # reason; wave alerts fire on bar close only. Information only - places no orders.
-    "screener_waves": "Wave count in screens: the running wave, its type, the alternate count and the clarity, from confirmed swings (information only)",
+    "screener_waves": "Wave count in screens: the running wave, its type, the alternate count and the clarity, the wave levels, ratios and "
+                      "anchored wave lines and their retest, from confirmed swings (information only)",
     "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
     "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",

@@ -194,8 +194,9 @@ def test_family_g_params_hash_records_the_wave_settings():
 
 def test_wave_level_series_are_sparse_and_do_not_hold_the_warm_up(monkeypatch):
     assert "WaveAlt" in engine.SPARSE_SERIES and set(engine.WAVE_SPARSE_SERIES) <= engine.SPARSE_SERIES
-    assert {name for name in engine.WAVE_SPARSE_SERIES if name in FUNCTIONS} == {"WaveAlt"}       # the others land with W2-W4
-    template = g(setup={"kind": "event", "long": 'oi == 1 OR WaveAlt(1) == "COR_B"', "short": "oi == 2", "same_bar": True})
+    assert set(engine.WAVE_SPARSE_SERIES) <= set(FUNCTIONS)                    # every one registered since W2-W4 (step 3 / 4)
+    template = g(setup={"kind": "event", "long": 'oi == 1 OR WaveAlt(1) == "COR_B" OR close > WaveInvalidation(1)', "short": "oi == 2",
+                        "same_bar": True})
     df = bars(setups={290: 1}, triggers={290: 1}, n=300)                     # flat bars: no swing, no alternate ever
     r = compiled(template)
     assert WAVES_FLAG in r.required_flags and r.min_bars >= 250               # the degree's history (SWING_DEGREE_MIN_BARS)
@@ -243,7 +244,10 @@ def test_a_token_naming_the_wave_timeframe_needs_the_setting():
 def test_the_flag_is_registered_off_with_a_catalog_entry():
     assert WAVES_FLAG == "screener_waves" == waves_gate.FLAG
     assert WAVES_FLAG in controls.FEATURE_FLAGS and WAVES_FLAG in controls.DEFAULT_OFF_FLAGS and WAVES_FLAG in FLAG_INFO
-    assert set(WAVE_FUNCTIONS) == {"WaveState", "WaveType", "WaveAlt", "WaveClarity"}
+    assert set(WAVE_FUNCTIONS) == {"WaveState", "WaveType", "WaveAlt", "WaveClarity",
+                                   # build steps 3 / 4 (tests/test_wave3_levels_lines.py)
+                                   "WaveOrigin", "WaveEnd", "WaveInvalidation", "WaveCap", "WaveBeyondOrigin", "WaveRetrace",
+                                   "WaveProjection", "WaveRatio", "WaveLineLevel", "WaveLineBreak"}
     assert all(FUNCTIONS[n].flag == WAVES_FLAG for n in WAVE_FUNCTIONS)
     ast = parse('WaveState(1) == "IMP_2" AND WaveClarity(1) != "UNCLEAR" AND close > open')
     assert waves_gate.flagged_calls(ast) == ["WaveState", "WaveClarity"]
@@ -293,6 +297,7 @@ def test_flag_off_hides_and_refuses_the_wave_functions():
 
 def test_the_new_modules_are_english_and_public_safe():
     root = Path(__file__).resolve().parents[1]
-    for rel in ("app/price_action/waves/counter.py", "app/price_action/waves/series.py", "app/screener/waves.py"):
+    for rel in ("app/price_action/waves/counter.py", "app/price_action/waves/series.py", "app/screener/waves.py",
+                "app/price_action/waves/levels.py", "app/screener/breakouts/wave_breaks.py"):
         text = (root / rel).read_text(encoding="utf-8")
         assert text.isascii(), rel

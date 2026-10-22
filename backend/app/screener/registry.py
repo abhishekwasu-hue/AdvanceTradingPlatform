@@ -71,6 +71,12 @@ def _wave_values(name: str) -> Tuple[str, ...]:
     return tuple(getattr(counter, name))
 
 
+def _wave_choices(name: str) -> Tuple[str, ...]:
+    """The wave level module's choices (app/price_action/waves/levels.py): wave names, base waves, lines."""
+    from app.price_action.waves import levels
+    return tuple(getattr(levels, name))
+
+
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
     Spec("open", "factor", NUM, "price", doc="bar open"),
     Spec("high", "factor", NUM, "price", doc="bar high"),
@@ -142,6 +148,13 @@ _BK4 = (BREAKOUT_BK4_FLAG,)
 # swing break reads the D1 swings (250 bars, SWING_DEGREE_MIN_BARS); a gap reads the previous session (intraday: whole sessions)
 LINE_MIN_BARS = 125
 RETEST_MIN_BARS = 250
+RETEST_DOC = ("B9: after a range / swing / Donchian / trendline breakout, price left the level and came back within `bars` bars to"
+              " hold it - a logical reversal at the level (reversal) or a touch - closing at or beyond it; once per breakout")
+RETEST_WAVE_DOC = ("; wave_line (flag screener_waves): after the first close beyond the wave line `line` of the degree-`degree` count"
+                   " by k ATR, the retest of that broken line (its value at the retest bar); wave_end: the same after a close beyond"
+                   " the end of wave `wave`")
+RETEST_WAVE_OF: Tuple[str, ...] = ("wave_line", "wave_end")
+RETEST_OF_CHOICES: Tuple[str, ...] = ("range", "swing", "donchian", "trendline") + RETEST_WAVE_OF
 GAP_TFS = ("1m", "3m", "5m", "15m", "1d")
 GAP_CLASSES = ("GAP_AND_GO", "GAP_HOLD", "GAP_FILL")
 _TT_ARG = _bk("tt_filter", "template", BOOL)
@@ -175,6 +188,13 @@ WAVE_DEGREE_CHOICES: Tuple[int, ...] = (1, 2, 3)
 _WDEGREE = Arg("degree", NUM, 1, False, choices=WAVE_DEGREE_CHOICES)
 _WDOC = (" - from CONFIRMED swings of that degree (the last wave still running); the count is recomputed only when a new"
          " swing is confirmed and never rewrites an earlier bar; missing before the first count")
+# Wave templates W2-W4 (same flag): the main count's levels, ratios and anchored lines as per-bar series - NaN where they do
+# not apply (the engine treats them as sparse, WB4). A ratio is always the caller's setting (a literal or a $parameter read
+# once, never an expression per bar); the functions hold no ratio of their own.
+_WDEGREE_REQ = Arg("degree", NUM, None, True, choices=WAVE_DEGREE_CHOICES)
+_WRATIO = Arg("ratio", NUM, None, True, literal_only=True, bounds=(0.0, 10.0))
+_WLDOC = (" - read from the main count known at the bar (the alternate is evidence only) and the bars up to it; NaN where it"
+          " does not apply")
 
 
 # TPL-1: the add-indicator work's arguments. Windows are whole bars (1..MAX_WINDOW by the validator); the acceleration
@@ -430,11 +450,14 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          flag=BREAKOUT_FLAG, also_flags=_BK4,
          doc="B8: on the bar that ends a gap's hold window, GAP_AND_GO (held, close at or beyond the open), GAP_HOLD (held, faded"
              " toward the level) or GAP_FILL (a close back inside the level); empty on other bars"),
-    Spec("RetestEntry", "filter", BOOL, None, (_SIDE, _bk("retest_of", "of", STR), _bk("retest_max_bars", "bars", NUM),
-                                               _bk("retest_reversal", "reversal", BOOL)), cost=4.0, min_bars=RETEST_MIN_BARS,
-         flag=BREAKOUT_FLAG, also_flags=_BK4,
-         doc="B9: after a range / swing / Donchian / trendline breakout, price left the level and came back within `bars` bars to"
-             " hold it - a logical reversal at the level (reversal) or a touch - closing at or beyond it; once per breakout"),
+    # R7 (wave templates, flag screener_waves for the wave choices): `of` also takes wave_line / wave_end, with the wave
+    # degree, the line, the wave and the break's k; the older choices read none of them and run exactly as before
+    Spec("RetestEntry", "filter", BOOL, None, (_SIDE, _bk("retest_of", "of", STR, choices=RETEST_OF_CHOICES), _bk("retest_max_bars", "bars", NUM),
+                                               _bk("retest_reversal", "reversal", BOOL), _WDEGREE,
+                                               Arg("line", STR, "channel_B", False, choices=_wave_choices("LINES")),
+                                               Arg("wave", STR, "A", False, choices=_wave_choices("FIXED_END_CHOICES")), _K),
+         cost=4.0, min_bars=RETEST_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
+         doc=RETEST_DOC + RETEST_WAVE_DOC),
     # Z7a-3: market zones (demand / supply, order blocks, S/R, gaps with their lifecycle) - research only, places no orders
     # U7 LG3: point-in-time fundamentals (flag screener_fundamentals, off by default)
     Spec("EPSGrowthYoY", "factor", NUM, "pct", (), cost=2.0, min_bars=1, needs=("fundamentals",), flag=FUNDAMENTALS_FLAG,
@@ -474,6 +497,48 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="CLEAR (every finished wave's inner structure reads and fits, no other reading), ALT_AGREES / ALT_DISAGREES (an"
              " alternate implying the same / the opposite larger direction), UNCLEAR (a tie, or a finished wave with no inner"
              " swings)" + _WDOC),
+    # Wave templates W2 / W3 / W4: levels, ratios and anchored lines of the main count (flag screener_waves)
+    Spec("WaveOrigin", "factor", NUM, "price", (_WDEGREE,), cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         flag=WAVES_FLAG, doc="the start of the current impulse, or of wave A (of W in a double three)" + _WLDOC),
+    Spec("WaveEnd", "factor", NUM, "price", (_WDEGREE_REQ, Arg("wave", STR, choices=_wave_choices("END_CHOICES"))), cost=4.0,
+         min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=WAVES_FLAG,
+         doc="the end of a finished wave (1-4 in an impulse, A-D in a correction; NaN while that wave runs or in the other"
+             " family); current = the running wave's extreme as known at the bar" + _WLDOC),
+    Spec("WaveInvalidation", "factor", NUM, "price", (_WDEGREE,), cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         flag=WAVES_FLAG,
+         doc="the hard-rule level of the count: wave two - the start of wave one; wave three - the start of wave one, then"
+             " the end of wave two once it passed the end of wave one; wave four - the end of wave one (a diagonal: of wave"
+             " two); the fifth wave - the end of wave four; zigzag B - the start of A; a flat B has none; C - the end of B;"
+             " triangle D / E - the end of B / C" + _WLDOC),
+    Spec("WaveCap", "factor", NUM, "price", (_WDEGREE,), cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         flag=WAVES_FLAG,
+         doc="evidence, not an invalidation: the fifth wave of an impulse whose wave three is shorter than wave one ends"
+             " at most wave three's length beyond the end of wave four (wave three is never the shortest)" + _WLDOC),
+    Spec("WaveBeyondOrigin", "filter", BOOL, None, (_WDEGREE,), cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         flag=WAVES_FLAG,
+         doc="true while a wave against the first one (two / four, B / D) has gone beyond the count's start - e.g. a flat"
+             " B beyond the start of A, before C decides whether the flat is expanded" + _WLDOC),
+    Spec("WaveRetrace", "factor", NUM, "price", (_WDEGREE_REQ, _WRATIO), cost=4.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, flag=WAVES_FLAG,
+         doc="the price `ratio` of the previous finished wave back from its end (a $setting)" + _WLDOC),
+    Spec("WaveProjection", "factor", NUM, "price", (_WDEGREE_REQ, Arg("base_wave", STR, choices=_wave_choices("BASE_CHOICES")), _WRATIO),
+         cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=WAVES_FLAG,
+         doc="the running wave's start plus `ratio` x the finished base wave's length, in the running wave's direction"
+             " (C = A x ratio, wave three = wave one x ratio; a $setting)" + _WLDOC),
+    Spec("WaveRatio", "factor", NUM, "ratio", (_WDEGREE, Arg("base_wave", STR, "previous", False, choices=_wave_choices("BASE_CHOICES"))),
+         cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=WAVES_FLAG,
+         doc="the running wave's length so far / the finished base wave's length: the retracement (previous) or the"
+             " extension (e.g. 1, A) as a value to compare with a setting" + _WLDOC),
+    Spec("WaveLineLevel", "factor", NUM, "price", (_WDEGREE_REQ, Arg("line", STR, choices=_wave_choices("LINES"))), cost=4.0,
+         min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=WAVES_FLAG,
+         doc="a line anchored to the count's own pivots, projected to the bar: zero_two / one_three / two_four (through"
+             " those wave ends: the 0-2 and 2-4 lines, a zigzag's 0-B base, a triangle's A-C / B-D sides, flat sides"
+             " included) or channel_<wave> (the wave's start-side line through its lower-degree swings: the corrective"
+             " channel)" + _WLDOC),
+    Spec("WaveLineBreak", "filter", BOOL, None, (_WDEGREE_REQ, Arg("line", STR, choices=_wave_choices("LINES")), _SIDE, _K), cost=4.0,
+         min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=WAVES_FLAG,
+         doc="the first close above (up) / below (down) that wave line by k ATR (ATR of the bars before), once per line;"
+             " a line first known beyond the close waits for a close back on its near side; no volume requirement" + _WLDOC),
     # N3 S8a: ownership and events (category E; flag screener_ownership, off by default) - research only, places no orders
     Spec("Holding", "factor", NUM, "pct", (_HOLDER,), cost=2.0, min_bars=1, needs=("ownership",), flag=OWNERSHIP_FLAG,
          doc="the holder's stake in the latest shareholding pattern, % (pledge: % of promoter shares pledged; stale after 200 days)" + _ODOC),
@@ -503,25 +568,30 @@ AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() 
 WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WAVES_FLAG)
 
 
+def describe_spec(spec: Spec) -> Dict[str, object]:
+    """One registry entry as data (wave templates R7: the registry endpoint shows RetestEntry without its wave choices
+    while `screener_waves` is off - app/screener/waves.py `hide`)."""
+    out: Dict[str, object] = {"kind": spec.kind, "returns": spec.returns, "unit": spec.unit, "args": [a.name for a in spec.args],
+                              "choices": {a.name: list(a.choices) for a in spec.args if a.choices}, "values": list(spec.values),
+                              "defaults": {a.name: a.default for a in spec.args if a.default is not None},
+                              "types": {a.name: a.type for a in spec.args}, "cross_sectional": spec.cross_sectional,
+                              "literal": [a.name for a in spec.args if a.literal_only],
+                              "kwargs": [a.name for a in spec.kwargs], "varargs": spec.varargs, "timeframed": spec.timeframed,
+                              "field": spec.name in FIELDS, "needs": list(spec.needs), "doc": spec.doc}
+    if spec.timeframes:                                              # U6 BK2: only the entries limited to some timeframes
+        out["timeframes"] = list(spec.timeframes)
+    if any(a.pattern for a in spec.args):                            # AMW-3: only the entries with a text form (TimeOfDay)
+        out["patterns"] = {a.name: a.pattern for a in spec.args if a.pattern}
+    return out
+
+
 def describe() -> Dict[str, Dict[str, object]]:
     """The registry as data (for the builder's palette and the docs page)."""
-    out: Dict[str, Dict[str, object]] = {}
-    for spec in (*FIELDS.values(), *FUNCTIONS.values()):
-        out[spec.name] = {"kind": spec.kind, "returns": spec.returns, "unit": spec.unit, "args": [a.name for a in spec.args],
-                          "choices": {a.name: list(a.choices) for a in spec.args if a.choices}, "values": list(spec.values),
-                          "defaults": {a.name: a.default for a in spec.args if a.default is not None},
-                          "types": {a.name: a.type for a in spec.args}, "cross_sectional": spec.cross_sectional,
-                          "literal": [a.name for a in spec.args if a.literal_only],
-                          "kwargs": [a.name for a in spec.kwargs], "varargs": spec.varargs, "timeframed": spec.timeframed,
-                          "field": spec.name in FIELDS, "needs": list(spec.needs), "doc": spec.doc}
-        if spec.timeframes:                                          # U6 BK2: only the entries limited to some timeframes
-            out[spec.name]["timeframes"] = list(spec.timeframes)
-        if any(a.pattern for a in spec.args):                        # AMW-3: only the entries with a text form (TimeOfDay)
-            out[spec.name]["patterns"] = {a.name: a.pattern for a in spec.args if a.pattern}
-    return out
+    return {spec.name: describe_spec(spec) for spec in (*FIELDS.values(), *FUNCTIONS.values())}
 
 
 __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "ZONE_FUNCTIONS",
            "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS", "BREAKOUT_BK4_FLAG", "BREAKOUT_BK4_FUNCTIONS",
            "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
-           "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES"]
+           "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES",
+           "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_DOC", "describe_spec"]

@@ -2534,3 +2534,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   studies and alert rules; bar close only in alerts; no-look-ahead cases added.
 - Tests: `tests/test_wave2_counter.py`, `tests/test_wave2_recipe.py`; the lookahead job covers the new functions.
 - Questions WAVE-17..WAVE-20.
+
+## 22 Oct - Wave / correction templates (family G): W2 / W3 levels and ratios, W4 anchored wave lines, R7 RetestEntry
+
+- Branch `claude/wave3-levels-lines`, stacked on #367 (`claude/wave2-counter-recipe`). Backend only. No migration. No G
+  template yet. Status table: `docs/design/WAVE_TEMPLATES_IMPL.md`.
+- W2 / W3 (WB4, WB5): `app/price_action/waves/levels.py` - per-bar origin, wave ends, the hard-rule invalidation per
+  type (a flat B has none; wave three's cap is the separate `WaveCap`; the zigzag limit stays a ratio setting), "B beyond
+  A's start" for G7, the retracement / projection levels and the running wave's ratio (ratios only from the caller).
+- W4 (WB6): lines anchored to the count's own pivots (0-2, 1-3, 2-4, each wave's corrective channel; triangle sides incl.
+  flat ones), their break by k ATR once per line, no volume; R7: RetestEntry `of = "wave_line"` / `"wave_end"`, the older
+  choices byte-identical (pinned hash).
+- ScreenQL: WaveOrigin, WaveEnd, WaveInvalidation, WaveCap, WaveBeyondOrigin, WaveRetrace, WaveProjection, WaveRatio,
+  WaveLineLevel, WaveLineBreak and the RetestEntry wave choices behind `screener_waves` (hidden / refused while off, bar
+  close only in alerts); no-look-ahead cases added.
+- Tests: `tests/test_wave3_levels_lines.py`; #367's allow-list and ratio-literal tests extended.
+- Questions WAVE-21..WAVE-26.

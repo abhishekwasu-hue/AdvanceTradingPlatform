@@ -36,10 +36,11 @@ from app.strategy_templates.compile import SIDES, Recipe, Side
 
 # Series that are legitimately missing between their events: they do not hold the warm-up back. Family G (review finding
 # WB4): the alternate wave count (missing when there is no second reading) and the wave level companions - the wave's
-# origin / ends, the hard-rule invalidation and the cap, the ratio levels and the anchored wave lines (NaN off their
-# waves; registered with the W2-W4 step). The R2 breakout level companions join the same way.
+# origin / ends, the hard-rule invalidation and the cap, the ratio levels, the running wave's ratio value and the anchored
+# wave lines (NaN off their waves; app/price_action/waves/levels.py). The yes / no wave series (WaveBeyondOrigin,
+# WaveLineBreak) are never missing. The R2 breakout level companions join the same way.
 WAVE_SPARSE_SERIES: Tuple[str, ...] = ("WaveAlt", "WaveOrigin", "WaveEnd", "WaveInvalidation", "WaveCap", "WaveRetrace",
-                                       "WaveProjection", "WaveLineLevel")
+                                       "WaveProjection", "WaveRatio", "WaveLineLevel")
 SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES)
 
 REASON_WARMUP = "warmup"

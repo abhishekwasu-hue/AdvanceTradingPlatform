@@ -54,7 +54,7 @@ def test_the_starters_and_new_phrases_route_to_jobs_3_to_5():
                    ("How are my open positions?", "positions"), ("what is the risk on my positions", "positions"),
                    ("Review my last trade", "review"), ("How was my week?", "review"), ("What is my discipline score?", "review")):
         assert chat.route(q) == job, q
-    assert chat.BUILT >= {"trade_check", "positions", "review"} and "strategy" not in chat.BUILT
+    assert chat.BUILT >= {"trade_check", "positions", "review"}                  # job 6 joined in slice 3 (test_copilot_v2_job6.py)
 
 
 # --- the answers on recorded fixtures -------------------------------------------------------------------------------------
@@ -223,7 +223,7 @@ def test_the_route_answers_jobs_3_to_5_on_the_real_tools_and_writes_no_order():
             assert body["job"] == job and body["job_number"] in (3, 4, 5) and all(s["ok"] or s["note"] for s in body["worked"])
             assert "diagnostics" not in body and "flag" not in json.dumps(body["unknowns"])
         home = client.get("/api/ai/chat/home", headers=headers).json()
-        assert [j["built"] for j in home["jobs"]] == [True, True, True, True, True, False, True, True]
+        assert [j["built"] for j in home["jobs"]] == [True] * 8
     finally:
         _run(_flag("ui_v2", False))
     assert _run(snapshot()) == before                     # the Copilot read; it changed no trade and created no order or proposal

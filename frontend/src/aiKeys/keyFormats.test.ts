@@ -16,14 +16,17 @@ describe("the shared key-format table", () => {
     }
   });
 
-  it("sessions and admin keys come first; OpenRouter and Groq are never OpenAI", () => {
+  it("sessions and admin keys come first; OpenRouter and Groq are their own providers, never OpenAI", () => {
     const kinds = KEY_FORMATS.map((r) => r.kind);
     expect(kinds.indexOf("provider")).toBeGreaterThan(kinds.lastIndexOf("session"));
-    expect(kinds.indexOf("provider")).toBeGreaterThan(kinds.lastIndexOf("unsupported"));
+    const prefixes = KEY_FORMATS.map((r) => r.prefix);
+    expect(prefixes.indexOf("sk-or-")).toBeLessThan(prefixes.indexOf("sk-"));
     const openrouter = detectProvider(["sk", "-or-", "v1-", "FAKEFAKE0000000000000000"].join(""));
-    expect(openrouter).toEqual({ kind: "unsupported", provider: null, name: "OpenRouter" });
-    expect(refusalFor(openrouter)).toBe("This looks like an OpenRouter key. AiAlgoDesk cannot use OpenRouter keys yet. Use a Claude, OpenAI or Google Gemini key.");
-    expect(refusalFor(detectProvider(["gsk", "_", "FAKEFAKE0000000000000000"].join("")))).toContain("Groq keys yet");
+    expect(openrouter).toEqual({ kind: "provider", provider: "openrouter", name: "OpenRouter" });
+    expect(refusalFor(openrouter)).toBeNull();
+    expect(detectProvider(["gsk", "_", "FAKEFAKE0000000000000000"].join(""))).toEqual({ kind: "provider", provider: "groq", name: "Groq" });
+    expect(refusalFor(detectProvider(["xai", "-", "FAKEFAKE0000000000000000"].join("")))).toContain(
+      "AiAlgoDesk cannot use xAI keys. Use a key from Google Gemini, Claude, OpenAI, OpenRouter, Groq, Mistral or Z.ai.");
   });
 
   it("a paste is trimmed of spaces, line breaks and quotes", () => {
@@ -31,8 +34,8 @@ describe("the shared key-format table", () => {
     expect(cleanKey(undefined)).toBe("");
   });
 
-  it("only Google Gemini is marked as a free tier that may train on what it is sent", () => {
-    expect(MAY_TRAIN_ON_FREE_TIER).toEqual({ anthropic: false, openai: false, gemini: true });
+  it("the free tiers that may train on what they are sent are marked (unknown counts as yes)", () => {
+    expect(MAY_TRAIN_ON_FREE_TIER).toEqual({ gemini: true, anthropic: false, openai: false, openrouter: true, groq: false, mistral: true, zai: true });
   });
 });
 
@@ -41,7 +44,7 @@ describe("plain error sentences", () => {
     expect(plainError("auth")).toBe("This key did not work. Check that you copied all of it.");
     expect(plainError("no_credit")).toBe("This key has no credit left.");
     expect(plainError("rate")).toBe("Too many requests. Try again in a minute.");
-    expect(plainError("no_vision")).toBe("This provider cannot read charts. Vision needs Gemini, Claude or OpenAI.");
+    expect(plainError("no_vision")).toBe("This provider cannot read charts. Vision needs Gemini, Claude, OpenAI, OpenRouter or Mistral.");
     expect(plainError("something new")).toBe(PLAIN_ERRORS.other);
     expect(plainError(null)).toBe(PLAIN_ERRORS.other);
   });

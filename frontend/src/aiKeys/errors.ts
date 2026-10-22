@@ -8,7 +8,7 @@ export const PLAIN_ERRORS: Readonly<Record<AiErrorKind, string>> = {
   auth: "This key did not work. Check that you copied all of it.",
   no_credit: "This key has no credit left.",
   rate: "Too many requests. Try again in a minute.",
-  no_vision: "This provider cannot read charts. Vision needs Gemini, Claude or OpenAI.",
+  no_vision: "This provider cannot read charts. Vision needs Gemini, Claude, OpenAI, OpenRouter or Mistral.",
   model: "This provider could not answer right now. Try again later.",
   unreachable: "The AI service could not be reached. Try again in a minute.",
   other: "The AI service did not answer. Try again in a minute.",

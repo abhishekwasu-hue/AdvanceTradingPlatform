@@ -1,5 +1,5 @@
 {
-  "_about": "Settings redesign A (review R5): the AI key-format table and its cases. Synthetic, obviously fake keys only. backend/app/ai/key_formats.py and frontend/src/aiKeys/keyFormats.ts must agree with every row; frontend/src/aiKeys/__fixtures__/key_formats.json is a byte-identical copy.",
+  "_about": "Settings redesign A (review R5): the AI key-format table and its cases. Synthetic, obviously fake keys only. backend/app/ai/key_formats.py and frontend/src/aiKeys/keyFormats.ts must agree with every row; frontend/src/aiKeys/__fixtures__/key_formats.json is a byte-identical copy. Master Order 2 part A added OpenRouter and Groq as providers, the provider facts and the picker order.",
   "table": [
     {
       "prefix": "sk-ant-sid",
@@ -63,14 +63,14 @@
     },
     {
       "prefix": "sk-or-",
-      "kind": "unsupported",
-      "provider": null,
+      "kind": "provider",
+      "provider": "openrouter",
       "name": "OpenRouter"
     },
     {
       "prefix": "gsk_",
-      "kind": "unsupported",
-      "provider": null,
+      "kind": "provider",
+      "provider": "groq",
       "name": "Groq"
     },
     {
@@ -118,9 +118,13 @@
     "access_token"
   ],
   "may_train_on_free_tier": {
+    "gemini": true,
     "anthropic": false,
     "openai": false,
-    "gemini": true
+    "openrouter": true,
+    "groq": false,
+    "mistral": true,
+    "zai": true
   },
   "cases": [
     {
@@ -155,17 +159,32 @@
     },
     {
       "key": "sk-or-v1-FAKEFAKE-test-only-eeeeeeeeeeeeeeeeeeee-5555",
-      "kind": "unsupported",
-      "provider": null
+      "kind": "provider",
+      "provider": "openrouter"
     },
     {
       "key": "gsk_FAKEFAKE-test-only-ffffffffffffffffffffffff-6666",
-      "kind": "unsupported",
-      "provider": null
+      "kind": "provider",
+      "provider": "groq"
     },
     {
       "key": "xai-FAKEFAKE-test-only-gggggggggggggggggggggggg-7777",
       "kind": "unsupported",
+      "provider": null
+    },
+    {
+      "key": "sk-or-v1-FAKEFAKE-test-only-not-openai-eeeeeeeeeeeeee",
+      "kind": "provider",
+      "provider": "openrouter"
+    },
+    {
+      "key": "FAKEFAKEfaketestonlymistral0000",
+      "kind": "unknown",
+      "provider": null
+    },
+    {
+      "key": "FAKEFAKEfaketestonlyzai00000000.FAKEFAKEtestonly",
+      "kind": "unknown",
       "provider": null
     },
     {
@@ -233,5 +252,72 @@
       "kind": "empty",
       "provider": null
     }
+  ],
+  "provider_facts": {
+    "gemini": {
+      "name": "Google Gemini",
+      "free_tier": true,
+      "vision": true,
+      "may_train": true,
+      "privacy": "On the free tier Google may use what you send to improve its products. A key with billing turned on is not used that way."
+    },
+    "anthropic": {
+      "name": "Claude",
+      "free_tier": false,
+      "vision": true,
+      "may_train": false,
+      "privacy": "Anthropic says it does not train its models on what you send through an API key."
+    },
+    "openai": {
+      "name": "OpenAI",
+      "free_tier": false,
+      "vision": true,
+      "may_train": false,
+      "privacy": "OpenAI says it does not train its models on what you send through an API key unless you opt in."
+    },
+    "openrouter": {
+      "name": "OpenRouter",
+      "free_tier": true,
+      "vision": true,
+      "may_train": true,
+      "privacy": "OpenRouter passes your request to another company's model. Some free models keep and use what you send."
+    },
+    "groq": {
+      "name": "Groq",
+      "free_tier": true,
+      "vision": false,
+      "may_train": false,
+      "privacy": "Groq says it does not keep what you send by default."
+    },
+    "mistral": {
+      "name": "Mistral",
+      "free_tier": true,
+      "vision": true,
+      "may_train": true,
+      "privacy": "On the free plan Mistral may use what you send to improve its models unless you opt out in its settings."
+    },
+    "zai": {
+      "name": "Z.ai GLM",
+      "free_tier": true,
+      "vision": false,
+      "may_train": true,
+      "privacy": "Z.ai does not say clearly what its free models keep, so AiAlgoDesk treats them as if they may use what you send."
+    }
+  },
+  "connect_order": [
+    "gemini",
+    "anthropic",
+    "openai",
+    "openrouter",
+    "groq",
+    "mistral",
+    "zai"
+  ],
+  "picker_order": [
+    "gemini",
+    "anthropic",
+    "openai",
+    "mistral",
+    "zai"
   ]
 }

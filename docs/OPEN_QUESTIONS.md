@@ -859,7 +859,22 @@ contradicts them.
 | MO2-1 | The order's quoted wording says "ATP"; the product people see is AiAlgoDesk. | The tours and key guides say **AiAlgoDesk** (the name in the sidebar and the page titles), so a beginner never meets a second name. One word to change back if the owner prefers ATP. | `src/tours/content/`, `src/aiKeys/` | open |
 | MO2-2 | The AI Copilot v2 page (#342) has no tour yet. | A Copilot tour is the next MO2 step; the tour id list is shared with the server allow-list (a test keeps them equal). | `src/tours/pages.ts` | open |
 | MO2-3 | Key guide screenshots. | Marked placeholders ("Screenshot coming: ...") until we take our own pictures of our own accounts; no third-party picture is fetched or committed. | `src/aiKeys/guides.ts` | open |
-| MO2-4 | Providers in the key guides. | The three BYOK takes today (Google Gemini, Anthropic, OpenAI). OpenRouter, Groq, Mistral and the rest come with part A; the helper already recognises their keys and says they are not taken yet. | `src/aiKeys/` | open |
+| MO2-4 | Providers in the key guides. | The three BYOK takes today (Google Gemini, Anthropic, OpenAI). OpenRouter, Groq, Mistral and the rest come with part A; the helper already recognises their keys and says they are not taken yet. Part A (MO2A-1..8 below): the Connect AI drawer lists all seven; the Vision card's guides stay the three. | `src/aiKeys/` | open |
+
+## MO2 part A: AI provider choice with free options (22 Oct)
+
+Behind `ui_v2` + `ai_one_key`; the Vision card without `ai_one_key` is unchanged. Each has a provisional default the build uses.
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| MO2A-1 | The provider websites (openrouter.ai, console.groq.com, docs.mistral.ai, docs.z.ai, developers.cloudflare.com) could not be opened from the build machine on 22 Oct. | Request shapes were read from each provider's own published source (official SDK / docs repositories on GitHub) or a search limited to its docs domain; each is recorded in `OPENAI_COMPATIBLE` and the guides' header. Someone opens each key page in a browser at the next guide review (the 120-day test). | `app/ai/providers.py`, `src/aiKeys/guides.ts` | open |
+| MO2A-2 | Cloudflare Workers AI. | Not added: its OpenAI-compatible address needs the account id next to the token, which one paste cannot carry. A follow-up can add a second "Account ID" box for that one provider. | `app/ai/providers.py` | open |
+| MO2A-3 | Which free tiers "may train". | Yes for Google Gemini, OpenRouter (free models are run by other companies), Mistral (free mode; opt-out exists) and Z.ai (not clearly stated, so treated as yes); no for Claude, OpenAI and Groq ("does not retain customer data by default", console.groq.com/docs/your-data). A "yes" blocks chart analysis until "My key is on a paid plan" is ticked. | `app/ai/key_formats.py` PROVIDER_FACTS | open |
+| MO2A-4 | Which new providers get charts (vision). | OpenRouter (the Free Models Router picks an image-capable model) and Mistral (Large 3 / Medium 3.1 / Small 3.2 read images). Groq and Z.ai are text only for now: Groq's vision models change often and Z.ai's GLM-V models were not checked against its API reference. | `VISION_PROVIDERS` | open |
+| MO2A-5 | OpenRouter: which models. | The Free Models Router (`openrouter/free`) for every tier; after "My key is on a paid plan" the Auto Router (`openrouter/auto`, billed by OpenRouter), so ATP's method never goes to a free model. `AI_OPENROUTER_<TIER>_MODEL` / `AI_OPENROUTER_PAID_MODEL` override them. | `app/ai/providers.py` | open |
+| MO2A-6 | Prices of the new paid models (the user's own limit counts them). | Free models count as zero. The paid rows (Groq gpt-oss, Mistral Large / Medium / Small, GLM-4.6) are deliberate upper bounds, because the price pages could not be re-checked; an unknown model counts at its provider's most expensive row. `AI_MODEL_PRICES_JSON` replaces any row without a release. | `app/ai/pricing.py` | open |
+| MO2A-7 | Background Vision reviews with a key of a new provider. | They stay on Gemini / Claude / OpenAI keys (the Vision card's three): a Mistral or OpenRouter key answers the Copilot and chart analysis but is not used for the background reviews yet. | `byok.active_provider` | open |
+| MO2A-8 | The consent line says "Your questions and chart images are sent to <provider>" also for Groq / Z.ai, which never get charts. | Kept: it is the accepted legal text (a change asks everyone again). The panel says right under it that the provider cannot read charts. | `app/ai/compliance_terms.py` | open |
 
 ## Settings redesign: the review's owner questions (SR, 22 Oct)
 

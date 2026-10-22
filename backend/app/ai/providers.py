@@ -61,6 +61,14 @@ _FALLBACK_MODELS = {"anthropic": {"strong": "claude-opus-5-5", "fast": "claude-s
                     "openai": {"strong": "gpt-4.1", "fast": "gpt-4.1-mini", "cheap": "gpt-4.1-nano"},
                     # Settings redesign A (R3): a user's own Gemini key runs the same tiers (only ever a user's key).
                     "gemini": {"strong": "gemini-2.5-pro", "fast": "gemini-2.5-flash", "cheap": "gemini-2.5-flash-lite"},
+                    # Master Order 2 part A: the OpenAI-compatible BYOK providers (only ever a user's own key). Sources and
+                    # the day they were checked: OPENAI_COMPATIBLE below. `AI_<PROVIDER>_<TIER>_MODEL` overrides each.
+                    # OpenRouter: the Free Models Router picks a free model that can do what the request needs (images too).
+                    "openrouter": {"strong": "openrouter/free", "fast": "openrouter/free", "cheap": "openrouter/free"},
+                    "groq": {"strong": "openai/gpt-oss-120b", "fast": "openai/gpt-oss-20b", "cheap": "openai/gpt-oss-20b"},
+                    "mistral": {"strong": "mistral-large-latest", "fast": "mistral-medium-latest", "cheap": "mistral-small-latest"},
+                    # Z.ai: GLM-4.5-Flash is its free model; the strong tier needs balance on the account.
+                    "zai": {"strong": "glm-4.6", "fast": "glm-4.5-flash", "cheap": "glm-4.5-flash"},
                     "rule_based": {"strong": RULE_BASED_MODEL, "fast": RULE_BASED_MODEL, "cheap": RULE_BASED_MODEL}}
 
 
@@ -122,9 +130,10 @@ def timeout_for(budget_tokens: int) -> float:
 
 
 def is_reasoning_model(model: str) -> bool:
-    """C3: OpenAI reasoning models reject `temperature` and only take `max_completion_tokens`."""
+    """C3: OpenAI reasoning models reject `temperature` and only take `max_completion_tokens`. MO2 A: the open-weight
+    `openai/gpt-oss-*` models (Groq) reason too and take `reasoning_effort`."""
     m = (model or "").lower()
-    return m.startswith(("o1", "o3", "o4", "gpt-5"))
+    return m.startswith(("o1", "o3", "o4", "gpt-5", "openai/gpt-oss", "gpt-oss"))
 
 
 _GENERATION = re.compile(r"(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?!\d)")   # a date suffix is not a minor version
@@ -237,17 +246,31 @@ def _openai_error_code(response: httpx.Response) -> str:
     return f"{err.get('code') or ''} {err.get('type') or ''}".strip().lower()
 
 
+# MO2 A: Z.ai's own error codes (docs.z.ai/api-reference/api-code, checked 2026-10-22): 1113 is "insufficient balance or no
+# resource package" (HTTP 429), 1302 "rate limit reached for requests" (HTTP 429).
+_ZAI_NO_CREDIT_CODES = ("1113",)
+_ZAI_RATE_CODES = ("1302",)
+_NO_CREDIT_WORDS = ("insufficient balance", "insufficient credits", "credit balance", "requires more credits", "recharge")
+
+
 def _openai_kind(response: httpx.Response, detail: str = "") -> str:
-    """OpenAI: 429 `insufficient_quota` is no credit, any other 429 a rate limit; `model_not_found` a model problem."""
+    """OpenAI: 429 `insufficient_quota` is no credit, any other 429 a rate limit; `model_not_found` a model problem.
+    The OpenAI-compatible providers (MO2 A) map the same way: OpenRouter answers 402 when the account has no credits,
+    Groq and Mistral use the OpenAI status codes, Z.ai sends its own codes (above) with HTTP 429."""
     status = response.status_code
     code = _openai_error_code(response)
+    words = code.split()
+    low = (detail or "").lower()
     if status == 401 or "invalid_api_key" in code:
         return "auth"
-    if "insufficient_quota" in code or "billing" in code or status == 402:
+    if ("insufficient_quota" in code or "billing" in code or status == 402 or any(c in words for c in _ZAI_NO_CREDIT_CODES)
+            or any(w in low for w in _NO_CREDIT_WORDS)):
         return "no_credit"
+    if any(c in words for c in _ZAI_RATE_CODES):
+        return "rate"
     if status == 429:
         return "rate"
-    if status == 404 or "model_not_found" in code:
+    if status == 404 or "model_not_found" in code or "model_decommissioned" in code:
         return "model"
     if status == 403:
         return "auth"
@@ -456,12 +479,31 @@ def _openai_client() -> httpx.AsyncClient:
 
 @dataclass
 class OpenAIProvider:
+    """OpenAI Chat Completions - and, with another `base_url` / `chat_path` (MO2 A, `OPENAI_COMPATIBLE`), the providers
+    that speak the same API: OpenRouter, Groq, Mistral and Z.ai. `max_tokens_field` is the budget parameter the provider
+    documents, `image_as_string` sends the chart as a plain data-URL string (Mistral's documented form) and `headroom`
+    adds the low-effort thinking headroom for providers whose models may reason before answering (C1)."""
     api_key: str = field(repr=False)
     model: str = field(default_factory=lambda: default_models()["openai"]["strong"])
     client: Optional[httpx.AsyncClient] = field(default=None, repr=False)
     name: str = "openai"
     base_url: str = "https://api.openai.com"
     tier: str = "strong"
+    chat_path: str = "/v1/chat/completions"
+    max_tokens_field: str = "max_completion_tokens"
+    image_as_string: bool = False
+    headroom: bool = False
+
+    @property
+    def _url(self) -> str:
+        return f"{self.base_url}{self.chat_path}"
+
+    @property
+    def _free_model(self) -> bool:
+        """OpenRouter's free models (`:free`, the Free Models Router): the call is recorded under the model asked for,
+        so it is priced at zero even when the answer names the free model the router picked."""
+        m = (self.model or "").lower()
+        return m.endswith(":free") or m == "openrouter/free"
 
     def _payload(self, system: str, user: str, budget: int, image_png: Optional[bytes] = None) -> dict:
         # C3: `max_completion_tokens` is the current parameter for every model; reasoning models reject `temperature`
@@ -469,9 +511,10 @@ class OpenAIProvider:
         content: Any = user
         if image_png is not None:
             # BYOK-V2: the chart as a data URL (low detail is enough for a candle chart and costs a fixed few tokens).
+            data_url = f"data:image/png;base64,{_b64(image_png)}"
             content = [{"type": "text", "text": user},
-                       {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{_b64(image_png)}", "detail": "low"}}]
-        payload: dict = {"model": self.model, "max_completion_tokens": budget,
+                       {"type": "image_url", "image_url": data_url if self.image_as_string else {"url": data_url, "detail": "low"}}]
+        payload: dict = {"model": self.model, self.max_tokens_field: budget,
                          "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}]}
         if is_reasoning_model(self.model):
             payload["reasoning_effort"] = _effort_for(self.tier)
@@ -481,7 +524,8 @@ class OpenAIProvider:
 
     def _budget(self, max_tokens: int) -> int:
         # C1 applies here too: on reasoning models `max_completion_tokens` caps the reasoning plus the visible text.
-        return int(max_tokens) + (thinking_headroom(_effort_for(self.tier)) if is_reasoning_model(self.model) else 0)
+        reasons = is_reasoning_model(self.model) or self.headroom
+        return int(max_tokens) + (thinking_headroom(_effort_for(self.tier)) if reasons else 0)
 
     async def complete(self, system: str, user: str, *, max_tokens: int = 2000) -> str:
         return (await self.complete_full(system, user, max_tokens=max_tokens)).text
@@ -493,14 +537,15 @@ class OpenAIProvider:
         spent = Completion(text="", model=self.model, provider=self.name)
         for attempt in range(2):
             try:
-                response = await client.post(f"{self.base_url}/v1/chat/completions", json=self._payload(system, user, budget, image_png), headers=headers,
+                response = await client.post(self._url, json=self._payload(system, user, budget, image_png), headers=headers,
                                              timeout=timeout_for(budget))
             except httpx.HTTPError as exc:
                 raise ProviderError(f"Provider unreachable: {exc.__class__.__name__}", usage=spent, kind="unreachable") from exc
             if response.status_code == 401:
                 raise ProviderError("Provider rejected the API key (401) - re-enter it under Settings", usage=spent, kind="auth")
             if response.status_code == 429:
-                raise ProviderError("Provider rate limit (429) - try again shortly", usage=spent, kind=_openai_kind(response))
+                raise ProviderError("Provider rate limit (429) - try again shortly", usage=spent,
+                                    kind=_openai_kind(response, _error_detail(response, self.api_key)))
             if response.status_code >= 400:
                 detail = _error_detail(response, self.api_key)
                 # C3: the body says which parameter the model rejected; the key is in the header, never in the body.
@@ -525,7 +570,8 @@ class OpenAIProvider:
                 continue
             if not text:
                 raise ProviderError("OpenAI answered without text content", usage=spent)
-            spent.text, spent.stop_reason, spent.model = text, str(choice.get("finish_reason") or "stop"), str(body.get("model") or self.model)
+            answered = self.model if self._free_model else str(body.get("model") or self.model)
+            spent.text, spent.stop_reason, spent.model = text, str(choice.get("finish_reason") or "stop"), answered
             return spent
         raise ProviderError(f"OpenAI's answer was cut off at the token limit twice (model {self.model}); nothing partial is shown", usage=spent)
 
@@ -569,13 +615,13 @@ class OpenAIProvider:
         payload["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["input_schema"]}}
                             for t in tools]
         try:
-            response = await client.post(f"{self.base_url}/v1/chat/completions", json=payload, headers=headers, timeout=timeout_for(budget))
+            response = await client.post(self._url, json=payload, headers=headers, timeout=timeout_for(budget))
         except httpx.HTTPError as exc:
             raise ProviderError(f"Provider unreachable: {exc.__class__.__name__}", kind="unreachable") from exc
         if response.status_code == 401:
             raise ProviderError("Provider rejected the API key (401) - re-enter it under Settings", kind="auth")
         if response.status_code == 429:
-            raise ProviderError("Provider rate limit (429) - try again shortly", kind=_openai_kind(response))
+            raise ProviderError("Provider rate limit (429) - try again shortly", kind=_openai_kind(response, _error_detail(response, self.api_key)))
         if response.status_code >= 400:
             detail = _error_detail(response, self.api_key)
             raise ProviderError(f"Provider error HTTP {response.status_code}: {detail}" if detail else f"Provider error HTTP {response.status_code}",
@@ -589,7 +635,7 @@ class OpenAIProvider:
         raw = body.get("usage") or {}
         usage = Completion(text="", input_tokens=int(raw.get("prompt_tokens") or 0), output_tokens=int(raw.get("completion_tokens") or 0),
                            cache_read_tokens=int((raw.get("prompt_tokens_details") or {}).get("cached_tokens") or 0),
-                           model=str(body.get("model") or self.model), provider=self.name)
+                           model=self.model if self._free_model else str(body.get("model") or self.model), provider=self.name)
         if choice.get("finish_reason") == "length":
             raise ProviderError(f"OpenAI's step was cut off at the token limit (model {self.model})", usage=usage)
         text = message.get("content") or ""
@@ -710,33 +756,111 @@ class GeminiProvider:
         raise ProviderError(f"Gemini's answer was cut off at the token limit twice (model {self.model}); nothing partial is shown", usage=spent)
 
 
-# BYOK-V1: the providers a user may bring their own key for (Settings > AI).
+# BYOK-V1: the providers a user may bring their own key for on the "Vision with your own AI key" card (Settings > AI,
+# without `ai_one_key`). Unchanged by MO2 A, so that card behaves as before.
 BYOK_PROVIDERS = ("anthropic", "openai", "gemini")
 
+# Master Order 2 part A: the OpenAI-compatible providers the Connect AI panel also takes (behind `ai_one_key`). Each one
+# is the existing OpenAIProvider with its own base URL, path and budget parameter. Checked on 2026-10-22. The provider
+# websites could not be opened directly from the build machine that day, so each shape was read from the provider's own
+# published source (its official SDK or docs repository) or, where only the website has it, from a search restricted to
+# the provider's own docs domain:
+# - OpenRouter: POST https://openrouter.ai/api/v1/chat/completions, `Authorization: Bearer`, `max_completion_tokens`
+#   (`max_tokens` deprecated), images as `image_url` parts; 401 / 402 (no credits) / 429. Source: the official SDK
+#   github.com/OpenRouterTeam/python-sdk (src/openrouter/chat.py, sdkconfiguration.py, docs/sdks/chat/README.mdx) and
+#   openrouter.ai/docs/guides/routing/routers/free-router (search; the `openrouter/free` router reads images too).
+# - Groq: POST https://api.groq.com/openai/v1/chat/completions, `Authorization: Bearer`, `max_completion_tokens`
+#   (`max_tokens` deprecated), `reasoning_effort` for gpt-oss. Source: the official SDK github.com/groq/groq-python
+#   (src/groq/_client.py, src/groq/resources/chat/completions.py). Text only here: its vision models change often
+#   (console.groq.com/docs/deprecations), so ATP does not send it charts.
+# - Mistral: POST https://api.mistral.ai/v1/chat/completions, `Authorization: Bearer`, `max_tokens`, images as
+#   `{"type": "image_url", "image_url": "data:image/...;base64,..."}`; Large 3 / Medium 3.1 / Small 3.2 read images.
+#   Source: Mistral's docs source github.com/mistralai/platform-docs-public (quickstarts/studio/
+#   activate-and-generate-api-key, studio/conversations/vision) and github.com/mistralai/client-python.
+# - Z.ai GLM: POST https://api.z.ai/api/paas/v4/chat/completions, `Authorization: Bearer`, `max_tokens`; error codes
+#   1113 (no balance) and 1302 (rate limit) with HTTP 429; GLM-4.5-Flash is free. Source: docs.z.ai (search;
+#   api-reference/llm/chat-completion, api-reference/api-code, guides/llm/glm-4.5). Text only here: its vision models
+#   (GLM-4.6V, GLM-5V-Turbo, github.com/zai-org/GLM-V) were not checked against the API reference.
+# Cloudflare Workers AI is not here yet: its OpenAI-compatible URL needs the account id next to the token
+# (developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility), which one paste cannot carry.
+OPENAI_COMPATIBLE: Dict[str, Dict[str, Any]] = {
+    "openrouter": {"base_url": "https://openrouter.ai", "chat_path": "/api/v1/chat/completions",
+                   "max_tokens_field": "max_completion_tokens", "image_as_string": False, "headroom": True},
+    "groq": {"base_url": "https://api.groq.com", "chat_path": "/openai/v1/chat/completions",
+             "max_tokens_field": "max_completion_tokens", "image_as_string": False, "headroom": True},
+    "mistral": {"base_url": "https://api.mistral.ai", "chat_path": "/v1/chat/completions",
+                "max_tokens_field": "max_tokens", "image_as_string": True, "headroom": False},
+    "zai": {"base_url": "https://api.z.ai", "chat_path": "/api/paas/v4/chat/completions",
+            "max_tokens_field": "max_tokens", "image_as_string": False, "headroom": True},
+}
+# Every provider a user's own key can be for under "Connect AI in one paste" (`ai_one_key`), free Google Gemini first.
+CONNECT_PROVIDERS = ("gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai")
 
-# The BYOK providers that read chart images (all three today; a text-only provider would be left out).
-VISION_PROVIDERS = ("anthropic", "openai", "gemini")
+# The BYOK providers that read chart images. A text-only provider (Groq, Z.ai) is never sent a chart: the vision
+# features refuse it with the plain "cannot read charts" sentence.
+VISION_PROVIDERS = ("anthropic", "openai", "gemini", "openrouter", "mistral")
+# The models of each vision provider that read images (its tier models above). A vision call on a model outside its
+# list is moved to the provider's first one.
+VISION_MODELS: Dict[str, Any] = {"mistral": ("mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"),
+                                 "openrouter": ("openrouter/free", "openrouter/auto")}
 
 
-def build_byok_provider(name: str, api_key: str, model: str, client: Optional[Any] = None, *, task: Optional[str] = None) -> VisionProvider:
+# A provider whose default models are free ones that may train on what they are sent (OpenRouter's Free Models Router):
+# once the user confirms the key is on a paid plan, the calls go to its paid router instead
+# (`AI_OPENROUTER_PAID_MODEL` overrides it), so "paid plan" really means paid models - ATP's private method is never
+# sent to a free model.
+PAID_MODELS: Dict[str, str] = {"openrouter": "openrouter/auto"}
+
+
+def paid_model(provider: str) -> Optional[str]:
+    default = PAID_MODELS.get(provider)
+    if default is None:
+        return None
+    return str(os.environ.get(f"AI_{provider.upper()}_PAID_MODEL") or default).strip()
+
+
+def vision_model(provider: str, model: str) -> str:
+    """The model a chart goes to: `model` when the provider's vision list has it (or has no list), else its first one."""
+    allowed = VISION_MODELS.get(provider)
+    if not allowed or model in allowed:
+        return model
+    return str(os.environ.get(f"AI_{provider.upper()}_VISION_MODEL") or allowed[0]).strip()
+
+
+def build_byok_provider(name: str, api_key: str, model: str, client: Optional[Any] = None, *, task: Optional[str] = None,
+                        vision: bool = False, paid: bool = False) -> VisionProvider:
     """BYOK-V1: one user's provider, on that user's key and chosen model, at the cheap tier (low effort). `client` is the
     Anthropic SDK http client or an `httpx.AsyncClient` (tests hand in mock transports). Never falls back to another key.
     Settings redesign A (R3): with `task`, the model and effort follow the task's tier (TASK_TIERS, the same tiers as the
-    organisation's key; Gemini has its own tier models) and `model` is ignored - a user never picks a model."""
+    organisation's key; Gemini has its own tier models) and `model` is ignored - a user never picks a model.
+    MO2 A: the OpenAI-compatible providers (OPENAI_COMPATIBLE) run on OpenAIProvider with their own URL; an empty
+    `model` takes the tier's model; `vision=True` refuses a text-only provider (kind `no_vision`) and keeps the call on
+    a model that reads images; `paid=True` (the user confirmed a paid plan) moves a free-model provider to its paid
+    router (PAID_MODELS)."""
     name = (name or "").lower()
     if not api_key:
         raise ProviderError("No API key stored for this provider", kind="auth")
+    if vision and name not in VISION_PROVIDERS:
+        raise ProviderError("This provider cannot read chart images", kind="no_vision")
     tier = "cheap"
     if task is not None:
         tier = TASK_TIERS.get(task, "strong")
         model = default_models().get(name, {}).get(tier) or model
+    model = model or default_models().get(name, {}).get(tier, "")
+    if paid and paid_model(name):
+        model = str(paid_model(name))
+    if vision:
+        model = vision_model(name, model)
     if name == "anthropic":
         return AnthropicProvider(api_key=api_key, model=model, http_client=client, effort=EFFORT_FOR_TIER[tier], tier=tier)
     if name == "openai":
         return OpenAIProvider(api_key=api_key, model=model, client=client, tier=tier)
     if name == "gemini":
         return GeminiProvider(api_key=api_key, model=model, client=client, tier=tier)
-    raise ProviderError(f"Unknown provider '{name}'; one of {BYOK_PROVIDERS}")
+    spec = OPENAI_COMPATIBLE.get(name)
+    if spec is not None:
+        return OpenAIProvider(api_key=api_key, model=model, client=client, name=name, tier=tier, **spec)
+    raise ProviderError(f"Unknown provider '{name}'; one of {CONNECT_PROVIDERS}")
 
 
 @dataclass

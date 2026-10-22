@@ -1,4 +1,4 @@
-import type { ByokProviderName } from "../types";
+import type { AiProviderName } from "./keyFormats";
 
 /**
  * Settings redesign part A: the Connect AI panel's server state (GET /api/ai/byok/connection, behind `ai_one_key`).
@@ -6,8 +6,8 @@ import type { ByokProviderName } from "../types";
  */
 export interface AiConnection {
   connected: boolean;
-  provider: ByokProviderName | null;
-  /** The plain name: Claude / OpenAI / Google Gemini. */
+  provider: AiProviderName | null;
+  /** The plain name: Claude / OpenAI / Google Gemini / OpenRouter / Groq / Mistral / Z.ai GLM. */
   label: string | null;
   key_end: string | null;
   /** The last test: true, false, or null (not tested yet). */
@@ -20,6 +20,10 @@ export interface AiConnection {
   paid_plan: boolean;
   paid_plan_text?: string | null;
   free_tier_warning: string | null;
+  /** MO2 part A: whether the vision features (chart analysis) can use this key; null when not connected. */
+  vision?: boolean | null;
+  /** MO2 part A: the provider's one-line data term. */
+  privacy?: string | null;
   limits: AiLimits;
   /** "Use this key for your account too" - only for the owner who entered the organisation's key. */
   copy_tenant_key: { label: string } | null;

@@ -5,9 +5,16 @@ the authority. The order of `PREFIXES` matters (first match wins):
 
 1. Things people paste that are not API keys are refused first: sign-in sessions, OAuth access / refresh tokens and
    cookies (a subscription such as Claude Pro cannot be used by another app), JWTs, and organisation admin keys.
-2. Keys of services ATP does not take yet (OpenRouter `sk-or-`, Groq `gsk_`, xAI `xai-`) are refused with a plain
-   "not supported yet" line - never read as an OpenAI key because they happen to start with `sk-`.
+2. Master Order 2 part A: OpenRouter `sk-or-` and Groq `gsk_` are providers of their own (OpenAI-compatible APIs) -
+   matched BEFORE the plain `sk-` row, so they are never read as an OpenAI key. Keys of services ATP does not take
+   (xAI `xai-`) are refused with a plain "not supported" line.
 3. `sk-ant-` is Anthropic; `sk-proj-`, `sk-svcacct-` and any other `sk-` is OpenAI; `AIza` is Google Gemini.
+4. Mistral and Z.ai keys have no fixed prefix: they come out "unknown" and the panel's small picker asks which service
+   the key is from (unknown formats always get the picker).
+
+`PROVIDER_FACTS` is the one table of what the Connect AI panel and the key guides say about each provider: the plain
+name, the "Free tier" and "Reads charts (vision)" tags, whether its free tier may train on what it is sent (R4 / SR-2:
+ATP's private-method features refuse such a key until the user confirms a paid plan) and the one-line data term.
 
 `backend/tests/fixtures/key_formats.json` holds the same table and the test cases; the frontend's
 `src/aiKeys/keyFormats.ts` reads a byte-identical copy (`src/aiKeys/__fixtures__/key_formats.json`), so the two sides
@@ -18,7 +25,7 @@ Nothing here keeps, logs or echoes a key.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple
 
 Kind = Literal["provider", "unsupported", "session", "admin", "unknown", "empty"]
 
@@ -34,8 +41,8 @@ PREFIXES: Tuple[Tuple[str, str, str, str], ...] = (
     ("bearer ", "session", "", "sign-in token"),
     ("sk-ant-admin", "admin", "", "Anthropic admin key"),
     ("sk-admin-", "admin", "", "OpenAI admin key"),
-    ("sk-or-", "unsupported", "", "OpenRouter"),
-    ("gsk_", "unsupported", "", "Groq"),
+    ("sk-or-", "provider", "openrouter", "OpenRouter"),
+    ("gsk_", "provider", "groq", "Groq"),
     ("xai-", "unsupported", "", "xAI"),
     ("sk-ant-", "provider", "anthropic", "Claude"),
     ("sk-proj-", "provider", "openai", "OpenAI"),
@@ -46,16 +53,42 @@ PREFIXES: Tuple[Tuple[str, str, str, str], ...] = (
 # Words that only appear in a pasted cookie / token, never in an API key.
 SESSION_MARKERS = ("session", "cookie", "oauth", "refresh_token", "access_token")
 
-PROVIDER_NAMES = {"anthropic": "Claude", "openai": "OpenAI", "gemini": "Google Gemini"}
+# Master Order 2 part A: what each provider is, in the words the panel and the guides use. Sources and the day they were
+# checked are on each provider's request shape in app/ai/providers.py (OPENAI_COMPATIBLE) and in the key guides
+# (frontend/src/aiKeys/guides.ts `checked_on`).
+# - free_tier: a key works without paying (with low limits). vision: ATP sends chart images to it.
+# - may_train: its free tier may use what it is sent to improve or train models (unknown counts as yes).
+PROVIDER_FACTS: Dict[str, Dict[str, Any]] = {
+    "gemini": {"name": "Google Gemini", "free_tier": True, "vision": True, "may_train": True,
+               "privacy": "On the free tier Google may use what you send to improve its products. A key with billing turned on is not used that way."},
+    "anthropic": {"name": "Claude", "free_tier": False, "vision": True, "may_train": False,
+                  "privacy": "Anthropic says it does not train its models on what you send through an API key."},
+    "openai": {"name": "OpenAI", "free_tier": False, "vision": True, "may_train": False,
+               "privacy": "OpenAI says it does not train its models on what you send through an API key unless you opt in."},
+    "openrouter": {"name": "OpenRouter", "free_tier": True, "vision": True, "may_train": True,
+                   "privacy": "OpenRouter passes your request to another company's model. Some free models keep and use what you send."},
+    "groq": {"name": "Groq", "free_tier": True, "vision": False, "may_train": False,
+             "privacy": "Groq says it does not keep what you send by default."},
+    "mistral": {"name": "Mistral", "free_tier": True, "vision": True, "may_train": True,
+                "privacy": "On the free plan Mistral may use what you send to improve its models unless you opt out in its settings."},
+    "zai": {"name": "Z.ai GLM", "free_tier": True, "vision": False, "may_train": True,
+            "privacy": "Z.ai does not say clearly what its free models keep, so AiAlgoDesk treats them as if they may use what you send."},
+}
+PROVIDER_NAMES = {provider: str(facts["name"]) for provider, facts in PROVIDER_FACTS.items()}
 # Review R4 / SR-2: a provider whose free tier may use what is sent to train its models. ATP's private method prompts
 # (chart analysis) never go to such a key until the user confirms the key is on a paid plan.
-MAY_TRAIN_ON_FREE_TIER = {"anthropic": False, "openai": False, "gemini": True}
+MAY_TRAIN_ON_FREE_TIER = {provider: bool(facts["may_train"]) for provider, facts in PROVIDER_FACTS.items()}
+# The providers the Connect AI panel takes (behind `ai_one_key`), in the order the picker and the guides show them:
+# free Google Gemini first.
+CONNECT_ORDER = ("gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai")
+# The ones whose keys have no fixed prefix (or a prefix-less format), offered by the picker for an unknown key.
+PICKER_ORDER = ("gemini", "anthropic", "openai", "mistral", "zai")
 
 
 @dataclass(frozen=True)
 class Detection:
     kind: Kind
-    provider: Optional[str] = None      # anthropic / openai / gemini when kind == "provider"
+    provider: Optional[str] = None      # a PROVIDER_FACTS id when kind == "provider"
     name: str = ""                      # the plain name of what was pasted
 
 
@@ -93,3 +126,8 @@ def detect_provider(raw: Optional[str]) -> Detection:
 def table() -> list:
     """The table as plain rows (the shared fixture holds the same list)."""
     return [{"prefix": p, "kind": k, "provider": prov or None, "name": n} for p, k, prov, n in PREFIXES]
+
+
+def facts() -> Dict[str, Dict[str, Any]]:
+    """The provider facts as plain rows (the shared fixture holds the same table)."""
+    return {provider: dict(row) for provider, row in PROVIDER_FACTS.items()}

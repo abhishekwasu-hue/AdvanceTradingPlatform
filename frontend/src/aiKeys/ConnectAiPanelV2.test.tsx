@@ -58,18 +58,18 @@ describe("Connect AI panel: not connected", () => {
     expect(text(view({ raw: geminiKey() }))).toContain("Free keys from Google Gemini may be used to train its models.");
   });
 
-  it("an unknown format gets the small picker of the three services", () => {
+  it("an unknown format gets the small picker (MO2 A: Mistral and Z.ai GLM keys have no prefix)", () => {
     const html = view({ raw: "FAKEFAKE-no-known-prefix-000000000000" });
     expect(html).toContain("data-picker");
     expect(text(html)).toContain("Which service is this key from?");
-    for (const name of ["Google Gemini", "Claude", "OpenAI"]) expect(text(html)).toContain(name);
+    for (const name of ["Google Gemini", "Claude", "OpenAI", "Mistral", "Z.ai GLM"]) expect(text(html)).toContain(name);
     expect(html).not.toContain("data-consent");
     expect(text(view({ raw: "FAKEFAKE-no-known-prefix-000000000000", picked: "openai" }))).toContain("sent to OpenAI");
   });
 
-  it("an OpenRouter key gets the plain not-supported line and no consent", () => {
-    const html = view({ raw: ["sk", "-or-", "v1-", "FAKEFAKE0000000000000000"].join("") });
-    expect(text(html)).toContain("AiAlgoDesk cannot use OpenRouter keys yet");
+  it("an xAI key gets the plain not-supported line and no consent (MO2 A: OpenRouter and Groq keys are taken)", () => {
+    const html = view({ raw: ["xai", "-", "FAKEFAKE0000000000000000"].join("") });
+    expect(text(html)).toContain("AiAlgoDesk cannot use xAI keys. Use a key from Google Gemini, Claude, OpenAI, OpenRouter, Groq, Mistral or Z.ai.");
     expect(html).not.toContain("data-consent");
   });
 

@@ -172,6 +172,7 @@ import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 import type { LegalAckBody, LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
 import type { SupportReply } from "../support/support";
 import { CONNECT_AI_EVENT, isNotConnected, type AiConnection } from "../aiKeys/connect";
+import type { AiProviderName } from "../aiKeys/keyFormats";
 import type { MarketStrip } from "../dashboard/types";
 import type { ChainExpiries, LiveChain } from "../optionChain/types";
 
@@ -869,7 +870,7 @@ export const api = {
   byokDeleteReport: (id: number) => request<{ deleted: number }>(`/ai/byok/reports/${id}`, { method: "DELETE" }),
   // Settings redesign A: "Connect AI in one paste" (404 while ai_one_key is off). The key is sent once and never comes back.
   aiConnection: () => request<AiConnection>("/ai/byok/connection"),
-  aiConnect: (body: { api_key: string; provider?: ByokProviderName; consent: boolean }) =>
+  aiConnect: (body: { api_key: string; provider?: AiProviderName; consent: boolean }) =>
     request<AiConnection>("/ai/byok/connect", { method: "POST", body: JSON.stringify(body) }),
   aiDisconnect: () => request<AiConnection>("/ai/byok/connection", { method: "DELETE" }),
   aiSaveLimits: (body: { daily_inr?: number; monthly_inr?: number }) =>

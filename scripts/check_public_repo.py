@@ -129,8 +129,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/tests/fixtures/zones/chart_bands_cases.json": "66a90beb9b4e75201b937005f46ad53e81494bdc19b5520458b25958eb7c3436",
     "frontend/src/charting/__fixtures__/chart_bands_cases.json": "66a90beb9b4e75201b937005f46ad53e81494bdc19b5520458b25958eb7c3436",
     # Settings redesign A: the AI key-format table and its cases (obviously fake keys only), backend + byte-identical copy
-    "backend/tests/fixtures/key_formats.json": "6d8d82749a43606325a0341641074f3461d3958345a348de07a2bd09d10ebdb0",
-    "frontend/src/aiKeys/__fixtures__/key_formats.json": "6d8d82749a43606325a0341641074f3461d3958345a348de07a2bd09d10ebdb0",
+    "backend/tests/fixtures/key_formats.json": "9eca4977c4c6c89bf6876b40938aef29caabba46227e2266144958ee1462f5da",
+    "frontend/src/aiKeys/__fixtures__/key_formats.json": "9eca4977c4c6c89bf6876b40938aef29caabba46227e2266144958ee1462f5da",
     # made-up rows in NSE's file layouts (the universe importer's tests)
     "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
     "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",

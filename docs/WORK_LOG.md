@@ -2477,3 +2477,29 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   setup-v2, tours-v2, dashboard-v2, front-page, copilot-chat-v2. Baselines `settings-index-v2-*`,
   `settings-<ai|alerts|appearance|help|advanced|account>-v2-*` (360 / 390 / 1440, light / dark), regenerated
   `connect-ai-v2-settings-*`, `key-guide-v2-1440-*`. Before shots: docs/screenshots/settings-b/.
+
+## 2026-10-22 - Master Order 2 part A: AI provider choice with free options (behind ui_v2 + ai_one_key)
+
+- Branch `claude/mo2a-ai-providers`. No migration (provider ids fit `user_ai_keys.provider` String(20)). Owner questions
+  MO2A-1..8 (OPEN_QUESTIONS) on their provisional defaults.
+- Providers added to "Connect AI in one paste": OpenRouter (`sk-or-`, Free Models Router `openrouter/free`; after "My key
+  is on a paid plan" the Auto Router), Groq (`gsk_`, gpt-oss tiers, text only), Mistral (no prefix -> picker; Large /
+  Medium / Small, reads charts), Z.ai GLM (`<id>.<secret>`, no prefix -> picker; GLM-4.6 / GLM-4.5-Flash, text only).
+  Cloudflare Workers AI not added (needs an account id next to the token; MO2A-2). Each runs on the existing
+  `OpenAIProvider` with its own URL / path / budget field (`OPENAI_COMPATIBLE`, sources and the date in the comment).
+- Backend: `key_formats.py` (`sk-or-` / `gsk_` are providers; `PROVIDER_FACTS`: name, free tier, vision, may train, data
+  line; `CONNECT_ORDER`, `PICKER_ORDER`) + the shared fixture (re-pinned); `providers.py` (tier models, `VISION_PROVIDERS`
+  / `VISION_MODELS`, `vision=` refuses a text-only provider before any call, `paid=` moves a free-model provider to paid
+  models, Z.ai error codes 1113 / 1302, OpenRouter 402, Groq `model_decommissioned`); `byok.py` (`validate_key_shape(one_key=)`,
+  Z.ai's one dot, `active_provider(allowed=)` keeps the Vision card / Vision reviews / the older chart path on their three,
+  `connection()` gains `vision` and `privacy`, the no-vision sentence names OpenRouter and Mistral); `resolve.py` (vision
+  and paid flags); `pricing.py` (free models at zero, upper-bound rows for the paid ones); the picker route takes the new ids.
+- Frontend: `keyFormats.ts` (`AiProviderName`, `PROVIDER_FACTS` from the fixture), `guides.ts` (four new guides,
+  `VISION_CARD_GUIDES`, the order's privacy notice), `KeyGuidesV2.tsx` (drawer: every provider with "Free tier" / "Paid",
+  "Reads charts (vision)", "May train on free keys", the data line; with the paste helper the three as before),
+  `ConnectAiPanelV2.tsx` (`ProviderTerms` before saving; connected: data line + cannot-read-charts), `detect.ts` (the
+  Vision card's helper still refuses OpenRouter / Groq keys as before).
+- Tests: backend `test_mo2a_ai_providers.py` (+ updated `test_settings_a_connect_ai.py`); vitest `mo2aProviders.test.tsx`
+  (+ updated aiKeys / keyFormats / ConnectAiPanelV2 tests); e2e `connect-ai-v2.e2e.ts` (MO2 A flows; the consent tick
+  uses click, the panel saves at once) and `key-guides-v2.e2e.ts` (flags-off case). New baselines
+  `connect-ai-v2-paste-groq-*`, `connect-ai-v2-guides-drawer-*` (360 / 390 / 1440, light / dark); no existing baseline changed.

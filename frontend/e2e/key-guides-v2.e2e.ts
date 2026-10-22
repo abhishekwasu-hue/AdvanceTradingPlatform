@@ -110,6 +110,17 @@ test.describe("key guides 1440", () => {
     await expect(page.locator("body")).not.toContainText(key);
   });
 
+  test("MO2 A: without ai_one_key the guides stay the three this card takes, and an OpenRouter key is still refused", async ({ page }) => {
+    await open(page);
+    const order = await guides(page).locator("[data-provider]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-provider")));
+    expect(order).toEqual(["gemini", "anthropic", "openai"]);
+    await expect(guides(page).locator("[data-tag]")).toHaveCount(0);
+    await guides(page).getByRole("button", { name: "Start with free Google Gemini" }).click();
+    await page.getByLabel("Paste your Google Gemini key").fill(["sk", "-or-", "v1-", fill(40)].join(""));
+    await expect(page.locator("[data-key-warning]")).toContainText("AiAlgoDesk cannot use OpenRouter keys yet");
+    await expect(page.getByRole("button", { name: "Save and test" })).toBeDisabled();
+  });
+
   test("BYOK off: the guides still show and the helper says the key cannot be saved yet", async ({ page }) => {
     await open(page, { byok: false });
     await guides(page).getByRole("button", { name: "Start with free Google Gemini" }).click();

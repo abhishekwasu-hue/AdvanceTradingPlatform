@@ -47,7 +47,7 @@ async def connect_owner(user: User = Depends(require_owner), session: AsyncSessi
 class ConnectBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     api_key: str = Field(min_length=1, max_length=512, repr=False)
-    provider: Optional[str] = Field(default=None, pattern=r"^(anthropic|openai|gemini)$",
+    provider: Optional[str] = Field(default=None, pattern=r"^(anthropic|openai|gemini|openrouter|groq|mistral|zai)$",
                                     description="only when the key's format did not say (the small picker)")
     consent: bool = False
 

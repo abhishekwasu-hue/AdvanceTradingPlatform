@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import key_formats, pricing
 from app.ai import providers as ai_providers
 from app.ai.metering import log_call, month_start
-from app.ai.providers import BYOK_PROVIDERS, Completion, ProviderError
+from app.ai.providers import BYOK_PROVIDERS, CONNECT_PROVIDERS, Completion, ProviderError
 from app.audit.log import write_audit_log
 from app.core import config
 from app.db.models import AiProviderConfigRecord, LlmCallRecord, User, UserAiKeyRecord, UserVisionPrefsRecord
@@ -64,7 +64,7 @@ PLAIN_ERRORS = {
     "auth": "This key did not work. Check that you copied all of it.",
     "no_credit": "This key has no credit left.",
     "rate": "Too many requests. Try again in a minute.",
-    "no_vision": "This provider cannot read charts. Vision needs Gemini, Claude or OpenAI.",
+    "no_vision": "This provider cannot read charts. Vision needs Gemini, Claude, OpenAI, OpenRouter or Mistral.",
     "model": "This provider could not answer right now. Try again later.",
     "unreachable": "The AI service could not be reached. Try again in a minute.",
     "other": "The AI service did not answer. Try again in a minute.",
@@ -97,10 +97,13 @@ SESSION_TOKEN_MESSAGE = ("This looks like a sign-in session, cookie or OAuth tok
 MIN_KEY_LENGTH = 20
 MAX_KEY_LENGTH = 256
 _KEY_CHARS = re.compile(r"^[A-Za-z0-9_-]+$")
+# MO2 A: a Z.ai key is two parts joined by one dot (`<id>.<secret>`); only that provider's key may carry the dot.
+_ZAI_KEY_CHARS = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 # The prefixes of things people paste that are not API keys (sign-in sessions, OAuth tokens, admin keys) and of every
 # provider's keys live in ONE table: app/ai/key_formats.py (review R5).
 _SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_\-]{4,}"),
+    re.compile(r"\bgsk_[A-Za-z0-9_\-]{4,}"),
     re.compile(r"AIza[0-9A-Za-z_\-]{8,}"),
     re.compile(r"ya29\.[0-9A-Za-z_\-.]+"),
     re.compile(r"(?i)bearer\s+\S+"),
@@ -130,12 +133,14 @@ def _looks_like_session_token(key: str) -> bool:
     return key_formats.looks_like_session(key)
 
 
-def validate_key_shape(provider: str, raw: Optional[str]) -> str:
+def validate_key_shape(provider: str, raw: Optional[str], *, one_key: bool = False) -> str:
     """The cleaned key, or ByokError. Refuses session cookies / OAuth / subscription tokens, admin keys, the wrong
-    provider's key and anything outside the length or character limits."""
+    provider's key and anything outside the length or character limits. MO2 A: `one_key` (the Connect AI panel, behind
+    `ai_one_key`) also takes the OpenAI-compatible providers; without it only the Vision card's three, as before."""
     provider = (provider or "").lower()
-    if provider not in BYOK_PROVIDERS:
-        raise ByokError(f"Unknown provider; one of {', '.join(BYOK_PROVIDERS)}")
+    allowed = CONNECT_PROVIDERS if one_key else BYOK_PROVIDERS
+    if provider not in allowed:
+        raise ByokError(f"Unknown provider; one of {', '.join(allowed)}")
     key = (raw or "").strip()
     if not key:
         raise ByokError("Paste an API key")
@@ -143,13 +148,19 @@ def validate_key_shape(provider: str, raw: Optional[str]) -> str:
         raise ByokError(SESSION_TOKEN_MESSAGE)
     if len(key) < MIN_KEY_LENGTH or len(key) > MAX_KEY_LENGTH:
         raise ByokError(f"An API key is {MIN_KEY_LENGTH} to {MAX_KEY_LENGTH} characters long")
-    if not _KEY_CHARS.match(key):
+    if not (_KEY_CHARS.match(key) or (provider == "zai" and _ZAI_KEY_CHARS.match(key))):
         raise ByokError("An API key contains only letters, digits, '-' and '_' - paste the key alone, without quotes or spaces")
     found = key_formats.detect_provider(key)
     if found.kind == "admin":
         raise ByokError("This is an organisation admin key. Use a standard API key from the provider's console")
     if found.kind == "unsupported":
+        raise ByokError(unsupported_message(found.name, one_key=one_key))
+    if found.provider and found.provider not in BYOK_PROVIDERS and not one_key:
+        # The Vision card (no `ai_one_key`): an OpenRouter / Groq key is refused with the same line as before MO2 A.
         raise ByokError(unsupported_message(found.name))
+    if provider in key_formats.PROVIDER_FACTS and provider not in BYOK_PROVIDERS:
+        _check_compatible_key(provider, found)
+        return key
     if provider == "anthropic" and found.provider != "anthropic":
         raise ByokError("An Anthropic API key starts with 'sk-ant-'")
     if provider == "openai" and found.provider != "openai":
@@ -159,9 +170,28 @@ def validate_key_shape(provider: str, raw: Optional[str]) -> str:
     return key
 
 
-def unsupported_message(name: str) -> str:
+def unsupported_message(name: str, *, one_key: bool = False) -> str:
     article = "an" if name[:1].upper() in "AEIOU" else "a"
+    if one_key:
+        return f"This looks like {article} {name} key. AiAlgoDesk cannot use {name} keys. {ONE_KEY_PROVIDERS_LINE}"
     return f"This looks like {article} {name} key. AiAlgoDesk cannot use {name} keys yet. Use a Claude, OpenAI or Google Gemini key."
+
+
+ONE_KEY_PROVIDERS_LINE = "Use a key from Google Gemini, Claude, OpenAI, OpenRouter, Groq, Mistral or Z.ai."
+_KEY_PREFIX_LINES = {"openrouter": "An OpenRouter key starts with 'sk-or-'", "groq": "A Groq key starts with 'gsk_'"}
+
+
+def _check_compatible_key(provider: str, found: "key_formats.Detection") -> None:
+    """MO2 A: an OpenRouter / Groq key has its own prefix; a Mistral / Z.ai key has none, so another provider's prefix
+    is the only thing that can be wrong with it."""
+    if provider in _KEY_PREFIX_LINES:
+        if found.provider != provider:
+            raise ByokError(_KEY_PREFIX_LINES[provider])
+        return
+    if found.provider is not None:
+        name = key_formats.PROVIDER_NAMES.get(provider, provider)
+        article = "an" if found.name[:1].upper() in "AEIOU" else "a"
+        raise ByokError(f"This looks like {article} {found.name} key, not a {name} key")
 
 
 def key_hint(key: str) -> str:
@@ -274,14 +304,17 @@ async def byok_spend(session: AsyncSession, user_id: int, provider: Optional[str
     return float(await session.scalar(query) or 0.0)
 
 
-def active_provider(prefs: Optional[UserVisionPrefsRecord], keys: List[UserAiKeyRecord], requested: Optional[str] = None) -> Optional[str]:
+def active_provider(prefs: Optional[UserVisionPrefsRecord], keys: List[UserAiKeyRecord], requested: Optional[str] = None, *,
+                    allowed: Tuple[str, ...] = BYOK_PROVIDERS) -> Optional[str]:
     """The provider the user's charts go to: the one asked for, else the one chosen in the prefs, else the first with a
-    key. None when that provider has no key."""
-    have = {k.provider for k in keys}
+    key. None when that provider has no key. MO2 A: `allowed` is the Vision card's three by default, so the Vision
+    reviews and the older chart path never send a chart (or ATP's method) to a provider added for the Connect AI panel;
+    `connected_key` passes every Connect AI provider."""
+    have = {k.provider for k in keys if k.provider in allowed}
     wanted = requested or (prefs.provider if prefs is not None else None)
     if wanted:
         return wanted if wanted in have else None
-    return next((p for p in BYOK_PROVIDERS if p in have), None)
+    return next((p for p in allowed if p in have), None)
 
 
 async def cap_block(session: AsyncSession, user: User, prefs: Optional[UserVisionPrefsRecord], *, now: Optional[datetime] = None,
@@ -338,9 +371,10 @@ def _forget_health(user: User) -> None:
     setup_health.forget(user.tenant_id, user.id)
 
 
-async def save_key(session: AsyncSession, user: User, *, provider: str, api_key: str, model: Optional[str] = None) -> UserAiKeyRecord:
+async def save_key(session: AsyncSession, user: User, *, provider: str, api_key: str, model: Optional[str] = None,
+                   one_key: bool = False) -> UserAiKeyRecord:
     provider = (provider or "").lower()
-    key = validate_key_shape(provider, api_key)
+    key = validate_key_shape(provider, api_key, one_key=one_key)
     chosen = clean_model(provider, model)
     record = await get_key(session, user, provider)
     if record is None:
@@ -573,7 +607,7 @@ async def connected_key(session: AsyncSession, user: User) -> Optional[UserAiKey
     """The key every AI feature of this user runs on: the provider chosen in the prefs, else the first one with a key.
     "Connected" is only this - a row in `user_ai_keys` (review R2); the Vision switch plays no part."""
     keys = await list_keys(session, user)
-    provider = active_provider(await get_prefs(session, user), keys)
+    provider = active_provider(await get_prefs(session, user), keys, allowed=CONNECT_PROVIDERS)
     return next((k for k in keys if k.provider == provider), None) if provider else None
 
 
@@ -643,6 +677,7 @@ async def connection(session: AsyncSession, user: User, *, now: Optional[datetim
     offer = await _tenant_key_offer(session, user)
     out: Dict[str, Any] = {"connected": record is not None, "provider": None, "label": None, "key_end": None, "ok": None, "error": None,
                            "tested_at": None, "consent": None, "may_train": False, "paid_plan": True, "free_tier_warning": None,
+                           "vision": None, "privacy": None,
                            "limits": limits,
                            "copy_tenant_key": ({"label": CONNECT_LABELS.get(offer.provider, offer.provider)} if offer is not None else None)}
     if record is None:
@@ -659,7 +694,10 @@ async def connection(session: AsyncSession, user: User, *, now: Optional[datetim
                consent={"accepted": consent_ok, "text": terms.byok_text(terms.KIND_BYOK, label)},
                may_train=may_train, paid_plan=await paid_plan_confirmed(session, user, record),
                paid_plan_text=terms.byok_text(terms.KIND_BYOK_PAID, label) if may_train else None,
-               free_tier_warning=FREE_TIER_WARNING.format(name=label) if may_train else None)
+               free_tier_warning=FREE_TIER_WARNING.format(name=label) if may_train else None,
+               # MO2 A: whether the vision features can use this key, and the provider's one-line data term.
+               vision=record.provider in ai_providers.VISION_PROVIDERS,
+               privacy=key_formats.PROVIDER_FACTS.get(record.provider, {}).get("privacy"))
     return out
 
 
@@ -681,18 +719,18 @@ async def connect(session: AsyncSession, user: User, *, api_key: str, provider: 
     if found.kind == "admin":
         raise ByokError("This is an organisation admin key. Use a standard API key from the provider's console")
     if found.kind == "unsupported":
-        raise ByokError(unsupported_message(found.name))
+        raise ByokError(unsupported_message(found.name, one_key=True))
     chosen = found.provider or (provider or "").lower()
     if not chosen:
         raise ProviderNeeded("Pick the service this key is from")
     if found.provider and provider and provider.lower() != found.provider:
         chosen = found.provider                          # the key's own format wins over a stale picker choice
-    key = validate_key_shape(chosen, key_formats.clean(api_key))
+    key = validate_key_shape(chosen, key_formats.clean(api_key), one_key=True)
     if not await consent_accepted(session, user, chosen):
         if not consent:
             raise ConsentRequired(consent_line(chosen))
         await accept_consent(session, user, chosen, request=request)
-    await save_key(session, user, provider=chosen, api_key=key)
+    await save_key(session, user, provider=chosen, api_key=key, one_key=True)
     key = ""
     prefs = await _prefs_or_new(session, user)
     prefs.provider = chosen                              # the newest key is the one in use; Vision's own switch is untouched

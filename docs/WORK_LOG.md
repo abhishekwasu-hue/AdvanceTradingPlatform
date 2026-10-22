@@ -2398,3 +2398,22 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: backend `test_tours_prefs.py` (+ the prefs allow-list), vitest `tours.test.tsx`, `aiKeys.test.tsx`; e2e
   `tours-v2.e2e.ts` (the CI check: every step's target visible on 1440 and 390, every step played) and
   `key-guides-v2.e2e.ts`, baselines `tour-welcome-v2-*`, `tour-step-v2-*`, `key-guide-v2-*`. No migration.
+
+## 2026-10-22 - Item 5 (owner's handover): the AI Copilot, second slice - jobs 3, 4, 5 (behind `ui_v2`)
+
+- Branch `claude/copilot-v2-jobs345` (slice 1 is #342 on main). Extends `app/ai/copilot_chat.py`; nothing rewritten.
+- Job 3, pre-trade check: reads the idea from the trader's words (side, entry, invalidation, size, optional objective,
+  entry model) and checks it against the structure per timeframe (with / against), ATP's stored areas (inside an area
+  on / against his side), the protected level, his OWN risk per trade and minimum reward to risk, and this week's
+  events; "What your plan does not say yet" lists the missing parts. No rule of ours, no verdict.
+- Job 4, position watch: new read tool `get_my_positions` (own rows only; structures as one position); warnings only
+  against his own settings or plain facts (open risk vs his portfolio-risk limit, the day's loss vs his daily limit,
+  position count, a widened stop, how far a losing position has moved towards its stop, one-sided book, events and
+  expiries this week, an area against the position). Explanation only.
+- Job 5, post-trade coach: new read tools `get_my_last_trade` (levels planned / executed, result in money and R, how
+  it closed, stop changes, MAE / MFE, journal tags) and `get_weekly_review` (the discipline engine's weekly review +
+  tags repeated across the last four weeks; flag `discipline_engine`). Descriptive only.
+- AI wording of jobs 3-5 must also pass the weekly review's describe-only check; refusals extended ("add lots for me").
+- Evals: 12 new copilot_jobs cases (must-answer, no-data, AI wording kept / rejected) and 13 new copilot_safety cases
+  (refusals + controls) on new synthetic fixtures; pins updated. e2e fixture and two 1440 baselines refreshed (jobs 3-5
+  "Ready"), two new e2e tests. No migration. Questions CP5-6..CP5-10.

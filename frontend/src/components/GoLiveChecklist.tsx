@@ -60,8 +60,8 @@ export default function GoLiveChecklist({ kind, onNavigate }: { kind: "tenant" |
             {ICON[it.status]}
             <div className="min-w-0">
               <span className="text-fg font-semibold">{it.title}</span>
-              {it.scope === "LIVE" && <span className="ml-1 rounded border border-border px-1 text-[10px] text-fg-muted">LIVE</span>}
-              {it.scope === "OPTIONAL" && <span className="ml-1 rounded border border-border px-1 text-[10px] text-fg-muted">optional</span>}
+              {it.scope === "LIVE" && <span className="ml-1 rounded border border-border px-1 text-xs text-fg-muted">LIVE</span>}
+              {it.scope === "OPTIONAL" && <span className="ml-1 rounded border border-border px-1 text-xs text-fg-muted">optional</span>}
               <span className="text-fg-muted"> · {it.detail}</span>
               {it.fix && it.status !== "ok" && (
                 <div className="text-fg-muted">
@@ -69,14 +69,14 @@ export default function GoLiveChecklist({ kind, onNavigate }: { kind: "tenant" |
                   {it.link && onNavigate && PAGE_IDS.has(it.link) && (
                     <button onClick={() => onNavigate(it.link as Page)} className="text-brand hover:underline">Open {it.link}</button>
                   )}
-                  {it.link && !PAGE_IDS.has(it.link) && <code className="text-[10px] text-fg-muted">{it.link}</code>}
+                  {it.link && !PAGE_IDS.has(it.link) && <code className="text-xs text-fg-muted">{it.link}</code>}
                 </div>
               )}
             </div>
           </li>
         ))}
       </ul>
-      {data && <div className="mt-2 text-[10px] text-fg-muted">{data.note}</div>}
+      {data && <div className="mt-2 text-xs text-fg-muted">{data.note}</div>}
     </Card>
   );
 }

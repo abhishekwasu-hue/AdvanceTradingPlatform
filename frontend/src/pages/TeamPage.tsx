@@ -17,7 +17,7 @@ function RoleBadge({ role }: { role: TenantRole }) {
       : role === "SUPER_ADMIN" ? "border-brand text-brand bg-brand/15"
         : role === "VIEWER" || role === "SUPPORT" ? "border-border text-fg-muted bg-surface-2"
           : "border-border text-fg bg-surface-2";
-  return <span className={`inline-block rounded-md border px-2 py-0.5 text-[11px] font-bold ${cls}`}>{ROLE_LABELS[role] ?? role}</span>;
+  return <span className={`inline-block rounded-md border px-2 py-0.5 text-xs font-bold ${cls}`}>{ROLE_LABELS[role] ?? role}</span>;
 }
 
 export default function TeamPage() {
@@ -160,7 +160,7 @@ export default function TeamPage() {
           )}
           {invites.length > 0 && (
             <table className="w-full text-xs mt-4">
-              <thead className="text-fg-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Pending</th><th className="py-1 pr-3">Role</th><th className="py-1 pr-3">Expires</th><th /></tr></thead>
+              <thead className="text-fg-muted uppercase text-xs tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Pending</th><th className="py-1 pr-3">Role</th><th className="py-1 pr-3">Expires</th><th /></tr></thead>
               <tbody>
                 {invites.map((i) => (
                   <tr key={i.id} className="border-t border-border">
@@ -178,7 +178,7 @@ export default function TeamPage() {
 
       <Card title={`Members (${members.length})`}>
         <table className="w-full text-xs">
-          <thead className="text-fg-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Email</th><th className="py-1 pr-3">Role</th><th className="py-1 pr-3">Joined</th><th className="py-1 pr-3">Status</th>{isOwner && <th className="py-1 text-right">Actions</th>}</tr></thead>
+          <thead className="text-fg-muted uppercase text-xs tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Email</th><th className="py-1 pr-3">Role</th><th className="py-1 pr-3">Joined</th><th className="py-1 pr-3">Status</th>{isOwner && <th className="py-1 text-right">Actions</th>}</tr></thead>
           <tbody>
             {members.map((m) => (
               <tr key={m.id} className="border-t border-border">
@@ -191,7 +191,7 @@ export default function TeamPage() {
                   ) : <RoleBadge role={m.role} />}
                 </td>
                 <td className="py-1.5 pr-3 text-fg-muted">{new Date(m.created_at).toLocaleDateString()}</td>
-                <td className={`py-1.5 pr-3 ${m.is_active ? "text-up" : "text-fg-muted"}`}>{m.is_active ? "active" : "removed"}{m.trading_disabled_reason && <div className="text-[10px] text-warn" title={m.trading_disabled_reason}>trading disabled</div>}</td>
+                <td className={`py-1.5 pr-3 ${m.is_active ? "text-up" : "text-fg-muted"}`}>{m.is_active ? "active" : "removed"}{m.trading_disabled_reason && <div className="text-xs text-warn" title={m.trading_disabled_reason}>trading disabled</div>}</td>
                 {isOwner && (
                   <td className="py-1.5 text-right">
                     {m.id !== user.id && m.role !== "SUPER_ADMIN" && m.is_active && (

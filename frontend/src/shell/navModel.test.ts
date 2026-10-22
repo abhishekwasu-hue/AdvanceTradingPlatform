@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { PAGES } from "../routes";
 import {
-  BOTTOM_BAR_V2, NAV_EXTRAS_V2, NAV_SECTIONS_V2, allNavItems, isItemVisible, moreSheetSections, navItemFor, searchPages,
-  sectionOf, visibleSections, type NavContext,
+  BOTTOM_BAR_V2, NAV_EXTRAS_V2, NAV_PINNED_V2, NAV_SECTIONS_V2, allNavItems, isItemVisible, moreButtonDot, moreSheetPinned,
+  moreSheetSections, navDotFor, navItemFor, searchPages, sectionOf, visibleSections, visiblePinned, type NavContext,
 } from "./navModel";
+import { brokerDot } from "../broker/brokerState";
+import type { BrokerConnection } from "../types";
 import { shellKeyFromPath } from "./shellRoutes";
 
 const flags = (...on: string[]) => (f: string) => on.includes(f);
@@ -139,7 +141,56 @@ describe("UI2-1 page search (More sheet and command bar)", () => {
   it("the merged pages' extras live at their new addresses", () => {
     expect(NAV_EXTRAS_V2.map((e) => [e.key, e.path])).toEqual([
       ["scanner", "/screener/custom"], ["options-builder", "/option-chain/plan"], ["chart-analyze", "/chart-analyze"], ["coach", "/coach"],
-      ["account", "/settings/account"],
+      ["account", "/settings/account"], ["setup", "/settings/setup"],
     ]);
+  });
+
+  it("UI2-7: Settings → Setup is found by search, not listed in the sidebar or the More sheet", () => {
+    const ctx = { on: () => true, role: "OWNER" };
+    expect(searchPages("setup", ctx)[0]).toMatchObject({ key: "setup", title: "Setup", section: "account" });
+    expect(searchPages("go-live", ctx).map((i) => i.key)).toContain("setup");
+    expect(moreSheetSections(ctx).flatMap((s) => s.items).map((i) => i.key)).not.toContain("setup");
+  });
+});
+
+describe("P2b Broker first, with its status dot", () => {
+  const conn = (status: BrokerConnection["status"], data_only = false): BrokerConnection =>
+    ({ broker: "upstox", account_label: "primary", name: "Upstox", status, message: "", data_only, renew: true });
+
+  it("Broker is the first entry: pinned above the sections, for every role, at /broker", () => {
+    expect(NAV_PINNED_V2.map((i) => [i.key, i.label, i.path])).toEqual([["broker", "Broker", "/broker"]]);
+    for (const ctx of [trader, everything, { on: flags(), role: "VIEWER" }]) expect(visiblePinned(ctx).map((i) => i.key)).toEqual(["broker"]);
+    expect(allNavItems()[0].key).toBe("broker");
+    expect(shellKeyFromPath("/broker")).toBe("broker");
+    expect(navItemFor("broker")?.title).toBe("Broker");
+    expect(sectionOf("broker")).toBeNull();                    // always shown: no section to open
+  });
+
+  it("on a phone it is the first tile of the More sheet, above every section", () => {
+    expect(moreSheetPinned(trader).map((i) => i.key)).toEqual(["broker"]);
+    expect(moreSheetSections(trader).flatMap((s) => s.items.map((i) => i.key))).not.toContain("broker");
+  });
+
+  it("search finds it first by name and by today's words; Settings no longer claims 'brokers'", () => {
+    expect(searchPages("broker", trader)[0].key).toBe("broker");
+    expect(searchPages("connect broker", trader).map((i) => i.key)).toEqual(["broker"]);
+    expect(searchPages("renew", trader)[0].key).toBe("broker");
+  });
+
+  it("the dot: green connected, amber needs login, red not working - on Broker only; More carries amber and red", () => {
+    const cases: [BrokerConnection[] | null, string | null, string | null][] = [
+      [null, null, null],                                         // not known: nothing
+      [[], null, null],                                           // none: no dot (the prompt asks instead)
+      [[conn("connected")], "connected", null],
+      [[conn("needs_login", true)], "connected", null],           // analytics-only Upstox: connected
+      [[conn("needs_login")], "needs_login", "needs_login"],
+      [[conn("connected"), conn("not_working")], "not_working", "not_working"],
+    ];
+    for (const [rows, dot, more] of cases) {
+      const d = brokerDot(rows);
+      expect(navDotFor("broker", d), JSON.stringify(rows)).toBe(dot);
+      expect(navDotFor("dashboard", d)).toBeNull();
+      expect(moreButtonDot(d)).toBe(more);
+    }
   });
 });

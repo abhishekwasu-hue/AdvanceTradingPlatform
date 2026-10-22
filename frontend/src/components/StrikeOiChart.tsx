@@ -11,10 +11,10 @@ export default function StrikeOiChart({ underlying, date }: { underlying: string
   useEffect(() => {
     let alive = true;
     api.oiStrikes(underlying, date).then((d) => { if (alive) { setData(d); setError(null); } })
-      .catch((e) => { if (alive) setError(String(e?.message ?? e)); });
+      .catch(() => { if (alive) setError("The OI by strike is not available right now."); });
     return () => { alive = false; };
   }, [underlying, date]);
-  if (error) return <div className="text-xs text-down">{error}</div>;
+  if (error) return <div className="text-xs text-fg-muted">{error}</div>;
   if (!data) return null;
   const bars = strikeBars(data.strikes);
   if (!bars.length) return <div className="text-xs text-fg-muted">No per-strike OI for {data.date} yet.</div>;
@@ -34,12 +34,12 @@ export default function StrikeOiChart({ underlying, date }: { underlying: string
               <rect x={x + w / 2} y={h - ph} width={w / 2 - 1} height={ph} className="fill-up/70">
                 <title>{`${b.strike} PE: ${formatOi(b.put)} (${formatSigned(b.putChange)} today)`}</title>
               </rect>
-              <text x={x + w / 2} y={h + 14} textAnchor="middle" className="fill-fg-muted text-[9px]">{b.strike}</text>
+              <text x={x + w / 2} y={h + 14} textAnchor="middle" className="fill-fg-muted text-xs">{b.strike}</text>
             </g>
           );
         })}
       </svg>
-      <div className="mt-1 text-[11px] text-fg-muted">Calls (red) and puts (green) · data as of {slotTime(data.data_as_of)}</div>
+      <div className="mt-1 text-xs text-fg-muted">Calls (red) and puts (green) · data as of {slotTime(data.data_as_of)}</div>
     </div>
   );
 }

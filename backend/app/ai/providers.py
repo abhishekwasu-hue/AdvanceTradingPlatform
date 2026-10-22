@@ -52,6 +52,7 @@ TASK_TIERS: Dict[str, str] = {
     "narration": "fast", "copilot": "fast", "knowledge": "fast", "thesis": "fast",
     "classification": "cheap", "scanner_read": "cheap",
     "support": "cheap",          # Z10-f: the support bot rewording one help passage
+    "option_chain_ask": "fast",  # OC3: Ask AI on the Option chain writes one analysis spec (the server computes the numbers)
 }
 EFFORT_FOR_TIER = {"strong": "medium", "fast": "low", "cheap": "low"}
 # C1: thinking headroom per effort level (tokens the model may spend reasoning before the text starts).

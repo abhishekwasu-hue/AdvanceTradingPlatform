@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bannerLines, formatOi, formatSigned, slotTime, strikeBars, tone } from "./format";
+import { bannerLines, formatOi, formatSigned, isLateChip, slotTime, strikeBars, tone } from "./format";
 import type { OiBannerResponse, OiBannerRow } from "./types";
 
 const row = (over: Partial<OiBannerRow> = {}): OiBannerRow => ({
@@ -22,16 +22,20 @@ describe("OI banner lines", () => {
     expect(l.chips).toEqual(["DTE 16", "Max pain 24,500", "Data as of 09:25"]);
     expect(l.tone.border).toBe("border-l-up");
   });
-  it("shows market closed, stale and expiry chips, and the first-of-day text", () => {
+  it("shows market closed, late-reading and expiry chips, and the first-of-day text in plain words (OC1)", () => {
     expect(bannerLines(resp({ market_open: false })).chips).toContain("Market closed");
-    expect(bannerLines(resp({ stale: true, age_minutes: 22.4 })).chips).toContain("Stale · 22 min old");
+    expect(bannerLines(resp({ stale: true, age_minutes: 22.4 })).chips).toContain("Last update 22 min ago");
     expect(bannerLines(resp({ banner: row({ dte: 0 }) })).chips[0]).toBe("Expiry today");
     expect(bannerLines(resp({ banner: row({ dte: 1 }) })).chips[0]).toBe("Expiry tomorrow");
     const first = bannerLines(resp({ banner: row({ first_of_day: true, message: "Insufficient data — history builds through the session" }) }));
     expect(first.classes).toBeNull();
+    expect(first.headline).toBe("OI change will show after the first few minutes");
     const none = bannerLines(resp({ banner: null, message: "Insufficient data — history builds through the session", stale: true, age_minutes: null }));
-    expect(none.headline).toMatch(/^Insufficient data/);
-    expect(none.chips).toEqual(["Stale · no data yet"]);
+    expect(none.headline).toBe("OI change will show after the first few minutes");
+    expect(none.chips).toEqual(["No reading yet today"]);
+    expect(isLateChip("Last update 22 min ago") && isLateChip("No reading yet today") && !isLateChip("Market closed")).toBe(true);
+    // No "Insufficient data" and no "Stale" label anywhere in the banner's words.
+    for (const l of [first, none, bannerLines(resp({ stale: true, age_minutes: 5 }))]) expect(JSON.stringify(l)).not.toMatch(/insufficient|stale/i);
     expect(bannerLines(resp({ banner: row({ pcr: null }) })).pcr).toBe("PCR — (no call OI)");
   });
   it("maps every direction to a theme token and never to a raw colour", () => {

@@ -76,7 +76,7 @@ export default function MarketPulseTab() {
       <Stagger className="grid gap-4 lg:grid-cols-3">
         <StaggerItem className="lg:col-span-1">
           <TiltCard className="h-full" data-testid="pulse-read">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">
               {t("pulse.todayRead")}{brief.day_type.symbol ? ` · ${brief.day_type.symbol}` : ""}<DataStamp data={data} />
             </div>
             <p className="mt-2 text-lg font-semibold leading-snug text-fg">{brief.plan.headline}</p>
@@ -106,14 +106,14 @@ export default function MarketPulseTab() {
         </StaggerItem>
         <StaggerItem>
           <TiltCard className="h-full" glow={sentiment && sentiment.score > 10 ? "up" : sentiment && sentiment.score < -10 ? "down" : "ai"} data-testid="pulse-gauge">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{t("pulse.sentiment.title")}</div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-fg-muted">{t("pulse.sentiment.title")}</div>
             <SentimentGauge3D score={sentiment?.score ?? null} label={sentiment?.label} coverage={sentiment?.coverage} />
             {(brief.sentiment_view ?? []).length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs text-fg-muted">{(brief.sentiment_view ?? []).slice(0, 2).map((l) => <li key={l}>{l}</li>)}</ul>}
           </TiltCard>
         </StaggerItem>
         <StaggerItem>
           <TiltCard className="h-full" data-testid="pulse-dial">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{t("pulse.regime.title")}</div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-fg-muted">{t("pulse.regime.title")}</div>
             <RegimeDial kind={kind} detail={brief.day_type.higher_regime ? t("pulse.regime.higher", { regime: brief.day_type.higher_regime.replace(/_/g, " ").toLowerCase() }) : null} />
           </TiltCard>
         </StaggerItem>
@@ -126,7 +126,7 @@ export default function MarketPulseTab() {
             {brief.plan.lines.length === 0 && <li className="text-fg-muted">{t("pulse.filtersEmpty")}</li>}
           </ul>
           {(brief.plan.fit_families.length > 0 || brief.plan.avoid_families.length > 0) && (
-            <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
+            <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
               {brief.plan.fit_families.map((f) => <Badge key={f} tone="neutral">{t("pulse.filterOpen", { family: t(`pulse.family.${f}`, { defaultValue: f }) })}</Badge>)}
               {brief.plan.avoid_families.map((f) => <Badge key={f} tone="neutral">{t("pulse.filterClosed", { family: t(`pulse.family.${f}`, { defaultValue: f }) })}</Badge>)}
             </div>

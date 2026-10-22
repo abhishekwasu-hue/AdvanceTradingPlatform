@@ -23,15 +23,19 @@ import {
   Users,
   Wand2,
   Zap,
-  type LucideIcon, Store, Sparkles, Sigma, ChartSpline, NotebookPen, ScanSearch } from "lucide-react";
+  type LucideIcon, Store, Sparkles, Sigma, ChartSpline, NotebookPen, ScanSearch, Plug } from "lucide-react";
 import { useEffect } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { pathFor, preloadPage } from "../routes";
 import { useFeatures } from "../ui/useFeatures";
+import { brokerDot } from "../broker/brokerState";
+import { StatusDot } from "../broker/marks";
+import { useBrokerConnections } from "../broker/useBrokerConnections";
 import Logo from "./Logo";
 
 export type Page =
+  | "broker"
   | "dashboard"
   | "strategies"
   | "strategy-builder"
@@ -76,8 +80,9 @@ interface NavGroup {
   items: NavItem[];
 }
 
+/** P2b: "Broker" is the first entry (with a status dot); on a phone it is the first entry of More (this drawer). */
 export const NAV_GROUPS: NavGroup[] = [
-  { title: "Overview", items: [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }] },
+  { title: "Overview", items: [{ id: "broker", label: "Broker", icon: Plug }, { id: "dashboard", label: "Dashboard", icon: LayoutDashboard }] },
   {
     title: "Trade",
     items: [
@@ -142,6 +147,7 @@ export const NAV: NavItem[] = [...NAV_GROUPS, ADMIN_GROUP].flatMap((g) => g.item
 export default function Sidebar({ page, open = false, onClose }: { page: Page | null; open?: boolean; onClose?: () => void }) {
   const { user, loading } = useAuth();
   const features = useFeatures();
+  const dot = brokerDot(useBrokerConnections().rows);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose?.(); };
@@ -161,7 +167,7 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
       <nav className="flex-1 overflow-y-auto py-3 space-y-4">
         {[...NAV_GROUPS, ...(user?.role === "SUPER_ADMIN" ? [ADMIN_GROUP] : [])].map((group) => (
           <div key={group.title}>
-            <div className="px-4 mb-1 text-[10px] font-bold uppercase tracking-wider text-fg-muted">
+            <div className="px-4 mb-1 text-xs font-bold uppercase tracking-wider text-fg-muted">
               {group.title}
             </div>
             {group.items.filter((item) => !item.flag || features.on(item.flag)).map((item) => {
@@ -183,6 +189,7 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
                 >
                   <Icon size={16} strokeWidth={2} className={active ? "text-brand" : "text-fg-muted"} />
                   {item.label}
+                  {item.id === "broker" && dot && <StatusDot dot={dot} announce className="ml-auto" />}
                 </Link>
               );
             })}
@@ -203,11 +210,11 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
         </div>
         <div className="mt-1.5 flex flex-wrap gap-1">
           {user && (
-            <span className="inline-flex items-center rounded-full bg-surface-2 border border-border px-2 py-0.5 text-[10px] font-medium text-fg">
+            <span className="inline-flex items-center rounded-full bg-surface-2 border border-border px-2 py-0.5 text-xs font-medium text-fg">
               {user.role.replace("_", " ")}
             </span>
           )}
-          <span className="inline-flex items-center gap-1 rounded-full bg-warn/10 border border-warn/30 px-2 py-0.5 text-[10px] font-medium text-warn">
+          <span className="inline-flex items-center gap-1 rounded-full bg-warn/10 border border-warn/30 px-2 py-0.5 text-xs font-medium text-warn">
             PAPER MODE
           </span>
         </div>

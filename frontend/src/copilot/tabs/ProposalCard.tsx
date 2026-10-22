@@ -93,7 +93,7 @@ export default function ProposalCard({ a, onDecided, snoozed = false, now = new 
       )}
       <details className="text-xs text-fg-muted">
         <summary className="cursor-pointer py-1 hover:text-fg">{t("watch.evidenceAll")}</summary>
-        <pre className="mt-1 max-w-full overflow-x-auto rounded-lg bg-surface-2 p-2 font-mono text-[11px] text-fg">{JSON.stringify(a.evidence, null, 2)}</pre>
+        <pre className="mt-1 max-w-full overflow-x-auto rounded-lg bg-surface-2 p-2 font-mono text-xs text-fg">{JSON.stringify(a.evidence, null, 2)}</pre>
       </details>
       <RiskCheckPanel a={a} />
       <VisionReportPanel actionId={a.id} />
@@ -119,8 +119,8 @@ export default function ProposalCard({ a, onDecided, snoozed = false, now = new 
               </Button>
             ))}
           </div>
-          {choices.some((c) => c.cutAtExpiry) && <p className="text-[11px] text-fg-muted">{t("watch.snoozeCut")}</p>}
-          <p className="text-[11px] text-fg-muted">{t("watch.snoozeHint")}</p>
+          {choices.some((c) => c.cutAtExpiry) && <p className="text-xs text-fg-muted">{t("watch.snoozeCut")}</p>}
+          <p className="text-xs text-fg-muted">{t("watch.snoozeHint")}</p>
         </div>
       )}
 
@@ -129,12 +129,12 @@ export default function ProposalCard({ a, onDecided, snoozed = false, now = new 
           <Button className={`${ACTION_BUTTON} w-full`} icon={<ExternalLink size={16} />} onClick={() => openBrokerAppLink(link)}>
             {t("watch.brokerApp", { broker: link.brokerLabel })}
           </Button>
-          <p className="text-[11px] text-fg-muted">{t("watch.brokerAppHint", { order: link.summary, broker: link.brokerLabel })}</p>
+          <p className="text-xs text-fg-muted">{t("watch.brokerAppHint", { order: link.summary, broker: link.brokerLabel })}</p>
         </div>
       )}
 
-      {a.action === "ENTRY" && <p className="text-[11px] text-fg-muted" data-testid="watch-entry-note">{t("watch.entryNote")}</p>}
-      {!paper && <p className="text-[11px] text-fg-muted">{t("watch.liveNote")}</p>}
+      {a.action === "ENTRY" && <p className="text-xs text-fg-muted" data-testid="watch-entry-note">{t("watch.entryNote")}</p>}
+      {!paper && <p className="text-xs text-fg-muted">{t("watch.liveNote")}</p>}
       {error && <p className="text-xs text-down" role="alert">{error}</p>}
       {stepUp && <StepUpDialog reason={stepUp} onCancel={() => setStepUp(null)} onVerified={() => { setStepUp(null); void approve(); }} />}
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen} title={t("watch.rejectTitle")} description={t("watch.rejectHint")}

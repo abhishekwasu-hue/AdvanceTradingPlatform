@@ -6,7 +6,9 @@ import { ThemeToggle } from "../components/AppearanceCard";
 import { installHelp, isIosSafari, isStandalone, promptInstall, usePwa } from "../pwa/pwa";
 import { MORE_SHEET_ID } from "./BottomNavV2";
 import { useReturnFocus } from "./returnFocus";
-import { moreSheetSections, searchPages, sectionTitle, type NavContext, type NavItemV2, type NavSectionV2, type SectionId, type ShellKey } from "./navModel";
+import { StatusDot } from "../broker/marks";
+import type { BrokerDot } from "../broker/brokerState";
+import { moreSheetPinned, moreSheetSections, navDotFor, searchPages, sectionTitle, type NavContext, type NavItemV2, type NavSectionV2, type SectionId, type ShellKey } from "./navModel";
 
 /**
  * UI2-1 (UI v2 proposal §4, mockup nav-bottom-mobile "More opens a sheet"): the phone's More sheet. A search box, then
@@ -21,6 +23,8 @@ export interface MoreSheetContentProps {
   query: string;
   onQuery: (q: string) => void;
   onPick: () => void;
+  /** P2b: the broker's status dot on the Broker tile. */
+  dot?: BrokerDot | null;
 }
 
 /** What the sheet lists for a query: the sections when empty, else the matches (each with its section's name). */
@@ -31,7 +35,7 @@ export function moreSheetResults(ctx: NavContext, query: string):
   return { kind: "matches", items: searchPages(query, ctx) };
 }
 
-function Tile({ item, current, onPick, caption }: { item: NavItemV2; current: ShellKey | null; onPick: () => void; caption?: string }) {
+function Tile({ item, current, onPick, caption, dot = null }: { item: NavItemV2; current: ShellKey | null; onPick: () => void; caption?: string; dot?: BrokerDot | null }) {
   const Icon = item.icon;
   const active = current === item.key;
   return (
@@ -44,14 +48,16 @@ function Tile({ item, current, onPick, caption }: { item: NavItemV2; current: Sh
         <span className="block truncate">{item.label}</span>
         {caption && <span className="block truncate text-t12 font-normal text-fg-muted">{caption}</span>}
       </span>
+      {dot && <StatusDot dot={dot} announce className="ml-auto" />}
     </Link>
   );
 }
 
 /** The sheet's lists - no dialog, so tests render it directly. */
-export function MoreSheetContent({ ctx, current, query, onQuery, onPick }: MoreSheetContentProps) {
+export function MoreSheetContent({ ctx, current, query, onQuery, onPick, dot = null }: MoreSheetContentProps) {
   const searchId = useId();
   const results = useMemo(() => moreSheetResults(ctx, query), [ctx, query]);
+  const pinned = useMemo(() => moreSheetPinned(ctx), [ctx]);
   return (
     <div className="space-y-space-3">
       <div className="relative">
@@ -59,8 +65,13 @@ export function MoreSheetContent({ ctx, current, query, onQuery, onPick }: MoreS
         <Search size={16} aria-hidden className="pointer-events-none absolute left-space-3 top-1/2 -translate-y-1/2 text-fg-muted" />
         <input id={searchId} type="search" value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Search pages"
           autoComplete="off" spellCheck={false}
-          className="h-11 w-full rounded-control border border-border bg-surface-2 pl-space-10 pr-space-3 text-[16px] text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+          className="h-11 w-full rounded-control border border-border bg-surface-2 pl-space-10 pr-space-3 text-sm text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
       </div>
+      {results.kind === "sections" && pinned.length > 0 && (
+        <div className="grid grid-cols-2 gap-space-2" data-sheet-pinned>
+          {pinned.map((item) => <Tile key={item.key} item={item} current={current} onPick={onPick} dot={navDotFor(item.key, dot)} />)}
+        </div>
+      )}
       {results.kind === "sections" ? results.sections.map((section) => (
         <section key={section.id} aria-label={section.title}>
           <h3 className="mb-space-2 text-t12 font-semibold text-fg-muted">{section.title}</h3>
@@ -72,7 +83,7 @@ export function MoreSheetContent({ ctx, current, query, onQuery, onPick }: MoreS
         <section aria-label="Matching pages">
           <h3 className="mb-space-2 text-t12 font-semibold text-fg-muted">Pages</h3>
           <div className="grid grid-cols-1 gap-space-2 min-[360px]:grid-cols-2">
-            {results.items.map((item) => <Tile key={item.key} item={item} current={current} onPick={onPick} caption={sectionTitle(item.section)} />)}
+            {results.items.map((item) => <Tile key={item.key} item={item} current={current} onPick={onPick} caption={sectionTitle(item.section)} dot={navDotFor(item.key, dot)} />)}
           </div>
         </section>
       ) : (
@@ -116,9 +127,10 @@ export interface MoreSheetV2Props {
   current: ShellKey | null;
   onHelp?: () => void;
   onFeedback?: () => void;
+  dot?: BrokerDot | null;
 }
 
-export default function MoreSheetV2({ open, onOpenChange, ctx, current, onHelp, onFeedback }: MoreSheetV2Props) {
+export default function MoreSheetV2({ open, onOpenChange, ctx, current, onHelp, onFeedback, dot = null }: MoreSheetV2Props) {
   const [query, setQuery] = useState("");
   const panel = useRef<HTMLDivElement>(null);
   // Closed by a choice or a route change too: the search starts empty next time.
@@ -148,7 +160,7 @@ export default function MoreSheetV2({ open, onOpenChange, ctx, current, onHelp, 
             </RD.Close>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-space-4 pb-space-4">
-            <MoreSheetContent ctx={ctx} current={current} query={query} onQuery={setQuery} onPick={close} />
+            <MoreSheetContent ctx={ctx} current={current} query={query} onQuery={setQuery} onPick={close} dot={dot} />
             {!query.trim() && (
               <section aria-label="App" className="mt-space-4 space-y-space-2">
                 <h3 className="text-t12 font-semibold text-fg-muted">App</h3>

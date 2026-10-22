@@ -121,7 +121,7 @@ export default function ThesisPanel() {
               {sb.hit_rate != null && <> · <b className="text-fg">{t("thesis.hitRate", { pct: Math.round(sb.hit_rate * 100) })}</b></>}
             </p>
           )}
-          <p className="text-[11px] text-fg-muted">{t("thesis.footer")}</p>
+          <p className="text-xs text-fg-muted">{t("thesis.footer")}</p>
         </div>
       )}
     </Panel>

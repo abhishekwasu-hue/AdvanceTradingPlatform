@@ -2,6 +2,7 @@ import { ExternalLink, KeyRound, LogIn, Plug, TriangleAlert, UserCircle2 } from 
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
+import { BROKER_PATH } from "../broker/paths";
 import { Button } from "../components/primitives";
 import type { BrokerTokenInfo } from "../types";
 import {
@@ -20,7 +21,7 @@ import {
  * candles, a seeded chain or example positions "until the broker connects".
  *
  * States:
- * - no broker stored  -> "Connect your broker", one primary action to the Connect flow (Settings -> Brokers for now);
+ * - no broker stored  -> "Connect your broker", one primary action to the Connect flow (the Broker page, P2b);
  * - stored, no usable session today -> "Log in to <Broker>", which runs that broker's existing login path:
  *   Upstox OAuth start, the login link for Zerodha / Fyers (then paste the code it returns), authenticate for others;
  * - connected -> the children, unchanged.
@@ -30,9 +31,9 @@ import {
  * Shown only on v2 pages (flag `ui_v2`); UI2-1 wraps the pages in src/ui/dataPages.ts with it. Places no orders.
  */
 
-/** The Connect flow: Settings -> Brokers until UI2-6 ships the guided flow. (A literal, not routes.ts, so this
- * component does not pull every page loader into its chunk; the unit test pins it to pathFor("settings").) */
-export const CONNECT_BROKER_PATH = "/settings";
+/** The Connect flow: the Broker page (P2b). (A literal, not routes.ts, so this component does not pull every page
+ * loader into its chunk; the unit test pins it to pathFor("broker").) */
+export const CONNECT_BROKER_PATH = BROKER_PATH;
 /** The sign-in page for a signed-out visitor (UI-14); pinned to pathFor("account") by the unit test. */
 export const SIGN_IN_PATH = "/account";
 
@@ -53,6 +54,9 @@ export interface BrokerGateViewProps {
   error?: string | null;
   codeStep?: CodeStep | null;
   onSubmitCode?: (code: string) => void;
+  /** UI2-9a: the page lists the trader's own positions under the gate itself (My positions), so the gate's sentences
+   * say only what the broker adds - live prices - and not "your positions". Left out: every other page's wording. */
+  positionsShown?: boolean;
 }
 
 const keyOf = (t: BrokerTokenInfo) => `${t.broker_name}/${t.account_label ?? "primary"}`;
@@ -89,7 +93,8 @@ function ErrorNote({ text }: { text: string }) {
   );
 }
 
-function CodeForm({ step, onSubmit, busy }: { step: CodeStep; onSubmit?: (code: string) => void; busy: boolean }) {
+/** The paste-the-code step of "Log in to Zerodha / Fyers" (also used by the v2 dashboard's Needs attention row). */
+export function CodeForm({ step, onSubmit, busy }: { step: CodeStep; onSubmit?: (code: string) => void; busy: boolean }) {
   const name = brokerDisplayName(step.broker.broker_name);
   const fieldId = useId();
   const [code, setCode] = useState("");
@@ -126,7 +131,7 @@ function CodeForm({ step, onSubmit, busy }: { step: CodeStep; onSubmit?: (code: 
 }
 
 /** The gate's look for each state - no data fetching, so stories and tests render it directly. */
-export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, onRetry, busy = null, error = null, codeStep = null, onSubmitCode }: BrokerGateViewProps) {
+export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, onRetry, busy = null, error = null, codeStep = null, onSubmitCode, positionsShown = false }: BrokerGateViewProps) {
   switch (state.kind) {
     case "connected":
       return <>{children}</>;
@@ -162,7 +167,7 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
     case "no-broker":
       return (
         <GateCard state={state.kind} icon={<Plug size={22} />} title="Connect your broker">
-          <p>Connect your broker to see live prices, charts and your positions.</p>
+          <p>{positionsShown ? "Connect your broker to see live prices and charts." : "Connect your broker to see live prices, charts and your positions."}</p>
           <a href={CONNECT_BROKER_PATH} onClick={(e) => { if (onConnect) { e.preventDefault(); onConnect(); } }}
             className="inline-flex h-11 w-full items-center justify-center rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto">
             Connect a broker
@@ -182,8 +187,8 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
         <GateCard state={state.kind} tone="warn" icon={<KeyRound size={22} />} title={`Log in to ${name}`}>
           <p>
             {state.expired
-              ? `Your ${name} session${account} has ended. Log in to see live prices and your positions.`
-              : `Log in to ${name}${account} to see live prices and your positions.`}
+              ? `Your ${name} session${account} has ended. Log in to see live prices${positionsShown ? "" : " and your positions"}.`
+              : `Log in to ${name}${account} to see live prices${positionsShown ? "" : " and your positions"}.`}
           </p>
           {step ? (
             <div data-code-step={keyOf(t)}><CodeForm step={step} onSubmit={onSubmitCode} busy={busy === keyOf(t)} /></div>
@@ -223,13 +228,17 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
   }
 }
 
-/**
- * Renders `children` only while the trader's broker session is usable; otherwise the gate (see the RULE above).
- * Needs the router (Connect goes to Settings) and AuthProvider, as every page inside the app shell has.
- */
-export function BrokerGate({ children }: { children: ReactNode }) {
-  const { state, refresh } = useBrokerSession();
-  const navigate = useNavigate();
+/** "Log in to <Broker>" started from a click: the login in progress, its error and the paste-the-code step. The broker
+ * gate and the v2 dashboard's Needs attention row share it; `refresh` re-reads the broker status after a login. */
+export interface BrokerLogin {
+  busy: string | null;
+  error: string | null;
+  codeStep: CodeStep | null;
+  login: (t: BrokerTokenInfo) => void;
+  submitCode: (code: string) => void;
+}
+
+export function useBrokerLogin(refresh: () => void): BrokerLogin {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [codeStep, setCodeStep] = useState<CodeStep | null>(null);
@@ -259,6 +268,18 @@ export function BrokerGate({ children }: { children: ReactNode }) {
       .catch((e: unknown) => setError(loginErrorText(e, t.broker_name)))
       .finally(() => setBusy(null));
   }
+
+  return { busy, error, codeStep, login, submitCode };
+}
+
+/**
+ * Renders `children` only while the trader's broker session is usable; otherwise the gate (see the RULE above).
+ * Needs the router (Connect goes to Settings) and AuthProvider, as every page inside the app shell has.
+ */
+export function BrokerGate({ children }: { children: ReactNode }) {
+  const { state, refresh } = useBrokerSession();
+  const navigate = useNavigate();
+  const { busy, error, codeStep, login, submitCode } = useBrokerLogin(refresh);
 
   return (
     <BrokerGateView

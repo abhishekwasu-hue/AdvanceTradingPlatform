@@ -188,6 +188,15 @@ def test_no_price_or_a_moved_price_is_a_proposal(monkeypatch, case):
     assert row.route == policy.ROUTE_PROPOSE and row.status == intents.DONE and _trades(t) == []
 
 
+def test_a_live_price_that_is_not_a_number_is_a_proposal_that_says_so(monkeypatch):
+    """UI2-3 review: a NaN quote is "not usable", not "the price moved since the setup"."""
+    t, _ = _armed_setup("price-nan", monkeypatch)
+    _price(monkeypatch, float("nan"))
+    row = _go(t)
+    assert row.route == policy.ROUTE_PROPOSE and row.status == intents.DONE and _trades(t) == []
+    assert "is not usable" in (row.reason or "") and "moved" not in (row.reason or "")
+
+
 @pytest.mark.parametrize("case", ["paused", "lockout", "caps"])
 def test_pause_lockout_and_caps_refuse_and_place_nothing(monkeypatch, case):
     t, _ = _armed_setup(f"refuse-{case}", monkeypatch)

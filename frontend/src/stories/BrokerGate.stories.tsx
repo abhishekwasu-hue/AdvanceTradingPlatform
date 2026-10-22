@@ -45,7 +45,7 @@ export const LoginFailed: Story = {
   name: "Login needed: login failed, two brokers",
   args: {
     state: brokerGateState({ ...base, tokens: [tokenRow("upstox"), tokenRow("fyers", { account_label: "desk" })] }),
-    error: "Upstox did not accept the login. Try again; if it repeats, check your Upstox keys in Settings.",
+    error: "Upstox did not accept the login. Try again; if it repeats, check your Upstox keys on the Broker page.",
   },
 };
 

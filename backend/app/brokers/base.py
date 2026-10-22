@@ -129,6 +129,8 @@ class BrokerInterface(ABC):
     # UI2-4a2: the longest range of daily bars one history request may ask for; longer ranges (weekly and monthly charts)
     # go out as whole-date chunks of at most this many days. Conservative where the broker publishes no limit.
     daily_days_per_request: int = 365
+    # The session token this adapter uses (read back by `access_token`); adapters set it in __init__ / authenticate().
+    _access_token: Optional[str] = None
 
     @abstractmethod
     async def authenticate(self) -> BrokerProfile: ...
@@ -254,7 +256,7 @@ class BrokerInterface(ABC):
         """Invalidate this session token at the broker (Upstox `DELETE /logout`, Kite
         `DELETE /session/token`) and forget it locally. Default: forget only - the adapter has no
         server-side logout - so a caller can always call this and then drop the adapter."""
-        self._access_token = None  # type: ignore[attr-defined]
+        self._access_token = None
 
     async def get_ltp_for_symbol(self, symbol: str, exchange: str = "NSE") -> float:
         """Last traded price for one plain trading symbol (RELIANCE, NIFTY 50, ...). `get_ltp`

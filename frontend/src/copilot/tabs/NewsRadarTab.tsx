@@ -101,7 +101,7 @@ export default function NewsRadarTab() {
             return (
               <StaggerItem key={i.id}>
                 <article className="copilot-glass rounded-xl p-3" data-testid="news-item">
-                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
                     {typeof c.severity === "number" && <Badge tone={severityTone(c.severity)}>{t("news.sev", { n: c.severity })}</Badge>}
                     <Badge tone="neutral">{t(`news.cat.${i.category}`, { defaultValue: i.category })}</Badge>
                     <Badge tone="warn">{t("news.unverified")}</Badge>
@@ -114,14 +114,14 @@ export default function NewsRadarTab() {
                     {i.source_url ? (
                       <a href={i.source_url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-brand hover:underline">{i.source}<ExternalLink size={11} /></a>
                     ) : <span className="text-fg-muted">{i.source}</span>}
-                    {i.symbols.slice(0, 6).map((s) => <span key={s} className="rounded border border-border px-1 text-[10px] text-fg-muted">{s}</span>)}
+                    {i.symbols.slice(0, 6).map((s) => <span key={s} className="rounded border border-border px-1 text-xs text-fg-muted">{s}</span>)}
                     <div className="ml-auto flex flex-wrap gap-1" role="group" aria-label={t("news.feedback")}>
                       {VERDICTS.map((v) => {
                         const Icon = VERDICT_ICON[v];
                         const on = verdicts[String(i.id)] === v;
                         return (
                           <button key={v} onClick={() => void vote(i.id, v)} aria-pressed={on}
-                                  className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] ${on ? "border-ai bg-ai/15 text-fg" : "border-border text-fg-muted hover:text-fg"}`}>
+                                  className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs ${on ? "border-ai bg-ai/15 text-fg" : "border-border text-fg-muted hover:text-fg"}`}>
                             <Icon size={11} aria-hidden />{t(`news.verdict.${v}`)}
                           </button>
                         );

@@ -14,12 +14,12 @@ export function LegacyCopilot() {
 }
 
 /** Links the backend sends (email verification, password reset, team invite) and the broker OAuth round-trip
- * (Settings -> "Login to Upstox" -> Upstox -> /api/broker/upstox/oauth/callback) land on the app root with a query
- * string. They keep working: the root forwards them, query intact, to the page that handles them. */
+ * (Broker -> "Renew" -> Upstox -> /api/broker/upstox/oauth/callback) land on the app root with a query string. They
+ * keep working: the root forwards them, query intact, to the page that handles them (P2b: the Broker page). */
 export function legacyTarget(search: string): Page | null {
   const params = new URLSearchParams(search);
   if (params.has("invite") || params.has("reset") || params.has("verify")) return "account";
-  if (params.has("broker")) return "settings";
+  if (params.has("broker")) return "broker";
   const named = params.get("page");                // web-push notifications open /?page=notifications
   if (named === "ai-copilot") return "copilot";        // the Copilot's old page id
   if (named && (PAGES as string[]).includes(named)) return named as Page;

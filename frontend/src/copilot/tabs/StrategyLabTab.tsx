@@ -127,7 +127,7 @@ export default function StrategyLabTab() {
         <div>
           <Input label={t("lab.ideaLabel")} value={idea} onChange={(e) => setIdea(e.target.value)} placeholder={t("lab.ideaPlaceholder")} />
           {parsed && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px]">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1 text-xs">
               <MessageSquareText size={12} className="text-ai" /><span className="text-fg-muted">{parsed.summary}</span>
               {(["symbol", "style", "direction"] as const).map((k) => parsed.matched[k] && <Badge key={k} tone="brand">{parsed.matched[k]}</Badge>)}
             </div>
@@ -138,7 +138,7 @@ export default function StrategyLabTab() {
           <div className="flex flex-wrap gap-1 pb-1">
             {SYMBOLS.map((s) => (
               <button key={s} onClick={() => setSymbol(s)} aria-pressed={symbol === s}
-                      className={`rounded-full border px-2 py-0.5 text-[11px] ${symbol === s ? "border-ai/60 bg-ai/15 text-fg" : "border-border text-fg-muted hover:text-fg"}`}>{s}</button>
+                      className={`rounded-full border px-2 py-0.5 text-xs ${symbol === s ? "border-ai/60 bg-ai/15 text-fg" : "border-border text-fg-muted hover:text-fg"}`}>{s}</button>
             ))}
           </div>
           <div className="w-64"><Select label={t("lab.style")} value={style} onChange={(v) => setStyle(v as typeof style)}
@@ -148,7 +148,7 @@ export default function StrategyLabTab() {
           <Button variant="primary" icon={<Layers size={15} />} disabled={task.busy || !symbol.trim()} onClick={() => void run()} data-testid="lab-run">{t("lab.run")}</Button>
           {estimate && <CostChip tokens={estimate.tokens} inr={estimate.inr} estimate />}
         </div>
-        {source.mode === "sample" && <p className="text-[11px] text-warn">{t("lab.sampleNote")}</p>}
+        {source.mode === "sample" && <p className="text-xs text-warn">{t("lab.sampleNote")}</p>}
         <AiProgress state={task.state} onCancel={task.cancel} onRetry={() => void run()} />
         <PrivacyNote compact />
       </TiltCard>
@@ -164,7 +164,7 @@ export default function StrategyLabTab() {
               ))}
             </Stagger>
             {result.candidates.length === 0 && <p className="text-sm text-fg-muted">{t("lab.noTrades")}</p>}
-            <p className="mt-3 text-[11px] text-fg-muted">{t("lab.method")}</p>
+            <p className="mt-3 text-xs text-fg-muted">{t("lab.method")}</p>
           </Panel>
         </>
       )}

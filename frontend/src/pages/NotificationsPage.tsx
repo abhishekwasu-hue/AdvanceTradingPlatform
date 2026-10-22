@@ -92,12 +92,12 @@ export default function NotificationsPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${severityClasses(n.severity)}`}>
+                    <span className={`rounded border px-1.5 py-0.5 text-xs font-semibold uppercase ${severityClasses(n.severity)}`}>
                       {n.severity}
                     </span>
-                    <span className="text-[10px] text-fg-muted uppercase tracking-wide">{n.event_type}</span>
+                    <span className="text-xs text-fg-muted uppercase tracking-wide">{n.event_type}</span>
                   </div>
-                  <span className="text-[11px] text-fg-muted whitespace-nowrap">{new Date(n.created_at).toLocaleString()}</span>
+                  <span className="text-xs text-fg-muted whitespace-nowrap">{new Date(n.created_at).toLocaleString()}</span>
                 </div>
                 <div className="mt-1 text-sm font-medium text-fg">{n.title}</div>
                 {n.message && <div className="mt-0.5 text-xs text-fg-muted">{n.message}</div>}
@@ -107,7 +107,7 @@ export default function NotificationsPage() {
                 {!n.read && (
                   <button
                     onClick={() => markRead(n.id)}
-                    className="mt-1.5 text-[11px] text-brand hover:underline"
+                    className="mt-1.5 text-xs text-brand hover:underline"
                   >
                     Mark read
                   </button>

@@ -1,6 +1,8 @@
-import { AlarmClock, Bell, CheckCircle2, Clock, MessageCircle, Satellite } from "lucide-react";
+import { AlarmClock, Bell, CheckCircle2, ChevronRight, Clock, MessageCircle, Satellite, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { api } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import { Badge, EmptyState, type Tone } from "../../components/primitives";
 import { isSnoozed } from "../../proposals/snooze";
 import type { AiAction, NotificationEntry, TelegramInboundStatus } from "../../types";
@@ -8,6 +10,8 @@ import { useCopilotData } from "../data";
 import { useCopilotT } from "../i18n";
 import { useDeepLinkTarget } from "../../utils/useDeepLinkTarget";
 import { useLiveEvents } from "../../live/useLiveEvents";
+import { signalsLinkFor, watchtowerSplit } from "../../signals/watchtower";
+import { useUiV2 } from "../../ui/useFeatures";
 import ProposalCard from "./ProposalCard";
 import { Panel } from "./shared";
 
@@ -27,12 +31,19 @@ function when(iso: string | null): string {
 
 export default function WatchtowerTab() {
   const t = useCopilotT();
-  const { pending, reloadActions } = useCopilotData();
+  const { pending: allPending, reloadActions } = useCopilotData();
+  // UI2-3 (UI v2 §3 M7): with `ui_v2` on, your own and organisation-wide entry approvals are decided in Signals (the
+  // same /ai/actions data); this tab keeps the agent's other proposals (pause, exit, reduce risk, review) and other
+  // members' entries (the organisation OWNER may decide them), and links to Signals. Flag off: unchanged.
+  const v2 = useUiV2();
+  const me = useAuth().user?.id;
+  const { entries, others: pending } = watchtowerSplit(allPending, v2, me);
   const [history, setHistory] = useState<AiAction[]>([]);
   const [alerts, setAlerts] = useState<NotificationEntry[] | null>(null);
   const [telegram, setTelegram] = useState<TelegramInboundStatus | null | "unavailable">(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [snoozed, setSnoozed] = useState<AiAction[]>([]);
+  const [snoozedAll, setSnoozed] = useState<AiAction[]>([]);
+  const snoozed = watchtowerSplit(snoozedAll, v2, me).others;
   const [now, setNow] = useState(() => new Date());
 
   // One read serves the timeline (decided proposals) and the snoozed list (PW5: hidden from the pending list).
@@ -64,6 +75,14 @@ export default function WatchtowerTab() {
       <Panel title={t("watch.title", { count: pending.length })} icon={<Satellite size={15} />}>
         <p className="mb-3 text-xs text-fg-muted">{t("watch.intro")}</p>
         {message && <p className="mb-3 rounded-lg border border-ai/30 bg-ai/5 px-3 py-2 text-xs text-fg" role="status">{message}</p>}
+        {v2 && (
+          <Link to={signalsLinkFor(entries)} data-testid="watch-signals-link"
+            className="mb-3 flex min-h-[44px] items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-fg hover:bg-surface-3">
+            <Zap size={15} aria-hidden className="shrink-0 text-brand" />
+            <span className="min-w-0 flex-1">{t("watch.signalsNote", { count: entries.length })}</span>
+            <span className="inline-flex shrink-0 items-center font-semibold text-brand">{t("watch.signalsLink")}<ChevronRight size={15} aria-hidden /></span>
+          </Link>
+        )}
         {pending.length === 0 ? (
           <EmptyState icon={<CheckCircle2 size={22} />} title={t("watch.emptyTitle")} body={t("watch.emptyBody")} />
         ) : <div className="space-y-3">{pending.map((a) => (
@@ -126,7 +145,7 @@ export default function WatchtowerTab() {
                 <div className="flex items-center gap-2"><span className="text-fg-muted">{t("watch.tgBot")}</span><Badge className="ml-auto" tone={telegram.configured ? "up" : "neutral"}>{telegram.configured ? t("watch.linked") : t("watch.notLinked")}</Badge></div>
                 <div className="flex items-center gap-2"><span className="text-fg-muted">{t("watch.tgApprovals")}</span><Badge className="ml-auto" tone={telegram.inbound_enabled ? "up" : "neutral"}>{telegram.inbound_enabled ? t("watch.on") : t("watch.off")}</Badge></div>
                 <div className="flex items-center gap-2"><span className="text-fg-muted">{t("watch.tgApprovers")}</span><span className="ml-auto font-tabular text-fg">{telegram.approvers?.length ?? 0}</span></div>
-                <p className="text-[11px] text-fg-muted">{t("watch.tgHint")}</p>
+                <p className="text-xs text-fg-muted">{t("watch.tgHint")}</p>
               </div>
             )}
           </Panel>

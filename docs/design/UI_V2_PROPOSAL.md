@@ -608,6 +608,10 @@ It is served by a new **`GET /api/broker/specs`**. `store_broker_credentials` va
 
 Opens on first sign-in. It is skippable at any step ("Skip for now") and resumable: progress is stored on the server per user, and the dashboard chip "Setup 2 of 4 · Next: set your risk limits" stays until all 4 steps are done or dismissed. The wizard also lives at **Settings → Setup**, together with the moved go-live checklist (`GET /api/readiness`).
 
+**Accepted (UI2-7):** the wizard opens by itself only while no step is done (and never for a VIEWER), so a new member who joins an organisation that is already set up sees the Setup chip on the dashboard, not the auto-opened wizard.
+
+**Superseded (P3, the owner's "simple front page"):** the dashboard (both shells) shows a **Get started** card instead of the chip, and nothing on the dashboard opens the wizard any more. The card has three steps, each with one button and a tick when done: *Connect your broker* (an Upstox Analytics Token counts for paper trading), *Start your paper bot* (a PAPER deployment of the trader's own), *Get alerts on your phone (Telegram)* (the organisation's Telegram channel is on and its last send went through). It disappears for good once all three are done (`get_started_hidden_at` in the `setup` preferences), can be hidden, and comes back from Help → *Show Get started* (Settings → Help, and the Help desk dialog). The wizard stays at Settings → Setup. The go-live checklist moved to **Settings → Advanced** in both shells, linked from *Prepare for LIVE*: passing rows fold into "N checks OK", only blockers and warnings are open with one sentence and one button each, no developer footer.
+
 | Step | Title | What the user does | Done when | Reuses |
 |---|---|---|---|---|
 | 1 | **Connect your broker** | The 3-step Connect flow (§10). "I'll trade on paper first" skips it. | A credential is stored and the smoke test passed, or skipped | Connect flow, `/broker/*` |

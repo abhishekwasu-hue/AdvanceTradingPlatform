@@ -288,7 +288,7 @@ test.describe("Analyze a chart: the flow", () => {
   test("flag off: no Charts-page button and the page is not there", async ({ page }) => {
     await open(page, "/charts", "light", OFF);
     await page.goto("/charts");
-    await expect(page.getByRole("button", { name: "Open" })).toBeVisible();
+    await expect(page.getByRole("toolbar", { name: "Chart controls" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Analyze a chart" })).toHaveCount(0);
     await page.goto("/chart-analyze");
     await expect(page.getByText("Page not found")).toBeVisible();

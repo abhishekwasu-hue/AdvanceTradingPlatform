@@ -25,14 +25,17 @@ export const TOOLBAR_KINDS: { kind: DrawingKind; label: string; title: string }[
   { kind: "text", label: "Text", title: "Text: one click" },
 ];
 
-/** Binds the drawing tools to a chart while `enabled`; returns the controller and its latest view. */
+/** Binds the drawing tools to a chart while `enabled`; returns the controller and its latest view. `timeframe`
+ * (UI2-4a1, optional): recorded on each new drawing; a change does not reload the drawings. */
 export function useDrawingTools(engine: LightweightEngine | null, element: HTMLElement | null, symbol: string | undefined,
-                                exchange: string, enabled: boolean) {
+                                exchange: string, enabled: boolean, timeframe?: string) {
   const [view, setView] = useState<ToolView | null>(null);
   const ctlRef = useRef<DrawingController | null>(null);
+  const timeframeRef = useRef(timeframe);
+  timeframeRef.current = timeframe;
   useEffect(() => {
     if (!enabled || !engine || !element || !symbol) return undefined;
-    const ctl = new DrawingController(drawingsApi, symbol, exchange);
+    const ctl = new DrawingController(drawingsApi, symbol, exchange, timeframeRef.current);
     ctlRef.current = ctl;
     const unbind = bindTools(engine, ctl, element, window);
     const unsubscribe = ctl.subscribe(setView);
@@ -48,6 +51,7 @@ export function useDrawingTools(engine: LightweightEngine | null, element: HTMLE
       setView(null);
     };
   }, [engine, element, symbol, exchange, enabled]);
+  useEffect(() => { ctlRef.current?.setTimeframe(timeframe); }, [timeframe]);
   return { view, controller: ctlRef.current };
 }
 
@@ -67,9 +71,9 @@ export function DrawingToolbar({ view, controller, onPick }: { view: ToolView; c
     controller.setTool(kind);
     onPick?.();
   };
-  const btn = "rounded px-1.5 py-0.5 text-[10px] font-semibold";
+  const btn = "rounded px-1.5 py-0.5 text-xs font-semibold";
   return (
-    <div className="mb-1 flex flex-wrap items-center gap-1 text-[10px]" role="toolbar" aria-label="Drawing tools">
+    <div className="mb-1 flex flex-wrap items-center gap-1 text-xs" role="toolbar" aria-label="Drawing tools">
       {TOOLBAR_KINDS.map((t) => (
         <button key={t.kind} type="button" title={t.title} aria-pressed={view.tool === t.kind} onClick={() => pick(t.kind)}
                 className={`${btn} ${view.tool === t.kind ? "bg-brand/15 text-brand ring-1 ring-brand/40" : "text-fg-muted hover:text-fg"}`}>

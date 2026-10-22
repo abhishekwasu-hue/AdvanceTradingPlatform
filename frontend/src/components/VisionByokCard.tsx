@@ -125,7 +125,7 @@ export default function VisionByokCard() {
               {p.last_test_ok === true && <span className="text-up">test ok {when(p.last_tested_at)}</span>}
               {p.last_test_ok === false && <span className="text-down">test failed: {p.last_test_error}</span>}
             </div>
-            <div className="mt-1 text-[11px] text-fg-muted">
+            <div className="mt-1 text-xs text-fg-muted">
               Create an API key in the provider's developer console:{" "}
               <a href={p.console_url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-0.5 text-brand hover:underline">
                 {p.console_url.replace(/^https:\/\//, "")} <ExternalLink size={10} />
@@ -181,7 +181,7 @@ export default function VisionByokCard() {
               })}
             </div>
             {status.scope && (
-              <p className="mt-1 text-[11px] text-fg-muted">
+              <p className="mt-1 text-xs text-fg-muted">
                 {status.scope.v3_enabled
                   ? `Scan alerts: alerts of rules you created, at most ${status.scope.scan_audits_per_hour} per hour. Daily review: after ${status.scope.daily_review_at} IST on trading days, up to ${status.scope.daily_review_max_symbols} of your own symbols (your deployments, then your symbol alerts), ${status.scope.daily_review_timeframe} chart.`
                   : "Scan-alert and daily-review audits are not enabled for your organisation yet."}
@@ -216,7 +216,7 @@ export default function VisionByokCard() {
               </div>
             </div>
           ))}
-          <div className="text-[11px] text-fg-muted">Estimates from the platform's own metering; your provider's bill is the authority.</div>
+          <div className="text-xs text-fg-muted">Estimates from the platform's own metering; your provider's bill is the authority.</div>
         </div>
       </div>
       {error && <div className="mt-3 text-sm text-down">{error}</div>}

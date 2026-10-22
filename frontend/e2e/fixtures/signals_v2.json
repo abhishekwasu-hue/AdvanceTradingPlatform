@@ -1,0 +1,350 @@
+{
+ "today": [
+  {
+   "id": "action:901",
+   "at": "2026-10-08T04:58:00+00:00",
+   "symbol": "NIFTY 50",
+   "exchange": "NSE",
+   "direction": "LONG",
+   "setup": "Opening-range breakout",
+   "entry": 24790.0,
+   "stop": 24720.0,
+   "target": 24930.0,
+   "rr": 2.0,
+   "source": {
+    "kind": "autopilot",
+    "name": "Deployment #4"
+   },
+   "mode": "PAPER",
+   "status": "waiting",
+   "expires_at": "2026-10-08T05:08:30+00:00",
+   "snoozed_until": null,
+   "reasons": [
+    "Broke the opening-range high (24,775) at 10:25.",
+    "Came back to it and held at 10:27.",
+    "Volume 1.6 x the 20-bar average on the break."
+   ],
+   "action_id": 901,
+   "outcome": null
+  },
+  {
+   "id": "action:902",
+   "at": "2026-10-08T04:52:00+00:00",
+   "symbol": "BANK NIFTY",
+   "exchange": "NSE",
+   "direction": "SHORT",
+   "setup": "Breakdown retest",
+   "entry": 53980.0,
+   "stop": 54120.0,
+   "target": 53700.0,
+   "rr": 2.0,
+   "source": {
+    "kind": "scan",
+    "name": "Scan setup"
+   },
+   "mode": "PAPER",
+   "status": "waiting",
+   "expires_at": "2026-10-08T05:14:30+00:00",
+   "snoozed_until": null,
+   "reasons": [
+    "Closed below the morning low.",
+    "Retest from below failed at 54,000."
+   ],
+   "action_id": 902,
+   "outcome": null
+  },
+  {
+   "id": "trade:51",
+   "at": "2026-10-08T04:35:00+00:00",
+   "symbol": "HDFCBANK",
+   "exchange": "NSE",
+   "direction": "LONG",
+   "setup": "Pullback to 20 EMA",
+   "entry": 1712.4,
+   "stop": 1698.0,
+   "target": 1741.0,
+   "rr": 1.99,
+   "source": {
+    "kind": "autopilot",
+    "name": "Deployment #2"
+   },
+   "mode": "PAPER",
+   "status": "taken",
+   "expires_at": null,
+   "snoozed_until": null,
+   "reasons": [],
+   "action_id": null,
+   "outcome": null
+  },
+  {
+   "id": "action:880",
+   "at": "2026-10-08T04:18:00+00:00",
+   "symbol": "INFY",
+   "exchange": "NSE",
+   "direction": "LONG",
+   "setup": "Gap-up and hold",
+   "entry": 1861.2,
+   "stop": 1849.0,
+   "target": 1886.0,
+   "rr": 2.03,
+   "source": {
+    "kind": "copilot",
+    "name": "PAPER ticket"
+   },
+   "mode": "PAPER",
+   "status": "taken",
+   "expires_at": null,
+   "snoozed_until": null,
+   "reasons": [
+    "Opened 0.9% higher and held the gap for 30 minutes."
+   ],
+   "action_id": 880,
+   "outcome": "PAPER order #77 placed at the re-quoted price 1861.2"
+  },
+  {
+   "id": "trade:50",
+   "at": "2026-10-08T04:01:00+00:00",
+   "symbol": "SBIN",
+   "exchange": "NSE",
+   "direction": "SHORT",
+   "setup": "Failed breakout",
+   "entry": 826.4,
+   "stop": 831.2,
+   "target": 816.8,
+   "rr": 2.0,
+   "source": {
+    "kind": "autopilot",
+    "name": "Deployment #3"
+   },
+   "mode": "PAPER",
+   "status": "taken",
+   "expires_at": null,
+   "snoozed_until": null,
+   "reasons": [],
+   "action_id": null,
+   "outcome": null
+  },
+  {
+   "id": "action:870",
+   "at": "2026-10-08T03:54:00+00:00",
+   "symbol": "TATASTEEL",
+   "exchange": "NSE",
+   "direction": "LONG",
+   "setup": "Opening-range breakout",
+   "entry": 152.35,
+   "stop": 150.9,
+   "target": 155.25,
+   "rr": 2.0,
+   "source": {
+    "kind": "scan",
+    "name": "Scan setup"
+   },
+   "mode": "PAPER",
+   "status": "skipped",
+   "expires_at": null,
+   "snoozed_until": null,
+   "reasons": [],
+   "action_id": 870,
+   "outcome": null
+  },
+  {
+   "id": "action:860",
+   "at": "2026-10-08T03:50:00+00:00",
+   "symbol": "AXISBANK",
+   "exchange": "NSE",
+   "direction": "LONG",
+   "setup": "Base breakout",
+   "entry": 1164.0,
+   "stop": 1152.0,
+   "target": 1188.0,
+   "rr": 2.0,
+   "source": {
+    "kind": "scan",
+    "name": "Scan setup"
+   },
+   "mode": "PAPER",
+   "status": "expired",
+   "expires_at": "2026-10-08T04:05:00+00:00",
+   "snoozed_until": null,
+   "reasons": [],
+   "action_id": 860,
+   "outcome": null
+  }
+ ],
+ "earlier": [
+  {
+   "id": "action:801",
+   "at": "2026-10-07T08:40:00+00:00",
+   "symbol": "RELIANCE",
+   "exchange": "NSE",
+   "direction": "SHORT",
+   "setup": "Breakdown retest",
+   "entry": 2905.0,
+   "stop": 2921.0,
+   "target": 2873.0,
+   "rr": 2.0,
+   "source": {
+    "kind": "copilot",
+    "name": "TradingView alert"
+   },
+   "mode": "PAPER",
+   "status": "skipped",
+   "expires_at": null,
+   "snoozed_until": null,
+   "reasons": [],
+   "action_id": 801,
+   "outcome": null
+  },
+  {
+   "id": "history:12",
+   "at": "2026-10-06T05:10:00+00:00",
+   "symbol": "ITC",
+   "exchange": "NSE",
+   "direction": "LONG",
+   "setup": "EMA pullback",
+   "entry": 431.5,
+   "stop": 428.0,
+   "target": 438.5,
+   "rr": 2.0,
+   "source": {
+    "kind": "library",
+    "name": "Signal generator"
+   },
+   "mode": null,
+   "status": "info",
+   "expires_at": null,
+   "snoozed_until": null,
+   "reasons": [
+    "Made-up generator reason."
+   ],
+   "action_id": null,
+   "outcome": null
+  }
+ ],
+ "proposals": [
+  {
+   "id": 901,
+   "deployment_id": 4,
+   "trade_id": null,
+   "action": "ENTRY",
+   "rule": "ENTRY_SIGNAL",
+   "reason": "Made-up entry proposal: LONG NIFTY 50",
+   "evidence": {
+    "proposal_price": 24790.0,
+    "stop_loss": 24720.0,
+    "target1": 24930.0,
+    "symbol": "NIFTY 50",
+    "direction": "LONG"
+   },
+   "status": "PROPOSED",
+   "decided_by": null,
+   "decided_at": null,
+   "decision_note": null,
+   "executed_at": null,
+   "result": null,
+   "expires_at": "2026-10-08T05:08:30+00:00",
+   "created_at": "2026-10-08T04:58:00+00:00",
+   "snoozed_until": null,
+   "mode": "PAPER",
+   "ticket": null,
+   "strike_breach": null,
+   "portfolio_impact": null,
+   "risk_check": {
+    "sizing": {
+     "capital_basis": 500000,
+     "risk_per_trade_pct": 1.2,
+     "risk_per_trade_amount": 6000.0,
+     "user_cap": 6000.0,
+     "org_cap": 10000,
+     "binding": "user",
+     "size_multiplier": 1,
+     "cap": 6000.0,
+     "override_cap": 6000.0,
+     "lot_size": 75,
+     "risk_per_unit": 70.0,
+     "suggested_quantity": 75,
+     "suggested_lots": 1,
+     "quantity": 75,
+     "lots": 1,
+     "risk_amount": 5250.0,
+     "risk_pct_of_capital": 1.05,
+     "gauge": 0.88,
+     "within_cap": true,
+     "override": false,
+     "gauge_zone": "ok"
+    },
+    "costs": {
+     "total": 64.5,
+     "net_reward_risk": 1.9
+    },
+    "refusals": [],
+    "warnings": [],
+    "errors": [],
+    "reward_risk": 2.0,
+    "min_reward_risk": 1.2
+   }
+  },
+  {
+   "id": 902,
+   "deployment_id": null,
+   "trade_id": null,
+   "action": "ENTRY",
+   "rule": "ENTRY_SIGNAL",
+   "reason": "Made-up entry proposal: SHORT BANK NIFTY",
+   "evidence": {
+    "proposal_price": 53980.0,
+    "stop_loss": 54120.0,
+    "target1": 53700.0,
+    "symbol": "BANK NIFTY",
+    "direction": "SHORT"
+   },
+   "status": "PROPOSED",
+   "decided_by": null,
+   "decided_at": null,
+   "decision_note": null,
+   "executed_at": null,
+   "result": null,
+   "expires_at": "2026-10-08T05:14:30+00:00",
+   "created_at": "2026-10-08T04:52:00+00:00",
+   "snoozed_until": null,
+   "mode": "PAPER",
+   "ticket": null,
+   "strike_breach": null,
+   "portfolio_impact": null,
+   "risk_check": {
+    "sizing": {
+     "capital_basis": 500000,
+     "risk_per_trade_pct": 1.2,
+     "risk_per_trade_amount": 6000.0,
+     "user_cap": 6000.0,
+     "org_cap": 10000,
+     "binding": "user",
+     "size_multiplier": 1,
+     "cap": 6000.0,
+     "override_cap": 6000.0,
+     "lot_size": 30,
+     "risk_per_unit": 140.0,
+     "suggested_quantity": 30,
+     "suggested_lots": 1,
+     "quantity": 30,
+     "lots": 1,
+     "risk_amount": 4200.0,
+     "risk_pct_of_capital": 0.84,
+     "gauge": 0.7,
+     "within_cap": true,
+     "override": false,
+     "gauge_zone": "ok"
+    },
+    "costs": {
+     "total": 64.5,
+     "net_reward_risk": 1.9
+    },
+    "refusals": [],
+    "warnings": [],
+    "errors": [],
+    "reward_risk": 2.0,
+    "min_reward_risk": 1.2
+   }
+  }
+ ]
+}

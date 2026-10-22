@@ -1,8 +1,10 @@
 import {
   BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Filter, GraduationCap, History, Layers,
-  LayoutDashboard, Link2, ListChecks, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
-  ScanSearch, Sigma, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, type LucideIcon,
+  LayoutDashboard, Link2, ListChecks, ListTodo, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
+  ScanSearch, Sigma, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, type LucideIcon,
 } from "lucide-react";
+import { needsAttention, type BrokerDot } from "../broker/brokerState";
+import { BROKER_PATH } from "../broker/paths";
 import type { Page } from "../components/Sidebar";
 
 /**
@@ -14,8 +16,9 @@ import type { Page } from "../components/Sidebar";
  * Pages whose feature is off are hidden, never shown disabled (§9 rule 9).
  */
 
-/** A v2 shell location: every routed page, plus the new Charts page (`/charts`, `/charts/:symbol`). */
-export type ShellKey = Page | "charts";
+/** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
+ * Settings → Setup (`/settings/setup`, UI2-7). */
+export type ShellKey = Page | "charts" | "setup";
 
 export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more";
 
@@ -82,7 +85,7 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
   },
   {
     id: "account", title: "Account", items: [
-      item("settings", "Settings", "Settings", "/settings", Settings, { keywords: ["brokers", "connect broker", "preferences", "appearance", "theme"] }),
+      item("settings", "Settings", "Settings", "/settings", Settings, { keywords: ["preferences", "appearance", "theme", "integrations", "webhook"] }),
       item("team", "Team", "Team", "/team", Users, { keywords: ["members", "invite"] }),
       item("notifications", "Notifications", "Notifications", "/notifications", Bell, { keywords: ["alerts", "inbox"] }),
     ],
@@ -99,6 +102,30 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
 ];
 
 /**
+ * P2b: the entries above the sections - always listed, never folded away: "Broker" first, with its status dot (green
+ * connected, amber needs login, red not working). On a phone it is the first tile of the More sheet. `section` is only
+ * the caption search results show.
+ */
+export const NAV_PINNED_V2: readonly (NavItemV2 & { section: SectionId })[] = [
+  { ...item("broker", "Broker", "Broker", BROKER_PATH, Plug, { keywords: ["brokers", "connect broker", "renew", "login", "upstox", "zerodha"] }), section: "account" },
+];
+
+/** The pinned entries this trader may see. */
+export function visiblePinned(ctx: NavContext): NavItemV2[] {
+  return NAV_PINNED_V2.filter((i) => isItemVisible(i, ctx));
+}
+
+/** The dot an entry carries: the broker's status on "Broker", nothing elsewhere. */
+export function navDotFor(key: ShellKey, dot: BrokerDot | null): BrokerDot | null {
+  return key === "broker" ? dot : null;
+}
+
+/** The phone's More button carries the dot too while a broker needs attention (amber or red). */
+export function moreButtonDot(dot: BrokerDot | null): BrokerDot | null {
+  return needsAttention(dot) ? dot : null;
+}
+
+/**
  * Pages that keep working but have no sidebar entry in v2: they are being merged into another page's tab (§3 M1, M2,
  * M3, M4; the tabs arrive in UI2-8). Until then they live at their new addresses and are found through search (the
  * command bar and the More sheet), so nothing a trader uses today becomes unreachable.
@@ -111,6 +138,8 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
     { flag: "chart_analyze", keywords: ["analyze chart", "analyse chart", "chart reading", "screenshot", "tradingview"] }), section: "markets" },
   { ...item("coach", "Coach and guide", "Coach and guide", "/coach", GraduationCap, { keywords: ["trade coach", "guide", "learn"] }), section: "insights" },
   { ...item("account", "Account", "Account", "/settings/account", UserCircle2, { keywords: ["profile", "password", "two-factor", "sessions", "email"] }), section: "account" },
+  // UI2-7: Settings → Setup, the setup wizard and the go-live checklist (§11); Settings v2 groups arrive with UI2-6.
+  { ...item("setup", "Setup", "Setup", "/settings/setup", ListTodo, { keywords: ["set up your account", "setup wizard", "get started", "go-live checklist", "readiness"] }), section: "account" },
 ];
 
 /** The phone bottom bar (§4): Home, Charts, Signals, Positions - and More, which opens the sheet. */
@@ -144,7 +173,7 @@ export function visibleSections(ctx: NavContext, sections: readonly NavSectionV2
 /** Every page in the navigation, extras included, in order - for the command bar and the More sheet's search. */
 export function allNavItems(): (NavItemV2 & { section: SectionId })[] {
   const main = NAV_SECTIONS_V2.flatMap((s) => s.items.map((i) => ({ ...i, section: s.id })));
-  return [...main, ...NAV_EXTRAS_V2];
+  return [...NAV_PINNED_V2, ...main, ...NAV_EXTRAS_V2];
 }
 
 /** The navigation entry for a shell location (sidebar items first, then the extras). */
@@ -153,9 +182,16 @@ export function navItemFor(key: ShellKey | null): (NavItemV2 & { section: Sectio
   return allNavItems().find((i) => i.key === key) ?? null;
 }
 
-/** The section that holds a location, so the sidebar can open it. */
+/** The section that holds a location, so the sidebar can open it (none for a pinned entry: it is always shown). */
 export function sectionOf(key: ShellKey | null): SectionId | null {
+  if (NAV_PINNED_V2.some((p) => p.key === key)) return null;
   return navItemFor(key)?.section ?? null;
+}
+
+/** P2b: the More sheet's first tiles, above the sections: the pinned entries (Broker). */
+export function moreSheetPinned(ctx: NavContext): NavItemV2[] {
+  const inBar = new Set<ShellKey>(BOTTOM_BAR_V2.map((b) => b.key));
+  return visiblePinned(ctx).filter((i) => !inBar.has(i.key));
 }
 
 /** The More sheet (§4): every visible page that is not in the bottom bar, grouped by the same sections. */

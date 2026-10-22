@@ -8,22 +8,34 @@
  *   Changing one chart of a group changes the others that the group links; a chart joining a group takes the group's
  *   linked symbol / interval.
  * - Nothing here places an order.
+ * - UI2-4d: the v2 Multi-chart tab (chart/MultiChartV2.tsx) keeps the same shape and API. A cell may also hold week and
+ *   month (the shared `chart/timeframes.ts` list) and the "bars" chart type; the backend accepts both since UI2-4a2-pre.
+ *   The CH5 page keeps its own lists (CH5_TIMEFRAMES, CHART_TYPES) and shows such a cell as day / candles (`ch5Cell`).
  */
 import { ApiError, request } from "../api/client";
+import { TIMEFRAMES as CHART_TIMEFRAMES, type TimeframeId } from "../chart/timeframes";
 
 export const SCHEMA = "layout/1";
 export const GRIDS = [1, 2, 4, 6, 8] as const;
 export type Grid = (typeof GRIDS)[number];
 export const GROUPS = ["A", "B", "C", "D"] as const;
 export type Group = (typeof GROUPS)[number];
-export const TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min", "day"] as const;
-export type Timeframe = (typeof TIMEFRAMES)[number];
+/** Every timeframe a cell may hold (UI2-4d: week and month added, from the one shared list). */
+export const TIMEFRAMES = CHART_TIMEFRAMES;
+export type Timeframe = TimeframeId;
+/** The CH5 page's own timeframes, as before UI2-4d (no week or month). */
+export const CH5_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min", "day"] as const satisfies readonly Timeframe[];
+export type Ch5Timeframe = (typeof CH5_TIMEFRAMES)[number];
+/** The CH5 chart engine's types (ProChart), unchanged. */
 export const CHART_TYPES = ["candles", "hollow", "heikin_ashi", "renko", "range", "line", "area"] as const;
 export type ChartType = (typeof CHART_TYPES)[number];
+/** Every chart type a cell may hold: the CH5 ones plus "bars" (OHLC bars, v2 only). */
+export const CELL_CHART_TYPES = [...CHART_TYPES, "bars"] as const;
+export type CellChartType = (typeof CELL_CHART_TYPES)[number];
 export const EXCHANGES = ["NSE", "BSE", "NFO", "BFO", "MCX", "CDS", "CRYPTO", "NYSE", "NASDAQ"] as const;
 const SYMBOL_RE = /^[A-Za-z0-9 &._:-]{1,40}$/;
 
-export interface CellV1 { symbol: string; exchange: string; timeframe: Timeframe; chart_type: ChartType; group: Group | null }
+export interface CellV1 { symbol: string; exchange: string; timeframe: Timeframe; chart_type: CellChartType; group: Group | null }
 export interface GroupSync { symbol: boolean; interval: boolean; crosshair: boolean }
 export interface LayoutV1 { schema: typeof SCHEMA; grid: Grid; cells: CellV1[]; groups: Partial<Record<Group, GroupSync>>; active: number }
 
@@ -51,6 +63,17 @@ export function defaultLayout(symbol = "NIFTY 50", exchange = "NSE", timeframe: 
   return { schema: SCHEMA, grid: 1, cells: [cell(symbol, exchange, timeframe)], groups: {}, active: 0 };
 }
 
+/** UI2-4d: a trader with no draft and no saved layout starts the v2 Multi-chart tab on two charts of one symbol, unlinked. */
+export function defaultLayoutV2(symbol = "NIFTY 50", exchange = "NSE", timeframe: Timeframe = "5min"): LayoutV1 {
+  return setGrid(defaultLayout(symbol, exchange, timeframe), 2);
+}
+
+/** A cell as the CH5 page shows it: week / month as day, "bars" as candles (the layout itself keeps them). */
+export function ch5Cell(c: CellV1): CellV1 & { timeframe: Ch5Timeframe; chart_type: ChartType } {
+  const timeframe = (CH5_TIMEFRAMES as readonly string[]).includes(c.timeframe) ? (c.timeframe as Ch5Timeframe) : "day";
+  return { ...c, timeframe, chart_type: c.chart_type === "bars" ? "candles" : c.chart_type };
+}
+
 export function syncOf(layout: LayoutV1, group: Group | null): GroupSync | null {
   return group ? layout.groups[group] ?? DEFAULT_SYNC : null;
 }
@@ -72,7 +95,7 @@ function withCells(layout: LayoutV1, change: (cells: CellV1[]) => void): LayoutV
 /** A new grid size: the first cells are kept; new cells show the active chart's symbol and timeframe, unlinked. */
 export function setGrid(layout: LayoutV1, grid: Grid): LayoutV1 {
   const base = layout.cells[layout.active] ?? layout.cells[0];
-  const cells = Array.from({ length: grid }, (_, i) => (layout.cells[i] ? { ...layout.cells[i] } : { ...base, chart_type: "candles" as ChartType, group: null }));
+  const cells = Array.from({ length: grid }, (_, i) => (layout.cells[i] ? { ...layout.cells[i] } : { ...base, chart_type: "candles" as CellChartType, group: null }));
   return { ...layout, grid, cells, active: Math.min(layout.active, grid - 1) };
 }
 
@@ -94,7 +117,7 @@ export function setTimeframe(layout: LayoutV1, index: number, timeframe: Timefra
 }
 
 /** The chart type is per chart (a Renko next to its candles is the point), never linked. */
-export function setChartType(layout: LayoutV1, index: number, chartType: ChartType): LayoutV1 {
+export function setChartType(layout: LayoutV1, index: number, chartType: CellChartType): LayoutV1 {
   return withCells(layout, (cells) => { cells[index] = { ...cells[index], chart_type: chartType }; });
 }
 
@@ -142,10 +165,10 @@ export function setActive(layout: LayoutV1, index: number): LayoutV1 {
   return index >= 0 && index < layout.cells.length && index !== layout.active ? { ...layout, active: index } : layout;
 }
 
-/** The next / previous timeframe in TIMEFRAMES order, stopping at either end. */
-export function stepTimeframe(timeframe: Timeframe, delta: number): Timeframe {
-  const i = TIMEFRAMES.indexOf(timeframe);
-  return TIMEFRAMES[Math.max(0, Math.min(TIMEFRAMES.length - 1, (i < 0 ? 2 : i) + delta))];
+/** The next / previous timeframe in `list` order (TIMEFRAMES, or the CH5 page's own), stopping at either end. */
+export function stepTimeframe(timeframe: Timeframe, delta: number, list: readonly Timeframe[] = TIMEFRAMES): Timeframe {
+  const i = list.indexOf(timeframe);
+  return list[Math.max(0, Math.min(list.length - 1, (i < 0 ? 2 : i) + delta))];
 }
 
 /** The backend's rules, checked before a layout is used (a stored draft) or sent; null when it is valid. */
@@ -159,7 +182,7 @@ export function layoutProblem(value: unknown): string | null {
     if (!c || typeof c.symbol !== "string" || !SYMBOL_RE.test(c.symbol)) return "a chart has no valid symbol";
     if (!EXCHANGES.includes(c.exchange as (typeof EXCHANGES)[number])) return `unknown exchange ${String(c.exchange)}`;
     if (!TIMEFRAMES.includes(c.timeframe)) return `unknown timeframe ${String(c.timeframe)}`;
-    if (!CHART_TYPES.includes(c.chart_type)) return `unknown chart type ${String(c.chart_type)}`;
+    if (!CELL_CHART_TYPES.includes(c.chart_type)) return `unknown chart type ${String(c.chart_type)}`;
     if (c.group !== null && !GROUPS.includes(c.group)) return `unknown link group ${String(c.group)}`;
   }
   if (!l.groups || typeof l.groups !== "object") return "groups missing";

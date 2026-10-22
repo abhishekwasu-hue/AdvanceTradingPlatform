@@ -126,6 +126,11 @@ if sub == "up":
         if svc in APP and f"{APP[svc]}:{rel}" not in st["images"]:
             print(f"pull access denied for {APP[svc]}", file=sys.stderr); rc = 1; finish()
     for svc in targets:
+        if svc == "caddy" and ("caddy" not in st["running"] or "--force-recreate" in flags):
+            # Caddy reads the Caddyfile only when its container is created (a single-file bind mount)
+            env = dict(l.split("=", 1) for l in open(".env").read().splitlines() if "=" in l and not l.startswith("#"))
+            path = os.path.join("deploy", env.get("CADDYFILE") or "Caddyfile")
+            st["caddy_conf"] = open(path).read() if os.path.exists(path) else ""
         st["running"][svc] = {"release": rel if svc in APP else "infra", "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", "")}
     if "backend" in targets and st.get("seed_on_boot") and os.environ.get("ATP_DEPLOYMENT_PHASE") == "phase0":
         # the API's own Phase 0 first boot (app/platform/deployment_phase.py): absent entries only
@@ -218,6 +223,10 @@ if sub == "exec":
                 finish()
         run_sql(target, sqls)
         finish()
+    if svc == "caddy" and cmd == ["cat", "/etc/caddy/Caddyfile"]:
+        if "caddy" not in st["running"]:
+            rc = 1; finish()
+        sys.stdout.write(st.get("caddy_conf", "")); finish()
     if svc == "backup" and cmd[:2] == ["cat", "/backups/LAST_BACKUP_OK"]:
         if st["last_backup_ok"]:
             out.append(st["last_backup_ok"])
@@ -379,6 +388,14 @@ if up:
     head = st["heads"].get(backend["release"])
     if db_rev not in (head, "-") and backend["ahead"] != db_rev:
         up = False          # an older image on a newer database starts only when told that exact revision
+pub = st.get("public")
+local = "--resolve" in args                          # through Caddy on the host; otherwise through public DNS (D1)
+if pub is not None and url.startswith("https://") and not (local and url.endswith("/api/system/health")):
+    if "-D" in args:
+        print("\r\n".join(["HTTP/2 200", *pub["headers"]]) + "\r\n" if pub["headers"] is not None else "", end=""); sys.exit(0)
+    if "://www." in url:
+        print(pub["www_local"] if local else pub["www"], end=""); sys.exit(0)
+    print(pub["health"], end=""); sys.exit(0)
 if "-w" in args:
     print("200" if up and "caddy" in st["running"] else "000", end="")
     sys.exit(0)
@@ -793,6 +810,80 @@ def test_a_seed_shaped_change_to_an_existing_entry_still_fails_the_deploy(host):
     (host.bin / "docker").write_text(fake)
     res = host.run("deploy")
     assert res.returncode == 1 and "feature flags CHANGED during the deploy" in res.stdout
+
+
+_EDGE_HEADERS = ["Strict-Transport-Security: max-age=31536000; includeSubDomains", "X-Content-Type-Options: nosniff",
+                 "X-Frame-Options: DENY", "Content-Security-Policy: default-src 'self'", "Referrer-Policy: no-referrer"]
+
+
+def test_health_checks_the_public_domain_its_headers_and_the_www_redirect(host):
+    """D1: with a real domain (CADDYFILE=Caddyfile) health checks, through Caddy here, the apex's security headers and the
+    www redirect (FAIL: they come from the release's Caddyfile), and through public DNS the apex and www (WARN only:
+    DNS and certificates are not part of a release, so they never fail a deploy or a rollback)."""
+    good = "301 https://atp.example.com/atp-health-probe?x=1"
+    host.write_env(extra={"DOMAIN": "atp.example.com", "CADDYFILE": "Caddyfile"})
+    host.state["public"] = {"health": "200", "headers": _EDGE_HEADERS, "www": good, "www_local": good}
+    host.save()
+    assert host.run("deploy").returncode == 0
+    res = host.run("health")
+    assert res.returncode == 0 and "WARN" not in res.stdout.split("==> public HTTPS")[1].split("==>")[0], res.all
+    assert "https://atp.example.com/api/system/health -> 200 over public DNS, certificate trusted" in res.stdout
+    assert "sends HSTS, CSP" in res.stdout and "www.atp.example.com -> permanent redirect to https://atp.example.com" in res.stdout
+    host.state["public"].update(www="000 ", www_local="000 ", health="000"); host.save()   # no www certificate, no hairpin
+    res = host.run("health")
+    assert res.returncode == 0, res.all                                                    # warnings, never a failed gate
+    assert "no certificate for it yet" in res.stdout and "over public DNS -> 000" in res.stdout
+    host.state["public"].update(www_local="200 ", headers=_EDGE_HEADERS[1:]); host.save()  # the release's Caddyfile is wrong
+    res = host.run("health")
+    assert res.returncode == 1 and "expected '301 https://atp.example.com/atp-health-probe?x=1'" in res.stdout
+    assert "is missing: strict-transport-security" in res.stdout
+    host.state["public"].update(www_local=good, headers=None); host.save()                 # no answer: one clear failure
+    res = host.run("health")
+    assert res.returncode == 1 and "gave no answer, so its security headers could not be checked" in res.stdout
+    assert "is missing" not in res.stdout
+
+
+def test_caddy_is_recreated_whenever_it_runs_another_caddyfile_than_the_checkout(host):
+    """D1 review: Caddy reads deploy/$CADDYFILE through a single-file bind mount, so the file it runs is compared with
+    the checkout's on every deploy and rollback (not two releases' files: the release that brings a change is deployed
+    by the previous atp.sh). Unchanged: Caddy is left alone. Stale - even on a converge - it is recreated, and until
+    then health fails."""
+    def recreations(since):
+        return [c["argv"] for c in host.state["calls"][since:] if "--force-recreate" in c["argv"]]
+
+    def release(text, message):
+        (host.work / "deploy" / "Caddyfile.ip").write_text(text)
+        _git(host.work, "add", "-A"); _git(host.work, "commit", "-q", "-m", message)
+        sha = _git(host.work, "rev-parse", "HEAD"); _git(host.work, "push", "-q", "origin", "main")
+        host.state["heads"][sha[:12]] = "rev1"; host.save()
+        return sha
+    _git(host.work, "checkout", "-q", "main")
+    sha_c = release("https://{$DOMAIN} {\n\ttls internal\n}\n", "release C")
+    sha_d = release("www.{$DOMAIN} {\n\tredir https://{$DOMAIN}{uri} permanent\n}\n", "release D: www")
+    assert host.run("deploy", sha_c).returncode == 0                                     # first deploy: created from the file
+    before = len(host.state["calls"])
+    assert host.run("deploy", sha_c).returncode == 0 and recreations(before) == []       # unchanged: left alone
+    res = host.run("deploy", sha_d)
+    assert res.returncode == 0, res.all
+    assert recreations(before) and recreations(before)[0][-1] == "caddy" and "recreating it so it reads this one" in res.stdout
+    host.state["caddy_conf"] = "an older file\n"; host.save()                           # e.g. deployed by an older atp.sh
+    res = host.run("health")
+    assert res.returncode == 1 and "caddy runs an older Caddyfile than deploy/Caddyfile.ip" in res.stdout
+    before = len(host.state["calls"])
+    res = host.run("deploy", sha_d)                                                      # a converge repairs it
+    assert res.returncode == 0 and recreations(before), res.all
+    assert host.run("health").returncode == 0
+    before = len(host.state["calls"])
+    res = host.run("rollback")                                                           # back to C: its file again
+    assert res.returncode == 0 and recreations(before), res.all
+
+
+def test_health_on_the_ip_caddyfile_skips_the_public_domain_checks(host):
+    """Recovery path: with CADDYFILE=Caddyfile.ip there is no public name to ask, so none of the D1 checks run."""
+    assert host.run("deploy").returncode == 0
+    res = host.run("health")
+    assert res.returncode == 0, res.all
+    assert "over public DNS" not in res.stdout and "www." not in res.stdout
 
 
 def test_health_passes_on_a_phase0_install_with_nothing_for_the_owner_to_set(host):

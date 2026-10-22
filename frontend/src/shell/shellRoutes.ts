@@ -1,5 +1,5 @@
 import { pageFromPath } from "../routes";
-import { V2_ALIASES, needsBrokerGate } from "./aliases";
+import { SETUP_ADDRESS, V2_ALIASES, needsBrokerGate, routerPath } from "./aliases";
 import { navItemFor, type ShellKey } from "./navModel";
 
 export { V2_ALIASES, flagOffFallback, needsBrokerGate, routerPath } from "./aliases";
@@ -34,9 +34,24 @@ export function chartsPath(symbol?: string | null): string {
   return s ? `/charts/${encodeURIComponent(s)}` : "/charts";
 }
 
-/** What the v2 shell shows at `pathname`: the Charts page, a merged page's new address, or today's page id. */
+/** UI2-4e: a chart on the Chart tab with its timeframe: `/charts/NIFTY%2050?tf=15min` (`&exchange=BSE` off NSE) - an
+ * embedded chart's "Open in Chart tab", Signals' "Open chart". The Charts page takes the timeframe (when it is one it
+ * knows), then drops it from the address. */
+export function chartTabPath(symbol: string, exchange?: string | null, timeframe?: string | null): string {
+  const s = symbol.trim().toUpperCase();
+  const q = new URLSearchParams();
+  if (timeframe) q.set("tf", timeframe);
+  const x = (exchange ?? "").trim().toUpperCase();
+  if (s && x && x !== "NSE") q.set("exchange", x);
+  const query = q.toString();
+  return query ? `${chartsPath(s)}?${query}` : chartsPath(s);
+}
+
+/** What the v2 shell shows at `pathname`: the Charts page, Settings → Setup, a merged page's new address, or today's
+ * page id. */
 export function shellKeyFromPath(pathname: string): ShellKey | null {
   if (chartsSymbolFromPath(pathname) !== undefined) return "charts";
+  if (clean(pathname) === SETUP_ADDRESS) return "setup";
   const alias = V2_ALIASES.find((a) => a.path === clean(pathname));
   if (alias) return alias.page;
   return pageFromPath(pathname);
@@ -78,4 +93,15 @@ export function v2RedirectFor(pathname: string, search: string, ctx: RedirectCon
  * too; `/journal/coach` and `/settings/account` are not data pages. */
 export function isGatedPath(pathname: string): boolean {
   return needsBrokerGate(pathname);
+}
+
+/** UI2-2: true when the shell puts the broker gate in front of this address *and* the page there is not one that shows
+ * the broker states itself (`ownStates`, src/shell/pagesV2.ts: the v2 dashboard). An address that cannot be decoded
+ * stays gated (fail closed). */
+export function shellGates(pathname: string, ownStates: readonly string[]): boolean {
+  if (!isGatedPath(pathname)) return false;
+  const { path, malformed } = routerPath(pathname);
+  if (malformed) return true;
+  const clean = `/${path.replace(/^\/+|\/+$/g, "")}`;
+  return !ownStates.includes(clean);
 }

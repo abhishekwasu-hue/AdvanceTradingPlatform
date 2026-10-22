@@ -40,6 +40,23 @@ Owner: Abhi. These rules apply to every Claude Code session on this repository. 
   With every merge, say whether a migration is needed. If yes: deploy after 15:30 IST, or `MIGRATION_FORCE=1` only
   when Abhi says so.
 
+## Signal language and the marketplace (owner decision, handover 11l)
+
+- The marketplace stays OFF. It is the LAST phase, considered only about six months from now, once every feature is
+  complete and production-grade. Don't build marketplace features before then.
+- Showing strategies / ideas is EDUCATION. "Buy this stock, SL here, target there" is research / advice: ATP never
+  does it. The strategy engine only GENERATES SIGNALS from logic the user adopted and configured; the user decides the
+  trade, lots and execution.
+- Signals are described in STRUCTURE WORDS only (e.g. "the pullback reached a seller area; a handover is forming").
+  No single prices or other numbers, and no buy / sell / target / stop-loss wording anywhere.
+  - Public / education surfaces (Idea Library, Copilot teacher, brief text, learning examples, marketing, share
+    cards): no security names and no prices; learning examples use anonymised charts older than 3 months (SEBI,
+    Jan 2025).
+  - The user's OWN signals (his adopted strategy, his chosen symbols): the symbol is shown, and the AREA may be shown
+    as a price range ("Seller area: 23,000–23,100"). What his automation did (orders, lots, fills) is a factual record
+    on the Orders / Positions pages, never part of the signal text.
+- The engine may use numbers internally; the policy governs what is SHOWN. A formatter and a CI guard enforce it.
+
 ## Trading logic (when ATP ports the Trade reader)
 
 - Abhi is a price-action trader, not an intraday trader. Chart reading is by structure; no day / date / time framing;

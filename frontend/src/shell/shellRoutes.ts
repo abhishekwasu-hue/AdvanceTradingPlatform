@@ -1,7 +1,8 @@
 import { pageFromPath } from "../routes";
-import { SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS, V2_ALIASES, needsBrokerGate, routerPath } from "./aliases";
+import { MARKETS_ADDRESS, SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS, V2_ALIASES, needsBrokerGate, routerPath } from "./aliases";
 import { navItemFor, type ShellKey } from "./navModel";
 import { settingsSectionAt } from "../settings/paths";
+import { IDEAS_ADDRESS } from "../ideas/model";
 
 export { V2_ALIASES, flagOffFallback, needsBrokerGate, routerPath } from "./aliases";
 
@@ -54,6 +55,8 @@ export function shellKeyFromPath(pathname: string): ShellKey | null {
   if (chartsSymbolFromPath(pathname) !== undefined) return "charts";
   if (clean(pathname) === SETUP_ADDRESS) return "setup";
   if (clean(pathname) === TRADING_DEFAULTS_ADDRESS) return "trading-defaults";
+  if (clean(pathname) === IDEAS_ADDRESS) return "ideas";
+  if (clean(pathname) === MARKETS_ADDRESS) return "markets";
   // Settings redesign B: the Settings section pages (v2 only).
   const section = settingsSectionAt(clean(pathname));
   if (section) return section.key;

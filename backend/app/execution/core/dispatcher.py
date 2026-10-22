@@ -318,19 +318,32 @@ async def _placed(session: AsyncSession, f: _Facts, owner_id: int, signal: Signa
     await session.commit()
 
 
+def notify_text(label: str, row: ExecutionIntentRecord, signal: Signal, *, signal_v2: bool = False) -> Tuple[str, str]:
+    """(title, message) of a notify-only setup. Handover 11l (flag `signal_language_v2`): in the signal language - the
+    symbol, the side and the user's own strategy, no single price and no stop / target wording (app/signals/language.py
+    setup_notice). Off: the text as before."""
+    if signal_v2:
+        from app.signals.language import setup_notice
+        return setup_notice(label, row.symbol, str(row.direction or ""), signal.strategy_name, signal.reasons)
+    return (f"{label}: {row.direction} {row.symbol}",
+            f"{label}: {row.direction} {row.symbol} at {_money(signal.entry)} (stop {_money(signal.stop_loss)}, "
+            f"target {_money(signal.target1)}) - {row.strategy_id}. Notify only: nothing is proposed or placed.")
+
+
 async def _notify(session: AsyncSession, row: ExecutionIntentRecord, signal: Signal, decision: policy.Decision,
                   now: datetime) -> str:
     from app.notifications.service import notify
+    from app.platform.controls import flag_enabled
+    from app.signals.language import FLAG as SIGNAL_LANGUAGE_FLAG
     intent_id, tenant_id, user_id = row.id, row.tenant_id, row.user_id
     label = intents.SOURCES.get(row.source, row.source)
+    title, message = notify_text(label, row, signal, signal_v2=await flag_enabled(session, SIGNAL_LANGUAGE_FLAG, tenant_id))
     # DONE first, in the transaction notify() commits: the row and its notification are written together or not at all.
     if not await intents.finish(session, intent_id, intents.DONE, route=decision.route, reason=decision.reason, now=now, commit=False):
         await session.rollback()
         return intents.FAILED
     record = await notify(
-        session, tenant_id, NotificationType.SCREEN_ALERT, title=f"{label}: {row.direction} {row.symbol}",
-        message=(f"{label}: {row.direction} {row.symbol} at {_money(signal.entry)} (stop {_money(signal.stop_loss)}, "
-                 f"target {_money(signal.target1)}) - {row.strategy_id}. Notify only: nothing is proposed or placed."),
+        session, tenant_id, NotificationType.SCREEN_ALERT, title=title, message=message,
         severity=NotificationSeverity.INFO, user_id=user_id,
         metadata_json=json.dumps({"execution_intent_id": intent_id, "source_ref": row.source_ref}))
     await session.execute(update(ExecutionIntentRecord).where(ExecutionIntentRecord.id == intent_id)

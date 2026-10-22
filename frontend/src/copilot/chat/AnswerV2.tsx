@@ -2,7 +2,10 @@ import { CircleHelp, ListChecks, Sparkles } from "lucide-react";
 import { Link } from "react-router";
 import { AnalysisTableView, MiniChart } from "../../optionChain/AnalysisTabsV2";
 import { useCopilotT } from "../i18n";
-import { stampText, workedLine, type ChatAnswer } from "./model";
+import { actionState, stampText, workedLine, type ChatAnswer } from "./model";
+
+/** Job 6: the hand-over to the Paper bot page is the answer's one primary action. */
+const DRAFT_ACTION = "inline-flex min-h-11 w-full items-center justify-center py-space-2 text-center gap-space-2 rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto";
 
 /**
  * One Copilot answer: the short answer first, then the data as sections of plain lines, inline tables and small charts
@@ -19,7 +22,8 @@ export function AnswerV2({ answer, onAsk }: { answer: ChatAnswer; onAsk?: (q: st
       </div>
       {answer.notes.map((n) => <p key={n} className="text-t13 text-fg-muted" data-note="chart-reader">{n}</p>)}
       {answer.action && (
-        <Link to={answer.action.to} className="inline-flex min-h-11 items-center text-t14 font-semibold text-brand hover:underline md:min-h-0">
+        <Link to={answer.action.to} state={actionState(answer)} data-action={answer.draft ? "draft" : "page"}
+          className={answer.draft ? DRAFT_ACTION : "inline-flex min-h-11 items-center text-t14 font-semibold text-brand hover:underline md:min-h-0"}>
           {answer.action.label}
         </Link>
       )}

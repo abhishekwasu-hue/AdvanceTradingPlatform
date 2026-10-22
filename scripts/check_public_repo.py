@@ -131,6 +131,12 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     # Settings redesign A: the AI key-format table and its cases (obviously fake keys only), backend + byte-identical copy
     "backend/tests/fixtures/key_formats.json": "9eca4977c4c6c89bf6876b40938aef29caabba46227e2266144958ee1462f5da",
     "frontend/src/aiKeys/__fixtures__/key_formats.json": "9eca4977c4c6c89bf6876b40938aef29caabba46227e2266144958ee1462f5da",
+    # Handover 11l: the signal-language cases (made-up texts; symbol names only as examples of what a public text may not
+    # carry), backend + byte-identical frontend copy
+    "backend/tests/fixtures/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
+    "frontend/src/signals/__fixtures__/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
+    # Idea library slice 1: the server's own payload of the hand-written idea cards (no market data; synced by a backend test)
+    "frontend/e2e/fixtures/ideas_v2.json": "be47523431c5523509f1a46238ff6824da910a0c176b1609e5971a6c23373d7f",
     # made-up rows in NSE's file layouts (the universe importer's tests)
     "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
     "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",
@@ -155,8 +161,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
     "backend/evals/sets/qa.jsonl": "845e5902cbc904864ec1f24bbf589194428ec462e164e388ab04b9734469338e",
     "backend/evals/sets/tool_args.jsonl": "becccbea044cd67e582bde3593bb500bccac3ba1132d1cd2ab38edc60818befa",
-    "backend/evals/sets/copilot_jobs.jsonl": "9dea95bb65105f9c49997d7a3c0bc43e1d087d5d3950e3cd47fb69b2401804c7",
-    "backend/evals/sets/copilot_safety.jsonl": "038649412f80a4ed9e3841137f2f659762367489364d1e0bdb9c27b990eafed3",
+    "backend/evals/sets/copilot_jobs.jsonl": "664c9e5d6a1d546ea1d23babb2be500112d58477a0c61609d32c095e0aa9ad3a",
+    "backend/evals/sets/copilot_safety.jsonl": "3f2ad7075e04113662e367e0cbd71157098ef3aa0345e4b93ccf99f2621a2925",
     "backend/evals/sets/copilot_tools.json": "eb2e73b61907e9b5d7631293d89b3f8e4a050abc773a292946ede221a8136a68",
     # hand-written API replies for the Playwright tests
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",
@@ -190,7 +196,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/thesis_history.json": "f3226989acc68ddf2bbfa69ff8a5353011a90a480befc57c0bfa0c988ccd5a6c",
     "frontend/e2e/fixtures/thesis_report.json": "e85180cb3f957bf048f9bffe63e3237bb760333376e255f1ae76f6d9df2e287d",
     "frontend/e2e/fixtures/trading_v2.json": "46bc6543f0f50524ef77c82ee261b19afe100722ee8c49d5a6a3fb6cda207265",
-    "frontend/e2e/fixtures/copilot_chat_v2.json": "cedf9ddab8a4d55d1d2f3ab1ebae0bc271f18b9b0a4b6585fe43f006a097a49f",
+    "frontend/e2e/fixtures/copilot_chat_v2.json": "3537bd6d831372158b163dc1706404a9afc044dd795798f81d5fbed6cbf0eec7",
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

@@ -4,9 +4,10 @@ The role (handover 5 A): a senior trader, risk manager and mentor at the user's 
 teaches; it NEVER places, blocks or changes an order (ADR-0006) and never says buy or sell (information and education,
 not advice - CLAUDE.md §3). Every answer is grounded in ATP's own tools:
 
-* `route(message)` picks one of the eight jobs (or a refusal, or "help"). Jobs 1, 2, 7 and 8 (first slice) and 3, 4 and
-  5 (second slice: the pre-trade check, the position watch, the post-trade coach) are built here; job 6 answers plainly
-  that it is not built yet and points at the page that exists today.
+* `route(message)` picks one of the eight jobs (or a refusal, or "help"). Jobs 1, 2, 7 and 8 (first slice), 3, 4 and 5
+  (second slice: the pre-trade check, the position watch, the post-trade coach) and 6 (third slice: the strategy builder,
+  `app/ai/strategy_builder.py` - the trader's own idea as a DRAFT paper strategy he reviews, saves and starts himself)
+  are built here.
 * Each built job calls a fixed set of READ tools (`app/ai/tools`), through a `Runner` the caller supplies - the request's
   `run_tool` in production, recorded fixtures in the evals and tests (no network, no model).
 * The answer is built by fixed rules from the tool results only: sections of plain lines, inline tables and small
@@ -69,8 +70,8 @@ JOBS: Tuple[Job, ...] = (
         "How are my open positions?", True, ("Open My positions", "/positions")),
     Job("review", 5, "Post-trade coach", "Reviews each trade, your repeated habits and your week.",
         "Review my last trade", True, ("Open the trade coach", "/copilot/coach")),
-    Job("strategy", 6, "Strategy builder", "Turns an idea into readable rules and an honest backtest.",
-        "Turn my idea into a strategy and test it", False, ("Open the idea builder", "/copilot/idea-builder")),
+    Job("strategy", 6, "Strategy builder", "Turns your own idea into readable rules: a draft paper strategy you review and save yourself.",
+        "Turn my idea into a strategy and test it", True, ("Open the Paper bot page", "/deployments")),
     Job("option_chain", 7, "Option chain and risk", "Explains the option chain and checks a size against your own risk settings.",
         "What does the option chain show?", True),
     Job("teacher", 8, "Teacher", "Explains a trading concept and shows it on your own chart.",
@@ -89,18 +90,51 @@ REFUSALS = {
                "I can show you what the data says right now: the structure, the key areas and the conditions to watch."),
     "tip": ("I don't give tips, picks or targets. "
             "I can read the structure of any chart with you, or explain a concept so you can judge it yourself."),
+    # Job 6 (the strategy builder): the values that are the trader's own settings, a promise of returns, someone else's strategy.
+    "settings": ("I can't choose your stop, your profit objective, your size or your reward to risk: those are your own settings, and I "
+                 "never add a rule you did not state. Tell me your values and I will put them in the draft."),
+    "promise": ("I can't promise any return, and nobody honestly can. A draft strategy is only your idea written as rules: test it on paper "
+                "and judge the results yourself."),
+    "copy": ("I can't copy another person's strategy, calls or trades. I build only from your own idea, in your own words, with the building "
+             "blocks ATP has. Describe what you look for on the chart and I will turn it into a draft."),
 }
 REFUSAL_STARTERS = ("Read the NIFTY chart", "Today's market brief", "Teach me: what is a demand zone?")
 
 _ORDER = [
     r"^(please |pls |now |ok |okay )?(place|send|execute|fire|punch|submit|book)\b",
-    r"^(please |pls |now |ok |okay )?(buy|sell|short)\b(?! side| signal| zone| area| pressure)",
+    r"^(please |pls |now |ok |okay )?(buy|sell|short)\b(?! side| signal| zone| area| pressure| when\b| if\b| whenever\b| once\b| after\b)",
     r"\b(can|could|will|would) you\b[\w\s,'-]{0,10}\b(place|put|send|execute|fire|punch|book|submit|enter|take|buy|sell|short|cancel|modify|amend|close|exit|square)\b",
     r"\b(buy|sell|short|place|execute|book|cancel|modify|exit|close|square off|add|average)\b[\w\s,'-]{0,40}\bfor me\b",
     r"\b(change|move|raise|lower|trail|remove|widen|tighten|cancel|modify|amend)\b[\w\s,'-]{0,15}\b(my|the)\b[\w\s,'-]{0,10}\b(stop|stop-loss|stoploss|sl|target|order|orders)\b",
     r"\b(square off|square-off|close|exit)\b[\w\s,'-]{0,10}\b(my|all)\b[\w\s,'-]{0,10}\b(positions?|trades?)\b",
     r"\b(place|put|send|execute|fire|punch|submit)\b[\w\s,'-]{0,15}\b(an|the|my|a)\b[\w\s,'-]{0,15}\border\b",
     r"\bauto[- ]?trade\b",
+    # Job 6: the Copilot never saves, deploys or starts a strategy or a bot - the trader does that himself.
+    r"\b(start|deploy|launch|activate|switch on|turn on|save)\b[\w\s,'-]{0,25}\b(bot|bots|deployment|strategy|it|auto ?trading)\b[\w\s,'-]{0,15}\bfor me\b",
+    r"\b(can|could|will|would) you\b[\w\s,'-]{0,10}\b(start|deploy|launch|activate|save)\b[\w\s,'-]{0,20}\b(bot|bots|deployment|strategy|it)\b",
+]
+_SETTINGS = [
+    r"\b(pick|choose|decide|set|give|suggest|tell|recommend|find)\b[\w\s,'-]{0,20}\b(stop|stops|stop-loss|stoploss|sl|target|targets|objective|"
+    r"lots?|position size|size|quantity|risk reward|reward to risk|r:r|rr)\b[\w\s,'-]{0,25}\b(for me|for my|for this|i should|to use)\b",
+    r"\b(what|which|how much|how many|where)\b[\w\s,'-]{0,20}\b(stop|stop-loss|stoploss|sl|target|objective|lots?|size|quantity|risk reward|"
+    r"reward to risk|r:r|rr)\b[\w\s,'-]{0,20}\bshould (i|we)\b",
+    r"\bshould (i|we) (use|pick|choose|set|keep|put|trade|take)\b[\w\s,'-]{0,20}\b(stop|stop-loss|stoploss|sl|target|objective|lots?|size|"
+    r"risk reward|reward to risk|r:r|rr)\b",
+    r"\b(you|u) (choose|pick|decide|set)\b[\w\s,'-]{0,20}\b(stop|stop-loss|sl|target|objective|lots?|size|risk reward|r:r)\b",
+]
+_PROMISE = [
+    r"\b(guarantee|guaranteed|guarantees|assured|promise|promised|risk[- ]free)\b",
+    r"\bhow much (money|profit|return|returns)\b[\w\s,'-]{0,20}\b(make|earn|get|give)\b",
+    r"\b(will|would|does|can) (this|my|the|it|that)\b[\w\s,'-]{0,20}\b(make money|make profits?|earn|win every|double|be profitable|profitable|"
+    r"returns)\b",
+    r"\b\d+\s*%[\w\s,'-]{0,10}\b(a|per|every|each) (day|week|month|year)\b",
+    r"\bnever (lose|loses|loss)\b|\bwin rate of 100\b|\bcan'?t lose\b",
+]
+_COPY = [
+    r"\b(copy|clone|replicate|mirror|steal)\b(?![\w\s,'-]{0,10}\bmy\b)[\w\s,'-]{0,30}\b(strategy|strategies|trades|calls|setup|setups|system|portfolio|positions)\b",
+    r"\b(strategy|strategies|setup|system|trades|calls) (of|from|used by|that)\b[\w\s.'-]{0,30}\b(trader|traders|channel|group|guru|influencer|"
+    r"youtuber|telegram|twitter|tipster|advisor|expert|uses)\b",
+    r"\b(someone|somebody|another (person|trader))( else)?'?s? (strategy|trades|calls|setup)\b",
 ]
 _TIP = [
     r"\b(tip|tips|sure[- ]?shot|jackpot|multibagger|multi-bagger|hot stock|stock pick|stock picks)\b",
@@ -118,7 +152,9 @@ _ADVICE = [
     r"\b(recommend|suggest)\b[\w\s,'-]{0,20}\b(stock|stocks|share|trade|buy|sell|strike|option|entry)\b",
     r"\bwhere (should|do) i (buy|sell|enter|exit|put my stop)\b",
 ]
-_COMPILED = {kind: [re.compile(p) for p in pats] for kind, pats in (("order", _ORDER), ("tip", _TIP), ("advice", _ADVICE))}
+REFUSAL_ORDER = ("order", "copy", "promise", "tip", "settings", "advice")
+_COMPILED = {kind: [re.compile(p) for p in pats] for kind, pats in (("order", _ORDER), ("settings", _SETTINGS), ("copy", _COPY),
+                                                                     ("promise", _PROMISE), ("tip", _TIP), ("advice", _ADVICE))}
 
 
 def _norm(message: str) -> str:
@@ -129,7 +165,7 @@ def refusal_kind(message: str) -> Optional[str]:
     """"order" / "tip" / "advice" when the message asks the Copilot to act or to advise; None otherwise. A question about a
     concept ("what is a buy signal?", "teach me what a stop-loss is") is not a refusal."""
     q = _norm(message)
-    for kind in ("order", "tip", "advice"):
+    for kind in REFUSAL_ORDER:
         if any(p.search(q) for p in _COMPILED[kind]):
             if kind != "order" and re.match(r"^(teach me|explain|what (is|are|does)|define|meaning of)\b", q) and not re.search(
                     r"\bshould (i|we)\b|\bfor me\b|\btarget\b|\btips?\b|\bpicks?\b|\bsure\b", q):
@@ -146,7 +182,8 @@ _ROUTES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("positions", ("open position", "my positions", "open trades", "position watch", "how are my", "my open risk", "risk on my")),
     ("review", ("review my", "last trade", "my trades", "journal", "my mistakes", "weekly review", "post-trade", "post trade", "my week",
                 "my habits", "discipline score")),
-    ("strategy", ("strategy", "backtest", "idea into", "test my idea", "test it")),
+    ("strategy", ("strategy", "backtest", "idea into", "test my idea", "test it", "go long when", "go short when", "buy when", "sell when",
+                  "long when", "short when", "buy if", "sell if", "enter long", "enter short", "my rules", "rules:")),
     ("teacher", ("teach me", "what is", "what are", "what's a", "explain", "meaning of", "define", "how does", "how do i read")),
     ("option_chain", ("option chain", "options chain", "chain", "pcr", "max pain", "open interest", " oi ", "straddle", "expected move",
                       "iv skew", " lot ", " lots ", "option")),
@@ -164,6 +201,10 @@ def route(message: str) -> str:
         if any(w in q for w in words):
             if job == "teacher" and re.search(r"\b(now|today|current|currently|at the moment)\b", q) and not q.lstrip().startswith("teach me"):
                 continue                            # "what is the PCR now" asks for data, not a lesson
+            if job == "strategy" and re.match(r"^ (what (is|are)|what's|teach me|explain|define|meaning of)\b", q):
+                from app.ai import knowledge
+                if knowledge.find_concepts(message, limit=1):
+                    return "teacher"                # "what is a backtest?" is a lesson, not an idea to build
             return job
     from app.ai import knowledge
     if knowledge.find_concepts(message, limit=1):
@@ -239,11 +280,13 @@ class Answer:
     worked: List[Step] = field(default_factory=list)
     action: Optional[Dict[str, str]] = None
     refused: Optional[str] = None
+    draft: Optional[Dict[str, Any]] = None                    # job 6: the draft paper strategy the review card shows (never saved here)
     starters: List[str] = field(default_factory=list)
     concepts: List[Dict[str, Any]] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
     diagnostics: Dict[str, Any] = field(default_factory=dict)
     trusted_text: List[str] = field(default_factory=list)     # tool texts + calculations: where the rule numbers may come from
+    signal_v2: bool = False                                     # handover 11l: flag `signal_language_v2` (never served)
 
     def section(self, title: str, lines: Sequence[str]) -> None:
         kept = [x for x in lines if x]
@@ -258,8 +301,8 @@ class Answer:
         return {"job": self.job, "job_number": job.number if job else None, "title": self.title, "summary": self.summary,
                 "answer": "\n".join(self.summary), "sections": self.sections, "blocks": self.blocks, "unknowns": self.unknowns,
                 "worked": [s.as_dict() for s in self.worked], "action": self.action, "refused": self.refused, "starters": self.starters,
-                "concepts": self.concepts, "notes": self.notes, "disclaimer": DISCLAIMER, "source": "rules",
-                "tool_calls": [s.tool for s in self.worked if not s.tool.startswith("calc:") and s.tool != "concept_library"]}
+                "concepts": self.concepts, "notes": self.notes, "disclaimer": DISCLAIMER, "source": "rules", "draft": self.draft,
+                "tool_calls": [s.tool for s in self.worked if not s.tool.startswith("calc:") and s.tool not in NOT_TOOLS]}
 
 
 def _f(value: Any, nd: int = 2) -> str:
@@ -300,6 +343,7 @@ def _numbers(data: Any, keys: Sequence[str]) -> List[Dict[str, Any]]:
     return out
 
 
+NOT_TOOLS = frozenset({"concept_library", "strategy_blocks"})     # steps that read ATP's own fixed lists, not a tool
 PLAIN_FAILURE = "this data is not available on your account yet"
 
 
@@ -563,6 +607,15 @@ def _size_check(answer: Answer, risk: ToolResult, straddle: Optional[Dict[str, A
 CHART_CONCEPTS = {"demand_supply", "support_resistance", "market_structure", "trend", "order_block", "gap_risk", "breakout", "pullback"}
 
 
+def _teacher_zone_v2(symbol: str, band: Dict[str, Any]) -> str:
+    """Handover 11l (flag `signal_language_v2`): the zone on the user's own chart in the signal language - its side in
+    structure words and the area as a range ("Buyer area: 23,000–23,100"), never a single price."""
+    from app.signals.language import area_label
+    side = "buyer" if band.get("role") in BUYER_ROLES else "seller"
+    state = f" ({band.get('state')})" if band.get("state") else ""
+    return f"On your {symbol} chart right now, ATP's zone layer marks a {side} area{state}. {area_label(side, band['low'], band['high'])}."
+
+
 async def teacher(answer: Answer, run: Runner, message: str) -> None:
     from app.ai import knowledge
     found = knowledge.find_concepts(message, limit=2)
@@ -588,13 +641,17 @@ async def teacher(answer: Answer, run: Runner, message: str) -> None:
         wanted = "demand" if "demand" in _norm(message) else "supply" if "supply" in _norm(message) else None
         pick = next((b for b in bands if wanted is None or b.get("role") == wanted), None)
         if pick:
-            shown.append(f"On your {symbol} chart right now, ATP's zone layer has a {pick.get('role')} area at {_f(pick['low'])} - "
+            shown.append(_teacher_zone_v2(symbol, pick) if answer.signal_v2 else
+                         f"On your {symbol} chart right now, ATP's zone layer has a {pick.get('role')} area at {_f(pick['low'])} - "
                          f"{_f(pick['high'])} ({pick.get('state')}).")
     if res.ok:
         rows = {r["tf"]: r for r in _structure_rows(res)}
         day = rows.get("1d")
         if day and day.get("protected") is not None:
-            shown.append(f"The daily structure reads {day.get('direction')}, with the protected level at {_f(day['protected'])}.")
+            # handover 11l (flag signal_language_v2): no single price - the protected swing is named, not quoted
+            shown.append(f"The daily structure reads {day.get('direction')}; its protected swing is marked on your chart."
+                         if answer.signal_v2 else
+                         f"The daily structure reads {day.get('direction')}, with the protected level at {_f(day['protected'])}.")
     if shown:
         answer.section(f"On your {symbol} chart", shown)
         answer.notes.append(CHART_NOTE)
@@ -1090,6 +1147,94 @@ async def post_trade_coach(answer: Answer, run: Runner, message: str) -> None:
     answer.summary = first or ["I have nothing to review yet: there is no closed trade in your records."]
     answer.section("How I review", ["I describe what happened, from your own records only. I don't tell you what to trade next."])
 
+# --- job 6: the strategy builder ---------------------------------------------------------------------------------------
+
+PAPER_BOT_PATH = "/deployments"
+_BUILDER_NOT_SYMBOLS = frozenset({"RSI", "VWAP", "SMA", "EMA", "DMA", "PDH", "PDL", "PDC", "ORB", "ADX", "ATR", "SUPERTREND", "BOLLINGER",
+                                  "MACD", "VOLUME", "LONG", "SHORT", "BUY", "SELL", "STOP", "TARGET", "PAPER", "STRATEGY", "WHEN", "AND",
+                                  "THE", "PRICE", "RR", "SL", "TP", "OR", "DI", "BB", "MIN", "MAX", "CLOSE", "HIGH", "LOW", "OPEN", "ENTRY",
+                                  "EXIT", "RULES", "RULE", "MY", "IDEA", "TURN", "BUILD", "MAKE", "TEST", "GO", "IF", "ON"})
+BUILD_BLOCKS = ("Averages: EMA and SMA, on this chart or a higher one (crossing, above, below).",
+                "RSI, ADX and +DI / -DI against a level or each other.",
+                "Supertrend, VWAP and the Bollinger bands against the price.",
+                "The previous day's high, low and close; the day's open; the opening range.",
+                "The volume against its average.")
+
+
+def builder_symbol(message: str) -> Optional[str]:
+    """The symbol the idea names (an index, or an upper-case NSE symbol), else None: the trader picks it on the form."""
+    q = _norm(message)
+    for name, pattern in _INDEX_WORDS:
+        if re.search(pattern, q):
+            return name
+    for token in re.findall(r"\b(?:NSE:)?[A-Z][A-Z0-9&]{2,14}\b", message or ""):
+        bare = token.split(":")[-1]
+        if bare not in _NOT_SYMBOLS and bare not in _BUILDER_NOT_SYMBOLS:
+            return bare
+    return None
+
+
+async def strategy_builder(answer: Answer, run: Runner, message: str) -> None:
+    """Job 6: the trader's own idea, in his words, as a DRAFT paper strategy made only of ATP's building blocks. Every
+    number is his: what his words do not state is listed under "Values you decide", never filled in. The draft goes to
+    the Paper bot page, where he reviews it, saves it and starts it on paper himself - nothing is saved or started here."""
+    from app.ai import strategy_builder as sb
+    from app.strategy_engine.registry import registry
+    risk = await _call(answer, run, "get_risk_limits", "Your own risk settings (your minimum reward to risk)", {}, ("min_risk_reward",))
+    own = _own_risk(risk)
+    draft = sb.build(message, builder_symbol(message), own.get("min_risk_reward") if own else None)
+    answer.worked.append(Step("strategy_blocks", "ATP's strategy building blocks (the same as Build a strategy)", True, source="building blocks"))
+    answer.trusted_text += [sb.EXAMPLE, sb.TIMEFRAMES_TEXT]
+    if draft.empty:
+        answer.summary = ["Tell me your idea in your own words and I will turn it into a draft paper strategy.",
+                          "Say what you look for on the chart, the side, the timeframe, where the idea is wrong (a distance in ATRs) and your "
+                          "profit objective in R."]
+        answer.section("For example", [sb.strip_preamble(sb.EXAMPLE)])
+        answer.section("What I can build today", list(BUILD_BLOCKS))
+        answer.section("How I build it", [sb.HOW_I_BUILD])
+        answer.starters = [sb.EXAMPLE]
+        return
+    d = draft.as_dict()
+    answer.draft = d
+    asks = d["asks"]
+    head = "Your idea as a draft paper strategy, built only from ATP's own building blocks."
+    if not draft.rules:
+        answer.summary = ["I could not build any part of this idea with ATP's building blocks yet.",
+                          "Describe it with the building blocks below, or keep the parts ATP has; nothing was drafted."]
+        answer.section("Not supported yet", [f"{x[0].upper()}{x[1:]}." for x in draft.unsupported])
+        answer.section("Parts I could not read", [f"\"{x}\"" for x in draft.unread])
+        answer.section("What I can build today", list(BUILD_BLOCKS))
+        answer.section("How I build it", [sb.HOW_I_BUILD])
+        answer.starters = [sb.EXAMPLE]
+        answer.draft = None
+        return
+    if asks:
+        answer.summary = [head, "Some values are still yours to decide before you can save it: they are listed below."]
+    else:
+        answer.summary = [head, "Every value comes from your words. Review it on the Paper bot page, then save it and start it on paper "
+                                "yourself."]
+    for side in ("long", "short", None):
+        lines = [r["text"] for r in d["rules"] if r["side"] == side]
+        if lines:
+            answer.section(sb.side_title(side, draft.timeframe), lines)
+    answer.section("Your settings", sb.settings_lines(draft))
+    decide = [a["label"] + "." for a in asks]
+    if not draft.symbol:
+        decide.append("The symbol: pick it on the Paper bot page.")
+    if draft.lots is None:
+        decide.append("The size: the Paper bot page starts with one lot or your own saved default; change it there.")
+    answer.section("Values you decide", decide)
+    answer.section("How I read your words", [f"{x[0].upper()}{x[1:]}." for x in draft.read_as])
+    answer.section("Not supported yet", [f"{x[0].upper()}{x[1:]}." for x in draft.unsupported] + ([sb.LEFT_OUT] if draft.unsupported else []))
+    answer.section("Parts I could not read", [f"\"{x}\"" for x in draft.unread] + (["Say these another way, or leave them out."] if draft.unread else []))
+    names = {s.id: s.name for s in registry.list_all()}
+    answer.section("Close to a ready-made strategy", [f"{names[i]}: a ready-made strategy with its own fixed rules (not your idea). Read them on the "
+                                                       "Paper bot page before you use it." for i in draft.ready_made if i in names])
+    answer.section("How I build it", [sb.HOW_I_BUILD])
+    answer.unknowns.append(sb.NO_BACKTEST)
+    answer.action = {"label": "Review it on the Paper bot page", "to": PAPER_BOT_PATH}
+
+
 # --- the jobs not built yet, refusals and help -------------------------------------------------------------------------
 
 def not_built(answer: Answer, job: Job) -> None:
@@ -1112,7 +1257,7 @@ def help_answer(answer: Answer) -> None:
 
 
 JOB_FNS = {"brief": brief, "chart": chart_reader, "option_chain": option_chain, "teacher": teacher, "trade_check": trade_check,
-           "positions": position_watch, "review": post_trade_coach}
+           "positions": position_watch, "review": post_trade_coach, "strategy": strategy_builder}
 
 
 def _grounded_lines(answer: Answer, question: str) -> None:
@@ -1139,11 +1284,13 @@ def _filtered(answer: Answer) -> None:
     """H-C1 c on the rule text too (belt and braces: the rules never write advice words; the zone layer's labels are data)."""
     for s in answer.sections:
         s["lines"] = [x for x in s["lines"] if output_filter.check(x, "en", where="copilot_chat")[0]]
+    answer.sections = [s for s in answer.sections if s["lines"]]
     answer.summary = [x for x in answer.summary if output_filter.check(x, "en", where="copilot_chat")[0]] or ["Here is what ATP's data shows."]
 
 
-async def answer(message: str, run: Runner) -> Answer:
-    """The rule answer for `message`, from the tools `run` reaches. Never raises on a tool failure (it says what is missing)."""
+async def answer(message: str, run: Runner, *, signal_v2: bool = False) -> Answer:
+    """The rule answer for `message`, from the tools `run` reaches. Never raises on a tool failure (it says what is missing).
+    `signal_v2`: flag `signal_language_v2` (handover 11l) - the teacher's "on your chart" lines in the signal language."""
     job_id = route(message)
     if job_id == "refuse":
         out = Answer("refuse", "I can't do that")
@@ -1154,7 +1301,7 @@ async def answer(message: str, run: Runner) -> Answer:
         help_answer(out)
         return out
     job = BY_ID[job_id]
-    out = Answer(job.id, job.title)
+    out = Answer(job.id, job.title, signal_v2=signal_v2)
     if not job.built:
         not_built(out, job)
         return out
@@ -1199,7 +1346,7 @@ PROMPT_VERSION = prompt_versions.version_of("copilot-chat", CHAT_PROMPT)
 # Jobs 3-5 explain the trader's own plan, positions and record: their AI wording must not instruct at all (the weekly
 # review's strict check, app/journal/review.advice_in: "you should", "consider", "next time", a sentence that opens with
 # a command...). On a finding the rule text stays.
-DESCRIBE_ONLY = frozenset({"trade_check", "positions", "review"})
+DESCRIBE_ONLY = frozenset({"trade_check", "positions", "review", "strategy"})
 
 
 async def narrate(provider: Any, out: Answer, question: str) -> Tuple[Optional[str], str]:
@@ -1235,6 +1382,6 @@ async def narrate(provider: Any, out: Answer, question: str) -> Tuple[Optional[s
     return None, why
 
 
-__all__ = ["JOBS", "BY_ID", "BUILT", "DISCLAIMER", "CHART_NOTE", "TOP_LINE", "NO_KEY_TITLE", "NO_KEY_LINE", "KEY_SETTINGS", "REFUSALS",
+__all__ = ["JOBS", "BY_ID", "BUILT", "DISCLAIMER", "PAPER_BOT_PATH", "builder_symbol", "strategy_builder", "CHART_NOTE", "TOP_LINE", "NO_KEY_TITLE", "NO_KEY_LINE", "KEY_SETTINGS", "REFUSALS",
            "Answer", "Step", "route", "refusal_kind", "symbol_in", "timeframe_in", "lots_in", "answer", "market_line", "narrate",
            "plain_reason", "PROMPT_VERSION", "CHAT_PROMPT"]

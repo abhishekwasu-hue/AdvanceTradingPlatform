@@ -335,6 +335,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/chart-analyze/items/{item_id}/analyze"): S_OWN_CHART_ANALYSES,
     ("GET", "/api/chart-analyze/items/{item_id}/strikes"): "member: the caller's own analysis + the caller's organisation's deployment settings (reads only)",
     ("DELETE", "/api/chart-analyze/items/{item_id}"): S_OWN_CHART_ANALYSES,
+    ("POST", "/api/chart-analyze/items/{item_id}/share"): S_OWN_CHART_ANALYSES,
+    ("DELETE", "/api/chart-analyze/items/{item_id}/share"): S_OWN_CHART_ANALYSES,
+    ("GET", "/api/chart-analyze/shared/{token}"): ("member: a structure-only copy (no name, no price, no date, no picture) of an analysis its "
+                                                   "owner shared with the caller's own organisation; a link of another organisation is a 404"),
     ("GET", "/api/charts/drawings"): "member",
     ("POST", "/api/charts/drawings"): S_OWN_DRAWINGS,
     ("GET", "/api/charts/drawings/export"): "member",
@@ -363,6 +367,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/contract-notes"): "trader",
     ("GET", "/api/contract-notes/{note_id}"): "member",
     ("GET", "/api/context/panel"): "member",
+    ("GET", "/api/markets/overview"): "member: shared index and sector moves from the system lists and the shared end-of-day history; no tenant rows",
+    ("GET", "/api/markets/lists/{key}"): "member: one shared system list's stocks with their end-of-day moves; no tenant rows",
     ("GET", "/api/custom-strategies"): "member",
     ("POST", "/api/custom-strategies"): "trader",
     ("POST", "/api/custom-strategies/parse"): P_PARSE_ONLY,
@@ -492,6 +498,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # UI2-7: the caller's own setup wizard progress (the `setup` preferences plus steps worked out from their own rows)
     ("GET", "/api/me/setup"): "member: the caller's own setup progress only (tenant and user)",
     ("PUT", "/api/me/setup"): S_OWN_PREFS,
+    # MO4: the daily rhythm - the caller's own digests (own trades, signals, journal; the organisation's market memory and
+    # events) and the caller's own Telegram choice
+    ("GET", "/api/rhythm/today"): "member: the caller's own digest (own trades, signals and journal; the organisation's market reads)",
+    ("GET", "/api/rhythm/settings"): "member: the caller's own daily-rhythm choice and whether Telegram reaches the caller's own chat",
+    ("PUT", "/api/rhythm/settings"): S_OWN_PREFS,
     ("GET", "/api/news-events"): P_NEWS_EVENTS,
     ("POST", "/api/news-events"): "trader",
     ("DELETE", "/api/news-events/{event_id}"): "trader",
@@ -557,6 +568,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/basket/preview"): "trader",
     ("POST", "/api/paper/fno/basket/execute"): "trader",       # FNO-2: every leg one PAPER order, hedge legs first
     ("POST", "/api/paper/fno/basket/broker-link"): S_COMPUTE,  # the legs pre-filled for the user's broker app; sends nothing
+    ("GET", "/api/paper/fno/risk-budget"): "member: the caller's own effective risk settings only (8b-d, the risk line)",
+    ("GET", "/api/paper/fno/setup-strikes"): "member: the caller's own signal and own deployments only (8b-a)",
+    ("POST", "/api/paper/fno/contracts"): S_COMPUTE,         # FNO-4: saved contracts read from the instrument master (platform-wide data)
+    ("GET", "/api/paper/fno/positions/groups"): "member: the caller's own open PAPER legs grouped (tenant and user)",
     ("POST", "/api/paper/experience/opt-out"): "trader",
     ("PUT", "/api/paper/account"): "trader",
     ("GET", "/api/paper/ladder"): "member",
@@ -632,6 +647,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/history/backtest"): "trader",    # N3 S6b: a simulation; writes one trial to the ledger
     ("GET", "/api/screener/venues"): "member",               # N3 S8c: the venue matrix (reference data)
     ("POST", "/api/screener/copilot/nl"): "trader",          # N3 S9: a ScreenQL draft from plain language; stores nothing
+    ("POST", "/api/screener/copilot/idea"): "trader",        # handover 11j: a ScreenQL draft from an idea, registry rules only; stores nothing
     ("GET", "/api/screener/rankings"): "member",             # N3 S7a: the platform systems and the organisation's own
     ("POST", "/api/screener/rankings"): "trader",
     ("PUT", "/api/screener/rankings/{system_id}"): "trader",
@@ -653,6 +669,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # strategy templates step 2 (flag strategy_templates): the built-in template cards, and the paper bot form's pre-fill
     ("GET", "/api/strategy-templates"): "member",
     ("POST", "/api/strategy-templates/{template_id}/adopt"): S_COMPUTE,
+    # idea library slice 1 (flag idea_library): read-only method cards, the same content for every organisation
+    ("GET", "/api/ideas"): "member",
+    ("GET", "/api/ideas/{idea_id}"): "member",
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
                                     "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),

@@ -12,7 +12,7 @@ export interface GlossaryEntry {
 
 export const GLOSSARY = {
   atm: { term: "ATM", definition: "At the money: the strike price closest to the current price of the index or stock." },
-  "api-key": { term: "API key", definition: "A key your broker gives you so this app can read your account and prices. You create it in your broker's developer console." },
+  "api-key": { term: "API key", definition: "A key your broker gives you so this app can read your account and prices. You create it on your broker's website." },
   "booked-pnl": { term: "Booked P&L", definition: "Profit or loss on trades you have already closed today. It no longer changes with the price." },
   cnc: { term: "CNC", definition: "Cash and carry: a delivery trade in shares that you can hold beyond today." },
   "cool-down": { term: "Cool-down", definition: "A wait after a stop-out before a new entry in the same symbol is allowed." },

@@ -4,12 +4,16 @@ import { useSearchParams } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { useChainTrading } from "../fno/ChainTradingV2";
 import { readCarry } from "../fno/hubModel";
+import { SetupPanelV2, useSetupStrikes } from "../fno/InsightsV2";
+import { SIGNAL_PARAM, setupMarks } from "../fno/insights";
 import SymbolHubTabsV2 from "../fno/SymbolHubTabsV2";
 import type { PageProps } from "../routes";
 import { cx } from "../components/primitives/cx";
 import { formatDateIST, formatTimeIST } from "../ui/format";
 import { PageIntro } from "../ui/PageIntro";
+import { useFeatures } from "../ui/useFeatures";
 import AnalysisSlotV2 from "./AnalysisSlotV2";
+import ChainDishV2 from "./ChainDishV2";
 import ChainTableV2 from "./ChainTableV2";
 import ChainCharts from "./ChartsViewV2";
 import ColumnsMenuV2 from "./ColumnsMenuV2";
@@ -37,6 +41,9 @@ import { useOptionChain, type OptionChainData } from "./useOptionChain";
  *   show "P", and a bottom strip holds the key figures (src/fno/ChainTradingV2.tsx). The page itself places nothing.
  * - FNO-3: the symbol hub's tab row on top (Chart | Option chain | Futures | Overview, src/fno/SymbolHubTabsV2.tsx). The
  *   address keeps the symbol and the expiry (`?underlying=&expiry=`, and the chart's `tf`), so the tabs carry them.
+ * - F&O 8b-a: opened from one of the user's own signals (`?signal=action:12`), a panel says where his own deployment
+ *   settings land and the chain shades those cells (src/fno/InsightsV2.tsx). Marks only: nothing is picked or placed.
+ * - MO4 slice 2: with `markets_view` on, "What the chain shows" on top (ChainDishV2): five plain lines from the analyses.
  * Shown only while `ui_v2` is on (src/shell/pagesV2.ts).
  */
 const SELECT = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 font-semibold text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9";
@@ -77,6 +84,11 @@ export default function OptionChainPageV2(_props: PageProps) {
   const [params, setParams] = useSearchParams();
   const [symbol, setSymbol] = useState(() => initialSymbol(typeof window === "undefined" ? "" : window.location.search));
   const [carried] = useState(() => readCarry(params));
+  // 8b-a: opened from one of the user's own signals (`?signal=action:12`): his settings' strikes are marked.
+  const [signal, setSignal] = useState<string | null>(() => {
+    const v = params.get("signal") ?? "";
+    return SIGNAL_PARAM.test(v) ? v : null;
+  });
   const market = useMarketStatus();
   const marketOpen = market.status?.sessions?.NSE?.is_open ?? null;
   const chain = useOptionChain(symbol, marketOpen, carried.expiry);
@@ -89,20 +101,21 @@ export default function OptionChainPageV2(_props: PageProps) {
       next.set("underlying", symbol);
       if (expiry) next.set("expiry", expiry); else next.delete("expiry");
       next.delete("basket");                       // read once on opening (the futures chain's basket badge)
+      if (!signal) next.delete("signal");
       return next.toString() === prev.toString() ? prev : next;
     }, { replace: true });
-  }, [symbol, expiry, setParams]);
+  }, [symbol, expiry, setParams, signal]);
   return (
     <>
       <SymbolHubTabsV2 symbol={symbol} current="option-chain" carry={{ expiry, timeframe: carried.timeframe }} />
       <OptionChainView symbol={symbol} onSymbol={setSymbol} chain={chain} marketOpen={marketOpen} prefs={prefs}
-        onPrefs={(next) => { setPrefs(next); writeColumns(next); }} />
+        onPrefs={(next) => { setPrefs(next); writeColumns(next); }} signal={signal} onClearSignal={() => setSignal(null)} />
     </>
   );
 }
 
 /** The page's look for given data (no reads of its own), so tests render every state directly. */
-export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs }: {
+export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal }: {
   symbol: string;
   onSymbol: (symbol: string) => void;
   chain: OptionChainData;
@@ -110,6 +123,9 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   marketOpen: boolean | null;
   prefs: ColumnPrefs;
   onPrefs: (prefs: ColumnPrefs) => void;
+  /** 8b-a: one of the user's own signals ("action:12"), to mark where his own settings land; null for none. */
+  signal?: string | null;
+  onClearSignal?: () => void;
 }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [view, setView] = useState<ChainView>("chain");
@@ -124,6 +140,10 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
     : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const pickedRow: ChainRow | null = live?.rows.find((r) => r.strike === picked) ?? null;
   const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions });
+  const setupState = useSetupStrikes(signal, live?.summary.spot ?? null);
+  const setupData = setupState.status === "ready" && setupState.data.underlying === symbol ? setupState.data : null;
+  const marks = useMemo(() => setupMarks(setupData, live?.expiry ?? chain.expiry), [setupData, live?.expiry, chain.expiry]);
+  const dishOn = useFeatures().on("markets_view");
 
   return (
     <div className="space-y-space-4" data-page="option-chain-v2">
@@ -168,6 +188,11 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         </div>
       )}
 
+      {dishOn && <ChainDishV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />}
+
+      <SetupPanelV2 state={setupState} symbol={symbol} expiry={live?.expiry ?? chain.expiry} onExpiry={(e) => { setPicked(null); chain.setExpiry(e); }}
+        onClear={() => onClearSignal?.()} />
+
       <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} />
 
       {view === "charts" && (
@@ -195,7 +220,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
             </div>
             <ViewToggle view={view} onView={setView} className="absolute -top-space-5 left-1/2 z-10 -translate-x-1/2 md:-top-space-4" />
             <ChainTableV2 live={live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${trading.centreSuffix}`} onPick={(row) => setPicked(row.strike)}
-              onPickLeg={trading.onPickLeg} held={trading.held} />
+              onPickLeg={trading.onPickLeg} held={trading.held} setup={marks.size ? marks : undefined} />
             {chain.problem && <p className="mt-space-2 text-t12 text-fg-muted">{TEXT.loadFailed}</p>}
           </>
         )}

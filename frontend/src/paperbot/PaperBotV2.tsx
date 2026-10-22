@@ -1,6 +1,6 @@
 import { ChevronRight, Pause, Play, Square } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
-import { Link } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
@@ -13,9 +13,11 @@ import type { CustomStrategyResponse, Deployment, StrategyInfo } from "../types"
 import { DEFAULTS_PATH, appliedLine, useTradingDefaults, type TradingDefaults } from "../settings/tradingDefaults";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
+import { draftFromState, formSymbol } from "../copilot/strategyDraft";
+import CopilotDraftV2 from "./CopilotDraftV2";
 import {
   READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, paperBotRequestWithDefaults, sortBots,
-  startSummary, strategyLine, symbolProblem,
+  startSummary, strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
 import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
 
@@ -66,6 +68,12 @@ export default function PaperBotV2(_props: PageProps) {
   // Strategy templates step 2 (ui_v2 + strategy_templates): the templates the organisation can adopt as paper strategies.
   const templatesOn = features.on("ui_v2") && features.on("strategy_templates");
   const [templates, setTemplates] = useState<StrategyTemplate[]>([]);
+  // Job 6: the Copilot's draft arrives in the navigation state (with the Copilot switch on); the trader saves it himself.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const draft = features.on("ai_copilot") ? draftFromState(location.state) : null;
+  const [preselect, setPreselect] = useState<Preselect | null>(null);
+  const [draftNote, setDraftNote] = useState<string | null>(null);
   const formRef = useRef<HTMLElement | null>(null);
   const firstField = useRef<HTMLSelectElement>(null);
 
@@ -177,10 +185,24 @@ export default function PaperBotV2(_props: PageProps) {
         )}
       </CardV2>
 
+      {canChange && draft && (
+        <CopilotDraftV2 key={draft.idea} draft={draft}
+          onDiscard={() => navigate(location.pathname, { replace: true, state: null })}
+          onSaved={(saved) => {
+            setCustom((all) => [...all.filter((c) => c.id !== saved.id), saved]);
+            setPreselect({ strategyId: saved.strategy_id, symbol: formSymbol(draft.symbol), lots: draft.lots });
+            setDraftNote(`Saved as your strategy "${saved.config.name}". It is picked below: check the symbol and press Start on paper when you are ready.`);
+            navigate(location.pathname, { replace: true, state: null });
+            goToForm();
+          }} />
+      )}
+
       {canChange && (
-        <section ref={formRef} className="scroll-mt-20">
+        <section ref={formRef} className="scroll-mt-20 space-y-space-3">
+          {draftNote && <NoteV2 kind="done" testId="draft-saved">{draftNote}</NoteV2>}
           <StartBotV2 library={library} custom={custom} hasBroker={hasBroker} firstField={firstField} onStarted={() => void loadBots()}
-            defaults={defaults} approvalAllowed={features.on("approval_only_entries")} templates={templates} initialTemplate={templateFromUrl()} />
+            defaults={defaults} approvalAllowed={features.on("approval_only_entries")} templates={templates} initialTemplate={templateFromUrl()}
+            preselect={preselect} />
         </section>
       )}
 
@@ -261,13 +283,15 @@ function StepNo({ n }: { n: number }) {
 }
 
 export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, defaults = null, approvalAllowed = false, templates = [],
-  initialTemplate = null }: {
+  initialTemplate = null, preselect = null }: {
   library: StrategyInfo[] | null; custom: CustomStrategyResponse[]; hasBroker: boolean | null;
   firstField: RefObject<HTMLSelectElement>; onStarted: () => void;
   /** Settings part C: the user's own defaults (a pre-fill, shown and switchable here); null = none. */
   defaults?: TradingDefaults | null; approvalAllowed?: boolean;
   /** Strategy templates step 2: templates the user can adopt here (empty while the flag is off). */
   templates?: StrategyTemplate[]; initialTemplate?: string | null;
+  /** Job 6: the strategy the trader just saved from the Copilot's draft, its symbol and the size his idea named. */
+  preselect?: Preselect | null;
 }) {
   const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), timeframe: useId() };
   const [useDefaults, setUseDefaults] = useState(true);
@@ -312,6 +336,17 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     return () => { live = false; };
   }, [pickedId, templateTimeframe]);
 
+  // Job 6: the strategy the trader saved from the Copilot's draft, with the symbol his idea named (a pre-fill he can change).
+  useEffect(() => {
+    if (!preselect) return;
+    setStrategyId(preselect.strategyId);
+    if (preselect.symbol) {
+      if (SYMBOLS.includes(preselect.symbol)) setSymbolChoice(preselect.symbol);
+      else { setSymbolChoice(OTHER); setOtherSymbol(preselect.symbol); }
+    }
+    setResult(null);
+  }, [preselect]);
+
   // The first ready-made strategy, with the symbol it is shown with.
   useEffect(() => {
     // (a template from the link, picked in this same commit, wins: the effect above already set it)
@@ -337,8 +372,11 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     : strategyLine(strategyId, info) || (custom.some((c) => c.strategy_id === strategyId) ? "Your own strategy from Build a strategy." : "");
   const offered = paperBotRequestWithDefaults(effectiveId, symbol, info, defaults, approvalAllowed).applied;
   const built = paperBotRequestWithDefaults(effectiveId, symbol, info, defaults, approvalAllowed, useDefaults).request;
+  // Job 6: the size the trader's own idea named (his saved strategy only).
+  const ideaLots = preselect && preselect.strategyId === strategyId ? preselect.lots : null;
+  const withLots = withIdeaLots(built, ideaLots);
   // A template reads its own candles (the adopted timeframe) and holds as the server said (Daily: for days).
-  const request = picked && adoption ? { ...built, timeframe: adoption.deployment.timeframe, holding: adoption.deployment.holding } : built;
+  const request = picked && adoption ? { ...withLots, timeframe: adoption.deployment.timeframe, holding: adoption.deployment.holding } : withLots;
 
   async function start() {
     setTouched(true);
@@ -413,6 +451,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
         </div>
         <div className="space-y-space-2">
           <p className="text-t14 text-fg-muted">{startSummary(symbol, info, request)}</p>
+          {request !== base && <p className="text-t13 text-fg-muted" data-idea-lots>The size comes from your idea.</p>}
           {offered.length > 0 && (
             <div className="space-y-space-1 rounded-control border border-subtle p-space-3" data-defaults>
               <label className="flex min-h-11 cursor-pointer items-center gap-space-2 text-t14 font-medium text-fg md:min-h-0">

@@ -20,6 +20,9 @@ export const SETUP_ADDRESS = "/settings/setup";
 /** Settings redesign part C: Settings → My trading defaults, a v2-only page. With the flag off it goes back to Settings. */
 export const TRADING_DEFAULTS_ADDRESS = "/settings/trading-defaults";
 
+/** MO4 slice 2: the Sector & index view, a v2-only page (flag `markets_view`). With `ui_v2` off it goes to the dashboard. */
+export const MARKETS_ADDRESS = "/markets";
+
 /**
  * With `ui_v2` off (never turned on, turned off again as a kill switch, or the trader just signed out - flags are not
  * read while signed out): a v2-only address of a merged page goes back to today's address, so a bookmark or the page
@@ -31,6 +34,7 @@ export function flagOffFallback(pathname: string): string | null {
   if (malformed) return null;
   const clean = `/${path.replace(/^\/+|\/+$/g, "")}`;
   if (clean === SETUP_ADDRESS || clean === TRADING_DEFAULTS_ADDRESS) return "/settings";
+  if (clean === MARKETS_ADDRESS) return "/";
   // Settings redesign B: a section page goes back to today's Settings page, at the part that holds it.
   const section = settingsSectionAt(clean);
   if (section) return section.old;

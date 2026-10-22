@@ -98,7 +98,9 @@ async def chat_ask(body: ChatBody, user: User = Depends(require_ai_acknowledged)
     await _flags(session, user)
     tenant_id, user_id, admin = int(user.tenant_id), int(user.id), user.role == UserRole.SUPER_ADMIN.value   # read before any tool runs
     run = _runner(session, tenant_id, user_id)
-    out = await chat.answer(body.message, run)
+    from app.platform.controls import flag_enabled
+    from app.signals.language import FLAG as SIGNAL_LANGUAGE_FLAG
+    out = await chat.answer(body.message, run, signal_v2=await flag_enabled(session, SIGNAL_LANGUAGE_FLAG, tenant_id))
     result = out.as_dict()
     provider = await _provider(session, tenant_id, user_id)
     result["ai"] = _ai_state(provider, await ai_resolve.one_key_on(session, tenant_id))

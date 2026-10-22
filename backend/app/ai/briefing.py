@@ -110,8 +110,17 @@ def risk_line(lang: str, cfg: RiskConfig, saved: bool) -> str:
     return f"Default risk settings (not set yet): {values}. You set your own under Risk Management."
 
 
+# Handover 11l (flag `signal_language_v2`): the two plan texts that used stop wording, in the signal language. The brief
+# is a public-style surface (no security names, no prices, no buy / sell / target / stop wording); the risk line is the
+# user's own settings record and is unchanged.
+VOLATILE_HEADLINE_V2 = ("A volatile day on the data: wide swings and gaps, so the risk distances your settings work out are wider "
+                        "and position sizes come out smaller.")
+HIGH_VIX_LINE_V2 = "India VIX is in its high-fear band: gaps are more likely; your own risk settings size every position."
+
+
 def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], events: List[dict], *,
-              cfg: Optional[RiskConfig] = None, cfg_saved: bool = False, freshness: Optional[dict] = None) -> dict:
+              cfg: Optional[RiskConfig] = None, cfg_saved: bool = False, freshness: Optional[dict] = None,
+              signal_v2: bool = False) -> dict:
     kind = dt["kind"]
     # P0.8-D: the day described by the data - never "buy the pullbacks", "sell the rallies" or "stay out".
     headlines = {
@@ -121,6 +130,8 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
         "VOLATILE": "A volatile day on the data: wide swings and gaps, so ATR-based stops are wider and position sizes come out smaller.",
         "UNKNOWN": "No market read yet - press \"Read now\" in Market memory (needs a broker session), or wait for the worker after 09:15.",
     }
+    if signal_v2:
+        headlines["VOLATILE"] = VOLATILE_HEADLINE_V2
     lines: List[str] = []
     fam = _families(dt["regime"]) if kind != "UNKNOWN" else {"fit": [], "avoid": []}
     if fam["fit"]:
@@ -133,7 +144,8 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
     if vix is not None:
         lines.append(market_memory.vix_text(lang, vix) + ".")
         if vix >= 20:
-            lines.append("VIX is 20 or higher: fear is high and gaps are more likely; your risk settings size every trade from its stop.")
+            lines.append(HIGH_VIX_LINE_V2 if signal_v2 else
+                         "VIX is 20 or higher: fear is high and gaps are more likely; your risk settings size every trade from its stop.")
     glines = [] if hidden else global_cues.view(lang, memory.get("globals", []))
     if glines:
         lines.append(glines[0])
@@ -234,7 +246,10 @@ async def build(session: AsyncSession, user: User, lang: str = "en", now: Option
 
     dt = day_type(memory)
     freshness = data_freshness(memory, now, status.is_open)
-    plan = game_plan(lang, dt, memory, experience, events, cfg=cfg, cfg_saved=cfg_saved is not None, freshness=freshness)
+    from app.platform.controls import flag_enabled
+    from app.signals.language import FLAG as SIGNAL_LANGUAGE_FLAG
+    plan = game_plan(lang, dt, memory, experience, events, cfg=cfg, cfg_saved=cfg_saved is not None, freshness=freshness,
+                     signal_v2=await flag_enabled(session, SIGNAL_LANGUAGE_FLAG, user.tenant_id))
     mood = global_cues.mood(memory.get("globals", []), now) if memory.get("globals") else None
     from app.ai import sentiment as sentiment_mod                          # Phase BC
     sentiment_read = memory.get("sentiment")

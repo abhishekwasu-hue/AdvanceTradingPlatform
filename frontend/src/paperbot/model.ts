@@ -172,3 +172,13 @@ export function sortBots<T extends Pick<Deployment, "status" | "id">>(bots: read
   return bots.filter((b) => showStopped || botState(b) !== "stopped")
     .slice().sort((a, b) => rank[botState(a)] - rank[botState(b)] || b.id - a.id);
 }
+
+/** Job 6 (the Copilot's strategy builder): the size the trader's own idea named ("2 lots"), on a contract that takes lots
+ * (an option or a future); a cash symbol, or no size named, keeps the request as it is. Never the mode: PAPER stays. */
+export function withIdeaLots<T extends DeploymentCreateRequest>(req: T, lots: number | null | undefined): T {
+  if (!lots || !Number.isInteger(lots) || lots < 1 || req.instrument_kind === "UNDERLYING" || !req.instrument_kind) return req;
+  return { ...req, max_lots: lots };
+}
+
+/** The strategy and symbol the page picks after the trader saved the Copilot's draft (his own click). */
+export interface Preselect { strategyId: string; symbol: string | null; lots: number | null }

@@ -74,12 +74,12 @@
     "id": "strategy",
     "number": 6,
     "title": "Strategy builder",
-    "line": "Turns an idea into readable rules and an honest backtest.",
+    "line": "Turns your own idea into readable rules: a draft paper strategy you review and save yourself.",
     "starter": "Turn my idea into a strategy and test it",
-    "built": false,
+    "built": true,
     "page": {
-     "label": "Open the idea builder",
-     "to": "/copilot/idea-builder"
+     "label": "Open the Paper bot page",
+     "to": "/deployments"
     }
    },
    {
@@ -1704,6 +1704,263 @@
     "get_market_zones",
     "get_risk_limits",
     "get_market_context"
+   ],
+   "ai": {
+    "ready": false,
+    "title": "Add a free AI key to start",
+    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "settings": "/settings/ai",
+    "reason": null
+   }
+  },
+  "Turn my idea into a strategy and test it": {
+   "job": "strategy",
+   "job_number": 6,
+   "title": "Strategy builder",
+   "summary": [
+    "Tell me your idea in your own words and I will turn it into a draft paper strategy.",
+    "Say what you look for on the chart, the side, the timeframe, where the idea is wrong (a distance in ATRs) and your profit objective in R."
+   ],
+   "answer": "Tell me your idea in your own words and I will turn it into a draft paper strategy.\nSay what you look for on the chart, the side, the timeframe, where the idea is wrong (a distance in ATRs) and your profit objective in R.",
+   "sections": [
+    {
+     "title": "For example",
+     "lines": [
+      "on the 15-minute chart, go long when the 20 EMA crosses above the 50 EMA and RSI 14 is above 50. Stop 1.5 x ATR 14, objective 2R."
+     ]
+    },
+    {
+     "title": "What I can build today",
+     "lines": [
+      "Averages: EMA and SMA, on this chart or a higher one (crossing, above, below).",
+      "RSI, ADX and +DI / -DI against a level or each other.",
+      "Supertrend, VWAP and the Bollinger bands against the price.",
+      "The previous day's high, low and close; the day's open; the opening range.",
+      "The volume against its average."
+     ]
+    },
+    {
+     "title": "How I build it",
+     "lines": [
+      "I use only ATP's own building blocks (the same ones as Build a strategy). I don't add a stop, an objective, a size or any rule you did not state: every number is your setting. Nothing is saved or started until you do it yourself."
+     ]
+    }
+   ],
+   "blocks": [],
+   "unknowns": [],
+   "worked": [
+    {
+     "tool": "get_risk_limits",
+     "label": "Your own risk settings (your minimum reward to risk)",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "risk_settings",
+     "numbers": [
+      {
+       "label": "min_risk_reward",
+       "value": 1.5
+      }
+     ],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "strategy_blocks",
+     "label": "ATP's strategy building blocks (the same as Build a strategy)",
+     "ok": true,
+     "as_of": null,
+     "source": "building blocks",
+     "numbers": [],
+     "note": null,
+     "args": {}
+    }
+   ],
+   "action": null,
+   "refused": null,
+   "starters": [
+    "Turn my idea into a strategy: on the 15-minute chart, go long when the 20 EMA crosses above the 50 EMA and RSI 14 is above 50. Stop 1.5 x ATR 14, objective 2R."
+   ],
+   "concepts": [],
+   "notes": [],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "draft": null,
+   "tool_calls": [
+    "get_risk_limits"
+   ],
+   "ai": {
+    "ready": false,
+    "title": "Add a free AI key to start",
+    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "settings": "/settings/ai",
+    "reason": null
+   }
+  },
+  "Turn my idea into a strategy: on the 15-minute chart, go long when the fast EMA crosses above the slow EMA and RSI 14 is above 50 on NIFTY. Stop 1.5 x ATR 14.": {
+   "job": "strategy",
+   "job_number": 6,
+   "title": "Strategy builder",
+   "summary": [
+    "Your idea as a draft paper strategy, built only from ATP's own building blocks.",
+    "Some values are still yours to decide before you can save it: they are listed below."
+   ],
+   "answer": "Your idea as a draft paper strategy, built only from ATP's own building blocks.\nSome values are still yours to decide before you can save it: they are listed below.",
+   "sections": [
+    {
+     "title": "Long side: all of these hold on the 15-minute chart",
+     "lines": [
+      "The fast EMA (length to decide) crosses above the slow EMA (length to decide).",
+      "RSI (14) is above 50."
+     ]
+    },
+    {
+     "title": "Your settings",
+     "lines": [
+      "Where the idea is wrong: 1.5 x ATR (14) from the entry.",
+      "Minimum reward to risk: 1.5 (from your own risk limits; change it if you like)."
+     ]
+    },
+    {
+     "title": "Values you decide",
+     "lines": [
+      "The fast EMA length.",
+      "The slow EMA length.",
+      "Your profit objective, in R (a multiple of the risk).",
+      "The size: the Paper bot page starts with one lot or your own saved default; change it there."
+     ]
+    },
+    {
+     "title": "How I build it",
+     "lines": [
+      "I use only ATP's own building blocks (the same ones as Build a strategy). I don't add a stop, an objective, a size or any rule you did not state: every number is your setting. Nothing is saved or started until you do it yourself."
+     ]
+    }
+   ],
+   "blocks": [],
+   "unknowns": [
+    "I don't know how this idea did in the past: a test on past data is not part of this draft yet. After you save it, test it on the Backtesting page, then watch it on paper."
+   ],
+   "worked": [
+    {
+     "tool": "get_risk_limits",
+     "label": "Your own risk settings (your minimum reward to risk)",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "risk_settings",
+     "numbers": [
+      {
+       "label": "min_risk_reward",
+       "value": 1.5
+      }
+     ],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "strategy_blocks",
+     "label": "ATP's strategy building blocks (the same as Build a strategy)",
+     "ok": true,
+     "as_of": null,
+     "source": "building blocks",
+     "numbers": [],
+     "note": null,
+     "args": {}
+    }
+   ],
+   "action": {
+    "label": "Review it on the Paper bot page",
+    "to": "/deployments"
+   },
+   "refused": null,
+   "starters": [],
+   "concepts": [],
+   "notes": [],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "draft": {
+    "idea": "on the 15-minute chart, go long when the fast EMA crosses above the slow EMA and RSI 14 is above 50 on NIFTY. Stop 1.5 x ATR 14.",
+    "name": "My EMA + RSI idea",
+    "symbol": "NIFTY",
+    "timeframe": "15min",
+    "sides": [
+     "long"
+    ],
+    "rules": [
+     {
+      "side": "long",
+      "condition": {
+       "left": {
+        "type": "indicator",
+        "indicator": "EMA",
+        "period": null,
+        "multiplier": null,
+        "timeframe": null,
+        "role": "fast"
+       },
+       "operator": "CROSSES_ABOVE",
+       "right": {
+        "type": "indicator",
+        "indicator": "EMA",
+        "period": null,
+        "multiplier": null,
+        "timeframe": null,
+        "role": "slow"
+       }
+      },
+      "text": "The fast EMA (length to decide) crosses above the slow EMA (length to decide).",
+      "words": "the fast ema crosses above the slow ema"
+     },
+     {
+      "side": "long",
+      "condition": {
+       "left": {
+        "type": "indicator",
+        "indicator": "RSI",
+        "period": 14,
+        "multiplier": null,
+        "timeframe": null
+       },
+       "operator": "GT",
+       "right": {
+        "type": "value",
+        "value": 50.0
+       }
+      },
+      "text": "RSI (14) is above 50.",
+      "words": "rsi 14 is above 50 on nifty"
+     }
+    ],
+    "settings": {
+     "stop_loss_atr_mult": 1.5,
+     "atr_period": 14,
+     "target_rr": null,
+     "min_rr": 1.5
+    },
+    "min_rr_source": "your risk limits",
+    "lots": null,
+    "asks": [
+     {
+      "key": "rules.0.left.period",
+      "label": "The fast EMA length"
+     },
+     {
+      "key": "rules.0.right.period",
+      "label": "The slow EMA length"
+     },
+     {
+      "key": "target_rr",
+      "label": "Your profit objective, in R (a multiple of the risk)"
+     }
+    ],
+    "unsupported": [],
+    "unread": [],
+    "read_as": [],
+    "ready_made": [],
+    "complete": false,
+    "mode": "PAPER"
+   },
+   "tool_calls": [
+    "get_risk_limits"
    ],
    "ai": {
     "ready": false,

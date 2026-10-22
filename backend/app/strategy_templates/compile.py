@@ -166,6 +166,10 @@ def resolve_settings(template: Template, timeframe: Optional[str] = None, sides:
                 continue
             left = tf if c.left == SIGNAL_TIMEFRAME else values[c.left]
             right = tf if c.right == SIGNAL_TIMEFRAME else values[c.right]
+            if c.op == "whole_bars":                                 # TPL-8: minutes in whole bars of the timeframe
+                if int(left) % _tf_minutes(str(right)):
+                    problems.append(c.message)
+                continue
             kinds = {template.param(k).type for k in (c.left, c.right) if k != SIGNAL_TIMEFRAME}
             if "timeframe" in kinds or SIGNAL_TIMEFRAME in (c.left, c.right):
                 left, right = _tf_minutes(str(left)), _tf_minutes(str(right))

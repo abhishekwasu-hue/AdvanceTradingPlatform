@@ -604,6 +604,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/validate"): S_COMPUTE,
     ("POST", "/api/screener/stages"): S_COMPUTE,
     ("GET", "/api/screener/etf"): "member",
+    # handover 11c-1 (flag strategy_lab_pine): the Pine subset - translation computes over the body; a run is a screener run
+    ("GET", "/api/lab/pine/templates"): "member",
+    ("POST", "/api/lab/pine/translate"): S_COMPUTE,
+    ("POST", "/api/lab/pine/run"): "trader",
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
                                     "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),

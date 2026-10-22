@@ -4,13 +4,13 @@ import type { WelcomeCard } from "../types";
 export const WELCOME: readonly WelcomeCard[] = [
   {
     id: "what",
-    title: "Welcome to ATP",
-    body: "ATP watches the market for the setups you choose, shows them as signals and lets you practise with paper trades before any real money.",
+    title: "Welcome to AiAlgoDesk",
+    body: "AiAlgoDesk watches the market for the setups you choose, shows them as signals and lets you practise with paper trades before any real money.",
   },
   {
     id: "broker",
     title: "Connect your broker",
-    body: "Your broker gives ATP live prices and charts. Pick it once on the Broker page; most brokers need one or two fields.",
+    body: "Your broker gives AiAlgoDesk live prices and charts. Pick it once on the Broker page; most brokers need one or two fields.",
   },
   {
     id: "paper",
@@ -20,7 +20,7 @@ export const WELCOME: readonly WelcomeCard[] = [
   {
     id: "alerts",
     title: "Get alerts on your phone",
-    body: "Turn on Telegram or app notifications in Settings, so a new signal reaches you even when ATP is closed.",
+    body: "Turn on Telegram or app notifications in Settings, so a new signal reaches you even when AiAlgoDesk is closed.",
   },
 ];
 

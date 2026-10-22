@@ -73,7 +73,7 @@ test.describe("key guides 1440", () => {
 
   test("the explainer, and Start with free Google Gemini opens its guide in one click", async ({ page }) => {
     await open(page);
-    await expect(guides(page)).toContainText("An API key is like a password that lets ATP use an AI service on your account. Free keys take about 2 minutes to create.");
+    await expect(guides(page)).toContainText("An API key is like a password that lets AiAlgoDesk use an AI service on your account. Free keys take about 2 minutes to create.");
     await expect(guides(page).locator("[data-provider]").first()).toHaveAttribute("data-provider", "gemini");
     await expect(guides(page).locator("[data-provider='gemini']")).toContainText("Recommended");
     await guides(page).getByRole("button", { name: "Start with free Google Gemini" }).click();

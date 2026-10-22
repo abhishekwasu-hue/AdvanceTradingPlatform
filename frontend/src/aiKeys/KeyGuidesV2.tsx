@@ -20,7 +20,7 @@ import { KEY_GUIDES, fixFor, guideFor, type KeyGuide } from "./guides";
  *   the helper says the key cannot be saved yet.
  */
 
-export const EXPLAINER = "An API key is like a password that lets ATP use an AI service on your account. Free keys take about 2 minutes to create.";
+export const EXPLAINER = "An API key is like a password that lets AiAlgoDesk use an AI service on your account. Free keys take about 2 minutes to create.";
 
 
 type Outcome = { ok: true; text: string } | { ok: false; text: string; fix: string | null };

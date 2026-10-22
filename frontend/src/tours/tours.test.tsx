@@ -216,7 +216,7 @@ describe("MO2 tours: one content file per page", () => {
   });
 
   it("the welcome has four cards in the ordered order and ends on the Broker page", () => {
-    expect(WELCOME.map((c) => c.title)).toEqual(["Welcome to ATP", "Connect your broker", "Your paper bot", "Get alerts on your phone"]);
+    expect(WELCOME.map((c) => c.title)).toEqual(["Welcome to AiAlgoDesk", "Connect your broker", "Your paper bot", "Get alerts on your phone"]);
   });
 
   it("targets are stable data-tour ids; the phone gets its own step where the layout differs", () => {
@@ -266,7 +266,7 @@ describe("MO2 tours: the engine", () => {
 
   it("the welcome card: its title, Next and Skip, and Skip all tips; never a modal", () => {
     const out = renderToStaticMarkup(<TourEngine tour={{ kind: "welcome" }} auto onClose={() => undefined} onUnavailable={() => undefined} />);
-    expect(out).toContain("Welcome to ATP");
+    expect(out).toContain("Welcome to AiAlgoDesk");
     expect(out).toContain(">Next<");
     expect(out).toContain(">Skip<");
     expect(out).toContain("Skip all tips");

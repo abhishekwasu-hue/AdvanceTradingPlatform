@@ -21,7 +21,7 @@ const fake = {
 
 describe("MO2 key guides: the content", () => {
   it("the explainer line, word for word", () => {
-    expect(EXPLAINER).toBe("An API key is like a password that lets ATP use an AI service on your account. Free keys take about 2 minutes to create.");
+    expect(EXPLAINER).toBe("An API key is like a password that lets AiAlgoDesk use an AI service on your account. Free keys take about 2 minutes to create.");
   });
 
   it("a guide per provider ATP takes today, Google Gemini first and recommended (the only one with a free tier)", () => {

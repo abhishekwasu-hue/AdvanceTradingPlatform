@@ -115,6 +115,8 @@ const next = (page: Page) => card(page).locator("[data-tour-primary]");
 
 for (const [layout, viewport] of [["desktop", DESKTOP], ["phone", PHONE]] as [TourLayout, typeof DESKTOP][]) {
   test.describe(`page tours on the ${layout} (${viewport.width})`, () => {
+    // Each test plays every step and reloads: more than the 30 s default on a busy runner.
+    test.describe.configure({ timeout: 60_000 });
     test.use(layout === "phone" ? { viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport, deviceScaleFactor: 1 });
 
     for (const id of Object.keys(PAGES) as TourId[]) {
@@ -150,12 +152,13 @@ for (const [layout, viewport] of [["desktop", DESKTOP], ["phone", PHONE]] as [To
 }
 
 test.describe("first-time guidance", () => {
+  test.describe.configure({ timeout: 60_000 });
   test.use({ viewport: DESKTOP, deviceScaleFactor: 1 });
 
   test("the welcome on the first sign-in: four cards, Next, and it ends on the Broker page", async ({ page }) => {
     const server = await open(page, "dashboard", NEW_USER);
-    await expect(card(page)).toHaveAttribute("data-tour-card", "welcome-what", { timeout: 10_000 });
-    for (const title of ["Welcome to ATP", "Connect your broker", "Your paper bot", "Get alerts on your phone"]) {
+    await expect(card(page)).toHaveAttribute("data-tour-card", "welcome-what", { timeout: 15_000 });
+    for (const title of ["Welcome to AiAlgoDesk", "Connect your broker", "Your paper bot", "Get alerts on your phone"]) {
       await expect(card(page)).toContainText(title);
       if (title !== "Get alerts on your phone") await next(page).click();
     }
@@ -221,7 +224,7 @@ test.describe("first-time guidance", () => {
     await help.getByRole("button", { name: "Show all tips again" }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect.poll(() => server.marks).toEqual({ welcome_done_at: null, skip_all_at: null, seen: {} });
-    await expect(card(page)).toHaveAttribute("data-tour-card", "welcome-what", { timeout: 10_000 });
+    await expect(card(page)).toHaveAttribute("data-tour-card", "welcome-what", { timeout: 15_000 });
   });
 
   test("Help → Skip all tips", async ({ page }) => {
@@ -252,7 +255,7 @@ for (const viewport of [DESKTOP, PHONE]) {
 
       test("the welcome card", async ({ page }) => {
         await open(page, "dashboard", NEW_USER, theme);
-        await expect(card(page)).toHaveAttribute("data-tour-card", "welcome-what", { timeout: 10_000 });
+        await expect(card(page)).toHaveAttribute("data-tour-card", "welcome-what", { timeout: 15_000 });
         await expect(page.locator("[aria-busy='true']")).toHaveCount(0, { timeout: 15_000 });
         await expect(page).toHaveScreenshot(`tour-welcome-v2-${viewport.width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
       });

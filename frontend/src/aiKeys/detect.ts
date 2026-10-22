@@ -56,7 +56,7 @@ export function checkPastedKey(provider: ByokProviderName, raw: string): PasteCh
   const detected = detectKey(key);
   if (!key) return { key, detected, switchTo: null, warning: null, ok: false };
   if (detected.kind === "other") {
-    return { key, detected, switchTo: null, ok: false, warning: `This looks like ${withArticle(detected.name)} key. ATP cannot use ${detected.name} keys yet; pick one of the providers here.` };
+    return { key, detected, switchTo: null, ok: false, warning: `This looks like ${withArticle(detected.name)} key. AiAlgoDesk cannot use ${detected.name} keys yet; pick one of the providers here.` };
   }
   if (detected.kind === "provider" && detected.provider !== provider) {
     return { key, detected, switchTo: detected.provider, ok: false,

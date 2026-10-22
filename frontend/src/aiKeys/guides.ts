@@ -5,7 +5,7 @@ import type { ByokProviderName } from "../types";
  * first and recommended: it has a free tier. More providers come with MO2 part A.
  *
  * - `key_page`: the provider's own key page, opened in a new tab. `checked_on`: the day someone last opened that page
- *   and checked the steps against it; a test (src/aiKeys/guides.test.ts) fails 120 days later, so it is checked again.
+ *   and checked the steps against it; a test (src/aiKeys/aiKeys.test.tsx) fails 120 days later, so it is checked again.
  * - Screenshots: each step may name the picture it needs; until a real one is taken (by us, of our own account) the guide
  *   shows a marked placeholder. No third-party picture is fetched or committed.
  * - What a key looks like is its prefix and length only, never a real key.
@@ -81,7 +81,7 @@ export const KEY_GUIDES: readonly KeyGuide[] = [
     steps: [
       { text: "Press Open Anthropic key page and sign in to the Anthropic Console, or create an account.", screenshot: "The Anthropic Console sign-in page" },
       { text: "Open Billing and add credit. A key does not work until the account has credit.", screenshot: "The Billing page of the Anthropic Console" },
-      { text: "Go back to API keys and press Create Key. Name it ATP so you know where it is used." },
+      { text: "Go back to API keys and press Create Key. Name it AiAlgoDesk so you know where it is used." },
       { text: "Copy the key now: the Console shows it only once.", screenshot: "A new key with its copy button (key hidden)" },
       PASTE_STEP,
     ],
@@ -103,7 +103,7 @@ export const KEY_GUIDES: readonly KeyGuide[] = [
     steps: [
       { text: "Press Open OpenAI key page and sign in to the OpenAI platform, or create an account.", screenshot: "The OpenAI platform sign-in page" },
       { text: "Under Settings, open Billing and add a payment method or credit. A key does not work without it." },
-      { text: "Go back to API keys and press Create new secret key. Name it ATP.", screenshot: "The Create new secret key button" },
+      { text: "Go back to API keys and press Create new secret key. Name it AiAlgoDesk.", screenshot: "The Create new secret key button" },
       { text: "Copy the key now: OpenAI shows it only once.", screenshot: "A new key with its copy button (key hidden)" },
       PASTE_STEP,
     ],

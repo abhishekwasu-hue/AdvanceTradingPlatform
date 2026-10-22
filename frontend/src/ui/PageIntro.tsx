@@ -1,6 +1,7 @@
 import { Info, X } from "lucide-react";
 import { useCallback, useId, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
+import { useTours } from "../tours/state";
 
 /**
  * UI2-1 (UI v2 proposal §9 rule 2): the "What is this page?" card. A page shows it on the trader's first visit: two
@@ -10,6 +11,9 @@ import { useAuth } from "../auth/AuthContext";
  *
  * Storage: this browser's localStorage for now. UI-8 stores it server-side per user (`GET/PUT /api/me/setup`, built in
  * UI2-7); `IntroStore` is the seam that swap replaces, and localStorage stays the cache.
+ *
+ * MO2 part C: the card is one of the page's first-time tips. "Skip all tips" (stored on the server, src/tours/state.ts)
+ * hides it on every page, and Help -> "Show all tips again" brings every closed card back (`clearIntroDismissals`).
  *
  * Neutral styling: it is information, not a warning. Wording is plain English, no developer terms.
  */
@@ -46,6 +50,11 @@ export function dismissIntro(store: IntroStore, userId: number | string | null, 
   if (userId === null) return;
   const ids = readIds(store, userId);
   if (!ids.includes(id)) store.write(storageKey(userId), JSON.stringify([...ids, id]));
+}
+
+/** Help -> "Show all tips again": every card this user closed shows again. */
+export function clearIntroDismissals(store: IntroStore, userId: number | string | null): void {
+  if (userId !== null) store.write(storageKey(userId), "[]");
 }
 
 export interface PageIntroViewProps {
@@ -86,8 +95,9 @@ export function PageIntroView({ title = "What is this page?", lines, showMe, onD
 export function PageIntro({ id, store = LOCAL_INTRO_STORE, ...view }: Omit<PageIntroViewProps, "onDismiss"> & { id: string; store?: IntroStore }) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
+  const tips = useTours(userId);
   const [closedNow, setClosedNow] = useState<string | null>(null);
   const dismiss = useCallback(() => { dismissIntro(store, userId, id); setClosedNow(`${userId}:${id}`); }, [store, userId, id]);
-  if (userId === null || closedNow === `${userId}:${id}` || isIntroDismissed(store, userId, id)) return null;
+  if (userId === null || tips.marks.skip_all_at || closedNow === `${userId}:${id}` || isIntroDismissed(store, userId, id)) return null;
   return <PageIntroView {...view} onDismiss={dismiss} />;
 }

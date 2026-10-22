@@ -144,8 +144,8 @@ describe("UI2-1 page search (More sheet and command bar)", () => {
 
   it("the merged pages' extras live at their new addresses", () => {
     expect(NAV_EXTRAS_V2.map((e) => [e.key, e.path])).toEqual([
-      ["scanner", "/screener/custom"], ["options-builder", "/option-chain/plan"], ["coach", "/coach"], ["account", "/settings/account"],
-      ["setup", "/settings/setup"],
+      ["scanner", "/screener/custom"], ["options-builder", "/option-chain/plan"], ["chart-analyze", "/chart-analyze"], ["coach", "/coach"],
+      ["account", "/settings/account"], ["setup", "/settings/setup"],
     ]);
   });
 

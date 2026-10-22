@@ -9,7 +9,8 @@
   more than `UNIVERSE_MAX_CHURN_RATIO` of them in a day is refused with a quality event (a provider glitch must not
   rewrite history). Every membership change is in the report (the rebalance diff).
 * The file's `Industry` column is NSE's sector level (provisional, OPEN_QUESTIONS U1-Q3); the other levels stay NULL
-  until a source gives them. A changed value closes the classification range and opens a new one.
+  until a source gives them. A changed value closes the classification range and opens a new one. A company that
+  already carries the finer levels from a full classification file (WL1, `classification.py`) keeps them.
 """
 import hashlib
 import json
@@ -159,6 +160,8 @@ async def _classify(session: AsyncSession, members: List[Constituent], today: da
             continue
         current = open_rows.get(m.isin)
         if current is not None and current.sector == m.industry:
+            continue
+        if current is not None and current.industry:            # WL1: a full classification file's finer levels win
             continue
         first = current is None and m.isin not in seen
         if current is not None:

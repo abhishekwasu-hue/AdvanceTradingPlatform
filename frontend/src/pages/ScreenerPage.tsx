@@ -5,9 +5,9 @@
  *
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
-import { Layers, LayoutGrid, Play, Save } from "lucide-react";
+import { Code2, Layers, LayoutGrid, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
 import { Button, cx, Dialog } from "../components/primitives";
 import { useToast } from "../components/Toast";
@@ -31,6 +31,9 @@ import { useFeatures } from "../ui/useFeatures";
 import { ComingSoon } from "../ui/ComingSoon";
 import { ErrorState } from "../ui/ErrorState";
 import { COMING_SOON_MESSAGE } from "../api/errors";
+
+// Handover 11c-1 (flag `strategy_lab_pine`): the Pine Script panel loads only when it is opened.
+const PinePanel = lazy(() => import("../lab/pine/PinePanel"));
 
 const VALIDATE_DELAY_MS = 350;
 /** D2 live counts: a preview run (not stored) once the trader pauses editing, on bars the server caches per symbol. */
@@ -88,6 +91,9 @@ export default function ScreenerPage(_props: PageProps) {
   const [etfOpen, setEtfOpen] = useState(false);
   // AMW-2 (flag `watchlists`): "My watchlists" in the universe column.
   const watchlistsOn = features.on("watchlists");
+  // Handover 11c-1 (flag `strategy_lab_pine`): paste a Pine script, see what translates, run its condition as a screen.
+  const pineOn = features.on("strategy_lab_pine");
+  const [pineOpen, setPineOpen] = useState(false);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries))
@@ -239,6 +245,7 @@ export default function ScreenerPage(_props: PageProps) {
           <Button size="sm" onClick={() => setToolsOpen(true)} data-testid="library-tools-open"><Layers size={14} /> Library tools</Button>
         )}
         {etfOn && <Button size="sm" onClick={() => setEtfOpen(true)} data-testid="etf-open"><LayoutGrid size={14} /> ETFs</Button>}
+        {pineOn && <Button size="sm" onClick={() => setPineOpen(true)} data-testid="pine-open"><Code2 size={14} /> Pine Script</Button>}
         <div className="hidden items-center gap-2 sm:flex">
           <Button size="sm" onClick={() => void doSave()} disabled={!text}><Save size={14} /> Save</Button>
           <Button size="sm" variant="primary" onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan">
@@ -322,6 +329,17 @@ export default function ScreenerPage(_props: PageProps) {
         <Dialog wide open={etfOpen} onOpenChange={setEtfOpen} title="ETFs"
                 description="NSE ETFs from the shared end-of-day history: traded value and how each moved against the index it tracks.">
           <EtfPanel />
+        </Dialog>
+      )}
+
+      {pineOn && (
+        <Dialog wide open={pineOpen} onOpenChange={setPineOpen} title="Pine Script"
+                description="Paste a TradingView Pine script: see what translates, read each condition in plain words and run it as a screen. The script is never run.">
+          {pineOpen && (
+            <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
+              <PinePanel symbols={symbols} baseTf={scanTf} />
+            </Suspense>
+          )}
         </Dialog>
       )}
 

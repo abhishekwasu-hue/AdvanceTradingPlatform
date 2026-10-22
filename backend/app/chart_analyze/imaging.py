@@ -1,0 +1,134 @@
+"""Analyze a chart: the one safe path every image takes (an upload or a fetched link) before it is stored or sent.
+
+1. Size: at most `max_image_bytes` (checked before anything is parsed).
+2. Type by magic bytes, never by the file name or the declared content type: PNG (`\\x89PNG\\r\\n\\x1a\\n`) or JPEG
+   (`\\xff\\xd8\\xff`). Anything else (GIF, WebP, SVG, HTML, a PDF) is refused.
+3. Header only: Pillow opens the image lazily, limited to the PNG and JPEG decoders; the width, the height and the
+   pixel count (the decompression-bomb limit, `max_image_pixels`) are checked before a single pixel is decoded, and
+   Pillow's own bomb warning is an error.
+4. `Image.verify()` on that object, then a fresh open and a full decode (verify leaves the object unusable).
+5. Re-encode: 16-bit greyscale becomes 8-bit first, the EXIF orientation is applied, the pixels are converted to RGB or
+   RGBA with every piece of metadata dropped, and saved as PNG. EXIF, XMP, ICC profiles, text chunks, comments and any trailing bytes after the
+   image end are gone; the original bytes are never stored or sent anywhere.
+It is CPU-bound: the API runs it in a worker thread behind a small process-wide limit (routes.DECODE_SLOTS).
+Every decode error becomes `ImageRejected` with a message the user can act on (a 4xx at the API), never a 500.
+"""
+import hashlib
+import io
+import struct
+import warnings
+from dataclasses import dataclass
+from typing import Any, Dict
+
+from PIL import Image, ImageOps, UnidentifiedImageError
+
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+JPEG_MAGIC = b"\xff\xd8\xff"
+ACCEPTED = "PNG or JPEG"
+
+
+class ImageRejected(ValueError):
+    """`status` is the HTTP status the API answers with (413 too big, 415 wrong type, 422 unreadable)."""
+
+    def __init__(self, message: str, status: int = 422) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+@dataclass(frozen=True)
+class CleanImage:
+    png: bytes
+    width: int
+    height: int
+    sha256: str
+
+
+def sniff(data: bytes) -> str:
+    """'png', 'jpeg' or '' from the first bytes."""
+    if data.startswith(PNG_MAGIC):
+        return "png"
+    if data.startswith(JPEG_MAGIC):
+        return "jpeg"
+    return ""
+
+
+def _limits(settings: Dict[str, Any]) -> tuple:
+    return (int(settings["max_image_bytes"]), int(settings["max_image_width"]), int(settings["max_image_height"]),
+            int(settings["max_image_pixels"]))
+
+
+def check_size(n: int, settings: Dict[str, Any]) -> None:
+    max_bytes = _limits(settings)[0]
+    if n > max_bytes:
+        raise ImageRejected(f"The image is larger than {max_bytes // 1024} KB. Crop it or save it smaller, then try again.", 413)
+
+
+_WIDE_MODES = ("I", "I;16", "I;16B", "I;16L", "I;16N", "F")
+
+
+def _eight_bit(img: Image.Image) -> Image.Image:
+    """A 16-bit or 32-bit greyscale image as 8-bit greyscale, early (one small copy instead of wide ones later)."""
+    if img.mode not in _WIDE_MODES:
+        return img
+    wide = img if img.mode in ("I", "F") else img.convert("I")
+    return wide.point(lambda v: v * (1 / 257)).convert("L")
+
+
+def sanitize(data: bytes, settings: Dict[str, Any]) -> CleanImage:
+    max_bytes, max_w, max_h, max_pixels = _limits(settings)
+    if not data:
+        raise ImageRejected("The file is empty.", 422)
+    check_size(len(data), settings)
+    kind = sniff(data)
+    if not kind:
+        raise ImageRejected(f"Only {ACCEPTED} images are accepted.", 415)
+    formats = ["PNG"] if kind == "png" else ["JPEG"]
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(data), formats=formats) as probe:
+                width, height = probe.size
+                if width <= 0 or height <= 0:
+                    raise ImageRejected("The image has no pixels.", 422)
+                if width > max_w or height > max_h:
+                    raise ImageRejected(f"The image is {width} x {height} pixels; the largest accepted is {max_w} x {max_h}.", 413)
+                if width * height > max_pixels:
+                    raise ImageRejected("The image has too many pixels to read safely.", 413)
+                probe.verify()
+            with Image.open(io.BytesIO(data), formats=formats) as img:
+                if img.size != (width, height):
+                    raise ImageRejected("The image could not be read.", 422)
+                img.load()
+                orientation = img.getexif().get(0x0112)
+                frame = _eight_bit(img)
+                if orientation not in (None, 1):
+                    frame = ImageOps.exif_transpose(frame) or frame
+                mode = "RGBA" if ("A" in frame.getbands() or frame.mode == "P" and "transparency" in frame.info) else "RGB"
+                clean = frame.convert(mode) if frame.mode != mode else frame.copy()
+                # No metadata survives: PNG writes ICC, transparency and the rest only from `info` (and EXIF only when
+                # passed to save), so an empty `info` means pixels only.
+                clean.info = {}
+                out = io.BytesIO()
+                clean.save(out, format="PNG", optimize=False)
+    except ImageRejected:
+        raise
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+        raise ImageRejected("The image has too many pixels to read safely.", 413) from None
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError, EOFError, MemoryError, TypeError, IndexError, KeyError, struct.error):
+        raise ImageRejected("The image could not be read. Save it again as PNG or JPEG and try again.", 422) from None
+    png = out.getvalue()
+    return CleanImage(png=png, width=clean.size[0], height=clean.size[1], sha256=hashlib.sha256(png).hexdigest())
+
+
+def png_chunks(png: bytes) -> list:
+    """The chunk types of a PNG, in order (tests: proves no metadata chunk survives)."""
+    if not png.startswith(PNG_MAGIC):
+        return []
+    pos, names = len(PNG_MAGIC), []
+    while pos + 8 <= len(png):
+        length, kind = struct.unpack(">I4s", png[pos:pos + 8])
+        names.append(kind.decode("latin-1"))
+        pos += 12 + length
+        if kind == b"IEND":
+            break
+    return names

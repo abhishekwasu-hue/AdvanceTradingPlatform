@@ -27,7 +27,7 @@ export default function BottomNavV2({ current, moreOpen, onMore, onPick, dot = n
   const attention = moreButtonDot(dot);
   const item = "flex min-h-16 flex-1 flex-col items-center justify-center gap-space-1 text-t12 font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand";
   return (
-    <nav aria-label="Quick navigation" data-bottom-nav-v2
+    <nav aria-label="Quick navigation" data-bottom-nav-v2 data-tour="nav-bottom"
       className={`bottom-nav fixed inset-x-0 bottom-0 flex border-t border-subtle bg-surface-1 pb-[env(safe-area-inset-bottom)] md:hidden ${moreOpen ? "pointer-events-auto z-[60]" : "z-20"}`}>
       {BOTTOM_BAR_V2.map(({ key, label }) => {
         const Icon = ICONS[key];

@@ -100,7 +100,14 @@ CONCEPTS: List[Concept] = [
             "The platform enforces a cool-down after a stop, a daily loss limit and a losing-streak pause so the rules hold when emotions don't.", ("risk_per_trade", "drawdown")),
     Concept("regime", "Market regime", ("regime", "sideways", "range", "ranging", "choppy"),
             "The market's mood: trending up/down, ranging (sideways), volatile or quiet. Trend strategies lose in ranges and reversion strategies lose in trends, "
-            "so each deployment here can enter only in the regimes it suits - a day with no trade is often the right outcome.", ("trend", "adx", "bollinger")),
+            "so a strategy suits some regimes better than others. In ATP the indicator regime is a diagnostic only: it never blocks an entry.",
+            ("trend", "adx", "bollinger")),
+    Concept("demand_supply", "Demand and supply zones",
+            ("demand zone", "supply zone", "demand", "supply", "rally base", "drop base", "base"),
+            "A demand zone is a price area where buyers stepped in strongly before: the price paused in a small base and then moved away fast. "
+            "A supply zone is the same for sellers, before a fast drop. A zone is an area, not a single line, and what matters is how the price "
+            "behaves when it comes back: a fresh zone has not been revisited yet, a tested one has. Zones are reference areas from past prices, "
+            "not signals - a zone can fail, so the risk is always decided first.", ("support_resistance", "market_structure", "stop_loss")),
     Concept("pullback", "Pullback", ("pullback", "dip", "retracement"),
             "A temporary move against the trend. Buying a pullback in an uptrend gives a better price and a tighter, logical stop (below the pullback low) "
             "than chasing a breakout - the idea behind the MTF and swing EMA pullback strategies.", ("trend", "ema", "breakout")),

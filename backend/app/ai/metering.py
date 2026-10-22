@@ -179,9 +179,12 @@ class MeteredProvider:
         except Exception as exc:  # noqa: BLE001 - the audit row is logged, never the cause of a failed answer
             logger.warning("LLM call not logged for tenant %s (%s): %s", self.tenant_id, self.feature, exc)
 
-    async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000) -> Completion:
+    async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000, image_png: Optional[bytes] = None) -> Completion:
+        # Analyze a chart: one chart image goes with the text when the caller sends one (the Anthropic, OpenAI and Gemini
+        # providers take it); without one the call is exactly as before.
+        extra: Dict[str, Any] = {"image_png": image_png} if image_png is not None else {}
         try:
-            result = await self.inner.complete_full(system, user, max_tokens=max_tokens)
+            result = await self.inner.complete_full(system, user, max_tokens=max_tokens, **extra)
         except ProviderError as exc:
             await self._record(exc.usage, system, user, None, f"error: {str(exc)[:280]}")
             raise

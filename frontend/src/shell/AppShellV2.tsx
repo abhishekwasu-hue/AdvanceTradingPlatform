@@ -24,6 +24,9 @@ import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2Red
 import SidebarV2 from "./SidebarV2";
 import TopBarV2 from "./TopBarV2";
 import { usePaperOnly } from "../setup/paperOnly";
+import { tourIdFor } from "../tours/pages";
+import { useTours } from "../tours/state";
+import TourHost from "../tours/TourHost";
 
 type FeedbackDialogProps = { open: boolean; onOpenChange: (open: boolean) => void; pathname: string; initialText?: string };
 const FeedbackDialog = lazy<ComponentType<FeedbackDialogProps>>(
@@ -61,6 +64,10 @@ export default function AppShellV2() {
   const dot = brokerDot(useBrokerConnections().rows);
   const accountPath = user ? "/settings/account" : pathFor("account");
   const go = useCallback((p: Page) => navigate(pathFor(p)), [navigate]);
+  // MO2 part C: this page's tips (welcome and page tours, src/tours) and the "?" that replays them.
+  const tourId = user ? tourIdFor(key) : null;
+  const tours = useTours(user?.id ?? null);
+  const replayTour = tourId && tours.known && tours.store ? () => tours.store?.request({ kind: "page", id: tourId }) : undefined;
 
   const [moreOpen, setMoreOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -161,7 +168,7 @@ export default function AppShellV2() {
         <TopBarV2 title={title} user={user} accountPath={accountPath}
           notificationsActive={key === "notifications"} accountActive={key === "account"}
           onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined}
-          paperOnly={frontPaperOnly} />
+          paperOnly={frontPaperOnly} onTour={replayTour} />
         <PwaBanners />
         <LegalAcceptanceBanner />
         {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip. */}
@@ -174,6 +181,7 @@ export default function AppShellV2() {
       <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key} dot={dot}
         onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
       <BrokerPromptHost />
+      {user && <TourHost userKey={user.id} role={user.role ?? null} tourId={tourId} />}
       <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} />
       {supportOn && supportLoaded && (
         <Suspense fallback={null}>

@@ -16,3 +16,18 @@ def rsi(close: pd.Series, period: int = 14) -> pd.Series:
     result = 100 - (100 / (1 + rs))
     result = result.where(avg_loss != 0, 100.0)
     return result
+
+
+@prefix_cached
+def stochastic(df: pd.DataFrame, period: int = 14, smooth: int = 3, d: int = 3) -> pd.DataFrame:
+    """Slow stochastic oscillator (0-100). The raw %K is 100 x (close - lowest low) / (highest high - lowest low) over
+    `period` bars; `k` is its `smooth`-bar simple average (smooth 1 = the fast stochastic) and `d` the `d`-bar simple
+    average of `k`. A window without range (highest high = lowest low) has no value (NaN), so it never matches.
+    Causal: bar t reads bars <= t only."""
+    lowest = df["low"].astype(float).rolling(window=period, min_periods=period).min()
+    highest = df["high"].astype(float).rolling(window=period, min_periods=period).max()
+    span = (highest - lowest).where(lambda s: s > 0)
+    raw = 100.0 * (df["close"].astype(float) - lowest) / span
+    k = raw.rolling(window=smooth, min_periods=smooth).mean()
+    d_line = k.rolling(window=d, min_periods=d).mean()
+    return pd.DataFrame({"k": k, "d": d_line}, index=df.index)

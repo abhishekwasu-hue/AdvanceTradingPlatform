@@ -24,8 +24,14 @@ from pandas.tseries.offsets import DateOffset
 
 from app.indicators.directional import adx as _adx
 from app.indicators.momentum import rsi as _rsi
+from app.indicators.momentum import stochastic as _stochastic
 from app.indicators.trend import ema as _ema
+from app.indicators.trend import hma as _hma
+from app.indicators.trend import macd as _macd
+from app.indicators.trend import parabolic_sar as _psar
+from app.indicators.trend import wma as _wma
 from app.indicators.volatility import atr as _atr
+from app.indicators.volatility import supertrend_dir as _supertrend_dir
 from app.screener import nodes as n
 from app.screener.registry import FUNCTIONS
 from app.screener.validator import Validated
@@ -290,6 +296,18 @@ class _Eval:
             "PlusDI": lambda: _adx(f, win(0, 14))["plus_di"],
             "MinusDI": lambda: _adx(f, win(0, 14))["minus_di"],
             "Supertrend": lambda: _operand(f, "SUPERTREND", win(0, 10), num(1, 3.0)),
+            # TPL-1: the add-indicator work (app/indicators) - the Supertrend's own direction, MACD, WMA / HMA, the
+            # stochastic and the parabolic SAR, all bar by bar on closed bars
+            "SupertrendDir": lambda: _supertrend_dir(f, max(1, win(0, 10)), num(1, 3.0)),
+            "MACD": lambda: _macd(f["close"].astype(float), win(0, 12), win(1, 26), win(2, 9))["macd"],
+            "MACDSignal": lambda: _macd(f["close"].astype(float), win(0, 12), win(1, 26), win(2, 9))["signal"],
+            "MACDHist": lambda: _macd(f["close"].astype(float), win(0, 12), win(1, 26), win(2, 9))["hist"],
+            "WMA": lambda: _wma(self.series(args[0], tf), win(1)),
+            "HMA": lambda: _hma(self.series(args[0], tf), win(1)),
+            "StochK": lambda: _stochastic(f, win(0, 14), win(1, 3), 1)["k"],
+            "StochD": lambda: _stochastic(f, win(0, 14), win(1, 3), win(2, 3))["d"],
+            "PSAR": lambda: _psar(f, num(0, 0.02), num(1, 0.02), num(2, 0.2))["sar"],
+            "PSARDir": lambda: _psar(f, num(0, 0.02), num(1, 0.02), num(2, 0.2))["dir"],
             "BBUpper": lambda: _operand(f, "BB_UPPER", win(0, 20), num(1, 2.0)),
             "BBMid": lambda: _operand(f, "BB_MID", win(0, 20), num(1, 2.0)),
             "BBLower": lambda: _operand(f, "BB_LOWER", win(0, 20), num(1, 2.0)),

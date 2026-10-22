@@ -82,7 +82,10 @@ test.describe("settings index behaviour", () => {
   test("the rows, each with its chip and where it leads", async ({ page }) => {
     await openSettings(page, "/settings", FULL);
     const rows = index(page).locator("[data-row]");
-    await expect(rows).toHaveText([/Account & plan/, /Broker/, /AI/, /Alerts/, /My trading defaults/, /Appearance/, /Help & tips/, /Set up your account/]);
+    await expect(rows).toHaveText([/Account & plan/, /Team/, /Broker/, /AI/, /Alerts/, /My trading defaults/, /Risk limits/, /Appearance/, /Help & tips/, /Set up your account/]);
+    // UX3-9: Team and Risk limits left the sidebar; Settings opens them.
+    await expect(row(page, "team").locator("a")).toHaveAttribute("href", "/team");
+    await expect(row(page, "risk").locator("a")).toHaveAttribute("href", "/risk-management");
     await expect(row(page, "broker").locator("[data-chip]")).toHaveText("Connected (Upstox)");
     await expect(row(page, "broker").locator("a")).toHaveAttribute("href", "/broker");
     await expect(row(page, "alerts").locator("[data-chip]")).toHaveText("Telegram connected");

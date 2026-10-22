@@ -7,7 +7,9 @@ import type { BrokerDot } from "../broker/brokerState";
 import { BOTTOM_BAR_V2, moreButtonDot, navItemFor, type ShellKey } from "./navModel";
 
 /**
- * UI2-1 (UI v2 proposal §4, mockup nav-bottom-mobile): the phone bottom bar - Home, Charts, Signals, Positions, More.
+ * UI2-1 (UI v2 proposal §4, mockup nav-bottom-mobile), UX3-9 (UX audit section 5): the phone bottom bar - Today,
+ * Charts, Signals, My trades, More. `current` is the entry of the page on screen (navEntryFor: My trades › Orders
+ * lights up My trades).
  * "More" opens the More sheet (search plus every other page). Each item is about 78 x 64 px (PW2: 44 px minimum),
  * the bar keeps clear of the home indicator, and it steps aside while a text field is focused (the `bottom-nav` rule in
  * styles/index.css). Hidden from md up, where the sidebar is always shown. While the sheet is open the bar stays on top

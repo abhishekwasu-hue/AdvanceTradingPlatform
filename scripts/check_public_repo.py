@@ -112,6 +112,14 @@ PRIVATE_FIXTURES_RESOLVER = "backend/tests/private_fixtures.py"
 # no real data: `python3 scripts/check_public_repo.py --hash <path>` prints the line to put here
 # (docs/PUBLIC_REPO_POLICY.md 5).
 ALLOWED_TEST_DATA: Dict[str, str] = {
+    # F&O 8b slice 3: UI screenshots of the auto journal card on made-up trades (e2e/fno8b-slice3-v2.e2e.ts); re-pin
+    # after regenerating them
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-dark.png": "326c2ffd0b00274feb9b593e8597b82d538ad202872d0d5811cf4a0ec1304ef7",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-light.png": "9ddb3873efe5597eb39938a0295e75c0384f034fc80c709a9778982a26f1f44f",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-360-dark.png": "68f15835ee396e59d97daa8bb6e81e85b7b7731b81e59334ba43073a4b8b6861",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-360-light.png": "f449069abaed7f3b9cabb151724bd7592c0b41aecdcd5b88125807a7dd099a8a",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-390-dark.png": "9fdea15fe582b9d87a8d57d624d1f21ad729db2f4a5ea6627ae128ca0a8f9301",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-390-light.png": "c1a88642dda946b70513834d3a8edcb1d19a3f5f6fbd75de3ca41ccf3be8a0bf",
     # ATP-generated goldens on synthetic, seeded inputs (each regeneration site names this list)
     "backend/tests/fixtures/charts/pa_layer_golden.json": "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
     "backend/tests/fixtures/charts/study_parity.json": "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",

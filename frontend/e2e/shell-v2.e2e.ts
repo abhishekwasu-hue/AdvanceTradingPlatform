@@ -9,7 +9,7 @@ import { expectPhoneLayout } from "./phoneLayout";
  *   __screenshots__ are not touched: with the flag off nothing changes (mobile.e2e.ts keeps proving it).
  * - Every phone page in the v2 shell passes the PW2 layout rules (no sideways scroll, 44 px targets, nothing hidden
  *   behind the bottom bar).
- * - The navigation model at work: sections and their memory, flag-hidden items, Admin console for SUPER_ADMIN only,
+ * - The navigation model at work: the flat 13-entry sidebar (UX3-9), the merged pages' tabs, flag-hidden items, Admin console for SUPER_ADMIN only,
  *   the More sheet and its search, the command bar (Ctrl K), the redirects, the broker gate on data pages.
  * After an intended change: `npx playwright test --project=phone e2e/shell-v2.e2e.ts --update-snapshots`, check the
  * new images, commit.
@@ -40,8 +40,10 @@ async function open(page: Page, path: string, theme: "dark" | "light", options: 
 
 const PHONE_PAGES: [string, string][] = [
   ["dashboard", "/"], ["charts", "/charts"], ["screener", "/screener"], ["option-chain", "/option-chain"],
-  ["positions", "/positions"], ["orders", "/orders"], ["alerts", "/notifications"], ["settings", "/settings"],
+  ["positions", "/positions"], ["orders", "/positions/orders"], ["alerts", "/notifications"], ["settings", "/settings"],
   ["copilot", "/copilot/market-pulse"], ["custom-scan", "/screener/custom"], ["signals", "/signals"],
+  // UX3-9: the merged pages' tab bars on a phone.
+  ["money", "/positions/money"], ["strategies", "/strategies"], ["backtest", "/strategies/test"], ["performance", "/analytics"],
 ];
 const PHONES = [{ width: 360, height: 800 }, { width: 390, height: 844 }];
 const THEMES = ["dark", "light"] as const;
@@ -66,16 +68,19 @@ for (const size of PHONES) {
       });
     }
 
-    test("the bottom bar is Home, Charts, Signals, Positions, More - each at least 44 px", async ({ page }) => {
+    test("the bottom bar is Today, Charts, Signals, My trades, More - each at least 44 px", async ({ page }) => {
       await open(page, "/", "dark");
       const bar = page.getByRole("navigation", { name: "Quick navigation" });
-      await expect(bar.locator("a, button")).toHaveText(["Home", "Charts", "Signals", "Positions", "More"]);
+      await expect(bar.locator("a, button")).toHaveText(["Today", "Charts", "Signals", "My trades", "More"]);
       for (const box of await bar.locator("a, button").evaluateAll((els) => els.map((e) => e.getBoundingClientRect()))) {
         expect(box.width).toBeGreaterThanOrEqual(44);
         expect(box.height).toBeGreaterThanOrEqual(44);
       }
       await bar.getByRole("link", { name: "Charts" }).click();
       await expect(page).toHaveURL(/\/charts$/);
+      // UX3-9: a My trades tab keeps My trades lit in the bar.
+      await page.goto("/positions/orders");
+      await expect(bar.getByRole("link", { name: "My trades" })).toHaveAttribute("aria-current", "page");
     });
 
     test("More opens a sheet with search and every other page; a choice closes it", async ({ page }) => {
@@ -83,11 +88,13 @@ for (const size of PHONES) {
       await page.getByRole("button", { name: "More pages" }).click();
       const sheet = page.getByRole("dialog", { name: "All pages" });
       await expect(sheet).toBeVisible();
-      for (const section of ["Markets", "Strategies", "Trading", "Insights", "Account", "More"]) {
+      for (const section of ["Markets", "Trading", "Insights", "Account"]) {
         await expect(sheet.getByRole("heading", { name: section, exact: true })).toBeVisible();
       }
       await expect(sheet.getByRole("link", { name: "Option chain" })).toBeVisible();
-      await expect(sheet.getByRole("link", { name: "My positions" })).toHaveCount(0);   // in the bar already
+      await expect(sheet.getByRole("link", { name: "Strategies" })).toBeVisible();
+      await expect(sheet.getByRole("link", { name: "My trades" })).toHaveCount(0);      // in the bar already
+      await expect(sheet.getByRole("link", { name: "Factor Lab" })).toHaveCount(0);     // UX3-9: found by search
       await expect(sheet.getByRole("link", { name: "Admin console" })).toHaveCount(0);  // an OWNER, not the operator
       for (const box of await sheet.locator("a").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) {
         expect(box).toBeGreaterThanOrEqual(44);
@@ -96,7 +103,7 @@ for (const size of PHONES) {
       await sheet.getByRole("searchbox", { name: "Search pages" }).fill("backtesting");
       await expect(sheet.getByRole("link")).toHaveCount(1);
       await sheet.getByRole("link", { name: /Test a strategy/ }).click();
-      await expect(page).toHaveURL(/\/backtest$/);
+      await expect(page).toHaveURL(/\/strategies\/test$/);                    // UX3-9: Strategies › Test
       await expect(sheet).toBeHidden();
     });
 
@@ -112,13 +119,13 @@ for (const size of PHONES) {
       await expect(sheet).toBeHidden();
       await more.click();
       await expect(sheet).toBeVisible();
-      await page.locator("[data-bottom-nav-v2] a", { hasText: "Positions" }).click();
+      await page.locator("[data-bottom-nav-v2] a", { hasText: "My trades" }).click();
       await expect(page).toHaveURL(/\/positions$/);
       await expect(sheet).toBeHidden();
       // The page already on screen: the sheet still closes (review M4).
       await more.click();
       await expect(sheet).toBeVisible();
-      await page.locator("[data-bottom-nav-v2] a", { hasText: "Positions" }).click();
+      await page.locator("[data-bottom-nav-v2] a", { hasText: "My trades" }).click();
       await expect(sheet).toBeHidden();
     });
 
@@ -172,38 +179,60 @@ test.describe("v2 shell 1440 desktop", () => {
     });
   }
 
-  test("five sections and More; Markets and Trading open; a section remembers being opened", async ({ page }) => {
-    await open(page, "/", "light");
+  test("UX3-9: one flat list of 13 entries in task order, Broker first; the page on screen is marked", async ({ page }) => {
+    await open(page, "/", "light", { ...V2, features: { ui_v2: true, ai_copilot: true, screener_v2: true } });
     const nav = page.getByRole("navigation", { name: "Pages" });
-    const headers = nav.locator("button[aria-expanded]");
-    await expect(headers).toHaveText(["Markets", "Strategies", "Trading", "Insights", "Account", "More"]);
-    await expect(nav.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
-    await expect(nav.getByRole("link", { name: "Signals" })).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Library" })).toHaveCount(0);           // Strategies starts closed
-    await nav.getByRole("button", { name: "Strategies" }).click();
-    await expect(nav.getByRole("link", { name: "Library" })).toBeVisible();
-    await nav.getByRole("button", { name: "Trading" }).click();
-    await expect(nav.getByRole("link", { name: "Signals" })).toHaveCount(0);
-    await page.reload();
-    await page.waitForLoadState("networkidle");
-    await expect(nav.getByRole("link", { name: "Library" })).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Signals" })).toHaveCount(0);
-    // The page on screen opens its own section.
+    await expect(nav.locator("button[aria-expanded]")).toHaveCount(0);                  // nothing folds away
+    await expect(nav.getByRole("link")).toHaveText([
+      "Broker", "Today", "Charts", "Option chain", "Find setups", "Signals", "Paper bot", "My trades", "Performance",
+      "Strategies", "AI Copilot", "News & events", "Settings",
+    ]);
+    await expect(nav.getByRole("link", { name: "Today" })).toHaveAttribute("aria-current", "page");
     await page.goto("/signals");
     await expect(nav.getByRole("link", { name: "Signals" })).toHaveAttribute("aria-current", "page");
+    // A merged page's tab and a Settings sub-page light up their entry.
+    await page.goto("/strategies/test");
+    await expect(nav.getByRole("link", { name: "Strategies" })).toHaveAttribute("aria-current", "page");
+    await page.goto("/risk-management");
+    await expect(nav.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
+  });
+
+  test("UX3-9: My trades, Strategies and Performance are tabs, each tab at its own address", async ({ page }) => {
+    await open(page, "/positions", "light", { ...V2, features: { ui_v2: true, discipline_engine: true, idea_library: true } });
+    const tabs = page.getByRole("navigation", { name: "My trades" });
+    await expect(tabs.getByRole("link")).toHaveText(["Positions", "Orders", "Money"]);
+    await expect(tabs.getByRole("link", { name: "Positions" })).toHaveAttribute("aria-current", "page");
+    await tabs.getByRole("link", { name: "Orders" }).click();
+    await expect(page).toHaveURL(/\/positions\/orders$/);
+    await expect(tabs.getByRole("link", { name: "Orders" })).toHaveAttribute("aria-current", "page");
+    await expect(page).toHaveTitle("My trades · AiAlgoDesk");
+    await tabs.getByRole("link", { name: "Money" }).click();
+    await expect(page).toHaveURL(/\/positions\/money$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/positions\/orders$/);
+
+    await page.goto("/strategies");
+    await expect(page.getByRole("navigation", { name: "Strategies" }).getByRole("link")).toHaveText(["Library", "Ideas", "Build", "Test"]);
+    await page.goto("/analytics");
+    await expect(page.getByRole("navigation", { name: "Performance" }).getByRole("link")).toHaveText(["Results", "Journal", "Coach"]);
   });
 
   test("pages whose feature is off are not listed; Admin console only for the platform operator", async ({ page }) => {
-    await open(page, "/", "light", { ...V2, features: { ui_v2: true } }, { atp_nav_sections: JSON.stringify({ strategies: true, insights: true, more: true }) });
+    await open(page, "/", "light", { ...V2, features: { ui_v2: true } });
     const nav = page.getByRole("navigation", { name: "Pages" });
-    await expect(nav.getByRole("link", { name: "Factor Lab" })).toBeVisible();
-    for (const hidden of ["AI Copilot", "Journal", "Marketplace", "Admin console"]) await expect(nav.getByRole("link", { name: hidden })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Settings" })).toBeVisible();
+    for (const hidden of ["AI Copilot", "Find setups", "Sectors & indices", "Admin console"]) await expect(nav.getByRole("link", { name: hidden })).toHaveCount(0);
+    // UX3-9: the tools the audit takes out of the user navigation are found by search.
+    for (const gone of ["Factor Lab", "Contract specs", "Activity log", "Company research", "Team", "Notifications"]) {
+      await expect(nav.getByRole("link", { name: gone, exact: true })).toHaveCount(0);
+    }
 
     await page.route(/\/api(?:\/v1)?\/auth\/me$/, (route) => route.fulfill({ json: { id: 1, email: "ops@example.com", tenant_id: 1, role: "SUPER_ADMIN", email_verified: true } }));
     await page.route(/\/api(?:\/v1)?\/system\/features$/, (route) => route.fulfill({ json: { ui_v2: true, ai_copilot: true, discipline_engine: true, marketplace: true } }));
     await page.reload();
     await page.waitForLoadState("networkidle");
-    for (const shown of ["AI Copilot", "Journal", "Marketplace", "Admin console"]) await expect(nav.getByRole("link", { name: shown })).toBeVisible();
+    for (const shown of ["AI Copilot", "Admin console"]) await expect(nav.getByRole("link", { name: shown })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Admin console" })).toHaveCount(1);
   });
 
   test("Ctrl K opens the command bar; typing and Enter go to the page", async ({ page }) => {
@@ -212,7 +241,7 @@ test.describe("v2 shell 1440 desktop", () => {
     const bar = page.locator("[data-command-bar]");
     await expect(bar).toBeVisible();
     await bar.getByRole("combobox", { name: "Search pages" }).fill("risk");
-    await expect(bar.getByRole("option").first()).toHaveText(/Risk/);
+    await expect(bar.getByRole("option").first()).toHaveText(/Risk limits/);
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/risk-management$/);
     await expect(bar).toBeHidden();
@@ -240,8 +269,13 @@ test.describe("v2 shell 1440 desktop", () => {
     await expect(page).toHaveURL(/\/option-chain\/plan\?underlying=NIFTY$/);
     await page.goto("/account");
     await expect(page).toHaveURL(/\/settings\/account$/);
-    await page.goto("/coach");                                          // Journal is off: Coach and guide stays
-    await expect(page).toHaveURL(/\/coach$/);
+    // UX3-9: the merged pages' old addresses open their tabs, keeping the query.
+    for (const [from, to] of [["/orders", "/positions/orders"], ["/portfolio", "/positions/money"], ["/strategy-builder", "/strategies/build"],
+      ["/backtest?strategy=orb", "/strategies/test?strategy=orb"], ["/journal", "/analytics/journal"], ["/coach", "/analytics/coach"],
+      ["/journal/coach", "/analytics/coach"]]) {
+      await page.goto(from);
+      await expect(page, from).toHaveURL(new RegExp(`${to.replace(/[?]/g, "\\?")}$`));
+    }
   });
 
   test("the Charts page opens on NIFTY 50 and on the symbol in the address", async ({ page }) => {
@@ -380,6 +414,12 @@ test.describe("flag off", () => {
     // A v2 page's new address (a bookmark, or Settings -> Account after signing out) goes back to today's address.
     await page.goto("/screener/custom?preset=gap");
     await expect(page).toHaveURL(/\/scanner\?preset=gap$/);
+    // UX3-9: a merged page's tab goes back to today's page, and today's sidebar is unchanged.
+    await page.goto("/positions/orders");
+    await expect(page).toHaveURL(/\/orders$/);
+    await page.goto("/strategies/test");
+    await expect(page).toHaveURL(/\/backtest$/);
+    await expect(page.locator("[data-page-tabs]")).toHaveCount(0);
   });
 });
 

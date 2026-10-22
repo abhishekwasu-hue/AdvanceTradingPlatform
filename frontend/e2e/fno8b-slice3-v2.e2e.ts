@@ -16,7 +16,8 @@ import { T, mockTrading } from "./tradingMocks";
  *   to the trades' own notes field and nothing else is sent.
  * Baselines (NEW): `fno8b3-trade-setup-v2-<360|390|1440>-<theme>.png` (the basket opened pre-filled),
  * `fno8b3-cockpit-v2-*` and `fno8b3-journal-v2-*`. After an intended change:
- * `npx playwright test --project=phone e2e/fno8b-slice3-v2.e2e.ts --update-snapshots`.
+ * `npx playwright test --project=phone e2e/fno8b-slice3-v2.e2e.ts --update-snapshots`; the `fno8b3-journal-v2-*` files are
+ * pinned in scripts/check_public_repo.py (ALLOWED_TEST_DATA: made-up trades), so re-pin them after regenerating.
  */
 const THEMES = ["light", "dark"] as const;
 const SHOT = { animations: "disabled" as const, maxDiffPixelRatio: 0.02, timeout: 15_000 };

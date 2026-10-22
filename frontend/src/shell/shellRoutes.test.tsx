@@ -58,7 +58,14 @@ describe("UI2-1 v2 addresses", () => {
     expect(flagOffFallback("/settings/account")).toBe("/account");          // signed out on Settings -> Account
     expect(flagOffFallback("/screener/custom/")).toBe("/scanner");
     expect(flagOffFallback("/option-chain/plan")).toBe("/options-builder");
-    expect(flagOffFallback("/journal/coach")).toBe("/coach");
+    expect(flagOffFallback("/journal/coach")).toBe("/coach");             // the address before UX3-9
+    // UX3-9: the merged pages' tabs.
+    expect(flagOffFallback("/positions/orders")).toBe("/orders");
+    expect(flagOffFallback("/positions/money")).toBe("/portfolio");
+    expect(flagOffFallback("/strategies/build")).toBe("/strategy-builder");
+    expect(flagOffFallback("/strategies/test")).toBe("/backtest");
+    expect(flagOffFallback("/analytics/journal")).toBe("/journal");
+    expect(flagOffFallback("/analytics/coach")).toBe("/coach");
     for (const p of ["/", "/settings", "/account", "/scanner", "/charts", "/charts/TCS", "/positions", "/nope"]) expect(flagOffFallback(p), p).toBeNull();
   });
 });
@@ -70,9 +77,23 @@ describe("UI2-1 redirects (only ever asked with ui_v2 on)", () => {
     expect(v2RedirectFor("/options-builder", "?underlying=NIFTY", signedIn)).toBe("/option-chain/plan?underlying=NIFTY");
   });
 
-  it("moves Coach under Journal only while Journal exists", () => {
-    expect(v2RedirectFor("/coach", "", signedIn)).toBeNull();
-    expect(v2RedirectFor("/coach", "", { ...signedIn, on: flags("discipline_engine") })).toBe("/journal/coach");
+  it("UX3-9: forwards the merged pages' old addresses to their tabs, keeping the query", () => {
+    const cases: [string, string][] = [
+      ["/orders", "/positions/orders"], ["/portfolio", "/positions/money"],
+      ["/strategy-builder", "/strategies/build"], ["/backtest", "/strategies/test"],
+      ["/journal", "/analytics/journal"], ["/coach", "/analytics/coach"], ["/journal/coach", "/analytics/coach"],
+    ];
+    for (const [from, to] of cases) {
+      expect(v2RedirectFor(from, "", signedIn), from).toBe(to);
+      expect(v2RedirectFor(`${from}/`, "?x=1", { ...signedIn, signedIn: false }), from).toBe(`${to}?x=1`);
+    }
+    // A tab whose feature is off still opens: it says "Coming soon" there (the flag is read at the new address).
+    expect(v2RedirectFor("/journal", "", { ...signedIn, on: flags("discipline_engine") })).toBe("/analytics/journal");
+    // The new addresses and the pages that stayed are left alone.
+    for (const p of ["/positions", "/positions/orders", "/positions/money", "/strategies", "/strategies/build", "/strategies/test",
+      "/analytics", "/analytics/journal", "/analytics/coach", "/ideas", "/risk-management", "/team"]) {
+      expect(v2RedirectFor(p, "", signedIn), p).toBeNull();
+    }
   });
 
   it("moves Account into Settings for a signed-in trader only, never with a verify / reset / invite link", () => {

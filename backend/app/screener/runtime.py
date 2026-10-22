@@ -365,9 +365,10 @@ class _Eval:
             "Pattern": lambda: _pattern_series(f, str(self.ev(args[0], tf)), _text(1, "any")),
             # AMW-3 (flag screenql_amw_functions): the AMW screener's predicates as causal series
             "StDev": lambda: self.series(args[0], tf).rolling(win(1)).std(ddof=0),
-            "RsiDivergence": lambda: _rsi_divergence(f, _text(0, "bullish"), win(1, 15), int(num(2, 0)), int(kw("period") or RSI_DIVERGENCE_PERIOD)),
+            "RsiDivergence": lambda: _rsi_divergence(f, _text(0, "bullish"), win(1, 15), int(num(2, 0)), int(kw("period") or RSI_DIVERGENCE_PERIOD),
+                                                     str(kw("kind") or RSI_DIVERGENCE_KIND)),
             "RsiDivergenceRef": lambda: _rsi_divergence_ref(f, _text(0, "extreme"), _text(1, "bullish"), int(num(2, 0)),
-                                                            int(kw("period") or RSI_DIVERGENCE_PERIOD)),
+                                                            int(kw("period") or RSI_DIVERGENCE_PERIOD), str(kw("kind") or RSI_DIVERGENCE_KIND)),
             "SwingLabel": lambda: _swing_label(f, _text(0, "high"), int(num(1, 0))),
             "TimeOfDay": lambda: pd.Series(time_of_day(f.index, _text(0, ""), _text(1, "")), index=f.index),
             # Wave templates W1 (flag screener_waves): the causal wave count (app/price_action/waves), close-only in alerts
@@ -385,6 +386,8 @@ class _Eval:
             "WaveProjection": lambda: _wave_level(f, int(num(0, 1)), "projection", _text(1, "previous"), num(2, float("nan"))),
             "WaveRatio": lambda: _wave_level(f, int(num(0, 1)), "ratio", _text(1, "previous")),
             "WaveLineLevel": lambda: _wave_level(f, int(num(0, 1)), "line", _text(1, "")),
+            # Wave templates companions (same flag): the corrective wave's volume against the wave before it
+            "WaveVolumeLower": lambda: _wave_volume_lower(f, int(num(0, 1)), _text(1, "current"), _text(2, "previous")),
             "WaveLineBreak": lambda: _wave_line_break(f, int(num(0, 1)), _text(1, ""), _text(2, "up"), num(3, _bkd("min_break_atr"))),
             "SwingHigh": lambda: _swings(f, int(num(0, 0)))[0],
             "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
@@ -392,6 +395,7 @@ class _Eval:
             "MedianRange": lambda: _median_range(f, win(0, 20)),
             "SwingZoneStrength": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "strength"),
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
+            "SwingZoneEdge": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "edge", num(2, 0.0)),
             "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
             "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
             # U6 BK1: breakout screens (app/screener/breakouts) - the same series the breakout engine and templates use
@@ -477,6 +481,10 @@ class _Eval:
                 "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, tf=tf, bars=self._gap_bars(tf)),
             "GapType": lambda: _breakout(f, "B8", str(self.ev(args[0], tf)), {
                 "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, "class", tf=tf, bars=self._gap_bars(tf)),
+            # Strategy templates TPL-8 (R2 for the gap family): the same B8 gaps on the same session Bars as GapBreakout
+            "GapBreakoutRef": lambda: _breakout_ref(f, "B8", _text(0, "level"), str(self.ev(args[1], tf)), {
+                "gap_level": _text(2, _bkd("gap_level")), "gap_hold_min": num(3, _bkd("gap_hold_min"))}, num(4, _bkd("stop_atr_mult")),
+                tf=tf, bars=self._gap_bars(tf)),
             "RetestEntry": lambda: retest_entry(),
             # Strategy templates R7 / R2: the retest's prices (the same B9 retests as RetestEntry with the same settings)
             "RetestEntryRef": lambda: _retest_ref(f, _text(0, "level"), str(self.ev(args[1], tf)), {
@@ -604,6 +612,7 @@ def _swing_label(f: pd.DataFrame, kind: str, degree: int) -> pd.Series:
 
 
 RSI_DIVERGENCE_PERIOD = 14         # RsiDivergence's RSI period when `period=` is left out (AMW-3: always 14)
+RSI_DIVERGENCE_KIND = "regular"    # RsiDivergence's kind when `kind=` is left out (AMW-3 / E2: regular only)
 
 
 @dataclass(frozen=True)
@@ -616,12 +625,15 @@ class _Divergence:
     diverges: bool
 
 
-def _divergence_swings(f: pd.DataFrame, side: str, degree: int, period: int) -> List[_Divergence]:
+def _divergence_swings(f: pd.DataFrame, side: str, degree: int, period: int, kind: str = RSI_DIVERGENCE_KIND) -> List[_Divergence]:
     """Every confirmed swing low (bullish) / high (bearish) of the degree, in confirmation order, with its divergence state
     against the one before (a lower low with a higher RSI(period) / a higher high with a lower RSI(period); RSI read at
-    each swing's extreme bar, known by the confirmation bar). Shared by RsiDivergence and RsiDivergenceRef."""
+    each swing's extreme bar, known by the confirmation bar). Shared by RsiDivergence and RsiDivergenceRef. Wave templates
+    companions: `kind` "hidden" - a higher low with a lower RSI (bullish) / a lower high with a higher RSI (bearish)."""
     if side not in ("bullish", "bearish"):
         raise ScreenRuntimeError(f"unknown divergence side {side!r}")
+    if kind not in ("regular", "hidden"):
+        raise ScreenRuntimeError(f"unknown divergence kind {kind!r}")
     k = "L" if side == "bullish" else "H"
     rsi = _rsi(f["close"].astype(float), period).to_numpy(float)
     out: List[_Divergence] = []
@@ -634,28 +646,34 @@ def _divergence_swings(f: pd.DataFrame, side: str, degree: int, period: int) -> 
         if prev is not None:
             r0, r1 = rsi[int(prev.bar_idx)], rsi[b]
             if np.isfinite(r0) and np.isfinite(r1):
-                state = bool(p.price < prev.price and r1 > r0) if k == "L" else bool(p.price > prev.price and r1 < r0)
+                if kind == "regular":
+                    state = bool(p.price < prev.price and r1 > r0) if k == "L" else bool(p.price > prev.price and r1 < r0)
+                else:
+                    state = bool(p.price > prev.price and r1 < r0) if k == "L" else bool(p.price < prev.price and r1 > r0)
         out.append(_Divergence(int(p.confirmed_idx), b, float(p.price), state))
         prev = p
     return out
 
 
-def _rsi_divergence(f: pd.DataFrame, side: str, lookback: int, degree: int, period: int = RSI_DIVERGENCE_PERIOD) -> pd.Series:
+def _rsi_divergence(f: pd.DataFrame, side: str, lookback: int, degree: int, period: int = RSI_DIVERGENCE_PERIOD,
+                    kind: str = RSI_DIVERGENCE_KIND) -> pd.Series:
     """AMW-3: a regular RSI divergence on every bar, from the swings CONFIRMED by that bar. Bullish: the last swing low
     is lower than the one before and the RSI at it is higher; bearish: a higher swing high with a lower RSI. RSI is read
     at each swing's extreme bar (known by the confirmation bar). True while the latest swing's extreme is at most
     `lookback` bars before the bar; false before two swings of the kind or where RSI has no value yet. The RSI period is
-    `period` (strategy templates E2; 14 when left out, as before)."""
+    `period` (strategy templates E2; 14 when left out, as before); `kind` "hidden" reads the hidden divergence instead (wave
+    templates companions; regular when left out, as before)."""
     n_ = len(f)
     div = np.zeros(n_, dtype=bool)                      # the divergence state from each confirmation on
     last_bar = np.full(n_, -1, dtype=np.int64)          # the latest swing's extreme bar, known at each bar
-    for d in _divergence_swings(f, side, degree, period):
+    for d in _divergence_swings(f, side, degree, period, kind):
         div[d.confirmed:], last_bar[d.confirmed:] = d.diverges, d.bar
     age = np.arange(n_) - last_bar
     return pd.Series(div & (last_bar >= 0) & (age <= lookback), index=f.index)
 
 
-def _rsi_divergence_ref(f: pd.DataFrame, what: str, side: str, degree: int, period: int = RSI_DIVERGENCE_PERIOD) -> pd.Series:
+def _rsi_divergence_ref(f: pd.DataFrame, what: str, side: str, degree: int, period: int = RSI_DIVERGENCE_PERIOD,
+                        kind: str = RSI_DIVERGENCE_KIND) -> pd.Series:
     """Strategy templates E2: the latest divergence's prices, held from the bar that confirmed its swing until the next
     divergence of the side is confirmed (a later swing that does not diverge leaves it as it is); missing before the first
     one. `extreme`: the divergent swing's own price (its low - bullish - or high - bearish); `confirm_bar`: the far side of
@@ -665,7 +683,7 @@ def _rsi_divergence_ref(f: pd.DataFrame, what: str, side: str, degree: int, peri
         raise ScreenRuntimeError(f"unknown divergence price {what!r}")
     far = f["high" if side == "bullish" else "low"].to_numpy(float)
     out = np.full(len(f), np.nan)
-    for d in _divergence_swings(f, side, degree, period):
+    for d in _divergence_swings(f, side, degree, period, kind):
         if d.diverges:
             out[d.confirmed:] = d.price if what == "extreme" else far[d.confirmed]
     return pd.Series(out, index=f.index)
@@ -722,6 +740,18 @@ def _wave_level(f: pd.DataFrame, degree: int, what: str, *args: Any) -> pd.Serie
     if values.dtype == bool:
         return pd.Series(values.copy(), index=f.index, dtype=bool)
     return pd.Series(np.array(values, dtype=float, copy=True), index=f.index, dtype=float)
+
+
+def _wave_volume_lower(f: pd.DataFrame, degree: int, wave: str, base: str) -> pd.Series:
+    """Wave templates companions: the mean volume of `wave` below the base wave's (app/price_action/waves/levels.py
+    `volume_lower`); FALSE where it does not apply or the bars have no volume (an index)."""
+    levels = _wave_levels(f, degree)
+    volume = f["volume"].to_numpy(float) if "volume" in f.columns else np.full(len(f), np.nan)
+    try:
+        values = levels.volume_lower(volume, wave, base)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    return pd.Series(values, index=f.index, dtype=bool)
 
 
 def _wave_bars(f: pd.DataFrame, side: str) -> Tuple[Any, Any]:
@@ -782,10 +812,10 @@ def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Seri
     return hi, lo, d
 
 
-_ZONE_CACHE: Dict[int, Tuple[Any, Any, Dict[Tuple[str, int], Tuple[np.ndarray, np.ndarray]]]] = {}
+_ZONE_CACHE: Dict[int, Tuple[Any, Any, Dict[Tuple[str, int], Tuple[np.ndarray, ...]]]] = {}
 
 
-def _swing_zone(f: pd.DataFrame, side: str, degree: int, what: str) -> pd.Series:
+def _swing_zone(f: pd.DataFrame, side: str, degree: int, what: str, width: float = 0.0) -> pd.Series:
     """S5-A4: the zone at the last CONFIRMED swing low (support) or high (resistance) as of each bar, measured by the
     trade-port level_strength module (default settings) from bars up to that bar.
 
@@ -796,7 +826,10 @@ def _swing_zone(f: pd.DataFrame, side: str, degree: int, what: str) -> pd.Series
       (that needs 1-minute data), so those two parts score as unknown, the same way the module scores them.
     - `distance` is (close - zone mid) / median range (dist_mr). Missing before the first confirmed pivot, and on a bar
       with no price range to measure in (flat bars: a zero median range).
-    Strength and distance come from one pass, kept for the frame, so a screen using both pays once."""
+    - `edge` (the wave templates' zone-edge companion) is the far side of the band that `distance` within +/- `width`
+      reads: the zone mid less (low) / plus (high) `width` median ranges, the same median range; missing where
+      `distance` is.
+    Strength, distance and the edge come from one pass, kept for the frame, so a screen using several pays once."""
     if side not in ("low", "high"):
         raise ScreenRuntimeError(f"unknown swing zone side {side!r}")
     stamp = (len(f), f.index[-1] if len(f) else None, float(f["close"].iloc[-1]) if len(f) else None)
@@ -809,11 +842,13 @@ def _swing_zone(f: pd.DataFrame, side: str, degree: int, what: str) -> pd.Series
     key = (side, degree)
     if key not in ref[2]:
         ref[2][key] = _swing_zone_arrays(f, side, degree)
-    strength, distance = ref[2][key]
+    strength, distance, mid, mr = ref[2][key]
+    if what == "edge":
+        return pd.Series(mid - width * mr if side == "low" else mid + width * mr, index=f.index)
     return pd.Series((strength if what == "strength" else distance).copy(), index=f.index)   # the cache stays intact
 
 
-def _swing_zone_arrays(f: pd.DataFrame, side: str, degree: int) -> Tuple[np.ndarray, np.ndarray]:
+def _swing_zone_arrays(f: pd.DataFrame, side: str, degree: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     from app.price_action import causal_swings as cs
     from app.price_action import level_strength as ls
     from app.price_action import pa_settings
@@ -833,6 +868,7 @@ def _swing_zone_arrays(f: pd.DataFrame, side: str, degree: int) -> Tuple[np.ndar
     bars = ls.prep_bars(frame, s)
     o, h, l, c, mr = bars["o"], bars["h"], bars["l"], bars["c"], bars["mr"]
     strength, distance = np.full(len(f), np.nan), np.full(len(f), np.nan)
+    mid, used_mr = np.full(len(f), np.nan), np.full(len(f), np.nan)      # the zone's mid and the median range dist_mr used
     for t in np.flatnonzero(origin >= 0):
         mr_t = mr[t] if np.isfinite(mr[t]) and mr[t] > 0 else float(np.nanmedian(h[:t + 1] - l[:t + 1]))
         if not (np.isfinite(mr_t) and mr_t > 0):                           # nothing to measure in: missing, not a crash
@@ -845,7 +881,9 @@ def _swing_zone_arrays(f: pd.DataFrame, side: str, degree: int) -> Tuple[np.ndar
         zone["formed_at"] = stamps[b]
         feats = ls.strength_features(zone, frame, int(t), symbol="DEFAULT", settings=s, bars=bars)
         strength[t], distance[t] = ls.strength_score(feats), feats["dist_mr"]
-    return strength, distance
+        zlo, zhi = (float(l[b]), float(max(l[b], min(o[b], c[b])))) if side == "low" else (float(min(h[b], max(o[b], c[b]))), float(h[b]))
+        mid[t], used_mr[t] = (zlo + zhi) / 2, mr_t                         # as strength_features measures dist_mr
+    return strength, distance, mid, used_mr
 
 
 def _reversal_series(f: pd.DataFrame, level: pd.Series, direction: str) -> pd.Series:
@@ -978,16 +1016,19 @@ def _moving_average(x: pd.Series, n_: int, kind: str) -> pd.Series:
     raise ScreenRuntimeError(f"unknown moving average type {kind!r}")
 
 
-def _breakout_ref(f: pd.DataFrame, screen: str, what: str, side: str, overrides: Dict[str, Any], stop_mult: float) -> pd.Series:
+def _breakout_ref(f: pd.DataFrame, screen: str, what: str, side: str, overrides: Dict[str, Any], stop_mult: float,
+                  tf: Optional[str] = None, bars: Any = None) -> pd.Series:
     """Strategy templates step 2 (owner order R2): a breakout's prices as a series - the columns evaluate_screen keeps for
     the same breakout (one per leg, closed bars), on its signal bars only (NaN elsewhere); `held_level` holds the latest
-    signal's level until the next one; the stop references are the breakout quality overlay's own (quality.stop_reference)."""
+    signal's level until the next one; the stop references are the breakout quality overlay's own (quality.stop_reference).
+    `tf` / `bars` (TPL-8, the gap family): the bars' timeframe and the session Bars on the exchange clock, exactly as the
+    breakout's own function reads them (_breakout); left out, every other family runs as before."""
     from app.screener.breakouts.quality import stop_reference
     from app.screener.breakouts.screens import Bars, evaluate_screen
     if side not in ("up", "down"):
         raise ScreenRuntimeError(f"unknown breakout side {side!r}")
     p = _breakout_params(overrides)
-    b = Bars(f, p)
+    b = bars if bars is not None else Bars(f, p, tf=tf)
     try:
         out = evaluate_screen(f, screen, p, bars=b, sides=(side,), columns=("signal", "level", "fail_level", "base_high", "base_low"))[side]
     except ValueError as exc:

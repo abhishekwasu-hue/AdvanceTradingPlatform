@@ -7,6 +7,16 @@ for the user: every figure is the user's OWN (his risk settings, his own deploym
   settings - the same effective configuration the order ticket checks against (organisation settings, the platform's
   ceilings, the user's own cap). The page compares an order's max loss with them in plain words. The line is a warning
   only: it never changes `can_place`, never refuses an order and never touches an exit (ADR-0004).
+* **paper_balance** (8b-d, slice 4): the PAPER balance the margin estimate is set beside - starting capital plus the net
+  P&L of his own closed PAPER trades priced from platform quotes (the account summary's rule), read only (no account is
+  created by reading it). The margin his open positions already use is not taken off: ATP does not track it, and the
+  line says so.
+* **event_risk** (8b-d, slice 4): the scheduled events of the events calendar ATP already keeps - the market events
+  (budget, RBI policy, expiry, results, ... - global ones and his organisation's own, the Risk Guardian's table) and,
+  for a stock, the company's calendar events (results, board meeting, ... - shared ones and his organisation's own)
+  - from today to the contract's expiry. When the calendar holds nothing at all from today on, it says so plainly
+  instead of "no events". Each event says what his own event rule does that day (no new entries / a smaller size); the
+  line itself never refuses anything.
 * **setup_strikes** (8b-a, the setup-aware chain): when the user opens the option chain from one of HIS OWN signals,
   the strikes his own option deployment's rules (strike rule, offset, wing width, expiry rule) work out to at the
   price on screen - the Analyze-a-chart rule (app/chart_analyze/strikes.py), so both say the same. The chain marks them;
@@ -56,7 +66,106 @@ async def risk_budget(session: AsyncSession, user: User) -> Dict[str, Any]:
         "per_trade": {"amount": round(capital * cfg.risk_per_trade_pct / 100.0, 2), "pct": float(cfg.risk_per_trade_pct)},
         "daily": {"amount": round(capital * cfg.max_daily_loss_pct / 100.0, 2), "pct": float(cfg.max_daily_loss_pct)},
         "source": "Your risk settings",
+        "paper_balance": await paper_balance(session, user),
         "blocks": False,                       # information only: the line never refuses an order or an exit
+    }
+
+
+async def paper_balance(session: AsyncSession, user: User) -> Dict[str, Any]:
+    """His PAPER balance (starting capital + the net P&L of his closed, counted PAPER trades), read only."""
+    from sqlalchemy import func
+
+    from app.core import config as app_config
+    from app.db.models import PaperAccountRecord, TradeRecord
+    starting = await session.scalar(select(PaperAccountRecord.starting_capital).where(PaperAccountRecord.user_id == user.id))
+    start = float(starting) if starting is not None else float(app_config.PAPER_STARTING_CAPITAL)
+    net = await session.scalar(select(func.coalesce(func.sum(TradeRecord.pnl), 0.0)).where(
+        TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.mode == "PAPER",
+        TradeRecord.exit_time.is_not(None), TradeRecord.price_source.is_(None)))
+    return {"amount": round(start + float(net or 0.0), 2), "source": "Your PAPER balance: starting capital plus your closed PAPER trades",
+            "open_margin_counted": False}
+
+
+# --- 8b-d, slice 4: the events between today and the expiry ---------------------------------------------------------
+
+EVENT_DAYS_MAX = 120                       # a contract further out than this is read up to this many days ahead
+MAX_EVENTS = 8
+MARKET_EVENT_NAMES = {"BUDGET": "Budget", "RBI_POLICY": "RBI policy", "EXPIRY": "Expiry day", "RESULTS": "Results",
+                      "FED": "US Fed decision", "ELECTION": "Election", "OTHER": "Market event"}
+COMPANY_EVENT_NAMES = {"RESULTS": "Results", "AGM": "AGM", "BOARD_MEETING": "Board meeting", "DIVIDEND": "Dividend", "BONUS": "Bonus",
+                       "SPLIT": "Split", "BUYBACK": "Buyback", "RECORD_DATE": "Record date", "INVESTOR_DAY": "Investor day",
+                       "PRODUCT_LAUNCH": "Product launch", "REGULATORY_DECISION": "Regulatory decision"}
+EVENTS_SOURCE = "Your events calendar"
+EMPTY_CALENDAR = ("The events calendar has no entries from today on, so results, RBI policy or budget days are not checked "
+                  "here. Events are added on the Risk page.")
+
+
+def _scope_applies(scope: Optional[str], underlying: str) -> bool:
+    from app.risk_engine import guardian
+    s = (scope or "").strip().upper()
+    if not s or s == "*":
+        return True
+    if s == guardian.INDEX_BUCKET:
+        return guardian.bucket_for(underlying) == guardian.INDEX_BUCKET
+    return master.underlying_of(s) == master.underlying_of(underlying)
+
+
+def _scope_text(scope: Optional[str]) -> str:
+    s = (scope or "").strip().upper()
+    if not s or s == "*":
+        return "all symbols"
+    return "all indices" if s == "INDEX" else s
+
+
+def _rule_text(action: Optional[str], size_cut_pct: Optional[float]) -> str:
+    if (action or "").upper() == "BLOCK":
+        return "Your event rule that day: no new entries."
+    if size_cut_pct is not None:
+        return f"Your event rule that day: a smaller size ({size_cut_pct:g}% cut)."
+    return "Your event rule that day: a smaller size."
+
+
+async def event_risk(session: AsyncSession, user: User, underlying: str, until: date, *, today: Optional[date] = None) -> Dict[str, Any]:
+    """The calendar's events from today to `until` (the contract's expiry) that apply to this underlying. Reads only."""
+    from datetime import timedelta
+
+    from app.db.models import CompanyRecord, EarningsCalendarEventRecord, MarketEventRecord
+    from app.fundamentals.visibility import visible
+    from app.market_data.calendar import IST
+    start = today or datetime.now(IST).date()
+    name = master.underlying_of(underlying)
+    end = min(max(until, start), start + timedelta(days=EVENT_DAYS_MAX))
+    own = (MarketEventRecord.tenant_id.is_(None)) | (MarketEventRecord.tenant_id == user.tenant_id)
+    rows = list(await session.scalars(select(MarketEventRecord).where(
+        MarketEventRecord.event_date >= start, MarketEventRecord.event_date <= end, own).order_by(MarketEventRecord.event_date, MarketEventRecord.id)))
+    events: List[Dict[str, Any]] = []
+    for e in rows:
+        if not _scope_applies(e.underlying, name):
+            continue
+        events.append({"date": e.event_date.isoformat(), "kind": e.kind, "name": MARKET_EVENT_NAMES.get((e.kind or "").upper(), "Market event"),
+                       "scope": _scope_text(e.underlying), "rule": _rule_text(e.action, e.size_cut_pct), "source": "market"})
+    company_ids = list(await session.scalars(select(CompanyRecord.id).where(
+        CompanyRecord.symbol == name, visible(CompanyRecord, user.tenant_id))))
+    if company_ids:
+        for c in await session.scalars(select(EarningsCalendarEventRecord).where(
+                EarningsCalendarEventRecord.company_id.in_(company_ids), EarningsCalendarEventRecord.event_date >= start,
+                EarningsCalendarEventRecord.event_date <= end, visible(EarningsCalendarEventRecord, user.tenant_id),
+        ).order_by(EarningsCalendarEventRecord.event_date, EarningsCalendarEventRecord.id)):
+            kind = (c.event_type or "").upper()
+            events.append({"date": c.event_date.isoformat(), "kind": kind, "name": COMPANY_EVENT_NAMES.get(kind, "Company event"),
+                           "scope": name, "rule": None, "source": "company"})
+    events.sort(key=lambda ev: (ev["date"], ev["source"] != "market"))
+    calendar_rows = await session.scalar(select(MarketEventRecord.id).where(MarketEventRecord.event_date >= start, own).limit(1))
+    if calendar_rows is None and company_ids:
+        calendar_rows = await session.scalar(select(EarningsCalendarEventRecord.id).where(
+            EarningsCalendarEventRecord.company_id.in_(company_ids), EarningsCalendarEventRecord.event_date >= start,
+            visible(EarningsCalendarEventRecord, user.tenant_id)).limit(1))
+    return {
+        "underlying": name, "from": start.isoformat(), "until": end.isoformat(), "clipped": end < until,
+        "events": events[:MAX_EVENTS], "more": max(0, len(events) - MAX_EVENTS),
+        "calendar_empty": calendar_rows is None,
+        "message": EMPTY_CALENDAR if calendar_rows is None else None,
+        "source": EVENTS_SOURCE, "blocks": False,
     }
 
 

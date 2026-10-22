@@ -111,7 +111,7 @@ async function openPositions(page: Page, theme: "light" | "dark", opts: { alerts
 }
 
 /** The writes that are not reads: anything but the session refresh, the contract lookup, the quote, the engine's numbers and the alert. */
-const actionsOf = (seen: Seen) => seen.writes.filter((w) => !/\/auth\/refresh$|\/paper\/fno\/contracts$|\/market-data\/quotes$|\/paper\/fno\/basket\/evaluate$|\/alerts\/rules$/.test(w.url));
+const actionsOf = (seen: Seen) => seen.writes.filter((w) => !/\/auth\/refresh$|\/paper\/fno\/contracts$|\/market-data\/(quotes|candles)$|\/paper\/fno\/basket\/evaluate$|\/alerts\/rules$/.test(w.url));
 
 const BASKET = [
   { id: "a", underlying: "NIFTY", expiry: "2026-10-27", strike: 25000, right: "CE", side: "SELL", lots: 1, price: 41, label: null, stopLoss: 60, iv: null },

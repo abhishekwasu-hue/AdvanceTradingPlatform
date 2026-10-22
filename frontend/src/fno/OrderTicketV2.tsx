@@ -11,7 +11,10 @@ import {
   draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
 } from "./ticketModel";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
-import { riskLine, structureOf, ticketPayoffSentence, type RiskBudget } from "./insights";
+import { riskLine, structureOf, ticketPayoffSentence, type RiskBudget, type RiskLine } from "./insights";
+import type { ChainRow } from "../optionChain/types";
+import { eventLine, legLiquidity, liquidityLine, marginLine, type EventRisk } from "./riskParts";
+import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
 
 /**
  * FNO-1 (owner order section 6): the ONE order ticket - used by the option chain now, built to be opened the same way
@@ -34,6 +37,9 @@ export interface OrderTicketProps {
   /** After a PLACED order (the chain re-reads its "P" markers). */
   onPlaced?: (result: OrderResult) => void;
   api?: Pick<FnoApi, "preview" | "place">;
+  /** 8b slice 4: the chain rows on screen when the ticket opened from the chain (its liquidity line); absent elsewhere
+   * (the line then says bid-ask and open interest are not known here). */
+  chainRows?: readonly ChainRow[] | null;
 }
 
 export type Step = { kind: "edit" } | { kind: "review"; preview: OrderPreview } | { kind: "done"; result: OrderResult };
@@ -65,7 +71,7 @@ function Line({ label, children, testId }: { label: string; children: ReactNode;
   );
 }
 
-export default function OrderTicketV2({ open, target, side, onClose, onPlaced, api = fnoApi }: OrderTicketProps) {
+export default function OrderTicketV2({ open, target, side, onClose, onPlaced, api = fnoApi, chainRows }: OrderTicketProps) {
   // Settings part C: the user's own lots / product / order type start a new ticket (v2 only; marked, changeable).
   const features = useFeatures();
   const saved = useTradingDefaults(features.on("ui_v2"));
@@ -91,6 +97,13 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
 
   // 8b-d: the user's own risk budget, read on the confirm step for its risk line (information only, never a refusal).
   const budget = useRiskBudget(open && step.kind === "review");
+  // 8b slice 4: the events calendar up to this contract's expiry, read on the confirm step (information only).
+  const events = useEventRisk(open && step.kind === "review", target?.underlying, target?.expiry);
+  const liquidity = useMemo<RiskLine | null>(() => {
+    if (!target) return null;
+    if (!chainRows || target.right === "FUT" || target.strike === null) return liquidityLine([], false);
+    return liquidityLine([legLiquidity(chainRows, target.strike, target.right, target.label ?? "This strike")]);
+  }, [chainRows, target]);
 
   // Desktop shortcuts: B = Buy, S = Sell while the ticket is being filled in (never while typing in a field).
   useEffect(() => {
@@ -151,7 +164,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
               <X size={18} aria-hidden />
             </RD.Close>
           </div>
-          <TicketBody target={target} draft={draft} step={step} busy={busy} problem={problem} idPrefix={idPrefix} defaults={defaults} budget={budget}
+          <TicketBody target={target} draft={draft} step={step} busy={busy} problem={problem} idPrefix={idPrefix} defaults={defaults} budget={budget} events={events} liquidity={liquidity}
             onDraft={(patch) => { setDraft((d) => ({ ...d, ...patch })); setProblem(null); }}
             onReview={review} onPlace={place} onBack={() => setStep({ kind: "edit" })} onClose={onClose} />
         </RD.Content>
@@ -175,12 +188,15 @@ export function PracticeFrame({ className }: { className?: string } = {}) {
 const sentence = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** The ticket's fields, the confirm step and the buttons (no state, no hooks). */
-export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose, defaults, budget }: {
+export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose, defaults, budget, events, liquidity }: {
   target: TicketTarget; draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string;
   /** Settings part C: the user's own ticket defaults, to mark the fields that still show them. */
   defaults?: DraftDefaults;
   /** 8b-d: the user's own risk budget for the risk line (null: the line is left out). */
   budget?: RiskBudget | null;
+  /** 8b slice 4: the events up to the expiry and the strike's liquidity (information only). */
+  events?: EventRisk | "error" | null;
+  liquidity?: RiskLine | null;
   onDraft: (patch: Partial<Draft>) => void; onReview: () => void; onPlace: () => void; onBack: () => void; onClose: () => void;
 }) {
   const n = needs(draft.orderType);
@@ -255,7 +271,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
           </>
         )}
 
-        {step.kind === "review" && <Review preview={step.preview} budget={budget} />}
+        {step.kind === "review" && <Review preview={step.preview} budget={budget} events={events} liquidity={liquidity} />}
 
         {step.kind === "done" && (
           <p role="status" data-ticket="result"
@@ -295,7 +311,9 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
 
 /** The confirm step: every figure from the server, before anything is placed. 8b: the payoff in plain words, the risk
  * line (the max loss beside the user's own limits, information only: `can_place` alone decides the button) and Explain. */
-export function Review({ preview: p, budget }: { preview: OrderPreview; budget?: RiskBudget | null }) {
+export function Review({ preview: p, budget, events, liquidity }: {
+  preview: OrderPreview; budget?: RiskBudget | null; events?: EventRisk | "error" | null; liquidity?: RiskLine | null;
+}) {
   const problems = [...p.errors, ...p.refusals];
   const payoff = ticketPayoffSentence(p);
   const c = p.contract;
@@ -328,6 +346,7 @@ export function Review({ preview: p, budget }: { preview: OrderPreview; budget?:
         </p>
       )}
       <RiskLineV2 line={riskLine(p.max_loss?.value, false, budget)} />
+      <RiskChecksV2 testId="ticket" lines={[eventLine(events ?? null, p.contract?.expiry), liquidity ?? null, marginLine(p.margin?.value, budget)]} />
       {problems.length > 0 && (
         <ul role="alert" className="space-y-space-1 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-ticket="refusals">
           {problems.map((r) => <li key={r}>{r}</li>)}

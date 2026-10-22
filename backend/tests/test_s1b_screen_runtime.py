@@ -318,6 +318,12 @@ def test_wave_levels_lines_and_retest_w2_w4():
     for text in ("WaveBeyondOrigin(1)", 'WaveLineBreak(1, "channel_current", "up", 0)',
                  'RetestEntry("up", "wave_line", 20, FALSE, 1, "channel_current", "A", 0)'):
         assert _ev(text, walk).dtype == bool, text
+    # the wave companions (deeper checks in tests/test_wave6_companions.py): the volume, the zone edge, the hidden divergence
+    assert _ev('WaveVolumeLower(1, "current")', walk).dtype == bool
+    edge = _ev('SwingZoneEdge("low", 0, 1)', walk)
+    assert edge.dtype == float and edge.notna().any()
+    assert _ev('RsiDivergence("bullish", 60, 0, kind="regular")', walk).equals(_ev('RsiDivergence("bullish", 60)', walk))
+    assert _ev('RsiDivergence("bullish", 60, 0, kind="hidden")', walk).dtype == bool
 
 
 def test_rankscore_n3_s7a():
@@ -442,6 +448,22 @@ def test_tpl4_breakout_family_companions():
     COVERED.add("VCPBreakoutRef")
     v = evaluate(parse('VCPBreakoutRef("stop_base", "up")'), SymbolData("S", {"1d": f}), base_tf="1d")
     assert v.notna().sum() == 1 and v.iloc[-1] < f["close"].iloc[-1]
+
+
+def test_tpl8_gap_companion():
+    """Strategy templates TPL-8 (R2 for the gap family): GapBreakoutRef gives the B8 gap's prices on the gap's signal bars
+    only, on the same session clock (tests/test_tpl8_b10_gap.py checks every output against the screen's own columns)."""
+    from app.quality.lookahead import synthetic_bars
+    walk = SymbolData("S", {"5m": synthetic_bars(3000, tf="5m", seed=1)})
+    seen = 0
+    for side in ("up", "down"):
+        fired = _ev(f'GapBreakout("{side}", "prev_day", 30)', walk)
+        level = _ev(f'GapBreakoutRef("level", "{side}", "prev_day", 30)', walk)
+        assert (level.notna() == fired).all(), side
+        held = _ev(f'GapBreakoutRef("held_level", "{side}", "prev_day", 30)', walk)
+        assert held[fired].tolist() == level[fired].tolist()
+        seen += int(fired.sum())
+    assert seen, "the fixture must carry gaps"
 
 
 def test_every_registry_entry_has_a_runtime_test():

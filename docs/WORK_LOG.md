@@ -3041,3 +3041,72 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Evals: +9 job cases (recorded results made by the real engine on synthetic candles), +12 safety cases (9 refusals, 3
   controls), `expect_followup`; hashes re-pinned. Tests `tests/test_copilot_v2_cp6_backtest.py`, vitest for the button.
 - Found: the engine's losses-in-a-row counter never resets within a run (CP6-15). Questions CP6-10..CP6-16.
+
+## 22 Oct - F&O workspace 8b slice 4: the risk line's events / liquidity / margin, the F&O desk, the journal chart
+- Branch `claude/fno8b-slice-4`. No migration, no new flag (behind `ui_v2` + the PAPER account); no order path changed.
+- 8b-d: `GET /api/paper/fno/event-risk` (the market events + the company's calendar from today to the expiry, his own
+  event rule per day, "the calendar is empty" said plainly); the risk budget carries the PAPER balance (read only, no
+  account created). The ticket's and the basket's confirm steps show one "Before you place (information only)" box:
+  events, liquidity (bid-ask / OI / volume compared with the chain on screen) and the margin beside the PAPER balance.
+- 8b-i: My positions shows the cockpit as a desk: chart of the underlying with his strikes, the chain near his strikes and
+  his basket beside the cockpit card from 1024 px; a quick switch on a phone. Read only.
+- 8b-k: the journal draft's "Show the chart" redraws the underlying's candles around the trade with "Opened" / "Closed"
+  marked (client side, one read, nothing stored).
+- Tests: `backend/tests/test_fno8b4_risk_parts.py`, `frontend/src/fno/slice4.test.tsx`, `frontend/e2e/fno8b-slice4-v2.e2e.ts`
+  (new baselines). Questions FNO-8B-27..31.
+## 22 Oct - Wave templates (family G): the volume, zone-edge and divergence companions, G1-G11 version 2 (behind strategy_templates + screener_waves, PAPER only)
+
+- Branch `claude/waves-companions`. No migration (templates are JSON in the repository; no new flag).
+- Every G template is version 2 with optional confirmations, all off by default: the RSI divergence (regular / hidden,
+  `RsiDivergence` `kind=`; left out = regular, byte-identical), the corrective wave's volume (`WaveVolumeLower`, a
+  comparison of two waves' mean volume) and the trigger bar's volume (`RelVolume`), and on G1 / G2 / G3 / G8 the area's
+  far side (`SwingZoneEdge`) as new invalidation choices. Version 1 is kept word for word in `templates/archive/`; an id
+  adopted on version 1 resolves to it; with the companions off version 2 gives the same parts and signals.
+- Schema: `confirmations` (each off by default, AND-ed to the chosen trigger). Ids: a template with confirmations leaves out
+  its trailing defaults (every older id unchanged). G12 not built (TPL-F7).
+- Tests: `tests/test_wave6_companions.py` (parity, must-fire / must-not per companion, mirror, truncation, the parity
+  harness, ids, schema, flags); earlier G tests read version 2. Questions WAVE-46..WAVE-52.
+## 22 Oct - MO4 slice 4: the Signals, Positions, Journal, Charts and Find setups dishes (behind ui_v2 + growth_v2)
+
+- Branch `claude/mo4-dishes`. No migration (every line comes from rows that already exist). No new flag: `growth_v2`
+  (with `ui_v2`) as for slice 3. No price, trial, reminder or referral (MO4-21..33); nothing touches an order.
+- Backend `app/growth/dishes.py` + `GET /api/growth/dish/{page}` (signals, positions, journal, charts `?symbol=&exchange=`,
+  screener; 404 with either flag off or an unknown page, 422 for Charts without a symbol). Built on the daily rhythm's
+  readers and guard (`app/rhythm/build.py` Section / readers, `words.clean`, `words.signal_line`):
+  - Signals: what waits for his decision (count + up to three setups in structure words), today's signals by source, his
+    strategies' paper record over 90 days (closed / ended with a gain / did not; legs of a structure counted once).
+  - Positions: open P&L at the last marks, the result if each reached the invalidation he set (a structure by its max
+    loss) against his own daily loss limit, positions without an invalidation, near it, premium kept on written options,
+    events and expiries in the next 7 days for what he holds. PAPER only.
+  - Journal (needs `discipline_engine`): the week's score and its trend over his past weeks ("following your own plan,
+    not how many trades"), best / costliest setups over four weeks, behaviour patterns in guard-safe words, suggested tags
+    waiting, closed trades without his note.
+  - Charts: the story from the shared daily history (daily swings + the last structure event + where the close sits
+    against the last swings; weekly swings; no level shown), then his own on the symbol (position, latest setup, lists).
+  - Find setups: today's matches of his own scans grouped by scan (most matches first), those on his own lists, how many
+    of his scans run on their own.
+- Frontend `src/growth/PageDishV2.tsx` (title, the headline that stands out, the sections via the daily brief's
+  `RhythmSectionV2`, "Details" / "Hide details" remembered per page on the device, every line re-checked for call words;
+  nothing on 404 / journal off / a failed first read), `model.ts` (`dishShown`, refresh: Signals / Positions 2 min, Find
+  setups 5 min), `dish.fixture.ts`. Mounted on SignalsV2, PositionsV2 (connected branch), JournalPage (above the share
+  card, not while the journal is off), ChartsPageV2 (Chart tab, folded at first) and ScreenerPage.
+- Tests: backend `tests/test_mo4_dishes.py` (flags, each dish from fixtures, empty states, another member's rows never,
+  the language, the pure rules) + tenancy route table; vitest `src/growth/dish.test.tsx`; e2e `e2e/page-dishes-v2.e2e.ts`
+  (no new baselines; `DISH_SHOTS=<dir>` saves before / after pictures). No existing baseline changed.
+- Not built (OPEN_QUESTIONS MO4-34..43): the reader's areas on Charts and similar past setups (`atp-private`), a per-signal
+  "reached the next area" statistic, journal chart snapshots and the monthly PDF, Find setups grouped by method with mini
+  charts, results dates per stock.
+## 22 Oct - Strategy templates TPL-8: R2 for the gap family and B10 gap and go (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl8-b10-gap`. No migration (templates are JSON in the repository; no new flag).
+- ScreenQL: the gap companion `GapBreakoutRef(what, side, level, hold, stop_mult)` - the B8 gap screen's own prices on
+  its signal bars, on the same session clock and with the same arguments as GapBreakout (`_breakout_ref` takes the gap's
+  timeframe / session Bars; every other family unchanged).
+- B10 gap and go ("Intraday (session-based)", 3 / 5 / 15 minutes): GAP_AND_GO on the bar that ends the opening window
+  (a setting in minutes, whole bars of the chart); the level the previous session's or the recent month's; invalidation
+  the level the gap cleared or that level with a buffer; no exit. One signal per session at most, never later in the
+  session (the most conservative session-clock choice, TPL-Q58). A new settings rule `whole_bars` refuses a window that
+  is not whole bars in words.
+- Tests: `tests/test_tpl8_b10_gap.py` (companion, must fire / must not, session clock, mirror, truncation, scan =
+  backtest = options backtest = worker, property tests, words, ids, adapter, flags, API), runtime fixture, causal cases
+  (lookahead job), history sweep, BK registry tests. Questions TPL-Q58..TPL-Q63.

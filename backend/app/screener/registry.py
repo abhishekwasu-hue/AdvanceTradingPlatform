@@ -117,6 +117,9 @@ _CONFIRM = Arg("confirm", STR, "any", False, choices=CONFIRM_STATES)
 _CONFIRM_BARS = tuple(("confirm", state, 1) for state in CONFIRM_STATES[1:])
 _HHMM = r"([01][0-9]|2[0-3]):[0-5][0-9]"
 _RSI_PERIOD = Arg("period", "window", 14, False)          # strategy templates E2: the RSI period of a divergence
+# wave templates companions: the divergence's kind (left out: regular, so every older call is byte-identical)
+RSI_DIVERGENCE_KINDS: Tuple[str, ...] = ("regular", "hidden")
+_RSI_KIND = Arg("kind", STR, "regular", False, choices=RSI_DIVERGENCE_KINDS)
 RSI_DIVERGENCE_REF_WHATS: Tuple[str, ...] = ("extreme", "confirm_bar")
 BREAKOUT_FLAG = "screener_breakouts"
 BREAKOUT_BK3_FLAG = "screener_breakouts_bk3"        # U6 BK3: VCP + indicator breakouts, on top of `screener_breakouts`
@@ -356,17 +359,18 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     # strategy templates E2 (TPL-7): the named argument period= is the RSI's period (left out: 14, so every older call is
     # byte-identical)
     Spec("RsiDivergence", "filter", BOOL, None, (Arg("side", STR, choices=("bullish", "bearish")), Arg("lookback", "window", 15, False), _DEGREE),
-         kwargs=(_RSI_PERIOD,), cost=3.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=AMW_FLAG,
+         kwargs=(_RSI_PERIOD, _RSI_KIND), cost=3.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=AMW_FLAG,
          doc="regular RSI(14) divergence between the last two CONFIRMED swing lows (bullish: a lower low with a higher RSI) or"
              " highs (bearish: a higher high with a lower RSI), the latest swing's extreme at most `lookback` bars before this bar"
-             " (named: period= the RSI's period, default 14)"),
+             " (named: period= the RSI's period, default 14; kind= regular (default) or hidden - bullish: a higher low with a"
+             " lower RSI, bearish: a lower high with a higher RSI)"),
     # strategy templates E2 (TPL-7, owner order R2 style): the divergence's prices as a series - the same divergences as
     # RsiDivergence with the same degree and period
     Spec("RsiDivergenceRef", "factor", NUM, "price", (Arg("what", STR, choices=RSI_DIVERGENCE_REF_WHATS),
                                                       Arg("side", STR, choices=("bullish", "bearish")), _DEGREE),
-         kwargs=(_RSI_PERIOD,), cost=3.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=AMW_FLAG,
-         doc="the latest regular RSI divergence's prices (the same divergences as RsiDivergence with the same degree and"
-             " period=), held from the bar that confirmed its swing until the next divergence of that side is confirmed"
+         kwargs=(_RSI_PERIOD, _RSI_KIND), cost=3.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=AMW_FLAG,
+         doc="the latest RSI divergence's prices (the same divergences as RsiDivergence with the same degree, period= and"
+             " kind=), held from the bar that confirmed its swing until the next divergence of that side is confirmed"
              " (missing before the first one): extreme (the divergent swing's own low - bullish - or high - bearish),"
              " confirm_bar (the far side of the bar that confirmed that swing: its high - bullish - or its low - bearish)"),
     Spec("SwingLabel", "classifier", CAT, None, (Arg("kind", STR, choices=("high", "low")), _DEGREE), cost=2.0, min_bars=SWING_MIN_BARS,
@@ -537,6 +541,13 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          flag=BREAKOUT_FLAG, also_flags=_BK4,
          doc="B8: on the bar that ends a gap's hold window, GAP_AND_GO (held, close at or beyond the open), GAP_HOLD (held, faded"
              " toward the level) or GAP_FILL (a close back inside the level); empty on other bars"),
+    # Strategy templates TPL-8 (owner order R2 for the gap family, B10 gap and go): the B8 gap's prices, on the same session
+    # clock as GapBreakout (the exchange calendar's sessions; the bar that ends the hold window) with the same arguments
+    Spec("GapBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("gap_level", "level", STR), _bk("gap_hold_min", "hold", NUM), _STOP_MULT),
+         cost=3.0, min_bars=BREAKOUT_MIN_BARS, min_sessions=2, timeframes=GAP_TFS, tf_multiple_args=("hold",), flag=BREAKOUT_FLAG,
+         also_flags=_BK4,
+         doc="B8 gap breakout's prices (level and fail_level: the level the gap cleared; base_low / base_high: the other side of"
+             " the session(s) the level came from)" + _REF_DOC.format(fn="GapBreakout")),
     # R7 (wave templates, flag screener_waves for the wave choices): `of` also takes wave_line / wave_end, with the wave
     # degree, the line, the wave and the break's k; the older choices read none of them and run exactly as before
     Spec("RetestEntry", "filter", BOOL, None, (_SIDE, _bk("retest_of", "of", STR, choices=RETEST_OF_CHOICES), _bk("retest_max_bars", "bars", NUM),
@@ -636,6 +647,19 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
              " those wave ends: the 0-2 and 2-4 lines, a zigzag's 0-B base, a triangle's A-C / B-D sides, flat sides"
              " included) or channel_<wave> (the wave's start-side line through its lower-degree swings: the corrective"
              " channel)" + _WLDOC),
+    # Wave templates companions (same flag): the corrective wave's volume, and the far side of the smaller swing zone's area
+    Spec("WaveVolumeLower", "filter", BOOL, None, (_WDEGREE_REQ, Arg("wave", STR, choices=_wave_choices("VOLUME_WAVES")),
+                                                   Arg("base_wave", STR, "previous", False, choices=_wave_choices("VOLUME_BASES"))),
+         cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=WAVES_FLAG,
+         doc="true when the mean volume of `wave` (finished, or the running one before this bar; current = the running wave) is below"
+             " the mean volume of the finished base wave (previous = the wave before it): a comparison, no number; false"
+             " where either wave is not known or a bar has no volume (an index: leave the volume confirmation off)" + _WLDOC),
+    Spec("SwingZoneEdge", "factor", NUM, "price", (Arg("side", STR, choices=("low", "high")), Arg("degree", NUM, None, True, choices=SWING_DEGREES),
+                                                   Arg("width", NUM, None, True, literal_only=True, bounds=(0.0, 10.0))),
+         cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=WAVES_FLAG,
+         doc="the far side of the area around the last CONFIRMED swing zone (the band SwingZoneDistance(side, degree) reads"
+             " within +/- width): low - the zone's mid less width median ranges, high - its mid plus width median ranges;"
+             " missing where SwingZoneDistance is"),
     Spec("WaveLineBreak", "filter", BOOL, None, (_WDEGREE_REQ, Arg("line", STR, choices=_wave_choices("LINES")), _SIDE, _K), cost=4.0,
          min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=WAVES_FLAG,
          doc="the first close above (up) / below (down) that wave line by k ATR (ATR of the bars before), once per line;"

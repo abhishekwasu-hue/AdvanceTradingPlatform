@@ -106,7 +106,11 @@ const TENANTS = [
   { id: 7, name: "Desk Seven", plan: "pro", status: "active", created_at: T(60 * 24 * 40), owners: ["owner@example.com"], members: 2, active_deployments: 2, live_deployments: 0, open_positions: 1 },
 ];
 
-export interface AdminOptions { theme?: Theme; role?: string; features?: Record<string, boolean> }
+export interface AdminOptions {
+  theme?: Theme; role?: string; features?: Record<string, boolean>;
+  /** More replies, registered after the ones above (so they win) and before the page opens (MO4 slice 3). */
+  routes?: (page: Page) => Promise<void>;
+}
 
 /** Opens `path` with the admin console's replies; returns the API paths the page asked for. */
 export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) {
@@ -154,6 +158,7 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
   await page.route(A("/admin/history-import/progress(\\?.*)?$"), ok({ datasets: { daily: { done: 480, pending: 2 } }, symbols: [], symbol_count: 482 }));
   await page.route(A("/admin/history-backfill/progress(\\?.*)?$"), ok({ flag_on: false, segments: { cm: { by_status: { done: 240 } } }, attention: [] }));
   await page.route(A("/admin/history-intraday/progress(\\?.*)?$"), ok({ flag_on: false, tenant_id: null, instruments: {}, attention: [] }));
+  if (o.routes) await o.routes(page);
   await page.goto(path);
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");

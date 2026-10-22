@@ -2948,6 +2948,34 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_wave5_templates.py` (must-fire per style, must-not per count type, mirror, truncation, parity incl.
   the 1-hour wave chart, property tests, no number literal, defaults, words, flags, id length).
 - Questions WAVE-38..WAVE-45 (OPEN_QUESTIONS). Not built: G12 (after family F), the RSI / volume filters, the UI.
+
+## 22 Oct - MO4 slice 3: the plan page and usage meter, the discipline share card, activation in the admin console (behind ui_v2 + growth_v2)
+
+- Branch `claude/mo4-plans-share`. No migration (every number comes from rows that already exist). New flag `growth_v2`
+  (OFF; controls.py + flag_catalog.py). No price, trial, reminder or referral is built (OPEN_QUESTIONS MO4-21..24 hold the
+  owner's proposal); nothing touches an order.
+- Plan page (part 4): `app/growth/plan.py` + `GET /api/growth/plan` - his plan in plain words (what it includes, no price,
+  no LIVE) and a usage meter: his watchlists, scans this month, AI requests this month (own AI key included), chart
+  analyses today / this month (with `chart_analyze`), the organisation's backtests this month and paper bots running
+  (marked "shared by your team" when there are members); the `plan_limits_v2` limits only while that flag enforces them;
+  a running trial's days left. `src/growth/PlanUsageV2.tsx` above the existing Plan & billing card on Settings › Account &
+  plan.
+- Share card (part 3): `app/growth/share.py` + `GET /api/growth/share/discipline-week` - "My discipline this week" from his
+  own PAPER record: days inside his own daily limits (a day without a trade counts), the journal streak (own notes on
+  every closed trade, weeks in a row), the discipline score while the journal is on, days traded said neutrally. A guard
+  drops any line with a security name (his own symbols and strategy ids), a price-like number, currency, money / outcome
+  words or call words; the browser checks again (`src/growth/model.ts`). `src/growth/DisciplineCardV2.tsx` on the
+  Journal page: the card as an SVG in theme tokens, "Save image" (PNG), "Copy text", the share sheet where the browser
+  has one; no link to his data is created.
+- Admin (part 5): `GET /api/admin/console/activation` (SUPER_ADMIN + two-factor, the console router; 404 with
+  `growth_v2` off) - signed up, broker connected, first paper bot, first journal entry, activated = all three, median time
+  to activation, masked e-mail addresses; `ActivationPanel` in Users & business.
+- Tests: backend `tests/test_mo4_growth.py` (flags, usage numbers from fixtures, no price, trial days, the guard, the
+  card from fixtures with symbols and prices, inside-limits and streak rules, activation admin-only / MFA / funnel);
+  tenancy route table. Frontend vitest `src/growth/growth.test.tsx`; e2e `e2e/growth-v2.e2e.ts` (new block-only
+  baselines `growth-plan-v2-*`, `growth-share-v2-*` at 360 / 390 / 1440 and `growth-activation-v2-*` at 390 / 1440, light
+  + dark; `e2e/adminMocks.ts` gains a `routes` hook). The banned-words guard reads `src/growth`.
+- Questions MO4-21..33 (OPEN_QUESTIONS); owner-orders README row 9 updated.
 ## 22 Oct - Strategy templates step 5 (TPL-5): the extreme since the setup bar, C2, D3, E1, E3, E5 (behind strategy_templates, PAPER only)
 
 - Branch `claude/tpl5-setup-extreme`. No migration (templates are JSON in the repository; no new flag).

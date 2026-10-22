@@ -60,6 +60,9 @@ class Spec:
     # AMW-3: further bars needed when an argument takes a value - (argument, value, bars), added to min_bars
     # (Pattern: a v2 candle reads ATR(14); a confirmation status reads the bar after the pattern)
     choice_extra_bars: Tuple[Tuple[str, object, int], ...] = ()
+    # TPL-1: argument pairs (a, b) where a must be below b (MACD fast < slow; PSAR start <= max is ("start", "max", True))
+    # - checked at validation on the literal / parameter / default values; the third item allows equality
+    ordered_args: Tuple[Tuple[str, str, bool], ...] = ()
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -157,6 +160,15 @@ _ZDOC = (" - the live zone nearest to the close within tolerance_pct % of it (ro
          " family zones = order blocks / demand-supply bases / gaps, levels = S/R lines), from the stored snapshot as of this"
          " bar's close")
 
+# TPL-1: the add-indicator work's arguments. Windows are whole bars (1..MAX_WINDOW by the validator); the acceleration
+# factors of the parabolic SAR are read once for the whole series (literal_only) within their bounds.
+SUPERTREND_K_BOUNDS = (0.1, 20.0)
+_MACD_ARGS = (Arg("fast", "window", 12, False), Arg("slow", "window", 26, False), Arg("signal", "window", 9, False))
+_STOCH_ARGS = (Arg("n", "window", 14, False), Arg("smooth", "window", 3, False), Arg("d", "window", 3, False))
+_PSAR_ARGS = (Arg("start", NUM, 0.02, False, literal_only=True, bounds=(0.001, 1.0)),
+              Arg("step", NUM, 0.02, False, literal_only=True, bounds=(0.001, 1.0)),
+              Arg("max", NUM, 0.2, False, literal_only=True, bounds=(0.001, 1.0)))
+
 FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("SMA", "factor", NUM, "same", (_X, _N), doc="simple moving average of x over n bars"),
     Spec("EMA", "factor", NUM, "same", (_X, _N), doc="exponential moving average"),
@@ -189,6 +201,31 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("BBUpper", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)), doc="upper Bollinger band"),
     Spec("BBMid", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)), doc="middle Bollinger band"),
     Spec("BBLower", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)), doc="lower Bollinger band"),
+    # TPL-1 (strategy templates, the add-indicator work): true per-bar series on closed bars, causal (app/indicators),
+    # each with a fixture, a reference-implementation parity test and a truncation test (tests/test_tpl1_indicators.py)
+    Spec("SupertrendDir", "factor", NUM, "sign", (Arg("n", "window", 10, False),
+                                                 Arg("k", NUM, 3.0, False, literal_only=True, bounds=SUPERTREND_K_BOUNDS)),
+         extra_bars=1, doc="the Supertrend's direction: +1 while the line is below price, -1 while above (missing in the warm-up);"
+                           " a change of sign is a flip"),
+    Spec("MACD", "factor", NUM, "price_diff", _MACD_ARGS, ordered_args=(("fast", "slow", False),),
+         doc="MACD line of close: EMA(fast) - EMA(slow) (fast below slow)"),
+    Spec("MACDSignal", "factor", NUM, "price_diff", _MACD_ARGS, window_sum=True, ordered_args=(("fast", "slow", False),),
+         doc="MACD signal line: the EMA(signal) of the MACD line"),
+    Spec("MACDHist", "factor", NUM, "price_diff", _MACD_ARGS, window_sum=True, ordered_args=(("fast", "slow", False),),
+         doc="MACD histogram: the MACD line minus its signal line"),
+    Spec("WMA", "factor", NUM, "same", (_X, _N), doc="linearly weighted moving average of x over n bars (the newest weighs n)"),
+    Spec("HMA", "factor", NUM, "same", (_X, Arg("n", "window", bounds=(2, MAX_WINDOW))),
+         doc="Hull moving average: WMA(2 x WMA(x, n / 2) - WMA(x, n), sqrt(n)), n at least 2"),
+    Spec("StochK", "factor", NUM, "index", _STOCH_ARGS[:2], window_sum=True,
+         doc="stochastic %K (0-100): the smooth-bar average of 100 x (close - lowest low) / (highest high - lowest low) over n"
+             " bars (smooth 1 = the fast stochastic; missing when the n bars have no range)"),
+    Spec("StochD", "factor", NUM, "index", _STOCH_ARGS, window_sum=True,
+         doc="stochastic %D (0-100): the d-bar average of %K"),
+    Spec("PSAR", "factor", NUM, "price", _PSAR_ARGS, min_bars=2, ordered_args=(("start", "max", True), ("step", "max", True)),
+         doc="Wilder's parabolic SAR (the steps of TradingView's ta.sar): the trailing level below price in an up move, above in a"
+             " down move; start / step / max are the acceleration factor's"),
+    Spec("PSARDir", "factor", NUM, "sign", _PSAR_ARGS, min_bars=2, ordered_args=(("start", "max", True), ("step", "max", True)),
+         doc="the parabolic SAR's direction: +1 while the SAR is below price, -1 while above; a change of sign is a flip"),
     Spec("DayOpen", "factor", NUM, "price", (), doc="the session's opening price"),
     Spec("PDH", "factor", NUM, "price", (), cost=1.5, doc="previous session high"),
     Spec("PDL", "factor", NUM, "price", (), cost=1.5, doc="previous session low"),

@@ -1,0 +1,52 @@
+{
+  "schema": "atp.template/1",
+  "id": "D1",
+  "version": 1,
+  "name": "Supertrend flip",
+  "family": "D",
+  "idea": "A signal when the Supertrend changes sides on a closed bar; optionally only when the Supertrend on a higher timeframe points the same way.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d", "1w"],
+  "params": [
+    {"key": "period", "label": "Supertrend period", "help": "Bars of the average true range behind the Supertrend line.",
+     "type": "int", "default": 10, "min": 1, "max": 100, "step": 1},
+    {"key": "multiplier", "label": "Supertrend multiplier", "help": "How many average true ranges the line keeps from the middle of the bar.",
+     "type": "float", "default": 3.0, "min": 0.5, "max": 10.0, "step": 0.1},
+    {"key": "use_context", "label": "Higher-timeframe filter", "help": "Only signal when the Supertrend on the context timeframe points the same way.",
+     "type": "bool", "default": false},
+    {"key": "context_timeframe", "label": "Context timeframe", "help": "The higher timeframe the filter reads (closed bars only).",
+     "type": "timeframe", "default": "1d", "choices": ["15m", "30m", "1h", "1d", "1w"]}
+  ],
+  "constraints": [
+    {"left": "context_timeframe", "op": ">", "right": "signal_timeframe", "when": "use_context",
+     "message": "The context timeframe must be higher than the signal timeframe."}
+  ],
+  "sides_default": "both",
+  "context": {
+    "long": "SupertrendDir($period, $multiplier) == 1",
+    "short": "SupertrendDir($period, $multiplier) == -1",
+    "timeframe_param": "context_timeframe",
+    "enabled_by": "use_context"
+  },
+  "setup": {
+    "kind": "event",
+    "long": "SupertrendDir($period, $multiplier) == 1 AND SupertrendDir($period, $multiplier)[1] == -1",
+    "short": "SupertrendDir($period, $multiplier) == -1 AND SupertrendDir($period, $multiplier)[1] == 1",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "Supertrend($period, $multiplier)",
+    "short": "Supertrend($period, $multiplier)"
+  },
+  "exit_signal": {
+    "long": "SupertrendDir($period, $multiplier) == -1 AND SupertrendDir($period, $multiplier)[1] == 1",
+    "short": "SupertrendDir($period, $multiplier) == 1 AND SupertrendDir($period, $multiplier)[1] == -1"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "supertrend_turned_bullish"}, {"token": "context_supertrend_agrees", "when": "use_context"}],
+    "short": [{"token": "supertrend_turned_bearish"}, {"token": "context_supertrend_agrees", "when": "use_context"}]
+  }
+}

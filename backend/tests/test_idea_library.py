@@ -253,3 +253,61 @@ def test_the_frontend_fixture_is_the_servers_own_payload():
     path = Path(__file__).resolve().parents[2] / "frontend" / "e2e" / "fixtures" / "ideas_v2.json"
     on = {"screener_v2", "screener_builder_u2", "screener_breakouts", "screener_breakouts_bk4"}
     assert json.loads(path.read_text(encoding="utf-8")) == c.payload(LIB, on)
+
+
+# ------------------------------------------------------------------------------- slice 2: adopt as a paper strategy
+def _with_mapping(idea_id: str, adopt: "c.Adopt") -> "c.Library":
+    ideas = tuple(i.model_copy(update={"adopt": adopt}) if i.id == idea_id else i for i in LIB.ideas)
+    return LIB.model_copy(update={"ideas": ideas})
+
+
+def test_every_idea_is_either_mapped_honestly_or_says_why_not():
+    for idea in LIB.ideas:
+        assert (idea.adopt is None) == (idea.id in c.ADOPT_REVIEW), idea.id
+        assert c.check_adopt(idea) == [], idea.id
+    assert set(c.ADOPT_REVIEW) <= set(c.IDEA_IDS) and all(len(v) > 20 for v in c.ADOPT_REVIEW.values())
+    # 22 Oct: no T idea shares its structure with D1 / D2 / B1 / B3, so none can be adopted yet (IDEA-1, IDEA-10)
+    assert c.adopt_templates(LIB) == []
+
+
+def test_a_mapping_is_checked_against_the_real_template_library():
+    t1 = LIB.idea("T1")
+    assert t1 is not None
+    good = t1.model_copy(update={"adopt": c.Adopt(template="D1", timeframe="15m", params={"period": 12})})
+    assert c.check_adopt(good) == []
+    assert c.check_adopt(t1.model_copy(update={"adopt": c.Adopt(template="G9")})) == ["T1: unknown template 'G9'"]
+    bad = c.check_adopt(t1.model_copy(update={"adopt": c.Adopt(template="D1", params={"period": 0})}))
+    assert bad and all(p.startswith("T1: ") for p in bad)
+    assert c.check_adopt(t1.model_copy(update={"adopt": c.Adopt(template="D1", params={"nope": 1})}))
+    with pytest.raises(ValueError):
+        c.Adopt(template="T1")                          # only strategy template ids (families A-G)
+
+
+def test_adopt_is_offered_only_when_the_mapped_template_can_be_adopted():
+    lib = _with_mapping("T5", c.Adopt(template="D1", timeframe="15m", params={"period": 12}))
+    t5 = lib.idea("T5")
+    assert t5 is not None and c.adopt_templates(lib) == ["D1"]
+    assert c.adopt_payload(t5) == {"available": False}
+    assert c.adopt_payload(t5, frozenset({"D1"})) == {"available": True, "template": "D1", "timeframe": "15m", "params": {"period": 12}}
+    data = c.payload(lib, set(), frozenset({"D1"}))
+    assert [i["id"] for i in data["ideas"] if i["adopt"]["available"]] == ["T5"]
+    assert all("adopt" in i and set(i["adopt"]) == {"available"} for i in data["ideas"] if i["id"] != "T5")
+
+
+def test_the_route_offers_adopt_only_with_strategy_templates_on(monkeypatch):
+    from app.strategy_templates.routes import FLAG as TEMPLATES_FLAG
+    lib = _with_mapping("T5", c.Adopt(template="D1", timeframe="15m", params={"period": 12}))
+    monkeypatch.setattr(c, "load", lambda: lib)
+    org = _org("adopt")
+    t5 = client.get("/api/ideas/T5", headers=org["headers"]).json()
+    assert t5["adopt"] == {"available": False}                       # strategy_templates off
+    _set_flag(TEMPLATES_FLAG, org["tenant_id"])
+    r = client.get("/api/ideas", headers=org["headers"])
+    by_id = {i["id"]: i for i in r.json()["ideas"]}
+    assert by_id["T5"]["adopt"] == {"available": True, "template": "D1", "timeframe": "15m", "params": {"period": 12}}
+    assert not any(by_id[i]["adopt"]["available"] for i in by_id if i != "T5")
+    # the same settings are what the template's own adopt route turns into the paper bot pre-fill (nothing is created)
+    pre = client.post("/api/strategy-templates/D1/adopt", headers=org["headers"],
+                      json={"timeframe": "15m", "params": {"period": 12}})
+    assert pre.status_code == 200, pre.text
+    assert pre.json()["deployment"]["mode"] == "PAPER" and pre.json()["settings"]["params"]["period"] == 12

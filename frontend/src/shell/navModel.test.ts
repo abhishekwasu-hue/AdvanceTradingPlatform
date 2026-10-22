@@ -16,11 +16,11 @@ const withScreener: NavContext = { on: flags("screener_v2"), role: "OWNER" };
 const labels = (ctx: NavContext) => visibleSections(ctx).map((s) => [s.title, s.items.map((i) => i.label)]);
 
 describe("UI2-1 navigation model: sections (proposal §2)", () => {
-  // MO4 slice 2: Markets holds "Sectors & indices" too (shown only while `markets_view` is on).
-  it("has the five sections plus More, in order, with 5 / 5 / 5 / 4 / 3 items - 22 primary items", () => {
+  // Ideas: idea library slice 1; MO4 slice 2: Markets holds "Sectors & indices" too (shown only while `markets_view` is on).
+  it("has the five sections plus More, in order, with 5 / 6 / 5 / 4 / 3 items - 23 primary items", () => {
     expect(NAV_SECTIONS_V2.map((s) => s.title)).toEqual(["Markets", "Strategies", "Trading", "Insights", "Account", "More"]);
-    expect(NAV_SECTIONS_V2.slice(0, 5).map((s) => s.items.length)).toEqual([5, 5, 5, 4, 3]);
-    expect(NAV_SECTIONS_V2.slice(0, 5).flatMap((s) => s.items)).toHaveLength(22);
+    expect(NAV_SECTIONS_V2.slice(0, 5).map((s) => s.items.length)).toEqual([5, 6, 5, 4, 3]);
+    expect(NAV_SECTIONS_V2.slice(0, 5).flatMap((s) => s.items)).toHaveLength(23);
     expect(NAV_SECTIONS_V2[5].items.map((i) => i.label)).toEqual(["Factor Lab", "Contract specs", "Marketplace", "Activity log", "Admin console"]);
   });
 

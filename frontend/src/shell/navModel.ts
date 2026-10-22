@@ -1,6 +1,6 @@
 import {
   BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Filter, GraduationCap, History, Layers,
-  LayoutDashboard, LayoutGrid, Link2, ListChecks, ListTodo, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
+  LayoutDashboard, LayoutGrid, Lightbulb, Link2, ListChecks, ListTodo, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
   ScanSearch, Sigma, SlidersHorizontal, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, Palette, LifeBuoy, Wrench, type LucideIcon,
 } from "lucide-react";
 import { needsAttention, type BrokerDot } from "../broker/brokerState";
@@ -8,6 +8,7 @@ import { BROKER_PATH } from "../broker/paths";
 import type { Page } from "../components/Sidebar";
 import { PAGE_FLAGS } from "./pageFlags";
 import { SETTINGS_PATH, type SettingsSectionKey } from "../settings/paths";
+import { IDEAS_ADDRESS, IDEA_FLAG } from "../ideas/model";
 
 /**
  * UI2-1 (UI v2 proposal §2 navigation map, §4 bottom bar): the one navigation model the v2 shell reads - the sidebar,
@@ -20,7 +21,7 @@ import { SETTINGS_PATH, type SettingsSectionKey } from "../settings/paths";
 
 /** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
  * Settings → Setup (`/settings/setup`, UI2-7), My trading defaults (`/settings/trading-defaults`, part C) and the Settings section pages (`/settings/ai` ..., Settings redesign B). */
-export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "markets" | SettingsSectionKey;
+export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | SettingsSectionKey;
 
 export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more";
 
@@ -65,6 +66,8 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
   {
     id: "strategies", title: "Strategies", items: [
       item("strategies", "Library", "Strategy library", "/strategies", Layers, { keywords: ["strategy library", "strategies"] }),
+      // Idea library slice 1 (flag idea_library): method ideas in plain words, each with a scan to try (education only).
+      item("ideas", "Ideas", "Idea library", IDEAS_ADDRESS, Lightbulb, { flag: IDEA_FLAG, keywords: ["idea library", "ideas", "learn", "methods", "price action"] }),
       item("strategy-builder", "Build a strategy", "Build a strategy", "/strategy-builder", Pencil, { keywords: ["strategy builder", "create"] }),
       item("backtest", "Test a strategy", "Test a strategy", "/backtest", History, { keywords: ["backtest", "backtesting"] }),
       item("copilot", "AI Copilot", "AI Copilot", "/copilot", Sparkles, { flag: "ai_copilot", keywords: ["ai", "assistant", "watchtower"] }),

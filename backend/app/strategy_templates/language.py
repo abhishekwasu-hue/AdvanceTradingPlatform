@@ -7,8 +7,9 @@ the tests run it over every token and every library template's rendered text.
 """
 from __future__ import annotations
 
-import re
 from typing import Dict, Iterable, List, Optional, Sequence
+
+from app.signals import language as _language
 
 TOKENS: Dict[str, str] = {
     # D1 Supertrend flip
@@ -22,31 +23,16 @@ TIMEFRAME_WORDS: Dict[str, str] = {"1m": "1-minute", "3m": "3-minute", "5m": "5-
 PLACEHOLDERS = ("timeframe", "context_timeframe")
 
 # Words a signal may never carry (policy 11l): trade instructions, levels and outcome words. Matched as whole words,
-# case-insensitively, also inside hyphenated words ("stop-loss").
-FORBIDDEN_WORDS = ("buy", "buying", "bought", "sell", "selling", "sold", "target", "targets", "stop", "stops", "stoploss", "sl",
-                   "loss", "profit", "profits", "entry", "enter", "exit", "long", "short", "order", "trade", "trades", "price",
-                   "guaranteed", "sure", "recommend", "recommended", "should", "must")
-_WORD = re.compile(r"[A-Za-z]+")
-_PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
-_TF_DIGITS = re.compile("|".join(re.escape(w) for w in sorted(TIMEFRAME_WORDS.values(), key=len, reverse=True)))
+# case-insensitively, also inside hyphenated words ("stop-loss"). Handover 11l: the list and the check live in the one
+# shared signal-language module (app/signals/language.py); the behaviour is identical (tests/test_signal_language.py).
+FORBIDDEN_WORDS = _language.STRICT_WORDS
 
 
 def guard(text: str) -> List[str]:
     """The problems of a phrase or a rendered text (empty = clean): a forbidden word, a digit outside a timeframe name
     (a price or a value), an unknown placeholder, or a character outside plain English text."""
-    problems: List[str] = []
-    for word in _WORD.findall(text):
-        if word.lower() in FORBIDDEN_WORDS:
-            problems.append(f"forbidden word {word!r}")
-    for name in _PLACEHOLDER.findall(text):
-        if name not in PLACEHOLDERS:
-            problems.append(f"unknown placeholder {{{name}}}")
-    rest = _TF_DIGITS.sub("", _PLACEHOLDER.sub("", text))
-    if re.search(r"[0-9]", rest):
-        problems.append("a number (signal text carries no prices or values)")
-    if re.search(r"[^A-Za-z0-9 ,;.\-'{}_()]", text):
-        problems.append("a character outside plain English text")
-    return problems
+    return _language.strict_guard(text, timeframe_words=TIMEFRAME_WORDS.values(), placeholders=PLACEHOLDERS,
+                                  forbidden=FORBIDDEN_WORDS)
 
 
 def render(tokens: Sequence[str], *, timeframe: str, context_timeframe: Optional[str] = None) -> str:

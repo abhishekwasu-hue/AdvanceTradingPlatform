@@ -48,13 +48,15 @@ describe("UI2-3 detail panel", () => {
     const words = text(html);
     expect(words).toContain("DEMO 50");
     expect(words).toContain("Long");
-    expect(words).toContain("Demo breakout · from Autopilot · Deployment #4 · Paper");
-    for (const label of ["Entry", "Stop", "Target", "Size", "Max loss", "Reward : risk"]) expect(words).toContain(label);
+    expect(words).toContain("Demo breakout · from Paper bot · Paper");          // UX3: no internal bot number
+    for (const label of ["Size", "Max loss", "Reward : risk", "Your levels", "Entry", "Exit if wrong", "Exit at profit"]) expect(words).toContain(label);
+    expect(words).not.toMatch(/\b(?:Stop|Target)\b/);                         // UX3 fix 10: no order words
+    expect(html).toMatch(/<details[^>]*data-your-levels/);                       // the user's own levels: one tap away
     expect(words).toContain("−2.00");                                 // stop below the entry
     expect(words).toContain("+4.00");
     expect(words).toContain("1 lot (75)");
     expect(words).toContain("−₹5,250.00");
-    expect(words).toContain("Why this trade");
+    expect(words).toContain("Why this signal");
     expect(words).toContain("Fits your risk limits");
     expect(words).toContain("Most you can lose (₹5,250.00) is within your ₹6,000.00 per-trade limit.");
     expect(words).toContain("Approve paper trade");
@@ -114,7 +116,7 @@ describe("UI2-3 detail panel", () => {
 
   it("levels are drawn with Entry neutral, Stop red and Target green", () => {
     const html = renderToStaticMarkup(<LevelsChart item={feedItem()} />);
-    expect(html).toContain('aria-label="Levels: entry 100.00, stop 98.00, target 104.00"');
+    expect(html).toContain('aria-label="Your levels: Entry 100.00, Exit if wrong 98.00, Exit at profit 104.00"');
     expect(html).toContain("stroke-up");
     expect(html).toContain("stroke-down");
     expect(html).toContain("stroke-fg-muted");
@@ -130,7 +132,7 @@ describe("UI2-3 the page", () => {
     expect(html.match(/role="tab"/g)).toHaveLength(3);
     expect(html).toMatch(/aria-selected="true"[^>]*>.*?Waiting/);
     expect(text(html)).toContain("Nothing is placed until you approve it.");
-    for (const s of ["All sources", "Autopilot", "Scans", "Copilot"]) expect(text(html)).toContain(s);
+    for (const s of ["All sources", "Paper bots", "Scans", "Copilot"]) expect(text(html)).toContain(s);
     expect(html).toContain('aria-label="Loading signals"');
     expect(text(html)).not.toMatch(/sample|seed/i);                  // the generator is not on this page any more (M6)
   });

@@ -9,6 +9,7 @@ import { BrokerGateView, CONNECT_BROKER_PATH, SIGN_IN_PATH, useBrokerLogin } fro
 import { useBrokerSession, type BrokerGateState } from "../ui/brokerSession";
 import { useFeatures } from "../ui/useFeatures";
 import { useBigText } from "../theme";
+import DailyRhythmCardV2 from "../rhythm/DailyRhythmCardV2";
 import { ActiveSignalsV2, OpenPositionsV2, TodaySummaryV2, type Rows } from "./BlocksV2";
 import MarketStripV2 from "./MarketStripV2";
 import {
@@ -29,8 +30,8 @@ import { dataOf, useDashboardData, type Loadable } from "./useDashboardData";
  * at Settings → Setup). With no broker stored and the card showing, the card takes the gate's place (its first step is
  * "Connect your broker"), so the trader sees one card, not two.
  *
- * Order, top to bottom: greeting, Get started (until its steps are done), market strip, Needs attention, Open positions,
- * Active signals, Today. Desktop: the strip runs full width, then Needs attention and Open positions on the left (2/3) and
+ * Order, top to bottom: greeting, Get started (until its steps are done), market strip, Needs attention, the daily brief
+ * (MO4, flag `daily_rhythm`: before the open / pulse / closing wrap / week, src/rhythm), Open positions, Active signals, Today. Desktop: the strip runs full width, then Needs attention and Open positions on the left (2/3) and
  * Active signals and Today on the right (1/3). Phone: one column in that order.
  *
  * Broker states (the dashboard handles them itself, so the strip still works before the day's broker login, UI-3):
@@ -126,6 +127,7 @@ export default function DashboardV2(_props: PageProps = {}) {
           <div className={`grid grid-cols-1 gap-space-4 ${big ? "2xl:grid-cols-3 2xl:items-start 2xl:gap-space-6" : "lg:grid-cols-3 lg:items-start lg:gap-space-6"}`}>
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:col-span-2 2xl:space-y-space-6" : "lg:col-span-2 lg:space-y-space-6"}`}>
               <NeedsAttentionV2 rows={attention} loginBroker={broker.kind === "login-needed" ? broker.broker : null} login={login} onHide={hidden.hide} />
+              {features.on("daily_rhythm") && <DailyRhythmCardV2 />}
               <OpenPositionsV2 data={positions} />
             </div>
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:space-y-space-6" : "lg:space-y-space-6"}`}>

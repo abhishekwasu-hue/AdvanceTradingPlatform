@@ -1,7 +1,7 @@
 import { useId, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
-import { useCandleSource } from "../components/DataSource";
+import { NEEDS_BROKER_FOR_DATA, useCandleSource } from "../components/DataSource";
 import { Sheet } from "../components/primitives";
 import { chartsPath } from "../shell/shellRoutes";
 import type { EnrichedSignal, OHLCVBar, StrategyInfo } from "../types";
@@ -39,9 +39,12 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
     const sym = symbol.trim().toUpperCase();
     if (!sym) return;
     setBusy(true); setError(null); setExecuteMsg(null);
-    const useSample = sample;
+    const useSample = sample && !source.sampleHidden;
     try {
-      if (!useSample && !source.usable) throw new Error("Log in to your broker on the Broker page to use real candles, or turn on sample data under Advanced.");
+      if (!useSample && !source.usable) {
+        // UX3 fix 7: sample data is a testing tool for the platform admin only (with ui_v2).
+        throw new Error(source.sampleHidden ? NEEDS_BROKER_FOR_DATA : "Log in to your broker on the Broker page to use real candles, or turn on sample data under Advanced.");
+      }
       // Strategies read every timeframe off one-minute bars (as the old page did).
       const broker = source.sources.find((s) => s.usable)?.broker;
       const fetched = useSample
@@ -93,7 +96,8 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
           <label htmlFor={ids.symbol} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
           <input id={ids.symbol} className={FIELD} value={symbol} onChange={(e) => setSymbol(e.target.value)} autoComplete="off" autoCapitalize="characters" spellCheck={false} />
         </div>
-        <details className="rounded-panel border border-subtle px-space-3">
+        {!source.sampleHidden && (
+        <details className="rounded-panel border border-subtle px-space-3" data-advanced>
           <summary className="flex min-h-11 cursor-pointer items-center text-t14 font-medium text-fg">Advanced</summary>
           <div className="space-y-space-3 pb-space-3">
             <label htmlFor={ids.sample} className="flex min-h-11 items-center gap-space-2 text-t14 text-fg">
@@ -115,6 +119,7 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
             )}
           </div>
         </details>
+        )}
         <button type="submit" disabled={busy || !symbol.trim()} aria-busy={busy || undefined} className={`${BUTTON} w-full bg-brand text-on-brand hover:bg-brand-strong`}>
           {busy ? "Working…" : "Try it"}
         </button>

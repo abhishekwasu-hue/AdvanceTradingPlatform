@@ -6,7 +6,7 @@ import type { Page } from "../components/Sidebar";
  * and its address shows "Coming soon" - never the flag name to a trader (an administrator sees it in a small note).
  * A tiny module on purpose: today's shell (App.tsx) reads it too, so it must not pull the v2 navigation in.
  */
-export const PAGE_FLAGS: Readonly<Partial<Record<Page | "markets", string>>> = {
+export const PAGE_FLAGS: Readonly<Partial<Record<Page | "ideas" | "markets", string>>> = {
   copilot: "ai_copilot",
   journal: "discipline_engine",
   // MO4 slice 2: the Sector & index view (v2 only, /markets).
@@ -15,6 +15,8 @@ export const PAGE_FLAGS: Readonly<Partial<Record<Page | "markets", string>>> = {
   "options-builder": "options_builder",
   // Audit P06: Find setups is empty while the screener is off - it leaves the navigation until `screener_v2` is on.
   screener: "screener_v2",
+  // Idea library slice 1: the v2-only Ideas page (/ideas) while `idea_library` is off.
+  ideas: "idea_library",
 };
 
 /** What the shell knows about the flags (useFeatures): `answered` is a real answer from the server. */

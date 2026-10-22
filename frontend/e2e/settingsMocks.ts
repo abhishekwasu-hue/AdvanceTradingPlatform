@@ -50,6 +50,8 @@ export interface SettingsMocks {
   /** The tips marks (GET /me/prefs?ns=tours); left out: 404 (the tips stay quiet). */
   tips?: "on" | "off";
   role?: string;
+  /** More replies, registered after the ones above (so they win) and before the page opens. */
+  routes?: (page: Page) => Promise<void>;
 }
 
 export const FEATURES = { ui_v2: true, ai_copilot: true, ai_one_key: true, phase0_paper_only: true };
@@ -97,6 +99,7 @@ export async function openSettings(page: Page, path: string, o: SettingsMocks = 
   if (o.role) {
     await page.route(/\/api(?:\/v1)?\/auth\/me$/, ok({ id: 3, email: "member@example.com", tenant_id: 2, role: o.role, email_verified: true, scopes: [] }));
   }
+  if (o.routes) await o.routes(page);
   await page.goto(path);
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");

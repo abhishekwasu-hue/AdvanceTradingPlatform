@@ -9,7 +9,7 @@ export const TOUR_IDS = ["dashboard", "broker", "charts", "option-chain", "signa
 
 export type TourId = (typeof TOUR_IDS)[number];
 
-/** The shell location each tour belongs to. The AI Copilot has no v2 page yet, so no tour (MO2-2). */
+/** The shell location each tour belongs to. The AI Copilot v2 page (#342) has no tour yet (MO2-2). */
 const BY_KEY: Partial<Record<ShellKey, TourId>> = {
   dashboard: "dashboard",
   broker: "broker",

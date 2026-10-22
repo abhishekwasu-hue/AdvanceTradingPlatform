@@ -237,12 +237,12 @@ describe("MO2 tours: one content file per page", () => {
     }
   });
 
-  it("the shell maps its pages to tours; the Copilot has no v2 page, so no tour", () => {
+  it("the shell maps its pages to tours; the Copilot's v2 page has no tour yet (MO2-2)", () => {
     expect(tourIdFor("risk-management")).toBe("risk");
     expect(tourIdFor("settings")).toBe("settings");
     expect(tourIdFor("copilot")).toBeNull();
     expect(tourIdFor(null)).toBeNull();
-    expect(pagesV2Source).not.toMatch(/copilot:\s*lazy/);
+    expect(pagesV2Source).toMatch(/copilot:\s*lazy/);
   });
 });
 

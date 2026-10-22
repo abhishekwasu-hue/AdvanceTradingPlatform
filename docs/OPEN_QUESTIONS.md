@@ -773,6 +773,6 @@ defaults below contradicts them.
 | # | Question | Provisional decision + reason | Applies to | Status |
 |---|----------|-------------------------------|------------|--------|
 | MO2-1 | The order's quoted wording says "ATP"; the product people see is AiAlgoDesk. | The tours and key guides say **AiAlgoDesk** (the name in the sidebar and the page titles), so a beginner never meets a second name. One word to change back if the owner prefers ATP. | `src/tours/content/`, `src/aiKeys/` | open |
-| MO2-2 | The AI Copilot has no v2 page yet. | No tour for it until it has one; the tour id list is shared with the server allow-list (a test keeps them equal). | `src/tours/pages.ts` | open |
+| MO2-2 | The AI Copilot v2 page (#342) has no tour yet. | A Copilot tour is the next MO2 step; the tour id list is shared with the server allow-list (a test keeps them equal). | `src/tours/pages.ts` | open |
 | MO2-3 | Key guide screenshots. | Marked placeholders ("Screenshot coming: ...") until we take our own pictures of our own accounts; no third-party picture is fetched or committed. | `src/aiKeys/guides.ts` | open |
 | MO2-4 | Providers in the key guides. | The three BYOK takes today (Google Gemini, Anthropic, OpenAI). OpenRouter, Groq, Mistral and the rest come with part A; the helper already recognises their keys and says they are not taken yet. | `src/aiKeys/` | open |

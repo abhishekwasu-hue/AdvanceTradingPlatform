@@ -21,6 +21,9 @@ from typing import Dict, Tuple
 # Why a route needs no login (public) or may be called by any member (self).
 P_SIGN_IN = ("public: sign-up, login, token refresh, password reset, invites and e-mail verification - the token in the path or "
              "body is the credential (rate limited)")
+P_GOOGLE_SIGN_IN = ("public: Google sign-in (GS-1) - the signed state cookie and Google's verified ID token are the credential "
+                    "(rate limited; 404 until both credentials are set)")
+P_SIGN_IN_PROVIDERS = "public: which extra sign-in buttons the sign-in page shows (one boolean, no data)"
 P_PAYMENT_WEBHOOK = "public: payment provider webhook, verified by its signature"
 P_PLANS = "public: the plan catalogue"
 P_OAUTH_CALLBACK = "public: the broker's OAuth redirect; the signed state parameter names the organisation"
@@ -232,6 +235,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/api-keys/{key_id}"): "owner",
     ("GET", "/api/audit-logs"): "member",
     ("GET", "/api/audit-logs/verify"): "admin",
+    ("GET", "/api/auth/google/callback"): P_GOOGLE_SIGN_IN,
+    ("GET", "/api/auth/google/start"): P_GOOGLE_SIGN_IN,
     ("GET", "/api/auth/invite/{token}"): P_SIGN_IN,
     ("POST", "/api/auth/invite/{token}/accept"): P_SIGN_IN,
     ("POST", "/api/auth/login"): P_SIGN_IN,
@@ -250,6 +255,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/auth/password/forgot"): P_SIGN_IN,
     ("GET", "/api/auth/password/reset/{token}"): P_SIGN_IN,
     ("POST", "/api/auth/password/reset/{token}"): P_SIGN_IN,
+    ("GET", "/api/auth/providers"): P_SIGN_IN_PROVIDERS,
     ("POST", "/api/auth/refresh"): P_SIGN_IN,
     ("POST", "/api/auth/register"): P_SIGN_IN,
     ("GET", "/api/auth/scopes"): "member",

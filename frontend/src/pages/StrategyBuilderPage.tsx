@@ -79,7 +79,7 @@ export function OperandEditor({ operand, onChange }: { operand: Operand; onChang
           )}
           <select
             title="Evaluate on a higher timeframe (completed bars only)"
-            className="rounded bg-surface-2 border border-border px-1 py-1 text-[11px] text-fg-muted"
+            className="rounded bg-surface-2 border border-border px-1 py-1 text-xs text-fg-muted"
             value={operand.timeframe ?? ""}
             onChange={(e) => onChange({ ...operand, timeframe: e.target.value || null })}
           >

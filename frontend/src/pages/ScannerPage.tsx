@@ -160,7 +160,7 @@ export default function ScannerPage() {
             {aiBusy ? "Planning…" : "Plan filters with AI"}
           </button>
         </div>
-        <p className="text-[11px] text-fg-muted mt-2">The AI only translates your words into the filters below (same building blocks as the Strategy Builder); you review them and press Run. Without an AI provider under Settings the deterministic parser is used.</p>
+        <p className="text-xs text-fg-muted mt-2">The AI only translates your words into the filters below (same building blocks as the Strategy Builder); you review them and press Run. Without an AI provider under Settings the deterministic parser is used.</p>
         {aiPlan && (
           <div className="mt-2 text-xs space-y-1">
             <div className="text-fg">{aiPlan.explanation} <span className="text-fg-muted">· {aiPlan.provider}{aiPlan.model ? `/${aiPlan.model}` : ""} · {aiPlan.prompt_version}</span></div>
@@ -327,7 +327,7 @@ export default function ScannerPage() {
               <button onClick={readWithAi} disabled={aiBusy || !lastRequest} className="rounded border border-border hover:bg-surface-2 px-3 py-1 text-xs text-fg disabled:opacity-50">
                 {aiBusy ? "Reading…" : "AI read of these matches"}
               </button>
-              <span className="text-[11px] text-fg-muted">Describes each match: the filters it cleared and the regime the platform reads. Not a ranking or advice, never an order.</span>
+              <span className="text-xs text-fg-muted">Describes each match: the filters it cleared and the regime the platform reads. Not a ranking or advice, never an order.</span>
             </div>
           )}
           {aiRead && (
@@ -342,7 +342,7 @@ export default function ScannerPage() {
                 </div>
               ))}
               {aiRead.warnings.map((w, i) => <div key={i} className="text-warn">{w}</div>)}
-              <div className="text-[11px] text-fg-muted">{aiRead.disclaimer}</div>
+              <div className="text-xs text-fg-muted">{aiRead.disclaimer}</div>
             </div>
           )}
           {result.matches.length === 0 ? (
@@ -358,7 +358,7 @@ export default function ScannerPage() {
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     {[...m.matched_indicator_labels, ...m.matched_structure_labels, ...m.matched_option_labels].map(
                       (label, i) => (
-                        <span key={i} className="rounded border border-border bg-surface-2 px-1.5 py-0.5 text-[11px] text-fg">
+                        <span key={i} className="rounded border border-border bg-surface-2 px-1.5 py-0.5 text-xs text-fg">
                           {label}
                         </span>
                       ),

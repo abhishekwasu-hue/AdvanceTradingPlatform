@@ -138,7 +138,7 @@ export function useChartStrategies({ enabled, candles, symbol, timeframe, exchan
 
   const panel = !enabled || !open ? null : (
     <div className="mb-2 rounded-lg border border-border bg-surface-2/60 p-2">
-      <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[11px] text-fg-muted">
+      <div className="mb-1.5 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
         <span className="font-bold uppercase tracking-wider text-fg">Strategies on this chart</span>
         <span><b className="text-fg">Chart</b> draws its entries, exits and last signal on these candles</span>
         {canDeploy
@@ -156,7 +156,7 @@ export function useChartStrategies({ enabled, candles, symbol, timeframe, exchan
             const incompatible = r && !("error" in r) && !r.compatible;
             const finest = s.timeframes[0];
             return (
-              <div key={s.id} className={`flex items-center gap-2 rounded-md border px-2 py-1 text-[11px] ${on ? "border-border bg-surface-3" : "border-border"}`}>
+              <div key={s.id} className={`flex items-center gap-2 rounded-md border px-2 py-1 text-xs ${on ? "border-border bg-surface-3" : "border-border"}`}>
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color(s.id) }} />
                 <span className="min-w-0 flex-1">
                   <span className="font-semibold text-fg" title={s.description}>{s.name}</span>

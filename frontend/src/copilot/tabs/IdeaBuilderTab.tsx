@@ -354,13 +354,13 @@ function TemplateGrid({ plan, sample, selected, busy, rejecting, reasons, onChoo
                 {/* Rules in words and the backtest, the same for every template. */}
                 {rules && (
                   <div className="relative rounded-xl border border-ai/25 bg-ai/5 p-2.5" data-testid="rules-in-words">
-                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ai">{t("idea.rulesAndBacktest")}</div>
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-ai">{t("idea.rulesAndBacktest")}</div>
                     <StrategyLines lines={rules.lines} sample={sample} className="space-y-1 text-xs text-fg" />
-                    {sample && <p className="mt-1 text-[11px] font-semibold text-warn">{t("idea.sampleBlur")}</p>}
+                    {sample && <p className="mt-1 text-xs font-semibold text-warn">{t("idea.sampleBlur")}</p>}
                   </div>
                 )}
                 {meta.regime_filter_open !== null && (
-                  <p className="text-[11px] text-fg-muted">{meta.regime_filter_open ? t("idea.filterOpen") : t("idea.filterClosed")}</p>
+                  <p className="text-xs text-fg-muted">{meta.regime_filter_open ? t("idea.filterOpen") : t("idea.filterClosed")}</p>
                 )}
                 <div className="mt-auto flex flex-wrap gap-2 pt-1">
                   <Button size="sm" variant={isSel ? "primary" : "secondary"} icon={<Check size={13} />} disabled={busy} onClick={() => onChoose(o)} aria-pressed={isSel}>
@@ -376,7 +376,7 @@ function TemplateGrid({ plan, sample, selected, busy, rejecting, reasons, onChoo
                     <div className="flex flex-wrap gap-1">
                       {feedback.map((f) => (
                         <button key={f.code} onClick={() => onToggleReason(f.code)} aria-pressed={reasons.includes(f.code)}
-                                className={`rounded-full border px-2 py-0.5 text-[11px] ${reasons.includes(f.code) ? "border-ai bg-ai/15 text-fg" : "border-border text-fg-muted"}`}>
+                                className={`rounded-full border px-2 py-0.5 text-xs ${reasons.includes(f.code) ? "border-ai bg-ai/15 text-fg" : "border-border text-fg-muted"}`}>
                           {f.en}
                         </button>
                       ))}
@@ -413,10 +413,10 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
           const strategy = s.id === "strategy";
           return (
             <div key={s.id} className="relative overflow-hidden rounded-xl border border-border bg-surface-2/40 p-3">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ai">{s.title}</div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-ai">{s.title}</div>
               {strategy ? <StrategyLines lines={s.lines} sample={sample} className="space-y-1 text-sm text-fg" />
                 : <ul className="space-y-1 text-sm text-fg">{s.lines.map((l, i) => <li key={i}>· {l}</li>)}</ul>}
-              {strategy && sample && <p className="mt-1 text-[11px] font-semibold text-warn">{t("idea.sampleBlur")}</p>}
+              {strategy && sample && <p className="mt-1 text-xs font-semibold text-warn">{t("idea.sampleBlur")}</p>}
             </div>
           );
         })}
@@ -452,7 +452,7 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
         </Button>
       </div>
       <Badge tone="neutral" className="mt-3">{t("idea.paperFirst")}</Badge>
-      <p className="mt-2 text-[11px] text-fg-muted">{plan.disclaimer}</p>
+      <p className="mt-2 text-xs text-fg-muted">{plan.disclaimer}</p>
     </Panel>
   );
 }

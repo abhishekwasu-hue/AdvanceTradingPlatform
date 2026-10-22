@@ -10,3 +10,9 @@ declare const __ATP_NATIVE__: boolean;
 /** Mobile B1: the API origin of the Android app's bundle (`https://<domain>`, or the `.invalid` placeholder of a debug
  * build; checked by scripts/mobile-rules.mjs). "" in the web build, whose API calls stay on its own origin. */
 declare const __ATP_API_ORIGIN__: string;
+
+// Item 1: the type-scale test reads the Tailwind theme (a plain JS file with no types of its own).
+declare module "*/tailwind.config.js" {
+  const config: { theme: { extend: Record<string, unknown> & { fontSize: Record<string, [string, { lineHeight: string }]> } } };
+  export default config;
+}

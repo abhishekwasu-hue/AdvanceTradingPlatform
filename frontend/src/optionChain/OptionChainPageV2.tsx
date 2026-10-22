@@ -24,7 +24,7 @@ import { useOptionChain, type OptionChainData } from "./useOptionChain";
  *   in the middle; a row opens its full details.
  * - No sample data and no developer controls: without a broker session the shell's broker gate shows "Connect your
  *   broker" instead of this page (src/ui/dataPages.ts), and a chain that cannot be read says so in plain words.
- * - Below the chain: the mount point of the Analysis tabs (OC2).
+ * - Below the chain: the Analysis tabs, Ask AI and My analyses (AnalysisSlotV2).
  * Shown only while `ui_v2` is on (src/shell/pagesV2.ts). Read-only: nothing here places an order.
  */
 const SELECT = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 font-semibold text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9";
@@ -138,7 +138,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         )}
       </section>
 
-      {/* OC2: the Analysis tabs go here (AnalysisSlotV2 is the placeholder a follow-up wires to AnalysisTabsV2). */}
+      {/* OC4: the Analysis tabs, Ask AI and My analyses for the chain on screen. */}
       <AnalysisSlotV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />
 
       <RowDetailsV2 row={pickedRow} atm={live?.summary.atm_strike ?? null} underlying={symbol} onClose={() => setPicked(null)} />

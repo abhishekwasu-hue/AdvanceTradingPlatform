@@ -53,7 +53,7 @@ function Hero() {
     <section className="copilot-hero relative overflow-hidden rounded-2xl border border-border p-4 md:p-6" aria-labelledby="copilot-title">
       <div className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
-          <div className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-ai/40 bg-ai/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-ai">
+          <div className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-ai/40 bg-ai/10 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-ai">
             <Sparkles size={12} aria-hidden />{t("shell.badge")}
           </div>
           <h1 id="copilot-title" className="text-2xl font-bold tracking-tight text-fg md:text-3xl">{t("shell.title")}</h1>
@@ -113,7 +113,7 @@ function Shell() {
             <Tabs />
           </CopilotDataProvider>
         </FirstUseModal>
-        <p className="text-[11px] leading-relaxed text-fg-muted">{t("compliance.footer")}</p>
+        <p className="text-xs leading-relaxed text-fg-muted">{t("compliance.footer")}</p>
       </div>
     </CopilotMotion>
   );

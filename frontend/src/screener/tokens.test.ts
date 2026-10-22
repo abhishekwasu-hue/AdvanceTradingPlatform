@@ -59,7 +59,7 @@ describe("U5 tokens", () => {
   it("keeps the shape tokens the screener uses", () => {
     expect(css).toMatch(/--radius-control:\s*6px/);
     expect(css).toMatch(/--radius-panel:\s*10px/);
-    expect(css).toMatch(/--stage-h:\s*44px/);
-    expect(css).toMatch(/--row-h:\s*36px/);
+    expect(css).toMatch(/--stage-h:\s*2\.75rem/);           // item 1: rem, so they grow with the text size
+    expect(css).toMatch(/--row-h:\s*2\.5rem/);
   });
 });

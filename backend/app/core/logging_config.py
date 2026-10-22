@@ -17,6 +17,7 @@ it, with no need to pass these ids into every individual log call by hand.
 import contextvars
 import json
 import logging
+import re
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -46,6 +47,33 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
+# GS-1: OAuth redirects carry one-time credentials in the query (`code`, `state`; some providers `id_token`,
+# `access_token`). uvicorn's access log prints the full path with its query, so those values are blanked there.
+_SECRET_QUERY = re.compile(r"(?<=[?&])(code|state|id_token|access_token|refresh_token)=[^&#\s]*", re.IGNORECASE)
+
+
+def redact_query(text: str) -> str:
+    return _SECRET_QUERY.sub(lambda m: f"{m.group(1)}=[redacted]", text)
+
+
+class QueryRedactionFilter(logging.Filter):
+    """Blanks OAuth credentials in the request line of an access-log record (its args hold the path)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and record.args:
+            record.args = tuple(redact_query(a) if isinstance(a, str) and "=" in a else a for a in record.args)
+        elif isinstance(record.msg, str) and "=" in record.msg and not record.args:
+            record.msg = redact_query(record.msg)
+        return True
+
+
+def install_access_log_redaction() -> None:
+    """Idempotent: adds the filter to uvicorn's access logger once."""
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, QueryRedactionFilter) for f in access.filters):
+        access.addFilter(QueryRedactionFilter())
+
+
 def configure_logging(level: int = logging.INFO) -> None:
     """Idempotent - safe to call more than once (e.g. once at app startup, again in a worker
     process someday) without stacking duplicate handlers.
@@ -57,6 +85,7 @@ def configure_logging(level: int = logging.INFO) -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
+    install_access_log_redaction()
 
 
 class bind_log_context:

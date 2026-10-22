@@ -45,12 +45,12 @@ function StatusBadge({ status }: { status: Deployment["status"] }) {
       : status === "PAUSED"
         ? "border-warn/40 text-warn bg-warn/10"
         : "border-border text-fg-muted bg-surface-2";
-  return <span className={`inline-block rounded-md border px-2 py-0.5 text-[11px] font-bold tracking-wide ${cls}`}>{status}</span>;
+  return <span className={`inline-block rounded-md border px-2 py-0.5 text-xs font-bold tracking-wide ${cls}`}>{status}</span>;
 }
 
 function ModeBadge({ mode }: { mode: ExecutionMode }) {
   const cls = mode === "LIVE" ? "border-down/50 text-down bg-down/10" : "border-border text-fg bg-surface-2";
-  return <span className={`inline-block rounded-md border px-2 py-0.5 text-[11px] font-bold tracking-wide ${cls}`}>{mode}</span>;
+  return <span className={`inline-block rounded-md border px-2 py-0.5 text-xs font-bold tracking-wide ${cls}`}>{mode}</span>;
 }
 
 function ist(iso: string): string {
@@ -350,7 +350,7 @@ export default function DeploymentsPage() {
                 </optgroup>
               )}
             </select>
-            {selectedStrategy && <div className="text-[11px] text-fg-muted mt-1">Timeframes: {selectedStrategy.timeframes.join(" / ")}</div>}
+            {selectedStrategy && <div className="text-xs text-fg-muted mt-1">Timeframes: {selectedStrategy.timeframes.join(" / ")}</div>}
           </div>
           <div>
             <label className="block text-xs text-fg-muted mb-1">Symbol</label>
@@ -546,7 +546,7 @@ export default function DeploymentsPage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-1 text-[11px] text-fg-muted">
+              <div className="mt-1 text-xs text-fg-muted">
                 Max loss, max profit and breakevens come from the expiry payoff of these legs. A side with no protection (more sold than bought) is undefined risk:
                 lots are sized off the loss the stop accepts and the group closes beyond that side's breakeven.
               </div>
@@ -562,12 +562,12 @@ export default function DeploymentsPage() {
                   {([["min_oi", "Min OI"], ["min_volume", "Min volume"], ["max_spread_pct", "Max bid/ask spread %"], ["target_delta", "Target |delta| (0-1)"],
                      ["min_iv_pct", "Min IV %"], ["max_iv_pct", "Max IV %"], ["min_premium", "Min premium"], ["max_premium", "Max premium"]] as const).map(([k, label]) => (
                     <div key={k}>
-                      <label className="block text-[10px] text-fg-muted mb-0.5">{label}</label>
+                      <label className="block text-xs text-fg-muted mb-0.5">{label}</label>
                       <input type="number" step="any" className="w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs" value={filters[k] ?? ""}
                         onChange={(e) => { setFilters({ ...filters, [k]: e.target.value }); setPreview(null); }} />
                     </div>
                   ))}
-                  <div className="sm:col-span-4 text-[11px] text-fg-muted">
+                  <div className="sm:col-span-4 text-xs text-fg-muted">
                     Applied at signal time to the live option chain around the rule strike: strikes failing liquidity, IV, delta or premium bounds are skipped;
                     with a target delta the passing strike nearest that delta wins. If the chain cannot be checked the trade is refused, never guessed.
                   </div>
@@ -602,7 +602,7 @@ export default function DeploymentsPage() {
                 const c = preview.contracts![dir];
                 return (
                   <div key={dir} className="rounded border border-border bg-surface-2/60 p-2">
-                    <div className="text-[10px] uppercase tracking-wide text-fg-muted">{dir} signal → {"error" in c ? "unresolved" : `${c.entry_side} ${c.tradingsymbol}`}</div>
+                    <div className="text-xs uppercase tracking-wide text-fg-muted">{dir} signal → {"error" in c ? "unresolved" : `${c.entry_side} ${c.tradingsymbol}`}</div>
                     {"error" in c ? (
                       <div className="text-warn mt-1">{c.error}</div>
                     ) : (
@@ -611,7 +611,7 @@ export default function DeploymentsPage() {
                   </div>
                 );
               })}
-              <div className="sm:col-span-2 text-[11px] text-fg-muted">{preview.rules}{preview.spot ? ` · spot ${preview.spot} (${preview.spot_source})` : ""}</div>
+              <div className="sm:col-span-2 text-xs text-fg-muted">{preview.rules}{preview.spot ? ` · spot ${preview.spot} (${preview.spot_source})` : ""}</div>
             </div>
           )}
           {preview && preview.structures && (
@@ -620,7 +620,7 @@ export default function DeploymentsPage() {
                 const st = preview.structures![dir];
                 return (
                   <div key={dir} className="rounded border border-border bg-surface-2/60 p-2">
-                    <div className="text-[10px] uppercase tracking-wide text-fg-muted">{dir} signal → {"error" in st ? "no structure" : st.strategy.replace(/_/g, " ").toLowerCase()}</div>
+                    <div className="text-xs uppercase tracking-wide text-fg-muted">{dir} signal → {"error" in st ? "no structure" : st.strategy.replace(/_/g, " ").toLowerCase()}</div>
                     {"error" in st ? (
                       <div className="text-warn mt-1">{st.error}</div>
                     ) : (
@@ -628,7 +628,7 @@ export default function DeploymentsPage() {
                         {st.legs.map((l) => <div key={l.tradingsymbol}>{l.side} {(l.ratio ?? 1) > 1 ? `${l.ratio}x ` : ""}{l.tradingsymbol} <span className="text-fg-muted">({l.role.toLowerCase()} leg)</span></div>)}
                         <div className="text-fg-muted">expiry {st.expiry} · lot {st.lot_size} · {st.width_points} pts wide</div>
                         {st.metrics ? (
-                          <div className="text-[11px] mt-1">
+                          <div className="text-xs mt-1">
                             {st.metrics.net_credit >= 0 ? "credit" : "debit"} <span className="text-up">{Math.abs(st.metrics.net_credit)}</span>/unit · max loss{" "}
                             {st.metrics.max_loss === null || st.metrics.max_loss === undefined
                               ? <span className="text-down">UNDEFINED (sized off the stop, {st.metrics.risk_per_unit}/unit)</span>
@@ -639,19 +639,19 @@ export default function DeploymentsPage() {
                               ? <> · exit at P&L ≥ {st.metrics.pnl_target} or ≤ {st.metrics.pnl_stop} per unit</>
                               : <> · exit at value ≤ {st.metrics.target_value} or ≥ {st.metrics.stop_value}</>}
                           </div>
-                        ) : st.metrics_error ? <div className="text-warn text-[11px] mt-1">{st.metrics_error}</div> : null}
+                        ) : st.metrics_error ? <div className="text-warn text-xs mt-1">{st.metrics_error}</div> : null}
                       </div>
                     )}
                   </div>
                 );
               })}
-              <div className="sm:col-span-2 text-[11px] text-fg-muted">{preview.rules}{preview.spot ? ` · spot ${preview.spot} (${preview.spot_source})` : ""}</div>
+              <div className="sm:col-span-2 text-xs text-fg-muted">{preview.rules}{preview.spot ? ` · spot ${preview.spot} (${preview.spot_source})` : ""}</div>
             </div>
           )}
         </div>
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-2">Dynamic exits <span className="normal-case font-normal">(optional; the strategy's stop and targets still apply)</span></div>
+          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">Dynamic exits <span className="normal-case font-normal">(optional; the strategy's stop and targets still apply)</span></div>
           <div className="grid sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs text-fg-muted mb-1">Trailing stop %</label>
@@ -673,10 +673,10 @@ export default function DeploymentsPage() {
         </div>
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-2">Regime filter <span className="normal-case font-normal">(optional; a diagnostic only - recorded for review, it never blocks an entry)</span></div>
+          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">Regime filter <span className="normal-case font-normal">(optional; a diagnostic only - recorded for review, it never blocks an entry)</span></div>
           <div className="flex flex-wrap gap-2">
             {REGIME_OPTIONS.map((r) => (
-              <button key={r} type="button" onClick={() => toggleRegime(r)} className={`rounded-md border px-2.5 py-1 text-[11px] font-bold ${regimes.includes(r) ? "border-brand/60 text-brand bg-brand/10" : "border-border text-fg-muted hover:text-fg"}`}>
+              <button key={r} type="button" onClick={() => toggleRegime(r)} className={`rounded-md border px-2.5 py-1 text-xs font-bold ${regimes.includes(r) ? "border-brand/60 text-brand bg-brand/10" : "border-border text-fg-muted hover:text-fg"}`}>
                 {r.replace("_", " ").toLowerCase()}
               </button>
             ))}
@@ -684,11 +684,11 @@ export default function DeploymentsPage() {
         </div>
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-2">OI gates <span className="normal-case font-normal">(optional; checked before each new entry from the option chain's OI - missing or stale OI data blocks the entry; exits are never gated. Limits come from the Option Chain page's OI settings)</span></div>
+          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">OI gates <span className="normal-case font-normal">(optional; checked before each new entry from the option chain's OI - missing or stale OI data blocks the entry; exits are never gated. Limits come from the Option Chain page's OI settings)</span></div>
           <div className="flex flex-wrap gap-2">
             {OI_GATE_OPTIONS.map(([g, label]) => (
               <button key={g} type="button" onClick={() => toggleOiGate(g)} title={g}
-                      className={`rounded-md border px-2.5 py-1 text-[11px] font-bold ${oiGates.includes(g) ? "border-brand/60 text-brand bg-brand/10" : "border-border text-fg-muted hover:text-fg"}`}>
+                      className={`rounded-md border px-2.5 py-1 text-xs font-bold ${oiGates.includes(g) ? "border-brand/60 text-brand bg-brand/10" : "border-border text-fg-muted hover:text-fg"}`}>
                 {label}
               </button>
             ))}
@@ -773,7 +773,7 @@ export default function DeploymentsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+              <thead className="text-fg-muted uppercase text-xs tracking-wide">
                 <tr className="text-left">
                   <th className="py-1 pr-3">#</th>
                   <th className="py-1 pr-3">Strategy</th>
@@ -792,11 +792,11 @@ export default function DeploymentsPage() {
                 {deployments.map((d) => (
                   <tr key={d.id} className="border-t border-border align-top">
                     <td className="py-1.5 pr-3 text-fg-muted">{d.id}</td>
-                    <td className="py-1.5 pr-3 font-medium text-fg">{d.strategy_id}<div className="text-[10px] text-fg-muted">{d.timeframe} base{d.holding === "SWING" ? " · swing (overnight)" : ""}</div></td>
-                    <td className="py-1.5 pr-3 text-fg">{d.symbol}<div className="text-[10px] text-fg-muted">{d.exchange}{d.instrument_kind !== "UNDERLYING" ? ` · ${d.contract_rules}` : ""}</div></td>
+                    <td className="py-1.5 pr-3 font-medium text-fg">{d.strategy_id}<div className="text-xs text-fg-muted">{d.timeframe} base{d.holding === "SWING" ? " · swing (overnight)" : ""}</div></td>
+                    <td className="py-1.5 pr-3 text-fg">{d.symbol}<div className="text-xs text-fg-muted">{d.exchange}{d.instrument_kind !== "UNDERLYING" ? ` · ${d.contract_rules}` : ""}</div></td>
                     <td className="py-1.5 pr-3"><ModeBadge mode={d.mode} /></td>
                     <td className="py-1.5 pr-3 capitalize text-fg-muted">{d.broker_name ?? "-"}
-                      {d.mode === "LIVE" && d.last_route && <div className="text-[10px] text-fg-muted normal-case max-w-[14rem] truncate" title={d.last_route}>{d.last_route}</div>}
+                      {d.mode === "LIVE" && d.last_route && <div className="text-xs text-fg-muted normal-case max-w-[14rem] truncate" title={d.last_route}>{d.last_route}</div>}
                     </td>
                     <td className="py-1.5 pr-3"><StatusBadge status={d.status} /></td>
                     <td className="py-1.5 pr-3 font-tabular text-fg">{d.open_positions}</td>

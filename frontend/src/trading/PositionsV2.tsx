@@ -409,7 +409,7 @@ function ClosedTradesV2({ trades, onSaved }: { trades: Loadable<TradeRecord[]>; 
   const rows = useMemo(() => closedRows(dataOf(trades) ?? []), [trades]);
   const shown = all ? rows : rows.slice(0, CLOSED_SHOWN);
   return (
-    <CardV2 title="Closed trades" count={rows.length} more={{ label: "Orders", to: "/orders" }} testId="history">
+    <CardV2 title="Closed trades" count={rows.length} more={{ label: "Orders", to: "/positions/orders" }} testId="history">
       {trades.status === "loading" ? <LoadingRowsV2 /> : trades.status === "error" ? <LoadFailedV2 what="your closed trades" /> : rows.length === 0 ? (
         <EmptyStateV2 text="No closed trades yet. A trade shows here once it is closed." />
       ) : (

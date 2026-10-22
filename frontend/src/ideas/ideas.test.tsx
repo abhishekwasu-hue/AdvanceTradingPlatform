@@ -145,10 +145,10 @@ describe("the education guard on what the page shows", () => {
 });
 
 describe("the shell: behind ui_v2 + idea_library", () => {
-  it("/ideas is the Ideas page, titled Idea library, under Strategies", () => {
+  it("/ideas is the Ideas page: Strategies › Ideas (UX3-9)", () => {
     expect(shellKeyFromPath(IDEAS_ADDRESS)).toBe("ideas");
     expect(shellKeyFromPath("/ideas/")).toBe("ideas");
-    expect(shellTitle("ideas")).toBe("Idea library");
+    expect(shellTitle("ideas")).toBe("Strategies");
     expect(navItemFor("ideas")?.section).toBe("strategies");
   });
 

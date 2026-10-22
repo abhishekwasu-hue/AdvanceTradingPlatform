@@ -2808,3 +2808,32 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   shared copy, link problems, flag off, filters). New baselines `chart-analyze-shared-*`, `chart-analyze-share-dialog-*`;
   `chart-analyze-{390,360,1440}-{light,dark}` regenerated (the history filters).
 - Questions CA-11..CA-14 (OPEN_QUESTIONS).
+
+## 22 Oct - UX3-9: the new 13-entry sidebar and the page merges (behind ui_v2)
+
+- Branch `claude/ux4-sidebar-merges`. No migration, no backend change. With `ui_v2` off today's sidebar and pages are
+  unchanged (the v2 navigation model is read only by the v2 shell).
+- Sidebar (`src/shell/navModel.ts`, `SidebarV2.tsx`): the audit's flat list in task order, no section folding - Broker
+  (pinned, status dot), Today, Charts, Option chain, [Sectors & indices], [Find setups], Signals, Paper bot, My trades,
+  Performance, Strategies, [AI Copilot], News & events, Settings; the Admin console set apart at the bottom for
+  SUPER_ADMIN. The groups (Markets, Trading, Insights, Account, Admin) only head the phone's More sheet and caption
+  search results. `navEntryFor` lights up the entry of a merged page's tab or a Settings sub-page. The section memory
+  (`atp_nav_sections`) is no longer read. Preloading on hover only for routed pages (it threw for v2-only keys).
+- Merges (`src/shell/pageGroups.ts`, `PageTabsV2.tsx`): a tab bar above today's pages, each tab its own address - My
+  trades: Positions `/positions` · Orders `/positions/orders` · Money `/positions/money` (PortfolioV2); Strategies:
+  Library `/strategies` · Ideas `/ideas` (flag) · Build `/strategies/build` · Test `/strategies/test`; Performance:
+  Results `/analytics` · Journal `/analytics/journal` (flag) · Coach `/analytics/coach`. The old addresses forward
+  there with the query (`v2RedirectFor`, from `V2_ALIASES`; `/journal/coach` via `V2_RETIRED_ALIASES`) and every new
+  address goes back with `ui_v2` off (`flagOffFallback`). One title per merged page in the top bar.
+- Gate: `/strategies/test` is a data page (backtests on broker candles); `/positions/money` is under `/positions` and
+  stays gated like `/portfolio`; `/positions/orders` is the trader's own record (`NOT_DATA_SUBPATHS`), not gated, as
+  `/orders` was.
+- Phone bottom bar: Today, Charts, Signals, My trades, More. Settings index: new rows Team and Risk limits.
+- Search-only (pages kept): Orders, Money, Build, Test, Ideas, Journal, Coach, Company research, Risk limits, Team,
+  Notifications, Factor Lab, Contract specs, Marketplace (flag), Activity log, and the Settings sub-pages.
+- Tests: vitest `navModel.test.ts` (13 entries, groups, entries of tabs, bottom bar, search), new `pageGroups.test.ts`
+  (tabs per flag, addresses, tours keep their pages), `shellRoutes.test.tsx` (redirects, flag-off fallbacks),
+  `shellV2.test.tsx` (flat sidebar, admin area, tab bar, gate on the new addresses), settings and ideas tests; e2e
+  `shell-v2.e2e.ts` (the flat list, tabs, redirects, flag off, the tab pages on a phone). Baselines regenerated: the v2
+  shots whose sidebar, bottom bar, top bar title or tab bar changed (list in the PR).
+- Owner questions UX4-1..UX4-8 (OPEN_QUESTIONS); UX3-9 marked done; owner-orders README row 8 updated.

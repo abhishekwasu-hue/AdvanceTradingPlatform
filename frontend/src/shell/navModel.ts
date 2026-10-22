@@ -23,7 +23,7 @@ import { IDEAS_ADDRESS, IDEA_FLAG } from "../ideas/model";
  * Settings → Setup (`/settings/setup`, UI2-7), My trading defaults (`/settings/trading-defaults`, part C) and the Settings section pages (`/settings/ai` ..., Settings redesign B). */
 export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | SettingsSectionKey;
 
-export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more";
+export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more" | "admin";
 
 export interface NavItemV2 {
   key: ShellKey;
@@ -50,11 +50,20 @@ export interface NavSectionV2 {
 const item = (key: ShellKey, label: string, title: string, path: string, icon: LucideIcon, extra: Partial<NavItemV2> = {}): NavItemV2 =>
   ({ key, label, title, path, icon, ...extra });
 
-/** The five sections plus More, in order (§2 "The v2 sections"; More holds the rarely used tools, UI-10). */
+/**
+ * UX3-9 (UX audit section 5, "The proposed sidebar"): 13 entries in task order, Broker first (pinned below), in one flat
+ * list - the sidebar shows no section headings and nothing folds away. The groups below only give the phone's More
+ * sheet its headings and the search results their captions. Two entries appear only with their feature on (Sectors &
+ * indices, Find setups, AI Copilot) and the Admin console only for the platform operator, set apart at the bottom.
+ *
+ * The merged pages (audit section 5 "Merge") are tabs of their entry (src/shell/pageGroups.ts): My trades (Positions ·
+ * Orders · Money), Strategies (Library · Ideas · Build · Test) and Performance (Results · Journal · Coach). Every other
+ * page keeps working and is found by search (NAV_EXTRAS_V2), so nothing a trader uses today becomes unreachable.
+ */
 export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
   {
     id: "markets", title: "Markets", items: [
-      item("dashboard", "Dashboard", "Today", "/", LayoutDashboard, { keywords: ["home", "overview", "today"] }),
+      item("dashboard", "Today", "Today", "/", LayoutDashboard, { keywords: ["home", "overview", "dashboard"] }),
       item("charts", "Charts", "Charts", "/charts", ChartCandlestick, { keywords: ["chart", "candles", "price"] }),
       item("option-chain", "Option chain", "Option chain", "/option-chain", Link2, { keywords: ["options", "oi", "pcr", "max pain"] }),
       // MO4 slice 2: the Sector & index view (v2 only, flag `markets_view`).
@@ -64,46 +73,28 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
     ],
   },
   {
-    id: "strategies", title: "Strategies", items: [
-      item("strategies", "Library", "Strategy library", "/strategies", Layers, { keywords: ["strategy library", "strategies"] }),
-      // Idea library slice 1 (flag idea_library): method ideas in plain words, each with a scan to try (education only).
-      item("ideas", "Ideas", "Idea library", IDEAS_ADDRESS, Lightbulb, { flag: IDEA_FLAG, keywords: ["idea library", "ideas", "learn", "methods", "price action"] }),
-      item("strategy-builder", "Build a strategy", "Build a strategy", "/strategy-builder", Pencil, { keywords: ["strategy builder", "create"] }),
-      item("backtest", "Test a strategy", "Test a strategy", "/backtest", History, { keywords: ["backtest", "backtesting"] }),
-      item("copilot", "AI Copilot", "AI Copilot", "/copilot", Sparkles, { flag: "ai_copilot", keywords: ["ai", "assistant", "watchtower"] }),
-      item("deployments", "Paper bot", "Paper bot", "/deployments", Bot, { keywords: ["autopilot", "deployments", "deploy", "running", "bots"] }),
-    ],
-  },
-  {
     id: "trading", title: "Trading", items: [
       item("signals", "Signals", "Signals", "/signals", Zap, { keywords: ["approvals", "alerts", "ideas"] }),
-      item("positions", "My positions", "My positions", "/positions", ListChecks, { keywords: ["positions", "holdings", "open trades"] }),
-      item("orders", "Orders", "Orders and fills", "/orders", ClipboardList, { keywords: ["fills", "trade history", "blotter"] }),
-      item("portfolio", "Portfolio", "My portfolio", "/portfolio", PieChart, { keywords: ["exposure", "money"] }),
-      item("risk-management", "Risk", "Risk limits", "/risk-management", Shield, { keywords: ["risk management", "limits", "daily loss"] }),
+      item("deployments", "Paper bot", "Paper bot", "/deployments", Bot, { keywords: ["autopilot", "deployments", "deploy", "running", "bots"] }),
+      item("positions", "My trades", "My trades", "/positions", ListChecks, { keywords: ["my positions", "positions", "holdings", "open trades", "closed trades"] }),
     ],
   },
   {
     id: "insights", title: "Insights", items: [
-      item("analytics", "Performance", "How am I doing?", "/analytics", BarChart3, { keywords: ["analytics", "p&l", "win rate"] }),
-      item("journal", "Journal", "Journal", "/journal", BookOpen, { flag: "discipline_engine", keywords: ["journal and discipline", "discipline"] }),
+      item("analytics", "Performance", "How am I doing?", "/analytics", BarChart3, { keywords: ["analytics", "p&l", "win rate", "results"] }),
+      item("strategies", "Strategies", "Strategies", "/strategies", Layers, { keywords: ["strategy library", "library"] }),
+      item("copilot", "AI Copilot", "AI Copilot", "/copilot", Sparkles, { flag: "ai_copilot", keywords: ["ai", "assistant", "watchtower"] }),
       item("news-events", "News & events", "News & events", "/news-events", Newspaper, { keywords: ["news", "events", "calendar"] }),
-      item("fundamentals", "Company research", "Company research", "/fundamentals", Building2, { keywords: ["fundamental analysis", "fundamentals"] }),
     ],
   },
   {
     id: "account", title: "Account", items: [
       item("settings", "Settings", "Settings", "/settings", Settings, { keywords: ["preferences", "appearance", "theme", "integrations", "webhook"] }),
-      item("team", "Team", "Team", "/team", Users, { keywords: ["members", "invite"] }),
-      item("notifications", "Notifications", "Notifications", "/notifications", Bell, { keywords: ["alerts", "inbox"] }),
     ],
   },
   {
-    id: "more", title: "More", items: [
-      item("quant", "Factor Lab", "Factor Lab", "/quant", Sigma, { keywords: ["quant", "factors"] }),
-      item("instruments", "Contract specs", "Contract specs", "/instruments", Box, { keywords: ["instruments", "lot size", "expiry"] }),
-      item("marketplace", "Marketplace", "Strategy marketplace", "/marketplace", Store, { flag: "marketplace", keywords: ["marketplace"] }),
-      item("system-logs", "Activity log", "Your account activity", "/system-logs", ScrollText, { keywords: ["system logs", "audit"] }),
+    // Audit section 5: the admin area is separate, not mixed into the user list (SUPER_ADMIN only; the server is the gate).
+    id: "admin", title: "Admin", items: [
       item("admin", "Admin console", "Admin console", "/admin", ShieldEllipsis, { role: "SUPER_ADMIN", keywords: ["admin", "platform"] }),
     ],
   },
@@ -134,9 +125,10 @@ export function moreButtonDot(dot: BrokerDot | null): BrokerDot | null {
 }
 
 /**
- * Pages that keep working but have no sidebar entry in v2: they are being merged into another page's tab (§3 M1, M2,
- * M3, M4; the tabs arrive in UI2-8). Until then they live at their new addresses and are found through search (the
- * command bar and the More sheet), so nothing a trader uses today becomes unreachable.
+ * Pages that keep working but have no sidebar entry: the tabs of a merged page (UX3-9, at their new addresses; the old
+ * addresses forward there), the sub-pages of Settings, and the rarely used tools the audit takes out of the user
+ * navigation (section 5 "Drop from the user navigation"). They are found through search (the command bar, the More
+ * sheet and the Settings index), so nothing a trader uses today becomes unreachable.
  */
 export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   { ...item("scanner", "Custom scan", "Custom scan", "/screener/custom", Radar, { keywords: ["market scanner", "scanner", "scan"] }), section: "markets" },
@@ -144,7 +136,22 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
     { flag: "options_builder", keywords: ["options builder", "payoff", "strategy"] }), section: "markets" },
   { ...item("chart-analyze", "Analyze a chart", "Analyze a chart", "/chart-analyze", ScanSearch,
     { flag: "chart_analyze", keywords: ["analyze chart", "analyse chart", "chart reading", "screenshot", "tradingview"] }), section: "markets" },
-  { ...item("coach", "Coach and guide", "Coach and guide", "/coach", GraduationCap, { keywords: ["trade coach", "guide", "learn"] }), section: "insights" },
+  // UX3-9: My trades' tabs (the old /orders and /portfolio forward here).
+  { ...item("orders", "Orders", "My trades", "/positions/orders", ClipboardList, { keywords: ["orders and fills", "fills", "trade history", "blotter"] }), section: "trading" },
+  { ...item("portfolio", "Money", "My trades", "/positions/money", PieChart, { keywords: ["portfolio", "my portfolio", "exposure", "where my money is"] }), section: "trading" },
+  // UX3-9: Strategies' tabs (Ideas keeps its own address; the old /strategy-builder and /backtest forward here).
+  // Idea library slice 1 (flag idea_library): method ideas in plain words, each with a scan to try (education only).
+  { ...item("ideas", "Ideas", "Strategies", IDEAS_ADDRESS, Lightbulb, { flag: IDEA_FLAG, keywords: ["idea library", "ideas", "learn", "methods", "price action"] }), section: "strategies" },
+  { ...item("strategy-builder", "Build a strategy", "Strategies", "/strategies/build", Pencil, { keywords: ["strategy builder", "create", "build"] }), section: "strategies" },
+  { ...item("backtest", "Test a strategy", "Strategies", "/strategies/test", History, { keywords: ["backtest", "backtesting", "test"] }), section: "strategies" },
+  // UX3-9: Performance's tabs (the old /journal, /coach and /journal/coach forward here).
+  { ...item("journal", "Journal", "How am I doing?", "/analytics/journal", BookOpen, { flag: "discipline_engine", keywords: ["journal and discipline", "discipline"] }), section: "insights" },
+  { ...item("coach", "Coach", "How am I doing?", "/analytics/coach", GraduationCap, { keywords: ["coach and guide", "trade coach", "guide", "learn"] }), section: "insights" },
+  { ...item("fundamentals", "Company research", "Company research", "/fundamentals", Building2, { keywords: ["fundamental analysis", "fundamentals"] }), section: "insights" },
+  // Settings' sub-pages (audit section 5: "set-once pages leave the main nav"); the Settings index lists them too.
+  { ...item("risk-management", "Risk limits", "Risk limits", "/risk-management", Shield, { keywords: ["risk", "risk management", "limits", "daily loss"] }), section: "account" },
+  { ...item("team", "Team", "Team", "/team", Users, { keywords: ["members", "invite"] }), section: "account" },
+  { ...item("notifications", "Notifications", "Notifications", "/notifications", Bell, { keywords: ["alerts", "inbox"] }), section: "account" },
   { ...item("account", "Account", "Account", "/settings/account", UserCircle2, { keywords: ["profile", "password", "two-factor", "sessions", "email"] }), section: "account" },
   // UI2-7: Settings → Setup, the setup wizard and the go-live checklist (§11); Settings v2 groups arrive with UI2-6.
   { ...item("setup", "Setup", "Setup", "/settings/setup", ListTodo, { keywords: ["set up your account", "setup wizard", "get started", "go-live checklist", "readiness"] }), section: "account" },
@@ -157,14 +164,39 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   { ...item("settings-appearance", "Appearance", "Appearance", SETTINGS_PATH.appearance, Palette, { keywords: ["theme", "dark mode", "light mode", "text size", "colour-blind", "reduce motion"] }), section: "account" },
   { ...item("settings-help", "Help & tips", "Help & tips", SETTINGS_PATH.help, LifeBuoy, { keywords: ["tips", "page tips", "tours", "show get started"] }), section: "account" },
   { ...item("settings-advanced", "Advanced", "Advanced", SETTINGS_PATH.advanced, Wrench, { keywords: ["webhook", "tradingview", "own telegram bot", "integrations"] }), section: "account" },
+  // Audit section 5 "Drop from the user navigation": still there, found by search.
+  { ...item("quant", "Factor Lab", "Factor Lab", "/quant", Sigma, { keywords: ["quant", "factors"] }), section: "more" },
+  { ...item("instruments", "Contract specs", "Contract specs", "/instruments", Box, { keywords: ["instruments", "lot size", "expiry"] }), section: "more" },
+  { ...item("marketplace", "Marketplace", "Strategy marketplace", "/marketplace", Store, { flag: "marketplace", keywords: ["marketplace"] }), section: "more" },
+  { ...item("system-logs", "Activity log", "Your account activity", "/system-logs", ScrollText, { keywords: ["system logs", "audit"] }), section: "more" },
 ];
 
-/** The phone bottom bar (§4): Home, Charts, Signals, Positions - and More, which opens the sheet. */
+/**
+ * UX3-9: the sidebar entry a page belongs to - a merged page's tab lights up its entry (Orders -> My trades), a Settings
+ * sub-page lights up Settings, a page's own sub-page its page (Custom scan -> Find setups). Null: none.
+ */
+const NAV_HOME: Partial<Record<ShellKey, ShellKey>> = {
+  orders: "positions", portfolio: "positions",
+  ideas: "strategies", "strategy-builder": "strategies", backtest: "strategies",
+  journal: "analytics", coach: "analytics",
+  scanner: "screener", "options-builder": "option-chain",
+  "risk-management": "settings", team: "settings", account: "settings", setup: "settings", "trading-defaults": "settings",
+  "settings-ai": "settings", "settings-alerts": "settings", "settings-appearance": "settings", "settings-help": "settings",
+  "settings-advanced": "settings",
+};
+
+/** The sidebar / bottom bar entry that shows as current for the page on screen. */
+export function navEntryFor(key: ShellKey | null): ShellKey | null {
+  if (key === null) return null;
+  return NAV_HOME[key] ?? key;
+}
+
+/** UX audit section 5: the phone bottom bar - Today, Charts, Signals, My trades - and More, which opens the sheet. */
 export const BOTTOM_BAR_V2: readonly { key: ShellKey; label: string }[] = [
-  { key: "dashboard", label: "Home" },
+  { key: "dashboard", label: "Today" },
   { key: "charts", label: "Charts" },
   { key: "signals", label: "Signals" },
-  { key: "positions", label: "Positions" },
+  { key: "positions", label: "My trades" },
 ];
 
 /** Who is looking and which flags are on - all the navigation needs to decide what to list. */
@@ -219,7 +251,10 @@ export function moreSheetSections(ctx: NavContext): NavSectionV2[] {
     .filter((s) => s.items.length > 0);
 }
 
-const SECTION_TITLES: Record<SectionId, string> = Object.fromEntries(NAV_SECTIONS_V2.map((s) => [s.id, s.title])) as Record<SectionId, string>;
+/** The caption of each group (search results, the More sheet); "Strategies" and "More" only caption search results. */
+const SECTION_TITLES: Record<SectionId, string> = {
+  markets: "Markets", strategies: "Strategies", trading: "Trading", insights: "Insights", account: "Account", more: "More", admin: "Admin",
+};
 export const sectionTitle = (id: SectionId): string => SECTION_TITLES[id];
 
 const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}&?]+/gu, " ").trim();

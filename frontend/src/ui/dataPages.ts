@@ -26,12 +26,21 @@ export const DATA_PAGES: readonly DataPage[] = [
   { path: "/positions", why: "Open positions marked at live prices" },
   { path: "/portfolio", why: "Holdings and exposure at live prices" },
   { path: "/backtest", why: "Backtests run on broker candles" },
+  // UX3-9: Strategies › Test, the backtest's new address (`/positions/money`, the portfolio, is under /positions).
+  { path: "/strategies/test", why: "Backtests run on broker candles" },
   { path: "/quant", why: "Factor studies run on broker candles" },
   { path: "/copilot", why: "Market pulse and strategy ideas read live market data" },
 ];
 
+/**
+ * UX3-9: sub-paths of a data page that are not data pages themselves - My trades › Orders (`/positions/orders`) is the
+ * trader's own order record, which worked without a broker session at `/orders` and still does.
+ */
+export const NOT_DATA_SUBPATHS: readonly string[] = ["/positions/orders"];
+
 /** True when `pathname` is a data page or one of its sub-paths (`/copilot/market-pulse`, `/charts/NIFTY`). */
 export function isDataPath(pathname: string): boolean {
   const clean = `/${pathname.replace(/^\/+|\/+$/g, "")}`;
+  if (NOT_DATA_SUBPATHS.includes(clean)) return false;
   return DATA_PAGES.some(({ path }) => (path === "/" ? clean === "/" : clean === path || clean.startsWith(`${path}/`)));
 }

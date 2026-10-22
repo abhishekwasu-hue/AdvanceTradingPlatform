@@ -62,7 +62,7 @@ export function ActiveSignalsV2({ data }: { data: Rows<SignalRow> }) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-space-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-space-2">
-                    <span className="text-t15 font-semibold text-fg">{s.symbol}</span>
+                    <span className="min-w-0 text-t15 font-semibold text-fg [overflow-wrap:anywhere]">{s.symbol}</span>
                     <span className={`inline-flex items-center gap-px text-t14 font-medium ${s.side === "Long" ? "text-up" : "text-down"}`}>
                       {s.side === "Long" ? <ArrowUpRight size={14} aria-hidden /> : <ArrowDownRight size={14} aria-hidden />}{s.side}
                     </span>

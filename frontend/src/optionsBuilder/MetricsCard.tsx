@@ -16,7 +16,7 @@ function Row({ label, value, tone, hint, sub, testId }: {
         <dt className="text-xs text-fg-muted">{label}</dt>
         <dd className={cx("text-right font-mono text-sm tabular-nums", tone === "up" ? "text-up" : tone === "down" ? "text-down" : tone === "warn" ? "text-warn" : "text-fg")}>{value}</dd>
       </div>
-      {sub && <p className="mt-0.5 text-[11px] leading-snug text-fg-muted">{sub}</p>}
+      {sub && <p className="mt-0.5 text-xs leading-snug text-fg-muted">{sub}</p>}
     </div>
   );
 }
@@ -34,7 +34,7 @@ function RiskGauge({ maxLoss, maxProfit }: { maxLoss: number; maxProfit: number 
         <path d="M10,50 A40,40 0 0 1 90,50" className="fill-none stroke-up/60" strokeWidth={9} />
         <path d="M10,50 A40,40 0 0 1 90,50" className="fill-none stroke-down" strokeWidth={9} strokeDasharray={`${arc * share} ${arc}`} />
       </svg>
-      <div className="text-[11px] leading-snug text-fg-muted">
+      <div className="text-xs leading-snug text-fg-muted">
         <div><span className="font-semibold text-down">Risk</span> {Math.round(share * 100)}% of the range</div>
         <div>{money(-loss)} to {money(maxProfit)}</div>
       </div>
@@ -57,7 +57,7 @@ export function MetricsCard({ evaluation: e, stale = false }: { evaluation: Eval
   const cost = e.costs;
   return (
     <aside aria-label="Metrics" aria-busy={stale} className={cx("rounded-xl border border-border bg-surface-1 p-4", stale && "opacity-60")} data-testid="metrics">
-      {stale && <p className="mb-2 text-[11px] text-fg-muted" data-testid="metrics-stale">Updating for your last change…</p>}
+      {stale && <p className="mb-2 text-xs text-fg-muted" data-testid="metrics-stale">Updating for your last change…</p>}
       <h2 className="text-sm font-semibold text-fg">The strategy</h2>
       <dl className="mt-2 divide-y divide-border/60">
         <Row label={net >= 0 ? "Net credit" : "Net debit"} value={money(Math.abs(net))} tone={net >= 0 ? "up" : undefined} testId="metric-net" />
@@ -84,18 +84,18 @@ export function MetricsCard({ evaluation: e, stale = false }: { evaluation: Eval
       </dl>
       <dl className="mt-2 grid grid-cols-4 gap-2 rounded-lg bg-surface-2 px-2 py-2 text-center" aria-label="Net Greeks">
         {([["Delta", g.delta.toFixed(1)], ["Gamma", g.gamma.toFixed(3)], ["Theta", g.theta.toFixed(0)], ["Vega", g.vega.toFixed(0)]] as const).map(([k, v]) => (
-          <div key={k} className="min-w-0"><dt className="text-[10px] text-fg-muted">{k}</dt><dd className="truncate font-mono text-xs tabular-nums text-fg">{v}</dd></div>
+          <div key={k} className="min-w-0"><dt className="text-xs text-fg-muted">{k}</dt><dd className="truncate font-mono text-xs tabular-nums text-fg">{v}</dd></div>
         ))}
       </dl>
       {ext && !ext.unbounded_loss && ext.max_loss != null && ext.max_loss < 0 && ext.max_profit != null && (
         <RiskGauge maxLoss={ext.max_loss} maxProfit={ext.max_profit} />
       )}
       {ext?.unbounded_loss && (
-        <p className="mt-3 rounded-md border border-warn/40 bg-warn/10 px-2 py-1.5 text-[11px] text-warn" data-testid="risk-undefined">
+        <p className="mt-3 rounded-md border border-warn/40 bg-warn/10 px-2 py-1.5 text-xs text-warn" data-testid="risk-undefined">
           Undefined risk: the loss has no cap. Add a hedge leg to cap it.
         </p>
       )}
-      <p className="mt-3 text-[11px] leading-snug text-fg-muted">
+      <p className="mt-3 text-xs leading-snug text-fg-muted">
         {e.summary.method === "" ? "" : `${e.summary.method[0].toUpperCase()}${e.summary.method.slice(1)}. `}{e.disclaimer}
       </p>
     </aside>

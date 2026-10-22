@@ -46,15 +46,15 @@ export default function WhatsAppSection({ channel, busy, run, test, status }: Wh
   return (
     <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2" data-testid="whatsapp-section">
       <div className="flex items-center gap-2 text-sm font-bold text-fg"><MessageCircle size={14} /> WhatsApp (Business gateway, paid plans)</div>
-      <div className="text-[11px]">{status}</div>
-      <p className="text-[11px] text-fg-muted">
+      <div className="text-xs">{status}</div>
+      <p className="text-xs text-fg-muted">
         WhatsApp delivers alerts only as a template your provider has approved, to numbers that opted in to messages from
         your organisation. Placeholders: {"{to} {template} {language} {title} {text} {severity}"}.
       </p>
       <input className={input} placeholder="Gateway URL (https)" value={wa.url} onChange={(e) => setWa({ ...wa, url: e.target.value })} />
-      <textarea className={`${input} font-mono text-[11px]`} rows={2} placeholder="Headers, one per line: Name: value (blank = keep stored)"
+      <textarea className={`${input} font-mono text-xs`} rows={2} placeholder="Headers, one per line: Name: value (blank = keep stored)"
                 value={wa.headers} onChange={(e) => setWa({ ...wa, headers: e.target.value })} />
-      <textarea className={`${input} font-mono text-[11px]`} rows={3} placeholder="Body template with {template} and {to}"
+      <textarea className={`${input} font-mono text-xs`} rows={3} placeholder="Body template with {template} and {to}"
                 value={wa.body_template} onChange={(e) => setWa({ ...wa, body_template: e.target.value })} />
       <div className="grid grid-cols-3 gap-2">
         <input className={input} placeholder="Approved template name" value={wa.template_name} onChange={(e) => setWa({ ...wa, template_name: e.target.value })} />

@@ -244,7 +244,7 @@ async def login(request: LoginRequest, http_request: Request, response: Response
         reason = "unknown_email" if user is None else "inactive" if not user.is_active else "bad_password"
         await record_login_event(session, email=email, user=user, success=False, reason=reason, request=http_request)
         await session.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Wrong email or password.")
 
     if user.mfa_enabled:
         # Password is right; the session only starts once the authenticator code checks out.

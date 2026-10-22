@@ -50,7 +50,7 @@ export default function SystemLogsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+              <thead className="text-fg-muted uppercase text-xs tracking-wide">
                 <tr className="text-left"><th className="py-1 pr-3">Time</th><th className="py-1 pr-3">Result</th><th className="py-1 pr-3">IP</th><th className="py-1 pr-3">Device</th></tr>
               </thead>
               <tbody>
@@ -74,7 +74,7 @@ export default function SystemLogsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+              <thead className="text-fg-muted uppercase text-xs tracking-wide">
                 <tr className="text-left">
                   <th className="py-1 pr-3">Time</th>
                   <th className="py-1 pr-3">Event</th>

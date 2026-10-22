@@ -12,7 +12,7 @@ export function OiBannerView({ data, compact = false }: { data: OiBannerResponse
          role="status" aria-label={`${data.underlying} OI banner: ${lines.tone.label}`}>
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-xs font-semibold text-fg-muted">{data.underlying} · OI</span>
-        <span className={`text-[11px] font-bold uppercase ${lines.tone.text}`}>{lines.tone.label}</span>
+        <span className={`text-xs font-bold uppercase ${lines.tone.text}`}>{lines.tone.label}</span>
       </div>
       <div className={`mt-1 font-semibold ${compact ? "text-sm" : "text-base"} ${lines.tone.text}`}>{lines.headline}</div>
       {lines.classes && <div className="mt-1 text-xs text-fg">{lines.classes}</div>}
@@ -20,7 +20,7 @@ export function OiBannerView({ data, compact = false }: { data: OiBannerResponse
       {lines.chips.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {lines.chips.map((c) => (
-            <span key={c} className={`rounded-full border px-2 py-0.5 text-[11px] ${isLateChip(c) ? "border-warn text-warn" : "border-border text-fg-muted"}`}>{c}</span>
+            <span key={c} className={`rounded-full border px-2 py-0.5 text-xs ${isLateChip(c) ? "border-warn text-warn" : "border-border text-fg-muted"}`}>{c}</span>
           ))}
         </div>
       )}

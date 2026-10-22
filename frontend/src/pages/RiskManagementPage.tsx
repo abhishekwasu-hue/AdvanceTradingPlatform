@@ -129,7 +129,7 @@ export default function RiskManagementPage() {
         <div className="grid sm:grid-cols-2 gap-4">
           {FIELDS.map((f) => (
             <div key={f.key}>
-              <label className="block text-xs text-fg-muted mb-1">{f.label}{f.ceiling && ceilings ? <span className="text-[10px] text-fg-muted"> · ceiling {ceilings[f.ceiling]}</span> : null}</label>
+              <label className="block text-xs text-fg-muted mb-1">{f.label}{f.ceiling && ceilings ? <span className="text-xs text-fg-muted"> · ceiling {ceilings[f.ceiling]}</span> : null}</label>
               <input
                 type="number"
                 step={f.step ?? "1"}
@@ -142,11 +142,11 @@ export default function RiskManagementPage() {
         </div>
 
         <div className="mt-4 text-xs font-bold uppercase tracking-wide text-fg-muted">Risk Guardian rules</div>
-        <p className="text-[11px] text-fg-muted mb-2">Enforced by the engine on every entry, paper or live, whatever built the strategy. Values cannot exceed the platform ceilings.</p>
+        <p className="text-xs text-fg-muted mb-2">Enforced by the engine on every entry, paper or live, whatever built the strategy. Values cannot exceed the platform ceilings.</p>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {GUARDIAN_FIELDS.map((f) => (
             <div key={f.key}>
-              <label className="block text-xs text-fg-muted mb-1" title={f.help}>{f.label}{f.ceiling && ceilings ? <span className="text-[10px] text-fg-muted"> · ceiling {ceilings[f.ceiling]}</span> : null}</label>
+              <label className="block text-xs text-fg-muted mb-1" title={f.help}>{f.label}{f.ceiling && ceilings ? <span className="text-xs text-fg-muted"> · ceiling {ceilings[f.ceiling]}</span> : null}</label>
               <input
                 type="number"
                 step={f.step ?? "1"}
@@ -155,7 +155,7 @@ export default function RiskManagementPage() {
                 value={config[f.key]}
                 onChange={(e) => setConfig({ ...config, [f.key]: Number(e.target.value) })}
               />
-              <div className="text-[10px] text-fg-muted mt-0.5">{f.help}</div>
+              <div className="text-xs text-fg-muted mt-0.5">{f.help}</div>
             </div>
           ))}
         </div>
@@ -196,7 +196,7 @@ export default function RiskManagementPage() {
               );
             })}
           </div>
-          <div className="mt-3 text-[11px] text-fg-muted">
+          <div className="mt-3 text-xs text-fg-muted">
             The drawdown ladder halves the risk per trade at {guardian.settings.dd_level_1_pct}% below the equity peak and pauses new entries at {guardian.settings.dd_level_2_pct}%; the multiplier never rises above 1 after a winning streak. Exits are never blocked.
           </div>
         </Card>
@@ -224,7 +224,7 @@ export default function RiskManagementPage() {
           <div className="mt-3 text-xs text-fg-muted">No events in the next 30 days.</div>
         ) : (
           <table className="w-full text-xs mt-3">
-            <thead className="text-fg-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Date</th><th className="py-1 pr-3">Scope</th><th className="py-1 pr-3">Kind</th><th className="py-1 pr-3">Action</th><th className="py-1 pr-3">Window</th><th className="py-1 pr-3">Description</th><th className="py-1 text-right"></th></tr></thead>
+            <thead className="text-fg-muted uppercase text-xs tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Date</th><th className="py-1 pr-3">Scope</th><th className="py-1 pr-3">Kind</th><th className="py-1 pr-3">Action</th><th className="py-1 pr-3">Window</th><th className="py-1 pr-3">Description</th><th className="py-1 text-right"></th></tr></thead>
             <tbody>
               {events.map((ev) => (
                 <tr key={ev.id} className="border-t border-border">

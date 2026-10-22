@@ -58,7 +58,7 @@ export default function GuideChat({ plain = false }: { plain?: boolean }) {
       {browse && (
         <div className="mb-2 flex flex-wrap gap-1">
           {concepts.map((c) => (
-            <button key={c.id} onClick={() => void openConcept(c.id)} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-fg hover:bg-surface-2">{c.title}</button>
+            <button key={c.id} onClick={() => void openConcept(c.id)} className="rounded-full border border-border px-2 py-0.5 text-xs text-fg hover:bg-surface-2">{c.title}</button>
           ))}
         </div>
       )}
@@ -76,14 +76,14 @@ export default function GuideChat({ plain = false }: { plain?: boolean }) {
             {t.a && (
               <div className="max-w-[95%] rounded-lg bg-surface-3 px-3 py-2 text-sm text-fg">
                 <div className="whitespace-pre-wrap leading-relaxed">{t.a.answer}</div>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px]">
+                <div className="mt-1.5 flex flex-wrap items-center gap-1 text-xs">
                   <span className={`rounded px-1.5 py-0.5 ${t.a.source === "ai" ? "bg-surface-2 text-fg-muted" : "border border-border text-fg"}`}>{t.a.source === "ai" ? "AI" : "Concept library"}</span>
                   {t.a.used_market_memory && <span className="rounded bg-surface-2 px-1.5 py-0.5 text-fg-muted">Market memory</span>}
                   {t.a.related.map((r) => (
                     <button key={r.id} onClick={() => void openConcept(r.id)} className="rounded-full border border-border px-2 py-0.5 text-fg hover:bg-surface-2">{r.title}</button>
                   ))}
                 </div>
-                {t.a.note && <div className="mt-1 text-[11px] text-warn">{t.a.note}</div>}
+                {t.a.note && <div className="mt-1 text-xs text-warn">{t.a.note}</div>}
               </div>
             )}
             {t.error && <div className="text-xs text-down">{t.error}</div>}
@@ -97,7 +97,7 @@ export default function GuideChat({ plain = false }: { plain?: boolean }) {
                className="flex-1 rounded border border-border bg-surface-2 px-3 py-1.5 text-sm" />
         <button disabled={busy || question.trim().length < 2} className="rounded bg-brand px-3 py-1.5 text-xs font-bold text-on-brand hover:bg-brand-strong disabled:opacity-40"><Send size={12} className="mr-1 inline" />Ask</button>
       </form>
-      <div className="mt-1 text-[11px] text-fg-muted">Information for learning - never advice on what to buy or sell.</div>
+      <div className="mt-1 text-xs text-fg-muted">Information for learning - never advice on what to buy or sell.</div>
     </>
   );
   return (

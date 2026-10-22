@@ -281,7 +281,9 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const error = await apiErrorFrom(response);
     // P0.1: the analysis endpoints (backtest, scanner, S/R zones, option chain) need a login now; an anonymous
     // visitor gets a plain sentence instead of a raw 401 body.
-    if (response.status === 401 && !getToken()) {
+    // Handover 8d: never on the sign-in routes themselves - a wrong email or password at login is a 401 before any
+    // token exists, and must show the server's own sentence ("Wrong email or password."), not "sign in".
+    if (response.status === 401 && !getToken() && !path.startsWith("/auth/")) {
       throw new ApiError(401, "Sign in from the Account page to use this feature.", error.detail, error.body, error.requestId);
     }
     // P0.8-D: an AI route before the first-use acknowledgement - every open acknowledgement gate re-reads its state

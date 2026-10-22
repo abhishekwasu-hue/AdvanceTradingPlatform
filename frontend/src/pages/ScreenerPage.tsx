@@ -5,7 +5,7 @@
  *
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
-import { Code2, Layers, LayoutGrid, Lightbulb, Play, Save } from "lucide-react";
+import { BellRing, Code2, History, Layers, LayoutGrid, Lightbulb, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -13,7 +13,7 @@ import { ApiError } from "../api/errors";
 import { Button, cx, Dialog } from "../components/primitives";
 import { useToast } from "../components/Toast";
 import type { PageProps } from "../routes";
-import { screenerApi, type PreviewResponse, type RunResponse } from "../screener/api";
+import { screenerApi, type IdeaResponse, type PreviewResponse, type RunResponse } from "../screener/api";
 import { FreshnessPill } from "../screener/FreshnessPill";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
@@ -35,11 +35,15 @@ import { ErrorState } from "../ui/ErrorState";
 import { COMING_SOON_MESSAGE } from "../api/errors";
 import { ideasApi } from "../ideas/api";
 import { ideaScanFromSearch, scanName } from "../ideas/model";
+import { addVersion, readStore, readsOf, snapshot, writeStore, type ScanVersion, type VersionStore } from "../screener/versions";
 
 // Handover 11c-1 (flag `strategy_lab_pine`): the Pine Script panel loads only when it is opened.
 const PinePanel = lazy(() => import("../lab/pine/PinePanel"));
 // Handover 11j (flag `screener_copilot`, behind `ui_v2`): a scan from a plain idea, part by part, as editable blocks.
 const IdeaPanel = lazy(() => import("../screener/IdeaPanel"));
+// Handover 11j steps 6-7 (same flags): the saved scan's versions (kept on this device) and "Tell me when it matches".
+const ScanVersionsPanel = lazy(() => import("../screener/ScanVersionsPanel"));
+const ScanAlertPanel = lazy(() => import("../screener/ScanAlertPanel"));
 
 const VALIDATE_DELAY_MS = 350;
 /** D2 live counts: a preview run (not stored) once the trader pauses editing, on bars the server caches per symbol. */
@@ -105,6 +109,11 @@ export default function ScreenerPage(_props: PageProps) {
   // MO4 slice 4: "Today's setups from your scans", the page's ready-made dish (ui_v2 + growth_v2).
   const dishOn = features.on("growth_v2") && features.on("ui_v2");
   const [ideaOpen, setIdeaOpen] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [ideaReads, setIdeaReads] = useState<Record<string, string>>({});     // a scan from an idea: block -> its plain words
+  const [versionStore, setVersionStore] = useState<VersionStore>(() => readStore());
+  const scanVersions = savedId != null ? versionStore[String(savedId)] ?? [] : [];
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries))
@@ -138,12 +147,14 @@ export default function ScreenerPage(_props: PageProps) {
     }).catch((e: unknown) => setOtherProblem(errorText(e)));
   };
 
-  const openIdea = (server: ServerStage[], baseTf: string) => {
+  const openIdea = (server: ServerStage[], baseTf: string, parts: IdeaResponse["parts"] = []) => {
     if (!registry) return;
     if (stages.length > 0 && !window.confirm("Replace the current conditions with the scan from your idea?")) return;
+    setIdeaReads(readsOf(parts));
     setStages(stagesFromServer(registry, server));
     setScanTf(baseTf);
     setName("Scan from my idea");
+    setSavedId(undefined);                             // a scan from an idea is a new scan (its own versions and alerts)
     setIdeaOpen(false);
   };
 
@@ -254,15 +265,34 @@ export default function ScreenerPage(_props: PageProps) {
     handle?.focus({ preventScroll: true });
   };
 
-  const doSave = async () => {
-    if (!text) return;
+  /** Saves the scan as it is now; its id, or null (the toast says why). With 11j on, a save that changes the scan adds
+   * a version to its history on this device. */
+  const saveNow = async (): Promise<number | null> => {
+    if (!text) return null;
     try {
       const saved = await screenerApi.save(name.trim() || "Untitled scan", text, scanTf, savedId);
       setSavedId(saved.id);
+      if (ideaOn && registry) {
+        const next = addVersion(readStore(), saved.id, snapshot(registry, saved.name, scanTf, stages, new Date(), ideaReads));
+        writeStore(next);
+        setVersionStore(next);
+      }
       toast.success(`Saved "${saved.name}".`);
+      return saved.id;
     } catch (e) {
       toast.error(errorText(e));
+      return null;
     }
+  };
+  const doSave = async () => { await saveNow(); };
+
+  const openVersion = (v: ScanVersion) => {
+    const n = scanVersions.indexOf(v) + 1;
+    setStages(v.stages);
+    setScanTf(v.base_tf);
+    setName(v.name);
+    setVersionsOpen(false);
+    toast.success(`Version ${n} is in the builder. Save to keep it as the newest version.`);
   };
 
   // the counts shown: the run's while the scan is the one that ran, else a live preview's for the current scan
@@ -297,6 +327,12 @@ export default function ScreenerPage(_props: PageProps) {
         {etfOn && <Button size="sm" onClick={() => setEtfOpen(true)} data-testid="etf-open"><LayoutGrid size={14} /> ETFs</Button>}
         {ideaOn && <Button size="sm" onClick={() => setIdeaOpen(true)} data-testid="idea-open-dialog"><Lightbulb size={14} /> From an idea</Button>}
         {pineOn && <Button size="sm" onClick={() => setPineOpen(true)} data-testid="pine-open"><Code2 size={14} /> Pine Script</Button>}
+        {ideaOn && (
+          <Button size="sm" onClick={() => setAlertOpen(true)} disabled={!text} data-testid="scan-alert-open"><BellRing size={14} /> Tell me when it matches</Button>
+        )}
+        {ideaOn && scanVersions.length > 0 && (
+          <Button size="sm" onClick={() => setVersionsOpen(true)} data-testid="scan-versions-open"><History size={14} /> Versions ({scanVersions.length})</Button>
+        )}
         <div className="hidden items-center gap-2 sm:flex">
           <Button size="sm" onClick={() => void doSave()} disabled={!text}><Save size={14} /> Save</Button>
           <Button size="sm" variant="primary" onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan">
@@ -400,6 +436,29 @@ export default function ScreenerPage(_props: PageProps) {
           {ideaOpen && (
             <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
               <IdeaPanel baseTf={scanTf} onOpen={openIdea} />
+            </Suspense>
+          )}
+        </Dialog>
+      )}
+
+      {ideaOn && (
+        <Dialog open={alertOpen} onOpenChange={setAlertOpen} title="Tell me when it matches"
+                description="Get a message when a symbol from your list passes this scan.">
+          {alertOpen && (
+            <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
+              <ScanAlertPanel name={name} symbols={symbols} scanTf={scanTf} screenId={savedId} save={saveNow}
+                              intrabar={features.on("screener_intrabar")} />
+            </Suspense>
+          )}
+        </Dialog>
+      )}
+
+      {ideaOn && (
+        <Dialog open={versionsOpen} onOpenChange={setVersionsOpen} title="Versions of this scan"
+                description="Every save that changes the scan is a version. Open an older one to go back to it.">
+          {versionsOpen && (
+            <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
+              <ScanVersionsPanel versions={scanVersions} onOpen={openVersion} />
             </Suspense>
           )}
         </Dialog>

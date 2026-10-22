@@ -3110,6 +3110,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_tpl8_b10_gap.py` (companion, must fire / must not, session clock, mirror, truncation, scan =
   backtest = options backtest = worker, property tests, words, ids, adapter, flags, API), runtime fixture, causal cases
   (lookahead job), history sweep, BK registry tests. Questions TPL-Q58..TPL-Q63.
+## 22 Oct - Strategy Lab 11j: edits on a scan from an idea, versions, "Tell me when it matches" (behind screener_copilot + ui_v2)
+
+- Branch `claude/lab-11j-scan-edits`. No migration, no new flag (the #374 flags).
+- Backend `app/screener/idea_edits.py`: edits by chat read deterministically (remove by the part's topic and chart, add
+  through the idea reader, a contradicting part on the same chart replaced, change / instead of, timeframe moves), one
+  plain feedback line per edit; `POST /api/screener/copilot/idea` takes `edits` (at most 20) and replays the idea with
+  them, so every part is validated and gated as before; the answer carries `edits` (feedback) and the scan's timeframe.
+- Frontend: the idea dialog's "Change it in plain words" box with examples, the feedback line and the versions (each with
+  what changed from the one before; any version opens as blocks); the Screener's "Versions" (a saved scan's history on
+  this device, `src/screener/versions.ts`, LAB-18) and "Tell me when it matches" (saves the scan, then an ordinary
+  bar-close screen alert rule on the Universe symbols via `POST /api/alerts/rules`; the alerts already on the scan with
+  Pause / Turn back on).
+- Tests: `tests/test_idea_edits.py`; vitest `src/screener/scanEdits.test.tsx`; e2e `e2e/screener-idea-v2.e2e.ts` (edit,
+  versions, alert flows; the 1440 baselines refreshed). Screenshots `docs/screenshots/lab11j/`. Questions LAB-18..LAB-22.
 
 ## 22 Oct - MO2A-2: Cloudflare Workers AI as a user-key AI provider (behind ui_v2 + ai_one_key)
 

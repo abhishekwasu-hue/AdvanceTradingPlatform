@@ -2029,6 +2029,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
 
+## Handover 11c-1: Pine Script subset -> ScreenQL, never executed (flag `strategy_lab_pine`, off)
+
+- Branch `claude/lab1-pine-subset` (from main). No migration. Host mode (ADR-0027): no runner, nothing executed.
+- `backend/app/lab/pine/`: `tokens.py` (single-pass scanner, size / line / token limits), `parser.py` (recursive descent,
+  Pine precedence, nesting and operator limits, per-line recovery), `translate.py` (Pine tree -> ScreenQL nodes from a
+  fixed table; inputs -> `$params` with bounds; signal conditions from `strategy.entry / close` in `if` or `when=`,
+  `alertcondition`, `plotshape / plotchar`; sizing and stops reported and ignored; look-ahead refused for the whole
+  script; every condition validated by `compile_screen`), `words.py` (plain words), `templates.py` (5 templates),
+  `routes.py` (`/api/lab/pine/templates`, `/translate`, `/run` through the Screener's run path).
+- Frontend: `src/lab/pine/` (PinePanel, lazy, in a "Pine Script" dialog on the Screener when the flag is on).
+- Docs: `docs/design/PINE_SUBSET.md` (the subset); questions PINE-1..PINE-7 in `docs/OPEN_QUESTIONS.md`.
+- Tests: `tests/test_lab_pine_{translate,parity,fuzz,routes}.py`, `src/lab/pine/PinePanel.test.tsx`; routes classified in
+  `tests/tenancy_route_table.py`; `app/lab` added to the mypy gate.
 ## FNO-1: option chain trading + the one order ticket, PAPER only (owner order ATP_SESSION_FNO_WORKSPACE.md 3, 6, 8b-l, 9)
 
 - Branch `claude/fno1-chain-ticket` (from main). Behind `ui_v2` + `paper_account` (OPEN_QUESTIONS FNO-1-1). No

@@ -3,13 +3,14 @@ from datetime import datetime, timezone
 
 from app.brokers.models import BrokerPosition
 from app.db.models import TradeRecord, User
+from tests.broker_fakes import KITE_KEY
 from tests.test_auth_api import _register, _session_factory, client
 
 
 def _store_credentials(headers):
     stored = client.post(
         "/api/broker/zerodha/credentials", headers=headers,
-        json={"api_key": "k", "access_token": "t"},
+        json={"api_key": KITE_KEY, "access_token": "t"},
     )
     assert stored.status_code == 204, stored.text
 

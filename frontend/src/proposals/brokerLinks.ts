@@ -66,6 +66,26 @@ export function brokerAppLink(a: Pick<AiAction, "action" | "status" | "ticket">)
   }
 }
 
+const KITE_FNO_EXCHANGES = new Set(["NFO", "BFO"]);
+
+/** FNO-2: an F&O basket for Kite, from the server's legs (Kite's own contract symbols from the instrument master,
+ * hedge legs first). Null when any leg is not a plain whole-quantity order on NFO / BFO or there is no publisher key. */
+export function kiteFnoBasketLink(orders: { tradingsymbol: string; exchange: string; transaction_type: "BUY" | "SELL"; quantity: number }[],
+                                  apiKey: string): BrokerAppLink | null {
+  const key = (apiKey || "").trim();
+  if (!key || !orders.length) return null;
+  const basket: KiteBasketOrder[] = [];
+  for (const o of orders) {
+    const exchange = (o.exchange || "").toUpperCase();
+    const symbol = (o.tradingsymbol || "").toUpperCase();
+    if (!KITE_FNO_EXCHANGES.has(exchange) || !KITE_SYMBOL.test(symbol) || !Number.isInteger(o.quantity) || o.quantity <= 0) return null;
+    if (o.transaction_type !== "BUY" && o.transaction_type !== "SELL") return null;
+    basket.push({ variety: "regular", tradingsymbol: symbol, exchange, transaction_type: o.transaction_type, order_type: "MARKET", quantity: o.quantity, readonly: false });
+  }
+  return { broker: "zerodha", brokerLabel: "Kite", method: "POST", action: KITE_BASKET_URL, fields: { api_key: key, data: JSON.stringify(basket) },
+           summary: basket.map((o) => `${o.transaction_type} ${o.quantity} ${o.tradingsymbol}`).join(", ") };
+}
+
 /** Opens the broker's own page in a new tab by submitting the form there. Nothing else is sent anywhere. */
 export function openBrokerAppLink(link: BrokerAppLink, doc: Document = document): void {
   const form = doc.createElement("form");

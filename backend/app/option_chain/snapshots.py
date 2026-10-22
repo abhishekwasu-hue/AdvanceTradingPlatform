@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -107,8 +108,10 @@ def _window(chain: OptionChain, span: int) -> List[OptionChainRow]:
 
 
 async def collect(session: AsyncSession, underlying: str, chain: OptionChain, now: datetime, *, source: str = "worker",
-                  span: Optional[int] = None, slot_minutes: Optional[int] = None) -> CollectResult:
-    """Stores one slot of `chain`. Idempotent per (underlying, slot); does not commit."""
+                  span: Optional[int] = None, slot_minutes: Optional[int] = None, future_price: Optional[float] = None,
+                  future_oi: Optional[float] = None) -> CollectResult:
+    """Stores one slot of `chain`. Idempotent per (underlying, slot); does not commit. `future_price` / `future_oi`: the
+    near-month future's quote read in the same slot (OC5), None when the broker's quote did not carry them."""
     underlying = normalise_underlying(underlying)
     now = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
     ist = now.astimezone(IST)
@@ -122,7 +125,8 @@ async def collect(session: AsyncSession, underlying: str, chain: OptionChain, no
     try:
         async with session.begin_nested():
             snap = OISnapshotRecord(underlying=underlying, trade_date=ist.date(), slot_start=slot, captured_at=now, expiry=expiry,
-                                    underlying_price=chain.underlying_ltp, strikes=len(rows), source=source[:30])
+                                    underlying_price=chain.underlying_ltp, strikes=len(rows), source=source[:30],
+                                    future_price=_positive(future_price), future_oi=_non_negative(future_oi))
             session.add(snap)
             await session.flush()
             for r in rows:
@@ -140,6 +144,14 @@ async def collect(session: AsyncSession, underlying: str, chain: OptionChain, no
     return CollectResult("OK", slot, len(rows), len(new))
 
 
+def _positive(value: Optional[float]) -> Optional[float]:
+    return float(value) if isinstance(value, (int, float)) and math.isfinite(value) and value > 0 else None
+
+
+def _non_negative(value: Optional[float]) -> Optional[float]:
+    return float(value) if isinstance(value, (int, float)) and math.isfinite(value) and value >= 0 else None
+
+
 # ---------------------------------------------------------------- reading
 
 @dataclass(frozen=True)
@@ -147,6 +159,8 @@ class SlotChain:
     slot_start: datetime
     captured_at: datetime
     chain: OptionChain
+    future_price: Optional[float] = None       # OC5: the near-month future in the same slot (None when not read)
+    future_oi: Optional[float] = None
 
 
 async def day_chains(session: AsyncSession, underlying: str, day: date) -> List[SlotChain]:
@@ -160,8 +174,49 @@ async def day_chains(session: AsyncSession, underlying: str, day: date) -> List[
         by_snap[r.snapshot_id].append(OptionChainRow(strike=r.strike, call_oi=r.call_oi, put_oi=r.put_oi, call_ltp=r.call_ltp,
                                                      put_ltp=r.put_ltp, call_iv=r.call_iv, put_iv=r.put_iv))
     return [SlotChain(_utc(s.slot_start), _utc(s.captured_at), OptionChain(underlying=underlying, expiry=s.expiry.isoformat() if s.expiry else "",
-                                                                         underlying_ltp=s.underlying_price, rows=by_snap[s.id]))
+                                                                         underlying_ltp=s.underlying_price, rows=by_snap[s.id]),
+                      s.future_price, s.future_oi)
             for s in snaps]
+
+
+@dataclass(frozen=True)
+class SessionClose:
+    """OC5: one earlier trading day - its spot readings in slot order (they stand in for the day's candle) and its last
+    stored chain (the closing reading)."""
+    day: date
+    prices: Tuple[float, ...]
+    last: SlotChain
+
+
+async def recent_session_closes(session: AsyncSession, underlying: str, before: date, sessions: int) -> List[SessionClose]:
+    """The last `sessions` trading days before `before` that hold stored slots, oldest first. Only each day's last
+    slot's strikes are read."""
+    days = sorted(await session.scalars(select(OISnapshotRecord.trade_date).where(OISnapshotRecord.underlying == underlying,
+                                                                                   OISnapshotRecord.trade_date < before)
+                                        .group_by(OISnapshotRecord.trade_date).order_by(OISnapshotRecord.trade_date.desc()).limit(sessions)))
+    if not days:
+        return []
+    snaps = list(await session.scalars(select(OISnapshotRecord).where(OISnapshotRecord.underlying == underlying,
+                                                                       OISnapshotRecord.trade_date.in_(days))
+                                       .order_by(OISnapshotRecord.trade_date, OISnapshotRecord.slot_start)))
+    by_day: Dict[date, List[OISnapshotRecord]] = {}
+    for snap in snaps:
+        by_day.setdefault(snap.trade_date, []).append(snap)
+    lasts = {rows[-1].id: rows[-1] for rows in by_day.values()}
+    strikes: Dict[int, List[OptionChainRow]] = {i: [] for i in lasts}
+    for r in await session.scalars(select(StrikeOISnapshotRecord).where(StrikeOISnapshotRecord.snapshot_id.in_(list(lasts)))
+                                   .order_by(StrikeOISnapshotRecord.snapshot_id, StrikeOISnapshotRecord.strike)):
+        strikes[r.snapshot_id].append(OptionChainRow(strike=r.strike, call_oi=r.call_oi, put_oi=r.put_oi, call_ltp=r.call_ltp,
+                                                     put_ltp=r.put_ltp, call_iv=r.call_iv, put_iv=r.put_iv))
+    out: List[SessionClose] = []
+    for day in sorted(by_day):
+        rows = by_day[day]
+        last = rows[-1]
+        chain = OptionChain(underlying=underlying, expiry=last.expiry.isoformat() if last.expiry else "", underlying_ltp=last.underlying_price,
+                            rows=strikes[last.id])
+        out.append(SessionClose(day, tuple(float(r.underlying_price) for r in rows if r.underlying_price),
+                                SlotChain(_utc(last.slot_start), _utc(last.captured_at), chain, last.future_price, last.future_oi)))
+    return out
 
 
 def _utc(value: datetime) -> datetime:
@@ -246,4 +301,4 @@ async def baselines(session: AsyncSession, underlying: str, day: date) -> Dict[f
 
 
 __all__ = ["collect", "CollectResult", "day_chains", "replay", "entry_json", "staleness", "latest_capture", "strike_series",
-           "baselines", "settings_for", "enabled_underlyings", "normalise_underlying", "platform_layer", "IST", "DEFAULT_KEY"]
+           "baselines", "recent_session_closes", "SessionClose", "settings_for", "enabled_underlyings", "normalise_underlying", "platform_layer", "IST", "DEFAULT_KEY"]

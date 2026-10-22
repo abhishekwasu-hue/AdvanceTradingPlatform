@@ -748,6 +748,20 @@ Never publish a listing without an attached backtest run; the API refuses the su
   always drops yesterday's access token first - the auth-code adapters skip the exchange while a token is on
   file, which used to make every pasted code "fail" with the stale token. Fyers needs the app's Redirect URL
   stored once as `redirect_uri`. Local PC runbook: `docs/LOCAL_PC.md`.
+- **Kite and Fyers login without pasting (UI2-5).** Register ATP's callback as the app's Redirect URL on the
+  broker's console: `<PUBLIC_BASE_URL>/api/broker/zerodha/oauth/callback` (Kite) or
+  `.../api/broker/fyers/oauth/callback` (Fyers); `GET /api/broker/specs` shows the exact address. The origin is
+  `BROKER_OAUTH_REDIRECT_BASE_URL` when set (an optional override), else `PUBLIC_BASE_URL` (D2, as for Upstox), else
+  the address the request came in on. `GET /api/broker/{zerodha|fyers}/oauth/start` returns the login page; the broker sends the browser back to
+  the callback, which exchanges the code and stores the session as the paste flow does. The link works once, for the
+  user who started it, within 10 minutes (Upstox's callback too, since the UI2-5 review), and only while that user is
+  still active with a trading role. Each client IP gets 20 callback requests per 5 minutes; past that the browser
+  lands back in the app with `error=too_many_attempts`. The paste-the-code routes stay for the old Settings layout.
+- **Operator note (UI2-5 review): nothing to set when `PUBLIC_BASE_URL` is already the public https origin.**
+  `BROKER_OAUTH_REDIRECT_BASE_URL` is only needed when brokers must reach the API at a different origin (for example
+  `https://atp.example.com`, no trailing path). With neither set, the API logs a `CONFIGURATION ACTION NEEDED` warning
+  at startup and takes callback addresses from the request's Host header. A value that does not start with `https://` stops a production or staging start.
+  The address must match the Redirect URL registered on each broker's console exactly.
 
 ### 1.6ab-0 Hardened environments (P0.1)
 
@@ -971,9 +985,12 @@ Never publish a listing without an attached backtest run; the API refuses the su
 
 - The dashboard is English only, and so are the AI's written answers (the owner's ruling, Oct 2026: the per-user
   answer-language choice and the Telegram reply in the message's language were removed - every AI answer is English,
-  whatever language the question is written in; only the strategy interview is trilingual). `users.ai_language` stays in
-  the schema and is ignored (always English).
+  whatever language the question is written in; only the strategy interview is trilingual). `GET/PUT /api/ai/preferences`
+  answer English only; a `PUT` from an older client is accepted and ignored (nothing is stored).
 - Migration `a1c3e5f7b9d2` adds `users.ai_language` (constant default, no table rewrite). Run it outside 09:15-15:30 IST.
+- Migration `e6b8d0f2a4c7` (EO-4) drops `users.ai_language` again. It is not ROLLBACK_SAFE: a code-only rollback past it
+  is refused (the previous release still maps the column); use `rollback --restore-db`, or run `alembic downgrade
+  c4e8a2d6f0b1` first, which re-adds the column (NOT NULL, default `en`, no table rewrite). Run it outside 09:15-15:30 IST.
 - Sample-data figures are stamped and blurred on purpose; switch Data to broker candles to read real numbers.
 - Optional: the per-call cost estimates on the AI provider card use `AI_USD_INR_RATE` and `AI_MODEL_PRICES_JSON` (P0.8-C).
 

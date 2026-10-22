@@ -50,7 +50,7 @@ export default function PortfolioV2(_props: PageProps = {}) {
       ]} />
       <PageTitleV2 title="My portfolio" subtitle="Where your money is right now, and what you have booked so far." />
 
-      <section aria-label="Summary" data-block="summary">
+      <section aria-label="Summary" data-block="summary" data-tour="portfolio-summary">
         {firstLoad ? <LoadingRowsV2 rows={2} /> : (
           <TilesV2>
             <TileV2 testId="invested" label="In open positions" hint="gross-exposure" value={formatINR(tiles.invested, { compact: true })}
@@ -73,7 +73,7 @@ export default function PortfolioV2(_props: PageProps = {}) {
         </NoteV2>
       )}
 
-      <CardV2 title="Where your money is" count={rows.length} testId="allocation">
+      <CardV2 title="Where your money is" count={rows.length} testId="allocation" tour="portfolio-allocation">
         {firstLoad ? <LoadingRowsV2 /> : allocationFailed ? <LoadFailedV2 what="where your money is" /> : rows.length === 0 ? (
           <EmptyStateV2 text="Nothing is invested right now. Open positions show here with their share of your capital." action={{ label: "Find setups", to: "/screener" }} />
         ) : (
@@ -90,7 +90,7 @@ export default function PortfolioV2(_props: PageProps = {}) {
         )}
       </CardV2>
 
-      <CardV2 title="Booked P&L over time" testId="booked">
+      <CardV2 title="Booked P&L over time" testId="booked" tour="portfolio-booked">
         {trades.status === "loading" ? <LoadingRowsV2 /> : trades.status === "error" ? <LoadFailedV2 what="your closed trades" /> : curve.length < 2 ? (
           <EmptyStateV2 text="Your booked profit and loss builds up here once you have closed two trades." />
         ) : (

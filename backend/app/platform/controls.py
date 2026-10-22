@@ -180,6 +180,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # studies and alert rules (an active rule pauses with the reason). A confirmation status, RsiDivergence and
     # SwingLabel fire on bar close only (intrabar rules refused); places no orders.
     "screenql_amw_functions": "AMW screener functions in ScreenQL: StDev, RSI divergence, swing labels, time of day, strong-body and gap-reversal candles, next-bar candle confirmation (research only, places no orders)",
+    # Handover 11c-1 (AMW-20 first slice, docs/design/PINE_SUBSET.md): the Pine Script subset - pasted Pine translated to
+    # ScreenQL signal conditions with line-numbered diagnostics, and "Run as screen" through the Screener's own run path.
+    # The Pine text is parsed, never executed (a host mode: no runner, ADR-0027). OFF: /api/lab/pine/* answers 404 and the
+    # Screener shows no Pine button. Places no orders.
+    "strategy_lab_pine": "Pine Script subset: paste a TradingView Pine script, see what translates, and run its signal condition as a screen (never executed; places no orders)",
     # Z10-b (G5, docs/design/Z10_LAUNCH_HARDENING.md): stale data -> zero alerts. The bar-close engine, the rule flush and
     # the dispatcher hold back a screen / instrument alert whose bars are no longer current. Trade, exit, risk and
     # system notifications are never held back. OFF: unchanged.

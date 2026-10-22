@@ -22,6 +22,7 @@ from app.db.models import BrokerCredentialRecord, TradeRecord, User
 from app.market_data import candles_routes, entitlement, live_access
 from app.market_data.fanin import SessionRef, SessionSymbols, UserSessionFanIn
 from app.platform import controls
+from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _session_factory, client
 from tests.test_market_data_service import _MemoryCache, _install_cache
 from tests.test_passwords import _headers, _tenant_pro
@@ -440,14 +441,14 @@ def test_a_teammate_cannot_take_over_or_log_in_to_another_members_credential(mon
     r = client.get(f"/api/broker/upstox/oauth/callback?code=abc&state={state}", follow_redirects=False)
     assert r.status_code == 302 and "error=not_holder" in r.headers["location"]
     # With all of their own credentials the member replaces the row: it becomes theirs and the old token is gone.
-    assert client.post("/api/broker/upstox/credentials", headers=member_headers, json={"api_key": "mk", "api_secret": "ms"}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials", headers=member_headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET}).status_code == 204
 
     async def go():
         async with _session_factory() as session:
             rec = await session.scalar(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == owner["tenant_id"]))
             return rec.user_id, token_lifecycle.load_credentials(rec), rec.token_status
     holder, creds, status = run(go())
-    assert holder == member["id"] and creds.access_token is None and creds.api_key == "mk" and status == "UNKNOWN"
+    assert holder == member["id"] and creds.access_token is None and creds.api_key == UPSTOX_KEY and status == "UNKNOWN"
 
 
 def test_the_holder_still_updates_their_own_row_by_merging():

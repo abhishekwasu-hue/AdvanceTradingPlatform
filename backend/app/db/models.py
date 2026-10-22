@@ -79,8 +79,6 @@ class User(Base):
     # Deactivated (removed from the team) users keep their rows for attribution/audit history
     # but can no longer log in or use an existing token - see get_current_user.
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
-    # P0.9: the language the AI writes its answers in (chat, guide). The dashboard itself is English only.
-    ai_language: Mapped[str] = mapped_column(String(4), nullable=False, default="en", server_default="en")
     # Phase M / V4.13: an OWNER or platform admin can stop one member from opening new positions
     # without deactivating the account (they can still watch, exit and report).
     trading_disabled_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -2041,6 +2039,10 @@ class OISnapshotRecord(Base):
     underlying_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     strikes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")
+    # OC5: the near-month future's last price and open interest read in the same slot (None when the broker's quote
+    # does not carry them, and for every slot stored before this column existed).
+    future_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    future_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class StrikeOISnapshotRecord(Base):
@@ -3311,6 +3313,45 @@ class WatchlistRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class SystemWatchlistRecord(Base):
+    """WL1 (handover item 4): one read-only system watchlist every user sees first - the indices, one index's stocks, one
+    sector's stocks or the F&O stocks. Platform-wide reference data (no tenant): built by the server job
+    (app/watchlists/system.py) from the U1 universe tables mapped to the instrument master; users read and copy it, never
+    change it. `key` is the stable slug the routes use ("indices", "index-nifty50", "sector-it", "fno-stocks")."""
+
+    __tablename__ = "system_watchlists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    group: Mapped[str] = mapped_column(String(16), nullable=False, index=True)        # INDICES / INDEX_STOCKS / SECTORS / FNO
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # `[{"symbol", "exchange", "name"}]` in display order (the watchlist item shape plus the company name).
+    items_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)    # content last changed
+    refreshed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)  # last refresh that built it
+
+
+class SystemWatchlistRefreshRecord(Base):
+    """WL1: one run of the system-watchlist refresh - when, what changed (the reconstitution diff: per list the symbols
+    added and removed, lists created and dropped) and which source symbols could not be mapped to the instrument master.
+    Read by the admin (SUPER_ADMIN) only."""
+
+    __tablename__ = "system_watchlist_refreshes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    lists_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lists_changed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    changes_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    unmapped_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    unmapped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
 class UserPrefsRecord(Base):

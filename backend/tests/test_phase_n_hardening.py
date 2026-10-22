@@ -16,6 +16,7 @@ from app.market_data.calendar import IST, session_status
 from app.notifications import mailer
 from app.platform import controls
 from app.secrets_store import encryption, envelope
+from tests.broker_fakes import KITE_KEY, UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_admin_api import _admin
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_deployments_api import _store_broker
@@ -63,7 +64,7 @@ def test_register_creates_tenant_key_and_credentials_use_it():
             assert key.wrapped_key != raw.decode()
     _run(check())
 
-    assert client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k1", "access_token": "t1"}).status_code == 204
+    assert client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": KITE_KEY, "access_token": "t1"}).status_code == 204
 
     async def stored():
         async with _session_factory() as session:
@@ -72,7 +73,7 @@ def test_register_creates_tenant_key_and_credentials_use_it():
     payload = _run(stored())
     assert payload.startswith(f"t1:{me['tenant_id']}:")
     assert encryption.is_tenant_encrypted(payload)
-    assert json.loads(encryption.decrypt_text(payload))["api_key"] == "k1"
+    assert json.loads(encryption.decrypt_text(payload))["api_key"] == KITE_KEY
     # Plain master-key decryption cannot read it (it is a different key)
     with pytest.raises(Exception):
         encryption.master_fernet().decrypt(payload.split(":", 2)[2].encode())
@@ -273,7 +274,7 @@ def test_verification_gate_blocks_live_and_credentials_when_required(monkeypatch
     headers, me = _owner("n3-gate@example.com")
     _store_broker(headers, token_status="VALID")
     monkeypatch.setattr(config, "EMAIL_VERIFICATION_REQUIRED", True)
-    r = client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "api_secret": "s", "access_token": "t"})
+    r = client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"})
     assert r.status_code == 403 and r.headers.get("X-Step-Up") == "email"
     live = client.post("/api/deployments", headers=headers, json={"strategy_id": STRATEGY, "symbol": "reliance", "mode": "LIVE", "broker_name": "upstox"})
     assert live.status_code == 403 and live.headers.get("X-Step-Up") == "email"
@@ -282,7 +283,7 @@ def test_verification_gate_blocks_live_and_credentials_when_required(monkeypatch
     # Admin stamps it verified -> the credential store proceeds
     admin_headers, _ = _admin("n3-gate-admin@example.com")
     assert client.post(f"/api/team/members/{me['id']}/verify-email", headers=admin_headers).status_code == 200
-    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "api_secret": "s", "access_token": "t"}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"}).status_code == 204
 
 
 def test_invite_acceptance_counts_as_verified():

@@ -118,6 +118,12 @@ The script reads these optional settings too, but only to report on them (it nev
 - `HISTORY_OWNER_TENANT_ID` and `HISTORY_OWNER_TENANT_NAME` (HB0): a warning when the ID is set without the name.
 - The four `R2_*` history-import keys (HB0): a warning when only some are set. This is a read-only token, separate
   from the backup token.
+- `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` (Google sign-in, GS-1): optional. Both empty = no Google
+  button (the default, never a failure); a warning when only one is set. Create them in the Google Cloud console
+  (docs/OPEN_QUESTIONS.md GS-1): a Web application OAuth client, authorised JavaScript origin `https://aialgodesk.tech`,
+  authorised redirect URI `https://aialgodesk.tech/api/auth/google/callback`. The button appears after the next deploy.
+  Google sign-in signs in an existing, active account whose e-mail equals the Google account's verified e-mail; while
+  the `self_signup` flag is off it never creates an account, and two-factor authentication is still asked for.
 
 Then run `/opt/atp/deploy/atp.sh install`.
 

@@ -16,7 +16,7 @@ type Rows<T> = { status: "loading" } | { status: "error" } | { status: "ok"; row
 export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
   const total = data.status === "ok" ? data.total : undefined;
   return (
-    <CardV2 title="Open positions" count={total} more={{ label: "View all", to: "/positions" }} testId="positions">
+    <CardV2 title="Open positions" count={total} more={{ label: "View all", to: "/positions" }} testId="positions" tour="dashboard-positions">
       {data.status === "loading" ? <LoadingRowsV2 /> : data.status === "error" ? <LoadFailedV2 what="your positions" /> : data.rows.length === 0 ? (
         <EmptyStateV2 text="No open positions. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
       ) : (
@@ -51,7 +51,7 @@ export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
 
 export function ActiveSignalsV2({ data }: { data: Rows<SignalRow> }) {
   return (
-    <CardV2 title="Active signals" more={{ label: "View all", to: "/signals" }} testId="signals">
+    <CardV2 title="Active signals" more={{ label: "View all", to: "/signals" }} testId="signals" tour="dashboard-signals">
       {data.status === "loading" ? <LoadingRowsV2 /> : data.status === "error" ? <LoadFailedV2 what="today's signals" /> : data.rows.length === 0 ? (
         <EmptyStateV2 text="No signals yet today. Your scans and Autopilot strategies post them here." action={{ label: "Set up a scan", to: "/screener/custom" }} />
       ) : (
@@ -62,7 +62,7 @@ export function ActiveSignalsV2({ data }: { data: Rows<SignalRow> }) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-space-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-space-2">
-                    <span className="text-t15 font-semibold text-fg">{s.symbol}</span>
+                    <span className="min-w-0 text-t15 font-semibold text-fg [overflow-wrap:anywhere]">{s.symbol}</span>
                     <span className={`inline-flex items-center gap-px text-t14 font-medium ${s.side === "Long" ? "text-up" : "text-down"}`}>
                       {s.side === "Long" ? <ArrowUpRight size={14} aria-hidden /> : <ArrowDownRight size={14} aria-hidden />}{s.side}
                     </span>

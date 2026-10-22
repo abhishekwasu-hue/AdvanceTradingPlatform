@@ -131,7 +131,7 @@ export function SidebarV2View({ sections, current, memory, onToggle, user, accou
           <Logo size={28} />
         </Link>
       </div>
-      <nav aria-label="Pages" className="flex-1 overflow-y-auto px-space-2 py-space-3">
+      <nav aria-label="Pages" data-tour="nav-sidebar" className="flex-1 overflow-y-auto px-space-2 py-space-3">
         {pinned.length > 0 && (
           <ul className="mb-space-2 space-y-px" data-nav-pinned>
             {pinned.map((item) => <li key={item.key}><NavLink item={item} current={current} dot={navDotFor(item.key, dot)} /></li>)}

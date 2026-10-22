@@ -167,7 +167,7 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
       <nav className="flex-1 overflow-y-auto py-3 space-y-4">
         {[...NAV_GROUPS, ...(user?.role === "SUPER_ADMIN" ? [ADMIN_GROUP] : [])].map((group) => (
           <div key={group.title}>
-            <div className="px-4 mb-1 text-[10px] font-bold uppercase tracking-wider text-fg-muted">
+            <div className="px-4 mb-1 text-xs font-bold uppercase tracking-wider text-fg-muted">
               {group.title}
             </div>
             {group.items.filter((item) => !item.flag || features.on(item.flag)).map((item) => {
@@ -210,11 +210,11 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
         </div>
         <div className="mt-1.5 flex flex-wrap gap-1">
           {user && (
-            <span className="inline-flex items-center rounded-full bg-surface-2 border border-border px-2 py-0.5 text-[10px] font-medium text-fg">
+            <span className="inline-flex items-center rounded-full bg-surface-2 border border-border px-2 py-0.5 text-xs font-medium text-fg">
               {user.role.replace("_", " ")}
             </span>
           )}
-          <span className="inline-flex items-center gap-1 rounded-full bg-warn/10 border border-warn/30 px-2 py-0.5 text-[10px] font-medium text-warn">
+          <span className="inline-flex items-center gap-1 rounded-full bg-warn/10 border border-warn/30 px-2 py-0.5 text-xs font-medium text-warn">
             PAPER MODE
           </span>
         </div>

@@ -142,7 +142,7 @@ export function ConnectPanelView({ entry, step, values, onChange, onSubmit, busy
             aria-describedby={f.placeholder ? `${ids}-${i}-hint` : undefined}
             value={values[f.key] ?? ""}
             onChange={(e) => onChange(f.key, e.target.value)}
-            className="h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-[16px] text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:text-t14" />
+            className="h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-sm text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:text-t14" />
           {f.placeholder && <p id={`${ids}-${i}-hint`} className="text-t12 text-fg-muted">{f.placeholder}</p>}
         </div>
       ))}

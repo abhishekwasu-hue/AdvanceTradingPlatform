@@ -183,7 +183,7 @@ export default function SignalsPage() {
         <Card title={`Recent signal history (${history.length})`}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+              <thead className="text-fg-muted uppercase text-xs tracking-wide">
                 <tr className="text-left">
                   <th className="py-1 pr-3">Time</th>
                   <th className="py-1 pr-3">Strategy</th>

@@ -50,7 +50,7 @@ export function AnotherAccount({ entries, canChange, onConnect }: {
           <label htmlFor={`${ids}-n`} className="block text-t13 font-medium text-fg">Account name</label>
           <input id={`${ids}-n`} value={name} onChange={(e) => setName(e.target.value)} disabled={!canChange} maxLength={32}
             autoComplete="off" spellCheck={false} placeholder="family"
-            className="h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-[16px] text-fg md:text-t14" />
+            className="h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-sm text-fg md:text-t14" />
         </div>
         <button type="submit" disabled={!ok} className={BTN_SECONDARY}>Connect</button>
       </div>
@@ -132,7 +132,7 @@ export default function BrokerAdvanced({ entries = [], canChange = true, onConne
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <details data-broker-advanced className="rounded-panel border border-subtle bg-surface-1"
+    <details data-broker-advanced data-tour="broker-advanced" className="rounded-panel border border-subtle bg-surface-1"
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-space-2 px-space-4 text-t14 font-semibold text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
         <ChevronRight size={16} aria-hidden className={`transition-transform ${open ? "rotate-90" : ""}`} />

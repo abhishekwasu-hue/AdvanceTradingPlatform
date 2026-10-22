@@ -187,7 +187,12 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "RetestEntry": ['RetestEntry("down", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)', 'RetestEntry("up", "trendline", 20, TRUE)',
                     # wave templates R7: the retest of a broken wave line / wave end
                     'RetestEntry("up", "wave_line", 20, FALSE, 1, "channel_current", "A", 0)',
-                    'RetestEntry("down", "wave_end", 20, FALSE, 1, "channel_B", "B", 0)'],
+                    'RetestEntry("down", "wave_end", 20, FALSE, 1, "channel_B", "B", 0)',
+                    # strategy templates R7: a channel retest (the edge projected), the base breakout's settings forwarded
+                    'RetestEntry("up", "channel", 20, FALSE, k=0)', 'RetestEntry("down", "range", 20, FALSE, k=0, n=10, v=0, mode="auto")'],
+    "RetestEntryRef": ['RetestEntryRef("held_level", "up", "channel", 20, FALSE, k=0)',
+                       'RetestEntryRef("retest_low", "down", "range", 20, FALSE, k=0, v=0)',
+                       'RetestEntryRef("stop_level_atr", "up", "trendline", 20, FALSE, 1, k=0)'],
     # Z7a-3: market zones from stored snapshots - the case builds a causal snapshot timeline from the bars (_zone_timeline)
     "NearZone": ['NearZone("demand", 0.5)', "NearZone()@1h", 'NearZone("supply", 1.0, "zones")'],
     "ZoneRole": ["ZoneRole(0.5)", "ZoneRole(1.0)@1h"],

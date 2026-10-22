@@ -6,6 +6,7 @@ The state machine is driven by a test recipe whose setup and trigger read contro
 triggers it), so every case below - expiry, same bar, replacement, conflict, invalid geometry, gaps through the arm
 level, context, state setups, warm-up - is a few marks on flat synthetic bars, and each expected bar is stated."""
 import copy
+import re
 
 import numpy as np
 import pandas as pd
@@ -250,8 +251,17 @@ def test_invalidation_must_be_a_price_and_switches_stay_out_of_expressions():
     t = tpl(invalidation={"long": "RSI(14)", "short": "high"})
     with pytest.raises(C.TemplateError, match="must be a price"):
         C.compile_recipe(t, C.resolve_settings(t, "15m"))
+    # step 3 (R7): a yes / no setting may fill a yes / no argument (RetestEntry's reversal); the validator types it there
     params = BASE["params"] + [{"key": "flag", "label": "Flag", "help": "A switch.", "type": "bool", "default": True}]
-    t = tpl(params=params, **{"setup.long": "$flag"})
+    t = tpl(params=params, **{"setup.long": 'RetestEntry("up", "range", 10, $flag)'})
+    assert C.compile_recipe(t, C.resolve_settings(t, "15m")).part("setup", "long").params == {"flag": True}
+    t = tpl(params=params, **{"setup.long": "SMA(close, $flag) > close"})
+    with pytest.raises(C.TemplateError, match="window"):
+        C.compile_recipe(t, C.resolve_settings(t, "15m"))
+    # a timeframe setting is still never a value inside an expression (only as @{name})
+    params = BASE["params"] + [{"key": "ctx_tf", "label": "Context", "help": "A timeframe.", "type": "timeframe", "default": "1h",
+                                "choices": ["1h", "1d"]}]
+    t = tpl(params=params, **{"setup.long": "$ctx_tf == \"1h\""})
     with pytest.raises(C.TemplateError, match="cannot be read inside an expression"):
         C.compile_recipe(t, C.resolve_settings(t, "15m"))
 
@@ -265,7 +275,7 @@ def test_the_library_validates_against_the_registry():
                 continue
             sided = [v for v in part.variants.values() if v is not None] if hasattr(part, "variants") else [part]   # step 2: D2 switches
             for text in [x for v in sided for x in (v.long, v.short)]:
-                for name in [w for w in FUNCTIONS if f"{w}(" in text]:
+                for name in [w for w in FUNCTIONS if re.search(rf"(?<![A-Za-z]){w}\(", text)]:   # whole names (DowTrend is not Trend)
                     assert name not in LAST_BAR_ONLY
 
 

@@ -2808,3 +2808,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   shared copy, link problems, flag off, filters). New baselines `chart-analyze-shared-*`, `chart-analyze-share-dialog-*`;
   `chart-analyze-{390,360,1440}-{light,dark}` regenerated (the history filters).
 - Questions CA-11..CA-14 (OPEN_QUESTIONS).
+
+
+## 22 Oct - Strategy templates step 3 (TPL-3): R7, C1 / C3, family A (A2, A5) (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl3-c1-c3-family-a`. No migration.
+- R7: RetestEntry forwards the base breakout's own settings as named arguments (`k=`, `n=`, `v=`, `mode=`, `touches=`;
+  left out = the defaults, the older calls byte-identical); `of = "channel"` (B5 channel breakout, the broken edge
+  projected to each bar after the breakout) for RetestEntry and the B9 screen; the companion `RetestEntryRef` (level,
+  retest_low, base, held_level, the breakout stop references) read from the same `retest_events`. The validator checks
+  named arguments like positional ones. A trendline retest keeps its frozen level (TPL-Q18).
+- Templates: C1 range breakout and retest (B1's settings), C3 channel breakout and retest (B3's settings), A2 range
+  edges (idea T2), A5 structure flip retest (idea T5). Not built: A1 / A3 / A4 / A8 (no zone data in the template engine,
+  no area-edge price), A6 / A7 (no function) - TPL-Q23. Engine: a number function of a sparse series does not hold the
+  warm-up back; a yes / no setting may fill a yes / no argument.
+- Tests: `tests/test_tpl3_templates.py` (section 8 gate for the four templates + R7), runtime fixture, causal cases
+  (lookahead job), history sweep; updated registry coverage tests. Questions TPL-Q18..TPL-Q25; TPL-Q8 answered.

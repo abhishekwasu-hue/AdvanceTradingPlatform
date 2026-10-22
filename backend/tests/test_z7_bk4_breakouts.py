@@ -39,7 +39,15 @@ def test_the_bk4_functions_take_the_parameter_defaults_and_need_both_flags():
             "GapBreakout": {"level": "gap_level", "hold": "gap_hold_min"}, "GapType": {"level": "gap_level", "hold": "gap_hold_min"},
             "RetestEntry": {"of": "retest_of", "bars": "retest_max_bars", "reversal": "retest_reversal"},
             # strategy templates step 2 (R2): the trendline / channel breakout's level companion
-            "LineBreakoutRef": {"mode": "tl_mode", "touches": "tl_min_touches", "k": "min_break_atr", "stop_mult": "stop_atr_mult"}}
+            "LineBreakoutRef": {"mode": "tl_mode", "touches": "tl_min_touches", "k": "min_break_atr", "stop_mult": "stop_atr_mult"},
+            # strategy templates step 3 (R7): the retest's level companion
+            "RetestEntryRef": {"of": "retest_of", "bars": "retest_max_bars", "reversal": "retest_reversal", "stop_mult": "stop_atr_mult"}}
+    # R7: the named arguments RetestEntry / RetestEntryRef forward to the base breakout take its parameters' defaults too
+    forward = {"k": "min_break_atr", "n": "range_n", "v": "vol_mult", "mode": "range_mode", "touches": "tl_min_touches"}
+    for fn in ("RetestEntry", "RetestEntryRef"):
+        named = {a.name: a for a in FUNCTIONS[fn].kwargs}
+        assert set(named) == set(forward)
+        assert all(named[arg].default == bp.DEFAULTS[param] for arg, param in forward.items()), fn
     assert set(want) == set(BREAKOUT_BK4_FUNCTIONS)
     for fn, args in want.items():
         spec = FUNCTIONS[fn]

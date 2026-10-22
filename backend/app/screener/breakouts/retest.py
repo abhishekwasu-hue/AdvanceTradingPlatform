@@ -12,9 +12,16 @@ level L:
   * a close back inside L before that ends the watch: the breakout failed, there is no retest.
 One retest per breakout (no leg dedupe needed). A value at bar j uses bars 0..j only. The down side is the up rule on
 mirrored prices (a bearish reversal at a broken support).
+
+Strategy templates R7 (owner order section 0): `retest_of` also takes `channel` - the B5 channel breakout (the far edge of
+a rising channel up, of a falling one down) - and a channel retest reads the broken edge's value AT each bar after the
+breakout (the line projected along its slope), not the value frozen at the breakout bar. `retest_events` is the one
+place the retests are found: the B9 screen and the template companion RetestEntryRef (app/screener/runtime.py) both
+read it, so a template's invalidation is the same retest the setup fired on.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import numpy as np
@@ -23,7 +30,35 @@ if TYPE_CHECKING:  # pragma: no cover - typing only (screens.py imports this mod
     from app.screener.breakouts.screens import Bars, _Side
 
 SCREENS: Dict[str, str] = {"B9": "Retest entry (second chance)"}
-BASES: Dict[str, str] = {"range": "B1", "swing": "B2", "donchian": "B10", "trendline": "B5"}
+BASES: Dict[str, str] = {"range": "B1", "swing": "B2", "donchian": "B10", "trendline": "B5", "channel": "B5"}
+# R7: the retests whose level is read along the broken line at each bar (a trendline retest keeps the level frozen at its
+# breakout bar, as before: open question TPL-Q18)
+PROJECTED: tuple = ("channel",)
+
+
+@dataclass(frozen=True)
+class Retest:
+    """One retest that held, in the side's orientation (`_Side`: the down side's prices negated): the breakout bar, the
+    retest bar, the level at the retest bar, the base's high / low at the breakout, and the broken edge's line (a channel
+    retest: slope and value at bar 0, else None - a fixed level)."""
+    breakout: int
+    bar: int
+    level: float
+    base_high: float
+    base_low: float
+    slope: Optional[float] = None
+    c0: Optional[float] = None
+
+    def level_at(self, x: int) -> float:
+        """The broken level at bar x (a fixed level: itself; a channel edge: projected along its line)."""
+        if self.slope is None or self.c0 is None:
+            return self.level
+        return self.slope * x + self.c0
+
+
+def base_params(p: Dict[str, Any]) -> Dict[str, Any]:
+    """The parameters the base breakout runs with: a channel retest follows the B5 rule in channel mode."""
+    return {**p, "tl_mode": "channel"} if p["retest_of"] == "channel" else p
 
 
 def _reversal_reach(s: Optional[Dict[str, Any]] = None) -> int:
@@ -99,52 +134,74 @@ def _reversals(b: "Bars", s: "_Side", lv: np.ndarray, bars: List[int]) -> np.nda
     return out
 
 
-def b9(b: "Bars", s: "_Side", p: Dict[str, Any], out: Dict[str, np.ndarray]) -> None:
+def retest_events(b: "Bars", s: "_Side", p: Dict[str, Any]) -> List[Retest]:
+    """Every retest that held (in the order of their breakouts), with the B9 rule above; a channel retest reads the
+    broken far edge at each bar (the support line b5 chose at the breakout bar, plus the channel's width)."""
     from app.screener.breakouts.screens import _RULES, _empty, one_per_leg
-    base = BASES[p["retest_of"]]
+    of = p["retest_of"]
+    base = BASES[of]
+    bp = base_params(p)
     o = _empty(b.n)
-    _RULES[base](b, s, p, o)
+    _RULES[base](b, s, bp, o)
     sig = one_per_leg(b, s, o["raw"], o["fail_level"], int(p["leg_degree"]), int(p["leg_rearm_bars"]))
     tol = float(p["retest_tol_atr"]) * np.nan_to_num(b.atr_prev, nan=0.0)
     need_rev = bool(p["retest_reversal"])
     rev = _Reversals(b, s) if need_rev else None
     reach = rev.reach if rev is not None else 1
-    watch = []                                             # (breakout bar, level, eligible bars)
-    lv = np.full(b.n, np.nan)
+    sup = None
+    if of in PROJECTED:
+        from app.screener.breakouts.lines import _lines
+        sup = _lines(b, s, bp, "support", edges=True)          # the channels b5 chose from (memoised on the bars)
+    watch = []                                             # (breakout bar, (bar, level there) of each eligible bar, line)
+    lv = np.full(b.n, np.nan)                              # the level of the latest watch that reached each bar
     for ii in np.flatnonzero(sig):
         i = int(ii)
         level = float(o["level"][i])
         if not np.isfinite(level):
             continue
+        line = None
+        if sup is not None:
+            chosen = sup.select(i)                         # the channel b5 broke at i: its far edge, projected
+            if chosen is not None:
+                line = (chosen.m, chosen.c0 + chosen.edge)
         left, bars = False, []
         for j in range(i + 1, min(b.n, i + 1 + int(p["retest_max_bars"]))):
-            if s.c[j] < level:                             # back inside before a retest: the breakout failed
+            lvj = level if line is None else line[0] * j + line[1]
+            if s.c[j] < lvj:                               # back inside before a retest: the breakout failed
                 break
-            if left and j - i >= reach and s.c[j] >= level:   # a retest bar closes at or beyond the level: only those are read
-                bars.append(j)
-                lv[j] = level
-            if s.l[j] > level + tol[j]:
+            if left and j - i >= reach and s.c[j] >= lvj:     # a retest bar closes at or beyond the level: only those are read
+                bars.append((j, lvj))
+                lv[j] = lvj
+            if s.l[j] > lvj + tol[j]:
                 left = True
-        watch.append((i, level, bars))
-    if not watch:
-        return
-    for i, level, bars in watch:
-        for j in bars:                                     # in order; the first retest that holds ends this breakout's watch
+        watch.append((i, bars, line))
+    out: List[Retest] = []
+    for i, bars, line in watch:
+        for j, lvj in bars:                                # in order; the first retest that holds ends this breakout's watch
             if rev is not None:
-                if lv[j] != level:                         # a later breakout's watch took the bar: its level, its retest
+                if lv[j] != lvj:                           # a later breakout's watch took the bar: its level, its retest
                     continue
-                touched = rev.at(j, level)
+                touched = rev.at(j, lvj)
             else:
-                touched = bool(s.l[j] <= level + tol[j])
+                touched = bool(s.l[j] <= lvj + tol[j])
             if touched:
-                out["raw"][j] = True
-                out["level"][j] = out["fail_level"][j] = level
-                out["base_len"][j] = j - i
-                out["base_high"][j], out["base_low"][j] = o["base_high"][i], o["base_low"][i]
-                out["event"][j] = f"RETEST_{base}"
+                out.append(Retest(i, j, lvj, float(o["base_high"][i]), float(o["base_low"][i]),
+                                  None if line is None else float(line[0]), None if line is None else float(line[1])))
                 break
+    return out
+
+
+def b9(b: "Bars", s: "_Side", p: Dict[str, Any], out: Dict[str, np.ndarray]) -> None:
+    base = BASES[p["retest_of"]]
+    for r in retest_events(b, s, p):
+        j = r.bar
+        out["raw"][j] = True
+        out["level"][j] = out["fail_level"][j] = r.level
+        out["base_len"][j] = j - r.breakout
+        out["base_high"][j], out["base_low"][j] = r.base_high, r.base_low
+        out["event"][j] = f"RETEST_{base}"
 
 
 RULES = {"B9": b9}
 
-__all__ = ["SCREENS", "BASES", "RULES", "b9", "fast_median_range"]
+__all__ = ["SCREENS", "BASES", "PROJECTED", "RULES", "Retest", "b9", "base_params", "retest_events", "fast_median_range"]

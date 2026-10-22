@@ -60,6 +60,7 @@ def test_defaults_before_anything_is_saved():
         "done_count": 0, "next": "broker", "complete": False, "stored": SETUP_DEFAULTS, "version": 0,
         "get_started": {"steps": [{"key": k, "done": False} for k in ("broker", "paper_bot", "telegram")], "done_count": 0,
                         "complete": False, "hidden_at": None, "shown_at": None, "visible": True},
+        "health": None,
     }
     # the same namespace through the generic preferences
     all_prefs = client.get("/api/me/prefs", headers=who["headers"]).json()

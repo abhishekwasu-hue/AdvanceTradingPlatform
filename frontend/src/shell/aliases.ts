@@ -1,5 +1,6 @@
 import type { Page } from "../components/Sidebar";
 import { isDataPath } from "../ui/dataPages";
+import { settingsSectionAt } from "../settings/paths";
 
 /**
  * UI2-1: the merged pages' new addresses (UI v2 proposal §3 M1, M2, M3, M4) and the page each shows until its tab
@@ -30,7 +31,25 @@ export function flagOffFallback(pathname: string): string | null {
   if (malformed) return null;
   const clean = `/${path.replace(/^\/+|\/+$/g, "")}`;
   if (clean === SETUP_ADDRESS || clean === TRADING_DEFAULTS_ADDRESS) return "/settings";
+  // Settings redesign B: a section page goes back to today's Settings page, at the part that holds it.
+  const section = settingsSectionAt(clean);
+  if (section) return section.old;
   return V2_ALIASES.find((a) => a.path === clean)?.old ?? null;
+}
+
+/**
+ * Settings redesign B: the whole address the flag-off fallback goes to - the query string before the hash
+ * (`/settings?x=1#alerts`). The fallback's own hash wins (it names the part of today's page); without one, the
+ * address's hash is kept. Null: stay.
+ */
+export function fallbackAddress(pathname: string, search: string, hash: string): string | null {
+  const to = flagOffFallback(pathname);
+  if (to === null) return null;
+  const at = to.indexOf("#");
+  const path = at === -1 ? to : to.slice(0, at);
+  const ownHash = at === -1 ? "" : to.slice(at);
+  const query = search && search !== "?" ? (search.startsWith("?") ? search : `?${search}`) : "";
+  return `${path}${query}${ownHash || hash}`;
 }
 
 /**

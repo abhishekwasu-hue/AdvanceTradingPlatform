@@ -172,7 +172,8 @@ test.describe("Get started card 390", () => {
     await open(page);
     await expect(card(page).getByRole("link", { name: "Connect your broker" })).toHaveAttribute("href", BROKER_HREF);
     await expect(card(page).getByRole("link", { name: "Start paper bot" })).toHaveAttribute("href", "/deployments");
-    await expect(card(page).getByRole("link", { name: "Set up Telegram" })).toHaveAttribute("href", "/settings#alerts");
+    // Settings redesign B: the link is the v2 address; with ui_v2 off it goes back to today's /settings#alerts.
+    await expect(card(page).getByRole("link", { name: "Set up Telegram" })).toHaveAttribute("href", "/settings/alerts");
     await card(page).getByRole("link", { name: "Set up Telegram" }).click();
     await expect(page).toHaveURL(/\/settings#alerts$/);
     await expect(page.locator("#alerts")).toBeInViewport({ timeout: 5_000 });

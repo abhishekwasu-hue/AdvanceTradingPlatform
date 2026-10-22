@@ -1,6 +1,10 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 import type { PageProps } from "../routes";
 import type { ShellKey } from "./navModel";
+import { SETTINGS_SECTIONS } from "../settings/paths";
+
+// Settings redesign B: one chunk for every Settings section page (it reads its section from the address).
+const SettingsSection = lazy(() => import("../settings/SettingsSectionV2"));
 
 /**
  * UI v2 proposal §12: "the router picks `PageV2 ?? Page` per page". The pages that have a v2 layout, each its own lazy
@@ -29,6 +33,9 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   deployments: lazy(() => import("../paperbot/PaperBotV2")),
   // Item 5 (owner's handover): the chat-first Copilot (src/copilot/chat) at /copilot; /copilot/<tab> keeps today's tabs.
   copilot: lazy(() => import("../copilot/chat/CopilotPageV2")),
+  // Settings redesign B: Settings is a short index with status (src/settings); each row opens its own small page.
+  settings: lazy(() => import("../settings/SettingsIndexV2")),
+  ...Object.fromEntries(SETTINGS_SECTIONS.map((s) => [s.key, SettingsSection])),
 };
 
 /**

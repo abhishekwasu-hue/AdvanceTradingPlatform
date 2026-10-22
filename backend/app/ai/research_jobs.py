@@ -119,7 +119,7 @@ async def run_next(session: AsyncSession, *, now: Optional[Clock] = None) -> Opt
             return sid
         provider = await ai_settings.provider_for(session, tenant, task="generation", user_id=uid)
         if getattr(provider, "name", "") == "rule_based":
-            await _finish(session, row, "failed", clock(), "The research loop needs an AI provider (Settings > AI provider).")
+            await _finish(session, row, "failed", clock(), "The research loop needs an AI provider (Settings > AI).")
             return sid
         frame, source = await market._frame(ToolContext(session, tid, user), spec.symbol, spec.exchange, spec.timeframe, days)
         frame = filter_allowed(frame, holdout_start())                # the sealed holdout is cut off, never searched

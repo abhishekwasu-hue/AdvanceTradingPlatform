@@ -1,12 +1,13 @@
 import {
   BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Filter, GraduationCap, History, Layers,
   LayoutDashboard, Link2, ListChecks, ListTodo, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
-  ScanSearch, Sigma, SlidersHorizontal, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, type LucideIcon,
+  ScanSearch, Sigma, SlidersHorizontal, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, Palette, LifeBuoy, Wrench, type LucideIcon,
 } from "lucide-react";
 import { needsAttention, type BrokerDot } from "../broker/brokerState";
 import { BROKER_PATH } from "../broker/paths";
 import type { Page } from "../components/Sidebar";
 import { PAGE_FLAGS } from "./pageFlags";
+import { SETTINGS_PATH, type SettingsSectionKey } from "../settings/paths";
 
 /**
  * UI2-1 (UI v2 proposal §2 navigation map, §4 bottom bar): the one navigation model the v2 shell reads - the sidebar,
@@ -18,8 +19,8 @@ import { PAGE_FLAGS } from "./pageFlags";
  */
 
 /** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
- * Settings → Setup (`/settings/setup`, UI2-7) and Settings → My trading defaults (`/settings/trading-defaults`, part C). */
-export type ShellKey = Page | "charts" | "setup" | "trading-defaults";
+ * Settings → Setup (`/settings/setup`, UI2-7), My trading defaults (`/settings/trading-defaults`, part C) and the Settings section pages (`/settings/ai` ..., Settings redesign B). */
+export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | SettingsSectionKey;
 
 export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more";
 
@@ -144,6 +145,12 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   // Settings redesign part C: the user's own starting values for new bots and chain tickets (a pre-fill, never a rule).
   { ...item("trading-defaults", "My trading defaults", "My trading defaults", "/settings/trading-defaults", SlidersHorizontal,
     { keywords: ["defaults", "default lots", "presets", "order presets", "expiry rule", "strike rule", "trailing stop"] }), section: "account" },
+  // Settings redesign B: the Settings section pages (src/settings), found by search too.
+  { ...item("settings-ai", "AI", "AI", SETTINGS_PATH.ai, Sparkles, { keywords: ["ai key", "api key", "connect ai", "claude", "openai", "gemini", "ai limits"] }), section: "account" },
+  { ...item("settings-alerts", "Alerts", "Alerts", SETTINGS_PATH.alerts, Bell, { keywords: ["telegram", "alert channels", "email alerts", "sms", "push notifications"] }), section: "account" },
+  { ...item("settings-appearance", "Appearance", "Appearance", SETTINGS_PATH.appearance, Palette, { keywords: ["theme", "dark mode", "light mode", "text size", "colour-blind", "reduce motion"] }), section: "account" },
+  { ...item("settings-help", "Help & tips", "Help & tips", SETTINGS_PATH.help, LifeBuoy, { keywords: ["tips", "page tips", "tours", "show get started"] }), section: "account" },
+  { ...item("settings-advanced", "Advanced", "Advanced", SETTINGS_PATH.advanced, Wrench, { keywords: ["webhook", "tradingview", "own telegram bot", "integrations"] }), section: "account" },
 ];
 
 /** The phone bottom bar (§4): Home, Charts, Signals, Positions - and More, which opens the sheet. */
@@ -211,22 +218,27 @@ export const sectionTitle = (id: SectionId): string => SECTION_TITLES[id];
 
 const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}&?]+/gu, " ").trim();
 
+/** What search reads from an entry: a page (allNavItems) or, on the Settings index, a setting inside a section. */
+export type Searchable = Pick<NavItemV2, "label" | "title" | "keywords" | "flag" | "role"> & { section?: SectionId };
+
 /**
  * Pages matching what the trader typed, best first: the label starting with the query, then a word of the label or
  * title starting with it, then the label or title containing it, then a keyword (today's name) matching it. Every
  * word typed must match somewhere. Hidden pages (flag off, other role) are never returned.
  */
-export function searchPages(query: string, ctx: NavContext, items = allNavItems()): (NavItemV2 & { section: SectionId })[] {
+export function searchPages(query: string, ctx: NavContext): (NavItemV2 & { section: SectionId })[];
+export function searchPages<T extends Searchable>(query: string, ctx: NavContext, items: readonly T[]): T[];
+export function searchPages(query: string, ctx: NavContext, items: readonly Searchable[] = allNavItems()): Searchable[] {
   const q = norm(query);
   const visible = items.filter((i) => isItemVisible(i, ctx));
   if (!q) return visible;
   const words = q.split(" ");
-  const scored: { it: NavItemV2 & { section: SectionId }; score: number; at: number }[] = [];
+  const scored: { it: Searchable; score: number; at: number }[] = [];
   visible.forEach((it, at) => {
     const label = norm(it.label);
     const title = norm(it.title);
     const keys = (it.keywords ?? []).map(norm);
-    const haystack = [label, title, ...keys, norm(sectionTitle(it.section))].join(" | ");
+    const haystack = [label, title, ...keys, it.section ? norm(sectionTitle(it.section)) : ""].join(" | ");
     if (!words.every((w) => haystack.includes(w))) return;
     const wordStart = (s: string) => s.split(" ").some((w) => w.startsWith(q)) || s.startsWith(q);
     let score: number;

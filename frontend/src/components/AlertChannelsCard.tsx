@@ -1,5 +1,6 @@
 import { BellRing, Mail, MessageSquare, Send, Webhook } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 import { api } from "../api/client";
 import WebPushSection from "../alerts/WebPushSection";
 import WhatsAppSection from "../alerts/WhatsAppSection";
@@ -7,6 +8,7 @@ import { Card } from "../components/ui";
 import type { AlertChannel, AlertChannelType, AlertDelivery, NotificationSeverity, TelegramInboundStatus } from "../types";
 import { useFeatures } from "../ui/useFeatures";
 
+const OWN_BOT_PATH = "/settings/advanced#own-bot";
 const SEVERITIES: NotificationSeverity[] = ["INFO", "WARNING", "CRITICAL"];
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm";
@@ -30,7 +32,9 @@ function OwnBotFold({ fold, open, children }: { fold: boolean; open: boolean; ch
 
 /** `ownBotOnly` (UX2 fix 5, ui_v2): Telegram is connected in one tap above this card, so here the Telegram block is only
  * the organisation's own bot, folded away under "Use your organisation's own bot". */
-export default function AlertChannelsCard({ ownBotOnly = false }: { ownBotOnly?: boolean } = {}) {
+/** Settings redesign B: `part` - "all" (today), "channels" (Settings → Alerts: every channel but the own bot) or "own-bot"
+ * (Settings → Advanced: only the organisation's own Telegram bot). */
+export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: { ownBotOnly?: boolean; part?: "all" | "channels" | "own-bot" } = {}) {
   const [channels, setChannels] = useState<AlertChannel[]>([]);
   const [deliveries, setDeliveries] = useState<AlertDelivery[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -162,22 +166,10 @@ export default function AlertChannelsCard({ ownBotOnly = false }: { ownBotOnly?:
     );
   }
 
-  return (
-    <Card title="Alert delivery (Telegram / email / webhook / push / SMS)">
-      <p className="text-xs text-fg-muted mb-3">
-        The trading worker raises CRITICAL alerts (broker session expired, stop-loss could not be
-        placed, deployment auto-paused, daily loss limit) while no browser is open. Configure at
-        least one channel so they reach you. Secrets are stored encrypted and never shown again;
-        leave a secret blank when editing to keep the stored one.
-      </p>
-
-      <div className="grid lg:grid-cols-2 gap-4">
-        <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
-          <div className="flex items-center gap-2 text-sm font-bold text-fg"><Send size={14} /> Telegram</div>
-          {ownBotOnly && platformTelegram ? (
-            <p className="text-xs text-fg-muted">Connected with the app&apos;s own Telegram bot. Manage it under Alerts on your phone, above.</p>
-          ) : (
-          <OwnBotFold fold={ownBotOnly} open={!!stored("TELEGRAM")}>
+  // Settings redesign B: the organisation's own Telegram bot (token, chat id, two-way Telegram) - under Settings →
+  // Advanced in v2 (`part="own-bot"`), and left out of Settings → Alerts (`part="channels"`).
+  const ownBotBody = (
+    <>
           <div className="text-xs">{status("TELEGRAM")}</div>
           <input className={input} type="password" autoComplete="off" placeholder="Bot token from @BotFather (blank = keep stored)" value={tg.bot_token} onChange={(e) => setTg({ ...tg, bot_token: e.target.value })} />
           <input className={input} placeholder="Chat id (your user id or a group id)" value={tg.chat_id} onChange={(e) => setTg({ ...tg, chat_id: e.target.value })} />
@@ -224,6 +216,44 @@ export default function AlertChannelsCard({ ownBotOnly = false }: { ownBotOnly?:
               <div className="text-xs text-fg-muted break-all">Webhook: {inbound.webhook_url} (HTTPS required; the secret header is set automatically)</div>
             </div>
           )}
+    </>
+  );
+
+  if (part === "own-bot") {
+    return (
+      <Card title="Your own Telegram bot">
+        <div className="space-y-2" data-own-bot>
+          <p className="text-xs text-fg-muted">Only if your organisation sends alerts with its own Telegram bot. Most people use Connect Telegram under Alerts instead.</p>
+          {ownBotBody}
+        </div>
+        {error && <div className="mt-3 text-sm text-down">{error}</div>}
+        {message && <div className="mt-3 text-sm text-up">{message}</div>}
+      </Card>
+    );
+  }
+
+  return (
+    <Card title="Alert delivery (Telegram / email / webhook / push / SMS)">
+      <p className="text-xs text-fg-muted mb-3">
+        The trading worker raises CRITICAL alerts (broker session expired, stop-loss could not be
+        placed, deployment auto-paused, daily loss limit) while no browser is open. Configure at
+        least one channel so they reach you. Secrets are stored encrypted and never shown again;
+        leave a secret blank when editing to keep the stored one.
+      </p>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-sm font-bold text-fg"><Send size={14} /> Telegram</div>
+          {part === "channels" ? (
+            <p className="text-xs text-fg-muted" data-telegram-elsewhere>
+              {platformTelegram ? "Connected with the app's own Telegram bot. Manage it under Connect Telegram, above." : "Use Connect Telegram, above."}{" "}
+              Your organisation&apos;s own bot is under <Link to={OWN_BOT_PATH} className="text-brand hover:underline">Advanced</Link>.
+            </p>
+          ) : ownBotOnly && platformTelegram ? (
+            <p className="text-xs text-fg-muted">Connected with the app&apos;s own Telegram bot. Manage it under Alerts on your phone, above.</p>
+          ) : (
+          <OwnBotFold fold={ownBotOnly} open={!!stored("TELEGRAM")}>
+          {ownBotBody}
           </OwnBotFold>
           )}
         </div>

@@ -19,6 +19,7 @@ import MoreSheetV2 from "./MoreSheetV2";
 import { sectionOf, visiblePinned, visibleSections, type NavContext } from "./navModel";
 import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
 import { SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS } from "./aliases";
+import { SETTINGS_SECTIONS } from "../settings/paths";
 import { closedFlag } from "./pageFlags";
 import { ComingSoon } from "../ui/ComingSoon";
 import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
@@ -137,6 +138,10 @@ export default function AppShellV2() {
           <Route path="/charts/:symbol?" caseSensitive element={<ChartsPage onNavigate={go} />} />
           <Route path={SETUP_ADDRESS} caseSensitive element={<SetupPage onNavigate={go} />} />
           <Route path={TRADING_DEFAULTS_ADDRESS} caseSensitive element={<TradingDefaultsPage onNavigate={go} />} />
+          {SETTINGS_SECTIONS.map(({ key: k, path: p }) => {
+            const SectionPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2[k] ?? NotFound;
+            return <Route key={p} path={p} caseSensitive element={<SectionPage onNavigate={go} />} />;
+          })}
           {V2_ALIASES.map(({ path, page }) => {
             const PageComponent = PAGE_COMPONENTS[page];
             return <Route key={path} path={path} caseSensitive element={<PageComponent onNavigate={go} />} />;

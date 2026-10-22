@@ -190,7 +190,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/thesis_history.json": "f3226989acc68ddf2bbfa69ff8a5353011a90a480befc57c0bfa0c988ccd5a6c",
     "frontend/e2e/fixtures/thesis_report.json": "e85180cb3f957bf048f9bffe63e3237bb760333376e255f1ae76f6d9df2e287d",
     "frontend/e2e/fixtures/trading_v2.json": "46bc6543f0f50524ef77c82ee261b19afe100722ee8c49d5a6a3fb6cda207265",
-    "frontend/e2e/fixtures/copilot_chat_v2.json": "6f6f338c8af42cda9088a94839b0ce027784e5b5c02245b0aaefc86d88b6ba96",
+    "frontend/e2e/fixtures/copilot_chat_v2.json": "cedf9ddab8a4d55d1d2f3ab1ebae0bc271f18b9b0a4b6585fe43f006a097a49f",
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

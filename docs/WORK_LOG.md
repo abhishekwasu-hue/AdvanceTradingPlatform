@@ -2451,4 +2451,29 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Pre-fill in the frontend only, behind `ui_v2`: the Paper bot's "Start on paper" ("Use my defaults for this bot" + the
   list of values taken), the paper-only full form (each field marked "from your defaults"), the chain order ticket
   (lots / product / order type). Empty defaults: byte-identical request bodies (tests).
-- Research: `docs/design/TRADING_DEFAULTS.md`. Questions SR-11..SR-14.
+- Research: `docs/design/TRADING_DEFAULTS.md`. Questions SR-C1..SR-C4.
+## 2026-10-22 - Settings redesign part B: "Settings = a short index with status", behind ui_v2
+
+- Branch `claude/settings-b-index` (on Part A). No migration. Plan of record: SETTINGS_REDESIGN_REVIEW.md B1-B4 + R1 / R2;
+  SR-9 (an old `#go-live` opens the index in Phase 0); new owner questions SR-11..SR-13 on provisional defaults.
+- B1: `src/settings/` - `SettingsIndexV2.tsx` (the rows: Account & plan, Broker, AI, Alerts, My trading defaults "Coming
+  soon", Appearance, Help & tips, Set up your account, Advanced; each with its live chip from the source its page reads),
+  `SettingsSectionV2.tsx` (`/settings/ai|alerts|appearance|help|advanced`; today's cards moved unchanged; Advanced in
+  folds: TradingView webhook, personal API keys only with `public_api`, own Telegram bot (`AlertChannelsCard part`),
+  Vision background reviews with `ai_one_key`, the Go-live checklist only after Phase 0), `VisionReviewSwitchesV2.tsx`,
+  `model.ts` (rows, search entries, chips), `paths.ts` (addresses, the hash forwarding). Account & plan is
+  `/settings/account` with BillingCard below (v2). Router: shell keys `settings-<section>`, titles, `flagOffFallback` to
+  today's `/settings#x` (App.tsx keeps the query before the hash: `fallbackAddress`).
+- B2: the search reuses navModel `searchPages` (now generic over searchable entries).
+- B3: "Prepare for LIVE" (index), the Advanced Go-live fold and the Setup page's prepare-live link hide while
+  `phase0_paper_only` is on or the flags are unknown (`useLiveHidden`).
+- B4: `/settings#alerts|#ai|#integrations|#advanced|#go-live` forward on the index; links moved: getStarted ALERTS_PATH,
+  StepsV2, goLive (static IP -> Broker page), CopilotChatV2, the Connect AI chip, OptionChainPage (`/broker`), OiAlertsCard,
+  ScannerPage, copilot locale; backend: TOKEN_EXPIRED deep link -> `/broker`, copilot KEY_SETTINGS `/settings/ai`, the
+  "Settings > AI provider" / "Vision with your own AI key" / "Settings, Advanced" texts. The four settings tour ids are on
+  the index rows.
+- Tests: vitest `src/settings/settings.test.tsx`; e2e `settings-index-v2.e2e.ts` (+ shared `settingsMocks.ts`; the phone
+  layout helper now skips the content of closed folds); updated e2e connect-ai-v2, key-guides-v2 (1440 baselines),
+  setup-v2, tours-v2, dashboard-v2, front-page, copilot-chat-v2. Baselines `settings-index-v2-*`,
+  `settings-<ai|alerts|appearance|help|advanced|account>-v2-*` (360 / 390 / 1440, light / dark), regenerated
+  `connect-ai-v2-settings-*`, `key-guide-v2-1440-*`. Before shots: docs/screenshots/settings-b/.

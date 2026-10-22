@@ -42,7 +42,41 @@ export interface SetupStepState { key: SetupStepKey; done: boolean; skipped: boo
 
 /** `GET /api/me/setup` (the fields this app reads). `getStarted`: each card step done (worked out by the server); null
  * when the answer has none (an older cache), and then no card is shown rather than a guess. */
-export interface SetupView { steps: SetupStepState[]; stored: SetupStored; version: number; getStarted: Record<GetStartedKey, boolean> | null }
+export interface SetupView {
+  steps: SetupStepState[];
+  stored: SetupStored;
+  version: number;
+  getStarted: Record<GetStartedKey, boolean> | null;
+  /** Settings redesign D: what in the setup needs an action now (backend app/me/setup_health.py); null while `ui_v2` is
+   * off or the answer has none. */
+  health?: SetupHealthItem[] | null;
+}
+
+/** Settings redesign D: one setup item that needs the trader (`GET /api/me/setup` -> `health`). */
+export type SetupHealthItem =
+  | { key: "analytics_token"; state: "expired" | "expiring" }
+  | { key: "ai_key"; state: "no_credit" | "failing"; message: string }
+  | { key: "telegram"; state: "not_connected" }
+  | { key: "data_feed"; state: "delayed" };
+
+const HEALTH_STATES: Record<SetupHealthItem["key"], readonly string[]> = {
+  analytics_token: ["expired", "expiring"], ai_key: ["no_credit", "failing"], telegram: ["not_connected"], data_feed: ["delayed"],
+};
+
+/** The server's `health` list, keeping only the items this app knows; null when absent or not a list. */
+export function cleanHealth(raw: unknown): SetupHealthItem[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: SetupHealthItem[] = [];
+  for (const item of raw as unknown[]) {
+    const v = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+    const key = v.key as SetupHealthItem["key"];
+    const state = typeof v.state === "string" ? v.state : "";
+    if (!Object.prototype.hasOwnProperty.call(HEALTH_STATES, key) || !HEALTH_STATES[key].includes(state)) continue;
+    if (key === "ai_key") out.push({ key, state: state as "no_credit" | "failing", message: typeof v.message === "string" ? v.message : "" });
+    else out.push({ key, state } as SetupHealthItem);
+  }
+  return out;
+}
 
 const isoOrNull = (v: unknown): string | null => (typeof v === "string" && v && !Number.isNaN(Date.parse(v)) ? v : null);
 
@@ -95,7 +129,7 @@ export function cleanView(raw: unknown): SetupView | null {
     if (SETUP_STEPS.includes(step.key as SetupStepKey)) done[step.key as SetupStepKey] = step.done === true;
   }
   const stored = cleanStored(v.stored);
-  return { steps: stepsOf(stored, done), stored, version: v.version, getStarted: cleanGetStarted(v.get_started) };
+  return { steps: stepsOf(stored, done), stored, version: v.version, getStarted: cleanGetStarted(v.get_started), health: cleanHealth(v.health) };
 }
 
 /** The same view after a local change to the marks (before the server answers). */

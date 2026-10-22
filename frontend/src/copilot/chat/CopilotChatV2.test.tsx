@@ -32,7 +32,7 @@ const JOBS = STARTERS.map((starter, i) => ({
 }));
 const HOME: ChatHome = {
   top_line: "Ask me anything about the market or your trades.",
-  ai: { ready: false, title: "Add a free AI key to start", line: "Until then I answer from ATP's own data in short, fixed sentences.", settings: "/settings#ai", reason: null },
+  ai: { ready: false, title: "Add a free AI key to start", line: "Until then I answer from ATP's own data in short, fixed sentences.", settings: "/settings/ai", reason: null },
   market_line: { line: "NIFTY 50 last closed at 24,850.5 (2026-10-20); Dow structure daily uptrend, weekly range.", reason: null, as_of: "2026-10-21T03:30:00+00:00" },
   disclaimer: "Information and education only, not advice. Every trading decision is yours.", jobs: JOBS, starters: STARTERS,
 };
@@ -89,7 +89,7 @@ describe("the chat-first Copilot page", () => {
     const html = view();
     expect(html).toContain("data-no-key");
     expect(text(html)).toContain("Add a free AI key to start");
-    expect(html).toContain('href="/settings#ai"');
+    expect(html).toContain('href="/settings/ai"');
     expect(view({ home: { ...HOME, ai: { ...HOME.ai, ready: true, title: null, line: null } } })).not.toContain("data-no-key");
     expect(needsKey(HOME)).toBe(true);
     expect(needsKey(null)).toBe(false);

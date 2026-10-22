@@ -15,6 +15,7 @@ import {
   attentionRows, brokerChip, greeting, marketLabel, oiLines, positionRows, signalsToday, todayPnl, todayTiles,
   type PositionRow, type SignalRow,
 } from "./model";
+import { useHiddenToday } from "./dismissToday";
 import NeedsAttentionV2 from "./NeedsAttentionV2";
 import { dataOf, useDashboardData, type Loadable } from "./useDashboardData";
 
@@ -80,12 +81,23 @@ export default function DashboardV2(_props: PageProps = {}) {
   const strip = dataOf(data.strip);
   const signals = useMemo(() => signalsToday(actions, now), [actions, now]);
   const attentionKnown = data.pending.status !== "loading" && data.deployments.status !== "loading";
+  const setup = useSetup(user?.id ?? null);
+  const card = getStartedCard(setup.view, { role: user?.role });
+  const hidden = useHiddenToday(user?.id ?? null, now);
+  // Coming back to the Dashboard (the store already answered once this visit): read the setup again, so a fix made
+  // elsewhere (a new AI key, Telegram connected) clears its row. The first read is the store's own.
+  const { fresh: setupFresh, reload: reloadSetup } = setup;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- once per Dashboard visit (and per signed-in user)
+  useEffect(() => { if (setupFresh) reloadSetup(); }, [user?.id]);
+  // Settings redesign D: the setup-health rows come only from the server's answer (never from the device's cache). A
+  // VIEWER cannot renew the organisation's token or connect its Telegram, so they see only their own AI key and prices.
+  const serverHealth = setup.fresh ? setup.view?.health ?? null : null;
+  const health = serverHealth && user?.role === "VIEWER" ? serverHealth.filter((h) => h.key === "ai_key" || h.key === "data_feed") : serverHealth;
   const attention = attentionKnown ? attentionRows({
     nowMs: now, broker, brokerRows, pending: dataOf(data.pending), deployments, risk: dataOf(data.risk), exposure, unread: dataOf(data.unread),
     status: dataOf(data.status), emailVerified: user?.email_verified, approvalsPath,
+    health, getStartedShowing: card !== null, dismissed: hidden.hidden,
   }) : null;
-  const setup = useSetup(user?.id ?? null);
-  const card = getStartedCard(setup.view, { role: user?.role });
   const positions: Rows<PositionRow> = rowsOf(data.positions, (p) => ({ rows: positionRows(p, exposure), total: p.length }));
   const signalRows: Rows<SignalRow> = rowsOf(data.actions, () => ({ rows: signals.rows, total: signals.count }));
   const tilesLoading = data.exposure.status === "loading" && data.summary.status === "loading";
@@ -113,7 +125,7 @@ export default function DashboardV2(_props: PageProps = {}) {
           {/* Item 1: at the Large / Extra large text sizes the two columns start only on a wider screen (2xl). */}
           <div className={`grid grid-cols-1 gap-space-4 ${big ? "2xl:grid-cols-3 2xl:items-start 2xl:gap-space-6" : "lg:grid-cols-3 lg:items-start lg:gap-space-6"}`}>
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:col-span-2 2xl:space-y-space-6" : "lg:col-span-2 lg:space-y-space-6"}`}>
-              <NeedsAttentionV2 rows={attention} loginBroker={broker.kind === "login-needed" ? broker.broker : null} login={login} />
+              <NeedsAttentionV2 rows={attention} loginBroker={broker.kind === "login-needed" ? broker.broker : null} login={login} onHide={hidden.hide} />
               <OpenPositionsV2 data={positions} />
             </div>
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:space-y-space-6" : "lg:space-y-space-6"}`}>

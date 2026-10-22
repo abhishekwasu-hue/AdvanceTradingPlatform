@@ -85,7 +85,7 @@ REASON_NO_KEY = "no key"
 REASON_DAILY_CAP = "daily cap reached"
 REASON_MONTHLY_CAP = "monthly cap reached"
 
-VISION_OFF_NO_KEY = "Vision off - add your API key in Settings"
+VISION_OFF_NO_KEY = "Vision off - connect your AI key in Settings > AI"
 SUBSCRIPTION_NOTE = ("Subscription sign-in (for example Claude Pro or Max) is not supported - API keys only. Create an API key in the "
                      "provider's developer console; the provider bills you directly for what you use.")
 PRIVACY_NOTE = ("When Vision reviews a chart, the chart image and the minimal context needed (symbol, timeframe, whether it is a "
@@ -332,6 +332,12 @@ async def _prefs_or_new(session: AsyncSession, user: User) -> UserVisionPrefsRec
     return prefs
 
 
+def _forget_health(user: User) -> None:
+    """Settings redesign D: the Dashboard's setup health reads this key's last test; drop its cached answer."""
+    from app.me import setup_health
+    setup_health.forget(user.tenant_id, user.id)
+
+
 async def save_key(session: AsyncSession, user: User, *, provider: str, api_key: str, model: Optional[str] = None) -> UserAiKeyRecord:
     provider = (provider or "").lower()
     key = validate_key_shape(provider, api_key)
@@ -349,6 +355,7 @@ async def save_key(session: AsyncSession, user: User, *, provider: str, api_key:
     record.last_test_error = None
     await write_audit_log(session, user.tenant_id, user.id, "byok_key_saved", f"{provider} model={chosen or record.model or 'default'}")
     await session.commit()
+    _forget_health(user)
     await session.refresh(record)
     return record
 
@@ -363,6 +370,7 @@ async def delete_key(session: AsyncSession, user: User, provider: str) -> bool:
         prefs.provider = None
     await write_audit_log(session, user.tenant_id, user.id, "byok_key_removed", record.provider)
     await session.commit()
+    _forget_health(user)
     return True
 
 
@@ -429,6 +437,7 @@ async def test_key(session: AsyncSession, user: User, provider: str, *, client: 
     record.last_test_error = None if ok else error
     await write_audit_log(session, user.tenant_id, user.id, "byok_key_tested", f"{provider}: {'ok' if ok else 'failed'}")
     await session.commit()
+    _forget_health(user)
     return {"provider": provider, "ok": ok, "error": None if ok else error, "kind": None if ok else (kind or "other"),
             "model": model, "cost_usd": round(cost, 8), "image": image}
 

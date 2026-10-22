@@ -1,6 +1,7 @@
 import { BROKER_PATH } from "../broker/paths";
 import type { BrokerGateState } from "../ui/brokerSession";
 import { brokerDisplayName } from "../ui/brokerSession";
+import type { SetupHealthItem } from "../setup/model";
 import { paperOnlyFrom } from "../setup/paperOnly";
 import { EMPTY, formatDateIST, formatLots, formatPrice, formatTimeIST } from "../ui/format";
 import type { OiBannerResponse } from "../oi/types";
@@ -311,7 +312,14 @@ export interface AttentionRow {
   detail: string;
   /** A link, or the broker login (run by the block itself). None for a notice with nothing to do here. */
   action?: { label: string; to: string } | { label: string; login: true };
+  /** Settings redesign D: the trader may hide this row until tomorrow (IST), on this device. */
+  dismissible?: boolean;
 }
+
+/** Settings redesign D: where each setup-health row's one button leads. */
+export const AI_FIX_PATH = "/settings#ai";
+/** Settings → Alerts (src/setup/getStarted.ts ALERTS_PATH; not imported, so this pure module does not load the routes). */
+export const TELEGRAM_FIX_PATH = "/settings#alerts";
 
 export interface AttentionInput {
   nowMs: number;
@@ -328,6 +336,48 @@ export interface AttentionInput {
   emailVerified: boolean | undefined;
   /** Where approvals are made today (UI2-3 moves them to Signals). */
   approvalsPath: string;
+  /** Settings redesign D: what in the setup needs an action now (`GET /api/me/setup` -> `health`); null = not known. */
+  health?: SetupHealthItem[] | null;
+  /** The Get started card is on the page (it has its own Telegram step, so the Telegram row waits until it is hidden). */
+  getStartedShowing?: boolean;
+  /** Row ids the trader hid for today (src/dashboard/dismissToday.ts). */
+  dismissed?: ReadonlySet<string>;
+}
+
+/** The setup-health rows (Settings redesign D), each with one button that opens the exact fix. */
+function healthRows(health: SetupHealthItem[] | null | undefined, getStartedShowing: boolean): Record<SetupHealthItem["key"], AttentionRow | null> {
+  const out: Record<SetupHealthItem["key"], AttentionRow | null> = { analytics_token: null, ai_key: null, telegram: null, data_feed: null };
+  for (const item of health ?? []) {
+    if (item.key === "analytics_token") {
+      out.analytics_token = {
+        id: "renew-token", icon: "login", tone: "warn", dismissible: true,
+        title: item.state === "expired" ? "Your Upstox Analytics Token has expired" : "Your Upstox Analytics Token ends today",
+        detail: item.state === "expired" ? "Paste a new token to keep prices and paper trading going."
+          : "Paste a new token today so prices and paper trading keep going tomorrow.",
+        action: { label: "Renew", to: BROKER_PATH },
+      };
+    } else if (item.key === "ai_key") {
+      out.ai_key = {
+        id: "ai-key", icon: "warning", tone: "warn", dismissible: true,
+        title: item.state === "no_credit" ? "Your AI key is out of credit" : "Your AI key is not working",
+        detail: item.state === "no_credit" ? "Add credit with your AI provider, or connect another key." : (item.message || "Check the key or connect another one."),
+        action: { label: "Fix", to: AI_FIX_PATH },
+      };
+    } else if (item.key === "telegram") {
+      if (!getStartedShowing) {
+        out.telegram = {
+          id: "telegram", icon: "alert", tone: "neutral", dismissible: true, title: "Get your alerts on Telegram",
+          detail: "Connect Telegram in one tap, so alerts reach your phone.", action: { label: "Connect", to: TELEGRAM_FIX_PATH },
+        };
+      }
+    } else if (item.key === "data_feed") {
+      out.data_feed = {
+        id: "data-delayed", icon: "warning", tone: "warn", dismissible: true, title: "Live prices are delayed",
+        detail: "Some prices may be from an earlier session for a while. This clears by itself; nothing to do on your side.",
+      };
+    }
+  }
+  return out;
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -340,9 +390,14 @@ function minutesLeft(expires: string | null, nowMs: number): number | null {
 
 /** Up to MAX_ATTENTION rows, most urgent first (§5): the broker login (nothing is priced without it, so it leads, as in
  * the phone mockup); approvals waiting; Autopilot paused or failing;
- * the daily-loss lockout; a real exposure warning; unseen alerts; LIVE paused by the operator; e-mail not verified. */
+ * the daily-loss lockout; a real exposure warning; unseen alerts; LIVE paused by the operator; e-mail not verified.
+ * Settings redesign D adds the setup-health rows (`input.health`): the Upstox Analytics Token ending ("Renew", after the
+ * broker login), delayed prices and a failing AI key ("Fix", after the exposure warning), and Telegram not connected
+ * ("Connect", last, and only once the Get started card is hidden). A row marked `dismissible` that the trader hid today
+ * stays out (`input.dismissed`). */
 export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): AttentionRow[] {
   const rows: AttentionRow[] = [];
+  const health = healthRows(input.health, !!input.getStartedShowing);
   // Snoozed proposals stay out until they wake (the server's pending list already leaves them out; checked again here).
   const pending = (input.pending ?? []).filter((a) => a.status === "PROPOSED" && !(toMs(a.snoozed_until) > input.nowMs));
   const entries = pending.filter((a) => a.action === "ENTRY");
@@ -352,12 +407,13 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
       id: "login", icon: "login", tone: "warn", title: `Log in to ${name}`,
       detail: input.broker.expired ? `Your ${name} session has ended. Log in to see live prices and your positions.`
         : `Log in to ${name} to see live prices and your positions.`,
-      action: { label: "Log in", login: true },
+      action: { label: "Log in", login: true }, dismissible: true,
     });
   } else {
     const partly = partlyConnected(input.brokerRows);
-    if (partly) rows.push({ id: "login", icon: "login", tone: "warn", title: partly, detail: "Log in to each broker you trade through today.", action: { label: "Brokers", to: BROKER_PATH } });
+    if (partly) rows.push({ id: "login", icon: "login", tone: "warn", title: partly, detail: "Log in to each broker you trade through today.", action: { label: "Brokers", to: BROKER_PATH }, dismissible: true });
   }
+  if (health.analytics_token) rows.push(health.analytics_token);
   if (entries.length) {
     const named = entries.slice(0, 2).map((a) => {
       const e = a.evidence ?? {};
@@ -391,13 +447,13 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
       title: paused.length === 1 ? `Autopilot paused “${humanise(d.strategy_id)} ${d.symbol}”` : `${paused.length} Autopilot strategies are paused`,
       detail: paused.length === 1 ? (d.pause_reason ? `${d.pause_reason} Nothing else is affected.` : "It stays paused until you resume it.")
         : "They stay paused until you resume them.",
-      action: { label: "Review", to: "/deployments" },
+      action: { label: "Review", to: "/deployments" }, dismissible: true,
     });
   } else if (failing.length) {
     rows.push({
       id: "failing", icon: "paused", tone: "warn",
       title: failing.length === 1 ? `Autopilot “${humanise(failing[0].strategy_id)} ${failing[0].symbol}” hit a problem` : `${failing.length} Autopilot strategies hit a problem`,
-      detail: "Open Autopilot to see what happened and what to do.", action: { label: "Review", to: "/deployments" },
+      detail: "Open Autopilot to see what happened and what to do.", action: { label: "Review", to: "/deployments" }, dismissible: true,
     });
   }
   const lockout = input.risk?.lockout;
@@ -406,6 +462,8 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
   }
   const warning = input.exposure?.warnings?.[0];
   if (warning) rows.push({ id: "exposure", icon: "warning", tone: "warn", title: "Your exposure is high", detail: warning, action: { label: "Portfolio", to: "/portfolio" } });
+  if (health.data_feed) rows.push(health.data_feed);
+  if (health.ai_key) rows.push(health.ai_key);
   const unread = input.unread ?? [];
   if (unread.length) {
     const newest = [...unread].sort((a, b) => toMs(b.created_at) - toMs(a.created_at))[0];
@@ -430,7 +488,9 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
   if (!paperOnly && input.emailVerified === false) {
     rows.push({ id: "email", icon: "account", tone: "neutral", title: "Verify your email", detail: "Live trading needs a verified address.", action: { label: "Verify", to: "/settings/account" } });
   }
-  return rows.slice(0, max);
+  if (health.telegram) rows.push(health.telegram);
+  const dismissed = input.dismissed;
+  return (dismissed?.size ? rows.filter((r) => !(r.dismissible && dismissed.has(r.id))) : rows).slice(0, max);
 }
 
 // --- Today summary ----------------------------------------------------------------------------------------------------

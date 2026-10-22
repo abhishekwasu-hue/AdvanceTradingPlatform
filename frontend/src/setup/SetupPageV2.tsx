@@ -3,7 +3,8 @@ import { Link, Navigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import type { PageProps } from "../routes";
 import { SIGN_IN_PATH } from "../ui/BrokerGate";
-import { GO_LIVE_PATH } from "./getStarted";
+import { GO_LIVE_PATH_V2 } from "../settings/paths";
+import { useLiveHidden } from "../settings/useLiveHidden";
 import SetupWizardV2 from "./SetupWizardV2";
 
 /**
@@ -14,12 +15,14 @@ import SetupWizardV2 from "./SetupWizardV2";
  */
 export default function SetupPageV2(_props: PageProps = {}) {
   const { user, loading } = useAuth();
+  // Settings redesign B3: "Prepare for LIVE" only once Phase 0 (PAPER only) is over.
+  const liveHidden = useLiveHidden();
   if (!loading && !user) return <Navigate to={SIGN_IN_PATH} replace />;
   return (
     <div className="mx-auto w-full max-w-[760px] space-y-space-4 md:space-y-space-6" data-page="setup-v2">
       <SetupWizardV2 />
-      {user && (
-        <Link to={GO_LIVE_PATH} data-block="prepare-live"
+      {user && !liveHidden && (
+        <Link to={GO_LIVE_PATH_V2} data-block="prepare-live"
           className="inline-flex min-h-11 items-center gap-space-1 rounded-control text-t14 font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
           Prepare for LIVE <ChevronRight size={16} aria-hidden />
         </Link>

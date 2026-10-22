@@ -160,7 +160,7 @@ export default function ScannerPage() {
             {aiBusy ? "Planning…" : "Plan filters with AI"}
           </button>
         </div>
-        <p className="text-xs text-fg-muted mt-2">The AI only translates your words into the filters below (same building blocks as the Strategy Builder); you review them and press Run. Without an AI provider under Settings the deterministic parser is used.</p>
+        <p className="text-xs text-fg-muted mt-2">The AI only translates your words into the filters below (same building blocks as the Strategy Builder); you review them and press Run. Without an AI key (Settings → AI) the built-in parser is used.</p>
         {aiPlan && (
           <div className="mt-2 text-xs space-y-1">
             <div className="text-fg">{aiPlan.explanation} <span className="text-fg-muted">· {aiPlan.provider}{aiPlan.model ? `/${aiPlan.model}` : ""} · {aiPlan.prompt_version}</span></div>

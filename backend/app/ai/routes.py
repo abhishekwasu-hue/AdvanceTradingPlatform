@@ -931,7 +931,7 @@ async def research_study(body: ResearchBody, user: User = Depends(require_ai_ack
     await require_flag(session, "ai_research", user.tenant_id)
     provider = await ai_settings.provider_for(session, await _tenant(session, user), task="generation", user_id=user.id)
     if getattr(provider, "name", "") == "rule_based":
-        raise HTTPException(status_code=409, detail="The research loop needs an AI provider (Settings > AI provider).")
+        raise HTTPException(status_code=409, detail="The research loop needs an AI provider (Settings > AI).")
     try:
         row = await research_jobs.enqueue(session, tenant_id=user.tenant_id, user_id=user.id, idea=body.idea, symbol=body.symbol,
                                           exchange=body.exchange, timeframe=body.timeframe, days=body.days, max_drafts=body.max_drafts)

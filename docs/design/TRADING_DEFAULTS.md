@@ -23,14 +23,14 @@ Rules (all tested in `frontend/src/settings/tradingDefaults.test.tsx` and `backe
   `target_credit_pct` / `stop_credit_pct`, `entry_mode`; ExitRules `trailing_stop_pct`, `break_even_at_r`,
   `time_exit_minutes`, `time_exit_at`; the ticket's lots / product / order type.
 - Not stored, never pre-filled: `mode`, broker routing, `order_style`, any LIVE field, the symbol, the strategy, the
-  timeframe, and `holding` (the strategy's candles decide it, SR-12).
+  timeframe, and `holding` (the strategy's candles decide it, SR-C2).
 - Not built (review R7): stop source, target rule, carry-forward, "next weekly on expiry day", separate lots for spreads
   and singles, "Use this template" (waits until templates are wired).
 - Empty defaults: every form builder returns today's object itself, so request bodies are byte-identical.
 - A value is used only where the API takes it (a structure's credit % only with a structure, a strike offset only with
   ITM / OTM, no structure or writing on a daily strategy); a value not used is not claimed.
-- APPROVAL only while the `approval_only_entries` flag allows it (the API refuses it otherwise; SR-13).
-- The time exits are on the page, empty, and ATP never fills one in (SR-10, SR-11).
+- APPROVAL only while the `approval_only_entries` flag allows it (the API refuses it otherwise; SR-C3).
+- The time exits are on the page, empty, and ATP never fills one in (SR-10, SR-C1).
 - Risk limits are a link to the Risk limits page, not a copy (they are tenant rows the server already enforces).
 
 ## C3: what other platforms preset, and what maps

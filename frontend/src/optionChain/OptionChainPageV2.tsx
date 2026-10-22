@@ -1,6 +1,7 @@
 import { CalendarDays, Info, TriangleAlert } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { useMarketStatus } from "../chart/useMarketStatus";
+import { useChainTrading } from "../fno/ChainTradingV2";
 import type { PageProps } from "../routes";
 import { formatDateIST, formatTimeIST } from "../ui/format";
 import { PageIntro } from "../ui/PageIntro";
@@ -25,7 +26,9 @@ import { useOptionChain, type OptionChainData } from "./useOptionChain";
  * - No sample data and no developer controls: without a broker session the shell's broker gate shows "Connect your
  *   broker" instead of this page (src/ui/dataPages.ts), and a chain that cannot be read says so in plain words.
  * - Below the chain: the Analysis tabs, Ask AI and My analyses (AnalysisSlotV2).
- * Shown only while `ui_v2` is on (src/shell/pagesV2.ts). Read-only: nothing here places an order.
+ * - FNO-1: with the PAPER account on, a call or put cell opens its actions and the PAPER order ticket, held contracts
+ *   show "P", and a bottom strip holds the key figures (src/fno/ChainTradingV2.tsx). The page itself places nothing.
+ * Shown only while `ui_v2` is on (src/shell/pagesV2.ts).
  */
 const SELECT = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 font-semibold text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9";
 
@@ -72,6 +75,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
     ? chain.expiries.expiries
     : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const pickedRow: ChainRow | null = live?.rows.find((r) => r.strike === picked) ?? null;
+  const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions });
 
   return (
     <div className="space-y-space-4" data-page="option-chain-v2">
@@ -132,11 +136,14 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
             <div aria-hidden className="mb-space-2 flex justify-between text-t12 font-semibold uppercase text-fg-muted">
               <span>Calls</span><span>Puts</span>
             </div>
-            <ChainTableV2 live={live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}`} onPick={(row) => setPicked(row.strike)} />
+            <ChainTableV2 live={live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${trading.centreSuffix}`} onPick={(row) => setPicked(row.strike)}
+              onPickLeg={trading.onPickLeg} held={trading.held} />
             {chain.problem && <p className="mt-space-2 text-t12 text-fg-muted">{TEXT.loadFailed}</p>}
           </>
         )}
+        {trading.strip}
       </section>
+      {trading.layer}
 
       {/* OC4: the Analysis tabs, Ask AI and My analyses for the chain on screen. */}
       <AnalysisSlotV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />

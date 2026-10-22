@@ -2048,6 +2048,42 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   keeps the seven-tab Copilot; `/copilot` added to `OWN_BROKER_STATES` (the chat says itself what a missing broker
   hides). Strings in `src/copilot/locales/en.ts` (`chat`). New e2e `e2e/copilot-chat-v2.e2e.ts` with four new baselines.
 - Provisional decisions: OPEN_QUESTIONS "Item 5 Copilot" (CP5-1..CP5-5).
+## FNO-1: option chain trading + the one order ticket, PAPER only (owner order ATP_SESSION_FNO_WORKSPACE.md 3, 6, 8b-l, 9)
+
+- Branch `claude/fno1-chain-ticket` (from main). Behind `ui_v2` + `paper_account` (OPEN_QUESTIONS FNO-1-1). No
+  migration, no new flag.
+- Backend: `app/paper/fno_ticket.py` + `fno_routes.py` (`/api/paper/fno/contract`, `/held`, `/order/preview`, `/order`,
+  classified in `tests/tenancy_route_table.py`). The contract (lot size, tick size) from the instrument master; the
+  confirm figures (fill price, margin estimate, max loss, charges) and every risk check in plain words before placing;
+  placing sends ONE PAPER order through `execute_signal_for_user` (two small keyword arguments for a manual contract:
+  its spec and position meta). `phase0_lock.assert_paper` is asserted right before the pipeline; there is no mode in
+  any body. The census test of order entry points lists the new caller.
+- Frontend: `src/fno/` - `OrderTicketV2` (the reusable ticket: lots with units, Market / Limit / SL / SL-M, MIS / NRML,
+  price helper, stop-loss, Review -> confirm -> place, B / S keys, bottom sheet on a phone, the "Practice mode (PAPER)"
+  frame), `ChainActionSheetV2` (Buy / Sell, Add to basket, Chart of this strike, Add to watchlist, Price alert, "You
+  hold" with Add / Exit), `ChainTradingV2` (the hook the chain page mounts + the bottom strip), `basket.ts` (legs in this
+  browser, badge count). The chain table: call / put cell taps, "P" markers, OI change in %. Page change: a few lines.
+- Tests: `backend/tests/test_fno1_chain_ticket.py`, `frontend/src/fno/fno.test.tsx`, `frontend/e2e/chain-ticket-v2.e2e.ts`
+  with new baselines `chain-actions-v2-*` and `order-ticket-v2-*` only (no existing baseline touched: without the PAPER
+  account the chain renders exactly as before).
+
+## FNO-2: basket orders, PAPER only (owner order ATP_SESSION_FNO_WORKSPACE.md 5, 8b-c, 9)
+
+- Branch `claude/fno2-basket`, stacked on `claude/fno1-chain-ticket` (PR #338). Same flags (`ui_v2` + `paper_account`).
+  No migration, no new flag. Open questions FNO-2-1..10.
+- Backend: `app/paper/fno_basket.py` + routes in `fno_routes.py` (`/api/paper/fno/basket/evaluate`, `/settings`,
+  `/preview`, `/execute`, `/broker-link`, classified in `tests/tenancy_route_table.py`). The numbers come from the
+  Options Builder's engine (`options_builder.routes._evaluate`) with lot sizes from the instrument master; the margin is
+  ATP's labelled estimate with the hedge beside the sold legs alone. Execute: every leg checked first (nothing placed if
+  any leg or the open-position room refuses), then each leg ONE PAPER order through `fno_ticket.place` (which asserts
+  `phase0_lock.assert_paper`), hedge legs first; a sold leg is never placed after its hedge failed; per-leg results,
+  never retried. Saved baskets: prefs namespace `fno_baskets` (strict, size-capped).
+- Frontend: `src/fno/BasketPanelV2.tsx` (drawer / bottom sheet from the chain's badge: legs, ready strategies, the
+  builder's payoff canvas, the payoff in plain words, numbers, confirm, per-leg result, save / load, Options Builder
+  hand-over, Kite basket), `basketModel.ts` (pure parts), `basket.ts` (update / replace, 12 legs), `api.ts` (basket
+  calls), `brokerLinks.kiteFnoBasketLink`; the Options Builder page reads the hand-over once.
+- Tests: `backend/tests/test_fno2_basket.py`, `frontend/src/fno/basket.test.tsx`, `frontend/e2e/basket-v2.e2e.ts` with
+  NEW baselines `basket-panel-v2-{1440,390}-{light,dark}.png` only (the badge keeps its look; no baseline touched).
 ## GS-1: Google sign-in, inert until the credentials are set
 - Owner decision (22 Oct): the "Continue with Google" button stays hidden until `GOOGLE_OAUTH_CLIENT_ID` and
   `GOOGLE_OAUTH_CLIENT_SECRET` are on the server (docs/OPEN_QUESTIONS.md GS-1). Redirect URI

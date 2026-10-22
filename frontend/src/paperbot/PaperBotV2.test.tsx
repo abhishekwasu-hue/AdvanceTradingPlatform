@@ -139,7 +139,7 @@ describe("UX2 fix 4 view", () => {
   it("a running bot: name, Paper, what it trades, Running, Pause and Stop", () => {
     const t = text(row(bot({ open_positions: 1 })));
     expect(t).toContain("Opening range breakout Paper NIFTY 50 options · during the day");
-    expect(t).toMatch(/Running Checked 2 min ago · 1 open trade Pause Stop/);
+    expect(t).toMatch(/Running Checked 2 min ago 1 open trade Pause Stop/);
     expect(t).not.toContain("Resume");
   });
 
@@ -152,11 +152,11 @@ describe("UX2 fix 4 view", () => {
     expect(asking).not.toMatch(/ Pause /);
   });
 
-  it("the start form: 1 strategy, 2 symbol, 3 Start on paper; the broker note when none is connected", () => {
+  it("the start form: 1 pick a strategy, 2 pick a symbol, Start on paper; the broker note when none is connected", () => {
     const html = renderToStaticMarkup(<MemoryRouter><StartBotV2 library={[intraday, daily, other]} custom={[]} hasBroker={false}
       firstField={createRef<HTMLSelectElement>()} onStarted={noop} /></MemoryRouter>);
     const t = text(html);
-    expect(t).toMatch(/1 Strategy .* 2 Symbol .* 3 Start on paper/);
+    expect(t).toMatch(/1 Pick a strategy .* 2 Pick a symbol .* Start on paper/);
     expect(t).toContain("Connect your broker");
     expect(html.match(/<optgroup label="Ready-made">[\s\S]*?<\/optgroup>/)?.[0]).toContain("Opening range breakout");
     expect(html.match(/<optgroup label="More from the Library">[\s\S]*?<\/optgroup>/)?.[0]).toContain("RSI divergence");

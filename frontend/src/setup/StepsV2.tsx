@@ -427,7 +427,9 @@ export function AlertsStepV2({ onChanged }: StepProps) {
               <li key={type} className="space-y-space-2 rounded-control border border-subtle p-space-3" data-channel={type}>
                 <TelegramConnectV2 onChanged={() => { void refresh(); onChanged(); }} />
                 {ownBot && c.enabled && (
-                  <ActionV2 busy={busy === "link"} disabled={busy !== null} onClick={() => void linkTelegram()}>Link my Telegram</ActionV2>
+                  <div className="flex flex-col gap-space-2 sm:flex-row">
+                    <ActionV2 busy={busy === "link"} disabled={busy !== null} onClick={() => void linkTelegram()}>Link my Telegram</ActionV2>
+                  </div>
                 )}
                 {n && <Note tone={n.tone}>{n.text}</Note>}
                 {code && (

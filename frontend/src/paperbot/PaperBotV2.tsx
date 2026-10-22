@@ -192,7 +192,7 @@ export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel,
           <p className="mt-space-1 flex flex-wrap items-center gap-space-2 text-t13 text-fg-muted">
             <StateChipV2 tone={state === "paused" ? "warn" : "neutral"} check={state === "running"}>{status}</StateChipV2>
             {state !== "stopped" && <span>{lastChecked(bot.last_evaluated_at)}</span>}
-            {bot.open_positions > 0 && <span>· {bot.open_positions} open {bot.open_positions === 1 ? "trade" : "trades"}</span>}
+            {bot.open_positions > 0 && <span>{bot.open_positions} open {bot.open_positions === 1 ? "trade" : "trades"}</span>}
           </p>
         </div>
         {state !== "stopped" && !confirming && (
@@ -224,6 +224,11 @@ export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel,
       )}
     </li>
   );
+}
+
+/** The step number in front of a field's label (decoration: the label itself says what to do). */
+function StepNo({ n }: { n: number }) {
+  return <span aria-hidden className="mr-space-1 inline-flex h-5 w-5 items-center justify-center rounded-pill bg-surface-3 text-t12 font-semibold text-fg">{n}</span>;
 }
 
 export function StartBotV2({ library, custom, hasBroker, firstField, onStarted }: {
@@ -287,7 +292,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted }
           </NoteV2>
         )}
         <div>
-          <label htmlFor={ids.strategy} className={LABEL}><span aria-hidden className="font-semibold text-fg">1</span> Strategy</label>
+          <label htmlFor={ids.strategy} className={LABEL}><StepNo n={1} />Pick a strategy</label>
           <select id={ids.strategy} ref={firstField} className={FIELD} value={strategyId} aria-describedby={ids.line}
             onChange={(e) => {
               setStrategyId(e.target.value); setResult(null);
@@ -301,14 +306,14 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted }
           {line && <p id={ids.line} className="mt-space-1 text-t14 text-fg-muted">{line}</p>}
         </div>
         <div>
-          <label htmlFor={ids.symbol} className={LABEL}><span aria-hidden className="font-semibold text-fg">2</span> Symbol</label>
+          <label htmlFor={ids.symbol} className={LABEL}><StepNo n={2} />Pick a symbol</label>
           <select id={ids.symbol} className={FIELD} value={symbolChoice} onChange={(e) => { setSymbolChoice(e.target.value); setResult(null); }}>
             {SYMBOLS.map((s) => <option key={s} value={s}>{s}</option>)}
             <option value={OTHER}>Another symbol…</option>
           </select>
           {symbolChoice === OTHER && (
             <div className="mt-space-2">
-              <label htmlFor={ids.other} className="sr-only">Symbol</label>
+              <label htmlFor={ids.other} className="sr-only">Type the symbol</label>
               <input id={ids.other} className={FIELD} value={otherSymbol} autoCapitalize="characters" autoComplete="off" placeholder="For example RELIANCE"
                 aria-invalid={touched && !!problem} onChange={(e) => setOtherSymbol(e.target.value)} onBlur={() => setTouched(true)} />
             </div>
@@ -319,7 +324,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted }
           <p className="text-t14 text-fg-muted">{startSummary(symbol, info)}</p>
           <button type="button" className={`${BUTTON_PRIMARY} w-full sm:w-auto`} disabled={busy || !strategyId} aria-busy={busy || undefined} onClick={() => void start()}>
             {busy && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}
-            <span aria-hidden className="font-semibold">3</span> Start on paper
+            Start on paper
           </button>
         </div>
         {result && <NoteV2 kind={result.kind}>{result.text}</NoteV2>}

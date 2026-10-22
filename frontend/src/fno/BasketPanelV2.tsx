@@ -18,6 +18,8 @@ import {
   type SavedState, type StrategyName,
 } from "./basketModel";
 import { PracticeFrame } from "./OrderTicketV2";
+import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
+import { riskLine, structureOf, type RiskBudget } from "./insights";
 import { moneyText, newClientRef, sideWord } from "./ticketModel";
 
 /**
@@ -90,6 +92,8 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   const ref = useRef(newClientRef());
   const seq = useRef(0);
   const idPrefix = useId();
+  // 8b-d: the user's own risk budget for the risk line (information only: Execute reads only the server's checks).
+  const budget = useRiskBudget(open && legs.length > 0);
 
   const live = chain.live;
   const spot = live?.summary.spot ?? null;
@@ -274,10 +278,10 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           </div>
           {step.kind === "edit" && (
             <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} rows={rows} pick={pick} atm={atm} spot={spot}
-              product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} />
+              product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} />
           )}
           {step.kind === "confirm" && (
-            <ConfirmView preview={step.preview} busy={busy} onBack={() => setStep({ kind: "edit" })} onPlace={() => { void execute(); }} />
+            <ConfirmView preview={step.preview} busy={busy} budget={budget} onBack={() => setStep({ kind: "edit" })} onPlace={() => { void execute(); }} />
           )}
           {step.kind === "done" && (
             <ResultView result={step.result} onRemaining={() => { void confirm(remainingLegs(step.legs, step.result)); }} onEdit={() => setStep({ kind: "edit" })}
@@ -327,10 +331,12 @@ function Figure({ label, children, sub, testId }: { label: string; children: Rea
 }
 
 /** The panel's edit view: ready strategies, the legs, the numbers and the tools (no state, no hooks). */
-export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on }: {
+export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget }: {
   legs: readonly BasketLeg[]; numbers: BasketNumbers | null; problems: string[]; settings: BasketSettings | null; rows: LiveChain["rows"];
   pick: number | null; atm: number | null; spot: number | null; product: Product; note: Note; tool: Tool; saved: SavedState | null;
   saveName: string; idPrefix: string; on: BodyHandlers;
+  /** 8b-d: the user's own risk budget for the risk line (null: the line is left out). */
+  budget?: RiskBudget | null;
 }) {
   const step = strikeStep(rows);
   const ext = numbers?.extremes ?? null;
@@ -399,6 +405,7 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
                   <span className="block text-t12 font-semibold text-fg-muted">In plain words (information only)</span>
                   {payoffSentence(numbers, underlying)}
                 </p>
+                <RiskLineV2 line={ext ? riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget) : null} />
                 <dl className="rounded-control border border-subtle px-space-3">
                   <Figure label={numbers.net_premium >= 0 ? "Net premium received" : "Net premium paid"} testId="net">{moneyText(Math.abs(numbers.net_premium))}</Figure>
                   <Figure label="Max profit" testId="max-profit">{ext ? (ext.unbounded_profit ? "Unlimited" : moneyText(ext.max_profit)) : "See the chart"}</Figure>
@@ -424,6 +431,7 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
                   </dl>
                 )}
                 {hedge && <p className="text-t12 text-fg-muted">{hedge.note} {numbers.disclaimer}</p>}
+                <ExplainV2 testId="basket" underlying={underlying} greeks={g ?? null} structure={structureOf(legs)} />
               </>
             )}
           </section>
@@ -529,7 +537,11 @@ function LegRow({ leg: l, n, lotSize, idPrefix, on }: { leg: BasketLeg; n: numbe
 }
 
 /** The confirm step: every leg as it would be placed (hedge legs first), the total margin and max loss (no state). */
-export function ConfirmView({ preview: p, busy, onBack, onPlace }: { preview: BasketPreview | null; busy: boolean; onBack: () => void; onPlace: () => void }) {
+export function ConfirmView({ preview: p, busy, onBack, onPlace, budget }: {
+  preview: BasketPreview | null; busy: boolean; onBack: () => void; onPlace: () => void;
+  /** 8b-d: the risk line beside the total max loss (information only: the button reads `can_execute` alone). */
+  budget?: RiskBudget | null;
+}) {
   const hedge = p?.totals?.margin.hedge ?? null;
   const ext = p?.totals?.extremes ?? null;
   return (
@@ -566,6 +578,7 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace }: { preview: Ba
               <Figure label="Max loss" testId="total-max-loss">{ext ? (ext.unbounded_loss ? "Unlimited" : moneyText(ext.max_loss)) : "See the chart"}</Figure>
               {p.totals && <Figure label="Charges to open (estimate)" testId="total-charges">{moneyText(p.totals.costs)}</Figure>}
             </dl>
+            {ext && <RiskLineV2 line={riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget)} />}
             {p.totals_errors.length > 0 && <p className="text-t13 text-fg-muted">{p.totals_errors[0]}</p>}
             {p.refusals.length > 0 && (
               <ul role="alert" className="space-y-space-1 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-basket="confirm-refusals">

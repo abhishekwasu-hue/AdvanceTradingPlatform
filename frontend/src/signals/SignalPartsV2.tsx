@@ -8,6 +8,7 @@ import { ApiError } from "../api/errors";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { cx } from "../components/primitives";
 import { snoozeChoices } from "../proposals/snooze";
+import { SetupChainLinkV2 } from "../fno/InsightsV2";
 import { chartTabPath } from "../shell/shellRoutes";
 import type { AiAction } from "../types";
 import { formatChange, formatDateIST, formatINR, formatLots, formatNumber, formatPrice, formatSignedINR, formatTimeIST } from "../ui/format";
@@ -399,6 +400,7 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
         {waiting && <CompactRisk proposal={proposal} />}
         {!waiting && <OutcomeLine item={item} now={now} />}
         <SignalActions item={item} now={now} compact canTrade={canTrade} onDone={onDone} onError={onError} />
+        <SetupChainLinkV2 item={item} />
         <YourLevels item={item} />
         {reasonWords(item.reasons).length > 0 && (
           <details className="group">
@@ -431,6 +433,7 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
       <Reasons item={item} />
       {waiting ? <RiskLines proposal={proposal} /> : <OutcomeLine item={item} now={now} />}
       <SignalActions item={item} now={now} canTrade={canTrade} chartTimeframe={timeframe} onDone={onDone} onError={onError} />
+      <SetupChainLinkV2 item={item} />
     </section>
   );
 }

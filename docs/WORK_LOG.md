@@ -2028,3 +2028,22 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   day (deduped by title). `DELETE /api/broker/{name}/analytics-token` forgets the token.
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
+
+## FNO-1: option chain trading + the one order ticket, PAPER only (owner order ATP_SESSION_FNO_WORKSPACE.md 3, 6, 8b-l, 9)
+
+- Branch `claude/fno1-chain-ticket` (from main). Behind `ui_v2` + `paper_account` (OPEN_QUESTIONS FNO-1-1). No
+  migration, no new flag.
+- Backend: `app/paper/fno_ticket.py` + `fno_routes.py` (`/api/paper/fno/contract`, `/held`, `/order/preview`, `/order`,
+  classified in `tests/tenancy_route_table.py`). The contract (lot size, tick size) from the instrument master; the
+  confirm figures (fill price, margin estimate, max loss, charges) and every risk check in plain words before placing;
+  placing sends ONE PAPER order through `execute_signal_for_user` (two small keyword arguments for a manual contract:
+  its spec and position meta). `phase0_lock.assert_paper` is asserted right before the pipeline; there is no mode in
+  any body. The census test of order entry points lists the new caller.
+- Frontend: `src/fno/` - `OrderTicketV2` (the reusable ticket: lots with units, Market / Limit / SL / SL-M, MIS / NRML,
+  price helper, stop-loss, Review -> confirm -> place, B / S keys, bottom sheet on a phone, the "Practice mode (PAPER)"
+  frame), `ChainActionSheetV2` (Buy / Sell, Add to basket, Chart of this strike, Add to watchlist, Price alert, "You
+  hold" with Add / Exit), `ChainTradingV2` (the hook the chain page mounts + the bottom strip), `basket.ts` (legs in this
+  browser, badge count). The chain table: call / put cell taps, "P" markers, OI change in %. Page change: a few lines.
+- Tests: `backend/tests/test_fno1_chain_ticket.py`, `frontend/src/fno/fno.test.tsx`, `frontend/e2e/chain-ticket-v2.e2e.ts`
+  with new baselines `chain-actions-v2-*` and `order-ticket-v2-*` only (no existing baseline touched: without the PAPER
+  account the chain renders exactly as before).

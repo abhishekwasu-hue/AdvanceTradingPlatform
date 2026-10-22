@@ -498,6 +498,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/orders/{order_id}/events"): "member",
     ("GET", "/api/paper/account"): "member",
     ("GET", "/api/paper/experience"): "member",
+    ("GET", "/api/paper/fno/contract"): "member",           # FNO-1: the instrument master's contract (platform-wide data)
+    ("GET", "/api/paper/fno/held"): "member: the caller's own open PAPER option positions only (tenant and user)",
+    ("POST", "/api/paper/fno/order"): "trader",              # FNO-1: one PAPER order from the chain's ticket
+    ("POST", "/api/paper/fno/order/preview"): "trader",
     ("POST", "/api/paper/experience/opt-out"): "trader",
     ("PUT", "/api/paper/account"): "trader",
     ("GET", "/api/paper/ladder"): "member",

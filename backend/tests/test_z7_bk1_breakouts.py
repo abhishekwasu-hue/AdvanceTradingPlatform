@@ -75,7 +75,8 @@ def test_screenql_argument_defaults_are_the_parameter_defaults():
             "RangeBreakoutRef": {"n": "range_n", "k": "min_break_atr", "v": "vol_mult", "mode": "range_mode", "stop_mult": "stop_atr_mult"}}
     bk2 = {"ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP"}   # tests/test_z7_bk2_intraday.py
     bk3 = {"VCPBreakout", "VCPReady", "DonchianBreakout", "SqueezeBreakout", "MABreakout", "RegimeBreakout"}   # tests/test_z7_bk3_breakouts.py
-    bk4 = {"TrendlineBreakout", "PatternBreakout", "GapBreakout", "GapType", "RetestEntry", "LineBreakoutRef"}   # tests/test_z7_bk4_breakouts.py
+    bk4 = {"TrendlineBreakout", "PatternBreakout", "GapBreakout", "GapType", "RetestEntry", "LineBreakoutRef",
+           "RetestEntryRef"}   # tests/test_z7_bk4_breakouts.py (RetestEntryRef: strategy templates step 3, R7)
     assert set(want) | bk2 | bk3 | bk4 == set(BREAKOUT_FUNCTIONS)
     for fn, args in want.items():
         spec = {a.name: a for a in FUNCTIONS[fn].args}

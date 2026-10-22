@@ -251,8 +251,17 @@ def test_invalidation_must_be_a_price_and_switches_stay_out_of_expressions():
     t = tpl(invalidation={"long": "RSI(14)", "short": "high"})
     with pytest.raises(C.TemplateError, match="must be a price"):
         C.compile_recipe(t, C.resolve_settings(t, "15m"))
+    # step 3 (R7): a yes / no setting may fill a yes / no argument (RetestEntry's reversal); the validator types it there
     params = BASE["params"] + [{"key": "flag", "label": "Flag", "help": "A switch.", "type": "bool", "default": True}]
-    t = tpl(params=params, **{"setup.long": "$flag"})
+    t = tpl(params=params, **{"setup.long": 'RetestEntry("up", "range", 10, $flag)'})
+    assert C.compile_recipe(t, C.resolve_settings(t, "15m")).part("setup", "long").params == {"flag": True}
+    t = tpl(params=params, **{"setup.long": "SMA(close, $flag) > close"})
+    with pytest.raises(C.TemplateError, match="window"):
+        C.compile_recipe(t, C.resolve_settings(t, "15m"))
+    # a timeframe setting is still never a value inside an expression (only as @{name})
+    params = BASE["params"] + [{"key": "ctx_tf", "label": "Context", "help": "A timeframe.", "type": "timeframe", "default": "1h",
+                                "choices": ["1h", "1d"]}]
+    t = tpl(params=params, **{"setup.long": "$ctx_tf == \"1h\""})
     with pytest.raises(C.TemplateError, match="cannot be read inside an expression"):
         C.compile_recipe(t, C.resolve_settings(t, "15m"))
 

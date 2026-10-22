@@ -1,0 +1,419 @@
+{
+  "schema": "atp.ideas/1",
+  "header": {
+    "title": "Idea library",
+    "subtitle": "Well-known chart-reading methods, explained in plain words. Learn an idea, then try it as a scan.",
+    "frame": [
+      "Education, not advice. Each idea is a general method explained in plain words; ATP does not tell you what to trade or when.",
+      "No results are claimed. Nothing here says how well an idea has done or will do.",
+      "Every number is your own setting. You choose the instruments, the settings and every decision; anything you run is on paper."
+    ],
+    "adopt_later": "Using an idea as a paper strategy comes later, once ATP's strategy templates carry it. You will set every value yourself, and it will run on paper only."
+  },
+  "groups": [
+    {"id": "trend", "name": "Trend"},
+    {"id": "range", "name": "Range"},
+    {"id": "reversal", "name": "Reversal at areas"},
+    {"id": "patterns", "name": "Patterns"},
+    {"id": "options", "name": "Options sellers"}
+  ],
+  "beginner": {
+    "title": "Not sure where to start?",
+    "intro": "Answer three questions and we suggest two or three ideas to read first. This is a reading list, not advice.",
+    "questions": [
+      {
+        "id": "style",
+        "text": "Do you prefer to follow a trend or to work inside a range?",
+        "options": [
+          {"id": "trend", "label": "Follow a trend", "ideas": ["T1", "T5", "T6"]},
+          {"id": "range", "label": "Work inside a range", "ideas": ["T2", "T3", "T4"]},
+          {"id": "unsure", "label": "Not sure yet", "ideas": ["T1", "T2"]}
+        ]
+      },
+      {
+        "id": "time",
+        "text": "How often can you look at your charts?",
+        "options": [
+          {"id": "few", "label": "A few times a day or less", "ideas": ["T1", "T2", "T5"]},
+          {"id": "often", "label": "Often", "ideas": ["T3", "T4", "T7"]}
+        ]
+      },
+      {
+        "id": "options",
+        "text": "Do you write option spreads (as an option seller)?",
+        "options": [
+          {"id": "yes", "label": "Yes", "ideas": ["T8", "T1", "T2"]},
+          {"id": "no", "label": "No", "ideas": []}
+        ]
+      }
+    ]
+  },
+  "ideas": [
+    {
+      "id": "T1",
+      "name": "Trend pullback to demand or supply",
+      "group": "trend",
+      "difficulty": "Beginner",
+      "one_line": "In a trend, wait for price to pull back into an area where the trend started before, and watch how it reacts there.",
+      "works_best_when": "The higher timeframe shows a clear trend and the pullback is slow and overlapping.",
+      "tends_to_fail_when": "The trend is already turning, or the pullback is fast and strong instead of tired.",
+      "plain": [
+        "Trends rarely move in a straight line. After a push, price usually rests and pulls back before the next push.",
+        "This idea waits for that pullback to reach a demand area in an uptrend, or a supply area in a downtrend: a place where buyers or sellers stepped in strongly before.",
+        "Inside the area you watch for a reaction: a candle that rejects the area, or a small change of character on a lower timeframe. The idea is wrong if price moves clearly beyond the far side of the area."
+      ],
+      "logic": {
+        "context": "A trend on the higher timeframe (your setting; Daily for a 15-minute chart by default).",
+        "area": "The nearest valid demand area in an uptrend, or supply area in a downtrend, that price is now visiting.",
+        "trigger": "A rejection or commitment candle inside the area, or a change of character on a lower timeframe inside the area.",
+        "invalidation": "Price moves beyond the far edge of the area.",
+        "evidence": [
+          "The pullback looks corrective: overlapping candles, smaller bodies than the push, lighter volume.",
+          "A commitment candle on rising volume.",
+          "A change of character on a lower timeframe.",
+          "RSI divergence into the area.",
+          "The area lines up with a trendline or another level."
+        ]
+      },
+      "structure_words": [
+        "Uptrend; the pullback reached a demand area; a handover is forming; a continuation setup formed.",
+        "Downtrend; the pullback reached a supply area; a handover is forming; a continuation setup formed."
+      ],
+      "settings": [
+        {"key": "trend_degree", "label": "Trend swing size", "help": "How big a swing must be to count when the trend is read. Bigger swings give a slower, steadier trend.", "type": "choice", "default": 1,
+         "choices": [{"value": 0, "label": "Smallest"}, {"value": 1, "label": "Small"}, {"value": 2, "label": "Medium"}, {"value": 3, "label": "Large"}]},
+        {"key": "area_tolerance_pct", "label": "How close counts as inside the area (%)", "help": "How near price must be to a demand or supply area to count as visiting it.", "type": "number", "default": 0.5, "min": 0.1, "max": 5, "step": 0.1}
+      ],
+      "your_decisions": [
+        "Which instruments you look at.",
+        "The higher timeframe and the chart timeframe.",
+        "Whether you act on a setup at all, and on which side.",
+        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+      ],
+      "provenance": "A widely taught price-action idea (trend, pullback, demand and supply), written for ATP as a generic method. It is not any one person's private method, and no results are claimed for it.",
+      "scans": [
+        {"id": "up", "label": "Uptrend version", "base_tf": "15m",
+         "text": "DowTrend($trend_degree)@1d == \"UP\" AND NearZone(\"demand\", $area_tolerance_pct, \"zones\") AND (PatternBullish() OR StructureEvent() == \"CHOCH_BULLISH\")"},
+        {"id": "down", "label": "Downtrend version", "base_tf": "15m",
+         "text": "DowTrend($trend_degree)@1d == \"DOWN\" AND NearZone(\"supply\", $area_tolerance_pct, \"zones\") AND (PatternBearish() OR StructureEvent() == \"CHOCH_BEARISH\")"}
+      ],
+      "scan_gaps": "The scan reads the reaction on the scan's own timeframe; a lower-timeframe change of character and the area's own timeframe come later."
+    },
+    {
+      "id": "T2",
+      "name": "Range edges",
+      "group": "range",
+      "difficulty": "Beginner",
+      "one_line": "When price moves sideways between two edges, watch for a rejection at the upper or lower edge.",
+      "works_best_when": "Price has failed to make a new extreme on both sides several times and the edges are clear.",
+      "tends_to_fail_when": "Price starts to close and hold beyond an edge: the range may be ending.",
+      "plain": [
+        "A range is a market that has stopped trending: it keeps failing to make a new high and a new low.",
+        "The upper edge acts as a supply area and the lower edge as a demand area. This idea watches for a rejection at one of the edges.",
+        "A rejection can be a commitment candle, a lower-timeframe change of character, or a quick move beyond the edge that closes back inside. The idea is wrong when price accepts beyond the edge: a close beyond it and a new swing formed there."
+      ],
+      "logic": {
+        "context": "A range by structure: price fails to make a new extreme on both sides.",
+        "area": "The upper edge (supply) or the lower edge (demand).",
+        "trigger": "A rejection at the edge: a commitment candle, a lower-timeframe change of character, or a move beyond the edge that closes back inside.",
+        "invalidation": "Acceptance beyond the edge: a close beyond it and a swing formed beyond it.",
+        "evidence": [
+          "The edge has been respected before.",
+          "RSI divergence at the edge.",
+          "Volume fades as price reaches the edge."
+        ]
+      },
+      "structure_words": [
+        "Range; price at the upper edge; rejection formed.",
+        "Range; price at the lower edge; rejection formed."
+      ],
+      "settings": [
+        {"key": "swing_size", "label": "Swing size", "help": "How big a swing must be to count when the range and its edges are read.", "type": "choice", "default": 1,
+         "choices": [{"value": 0, "label": "Smallest"}, {"value": 1, "label": "Small"}, {"value": 2, "label": "Medium"}, {"value": 3, "label": "Large"}]}
+      ],
+      "your_decisions": [
+        "Which instruments you look at, and the chart timeframe.",
+        "Whether you act at an edge at all, and how.",
+        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+      ],
+      "provenance": "A widely taught idea of trading the edges of a sideways market, written for ATP as a generic method. No results are claimed for it.",
+      "scans": [
+        {"id": "upper", "label": "Upper edge", "base_tf": "15m",
+         "text": "DowTrend($swing_size) == \"RANGE\" AND ReversalAt(SwingHigh($swing_size), \"bearish\")"},
+        {"id": "lower", "label": "Lower edge", "base_tf": "15m",
+         "text": "DowTrend($swing_size) == \"RANGE\" AND ReversalAt(SwingLow($swing_size), \"bullish\")"}
+      ],
+      "scan_gaps": "The scan reads the edge as the latest swing high or low; a lower-timeframe change of character comes later."
+    },
+    {
+      "id": "T3",
+      "name": "RSI divergence at an area",
+      "group": "reversal",
+      "difficulty": "Intermediate",
+      "one_line": "Price pushes into an area to a new extreme, but RSI does not follow: the push may be running out of strength.",
+      "works_best_when": "The push into the area is stretched and the divergence is clear between two pushes.",
+      "tends_to_fail_when": "A strong trend keeps going: divergence can repeat several times before anything turns.",
+      "plain": [
+        "RSI is a momentum gauge. When price makes a new high but RSI makes a lower high, momentum is not confirming the move. That is called a bearish divergence; the mirror image is a bullish divergence.",
+        "This idea only looks at divergence when price is pushing into a valid demand or supply area, and waits for a reaction after it.",
+        "The idea is wrong if price moves beyond the extreme of the push."
+      ],
+      "logic": {
+        "context": "Any trend state.",
+        "area": "A valid supply area (for bearish divergence) or demand area (for bullish divergence) that price pushes into.",
+        "trigger": "After the divergence, a change of character on a lower timeframe or a commitment candle.",
+        "invalidation": "Price moves beyond the extreme of the push.",
+        "evidence": [
+          "Regular divergence between the consecutive pushes into the area.",
+          "The area has held before.",
+          "A clear change of character after the divergence."
+        ]
+      },
+      "structure_words": [
+        "Price pushed into a supply area with bearish RSI divergence; a lower-timeframe change of character confirmed.",
+        "Price pushed into a demand area with bullish RSI divergence; a lower-timeframe change of character confirmed."
+      ],
+      "settings": [
+        {"key": "divergence_lookback", "label": "How recent the divergence must be (bars)", "help": "The latest swing of the divergence must be at most this many bars back.", "type": "number", "default": 15, "min": 3, "max": 60, "step": 1},
+        {"key": "swing_size", "label": "Swing size", "help": "How big a swing must be to count as a push.", "type": "choice", "default": 1,
+         "choices": [{"value": 0, "label": "Smallest"}, {"value": 1, "label": "Small"}, {"value": 2, "label": "Medium"}, {"value": 3, "label": "Large"}]},
+        {"key": "area_tolerance_pct", "label": "How close counts as inside the area (%)", "help": "How near price must be to a demand or supply area to count as inside it.", "type": "number", "default": 0.5, "min": 0.1, "max": 5, "step": 0.1}
+      ],
+      "your_decisions": [
+        "Which instruments you look at, and the chart timeframe.",
+        "Whether you act on a divergence at all.",
+        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+      ],
+      "provenance": "RSI divergence is a widely taught momentum idea; reading it only at demand and supply areas is a common price-action refinement. Written for ATP as a generic method. No results are claimed for it.",
+      "scans": [
+        {"id": "bearish", "label": "Bearish divergence at supply", "base_tf": "15m",
+         "text": "RsiDivergence(\"bearish\", $divergence_lookback, $swing_size) AND NearZone(\"supply\", $area_tolerance_pct, \"zones\") AND (PatternBearish() OR StructureEvent() == \"CHOCH_BEARISH\")"},
+        {"id": "bullish", "label": "Bullish divergence at demand", "base_tf": "15m",
+         "text": "RsiDivergence(\"bullish\", $divergence_lookback, $swing_size) AND NearZone(\"demand\", $area_tolerance_pct, \"zones\") AND (PatternBullish() OR StructureEvent() == \"CHOCH_BULLISH\")"}
+      ],
+      "scan_gaps": "The scan reads the reaction on the scan's own timeframe; a lower-timeframe change of character comes later."
+    },
+    {
+      "id": "T4",
+      "name": "Sweep and reclaim",
+      "group": "reversal",
+      "difficulty": "Intermediate",
+      "one_line": "Price runs just beyond an obvious high or low, then closes back inside: the move beyond may have been a trap.",
+      "works_best_when": "The high or low is obvious to everyone and sits near or inside a demand or supply area.",
+      "tends_to_fail_when": "Price keeps going after the sweep and the next push holds beyond the old extreme.",
+      "plain": [
+        "Obvious highs and lows attract orders. Price often trades a little beyond them and then comes straight back.",
+        "This idea looks for that: a move beyond a prior swing high or low, near a supply or demand area, that closes back inside.",
+        "Then it waits for the next push to fail inside the extreme of the sweep. The idea is wrong if price moves beyond the sweep's extreme."
+      ],
+      "logic": {
+        "context": "Obvious liquidity, such as equal highs or lows or a prior swing extreme, near or inside an area.",
+        "area": "The supply area above (for a sweep of highs) or the demand area below (for a sweep of lows).",
+        "trigger": "The next push fails inside the extreme of the sweep.",
+        "invalidation": "Price moves beyond the extreme of the sweep.",
+        "evidence": [
+          "The swept level was obvious (equal highs or lows, a clear prior swing).",
+          "A fast close back inside after the sweep.",
+          "The follow-up push is weaker than the sweep."
+        ]
+      },
+      "structure_words": [
+        "Liquidity above the highs was swept and price closed back inside the supply area; the follow-up push failed.",
+        "Liquidity below the lows was swept and price closed back inside the demand area; the follow-up push failed."
+      ],
+      "settings": [
+        {"key": "swing_size", "label": "Swing size", "help": "How big a swing must be to count as the high or low that gets swept.", "type": "choice", "default": 1,
+         "choices": [{"value": 0, "label": "Smallest"}, {"value": 1, "label": "Small"}, {"value": 2, "label": "Medium"}, {"value": 3, "label": "Large"}]},
+        {"key": "area_tolerance_pct", "label": "How close counts as inside the area (%)", "help": "How near price must be to a demand or supply area to count as inside it.", "type": "number", "default": 0.5, "min": 0.1, "max": 5, "step": 0.1}
+      ],
+      "your_decisions": [
+        "Which instruments you look at, and the chart timeframe.",
+        "Whether the follow-up push really failed, and whether you act at all.",
+        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+      ],
+      "provenance": "The sweep (also called an upthrust or a spring) is a widely taught price-action idea, written for ATP as a generic method. No results are claimed for it.",
+      "scans": [
+        {"id": "highs", "label": "Sweep above the highs", "base_tf": "15m",
+         "text": "high > SwingHigh($swing_size) AND close < SwingHigh($swing_size) AND NearZone(\"supply\", $area_tolerance_pct, \"zones\")"},
+        {"id": "lows", "label": "Sweep below the lows", "base_tf": "15m",
+         "text": "low < SwingLow($swing_size) AND close > SwingLow($swing_size) AND NearZone(\"demand\", $area_tolerance_pct, \"zones\")"}
+      ],
+      "scan_gaps": "The scan finds the sweep and the close back inside. Equal highs or lows and the failed follow-up push come later; check them on the chart for now."
+    },
+    {
+      "id": "T5",
+      "name": "Breakout and retest",
+      "group": "trend",
+      "difficulty": "Beginner",
+      "one_line": "After a level breaks for real, wait for price to come back and test it from the other side.",
+      "works_best_when": "The break was clean (a close beyond and a new swing beyond) and the return is calm.",
+      "tends_to_fail_when": "Price slips back through the level and accepts on the old side.",
+      "plain": [
+        "When an area or line breaks for real, its role often flips: old resistance can act as support, and old support as resistance.",
+        "This idea does not chase the break. It waits for price to return to the broken level from the other side, and looks for a rejection candle that closes away from it.",
+        "The idea is wrong if price accepts back through the level."
+      ],
+      "logic": {
+        "context": "An area or line broken by the method's definition: a close beyond it and a swing formed beyond it.",
+        "area": "The broken area or line, approached from the other side.",
+        "trigger": "A rejection candle that closes away from the level.",
+        "invalidation": "Acceptance back through the level.",
+        "evidence": [
+          "The break came with displacement (a strong candle).",
+          "The return to the level is slow and overlapping.",
+          "The rejection candle closes firmly away from the level."
+        ]
+      },
+      "structure_words": [
+        "Former resistance was broken and is being retested from above; rejection formed.",
+        "Former support was broken and is being retested from below; rejection formed."
+      ],
+      "settings": [
+        {"key": "retest_of", "label": "What broke", "help": "The kind of level whose retest you want to see.", "type": "choice", "default": "swing",
+         "choices": [{"value": "swing", "label": "A swing level"}, {"value": "range", "label": "A range edge"}, {"value": "trendline", "label": "A trendline"}]},
+        {"key": "retest_max_bars", "label": "Retest within (bars)", "help": "The return must come within this many bars after the break; a later return is a new base, not a retest.", "type": "number", "default": 10, "min": 1, "max": 100, "step": 1}
+      ],
+      "your_decisions": [
+        "Which instruments you look at, and the chart timeframe.",
+        "Whether you act on a retest at all.",
+        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+      ],
+      "provenance": "The retest of a broken level (a structure flip) is a widely taught idea, written for ATP as a generic method. It is a retest idea, never a breakout-chasing one. No results are claimed for it.",
+      "scans": [
+        {"id": "above", "label": "Retest from above", "base_tf": "15m",
+         "text": "RetestEntry(\"up\", $retest_of, $retest_max_bars, TRUE)"},
+        {"id": "below", "label": "Retest from below", "base_tf": "15m",
+         "text": "RetestEntry(\"down\", $retest_of, $retest_max_bars, TRUE)"}
+      ],
+      "scan_gaps": null
+    },
+    {
+      "id": "T6",
+      "name": "Channel trading",
+      "group": "trend",
+      "difficulty": "Intermediate",
+      "one_line": "In a rising or falling channel, watch for a rejection at the channel line on the trend's side.",
+      "works_best_when": "Both channel lines have at least two clear reactions and the channel slopes steadily.",
+      "tends_to_fail_when": "Price closes through the line and forms a swing beyond it: the channel is broken.",
+      "plain": [
+        "A channel is two parallel lines that price has reacted to several times.",
+        "This idea only watches the line on the trend's side: the lower line in a rising channel, the upper line in a falling one. It waits for a rejection there.",
+        "The idea is wrong when price closes through the line and forms a swing beyond it. A broken channel can then become a breakout and retest (T5)."
+      ],
+      "logic": {
+        "context": "A channel made of two parallel lines, each with at least two reactions, on the chart or a higher timeframe.",
+        "area": "The channel line in the trend's favour: the lower line in a rising channel, the upper line in a falling one.",
+        "trigger": "A rejection at the line: a commitment candle or a lower-timeframe change of character.",
+        "invalidation": "A close through the line and a swing formed beyond it.",
+        "evidence": [
+          "Each line has clear earlier reactions.",
+          "The touch lines up with a demand or supply area.",
+          "RSI divergence at the line."
+        ]
+      },
+      "structure_words": [
+        "Rising channel; price at the lower channel line; rejection formed.",
+        "Falling channel; price at the upper channel line; rejection formed."
+      ],
+      "settings": [],
+      "your_decisions": [
+        "Which instruments you look at, and the chart timeframe.",
+        "Whether you act at the line at all.",
+        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+      ],
+      "provenance": "Channel trading is a widely taught idea, written for ATP as a generic method. No results are claimed for it.",
+      "scans": [],
+      "scan_gaps": "A scan for this idea comes later: Find setups cannot yet tell when price is at a channel line."
+    },
+    {
+      "id": "T7",
+      "name": "Pattern at an area",
+      "group": "patterns",
+      "difficulty": "Intermediate",
+      "one_line": "A double top or bottom, or a head and shoulders, that forms at a valid demand or supply area.",
+      "works_best_when": "The pattern is clean, built from clear swings, and sits at an area that has held before.",
+      "tends_to_fail_when": "The neckline breaks but price comes straight back through it.",
+      "plain": [
+        "Some swing patterns show a trend running out of strength: a double top or bottom, or a head and shoulders and its inverse.",
+        "This idea only counts them when they form at a valid demand or supply area.",
+        "It waits for the neckline to break and then for the retest to be rejected (as in T5), or for a lower-timeframe change of character at the second top or bottom (your choice). The idea is wrong if price moves beyond the pattern's extreme."
+      ],
+      "logic": {
+        "context": "A double top or bottom, or a head and shoulders (or its inverse), recognised from swings, at or from a valid area.",
+        "area": "The demand or supply area where the pattern forms.",
+        "trigger": "The neckline breaks and the retest is rejected, or a lower-timeframe change of character at the second top or bottom.",
+        "invalidation": "Price moves beyond the pattern's extreme.",
+        "evidence": [
+          "The second push is weaker than the first.",
+          "RSI divergence between the tops or bottoms.",
+          "A clean neckline break."
+        ]
+      },
+      "structure_words": [
+        "Double top formed at a supply area; the neckline broke and the retest was rejected.",
+        "Double bottom formed at a demand area; the neckline broke and the retest was rejected."
+      ],
+      "settings": [],
+      "your_decisions": [
+        "Which instruments you look at, and the chart timeframe.",
+        "Which trigger you prefer: the neckline retest or the lower-timeframe change of character.",
+        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+      ],
+      "provenance": "Double tops and bottoms and head and shoulders are classic chart patterns from public technical-analysis books, written for ATP as a generic method. No results are claimed for them.",
+      "scans": [],
+      "scan_gaps": "A scan for this idea comes later: Find setups cannot yet recognise double tops, double bottoms or head and shoulders."
+    },
+    {
+      "id": "T8",
+      "name": "Options seller pack",
+      "group": "options",
+      "difficulty": "Intermediate",
+      "one_line": "The trend pullback and range edge ideas, reduced to the direction of the structure, for people who write option spreads.",
+      "works_best_when": "You already have your own options construction and only want to know the structure's direction.",
+      "tends_to_fail_when": "The structure changes quickly, for example a range that breaks soon after a signal.",
+      "plain": [
+        "Option writers often care about one thing: is the structure a bullish continuation, a bearish continuation, or a range with price at an edge?",
+        "This pack bundles the trend pullback (T1) and range edges (T2) ideas and reports only that direction, with the area and the invalidation area.",
+        "What each signal type leads to, if anything, is your own decision in your paper bot settings: the construction, strikes, width, lots, expiry rule and exits. The pack never names a strike, a premium or a lot."
+      ],
+      "logic": {
+        "context": "The trend pullback idea (T1) and the range edges idea (T2); the channel idea (T6) can join later.",
+        "area": "The area from the idea that formed the signal.",
+        "trigger": "The trigger of that idea.",
+        "invalidation": "The invalidation of that idea, shown as an area.",
+        "evidence": [
+          "The signal type: bullish continuation, bearish continuation, range upper edge or range lower edge.",
+          "The evidence of the idea that formed it."
+        ]
+      },
+      "structure_words": [
+        "Bullish continuation; the pullback reached a demand area; a handover is forming.",
+        "Range upper edge; price at the upper edge; rejection formed."
+      ],
+      "settings": [
+        {"key": "trend_degree", "label": "Trend swing size", "help": "How big a swing must be to count when the trend is read.", "type": "choice", "default": 1,
+         "choices": [{"value": 0, "label": "Smallest"}, {"value": 1, "label": "Small"}, {"value": 2, "label": "Medium"}, {"value": 3, "label": "Large"}]},
+        {"key": "area_tolerance_pct", "label": "How close counts as inside the area (%)", "help": "How near price must be to a demand or supply area to count as visiting it.", "type": "number", "default": 0.5, "min": 0.1, "max": 5, "step": 0.1},
+        {"key": "swing_size", "label": "Range swing size", "help": "How big a swing must be to count when the range and its edges are read.", "type": "choice", "default": 1,
+         "choices": [{"value": 0, "label": "Smallest"}, {"value": 1, "label": "Small"}, {"value": 2, "label": "Medium"}, {"value": 3, "label": "Large"}]}
+      ],
+      "your_decisions": [
+        "Which underlyings you look at, and the chart timeframe.",
+        "What each signal type leads to, if anything: your construction, strikes, width, lots, expiry rule and exits, all in your own paper bot settings.",
+        "Whether you act on a signal at all."
+      ],
+      "provenance": "A bundle of the trend pullback and range edges ideas in this library, reduced to the structure's direction. Written for ATP as a generic method. No results are claimed for it.",
+      "scans": [
+        {"id": "bull", "label": "Bullish continuation", "base_tf": "15m",
+         "text": "DowTrend($trend_degree)@1d == \"UP\" AND NearZone(\"demand\", $area_tolerance_pct, \"zones\") AND (PatternBullish() OR StructureEvent() == \"CHOCH_BULLISH\")"},
+        {"id": "bear", "label": "Bearish continuation", "base_tf": "15m",
+         "text": "DowTrend($trend_degree)@1d == \"DOWN\" AND NearZone(\"supply\", $area_tolerance_pct, \"zones\") AND (PatternBearish() OR StructureEvent() == \"CHOCH_BEARISH\")"},
+        {"id": "upper", "label": "Range upper edge", "base_tf": "15m",
+         "text": "DowTrend($swing_size) == \"RANGE\" AND ReversalAt(SwingHigh($swing_size), \"bearish\")"},
+        {"id": "lower", "label": "Range lower edge", "base_tf": "15m",
+         "text": "DowTrend($swing_size) == \"RANGE\" AND ReversalAt(SwingLow($swing_size), \"bullish\")"}
+      ],
+      "scan_gaps": "Each signal type is its own scan for now; one combined view comes later."
+    }
+  ]
+}

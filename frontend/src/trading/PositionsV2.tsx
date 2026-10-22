@@ -1,5 +1,5 @@
-import { ArrowDownRight, ArrowUpRight, ChartCandlestick } from "lucide-react";
-import { Suspense, lazy, useId, useMemo, useState, type FormEvent } from "react";
+import { ArrowDownRight, ArrowUpRight, ChartCandlestick, Layers, Plus, SlidersHorizontal } from "lucide-react";
+import { Suspense, lazy, useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -9,6 +9,12 @@ import PaperTicketCard from "../components/PaperTicketCard";
 import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2, toneClass } from "../dashboard/CardV2";
 import { signTone } from "../dashboard/model";
 import { dataOf, usePolled, type Loadable } from "../dashboard/useDashboardData";
+import {
+  addSide, adjustHref, contractsApi, groupRows, groupTitle, isFnoPosition, positionItem, positionTarget, type ContractFacts, type PositionGroup,
+} from "../fno/contracts";
+import type { Side } from "../fno/api";
+import type { TicketTarget } from "../fno/ticketModel";
+import { itemKey } from "../chart/watchlistsV2";
 import DecisionToolsCard from "../progression/DecisionToolsCard";
 import ExperienceCard from "../progression/ExperienceCard";
 import type { PageProps } from "../routes";
@@ -27,6 +33,8 @@ import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from ".
 
 // N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
+// FNO-4: the ONE order ticket (PAPER), loaded only when Add is tapped on an F&O position.
+const OrderTicketV2 = lazy(() => import("../fno/OrderTicketV2"));
 
 const REFRESH_MS = 30_000;
 const every = (ms: number) => () => ms;
@@ -99,7 +107,15 @@ export default function PositionsV2(_props: PageProps = {}) {
   }
 
   const byId = new Map((list ?? []).map((p) => [p.id, p]));
-  const actions = { exitNowOn, canTrade, onExit: exitNow, onCheck: checkPrice };
+  // FNO-4 (owner order section 8): Add / Adjust on F&O PAPER positions and the legs placed together, with the PAPER
+  // account on (the ticket's own routes answer 404 without it). Exit stays the handler above, never blocked here.
+  const fnoOn = features.on("paper_account") && canTrade;
+  const fno = useFnoPositions(list, fnoOn && signedIn);
+  const [ticket, setTicket] = useState<{ target: TicketTarget; side: Side } | null>(null);
+  const actions: RowActions = {
+    exitNowOn, canTrade, onExit: exitNow, onCheck: checkPrice,
+    fno: fnoOn ? { facts: fno.facts, onAdd: (target, side) => setTicket({ target, side }) } : undefined,
+  };
 
   if (!connected) {
     return (
@@ -123,7 +139,7 @@ export default function PositionsV2(_props: PageProps = {}) {
                   <p className="mb-space-3 text-t13 text-fg-muted">
                     Live prices and profit or loss show once your broker is connected.{exitNowOn && canTrade ? " You can still exit a paper position here." : ""}
                   </p>
-                  <PositionList rows={rows} byId={byId} actions={actions} prices={false} />
+                  <PositionList rows={rows} byId={byId} actions={actions} prices={false} groups={fno.groups} />
                 </>
               )}
             </CardV2>
@@ -165,9 +181,15 @@ export default function PositionsV2(_props: PageProps = {}) {
         {positions.status === "loading" ? <LoadingRowsV2 /> : positions.status === "error" ? <LoadFailedV2 what="your positions" /> : rows.length === 0 ? (
           <EmptyStateV2 text="No open positions. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
         ) : (
-          <PositionList rows={rows} byId={byId} actions={actions} />
+          <PositionList rows={rows} byId={byId} actions={actions} groups={fno.groups} />
         )}
       </CardV2>
+
+      {ticket && (
+        <Suspense fallback={null}>
+          <OrderTicketV2 open target={ticket.target} side={ticket.side} onClose={() => setTicket(null)} onPlaced={() => reload()} />
+        </Suspense>
+      )}
 
       {hasOptions && <GreeksCardV2 />}
 
@@ -191,23 +213,70 @@ export interface RowActions {
   canTrade: boolean;
   onExit: (p: TradeRecord) => void;
   onCheck: (p: TradeRecord, price: number) => void;
+  /** FNO-4: Add / Adjust on an F&O PAPER position (absent: the row is exactly as before). */
+  fno?: { facts: ReadonlyMap<string, ContractFacts>; onAdd: (target: TicketTarget, side: Side) => void };
 }
 
-/** `prices: false` (no broker session): no LTP or P&L columns at all - an entry-price row with nothing made up. */
-function PositionList({ rows, byId, actions, prices = true }: { rows: HeldRow[]; byId: Map<number, TradeRecord>; actions: RowActions; prices?: boolean }) {
+/** FNO-4: what the F&O PAPER positions are (for Add / Adjust) and which legs were placed together (one basket, one
+ * structure). Read only; any failure reads as "nothing known", so the list is as before. */
+function useFnoPositions(list: TradeRecord[] | null | undefined, on: boolean) {
+  const items = useMemo(() => (list ?? []).filter((p) => p.mode === "PAPER" && isFnoPosition(p)).map(positionItem), [list]);
+  const key = items.map(itemKey).sort().join("|");
+  const [facts, setFacts] = useState<ReadonlyMap<string, ContractFacts>>(new Map());
+  useEffect(() => {
+    if (!on || !key) { setFacts(new Map()); return undefined; }
+    let live = true;
+    contractsApi.lookup(items.slice(0, 60)).then((r) => { if (live) setFacts(new Map((r?.items ?? []).map((f) => [itemKey(f), f]))); },
+      () => { if (live) setFacts(new Map()); });
+    return () => { live = false; };
+  }, [on, key]);                                                        // `items` is read through `key` (same set, same call)
+  const [groupsState] = usePolled(contractsApi.groups, every(REFRESH_MS), on && items.length > 1);
+  const groups: PositionGroup[] = on ? dataOf(groupsState)?.groups ?? [] : [];
+  return { facts, groups };
+}
+
+/** `prices: false` (no broker session): no LTP or P&L columns at all - an entry-price row with nothing made up.
+ * FNO-4: legs placed together show together under one line with their combined P&L; every leg keeps its own Exit. */
+function PositionList({ rows, byId, actions, prices = true, groups = [] }: {
+  rows: HeldRow[]; byId: Map<number, TradeRecord>; actions: RowActions; prices?: boolean; groups?: PositionGroup[];
+}) {
+  const { grouped, single } = groupRows(rows, groups);
+  const row = (r: HeldRow) => {
+    const p = byId.get(r.id);
+    return p ? <PositionRowV2 key={r.id} row={r} position={p} actions={actions} prices={prices} /> : null;
+  };
   return (
-    <ul className="divide-y divide-subtle">
-      {rows.map((r) => {
-        const p = byId.get(r.id);
-        return p ? <PositionRowV2 key={r.id} row={r} position={p} actions={actions} prices={prices} /> : null;
-      })}
-    </ul>
+    <div className="space-y-space-3">
+      {grouped.map((g) => (
+        <section key={g.group.key} aria-label={groupTitle(g)} data-group={g.group.kind}
+          className="rounded-control border border-border px-space-3 py-space-2">
+          <div className="flex flex-wrap items-center justify-between gap-space-2 border-b border-subtle pb-space-2">
+            <span className="inline-flex items-center gap-space-2 text-t14 font-semibold text-fg">
+              <Layers size={16} aria-hidden className="text-fg-muted" />{groupTitle(g)}
+            </span>
+            {prices && (
+              <span className="text-right" data-col="group-pnl">
+                <span className="mr-space-2 text-t12 text-fg-muted">Combined P&amp;L</span>
+                <span className={`font-tabular text-t15 font-semibold ${toneClass(signTone(g.pnl))}`}>{g.pnl === null ? EMPTY : formatSignedINR(g.pnl)}</span>
+              </span>
+            )}
+          </div>
+          <ul className="divide-y divide-subtle">{g.legs.map(row)}</ul>
+        </section>
+      ))}
+      {single.length > 0 && <ul className="divide-y divide-subtle">{single.map(row)}</ul>}
+    </div>
   );
 }
 
 export function PositionRowV2({ row, position, actions, prices = true }: { row: HeldRow; position: TradeRecord; actions: RowActions; prices?: boolean }) {
   const tone = toneClass(signTone(row.pnl));
   const showExit = actions.exitNowOn && actions.canTrade && position.mode === "PAPER";
+  // FNO-4: Add (the ticket on the same contract and side, PAPER) and Adjust (the chain of its expiry) - only for an F&O
+  // PAPER position whose contract is known and still trading. Neither is ever shown in place of Exit.
+  const facts = actions.fno && position.mode === "PAPER" && isFnoPosition(position) ? actions.fno.facts.get(itemKey(positionItem(position))) : undefined;
+  const target = actions.fno ? positionTarget(position, facts, row.ltp) : null;
+  const adjust = actions.fno ? adjustHref(facts) : null;
   return (
     <li className="py-space-3 first:pt-0 last:pb-0" data-position={row.id}>
       <div className="flex items-start gap-space-3">
@@ -252,6 +321,16 @@ export function PositionRowV2({ row, position, actions, prices = true }: { row: 
           </button>
         )}
         {!actions.exitNowOn && <CheckPriceV2 position={position} onCheck={actions.onCheck} />}
+        {target && actions.fno && (
+          <button type="button" onClick={() => actions.fno?.onAdd(target, addSide(position))} data-testid="fno-add" className={BUTTON_SECONDARY}>
+            <Plus size={16} aria-hidden />Add
+          </button>
+        )}
+        {adjust && (
+          <Link to={adjust} data-testid="fno-adjust" className={BUTTON_SECONDARY} title="Roll the strike or add a hedge on the chain">
+            <SlidersHorizontal size={16} aria-hidden />Adjust
+          </Link>
+        )}
         <Link to={chartsPath(row.chartSymbol)} className={BUTTON_SECONDARY}>
           <ChartCandlestick size={16} aria-hidden />Chart
         </Link>

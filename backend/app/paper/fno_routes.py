@@ -18,6 +18,13 @@ FNO-2, the basket (app/paper/fno_basket.py), same flags, same PAPER-only path - 
 - `POST /api/paper/fno/basket/preview`      the confirm step: every leg checked, hedge legs first, total margin and max loss.
 - `POST /api/paper/fno/basket/execute`      every leg as a PAPER order, hedge legs first; per-leg results, never retried.
 - `POST /api/paper/fno/basket/broker-link`  the legs pre-filled for the user's own broker app (ATP places nothing there).
+
+FNO-4, the watchlist's contract rows and the positions page (app/paper/fno_contracts.py), read only:
+- `POST /api/paper/fno/contracts`         what saved contracts are: name, expiry, days left, "Expired" and the roll target
+                                          (the same strike in the next expiry). Behind `ui_v2` only: it is reference data,
+                                          reads no price and leads to no order (a roll only edits the watchlist).
+- `GET  /api/paper/fno/positions/groups`  the caller's open PAPER legs that belong together (one basket, one structure),
+                                          for the combined P&L. Same flags as the ticket. Every leg keeps its own Exit.
 """
 from datetime import date
 from typing import Any, Dict, List, Literal, Optional
@@ -30,7 +37,7 @@ from app.auth.dependencies import get_current_user, require_trader
 from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
-from app.paper import fno_basket, fno_ticket
+from app.paper import fno_basket, fno_contracts, fno_ticket
 
 router = APIRouter(prefix="/api/paper/fno", tags=["paper"])
 UI_V2_FLAG = "ui_v2"
@@ -40,6 +47,7 @@ place_rate_limit = user_rate_limit("paper_fno_order", limit=30, window_seconds=6
 basket_rate_limit = user_rate_limit("paper_fno_basket", limit=10, window_seconds=60)
 evaluate_rate_limit = user_rate_limit("paper_fno_basket_eval", limit=120, window_seconds=60)
 preview_rate_limit = user_rate_limit("paper_fno_preview", limit=120, window_seconds=60)
+contracts_rate_limit = user_rate_limit("paper_fno_contracts", limit=60, window_seconds=60)
 
 
 async def _enabled(session: AsyncSession, user: User) -> None:
@@ -212,3 +220,31 @@ async def basket_execute(body: ExecuteBody, user: User = Depends(require_trader)
 async def basket_broker_link(body: BasketBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _enabled(session, user)
     return await fno_basket.broker_link(session, user, body.asks())
+
+
+# --- FNO-4: contract rows (watchlists) and position groups --------------------------------------------------------------
+
+class ContractItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    symbol: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9 &._:-]{1,40}$")
+    exchange: str = Field(min_length=2, max_length=12, pattern=r"^[A-Za-z_]{2,12}$")
+
+
+class ContractsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: List[ContractItem] = Field(min_length=1, max_length=fno_contracts.MAX_ITEMS)
+
+
+@router.post("/contracts", dependencies=[Depends(contracts_rate_limit)])
+async def contracts(body: ContractsBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    from app.platform.controls import flag_enabled
+    if not await flag_enabled(session, UI_V2_FLAG, user.tenant_id):
+        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": UI_V2_FLAG})
+    items = await fno_contracts.lookup(session, [(i.exchange, " ".join(i.symbol.split())) for i in body.items])
+    return {"items": items}
+
+
+@router.get("/positions/groups")
+async def position_groups(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _enabled(session, user)
+    return {"groups": await fno_contracts.position_groups(session, user)}

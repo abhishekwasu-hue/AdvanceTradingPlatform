@@ -1,0 +1,898 @@
+{
+  "_about": "Shared signal-language cases (handover 11l): backend/tests/test_signal_language.py and frontend/src/signals/language.test.ts both run them; the frontend copy (frontend/src/signals/__fixtures__/signal_language.json) is byte-identical (checked).",
+  "security_names": [
+    "RELIANCE",
+    "TCS",
+    "INFY",
+    "HDFCBANK",
+    "ICICIBANK",
+    "SBIN",
+    "ITC",
+    "LT",
+    "AXISBANK",
+    "KOTAKBANK",
+    "BHARTIARTL",
+    "TATAMOTORS",
+    "TATASTEEL",
+    "WIPRO",
+    "MARUTI",
+    "M&M",
+    "BAJFINANCE",
+    "ADANIENT",
+    "SUNPHARMA",
+    "HINDUNILVR",
+    "ASIANPAINT",
+    "ULTRACEMCO",
+    "NTPC",
+    "POWERGRID",
+    "ONGC",
+    "COALINDIA",
+    "TITAN",
+    "NESTLEIND",
+    "HCLTECH",
+    "TECHM"
+  ],
+  "format": [
+    {
+      "structure": {
+        "trend": "down",
+        "side": "seller",
+        "steps": [
+          "pullback_reached_area",
+          "handover_forming"
+        ],
+        "setup": "trend_continuation",
+        "evidence": [
+          "ltf_choch",
+          "bearish_divergence"
+        ],
+        "symbol": "nifty",
+        "area_range": [
+          23100,
+          23000
+        ]
+      },
+      "surface": "signal_own",
+      "text": "NIFTY · Seller area: 23,000–23,100. The market is in a downtrend; the pullback reached this seller area; a handover is forming inside the area; a trend-continuation setup has formed. Evidence: lower-timeframe change of character, bearish RSI divergence."
+    },
+    {
+      "structure": {
+        "trend": "down",
+        "side": "seller",
+        "steps": [
+          "pullback_reached_area",
+          "handover_forming"
+        ],
+        "setup": "trend_continuation",
+        "evidence": [
+          "ltf_choch",
+          "bearish_divergence"
+        ],
+        "symbol": "nifty",
+        "area_range": [
+          23100,
+          23000
+        ]
+      },
+      "surface": "signal_public",
+      "text": "The market is in a downtrend; the pullback reached a seller area; a handover is forming inside the area; a trend-continuation setup has formed. Evidence: lower-timeframe change of character, bearish RSI divergence."
+    },
+    {
+      "structure": {
+        "trend": "up",
+        "side": "buyer",
+        "steps": [
+          "pullback_reached_area"
+        ],
+        "timeframe": "1h",
+        "symbol": "RELIANCE",
+        "area_range": [
+          2841.5,
+          2856.25
+        ]
+      },
+      "surface": "signal_own",
+      "text": "RELIANCE · Buyer area: 2,841.5–2,856.25. On the 1-hour chart, the market is in an uptrend; the pullback reached this buyer area."
+    },
+    {
+      "structure": {
+        "trend": "up",
+        "side": "buyer",
+        "steps": [
+          "pullback_reached_area"
+        ],
+        "timeframe": "1h",
+        "symbol": "RELIANCE",
+        "area_range": [
+          2841.5,
+          2856.25
+        ]
+      },
+      "surface": "signal_public",
+      "text": "On the 1-hour chart, the market is in an uptrend; the pullback reached a buyer area."
+    },
+    {
+      "structure": {
+        "trend": "up",
+        "side": "buyer",
+        "steps": [
+          "pullback_reached_area",
+          "handover_complete"
+        ],
+        "setup": "trend_continuation",
+        "symbol": "BANKNIFTY"
+      },
+      "surface": "signal_own",
+      "text": "BANKNIFTY · The market is in an uptrend; the pullback reached the buyer area; the handover inside the area is complete; a trend-continuation setup has formed."
+    },
+    {
+      "structure": {
+        "trend": "up",
+        "side": "buyer",
+        "steps": [
+          "pullback_reached_area",
+          "handover_complete"
+        ],
+        "setup": "trend_continuation",
+        "symbol": "BANKNIFTY"
+      },
+      "surface": "signal_public",
+      "text": "The market is in an uptrend; the pullback reached a buyer area; the handover inside the area is complete; a trend-continuation setup has formed."
+    },
+    {
+      "structure": {
+        "trend": "range",
+        "side": "seller",
+        "steps": [
+          "range_edge",
+          "rally_reached_area"
+        ],
+        "setup": "range_reversion",
+        "evidence": [
+          "rejection_candle"
+        ],
+        "symbol": "SENSEX",
+        "area_range": [
+          81234,
+          81990.4
+        ]
+      },
+      "surface": "signal_own",
+      "text": "SENSEX · Seller area: 81,234–81,990.4. The market is moving sideways in a range; the move reached the edge of the range; the move reached this seller area; a range setup has formed at the edge. Evidence: a rejection candle."
+    },
+    {
+      "structure": {
+        "side": "buyer",
+        "steps": [
+          "swept_and_reclaimed"
+        ],
+        "setup": "sweep_reclaim",
+        "evidence": [
+          "liquidity_sweep",
+          "bullish_divergence"
+        ],
+        "timeframe": "1d",
+        "symbol": "M&M",
+        "area_range": [
+          123456.789,
+          124000
+        ]
+      },
+      "surface": "signal_own",
+      "text": "M&M · Buyer area: 1,23,456.79–1,24,000. On the Daily chart, the move swept beyond the area and came back inside; a sweep-and-reclaim setup has formed. Evidence: liquidity sweep, bullish RSI divergence."
+    },
+    {
+      "structure": {
+        "side": "buyer",
+        "steps": [
+          "swept_and_reclaimed"
+        ],
+        "setup": "sweep_reclaim",
+        "evidence": [
+          "liquidity_sweep",
+          "bullish_divergence"
+        ],
+        "timeframe": "1d",
+        "symbol": "M&M",
+        "area_range": [
+          123456.789,
+          124000
+        ]
+      },
+      "surface": "signal_public",
+      "text": "On the Daily chart, the move swept beyond the area and came back inside; a sweep-and-reclaim setup has formed. Evidence: liquidity sweep, bullish RSI divergence."
+    },
+    {
+      "structure": {
+        "steps": [
+          "breakout_retest"
+        ],
+        "setup": "breakout_retest",
+        "evidence": [
+          "bos",
+          "volume_dry_up"
+        ]
+      },
+      "surface": "signal_own",
+      "text": "The breakout is being retested from the other side; a breakout-and-retest setup has formed. Evidence: break of structure, volume drying up in the pullback."
+    },
+    {
+      "structure": {
+        "steps": [
+          "breakout_retest"
+        ],
+        "setup": "breakout_retest",
+        "evidence": [
+          "bos",
+          "volume_dry_up"
+        ]
+      },
+      "surface": "signal_public",
+      "text": "The breakout is being retested from the other side; a breakout-and-retest setup has formed. Evidence: break of structure, volume drying up in the pullback."
+    },
+    {
+      "structure": {
+        "evidence": [
+          "engulfing_candle"
+        ]
+      },
+      "surface": "signal_public",
+      "text": "Evidence: an engulfing candle."
+    }
+  ],
+  "refuse": [
+    {
+      "structure": {
+        "trend": "sideways"
+      },
+      "surface": "signal_own"
+    },
+    {
+      "structure": {
+        "steps": [
+          "pullback_reached_area"
+        ]
+      },
+      "surface": "signal_own"
+    },
+    {
+      "structure": {
+        "trend": "up"
+      },
+      "surface": "education"
+    }
+  ],
+  "check": [
+    {
+      "text": "NIFTY · Seller area: 23,000–23,100. The pullback reached this seller area; a handover is forming inside the area.",
+      "surface": "signal_own",
+      "names": [],
+      "own_symbols": [
+        "NIFTY"
+      ],
+      "problems": []
+    },
+    {
+      "text": "NIFTY · Seller area: 23,000-23,100. The pullback reached this seller area.",
+      "surface": "signal_own",
+      "names": [],
+      "own_symbols": [
+        "NIFTY"
+      ],
+      "problems": []
+    },
+    {
+      "text": "Seller area: 23,000–23,100. The pullback reached this area.",
+      "surface": "signal_public",
+      "names": [],
+      "own_symbols": [],
+      "problems": [
+        {
+          "kind": "number",
+          "detail": "23,000"
+        },
+        {
+          "kind": "number",
+          "detail": "23,100"
+        }
+      ]
+    },
+    {
+      "text": "RELIANCE: sell below 2,840 with a stop at 2,870 and target 2,780.",
+      "surface": "signal_own",
+      "names": [],
+      "own_symbols": [
+        "RELIANCE"
+      ],
+      "problems": [
+        {
+          "kind": "call_word",
+          "detail": "sell"
+        },
+        {
+          "kind": "call_word",
+          "detail": "stop"
+        },
+        {
+          "kind": "call_word",
+          "detail": "target"
+        },
+        {
+          "kind": "number",
+          "detail": "2,840"
+        },
+        {
+          "kind": "number",
+          "detail": "2,870"
+        },
+        {
+          "kind": "number",
+          "detail": "2,780"
+        }
+      ]
+    },
+    {
+      "text": "Buy RELIANCE now, SL 2800.",
+      "surface": "signal_own",
+      "names": [],
+      "own_symbols": [
+        "RELIANCE"
+      ],
+      "problems": [
+        {
+          "kind": "call_word",
+          "detail": "buy"
+        },
+        {
+          "kind": "call_word",
+          "detail": "sl"
+        },
+        {
+          "kind": "number",
+          "detail": "2800"
+        }
+      ]
+    },
+    {
+      "text": "The pullback reached a buyer area; the buyer side took over.",
+      "surface": "signal_public",
+      "names": [
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "ICICIBANK",
+        "SBIN",
+        "ITC",
+        "LT",
+        "AXISBANK",
+        "KOTAKBANK",
+        "BHARTIARTL",
+        "TATAMOTORS",
+        "TATASTEEL",
+        "WIPRO",
+        "MARUTI",
+        "M&M",
+        "BAJFINANCE",
+        "ADANIENT",
+        "SUNPHARMA",
+        "HINDUNILVR",
+        "ASIANPAINT",
+        "ULTRACEMCO",
+        "NTPC",
+        "POWERGRID",
+        "ONGC",
+        "COALINDIA",
+        "TITAN",
+        "NESTLEIND",
+        "HCLTECH",
+        "TECHM"
+      ],
+      "own_symbols": [],
+      "problems": []
+    },
+    {
+      "text": "RELIANCE reached a buyer area.",
+      "surface": "signal_public",
+      "names": [
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "ICICIBANK",
+        "SBIN",
+        "ITC",
+        "LT",
+        "AXISBANK",
+        "KOTAKBANK",
+        "BHARTIARTL",
+        "TATAMOTORS",
+        "TATASTEEL",
+        "WIPRO",
+        "MARUTI",
+        "M&M",
+        "BAJFINANCE",
+        "ADANIENT",
+        "SUNPHARMA",
+        "HINDUNILVR",
+        "ASIANPAINT",
+        "ULTRACEMCO",
+        "NTPC",
+        "POWERGRID",
+        "ONGC",
+        "COALINDIA",
+        "TITAN",
+        "NESTLEIND",
+        "HCLTECH",
+        "TECHM"
+      ],
+      "own_symbols": [],
+      "problems": [
+        {
+          "kind": "security_name",
+          "detail": "RELIANCE"
+        }
+      ]
+    },
+    {
+      "text": "On the 15-minute chart, the market is in an uptrend.",
+      "surface": "signal_public",
+      "names": [
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "ICICIBANK",
+        "SBIN",
+        "ITC",
+        "LT",
+        "AXISBANK",
+        "KOTAKBANK",
+        "BHARTIARTL",
+        "TATAMOTORS",
+        "TATASTEEL",
+        "WIPRO",
+        "MARUTI",
+        "M&M",
+        "BAJFINANCE",
+        "ADANIENT",
+        "SUNPHARMA",
+        "HINDUNILVR",
+        "ASIANPAINT",
+        "ULTRACEMCO",
+        "NTPC",
+        "POWERGRID",
+        "ONGC",
+        "COALINDIA",
+        "TITAN",
+        "NESTLEIND",
+        "HCLTECH",
+        "TECHM"
+      ],
+      "own_symbols": [],
+      "problems": []
+    },
+    {
+      "text": "On the 15-minute chart, RSI is at 62 and rising.",
+      "surface": "signal_public",
+      "names": [],
+      "own_symbols": [],
+      "problems": [
+        {
+          "kind": "number",
+          "detail": "62"
+        }
+      ]
+    },
+    {
+      "text": "NIFTY 50 · Buyer area: 1,23,456.79–1,24,000. On the Daily chart, the pullback reached this buyer area.",
+      "surface": "signal_own",
+      "names": [],
+      "own_symbols": [
+        "NIFTY 50"
+      ],
+      "problems": []
+    },
+    {
+      "text": "A stop-loss caps the loss of one trade; size it from your own settings.",
+      "surface": "education",
+      "names": [
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "ICICIBANK",
+        "SBIN",
+        "ITC",
+        "LT",
+        "AXISBANK",
+        "KOTAKBANK",
+        "BHARTIARTL",
+        "TATAMOTORS",
+        "TATASTEEL",
+        "WIPRO",
+        "MARUTI",
+        "M&M",
+        "BAJFINANCE",
+        "ADANIENT",
+        "SUNPHARMA",
+        "HINDUNILVR",
+        "ASIANPAINT",
+        "ULTRACEMCO",
+        "NTPC",
+        "POWERGRID",
+        "ONGC",
+        "COALINDIA",
+        "TITAN",
+        "NESTLEIND",
+        "HCLTECH",
+        "TECHM"
+      ],
+      "own_symbols": [],
+      "problems": []
+    },
+    {
+      "text": "RSI runs from 0 to 100; above 70 is often called overbought.",
+      "surface": "education",
+      "names": [
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "ICICIBANK",
+        "SBIN",
+        "ITC",
+        "LT",
+        "AXISBANK",
+        "KOTAKBANK",
+        "BHARTIARTL",
+        "TATAMOTORS",
+        "TATASTEEL",
+        "WIPRO",
+        "MARUTI",
+        "M&M",
+        "BAJFINANCE",
+        "ADANIENT",
+        "SUNPHARMA",
+        "HINDUNILVR",
+        "ASIANPAINT",
+        "ULTRACEMCO",
+        "NTPC",
+        "POWERGRID",
+        "ONGC",
+        "COALINDIA",
+        "TITAN",
+        "NESTLEIND",
+        "HCLTECH",
+        "TECHM"
+      ],
+      "own_symbols": [],
+      "problems": []
+    },
+    {
+      "text": "With a capital of ₹1,00,000 and 1% risk, the risk is ₹1,000.",
+      "surface": "education",
+      "names": [
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "ICICIBANK",
+        "SBIN",
+        "ITC",
+        "LT",
+        "AXISBANK",
+        "KOTAKBANK",
+        "BHARTIARTL",
+        "TATAMOTORS",
+        "TATASTEEL",
+        "WIPRO",
+        "MARUTI",
+        "M&M",
+        "BAJFINANCE",
+        "ADANIENT",
+        "SUNPHARMA",
+        "HINDUNILVR",
+        "ASIANPAINT",
+        "ULTRACEMCO",
+        "NTPC",
+        "POWERGRID",
+        "ONGC",
+        "COALINDIA",
+        "TITAN",
+        "NESTLEIND",
+        "HCLTECH",
+        "TECHM"
+      ],
+      "own_symbols": [],
+      "problems": [
+        {
+          "kind": "currency",
+          "detail": "₹"
+        },
+        {
+          "kind": "currency",
+          "detail": "₹"
+        }
+      ]
+    },
+    {
+      "text": "TCS formed a hammer at the support last month.",
+      "surface": "education",
+      "names": [
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "ICICIBANK",
+        "SBIN",
+        "ITC",
+        "LT",
+        "AXISBANK",
+        "KOTAKBANK",
+        "BHARTIARTL",
+        "TATAMOTORS",
+        "TATASTEEL",
+        "WIPRO",
+        "MARUTI",
+        "M&M",
+        "BAJFINANCE",
+        "ADANIENT",
+        "SUNPHARMA",
+        "HINDUNILVR",
+        "ASIANPAINT",
+        "ULTRACEMCO",
+        "NTPC",
+        "POWERGRID",
+        "ONGC",
+        "COALINDIA",
+        "TITAN",
+        "NESTLEIND",
+        "HCLTECH",
+        "TECHM"
+      ],
+      "own_symbols": [],
+      "problems": [
+        {
+          "kind": "security_name",
+          "detail": "TCS"
+        }
+      ]
+    },
+    {
+      "text": "Mahindra & Mahindra (M&M) and LTIMINDTREE are names; LT is too, but ALT and LTD are not.",
+      "surface": "education",
+      "names": [
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "ICICIBANK",
+        "SBIN",
+        "ITC",
+        "LT",
+        "AXISBANK",
+        "KOTAKBANK",
+        "BHARTIARTL",
+        "TATAMOTORS",
+        "TATASTEEL",
+        "WIPRO",
+        "MARUTI",
+        "M&M",
+        "BAJFINANCE",
+        "ADANIENT",
+        "SUNPHARMA",
+        "HINDUNILVR",
+        "ASIANPAINT",
+        "ULTRACEMCO",
+        "NTPC",
+        "POWERGRID",
+        "ONGC",
+        "COALINDIA",
+        "TITAN",
+        "NESTLEIND",
+        "HCLTECH",
+        "TECHM"
+      ],
+      "own_symbols": [],
+      "problems": [
+        {
+          "kind": "security_name",
+          "detail": "LT"
+        },
+        {
+          "kind": "security_name",
+          "detail": "M&M"
+        }
+      ]
+    },
+    {
+      "text": "Matched on the bar close: RELIANCE, TCS. These symbols passed your own rule's conditions; this is information, not advice.",
+      "surface": "signal_own",
+      "names": [],
+      "own_symbols": [
+        "RELIANCE",
+        "TCS"
+      ],
+      "problems": []
+    },
+    {
+      "text": "The structure is stopping out sellers; stoploss hunting below the area.",
+      "surface": "signal_own",
+      "names": [],
+      "own_symbols": [],
+      "problems": [
+        {
+          "kind": "call_word",
+          "detail": "stoploss"
+        }
+      ]
+    },
+    {
+      "text": "Price is at Rs 2,500 or Rs.2500 or INR 10 or $5.",
+      "surface": "education",
+      "names": [],
+      "own_symbols": [],
+      "problems": [
+        {
+          "kind": "currency",
+          "detail": "Rs"
+        },
+        {
+          "kind": "currency",
+          "detail": "Rs."
+        },
+        {
+          "kind": "currency",
+          "detail": "INR"
+        },
+        {
+          "kind": "currency",
+          "detail": "$"
+        }
+      ]
+    },
+    {
+      "text": "A sl is lower-case and not a trading word, but SL is.",
+      "surface": "signal_own",
+      "names": [],
+      "own_symbols": [],
+      "problems": [
+        {
+          "kind": "call_word",
+          "detail": "sl"
+        }
+      ]
+    }
+  ],
+  "call_words": [
+    {
+      "text": "Buy now",
+      "words": [
+        "buy"
+      ]
+    },
+    {
+      "text": "the buyer area and the seller area",
+      "words": []
+    },
+    {
+      "text": "Targets reached, targeted, targeting",
+      "words": [
+        "targets",
+        "targeted",
+        "targeting"
+      ]
+    },
+    {
+      "text": "a stop loss, stop-loss, stoplosses",
+      "words": [
+        "stop",
+        "stop",
+        "stoplosses"
+      ]
+    },
+    {
+      "text": "SL hit; sl is fine",
+      "words": [
+        "sl"
+      ]
+    },
+    {
+      "text": "sold, selling, bought",
+      "words": [
+        "sold",
+        "selling",
+        "bought"
+      ]
+    },
+    {
+      "text": "BUY",
+      "words": [
+        "buy"
+      ]
+    },
+    {
+      "text": "",
+      "words": []
+    }
+  ],
+  "group_in": [
+    [
+      0,
+      "0"
+    ],
+    [
+      5,
+      "5"
+    ],
+    [
+      999,
+      "999"
+    ],
+    [
+      1000,
+      "1,000"
+    ],
+    [
+      23000,
+      "23,000"
+    ],
+    [
+      23100.5,
+      "23,100.5"
+    ],
+    [
+      123456.789,
+      "1,23,456.79"
+    ],
+    [
+      1234567,
+      "12,34,567"
+    ],
+    [
+      10000000,
+      "1,00,00,000"
+    ],
+    [
+      99.999,
+      "100"
+    ],
+    [
+      0.004,
+      "0"
+    ],
+    [
+      2841.5,
+      "2,841.5"
+    ]
+  ],
+  "setup_notice": [
+    {
+      "label": "Scan setup",
+      "symbol": "reliance",
+      "direction": "LONG",
+      "strategy_name": "Trend pullback",
+      "reasons": [
+        "The pullback reached the buyer area",
+        "RSI 41.2 below 45",
+        "a handover is forming inside the area."
+      ],
+      "out": [
+        "Scan setup: RELIANCE",
+        "Scan setup: RELIANCE - an upside setup from your strategy Trend pullback has formed. Why: The pullback reached the buyer area; a handover is forming inside the area. Notify only: nothing is proposed or placed."
+      ]
+    },
+    {
+      "label": "TradingView alert",
+      "symbol": "NIFTY",
+      "direction": "SHORT",
+      "strategy_name": "EMA 9/21 cross",
+      "reasons": [],
+      "out": [
+        "TradingView alert: NIFTY",
+        "TradingView alert: NIFTY - a downside setup from your strategy has formed. Notify only: nothing is proposed or placed."
+      ]
+    }
+  ]
+}

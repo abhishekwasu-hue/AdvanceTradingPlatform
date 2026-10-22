@@ -25,6 +25,16 @@ export interface PreviewResponse {
 }
 export interface SavedScreen { id: number; name: string; text: string; base_tf: string }
 
+/** Handover 11j "idea -> scan": one recognised part of the idea (registry functions only). */
+export interface IdeaPart {
+  rule: string; phrase: string; condition: string; reads: string; assumptions: string[]; ok: boolean;
+  problems: { kind: string; message: string; pos: number | null }[];
+}
+export interface IdeaResponse {
+  ok: boolean; text: string | null; base_tf: string; stages: StagesResponse["stages"]; parts: IdeaPart[];
+  not_supported: { phrase: string; why: string }[]; disclaimer: string;
+}
+
 export const screenerApi = {
   registry: () => request<{ version: string; timeframes: string[]; entries: Registry }>("/screener/registry"),
   validate: (source: string, baseTf: string) =>
@@ -39,7 +49,7 @@ export const screenerApi = {
   /** U7 LG1: the Legends cards (flag `screener_legends`; 503 while it is off - the gallery then shows no card text). */
   legends: () => request<LegendsLibrary>("/screener/legends"),
   /** U2 (flag `screener_builder_u2`; 503 while off): a screen -> the funnel's stages (top-level conjuncts). */
-  stages: (body: { library_id?: string; source?: string; base_tf?: string }) =>
+  stages: (body: { library_id?: string; source?: string; base_tf?: string; params?: Record<string, number | string | boolean> }) =>
     request<StagesResponse>("/screener/stages", { method: "POST", body: JSON.stringify(body) }),
   /** U9 TX2 (flag `screener_tx2`; 503 while it is off - the page then shows no library tools). */
   libraryMirrors: () => request<MirrorsResponse>("/screener/library/mirrors"),
@@ -50,6 +60,9 @@ export const screenerApi = {
     request<WatchResponse>("/screener/library/watch-trigger", { method: "POST", body: JSON.stringify(body) }),
   /** S10 J (flag `screener_etf`; 503 while off - the page then shows no ETF button). */
   etf: (query: string) => request<EtfResponse>(`/screener/etf?${query}`),
+  /** Handover 11j (flag `screener_copilot`; 404 / 503 while off): a plain idea -> a draft scan, part by part, as blocks. */
+  idea: (text: string, baseTf: string) =>
+    request<IdeaResponse>("/screener/copilot/idea", { method: "POST", body: JSON.stringify({ text, base_tf: baseTf }) }),
   save: (name: string, source: string, baseTf: string, id?: number) =>
     request<SavedScreen>(id ? `/screener/screens/${id}` : "/screener/screens",
       { method: id ? "PUT" : "POST", body: JSON.stringify({ name, source, base_tf: baseTf }) }),

@@ -174,6 +174,7 @@ import type { SupportReply } from "../support/support";
 import { CONNECT_AI_EVENT, isNotConnected, type AiConnection } from "../aiKeys/connect";
 import type { AiProviderName } from "../aiKeys/keyFormats";
 import type { MarketStrip } from "../dashboard/types";
+import type { RhythmKind, RhythmPrefs, RhythmSettings, RhythmToday } from "../rhythm/types";
 import type { ChainExpiries, LiveChain } from "../optionChain/types";
 
 export { ApiError, friendlyError } from "./errors";
@@ -828,6 +829,10 @@ export const api = {
   portfolioExposure: (livePrices = true) => request<PortfolioExposure>(`/portfolio/exposure?live_prices=${livePrices}`),
   // UI2-2: the v2 dashboard's market strip - three indices and the market state in one read-only call.
   marketStrip: () => request<MarketStrip>("/market/strip"),
+  // MO4: the daily rhythm (app/rhythm/routes.py; flags ui_v2 + daily_rhythm, 404 while off).
+  rhythmToday: (kind?: RhythmKind) => request<RhythmToday>(`/rhythm/today${kind ? `?kind=${kind}` : ""}`),
+  rhythmSettings: () => request<RhythmSettings>("/rhythm/settings"),
+  saveRhythmSettings: (prefs: RhythmPrefs) => request<RhythmSettings>("/rhythm/settings", { method: "PUT", body: JSON.stringify(prefs) }),
   analyticsDegradation: () => request<DegradationReport>("/analytics/degradation"),
   updateTradeJournal: (tradeId: number, body: { notes?: string | null; tags?: string[] | null }) =>
     request<TradeRecord>(`/trades/${tradeId}/journal`, { method: "PATCH", body: JSON.stringify(body) }),

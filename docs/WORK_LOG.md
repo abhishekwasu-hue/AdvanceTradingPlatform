@@ -2518,6 +2518,29 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   e2e `admin-console-v2.e2e.ts` with new baselines `admin-<section>-v2-*` and `admin-diagnostics-v2-*` (1440 / 390, light / dark).
 - Questions MO3-A1..A6 ("View as user" design note in MO3-A1).
 
+## 22 Oct - Master Order 4 slice 1: the daily rhythm (behind ui_v2 + daily_rhythm)
+
+- Branch `claude/mo4-daily-rhythm`. No migration: the user's choice is the `user_prefs` namespace `daily_rhythm`
+  (Telegram OFF by default; pre-market / closing / weekly on, the pulse off), the worker's "sent" marks the internal row
+  `daily_rhythm_sent`. New flag `daily_rhythm` (OFF; controls.py + flag_catalog.py, needs `ui_v2`).
+- Backend `app/rhythm/`: `schedule.py` (IST phase for the Dashboard; Telegram windows on NSE trading days incl. holidays,
+  the weekly review on the weekend; once per day / ISO week), `words.py` (every line passes the Analyze-a-chart call-word
+  list plus an advice filter; a setup line carries no number; structure words for trend, BOS / CHoCH and where price sits
+  between the buyer and seller areas, no level shown), `build.py` (the four digests from the organisation's market memory,
+  the shared daily lake through the context panel's readers, global cues, events and holidays, and the user's own
+  signals feed, PAPER positions with marks, his day against his own limits, the journal's score when it is on; a section
+  with nothing says so), `deliver.py` (Telegram to the user's own chat only; an empty digest is not sent), `routes.py`
+  (`GET /api/rhythm/today[?kind=]`, `GET|PUT /api/rhythm/settings`; 404 with either flag off). The trading worker calls
+  `send_due` every 5 minutes in its own session. Routes classified in `tests/tenancy_route_table.py`; `app/rhythm` added
+  to the mypy gate.
+- Frontend `src/rhythm/`: `DailyRhythmCardV2.tsx` on the v2 Dashboard (after Needs attention; tabs Morning / Pulse /
+  Wrap / Week, the moment's one marked; every line re-checked on render), `RhythmTelegramV2.tsx` on Settings → Alerts
+  ("Daily briefs on Telegram", `#daily-briefs`, in the Settings search with the flag).
+- Tests: backend `tests/test_mo4_daily_rhythm.py` (schedule, words, each digest from fixtures, no data = nothing,
+  discipline not trade count, flags off = 404 / nothing sent, Telegram opt-in, once, never on a holiday, never another
+  member's chat); vitest `src/rhythm/rhythm.test.tsx`; e2e `daily-rhythm-v2.e2e.ts` with new baselines
+  `daily-rhythm-v2-<360|390|1440>-<light|dark>.png`. No existing baseline changed. Questions MO4-1..10.
+
 ## 22 Oct - F&O workspace slice 4: contracts in watchlists, positions Add / Adjust / Exit and grouping (behind ui_v2)
 
 - Branch `claude/fno4-watchlist-chart-positions`. No migration. No new order path: Add opens the existing ONE ticket

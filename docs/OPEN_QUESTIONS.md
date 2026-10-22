@@ -935,6 +935,23 @@ Each has a provisional default the build uses until the owner answers.
 | MO3-A5 | "Support tickets": ATP has none; Support shows the "Send feedback" messages and one person's status. | Keep feedback as the support inbox until the owner wants a ticket system. | Support section | open |
 | MO3-A6 | Testing tools: sample data, test signals and debug panels still live on the user pages (Backtest, Custom scan, Factor Lab). | This slice shows the existing operator tools read-only (alert outbox, failed deliveries, retention, saved-screen check, history imports); moving the user-page tools here is a later slice. | Testing tools section | open |
 
+## MO4 slice 1: the daily rhythm (22 Oct)
+
+Each has a provisional default the build uses until the owner answers.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| MO4-1 | GIFT Nifty has no free, reliable source with clear terms. | Not shown. The "Market mood" line uses the US index futures (the overnight mood GIFT Nifty mostly reflects), as the Copilot's global cues already do. A paid feed can be added when the owner picks one. | `app/rhythm/build.py` `mood_section` | open |
+| MO4-2 | Today's key areas of NIFTY / BANK NIFTY: words or price ranges? CLAUDE.md allows an AREA as a range only for the user's own signals. | Words only ("price is closer to the buyer area below than to the seller area above"); no index level is shown. The area numbers are used inside the reader only. | `app/rhythm/words.py` `area_words` | open |
+| MO4-3 | FII / DII flows. | Shown only when the existing provider seam (`FII_DII_SOURCE`) is configured; today none is, so the line is simply absent (never a made-up figure). | `app/rhythm/build.py` | open |
+| MO4-4 | Mid-session pulse: OI shift and the intraday sector leader / laggard. | Not in this slice. The pulse says what changed in the indices' structure since the open, which open positions are near their own invalidation, and the new setups. The OI shift comes with the Option chain dish (order step 2); the intraday sector read needs intraday sector data. | `app/rhythm/build.py` `mid_session` | open |
+| MO4-5 | Send times (IST, trading days only on the NSE calendar incl. holidays). | Before the open 08:30-09:15; pulse 12:30-13:30 (optional, off by default); closing wrap 15:45-19:00; weekly review Saturday 09:00 to Sunday 21:00. Each once per day / week; the worker looks every 5 minutes. | `app/rhythm/schedule.py` | open |
+| MO4-6 | Who gets the Telegram message in an organisation with several members. | Only the user's own chat: his personal link to the organisation's own bot, else the organisation's Telegram chat when he is the one who connected it. Another member sees "Connect your own" on Settings → Alerts. | `app/rhythm/deliver.py` `destination` | open |
+| MO4-7 | WhatsApp and push for the briefs (the order says "per the user's choice"). | Telegram only in this slice (it is the connected channel today; WhatsApp needs the DLT set-up). Push and WhatsApp can reuse the same digest text later. | `app/rhythm/deliver.py` | open |
+| MO4-8 | "Discipline score for the day". | The journal's weekly score rules over today's decisions, shown only while the journal (`discipline_engine`) is on; without it the wrap says whether the user stayed inside his own daily limits (trades and loss), and only when he has saved his own risk settings. Never a count of trades as praise. | `app/rhythm/build.py` `day_section` | open |
+| MO4-9 | A digest with nothing in it (no market read, no trades, no events). | Not sent to Telegram (marked as done for the day); on the Dashboard each section says plainly that there is nothing yet. | `app/rhythm/deliver.py` | open |
+| MO4-10 | Sector leader / laggard list. | Fourteen NSE sectoral indices from the shared daily lake (IT, Banking, Auto, Pharma, FMCG, Metal, Realty, Energy, Media, PSU banks, Financial services, Oil & gas, Healthcare, Consumer durables); an index with no bars is skipped. | `app/rhythm/build.py` `SECTOR_INDICES` | open |
+
 ## Idea library slice 1 (22 Oct)
 
 Each has a provisional default the build uses until the owner answers.

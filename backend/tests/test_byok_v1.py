@@ -141,7 +141,7 @@ def test_flag_is_default_off_and_every_route_answers_404_while_off():
 def test_without_a_key_the_vision_line_says_add_your_api_key(flag_on):
     headers, _ = _user("byok-nokey@example.com")
     status = client.get("/api/ai/byok/status", headers=headers).json()
-    assert status["vision_line"] == "Vision off - add your API key in Settings"
+    assert status["vision_line"] == "Vision off - connect your AI key in Settings > AI"
     assert status["active"] is False and status["enabled"] is False
     assert [p["provider"] for p in status["providers"]] == ["anthropic", "openai", "gemini"]
     assert all(p["key_set"] is False and p["key_hint"] is None for p in status["providers"])
@@ -454,7 +454,7 @@ def test_prefs_validate_caps_models_and_providers(flag_on):
     # Back to the default model, and removing the chosen provider's key falls back to "auto".
     assert client.put("/api/ai/byok/prefs", headers=headers, json={"models": {"openai": ""}}).json()["providers"][1]["model_pinned"] is False
     after = client.delete("/api/ai/byok/key/openai", headers=headers).json()
-    assert after["provider"] is None and after["vision_line"] == "Vision off - add your API key in Settings"
+    assert after["provider"] is None and after["vision_line"] == "Vision off - connect your AI key in Settings > AI"
     prefs = _run(_rows(UserVisionPrefsRecord, UserVisionPrefsRecord.user_id == me["id"]))
     assert len(prefs) == 1 and prefs[0].tenant_id == me["tenant_id"]
 

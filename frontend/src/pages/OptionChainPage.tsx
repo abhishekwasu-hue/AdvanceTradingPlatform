@@ -19,9 +19,8 @@ const BIAS_COLOR: Record<string, string> = {
   NEUTRAL: "text-fg-muted",
 };
 
-/** Where "the Broker page" is: Settings -> Brokers until the Broker page's own `/broker` route ships (a literal, as
- * the broker gate's CONNECT_BROKER_PATH; that change moves both). */
-export const BROKER_PAGE_PATH = "/settings";
+/** Where "the Broker page" is: its own `/broker` route in both shells (Settings redesign B; was Settings -> Brokers). */
+export const BROKER_PAGE_PATH = "/broker";
 
 /** OC1: what the page says when the chain cannot be read - plain words, never the server's own text. `connect`: the
  * words end with a link to the Broker page. */

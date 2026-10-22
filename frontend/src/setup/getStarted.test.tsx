@@ -225,7 +225,7 @@ describe("P3 Go-live checklist", () => {
     expect(goLiveView(checklist([item("worker", "todo")])).open[0]).toMatchObject({ title: "Automatic trading is running",
       sentence: "Automatic trading is not running, so nothing trades by itself. Ask your platform admin." });
     expect(v.open[1]).toMatchObject({ title: "Two-step sign-in on", action: { label: "Open Account", to: "/account" } });
-    expect(v.open[2].action).toEqual({ label: "Set up Telegram", to: "/settings#alerts" });
+    expect(v.open[2].action).toEqual({ label: "Set up Telegram", to: "/settings/alerts" });
     const out = html(<GoLiveListV2 view={v} onRecheck={() => undefined} />);
     const rows = out.split("data-row=").slice(1);
     for (const r of rows) expect((r.match(/<a |<button/g) ?? []).length).toBe(1);

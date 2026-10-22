@@ -710,7 +710,7 @@ class GeminiProvider:
         raise ProviderError(f"Gemini's answer was cut off at the token limit twice (model {self.model}); nothing partial is shown", usage=spent)
 
 
-# BYOK-V1: the providers a user may bring their own key for (Settings > Vision with your own AI key).
+# BYOK-V1: the providers a user may bring their own key for (Settings > AI).
 BYOK_PROVIDERS = ("anthropic", "openai", "gemini")
 
 

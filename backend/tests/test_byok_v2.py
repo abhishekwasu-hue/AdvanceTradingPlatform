@@ -368,7 +368,7 @@ def test_one_users_key_is_never_used_for_another_users_audit_same_tenant_and_oth
     assert "alpha" in rep_a.report_text and "bravo" not in rep_a.report_text and "charlie" not in rep_a.report_text
     assert "bravo" in rep_b.report_text and "alpha" not in rep_b.report_text
     assert "charlie" in rep_c.report_text and rep_c.provider == "gemini"
-    assert rep_n.status == "skipped" and rep_n.reason == "no key" and rep_n.report_text == "Vision off - add your API key in Settings"
+    assert rep_n.status == "skipped" and rep_n.reason == "no key" and rep_n.report_text == "Vision off - connect your AI key in Settings > AI"
     assert sorted(vision.seen) == sorted([("anthropic", A_KEY, True), ("anthropic", B_KEY, True), ("gemini", GEMINI_KEY, True)])
 
     # Reading: only one's own reports, whatever action id is asked for.
@@ -424,7 +424,7 @@ def test_without_a_key_the_card_line_says_add_your_api_key(flag_on):
     headers, me = _user("v2-nokey-line@example.com")
     action_id = _run(_proposal(me["tenant_id"], me["id"], "V2NOKEYLINE"))
     body = client.get(f"/api/ai/byok/reports?action_id={action_id}", headers=headers).json()
-    assert body["reports"] == [] and body["vision_line"] == "Vision off - add your API key in Settings"
+    assert body["reports"] == [] and body["vision_line"] == "Vision off - connect your AI key in Settings > AI"
 
 
 # --- caps and failures -----------------------------------------------------------------------------------------------------
@@ -638,5 +638,5 @@ def test_clean_note_strips_numbers_markup_and_instructions():
     assert vision_audit.clean_note("place a market order") == vision_audit.WITHHELD
     assert vision_audit.clean_note("") == "no comment"
     assert len(vision_audit.clean_note("word " * 100)) <= vision_audit.NOTE_MAX + 3
-    assert vision_audit.skip_line("no key") == "Vision off - add your API key in Settings"
+    assert vision_audit.skip_line("no key") == "Vision off - connect your AI key in Settings > AI"
     assert vision_audit.skip_line("monthly cap reached") == "Vision skipped: monthly cap reached"

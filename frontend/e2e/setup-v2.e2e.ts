@@ -202,9 +202,9 @@ test.describe("setup wizard 390 x 844", () => {
     await expect(page.locator("[data-block='get-started']")).toBeVisible();
     await expect(page.locator("[data-block='setup']")).toHaveCount(0);
     // a skip only changes the order: the skipped risk step stays open; the skipped broker step counts (paper first)
+    // Settings redesign B: the Settings index's "Set up your account" row carries the chip
     await page.goto("/settings");
-    await expect(page.locator("[data-block='setup']")).toContainText("Setup 2 of 4");
-    await expect(page.locator("[data-block='setup']")).toContainText("Next: pick your first strategy");
+    await expect(page.locator("[data-row='setup'] [data-chip]")).toHaveText("Setup 2 of 4");
   });
 
   test("the risk step: the spec's defaults, the sentence, max trades under Advanced, saved through /paper/risk", async ({ page }) => {
@@ -315,10 +315,11 @@ test.describe("setup wizard 390 x 844", () => {
   });
 
   test("Settings → Setup links to the go-live checklist, now under Settings → Advanced", async ({ page }) => {
+    // Settings redesign B3: only while phase0_paper_only is off (these flags leave it off); v2 address.
     await open(page);
     await expect(page.locator("[data-block='go-live']")).toHaveCount(0);
     await page.locator("[data-block='prepare-live']").click();
-    await expect(page).toHaveURL(/\/settings#go-live$/);
+    await expect(page).toHaveURL(/\/settings\/advanced#go-live$/);
     await expect(page.locator("[data-block='go-live']")).toContainText("Go-live checklist");
     await expect(page.locator("[data-block='go-live'] [data-row='risk']")).toContainText("Risk limits set");
   });
@@ -333,9 +334,8 @@ test.describe("the dashboard and the wizard (P3)", () => {
     await expect(card).toContainText("1 of 3 done");
     await expect(page.locator("[data-block='setup']")).toHaveCount(0);
     await page.goto("/settings");
-    const chip = page.locator("[data-block='setup']");
-    await expect(chip).toContainText("Setup 2 of 4");
-    await expect(chip).toContainText("Next: set your risk limits");
+    const chip = page.locator("[data-row='setup']");
+    await expect(chip.locator("[data-chip]")).toHaveText("Setup 2 of 4");
     await chip.getByRole("link").click();
     await expect(page).toHaveURL(/\/settings\/setup$/);
     await expect(stepTitle(page)).toHaveText("Set your risk limits");

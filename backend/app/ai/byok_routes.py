@@ -122,8 +122,8 @@ async def list_reports(action_id: Optional[int] = Query(default=None, ge=1), not
                        kind: Optional[Literal["proposal", "scan_alert", "daily_review"]] = Query(default=None),
                        user: User = Depends(byok_user), session: AsyncSession = Depends(get_session)) -> dict:
     """The caller's own Vision reports (never another user's): for one proposal, one scan-alert notification, one kind
-    (BYOK-V3: `scan_alert`, `daily_review`) or the latest ones, plus the line shown when there is none ("Vision off - add
-    your API key in Settings", ...)."""
+    (BYOK-V3: `scan_alert`, `daily_review`) or the latest ones, plus the line shown when there is none ("Vision off - connect
+    your AI key in Settings > AI", ...)."""
     return await vision_audit.reports_for(session, user, action_id, kind=kind, notification_id=notification_id)
 
 

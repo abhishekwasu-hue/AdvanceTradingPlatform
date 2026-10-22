@@ -72,7 +72,7 @@ async def provider_for(session: AsyncSession, tenant: Tenant, *, client: Optiona
         # also for a provider saved before the consent existed, and again after the consent text changes.
         from app.ai import compliance_terms as terms
         if await terms.latest(session, terms.KIND_DATA, tenant_id=tenant.id) is None:
-            return RuleBasedProvider(reason="the account owner has not accepted the current data-sharing consent (Settings > AI provider)")
+            return RuleBasedProvider(reason="the account owner has not accepted the current data-sharing consent (Settings > AI)")
     if record.provider != "rule_based" and await metering.budget_exhausted(session, tenant):
         return RuleBasedProvider(reason=f"the plan's monthly AI budget ({metering.budget_inr(tenant):,.0f} INR) is spent; the rules answer until the 1st")
     key = decrypt_text(record.encrypted_api_key, PURPOSE_AI_PROVIDER_KEY, record.tenant_id) if record.encrypted_api_key else None

@@ -12,7 +12,7 @@ import Sidebar, { NAV, type Page } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { api } from "./api/client";
 import { PAGES, PAGE_COMPONENTS, isStatusPath, pageFromPath, pathFor } from "./routes";
-import { flagOffFallback, shellMode } from "./shell/aliases";
+import { fallbackAddress, shellMode } from "./shell/aliases";
 import { closedFlag } from "./shell/pageFlags";
 import { ComingSoon } from "./ui/ComingSoon";
 import { landingAfterSignIn } from "./auth/landing";
@@ -259,7 +259,7 @@ function Shell() {
   const mode = shellMode({ ...known, capped });
   if (mode === "today") return <AppShell />;
   if (mode === "wait") return <ShellWaitingV2 />;
-  if (mode === "fallback") return <Navigate to={`${flagOffFallback(location.pathname)}${location.search}`} replace />;
+  if (mode === "fallback") return <Navigate to={fallbackAddress(location.pathname, location.search, location.hash) ?? "/"} replace />;
   return (
     <ErrorBoundary title="The app">
       <Suspense fallback={<ShellWaitingV2 />}><AppShellV2 /></Suspense>

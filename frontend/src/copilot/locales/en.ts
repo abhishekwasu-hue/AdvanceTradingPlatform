@@ -501,8 +501,8 @@ export const COPILOT_EN = {
     notLinked: "Not linked",
     on: "On",
     off: "Off",
-    tgUnavailable: "Telegram status is shown to the account owner (Settings > Alert channels).",
-    tgHint: "Set up in Settings > Alert channels. A LIVE approval from Telegram asks for the authenticator code too.",
+    tgUnavailable: "Telegram status is shown to the account owner (Settings > Alerts).",
+    tgHint: "Set up in Settings > Alerts. A LIVE approval from Telegram asks for the authenticator code too.",
   },
   news: {
     title: "News Radar",

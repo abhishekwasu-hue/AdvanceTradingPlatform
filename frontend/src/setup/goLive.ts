@@ -47,7 +47,7 @@ function plain(key: string, brokerPath: string): Plain | null {
     case "mfa": return { sentence: "Turn on two-step sign-in for your account.", label: "Open Account", to: "/account" };
     case "email_verified": return { sentence: "Verify your email address from the link we sent you.", label: "Open Account", to: "/account" };
     case "algo_id": return { sentence: "Add your exchange-registered algo ID to your organisation.", label: "Open Team", to: "/team" };
-    case "static_ip": return { sentence: "Register this server's IP address with your broker.", label: "Open Settings", to: "/settings" };
+    case "static_ip": return { sentence: "Register this server's IP address with your broker.", label: "Open the Broker page", to: connectBrokerPath() };
     default: return null;
   }
 }

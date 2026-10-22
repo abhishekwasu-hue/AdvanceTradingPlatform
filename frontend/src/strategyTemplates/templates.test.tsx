@@ -8,6 +8,7 @@ import { TEMPLATE_ID_PREFIX, botName, isTemplateId, templateOf } from "../paperb
 import type { StrategyInfo } from "../types";
 import apiSource from "./api.ts?raw";
 import type { StrategyTemplate } from "./api";
+import { paperBotPathFor, templateLinkFromSearch, typedSettings } from "./link";
 
 /** Strategy templates step 2: templates adopted as paper strategies in the v2 Paper bot form (ui_v2 + strategy_templates). */
 
@@ -49,11 +50,46 @@ describe("strategy templates: the paper bot form", () => {
   });
 
   it("adopting is a pre-fill: the server's strategy id, candles and holding go into the same PAPER request; nothing else starts", () => {
-    expect(pageSource).toContain("templatesApi.adopt(pickedId, { timeframe: templateTimeframe })");
+    expect(pageSource).toContain("templatesApi.adopt(pickedId, fromLink ? { timeframe: templateTimeframe, params } : { timeframe: templateTimeframe })");
     expect(pageSource).toContain("timeframe: adoption.deployment.timeframe, holding: adoption.deployment.holding");
     expect(pageSource).toContain('features.on("ui_v2") && features.on("strategy_templates")');
     expect(pageSource).toMatch(/disabled=\{busy \|\| !effectiveId\}/);           // no Start until the pre-fill is in
     expect(apiSource).toContain('mode: "PAPER"');
     expect(apiSource).not.toContain("/deployments");                              // the template API never creates a bot
+  });
+});
+
+describe("the template link (idea library slice 2, IDEA-1)", () => {
+  it("carries the template, its timeframe and the settings as a pre-fill, and reads them back", () => {
+    const path = paperBotPathFor({ template: "D2", timeframe: "15m", params: { fast: 5, use_trend: true, ma_type: "SMA" } });
+    expect(path).toBe("/deployments?template=D2&timeframe=15m&set.fast=5&set.use_trend=true&set.ma_type=SMA");
+    expect(templateLinkFromSearch(path.slice(path.indexOf("?")))).toEqual(
+      { template: "D2", timeframe: "15m", params: { fast: "5", use_trend: "true", ma_type: "SMA" } });
+    expect(templateLinkFromSearch("?template=D2")).toEqual({ template: "D2", timeframe: null, params: {} });
+  });
+
+  it("drops what is not a template link instead of guessing", () => {
+    expect(templateLinkFromSearch("?template=T5")).toBeNull();
+    expect(templateLinkFromSearch("?template=<x>")).toBeNull();
+    expect(templateLinkFromSearch("")).toBeNull();
+    expect(templateLinkFromSearch("?template=D2&timeframe=soon&set.Bad=1&set.fast=")).toEqual({ template: "D2", timeframe: null, params: {} });
+  });
+
+  it("types the settings as the template declares them; unknown keys and wrong types are left out", () => {
+    const t = { params: [
+      { key: "fast", label: "", help: "", type: "int" as const, default: 9 },
+      { key: "k", label: "", help: "", type: "float" as const, default: 0.2 },
+      { key: "use_trend", label: "", help: "", type: "bool" as const, default: false },
+      { key: "ma_type", label: "", help: "", type: "ma_type" as const, default: "EMA" },
+    ] };
+    expect(typedSettings(t, { fast: "5", k: "0.5", use_trend: "true", ma_type: "SMA", other: "1" }))
+      .toEqual({ fast: 5, k: 0.5, use_trend: true, ma_type: "SMA" });
+    expect(typedSettings(t, { fast: "5.5", k: "x", use_trend: "yes" })).toEqual({});
+  });
+
+  it("the form reads the link's timeframe and settings and says the idea's settings are the start", () => {
+    expect(pageSource).toContain("templateLinkFromSearch(window.location.search)");
+    expect(pageSource).toContain("typedSettings(picked, initialTemplate.params)");
+    expect(pageSource).toContain("Starts with the settings from the idea.");
   });
 });

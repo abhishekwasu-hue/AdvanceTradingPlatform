@@ -13,8 +13,13 @@ export interface Idea {
   id: string; name: string; group: string; difficulty: "Beginner" | "Intermediate"; one_line: string;
   works_best_when: string; tends_to_fail_when: string; plain: string[]; logic: IdeaLogic; structure_words: string[];
   settings: IdeaSetting[]; your_decisions: string[]; provenance: string; scans: IdeaScan[]; scan_gaps: string | null;
-  adopt: { available: boolean };
+  adopt: IdeaAdopt;
 }
+/** Slice 2 (IDEA-1): an idea mapped honestly onto a strategy template the organisation can adopt now; otherwise only
+ * `available: false` ("comes later"). The settings are the Paper bot form's pre-fill. */
+export type IdeaAdopt =
+  | { available: false }
+  | { available: true; template: string; timeframe: string | null; params: Record<string, number | string | boolean> };
 export interface IdeaGroup { id: string; name: string }
 export interface BeginnerOption { id: string; label: string; ideas: string[] }
 export interface BeginnerQuestion { id: string; text: string; options: BeginnerOption[] }

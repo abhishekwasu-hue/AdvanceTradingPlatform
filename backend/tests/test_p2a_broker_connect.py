@@ -21,7 +21,7 @@ from app.brokers import catalog as cat
 from app.brokers import upstox_analytics as ua
 from app.brokers.models import BrokerCredentials
 from app.brokers.registry import available_brokers
-from app.brokers.token_lifecycle import load_credentials
+from app.brokers.token_lifecycle import default_token_expiry, load_credentials
 from app.db.models import BrokerCredentialRecord
 from tests.test_auth_api import _register, _session_factory, client
 
@@ -554,7 +554,9 @@ def test_a_login_address_without_the_code_never_replaces_the_session():
 
 def test_dhan_session_ends_at_the_tokens_own_exp():
     headers = _org("dhanexp")
-    exp = NOW + timedelta(hours=3)
+    schedule = default_token_expiry("dhan", NOW)
+    assert schedule is not None
+    exp = NOW + (schedule - NOW) / 2          # before the daily schedule at any time of day, so the token's own exp wins
     pasted = jwt.encode({"sub": "1000001", "exp": int(exp.timestamp())}, "dhan-side-signing-key-for-tests-only", algorithm="HS256")
     DHAN_GOOD.add(pasted)
     assert _connect(headers, "dhan", {"client_id": "1000001", "access_token": pasted})["status"] == "connected"

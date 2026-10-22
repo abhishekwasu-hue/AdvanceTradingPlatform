@@ -168,6 +168,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
         <ChainActionSheetV2 target={target} held={held} onClose={() => setAction(null)} onTrade={trade} onExit={exit}
           watchlistsOn={features.on("watchlists")} alertsOn={features.on("screener_v2")} api={fno} />
         <OrderTicketV2 open={ticket !== null} target={ticket?.target ?? null} side={ticket?.side ?? "BUY"} api={fno}
+          chainRows={live && ticket && ticket.target.expiry === live.expiry ? live.rows : null}
           onClose={() => { setTicket(null); setOrigin(null); }} onPlaced={(r) => { reloadHeld(); noteSignal([r.trade_id]); setOrigin(null); }} />
         <BasketPanelV2 open={basketOpen} onClose={() => { setBasketOpen(false); setOrigin(null); }}
           onPlaced={(r) => { reloadHeld(); noteSignal(r.legs.filter((l) => l.status === "PLACED").map((l) => l.trade_id)); setOrigin(null); }}

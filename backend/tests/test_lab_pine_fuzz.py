@@ -45,7 +45,7 @@ def test_random_token_soup_never_crashes():
 
 def test_random_characters_never_crash():
     rng = random.Random(11)
-    alphabet = "abcxyz_.0123456789 ()[]{},;:=<>!?+-*/%#@$\"'\\\n\téक\U0001F600\x00\x1b"
+    alphabet = "abcxyz_.0123456789 ()[]{},;:=<>!?+-*/%#@$\"'\\\n\t\u00e9\u0915\U0001F600\x00\x1b"
     for _ in range(400):
         _check("".join(rng.choice(alphabet) for _ in range(rng.randint(0, 300))))
 

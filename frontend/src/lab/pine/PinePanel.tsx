@@ -91,7 +91,7 @@ export default function PinePanel({ symbols, baseTf, api = pineApi, initialSourc
         <pre ref={gutterRef} aria-hidden className="m-0 select-none overflow-hidden border-r border-border-subtle px-2 py-2 text-right font-mono text-t12 leading-5 text-fg-muted"
              data-testid="pine-gutter">{numbers.join("\n")}</pre>
         <textarea ref={textRef} value={source} onChange={(e) => setSource(e.target.value)} spellCheck={false} wrap="off" rows={14}
-                  aria-label="Pine Script" placeholder={'//@version=5\nindicator("My signal")\n...'}
+                  aria-label="Your Pine script" placeholder={'//@version=5\nindicator("My signal")\n...'}
                   onScroll={(e) => { if (gutterRef.current) gutterRef.current.scrollTop = e.currentTarget.scrollTop; }}
                   className="min-h-[14rem] w-full resize-y bg-transparent px-2 py-2 font-mono text-t12 leading-5 text-fg outline-none" />
       </div>
@@ -107,7 +107,7 @@ export default function PinePanel({ symbols, baseTf, api = pineApi, initialSourc
               {result.signals.map((s) => (
                 <li key={s.index} className="rounded-panel border border-border bg-surface-1 p-3">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p className="font-semibold text-fg">{KIND_LABEL[s.kind]} <span className="font-normal text-fg-muted">· line {s.line} · {s.label}</span></p>
+                    <p className="font-semibold text-fg">{KIND_LABEL[s.kind]} <span className="font-normal text-fg-muted">· line {s.line}{s.label.startsWith(KIND_LABEL[s.kind]) ? "" : ` · ${s.label}`}</span></p>
                     {s.ok && (
                       <Button size="sm" onClick={() => doRun(s.index)} loading={running === s.index} disabled={!symbols.length || running !== null}
                               data-testid={`pine-run-${s.index}`}>Run as screen</Button>

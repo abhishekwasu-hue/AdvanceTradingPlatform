@@ -36,7 +36,8 @@ class _Words:
         default = getattr(spec, "default", None)
         if isinstance(default, bool):
             return f"the '{title}' setting (now {'on' if default else 'off'})"
-        return f"{_number(float(default))} ({title})" if isinstance(default, (int, float)) else title
+        # A number reads as its current value; the panel lists each input by its title on its own line.
+        return _number(float(default)) if isinstance(default, (int, float)) else title
 
     def arg(self, node: Any) -> str:
         if isinstance(node, n.Num):

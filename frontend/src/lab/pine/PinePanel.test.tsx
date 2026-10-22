@@ -16,7 +16,7 @@ const RESULT: PineTranslation = {
   ok: true, complete: false, refused: false, version: "5", script_kind: "indicator", title: "Cross", primary: 0,
   signals: [
     { index: 0, kind: "alert", label: "cross", line: 5, ok: true, text: "CrossAbove(EMA(close, $len), EMA(close, 21))", params: { len: 9 },
-      words: "The EMA of the close over 9 (Fast EMA) bars crosses above the EMA of the close over 21 bars", problems: [] },
+      words: "The EMA of the close over 9 bars crosses above the EMA of the close over 21 bars", problems: [] },
     { index: 1, kind: "alert", label: "above wma", line: 6, ok: false, text: null, params: {}, words: "",
       problems: ["not translated: 'w' on line 4 is outside the subset"] },
   ],

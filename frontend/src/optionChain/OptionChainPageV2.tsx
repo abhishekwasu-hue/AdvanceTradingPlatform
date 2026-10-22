@@ -112,7 +112,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       ]} />
       <header className="flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between">
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Option chain</h1>
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2 md:flex md:gap-space-3">
+        <div data-tour="oc-pickers" className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2 md:flex md:gap-space-3">
           <div className="min-w-0 md:w-48">
             <label htmlFor={symbolId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
             <select id={symbolId} value={symbol} onChange={(e) => { setPicked(null); onSymbol(e.target.value); }} className={SELECT}>
@@ -156,7 +156,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         </section>
       )}
 
-      {view === "chain" && <section aria-label="Chain" data-block="chain" className="relative">
+      {view === "chain" && <section aria-label="Chain" data-block="chain" data-tour="oc-chain" className="relative">
         {/* The toggle sits in the gap above the chain, centred over the strike column, so the chain does not move. */}
         {!(live && live.rows.length > 0) && <div className="mb-space-3 flex justify-center"><ViewToggle view={view} onView={setView} /></div>}
         {chain.problem && !live && <Note tone="warn">{chain.problem === "no-session" ? TEXT.noSession : chain.problem === "plan" ? TEXT.plan : TEXT.loadFailed}</Note>}

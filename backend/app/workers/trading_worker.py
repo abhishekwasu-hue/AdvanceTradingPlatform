@@ -60,7 +60,7 @@ from app.workers import eod_summary
 from app.workers.redis_guard import RedisGuard
 from app.news_feed import service as news_feed
 from app.platform import controls as platform_controls
-from app.ai.regime import classify_regime, parse_filter, regime_blocks
+from app.ai.regime import classify_regime, parse_filter, regime_note
 from app.observability.metrics import RETENTION_DELETED, observe_cycle
 from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
 from app.instruments import master
@@ -1416,18 +1416,16 @@ class TradingWorker:
             logger.warning("Deployment %s: %s", dep.id, stale)
             return False
 
-        # Phase L3: the regime filter - a deployment that only trades trends sits out ranges, and
-        # says so. Classified on the base frame the strategy is about to read.
+        # Phase L3 -> handover item 5 C: the indicator regime is an admin diagnostic only. It is classified and logged;
+        # it never blocks an entry (and never touched exits). The old filter's verdict is logged for the admin.
         allowed = parse_filter(dep.regime_filter)
         regime = classify_regime(base) if (allowed or dep.id in self._regime_wanted or len(base) >= 60) else None
         if regime is not None:
             self._regimes[dep.id] = regime.kind
-        if allowed:
-            blocked = regime_blocks(regime, allowed)
-            if blocked:
-                dep.last_error = blocked
-                await session.commit()
-                return False
+        if allowed and regime is not None:
+            note = regime_note(regime, allowed)
+            if note:
+                logger.info("Deployment %s: regime diagnostic (never blocks): %s", dep.id, note)
 
         signal = strategy.analyze(frames, dep.symbol)
         if not signal.is_tradeable:

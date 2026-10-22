@@ -10,6 +10,8 @@ import {
   MAX_LOTS, ORDER_TYPES, PRACTICE_TEXT, PRACTICE_TITLE, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
   draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
 } from "./ticketModel";
+import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
+import { riskLine, structureOf, ticketPayoffSentence, type RiskBudget } from "./insights";
 
 /**
  * FNO-1 (owner order section 6): the ONE order ticket - used by the option chain now, built to be opened the same way
@@ -87,6 +89,9 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
     ref.current = newClientRef();
   }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults]);
 
+  // 8b-d: the user's own risk budget, read on the confirm step for its risk line (information only, never a refusal).
+  const budget = useRiskBudget(open && step.kind === "review");
+
   // Desktop shortcuts: B = Buy, S = Sell while the ticket is being filled in (never while typing in a field).
   useEffect(() => {
     if (!open || step.kind !== "edit") return undefined;
@@ -146,7 +151,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
               <X size={18} aria-hidden />
             </RD.Close>
           </div>
-          <TicketBody target={target} draft={draft} step={step} busy={busy} problem={problem} idPrefix={idPrefix} defaults={defaults}
+          <TicketBody target={target} draft={draft} step={step} busy={busy} problem={problem} idPrefix={idPrefix} defaults={defaults} budget={budget}
             onDraft={(patch) => { setDraft((d) => ({ ...d, ...patch })); setProblem(null); }}
             onReview={review} onPlace={place} onBack={() => setStep({ kind: "edit" })} onClose={onClose} />
         </RD.Content>
@@ -155,10 +160,11 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
   );
 }
 
-/** The "Practice mode (PAPER)" frame on every ticket (owner order 8b-l). */
-export function PracticeFrame() {
+/** The "Practice mode (PAPER)" frame on every ticket (owner order 8b-l); 8b slice 1: also on the positions page while
+ * every position shown is PAPER (`className` rounds it there). */
+export function PracticeFrame({ className }: { className?: string } = {}) {
   return (
-    <div className="flex flex-wrap items-center gap-x-space-2 bg-warn-tint px-space-4 py-space-2 text-t13 font-semibold text-warn" data-practice-frame>
+    <div className={cx("flex flex-wrap items-center gap-x-space-2 bg-warn-tint px-space-4 py-space-2 text-t13 font-semibold text-warn", className)} data-practice-frame>
       <ShieldCheck size={16} aria-hidden className="shrink-0" />
       <span className="shrink-0">{PRACTICE_TITLE}</span>
       <span className="font-normal">{PRACTICE_TEXT}</span>
@@ -169,10 +175,12 @@ export function PracticeFrame() {
 const sentence = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** The ticket's fields, the confirm step and the buttons (no state, no hooks). */
-export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose, defaults }: {
+export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose, defaults, budget }: {
   target: TicketTarget; draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string;
   /** Settings part C: the user's own ticket defaults, to mark the fields that still show them. */
   defaults?: DraftDefaults;
+  /** 8b-d: the user's own risk budget for the risk line (null: the line is left out). */
+  budget?: RiskBudget | null;
   onDraft: (patch: Partial<Draft>) => void; onReview: () => void; onPlace: () => void; onBack: () => void; onClose: () => void;
 }) {
   const n = needs(draft.orderType);
@@ -247,7 +255,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
           </>
         )}
 
-        {step.kind === "review" && <Review preview={step.preview} />}
+        {step.kind === "review" && <Review preview={step.preview} budget={budget} />}
 
         {step.kind === "done" && (
           <p role="status" data-ticket="result"
@@ -285,9 +293,12 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
   );
 }
 
-/** The confirm step: every figure from the server, before anything is placed. */
-export function Review({ preview: p }: { preview: OrderPreview }) {
+/** The confirm step: every figure from the server, before anything is placed. 8b: the payoff in plain words, the risk
+ * line (the max loss beside the user's own limits, information only: `can_place` alone decides the button) and Explain. */
+export function Review({ preview: p, budget }: { preview: OrderPreview; budget?: RiskBudget | null }) {
   const problems = [...p.errors, ...p.refusals];
+  const payoff = ticketPayoffSentence(p);
+  const c = p.contract;
   const type = p.order_type === "MARKET" ? "Market" : p.order_type === "LIMIT" ? "Limit" : p.order_type;
   return (
     <div className="space-y-space-3" data-ticket="confirm">
@@ -310,6 +321,13 @@ export function Review({ preview: p }: { preview: OrderPreview }) {
         {p.charges && <Line label="Charges (estimate)" testId="charges">{moneyText(p.charges.total)}</Line>}
       </dl>
       {p.fill_note && p.fill_price !== null && <p className="text-t13 text-fg-muted">{p.fill_note}</p>}
+      {payoff && (
+        <p className="rounded-control bg-surface-2 px-space-3 py-space-2 text-t14 text-fg" data-ticket="plain-words">
+          <span className="block text-t12 font-semibold text-fg-muted">In plain words (information only)</span>
+          {payoff}
+        </p>
+      )}
+      <RiskLineV2 line={riskLine(p.max_loss?.value, false, budget)} />
       {problems.length > 0 && (
         <ul role="alert" className="space-y-space-1 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-ticket="refusals">
           {problems.map((r) => <li key={r}>{r}</li>)}
@@ -319,6 +337,10 @@ export function Review({ preview: p }: { preview: OrderPreview }) {
         <ul className="space-y-space-1 text-t13 text-fg-muted" data-ticket="warnings">
           {p.warnings.map((w) => <li key={w}>{w}</li>)}
         </ul>
+      )}
+      {c && (
+        <ExplainV2 testId="ticket" underlying={c.underlying}
+          structure={structureOf([{ side: p.side, right: c.right, strike: c.strike ?? 0, expiry: c.expiry }])} />
       )}
     </div>
   );

@@ -93,6 +93,7 @@ from app.me.setup import router as me_setup_router
 from app.context_panel.routes import router as context_panel_router
 from app.paper.ticket_routes import router as paper_ticket_router
 from app.paper.fno_routes import router as paper_fno_router
+from app.paper.fno_insights_routes import router as paper_fno_insights_router
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
 from app.workers.routes import router as workers_router
@@ -347,6 +348,7 @@ app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(paper_fno_router)       # FNO-1: trading from the option chain, PAPER only (flags ui_v2 + paper_account)
+app.include_router(paper_fno_insights_router)  # F&O 8b slice 1: risk budget + setup-aware strikes, read-only (ui_v2)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
 app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)
 

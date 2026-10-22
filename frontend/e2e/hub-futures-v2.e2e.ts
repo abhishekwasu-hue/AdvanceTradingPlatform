@@ -80,6 +80,8 @@ async function open(page: Page, theme: "light" | "dark", path: string, opts: { h
   await page.route(/\/api(?:\/v1)?\/paper\/fno\//, async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/held")) return route.fulfill({ json: [] });
+    // 8b-d: the risk line's budget (not set up here: the line is left out, the ticket is unchanged).
+    if (url.pathname.endsWith("/risk-budget")) return route.fulfill({ status: 404, json: { detail: "Not found" } });
     const body = route.request().postDataJSON() as Record<string, unknown>;
     seen.posts.push({ url: url.pathname, body });
     const placed = url.pathname.endsWith("/order")

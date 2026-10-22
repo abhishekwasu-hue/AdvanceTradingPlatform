@@ -22,6 +22,9 @@ import type { ChainLeg, ChainRow, LiveChain } from "./types";
  *   strike cell still opens the row's details); on the focused row, C opens the call's and P the put's. A "P" next to
  *   the strike marks a call or put the user holds in PAPER (`held`, keys "strike|CE" / "strike|PE"). With
  *   `prefs.pct` the OI change shows in percent.
+ * - F&O 8b-a (`setup`, the chain opened from one of the user's own signals): the call or put cells his own deployment
+ *   settings land on are shaded, and the strike says "Main" / "Wing" ("from your settings" for a screen reader). A mark
+ *   only shows; nothing is picked or opened by it.
  */
 function cellText(key: ColumnDef["key"], leg: ChainLeg, pct = false): string {
   switch (key) {
@@ -36,7 +39,7 @@ function cellText(key: ColumnDef["key"], leg: ChainLeg, pct = false): string {
 
 const SHOWN_CLASS = { all: "", desktop: "hidden md:table-cell", none: "hidden" } as const;
 
-export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg, held }: {
+export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg, held, setup }: {
   live: LiveChain;
   prefs: ColumnPrefs;
   /** The ATM row is centred once per key (symbol and expiry; FNO-1: and each "recentre" tap). */
@@ -46,6 +49,8 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
   onPickLeg?: (row: ChainRow, side: "call" | "put") => void;
   /** FNO-1: the contracts the user holds in PAPER, as "strike|CE" / "strike|PE". */
   held?: ReadonlySet<string>;
+  /** 8b-a: where the user's own settings land, "strike|CE" / "strike|PE" -> "Main" / "Wing" / "2nd". */
+  setup?: ReadonlyMap<string, string>;
 }) {
   const { rows, summary } = live;
   const spot = summary.spot;
@@ -70,15 +75,16 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
   const legCells = (side: "call" | "put", cols: readonly ColumnDef[], row: ChainRow, isAtm: boolean) => {
     const leg = row[side];
     const itm = !isAtm && isItm(side, row.strike, spot);
+    const marked = setup?.get(`${row.strike}|${side === "call" ? "CE" : "PE"}`);
     const pick = onPickLeg ? (e: { stopPropagation: () => void }) => { e.stopPropagation(); onPickLeg(row, side); } : undefined;
     return cols.map((c) => {
       const shown = SHOWN_CLASS[columnShown(c, prefs)];
       const base = cx("relative whitespace-nowrap px-space-2 py-space-2 font-tabular", side === "call" ? "text-right" : "text-left",
-        itm && "bg-surface-2", shown);
+        marked ? "bg-brand/15" : itm && "bg-surface-2", shown);
       if (c.key === "oi") {
         const top = highest[side] === row.strike;
         return (
-          <td key={c.key} className={cx(base, top && "font-semibold shadow-[inset_0_0_0_1px_rgb(var(--brand))]")} data-itm={itm || undefined}
+          <td key={c.key} className={cx(base, top && "font-semibold shadow-[inset_0_0_0_1px_rgb(var(--brand))]")} data-itm={itm || undefined} data-setup={marked ? side : undefined}
             data-max-oi={top ? side : undefined} title={top ? `Highest ${side} OI` : undefined} onClick={pick}>
             <span aria-hidden className={cx("absolute inset-y-1", side === "call" ? "right-0" : "left-0", top ? "bg-brand/30" : "bg-brand/15")}
               style={{ width: `${barPercent(leg.oi, max[side])}%` }} />
@@ -92,7 +98,7 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
         );
       }
       return (
-        <td key={c.key} className={cx(base, "text-fg")} data-itm={itm || undefined} onClick={pick}>
+        <td key={c.key} className={cx(base, "text-fg")} data-itm={itm || undefined} data-setup={marked ? side : undefined} onClick={pick}>
           {cellText(c.key, leg, prefs.pct === true)}
         </td>
       );
@@ -153,6 +159,7 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
                   {formatStrike(row.strike)}
                   {held?.has(`${row.strike}|PE`) && <HeldMark side="put" />}
                   {isAtm && <span className="block text-t12 font-medium text-brand">ATM<span className="sr-only">, at the money</span></span>}
+                  {setup && <SetupMark call={setup.get(`${row.strike}|CE`)} put={setup.get(`${row.strike}|PE`)} />}
                 </th>
                 {legCells("put", puts, row, isAtm)}
               </tr>
@@ -169,6 +176,18 @@ function HeldMark({ side }: { side: "call" | "put" }) {
   return (
     <span data-held={side} className={cx("inline-block rounded-pill bg-brand px-space-1 text-t12 font-semibold leading-4 text-on-brand", side === "call" ? "mr-space-1" : "ml-space-1")}>
       P<span className="sr-only">{side === "call" ? " (you hold the call)" : " (you hold the put)"}</span>
+    </span>
+  );
+}
+
+/** 8b-a: "Main" / "Wing" under the strike where the user's own settings land (call on the left, put on the right). */
+function SetupMark({ call, put }: { call?: string; put?: string }) {
+  if (!call && !put) return null;
+  return (
+    <span className="block text-t12 font-semibold text-brand" data-setup-mark>
+      {call && <span>{call} call<span className="sr-only">, from your settings</span></span>}
+      {call && put && " · "}
+      {put && <span>{put} put<span className="sr-only">, from your settings</span></span>}
     </span>
   );
 }

@@ -1,0 +1,55 @@
+{
+  "schema": "atp.template/1",
+  "id": "F2",
+  "version": 1,
+  "name": "Range seller pack",
+  "family": "F",
+  "idea": "For option sellers: a range recipe's signals read as the range's lower or upper edge; the spread, its strikes and the lots come only from your own bot settings.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "source", "label": "Signals from", "help": "The range recipe whose signals give the edge. Its settings are below; the recipe runs exactly as on its own.",
+     "type": "enum", "default": "range_edges", "choices": ["range_edges"], "choice_labels": ["Range edges"]},
+    {"key": "swing_degree", "label": "Swing size", "help": "How big a swing must be to count when the range and its edges are read. Bigger swings give wider, slower ranges.",
+     "type": "int", "default": 1, "min": 0, "max": 3, "step": 1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "context": {
+    "by": "source",
+    "variants": {
+      "range_edges": {
+        "long": "DowTrend($swing_degree) == \"RANGE\"",
+        "short": "DowTrend($swing_degree) == \"RANGE\""
+      }
+    }
+  },
+  "setup": {
+    "by": "source",
+    "variants": {
+      "range_edges": {
+        "kind": "event",
+        "long": "ReversalAt(SwingLow($swing_degree), \"bullish\")",
+        "short": "ReversalAt(SwingHigh($swing_degree), \"bearish\")",
+        "same_bar": true
+      }
+    }
+  },
+  "trigger": null,
+  "invalidation": {
+    "by": "source",
+    "variants": {
+      "range_edges": {
+        "long": "SwingLow($swing_degree)",
+        "short": "SwingHigh($swing_degree)"
+      }
+    }
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "range_on_chart"}, {"token": "lower_edge_rejection_formed"}, {"token": "pack_range_lower_edge"}],
+    "short": [{"token": "range_on_chart"}, {"token": "upper_edge_rejection_formed"}, {"token": "pack_range_upper_edge"}]
+  }
+}

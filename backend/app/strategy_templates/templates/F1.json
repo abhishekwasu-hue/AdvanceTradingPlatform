@@ -1,0 +1,76 @@
+{
+  "schema": "atp.template/1",
+  "id": "F1",
+  "version": 1,
+  "name": "Directional seller pack",
+  "family": "F",
+  "idea": "For option sellers: a trend recipe's signals read as a bullish or bearish continuation side; the spread, its strikes and the lots come only from your own bot settings.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d", "1w"],
+  "params": [
+    {"key": "source", "label": "Signals from", "help": "The trend recipe whose signals give the side. Its settings are below; the recipe runs exactly as on its own.",
+     "type": "enum", "default": "supertrend_flip", "choices": ["supertrend_flip"], "choice_labels": ["Supertrend flip"]},
+    {"key": "period", "label": "Supertrend period", "help": "Bars of the average true range behind the Supertrend line.",
+     "type": "int", "default": 10, "min": 1, "max": 100, "step": 1},
+    {"key": "multiplier", "label": "Supertrend multiplier", "help": "How many average true ranges the line keeps from the middle of the bar.",
+     "type": "float", "default": 3.0, "min": 0.5, "max": 10.0, "step": 0.1},
+    {"key": "use_context", "label": "Higher-timeframe filter", "help": "Only signal when the Supertrend on the context timeframe points the same way.",
+     "type": "bool", "default": false},
+    {"key": "context_timeframe", "label": "Context timeframe", "help": "The higher timeframe the filter reads (closed bars only).",
+     "type": "timeframe", "default": "1d", "choices": ["15m", "30m", "1h", "1d", "1w"]}
+  ],
+  "constraints": [
+    {"left": "context_timeframe", "op": ">", "right": "signal_timeframe", "when": "use_context",
+     "message": "The context timeframe must be higher than the signal timeframe."}
+  ],
+  "sides_default": "both",
+  "context": {
+    "by": "source",
+    "variants": {
+      "supertrend_flip": {
+        "long": "SupertrendDir($period, $multiplier) == 1",
+        "short": "SupertrendDir($period, $multiplier) == -1"
+      }
+    },
+    "timeframe_param": "context_timeframe",
+    "enabled_by": "use_context"
+  },
+  "setup": {
+    "by": "source",
+    "variants": {
+      "supertrend_flip": {
+        "kind": "event",
+        "long": "SupertrendDir($period, $multiplier) == 1 AND SupertrendDir($period, $multiplier)[1] == -1",
+        "short": "SupertrendDir($period, $multiplier) == -1 AND SupertrendDir($period, $multiplier)[1] == 1",
+        "same_bar": true
+      }
+    }
+  },
+  "trigger": null,
+  "invalidation": {
+    "by": "source",
+    "variants": {
+      "supertrend_flip": {
+        "long": "Supertrend($period, $multiplier)",
+        "short": "Supertrend($period, $multiplier)"
+      }
+    }
+  },
+  "exit_signal": {
+    "by": "source",
+    "variants": {
+      "supertrend_flip": {
+        "long": "SupertrendDir($period, $multiplier) == -1 AND SupertrendDir($period, $multiplier)[1] == 1",
+        "short": "SupertrendDir($period, $multiplier) == 1 AND SupertrendDir($period, $multiplier)[1] == -1"
+      }
+    }
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "supertrend_turned_bullish"}, {"token": "context_supertrend_agrees", "when": "use_context"},
+             {"token": "pack_bullish_continuation"}],
+    "short": [{"token": "supertrend_turned_bearish"}, {"token": "context_supertrend_agrees", "when": "use_context"},
+              {"token": "pack_bearish_continuation"}]
+  }
+}

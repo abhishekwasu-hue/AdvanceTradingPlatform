@@ -11,6 +11,8 @@ import { T, mockTrading } from "./tradingMocks";
  *   settings land on are ringed and named; nothing is picked, opened or placed by it.
  * - The ticket's confirm step (8b-c, 8b-d, 8b-h): the payoff in plain words, the risk line beside the user's own limits
  *   (a warning that never disables "Place PAPER order") and Explain; the PAPER frame stays on.
+ * - 8b slice 3: the panel's item now carries "Trade this setup" (the server's legs have their role); the baselines
+ *   `fno8b-setup-chain-v2-*` were regenerated for it.
  * - Baselines (NEW): `fno8b-setup-chain-v2-<width>-<theme>.png` and `fno8b-ticket-review-v2-<width>-<theme>.png` at 1440,
  *   390 and 360, light and dark.
  * After an intended change: `npx playwright test --project=phone e2e/fno-insights-v2.e2e.ts --update-snapshots`.
@@ -30,7 +32,8 @@ const SETUP = {
   source: "your_settings", signal: "action:12", underlying: "NIFTY", setup: "Made-up setup", side: "bull_put",
   reference: { text: "the current price", price: 24480 }, message: null,
   items: [{ id: 7, settings: "Bull put spread · main strike 1 strike out of the money · wing 2 strikes away · nearest expiry", expiry: "2026-11-03",
-    legs: [{ label: "Main strike", right: "PE", strike: 24400, ratio: 1 }, { label: "Wing", right: "PE", strike: 24200, ratio: 1 }], note: null }],
+    legs: [{ label: "Main strike", right: "PE", strike: 24400, ratio: 1, role: "short" }, { label: "Wing", right: "PE", strike: 24200, ratio: 1, role: "long" }],
+    note: null, lots: 1, stop_pct: 50 }],
 };
 
 function preview(body: Record<string, unknown>) {

@@ -8,7 +8,8 @@ import { closedText, failedText } from "../trading/model";
 import { daysText, formatIv, formatStrike, type ColumnPrefs } from "../optionChain/model";
 import type { ChainExpiry, ChainRow, ChainSummary, LiveChain } from "../optionChain/types";
 import { fnoApi, type FnoApi, type FnoContract, type HeldLeg, type Side } from "./api";
-import { useBasket } from "./basket";
+import { basket as basketStore, useBasket } from "./basket";
+import { insightsApi, type InsightsApi, type SetupTrade } from "./insights";
 import BasketPanelV2 from "./BasketPanelV2";
 import ChainActionSheetV2, { type ActionTarget } from "./ChainActionSheetV2";
 import OrderTicketV2 from "./OrderTicketV2";
@@ -27,6 +28,11 @@ import { heldKey, sideWord, type TicketTarget } from "./ticketModel";
  *   tap ATM to bring the ATM row back to the middle, OI change as a count or in %, the basket badge;
  * - FNO-2: the badge opens the basket panel (src/fno/BasketPanelV2.tsx): the legs, the payoff, ready strategies and
  *   Execute basket (PAPER, hedge legs first).
+ * - 8b-b "Trade this setup" (`tradeSetup`): the chain opened from one of the user's own signals opens the SAME ticket
+ *   (one leg) or basket (several legs) pre-filled with the strikes his own deployment settings give. Nothing is placed:
+ *   he reviews it and places it himself with the ticket's / basket's own buttons (PAPER). A basket he already has is
+ *   replaced only after he says yes. Once he placed it, his signal is noted on the journal of those trades (8b-k,
+ *   journal rows only); a failed note changes nothing.
  */
 const HELD_EVERY_MS = 30_000;
 type Note = { kind: "done" | "warn"; text: string } | null;
@@ -39,6 +45,8 @@ export interface ChainTrading {
   centreSuffix: string;
   strip: ReactNode;
   layer: ReactNode;
+  /** 8b-b: open the ticket / basket pre-filled (never places). Absent while the PAPER account is off. */
+  tradeSetup?: (t: SetupTrade) => void;
 }
 
 export function spotSymbolOf(underlying: string): string {
@@ -46,8 +54,11 @@ export function spotSymbolOf(underlying: string): string {
   return map[underlying] ?? underlying;
 }
 
-export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, exitNow = api.exitNow, expiries = [] }: {
+export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, exitNow = api.exitNow, expiries = [], signal = null, insights = insightsApi }: {
   symbol: string;
+  /** 8b-b: the user's own signal the chain was opened from ("action:12"), for the journal note after he places. */
+  signal?: string | null;
+  insights?: Pick<InsightsApi, "linkJournal">;
   live: LiveChain | null;
   /** The expiries the page lists (a Calendar's far leg reads the next one). */
   expiries?: readonly ChainExpiry[];
@@ -68,6 +79,8 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
   // FNO-3: the futures chain's basket badge links here with `?basket=open`, so the legs it added open at once.
   const [basketOpen, setBasketOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("basket") === "open");
   const legs = useBasket();
+  // 8b-b: the signal the open ticket / basket was pre-filled from (null: opened by hand, nothing is noted).
+  const [origin, setOrigin] = useState<string | null>(null);
 
   const reloadHeld = useCallback(() => setRound((r) => r + 1), []);
   useEffect(() => {
@@ -106,12 +119,40 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
     reloadHeld();
   }
 
+  // 8b-k: after he placed what "Trade this setup" opened, his signal is noted on those trades' journal (journal only).
+  function noteSignal(tradeIds: (number | null | undefined)[]) {
+    const ids = tradeIds.filter((id): id is number => typeof id === "number");
+    if (!origin || !ids.length) return;
+    insights.linkJournal(origin, ids).catch(() => { /* the journal note is a convenience; the trades are as placed */ });
+  }
+
+  function tradeSetup(t: SetupTrade) {
+    if (t.kind === "none" || !signal) return;
+    setAction(null);
+    setNote(null);
+    if (t.kind === "ticket") {
+      setOrigin(signal);
+      setTicket({ side: t.side, target: t.target });
+      // The contract's name and lot size, as the action sheet reads them (the ticket works without them).
+      fno.contract(t.target.underlying, t.target.expiry, t.target.strike, t.target.right)
+        .then((c) => setTicket((cur) => (cur && cur.target.strike === t.target.strike && cur.target.right === t.target.right
+          ? { ...cur, target: { ...cur.target, label: c.label ?? null, lotSize: c.lot_size ?? null } } : cur)))
+        .catch(() => { /* the ticket reads the lot size on its review step */ });
+      return;
+    }
+    if (legs.length && !window.confirm(`Your basket has ${legs.length} leg${legs.length === 1 ? "" : "s"}. Replace them with this setup?`)) return;
+    basketStore.replace(t.legs);
+    setOrigin(signal);
+    setBasketOpen(true);
+  }
+
   if (!enabled) return { enabled: false, held: heldSet, centreSuffix: "", strip: null, layer: null };
   return {
     enabled,
     held: heldSet,
     onPickLeg: (r, side) => { setNote(null); setAction({ strike: r.strike, side }); },
     centreSuffix: recentre ? `|${recentre}` : "",
+    tradeSetup,
     strip: live ? (
       <ChainBottomStripV2 summary={live.summary} pct={prefs.pct === true} onPct={(pct) => onPrefs({ ...prefs, pct })}
         onRecentre={() => setRecentre((n) => n + 1)} basketCount={legs.length} onBasket={() => setBasketOpen(true)} />
@@ -127,8 +168,9 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
         <ChainActionSheetV2 target={target} held={held} onClose={() => setAction(null)} onTrade={trade} onExit={exit}
           watchlistsOn={features.on("watchlists")} alertsOn={features.on("screener_v2")} api={fno} />
         <OrderTicketV2 open={ticket !== null} target={ticket?.target ?? null} side={ticket?.side ?? "BUY"} api={fno}
-          onClose={() => setTicket(null)} onPlaced={reloadHeld} />
-        <BasketPanelV2 open={basketOpen} onClose={() => setBasketOpen(false)} onPlaced={reloadHeld}
+          onClose={() => { setTicket(null); setOrigin(null); }} onPlaced={(r) => { reloadHeld(); noteSignal([r.trade_id]); setOrigin(null); }} />
+        <BasketPanelV2 open={basketOpen} onClose={() => { setBasketOpen(false); setOrigin(null); }}
+          onPlaced={(r) => { reloadHeld(); noteSignal(r.legs.filter((l) => l.status === "PLACED").map((l) => l.trade_id)); setOrigin(null); }}
           chain={{ symbol, live, expiries, loadChain: (e) => api.optionChainLive(symbol, e) }} />
       </>
     ),

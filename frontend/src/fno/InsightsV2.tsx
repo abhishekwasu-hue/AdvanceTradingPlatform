@@ -1,12 +1,13 @@
-import { BookOpen, Crosshair, Info, TriangleAlert } from "lucide-react";
+import { BookOpen, Crosshair, Info, ShoppingBasket, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { cx } from "../components/primitives/cx";
 import { formatDateIST, formatNumber } from "../ui/format";
 import { useFeatures } from "../ui/useFeatures";
 import {
-  FROM_YOUR_SETTINGS, GREEKS_NOTE, NOT_PICKED, STRUCTURE_EXPLAIN, greekLines, insightsApi, otherSetupExpiries, setupChainHref,
-  type GreekValues, type InsightsApi, type RiskBudget, type RiskLine, type SetupStrikes, type Structure,
+  FROM_YOUR_SETTINGS, GREEKS_NOTE, NOT_PICKED, STRUCTURE_EXPLAIN, TRADE_NOTE, greekLines, insightsApi, otherSetupExpiries, setupChainHref,
+  setupTradeNote, type GreekValues, type InsightsApi, type RiskBudget, type RiskLine, type SetupItem, type SetupStrikes, type SetupTrade,
+  type Structure,
 } from "./insights";
 
 /**
@@ -98,9 +99,11 @@ export function useSetupStrikes(signal: string | null, spot: number | null, api:
 
 const RIGHT = { CE: "Call", PE: "Put" } as const;
 
-/** The block above the chain when it was opened from one of the user's own signals. */
-export function SetupPanelV2({ state, symbol, expiry, onExpiry, onClear }: {
+/** The block above the chain when it was opened from one of the user's own signals. 8b-b: with `tradeOf` / `onTrade`
+ * (the PAPER account on), each item has "Trade this setup", which opens the existing ticket / basket pre-filled. */
+export function SetupPanelV2({ state, symbol, expiry, onExpiry, onClear, tradeOf, onTrade }: {
   state: SetupState; symbol: string; expiry: string | null; onExpiry: (expiry: string) => void; onClear: () => void;
+  tradeOf?: (item: SetupItem) => SetupTrade; onTrade?: (t: SetupTrade) => void;
 }) {
   if (state.status === "off") return null;
   const data = state.status === "ready" ? state.data : null;
@@ -139,6 +142,7 @@ export function SetupPanelV2({ state, symbol, expiry, onExpiry, onClear }: {
               )}
               {item.expiry && <p className="text-t12 text-fg-muted">Expiry {formatDateIST(item.expiry)}</p>}
               {item.note && <p className="text-t12 text-fg-muted">{item.note}</p>}
+              {tradeOf && onTrade && <TradeSetupV2 trade={tradeOf(item)} onTrade={onTrade} />}
             </div>
           ))}
           {!elsewhere && others.length > 0 && (
@@ -157,15 +161,38 @@ export function SetupPanelV2({ state, symbol, expiry, onExpiry, onClear }: {
   );
 }
 
+/** 8b-b: "Trade this setup" on one item - opens the ticket / basket pre-filled; says why when it cannot. Never places. */
+function TradeSetupV2({ trade, onTrade }: { trade: SetupTrade; onTrade: (t: SetupTrade) => void }) {
+  if (trade.kind === "none") return <p className="mt-space-2 text-t12 text-fg-muted" data-setup-trade="none">{trade.problem}</p>;
+  return (
+    <div className="mt-space-2 space-y-space-1" data-setup-trade={trade.kind}>
+      <button type="button" onClick={() => onTrade(trade)} data-setup="trade"
+        className="inline-flex min-h-11 items-center gap-space-2 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+        <ShoppingBasket size={16} aria-hidden /> Trade this setup
+      </button>
+      <p className="text-t12 text-fg-muted">{setupTradeNote(trade)} {TRADE_NOTE}</p>
+    </div>
+  );
+}
+
 /** On a signal of the user's own with a side, on a symbol with an option chain: "Your strikes on the chain" (ui_v2): the
- * chain opens with the strikes his own settings land on marked. */
+ * chain opens with the strikes his own settings land on marked. 8b-b: with the PAPER account on, "Trade this setup"
+ * opens the same chain and the pre-filled ticket / basket at once (he still reviews and places it himself). */
 export function SetupChainLinkV2({ item }: { item: { id: string; symbol: string; direction: "LONG" | "SHORT" | null } }) {
   const features = useFeatures();
   const href = features.on("ui_v2") ? setupChainHref(item) : null;
+  const trade = href && features.on("paper_account") ? setupChainHref(item, true) : null;
   if (!href) return null;
   return (
-    <Link to={href} data-setup-link className="inline-flex min-h-11 items-center gap-space-1 text-t14 font-semibold text-brand hover:underline">
-      <Crosshair size={16} aria-hidden className="shrink-0" /> Your strikes on the chain
-    </Link>
+    <span className="inline-flex flex-wrap items-center gap-x-space-4">
+      <Link to={href} data-setup-link className="inline-flex min-h-11 items-center gap-space-1 text-t14 font-semibold text-brand hover:underline">
+        <Crosshair size={16} aria-hidden className="shrink-0" /> Your strikes on the chain
+      </Link>
+      {trade && (
+        <Link to={trade} data-setup-trade-link className="inline-flex min-h-11 items-center gap-space-1 text-t14 font-semibold text-brand hover:underline">
+          <ShoppingBasket size={16} aria-hidden className="shrink-0" /> Trade this setup
+        </Link>
+      )}
+    </span>
   );
 }

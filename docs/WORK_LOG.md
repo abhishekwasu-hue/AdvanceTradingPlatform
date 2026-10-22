@@ -2861,3 +2861,31 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   warm-up back; a yes / no setting may fill a yes / no argument.
 - Tests: `tests/test_tpl3_templates.py` (section 8 gate for the four templates + R7), runtime fixture, causal cases
   (lookahead job), history sweep; updated registry coverage tests. Questions TPL-Q18..TPL-Q25; TPL-Q8 answered.
+
+
+## 22 Oct - F&O workspace 8b, slice 3: "Trade this setup", the F&O cockpit, the auto journal (behind ui_v2, PAPER only)
+
+- Branch `claude/fno8b-slice-3`. No migration (the journal's own `journal_entries` row is the draft). No new order path:
+  the ticket and the basket are the existing ones, and nothing opens them with an order placed.
+- 8b-b "Trade this setup": `GET /api/paper/fno/setup-strikes` items now carry each leg's role in the structure
+  (short / long, `chart_analyze/strikes.deployment_legs(with_role=True)`; Analyze-a-chart's answer is unchanged) and
+  the deployment's own max lots and premium stop % (null when not set). `insights.setupTrade` turns one item into the
+  ticket (one leg) or the basket (several legs) at the chain's prices; the setup panel has "Trade this setup" per item;
+  the signal card has a "Trade this setup" link (`?trade=1`: opens it once by itself when exactly one item fits). A
+  basket he has is replaced only on his yes. After he places it, `POST /api/paper/fno/journal/link` notes his signal on
+  those trades' journal rows.
+- 8b-i the cockpit: `fno/CockpitV2.tsx` + `fno/cockpit.ts` - "F&O at a glance" at the top of My positions (F&O PAPER
+  positions only): lines with P&L, premium kept, theta and net Greeks, the most the lines can lose at expiry beside his
+  own limits (information only), coming expiries, his alerts. Read only; no control.
+- 8b-k the auto journal: `app/paper/fno_journal.py` + `fno_journal_routes.py` (`GET /api/paper/fno/journal/drafts`,
+  `POST /api/paper/fno/journal/link`; `ui_v2` + PAPER account); `fno/JournalDraftsV2.tsx` + `fno/journal.ts` - a draft
+  per closed PAPER F&O trade or basket from facts + his signal's structure words (signal-language filtered), with his
+  notes saved to the trades' existing notes field. The card shows only when there is a draft.
+- Tests: backend `tests/test_fno8b3_setup_journal.py` (flags, roles + own lots / stop, the basket asserted PAPER at the
+  Phase 0 chokepoint, link and drafts reach no order path, teammate's signal / member see nothing, exits under the
+  lock, notes); `test_fno8b_insights.py` leg dicts gain `role`; tenancy route table. Frontend vitest
+  `src/fno/slice3.test.tsx`; e2e `e2e/fno8b-slice3-v2.e2e.ts` (pre-filled basket and ticket send nothing until he
+  places, the link after, replace-on-yes, the cockpit read only, notes the only write, Exit now enabled);
+  `fno8b-slice2-v2.e2e.ts` answers the cockpit's GET of the alert rules. New baselines `fno8b3-trade-setup-v2-*`,
+  `fno8b3-cockpit-v2-*`, `fno8b3-journal-v2-*`; regenerated `fno8b-setup-chain-v2-*` (the panel's new button).
+- Questions FNO-8B-17..26 (OPEN_QUESTIONS); owner-orders README row 3 updated.

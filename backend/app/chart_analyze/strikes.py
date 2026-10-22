@@ -94,8 +94,11 @@ def _leg_label(strategy: OptionStrategy, index: int, ratio: int) -> str:
     return "Wing"
 
 
-async def _legs(session: AsyncSession, dep: StrategyDeploymentRecord, side: str, spot: float, today: date) -> Dict[str, Any]:
-    """{expiry, legs} from the instrument master, or {note} when the ladder is missing or too short."""
+async def _legs(session: AsyncSession, dep: StrategyDeploymentRecord, side: str, spot: float, today: date,
+                with_role: bool = False) -> Dict[str, Any]:
+    """{expiry, legs} from the instrument master, or {note} when the ladder is missing or too short. `with_role` (F&O
+    8b-b, "Trade this setup") adds each leg's role in the structure - "short" (written) or "long" (held), structure
+    words - so the ticket / basket opens with each leg's side as the deployment's own settings give it."""
     strategy = OptionStrategy(dep.option_strategy or "SINGLE")
     rules = ContractRules.from_deployment(dep)
     direction = SIDE_DIRECTION[side]
@@ -117,7 +120,10 @@ async def _legs(session: AsyncSession, dep: StrategyDeploymentRecord, side: str,
             return {"expiry": None, "legs": None, "note": NO_MASTER}
         expiry_seen = expiry
         if strategy == OptionStrategy.SINGLE:
-            out.append({"label": "Main strike", "right": right, "strike": main, "ratio": 1})
+            single: Dict[str, Any] = {"label": "Main strike", "right": right, "strike": main, "ratio": 1}
+            if with_role:
+                single["role"] = "short" if rules.position == OptionPosition.WRITE else "long"
+            out.append(single)
             continue
         _sides, primary_role = structure_sides(strategy, direction)
         try:
@@ -127,14 +133,17 @@ async def _legs(session: AsyncSession, dep: StrategyDeploymentRecord, side: str,
         # The main strike first, then the others, as the structure is described.
         planned = sorted(planned, key=lambda leg: leg.strike != main)
         for i, leg in enumerate(planned):
-            out.append({"label": _leg_label(strategy, i, leg.ratio), "right": leg.right, "strike": leg.strike, "ratio": leg.ratio})
+            row: Dict[str, Any] = {"label": _leg_label(strategy, i, leg.ratio), "right": leg.right, "strike": leg.strike, "ratio": leg.ratio}
+            if with_role:
+                row["role"] = "short" if leg.role == "SHORT" else "long"
+            out.append(row)
     return {"expiry": expiry_seen.isoformat() if expiry_seen else None, "legs": out, "note": None}
 
 
 async def deployment_legs(session: AsyncSession, dep: StrategyDeploymentRecord, side: str, spot: float, today: date) -> Dict[str, Any]:
     """The strikes ONE deployment's own settings work out to at `spot` ({expiry, legs, note}); F&O 8b-a (the setup-aware
     chain, app/paper/fno_insights.py) reads the same rule, so the chain and this result never disagree."""
-    return await _legs(session, dep, side, spot, today)
+    return await _legs(session, dep, side, spot, today, with_role=True)
 
 
 async def for_result(session: AsyncSession, tenant_id: int, result: Dict[str, Any], *, symbol_override: Optional[str] = None,

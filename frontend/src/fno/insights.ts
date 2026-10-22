@@ -14,9 +14,12 @@
  */
 import { request } from "../api/client";
 import { INDEX_SYMBOLS, STOCK_SYMBOLS } from "../optionChain/model";
-import { formatINR, formatNumber, RUPEE } from "../ui/format";
+import type { ChainRow } from "../optionChain/types";
+import { formatDateIST, formatINR, formatNumber, RUPEE } from "../ui/format";
 import type { ContractRight, OrderPreview, Side } from "./api";
-import { aboutMoney } from "./basketModel";
+import type { NewLeg } from "./basket";
+import { aboutMoney, stopFor } from "./basketModel";
+import type { TicketTarget } from "./ticketModel";
 
 const priceText = (v: number) => formatNumber(Math.round(v * 100) / 100, Number.isInteger(Math.round(v * 100) / 100) ? 0 : 2);
 
@@ -196,8 +199,12 @@ export const GREEKS_NOTE = "The Greeks are a model's estimate for small moves to
 
 // --- 8b-a: the setup-aware chain ---------------------------------------------------------------------------------------
 
-export interface SetupLeg { label: string; right: "CE" | "PE"; strike: number; ratio: number }
-export interface SetupItem { id: number; settings: string; expiry: string | null; legs: SetupLeg[] | null; note: string | null }
+/** `role` (8b slice 3): the leg's role in the structure his settings give - "short" (written) or "long" (held). */
+export interface SetupLeg { label: string; right: "CE" | "PE"; strike: number; ratio: number; role?: "short" | "long" }
+/** `lots` / `stop_pct` (8b slice 3): the deployment's own max lots and sold-leg premium stop, null when he set none. */
+export interface SetupItem {
+  id: number; settings: string; expiry: string | null; legs: SetupLeg[] | null; note: string | null; lots?: number | null; stop_pct?: number | null;
+}
 export interface SetupStrikes {
   source: "your_settings";
   signal: string;
@@ -241,22 +248,81 @@ export function chainSymbolOf(symbol: string): string | null {
   return (INDEX_SYMBOLS as readonly string[]).includes(name) || STOCK_SYMBOLS.includes(name) ? name : null;
 }
 
-/** "Strikes on the chain" for one of the user's own signals with a side: the chain page with the signal id. */
-export function setupChainHref(item: { id: string; symbol: string; direction: "LONG" | "SHORT" | null }): string | null {
+/** "Strikes on the chain" for one of the user's own signals with a side: the chain page with the signal id. With
+ * `trade` (8b-b, "Trade this setup") the chain also opens the ticket / basket pre-filled once the strikes are known. */
+export function setupChainHref(item: { id: string; symbol: string; direction: "LONG" | "SHORT" | null }, trade = false): string | null {
   const kind = item.id.split(":")[0];
   if (!item.direction || (kind !== "action" && kind !== "history")) return null;
   const name = chainSymbolOf(item.symbol);
   if (!name) return null;
-  return `/option-chain?${new URLSearchParams({ underlying: name, signal: item.id }).toString()}`;
+  const q = new URLSearchParams({ underlying: name, signal: item.id });
+  if (trade) q.set(TRADE_PARAM, "1");
+  return `/option-chain?${q.toString()}`;
 }
 
 export const SIGNAL_PARAM = /^(action|history):\d{1,12}$/;
+export const TRADE_PARAM = "trade";
+
+// --- 8b-b: "Trade this setup" ---------------------------------------------------------------------------------------
+
+/** The existing PAPER ticket (one leg) or basket (several legs) pre-filled from one item of the setup answer, or why it
+ * cannot be: nothing is placed by this - the user reviews it and places it himself. */
+export type SetupTrade =
+  | { kind: "ticket"; side: Side; target: TicketTarget }
+  | { kind: "basket"; legs: NewLeg[]; lotsFromSettings: boolean; stopsToSet: number }
+  | { kind: "none"; problem: string };
+
+export const TRADE_NOTE = "Nothing is placed until you review it and place it yourself (PAPER).";
+
+const quoteOf = (row: ChainRow, right: "CE" | "PE") => (right === "CE" ? row.call : row.put);
+const pos = (v: number | null | undefined) => (typeof v === "number" && v > 0 ? v : null);
+
+export function setupTrade(item: SetupItem, underlying: string, expiry: string | null | undefined, rows: readonly ChainRow[]): SetupTrade {
+  if (!item.legs || !item.legs.length || !item.expiry) return { kind: "none", problem: item.note ?? "Your settings did not give strikes here." };
+  if (item.expiry !== expiry) return { kind: "none", problem: `Your settings use the ${formatDateIST(item.expiry)} expiry. Show it first.` };
+  if (item.legs.some((l) => !l.role)) return { kind: "none", problem: "Your settings could not be read just now." };
+  const priced: { leg: SetupLeg; row: ChainRow }[] = [];
+  for (const leg of item.legs) {
+    const row = rows.find((r) => Math.abs(r.strike - leg.strike) < 1e-6);
+    if (!row) return { kind: "none", problem: `The chain on screen has no ${formatNumber(leg.strike, 0)} strike.` };
+    priced.push({ leg, row });
+  }
+  const sideOf = (l: SetupLeg): Side => (l.role === "short" ? "SELL" : "BUY");
+  if (priced.length === 1 && priced[0].leg.ratio === 1) {
+    const { leg, row } = priced[0];
+    const q = quoteOf(row, leg.right);
+    return { kind: "ticket", side: sideOf(leg), target: { underlying, expiry, strike: leg.strike, right: leg.right, label: null, lotSize: null,
+      ltp: pos(q.ltp), bid: pos(q.bid), ask: pos(q.ask) } };
+  }
+  const lots = typeof item.lots === "number" && item.lots > 0 ? Math.round(item.lots) : null;
+  const legs: NewLeg[] = priced.map(({ leg, row }) => {
+    const q = quoteOf(row, leg.right);
+    const price = pos(q.ltp);
+    const side = sideOf(leg);
+    const stopLoss = side === "SELL" && typeof item.stop_pct === "number" && item.stop_pct > 0 ? stopFor(price, item.stop_pct) : null;
+    return { underlying, expiry, strike: leg.strike, right: leg.right, side, lots: (lots ?? 1) * Math.max(1, leg.ratio), price, label: null,
+      iv: q.iv ?? null, stopLoss };
+  });
+  return { kind: "basket", legs, lotsFromSettings: lots !== null, stopsToSet: legs.filter((l) => l.side === "SELL" && !l.stopLoss).length };
+}
+
+/** The line under "Trade this setup" saying where the lots and the exit levels come from (his settings, or to set). */
+export function setupTradeNote(t: SetupTrade): string | null {
+  if (t.kind === "ticket") return "Opens the order ticket with this strike. Lots start from your own ticket defaults.";
+  if (t.kind !== "basket") return null;
+  const lots = t.lotsFromSettings ? "Lots from your settings." : "Your settings have no lots set, so each leg starts at 1 lot.";
+  const stops = t.stopsToSet ? ` Set the exit level of ${t.stopsToSet === 1 ? "the short leg" : `the ${t.stopsToSet} short legs`} in the basket.` : "";
+  return `Opens the basket with these legs. ${lots}${stops}`;
+}
 
 const q = (params: Record<string, string | number | null>) =>
   new URLSearchParams(Object.entries(params).filter(([, v]) => v !== null).map(([k, v]) => [k, String(v)])).toString();
 
 export const insightsApi = {
   riskBudget: () => request<RiskBudget>("/paper/fno/risk-budget"),
+  /** 8b-k: notes HIS signal on the journal of the trades he just placed from "Trade this setup" (journal rows only). */
+  linkJournal: (signal: string, tradeIds: number[]) =>
+    request<{ linked: number[]; message: string | null }>("/paper/fno/journal/link", { method: "POST", body: JSON.stringify({ signal, trade_ids: tradeIds }) }),
   setupStrikes: (signal: string, spot: number | null) => request<SetupStrikes>(`/paper/fno/setup-strikes?${q({ signal, spot: spot && spot > 0 ? spot : null })}`),
 };
 export type InsightsApi = typeof insightsApi;

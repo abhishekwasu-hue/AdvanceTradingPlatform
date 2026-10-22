@@ -15,6 +15,7 @@ import {
 } from "../fno/contracts";
 import { CaptureLineV2, CompareButtonV2, StructureAlertV2 } from "../fno/PositionInsightsV2";
 import { posLeg, type PosLeg } from "../fno/positionInsights";
+import type { CockpitUnit } from "../fno/cockpit";
 import type { Side } from "../fno/api";
 import type { TicketTarget } from "../fno/ticketModel";
 import { itemKey } from "../chart/watchlistsV2";
@@ -41,6 +42,9 @@ const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
 const OrderTicketV2 = lazy(() => import("../fno/OrderTicketV2"));
 // 8b-g: "Compare a change", loaded only when it is opened.
 const AdjustCompareV2 = lazy(() => import("../fno/CompareV2").then((m) => ({ default: m.AdjustCompareV2 })));
+// 8b slice 3: the F&O cockpit (read only) and the auto journal drafts, loaded only while F&O PAPER trading is on.
+const CockpitV2 = lazy(() => import("../fno/CockpitV2"));
+const JournalDraftsV2 = lazy(() => import("../fno/JournalDraftsV2"));
 
 const REFRESH_MS = 30_000;
 const every = (ms: number) => () => ms;
@@ -159,6 +163,8 @@ export default function PositionsV2(_props: PageProps = {}) {
   }
 
   const tiles = holdingTiles(list, dataOf(exposure));
+  // 8b-i: the F&O cockpit's lines - legs placed together as one, the rest one by one (F&O PAPER positions only).
+  const cockpit = fnoOn ? cockpitUnits(rows, byId, actions, fno.groups) : [];
   const hasOptions = (list ?? []).some((p) => p.instrument_kind === "OPTION");
 
   return (
@@ -186,6 +192,12 @@ export default function PositionsV2(_props: PageProps = {}) {
 
       {notice && <NoteV2 kind={notice.kind} testId="action">{notice.text}</NoteV2>}
 
+      {cockpit.length > 0 && (
+        <Suspense fallback={null}>
+          <CockpitV2 units={cockpit} alertsOn={features.on("screener_v2")} />
+        </Suspense>
+      )}
+
       <CardV2 title="Open positions" count={list?.length} testId="positions" tour="positions-list">
         {positions.status === "loading" ? <LoadingRowsV2 /> : positions.status === "error" ? <LoadFailedV2 what="your positions" /> : rows.length === 0 ? (
           <EmptyStateV2 text="No open positions. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
@@ -208,6 +220,12 @@ export default function PositionsV2(_props: PageProps = {}) {
       {hasOptions && <GreeksCardV2 />}
 
       <ClosedTradesV2 trades={trades} onSaved={reloadTrades} />
+
+      {fnoOn && (
+        <Suspense fallback={null}>
+          <JournalDraftsV2 refreshKey={list?.length ?? 0} />
+        </Suspense>
+      )}
 
       <section aria-labelledby="paper-tools" className="space-y-space-4" data-block="tools">
         <h2 id="paper-tools" data-tour="positions-tools" className="text-t15 font-semibold text-fg">Paper account and tools</h2>
@@ -248,6 +266,22 @@ function fnoLegs(rows: readonly HeldRow[], byId: Map<number, TradeRecord>, actio
     out.push(leg);
   }
   return out.length ? out : null;
+}
+
+/** 8b-i: the cockpit's lines from the rows on screen: each group of legs placed together, then each F&O PAPER position on
+ * its own (an equity row, or a contract not known yet, is left out). */
+function cockpitUnits(rows: readonly HeldRow[], byId: Map<number, TradeRecord>, actions: RowActions, groups: readonly PositionGroup[]): CockpitUnit[] {
+  const { grouped, single } = groupRows(rows, groups);
+  const out: CockpitUnit[] = [];
+  for (const g of grouped) {
+    const legs = fnoLegs(g.legs, byId, actions);
+    if (legs) out.push({ key: g.group.key, title: groupTitle(g), legs, pnl: g.pnl });
+  }
+  for (const r of single) {
+    const legs = fnoLegs([r], byId, actions);
+    if (legs) out.push({ key: `trade:${r.id}`, title: legs[0].label, legs, pnl: r.pnl });
+  }
+  return out;
 }
 
 const daysLeftOf = (facts: ContractFacts | undefined): string | null => (known(facts) ? countdown(facts.days_left) : null);

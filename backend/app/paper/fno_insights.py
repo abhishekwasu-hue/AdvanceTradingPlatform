@@ -78,6 +78,14 @@ def _json(text: Optional[str]) -> Dict[str, Any]:
     return out if isinstance(out, dict) else {}
 
 
+def _json_list(text: Optional[str]) -> List[Any]:
+    try:
+        out = json.loads(text or "[]")
+    except ValueError:
+        return []
+    return out if isinstance(out, list) else []
+
+
 def _num(value: Any) -> Optional[float]:
     try:
         out = float(value)
@@ -110,13 +118,13 @@ async def _signal(session: AsyncSession, user: User, kind: str, num: int) -> Opt
         signal = ev.get("signal") if isinstance(ev.get("signal"), dict) else {}
         return {"symbol": str(ev.get("symbol") or ""), "direction": str(ev.get("direction") or "").upper(),
                 "setup": str((signal or {}).get("strategy_name") or ev.get("strategy_id") or "Your signal")[:80],
-                "price": _num(ev.get("proposal_price")), "deployment": dep}
+                "price": _num(ev.get("proposal_price")), "deployment": dep, "reasons": (signal or {}).get("reasons")}
     hist = await session.get(SignalHistoryRecord, num)
     if hist is None or hist.tenant_id != user.tenant_id or hist.user_id != user.id:
         return None
     from app.signals_feed.service import strategy_name
     return {"symbol": hist.symbol, "direction": str(hist.direction or "").upper(), "setup": strategy_name(hist.strategy_id), "price": _num(hist.entry),
-            "deployment": None}
+            "deployment": None, "reasons": _json_list(hist.reasons_json)}
 
 
 async def _candidates(session: AsyncSession, user: User, underlying: str, side: str,
@@ -174,7 +182,11 @@ async def setup_strikes(session: AsyncSession, user: User, signal_id: str, *, sp
     today = today or datetime.now(IST).date()
     items = []
     for d in deps:
-        entry: Dict[str, Any] = {"id": d.id, "settings": strike_rules.describe(d, side)}
+        # 8b-b "Trade this setup": his own lots and sold-leg premium stop from the same deployment (None = not set: the
+        # ticket / basket then starts from his own defaults or asks him; nothing is made up here).
+        entry: Dict[str, Any] = {"id": d.id, "settings": strike_rules.describe(d, side),
+                                 "lots": int(d.max_lots) if d.max_lots else None,
+                                 "stop_pct": float(d.premium_stop_pct) if d.premium_stop_pct is not None else None}
         entry.update(await strike_rules.deployment_legs(session, d, side, float(price), today))
         items.append(entry)
     return {**base, "items": items}

@@ -165,8 +165,8 @@ def test_own_proposal_marks_the_strikes_of_its_own_deployment_at_the_chain_price
     [item] = out["items"]
     assert item["id"] == dep and item["settings"].startswith("Bull put spread · main strike 1 strike out of the money")
     # At 120.5 the ATM is 120; one strike out of the money on the put side is 115; the wing two strikes lower, 105.
-    assert item["legs"] == [{"label": "Main strike", "right": "PE", "strike": 115.0, "ratio": 1},
-                            {"label": "Wing", "right": "PE", "strike": 105.0, "ratio": 1}]
+    assert item["legs"] == [{"label": "Main strike", "right": "PE", "strike": 115.0, "ratio": 1, "role": "short"},
+                            {"label": "Wing", "right": "PE", "strike": 105.0, "ratio": 1, "role": "long"}]
     # Without the chain's price, the signal's own price is the reference (121 -> ATM 120, same strikes).
     out = _strikes(t, signal)
     assert out["reference"] == {"text": "the signal's price", "price": 121.0} and out["items"][0]["legs"] == item["legs"]
@@ -185,8 +185,8 @@ def test_own_generated_signal_uses_only_the_callers_own_fitting_deployments():
     mine = _deployment(t["tenant_id"], sym, created_by=t["user_id"], strategy="BEAR_CALL_SPREAD")
     out = _strikes(t, signal, spot=120.5)
     assert [i["id"] for i in out["items"]] == [mine]
-    assert out["items"][0]["legs"] == [{"label": "Main strike", "right": "CE", "strike": 125.0, "ratio": 1},
-                                       {"label": "Wing", "right": "CE", "strike": 135.0, "ratio": 1}]
+    assert out["items"][0]["legs"] == [{"label": "Main strike", "right": "CE", "strike": 125.0, "ratio": 1, "role": "short"},
+                                       {"label": "Wing", "right": "CE", "strike": 135.0, "ratio": 1, "role": "long"}]
 
 
 def test_a_teammates_or_another_organisations_signal_marks_nothing():

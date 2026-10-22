@@ -247,7 +247,9 @@ def test_the_flag_is_registered_off_with_a_catalog_entry():
     assert set(WAVE_FUNCTIONS) == {"WaveState", "WaveType", "WaveAlt", "WaveClarity",
                                    # build steps 3 / 4 (tests/test_wave3_levels_lines.py)
                                    "WaveOrigin", "WaveEnd", "WaveInvalidation", "WaveCap", "WaveBeyondOrigin", "WaveRetrace",
-                                   "WaveProjection", "WaveRatio", "WaveLineLevel", "WaveLineBreak"}
+                                   "WaveProjection", "WaveRatio", "WaveLineLevel", "WaveLineBreak",
+                                   # the companions (tests/test_wave6_companions.py)
+                                   "WaveVolumeLower", "SwingZoneEdge"}
     assert all(FUNCTIONS[n].flag == WAVES_FLAG for n in WAVE_FUNCTIONS)
     ast = parse('WaveState(1) == "IMP_2" AND WaveClarity(1) != "UNCLEAR" AND close > open')
     assert waves_gate.flagged_calls(ast) == ["WaveState", "WaveClarity"]

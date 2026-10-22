@@ -30,6 +30,7 @@ import { EMPTY, formatINR, formatNumber, formatPct, formatPrice, formatSignedINR
 import { PageIntro } from "../ui/PageIntro";
 import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
+import PageDishV2 from "../growth/PageDishV2";
 import {
   closedRows, closedText, exitConfirmText, failedText, heldRows, holdingTiles, openCaption, type ClosedRow, type HeldRow,
 } from "./model";
@@ -190,6 +191,9 @@ export default function PositionsV2(_props: PageProps = {}) {
           </TilesV2>
         )}
       </section>
+
+      {/* MO4 slice 4: the page's ready-made dish (ui_v2 + growth_v2): his risk in plain words, what is coming up. */}
+      {features.on("growth_v2") && <PageDishV2 page="positions" />}
 
       {notice && <NoteV2 kind={notice.kind} testId="action">{notice.text}</NoteV2>}
 

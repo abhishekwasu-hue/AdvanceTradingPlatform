@@ -76,6 +76,10 @@ END_CHOICES: Tuple[str, ...] = IMPULSE_WAVES[:-1] + CORRECTION_WAVES[:-1] + (CUR
 FIXED_END_CHOICES: Tuple[str, ...] = IMPULSE_WAVES[:-1] + CORRECTION_WAVES[:-1]
 # The base wave of a projection or a ratio
 BASE_CHOICES: Tuple[str, ...] = (PREVIOUS,) + IMPULSE_WAVES[:-1] + CORRECTION_WAVES[:-1]
+# WaveVolumeLower (the wave templates' volume companion): a wave of the reading (finished, or the running one; current = the
+# running wave) against a finished base wave (previous = the wave before it)
+VOLUME_WAVES: Tuple[str, ...] = IMPULSE_WAVES + CORRECTION_WAVES + (CURRENT,)
+VOLUME_BASES: Tuple[str, ...] = (PREVIOUS,) + IMPULSE_WAVES[:-1] + CORRECTION_WAVES[:-1]
 POINT_LINES: Dict[str, Tuple[int, int]] = {"zero_two": (0, 2), "one_three": (1, 3), "two_four": (2, 4)}
 CHANNEL_PREFIX = "channel_"
 CHANNEL_LINES: Tuple[str, ...] = tuple(CHANNEL_PREFIX + w for w in IMPULSE_WAVES + CORRECTION_WAVES) + (CHANNEL_PREFIX + CURRENT,)
@@ -247,6 +251,42 @@ class WaveLevels:
                 out[t] = abs(float(self.running[t]) - r.points[-2]) / length
         return out
 
+    # --- the volume companion (a comparison of two waves' mean volume; no number) ---------------------------------------
+    def volume_lower(self, volume: np.ndarray, wave: str, base: str = PREVIOUS) -> np.ndarray:
+        """TRUE where the mean volume of `wave` - finished: its bars from the bar after its start to its end bar; the
+        running wave: from the bar after its start to the bar BEFORE this one, so a trigger bar's own volume is never
+        counted in the wave it may end - is below the mean volume of the finished `base` wave (`previous`: the wave before
+        `wave`). FALSE where either wave is not in the reading (not reached, the other family, the base not finished), the
+        running wave has no bar before this one yet, or a bar of either span has no volume (missing, or an index's zero
+        volume: no average to compare). Reads only bars up to each bar."""
+        if wave not in VOLUME_WAVES:
+            raise ValueError(f"wave {wave!r} is not one of {', '.join(VOLUME_WAVES)}")
+        if base not in VOLUME_BASES:
+            raise ValueError(f"base wave {base!r} is not one of {', '.join(VOLUME_BASES)}")
+        v = np.asarray(volume, dtype=float)
+        bad = ~np.isfinite(v) | (v <= 0)
+        csum = np.concatenate(([0], np.cumsum(np.where(bad, 0, v))))
+        cbad = np.concatenate(([0], np.cumsum(bad.astype(np.int64))))
+
+        def mean(lo: int, hi: int) -> Optional[float]:            # bars lo..hi, both included
+            if hi < lo or cbad[hi + 1] - cbad[lo] > 0:
+                return None
+            return float((csum[hi + 1] - csum[lo]) / (hi - lo + 1))
+
+        out = np.zeros(self.size, dtype=bool)
+        for t, r in self._each():
+            n = len(r.points) - 1
+            i = n if wave == CURRENT else _wave_index(wave, r)
+            if i is None or i > n:
+                continue
+            j = i - 1 if base == PREVIOUS else _wave_index(base, r)
+            if j is None or not 1 <= j < n or j == i:
+                continue
+            end = t - 1 if i == n else int(r.bars[i])
+            this, other = mean(int(r.bars[i - 1]) + 1, end), mean(int(r.bars[j - 1]) + 1, int(r.bars[j]))
+            out[t] = this is not None and other is not None and this < other
+        return out
+
     # --- W4 anchored wave lines ----------------------------------------------------------------------------------------
     def line(self, name: str) -> Tuple[np.ndarray, List[Optional[Anchor]]]:
         """The line's value on every bar and the anchors it had there (None where it is not defined)."""
@@ -358,4 +398,4 @@ def cached_wave_levels(bars: pd.DataFrame, degree: int, settings: Optional[Mappi
 
 
 __all__ = ["WaveLevels", "wave_levels", "cached_wave_levels", "levels_from", "project", "level_anchor", "Anchor", "LINES", "POINT_LINES",
-           "CHANNEL_LINES", "END_CHOICES", "FIXED_END_CHOICES", "BASE_CHOICES", "IMPULSE_WAVES", "CORRECTION_WAVES", "CURRENT", "PREVIOUS"]
+           "CHANNEL_LINES", "END_CHOICES", "FIXED_END_CHOICES", "BASE_CHOICES", "VOLUME_WAVES", "VOLUME_BASES", "IMPULSE_WAVES", "CORRECTION_WAVES", "CURRENT", "PREVIOUS"]

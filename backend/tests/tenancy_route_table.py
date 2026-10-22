@@ -373,6 +373,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # MO4 slice 3: the caller's own plan page + usage meter and his own discipline share card (flags ui_v2 + growth_v2)
     ("GET", "/api/growth/plan"): "member: the caller's own plan and usage (his own watchlists, scans, AI requests and analyses; the organisation's paper bots and backtests)",
     ("GET", "/api/growth/share/discipline-week"): "member: the caller's own discipline facts from his own PAPER trades; no names, no prices",
+    # MO4 slice 4: the page dishes - the caller's own signals, PAPER positions, journal, lists and scans (+ shared daily history)
+    ("GET", "/api/growth/dish/{page}"): "member: the caller's own signals, PAPER positions, journal, watchlists and scan matches; the chart story from the shared daily history",
     ("GET", "/api/custom-strategies"): "member",
     ("POST", "/api/custom-strategies"): "trader",
     ("POST", "/api/custom-strategies/parse"): P_PARSE_ONLY,

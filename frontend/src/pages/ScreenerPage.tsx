@@ -29,6 +29,7 @@ import { WatchlistPicker } from "../screener/WatchlistPicker";
 import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
 import "../screener/screener.css";
 import { useFeatures } from "../ui/useFeatures";
+import PageDishV2 from "../growth/PageDishV2";
 import { ComingSoon } from "../ui/ComingSoon";
 import { ErrorState } from "../ui/ErrorState";
 import { COMING_SOON_MESSAGE } from "../api/errors";
@@ -101,6 +102,8 @@ export default function ScreenerPage(_props: PageProps) {
   const [pineOpen, setPineOpen] = useState(false);
   // Handover 11j (flag `screener_copilot`, behind `ui_v2`): "From an idea".
   const ideaOn = features.on("screener_copilot") && features.on("ui_v2");
+  // MO4 slice 4: "Today's setups from your scans", the page's ready-made dish (ui_v2 + growth_v2).
+  const dishOn = features.on("growth_v2") && features.on("ui_v2");
   const [ideaOpen, setIdeaOpen] = useState(false);
 
   useEffect(() => {
@@ -274,6 +277,7 @@ export default function ScreenerPage(_props: PageProps) {
 
   return (
     <div className="screener-page pb-20 sm:pb-0">
+      {dishOn && <PageDishV2 page="screener" className="mb-4" />}
       {/* Header strip: name (edit in place), freshness, Run (primary) / Save */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <label className={cx("min-w-0 flex-1", ideaOn && "basis-full sm:basis-0")}>

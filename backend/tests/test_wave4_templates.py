@@ -123,7 +123,7 @@ def expressions(template):
 # ============================================================================================================ the library
 def test_the_three_templates_are_family_g_and_validate_against_the_registry():
     for t in TEMPLATES:
-        assert t.family == "G" and t.version == 1 and C.validate_template(t) == [], t.id
+        assert t.family == "G" and t.version == 2 and C.validate_template(t) == [], t.id   # version 2: the companions
         r = recipe(t)
         assert r.required_flags == {"screener_waves", "screener_breakouts"}, t.id    # the default trigger style (CHoCH)
         assert recipe(t, entry_style="retest").required_flags >= {"screener_waves", "screener_breakouts", "screener_breakouts_bk4"}
@@ -495,7 +495,7 @@ def test_g_templates_are_listed_only_with_strategy_templates_and_screener_waves(
     assert "screener_waves" not in text and "WaveState" not in text and "$" not in text
     r = client.post("/api/strategy-templates/G1/adopt", headers=org["headers"], json={"timeframe": "15m"})
     assert r.status_code == 200 and r.json()["deployment"]["mode"] == "PAPER"
-    assert r.json()["strategy_id"].startswith("template:G1:1:15m:both:")
+    assert r.json()["strategy_id"].startswith("template:G1:2:15m:both:")
     other = _org("waves-off", "strategy_templates", "screener_breakouts")
     assert client.post("/api/strategy-templates/G3/adopt", headers=other["headers"], json={}).status_code == 404
 

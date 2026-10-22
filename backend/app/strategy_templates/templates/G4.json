@@ -1,7 +1,7 @@
 {
   "schema": "atp.template/1",
   "id": "G4",
-  "version": 1,
+  "version": 2,
   "name": "Wave C: the break of wave B's channel",
   "family": "G",
   "idea": "A signal when the channel of the wave B pullback breaks in the direction of wave C, as a close beyond it or its retest; wave C may run against the higher trend.",
@@ -23,7 +23,13 @@
     {"key": "k", "label": "Break distance", "help": "How far beyond the level a close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
     {"key": "retest_bars", "label": "Retest window", "help": "For the retest style: the bars after the break within which the retest must come.", "type": "int", "default": 10, "min": 1, "max": 100, "step": 1},
     {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The count's own limit (the start of wave A, or the end of wave B if B went past it), or the last smaller swing.", "type": "enum", "default": "wave_rule", "choices": ["wave_rule", "last_swing"], "choice_labels": ["The start of wave A, or wave B's end beyond it", "The last smaller swing"]},
-    {"key": "exit_signal", "label": "Exit signal", "help": "Optional: when the idea has ended. It is not acted on yet; your own exit settings always apply.", "type": "enum", "default": "none", "choices": ["none", "choch", "leaves"], "choice_labels": ["None", "The wave structure turns against the idea", "The count leaves waves B and C"]}
+    {"key": "exit_signal", "label": "Exit signal", "help": "Optional: when the idea has ended. It is not acted on yet; your own exit settings always apply.", "type": "enum", "default": "none", "choices": ["none", "choch", "leaves"], "choice_labels": ["None", "The wave structure turns against the idea", "The count leaves waves B and C"]},
+    {"key": "divergence", "label": "RSI divergence", "help": "Optional: also an RSI divergence on the wave chart when the trigger comes. Regular: the last swing went further than the one before but the RSI did not. Hidden: the last swing stopped short of the one before but the RSI went further.", "type": "enum", "default": "off", "choices": ["off", "regular", "hidden"], "choice_labels": ["Off", "A regular divergence", "A hidden divergence"]},
+    {"key": "div_degree", "label": "Divergence swing size", "help": "Which swings of the wave chart the divergence compares: 0 is the smallest (the swings inside a wave); a larger size compares larger swings, up to the waves themselves.", "type": "int", "default": 0, "min": 0, "max": 3, "step": 1},
+    {"key": "div_bars", "label": "Divergence age", "help": "How many bars of the wave chart before the trigger the divergence's last swing may be.", "type": "int", "default": 15, "min": 1, "max": 200, "step": 1},
+    {"key": "rsi_period", "label": "RSI length", "help": "How many bars the RSI of the divergence is measured over.", "type": "int", "default": 14, "min": 2, "max": 100, "step": 1},
+    {"key": "volume", "label": "Volume", "help": "Optional: wave B on lower volume than wave A, the trigger bar on higher volume than its average, or both. Indices have no volume: leave this off for an index (it would never confirm).", "type": "enum", "default": "off", "choices": ["off", "wave", "trigger", "both"], "choice_labels": ["Off", "Wave B on lower volume than wave A", "The trigger bar on higher volume", "Both"]},
+    {"key": "vol_mult", "label": "Trigger bar volume", "help": "For the trigger bar volume: at least this many times its average volume.", "type": "float", "default": 1.0, "min": 0.1, "max": 10.0, "step": 0.1}
   ],
   "constraints": [
     {"left": "wave_tf", "op": ">=", "right": "signal_timeframe", "message": "The wave timeframe must not be finer than your signal timeframe."},
@@ -88,6 +94,40 @@
       }
     }
   },
+  "confirmations": [
+    {
+      "by": "divergence",
+      "variants": {
+        "off": null,
+        "regular": {
+          "long": "RsiDivergence(\"bullish\", $div_bars, $div_degree, period=$rsi_period, kind=\"regular\")@{wave_tf}",
+          "short": "RsiDivergence(\"bearish\", $div_bars, $div_degree, period=$rsi_period, kind=\"regular\")@{wave_tf}"
+        },
+        "hidden": {
+          "long": "RsiDivergence(\"bullish\", $div_bars, $div_degree, period=$rsi_period, kind=\"hidden\")@{wave_tf}",
+          "short": "RsiDivergence(\"bearish\", $div_bars, $div_degree, period=$rsi_period, kind=\"hidden\")@{wave_tf}"
+        }
+      }
+    },
+    {
+      "by": "volume",
+      "variants": {
+        "off": null,
+        "wave": {
+          "long": "WaveVolumeLower($wave_degree, \"B\", \"A\")@{wave_tf}",
+          "short": "WaveVolumeLower($wave_degree, \"B\", \"A\")@{wave_tf}"
+        },
+        "trigger": {
+          "long": "RelVolume() >= $vol_mult",
+          "short": "RelVolume() >= $vol_mult"
+        },
+        "both": {
+          "long": "WaveVolumeLower($wave_degree, \"B\", \"A\")@{wave_tf} AND RelVolume() >= $vol_mult",
+          "short": "WaveVolumeLower($wave_degree, \"B\", \"A\")@{wave_tf} AND RelVolume() >= $vol_mult"
+        }
+      }
+    }
+  ],
   "evidence": [],
   "signal_text": {
     "long": [

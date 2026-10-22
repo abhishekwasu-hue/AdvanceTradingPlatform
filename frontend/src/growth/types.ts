@@ -1,3 +1,5 @@
+import type { RhythmSection } from "../rhythm/types";
+
 /** MO4 slice 3 (`ui_v2` + `growth_v2`): what `/api/growth/*` and `/api/admin/console/activation` answer. */
 
 export interface PlanMeter {
@@ -45,4 +47,19 @@ export interface Activation {
   funnel: { key: string; label: string; count: number }[];
   median_hours_to_activation: number | null;
   people: ActivationPerson[];
+}
+
+/** MO4 slice 4: the "ready-made dish" at the top of a page, as `/api/growth/dish/<page>` sends it. */
+export type DishPage = "signals" | "positions" | "journal" | "charts" | "screener";
+
+export interface PageDish {
+  page: DishPage;
+  title: string;
+  /** The one line that stands out (null when there is nothing to say yet). */
+  headline: string | null;
+  /** False for the journal while the journal is off: the page says so itself, so the dish shows nothing. */
+  available: boolean;
+  sections: RhythmSection[];
+  as_of: string;
+  note: string;
 }

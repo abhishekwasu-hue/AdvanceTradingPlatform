@@ -89,7 +89,7 @@ def fixture(key, style):
 # ============================================================================================================ the library
 def test_the_new_templates_are_family_g_and_validate_against_the_registry():
     for tid, t in TEMPLATES.items():
-        assert t.family == "G" and t.version == 1 and C.validate_template(t) == [], tid
+        assert t.family == "G" and t.version == 2 and C.validate_template(t) == [], tid   # version 2: the companions
         for style in t.param("entry_style").choices:
             flags = recipe(t, entry_style=style).required_flags
             assert "screener_waves" in flags, (tid, style)
@@ -427,7 +427,7 @@ def test_the_new_templates_are_listed_only_with_screener_waves():
     assert set(NEW) <= set(cards) and all(cards[t]["family_name"] == "Waves" and cards[t]["available"] for t in NEW)
     r = client.post("/api/strategy-templates/G6/adopt", headers=org["headers"], json={"timeframe": "15m"})
     assert r.status_code == 200 and r.json()["deployment"]["mode"] == "PAPER"
-    assert r.json()["strategy_id"].startswith("template:G6:1:15m:both:")
+    assert r.json()["strategy_id"].startswith("template:G6:2:15m:both:")
 
 
 def test_no_projection_target_in_any_new_template():

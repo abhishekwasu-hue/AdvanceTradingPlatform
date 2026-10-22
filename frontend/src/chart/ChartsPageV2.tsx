@@ -18,6 +18,7 @@ import { chartsPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
 import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import { useFeatures } from "../ui/useFeatures";
+import PageDishV2 from "../growth/PageDishV2";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { ChartSettingsPopover } from "./ChartSettingsPopover";
 import ChartV2 from "./ChartV2";
@@ -232,6 +233,12 @@ export default function ChartsPageV2(_props: PageProps) {
             </button>
           ))}
         </div>
+      )}
+
+      {/* MO4 slice 4: what this chart shows, in structure words, and what is his on it (ui_v2 + growth_v2); folded at
+          first so the chart comes first. */}
+      {features.on("growth_v2") && !fs.on && !hubView && tab === "chart" && (
+        <PageDishV2 page="charts" symbol={symbol} exchange={exchange} folded />
       )}
 
       {tab === "chart" && !hubView && (

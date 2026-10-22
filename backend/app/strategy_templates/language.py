@@ -113,6 +113,11 @@ TOKENS: Dict[str, str] = {
     "range_regime": "the market is in a range regime",
     "vwap_reclaimed_in_session": "the close moved back above the session VWAP after trading below it in the same session on the {timeframe} chart",
     "vwap_lost_in_session": "the close moved back below the session VWAP after trading above it in the same session on the {timeframe} chart",
+    # B10 gap and go (TPL-8, session-based): the gap, its hold through the opening window and the close at or beyond the open
+    "gap_up_kept_going": ("the session opened above the prior high, held above it through the opening window and kept going on the"
+                          " {timeframe} chart"),
+    "gap_down_kept_going": ("the session opened below the prior low, held below it through the opening window and kept going on the"
+                            " {timeframe} chart"),
     # Family G (wave templates): structure words only - wave labels in words, no number, no price
     "wave_two_pullback_ended": "the wave two pullback ended at an area on the {wave_timeframe} chart",
     "wave_four_pullback_ended": "the wave four pullback ended at an area on the {wave_timeframe} chart",

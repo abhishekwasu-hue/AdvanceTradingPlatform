@@ -1,0 +1,38 @@
+{
+  "schema": "atp.template/1",
+  "id": "B10",
+  "version": 1,
+  "name": "Gap and go",
+  "family": "B",
+  "idea": "A signal when the session opens beyond the prior high (or low), every close of the opening window holds beyond it, and the window ends at or beyond the open: the gap kept going. The idea is wrong back through the level the gap cleared.",
+  "difficulty": "Intermediate",
+  "style": "Intraday (session-based)",
+  "allowed_timeframes": ["5m", "15m", "3m"],
+  "params": [
+    {"key": "gap_level", "label": "The level the gap clears", "help": "The previous session's high (or low), or the high (or low) of the recent month of sessions.", "type": "enum", "default": "prev_day", "choices": ["prev_day", "base"], "choice_labels": ["The previous session's high or low", "The high or low of the recent month of sessions"]},
+    {"key": "hold", "label": "Opening window (minutes)", "help": "Every close in this many minutes from the session's open must stay beyond the level; the signal comes on the bar that ends the window. It must be a whole number of the chart's bars.", "type": "int", "default": 30, "min": 1, "max": 240, "step": 1},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The level the gap cleared, or that level with a buffer.", "type": "enum", "default": "fail_level", "choices": ["fail_level", "stop_level_atr"], "choice_labels": ["The level the gap cleared", "Just beyond the level the gap cleared"]},
+    {"key": "stop_mult", "label": "Level buffer", "help": "For 'just beyond the level the gap cleared': how many average true ranges beyond it.", "type": "float", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [
+    {"left": "hold", "op": "whole_bars", "right": "signal_timeframe", "message": "The opening window must be a whole number of the chart's bars (for example 15, 30 or 45 minutes on the 15-minute chart)."}
+  ],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "GapType(\"up\", $gap_level, $hold) == \"GAP_AND_GO\"",
+    "short": "GapType(\"down\", $gap_level, $hold) == \"GAP_AND_GO\"",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "GapBreakoutRef($invalidation, \"up\", $gap_level, $hold, $stop_mult)",
+    "short": "GapBreakoutRef($invalidation, \"down\", $gap_level, $hold, $stop_mult)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "gap_up_kept_going"}],
+    "short": [{"token": "gap_down_kept_going"}]
+  }
+}

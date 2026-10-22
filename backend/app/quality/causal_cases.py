@@ -116,6 +116,8 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "SwingDirection": ["SwingDirection(0)", "SwingDirection(1)@1h"],
     "SwingZoneStrength": ['SwingZoneStrength("low", 0)', 'SwingZoneStrength("high", 1)'],
     "SwingZoneDistance": ['SwingZoneDistance("low", 0)', 'SwingZoneDistance("high", 0)'],
+    # wave templates companions (flag screener_waves): the far side of the smaller swing zone's area
+    "SwingZoneEdge": ['SwingZoneEdge("low", 0, 1)', 'SwingZoneEdge("high", 1, 0.5)', 'SwingZoneEdge("low", 0, 0)@15m'],
     "ReversalAt": ['ReversalAt(SwingLow(0), "bullish")', 'ReversalAt(SMA(close, 20), "bearish")'],
     "RealBreak": ['RealBreak(SwingHigh(0), "above", 20)', 'RealBreak(PDL(), "below")'],
     "MedianRange": ["MedianRange(20)", "MedianRange(10)@1h"],
@@ -125,9 +127,13 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "RsiDivergence": ['RsiDivergence("bullish", 30)', 'RsiDivergence("bearish", 30)', 'RsiDivergence("bullish", 60, 1)',
                       'RsiDivergence("bullish", 40)@15m',
                       # strategy templates E2 (TPL-7): the RSI period as a named argument, and the divergence's prices
-                      'RsiDivergence("bullish", 30, 0, period=7)', 'RsiDivergence("bearish", 40, 0, period=21)'],
+                      'RsiDivergence("bullish", 30, 0, period=7)', 'RsiDivergence("bearish", 40, 0, period=21)',
+                      # wave templates companions: the hidden divergence as a named argument
+                      'RsiDivergence("bullish", 30, 0, kind="hidden")', 'RsiDivergence("bearish", 40, 1, period=9, kind="hidden")',
+                      'RsiDivergence("bearish", 30, 0, kind="regular")@15m'],
     "RsiDivergenceRef": ['RsiDivergenceRef("extreme", "bullish")', 'RsiDivergenceRef("confirm_bar", "bearish", 0, period=9)',
-                         'RsiDivergenceRef("extreme", "bullish", 0, period=7)@15m'],
+                         'RsiDivergenceRef("extreme", "bullish", 0, period=7)@15m',
+                         'RsiDivergenceRef("extreme", "bearish", 0, kind="hidden")', 'RsiDivergenceRef("confirm_bar", "bullish", 0, kind="hidden")'],
     "SwingLabel": ['SwingLabel("high")', 'SwingLabel("low", 1)', 'SwingLabel("high", 0)@15m'],
     "TimeOfDay": ['TimeOfDay("09:30", "14:45")', 'TimeOfDay("15:00", "09:30")', 'TimeOfDay("10:15", "13:15")@1h'],
     # Wave templates W1 (flag screener_waves): the causal wave count from CONFIRMED swings, recomputed on new swings only
@@ -148,6 +154,8 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "WaveRatio": ["WaveRatio(1)", 'WaveRatio(1, "A")', "WaveRatio(2)@15m"],
     "WaveLineLevel": ['WaveLineLevel(1, "channel_current")', 'WaveLineLevel(1, "zero_two")', 'WaveLineLevel(1, "channel_B")',
                       'WaveLineLevel(2, "two_four")'],
+    "WaveVolumeLower": ['WaveVolumeLower(1, "current")', 'WaveVolumeLower(1, "B", "A")', 'WaveVolumeLower(1, "2", "1")',
+                        'WaveVolumeLower(2, "current", "previous")@15m'],
     "WaveLineBreak": ['WaveLineBreak(1, "channel_current", "up", 0)', 'WaveLineBreak(1, "zero_two", "down", 0)',
                       'WaveLineBreak(1, "channel_B", "down", 0)'],
     # U6 BK1 breakout screens (one signal per leg) and their factors; volume and distance conditions off so they fire
@@ -203,6 +211,9 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     # the synthetic 5m sessions open where the previous one closed or with a gap: only some sessions gap (down here)
     "GapBreakout": ['GapBreakout("down", "prev_day", 15)', 'GapBreakout("down", "prev_day", 5)', 'GapBreakout("down", "prev_day", 60)@15m'],
     "GapType": ['GapType("down", "prev_day", 15)', 'GapType("up", "prev_day", 30)@15m'],
+    # strategy templates TPL-8 (R2 for the gap family): the gap's prices on its signal bars (held_level forward)
+    "GapBreakoutRef": ['GapBreakoutRef("level", "down", "prev_day", 15)', 'GapBreakoutRef("stop_level_atr", "down", "prev_day", 5, 1)',
+                       'GapBreakoutRef("held_level", "down", "prev_day", 15)@15m'],
     "RetestEntry": ['RetestEntry("down", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)', 'RetestEntry("up", "trendline", 20, TRUE)',
                     # wave templates R7: the retest of a broken wave line / wave end
                     'RetestEntry("up", "wave_line", 20, FALSE, 1, "channel_current", "A", 0)',

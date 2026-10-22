@@ -2047,7 +2047,7 @@ usage() { sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 cmd_reset_password() {
   [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
   local email="${1:-}" pw pw2 rc=0
-  [ -n "$email" ] && [ $# -eq 1 ] || die "usage: atp.sh reset-password EMAIL" 2
+  if [ -z "$email" ] || [ $# -ne 1 ]; then die "usage: atp.sh reset-password EMAIL" 2; fi
   case "$email" in *@*) ;; *) die "not an e-mail address: $email" 2 ;; esac
   [ -t 0 ] || die "run this in a terminal: the password is typed, never piped or passed" 2
   if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would ask for the new password twice and set it for %s\n' "$email"; return 0; fi

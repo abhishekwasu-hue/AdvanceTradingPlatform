@@ -2156,3 +2156,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   in `docs/adr/README.md`); `docs/OPEN_QUESTIONS.md` LAB-9 records it. G-LAB still gates every code-mode flag. The ADR
   note also records that order 11e overrides AMW_PORT C-3 (AI may write code for every Lab mode, as untrusted code).
 - CLAUDE.md and `docs/owner-orders/` not touched (owner-orders lives on its own branch).
+## 2026-10-22 - Strategy templates step 1: recipe core + indicators (owner order 13, TPL-1)
+
+- Branch `claude/tpl1-core-indicators`. No migration. Status table: `docs/design/STRATEGY_TEMPLATES_IMPL.md`.
+- `backend/app/strategy_templates/`: the strict template schema, binding to the ScreenQL registry (LAST_BAR_ONLY
+  refused, R1), the causal setup / trigger state machine as a pure function of bars (R3, S1-S7, R8), the adapter to
+  BaseStrategy (no build_signal, no targets), the signal-text tokens and guard, the parity harness (scan = both
+  backtest engines = the worker's call on one trailing window; the fetch size, R6) and the proof template D1.
+- Indicators: SupertrendDir, MACD (line / signal / histogram), WMA, HMA, Stochastic (%K / %D), Parabolic SAR (level /
+  direction) in `app/indicators` and the ScreenQL registry / runtime / validator, with reference-implementation tests and
+  no-look-ahead cases. `determine_exit_price` accepts a missing target (R4).
+- Not in this PR: exits as settings (needs a migration + owner approval), R2 / R5 / R7 / R10. Questions TPL-Q1..Q7.

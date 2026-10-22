@@ -8,10 +8,12 @@ reads its last bar from it, so a run costs one series, not one per bar (the squa
 The adapter never calls BaseStrategy.build_signal (section 5: it forces targets of 1.5 / 2.5 R and a 1.2 R:R refusal
 - rules the user never set). It builds the Signal directly: entry = the trigger close (a reference; the fill is the
 deployment's), stop_loss = the template's invalidation, no targets, risk_reward None. Targets and exits are the user's
-deployment settings (the next PRs: stop_source / target_rule and the TEMPLATE_EXIT plumbing, STRATEGY_TEMPLATES_IMPL.md).
+deployment settings (the next PRs: stop_source / target_rule and the TEMPLATE_EXIT plumbing, see
+docs/design/STRATEGY_TEMPLATES_IMPL.md). `determine_exit_price` already accepts a missing target (R4), so both backtest
+engines run a template signal that carries only its stop.
 
-NOT WIRED YET: nothing registers this adapter for deployments or the backtest routes, and `run_backtest` still needs
-`determine_exit_price` to accept target1 None (R4) - see docs/design/STRATEGY_TEMPLATES_IMPL.md.
+NOT WIRED YET: nothing registers this adapter for deployments or the backtest routes; the parity harness
+(app/strategy_templates/parity.py) runs it through the scan, both backtest engines and the worker's call.
 """
 from __future__ import annotations
 
@@ -30,7 +32,7 @@ from app.strategy_templates.schema import Template
 # ScreenQL timeframe -> the backtest engines' / strategies' timeframe label (app/backtest/windows.bar_length)
 ENGINE_LABEL: Dict[str, str] = {"1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "day"}
 # A fixed score: a template signal is not graded (no quality claim); 70 is the grade VALID, as the Strategy Builder's
-# own signals (OPEN_QUESTIONS TPL-4).
+# own signals (OPEN_QUESTIONS TPL-Q1).
 TEMPLATE_SCORE = 70
 _NO_SIGNAL_TEXT = {engine.REASON_WARMUP: "Not enough history for this template yet",
                    engine.REASON_CONFLICT: "Both sides triggered on this bar (conflict): no signal",

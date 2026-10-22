@@ -5,6 +5,7 @@ compile  - binding to the ScreenQL registry (refuses LAST_BAR_ONLY / unknown nam
 engine   - the pure, causal setup / trigger state machine over a whole series (S1-S7, R3, R8)
 adapter  - a template as a BaseStrategy that reads that series (not wired to deployments yet)
 language - the signal text tokens and their guard (policy 11l)
+parity   - the scan = backtest = live harness (section 8) and the history to fetch (R6)
 library  - the built-in templates (templates/<id>.json)
 
 Templates only generate signals. Nothing here places, sizes or exits an order.

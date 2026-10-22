@@ -21,8 +21,11 @@ export async function expectPhoneLayout(page: Page): Promise<void> {
       const grow = after.content !== "none" && after.position === "absolute" ? -2 * Math.min(0, parseFloat(after.top) || 0) : 0;
       return box.height + grow;
     };
+    // Settings redesign B: the content of a closed <details> fold is not on screen (Chromium still reports its boxes).
+    const folded = (e: Element) => { const d = e.closest("details:not([open])"); return !!d && !e.closest("summary"); };
     const small = [...document.querySelectorAll("button, a, input, select, textarea, [role=tab], [role=switch]")]
       .filter((e) => {
+        if (folded(e)) return false;
         const box = e.getBoundingClientRect();
         if (!box.width || !box.height || getComputedStyle(e).visibility === "hidden") return false;
         if (e.closest("table, p, li")) return false;                       // links inside text and table cells
@@ -45,7 +48,8 @@ export async function expectPhoneLayout(page: Page): Promise<void> {
   const clear = await page.evaluate(() => {
     const nav = document.querySelector("nav[aria-label='Quick navigation']")!.getBoundingClientRect();
     const main = document.querySelector("main")!;
-    const last = [...main.querySelectorAll("button, a, input, select, textarea")].filter((e) => e.getBoundingClientRect().height > 0).pop();
+    const folded = (e: Element) => { const d = e.closest("details:not([open])"); return !!d && !e.closest("summary"); };
+    const last = [...main.querySelectorAll("button, a, input, select, textarea")].filter((e) => e.getBoundingClientRect().height > 0 && !folded(e)).pop();
     return last ? last.getBoundingClientRect().bottom <= nav.top + 1 : true;
   });
   expect(clear, "the last control on the page sits under the bottom navigation").toBe(true);

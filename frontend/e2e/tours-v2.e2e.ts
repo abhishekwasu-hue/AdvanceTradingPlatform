@@ -217,8 +217,9 @@ test.describe("first-time guidance", () => {
   });
 
   test("Help → Show all tips again clears the marks and the welcome opens on the Dashboard", async ({ page }) => {
-    const server = await open(page, "settings", { welcome_done_at: WHEN, skip_all_at: WHEN, seen: { dashboard: WHEN, settings: WHEN } });
-    const help = page.locator("[data-tour='settings-help']");
+    // Settings redesign B: Help & tips is its own page; the tour step points at its row on the index.
+    const server = await open(page, "settings", { welcome_done_at: WHEN, skip_all_at: WHEN, seen: { dashboard: WHEN, settings: WHEN } }, "light", "/settings/help");
+    const help = page.locator("[data-settings-help]");
     await help.scrollIntoViewIfNeeded();
     await expect(help.getByText("Tips are off.")).toBeVisible();
     await help.getByRole("button", { name: "Show all tips again" }).click();
@@ -228,8 +229,8 @@ test.describe("first-time guidance", () => {
   });
 
   test("Help → Skip all tips", async ({ page }) => {
-    const server = await open(page, "settings", { ...FIRST_VISIT, seen: { settings: WHEN } });
-    const help = page.locator("[data-tour='settings-help']");
+    const server = await open(page, "settings", { ...FIRST_VISIT, seen: { settings: WHEN } }, "light", "/settings/help");
+    const help = page.locator("[data-settings-help]");
     await help.scrollIntoViewIfNeeded();
     await help.getByRole("button", { name: "Skip all tips" }).click();
     await expect.poll(() => server.marks.skip_all_at).not.toBeNull();

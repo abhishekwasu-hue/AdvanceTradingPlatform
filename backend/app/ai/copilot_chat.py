@@ -43,7 +43,7 @@ CHART_NOTE = "Structure reading from ATP's zone layers (the full Price Action re
 TOP_LINE = "Ask me anything about the market or your trades."
 NO_KEY_TITLE = "Add a free AI key to start"
 NO_KEY_LINE = "Until then I answer from ATP's own data in short, fixed sentences."
-KEY_SETTINGS = "/settings#ai"
+KEY_SETTINGS = "/settings/ai"                                # Settings redesign B: the AI section page
 DEFAULT_SYMBOL = "NIFTY"
 
 

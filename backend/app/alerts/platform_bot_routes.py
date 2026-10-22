@@ -29,7 +29,7 @@ from app.plans.limits import check_can_add_alert_channel, load_tenant
 router = APIRouter(tags=["alerts"])
 
 NOT_SET_UP = "Telegram alerts are not set up on this server yet."
-OWN_BOT = "Your organisation sends Telegram alerts with its own bot. Change that under Settings, Advanced."
+OWN_BOT = "Your organisation sends Telegram alerts with its own bot. Change that under Settings > Advanced > Your own Telegram bot."
 NO_TELEGRAM = "Telegram could not be reached just now. Try again in a minute."
 
 

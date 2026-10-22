@@ -1,3 +1,4 @@
+import { ALERTS_PATH } from "./getStarted";
 import { BellRing, Mail, Send, Smartphone } from "lucide-react";
 import { useEffect, useId, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router";
@@ -456,7 +457,7 @@ export function AlertsStepV2({ onChanged }: StepProps) {
                 {canPush && <ActionV2 busy={busy === "push-on"} disabled={busy !== null} onClick={() => void pushHere(c?.min_severity ?? "WARNING")}>
                   <BellRing size={16} aria-hidden /> Turn on here</ActionV2>}
                 {c?.enabled && <ActionV2 busy={busy === `test-${type}`} disabled={busy !== null} onClick={() => void sendTest(type)}>Send a test</ActionV2>}
-                {!c && type !== "PUSH" && <Link to="/settings" className={LINK_SECONDARY}>Open alert settings</Link>}
+                {!c && type !== "PUSH" && <Link to={ALERTS_PATH} className={LINK_SECONDARY}>Open alert settings</Link>}
               </div>
               {n && <Note tone={n.tone}>{n.text}</Note>}
             </li>

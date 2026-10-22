@@ -1,3 +1,4 @@
+import { SETTINGS_PATH } from "../../settings/paths";
 import { KeyRound, SendHorizontal, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router";
@@ -94,7 +95,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
               <p className="text-t14 text-fg-muted">{home?.ai.line ?? t("chat.noKeyLine")}</p>
             </div>
           </div>
-          <Link to={home?.ai.settings ?? "/settings#ai"} className={BUTTON}>{t("chat.noKeyAction")}</Link>
+          <Link to={home?.ai.settings ?? SETTINGS_PATH.ai} className={BUTTON}>{t("chat.noKeyAction")}</Link>
         </section>
       )}
 

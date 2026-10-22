@@ -40,7 +40,7 @@ export default function OiAlertsCard({ underlying }: { underlying: string }) {
     <div className="space-y-3 text-xs">
       <label className="flex items-center gap-2">
         <input type="checkbox" checked={!!alerts.enabled} onChange={(e) => save({ enabled: e.target.checked })} />
-        <span>Notify me when the {underlying} OI banner changes (through Settings → Alert channels)</span>
+        <span>Notify me when the {underlying} OI banner changes (through Settings → Alerts)</span>
       </label>
       <div className="grid gap-1 sm:grid-cols-2">
         {OI_ALERT_TYPES.map((t) => (

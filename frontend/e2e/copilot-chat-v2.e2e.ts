@@ -91,7 +91,7 @@ test.describe("v2 copilot chat 1440 desktop", () => {
     await open(page, "light");
     await expect(page.locator("[data-top-line]")).toHaveText("Ask me anything about the market or your trades.");
     await expect(page.locator("[data-no-key]")).toContainText("Add a free AI key to start");
-    await expect(page.locator("[data-no-key] a")).toHaveAttribute("href", "/settings#ai");
+    await expect(page.locator("[data-no-key] a")).toHaveAttribute("href", "/settings/ai");
     await expect(page.locator("[data-market-line='ok']")).toContainText("NIFTY 50 last closed at 24,850.5");
     await expect(page.locator("[data-starters] button")).toHaveCount(8);
     await expect(page.locator("[data-job]")).toHaveCount(8);

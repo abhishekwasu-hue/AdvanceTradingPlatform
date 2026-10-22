@@ -32,7 +32,7 @@ from app.db.models import Tenant, User
 
 FEATURE = "chart_analyze"
 NO_AI = ("No AI is set up for chart analysis: the organisation's AI provider is not available on this plan (or its "
-         "budget is spent), and you have no own AI key switched on. Add your own key under Settings > Vision with your own AI key.")
+         "budget is spent), and you have no own AI key switched on. Connect your own AI key under Settings > AI.")
 
 
 class EngineUnavailable(RuntimeError):

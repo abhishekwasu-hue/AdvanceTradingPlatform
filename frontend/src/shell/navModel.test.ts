@@ -146,6 +146,9 @@ describe("UI2-1 page search (More sheet and command bar)", () => {
     expect(NAV_EXTRAS_V2.map((e) => [e.key, e.path])).toEqual([
       ["scanner", "/screener/custom"], ["options-builder", "/option-chain/plan"], ["chart-analyze", "/chart-analyze"], ["coach", "/coach"],
       ["account", "/settings/account"], ["setup", "/settings/setup"],
+      // Settings redesign B: the Settings section pages.
+      ["settings-ai", "/settings/ai"], ["settings-alerts", "/settings/alerts"], ["settings-appearance", "/settings/appearance"],
+      ["settings-help", "/settings/help"], ["settings-advanced", "/settings/advanced"],
     ]);
   });
 

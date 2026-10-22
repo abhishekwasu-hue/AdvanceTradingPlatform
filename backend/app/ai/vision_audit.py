@@ -21,7 +21,7 @@ proposal or a deployment):
    and linked a private chat, sent there as a photo with the caption.
 
 No key, flag off, a cap reached or a provider error: the proposal and its normal notification are unchanged; the report
-reads "Vision off - add your API key in Settings" or "Vision skipped: <reason>" (sanitised: never the key), and the
+reads "Vision off - connect your AI key in Settings > AI" or "Vision skipped: <reason>" (sanitised: never the key), and the
 chart still goes to Telegram. The chart image is never stored - only its SHA-256.
 
 BYOK-V3 (flag `vision_byok_v3`, on top of `vision_byok`): the same audit for two more subjects, each under the one

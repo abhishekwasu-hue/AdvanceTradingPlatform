@@ -1,6 +1,7 @@
 import { pageFromPath } from "../routes";
 import { SETUP_ADDRESS, V2_ALIASES, needsBrokerGate, routerPath } from "./aliases";
 import { navItemFor, type ShellKey } from "./navModel";
+import { settingsSectionAt } from "../settings/paths";
 
 export { V2_ALIASES, flagOffFallback, needsBrokerGate, routerPath } from "./aliases";
 
@@ -52,6 +53,9 @@ export function chartTabPath(symbol: string, exchange?: string | null, timeframe
 export function shellKeyFromPath(pathname: string): ShellKey | null {
   if (chartsSymbolFromPath(pathname) !== undefined) return "charts";
   if (clean(pathname) === SETUP_ADDRESS) return "setup";
+  // Settings redesign B: the Settings section pages (v2 only).
+  const section = settingsSectionAt(clean(pathname));
+  if (section) return section.key;
   const alias = V2_ALIASES.find((a) => a.path === clean(pathname));
   if (alias) return alias.page;
   return pageFromPath(pathname);

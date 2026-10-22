@@ -63,7 +63,7 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
       item("strategy-builder", "Build a strategy", "Build a strategy", "/strategy-builder", Pencil, { keywords: ["strategy builder", "create"] }),
       item("backtest", "Test a strategy", "Test a strategy", "/backtest", History, { keywords: ["backtest", "backtesting"] }),
       item("copilot", "AI Copilot", "AI Copilot", "/copilot", Sparkles, { flag: "ai_copilot", keywords: ["ai", "assistant", "watchtower"] }),
-      item("deployments", "Autopilot", "Autopilot", "/deployments", Bot, { keywords: ["deployments", "deploy", "running"] }),
+      item("deployments", "Paper bot", "Paper bot", "/deployments", Bot, { keywords: ["autopilot", "deployments", "deploy", "running", "bots"] }),
     ],
   },
   {

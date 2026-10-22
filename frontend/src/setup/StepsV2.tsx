@@ -6,6 +6,7 @@ import { ApiError } from "../api/errors";
 import { currentPushEnv, pushReadiness, vapidKeyBytes } from "../alerts/push";
 import { ChipV2, LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import type { TelegramLinkCode } from "../alerts/rules";
+import TelegramConnectV2 from "../alerts/TelegramConnectV2";
 import type { AlertChannel, AlertChannelType, PaperRiskStatus, StrategyInfo } from "../types";
 import { CONNECT_BROKER_PATH } from "../ui/BrokerGate";
 import { formatNumber, formatTimeIST } from "../ui/format";
@@ -333,7 +334,7 @@ export function StrategyStepV2({ onChanged }: StepProps) {
 
 const CHANNELS: { type: AlertChannelType; name: string; icon: typeof Smartphone; missing: string }[] = [
   { type: "PUSH", name: "App notifications", icon: Smartphone, missing: "Off. Turn them on to get alerts on this device." },
-  { type: "TELEGRAM", name: "Telegram", icon: Send, missing: "Not set up. Your organisation's Telegram bot is added in Settings, under Alert delivery." },
+  { type: "TELEGRAM", name: "Telegram", icon: Send, missing: "Not connected yet." },
   { type: "EMAIL", name: "Email", icon: Mail, missing: "Not set up. Email alerts are added in Settings, under Alert delivery." },
 ];
 
@@ -418,6 +419,26 @@ export function AlertsStepV2({ onChanged }: StepProps) {
           const c = channels.find((x) => x.channel_type === type);
           const n = notes[type];
           const canPush = type === "PUSH" && (readiness === "ask" || readiness === "granted");
+          if (type === "TELEGRAM") {
+            // UX2 fix 5: Telegram in one tap (the platform's bot). An organisation's own bot keeps "Link my Telegram"
+            // (each member's own chat for the screen alerts of their rules).
+            const ownBot = !!c && !c.config.platform_bot;
+            return (
+              <li key={type} className="space-y-space-2 rounded-control border border-subtle p-space-3" data-channel={type}>
+                <TelegramConnectV2 onChanged={() => { void refresh(); onChanged(); }} />
+                {ownBot && c.enabled && (
+                  <ActionV2 busy={busy === "link"} disabled={busy !== null} onClick={() => void linkTelegram()}>Link my Telegram</ActionV2>
+                )}
+                {n && <Note tone={n.tone}>{n.text}</Note>}
+                {code && (
+                  <p className="rounded-control bg-surface-2 px-space-3 py-space-2 text-t14 text-fg">
+                    Send <span className="font-mono font-semibold">{code.command}</span> to your organisation&apos;s bot in a private chat.
+                    The code works once, until {formatTimeIST(code.expires_at)}.
+                  </p>
+                )}
+              </li>
+            );
+          }
           return (
             <li key={type} className="space-y-space-2 rounded-control border border-subtle p-space-3" data-channel={type}>
               <div className="flex items-start gap-space-3">
@@ -432,17 +453,10 @@ export function AlertsStepV2({ onChanged }: StepProps) {
               <div className="flex flex-col gap-space-2 sm:flex-row">
                 {canPush && <ActionV2 busy={busy === "push-on"} disabled={busy !== null} onClick={() => void pushHere(c?.min_severity ?? "WARNING")}>
                   <BellRing size={16} aria-hidden /> Turn on here</ActionV2>}
-                {type === "TELEGRAM" && c?.enabled && <ActionV2 busy={busy === "link"} disabled={busy !== null} onClick={() => void linkTelegram()}>Link my Telegram</ActionV2>}
                 {c?.enabled && <ActionV2 busy={busy === `test-${type}`} disabled={busy !== null} onClick={() => void sendTest(type)}>Send a test</ActionV2>}
                 {!c && type !== "PUSH" && <Link to="/settings" className={LINK_SECONDARY}>Open alert settings</Link>}
               </div>
               {n && <Note tone={n.tone}>{n.text}</Note>}
-              {type === "TELEGRAM" && code && (
-                <p className="rounded-control bg-surface-2 px-space-3 py-space-2 text-t14 text-fg">
-                  Send <span className="font-mono font-semibold">{code.command}</span> to your organisation&apos;s bot in a private chat.
-                  The code works once, until {formatTimeIST(code.expires_at)}.
-                </p>
-              )}
             </li>
           );
         })}

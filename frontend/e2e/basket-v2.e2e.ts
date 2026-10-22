@@ -175,6 +175,33 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
   });
 }
 
+// 8b-j (F&O 8b slice 2): two baskets side by side - his basket and a ready strategy from his settings - information only.
+// Baselines `fno8b2-basket-compare-v2-<360|390|1440>-<theme>.png` (the panel scrolled to the Compare section).
+for (const [width, height] of [[1440, 900], [390, 844], [360, 800]] as const) {
+  test.describe(`Basket compare v2 at ${width}`, () => {
+    test.use(width === 1440 ? { viewport: { width, height } } : { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+    for (const theme of THEMES) {
+      test(`two baskets side by side look the same (${theme})`, async ({ page }) => {
+        const seen = await open(page, theme);
+        const panel = await bullPut(page);
+        await panel.locator("[data-tool='compare']").click();
+        const compare = panel.locator("[data-basket='compare']");
+        await compare.locator("[data-compare-pick='1']").selectOption({ label: "Bear call spread" });
+        await expect(compare.locator("[data-figure-row='Breakevens'] td")).toHaveText(["24,452", "24,528"]);
+        await expect(compare.locator("[data-figure-row='Probability of profit'] td")).toHaveText(["58.0%", "58.0%"]);
+        // The engine was asked for the bear call's numbers; nothing was checked for placing or placed.
+        await expect.poll(() => seen.posts.filter((p) => p.url.endsWith("/basket/evaluate"))
+          .some((p) => (p.body as { legs: Leg[] }).legs.map((l) => `${l.side} ${l.strike} ${l.right}`).join(",") === "BUY 24700 CE,SELL 24500 CE")).toBe(true);
+        expect(seen.posts.filter((p) => /\/basket\/(preview|execute)$|\/paper\/fno\/order/.test(p.url))).toEqual([]);
+        await compare.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await page.mouse.move(0, 0);
+        await expect(panel).toHaveScreenshot(`fno8b2-basket-compare-v2-${width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+      });
+    }
+  });
+}
+
 test.describe("Basket panel v2 flows", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 

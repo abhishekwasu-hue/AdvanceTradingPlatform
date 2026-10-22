@@ -2810,6 +2810,27 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Questions CA-11..CA-14 (OPEN_QUESTIONS).
 
 
+## 22 Oct - F&O workspace 8b, slice 2: premium kept, alerts on his own levels, the comparisons (behind ui_v2, PAPER only)
+
+- Branch `claude/fno8b-slice-2`. No migration, no new route, no backend code change. Owner questions FNO-8B-9..16
+  (OPEN_QUESTIONS). Information only: nothing here places, blocks or changes an order; no new order path; Exit now
+  untouched (ADR-0004); an alert only notifies (ADR-0006).
+- Frontend: `src/fno/positionInsights.ts` (the exact payoff at expiry and its outcome - max profit / loss, breakevens -,
+  the position as the features read it, the premium kept, the alert choices of his own levels and the rule body, the
+  change side and the engine asks) and `src/fno/PositionInsightsV2.tsx` (`CaptureLineV2`, `StructureAlertV2` +
+  `AlertChoicesView`, `CompareButtonV2`), `src/fno/CompareV2.tsx` (`CompareView` chart + sentences + figures,
+  `AdjustCompareV2` "Compare a change", `ChangeEditor`, `StrategyCompareV2` + `compareChoices` / `basketColumn`).
+  Wired into My positions (a sold option on its own: premium kept + Tell me when; legs placed together: premium kept,
+  Tell me when, Compare a change on the group; the legs inside keep Exit / Add / Adjust) and the basket panel (tool
+  "Compare": his basket, the ready strategies from his settings, his saved baskets).
+- Tests: backend `test_fno8b2_structure_alerts.py` (2: the page's alert bodies are plain instrument rules with no Then;
+  a firing records the event and places nothing); vitest `src/fno/positionInsights.test.tsx` (26: the maths from
+  fixtures, the words, the alert body, no order path, Exit never disabled); e2e `fno8b-slice2-v2.e2e.ts` (17) and the
+  basket compare in `basket-v2.e2e.ts` (6) with new baselines `fno8b2-positions-v2-*`, `fno8b2-compare-v2-*`,
+  `fno8b2-basket-compare-v2-*` (1440 / 390 / 360, light / dark); regenerated `fno4-positions-v2-*` (the premium kept and
+  the buttons on the group).
+
+
 ## 22 Oct - Wave templates (family G): the G parity harness and the templates G1, G3, G8 (behind strategy_templates + screener_waves)
 
 - Branch `claude/wave4-g3-g8-g1`. No migration (templates are JSON in the repository; flags are registered in code).

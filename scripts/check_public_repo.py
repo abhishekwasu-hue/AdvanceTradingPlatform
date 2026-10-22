@@ -168,6 +168,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/news_status.json": "be5ac693f289f43bc2bfeb790c22a9390a985a0715f8193670de81c64245e7bd",
     "frontend/e2e/fixtures/notifications.json": "be5ded0116ca5c0f8f71caa2170c75eba590783ad737fdd99d14db74c4af4faa",
     "frontend/e2e/fixtures/option_chain_v2.json": "c37438deaa26205fcc03016050fae76b6e181a2f9911587e4ac51d81e2a98848",
+    "frontend/e2e/fixtures/option_chain_charts.json": "26645da956042b696609fa5515bb62ca052a83ec4d6f6f41576790fedb1aaa25",
     "frontend/e2e/fixtures/options_builder.json": "bf6df3ea9f5caddb5e3acc1d2f8360875a3cd72550f194156b21266fd550e1f0",
     "frontend/e2e/fixtures/provider.json": "6aabdd6f537fd8ce0a735b8ec21ed11e8f590ea3718263cc470f0916e53c7b32",
     "frontend/e2e/fixtures/setup_v2.json": "cff0561b071bfa9bfb79e7e4b85029ddc0cbb3f395a64cd7d0c209aebdd419e7",

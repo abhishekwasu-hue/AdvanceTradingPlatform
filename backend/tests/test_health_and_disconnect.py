@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.brokers import token_lifecycle
 from app.brokers.circuit_breaker import breaker_for, reset_all
 from app.db.models import AuditLogRecord, BrokerCredentialRecord
+from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_trading_worker import _FakeBroker
 
@@ -49,7 +50,7 @@ def test_disconnect_revokes_the_broker_session_and_marks_it_expired(monkeypatch)
     token = _register("g-disconnect@example.com")
     headers = {"Authorization": f"Bearer {token}"}
     assert client.post("/api/broker/upstox/credentials", headers=headers,
-                       json={"api_key": "k", "api_secret": "s", "access_token": "t"}).status_code == 204
+                       json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"}).status_code == 204
     broker = _DisconnectingBroker()
     monkeypatch.setattr("app.brokers.routes.build_adapter", lambda record, client=None: broker)
 

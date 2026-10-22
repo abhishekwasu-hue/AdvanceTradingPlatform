@@ -2039,6 +2039,10 @@ class OISnapshotRecord(Base):
     underlying_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     strikes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")
+    # OC5: the near-month future's last price and open interest read in the same slot (None when the broker's quote
+    # does not carry them, and for every slot stored before this column existed).
+    future_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    future_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class StrikeOISnapshotRecord(Base):
@@ -2368,6 +2372,41 @@ class VisionReportRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class ChartAnalysisRecord(Base):
+    """Analyze a chart (docs/design/CHART_ANALYZE.md, flag `chart_analyze`): one chart image a user uploaded or linked,
+    and its analysis. Owned by one user of one organisation; nobody else reads it. The image is stored privately on the
+    host's data volume: `image_path` is relative to the private store and built from server-generated ids only, and the
+    original bytes are never kept (only a re-encoded PNG without metadata). `status`: ready (stored, not analysed),
+    running, done, failed, deleted. A deleted or expired row keeps only its counters (created_at, mode, cost) so the
+    plan's daily / monthly limits cannot be reset by deleting; its file and result are gone."""
+
+    __tablename__ = "chart_analyses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, default="image_only", server_default="image_only")
+    source: Mapped[str] = mapped_column(String(10), nullable=False, default="upload", server_default="upload")   # upload / link
+    source_host: Mapped[str | None] = mapped_column(String(255), nullable=True)               # a link's host only, never the URL
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="ready", server_default="ready", index=True)
+    image_path: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    image_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    image_width: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    image_height: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    image_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    engine_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    billed_to_user_key: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)       # when the running analysis was claimed
+    analysed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
 
 
 class PaperAccountRecord(Base):
@@ -3274,6 +3313,45 @@ class WatchlistRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class SystemWatchlistRecord(Base):
+    """WL1 (handover item 4): one read-only system watchlist every user sees first - the indices, one index's stocks, one
+    sector's stocks or the F&O stocks. Platform-wide reference data (no tenant): built by the server job
+    (app/watchlists/system.py) from the U1 universe tables mapped to the instrument master; users read and copy it, never
+    change it. `key` is the stable slug the routes use ("indices", "index-nifty50", "sector-it", "fno-stocks")."""
+
+    __tablename__ = "system_watchlists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    group: Mapped[str] = mapped_column(String(16), nullable=False, index=True)        # INDICES / INDEX_STOCKS / SECTORS / FNO
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # `[{"symbol", "exchange", "name"}]` in display order (the watchlist item shape plus the company name).
+    items_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)    # content last changed
+    refreshed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)  # last refresh that built it
+
+
+class SystemWatchlistRefreshRecord(Base):
+    """WL1: one run of the system-watchlist refresh - when, what changed (the reconstitution diff: per list the symbols
+    added and removed, lists created and dropped) and which source symbols could not be mapped to the instrument master.
+    Read by the admin (SUPER_ADMIN) only."""
+
+    __tablename__ = "system_watchlist_refreshes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    lists_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lists_changed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    changes_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    unmapped_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    unmapped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
 class UserPrefsRecord(Base):

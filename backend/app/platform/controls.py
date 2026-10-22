@@ -309,6 +309,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # bucket, max open positions; each 0 = no limit, set in the PAPER risk settings) refuse new PAPER entries before a
     # proposal and at Approve. Acts only while portfolio_risk is on too. Exits are never refused (ADR-0004).
     "portfolio_risk_caps": "Portfolio caps on new PAPER entries: sector exposure, open risk per bucket, open positions (entries only; exits never refused)",
+    # Analyze a chart (docs/design/CHART_ANALYZE.md, PR-A): a user uploads a chart image or pastes a chart link and gets
+    # an educational reading of it (the situation and the possibilities, never advice), from the analysis engine in the
+    # private package. Beta tenants only (the allow-list). OFF: every /api/chart-analyze route answers 503 and the page
+    # and the Charts-page button are hidden. Places no orders.
+    "chart_analyze": "Analyze a chart: upload a chart image or paste a chart link for an educational reading (beta; places no orders)",
     # N4 CH6 (docs/design/CHARTING.md): ScreenQL expressions drawn as chart studies, computed by the screener's own runtime
     # from the shared lake bars as of a time (lines for numbers, marks for conditions). OFF: GET /api/charts/studies
     # answers 503 and the chart shows no study panel. Reference only - places no orders.

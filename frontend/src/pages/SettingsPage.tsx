@@ -18,6 +18,8 @@ import { GO_LIVE_PATH } from "../setup/getStarted";
 import GoLiveChecklistV2 from "../setup/GoLiveChecklistV2";
 import ShowGetStartedV2 from "../setup/ShowGetStartedV2";
 import { useFeatures } from "../ui/useFeatures";
+import KeyGuidesV2 from "../aiKeys/KeyGuidesV2";
+import TipsButtonsV2 from "../tours/TipsButtonsV2";
 
 /**
  * Settings. P2b: the broker moved to its own page (src/broker/BrokerPage.tsx) - Settings keeps only a link to it. What
@@ -27,9 +29,9 @@ import { useFeatures } from "../ui/useFeatures";
 
 export const BROKER_PAGE_PATH = BROKER_PATH;
 
-function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+function Section({ id, title, tour, children }: { id: string; title: string; tour?: string; children: ReactNode }) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className="space-y-4 scroll-mt-20">
+    <section id={id} aria-labelledby={`${id}-title`} data-tour={tour} className="space-y-4 scroll-mt-20">
       <h2 id={`${id}-title`} className="pt-2 text-sm font-semibold text-fg">{title}</h2>
       {children}
     </section>
@@ -88,10 +90,10 @@ export default function SettingsPage() {
       {/* UI2-7: Settings → Setup (the wizard), only while ui_v2 is on; off, nothing renders. P3: the go-live checklist is
           under Advanced, below. */}
       {v2 && <SetupLinkV2 />}
-      <AppearanceCard />
+      <div data-tour="settings-appearance"><AppearanceCard /></div>
       <BrokerLinkCard />
       <BillingCard />
-      <div id="alerts" className="scroll-mt-4 space-y-4">
+      <div id="alerts" data-tour="settings-alerts" className="scroll-mt-4 space-y-4">
         {/* UX2 fix 5: with ui_v2, Telegram in one tap first; the bot token and chat id move into the card's "own bot" part. */}
         {v2 && (
           <Card title="Alerts on your phone">
@@ -106,18 +108,33 @@ export default function SettingsPage() {
         <ApiKeysCard />
       </Section>
 
-      <Section id="ai" title="AI">
+      {/* MO2 part B: the beginner key guides first, then the cards that use a key. */}
+      <Section id="ai" title="AI" tour="settings-ai">
+        <KeyGuidesV2 />
         <AiProviderCard />
         <VisionByokCard />
       </Section>
 
-      {user.role !== "VIEWER" && (
-        <Card title="Help">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-fg-muted">Bring back the Get started steps on your Dashboard: broker, paper bot and Telegram alerts.</p>
-            <ShowGetStartedV2 className="self-start sm:self-auto" />
-          </div>
-        </Card>
+      {(user.role !== "VIEWER" || v2) && (
+        <div data-tour="settings-help">
+          <Card title="Help">
+            <div className="space-y-4">
+              {user.role !== "VIEWER" && (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-fg-muted">Bring back the Get started steps on your Dashboard: broker, paper bot and Telegram alerts.</p>
+                  <ShowGetStartedV2 className="self-start sm:self-auto" />
+                </div>
+              )}
+              {/* MO2 part C: the first-time tips (page tours and the "What is this page?" cards) live in the v2 shell. */}
+              {v2 && (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between" data-tips-row>
+                  <p className="text-sm text-fg-muted">Tips explain each page on your first visit. See them all again, or turn them off.</p>
+                  <TipsButtonsV2 className="self-start sm:self-auto" />
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
       )}
 
       <details id="advanced" open={advancedOpen} onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}

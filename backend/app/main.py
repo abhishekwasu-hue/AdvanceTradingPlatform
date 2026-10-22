@@ -83,6 +83,9 @@ from app.trading.persistence import persist_signal_history
 from app.paper.routes import router as paper_router
 from app.decision_tools.routes import router as decision_tools_router
 from app.watchlists.routes import router as watchlists_router
+from app.watchlists.system_routes import admin_router as system_watchlists_admin_router
+from app.watchlists.system_routes import router as system_watchlists_router
+from app.chart_analyze.routes import admin_router as chart_analyze_admin_router, router as chart_analyze_router
 from app.signals_feed.routes import router as signals_feed_router
 from app.me.prefs import router as me_prefs_router
 from app.option_chain.ask_routes import router as oc_ask_router
@@ -115,12 +118,14 @@ from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
 from app.option_chain.analyses_routes import router as oc_analyses_router
+from app.option_chain.charts_routes import router as oc_charts_router
 from app.platform.readiness_routes import router as readiness_router
 from app.billing.routes import admin_router as billing_admin_router, router as billing_router, webhook_router as billing_webhook_router
 from app.billing.service import meter
 from app.marketplace.routes import admin_router as marketplace_admin_router, router as marketplace_router
 from app.public_api.routes import keys_router as api_keys_router, public_router as public_api_router
 from app.ai.routes import router as ai_router
+from app.ai.chat_routes import router as ai_chat_router
 from app.ai.byok_routes import router as ai_byok_router
 from app.platform.routes import admin_router as controls_admin_router, status_router as system_status_router, users_router as trading_disable_router
 from app.portfolio.routes import router as portfolio_router
@@ -273,6 +278,7 @@ app.include_router(api_keys_router)
 app.include_router(public_api_router)
 app.include_router(ai_byok_router)       # BYOK-V1: the user's own AI key for Vision (flag vision_byok, off by default)
 app.include_router(ai_router)
+app.include_router(ai_chat_router)   # handover item 5: the chat-first Copilot (flag ui_v2, off)
 app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(quant_router)        # Phase Z: factor and risk models
 app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages
@@ -284,6 +290,7 @@ app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill prog
 app.include_router(history_intraday_admin_router)  # HB2: owner intraday history progress (SUPER_ADMIN, read-only)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
 app.include_router(oc_analyses_router)     # OC2: the built-in option chain analyses, read-only (flag ui_v2, off)
+app.include_router(oc_charts_router)       # OC5: the Option chain "Charts" series, read-only (flag ui_v2)
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)
 app.include_router(controls_admin_router)
@@ -322,7 +329,11 @@ app.include_router(pwa_router)             # PW6: PWA install/update events (cou
 app.include_router(feedback_router)        # PW6: "Send feedback"
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
 app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and position what-if (flag decision_tools)
+app.include_router(system_watchlists_router)  # WL1: read-only system lists (indices, index stocks, sectors, F&O); before /{id}
 app.include_router(watchlists_router)  # AMW-2: the caller's own named watchlists (flag watchlists, off)
+app.include_router(system_watchlists_admin_router)  # WL1: the admin's view of the system lists' refresh (SUPER_ADMIN)
+app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a chart image, educational reading (flag chart_analyze, off)
+app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)
 app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)

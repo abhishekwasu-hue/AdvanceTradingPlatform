@@ -84,6 +84,17 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ZScore": ["ZScore(close, 20)"],
     "Lag": ["Lag(close, 3)"],
     "Supertrend": ["Supertrend(10, 3)", "Supertrend(10, 3)@1h"],
+    # TPL-1: the add-indicator work
+    "SupertrendDir": ["SupertrendDir(10, 3)", "SupertrendDir(7, 2)@1h"],
+    "MACD": ["MACD(12, 26, 9)", "MACD(5, 13, 4)@1h"],
+    "MACDSignal": ["MACDSignal(12, 26, 9)"],
+    "MACDHist": ["MACDHist(12, 26, 9)"],
+    "WMA": ["WMA(close, 10)", "WMA(close, 5)@1h"],
+    "HMA": ["HMA(close, 16)"],
+    "StochK": ["StochK(14, 3)", "StochK(5, 1)@1h"],
+    "StochD": ["StochD(14, 3, 3)"],
+    "PSAR": ["PSAR(0.02, 0.02, 0.2)", "PSAR()@1h"],
+    "PSARDir": ["PSARDir(0.02, 0.02, 0.2)"],
     "BBUpper": ["BBUpper(20, 2)"],
     "BBMid": ["BBMid(20, 2)"],
     "BBLower": ["BBLower(20, 2)"],
@@ -401,6 +412,12 @@ def _register_indicators() -> None:
         "bollinger_20_2": lambda f: volatility.bollinger(close(f), 20, 2.0),
         "adx_14": lambda f: directional.adx(f, 14),
         "session_vwap": lambda f: vwap.session_vwap(f),
+        # TPL-1: the add-indicator work
+        "wma_10": lambda f: trend.wma(close(f), 10),
+        "hma_16": lambda f: trend.hma(close(f), 16),
+        "parabolic_sar_default": lambda f: trend.parabolic_sar(f),
+        "stochastic_14_3_3": lambda f: momentum.stochastic(f, 14, 3, 3),
+        "supertrend_dir_10_3": lambda f: volatility.supertrend_dir(f, 10, 3.0),
     }.items():
         register(f"indicator.{name}", fn, group="indicator")
     for name, fn in {

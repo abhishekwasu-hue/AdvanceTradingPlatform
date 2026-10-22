@@ -10,6 +10,7 @@ from app.brokers import token_lifecycle
 from app.brokers.models import BrokerProfile, MarginInfo
 from app.db.models import BrokerAccountRecord, StrategyDeploymentRecord, TradeRecord
 from app.workers import trading_worker as tw
+from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_accounts import _mark_valid
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _create, _store_broker
@@ -124,7 +125,7 @@ def _set_balance(account_id: int, available: float, synced_at):
 def test_worker_routes_a_live_entry_by_most_margin_and_records_the_choice(monkeypatch):
     t = _tenant("t-routing-worker@example.com")
     assert client.post("/api/broker/upstox/credentials?account_label=second", headers=t["headers"],
-                       json={"api_key": "k", "api_secret": "s", "access_token": "t"}).status_code == 204
+                       json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"}).status_code == 204
     _mark_valid(t["tenant_id"], "second")
     accounts = {a["account_label"]: a for a in client.get("/api/accounts", headers=t["headers"]).json()}
     now = OPEN_NOW.astimezone(timezone.utc)
@@ -167,7 +168,7 @@ def test_worker_routes_a_live_entry_by_most_margin_and_records_the_choice(monkey
 def test_worker_falls_back_to_default_when_balances_are_stale(monkeypatch):
     t = _tenant("t-routing-stale@example.com")
     assert client.post("/api/broker/upstox/credentials?account_label=second", headers=t["headers"],
-                       json={"api_key": "k", "api_secret": "s", "access_token": "t"}).status_code == 204
+                       json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"}).status_code == 204
     _mark_valid(t["tenant_id"], "second")
     accounts = {a["account_label"]: a for a in client.get("/api/accounts", headers=t["headers"]).json()}
     stale = OPEN_NOW.astimezone(timezone.utc) - timedelta(hours=2)
@@ -206,7 +207,7 @@ def test_worker_falls_back_to_default_when_balances_are_stale(monkeypatch):
 def test_fewest_positions_counts_open_live_trades_per_account(monkeypatch):
     t = _tenant("t-routing-fewest@example.com")
     assert client.post("/api/broker/upstox/credentials?account_label=second", headers=t["headers"],
-                       json={"api_key": "k", "api_secret": "s", "access_token": "t"}).status_code == 204
+                       json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"}).status_code == 204
     _mark_valid(t["tenant_id"], "second")
     accounts = {a["account_label"]: a for a in client.get("/api/accounts", headers=t["headers"]).json()}
     dep_id = _deploy(t, mode="LIVE")
@@ -245,7 +246,7 @@ def test_exits_and_stop_guard_follow_the_trades_own_account(monkeypatch):
     even though the primary account is the default - never through the first session found."""
     t = _tenant("t-routing-exit@example.com")
     assert client.post("/api/broker/upstox/credentials?account_label=second", headers=t["headers"],
-                       json={"api_key": "k", "api_secret": "s", "access_token": "t"}).status_code == 204
+                       json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"}).status_code == 204
     _mark_valid(t["tenant_id"], "second")
     accounts = {a["account_label"]: a for a in client.get("/api/accounts", headers=t["headers"]).json()}
     _deploy(t, mode="LIVE")   # gives the worker two LIVE sessions to hold

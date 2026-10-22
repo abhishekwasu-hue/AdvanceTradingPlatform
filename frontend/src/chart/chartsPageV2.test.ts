@@ -54,7 +54,7 @@ describe("UI2-4b2 timeframes the page offers", () => {
   });
 
   it("the stored view is cleaned: a wrong field takes its default, overlays keep the chart's order", () => {
-    const ui24c = { drawings_hidden: false, watchlist_open: true, watchlist_id: null };
+    const ui24c = { drawings_hidden: false, watchlist_open: true, watchlist_id: null, watchlist_system: null };   // WL1: + the system list
     expect(cleanView(null)).toEqual({ timeframe: "5min", type: "candles", overlays: [], layers: [], ...ui24c });
     expect(cleanView({ timeframe: "week", type: "renko", overlays: ["sma", "x", "ema_fast"], layers: ["trades", "trades", 3] }))
       .toEqual({ timeframe: "week", type: "candles", overlays: ["ema_fast", "sma"], layers: ["trades"], ...ui24c });

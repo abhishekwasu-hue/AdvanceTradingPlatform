@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import TenantInviteRecord
 from app.notifications.service import notify
+from tests.broker_fakes import UPSTOX_KEY
 from tests.test_auth_api import _register, _session_factory, client
 
 
@@ -191,7 +192,7 @@ def test_viewer_is_read_only_across_trading_endpoints():
     assert client.get("/api/broker/credentials", headers=viewer_headers).status_code == 200
 
     blocked = [
-        client.post("/api/broker/upstox/credentials", headers=viewer_headers, json={"api_key": "k"}),
+        client.post("/api/broker/upstox/credentials", headers=viewer_headers, json={"api_key": UPSTOX_KEY}),
         client.put("/api/risk-settings", headers=viewer_headers, json=client.get("/api/risk-settings", headers=viewer_headers).json()),
         client.post("/api/deployments", headers=viewer_headers, json={"strategy_id": "ema_rsi_scalper_1m", "symbol": "X"}),
         client.put("/api/alert-channels/telegram", headers=viewer_headers, json={"config": {"bot_token": "1:a", "chat_id": "1"}}),

@@ -22,6 +22,8 @@ python-multipart>=0.0.9,<1.0
 prometheus_client>=0.20,<1.0
 websockets>=13.0,<18.0
 defusedxml==0.7.1
+# Analyze a chart: safe decode and re-encode of uploaded chart images (PNG / JPEG only, metadata stripped).
+Pillow>=13.0.0,<14.0   # 13.0.0: the 12.x CVEs pip-audit lists (incl. CVE-2026-25990) fixed
 # HB0: R2 history import (Parquet files over the S3 API) - used only by `python -m app.market_lake.r2_import`.
 pyarrow>=17.0,<27.0
 boto3>=1.34,<2.0

@@ -12,6 +12,7 @@
 //  - every `*V2.tsx` anywhere under src/ (UI2-1 onward: DashboardV2.tsx, shell/SidebarV2.tsx, ...);
 //  - every .ts / .tsx under src/chart/ (UI2-4b1: the v2 chart, its theme and settings), except tests;
 //  - every .ts / .tsx under src/broker/ (P2b: the Broker page, its prompt, panel and nav dot - both shells), except tests;
+//  - every .ts / .tsx under src/tours/ and src/aiKeys/ (MO2: the page tours and the AI-key guides), except tests;
 //  - minus EXCLUDED: files named "V2" for another reason.
 //   node scripts/check-v2-colours.mjs            # exit 0 = clean, 1 = findings
 //   node scripts/check-v2-colours.mjs FILE...    # check the named files instead
@@ -68,7 +69,7 @@ export function isV2File(path) {
   const rel = p.slice(at);
   if (EXCLUDED.includes(rel)) return false;
   if (/\.(test|stories|fixture)\.tsx?$/.test(rel)) return false;
-  if (/^src\/(ui|chart|broker)\/.+\.tsx?$/.test(rel)) return true;
+  if (/^src\/(ui|chart|broker|tours|aiKeys)\/.+\.tsx?$/.test(rel)) return true;
   return /^src\/(.+\/)?[^/]+V2\.tsx$/.test(rel);
 }
 

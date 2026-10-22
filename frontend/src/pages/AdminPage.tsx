@@ -8,6 +8,7 @@ import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import HolidaysCard from "../components/HolidaysCard";
+import SystemListsCard from "../components/SystemListsCard";
 import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, EncryptionStatus, FeatureFlags, Incident, PlatformAuditLog, RiskCeilings, SystemStatus } from "../types";
 import { PageHeader } from "../components/primitives";
 import { useFeatures } from "../ui/useFeatures";
@@ -105,6 +106,8 @@ export default function AdminPage() {
       <GoLiveChecklist kind="platform" />
 
       <HolidaysCard />
+
+      <SystemListsCard />
 
       <Card title="Global kill switch">
         {overview?.global_kill_switch_engaged ? (

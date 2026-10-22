@@ -26,7 +26,7 @@ from app.accounts.service import get_account
 from app.market_data.calendar import IST
 from datetime import datetime, date
 from app.core.enums import DeploymentStatus, ExecutionMode, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, SignalDirection, StrikeRule
-from app.custom_strategies.resolver import resolve_strategy, normalize_strategy_id
+from app.custom_strategies.resolver import TEMPLATE_PREFIX, resolve_strategy, normalize_strategy_id
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.instruments import master as instrument_master
 from app.instruments.strike_selection import StrikeFilters
@@ -414,6 +414,9 @@ async def create_deployment(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     _check_holding(request, strategy)
+    if request.strategy_id.startswith(TEMPLATE_PREFIX) and request.mode != ExecutionMode.PAPER:
+        # Strategy templates step 2: signals only, PAPER only (owner order section 10) - a template never runs LIVE here.
+        raise HTTPException(status_code=400, detail="Strategy templates run on paper only for now")
     if request.entry_mode == "APPROVAL":
         from app.execution import approval
         if not await approval.flag_on(session, user.tenant_id):

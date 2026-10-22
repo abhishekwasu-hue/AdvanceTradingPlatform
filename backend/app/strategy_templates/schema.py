@@ -8,11 +8,19 @@ a position size, a strike, a premium, a lot or an order (section 5 - those are t
 
 Every number in a template is a PARAMETER with a type, a default and bounds (`ParamSpec`); the expressions read them as
 `$key`. Relations between parameters (fast < slow; the context timeframe above the signal timeframe) are `Constraint`s.
+
+Family G (wave templates, docs/design/WAVE_TEMPLATES_REVIEW.md WB3) adds, still as `atp.template/1` and without changing
+any existing template:
+* `variants`: a part (setup, trigger, invalidation, exit signal, context) may hold one expression per value of an enum
+  setting (`{"by": "entry_style", "variants": {"aggressive": {...}, "breakout": {...}}}`); only the chosen one is
+  compiled, so an unchosen variant never runs and never holds the warm-up back;
+* `@{key}` in an expression: the timeframe of a timeframe setting (`WaveState(1)@{wave_tf}`), filled in at compile time
+  and then validated like a written `@1h`.
 """
 from __future__ import annotations
 
 import json
-from typing import List, Literal, Optional, Tuple, Union
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
 
@@ -44,9 +52,13 @@ class ParamSpec(_Strict):
     max: Optional[float] = None
     step: Optional[float] = None
     choices: Tuple[str, ...] = ()
+    # Step 2: the words the settings form shows for each choice (same order as `choices`; empty = the choices themselves)
+    choice_labels: Tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _shape(self) -> "ParamSpec":
+        if self.choice_labels and len(self.choice_labels) != len(self.choices):
+            raise ValueError(f"{self.key}: one label per choice")
         if self.type in ("int", "float"):
             if self.min is None or self.max is None or self.min > self.max:
                 raise ValueError(f"{self.key}: a number setting needs min <= max")
@@ -99,6 +111,13 @@ class Sided(_Strict):
     short: str = Field(min_length=1, max_length=2000)
 
 
+class Switch(_Strict):
+    """One expression per value of the enum setting `by` (every value covered); null means "no expression" for that value
+    (allowed for a trigger, a context and an exit signal, never for an invalidation)."""
+    by: str = Field(pattern=_KEY)
+    variants: Dict[str, Optional[Sided]] = Field(min_length=1)
+
+
 class Context(_Strict):
     """Optional filters on closed context bars, read on the trigger bar. With `timeframe_param`, every field and function
     in the expression that names no timeframe runs on the chosen context timeframe (the ScreenQL runtime's close-time
@@ -124,6 +143,21 @@ class Setup(_Strict):
     breach_on: Literal["close", "wick"] = "close"
 
 
+class SetupSwitch(_Strict):
+    """A whole setup per value of the enum setting `by` (e.g. the window: one opportunity per wave is a state setup,
+    every pullback an event setup)."""
+    by: str = Field(pattern=_KEY)
+    variants: Dict[str, Setup] = Field(min_length=1)
+
+
+class ContextSwitch(_Strict):
+    """A context filter per value of the enum setting `by` (null: no filter for that value, e.g. trend relation "any")."""
+    by: str = Field(pattern=_KEY)
+    variants: Dict[str, Optional[Sided]] = Field(min_length=1)
+    timeframe_param: Optional[str] = Field(default=None, pattern=_KEY)
+    enabled_by: Optional[str] = Field(default=None, pattern=_KEY)
+
+
 class Evidence(_Strict):
     name: str = Field(pattern=_KEY)
     long: str = Field(min_length=1, max_length=2000)
@@ -142,10 +176,10 @@ class SignalText(_Strict):
 
 class Template(_Strict):
     schema_: Literal["atp.template/1"] = Field(alias="schema")
-    id: str = Field(pattern=r"^[A-F][0-9]{1,2}$")
+    id: str = Field(pattern=r"^[A-G][0-9]{1,2}$")
     version: StrictInt = Field(ge=1)
     name: str = Field(min_length=1, max_length=80)
-    family: Literal["A", "B", "C", "D", "E", "F"]
+    family: Literal["A", "B", "C", "D", "E", "F", "G"]
     idea: str = Field(min_length=1, max_length=300)
     difficulty: Literal["Beginner", "Intermediate", "Advanced"]
     style: Literal["Intraday", "Swing", "Both", "Intraday (session-based)"]
@@ -153,11 +187,11 @@ class Template(_Strict):
     params: Tuple[ParamSpec, ...] = ()
     constraints: Tuple[Constraint, ...] = ()
     sides_default: Literal["long", "short", "both"] = "both"
-    context: Optional[Context] = None
-    setup: Setup
-    trigger: Optional[Sided] = None       # None: the setup event itself is the trigger (needs kind event + same_bar)
-    invalidation: Sided                   # a price per side, read on the trigger bar (S6: on the losing side of the close)
-    exit_signal: Optional[Sided] = None
+    context: Optional[Union[Context, ContextSwitch]] = None
+    setup: Union[Setup, SetupSwitch]
+    trigger: Optional[Union[Sided, Switch]] = None   # None: the setup event itself is the trigger (needs kind event + same_bar)
+    invalidation: Union[Sided, Switch]               # a price per side, read on the trigger bar (S6: on the losing side of the close)
+    exit_signal: Optional[Union[Sided, Switch]] = None
     evidence: Tuple[Evidence, ...] = ()
     signal_text: SignalText
 
@@ -187,13 +221,27 @@ class Template(_Strict):
         for what, key, kind in refs:
             if key is not None and (key not in by_key or by_key[key].type != kind):
                 raise ValueError(f"{what} must name a {kind} setting, got {key!r}")
-        if isinstance(self.setup.expiry_bars, str):
-            key = self.setup.expiry_bars.removeprefix("$")
-            if not self.setup.expiry_bars.startswith("$") or key not in by_key or by_key[key].type != "int":
-                raise ValueError("expiry_bars must be a whole number or a $setting of type int")
-        elif self.setup.expiry_bars is not None and self.setup.expiry_bars < 0:
-            raise ValueError("expiry_bars must not be negative")
-        if self.trigger is None and not (self.setup.kind == "event" and self.setup.same_bar):
+        switches: List[Tuple[str, Union[Switch, SetupSwitch, ContextSwitch]]] = [
+            (what, part) for what, part in (("context", self.context), ("setup", self.setup), ("trigger", self.trigger),
+                                            ("invalidation", self.invalidation), ("exit_signal", self.exit_signal))
+            if isinstance(part, (Switch, SetupSwitch, ContextSwitch))]
+        for what, sw in switches:
+            spec = by_key.get(sw.by)
+            if spec is None or spec.type != "enum":
+                raise ValueError(f"{what} variants must be chosen by an enum setting, got {sw.by!r}")
+            if set(sw.variants) != set(spec.choices):
+                raise ValueError(f"{what} variants must cover exactly the choices of {sw.by}: {', '.join(spec.choices)}")
+            if what == "invalidation" and any(v is None for v in sw.variants.values()):
+                raise ValueError("every invalidation variant needs an expression")
+        setups = list(self.setup.variants.values()) if isinstance(self.setup, SetupSwitch) else [self.setup]
+        for setup in setups:
+            if isinstance(setup.expiry_bars, str):
+                key = setup.expiry_bars.removeprefix("$")
+                if not setup.expiry_bars.startswith("$") or key not in by_key or by_key[key].type != "int":
+                    raise ValueError("expiry_bars must be a whole number or a $setting of type int")
+            elif setup.expiry_bars is not None and setup.expiry_bars < 0:
+                raise ValueError("expiry_bars must not be negative")
+        if self.trigger is None and not all(s.kind == "event" and s.same_bar for s in setups):
             raise ValueError("without a trigger the setup event is the signal: kind event with same_bar true")
         if len({e.name for e in self.evidence}) != len(self.evidence):
             raise ValueError("evidence names must be unique")
@@ -210,4 +258,4 @@ class Template(_Strict):
 
 
 __all__ = ["SCHEMA_VERSION", "SIGNAL_TIMEFRAME", "MA_TYPES", "SOURCES", "ParamSpec", "Constraint", "Sided", "Context", "Setup",
-           "Evidence", "TextPart", "SignalText", "Template"]
+           "Evidence", "TextPart", "SignalText", "Template", "Switch", "SetupSwitch", "ContextSwitch"]

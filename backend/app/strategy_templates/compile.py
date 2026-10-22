@@ -10,13 +10,16 @@ Binding rules (owner order section 0 R1, section 1):
 * a function in `LAST_BAR_ONLY` is refused by name - read as a series it repeats the last answer backwards
   (look-ahead) and it takes no @timeframe; so is a cross-sectional rank;
 * a `$name` must be a declared setting; settings that are not ScreenQL values (yes / no switches, timeframes) never
-  reach an expression.
+  reach an expression - a timeframe setting reaches one only as `@{name}` (family G, WB3), replaced by its value
+  (`@1h`) before parsing and then validated like a written timeframe;
+* a part with `variants` compiles only the expression of the chosen enum value (family G, WB3).
 """
 from __future__ import annotations
 
 import copy
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
@@ -25,7 +28,7 @@ from app.screener.parser import ScreenQLSyntaxError, parse
 from app.screener.registry import FUNCTIONS, LAST_BAR_ONLY, NUM, BOOL
 from app.screener.validator import validate_study
 from app.strategy_templates import language
-from app.strategy_templates.schema import SIGNAL_TIMEFRAME, Sided, Template
+from app.strategy_templates.schema import SIGNAL_TIMEFRAME, ContextSwitch, Setup, SetupSwitch, Sided, Switch, Template
 
 Side = Literal["long", "short"]
 SIDES: Tuple[Side, ...] = ("long", "short")
@@ -72,6 +75,15 @@ class Recipe:
     lookback: Dict[str, int] = field(default_factory=dict)
     required_flags: Set[str] = field(default_factory=set)
     params_hash: str = ""
+    setup: Optional[Setup] = None               # the setup in force (a SetupSwitch's chosen variant); see `chosen_setup`
+    has_trigger: bool = True                    # False: the setup event itself is the signal
+
+    @property
+    def chosen_setup(self) -> Setup:
+        if self.setup is not None:
+            return self.setup
+        setup = self.template.setup
+        return setup if isinstance(setup, Setup) else setup.variants[str(self.settings.params[setup.by])]
 
     def part(self, name: str, side: Side) -> Optional[Part]:
         return self.parts.get((name, side))
@@ -84,6 +96,34 @@ class Recipe:
 
 def _tf_minutes(tf: str) -> int:
     return n.TF_MINUTES[tf]
+
+
+_TF_PLACEHOLDER = re.compile(r"@\{([a-z][a-z0-9_]{0,31})\}")
+
+
+def fill_timeframes(text: str, template: Template, settings: "Settings", what: str) -> str:
+    """Family G (WB3): `@{key}` -> `@<the timeframe setting's value>`. A key that is not a timeframe setting is refused."""
+    problems: List[str] = []
+
+    def sub(m: "re.Match[str]") -> str:
+        key = m.group(1)
+        spec = next((p for p in template.params if p.key == key), None)
+        if spec is None or spec.type != "timeframe":
+            problems.append(f"{what}: @{{{key}}} must name a timeframe setting of this template")
+            return m.group(0)
+        return "@" + str(settings.params[key])
+    out = _TF_PLACEHOLDER.sub(sub, text)
+    if problems:
+        raise TemplateError(problems)
+    return out
+
+
+def chosen(part: Any, settings: "Settings") -> Any:
+    """A part as the user's settings choose it: a Switch / SetupSwitch / ContextSwitch gives the variant of its enum value
+    (None when that value has no expression); anything else is itself."""
+    if isinstance(part, (Switch, SetupSwitch, ContextSwitch)):
+        return part.variants[str(settings.params[part.by])]
+    return part
 
 
 def resolve_settings(template: Template, timeframe: Optional[str] = None, sides: Optional[str] = None,
@@ -152,6 +192,7 @@ def _param_names(ast: Any) -> Set[str]:
 
 def compile_part(text: str, *, what: str, want: str, template: Template, settings: Settings, on_tf: Optional[str] = None) -> Part:
     """Parse, bind and validate one expression. `want` is "bool" (a condition) or "num" (a price level)."""
+    text = fill_timeframes(text, template, settings, what)
     try:
         ast = parse(text)
     except ScreenQLSyntaxError as exc:
@@ -193,11 +234,22 @@ def _pa_settings_fingerprint() -> str:
     return hashlib.sha256(json.dumps(pa_settings.settings(), sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
+def _wave_settings_fingerprint(settings: Settings) -> str:
+    """R9 for family G: the wave reading's settings in force (WAVE-6) - today's values, overridden by a template setting of
+    the same name."""
+    from app.price_action.waves.settings import WAVE_DEFAULTS
+    effective = {k: settings.params.get(k, v) for k, v in WAVE_DEFAULTS.items()}
+    return hashlib.sha256(json.dumps(effective, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
 def params_hash(template: Template, settings: Settings) -> str:
     """R9 / section 4: what a signal's provenance records - the same template version, settings, price-action settings
-    and engine semantics give the same hash (and the same signals, S11)."""
+    and engine semantics give the same hash (and the same signals, S11). A family G template also records the wave
+    reading's settings; every other family's hash is exactly what it was before family G."""
     body = {"template": template.id, "version": template.version, "schema": "atp.template/1", "engine": ENGINE_VERSION,
             "timeframe": settings.timeframe, "sides": settings.sides, "params": settings.params, "pa_settings": _pa_settings_fingerprint()}
+    if template.family == "G":
+        body["wave_settings"] = _wave_settings_fingerprint(settings)
     return hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()[:20]
 
 
@@ -205,7 +257,14 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
     problems: List[str] = []
     parts: Dict[Tuple[str, Side], Part] = {}
     ctx = template.context
-    context_on = ctx is not None and (ctx.enabled_by is None or bool(settings.params[ctx.enabled_by]))
+    ctx_sided: Optional[Sided] = chosen(ctx, settings) if ctx is not None else None
+    setup: Setup = chosen(template.setup, settings)
+    trigger: Optional[Sided] = chosen(template.trigger, settings)
+    invalidation: Sided = chosen(template.invalidation, settings)
+    exit_signal: Optional[Sided] = chosen(template.exit_signal, settings)
+    if trigger is None and not (setup.kind == "event" and setup.same_bar):
+        problems.append("without a trigger the setup event is the signal: kind event with same_bar true")
+    context_on = ctx is not None and ctx_sided is not None and (ctx.enabled_by is None or bool(settings.params[ctx.enabled_by]))
     context_tf = str(settings.params[ctx.timeframe_param]) if ctx is not None and ctx.timeframe_param else None
     if context_on and context_tf is not None and _tf_minutes(context_tf) < _tf_minutes(settings.timeframe):
         problems.append("the context timeframe must not be finer than the signal timeframe")
@@ -222,20 +281,23 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
             except TemplateError as exc:
                 problems.extend(exc.problems)
 
-    add("setup", None, "bool", long_text=template.setup.long, short_text=template.setup.short)
-    add("trigger", template.trigger, "bool")
-    add("invalidation", template.invalidation, "num")
-    add("arm_level", template.setup.arm_level, "num")
-    add("exit_signal", template.exit_signal, "bool")
-    if ctx is not None and context_on:
-        add("context", None, "bool", context_tf, long_text=ctx.long, short_text=ctx.short)
+    add("setup", None, "bool", long_text=setup.long, short_text=setup.short)
+    if trigger is not None:
+        add("trigger", trigger, "bool")
+    add("invalidation", invalidation, "num")
+    if setup.arm_level is not None:
+        add("arm_level", setup.arm_level, "num")
+    if exit_signal is not None:
+        add("exit_signal", exit_signal, "bool")
+    if ctx_sided is not None and context_on:
+        add("context", None, "bool", context_tf, long_text=ctx_sided.long, short_text=ctx_sided.short)
     for ev in template.evidence:
         add(f"evidence:{ev.name}", None, "bool", long_text=ev.long, short_text=ev.short)
     for part in (*template.signal_text.long, *template.signal_text.short):
         if part.token not in language.TOKENS:
             problems.append(f"signal text: unknown token {part.token!r}")
     expiry: Optional[int] = None
-    raw = template.setup.expiry_bars
+    raw = setup.expiry_bars
     if isinstance(raw, str):
         expiry = int(settings.params[raw.removeprefix("$")])
     elif raw is not None:
@@ -252,20 +314,34 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
         for call in _calls(compiled_part.ast):
             spec = FUNCTIONS[call.name]
             flags.update(f for f in (spec.flag, *spec.also_flags) if f)
-    recipe = Recipe(template, settings, context_tf if context_on else None, context_on, parts, expiry, lookback, flags)
+    recipe = Recipe(template, settings, context_tf if context_on else None, context_on, parts, expiry, lookback, flags,
+                    setup=setup, has_trigger=trigger is not None)
     recipe.params_hash = params_hash(template, settings)
     return recipe
+
+
+def _switch_settings(template: Template) -> List[str]:
+    """The enum settings that choose a part's variant (family G, WB3), in the order the parts are listed."""
+    out: List[str] = []
+    for part in (template.context, template.setup, template.trigger, template.invalidation, template.exit_signal):
+        if isinstance(part, (Switch, SetupSwitch, ContextSwitch)) and part.by not in out:
+            out.append(part.by)
+    return out
 
 
 def validate_template(template: Template) -> List[str]:
     """The static check of a library template: its text tokens, and every allowed timeframe with the default settings
     (a context timeframe default finer than the signal timeframe is skipped - the constraint refuses that pair)."""
     problems: List[str] = []
+    declared = {p.key: p.type for p in template.params}
     for part in (*template.signal_text.long, *template.signal_text.short):
         if part.token not in language.TOKENS:
             problems.append(f"signal text: unknown token {part.token!r}")
         else:
             problems += [f"token {part.token}: {p}" for p in language.guard(language.TOKENS[part.token])]
+            for placeholder, key in language.TIMEFRAME_SETTING_PLACEHOLDERS.items():
+                if "{" + placeholder + "}" in language.TOKENS[part.token] and declared.get(key) != "timeframe":
+                    problems.append(f"token {part.token}: {{{placeholder}}} needs the timeframe setting {key!r}")
     compiled = 0
     ctx = template.context
     for tf in template.allowed_timeframes:
@@ -277,6 +353,8 @@ def validate_template(template: Template) -> List[str]:
                 on = {**on, ctx.timeframe_param: above[0]} if above else None     # no context timeframe above this one
             if on:
                 variants.append(on)
+        for by in _switch_settings(template):         # family G (WB3): every variant of every switch, one at a time
+            variants += [{by: choice} for choice in template.param(by).choices if choice != template.param(by).default]
         for params in variants:
             try:
                 settings = resolve_settings(template, tf, params=params)
@@ -293,4 +371,4 @@ def validate_template(template: Template) -> List[str]:
 
 
 __all__ = ["TemplateError", "Settings", "Recipe", "Part", "resolve_settings", "compile_recipe", "compile_part", "validate_template",
-           "params_hash", "SIDES", "ENGINE_VERSION"]
+           "fill_timeframes", "chosen", "params_hash", "SIDES", "ENGINE_VERSION"]

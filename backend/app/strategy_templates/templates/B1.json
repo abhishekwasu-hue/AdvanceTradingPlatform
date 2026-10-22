@@ -1,0 +1,49 @@
+{
+  "schema": "atp.template/1",
+  "id": "B1",
+  "version": 1,
+  "name": "Range breakout",
+  "family": "B",
+  "idea": "A signal on the first close beyond a range or a consolidation by a set distance; the idea has ended when the close is back inside the range.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "range_mode", "label": "The range", "help": "Which range the break is measured from: the bars just before the break, or the consolidation found before it.",
+     "type": "enum", "default": "auto", "choices": ["fixed", "auto"],
+     "choice_labels": ["A set number of bars before the break", "The consolidation before the break"]},
+    {"key": "range_n", "label": "Range bars", "help": "For a set number of bars: how many bars before the break make the range.",
+     "type": "int", "default": 20, "min": 2, "max": 500, "step": 1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the range the close must be, in average true ranges (0 means any close beyond).",
+     "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "vol_mult", "label": "Volume expansion", "help": "The breakout bar's volume must be at least this many times the average (0 means no volume condition; indices have no volume).",
+     "type": "float", "default": 0.0, "min": 0.0, "max": 20.0, "step": 0.1},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The level that says the breakout failed: just beyond the broken edge, the range's far side, or its middle.",
+     "type": "enum", "default": "stop_level_atr", "choices": ["stop_level_atr", "stop_base", "stop_midpoint"],
+     "choice_labels": ["Just beyond the broken edge", "The far side of the range", "The middle of the range"]},
+    {"key": "stop_mult", "label": "Edge buffer", "help": "For 'just beyond the broken edge': how many average true ranges beyond the edge.",
+     "type": "float", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "RangeBreakout(\"up\", $range_n, $k, $vol_mult, $range_mode)",
+    "short": "RangeBreakout(\"down\", $range_n, $k, $vol_mult, $range_mode)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "RangeBreakoutRef($invalidation, \"up\", $range_n, $k, $vol_mult, $range_mode, $stop_mult)",
+    "short": "RangeBreakoutRef($invalidation, \"down\", $range_n, $k, $vol_mult, $range_mode, $stop_mult)"
+  },
+  "exit_signal": {
+    "long": "close < RangeBreakoutRef(\"held_level\", \"up\", $range_n, $k, $vol_mult, $range_mode)",
+    "short": "close > RangeBreakoutRef(\"held_level\", \"down\", $range_n, $k, $vol_mult, $range_mode)"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "range_broken_upward"}],
+    "short": [{"token": "range_broken_downward"}]
+  }
+}

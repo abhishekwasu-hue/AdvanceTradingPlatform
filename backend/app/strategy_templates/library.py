@@ -42,7 +42,8 @@ def signal_text(template: Template, settings: Settings, side: str, context_timef
     """The signal's sentence in structure words (section 6): the side's tokens whose `when` setting is on."""
     parts = template.signal_text.long if side == "long" else template.signal_text.short
     tokens = [p.token for p in parts if p.when is None or bool(settings.params.get(p.when))]
-    return language.render(tokens, timeframe=settings.timeframe, context_timeframe=context_timeframe)
+    tf_words = {placeholder: settings.params.get(key) for placeholder, key in language.TIMEFRAME_SETTING_PLACEHOLDERS.items()}
+    return language.render(tokens, timeframe=settings.timeframe, context_timeframe=context_timeframe, **tf_words)
 
 
 __all__ = ["TEMPLATES_DIR", "templates", "get", "signal_text"]

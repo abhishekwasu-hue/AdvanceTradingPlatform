@@ -84,6 +84,10 @@ class Signal(BaseModel):
     grade: SignalGrade = SignalGrade.NO_TRADE
     reasons: List[str] = Field(default_factory=list)
     timeframe_combo: str = ""
+    # Strategy templates (open question TPL-Q2): where a signal came from - the template id and version, the settings hash
+    # and the setup instance - for the server only. Never serialised (`exclude`): no API answer, stored row, alert or
+    # notification carries it, so a user never sees an internal id; the reasons hold only the structure-word sentence.
+    provenance: Optional[Dict[str, str]] = Field(default=None, exclude=True)
 
     @property
     def is_tradeable(self) -> bool:

@@ -214,8 +214,10 @@ def test_property_random_valid_settings(period, mult, use_ctx, pair, seed):
         assert flips.get(t) == s.direction[t]
         close = base["close"].iloc[t]
         assert (s.invalidation[t] < close) if s.direction[t] > 0 else (s.invalidation[t] > close)
-    if not use_ctx:
-        assert {t: int(s.direction[t]) for t in s.signal_bars()} == flips
+    if not use_ctx:                                           # every flip signals, unless S6 refused its geometry (a flip
+        # bar can close beyond the new line when the multiplier is small: found by this property test in step 2)
+        want = {t: d for t, d in flips.items() if s.reason[t] != engine.REASON_GEOMETRY}
+        assert {t: int(s.direction[t]) for t in s.signal_bars()} == want
 
 
 # --- the signal text -----------------------------------------------------------------------------------------------------
@@ -259,7 +261,11 @@ def test_adapter_reads_the_series_bar_by_bar(monkeypatch):
             assert sig.stop_loss == pytest.approx(series.invalidation[i]) and sig.entry == df["close"].iloc[i]
             assert sig.target1 is None and sig.target2 is None and sig.risk_reward is None
             assert sig.reasons[0].startswith("Supertrend turned") and "agrees" in sig.reasons[0]
-            assert f"settings {strat.recipe.params_hash}" in sig.reasons[-1]
+            # TPL-Q2 (step 2): the provenance is on the signal for the server, never in the reasons a user reads
+            assert sig.provenance is not None and sig.provenance["settings"] == strat.recipe.params_hash
+            assert sig.provenance["setup"] == series.instance_id(i) and sig.provenance["strategy_id"] == strat.id
+            assert not any(strat.recipe.params_hash in r or "Template" in r for r in sig.reasons)
+            assert "provenance" not in sig.model_dump() and "provenance" not in sig.model_dump_json()
     assert sum(1 for x in seen if x.is_tradeable) == len(series.signal_bars()) >= 1
     assert seen[0].reasons == ["Not enough history for this template yet"]
 

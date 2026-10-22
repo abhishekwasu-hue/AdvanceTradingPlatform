@@ -147,6 +147,7 @@ from app.screener.board import router as screener_board_router
 from app.screener.library_routes import router as screener_library_router
 from app.screener.etf_routes import router as screener_etf_router
 from app.lab.pine.routes import router as lab_pine_router
+from app.strategy_templates.routes import router as strategy_templates_router
 from app.idea_library.routes import router as idea_library_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.screener.then.routes import router as scan_then_router
@@ -312,6 +313,7 @@ app.include_router(fx_admin_router)
 app.include_router(incidents_router)
 app.include_router(screener_router)
 app.include_router(lab_pine_router)  # handover 11c-1: Pine Script subset -> ScreenQL, never executed (flag strategy_lab_pine, off)
+app.include_router(strategy_templates_router)  # strategy templates step 2: list + adopt as a paper strategy (flag strategy_templates, off)
 app.include_router(idea_library_router)  # idea library slice 1: method cards T1-T8, education only (flag idea_library, off)
 app.include_router(screener_history_router)  # N3 S6a: who passed on a date, screen fitness (flag screener_history, off)
 app.include_router(screener_rankings_router)  # N3 S7a: ranking systems (flag screener_rankings, off)

@@ -304,6 +304,9 @@ def test_refusals_holdout_timeframe_and_data(monkeypatch):
 
 SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false on the fixture (review of S6a re-check)
     "Greatest": "Greatest(open, close) > SMA(close, 5)",
+    # strategy templates step 2 (R2): prices on signal bars only - read as "the close is above the latest breakout's level"
+    "RangeBreakoutRef": 'close > RangeBreakoutRef("held_level", "up", 20, 0, 0)',
+    "LineBreakoutRef": 'close > LineBreakoutRef("held_level", "up", "line", 2, 0)',
     "Least": "Least(open, close, low) < SMA(close, 5)",
     "NearSupport": "NearSupport(0.05, 3)",
     "NearResistance": "NearResistance(0.05, 3)",
@@ -315,6 +318,12 @@ SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false 
     "MABreakout": 'MABreakout("up", 5, "sma", 0)',
     "RegimeBreakout": 'RegimeBreakout("up", 20, 5, 60, 0)',
     "RsiDivergence": 'RsiDivergence("bearish", 60)',                           # AMW-3: no bullish one on the sparse dates
+    "WaveState": 'WaveState(1) != "UNCLEAR"',                                  # waves W1: missing before the first count
+    "WaveAlt": 'WaveAlt(1) != "IMP_1"',
+    "WaveClarity": 'WaveClarity(1) == "UNCLEAR"',
+    "WaveOrigin": "close > WaveOrigin(1)",                                     # waves W2: a level, flat for a whole count
+    "WaveInvalidation": "close > WaveInvalidation(1)",
+    "WaveCap": "close > WaveCap(1) OR close > WaveOrigin(1)",                   # no fifth wave with a short third on the fixture
 }
 SWEEP_DENSE = {"RangeBreakout", "SwingBreakType", "SwingBreakout", "RangeExpansion", "ReversalAt",   # rare events: every date
                "DonchianBreakout", "MABreakout", "RegimeBreakout"}

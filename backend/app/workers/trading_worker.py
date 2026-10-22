@@ -24,6 +24,7 @@ A Redis lock guards against two replicas trading the same deployments; Redis dow
 fails open (single replica assumed) - see app/cache/client.py::cache_acquire_lock.
 """
 import asyncio
+import copy
 import logging
 import socket
 import time
@@ -190,6 +191,22 @@ DEPLOYMENT_CREATOR_INACTIVE = ("No new entries: the member who set up this deplo
                                "Open positions are still monitored and closed. The owner can re-create the deployment under an active member.")
 DEPLOYMENT_CREATOR_CANNOT_TRADE = ("No new entries: the member who set up this deployment no longer has a trading role or the trading:write "
                                    "scope. Open positions are still monitored and closed.")
+
+
+def _history_source(market_data: MarketDataService, strategy: object) -> MarketDataService:
+    """Strategy templates step 2 (owner order R6): a strategy that names how many calendar days of candles it needs
+    (`history_days`, the template adapter: its recipe's warm-up x the safety factor) is fetched with that lookback when it
+    is longer than the service's own (5 intraday days); every other strategy gets the service unchanged. A shallow copy:
+    the broker session and the caches are shared, only the lookback differs (the candle cache keys carry it)."""
+    days = getattr(strategy, "history_days", None)
+    if not callable(days):
+        return market_data
+    need, own = int(days()), getattr(market_data, "lookback_days", None)
+    if not isinstance(own, int) or need <= own:
+        return market_data
+    longer = copy.copy(market_data)
+    longer.lookback_days = need
+    return longer
 
 
 class TradingWorker:
@@ -1432,7 +1449,7 @@ class TradingWorker:
         adapters: Dict[str, BrokerInterface], now: datetime, entries_allowed: bool,
     ) -> bool:
         strategy = await resolve_strategy(dep.strategy_id, user, session)
-        frames = await market_data.get_frames(dep.symbol, dep.exchange, dep.timeframe, strategy.timeframes)
+        frames = await _history_source(market_data, strategy).get_frames(dep.symbol, dep.exchange, dep.timeframe, strategy.timeframes)
         # Always persist UTC: a DB that drops tzinfo (SQLite) would otherwise store an IST wall
         # time that reads back as if it were UTC, 5.5h in the future.
         dep.last_evaluated_at = now.astimezone(timezone.utc)
@@ -1564,7 +1581,8 @@ class TradingWorker:
             if trade is not None and trade.regime_at_entry is None:
                 trade.regime_at_entry = self._regimes[dep.id]
         await session.commit()
-        logger.info("Deployment %s signal %s -> executed=%s order=%s", dep.id, signal.direction.value, result.executed, order.id)
+        logger.info("Deployment %s signal %s -> executed=%s order=%s%s", dep.id, signal.direction.value, result.executed, order.id,
+                    f" provenance={signal.provenance}" if signal.provenance else "")
         return result.executed
 
     async def _propose_entry(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime,

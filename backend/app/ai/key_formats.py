@@ -11,6 +11,10 @@ the authority. The order of `PREFIXES` matters (first match wins):
 3. `sk-ant-` is Anthropic; `sk-proj-`, `sk-svcacct-` and any other `sk-` is OpenAI; `AIza` is Google Gemini.
 4. Mistral and Z.ai keys have no fixed prefix: they come out "unknown" and the panel's small picker asks which service
    the key is from (unknown formats always get the picker).
+5. MO2A-2: Cloudflare Workers AI needs two things, an API token (`cfut_` user token / `cfat_` account token, the
+   scannable formats; older tokens are 40 letters and numbers with no prefix) and the 32-character Account ID. Both may
+   come in ONE paste (the token and the Account ID side by side, in either order: `split_account_id`), or the panel
+   asks for the Account ID in a second box. The Global API Key (`cfk_`) opens the whole Cloudflare account: refused.
 
 `PROVIDER_FACTS` is the one table of what the Connect AI panel and the key guides say about each provider: the plain
 name, the "Free tier" and "Reads charts (vision)" tags, whether its free tier may train on what it is sent (R4 / SR-2:
@@ -25,6 +29,7 @@ Nothing here keeps, logs or echoes a key.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Dict, Literal, Optional, Tuple
 
 Kind = Literal["provider", "unsupported", "session", "admin", "unknown", "empty"]
@@ -41,8 +46,11 @@ PREFIXES: Tuple[Tuple[str, str, str, str], ...] = (
     ("bearer ", "session", "", "sign-in token"),
     ("sk-ant-admin", "admin", "", "Anthropic admin key"),
     ("sk-admin-", "admin", "", "OpenAI admin key"),
+    ("cfk_", "admin", "", "Cloudflare Global API Key"),
     ("sk-or-", "provider", "openrouter", "OpenRouter"),
     ("gsk_", "provider", "groq", "Groq"),
+    ("cfut_", "provider", "cloudflare", "Cloudflare Workers AI"),
+    ("cfat_", "provider", "cloudflare", "Cloudflare Workers AI"),
     ("xai-", "unsupported", "", "xAI"),
     ("sk-ant-", "provider", "anthropic", "Claude"),
     ("sk-proj-", "provider", "openai", "OpenAI"),
@@ -73,6 +81,10 @@ PROVIDER_FACTS: Dict[str, Dict[str, Any]] = {
                 "privacy": "On the free plan Mistral may use what you send to improve its models unless you opt out in its settings."},
     "zai": {"name": "Z.ai GLM", "free_tier": True, "vision": False, "may_train": True,
             "privacy": "Z.ai does not say clearly what its free models keep, so AiAlgoDesk treats them as if they may use what you send."},
+    # MO2A-2 (developers.cloudflare.com/workers-ai/platform/data-usage, read 2026-10-22): no retention after the
+    # answer and no training on what is sent; 10,000 free Neurons a day on every plan (platform/pricing).
+    "cloudflare": {"name": "Cloudflare Workers AI", "free_tier": True, "vision": True, "may_train": False,
+                   "privacy": "Cloudflare says it does not keep what you send after answering and does not train models on it."},
 }
 PROVIDER_NAMES = {provider: str(facts["name"]) for provider, facts in PROVIDER_FACTS.items()}
 # Review R4 / SR-2: a provider whose free tier may use what is sent to train its models. ATP's private method prompts
@@ -80,9 +92,14 @@ PROVIDER_NAMES = {provider: str(facts["name"]) for provider, facts in PROVIDER_F
 MAY_TRAIN_ON_FREE_TIER = {provider: bool(facts["may_train"]) for provider, facts in PROVIDER_FACTS.items()}
 # The providers the Connect AI panel takes (behind `ai_one_key`), in the order the picker and the guides show them:
 # free Google Gemini first.
-CONNECT_ORDER = ("gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai")
-# The ones whose keys have no fixed prefix (or a prefix-less format), offered by the picker for an unknown key.
-PICKER_ORDER = ("gemini", "anthropic", "openai", "mistral", "zai")
+CONNECT_ORDER = ("gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai", "cloudflare")
+# The ones whose keys have no fixed prefix (or a prefix-less format), offered by the picker for an unknown key. Cloudflare
+# is here for its older, prefix-less tokens.
+PICKER_ORDER = ("gemini", "anthropic", "openai", "mistral", "zai", "cloudflare")
+# MO2A-2: a Cloudflare Account ID (32 hex characters, as the dashboard shows it), and what may sit between it and the token
+# in one paste (spaces, a line break or a comma).
+ACCOUNT_ID = re.compile(r"^[0-9a-fA-F]{32}$")
+_PAIR_SEPARATOR = re.compile(r"[\s,]+")
 
 
 @dataclass(frozen=True)
@@ -107,11 +124,30 @@ def looks_like_session(key: str) -> bool:
     return "=" in key or ";" in key or key.count(".") >= 2
 
 
+def split_account_id(raw: Optional[str]) -> Tuple[Optional[str], str]:
+    """MO2A-2: (account id, the rest) when the paste is exactly two parts and one of them is a Cloudflare Account ID;
+    else (None, the paste). The id comes back lower-case."""
+    key = clean(raw)
+    parts = [part.strip("\"'`") for part in _PAIR_SEPARATOR.split(key) if part]
+    if len(parts) != 2:
+        return None, key
+    ids = [part for part in parts if ACCOUNT_ID.match(part)]
+    if len(ids) != 1:
+        return None, key
+    account = ids[0]
+    return account.lower(), next(part for part in parts if part is not account)
+
+
 def detect_provider(raw: Optional[str]) -> Detection:
-    """Which provider a key belongs to, from its format alone (no call is made)."""
+    """Which provider a key belongs to, from its format alone (no call is made). A paste of a token next to a Cloudflare
+    Account ID is read from the token; a prefix-less token next to an Account ID is a (older) Cloudflare token."""
     key = clean(raw)
     if not key:
         return Detection("empty")
+    account, rest = split_account_id(key)
+    if account is not None:
+        found = detect_provider(rest)
+        return Detection("provider", "cloudflare", PROVIDER_NAMES["cloudflare"]) if found.kind == "unknown" else found
     if looks_like_session(key):
         found = next((name for prefix, kind, _, name in PREFIXES if kind == "session" and key.lower().startswith(prefix)), "sign-in token")
         return Detection("session", None, found)

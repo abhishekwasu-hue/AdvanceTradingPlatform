@@ -1,0 +1,36 @@
+{
+  "_about": "MO2A-2: Cloudflare Workers AI answers for the mocked transport (no test reaches Cloudflare). Written on 2026-10-22 from Cloudflare's own docs source, github.com/cloudflare/cloudflare-docs: the success body is the OpenAI Chat Completions shape its /ai/v1/chat/completions endpoint returns (workers-ai/configuration/open-ai-compatibility.mdx, the usage fields of workers-ai-models/llama-4-scout-17b-16e-instruct.json); the error bodies are the Cloudflare API envelope with the codes and messages of workers-ai/platform/errors.mdx. 10000 and 7003 are general Cloudflare API codes (authentication error; an invalid Account ID in the address). Some bodies echo the token: the worst case for leaking it.",
+  "success": {
+    "status": 200,
+    "body": {
+      "id": "id-FAKEFAKE-test-only",
+      "object": "chat.completion",
+      "created": 1792700000,
+      "model": "@cf/meta/llama-4-scout-17b-16e-instruct",
+      "choices": [{"index": 0, "message": {"role": "assistant", "content": "OK"}, "finish_reason": "stop"}],
+      "usage": {"prompt_tokens": 42, "completion_tokens": 1, "total_tokens": 43}
+    }
+  },
+  "errors": [
+    {"name": "bad token", "status": 401, "kind": "auth",
+     "body": {"success": false, "errors": [{"code": 10000, "message": "Authentication error"}], "messages": [], "result": null}},
+    {"name": "wrong account id", "status": 404, "kind": "auth",
+     "body": {"success": false, "errors": [{"code": 7003, "message": "Could not route to /client/v4/accounts/{account}/ai/v1/chat/completions, perhaps your object identifier is invalid?"}], "messages": [], "result": null}},
+    {"name": "account blocked", "status": 403, "kind": "auth",
+     "body": {"success": false, "errors": [{"code": 3023, "message": "Service unavailable for account"}], "messages": [], "result": null}},
+    {"name": "daily free allocation used up", "status": 429, "kind": "no_credit",
+     "body": {"success": false, "errors": [{"code": 3036, "message": "You have used up your daily free allocation of 10,000 neurons. Please upgrade to Cloudflare's Workers Paid plan if you would like to continue usage."}], "messages": [], "result": null}},
+    {"name": "model requires Workers Paid", "status": 403, "kind": "no_credit",
+     "body": {"success": false, "errors": [{"code": 5035, "message": "This model requires a Workers Paid plan. See pricing for details."}], "messages": [], "result": null}},
+    {"name": "out of capacity", "status": 429, "kind": "rate",
+     "body": {"success": false, "errors": [{"code": 3040, "message": "Capacity temporarily exceeded, please try again."}], "messages": [], "result": null}},
+    {"name": "no such model", "status": 400, "kind": "model",
+     "body": {"success": false, "errors": [{"code": 5007, "message": "No such model @cf/meta/some-model or task"}], "messages": [], "result": null}},
+    {"name": "invalid model id", "status": 404, "kind": "model",
+     "body": {"success": false, "errors": [{"code": 3042, "message": "The model name is invalid"}], "messages": [], "result": null}},
+    {"name": "model terms not agreed", "status": 403, "kind": "model",
+     "body": {"success": false, "errors": [{"code": 5016, "message": "User has not agreed to Llama3.2 model terms"}], "messages": [], "result": null}},
+    {"name": "token echoed", "status": 400, "kind": "other",
+     "body": {"success": false, "errors": [{"code": 3003, "message": "Request is missing headers or body: {token}"}], "messages": [], "result": null}}
+  ]
+}

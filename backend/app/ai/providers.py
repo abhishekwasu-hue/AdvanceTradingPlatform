@@ -29,7 +29,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 import httpx
 
@@ -69,6 +69,11 @@ _FALLBACK_MODELS = {"anthropic": {"strong": "claude-opus-5-5", "fast": "claude-s
                     "mistral": {"strong": "mistral-large-latest", "fast": "mistral-medium-latest", "cheap": "mistral-small-latest"},
                     # Z.ai: GLM-4.5-Flash is its free model; the strong tier needs balance on the account.
                     "zai": {"strong": "glm-4.6", "fast": "glm-4.5-flash", "cheap": "glm-4.5-flash"},
+                    # MO2A-2: Cloudflare Workers AI - Llama 4 Scout on every tier: it reads images, calls functions and
+                    # has a 131k-token window (its model page, read 2026-10-22). It counts against the account's 10,000
+                    # free Neurons a day, then the Workers Paid plan.
+                    "cloudflare": {"strong": "@cf/meta/llama-4-scout-17b-16e-instruct", "fast": "@cf/meta/llama-4-scout-17b-16e-instruct",
+                                   "cheap": "@cf/meta/llama-4-scout-17b-16e-instruct"},
                     "rule_based": {"strong": RULE_BASED_MODEL, "fast": RULE_BASED_MODEL, "cheap": RULE_BASED_MODEL}}
 
 
@@ -240,6 +245,9 @@ def _openai_error_code(response: httpx.Response) -> str:
         body = response.json()
     except ValueError:
         return ""
+    if isinstance(body, dict) and isinstance(body.get("errors"), list):
+        # MO2A-2: the Cloudflare API envelope - {"success": false, "errors": [{"code": 3036, "message": "..."}]}.
+        return " ".join(str(e.get("code")) for e in body["errors"] if isinstance(e, dict) and e.get("code") is not None)
     err = body.get("error") if isinstance(body, dict) else None
     if not isinstance(err, dict):
         return ""
@@ -251,6 +259,16 @@ def _openai_error_code(response: httpx.Response) -> str:
 _ZAI_NO_CREDIT_CODES = ("1113",)
 _ZAI_RATE_CODES = ("1302",)
 _NO_CREDIT_WORDS = ("insufficient balance", "insufficient credits", "credit balance", "requires more credits", "recharge")
+# MO2A-2: Cloudflare Workers AI's own codes (developers.cloudflare.com/workers-ai/platform/errors, read 2026-10-22):
+# 3036 "used up your daily free allocation of 10,000 neurons" (HTTP 429) and 5035 "requires a Workers Paid plan" (403) are
+# no credit; 3040 "capacity temporarily exceeded" (429) is a rate limit; 5007 / 3042 (no such / invalid model) and 5016
+# (model terms not agreed) are a model problem; 3023 (account blocked) means the key cannot be used. The general
+# Cloudflare API codes 10000 (authentication error) and 7003 (the Account ID in the address is not valid) are not on
+# that page but come back in the same envelope: the token or the Account ID is wrong.
+_CF_NO_CREDIT_CODES = ("3036", "5035")
+_CF_RATE_CODES = ("3040",)
+_CF_MODEL_CODES = ("5007", "3042", "5016")
+_CF_AUTH_CODES = ("3023", "10000", "7003")
 
 
 def _openai_kind(response: httpx.Response, detail: str = "") -> str:
@@ -261,13 +279,15 @@ def _openai_kind(response: httpx.Response, detail: str = "") -> str:
     code = _openai_error_code(response)
     words = code.split()
     low = (detail or "").lower()
-    if status == 401 or "invalid_api_key" in code:
+    if status == 401 or "invalid_api_key" in code or any(c in words for c in _CF_AUTH_CODES):
         return "auth"
-    if ("insufficient_quota" in code or "billing" in code or status == 402 or any(c in words for c in _ZAI_NO_CREDIT_CODES)
+    if ("insufficient_quota" in code or "billing" in code or status == 402 or any(c in words for c in _ZAI_NO_CREDIT_CODES + _CF_NO_CREDIT_CODES)
             or any(w in low for w in _NO_CREDIT_WORDS)):
         return "no_credit"
-    if any(c in words for c in _ZAI_RATE_CODES):
+    if any(c in words for c in _ZAI_RATE_CODES + _CF_RATE_CODES):
         return "rate"
+    if any(c in words for c in _CF_MODEL_CODES):
+        return "model"
     if status == 429:
         return "rate"
     if status == 404 or "model_not_found" in code or "model_decommissioned" in code:
@@ -662,8 +682,11 @@ def _error_detail(response: httpx.Response, secret: Optional[str] = None) -> str
         text = response.text or ""
     else:
         err = body.get("error") if isinstance(body, dict) else None
+        errors = body.get("errors") if isinstance(body, dict) else None
         if isinstance(err, dict):
             text = str(err.get("message") or err.get("type") or "")
+        elif isinstance(errors, list) and errors and isinstance(errors[0], dict):
+            text = str(errors[0].get("message") or "")          # MO2A-2: the Cloudflare API envelope
         else:
             text = json.dumps(body) if body else ""
     if secret:
@@ -781,8 +804,16 @@ BYOK_PROVIDERS = ("anthropic", "openai", "gemini")
 #   1113 (no balance) and 1302 (rate limit) with HTTP 429; GLM-4.5-Flash is free. Source: docs.z.ai (search;
 #   api-reference/llm/chat-completion, api-reference/api-code, guides/llm/glm-4.5). Text only here: its vision models
 #   (GLM-4.6V, GLM-5V-Turbo, github.com/zai-org/GLM-V) were not checked against the API reference.
-# Cloudflare Workers AI is not here yet: its OpenAI-compatible URL needs the account id next to the token
-# (developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility), which one paste cannot carry.
+# - Cloudflare Workers AI (MO2A-2, read 2026-10-22): POST
+#   https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions, `Authorization: Bearer <API token>`,
+#   `max_tokens`, images as `image_url` parts with a data URL (Llama 4 Scout reads them; HTTP image URLs are refused);
+#   errors in the Cloudflare envelope `{"errors": [{"code", "message"}]}` (codes above). The address needs the Account
+#   ID, so the stored secret is "<account id>:<token>" (`cloudflare_parts`). developers.cloudflare.com could not be
+#   opened from the build machine, so this was read from Cloudflare's own docs source, github.com/cloudflare/
+#   cloudflare-docs (src/content/docs/workers-ai/configuration/open-ai-compatibility.mdx, get-started/rest-api.mdx,
+#   platform/errors.mdx, platform/pricing.mdx, platform/limits.mdx, platform/data-usage.mdx,
+#   docs/fundamentals/api/get-started/token-formats.mdx and src/content/workers-ai-models/
+#   llama-4-scout-17b-16e-instruct.json).
 OPENAI_COMPATIBLE: Dict[str, Dict[str, Any]] = {
     "openrouter": {"base_url": "https://openrouter.ai", "chat_path": "/api/v1/chat/completions",
                    "max_tokens_field": "max_completion_tokens", "image_as_string": False, "headroom": True},
@@ -792,17 +823,38 @@ OPENAI_COMPATIBLE: Dict[str, Dict[str, Any]] = {
                 "max_tokens_field": "max_tokens", "image_as_string": True, "headroom": False},
     "zai": {"base_url": "https://api.z.ai", "chat_path": "/api/paas/v4/chat/completions",
             "max_tokens_field": "max_tokens", "image_as_string": False, "headroom": True},
+    # The `{account_id}` is filled from the stored secret (cloudflare_parts) - never from a request.
+    "cloudflare": {"base_url": "https://api.cloudflare.com", "chat_path": "/client/v4/accounts/{account_id}/ai/v1/chat/completions",
+                   "max_tokens_field": "max_tokens", "image_as_string": False, "headroom": False},
 }
 # Every provider a user's own key can be for under "Connect AI in one paste" (`ai_one_key`), free Google Gemini first.
-CONNECT_PROVIDERS = ("gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai")
+CONNECT_PROVIDERS = ("gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai", "cloudflare")
 
 # The BYOK providers that read chart images. A text-only provider (Groq, Z.ai) is never sent a chart: the vision
 # features refuse it with the plain "cannot read charts" sentence.
-VISION_PROVIDERS = ("anthropic", "openai", "gemini", "openrouter", "mistral")
+VISION_PROVIDERS = ("anthropic", "openai", "gemini", "openrouter", "mistral", "cloudflare")
 # The models of each vision provider that read images (its tier models above). A vision call on a model outside its
 # list is moved to the provider's first one.
 VISION_MODELS: Dict[str, Any] = {"mistral": ("mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"),
-                                 "openrouter": ("openrouter/free", "openrouter/auto")}
+                                 "openrouter": ("openrouter/free", "openrouter/auto"),
+                                 "cloudflare": ("@cf/meta/llama-4-scout-17b-16e-instruct",)}
+
+# MO2A-2: a Cloudflare Account ID (32 hex characters). The stored Cloudflare secret is "<account id>:<token>".
+_CF_ACCOUNT_ID = re.compile(r"^[0-9a-f]{32}$")
+CLOUDFLARE_SEPARATOR = ":"
+
+
+def cloudflare_secret(account_id: str, token: str) -> str:
+    """The one string stored (sealed) for a Cloudflare key: the Account ID and the API token."""
+    return f"{account_id}{CLOUDFLARE_SEPARATOR}{token}"
+
+
+def cloudflare_parts(secret: str) -> Tuple[str, str]:
+    """(account id, token) of a stored Cloudflare secret; ProviderError (kind `auth`) when it is not one."""
+    account, sep, token = (secret or "").partition(CLOUDFLARE_SEPARATOR)
+    if not sep or not token or not _CF_ACCOUNT_ID.match(account):
+        raise ProviderError("The stored Cloudflare key has no valid Account ID", kind="auth")
+    return account, token
 
 
 # A provider whose default models are free ones that may train on what they are sent (OpenRouter's Free Models Router):
@@ -858,6 +910,10 @@ def build_byok_provider(name: str, api_key: str, model: str, client: Optional[An
     if name == "gemini":
         return GeminiProvider(api_key=api_key, model=model, client=client, tier=tier)
     spec = OPENAI_COMPATIBLE.get(name)
+    if spec is not None and name == "cloudflare":
+        account, token = cloudflare_parts(api_key)
+        return OpenAIProvider(api_key=token, model=model, client=client, name=name, tier=tier,
+                              **{**spec, "chat_path": str(spec["chat_path"]).format(account_id=account)})
     if spec is not None:
         return OpenAIProvider(api_key=api_key, model=model, client=client, name=name, tier=tier, **spec)
     raise ProviderError(f"Unknown provider '{name}'; one of {CONNECT_PROVIDERS}")

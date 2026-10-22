@@ -13,6 +13,11 @@ import { PROVIDER_FACTS, type AiProviderName } from "./keyFormats";
  * console.groq.com/docs (quickstart, your-data), Mistral's docs source github.com/mistralai/platform-docs-public
  * (activate-and-generate-api-key) and docs.z.ai (quick-start, the API keys page link). Re-check them in the browser at
  * the next review.
+ * MO2A-2: the Cloudflare Workers AI guide was checked on 2026-10-22 the same way: developers.cloudflare.com could not be
+ * opened from the build machine, so the steps were read from Cloudflare's own docs source, github.com/cloudflare/
+ * cloudflare-docs (workers-ai/get-started/rest-api.mdx: Workers AI page -> Use REST API -> Create a Workers AI API Token
+ * -> Copy API Token, and Get Account ID; platform/pricing.mdx: the free daily allowance resets at 00:00 UTC; and
+ * fundamentals/api/get-started/token-formats.mdx: `cfut_` tokens).
  *
  * - `key_page`: the provider's own key page, opened in a new tab. `checked_on`: the day someone last opened that page
  *   and checked the steps against it; a test (src/aiKeys/aiKeys.test.tsx) fails 120 days later, so it is checked again.
@@ -215,6 +220,30 @@ export const KEY_GUIDES: readonly KeyGuide[] = [
       { problem: "Authentication failed", fix: "Copy the whole key again, both parts and the dot, and paste it here.", match: /auth|401|invalid/i },
       { problem: "Insufficient balance or no resource package", fix: "Add balance on the Z.ai billing page; the free Flash model keeps working without it.", match: /balance|recharge|1113|credit/i },
       { problem: "Rate limit reached for requests", fix: "Wait a minute and try again.", match: /rate|429|1302/i },
+    ],
+  },
+  {
+    provider: "cloudflare",
+    name: "Cloudflare Workers AI",
+    cost: "Free tier",
+    recommended: false,
+    key_page: { label: "Open Cloudflare key page", url: "https://dash.cloudflare.com/?to=/:account/ai/workers-ai" },
+    checked_on: "2026-10-22",
+    steps: [
+      { text: "Press Open Cloudflare key page and sign in to Cloudflare, or create a free account. It opens the Workers AI page.", screenshot: "The Cloudflare sign-in page" },
+      { text: "On the Workers AI page, press Use REST API.", screenshot: "The Use REST API button on the Workers AI page" },
+      { text: "Press Create a Workers AI API Token, check the details it fills in and press Create API Token.", screenshot: "The Create a Workers AI API Token button" },
+      { text: "Press Copy API Token.", screenshot: "A new token with its copy button (token hidden)" },
+      { text: "Under Get Account ID, copy the Account ID too. Cloudflare needs both." },
+      { text: "Come back to this page and paste the token in the box below. Paste the Account ID next to it, or in the Account ID box that appears." },
+    ],
+    looks_like: { prefix: "cfut_", text: "The token starts with cfut_ (older tokens are about 40 letters and numbers with no fixed start). The Account ID is 32 letters and numbers." },
+    is_it_free: "Yes, to start. Every Cloudflare account gets a free daily allowance of Workers AI use, no card needed; it starts again each day at 05:30 IST, and more needs the Workers Paid plan. Cloudflare says it does not keep or train on what you send, and the model AiAlgoDesk uses there reads charts. Cloudflare's pricing page has the current allowance.",
+    errors: [
+      { problem: "Authentication error", fix: "Copy the token again with Copy API Token and paste it here with your Account ID.", match: /auth|401|10000|did not work|invalid/i },
+      { problem: "Could not route to your account", fix: "The Account ID is not right. Copy it again under Get Account ID on the Workers AI page.", match: /account|route|7003|identifier/i },
+      { problem: "You have used up your daily free allocation", fix: "The free daily allowance is used up. It starts again at 05:30 IST, or move to the Workers Paid plan.", match: /allocation|neurons|3036|paid plan|credit/i },
+      { problem: "Capacity temporarily exceeded", fix: "Cloudflare is busy. Wait a minute and try again.", match: /capacity|3040|rate|429|too many/i },
     ],
   },
 ];

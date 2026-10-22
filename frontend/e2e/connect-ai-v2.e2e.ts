@@ -16,6 +16,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  *   privacy notice, the provider's data line and (Groq, Z.ai) "cannot read charts" show before saving; the guides drawer
  *   lists every provider with its tags, free Google Gemini first. Baselines `connect-ai-v2-paste-groq-<width>-<theme>.png`
  *   and `connect-ai-v2-guides-drawer-<width>-<theme>.png`.
+ * - MO2A-2: a Cloudflare token alone opens the "Cloudflare Account ID" box and nothing is sent until it holds an Account
+ *   ID; a token pasted next to its Account ID goes in one paste. Baseline `connect-ai-v2-paste-cloudflare-<width>-<theme>.png`.
  * Key-shaped strings are built at run time from parts (this repository is public); none is a real key.
  * After an intended change: `npx playwright test --project=phone e2e/connect-ai-v2.e2e.ts --update-snapshots`.
  */
@@ -33,10 +35,17 @@ const MISTRAL_SHAPED = () => "q7W3".repeat(8);
 const GROQ = { ...NONE, connected: true, provider: "groq", label: "Groq", key_end: "q7W3", ok: true, tested_at: "2026-10-22T05:30:00+00:00",
   vision: false, privacy: "Groq says it does not keep what you send by default.",
   consent: { accepted: true, text: "Your questions and chart images are sent to Groq to answer you. Never your broker login or passwords." } };
-const NO_VISION = "This provider cannot read charts. Vision needs Gemini, Claude, OpenAI, OpenRouter or Mistral.";
+const NO_VISION = "This provider cannot read charts. Vision needs Gemini, Claude, OpenAI, OpenRouter, Mistral or Cloudflare Workers AI.";
 const NOTICE = "Free tiers of some providers may use your prompts, charts and data to improve or train their models. Use a paid tier for private strategies.";
 
-interface Calls { connect: { api_key: string; provider?: string; consent: boolean }[]; disconnect: number }
+const CLOUDFLARE_SHAPED = () => ["cfut", "_", "q7W3".repeat(12)].join("");
+const CF_ACCOUNT = "0123456789abcdef".repeat(2);
+const CLOUDFLARE = { ...NONE, connected: true, provider: "cloudflare", label: "Cloudflare Workers AI", key_end: "q7W3", ok: true,
+  tested_at: "2026-10-22T05:30:00+00:00", vision: true,
+  privacy: "Cloudflare says it does not keep what you send after answering and does not train models on it.",
+  consent: { accepted: true, text: "Your questions and chart images are sent to Cloudflare Workers AI to answer you. Never your broker login or passwords." } };
+
+interface Calls { connect: { api_key: string; provider?: string; consent: boolean; account_id?: string }[]; disconnect: number }
 
 async function open(page: Page, path: string, { theme = "light", connected = false, connectAs = CLAUDE }:
   { theme?: "light" | "dark"; connected?: boolean; connectAs?: Record<string, unknown> } = {}): Promise<Calls> {
@@ -116,6 +125,15 @@ for (const size of SIZES) {
         await expect(section.locator("[data-provider-terms='groq']")).toContainText(NO_VISION);
         await section.scrollIntoViewIfNeeded();
         await expect(section).toHaveScreenshot(`connect-ai-v2-paste-groq-${size.width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+      });
+
+      test(`MO2A-2: a Cloudflare token before its Account ID looks the same (${theme})`, async ({ page }) => {
+        await open(page, "/settings/ai", { theme });
+        const section = page.locator("#ai");
+        await section.getByLabel("Paste your AI key").fill(CLOUDFLARE_SHAPED());
+        await expect(section.locator("[data-account-id]")).toBeVisible();
+        await section.scrollIntoViewIfNeeded();
+        await expect(section).toHaveScreenshot(`connect-ai-v2-paste-cloudflare-${size.width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
       });
 
       test(`MO2 A: the guides drawer with every provider looks the same (${theme})`, async ({ page }) => {
@@ -225,13 +243,36 @@ test.describe("connect AI with the MO2 A providers", () => {
     await expect.poll(() => calls.connect).toEqual([{ api_key: key, provider: "mistral", consent: true }]);
   });
 
+  test("MO2A-2: a Cloudflare token alone asks for the Account ID and sends both; one paste with both needs nothing more", async ({ page }) => {
+    const calls = await open(page, "/settings/ai", { connectAs: CLOUDFLARE });
+    const section = page.locator("#ai");
+    const token = CLOUDFLARE_SHAPED();
+    await section.getByLabel("Paste your AI key").fill(token);
+    await expect(section.locator("[data-detected='cloudflare']")).toHaveText("This is a Cloudflare Workers AI key.");
+    await section.locator("[data-consent] input").click();
+    await section.getByLabel("Cloudflare Account ID").fill("1234");
+    await expect(section.locator("[data-account-id]")).toContainText("An Account ID is 32 letters and numbers.");
+    expect(calls.connect).toEqual([]);                                  // nothing is sent without a valid Account ID
+    await section.getByLabel("Cloudflare Account ID").fill(CF_ACCOUNT);
+    await expect(section.locator("[data-connected-line]")).toContainText("Connected · Cloudflare Workers AI · key …q7W3");
+    expect(calls.connect).toEqual([{ api_key: token, provider: "cloudflare", consent: true, account_id: CF_ACCOUNT }]);
+
+    await section.getByRole("button", { name: "Disconnect" }).click();
+    await section.getByLabel("Paste your AI key").fill(`${CF_ACCOUNT} ${token}`);
+    await expect(section.locator("[data-detected='cloudflare']")).toHaveText("This is a Cloudflare Workers AI key with its Account ID.");
+    await expect(section.locator("[data-account-id]")).toHaveCount(0);
+    await section.locator("[data-consent] input").click();
+    await expect.poll(() => calls.connect.length).toBe(2);
+    expect(calls.connect[1]).toEqual({ api_key: `${CF_ACCOUNT} ${token}`, provider: "cloudflare", consent: true });
+  });
+
   test("the drawer lists every provider in order with its tags; a text-only guide says it cannot read charts", async ({ page }) => {
     await open(page, "/settings/ai");
     await page.locator("#ai").getByRole("button", { name: "Get a free key" }).click();
     const drawer = page.locator("[data-key-guides-drawer]");
-    await expect(drawer.locator("[data-provider]")).toHaveCount(7);
+    await expect(drawer.locator("[data-provider]")).toHaveCount(8);
     const order = await drawer.locator("[data-provider]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-provider")));
-    expect(order).toEqual(["gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai"]);
+    expect(order).toEqual(["gemini", "anthropic", "openai", "openrouter", "groq", "mistral", "zai", "cloudflare"]);
     await expect(drawer.locator("[data-provider='openrouter'] [data-tag='vision']")).toBeVisible();
     await expect(drawer.locator("[data-provider='groq'] [data-tag='vision']")).toHaveCount(0);
     await expect(drawer.locator("[data-provider='mistral'] [data-tag='may-train']")).toBeVisible();

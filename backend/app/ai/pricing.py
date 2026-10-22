@@ -40,9 +40,19 @@ _LIST_PRICES: Dict[str, Price] = {
     "openai/gpt-oss-120b": (0.5, 2.0, 0.5), "openai/gpt-oss-20b": (0.25, 1.0, 0.25),
     "mistral-large": (2.0, 6.0, 0.2), "mistral-medium": (1.0, 4.0, 0.1), "mistral-small": (0.3, 1.0, 0.03),
     "glm-4.6": (1.0, 4.0, 0.2),
+    # MO2A-2: Cloudflare Workers AI list prices (developers.cloudflare.com/workers-ai/platform/pricing, read 2026-10-22
+    # from its docs source). The 10,000 free Neurons a day are not tracked here, so every call counts at the list price:
+    # a user's own limit is never under-counted. No cached-input price, so the cache column is the input price.
+    "@cf/meta/llama-4-scout-17b-16e-instruct": (0.27, 0.85, 0.27),
+    "@cf/meta/llama-3.3-70b-instruct-fp8-fast": (0.293, 2.253, 0.293),
+    "@cf/openai/gpt-oss-120b": (0.35, 0.75, 0.35), "@cf/openai/gpt-oss-20b": (0.2, 0.3, 0.2),
+    "@cf/mistralai/mistral-small-3.1-24b-instruct": (0.351, 0.555, 0.351),
+    # The dearest rows on that page, so a Cloudflare model this table does not know is counted at or above its price.
+    "@cf/zai-org/glm-5.3": (1.4, 4.4, 0.26), "@cf/meta/llama-2-7b-chat-fp16": (0.556, 6.667, 0.556),
 }
 _PROVIDER_PREFIX: Dict[str, Union[str, Tuple[str, ...]]] = {"anthropic": "claude-", "openai": ("gpt-", "o1", "o3", "o4"), "gemini": "gemini-",
-                    "groq": "openai/gpt-oss", "mistral": "mistral-", "zai": "glm-"}
+                    "groq": "openai/gpt-oss", "mistral": "mistral-", "zai": "glm-",
+                    "cloudflare": "@cf/"}
 _prices: Dict[str, Price] = {}
 
 

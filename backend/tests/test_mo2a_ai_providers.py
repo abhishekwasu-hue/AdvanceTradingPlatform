@@ -295,7 +295,7 @@ def test_the_vision_reviews_never_pick_a_provider_added_for_the_connect_panel(on
 
 def test_the_picker_route_accepts_only_known_provider_ids(one_key):
     headers, _ = _user("mo2a-picker@example.com")
-    bad = _connect(headers, MISTRAL_KEY, consent=True, provider="cloudflare")
+    bad = _connect(headers, MISTRAL_KEY, consent=True, provider="cohere")
     assert bad.status_code == 422
 
 

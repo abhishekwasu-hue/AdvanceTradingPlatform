@@ -1,5 +1,5 @@
 {
-  "_about": "Settings redesign A (review R5): the AI key-format table and its cases. Synthetic, obviously fake keys only. backend/app/ai/key_formats.py and frontend/src/aiKeys/keyFormats.ts must agree with every row; frontend/src/aiKeys/__fixtures__/key_formats.json is a byte-identical copy. Master Order 2 part A added OpenRouter and Groq as providers, the provider facts and the picker order.",
+  "_about": "Settings redesign A (review R5): the AI key-format table and its cases. Synthetic, obviously fake keys only. backend/app/ai/key_formats.py and frontend/src/aiKeys/keyFormats.ts must agree with every row; frontend/src/aiKeys/__fixtures__/key_formats.json is a byte-identical copy. Master Order 2 part A added OpenRouter and Groq as providers, the provider facts and the picker order. MO2A-2 added Cloudflare Workers AI (cfut_ / cfat_ tokens, the cfk_ Global API Key refused) and the account_id_cases: a token pasted next to its Account ID.",
   "table": [
     {
       "prefix": "sk-ant-sid",
@@ -62,6 +62,12 @@
       "name": "OpenAI admin key"
     },
     {
+      "prefix": "cfk_",
+      "kind": "admin",
+      "provider": null,
+      "name": "Cloudflare Global API Key"
+    },
+    {
       "prefix": "sk-or-",
       "kind": "provider",
       "provider": "openrouter",
@@ -72,6 +78,18 @@
       "kind": "provider",
       "provider": "groq",
       "name": "Groq"
+    },
+    {
+      "prefix": "cfut_",
+      "kind": "provider",
+      "provider": "cloudflare",
+      "name": "Cloudflare Workers AI"
+    },
+    {
+      "prefix": "cfat_",
+      "kind": "provider",
+      "provider": "cloudflare",
+      "name": "Cloudflare Workers AI"
     },
     {
       "prefix": "xai-",
@@ -124,7 +142,8 @@
     "openrouter": true,
     "groq": false,
     "mistral": true,
-    "zai": true
+    "zai": true,
+    "cloudflare": false
   },
   "cases": [
     {
@@ -248,6 +267,51 @@
       "provider": null
     },
     {
+      "key": "cfut_FAKEFAKEtestonlycloudflare0000000000000000000000",
+      "kind": "provider",
+      "provider": "cloudflare"
+    },
+    {
+      "key": "cfat_FAKEFAKEtestonlycloudflare0000000000000000000000",
+      "kind": "provider",
+      "provider": "cloudflare"
+    },
+    {
+      "key": "cfk_FAKEFAKEtestonlyglobalapikey000000000000000000000",
+      "kind": "admin",
+      "provider": null
+    },
+    {
+      "key": "0123456789abcdef0123456789abcdef cfut_FAKEFAKEtestonlycloudflare0000000000000000000000",
+      "kind": "provider",
+      "provider": "cloudflare"
+    },
+    {
+      "key": "cfat_FAKEFAKEtestonlycloudflare0000000000000000000000\n0123456789ABCDEF0123456789ABCDEF",
+      "kind": "provider",
+      "provider": "cloudflare"
+    },
+    {
+      "key": "0123456789abcdef0123456789abcdef, FAKEFAKEtestonlyCloudflareOldToken000000",
+      "kind": "provider",
+      "provider": "cloudflare"
+    },
+    {
+      "key": "FAKEFAKEtestonlyCloudflareOldToken000000",
+      "kind": "unknown",
+      "provider": null
+    },
+    {
+      "key": "0123456789abcdef0123456789abcdef",
+      "kind": "unknown",
+      "provider": null
+    },
+    {
+      "key": "0123456789abcdef0123456789abcdef sk-or-v1-FAKEFAKE-test-only-eeeeeeeeeeeeeeeeeeee-5555",
+      "kind": "provider",
+      "provider": "openrouter"
+    },
+    {
       "key": "   ",
       "kind": "empty",
       "provider": null
@@ -302,6 +366,13 @@
       "vision": false,
       "may_train": true,
       "privacy": "Z.ai does not say clearly what its free models keep, so AiAlgoDesk treats them as if they may use what you send."
+    },
+    "cloudflare": {
+      "name": "Cloudflare Workers AI",
+      "free_tier": true,
+      "vision": true,
+      "may_train": false,
+      "privacy": "Cloudflare says it does not keep what you send after answering and does not train models on it."
     }
   },
   "connect_order": [
@@ -311,13 +382,47 @@
     "openrouter",
     "groq",
     "mistral",
-    "zai"
+    "zai",
+    "cloudflare"
   ],
   "picker_order": [
     "gemini",
     "anthropic",
     "openai",
     "mistral",
-    "zai"
+    "zai",
+    "cloudflare"
+  ],
+  "account_id_cases": [
+    {
+      "paste": "0123456789abcdef0123456789abcdef cfut_FAKEFAKEtestonlycloudflare0000000000000000000000",
+      "account_id": "0123456789abcdef0123456789abcdef",
+      "rest": "cfut_FAKEFAKEtestonlycloudflare0000000000000000000000"
+    },
+    {
+      "paste": "  cfat_FAKEFAKEtestonlycloudflare0000000000000000000000\n0123456789ABCDEF0123456789ABCDEF  ",
+      "account_id": "0123456789abcdef0123456789abcdef",
+      "rest": "cfat_FAKEFAKEtestonlycloudflare0000000000000000000000"
+    },
+    {
+      "paste": "\"0123456789abcdef0123456789abcdef\", 'FAKEFAKEtestonlyCloudflareOldToken000000'",
+      "account_id": "0123456789abcdef0123456789abcdef",
+      "rest": "FAKEFAKEtestonlyCloudflareOldToken000000"
+    },
+    {
+      "paste": "cfut_FAKEFAKEtestonlycloudflare0000000000000000000000",
+      "account_id": null,
+      "rest": "cfut_FAKEFAKEtestonlycloudflare0000000000000000000000"
+    },
+    {
+      "paste": "0123456789abcdef0123456789abcdef 0123456789abcdef0123456789abcdef",
+      "account_id": null,
+      "rest": "0123456789abcdef0123456789abcdef 0123456789abcdef0123456789abcdef"
+    },
+    {
+      "paste": "0123456789abcdef0123456789abcdef cfut_FAKEFAKEtestonlycloudflare0000000000000000000000 extra",
+      "account_id": null,
+      "rest": "0123456789abcdef0123456789abcdef cfut_FAKEFAKEtestonlycloudflare0000000000000000000000 extra"
+    }
   ]
 }

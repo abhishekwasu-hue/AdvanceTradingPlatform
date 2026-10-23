@@ -13,6 +13,8 @@ engine the Backtesting page uses) and reports only facts:
 * the walk-forward windows (`app/backtest/robustness.walk_forward`, the same parameters on each window);
 * the deflated Sharpe ratio (`app/backtest/validation.deflated_sharpe`), counted as ONE try - every change the trader
   tests is another try, and many tries make a good-looking result more likely by luck (said in the answer);
+* the losses-in-a-row pause (CP6-15): when the trader's limit was reached, whether each pause ended at the next session
+  or - under "Pause until I resume", which nobody can do inside a test - held to the end of the run;
 * the operator's sealed holdout (`BACKTEST_HOLDOUT_START`, `app/backtest/data_policy`) is never touched: its bars are
   dropped before anything runs, and the count is reported.
 
@@ -111,6 +113,9 @@ def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: 
     whole = run_backtest(strategy, df, symbol.upper(), base_tf, risk)
     out["whole"] = _part(whole, df, capital)
     out["sample"] = "ok" if whole.total_trades >= need else "too_few"
+    # CP6-15: what the losses-in-a-row pause did on the whole window (None when it never engaged). Under "Pause until I
+    # resume" nobody can resume a test, so the pause held to the end and the answer says so plainly.
+    out["loss_streak"] = whole.loss_streak
 
     cut = int(len(df) * (1 - LATER_SHARE))
     earlier_df, later_df = df.iloc[:cut], df.iloc[cut:]

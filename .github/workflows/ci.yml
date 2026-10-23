@@ -9,9 +9,14 @@ on:
 
 # One CI run per commit: a push to an in-repo branch already runs every job on that sha, so the
 # pull_request event only has to cover forks (its jobs are skipped otherwise). A newer push to the
-# same feature branch cancels the run of the one it replaced; main is never cancelled.
+# same feature branch cancels the run of the one it replaced.
+# A3 (review R3): every main commit gets a result, because `atp.sh deploy` deploys only a commit whose run here
+# passed. A group allows one running and ONE pending run, so a shared main group silently cancelled the queued run
+# whenever a third push arrived; main pushes therefore get a group of their own sha and run side by side.
+# Cost: public repository, so GitHub-hosted runner minutes are free; the limit is the account's concurrent jobs
+# (20 on the free plan), so a burst of merges queues instead of being cancelled (docs/deploy/HOSTINGER_RUNBOOK.md 8a).
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  group: ci-${{ github.event_name }}-${{ github.ref == 'refs/heads/main' && github.sha || github.head_ref || github.ref_name }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # P0.7: every third-party action is pinned to a commit SHA (the tag it stands for is in the comment), so a
@@ -240,7 +245,7 @@ jobs:
   frontend:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40  # the build + unit + e2e run reached the old 25-minute limit (cancelled runs on #438 and #450)
     defaults:
       run:
         working-directory: frontend

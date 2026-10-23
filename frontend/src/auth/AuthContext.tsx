@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, clearToken, setToken, tryRefresh } from "../api/client";
+import { endView } from "../api/viewAs";
+import { currentView } from "../api/viewState";
 import type { UserResponse } from "../types";
 import type { LegalAckBody } from "../legal/legal";
 import { clearSignIn, markSignIn } from "../broker/signIn";
@@ -92,6 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() {
+    // MO3-A1: "Sign out" during a read-only support view ends the view (the admin stays signed in; the banner's host
+    // brings the admin back) - it never signs the person out.
+    if (currentView()) { void endView(); return; }
     // Best effort server-side revoke; the local tokens are cleared regardless.
     api.logout().catch(() => {});
     clearToken();

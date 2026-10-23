@@ -223,6 +223,8 @@ export interface BacktestResult {
   run_id?: number | null;
   // Phase W: present on an option backtest.
   options?: OptionBacktestSummary | null;
+  // CP6-15: what the losses-in-a-row pause did in this run; absent when the limit was never reached.
+  loss_streak?: { mode: LossStreakPause; limit: number; pauses: number; first_paused_at: string | null; held_to_end: boolean; note: string } | null;
 }
 
 // Phase W: historical option backtests.
@@ -429,6 +431,23 @@ export interface RiskConfig {
   dd_level_1_pct: number;
   dd_level_2_pct: number;
   event_size_cut_pct: number;
+  /** CP6-15: when the losses-in-a-row pause ends (the server's default is "next_session"). */
+  loss_streak_pause?: LossStreakPause;
+}
+
+export type LossStreakPause = "next_session" | "until_resume";
+
+/** CP6-15: GET /api/risk-settings/loss-streak - the losses in a row as the risk engine counts them now. */
+export interface LossStreakStatus {
+  mode: LossStreakPause;
+  mode_label: string;
+  limit: number;
+  losses_in_a_row: number;
+  paused: boolean;
+  can_resume: boolean;
+  ends: string | null;
+  resumed_at: string | null;
+  exits_blocked: false;
 }
 
 export type RiskCeilings = Record<string, number>;
@@ -947,6 +966,8 @@ export type ExecutionMode = "PAPER" | "LIVE";
 
 export interface Deployment {
   id: number;
+  /** Strategy templates section 5: the bot's exit choice as stored (null: none chosen). */
+  template_exits?: TemplateExitsRequest | null;
   regime_filter?: string[] | null;
   oi_gates?: string[] | null;
   holding?: string;
@@ -1117,6 +1138,17 @@ export interface DeploymentCreateRequest extends ContractRules {
   routing_policy?: RoutingPolicy | null;
   route_across_brokers?: boolean;
   exit_rules?: ExitRules | null;
+  /** Strategy templates section 5: a template's own exit choice (omitted = the template's level as the stop, no target). */
+  template_exits?: TemplateExitsRequest | null;
+}
+
+/** Strategy templates section 5 (src/strategyTemplates/exits.ts): where a template bot's stop comes from, when it takes profit. */
+export interface TemplateExitsRequest {
+  stop_source?: "TEMPLATE_INVALIDATION" | "PREMIUM_PCT" | "CREDIT_PCT" | null;
+  target_rule?: "NONE" | "R_MULTIPLE" | "TEMPLATE_EXIT" | "CREDIT_PCT" | "WAVE_PROJECTION" | null;
+  target_r?: number | null;
+  target_base_wave?: string | null;
+  target_ratio?: number | null;
 }
 
 export type RoutingPolicy = "EXPLICIT" | "MOST_MARGIN" | "LEAST_UTILISED" | "FEWEST_POSITIONS";

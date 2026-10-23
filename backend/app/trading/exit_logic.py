@@ -63,11 +63,10 @@ def check_exit(trade: TradeRecord, current_price: float) -> Optional[Tuple[str, 
 def underlying_exit(direction: str, stop_loss: Optional[float], target1: Optional[float], target2: Optional[float], price: float) -> Optional[str]:
     """Which of the strategy's *underlying* levels `price` has crossed, if any - the same
     priority as `determine_exit_price` (stop, then the more ambitious target, then target 1),
-    tolerant of missing targets (an option deployment's strategy may only have a stop)."""
-    if stop_loss is None:
-        return None
+    tolerant of missing targets (an option deployment's strategy may only have a stop) and of a missing stop (strategy
+    templates section 5: a single option whose stop is the premium stop only still exits at its underlying target)."""
     is_long = direction == "LONG"
-    if (is_long and price <= stop_loss) or (not is_long and price >= stop_loss):
+    if stop_loss is not None and ((is_long and price <= stop_loss) or (not is_long and price >= stop_loss)):
         return "Stop Loss"
     if target2 is not None and ((is_long and price >= target2) or (not is_long and price <= target2)):
         return "Target 2"

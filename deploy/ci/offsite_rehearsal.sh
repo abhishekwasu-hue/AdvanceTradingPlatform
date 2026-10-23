@@ -17,8 +17,9 @@
 #   8. atp.sh deploy N               starts on it: deep health, the secrets key opens every organisation's data key
 #                                    (health runs check_secrets_key.py), the user from step 2 logs in, audit chain intact
 #
-# Also set for the rehearsal only, as in rollback_rehearsal.sh: ATP_ALLOW_UNMERGED=1, ATP_ALLOW_SESSION_RESTART=1 and
-# MIGRATION_FORCE=1 (CI may run in market hours on an empty database). Every value in .env is random and dies with $WORK.
+# Also set for the rehearsal only, as in rollback_rehearsal.sh: ATP_ALLOW_UNMERGED=1, ATP_ALLOW_SESSION_RESTART=1,
+# ATP_ALLOW_UNTESTED=1 with a reason (A3: the commit under test has no CI result yet) and MIGRATION_FORCE=1 (CI may
+# run in market hours on an empty database). Every value in .env is random and dies with $WORK.
 # Needs: a non-root user in the docker group, docker compose >= 2.24, ports 80/443 and 127.0.0.1:8000/5432/6379 free.
 # Writes $WORK/offsite_report.md (WORK: ATP_OFFSITE_REHEARSAL_DIR, default $RUNNER_TEMP/atp-offsite) and exits non-zero
 # when a step fails. `--down` removes the stack afterwards. Nothing here reaches a real bucket or the deployed host.
@@ -36,7 +37,7 @@ DOWN=0
 [ "${1:-}" = "--down" ] && DOWN=1
 [ "$(id -u)" != "0" ] || { echo "run as a non-root user in the docker group (deploy/atp.sh refuses root)" >&2; exit 2; }
 
-export ATP_DIR="$CLONE" ATP_ALLOW_UNMERGED=1 ATP_ALLOW_SESSION_RESTART=1 ATP_HEALTH_TIMEOUT="${ATP_HEALTH_TIMEOUT:-360}"
+export ATP_DIR="$CLONE" ATP_ALLOW_UNMERGED=1 ATP_ALLOW_SESSION_RESTART=1 ATP_ALLOW_UNTESTED=1 ATP_UNTESTED_REASON="CI rehearsal of this commit" ATP_HEALTH_TIMEOUT="${ATP_HEALTH_TIMEOUT:-360}"
 export ATP_FILES_BACKUP_DIR="$WORK/files"
 API="http://127.0.0.1:8000"
 DB="advance_trading_platform"

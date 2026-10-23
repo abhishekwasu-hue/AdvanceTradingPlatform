@@ -1,7 +1,12 @@
-# Phase P5: deploy main to the staging host over SSH. Runs only when the repository has the
-# STAGING_SSH_HOST / STAGING_SSH_USER / STAGING_SSH_KEY secrets; without them the job is skipped,
-# so forks and local clones are unaffected. The host needs docker compose and a checkout of this
-# repository at STAGING_REPO_PATH (default /opt/atp).
+# Phase P5: deploy main to the staging host over SSH. Runs only when the repository variable
+# STAGING_ENABLED is 'true' (with the STAGING_SSH_HOST / STAGING_SSH_USER / STAGING_SSH_KEY secrets
+# and STAGING_URL); otherwise the job is skipped, so forks and local clones are unaffected. The host
+# needs docker compose and a checkout of this repository at STAGING_REPO_PATH (default /opt/atp).
+#
+# A3 (review R4, RDY-2): there is NO staging host today - the staging is the CI staging stack
+# (staging-stack.yml: acceptance, rollback, offsite, load-500), which `atp.sh deploy` requires before production.
+# A second host is the owner's cost decision; if he buys one, it should pull GHCR images by digest and run
+# deploy/atp.sh with its own .env (scripts/deploy.sh here is the older path and is never used for production).
 name: Deploy staging
 
 on:
@@ -41,8 +46,17 @@ jobs:
             git fetch -q origin
             case "${DEPLOY_REF:-origin/main}" in -*|*[!A-Za-z0-9._/@^~+-]*) echo "refusing ref with unexpected characters" >&2; exit 1;; esac
             scripts/deploy.sh staging "${DEPLOY_REF:-origin/main}"
+      # A3 (review R4): the smoke test can fail. With staging switched on, an unset STAGING_URL, no answer after the
+      # retries, or an answer that is not {"status": "ok"} fails the job (it used to `|| echo` and always pass).
       - name: Smoke test
         env:
           STAGING_URL: ${{ vars.STAGING_URL }}
         run: |
-          curl -sf "${STAGING_URL:-http://localhost:18000}/api/system/health" || echo "smoke test skipped (STAGING_URL unset or unreachable from runner)"
+          if [ -z "${STAGING_URL:-}" ]; then
+            echo "::error title=staging smoke test::STAGING_URL is not set (repository variable) - cannot check the staging host"; exit 1
+          fi
+          body="$(curl -fsS --retry 10 --retry-delay 6 --retry-all-errors --max-time 10 "$STAGING_URL/api/system/health")" || {
+            echo "::error title=staging smoke test::$STAGING_URL/api/system/health did not answer"; exit 1; }
+          printf '%s' "$body" | python3 -c 'import json, sys; d = json.load(sys.stdin); sys.exit(0 if d.get("status") == "ok" else 1)' || {
+            echo "::error title=staging smoke test::health answered but not ok: $(printf '%s' "$body" | head -c 300)"; exit 1; }
+          echo "staging healthy: $body"

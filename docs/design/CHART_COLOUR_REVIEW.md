@@ -195,3 +195,28 @@ One draft PR each, behind `ui_v2`, with tests. No migration in any of them.
 7. `claude/colour-tokens`: new tokens in `tokens.css` (four variants, v2-scoped surfaces per CC-3), tailwind names, `tokens.test.ts` pairs and the distinct-hue test. `gen-palette.mjs` untouched.
 8. `claude/colour-components`: `Button` outline + v2 sizes (replacing the class-string copies), one `Chip` (merging `ChipV2` / `Badge`), `StatusChip`, `RangeBar`; Storybook; the one-solid-button e2e helper (warning).
 9. The comparison page for Abhi (before / after: Today, Option chain, Signals, Positions, Charts, Settings; 390 / 1440; light / dark), then page adoption PRs only after his OK, baselines refreshed per PR.
+
+## Part 3 build notes
+
+- The owner accepted CC-1..CC-14 as proposed (DECISIONS 23 Oct, #434); the build follows those defaults.
+- **PR 1 `claude/colour-tokens` (item 7).** `tokens.css` gains `--range` / `--range-track` (CC-4: a neutral track and an
+  amber-yellow marker, not an alias of warn), `--info-tint` and `--ai-tint`, in the dark, light and both colour-blind
+  blocks; Tailwind names `range`, `range-track`, `info-tint`, `ai-tint`. The deeper navy-slate dark surfaces
+  (surface, surface-1/2/3, inset, border, border-subtle, glass) sit under `:root[data-shell="v2"]:not([data-theme="light"])`
+  (CC-3): `AppShellV2` marks only its own `<div>` today, so nothing changes until the pages adopt the look. The chart
+  background does not move. Colour-blind mode: warn moves to a yellow / dark olive (CC-20), the AI violet is lighter
+  in the dark theme. `ui/tokens.test.ts`: AA pairs for the new tokens in six variants (incl. navy and navy colour-blind),
+  the existing pairs on navy, "no normal-theme value changes", and the distinct-hue test (OKLab distance, after a
+  deuteranopia simulation in colour-blind mode; up / down / warn / info / ai pairwise, range against all but warn).
+  `gen-palette.mjs` untouched.
+- **PR 2 `claude/colour-components` (item 8).** `Button` gains `outline` and the v2 size (`h-11 md:h-9`); `buttonClass()`
+  is the one class source, and `trading/PartsV2.tsx` `BUTTON_PRIMARY` / `BUTTON_SECONDARY` are now its output (same
+  classes plus `disabled:cursor-not-allowed`). The broker and admin class strings differ in size and focus (no `md:h-9`
+  on the broker buttons), so they stay until their pages adopt `Button`. `ui/Chip.tsx`: one chip (tones neutral /
+  brand / up / down / warn / info / ai; tint / outline / solid; pill / badge); `ChipV2` and `Badge` keep their exports
+  and render byte-identical markup (pinned). `FilterChip` (selected = brand outline + tint). `ui/StatusChip.tsx`
+  (connected / needs-action / error with `atStake` / info / paper / live). `ui/RangeBar.tsx` (`role="meter"`, low /
+  high as text). `e2e/solidBrand.ts`: counts the visible buttons and links painted with `--brand-fill` and adds a
+  `warning` annotation above one; called from `afterEach` in the Today, Option chain, Signals, Positions, Charts and
+  Settings specs. The two page-level `StatusChip`s (Settings, Signals) stay until adoption.
+

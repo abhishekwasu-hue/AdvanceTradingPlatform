@@ -28,19 +28,28 @@ from bench_backtest import crafted_bars  # noqa: E402
 
 GOLDEN = json.loads((BACKEND / "tests" / "golden" / "c2_default_models.json").read_text())
 RISK = RiskConfig(capital=1_000_000, risk_per_trade_pct=GOLDEN["risk_per_trade_pct"])
+# CP6-15: the golden was recorded when the losses-in-a-row counter reset only on a win. "Pause until I resume" is exactly
+# that counter in a backtest (nobody resumes a test), so the golden run uses it, and the pause report it adds - a field
+# the pre-C2 engine did not have - is left out of the hash. The default "next session" counter is tested in
+# tests/test_cp6_15_loss_streak.py.
+GOLDEN_RISK = RISK.model_copy(update={"loss_streak_pause": "until_resume"})
 
 
-def _run(strategy, models=None):
+def _run(strategy, models=None, risk=None):
     daily = strategy.timeframes[0] == "day"
     df = crafted_bars(208 if daily else 4, daily=daily)
-    return engine.run_backtest(strategy, df, "NIFTY 50", "day" if daily else "1min", RISK, models=models)
+    return engine.run_backtest(strategy, df, "NIFTY 50", "day" if daily else "1min", risk or RISK, models=models)
+
+
+def _golden_hash(result):
+    return result_hash(result.model_copy(update={"loss_streak": None}))
 
 
 @pytest.mark.parametrize("strategy_id", sorted(GOLDEN["results"]))
 def test_default_models_reproduce_the_pre_c2_engine_exactly(strategy_id):
     strategy = registry.get(strategy_id)
-    assert result_hash(_run(strategy)) == GOLDEN["results"][strategy_id]["result_hash"]
-    assert result_hash(_run(strategy, ModelSet())) == GOLDEN["results"][strategy_id]["result_hash"]
+    assert _golden_hash(_run(strategy, risk=GOLDEN_RISK)) == GOLDEN["results"][strategy_id]["result_hash"]
+    assert _golden_hash(_run(strategy, ModelSet(), risk=GOLDEN_RISK)) == GOLDEN["results"][strategy_id]["result_hash"]
 
 
 def test_golden_covers_every_registered_strategy():

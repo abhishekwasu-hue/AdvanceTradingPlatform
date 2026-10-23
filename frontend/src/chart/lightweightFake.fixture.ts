@@ -2,8 +2,33 @@
  * Test only: a stand-in for the slice of lightweight-charts v5 the v2 chart uses (`vi.mock("lightweight-charts", ...)`),
  * with native panes (a series added past the last pane opens a new one; a pane left empty is removed, as the library
  * does) and a record of every option change, so a test can tell an in-place change from a rebuild.
+ * Chart review (first PR): the price scale (`options / applyOptions / setAutoScale / getVisibleRange / setVisibleRange`),
+ * the time scale's scroll position (`scrollPosition / scrollToPosition / scrollToRealTime / resetTimeScale`), the
+ * crosshair handlers and `merged()` (the chart's options as the library would hold them) for the gesture tests.
  */
 type Options = Record<string, unknown>;
+
+const isObject = (v: unknown): v is Options => typeof v === "object" && v !== null && !Array.isArray(v);
+/** A deep merge like the library's `applyOptions` (objects merge, everything else replaces). */
+export function deepMerge(base: Options, change: Options): Options {
+  const out: Options = { ...base };
+  for (const [k, v] of Object.entries(change)) out[k] = isObject(v) && isObject(out[k]) ? deepMerge(out[k] as Options, v) : v;
+  return out;
+}
+
+export class FakePriceScale {
+  opts: Options = { autoScale: true, mode: 0, invertScale: false };
+  /** The visible price range; the library recomputes it while auto-scale is on, the fake keeps it. */
+  range: { from: number; to: number } | null = { from: 90, to: 110 };
+  constructor(private readonly chart: FakeChart, readonly id: string) {}
+  width() { return 0; }
+  options() { return this.opts; }
+  applyOptions(o: Options) { this.opts = deepMerge(this.opts, o); this.chart.calls.push(`priceScale.applyOptions:${this.id}`); }
+  setAutoScale(on: boolean) { this.applyOptions({ autoScale: on }); }
+  getVisibleRange() { return this.range; }
+  /** As the library: a range set by hand turns auto-scale off. */
+  setVisibleRange(r: { from: number; to: number }) { this.setAutoScale(false); this.range = { ...r }; this.chart.calls.push(`priceScale.setVisibleRange:${this.id}`); }
+}
 
 export class FakePriceLine {
   constructor(public options: Options) {}
@@ -48,8 +73,14 @@ export class FakeChart {
   applied: Options[] = [];
   paneList: FakePane[] = [new FakePane(this)];
   range: { from: number; to: number } | null = { from: 5, to: 50 };
+  /** Bars from the right edge to the latest bar (the library's `scrollPosition`): the default right offset is 4. */
+  position = 4;
   removed = false;
+  timeOptions: Options = { rightOffset: 4, barSpacing: 6 };
   private rangeHandlers: ((r: unknown) => void)[] = [];
+  crosshairHandlers: ((p: unknown) => void)[] = [];
+  clickHandlers: ((p: unknown) => void)[] = [];
+  private readonly scales = new Map<string, FakePriceScale>();
   private readonly scale = {
     subscribeVisibleLogicalRangeChange: (h: (r: unknown) => void) => { this.rangeHandlers.push(h); },
     unsubscribeVisibleLogicalRangeChange: (h: (r: unknown) => void) => { this.rangeHandlers = this.rangeHandlers.filter((x) => x !== h); },
@@ -60,9 +91,18 @@ export class FakeChart {
     fitContent: () => { this.calls.push("fitContent"); },
     logicalToCoordinate: (l: number) => l * 10,
     coordinateToLogical: (x: number) => x / 10,
+    getVisibleRange: () => this.range,
+    scrollPosition: () => this.position,
+    scrollToPosition: (p: number) => { this.position = p; this.calls.push("scrollToPosition"); },
+    scrollToRealTime: () => { this.position = this.timeOptions.rightOffset as number; this.calls.push("scrollToRealTime"); },
+    resetTimeScale: () => { this.position = this.timeOptions.rightOffset as number; this.calls.push("resetTimeScale"); },
+    options: () => this.timeOptions,
+    applyOptions: (o: Options) => { this.timeOptions = deepMerge(this.timeOptions, o); this.calls.push("timeScale.applyOptions"); },
   };
   constructor(public options: Options) {}
   applyOptions(o: Options) { this.applied.push(o); this.calls.push("applyOptions"); }
+  /** The chart's options now: the creation options with every `applyOptions` merged in, as the library holds them. */
+  merged(): Options { return this.applied.reduce<Options>((acc, o) => deepMerge(acc, o), this.options); }
   addSeries(def: { type: string }, options: Options = {}, pane = 0) {
     const s = new FakeSeries(this, def.type, options);
     if (pane >= this.paneList.length) this.paneList.push(new FakePane(this));
@@ -82,12 +122,20 @@ export class FakeChart {
   series(type: string) { return this.paneList.flatMap((p) => p.series).filter((s) => s.type === type); }
   scrollTo(r: { from: number; to: number }) { this.range = r; for (const h of this.rangeHandlers) h(r); }
   timeScale() { return this.scale; }
-  subscribeCrosshairMove() {}
-  unsubscribeCrosshairMove() {}
-  subscribeClick() {}
-  unsubscribeClick() {}
+  subscribeCrosshairMove(h: (p: unknown) => void) { this.crosshairHandlers.push(h); }
+  unsubscribeCrosshairMove(h: (p: unknown) => void) { this.crosshairHandlers = this.crosshairHandlers.filter((x) => x !== h); }
+  /** A crosshair move as the library reports it (`time`, `point`, `seriesData`, ...). */
+  moveCrosshair(p: unknown) { for (const h of this.crosshairHandlers) h(p); }
+  subscribeClick(h: (p: unknown) => void) { this.clickHandlers.push(h); }
+  unsubscribeClick(h: (p: unknown) => void) { this.clickHandlers = this.clickHandlers.filter((x) => x !== h); }
   paneSize() { return { width: 400, height: 300 }; }
-  priceScale() { return { width: () => 0 }; }
+  priceScale(id = "right") {
+    let scale = this.scales.get(id);
+    if (!scale) { scale = new FakePriceScale(this, id); this.scales.set(id, scale); }
+    return scale;
+  }
+  /** Scrolls the time scale to a position (bars from the right edge) and tells the range subscribers. */
+  scrollToBars(position: number) { this.position = position; for (const h of this.rangeHandlers) h(this.range); }
   remove() { this.removed = true; this.calls.push("remove"); }
 }
 
@@ -105,3 +153,5 @@ export const AreaSeries = { type: "Area" };
 export const ColorType = { Solid: "solid" };
 export const CrosshairMode = { Normal: 0 };
 export const LineStyle = { Solid: 0, Dotted: 1, Dashed: 2 };
+export const PriceScaleMode = { Normal: 0, Logarithmic: 1, Percentage: 2, IndexedTo100: 3 };
+export const TrackingModeExitMode = { OnTouchEnd: 0, OnNextTap: 1 };

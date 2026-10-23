@@ -11,7 +11,7 @@ apply:
 | Piece | Where | Becomes |
 |---|---|---|
 | `ProChart` (483 lines, lightweight-charts ^4.2.3): candles, volume, EMA/SMA/BB/VWAP/Supertrend overlays, RSI/ADX panes, timeframe pills, live LTP, lazy older history, `priceLines`/`zones`/`markers` props, strategies on chart (Phase AO) | `frontend/src/components/ProChart.tsx`, used by 5 files (Signals, Backtest, ChartWindow, PositionChartCard, MarketPulseCard) | The **embedded/mini implementation** of `ChartEngine` (CH1). Its props become calls on the interface; existing pages keep working |
-| `CandleChart` (mini), `EquityCurveChart`, `PositionChartCard` | `components/` | Mini charts stay on lightweight-charts. EquityCurve is not a market chart and stays outside the interface |
+| `CandleChart` (mini), `EquityCurveChart`, `PositionChartCard` | `components/` | Mini charts stay on lightweight-charts. EquityCurve is not a market chart and stays outside the interface. (23 Oct, chart review R1: `CandleChart` was never rendered and is removed; its marker types live in `charting/markers.ts`, and the chart options in `chart/chartOptions.ts`.) |
 | `ChartWindow` (pop-out page), `chartHistory`, `chartHelpers` | `pages/`, `components/` | The pop-out of the multi-chart workspace (CH5); history loading moves into the datafeed adapter |
 | Backend: market_data candles (broker), lake history API (B5, as-of, adjusted), price_action engine, option chain + Greeks, instruments + `nse_expiries` | `backend/app/...` | The UDF-style datafeed and the platform layers (§2). One computation library for chart, screener and backtest (CH6) |
 

@@ -347,6 +347,9 @@ TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_
 # the broker's own per-connection cap (app/market_data/broker_data_terms.json) applies on top when it is recorded.
 # 50 is the per-session figure of the beta capacity model (§4), not a broker limit.
 BYOB_SESSION_SYMBOL_CAP = max(1, int(os.environ.get("BYOB_SESSION_SYMBOL_CAP", "50")))
+# TM Part 1 (data hub, flag `data_hub`): an option-chain snapshot is shared within one broker connection for this many
+# seconds (the chain page, a chart and a Copilot question in the same moment make one broker call). 0 = no sharing.
+HUB_CHAIN_SNAPSHOT_SECONDS = max(0, int(os.environ.get("HUB_CHAIN_SNAPSHOT_SECONDS", "5")))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more
 # than BROKER_CIRCUIT_FAILURE_RATIO of the broker calls in the last BROKER_CIRCUIT_WINDOW_SECONDS

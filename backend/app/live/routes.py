@@ -9,23 +9,36 @@ page reloads what it shows through the normal, authorised endpoints.
 Each stream lives at most `STREAM_SECONDS` and the client reconnects; a comment line every 15 s keeps proxies from
 closing an idle connection. One database round-trip per second per open app is fine for the Phase 0 cohort (a few
 hundred users); a Redis pub/sub feed can replace the polling later without changing the wire format.
+
+TM Part 1 (TM-12; flag `data_hub`, OFF by default): the same stream also carries the data hub's `ticks` topic - prices,
+so here data does ride the stream - for the symbols the tab registered (`PUT /api/live/ticks`, at most 50, at most one
+update per symbol per second, from the user's own broker connection only) and a `hub` event when that connection's
+state changes (live / reconnecting / renew needed), in plain words. `GET /api/live/hub` gives the state on page load.
+Flag off: the stream is exactly as before and the two routes answer 404.
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import re
 import time
-from typing import AsyncIterator, Awaitable, Callable, Dict, Optional, Tuple
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.dependencies import get_current_user
+from app.charts.drawings import EXCHANGE_RE, SYMBOL_RE
+from app.core.rate_limit import user_rate_limit
 from app.db.models import AiActionRecord, NotificationRecord, User
+from app.db.session import get_session
 
 router = APIRouter(prefix="/api/live", tags=["live"])
+logger = logging.getLogger(__name__)
 
 POLL_SECONDS = 1.0
 HEARTBEAT_SECONDS = 15.0
@@ -64,9 +77,10 @@ def _event(name: str, data: dict) -> bytes:
 
 
 async def events(tenant_id: int, disconnected: Callable[[], Awaitable[bool]], *, max_seconds: float = STREAM_SECONDS,
-                 poll_seconds: float = POLL_SECONDS, heartbeat_seconds: float = HEARTBEAT_SECONDS) -> AsyncIterator[bytes]:
+                 poll_seconds: float = POLL_SECONDS, heartbeat_seconds: float = HEARTBEAT_SECONDS, feed: Any = None) -> AsyncIterator[bytes]:
     """The stream body: `ready`, then one event per topic whose signature changed, a heartbeat comment, and `bye`
-    when the stream's time is up (the client reconnects)."""
+    when the stream's time is up (the client reconnects). With a data-hub `feed` (TM-12) also its `ticks` / `hub`
+    events each second; a failing feed never ends the stream."""
     factory = _factory()
     started = last_beat = time.monotonic()
     previous: Optional[Dict[str, Tuple]] = None
@@ -81,6 +95,12 @@ async def events(tenant_id: int, disconnected: Callable[[], Awaitable[bool]], *,
                 if value != previous.get(topic):
                     yield _event(topic, {"changed": True})
         previous = current
+        if feed is not None:
+            try:
+                for name, data in await feed.poll():
+                    yield _event(name, data)
+            except Exception:  # noqa: BLE001 - prices are extra: the reload signals keep flowing
+                logger.debug("live ticks feed failed", exc_info=True)
         if time.monotonic() - last_beat >= heartbeat_seconds:
             last_beat = time.monotonic()
             yield b": ping\n\n"
@@ -88,14 +108,102 @@ async def events(tenant_id: int, disconnected: Callable[[], Awaitable[bool]], *,
     yield _event("bye", {"reconnect": True})
 
 
+SID_RE = r"^[A-Za-z0-9_-]{8,64}$"
+
+
+async def _hub_or_404(session: AsyncSession, user: User) -> None:
+    from app.market_data.hub import hub_on
+    from app.platform.controls import flag_enabled
+    if not (await flag_enabled(session, "ui_v2", user.tenant_id) and await hub_on(session, user.tenant_id)):
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+async def _feed_for(user: User, sid: Optional[str]) -> Any:
+    """The data hub's browser feed for this tab, or None (no tab id, or the flag off)."""
+    if not sid:
+        return None
+    from app.market_data.hub import BrowserFeed
+    factory = _factory()
+    async with factory() as session:
+        try:
+            await _hub_or_404(session, user)
+        except HTTPException:
+            return None
+    return BrowserFeed(factory, user.id, sid)
+
+
 @router.get("/stream")
-async def live_stream(request: Request, user: User = Depends(get_current_user)) -> StreamingResponse:
-    """The caller's organisation only (the tenant comes from the token, never from the request)."""
+async def live_stream(request: Request, sid: Optional[str] = Query(default=None, pattern=SID_RE),
+                      user: User = Depends(get_current_user)) -> StreamingResponse:
+    """The caller's organisation only (the tenant comes from the token, never from the request). `sid` (TM-12): the
+    tab's id for its live ticks, from the caller's own broker connection only."""
     from app.auth import view_as
     left = view_as.stream_seconds(STREAM_SECONDS)       # MO3-A1: a read-only view's stream ends with the view
-    extra = {"max_seconds": left} if left is not None else {}
+    extra: Dict[str, Any] = {"max_seconds": left} if left is not None else {}
+    feed = await _feed_for(user, sid)
+    if feed is not None:
+        extra["feed"] = feed
     return StreamingResponse(
         events(user.tenant_id, request.is_disconnected, **extra),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
+
+
+# --- TM Part 1: the data hub's browser side (flag data_hub; 404 while off) -------------------------------------------
+
+_SYMBOL = re.compile(SYMBOL_RE)
+_EXCHANGE = re.compile(EXCHANGE_RE)
+ticks_rate_limit = user_rate_limit("live_ticks", limit=60, window_seconds=60)
+
+
+class TickItem(BaseModel):
+    symbol: str = Field(min_length=1, max_length=60)
+    exchange: str = Field(default="NSE", min_length=2, max_length=10)
+
+    @field_validator("symbol")
+    @classmethod
+    def _symbol(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not _SYMBOL.match(v):
+            raise ValueError("not a trading symbol")
+        return v
+
+    @field_validator("exchange")
+    @classmethod
+    def _exchange(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not _EXCHANGE.match(v):
+            raise ValueError("not an exchange")
+        return v
+
+
+class TicksBody(BaseModel):
+    sid: str = Field(pattern=SID_RE)
+    items: List[TickItem] = Field(default_factory=list, max_length=50)
+
+
+@router.put("/ticks", dependencies=[Depends(ticks_rate_limit)])
+async def put_ticks(body: TicksBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """The symbols this tab shows (replaces the tab's previous set). They are registered on the caller's own broker
+    connection, so its one stream carries them; their prices arrive as `ticks` events on the tab's live stream. Stores
+    only the tab's list for a few minutes; places nothing."""
+    from app.market_data import hub
+    await _hub_or_404(session, user)
+    pairs = [(i.symbol, i.exchange) for i in body.items]
+    await hub.set_browser_symbols(user.id, body.sid, pairs)
+    conn = await hub.user_connection(session, user)
+    streamed = await hub.admit_for_user(session, user, conn, pairs) if conn is not None else []
+    await session.commit()
+    status = (await hub.connection_status(conn)).public() if conn is not None else None
+    return {"accepted": len(pairs), "streamed": len(streamed), "status": status}
+
+
+@router.get("/hub")
+async def hub_status(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """The state of the caller's own broker connection for prices, in plain words (no ids). `status` is null when no
+    broker is linked (the broker gate covers that)."""
+    from app.market_data import hub
+    await _hub_or_404(session, user)
+    conn = await hub.user_connection(session, user)
+    return {"status": (await hub.connection_status(conn)).public() if conn is not None else None}

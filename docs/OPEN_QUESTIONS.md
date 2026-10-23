@@ -1595,3 +1595,20 @@ collide on numbers.
 | PRV-4 | A reader deployment when the package is missing or refused. | No new entries ("This strategy is paused: its engine is not available"); open positions keep their exits (ADR-0004); users see the generic templates; the reader flags cannot be switched on. | PRIVATE_PACKAGE section 10 | open |
 | PRV-5 | New signal-language tokens the reader needs. | Added as generic structure phrases to `app/signals/language.py` and its frontend mirror in a reviewed public PR (shared cases grow with them); when the reader emits them stays private. The package never brings its own text to a screen. | PRIVATE_PACKAGE section 9.3 | open |
 | PRV-6 | A new MAJOR reader version and running deployments. | The host's `ATP_PRIVATE_REF` moves only after the parity checks and a PAPER shadow; each deployment records the reader version it started with; the admin console lists the release note. | PRIVATE_PACKAGE section 11 | open |
+
+## Terminal master Part 1: the data hub (TMH, 23 Oct)
+
+Branch `claude/terminal-data-hub`. Design: `docs/design/DATA_HUB.md`. Checked against CLAUDE.md (sections 3, 4, 8),
+DECISIONS 23 Oct (the owner principle; TM-12, TM-13, TM-14 defaults accepted), `docs/BROKER_DATA_TERMS.md` (BT1 / BT1b),
+RDY-6 and LD-10. Every row is a provisional default; the code follows it until the owner says otherwise.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| TMH-1 | "ONE renew prompt": a hub notification as well as the worker's existing "session expired" notification would make two notices for one ended login. | The hub sends no notification of its own. The prompt is the app's one notice (above every page, one "Log in again" button, hidden while the page's own broker card asks) plus the worker's existing single notification. | `market_data/hub.py`, `frontend/src/live/LivePricesBanner.tsx` | open |
+| TMH-2 | byob off: the organisation's connection. The worker streams its first usable adapter; the API's `/ltp` picks its first usable row - with two brokers linked they can differ. | One connection per organisation (`org.t<tenant>`); its ticks answer for the organisation whichever of its own rows the API picked (same organisation, never another's). | `hub.org_feed` | open |
+| TMH-3 | The symbol cap per connection: `BYOB_SESSION_SYMBOL_CAP` 50 (an ATP figure, not the broker's). Upstox and Kite allow far more per socket. | Keep 50 (positions first); the rest stays on one batch call. Raise by environment after the owner's host run shows the CPU and memory. | `core/config.py` | open |
+| TMH-4 | Per-tick Redis writes do not scale (25,000 a second at 500 x 50). | Hub streams publish one snapshot per connection per second; the API reads at most a second behind the stream (the worker's decisions read the tick in its own process, at once). | `HubTickCache` | open |
+| TMH-5 | The option chain itself has no stream, and the chain page's spot still comes with the chain (15 s). | Shared chain snapshots (5 s) now; the chain on a stream and ticks on the chain page with Part 4 / 9.3. | `hub.shared_chain` | open |
+| TMH-6 | A hub stream stops on a refused token (401 / 403); a stream outside the hub keeps retrying as before. | Only hub streams stop (opt-in flag on the stream); network failures are retried on the same backoff everywhere. | `market_data/stream.py` | open |
+| TMH-8 | Found in passing: the Phase S org stream (`_stream_quotes`, env `STREAMING_QUOTES_ENABLED`, off in production) hands the worker's rate-budget wrapper to the stream, which has no `_request` / instrument lookup - an Upstox stream there would fail on connect. | Not changed here (that path stays as it is). Hub streams get the broker adapter under the wrappers (`hub.stream_adapter`); the old path is fixed only if the owner wants the env switch used. | `workers/trading_worker.py` | open |
+| TMH-7 | Trader pack: `data_hub` should join the "Enable trader features" list. | Branch `claude/trader-pack` is not merged yet: the flag is added to its list when it merges (noted in the PR). | `platform/flag_catalog.py` | open |

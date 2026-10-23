@@ -2712,6 +2712,12 @@ writes the recovery settings so a fresh Postgres replays the archive to that ins
 Nightly logical dumps stay as the provider-independent copy. RPO is now the archive interval
 (minutes) instead of a day; the per-data-class table is in OPERATIONS 1.1.
 
+A1 (production readiness, Oct 2026): on the Hostinger host archiving is **off** by default
+(`archive_mode=${PG_ARCHIVE_MODE:-off}` in `docker-compose.hostinger.yml`; nothing had scheduled the base
+backup, so the archive only grew). `PG_ARCHIVE_MODE=on` turns it back on, and `deploy/atp.sh base-backup`
+(scheduled weekly then) takes the base backup through the postgres container's local socket, encrypted and
+sealed by `base_backup.sh --stdin`. The WAL archive is never copied off the host. Runbook section 6c.
+
 ## Phase P: Safety backstop, tax, currency, drift and staging
 
 ### P1: Protective-stop guard (section 52)

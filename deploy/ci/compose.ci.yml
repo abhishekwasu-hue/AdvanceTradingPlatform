@@ -54,7 +54,7 @@ services:
     # docker-compose.hostinger.yml's command, unchanged, plus pg_stat_statements (LD-7 diagnostics: the load test's
     # statements by total time, deploy/ci/stack.sh load). CI only; a Compose override replaces the whole command.
     command: ["postgres",
-              "-c", "wal_level=replica", "-c", "archive_mode=on", "-c", "archive_timeout=300",
+              "-c", "wal_level=replica", "-c", "archive_mode=${PG_ARCHIVE_MODE:-off}", "-c", "archive_timeout=300",
               "-c", "archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f",
               "-c", "shared_buffers=${PG_SHARED_BUFFERS:-512MB}",
               "-c", "effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}",

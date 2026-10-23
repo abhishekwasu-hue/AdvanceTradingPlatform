@@ -8,6 +8,8 @@ import { openAdmin, type Theme } from "./adminMocks";
  * - Baselines (NEW): `admin-<system|controls|users|testing|support>-v2-{1440,390}-{light,dark}.png` and
  *   `admin-diagnostics-v2-{1440,390}-{light,dark}.png`. Other baselines are untouched.
  *   MO3-A1 (23 Oct): `admin-support-v2-*` updated - the "View as this person" button and the "Recent views as a user" card.
+ *   Trader pack (23 Oct): `admin-controls-v2-*` updated - the "Trader features" card; NEW
+ *   `admin-trader-pack-v2-{1440,390}-{light,dark}.png` (the card alone, before "Enable trader features").
  * Every reply is made up (e2e/adminMocks.ts). After an intended change:
  * `npx playwright test --project=phone e2e/admin-console-v2.e2e.ts --update-snapshots`.
  */
@@ -43,6 +45,13 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
         });
       }
 
+      test(`the Trader features card looks the same (${theme})`, async ({ page }) => {
+        await openAdmin(page, "/admin?section=controls", { theme });
+        const card = page.locator("[data-console-card='trader-pack']");
+        await expect(card.locator("[data-trader-pack-summary]")).toContainText("4 of 7");
+        await expect(card).toHaveScreenshot(`admin-trader-pack-v2-${size.name}-${theme}.png`, SHOT);
+      });
+
       test(`the Diagnostics drawer looks the same (${theme})`, async ({ page }) => {
         await openAdmin(page, "/admin", { theme });
         await page.locator("[data-diagnostics-button]").click();
@@ -67,6 +76,25 @@ test.describe("Admin console behaviour", () => {
       expect(asked.filter((p) => p.includes("/admin/"))).toEqual([]);
     });
   }
+
+  test("Trader features: enable turns the pack on, Undo puts it back, and the status says what needs setup", async ({ page }) => {
+    const asked = await openAdmin(page, "/admin?section=controls");
+    const card = page.locator("[data-console-card='trader-pack']");
+    await expect(card.locator("[data-trader-pack-summary]")).toHaveText("4 of 7 trader features are on; 1 needs setup.");
+    await expect(card.locator("[data-pack-flag='ai_copilot']")).toContainText("No AI key yet");
+    await expect(card.getByRole("button", { name: "Undo" })).toBeDisabled();
+    await card.getByRole("button", { name: "Enable trader features" }).click();
+    await expect(card.getByRole("status")).toHaveText("3 features turned on.");
+    await expect(card.locator("[data-trader-pack-summary]")).toHaveText("All trader features are on; 1 needs setup.");
+    await expect(card.locator("[data-pack-flag='watchlists']")).toHaveAttribute("data-pack-state", "working");
+    await expect(card.getByRole("button", { name: "Enable trader features" })).toBeDisabled();
+    await card.getByRole("button", { name: "Undo" }).click();
+    await expect(card.getByRole("status")).toHaveText("3 switches put back as they were.");
+    await expect(card.locator("[data-pack-flag='watchlists']")).toHaveAttribute("data-pack-state", "off");
+    expect(asked.filter((p) => p.includes("/trader-pack")).length).toBeGreaterThanOrEqual(3);
+    const text = await card.innerText();
+    expect(text).not.toMatch(/\b[a-z]+_[a-z0-9_]+\b/);        // plain words only: no flag names on the card
+  });
 
   test("the sections switch in place and the address keeps the section", async ({ page }) => {
     await openAdmin(page, "/admin");

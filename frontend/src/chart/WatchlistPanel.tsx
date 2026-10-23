@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { cx } from "../components/primitives/cx";
 import { EMPTY, formatDateIST, formatPct, formatPrice } from "../ui/format";
 import { SymbolPicker } from "../ui/SymbolPicker";
+import { useLiveTicks } from "../live/liveTicks";
 import {
   contractItems, contractSubline, contractsApi, contractsKey, holdsTarget, known, rollEdit, splitExpired, type ContractFacts, type KnownContract,
 } from "../fno/contracts";
@@ -13,7 +14,8 @@ import {
   type ListRef, type RowSort, type SystemGroup, type SystemItem, type SystemList,
 } from "./systemLists";
 import {
-  MAX_ITEMS, NAME_MAX, QUOTE_ROWS, QuotePoller, SWITCHED_OFF, WatchlistsStore, direction, itemKey, moveItem, watchlistError, watchlistsV2Api,
+  MAX_ITEMS, NAME_MAX, QUOTE_ROWS, QuotePoller, SWITCHED_OFF, WatchlistsStore, direction, itemKey, moveItem, quoteItems, watchlistError,
+  watchlistsV2Api, withTicks,
   type QuoteRow, type WatchItem, type WatchlistV2,
 } from "./watchlistsV2";
 
@@ -51,13 +53,15 @@ export interface WatchlistPanelProps {
   onClose?: () => void;
   /** The phone sheet: 44 px targets everywhere. */
   touch?: boolean;
+  /** TM Part 1 (flag `data_hub`): prices move with the live ticks of the user's own broker connection. */
+  liveTicks?: boolean;
   className?: string;
 }
 
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
 /** The prices of the first 50 rows (QuotePoller: a reorder asks for nothing new; a changed set waits out the 10 s). */
-function useQuotes(items: readonly WatchItem[]) {
+function useQuotes(items: readonly WatchItem[], live = false) {
   const [quotes, setQuotes] = useState<{ rows: Map<string, QuoteRow>; failed: boolean }>({ rows: new Map(), failed: false });
   const poller = useMemo(() => new QuotePoller(watchlistsV2Api.quotes, {
     data: (reply) => setQuotes({ rows: new Map(reply.items.map((r) => [itemKey(r), r])), failed: false }),
@@ -65,7 +69,9 @@ function useQuotes(items: readonly WatchItem[]) {
   }), []);
   useEffect(() => () => poller.close(), [poller]);
   useEffect(() => { poller.update(items); }, [poller, items]);
-  return quotes;
+  // TM Part 1 (flag data_hub): the rows' prices move with the live ticks of the user's own broker connection.
+  const ticks = useLiveTicks(useMemo(() => quoteItems(items), [items]), live);
+  return useMemo(() => (ticks.size === 0 ? quotes : { ...quotes, rows: withTicks(quotes.rows, ticks) }), [quotes, ticks]);
 }
 
 /** FNO-4: what the list's F&O contract rows are (name, days left, Expired, the roll target), read again when the set of
@@ -204,7 +210,7 @@ function Price({ q }: { q: QuoteRow | undefined }) {
   );
 }
 
-export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, systemKey = null, onSystemKey, storageKey, onClose, touch = false, className }: WatchlistPanelProps) {
+export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, systemKey = null, onSystemKey, storageKey, onClose, touch = false, className, liveTicks = false }: WatchlistPanelProps) {
   const store = useMemo(() => new WatchlistsStore(), []);
   const state = useSyncExternalStore(store.subscribe, store.getState);
   useEffect(() => { void store.load(); }, [store]);
@@ -226,7 +232,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
   const matching = useMemo(() => (systemList ? filterRows(systemList.items, rowQuery) : []), [systemList, rowQuery]);
   const items = useMemo(() => (state.off ? [] : systemList ? matching : list?.items ?? []), [list, state.off, systemList, matching]);
   // The price poll keeps the list's own rows (so a lookup answering later never restarts it and leaves a gap).
-  const quotes = useQuotes(items);
+  const quotes = useQuotes(items, liveTicks);
   // FNO-4: the contract rows of the trader's own list; expired ones move to "Expired" below the others (no price shown).
   const ownItems = useMemo(() => (systemList || state.off ? [] : list?.items ?? []), [list, state.off, systemList]);
   const facts = useContractFacts(ownItems);

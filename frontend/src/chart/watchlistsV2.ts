@@ -153,6 +153,24 @@ const sameList = (a: WatchlistV2, b: WatchlistV2) =>
 export const quoteItems = (items: readonly WatchItem[]): WatchItem[] => items.slice(0, QUOTE_ROWS);
 
 /** Up, down or flat, for the sign and the arrow next to the colour (colour is never the only signal); null: no change known. */
+/** TM Part 1 (flag `data_hub`): the polled rows with each symbol's newest live tick on top - the last price from the
+ * tick, the change measured again from the previous close the row's quote gave (unknown stays unknown). A tick never
+ * invents a row's change; a row the poll has not priced yet shows the tick's price with no change. Pure. */
+export function withTicks(rows: ReadonlyMap<string, QuoteRow>, ticks: ReadonlyMap<string, { symbol: string; exchange: string; ltp: number }>): Map<string, QuoteRow> {
+  const out = new Map(rows);
+  for (const [key, tick] of ticks) {
+    if (!(tick.ltp > 0)) continue;
+    const row = rows.get(key);
+    const prev = row && !row.missing && row.ltp != null && row.change != null ? row.ltp - row.change : null;
+    const change = prev != null ? tick.ltp - prev : null;
+    out.set(key, {
+      ...(row ?? { symbol: tick.symbol, exchange: tick.exchange }),
+      ltp: tick.ltp, change, change_pct: prev ? (change! / prev) * 100 : null, missing: false, stale: false, error: null,
+    } as QuoteRow);
+  }
+  return out;
+}
+
 export function direction(row: Pick<QuoteRow, "change"> | undefined): "up" | "down" | "flat" | null {
   const c = row?.change;
   if (c == null || !Number.isFinite(c)) return null;

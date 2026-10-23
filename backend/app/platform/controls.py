@@ -133,12 +133,31 @@ FEATURE_FLAGS: Dict[str, str] = {
     # turns it on (Settings > Alerts, OFF by default). Built from the user's own data and the market data ATP holds;
     # structure words only, no buy / sell / target / stop wording. OFF: /api/rhythm/* answers 404 and nothing is sent.
     "daily_rhythm": "Daily rhythm: the pre-market brief, mid-session pulse, closing wrap and weekly review on the Dashboard and, by choice, on Telegram",
+    # TM Part 1 (docs/design/DATA_HUB.md; app/market_data/hub.py): the data hub - one session and one market-data
+    # stream per broker connection, shared by every consumer of that connection (charts, chain, watchlists, alerts, the
+    # paper engine), kept to the connection's own keys (never another user's or organisation's), live ticks to the
+    # browser on the existing live stream, a plain "reconnecting" state and ONE renew prompt when the broker ends the
+    # login. `byob_data_tier` still decides whose session a user may read. OFF: everything exactly as before.
+    "data_hub": "Data hub: one live price stream per broker connection for every page, live ticks in the browser, a reconnecting state and one renew prompt",
     # Master Order 4 slice 3 (app/growth; needs `ui_v2`): the plan page with a usage meter (what the user's plan includes
     # and how much of it he used, from the existing limits and counters), the "my discipline this week" share card (his
     # own discipline facts only: no security names, no prices, no call words) and the admin Business view's activation
     # events (read-only). OFF: /api/growth/* and /api/admin/console/activation answer 404 and nothing new is shown. No
     # price, trial, reminder or referral is built; nothing places an order.
     "growth_v2": "Plans and growth: the plan page with a usage meter, the discipline share card and the admin activation events (read-only)",
+    # Readiness C13 (app/learn, app/growth): learning and growth, each OFF by default.
+    # `learn`: the Learn page (short lessons on structure reading, risk, paper practice and how ATP works; the glossary;
+    # the video links the operator sets). Education only, guarded content. OFF: GET /api/learn answers 404, no Learn entry.
+    "learn": "Learn: short lessons in plain English, the glossary and the operator's video links (education only)",
+    # `marketing_site`: the public Features / How it works / About pages for the front page (read globally - a visitor
+    # has no organisation). OFF: GET /api/site/pages answers 404 and the sign-in screen links none of them.
+    "marketing_site": "Public marketing pages: Features, How it works and About on the front page (no claims, no prices)",
+    # `onboarding_emails`: the first-week e-mails (connect your broker, start a paper bot, review your first signal),
+    # once each, with an unsubscribe link; nothing is sent without PLATFORM_SMTP_* and PUBLIC_BASE_URL. Places nothing.
+    "onboarding_emails": "First-week e-mails: connect your broker, start your first paper bot, review your first signal (each once, with unsubscribe)",
+    # `referrals`: each person's own invite link and the new account's one claim; the reward is only described (C11 owns
+    # granting it). Nothing touches the marketplace. OFF: /api/growth/referral* answer 404 and no invite card shows.
+    "referrals": "Invite a friend: your own invite link, and how many people joined through it (no reward is granted automatically)",
     # PW6 (beta spec 4a, Phase 0): the closed-beta gate. ON: sign-up needs a SUPER_ADMIN-issued invite code and stops at
     # BETA_COHORT_CAP accounts. OFF: registration is exactly as before (self_signup still decides). OFF by default.
     "beta_cohort_gate": "Closed beta: sign-up needs an invite code and stops at the cohort cap (BETA_COHORT_CAP, default 500)",
@@ -419,6 +438,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
     # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
     "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
+    # Owner order 23 Oct (app/backtest/bar_source.py): backtests without a daily broker login. With no usable broker
+    # session, a Daily / Weekly backtest runs on the shared lake's stored end-of-day history (NSE daily files, the R2 daily
+    # import - never the owner's private 1-minute store); intraday still needs a broker. OFF: every backtest path answers
+    # exactly as before (no broker session = 409). A simulation only: places no orders.
+    "backtest_stored_history": "Backtests on ATP's stored daily history when no broker is connected (Daily and Weekly; intraday needs a broker)",
     # S10 (SCREENER_SPEC §5 S10, Phase 0 slice): the ETF screen (J) - NSE ETFs from the shared end-of-day history with
     # traded value and the tracking difference against the index each tracks. OFF: GET /api/screener/etf answers 503 and
     # the Screener page shows no ETF button. Information only, no recommendation, places no orders.

@@ -88,13 +88,16 @@ from app.watchlists.system_routes import admin_router as system_watchlists_admin
 from app.watchlists.system_routes import router as system_watchlists_router
 from app.chart_analyze.routes import admin_router as chart_analyze_admin_router, router as chart_analyze_router
 from app.signals_feed.routes import router as signals_feed_router
+from app.signals_feed.day_one_routes import router as signals_day_one_router
 from app.me.prefs import router as me_prefs_router
 from app.rhythm.routes import router as rhythm_router
 from app.option_chain.ask_routes import router as oc_ask_router
 from app.me.setup import router as me_setup_router
 from app.context_panel.routes import router as context_panel_router
 from app.markets.routes import router as markets_router
+from app.growth.routes import admin_router as growth_admin_router
 from app.growth.routes import router as growth_router
+from app.learn.routes import router as learn_router
 from app.paper.ticket_routes import router as paper_ticket_router
 from app.paper.fno_routes import router as paper_fno_router
 from app.paper.fno_insights_routes import router as paper_fno_insights_router
@@ -153,6 +156,7 @@ from app.screener.board import router as screener_board_router
 from app.screener.library_routes import router as screener_library_router
 from app.screener.version_routes import router as screener_version_router
 from app.screener.etf_routes import router as screener_etf_router
+from app.screener.universes import router as screener_universes_router
 from app.lab.pine.routes import router as lab_pine_router
 from app.strategy_templates.routes import router as strategy_templates_router
 from app.idea_library.routes import router as idea_library_router
@@ -383,6 +387,7 @@ app.include_router(screener_board_router)  # U5 D3a: result-board heatmap / char
 app.include_router(screener_library_router)  # U9 TX2: confluence, mirrors, watch-then-trigger lists (flag screener_tx2, off)
 app.include_router(screener_version_router)  # LAB-18 (AMW-7): a saved screen's versions (flag screener_copilot, off)
 app.include_router(screener_etf_router)  # S10 J: the ETF screen on the shared EOD history (flag screener_etf, off)
+app.include_router(screener_universes_router)  # owner 23 Oct: the lists a scan runs on and the batch plan (flag screener_v2)
 app.include_router(alert_rules_router)
 app.include_router(scan_then_router)
 app.include_router(alert_links_router)
@@ -409,6 +414,7 @@ app.include_router(system_watchlists_admin_router)  # WL1: the admin's view of t
 app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a chart image, educational reading (flag chart_analyze, off)
 app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)
 app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)
+app.include_router(signals_day_one_router)  # Signals day one: the setup card + his adopted watch (ui_v2 + strategy_templates)
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
 app.include_router(rhythm_router)     # MO4: the daily rhythm - pre-market brief, pulse, closing wrap, weekly review (flags ui_v2 + daily_rhythm)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
@@ -416,6 +422,8 @@ app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(markets_router)   # MO4 slice 2: the Sector & index view (flags ui_v2 + markets_view)
 app.include_router(growth_router)    # MO4 slice 3: the plan page + usage meter, the discipline share card (flags ui_v2 + growth_v2)
+app.include_router(growth_admin_router)  # C13: the referral reward wording (SUPER_ADMIN + two-factor)
+app.include_router(learn_router)     # C13: the Learn section (ui_v2 + learn), the public marketing pages (marketing_site)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(paper_fno_router)       # FNO-1: trading from the option chain, PAPER only (flags ui_v2 + paper_account)
 app.include_router(paper_fno_insights_router)  # F&O 8b slice 1: risk budget + setup-aware strikes, read-only (ui_v2)

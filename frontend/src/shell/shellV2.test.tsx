@@ -143,7 +143,7 @@ describe("UI2-1 sidebar", () => {
     const entries = hrefs(html).slice(1, -1);
     expect(entries).toEqual([
       "/broker", "/", "/charts", "/option-chain", "/markets", "/screener", "/signals", "/deployments", "/positions",
-      "/analytics", "/strategies", "/copilot", "/news-events", "/settings", "/admin",
+      "/analytics", "/strategies", "/copilot", "/news-events", "/learn", "/settings", "/admin",   // C13: Learn (flag `learn`)
     ]);
     expect(html.indexOf("data-nav-admin")).toBeLessThan(html.indexOf('href="/admin"'));
   });

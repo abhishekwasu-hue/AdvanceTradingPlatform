@@ -212,8 +212,9 @@ class ImportResult:
 
 async def import_device(session: AsyncSession, row: ScreenRecord, user_id: Optional[int], items: Sequence[Dict[str, Any]],
                         compile_text: Any, now: Optional[datetime] = None) -> ImportResult:
-    """The one upload of a device's history for this screen. Each item ({at, name, base_tf, texts, stages, summaries}) is validated by compiling its blocks (`compile_text(text, base_tf) -> (ast, validated)`); an item that does
-    not compile, is dated in the future or repeats the one before it is skipped. Imported versions keep their saved time,
+    """The one upload of a device's history for this screen. Each item ({at, name, base_tf, texts, stages, summaries})
+    is validated by compiling its blocks (`compile_text(text, base_tf) -> (ast, validated)`); an item that does not
+    compile, is dated in the future or repeats the one before it is skipped. Imported versions keep their saved time,
     so they sit before the versions this server wrote (which all came after the device kept its own). The screen's
     marker makes a repeat a no-op. The caller commits."""
     await _lock(session, row)

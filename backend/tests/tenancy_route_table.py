@@ -330,8 +330,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/backtest/bars"): S_BACKTEST_BARS,
     ("POST", "/api/backtest/monte-carlo"): S_BACKTEST,
     ("POST", "/api/backtest/optimize"): S_BACKTEST,
-    ("GET", "/api/backtest/option-chain/coverage"): "member",
-    ("GET", "/api/backtest/option-chain/snapshots"): "member",
+    ("GET", "/api/backtest/option-chain/coverage"): "member",      # TM94-3: the organisation's own recorded rows and uploads only
+    ("GET", "/api/backtest/option-chain/snapshots"): "member",     # TM94-3: the organisation's own recorded rows and uploads only
     ("POST", "/api/backtest/option-chain/snapshots"): "trader",
     ("POST", "/api/backtest/walk-forward"): S_BACKTEST,
     ("GET", "/api/backtests"): "member",

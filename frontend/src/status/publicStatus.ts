@@ -28,7 +28,8 @@ export interface PublicStatus {
   banner: {
     maintenance: boolean;
     maintenance_message: string | null;
-    incidents: { impact: "minor" | "major"; state: "investigating" | "monitoring"; started_at: string | null }[];
+    /** A2: `note` is the one public sentence the operator wrote for this incident (absent when none). */
+    incidents: { impact: "minor" | "major"; state: "investigating" | "monitoring"; started_at: string | null; note?: string }[];
   };
 }
 
@@ -78,6 +79,12 @@ export function headline(state: ComponentState): string {
     case "outage": return "Part of the platform is down";
     default: return "Status not known yet";
   }
+}
+
+/** A2: the headline for the whole page - planned maintenance says so when nothing is worse. */
+export function pageHeadline(status: PublicStatus): { text: string; maintenance: boolean } {
+  if (status.banner.maintenance && status.status === "operational") return { text: "Planned maintenance: no new entries", maintenance: true };
+  return { text: headline(status.status), maintenance: false };
 }
 
 export const COMPONENT_NAMES: { key: keyof PublicStatus["components"]; name: string }[] = [

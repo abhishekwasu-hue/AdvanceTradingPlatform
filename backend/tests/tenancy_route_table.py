@@ -108,6 +108,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/admin/console/system"): "admin",
     ("GET", "/api/admin/console/users"): "admin",
     ("GET", "/api/admin/console/activation"): "admin",
+    # A2: Admin > System > Alerts (app/observability/ops_routes.py) - platform-wide, SUPER_ADMIN + two-factor.
+    ("GET", "/api/admin/ops-alerts"): "admin",
+    ("POST", "/api/admin/ops-alerts/run"): "admin",
+    ("POST", "/api/admin/ops-alerts/test"): "admin",
+    ("POST", "/api/admin/ops-alerts/telegram"): "admin",
+    ("DELETE", "/api/admin/ops-alerts/telegram"): "admin",
     ("GET", "/api/admin/controls"): "admin",
     ("PUT", "/api/admin/controls/brokers"): "admin",
     ("GET", "/api/admin/controls/flags"): "admin",

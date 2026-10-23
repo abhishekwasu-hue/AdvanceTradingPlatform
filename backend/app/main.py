@@ -155,6 +155,7 @@ from app.alerts.rules_routes import router as alert_rules_router
 from app.screener.then.routes import router as scan_then_router
 from app.alerts.links_routes import router as alert_links_router
 from app.alerts.platform_bot_routes import router as telegram_connect_router
+from app.observability.ops_routes import router as ops_alerts_router
 from app.alerts.outbox_admin import router as alert_outbox_admin_router
 from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
@@ -176,6 +177,8 @@ from app.platform.deployment_phase import on_startup as deployment_phase_startup
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     validate_production_config()
+    from app.observability import error_tracker
+    error_tracker.init("api")      # A2: off unless ERROR_TRACKER_DSN is set; events are scrubbed of personal data
     if tables_created_at_startup(ENVIRONMENT):
         await init_models()         # dev/test only; production and staging are Alembic's alone (P0.1 / S12)
     async with _startup_session_factory() as session:
@@ -274,6 +277,7 @@ app.include_router(alerts_router)
 app.include_router(team_router)
 app.include_router(admin_router)
 app.include_router(admin_console_router)  # MO3 (a): the admin console's read-only sections (SUPER_ADMIN + two-factor)
+app.include_router(ops_alerts_router)  # A2: Admin > System > Alerts - the server checks and the operator channels
 app.include_router(exports_router)
 app.include_router(contract_notes_router)
 app.include_router(observability_router)

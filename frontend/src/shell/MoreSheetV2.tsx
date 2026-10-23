@@ -9,6 +9,7 @@ import { useReturnFocus } from "./returnFocus";
 import { StatusDot } from "../broker/marks";
 import type { BrokerDot } from "../broker/brokerState";
 import { moreSheetPinned, moreSheetSections, navDotFor, navEntryFor, searchPages, sectionTitle, type NavContext, type NavItemV2, type NavSectionV2, type SectionId, type ShellKey } from "./navModel";
+import StatusLink from "../status/StatusLink";
 
 /**
  * UI2-1 (UI v2 proposal §4, mockup nav-bottom-mobile "More opens a sheet"): the phone's More sheet. A search box, then
@@ -184,6 +185,7 @@ export default function MoreSheetV2({ open, onOpenChange, ctx, current, onHelp, 
                     <ThemeToggle /> Theme
                   </div>
                 </div>
+                <div className="flex justify-center empty:hidden" data-more-footer><StatusLink className="px-space-3" /></div>
               </section>
             )}
           </div>

@@ -9,11 +9,11 @@ Built only from what the platform already measures:
   `byob_data_tier`) the worker keeps open: a count, nothing about whose.
 * **Alert delivery** - the outbox lag: how long the oldest alert that is due has been waiting (SLO-8 says 60 s).
 * **Banner** - maintenance mode with the operator's message, and the platform-wide incidents that are not resolved
-  (`app/incidents`), as a severity band, a state and a start time.
+  (`app/incidents`), as a severity band, a state, a start time and (A2) the operator's public note, when one is set.
 
 What it never says: error text, versions, commits, migration revisions, host names, latencies, component internals,
 anything per tenant or per user (organisation-scoped incidents are left out, and an incident's title, summary and
-cause stay in the admin console), counts of users, positions or orders.
+cause stay in the admin console; only the note the operator wrote for the public is shown), counts of users, positions or orders.
 
 The flag `public_status_page` is off by default: while it is off the endpoint answers a plain 404. When the database
 does not answer within `DB_CHECK_TIMEOUT_SECONDS`, or the flag cannot be read, the endpoint answers 503 with an outage
@@ -168,9 +168,11 @@ async def _banner(session: AsyncSession) -> Dict[str, Any]:
     controls = await control_status(session)
     rows = await session.scalars(select(IncidentRecord).where(
         IncidentRecord.tenant_id.is_(None), IncidentRecord.status.in_(("OPEN", "MITIGATED"))).order_by(IncidentRecord.started_at.desc()).limit(5))
+    from app.incidents.service import public_notes
+    notes = await public_notes(session)
     incidents = [{"impact": "major" if r.severity in ("CRITICAL", "EMERGENCY") else "minor",
                   "state": "monitoring" if r.status == "MITIGATED" else "investigating",
-                  "started_at": _iso(r.started_at)} for r in rows]
+                  "started_at": _iso(r.started_at), **({"note": notes[str(r.id)]} if notes.get(str(r.id)) else {})} for r in rows]
     on = bool(controls.get("maintenance_mode"))
     return {"maintenance": on, "maintenance_message": (controls.get("maintenance_message") or None) if on else None, "incidents": incidents}
 

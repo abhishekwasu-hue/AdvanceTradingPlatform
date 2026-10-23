@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.db.models import User
 from app.db.session import get_session
-from app.strategy_templates import ids, language, library, packs
+from app.strategy_templates import exits as exit_settings, ids, language, library, packs
 from app.strategy_templates.adapter import ENGINE_LABEL, TemplateStrategy
 from app.strategy_templates.compile import TemplateError, compile_recipe, resolve_settings
 from app.strategy_templates.schema import Template
@@ -144,6 +144,25 @@ async def adopt(template_id: str, body: AdoptBody, user: User = Depends(get_curr
         "settings": {"timeframe": settings.timeframe, "sides": settings.sides, "params": settings.params},
         "history": {"bars": strategy.history_bars(), "days": strategy.history_days()},
         "notes": _notes(template, strategy),
+        "exits": _exit_choices(strategy),
+    }
+
+
+def _exit_choices(strategy: TemplateStrategy) -> Dict[str, Any]:
+    """Section 5: what the paper bot form may offer as this template's exits (with these settings), per instrument
+    (the first choice of each list is the default: the behaviour before section 5). The form shows them in words; the
+    deployment route checks the choice again."""
+    caps = strategy.capabilities()
+    precedence: Dict[str, Any] = {}
+    for cls_, (stops, targets) in exit_settings.PRECEDENCE.items():
+        offered = [t for t in targets if not ((t == "TEMPLATE_EXIT" and not caps.exit_signal)
+                                              or (t == "WAVE_PROJECTION" and not caps.wave_projection))]
+        precedence[cls_] = {"stops": list(stops), "targets": offered}
+    return {
+        "precedence": precedence, "exit_signal": caps.exit_signal, "wave_projection": caps.wave_projection,
+        "base_waves": [{"value": b, "label": exit_settings.base_wave_words(b)} for b in exit_settings.base_waves()] if caps.wave_projection else [],
+        "target_r": {"min": exit_settings.TARGET_R_BOUNDS[0], "max": exit_settings.TARGET_R_BOUNDS[1]},
+        "ratio": {"min": exit_settings.RATIO_BOUNDS[0], "max": exit_settings.RATIO_BOUNDS[1]},
     }
 
 

@@ -181,7 +181,10 @@ class _Who:
 async def user_key_provider(session: AsyncSession, user: User, task: str, *, need_vision: bool = False,
                             client: Optional[Any] = None) -> Optional[UserKeyProvider]:
     """Tier 1: the user's own connected key (consent accepted), or None. Raises the plain hard stop at the cap."""
+    from app.auth import view_as
     from app.secrets_store.envelope import ensure_tenant_key
+    if view_as.active():
+        return None                                     # MO3-A1: a read-only support view never opens the user's own key
     record = await byok.connected_key(session, user)
     if record is None or not await byok.consent_accepted(session, user, record.provider):
         return None

@@ -4,13 +4,15 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import type { PageProps } from "../routes";
-import type { GuardianStatus, PaperRiskStatus, RiskCeilings, RiskConfig } from "../types";
+import type { GuardianStatus, LossStreakPause, LossStreakStatus, PaperRiskStatus, RiskCeilings, RiskConfig } from "../types";
 import { formatINR, formatNumber } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { PageIntro } from "../ui/PageIntro";
 import { TermHint } from "../ui/TermHint";
-import { drawdownOrderProblem, failedText, fieldProblem, guardianLine, todayRisk } from "./model";
-import { BUTTON_PRIMARY, FIELD, LABEL, NoteV2, PageTitleV2, ShareBarV2, StateChipV2, TileV2, TilesV2 } from "./PartsV2";
+import {
+  LOSS_STREAK_CHOICES, drawdownOrderProblem, failedText, fieldProblem, guardianLine, lastResumeText, lossStreakNote, todayRisk,
+} from "./model";
+import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, ShareBarV2, StateChipV2, TileV2, TilesV2 } from "./PartsV2";
 import { MarketEventsV2, OrgLimitsV2, RiskChecksV2 } from "./RiskPartsV2";
 
 interface FieldSpec { key: keyof RiskConfig; label: string; unit?: string; hint?: GlossaryKey; ceiling?: string; minimum?: string; help: string; step?: string }
@@ -22,7 +24,7 @@ const LIMIT_FIELDS: FieldSpec[] = [
   { key: "max_daily_loss_pct", label: "Daily loss limit", unit: "% of capital", hint: "daily-loss-limit", step: "0.1", ceiling: "max_daily_loss_pct", help: "New entries stop for the day once your losses reach it." },
   { key: "max_trades_per_day", label: "Trades per day", help: "New entries allowed in one day." },
   { key: "max_open_positions", label: "Open positions", help: "Positions open at the same time." },
-  { key: "max_consecutive_losses", label: "Losses in a row", help: "New entries stop after this many losing trades in a row." },
+  { key: "max_consecutive_losses", label: "Losses in a row", help: "New entries pause after this many losing trades in a row. The choice below says when they start again." },
   { key: "min_risk_reward", label: "Lowest reward to risk", hint: "reward-risk", step: "0.1", help: "A trade whose target pays less than this for each rupee at risk is refused." },
   { key: "lot_size", label: "Lot size", hint: "lot", help: "Units in one lot, used to size an order." },
 ];
@@ -71,15 +73,34 @@ export default function RiskV2(_props: PageProps = {}) {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [eventsNonce, setEventsNonce] = useState(0);
+  // CP6-15: when the losses-in-a-row pause ends, and the pause as the risk engine counts it now
+  const [pauseDraft, setPauseDraft] = useState<LossStreakPause>("next_session");
+  const [streak, setStreak] = useState<LossStreakStatus | null>(null);
+  const [resuming, setResuming] = useState(false);
 
   function refreshGuardian() {
     api.guardianStatus().then(setGuardian).catch(() => {});
+    api.lossStreak().then(setStreak).catch(() => {});
     setEventsNonce((n) => n + 1);
+  }
+
+  async function resume() {
+    setResuming(true);
+    setNotice(null);
+    try {
+      setStreak(await api.resumeLossStreak());
+      setNotice({ kind: "done", text: "Resumed. New entries are allowed again; only losses from now on count towards your limit." });
+    } catch (err) {
+      setNotice({ kind: "warn", text: failedText("New entries were not resumed.", err) });
+      api.lossStreak().then(setStreak).catch(() => {});
+    } finally {
+      setResuming(false);
+    }
   }
 
   useEffect(() => {
     if (!user) return;
-    api.getRiskSettings().then((c) => { setConfig(c); setDrafts(draftsOf(c)); }).catch(() => setLoadFailed(true));
+    api.getRiskSettings().then((c) => { setConfig(c); setDrafts(draftsOf(c)); setPauseDraft(c.loss_streak_pause ?? "next_session"); }).catch(() => setLoadFailed(true));
     api.riskCeilings().then(setCeilings).catch(() => {});
     paperRiskOrNone().then(setPaper).catch(() => {});
     refreshGuardian();
@@ -98,7 +119,7 @@ export default function RiskV2(_props: PageProps = {}) {
       setNotice({ kind: "warn", text: "Nothing was saved. Fix the values marked below, then save again." });
       return;
     }
-    const next: RiskConfig = { ...config };
+    const next: RiskConfig = { ...config, loss_streak_pause: pauseDraft };
     for (const f of ALL_FIELDS) (next as unknown as Record<string, number>)[f.key] = Number(drafts[f.key]);
     setSaving(true);
     setNotice(null);
@@ -106,6 +127,7 @@ export default function RiskV2(_props: PageProps = {}) {
       const saved = await api.updateRiskSettings(next);
       setConfig(saved);
       setDrafts(draftsOf(saved));
+      setPauseDraft(saved.loss_streak_pause ?? "next_session");
       setNotice({ kind: "done", text: "Saved. Every paper and live entry now uses these limits and guardian rules." });
       refreshGuardian();
     } catch (err) {
@@ -127,6 +149,8 @@ export default function RiskV2(_props: PageProps = {}) {
   }
 
   const today = todayRisk(config, paper);
+  const pausedNote = lossStreakNote(streak);
+  const resumedText = lastResumeText(streak);
   const canEditOrg = user.role === "OWNER" || user.role === "SUPER_ADMIN";
 
   return (
@@ -154,6 +178,18 @@ export default function RiskV2(_props: PageProps = {}) {
               )}
             </TilesV2>
             {today.lockout && <NoteV2 kind="warn" testId="lockout">{today.lockout}</NoteV2>}
+            {pausedNote && streak && (
+              <div data-block="loss-streak" className="space-y-space-2">
+                <NoteV2 kind="warn" testId="loss-streak">{pausedNote}{resumedText ? ` ${resumedText}` : ""}</NoteV2>
+                {streak.can_resume && (
+                  <div className="flex flex-col gap-space-2 sm:flex-row sm:items-center">
+                    <button type="button" onClick={() => void resume()} disabled={resuming} data-testid="loss-streak-resume"
+                      className={`${BUTTON_SECONDARY} w-full sm:w-auto`}>{resuming ? "Resuming…" : "Resume after losses in a row"}</button>
+                    <p className="text-t12 text-fg-muted">Only losses from now on will count towards your limit. Your limits stay as they are.</p>
+                  </div>
+                )}
+              </div>
+            )}
             {guardian && (
               <ul className="divide-y divide-subtle rounded-control border border-subtle" data-guardian>
                 {(["PAPER", "LIVE"] as const).map((mode) => {
@@ -188,6 +224,7 @@ export default function RiskV2(_props: PageProps = {}) {
           <p className="mt-space-1 text-t13 text-fg-muted">Checked before every paper and live entry you place. A limit can never be set above the platform&apos;s ceiling.</p>
           <FieldGroup title="Size and daily limits" fields={LIMIT_FIELDS} drafts={drafts} touched={touched} ceilingOf={ceilingOf} minimumOf={minimumOf} problemOf={problemOf}
             onChange={(k, v) => setDrafts((d) => ({ ...d, [k]: v }))} onBlur={(k) => setTouched((t) => ({ ...t, [k]: true }))} />
+          <PauseChoice value={pauseDraft} onChange={setPauseDraft} resumedText={pauseDraft === "until_resume" ? resumedText : null} />
           <FieldGroup title="Guardian rules" fields={GUARDIAN_FIELDS} drafts={drafts} touched={touched} ceilingOf={ceilingOf} minimumOf={minimumOf} problemOf={problemOf}
             onChange={(k, v) => setDrafts((d) => ({ ...d, [k]: v }))} onBlur={(k) => setTouched((t) => ({ ...t, [k]: true }))}
             note="The risk guardian checks these on every entry, paper or live, whatever built the strategy." />
@@ -201,6 +238,35 @@ export default function RiskV2(_props: PageProps = {}) {
       <OrgLimitsV2 canEdit={canEditOrg} />
       <RiskChecksV2 />
     </div>
+  );
+}
+
+/** CP6-15: "After the losses-in-a-row limit" - when the pause ends. Saved with the other limits by "Save limits". */
+function PauseChoice({ value, onChange, resumedText }: { value: LossStreakPause; onChange: (v: LossStreakPause) => void; resumedText: string | null }) {
+  const name = useId();
+  return (
+    <fieldset className="mt-space-5" data-field="loss_streak_pause">
+      <legend className="text-t14 font-semibold text-fg">After the losses-in-a-row limit</legend>
+      <p className="mt-space-1 text-t13 text-fg-muted">When new entries start again once your losses in a row reach the limit above. Exits are never paused.</p>
+      <div className="mt-space-3 grid grid-cols-1 gap-space-3 sm:grid-cols-2">
+        {LOSS_STREAK_CHOICES.map((c) => {
+          const id = `${name}-${c.value}`;
+          const on = value === c.value;
+          return (
+            <label key={c.value} htmlFor={id} data-choice={c.value}
+              className={`flex min-w-0 cursor-pointer items-start gap-space-3 rounded-control border p-space-3 transition-colors duration-fast ${on ? "border-brand bg-surface-2" : "border-border bg-surface-1 hover:bg-surface-2"}`}>
+              <input id={id} type="radio" name={name} value={c.value} checked={on} onChange={() => onChange(c.value)}
+                className="mt-[3px] h-4 w-4 shrink-0 accent-brand" />
+              <span className="min-w-0">
+                <span className="block text-t14 font-semibold text-fg">{c.label}</span>
+                <span className="mt-space-1 block text-t12 text-fg-muted">{c.help}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {resumedText && <p className="mt-space-2 text-t12 text-fg-muted">{resumedText}</p>}
+    </fieldset>
   );
 }
 

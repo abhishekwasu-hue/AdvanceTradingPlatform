@@ -13,7 +13,7 @@ import { ApiError } from "../api/errors";
 import { Button, cx, Dialog } from "../components/primitives";
 import { useToast } from "../components/Toast";
 import type { PageProps } from "../routes";
-import { screenerApi, type IdeaResponse, type PreviewResponse, type RunResponse } from "../screener/api";
+import { screenerApi, type IdeaResponse, type PreviewResponse, type RunResponse, type ServerVersion } from "../screener/api";
 import { FreshnessPill } from "../screener/FreshnessPill";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
@@ -35,13 +35,13 @@ import { ErrorState } from "../ui/ErrorState";
 import { COMING_SOON_MESSAGE } from "../api/errors";
 import { ideasApi } from "../ideas/api";
 import { ideaScanFromSearch, scanName } from "../ideas/model";
-import { addVersion, readStore, readsOf, snapshot, writeStore, type ScanVersion, type VersionStore } from "../screener/versions";
+import { builderOf, clearStore, readStore, readsOf, snapshot, syncDeviceHistory, writeStore } from "../screener/versions";
 
 // Handover 11c-1 (flag `strategy_lab_pine`): the Pine Script panel loads only when it is opened.
 const PinePanel = lazy(() => import("../lab/pine/PinePanel"));
 // Handover 11j (flag `screener_copilot`, behind `ui_v2`): a scan from a plain idea, part by part, as editable blocks.
 const IdeaPanel = lazy(() => import("../screener/IdeaPanel"));
-// Handover 11j steps 6-7 (same flags): the saved scan's versions (kept on this device) and "Tell me when it matches".
+// Handover 11j steps 6-7 (same flags): the saved scan's versions (LAB-18: kept on the server) and "Tell me when it matches".
 const ScanVersionsPanel = lazy(() => import("../screener/ScanVersionsPanel"));
 const ScanAlertPanel = lazy(() => import("../screener/ScanAlertPanel"));
 
@@ -112,8 +112,11 @@ export default function ScreenerPage(_props: PageProps) {
   const [alertOpen, setAlertOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [ideaReads, setIdeaReads] = useState<Record<string, string>>({});     // a scan from an idea: block -> its plain words
-  const [versionStore, setVersionStore] = useState<VersionStore>(() => readStore());
-  const scanVersions = savedId != null ? versionStore[String(savedId)] ?? [] : [];
+  // LAB-18 (AMW-7): the saved scan's versions on the server; the device history is uploaded once first (`synced`).
+  const [scanVersions, setScanVersions] = useState<ServerVersion[]>([]);
+  const [versionsMax, setVersionsMax] = useState(50);
+  const [synced, setSynced] = useState(false);
+  const [openingVersion, setOpeningVersion] = useState<number | null>(null);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries))
@@ -123,6 +126,27 @@ export default function ScreenerPage(_props: PageProps) {
     screenerApi.libraryMirrors().then((m) => setMirrors(isMirrors(m) ? m : null)).catch(() => setMirrors(null));
     screenerApi.watchLists().then((w) => setWatchLists(isWatchLists(w) ? w : null)).catch(() => setWatchLists(null));
   }, []);
+
+  // LAB-18 first sync: what this device kept before the server kept versions goes up once per scan, then the device
+  // copy is cleared (what the server did not take yet - it was off or unreachable - stays for the next load).
+  useEffect(() => {
+    if (!ideaOn) return undefined;
+    let alive = true;
+    const store = readStore();
+    if (!Object.keys(store).length) { setSynced(true); return undefined; }
+    syncDeviceHistory(store, screenerApi).then(({ left }) => {
+      if (Object.keys(left).length) writeStore(left);
+      else clearStore();
+    }).catch(() => undefined).finally(() => { if (alive) setSynced(true); });
+    return () => { alive = false; };
+  }, [ideaOn]);
+
+  const loadVersions = useCallback((id: number | undefined) => {
+    if (!ideaOn || id == null) { setScanVersions([]); return; }
+    screenerApi.versions(id).then((r) => { setScanVersions(r.versions); setVersionsMax(r.max); })
+      .catch(() => setScanVersions([]));          // no history shown is better than an error on the page
+  }, [ideaOn]);
+  useEffect(() => { if (synced) loadVersions(savedId); }, [synced, savedId, loadVersions]);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
   // breakout family joins with U6 BK1).
@@ -265,18 +289,15 @@ export default function ScreenerPage(_props: PageProps) {
     handle?.focus({ preventScroll: true });
   };
 
-  /** Saves the scan as it is now; its id, or null (the toast says why). With 11j on, a save that changes the scan adds
-   * a version to its history on this device. */
+  /** Saves the scan as it is now; its id, or null (the toast says why). With 11j on, the save sends its builder blocks
+   * and the server writes a new version when the scan changed (LAB-18). */
   const saveNow = async (): Promise<number | null> => {
     if (!text) return null;
     try {
-      const saved = await screenerApi.save(name.trim() || "Untitled scan", text, scanTf, savedId);
+      const blocks = ideaOn && registry ? builderOf(snapshot(registry, name.trim() || "Untitled scan", scanTf, stages, new Date(), ideaReads)) : undefined;
+      const saved = await screenerApi.save(name.trim() || "Untitled scan", text, scanTf, savedId, blocks);
       setSavedId(saved.id);
-      if (ideaOn && registry) {
-        const next = addVersion(readStore(), saved.id, snapshot(registry, saved.name, scanTf, stages, new Date(), ideaReads));
-        writeStore(next);
-        setVersionStore(next);
-      }
+      if (ideaOn && saved.id === savedId) loadVersions(saved.id);      // a new id loads through the effect above
       toast.success(`Saved "${saved.name}".`);
       return saved.id;
     } catch (e) {
@@ -286,13 +307,25 @@ export default function ScreenerPage(_props: PageProps) {
   };
   const doSave = async () => { await saveNow(); };
 
-  const openVersion = (v: ScanVersion) => {
-    const n = scanVersions.indexOf(v) + 1;
-    setStages(v.stages);
-    setScanTf(v.base_tf);
-    setName(v.name);
-    setVersionsOpen(false);
-    toast.success(`Version ${n} is in the builder. Save to keep it as the newest version.`);
+  /** "Open this version": its blocks go back into the builder (the blocks it was saved with, else its text as blocks).
+   * Nothing is saved; the next save is a new version. */
+  const openVersion = async (v: ServerVersion) => {
+    if (!registry || savedId == null) return;
+    setOpeningVersion(v.version);
+    try {
+      const full = await screenerApi.version(savedId, v.version);
+      const blocks = full.builder?.stages
+        ?? stagesFromServer(registry, (await screenerApi.stages({ source: full.text, base_tf: full.base_tf, params: full.params })).stages);
+      setStages(blocks);
+      setScanTf(full.base_tf);
+      setName(full.name);
+      setVersionsOpen(false);
+      toast.success(`Version ${v.number} is in the builder. Save to keep it as the newest version.`);
+    } catch {
+      toast.error("This version could not be opened. Try again in a moment.");
+    } finally {
+      setOpeningVersion(null);
+    }
   };
 
   // the counts shown: the run's while the scan is the one that ran, else a live preview's for the current scan
@@ -458,7 +491,7 @@ export default function ScreenerPage(_props: PageProps) {
                 description="Every save that changes the scan is a version. Open an older one to go back to it.">
           {versionsOpen && (
             <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
-              <ScanVersionsPanel versions={scanVersions} onOpen={openVersion} />
+              <ScanVersionsPanel versions={scanVersions} onOpen={(v) => void openVersion(v)} max={versionsMax} opening={openingVersion} />
             </Suspense>
           )}
         </Dialog>

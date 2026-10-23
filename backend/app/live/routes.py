@@ -91,8 +91,11 @@ async def events(tenant_id: int, disconnected: Callable[[], Awaitable[bool]], *,
 @router.get("/stream")
 async def live_stream(request: Request, user: User = Depends(get_current_user)) -> StreamingResponse:
     """The caller's organisation only (the tenant comes from the token, never from the request)."""
+    from app.auth import view_as
+    left = view_as.stream_seconds(STREAM_SECONDS)       # MO3-A1: a read-only view's stream ends with the view
+    extra = {"max_seconds": left} if left is not None else {}
     return StreamingResponse(
-        events(user.tenant_id, request.is_disconnected),
+        events(user.tenant_id, request.is_disconnected, **extra),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )

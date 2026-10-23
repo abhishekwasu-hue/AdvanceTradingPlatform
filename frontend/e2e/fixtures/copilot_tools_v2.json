@@ -42,7 +42,7 @@
      "lines": [
       "India VIX 12.4.",
       "Global markets: SP500 0.42%, NIKKEI -0.3%.",
-      "Market sentiment read: RISK_ON."
+      "Market sentiment read: risk-on."
      ]
     }
    ],
@@ -190,17 +190,17 @@
     },
     {
      "tool": "calc:views_read",
-     "label": "Views read",
+     "label": "Views with data",
      "ok": true,
      "as_of": null,
      "source": "calculation",
      "numbers": [
       {
-       "label": "views_read",
+       "label": "read",
        "value": 4
       },
       {
-       "label": "views",
+       "label": "of",
        "value": 4
       }
      ],

@@ -1658,7 +1658,7 @@ async def full_view(answer: Answer, run: Runner, message: str) -> None:
         answer.section("Market memory", memory)
     else:
         answer.unknowns.append(f"I don't know yet what the market memory holds: {plain_reason(snap.error, snap.source) if not snap.ok else 'no fresh cues'}.")
-    _calc(answer, "views_read", "Views read", {}, {"views_read": read, "views": 4})
+    _calc(answer, "views_read", "Views with data", {}, {"read": read, "of": 4})
     head = f"{symbol}: {read} of 4 views read."
     if res.ok and (res.data or {}).get("last_close") is not None:
         head += f" Last close {_f(res.data['last_close'])}."

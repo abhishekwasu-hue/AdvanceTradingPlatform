@@ -179,7 +179,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
     "backend/evals/sets/qa.jsonl": "845e5902cbc904864ec1f24bbf589194428ec462e164e388ab04b9734469338e",
     "backend/evals/sets/tool_args.jsonl": "578efa3d69f7d860f221068273a074b018e7998b71bdf8c55d5bdbd66d7f862b",
-    "backend/evals/sets/copilot_jobs.jsonl": "c96177678ecb2b7302976e582996a35cec5601ec2d7d5ac26ec7adafdab58291",
+    "backend/evals/sets/copilot_jobs.jsonl": "43566266ba2acd7cc345fa90c6c2a94f3073b15100a716e5a37ffd87eab1e922",
     "backend/evals/sets/copilot_safety.jsonl": "6957614b58ca737a77f1445e2d3bd0a13fa5c3063c829e75506e6043a3a37287",
     "backend/evals/sets/copilot_tools.json": "c7946be46843344a0095458d4faa555e8342138d968f3b2a04eacc25a355d8a6",
     "frontend/e2e/fixtures/copilot_tools_v2.json": "9ab1d0b702c09a1c7d3f20220c38da73124b40e7f56b2f28ead22710ba47039f",

@@ -49,6 +49,15 @@ async def _frame(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, d
     return await evidence.server_frame(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days, user=ctx.user)
 
 
+async def _backtest_frame(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, days: int) -> Tuple[pd.DataFrame, str, Dict[str, Any]]:
+    """Owner order 23 Oct: a backtest's bars - the broker session when usable, else ATP's stored Daily history (flag
+    `backtest_stored_history`), else a plain 409 (app/backtest/bar_source.py). With a broker session: `_frame` exactly."""
+    from app.backtest import bar_source
+    bars = await bar_source.resolve(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days, user=ctx.user,
+                                    broker_fetch=lambda: _frame(ctx, symbol, exchange, timeframe, days))
+    return bars.frame, bars.source, bars.info()
+
+
 async def _broker(ctx: ToolContext, symbol: str, exchange: str) -> Tuple[Any, str]:
     """The broker session a quote / chain is read through. BT1b (flag `byob_data_tier`): only the asking user's own
     session at a confirmed broker, for a symbol inside its budget; otherwise 409 (the tool reports the reason)."""
@@ -63,6 +72,20 @@ async def _broker(ctx: ToolContext, symbol: str, exchange: str) -> Tuple[Any, st
         return own.adapter(), own.source
     record = await _pick_record(ctx.session, ctx.tenant_id, None, "primary")
     return build_adapter(record), f"broker:{record.broker_name}"
+
+
+async def _hub_connection(ctx: ToolContext) -> Any:
+    """TM Part 1 (flag data_hub): the asking user's own connection on the data hub, or None (flag off, no user, no
+    broker). The tool then reads the same price / chain snapshot every page of that connection reads."""
+    user = ctx.user if getattr(ctx.user, "tenant_id", None) == ctx.tenant_id else None
+    if user is None:
+        return None
+    try:
+        from app.market_data import hub as data_hub
+        conn = await data_hub.user_connection(ctx.session, user)
+    except Exception:  # noqa: BLE001 - the hub is an addition; without it the tool reads as before
+        return None
+    return conn if conn is not None and not conn.renew else None
 
 
 def _failed(source: str, exc: HTTPException) -> ToolResult:
@@ -128,6 +151,12 @@ async def get_quote(ctx: ToolContext, args: _QuoteArgs) -> ToolResult:
     quote = await adapter.get_quote_for_symbol(args.symbol.upper(), args.exchange)
     if quote is None:
         return ToolResult(False, None, None, source, error=f"no quote for {args.symbol} on {args.exchange}")
+    conn = await _hub_connection(ctx)
+    if conn is not None:
+        # One price everywhere: the connection's fresh hub tick is the last price the chart and watchlist show too.
+        tick = await conn.tick_cache.fresh(conn.broker, args.exchange.upper(), args.symbol.upper())
+        if tick is not None:
+            quote = quote.model_copy(update={"ltp": float(tick.ltp), "timestamp": tick.best_ts})
     stamp = _iso(quote.timestamp) or ctx.now.isoformat()
     data = {"symbol": args.symbol.upper(), "ltp": _r(quote.ltp), "open": _r(quote.open), "high": _r(quote.high), "low": _r(quote.low),
             "prev_close": _r(quote.close), "volume": _r(quote.volume, 0),
@@ -161,7 +190,14 @@ async def get_option_chain(ctx: ToolContext, args: _ChainArgs) -> ToolResult:
         adapter, source = await _broker(ctx, args.underlying.upper(), "NFO")
     except HTTPException as exc:
         return _failed("option_chain", exc)
-    chain = await adapter.get_option_chain(args.underlying.upper(), args.expiry)
+    conn = await _hub_connection(ctx)
+    if conn is not None and conn.record is not None:
+        # TM Part 1: the connection's chain snapshot of the last few seconds (the chain page's, say) - no second call.
+        from app.market_data import hub as data_hub
+        chain = await data_hub.shared_chain(int(conn.record.id), args.underlying, args.expiry,
+                                            lambda: adapter.get_option_chain(args.underlying.upper(), args.expiry))
+    else:
+        chain = await adapter.get_option_chain(args.underlying.upper(), args.expiry)
     if not chain.rows:
         return ToolResult(False, None, None, source, error=f"the broker returned an empty chain for {args.underlying}")
     return ToolResult(True, summarise_chain(chain), ctx.now.isoformat(), source, {"read_at": ctx.now.isoformat(), "expiry": str(chain.expiry)})
@@ -193,7 +229,7 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
     except (KeyError, PermissionError) as exc:
         return ToolResult(False, None, None, "backtest", error=f"unknown or not allowed strategy {args.strategy_id!r}: {exc}"[:300])
     try:
-        df, source = await _frame(ctx, args.symbol, args.exchange, args.timeframe, args.days)
+        df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, args.timeframe, args.days)
     except HTTPException as exc:
         return _failed("backtest", exc)
     risk = await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()
@@ -204,7 +240,8 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
             "sample": "insufficient" if result.total_trades < WEAK_EVIDENCE_MIN_TRADES else "ok", "min_trades_for_statistics": WEAK_EVIDENCE_MIN_TRADES,
             "note": "Past simulated results on this window only; costs and slippage are approximations.",
             # CP6-15: the losses-in-a-row pause in this run, in plain words (None when it never engaged)
-            "loss_streak_pause": (result.loss_streak or {}).get("note")}
+            "loss_streak_pause": (result.loss_streak or {}).get("note"),
+            "prices": prices["words"], "prices_line": prices["line"]}
     return ToolResult(True, data, _iso(df.index[-1]), source, {"first_bar": _iso(df.index[0]), "last_bar": _iso(df.index[-1])})
 
 
@@ -231,12 +268,13 @@ async def backtest_draft(ctx: ToolContext, args: _DraftBacktestArgs) -> ToolResu
         return ToolResult(False, None, None, "backtest", error=f"the draft is not a complete strategy: {exc.errors()[:2]}"[:300])
     fetch_tf = dbt.FETCH_TIMEFRAME.get(config.timeframe, config.timeframe)
     try:
-        df, source = await _frame(ctx, args.symbol, args.exchange, fetch_tf, dbt.TEST_DAYS)
+        df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, fetch_tf, dbt.TEST_DAYS)
     except HTTPException as exc:
         return _failed("backtest", exc)
     risk = await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()
     data = await asyncio.to_thread(dbt.honest_test, config, df, args.symbol, fetch_tf, risk)    # CPU-bound: off the event loop
     data["exchange"] = args.exchange
+    data["prices"], data["prices_line"] = prices["words"], prices["line"]
     return ToolResult(True, data, _iso(df.index[-1]), source, {"first_bar": _iso(df.index[0]), "last_bar": _iso(df.index[-1])})
 
 

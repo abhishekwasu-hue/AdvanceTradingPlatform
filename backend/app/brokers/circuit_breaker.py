@@ -201,5 +201,8 @@ def reset_all() -> None:
 def observe_call(broker_name: str, method: str, exc: Optional[BaseException]) -> None:
     """Record one broker call's outcome on the metrics and the broker's breaker."""
     outcome = "ok" if exc is None else ("failure" if is_health_failure(exc) else "rejected")
+    # TM Part 1: a broker 429 is counted as its own outcome, so the rate-limit errors per broker can be measured.
+    if exc is not None and getattr(exc, "status_code", None) == 429:
+        outcome = "rate_limited"
     BROKER_CALLS.labels(broker=(broker_name or "unknown").lower(), method=method, outcome=outcome).inc()
     breaker_for(broker_name).record(exc)

@@ -123,6 +123,12 @@ def _source(record: BrokerCredentialRecord, byob: bool = False) -> dict:
     return out
 
 
+def own_ticks(namespace: str) -> TickCache:
+    """A user's own session's ticks (BT1): its per-symbol keys, or - TM Part 1, the data hub - its connection snapshot."""
+    from app.market_data.hub import tick_cache_for
+    return tick_cache_for(namespace)
+
+
 async def _byob(session: AsyncSession, user: User) -> bool:
     """BT1: the bring-your-own-broker data tier is on for this user's organisation (flag off = today's behaviour)."""
     return await flag_enabled(session, BYOB_FLAG, user.tenant_id)
@@ -534,7 +540,7 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
         if not ent.live or ent.record is None or ent.session is None:
             raise _tier_c({(symbol, exchange): ent})
         # LD-10: the user's own session's tick first, then the shared live feed's for the same broker, then the broker.
-        body = await _ltp_body(ent.record, TickCache(namespace=ent.session.namespace), symbol, exchange, now, shared_feed=tick_cache)
+        body = await _ltp_body(ent.record, own_ticks(ent.session.namespace), symbol, exchange, now, shared_feed=tick_cache)
         # The tick's / quote's own time; a bare LTP has none, so its age is unknown and the badge says stale.
         as_of = datetime.fromisoformat(body["timestamp"]) if body["timestamp"] else None
         body["data_tier"] = ent.badge(as_of=as_of, now=now)
@@ -543,7 +549,10 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
             body["stale"], body["stale_reason"] = True, body["data_tier"]["stale_reason"]
         return body
     record = await _pick_record(session, user.tenant_id, broker, account_label)
-    return await _ltp_body(record, tick_cache, symbol, exchange, now)
+    # TM Part 1 (flag data_hub): the organisation's own hub stream (registered for this symbol), never the shared keys.
+    from app.market_data import hub as data_hub
+    own = await data_hub.org_feed(session, user.tenant_id, record.broker_name, [(symbol, exchange)])
+    return await _ltp_body(record, own if own is not None else tick_cache, symbol, exchange, now)
 
 
 async def _ltp_body(record: BrokerCredentialRecord, ticks: TickCache, symbol: str, exchange: str, now: datetime,
@@ -641,6 +650,8 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
     else:
         record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
     adapter = build_adapter(record)
+    from app.market_data import hub as data_hub
+    hub_chains = await data_hub.hub_on(session, user.tenant_id)
     now = datetime.now(timezone.utc)
     eod_date, holidays = await _eod_context(session, ents)
     out: Dict[str, dict] = {}
@@ -656,7 +667,12 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
                                "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None}
             continue
         try:
-            chain = await adapter.get_option_chain(underlying, body.expiry)
+            if hub_chains:
+                # TM Part 1: one chain fetch per connection every few seconds, whoever asks (page, chart, Copilot).
+                chain = await data_hub.shared_chain(record.id, underlying, body.expiry,
+                                                    lambda u=underlying: adapter.get_option_chain(u, body.expiry))
+            else:
+                chain = await adapter.get_option_chain(underlying, body.expiry)
             out[underlying] = {"chain": chain.model_dump(mode="json"), "rows": len(chain.rows), "error": None}
             fetched += 1
             if not chain.rows:
@@ -698,7 +714,7 @@ async def data_tier(symbol: Optional[str] = None, exchange: str = "NSE", user: U
         ent = await entitlement.resolve(session, user, sym, exch, now=now, register=False)
         as_of = None
         if ent.live and ent.session is not None:
-            tick = await TickCache(namespace=ent.session.namespace).get(ent.session.broker, exch, sym)
+            tick = await own_ticks(ent.session.namespace).get(ent.session.broker, exch, sym)
             as_of = tick.best_ts if tick is not None else None
         badge = ent.badge(as_of=as_of, eod_date=eod_date, now=now, holidays=holidays)
     return {"enabled": True, "badge": badge, "market_wide": market_wide, "eod_date": eod_date.isoformat() if eod_date else None,

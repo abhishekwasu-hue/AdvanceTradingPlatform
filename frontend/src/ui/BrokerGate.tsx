@@ -1,5 +1,6 @@
 import { ExternalLink, KeyRound, LogIn, Plug, TriangleAlert, UserCircle2 } from "lucide-react";
-import { useId, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import { gateShowing } from "../live/gateShowing";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
@@ -280,6 +281,11 @@ export function BrokerGate({ children }: { children: ReactNode }) {
   const { state, refresh } = useBrokerSession();
   const navigate = useNavigate();
   const { busy, error, codeStep, login, submitCode } = useBrokerLogin(refresh);
+  // TM Part 1: while this card asks to log in, the app's live-prices notice does not ask a second time.
+  useEffect(() => {
+    gateShowing.set(state.kind === "login-needed");
+    return () => gateShowing.set(false);
+  }, [state.kind]);
 
   return (
     <BrokerGateView

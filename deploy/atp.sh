@@ -622,6 +622,15 @@ report_settings() {
   for k in GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do if env_set "$k"; then n=$((n + 1)); fi; done
   case "$n" in 0) info "Google sign-in (GS-1): not set (optional; no Google button)";; 2) ok "Google sign-in (GS-1): both keys set (the button shows)";;
     *) warn "Google sign-in (GS-1): only one of GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET set - the button stays hidden";; esac
+  # B8: browser notifications need a stable VAPID key; without one the app refuses new browser subscriptions (runbook section 4).
+  if env_set VAPID_PRIVATE_KEY; then
+    ok "browser notifications (Web Push): VAPID_PRIVATE_KEY set - subscriptions survive restarts"
+    case "$(env_get VAPID_SUBJECT)" in ""|*@example.com) warn "browser notifications: VAPID_SUBJECT is not your own contact (mailto:you@yourdomain)";; esac
+  else
+    warn "browser notifications (Web Push): VAPID_PRIVATE_KEY is not set - the app refuses new browser subscriptions until it is (runbook section 4, 'Browser and phone notifications')"
+  fi
+  if env_set FCM_SERVICE_ACCOUNT_JSON_BASE64 || env_set FCM_SERVICE_ACCOUNT_FILE; then ok "phone notifications (Android app, FCM): key set - the mobile_push flag decides who gets them"
+  else info "phone notifications (Android app, FCM): not set (optional; FCM_SERVICE_ACCOUNT_JSON_BASE64) - nothing is sent to phones"; fi
 }
 
 lock() {
@@ -778,16 +787,22 @@ health_checks() {
 public_domain_check() {
   local domain="$1" code hdrs h missing="" want got
   local here=(--resolve "$domain:443:127.0.0.1" --resolve "www.$domain:443:127.0.0.1")
-  hdrs="$(curl -sk -m 10 -D - -o /dev/null "${here[@]}" "https://$domain/" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
-  if ! printf '%s\n' "$hdrs" | grep -q '^http/'; then
-    bad "https://$domain/ through Caddy here gave no answer, so its security headers could not be checked"
-  else
-    for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy; do
+  # A4: the app page and the API both, and Permissions-Policy plus the CSP's frame-ancestors as well.
+  local page
+  for page in / /api/system/health; do
+    missing=""
+    hdrs="$(curl -sk -m 10 -D - -o /dev/null "${here[@]}" "https://$domain$page" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
+    if ! printf '%s\n' "$hdrs" | grep -q '^http/'; then
+      bad "https://$domain$page through Caddy here gave no answer, so its security headers could not be checked"
+      continue
+    fi
+    for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy permissions-policy; do
       printf '%s\n' "$hdrs" | grep -q "^$h:" || missing="$missing $h"
     done
-    if [ -z "$missing" ]; then ok "https://$domain/ sends HSTS, CSP, X-Frame-Options, X-Content-Type-Options and Referrer-Policy"
-    else bad "https://$domain/ is missing:$missing (deploy/Caddyfile)"; fi
-  fi
+    printf '%s\n' "$hdrs" | grep -q "^content-security-policy:.*frame-ancestors 'none'" || missing="$missing csp-frame-ancestors"
+    if [ -z "$missing" ]; then ok "https://$domain$page sends HSTS, CSP (frame-ancestors), X-Frame-Options, X-Content-Type-Options, Referrer-Policy and Permissions-Policy"
+    else bad "https://$domain$page is missing:$missing (deploy/Caddyfile)"; fi
+  done
   want="301 https://$domain/atp-health-probe?x=1"
   got="$(curl -sk -o /dev/null -m 10 -w '%{http_code} %{redirect_url}' "${here[@]}" "https://www.$domain/atp-health-probe?x=1" 2>/dev/null || true)"
   case "$got" in

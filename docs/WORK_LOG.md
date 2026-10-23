@@ -3447,3 +3447,16 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `docs/design/TRADE_TAKEOVER.md`: pointer in the status, the signal-language note in section 10, new section 13.
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
+
+## 23 Oct - User-friendly pass item 1: "Verify your email" leaves the top bar
+
+- Branch `claude/ufp-verify-email` (from main), shipped first on the owner's word. Frontend only, **no migration**, no flag.
+- Both top bars (v2 `TopBarV2`, today's `App.tsx`) no longer show the chip on any page.
+- The v2 Dashboard's Needs attention list has one "Verify your email" row (also in PAPER, without LIVE wording), with a
+  "Resend link" button and "Hide for today"; Settings › Account keeps its Email verification card. Both send the link
+  through `src/ui/verifyEmail.ts` and say what happened in the same plain words (never a server text).
+- Tests: `src/ui/verifyEmail.test.tsx`, `dashboard/model.test.ts`, `shell/shellV2.test.tsx`, `setup/getStarted.test.tsx`;
+  e2e `front-page.e2e.ts` (no chip on any page). Baselines refreshed because the chip row is gone from every v2 page
+  (the e2e user has an unverified address): chart-analyze, charts, connect-ai, copilot-chat, fno-insights, fno-workspace,
+  markets, option-chain, settings-index, shell, signals and view-as `*-v2-*` images (103 files).
+

@@ -310,7 +310,7 @@ export interface AttentionRow {
   title: string;
   detail: string;
   /** A link, or the broker login (run by the block itself). None for a notice with nothing to do here. */
-  action?: { label: string; to: string } | { label: string; login: true };
+  action?: { label: string; to: string } | { label: string; login: true } | { label: string; resend: true };
   /** Settings redesign D: the trader may hide this row until tomorrow (IST), on this device. */
   dismissible?: boolean;
 }
@@ -487,12 +487,12 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
   if (input.status?.maintenance_mode) {
     rows.push({ id: "maintenance", icon: "warning", tone: "warn", title: "Maintenance: new trades are paused", detail: input.status.maintenance_message || "Open positions are still watched." });
   }
-  // User-friendly pass item 1 (UX audit M13): "Verify your email" lives here, once - never as a chip on every page. In
-  // PAPER it is a quiet, dismissible reminder with no LIVE wording; it names live trading only once LIVE is in play.
+  // User-friendly pass item 1 (UX audit M13): "Verify your email" is asked for here, once, with Resend - never as a chip
+  // on every page. In PAPER it carries no LIVE wording; it can be hidden for today.
   if (input.emailVerified === false) {
     rows.push({ id: "email", icon: "account", tone: "neutral", title: "Verify your email", dismissible: true,
-      detail: paperOnly ? "Confirm your address, so messages about your account reach you." : "Live trading needs a verified address.",
-      action: { label: "Verify", to: "/settings/account" } });
+      detail: paperOnly ? "Open the link we emailed you, so messages about your account reach you." : "Open the link we emailed you. Live trading needs a verified address.",
+      action: { label: "Resend link", resend: true } });
   }
   if (health.telegram) rows.push(health.telegram);
   const dismissed = input.dismissed;

@@ -146,7 +146,7 @@ describe("P3 nothing about LIVE on the front page in PAPER", () => {
     for (const unread of [null, undefined, { detail: "Not found" }, "error"]) expect(paperOnlyFrom(unread)).toBe(false);
   });
 
-  it("the top bars leave out the LIVE-paused notice in PAPER; the v2 bar never shows an e-mail chip (item 1)", () => {
+  it("the top bars leave out the LIVE-paused notice in PAPER; neither bar has an e-mail chip (item 1)", () => {
     const status = { maintenance_mode: true, maintenance_message: null, disabled_brokers: ["upstox"] } as never;
     const user = { id: 1, email: "a@b.c", tenant_id: 1, role: "OWNER", email_verified: false } as never;
     expect(topBarNotices(status, user).map((n) => n.text)).toEqual(["Maintenance: new trades are paused", "Live trading is paused on upstox"]);
@@ -155,7 +155,7 @@ describe("P3 nothing about LIVE on the front page in PAPER", () => {
     expect(shellSource).toMatch(/usePaperOnly\(!!user && key === "dashboard"\)/);
     expect(shellSource).toContain("paperOnly={frontPaperOnly || liveHidden}");     // item 2: the paper phase, every page
     expect(appSource).toMatch(/usePaperOnly\(!!user && page === "dashboard"\)/);
-    expect(appSource).toMatch(/email_verified === false && !paperOnly/);
+    expect(appSource).not.toMatch(/email_verified === false/);                       // item 1: no chip in today's bar
     expect(appSource).toMatch(/disabled_brokers\.length > 0 && !paperOnly/);
   });
 

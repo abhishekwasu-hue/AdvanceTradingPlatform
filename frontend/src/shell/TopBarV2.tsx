@@ -18,8 +18,8 @@ import { initialsOf } from "./SidebarV2";
  * with an icon). P3: on the front page in PAPER (`paperOnly`) the LIVE-paused notice is left out; the shell also passes
  * `paperOnly` on every page while `phase0_paper_only` is on (user-friendly pass item 2: no LIVE wording in the paper
  * phase).
- * User-friendly pass item 1 (UX audit M13): "Verify your email" is no longer a chip on every page; it is one row in
- * the Dashboard's Needs attention list (src/dashboard/model.ts) and the Email verification card in Settings › Account.
+ * User-friendly pass item 1 (UX audit M13): "Verify your email" is never a chip on every page; it is one row in the
+ * Dashboard's Needs attention list (with Resend) and the Email verification card in Settings › Account.
  */
 
 const iconButton = "flex h-11 w-11 items-center justify-center rounded-control text-fg-muted transition-colors duration-fast hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-9 md:w-9";

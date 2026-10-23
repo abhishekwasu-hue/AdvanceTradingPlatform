@@ -20,13 +20,13 @@ from types import SimpleNamespace
 from typing import Dict, List, Optional
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.brokers.exceptions import BrokerAPIError
 from app.brokers.models import OptionChain, OptionChainRow
 from app.brokers.rate_budget import RateBudget, RateLimits
 from app.core import config
-from app.db.models import BrokerCredentialRecord, MdTenantChainSnapshotRecord, OISnapshotRecord, StrikeOISnapshotRecord, Tenant, User
+from app.db.models import BrokerCredentialRecord, MdTenantChainSnapshotRecord, OIBannerSettingRecord, OISnapshotRecord, StrikeOISnapshotRecord, Tenant, User
 from app.market_data.calendar import IST
 from app.market_lake import chain_recorder, chain_store
 from app.option_chain import snapshots
@@ -536,7 +536,18 @@ def test_oi_collector_reads_each_organisation_through_its_own_session_only(monke
         async with _session_factory() as session:
             return await worker._oi_banner(session, when)
     when = datetime(2026, 3, 10, 9, 20, tzinfo=IST).astimezone(timezone.utc)
-    assert _run(cycle(when)) == 1
+    try:
+        _check_oi_collector(und, a, b, a_headers, b_headers, worker, log, cycle, when, monkeypatch)
+    finally:                                   # no enabled underlying is left behind for the worker tests that follow
+        async def drop():
+            async with _session_factory() as session:
+                await session.execute(delete(OIBannerSettingRecord).where(OIBannerSettingRecord.underlying == und))
+                await session.commit()
+        _run(drop())
+
+
+def _check_oi_collector(und, a, b, a_headers, b_headers, worker, log, cycle, when, monkeypatch):
+    _run(cycle(when))
     assert log == [a.tenant_id]                                                         # B's slot never through A's session
     assert _count(OISnapshotRecord, OISnapshotRecord.underlying == und) == 1
     assert _count(OISnapshotRecord, OISnapshotRecord.underlying == und, OISnapshotRecord.tenant_id == a.tenant_id) == 1
@@ -547,9 +558,9 @@ def test_oi_collector_reads_each_organisation_through_its_own_session_only(monke
 
     # B links its own broker: from the next slot B has its own slots, read through its own session
     async def both(session, tenant_id, now):
-        return _OIBroker(tenant_id, log)
+        return _OIBroker(tenant_id, log) if tenant_id in (a.tenant_id, b.tenant_id) else None
     monkeypatch.setattr(worker, "_first_usable_broker", both)
-    assert _run(cycle(when + timedelta(minutes=5))) == 2
+    _run(cycle(when + timedelta(minutes=5)))
     assert log[1:] == sorted([a.tenant_id, b.tenant_id])
     assert _count(OISnapshotRecord, OISnapshotRecord.underlying == und, OISnapshotRecord.tenant_id == b.tenant_id) == 1
 

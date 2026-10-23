@@ -292,7 +292,9 @@ class Bars:
     def dow(self, degree: int) -> np.ndarray:
         """Dow trend on every bar from the swings confirmed by that bar: UP (last high HH and last low HL), DOWN (LH + LL),
         RANGE (anything else once both kinds are labelled), None before that - and None on the first `dow_min_bars` (D0)
-        or DOW_MIN_BARS[degree] bars of the frame, where a shorter history could read a different trend (unknown, never a guess)."""
+        or DOW_MIN_BARS[degree] bars of the frame, where a shorter history could read a different trend (unknown, never a guess).
+        An equal swing does not extend the structure: an equal high is LH, an equal low HL, so the trend of the mirrored
+        bars is the mirror of the trend (TPL-F6; before it an equal low read LL - a tie read "lower" on both sides)."""
         if degree not in self._dow:
             out = np.full(self.n, None, dtype=object)
             last: Dict[str, Optional[float]] = {"H": None, "L": None}
@@ -305,7 +307,7 @@ class Bars:
                     pv = piv[k]
                     prev = last[pv.kind]
                     if prev is not None:
-                        label[pv.kind] = ("HH" if pv.price > prev else "LH") if pv.kind == "H" else ("HL" if pv.price > prev else "LL")
+                        label[pv.kind] = ("HH" if pv.price > prev else "LH") if pv.kind == "H" else ("LL" if pv.price < prev else "HL")
                     last[pv.kind] = pv.price
                     if label["H"] and label["L"]:
                         cur = "UP" if (label["H"], label["L"]) == ("HH", "HL") else "DOWN" if (label["H"], label["L"]) == ("LH", "LL") else "RANGE"

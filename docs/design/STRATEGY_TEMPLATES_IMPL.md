@@ -191,7 +191,7 @@ filter on), the pack's settings are the member's, the pack's series equals the m
 reasons, warm-up, instances) on random data and in property tests on random valid settings; F1 must fire on the turn on
 both sides with the line and the opposite flip, must not in a steady trend or on noise, the higher-timeframe filter, the
 warm-up and the refusals; F2 only at a range edge inside a range, never outside one, no exit, S6; for both: the mirror
-test (F1 from the bar the Supertrend directions mirror each other, as D1; F2 on mirror-exact fixtures, TPL-F6), the
+test (F1 from the bar the Supertrend directions mirror each other, as D1; F2 on mirror-exact fixtures, TPL-F6; since the TPL-F6 fix also on the seeds that broke), the
 truncation test over many t, scan = backtest = options backtest (bull put, bear call and iron condor configurations: the
 same signals for each) = worker on one trailing window; the user's structure decides the legs (bull put spreads only on
 bullish signals, bear call spreads only on bearish ones, condors on either with four legs), the width and the lots come
@@ -258,18 +258,107 @@ companion is in the runtime fixtures (`test_s1b_screen_runtime.py`), the no-look
 lookahead job), the history sweep and the BK4 registry tests. No frontend change: the Paper bot form lists the templates
 from the API. No idea-library card (TPL-Q63).
 
-## TPL-9: the projected trendline retest (owner decision TPL-Q18) and C4 trendline breakout + retest
+## TPL-F6: the swing structure made mirror-symmetric (owner-approved fix, no migration)
 
+| Item | Where | Status |
+|---|---|---|
+| The asymmetry: an equal swing high read LH ("lower") and an equal swing low read LL ("lower"), so a tie read "lower" on both sides and a series and its mirror disagreed wherever it held equal swings. Now an equal swing does not extend the structure: an equal high is LH, an equal low HL (only the equal-low case changes) | `screener/breakouts/screens.py` (`Bars.dow`: DowTrend, SwingBreakType's BOS / CHOCH, the breakout templates' higher-timeframe filter), `screener/runtime.py` (`_swing_label`: SwingLabel) | done |
+| The reversal check (ReversalAt) was already exact: its bearish read is the bullish rule on negated prices. What looked like a reversal difference came from the level (the zigzag's opening swing, TPL-F9) or from a float reflection (K - p breaks a tie on non-tick prices); on whole ticks it mirrors bar for bar (now tested) | `price_action/reversal.py` (unchanged) | done |
+| Mirror rules: DowTrend (UP <-> DOWN, RANGE stays) and SwingBreakType (side swaps; BOS / CHOCH / BREAK stay) leave NOT_SYMMETRIC, with exactness cases | `screener/mirror.py`, `tests/test_tx2_library.py` | done |
+| Version: the template ids and versions stay (the fix is in the shared functions, not in a template); the params hash of the 16 templates that read the structure (A2, B2, E2, E3, F2, G1-G11; also the archived version 1 of F2 and G1-G11) records `STRUCTURE_VERSION` "2"; every other template's hash is unchanged. The breakout fitness job's hash is settings-only (unchanged); its next daily run reads the new rule. No golden fixture reads the screener structure (the chart / Trade-port goldens use `price_action/market_structure.py`, unchanged, TPL-F9) | `strategy_templates/compile.py` | done |
+| Tests: the mirror test over 120 deterministic series per swing size (random walks + ranges / flat-top / flat-bottom series with equal highs and lows, 15m and daily, swing sizes 0 and 1) on every bar, failing on the old rule (`legacy_dow`, kept in the fixtures); SwingLabel / SwingBreakType / ReversalAt mirrored; A2 / F2 / E3 mirrored on the seeds that broke; the E3 structure regime back in its mirror test; F2 seeds 2, 4, 5 in its mirror test | `tests/test_tpl_f6_mirror.py`, `tests/mirror_tie_fixtures.py`, `test_tpl5_templates.py`, `test_tpl6_family_f.py`, `test_amw3_screenql_functions.py` | done |
+
+Signal bars before vs after, from `backend/tests/tools/tpl_f6_signal_delta.py --count 300 --markdown` (synthetic bars only;
+the "before" run patches the pre-fix labelling back in). Reading it: most of the change is the equal low that now reads HL,
+so a "down" structure on an equal low becomes a range and an "up" structure keeps going - B2's short BOS and the bearish
+CHOCH / BOS reads lose bars, the range templates (A2, F2, E3 structure regime) and the breakout templates' "not against
+the higher-timeframe trend" filter gain bars. The controls (templates that read no structure function, ReversalAt) do not
+change.
+
+Sample: 300 series per timeframe x 600 bars (15m / 1h / 1d); "(long)": 100 series x 1800 bars (family G and the breakout templates, whose higher-timeframe trend needs the history); deterministic synthetic bars (tests/mirror_tie_fixtures.py). A classifier row counts one signal bar per bar with a value, so a changed value is one added and one removed.
+
+| Group | Item | Timeframes | Series | Could not run | Series changed | Signal bars before | After | Added | Removed |
+|---|---|---|---|---|---|---|---|---|---|
+| screener function | DowTrend(0) value | 15m, 1h, 1d | 900 | 0 | 562 | 497293 | 497293 | 28730 | 28730 |
+| screener function | SwingLabel("low", 0) value | 15m, 1h, 1d | 900 | 0 | 565 | 505883 | 505883 | 28893 | 28893 |
+| screener function | SwingLabel("high", 0) value | 15m, 1h, 1d | 900 | 0 | 0 | 506586 | 506586 | 0 | 0 |
+| screener function | SwingBreakType("up", 0, 0.2) value | 15m, 1h, 1d | 900 | 0 | 131 | 6041 | 6041 | 142 | 142 |
+| screener function | SwingBreakType("down", 0, 0.2) value | 15m, 1h, 1d | 900 | 0 | 232 | 8542 | 8542 | 292 | 292 |
+| screener function | DowTrend(1) value | 15m, 1h, 1d | 900 | 0 | 422 | 314929 | 314929 | 25093 | 25093 |
+| screener function | SwingLabel("low", 1) value | 15m, 1h, 1d | 900 | 0 | 469 | 485353 | 485353 | 33775 | 33775 |
+| screener function | SwingLabel("high", 1) value | 15m, 1h, 1d | 900 | 0 | 0 | 484519 | 484519 | 0 | 0 |
+| screener function | SwingBreakType("up", 1, 0.2) value | 15m, 1h, 1d | 900 | 0 | 6 | 1524 | 1524 | 6 | 6 |
+| screener function | SwingBreakType("down", 1, 0.2) value | 15m, 1h, 1d | 900 | 0 | 165 | 5031 | 5031 | 195 | 195 |
+| control | ReversalAt(SwingLow(0), "bullish") | 15m, 1h, 1d | 900 | 0 | 0 | 2759 | 2759 | 0 | 0 |
+| control | ReversalAt(SwingHigh(0), "bearish") | 15m, 1h, 1d | 900 | 0 | 0 | 3215 | 3215 | 0 | 0 |
+| breakout template | swing_1h_range (B1 @1h) | 1h (long) | 100 | 0 | 0 | 72 | 72 | 0 | 0 |
+| breakout template | daily_swing_break (B2 @1d) | 1d (long) | 100 | 0 | 11 | 1605 | 1614 | 11 | 2 |
+| breakout template | intraday_15m_nr7 (B4 @15m) | 15m (long) | 100 | 0 | 4 | 172 | 171 | 3 | 4 |
+| breakout template | daily_52w_high (B7 @1d) | 1d (long) | 100 | 0 | 0 | 85 | 85 | 0 | 0 |
+| breakout template | intraday_15m_expansion (B13 @15m) | 15m (long) | 100 | 0 | 5 | 84 | 93 | 9 | 0 |
+| breakout template | intraday_15m_orb30 (B16 @15m) | 15m (long) | 100 | 0 | 1 | 105 | 104 | 0 | 1 |
+| breakout template | intraday_15m_first_hour (B17 @15m) | 15m (long) | 100 | 0 | 0 | 109 | 109 | 0 | 0 |
+| breakout template | daily_vcp (B3 @1d) | 1d (long) | 100 | 0 | 0 | 0 | 0 | 0 | 0 |
+| breakout template | daily_vcp_watchlist (B3 @1d) | 1d (long) | 100 | 0 | 0 | 5 | 5 | 0 | 0 |
+| breakout template | daily_donchian_20 (B10 @1d) | 1d (long) | 100 | 0 | 49 | 5069 | 5258 | 203 | 14 |
+| breakout template | daily_donchian_55 (B10 @1d) | 1d (long) | 100 | 0 | 3 | 1773 | 1772 | 1 | 2 |
+| breakout template | daily_bb_squeeze (B11 @1d) | 1d (long) | 100 | 0 | 3 | 739 | 741 | 4 | 2 |
+| breakout template | intraday_15m_ttm_squeeze (B11 @15m) | 15m (long) | 100 | 0 | 5 | 202 | 203 | 6 | 5 |
+| breakout template | daily_50ma_breakout (B12 @1d) | 1d (long) | 100 | 0 | 1 | 182 | 181 | 0 | 1 |
+| breakout template | daily_rsi_adx_regime (B15 @1d) | 1d (long) | 100 | 0 | 0 | 41 | 41 | 0 | 0 |
+| breakout template | daily_trendline_break (B5 @1d) | 1d (long) | 100 | 0 | 7 | 1886 | 1887 | 5 | 4 |
+| breakout template | swing_1h_channel_break (B5 @1h) | 1h (long) | 100 | 0 | 0 | 20 | 20 | 0 | 0 |
+| breakout template | daily_flag (B6 @1d) | 1d (long) | 100 | 0 | 0 | 9 | 9 | 0 | 0 |
+| breakout template | daily_triangle (B6 @1d) | 1d (long) | 100 | 0 | 1 | 206 | 205 | 0 | 1 |
+| breakout template | daily_gap_base (B8 @1d) | 1d (long) | 100 | 0 | 14 | 697 | 865 | 168 | 0 |
+| breakout template | daily_range_retest (B9 @1d) | 1d (long) | 100 | 0 | 1 | 25 | 26 | 1 | 0 |
+| breakout template | swing_1h_range_retest (B9 @1h) | 1h (long) | 100 | 0 | 0 | 4 | 4 | 0 | 0 |
+| template A2 | A2 range edges, swing size 0 | 15m, 1h, 1d | 900 | 0 | 80 | 1615 | 1650 | 74 | 39 |
+| template A2 | A2 range edges (defaults) | 15m, 1h, 1d | 900 | 0 | 29 | 348 | 386 | 38 | 0 |
+| template F2 | F2 range edges, swing size 0 | 15m, 1h, 1d | 900 | 0 | 80 | 1615 | 1650 | 74 | 39 |
+| template F2 | F2 range edges (defaults) | 15m, 1h, 1d | 900 | 0 | 29 | 348 | 386 | 38 | 0 |
+| template F2 | F2 band reversion, structure regime | 15m, 1h, 1d | 900 | 0 | 228 | 4493 | 4680 | 282 | 95 |
+| template E3 | E3 structure regime, swing size 0 | 15m, 1h, 1d | 900 | 0 | 228 | 4493 | 4680 | 282 | 95 |
+| template E3 | E3 structure regime (defaults) | 15m, 1h, 1d | 900 | 0 | 230 | 3276 | 3676 | 426 | 26 |
+| template E2 | E2 RSI divergence, CHoCH trigger (defaults) | 15m, 1h, 1d | 900 | 0 | 10 | 191 | 185 | 2 | 8 |
+| template B2 | B2 swing break BOS (defaults) | 15m, 1h, 1d | 900 | 0 | 163 | 1306 | 1113 | 0 | 193 |
+| template B2 | B2 swing break, swing size 0 | 15m, 1h, 1d | 900 | 0 | 209 | 4274 | 4042 | 19 | 251 |
+| template G | G1 (wave 1h, trend 1d at swing size 0) | 1h (long) | 100 | 0 | 1 | 7 | 6 | 0 | 1 |
+| template G | G2 (wave 1h, trend 1d at swing size 0) | 1h (long) | 100 | 0 | 0 | 0 | 0 | 0 | 0 |
+| template G | G3 (wave 1h, trend 1d at swing size 0) | 1h (long) | 100 | 0 | 0 | 22 | 22 | 0 | 0 |
+| template G | G4 (wave 1h, trend 1d at swing size 0) | 1h (long) | 100 | 0 | 0 | 35 | 35 | 0 | 0 |
+| template G | G5 (wave 1h, trend 1d at swing size 0) | 1h (long) | 100 | 0 | 0 | 2 | 2 | 0 | 0 |
+| template G | G6 (wave 1h, trend 1d at swing size 0) | 1h (long) | 100 | 0 | 0 | 29 | 29 | 0 | 0 |
+| template G | G7 (wave 1h, trend 1d at swing size 0) | 1h (long) | 100 | 0 | 0 | 11 | 11 | 0 | 0 |
+| template G | G8 (wave 1h, trend 1d at swing size 0) | 1h (long) | 100 | 0 | 1 | 8 | 8 | 1 | 1 |
+| template G | G9 (wave 1h, trend 1d at swing size 0) | 1h (long) | 100 | 0 | 0 | 2 | 2 | 0 | 0 |
+| template G | G10 (wave 1h, trend 1d at swing size 0) | 1h (long) | 100 | 0 | 0 | 0 | 0 | 0 | 0 |
+| template G | G11 (wave 1h, trend 1d at swing size 0) | 1h (long) | 100 | 0 | 0 | 2 | 2 | 0 | 0 |
+| control | C1 (defaults) | 15m, 1d | 600 | 0 | 0 | 79 | 79 | 0 | 0 |
+| control | C3 (defaults) | 15m, 1d | 600 | 0 | 0 | 31 | 31 | 0 | 0 |
+| control | D1 (defaults) | 15m, 1d | 600 | 0 | 0 | 16342 | 16342 | 0 | 0 |
+| control | D2 (defaults) | 15m, 1d | 600 | 0 | 0 | 10270 | 10270 | 0 | 0 |
+| control | D3 (defaults) | 15m, 1d | 600 | 0 | 0 | 2398 | 2398 | 0 | 0 |
+| control | B1 (defaults) | 15m, 1d | 600 | 0 | 0 | 11725 | 11725 | 0 | 0 |
+| control | A5 (defaults) | 15m, 1d | 600 | 0 | 0 | 51 | 51 | 0 | 0 |
+
+C4 and the `trendline_projected` retest (draft PR #416, branch `claude/tpl-c4-projected`), measured on that branch with this
+fix applied (200 series: 100 per timeframe x 15m / 1d x 600 bars, same generator): C4 defaults 29 before / 29 after,
+C4 touch 292 / 292, `RetestEntry("up" / "down", "trendline_projected", 10, TRUE)` 18 / 18 and 26 / 26,
+`RetestEntry("up", "trendline", 10, TRUE)` 39 / 39 - nothing added or removed (the retest reads no structure function).
+#416's REVERSAL_SHA256 and RETEST_SHA256 (`test_wave3_levels_lines.py`) still pass with this fix; its TEMPLATES_SHA256 pin
+(every template's params hash) changes by design, to `c9ee3604e1414caed2e64390dc3640d61c529bc7b5e21f4347f255a7ecddf959`.
+Its seed choice for the reversal mirror test: on whole-tick prices C4 mirrors on all 30 seeds tried (11 with signals),
+before and after this fix; the one float-reflection miss (seed 1, K = 400) is a float tie, not TPL-F6.
+
+## TPL-9: the projected trendline retest (owner decision TPL-Q18) and C4 trendline breakout + retest
 Same flag `strategy_templates` (OFF), PAPER only, signals only, no migration. Owner decision 2026-10-23 (DECISIONS.md):
 the older trendline retest stays byte-identical; the line projected to the retest bar is a new option, used by C4.
-
 | Part | Where | Status |
-|---|---|---|
 | A NEW retest choice `trendline_projected`: the B5 trendline breakout in line mode (whatever the B9 screen's own `tl_mode`), the broken line (the falling resistance up, the rising support down) read at each bar after the breakout - the "back inside" check, the retest's reach, the touch and the reversal all at the projected value, as `channel`; for RetestEntry, RetestEntryRef (level / held_level projected, retest_low, base, the stop references) and the B9 screen (`retest_of`); `touches=` and `k=` forwarded (R7) | `screener/breakouts/retest.py` (`BASES`, `PROJECTED`, `base_params`, `retest_events`), `params.py`, `registry.py`, `runtime.py` | done |
 | `trendline` unchanged: its level stays frozen at the breakout bar. Pinned byte for byte against main (aa175fea): RetestEntry (both sides, reversal on / off, named arguments), every RetestEntryRef price, the B9 screen's columns and the retest events on five data sets (touch: 14,923 values; reversal: 2,853, pinned separately because a deliberate change of the reversal rule, e.g. TPL-F6, re-pins it), and the params hash + default id of every library / archived template outside family G (64) | `tests/test_tpl9_c4_trendline_retest.py` | done |
 | C4 trendline breakout and retest: B4's own breakout settings (touches, break distance, the edge buffer; the breakout reference choices = B4's invalidation choices), C3's retest settings (retest within, wait for a reversal or a touch), invalidation {the pullback to the line, the breakout's own reference, whichever is farther - default}, exit a close back across the projected line; signal text in structure words (two tokens) | `templates/C4.json`, `language.py` | done |
 | The new choice in the no-look-ahead cases (lookahead job) | `app/quality/causal_cases.py` | done |
-
 Tests: `tests/test_tpl9_c4_trendline_retest.py` - the pins above; the new choice's name and base; a hand-made falling-line
 retest whose pull back closes below the line's breakout-bar value (so the frozen retest has failed) and holds the projected
 line: C4 must fire long and short (mirror) with every invalidation choice by value, must not after a close back through the
@@ -286,7 +375,6 @@ text, "no number written into a rule" and every rule on the projected line, B4's
 trip and fit, the adapter's signal (no target, risk_reward None, provenance), the flags, no order field, and the API (404 with
 `strategy_templates` off; unavailable without the breakout flags; adopt as a PAPER pre-fill). No frontend change: the Paper
 bot form lists the templates from the API. No idea-library card: T5 stays A5 (TPL-Q48 / TPL-Q22).
-
 The B3 / B4 exits (TPL-Q12 / TPL-Q28) still read the line as of the breakout bar: they are version 1, and a projected exit
 would be a new version (not part of this decision).
 

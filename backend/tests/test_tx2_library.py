@@ -144,8 +144,12 @@ CASES_5M = [
     'VolumeBreakout("up", 1.5)', 'ORBreakout("up", 15, 0, FALSE, 15, 0)', 'DayLevelBreak("up", "prev_day", 0, FALSE, 15, 0)',
     'DayLevelBreak("down", "first_hour", 0, FALSE, 0, 0)', 'DayExtremeBreak("up", 0, FALSE, 15, 0)',
     "Count(1, close > EMA(close, 20))[1] >= 1 AND close > high[1]",
+    # TPL-F6: the swing structure mirrors (an equal high is not higher, an equal low not lower)
+    "DowTrend(0)", 'DowTrend(0) == "UP"', 'DowTrend(0) IN ("DOWN", "RANGE")', 'SwingBreakType("up", 0, 0)',
+    'SwingBreakType("down", 0, 0.2) == "CHOCH"',
 ]
-CASES_1D = ['NewHighBreakout("up", 4, 0, 0)', "SwingDirection(1)", 'SwingBreakout("up", 1, 0)', "close@1w > SMA(close, 5)@1w"]
+CASES_1D = ['NewHighBreakout("up", 4, 0, 0)', "SwingDirection(1)", 'SwingBreakout("up", 1, 0)', "close@1w > SMA(close, 5)@1w",
+            'DowTrend(0)@1w != "DOWN"', 'SwingBreakType("up", 1, 0) == "BOS"']
 # Read no bars (reference data as of the run date): direction-free, passed through; nothing to evaluate here.
 REFERENCE = {"IsFnO", "IndexMember", "Sector", "Industry", "McapBucket"}
 NOT_IN_SYNTHETIC_BARS = {"oi"}                     # open interest: passed through unchanged like volume
@@ -175,8 +179,6 @@ def test_every_mirror_rule_has_an_exactness_case():
     ("close > 100", "not a price"),
     ("close >= 0.9 * Max(high, 250)", "ratio or a multiple of a price"),
     ("PctChange(close, 5) > 2", "percentage change of a price"),
-    ('DowTrend(0)@1d != "DOWN"', "ties do not mirror"),
-    ('SwingBreakType("up", 1, 0) == "BOS"', "ties do not mirror"),
     ("ATRPercentile(14, 50) < 20", "price level"),
     ("Supertrend(10, 3) < close", "not checked"),
     ('Pattern("hammer")', "no mirrored twin"),

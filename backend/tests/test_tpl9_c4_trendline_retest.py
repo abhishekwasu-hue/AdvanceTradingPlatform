@@ -73,8 +73,9 @@ PIN_DATA = ((1, "15m"), (5, "15m"), (9, "15m"), (7, "5m"), (3, "1d"))
 TOUCH_SHA256, TOUCH_COUNT = "f1466b20f301cdbca2bfdc3ecbd2494346d7e950a00a9ebb079dc3146fd56489", 14923
 REVERSAL_SHA256, REVERSAL_COUNT = "ee9e54e6f0e3bd5faa8de5314c7654368f42dac7b40d509c79e77f0ca4d9b688", 2853
 # the params hash (with the price-action settings' fingerprint held fixed) and the default adopted id of every library
-# template outside family G (G has its own pins), and of every archived version, before this change
-TEMPLATES_SHA256, TEMPLATES_COUNT = "11728d863072f47ed7fddab39af945a7ade2f57fd965c87ecbe91710ebf75433", 64
+# template outside family G (G has its own pins), and of every archived version, before this change. Re-pinned by
+# TPL-F6 (STRUCTURE_VERSION "2" enters the params hash of A2, B2, E2, E3 and F2 only; ids unchanged); was 11728d86...
+TEMPLATES_SHA256, TEMPLATES_COUNT = "c9ee3604e1414caed2e64390dc3640d61c529bc7b5e21f4347f255a7ecddf959", 64
 
 
 def _values(a):

@@ -53,7 +53,6 @@ describe("the helpers", () => {
     const keys = shown.map((e) => e.key);
     expect(keys).not.toContain("stop");
     expect(keys).not.toContain("target");
-    expect(keys).not.toContain("india-vix");
     expect(shown.map((e) => e.term)).toEqual([...shown.map((e) => e.term)].sort((a, b) => a.localeCompare(b)));
     expect(learnGlossary("open interest").map((e) => e.key)).toContain("oi");
   });

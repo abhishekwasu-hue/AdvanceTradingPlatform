@@ -201,6 +201,16 @@ stored flags row was unreadable and the seed skipped it), switching the mode put
 default: `live_trading` ON (it is a kill flag) and `phase0_paper_only` OFF. In Phase 0 mode those absent entries
 resolved to the safe values only because of the mode.
 
+## 4b. Trader features (one button)
+
+After the first deploy, **Admin → Controls → Enable trader features** turns on, in one step, every switch a trader
+needs (the Copilot, strategy templates and the Pine Lab, the screens, the idea library, watchlists, the chart tools,
+the paper account and its risk tools). Each switch it changes is in the audit log (`feature_flag_set`, then
+`trader_pack_enabled`). It never touches `live_trading`, `phase0_paper_only`, `marketplace`, `public_api`,
+`self_signup`, `scan_auto_paper` or any owner-decision flag, so the deploy's flag check (section 4a) stays green.
+The card lists each feature as Working / Needs setup / On / Off; **Undo** puts every switch back exactly as it was
+before the first enable. No migration, nothing to run on the server.
+
 ## 5. DNS and TLS
 
 - **No domain yet:** `DOMAIN=<SERVER_IP>`, `ACME_EMAIL=ops@localhost`, `CADDYFILE=Caddyfile.ip`. Caddy serves HTTPS

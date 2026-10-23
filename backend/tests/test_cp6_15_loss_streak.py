@@ -412,4 +412,6 @@ def test_migration_is_additive_rollback_safe_reversible_and_the_only_head():
     assert "drop_column('risk_settings', 'loss_streak_resumed_at')" in source and "drop_column('risk_settings', 'loss_streak_pause')" in source
     script = ScriptDirectory.from_config(Config(str(root / "alembic.ini")))
     heads = script.get_heads()
-    assert heads == ["b5d7f9a1c3e6"]
+    # One head, and CP6-15 is on its line (MO3-A1's e8a0c2d4f6b9 is chained on it; the migration block re-chains at merge).
+    assert len(heads) == 1
+    assert "b5d7f9a1c3e6" in {rev.revision for rev in script.iterate_revisions(heads[0], "base")}

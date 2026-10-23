@@ -312,13 +312,21 @@ def test_start_end_and_every_request_are_audited_on_both_accounts(world):
 
 
 def test_the_audit_chain_stays_intact(world):
-    from app.audit.log import verify_audit_chain
+    """The rows a view appends chain correctly (checked from an anchor taken just before: other modules of the suite
+    tamper with older rows on purpose to test the verifier)."""
+    from app.audit.log import record_anchor, verify_audit_chain
+
+    async def anchor():
+        async with _session_factory() as session:
+            await record_anchor(session)
+            await session.commit()
+    _run(anchor())
     view = _bearer(_start(world["admin"], world["target_me"]["id"])["token"])
     client.post("/api/view-session/end", headers=view)
 
     async def check():
         async with _session_factory() as session:
-            return await verify_audit_chain(session)
+            return await verify_audit_chain(session, since_anchor=True)
     assert _run(check()) == (True, None)
 
 
@@ -495,6 +503,12 @@ def test_the_migration_is_one_additive_reversible_step():
     source = path.read_text()
     assert source.count("op.create_table(") == 2 and "drop_column" not in source and "add_column" not in source
     assert "op.drop_table('view_sessions')" in source and "op.drop_table('view_session_requests')" in source
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    from scripts.migration_rollback_safety import lint, risky_operations
+    assert risky_operations(source) == [] and not [p for p in lint() if p.startswith(path.name)]
+    assert ScriptDirectory.from_config(Config(str(path.parents[2] / "alembic.ini"))).get_heads() == ["e8a0c2d4f6b9"]
 
 
 def test_admin_session_row_must_be_two_factor_verified(world):

@@ -170,7 +170,7 @@ const ANSWER = {
       "condition": "NearZone(\"demand\")",
       "reads": "the close is at a buyer area (a demand zone)",
       "assumptions": [
-        "at the area = within 0.5% of the nearest live zone (the function's default)"
+        "at the area = within 0.5% of the nearest live zone (the usual setting)"
       ],
       "ok": true,
       "problems": []
@@ -193,7 +193,7 @@ const ANSWER = {
       "reads": "RSI is between 35 and 45",
       "assumptions": [
         "near 40 = within 5 points of it",
-        "RSI over 14 bars (the function's default)"
+        "RSI over 14 bars (the usual setting)"
       ],
       "ok": true,
       "problems": []

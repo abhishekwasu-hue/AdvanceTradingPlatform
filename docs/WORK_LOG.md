@@ -3728,3 +3728,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests `tests/test_tm7_smart_execution.py`, `src/fno/smartExecution.test.tsx`. Screenshots (fixtures, not committed):
   scratchpad `tm-part7/`. Questions SE-4..SE-8. No migration.
 
+## 23 Oct - Day-one fix 5: the Copilot's answers in a beginner's words (README row 19, DAY_ONE_TRADER_TEST finding 7)
+
+- Branch `claude/d1-fix-copilot-words` (from main). **No migration**, no flag change (the Copilot's own flags).
+- `app/ai/copilot_chat.py`: a scan answer's "Each stage" / "Why <symbol>" lines use the idea reader's own plain words
+  (`stage_words`: "The market-structure trend is up: 3 left", never `Trend() == "UPTREND"`); "Open Find setups" and
+  "edit them in Find setups" (the v2 page name, not "the Screener"); the market line "by its swing highs and lows the
+  daily trend is up, the weekly sideways" with an India date ("20 Oct 2026") instead of "Dow structure daily uptrend"
+  and "(2026-10-20)"; structure lines and table name BOS / CHoCH in words ("break past the last swing (a break of
+  structure)", "first break against the trend (a change of character)"); the option chain section opens with what PCR
+  is (max pain is already explained in its own sentence).
+- `app/screener/idea.py`: "(the function's default)" -> "(the usual setting)".
+- Evals `copilot_jobs.jsonl` facts updated (3), e2e fixtures `copilot_tools_v2.json` / `copilot_chat_v2.json` patched to
+  the new words (pins updated in `scripts/check_public_repo.py`), `copilot-chat-v2-1440-light.png` re-baselined.
+- Tests `tests/test_d1_copilot_words.py` (4), e2e `e2e/d1-copilot-words-v2.e2e.ts` (no baseline).
+- Not changed: the "More Copilot tools" list (finding 7's last point).

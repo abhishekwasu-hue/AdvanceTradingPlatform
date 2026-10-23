@@ -1,5 +1,5 @@
-import { ChartCandlestick, NotebookPen } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { ChartCandlestick, Download, NotebookPen } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import { CardV2, ChipV2, toneClass } from "../dashboard/CardV2";
 import { signTone } from "../dashboard/model";
 import { BUTTON_SECONDARY, FIELD } from "../trading/PartsV2";
@@ -11,6 +11,7 @@ import {
   type JournalDrafts,
 } from "./journal";
 import { cropBars, snapshotWindow } from "./snapshot";
+import { downloadSnapshot, snapshotFileName, type ImageOptions } from "./snapshotImage";
 
 /**
  * F&O workspace 8b-k: the auto journal on the positions page (pure parts in journal.ts). Each closed PAPER F&O trade -
@@ -115,9 +116,16 @@ function DraftV2({ draft, onSave, candles }: { draft: JournalDraft; onSave: (d: 
 
 type Snap = { status: "idle" } | { status: "loading" } | { status: "error" } | { status: "ok"; bars: OHLCVBar[] };
 
-/** 8b slice 4: the chart snapshot of the trade, read only when he asks for it (one candle read; nothing is stored). */
-export function SnapshotV2({ draft, candles, now = Date.now() }: { draft: JournalDraft; candles: Candles; now?: number }) {
+export const IMAGE_FAILED = "The image could not be made in this browser. The chart is still shown here.";
+
+/** 8b slice 4: the chart snapshot of the trade, read only when he asks for it (one candle read; nothing is stored).
+ * FNO-8B-31: "Download image" saves the chart as drawn as a PNG on his own device (nothing is sent anywhere). */
+export function SnapshotV2({ draft, candles, now = Date.now(), download = downloadSnapshot }: {
+  draft: JournalDraft; candles: Candles; now?: number; download?: (svg: SVGSVGElement, o: ImageOptions) => Promise<boolean>;
+}) {
   const [snap, setSnap] = useState<Snap>({ status: "idle" });
+  const [saving, setSaving] = useState<"idle" | "busy" | "failed">("idle");
+  const shown = useRef<HTMLDivElement | null>(null);
   const opened = draft.opened_at ? Date.parse(draft.opened_at) : NaN;
   const closed = draft.closed_at ? Date.parse(draft.closed_at) : NaN;
   if (!Number.isFinite(opened) || !Number.isFinite(closed)) return null;
@@ -142,12 +150,26 @@ export function SnapshotV2({ draft, candles, now = Date.now() }: { draft: Journa
   }
   if (snap.status === "error") return <p className="mt-space-2 text-t13 text-fg-muted" data-draft-chart="missing">{SNAPSHOT_MISSING}</p>;
   const marks = [{ at: opened, label: "Opened" }, { at: closed, label: "Closed" }];
+  async function saveImage() {
+    const svg = shown.current?.querySelector<SVGSVGElement>("figure[data-snapshot] svg");
+    if (!svg) { setSaving("failed"); return; }
+    setSaving("busy");
+    const ok = await download(svg, { fileName: snapshotFileName(symbol, closed),
+      heading: `${symbol} · PAPER trade · opened ${formatDateTimeIST(opened)} · closed ${formatDateTimeIST(closed)}` });
+    setSaving(ok ? "idle" : "failed");
+  }
   return (
-    <div className="mt-space-2 rounded-control border border-subtle px-space-2 py-space-2" data-draft-chart="shown">
+    <div ref={shown} className="mt-space-2 rounded-control border border-subtle px-space-2 py-space-2" data-draft-chart="shown">
       <p className="px-space-1 text-t12 font-semibold text-fg-muted">{symbol}: the chart while the trade was open</p>
       <CandleSnapshotV2 bars={snap.bars} marks={marks} testId={draft.key} title={`${symbol} chart for this trade`}
         summary={`${symbol} from before it opened (${formatDateTimeIST(opened)}) to after it closed (${formatDateTimeIST(closed)}).`} />
       <p className="px-space-1 text-t12 text-fg-muted">{SNAPSHOT_NOTE}</p>
+      <div className="mt-space-1 flex flex-wrap items-center gap-space-2 px-space-1">
+        <button type="button" onClick={() => { void saveImage(); }} disabled={saving === "busy"} data-draft-chart="download" className={BUTTON_SECONDARY}>
+          <Download size={16} aria-hidden /> {saving === "busy" ? "Making the image…" : "Download image"}
+        </button>
+        {saving === "failed" && <span role="status" className="text-t13 text-warn" data-draft-chart="download-failed">{IMAGE_FAILED}</span>}
+      </div>
     </div>
   );
 }

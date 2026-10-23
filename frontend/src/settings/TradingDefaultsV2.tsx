@@ -13,6 +13,7 @@ import {
   EMPTY_DEFAULTS, EXPIRIES, KINDS, POSITIONS, RISK_LIMITS_PATH, STRIKES, STRUCTURES, TICKET_ORDER_TYPES, TICKET_PRODUCTS,
   defaultsOf, formOf, hasAnyDefault, loadDefaults, saveDefaults, type DefaultsForm,
 } from "./tradingDefaults";
+import { LIMITS_OFF, limitsFormOf, limitsOf, loadLimits, saveLimits, type LimitsForm } from "./liquidityLimits";
 
 /**
  * Settings redesign part C: Settings → My trading defaults at `/settings/trading-defaults`, shown only while `ui_v2` is on
@@ -21,20 +22,26 @@ import {
  * defaults" next to a value it took, and the value can be changed there. Nothing trades from this page and the server
  * never reads these values to trade. Only existing fields (review R7); no mode, broker routing or LIVE field. Risk limits
  * are a link to their own page, not a copy.
+ * FNO-8B-28: "My own liquidity limits" (namespace `fno`, src/settings/liquidityLimits.ts) - OFF by default; when on, the
+ * F&O confirm step's liquidity line also says whether the strike is inside them. Information only; saved with the same
+ * "Save my defaults" button and cleared by "Clear all".
  */
 export default function TradingDefaultsV2(_props: PageProps = {}) {
   const { user, loading } = useAuth();
   const features = useFeatures();
   const [form, setForm] = useState<DefaultsForm | null>(null);
   const [version, setVersion] = useState(0);
+  const [limits, setLimits] = useState<LimitsForm>(limitsFormOf(LIMITS_OFF));
+  const [limitsVersion, setLimitsVersion] = useState(0);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const r = await loadDefaults();
+      const [r, l] = await Promise.all([loadDefaults(), loadLimits()]);
       setForm(formOf(r.value)); setVersion(r.version); setFailed(false);
+      setLimits(limitsFormOf(l.value)); setLimitsVersion(l.version);
     } catch {
       setFailed(true);
     }
@@ -46,15 +53,21 @@ export default function TradingDefaultsV2(_props: PageProps = {}) {
 
   const approvalAllowed = features.on("approval_only_entries");
 
-  async function save(next: DefaultsForm, cleared = false) {
+  async function save(next: DefaultsForm, nextLimits: LimitsForm, cleared = false) {
     const { value, problems } = defaultsOf(next);
-    if (problems.length) { setNote({ kind: "warn", text: problems[0] }); return; }
+    const own = limitsOf(nextLimits);
+    const first = problems[0] ?? own.problems[0];
+    if (first) { setNote({ kind: "warn", text: first }); return; }
     setBusy(true); setNote(null);
     try {
       const r = await saveDefaults(value, version);
       setForm(formOf(r.value)); setVersion(r.version);
+      const l = await saveLimits(own.value, limitsVersion);
+      setLimits(limitsFormOf(l.value)); setLimitsVersion(l.version);
+      const limitsWord = l.value.on ? " Your own liquidity limits are on." : "";
       setNote({ kind: "done", text: cleared ? "Your defaults are cleared. New forms start with the usual settings."
-        : hasAnyDefault(r.value) ? "Saved. New forms start with these values, marked \"from your defaults\"."
+        : hasAnyDefault(r.value) ? `Saved. New forms start with these values, marked "from your defaults".${limitsWord}`
+        : l.value.on ? "Saved. Your own liquidity limits are on; new forms start with the usual settings."
         : "Saved. Nothing is set, so new forms start with the usual settings." });
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
@@ -75,7 +88,8 @@ export default function TradingDefaultsV2(_props: PageProps = {}) {
       {failed && !form ? <CardV2 title="My trading defaults"><LoadFailedV2 what="your defaults" /></CardV2>
         : !form ? <CardV2 title="My trading defaults"><LoadingRowsV2 rows={4} /></CardV2>
         : <DefaultsFormV2 form={form} onChange={(f) => { setForm(f); setNote(null); }} approvalAllowed={approvalAllowed} busy={busy} note={note}
-            onSave={() => void save(form)} onClear={() => void save(formOf(EMPTY_DEFAULTS), true)} />}
+            limits={limits} onLimits={(f) => { setLimits(f); setNote(null); }}
+            onSave={() => void save(form, limits)} onClear={() => void save(formOf(EMPTY_DEFAULTS), limitsFormOf(LIMITS_OFF), true)} />}
     </div>
   );
 }
@@ -109,9 +123,11 @@ function NumberBox({ id, value, onChange, placeholder = "Not set", decimal = fal
 }
 
 /** The page's form (no data loading: tested on its own). */
-export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, onSave, onClear }: {
+export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, onSave, onClear, limits, onLimits }: {
   form: DefaultsForm; onChange: (f: DefaultsForm) => void; approvalAllowed: boolean; busy: boolean;
   note: { kind: "done" | "warn"; text: string } | null; onSave: () => void; onClear: () => void;
+  /** FNO-8B-28: his own liquidity limits (absent: the card is not shown). */
+  limits?: LimitsForm; onLimits?: (f: LimitsForm) => void;
 }) {
   const base = useId();
   const id = (k: string) => `${base}-${k}`;
@@ -224,6 +240,30 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
           </Field>
         </div>
       </CardV2>
+
+      {limits && onLimits && (
+        <CardV2 title="My own liquidity limits (F&O)" testId="liquidity">
+          <p className="mb-space-3 text-t14 text-fg-muted">
+            Before you place an F&amp;O order, its strike is compared with the other strikes on the chain. You can also add your own limits;
+            the check then says whether the strike is inside them. Information only: it never holds back an order or an exit.
+          </p>
+          <label className="flex min-h-11 cursor-pointer items-start gap-space-2 text-t14 text-fg">
+            <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-brand" checked={limits.on} data-limits="on"
+              onChange={(e) => onLimits({ ...limits, on: e.target.checked })} />
+            <span>Use my own limits too</span>
+          </label>
+          {limits.on && (
+            <div className={`${grid} mt-space-3`}>
+              <Field id={id("spread")} label="Max bid-ask gap %" hint="Of the price. Above 0, up to 100.">
+                <NumberBox id={id("spread")} value={limits.max_spread_pct} onChange={(v) => onLimits({ ...limits, max_spread_pct: v })} decimal />
+              </Field>
+              <Field id={id("minoi")} label="Min open interest" hint="A whole number. Empty means not checked.">
+                <NumberBox id={id("minoi")} value={limits.min_oi} onChange={(v) => onLimits({ ...limits, min_oi: v })} />
+              </Field>
+            </div>
+          )}
+        </CardV2>
+      )}
 
       <CardV2 title="Risk limits" testId="risk">
         <p className="text-t14 text-fg-muted">Your daily loss limit and the most open positions live on their own page and apply to every trade.</p>

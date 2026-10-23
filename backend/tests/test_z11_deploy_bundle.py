@@ -481,9 +481,9 @@ if up:
         up = False          # an older image on a newer database starts only when told that exact revision
 pub = st.get("public")
 local = "--resolve" in args                          # through Caddy on the host; otherwise through public DNS (D1)
+if pub is not None and url.startswith("https://") and "-D" in args:   # the edge headers (A4: the app page and the API)
+    print("\r\n".join(["HTTP/2 200", *pub["headers"]]) + "\r\n" if pub["headers"] is not None else "", end=""); sys.exit(0)
 if pub is not None and url.startswith("https://") and not (local and url.endswith("/api/system/health")):
-    if "-D" in args:
-        print("\r\n".join(["HTTP/2 200", *pub["headers"]]) + "\r\n" if pub["headers"] is not None else "", end=""); sys.exit(0)
     if "://www." in url:
         print(pub["www_local"] if local else pub["www"], end=""); sys.exit(0)
     print(pub["health"], end=""); sys.exit(0)
@@ -933,7 +933,8 @@ def test_a_seed_shaped_change_to_an_existing_entry_still_fails_the_deploy(host):
 
 
 _EDGE_HEADERS = ["Strict-Transport-Security: max-age=31536000; includeSubDomains", "X-Content-Type-Options: nosniff",
-                 "X-Frame-Options: DENY", "Content-Security-Policy: default-src 'self'", "Referrer-Policy: no-referrer"]
+                 "X-Frame-Options: DENY", "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'", "Referrer-Policy: no-referrer",
+                 "Permissions-Policy: camera=()"]
 
 
 def test_health_checks_the_public_domain_its_headers_and_the_www_redirect(host):
@@ -957,6 +958,13 @@ def test_health_checks_the_public_domain_its_headers_and_the_www_redirect(host):
     res = host.run("health")
     assert res.returncode == 1 and "expected '301 https://atp.example.com/atp-health-probe?x=1'" in res.stdout
     assert "is missing: strict-transport-security" in res.stdout
+    assert "https://atp.example.com/api/system/health is missing: strict-transport-security" in res.stdout  # A4: the API too
+    host.state["public"].update(headers=[h for h in _EDGE_HEADERS if not h.startswith("Permissions")]); host.save()
+    res = host.run("health")
+    assert res.returncode == 1 and "is missing: permissions-policy" in res.stdout                          # A4
+    host.state["public"].update(headers=[h.replace("; frame-ancestors 'none'", "") for h in _EDGE_HEADERS]); host.save()
+    res = host.run("health")
+    assert res.returncode == 1 and "is missing: csp-frame-ancestors" in res.stdout                         # A4
     host.state["public"].update(www_local=good, headers=None); host.save()                 # no answer: one clear failure
     res = host.run("health")
     assert res.returncode == 1 and "gave no answer, so its security headers could not be checked" in res.stdout

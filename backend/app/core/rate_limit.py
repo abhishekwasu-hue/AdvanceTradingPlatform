@@ -67,18 +67,23 @@ async def allow(name: str, key: str, limit: int, window_seconds: float, units: i
     return _local_hit(name, key, limit, window_seconds, units)
 
 
-def _too_many() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many requests, please try again later.")
+TOO_MANY = "Too many requests, please try again later."
 
 
-def rate_limit(name: str, limit: int, window_seconds: float) -> Callable[[Request], Awaitable[None]]:
+def _too_many(message: Optional[str] = None, window_seconds: Optional[float] = None) -> HTTPException:
+    """429 with a plain sentence; with the window, `Retry-After` says the longest wait (A4)."""
+    headers = {"Retry-After": str(max(1, int(window_seconds)))} if window_seconds else None
+    return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message or TOO_MANY, headers=headers)
+
+
+def rate_limit(name: str, limit: int, window_seconds: float, message: Optional[str] = None) -> Callable[[Request], Awaitable[None]]:
     """`Depends(rate_limit("auth_login", limit=10, window_seconds=60))`: 429 once a caller IP has made `limit`
-    calls to this named limiter within the trailing `window_seconds`."""
+    calls to this named limiter within the trailing `window_seconds`. `message` is the plain sentence the person reads."""
 
     async def _check(request: Request) -> None:
         ip = request.client.host if request.client else "unknown"
         if not await allow(name, ip, limit, window_seconds):
-            raise _too_many()
+            raise _too_many(message, window_seconds)
 
     return _check
 
@@ -87,16 +92,16 @@ async def charge_user(name: str, user_id: int, limit: int, window_seconds: float
     """Counts `units` calls of a per-user limiter at once (a request that does the work of several calls - U9 TX2
     review: a confluence of six screens is six screener runs); 429 when they do not fit in the window."""
     if not await allow(name, f"u{user_id}", limit, window_seconds, max(1, int(units))):
-        raise _too_many()
+        raise _too_many(None, window_seconds)
 
 
-def user_rate_limit(name: str, limit: int, window_seconds: float) -> Callable[..., Awaitable[None]]:
+def user_rate_limit(name: str, limit: int, window_seconds: float, message: Optional[str] = None) -> Callable[..., Awaitable[None]]:
     """Per logged-in user; the dependency resolves the user itself so it composes with any route."""
     from app.auth.dependencies import get_current_user
 
     async def _check(user=Depends(get_current_user)) -> None:
         if not await allow(name, f"u{user.id}", limit, window_seconds):
-            raise _too_many()
+            raise _too_many(message, window_seconds)
 
     return _check
 

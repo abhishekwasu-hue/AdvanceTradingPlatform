@@ -8,7 +8,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import verify_audit_chain
-from app.auth.dependencies import get_current_user, require_role, require_trader
+from app.auth.dependencies import get_current_user, require_mfa_session, require_role, require_trader
 from app.option_chain.greeks import today_ist
 from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
@@ -445,7 +445,7 @@ class AuditChainVerificationResponse(BaseModel):
     first_broken_row_id: Optional[int] = None
 
 
-@router.get("/audit-logs/verify", response_model=AuditChainVerificationResponse)
+@router.get("/audit-logs/verify", response_model=AuditChainVerificationResponse, dependencies=[Depends(require_mfa_session)])
 async def verify_audit_logs(
     user: User = Depends(require_role()),  # SUPER_ADMIN only - the chain spans every tenant
     session: AsyncSession = Depends(get_session),

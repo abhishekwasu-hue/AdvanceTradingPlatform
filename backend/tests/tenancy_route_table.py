@@ -74,6 +74,8 @@ S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own t
 S_READ_MARKS = "self: read marks are per user"
 S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
 S_FEEDBACK = "self: sends product feedback (rate limited)"
+S_REPORT = ("self: Report a problem - the caller's own scrubbed message and a closed list of context fields into the feedback "
+            "inbox; tenant and user from the session (rate limited)")
 S_NEWS_CLASSIFY = "self: classifies the organisation's pending feed items with its own AI key (metered, like a Copilot question)"
 S_OWN_VERDICTS = "self: the caller's own verdicts on feed items"
 S_PREVIEW = "self: previews the contract a deployment would trade; stores nothing"
@@ -99,6 +101,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/admin/beta/cohort"): "admin",
     ("PUT", "/api/admin/beta/cohort/stage"): "admin",
     ("GET", "/api/admin/beta/feedback"): "admin",
+    ("GET", "/api/admin/support/tickets"): "admin",
+    ("PUT", "/api/admin/support/tickets/{ticket_id}"): "admin",
+    ("GET", "/api/admin/support/settings"): "admin",
+    ("PUT", "/api/admin/support/settings"): "admin",
     ("GET", "/api/admin/beta/invite-codes"): "admin",
     ("POST", "/api/admin/beta/invite-codes"): "admin",
     ("POST", "/api/admin/beta/invite-codes/{code_id}/revoke"): "admin",
@@ -241,6 +247,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/alert-channels/{channel_type}"): "trader",
     ("PUT", "/api/alert-channels/{channel_type}"): "trader",
     ("POST", "/api/alert-channels/{channel_type}/test"): "trader",
+    # B8 (flag mobile_push): the caller's own phones for app notifications, inside the organisation's FCM channel
+    ("GET", "/api/mobile/devices"): "member: the caller's own phones only (another member's phones are never listed; no token is returned)",
+    ("POST", "/api/mobile/devices"): "self: registers the caller's own phone for notifications (a phone that changes hands is moved, never shared)",
+    ("PATCH", "/api/mobile/devices/{device_id}"): "self: the name and notification kinds of the caller's own phone; another member's id answers 404",
+    ("DELETE", "/api/mobile/devices/{device_id}"): "self: removes the caller's own phone; another member's id answers 404",
+    ("POST", "/api/mobile/devices/{device_id}/test"): "self: a test notification to the caller's own phone; another member's id answers 404",
     ("GET", "/api/alerts/dead-letters"): "member",
     ("POST", "/api/alerts/deliveries/{delivery_id}/retry"): "trader",
     ("GET", "/api/alerts/email-opt-outs"): "member",
@@ -285,6 +297,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/auth/login-history"): "member",
     ("POST", "/api/auth/logout"): S_OWN_ACCOUNT,
     ("POST", "/api/auth/logout-all"): S_OWN_ACCOUNT,
+    ("POST", "/api/auth/logout-others"): S_OWN_ACCOUNT,
     ("GET", "/api/auth/me"): "member",
     ("POST", "/api/auth/mfa/backup-codes"): S_OWN_ACCOUNT,
     ("POST", "/api/auth/mfa/confirm"): S_OWN_ACCOUNT,
@@ -418,6 +431,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/deployments/{deployment_id}/stop"): "trader",
     ("GET", "/api/exports/{dataset}"): "owner",
     ("POST", "/api/feedback"): S_FEEDBACK,
+    ("GET", "/api/support/help"): "member",
+    ("GET", "/api/support/contact"): "member",
+    ("POST", "/api/support/report"): S_REPORT,
     ("GET", "/api/fundamentals/calendar/upcoming"): P_FUNDAMENTALS,
     ("GET", "/api/fundamentals/companies"): P_FUNDAMENTALS,
     ("POST", "/api/fundamentals/companies"): "trader",

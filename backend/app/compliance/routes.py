@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_owner, require_role
+from app.auth.dependencies import get_current_user, require_mfa_session, require_owner, require_role
 from app.compliance import golive, rules, static_ip
 from app.core import config
 from app.core.enums import UserRole
@@ -66,14 +66,14 @@ class EvidenceBody(BaseModel):
     valid_until: Optional[date] = None
 
 
-@router.get("/golive")
+@router.get("/golive", dependencies=[Depends(require_mfa_session)])   # A4 / R5 b: two-factor like every admin route
 async def golive_items(user: User = Depends(require_role(UserRole.SUPER_ADMIN)), session: AsyncSession = Depends(get_session)) -> dict:
     """Part D6: the go-live items only a human can evidence, plus the two the platform checks itself (SUPER_ADMIN)."""
     return {"items": [asdict(i) for i in await golive.evaluate(session)],
             "breach_notify_hours": rules.load().param(golive.RULE, "dpdp_breach_notify_hours")}
 
 
-@router.put("/golive/evidence")
+@router.put("/golive/evidence", dependencies=[Depends(require_mfa_session)])
 async def record_golive_evidence(body: EvidenceBody, user: User = Depends(require_role(UserRole.SUPER_ADMIN)),
                                  session: AsyncSession = Depends(get_session)) -> dict:
     try:

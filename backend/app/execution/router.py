@@ -70,6 +70,7 @@ _FILLED_STATUSES = {"COMPLETE", "FILLED", "TRADED", "EXECUTED"}
 _REJECTED_STATUSES = {"REJECTED", "CANCELLED", "CANCELED", "EXPIRED", "LAPSED"}
 DEFAULT_MARKET_PROTECTION_PCT = 0.5
 ORDER_STYLES = ("MARKET", "PROTECTED_LIMIT")
+PAPER_EXECUTIONS = ("direct", "adapter")
 _TICK = 0.05
 
 
@@ -98,9 +99,15 @@ class OrderRouter:
         self, mode: ExecutionMode, risk_config: RiskConfig, broker: Optional[BrokerInterface] = None,
         exchange: str = "NSE", product: str = "MIS", place_protective_stop: bool = True,
         algo_id: Optional[str] = None, order_style: str = "MARKET", market_protection_pct: Optional[float] = None,
-        is_option: Optional[bool] = None,
+        is_option: Optional[bool] = None, paper_execution: str = "direct",
     ) -> None:
         self.mode = mode
+        # TM-1: how a PAPER order fills - "direct" (PaperBroker.open_trade, every path not yet moved) or "adapter" (the
+        # PaperExecutionAdapter, a BrokerInterface over the same fill and cost model). Paths move one at a time, each with
+        # an old-vs-new parity test (tests/test_tm1_paper_adapter.py). LIVE ignores it.
+        if paper_execution not in PAPER_EXECUTIONS:
+            raise ValueError(f"paper_execution must be one of {PAPER_EXECUTIONS}")
+        self.paper_execution = paper_execution
         self.algo_id = algo_id
         # P0.5 / T5: MARKET (default) or PROTECTED_LIMIT - a marketable limit `market_protection_pct` past the
         # signal price. P0.5 / T2: `is_option` tells the stop which order type the broker accepts (None = infer
@@ -146,6 +153,8 @@ class OrderRouter:
         entry_tag = build_order_tag(strategy_id=signal.strategy_id, leg=LEG_ENTRY, algo_id=self.algo_id, max_length=max_tag,
                                     broker=getattr(self.broker, "name", None))
 
+        if self.mode == ExecutionMode.PAPER and self.paper_execution == "adapter":
+            return await self._execute_paper_adapter(signal, state, decision.quantity, notes, entry_tag, started)
         if self.mode == ExecutionMode.PAPER:
             trade = self.paper_broker.open_trade(signal, decision.quantity, datetime.now(timezone.utc))
             trade.expected_price = signal.entry
@@ -297,6 +306,42 @@ class OrderRouter:
             partial_fill=partial_fill, requested_quantity=requested_quantity, broker_uncertain=broker_uncertain,
             sl_rejected=sl_rejected,
         )
+
+    async def _execute_paper_adapter(self, signal: Signal, state: TradingDayState, quantity: float, notes: list[str],
+                                     entry_tag: Optional[str], started: float) -> ExecutionResult:
+        """TM-1: the PAPER entry through the PaperExecutionAdapter - one market order on the paper exchange at the price
+        the caller already checked (`signal.entry`), the fill read back from the adapter's book, a partial fill handled
+        as for LIVE (the position is the filled part, the remainder cancelled). Same fill price (the same PaperBroker
+        slippage), same reasons and same Trade as the direct path; no protective stop order (PAPER enforces stops in the
+        position monitor, as before)."""
+        from app.execution.paper_adapter import PaperExecutionAdapter
+        adapter = PaperExecutionAdapter(self.paper_broker)
+        adapter.mark(signal.symbol, signal.entry, self.exchange)
+        side = OrderSide.BUY if signal.direction == SignalDirection.LONG else OrderSide.SELL
+        request = BrokerOrderRequest(symbol=signal.symbol, exchange=self.exchange, transaction_type=side, quantity=quantity,
+                                     order_type="MARKET", product=self.product, tag=entry_tag, intent=ORDER_INTENT_ENTRY)
+        response = await adapter.place_order(request)
+        book = adapter.order(response.order_id)
+        if response.status == "REJECTED" or book is None or not book.filled_quantity or book.average_price is None:
+            if book is not None and book.status not in ("REJECTED", "CANCELLED", "COMPLETE"):
+                await adapter.cancel_order(response.order_id)
+            return ExecutionResult(executed=False, reasons=notes + [f"Paper order not filled: {response.message or response.status}"])
+        reasons = notes + ["Paper order filled"]
+        filled, partial = float(book.filled_quantity), False
+        if filled + 1e-9 < quantity:
+            reasons.append(f"Partial fill: {filled:g} of {quantity:g} - position and stop sized to the filled quantity")
+            await adapter.cancel_order(response.order_id)
+            reasons.append(f"Unfilled remainder {quantity - filled:g} cancelled")
+            partial = True
+        trade = Trade(symbol=signal.symbol, strategy_id=signal.strategy_id, direction=signal.direction,
+                      entry_time=datetime.now(timezone.utc), entry_price=round(float(book.average_price), 2), quantity=filled,
+                      stop_loss=signal.stop_loss, target1=signal.target1, target2=signal.target2)
+        trade.expected_price = signal.entry
+        trade.entry_latency_ms = int((time.perf_counter() - started) * 1000)
+        state.trades_today += 1
+        state.open_positions += 1
+        return ExecutionResult(executed=True, reasons=reasons, trade=trade, algo_tag=entry_tag, partial_fill=partial,
+                               requested_quantity=quantity if partial else None)
 
     async def _resolve_fill_price(self, order_id: str, fallback: float) -> float:
         price, _ = await self._resolve_fill(order_id, fallback)

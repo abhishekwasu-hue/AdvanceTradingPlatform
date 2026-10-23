@@ -146,7 +146,7 @@ async def _transition(session: AsyncSession, legs: Sequence[TradeRecord], expect
     meta[KEY] = new_block_
     claimed = await session.execute(update(TradeRecord).where(TradeRecord.id == first.id, TradeRecord.group_meta == old_text)
                                     .values(group_meta=json.dumps(meta)).execution_options(synchronize_session=False))
-    if claimed.rowcount != 1:
+    if getattr(claimed, "rowcount", 0) != 1:
         await session.rollback()
         return None
     for leg in every[1:]:

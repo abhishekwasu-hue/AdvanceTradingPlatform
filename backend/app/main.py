@@ -88,6 +88,7 @@ from app.watchlists.system_routes import admin_router as system_watchlists_admin
 from app.watchlists.system_routes import router as system_watchlists_router
 from app.chart_analyze.routes import admin_router as chart_analyze_admin_router, router as chart_analyze_router
 from app.signals_feed.routes import router as signals_feed_router
+from app.signals_feed.day_one_routes import router as signals_day_one_router
 from app.me.prefs import router as me_prefs_router
 from app.rhythm.routes import router as rhythm_router
 from app.option_chain.ask_routes import router as oc_ask_router
@@ -153,6 +154,7 @@ from app.screener.board import router as screener_board_router
 from app.screener.library_routes import router as screener_library_router
 from app.screener.version_routes import router as screener_version_router
 from app.screener.etf_routes import router as screener_etf_router
+from app.screener.universes import router as screener_universes_router
 from app.lab.pine.routes import router as lab_pine_router
 from app.strategy_templates.routes import router as strategy_templates_router
 from app.idea_library.routes import router as idea_library_router
@@ -383,6 +385,7 @@ app.include_router(screener_board_router)  # U5 D3a: result-board heatmap / char
 app.include_router(screener_library_router)  # U9 TX2: confluence, mirrors, watch-then-trigger lists (flag screener_tx2, off)
 app.include_router(screener_version_router)  # LAB-18 (AMW-7): a saved screen's versions (flag screener_copilot, off)
 app.include_router(screener_etf_router)  # S10 J: the ETF screen on the shared EOD history (flag screener_etf, off)
+app.include_router(screener_universes_router)  # owner 23 Oct: the lists a scan runs on and the batch plan (flag screener_v2)
 app.include_router(alert_rules_router)
 app.include_router(scan_then_router)
 app.include_router(alert_links_router)
@@ -409,6 +412,7 @@ app.include_router(system_watchlists_admin_router)  # WL1: the admin's view of t
 app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a chart image, educational reading (flag chart_analyze, off)
 app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)
 app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)
+app.include_router(signals_day_one_router)  # Signals day one: the setup card + his adopted watch (ui_v2 + strategy_templates)
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
 app.include_router(rhythm_router)     # MO4: the daily rhythm - pre-market brief, pulse, closing wrap, weekly review (flags ui_v2 + daily_rhythm)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)

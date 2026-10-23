@@ -3561,6 +3561,66 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `test_tm1_data_hub.py`, `test_tm1_data_hub_load.py`, vitest `live/liveTicks.test.tsx`, e2e `live-prices-v2.e2e.ts`.
 - Questions TMH-1..8; `data_hub` joins the trader pack (#455). README row 20 is not on main yet: its status clause is in the PR body.
 
+## 23 Oct - Signals day one (README row 19, the trader review's gaps)
+
+- Branch `claude/signals-day-one` (from main). **No migration** (an internal `user_prefs` row). Behind `ui_v2` +
+  `strategy_templates`. PAPER only; nothing creates a deployment, a proposal or an order.
+- Backend: `app/signals_feed/day_one.py` + `day_one_routes.py` (`/api/signals/day-one`, adopt, refresh, stop);
+  `SignalSeries.armed_end` (additive) in `app/strategy_templates/engine.py`; tenancy table rows; the language guard
+  registers the new producer.
+- Frontend: `DayOneV2.tsx` / `dayOne.ts` on Signals; the empty inbox points at the watch.
+- Tests: `test_signals_day_one.py`, the guard, vitest `DayOneV2.test.tsx`, e2e `signals-day-one-v2.e2e.ts`.
+- Design `docs/design/SIGNALS_DAY_ONE.md`; questions SIG1-1..6.
+
+## 23 Oct - Copilot on the user's own key, its tools wired (owner order 23 Oct, README row 19)
+
+- Branch `claude/copilot-own-key-tools` (from main). **No migration.** New user-facing parts behind `ui_v2` plus their
+  flags (`ai_one_key`, `ai_agent`, `screener_copilot`, `ai_multiview`; all unchanged, OFF by default).
+- Verified the review: with `ai_one_key` off only the organisation's key counts (plan + consent + budget); with it on,
+  `resolve.provider_for_user` already put the user's own key first. Finished it: the scan read moved to the resolver;
+  the chat at the user's own limit still answers from the rules (never the organisation's key); `ai_one_key` is `ready`
+  in the flag catalog. A plain member and a Free-plan user connect and use their own key (tests).
+- Chat tools: job 1 adds market memory and the news feed, job 4 the news on the held symbols; new job 9 "Find setups"
+  (the deterministic idea reader -> `build_screen` -> `get_screen_universe` -> `run_screen` -> `explain_results` on
+  "why", or `propose_alert` through the agent's guard) and job 10 "Full view of a symbol" (structure, option chain,
+  news, market memory). A switched-off part reads "... is not set up yet"; the SUPER_ADMIN's diagnostics name the
+  flag. "How I worked this out" lists "Tools used" in plain names. New read tool `get_screen_universe`.
+- Evals: fixtures regenerated (additions only), 12 job cases and 5 safety cases added; both sets at 1.0.
+- Tests: `tests/test_copilot_own_key_tools.py`; updated job-count / tool-list assertions in the chat tests; vitest for
+  "Tools used" and the admin line; e2e `copilot-tools-v2.e2e.ts` (no baselines; `OKT_SHOTS` saves screenshots).
+- No new route (the tenancy table is unchanged). Questions OKT-1..10.
+
+## 23 Oct - The scan universe is never empty (owner order, trader review row 19)
+
+- Find setups (behind `ui_v2` + `screener_v2`): a universe picker - NIFTY 50 chosen on open (the system list, else the
+  stored NIFTY 50 membership, else a names-only fallback), NIFTY 100 / 500, any index's stocks, a sector, F&O stocks,
+  my watchlists, or my own symbols. A run is never sent empty: an empty choice runs on NIFTY 50 with a plain note.
+- One tap: a gallery card's "Try as a scan" and the Ideas page's "Try as a scan" open the screen and run it on the
+  chosen universe once its text is checked; the blocks stay editable.
+- Over 50 symbols: batches (run cap unchanged), each broker call on the credential's shared API budget, paced by the
+  calls each batch made at the per-minute share; progress, Stop, results growing as each batch lands, held-back
+  stocks named. A long answer lists the matches first. Alerts keep the chosen universe (first 50).
+- New routes `GET /api/screener/universes`, `/universes/{key}` (member, shared reference data; tenancy table).
+  `POST /api/screener/run` takes `batch` (default false = exactly as before). No migration.
+- Questions SU-1..SU-5. README row 19 lives in the open trader-review PR; its status clause is in this PR's body.
+
+## 23 Oct - Backtests without a daily broker login (stored licensed history)
+
+- Branch `claude/backtest-stored-history` (from main). **No migration.** New flag `backtest_stored_history` (OFF; needs
+  `ui_v2`), setting `BACKTEST_STORED_SOURCES` (default `nse_bhav:`).
+- `backend/app/backtest/bar_source.py`: one resolver - the organisation's broker session when usable (unchanged reads),
+  else the shared lake's licensed Daily bars (Weekly built from them), else a plain 409 ("Daily history for X is not
+  stored yet." / "Intraday backtests need a connected broker ..."). Never sample data, never the owner's private
+  1-minute store, never intraday or broker-written lake rows. Lake bars become the exact frame a broker's Daily candles
+  give (parity test: identical results); the window mirrors the broker's (>= 400 days, to yesterday).
+- Wired into the Copilot `run_backtest` / `backtest_draft` tools (the answer says where the prices came from), the AI
+  draft backtest route, the interview plan, the research study job, and new `POST /api/backtest/bars` (tenancy:
+  self). Frontend (ui_v2 + flag): the Backtesting page and setup "Test it" run on stored history without a broker and
+  show "Prices from ..., <from> to <to>." on the result; AI drafts test on the server; the backtest pages skip the
+  broker gate with the flag on. Admin: the daily backfill tool shows the days the lake holds per segment.
+- Tests: `tests/test_backtest_bar_source.py` (12, fake lake rows), `src/backtest/pricesLine.test.tsx` (6). Questions
+  BSH-1..6 (BSH-1 for the lawyer's list).
+
 
 ## 23 Oct - Watchlists: the universe sync ON block (WL1-3 / WL1-4 / WL1-5, README row 19)
 

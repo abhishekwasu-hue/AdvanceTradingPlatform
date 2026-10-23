@@ -1618,6 +1618,72 @@ RDY-6 and LD-10. Every row is a provisional default; the code follows it until t
 | TMH-8 | Found in passing: the Phase S org stream (`_stream_quotes`, env `STREAMING_QUOTES_ENABLED`, off in production) hands the worker's rate-budget wrapper to the stream, which has no `_request` / instrument lookup - an Upstox stream there would fail on connect. | Not changed here (that path stays as it is). Hub streams get the broker adapter under the wrappers (`hub.stream_adapter`); the old path is fixed only if the owner wants the env switch used. | `workers/trading_worker.py` | open |
 | TMH-7 | Trader pack: `data_hub` should join the "Enable trader features" list. | Added to `trader_pack.PACK` (after `ui_v2`; #455 merged before this PR): "Enable trader features" turns it on, "Undo" turns it off again. | `platform/trader_pack.py` | open |
 
+## Signals day one (SIG1, 23 Oct)
+
+Owner order 23 Oct ("Signals not empty on day one", README row 19). Branch `claude/signals-day-one`. Design:
+`docs/design/SIGNALS_DAY_ONE.md`. Checked against CLAUDE.md sections 2-5, DECISIONS (23 Oct trader review: gaps first;
+the watchlists sync ON) and the strategy templates order (section 8 parity, section 10 PAPER only): no rule is added,
+nothing is placed, no LIVE path, no migration.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| SIG1-1 | What does "adopt as a PAPER strategy in approval-only mode" create? | His own watch (one internal `user_prefs` row: the template's strategy id with its default settings, the list, `PAPER`, entries `APPROVAL` - server constants). No deployment rows: a deployment is one symbol and needs a broker session a new user may not have, and 50 bots would hit the plan limits and the broker budget. The watch only describes; "Start a paper bot with it" opens the existing form with the template picked (approval-only entries there under `approval_only_entries`). | app/signals_feed/day_one.py | open (owner may choose "create the bots") |
+| SIG1-2 | Which ready strategies does the card offer? | A5 Structure flip retest, B1 Range breakout, D3 Moving-average pullback in trend, on the Daily chart, with their own defaults; only those switched on for the organisation (A5 / B1 need the breakout screen flags, D3 none). | `OFFERS` | open |
+| SIG1-3 | Which lists? | The NIFTY 50 system list first (default), the other index-stock, sector and F&O lists, and his own lists with `watchlists` on. The Indices list is not offered (not a list of shares). At most 60 symbols are read; a longer list says so. | `list_choices`, `MAX_WATCH` | open |
+| SIG1-4 | Data for the first run. | The shared daily lake only (NSE bhavcopy / vendor / import, closed bars, split-adjusted), read in one batch (`load_daily`, the one seam a shared history resolver replaces). No broker call; no history = "No Daily history for this symbol yet", never sample data. | `load_daily` | open |
+| SIG1-5 | "Formed recently". | A display window of 5 Daily bars (not a reading rule; the logic is the template's own). | `RECENT_BARS` | open |
+| SIG1-6 | When is the watch read again? | On adopting; on opening Signals when the last read is older than 4 hours; on "Refresh" (at most once a minute). No worker job, no notification. | `STALE_SECONDS`, `MIN_REFRESH_SECONDS` | open |
+
+## Copilot on the user's own key, tools wired (OKT, 23 Oct)
+
+Owner order 23 Oct ("the Copilot uses the user's own AI key and its tools are wired"), branch
+`claude/copilot-own-key-tools`. Checked against CLAUDE.md (signals not advice, ADR-0006, PAPER only, flags OFF by
+default), DECISIONS.md and the SR / MO2A rows above (SR-2, SR-3, SR-4, SR-6 are kept as they are).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| OKT-1 | The order's screens and multi-view in the chat: new jobs or inside the eight? | Two new jobs after the handover's eight: 9 "Find setups" (screens) and 10 "Full view of a symbol". Jobs 1 and 4 also read the news feed and market memory. | `app/ai/copilot_chat.py` JOBS | open |
+| OKT-2 | Which flag lets the chat read news and market memory? | `ai_agent` (its description already names them); screens `screener_copilot` (+ `screener_v2`); the full view `ai_multiview`. Off: "I don't know yet - ... is not set up"; the flag name only in the SUPER_ADMIN's diagnostics. | `CHAT_TOOL_FLAGS`, `JOB_FLAGS` | open |
+| OKT-3 | The universe of a chat screen. | The user's own first watchlist (his order, NSE symbols, at most 50), else the "NIFTY 50 stocks" system list; the answer names the list. | `tools/screener.get_screen_universe` | open |
+| OKT-4 | May the chat's rules propose an alert? | Yes, only when the trader's own words ask ("alert me when ..."), on one named symbol, through the agent's own guard (his words, one per question, not from third-party text); it is only PROPOSED and he approves it under AI Copilot (ADR-0006). | `chat_routes._runner` | open |
+| OKT-5 | News headline text in a chat answer. | Not shown: a count and the high-severity count, with a pointer to the News page (third-party text may carry trade words). | `copilot_chat._news_line` | open |
+| OKT-6 | The full view's technical part. | ATP's structure reader per timeframe, not the indicator regime (handover 5 C: the regime is an admin diagnostic only). | `copilot_chat.full_view` | open |
+| OKT-7 | "Why did these pass" in the chat. | Each stage's pass / not passed only; the screen engine's own numbers stay on the Screener page (no single prices in the chat). | `copilot_chat.screen` | open |
+| OKT-8 | The user's own key at its own limit, on the Copilot page. | The page still opens and answers from ATP's rules with the plain limit line; never the organisation's key (SR-4). | `chat_routes._provider` | open |
+| OKT-9 | `ai_one_key` catalog status. | `ready` (one key works end to end on any plan, the Free plan included). Switching it ON in production is the owner's step (Admin → Feature flags; it needs `ui_v2`, which is ON). | `platform/flag_catalog.py` | open (owner) |
+| OKT-10 | The scan read ("read this scan") was still on the organisation's key only. | Moved to the user's own key first (user-started, SR-6). The research loop stays on the organisation's key (it queues a background job). | `app/scanner/ai.py` | open |
+
+## The scan universe is never empty (SU, owner order 23 Oct)
+
+Branch `claude/scan-universe` (behind `ui_v2` + `screener_v2`). Code: `backend/app/screener/universes.py`,
+`frontend/src/screener/universe.ts`, `UniversePicker.tsx`, `ScreenerPage.tsx`. Checked against CLAUDE.md (signals not
+advice: a list of names, no prices; PAPER; no migration; exits untouched), DECISIONS.md and the trader-review order.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| SU-1 | NIFTY 50 when the server has no NIFTY 50 list (the system lists not built yet, or the call failed). | First the system list `index-nifty50`; else the current NIFTY 50 membership the universe sync stores (`index_membership` + `securities`); only when neither exists, a static names-only list in the page (`NIFTY50_FALLBACK`, 50 NSE symbols, no prices or weights; may lag a reconstitution until the system list exists - a stale name just reads "no bars"). | `universe.ts`, `universes.py` | open |
+| SU-2 | A universe over 50 symbols: raise the run cap or batch? | Batch; the run cap stays 50. Each batch is a `/run` with `batch: true`, one in flight at a time; every broker call of a batch takes a token from the credential's shared API budget (`api_budget.BudgetedAdapter`, the budget charts use: half of `rate_budget.py`'s conservative limits), so a batch can never spend past it - a symbol without a token reads "waited for the broker's limit" and the page offers to run again. Batch size = what the per-second share fetches in about 10 s (Upstox 40, Zerodha / others 10); the page waits after each batch for the calls it made at the per-minute share (cached bars cost nothing, so a warm NIFTY 500 runs at once). Raising the cap would make one request hold up to 500 broker calls (minutes on Zerodha) and could not report partial results. Ordinary runs of 50 or fewer are unchanged (no token taken). | `universes.py`, `routes.py` (`fetch_frames budget_out`), `runInBatches` | open |
+| SU-3 | Upstox's 30-minute window: the API budget allows 500 calls per 30 minutes per credential; a cold NIFTY 500 scan on an intraday timeframe (bars + daily context) can use it, and charts then read "budget used" until it frees. | Kept: the budget refuses past the window (never over the broker's allowance), the default stays NIFTY 50, and daily bars are cached and shared. If it bites, cap a batch run's share of the 30-minute window (e.g. half). | `api_budget.py` | open |
+| SU-4 | Scan alerts on a list over 50 stocks. | An alert saved from a run keeps the chosen universe, up to the alert engine's 50 symbols (the first 50 of the list, said in the dialog). Raising the alert cap adds bar-close fetches to the trading worker's budget (which its exits share), so it waits for the owner. | `ScanAlertPanel.tsx`, `alerts/rules_routes.py` | open |
+| SU-5 | A long list's answer (over 50 rows). | Matches first: the matches (and any stock the broker's limit held back) are listed, the others are counted ("425 stocks did not match"), with "Show all". | `ScreenerPage.tsx` | open |
+
+## Backtests without a daily broker login (BSH, 23 Oct)
+
+Owner order 23 Oct ("backtests without a daily broker login (stored licensed history)"), branch
+`claude/backtest-stored-history`. Code: `backend/app/backtest/bar_source.py`. Checked against CLAUDE.md §3-4 (signals
+only, PAPER, no secrets, public repo), DECISIONS (RDY-6 "licensed EOD only, never the platform's or another user's
+Upstox feed"; RDY-4 legal pages OFF until the lawyer) and the HB0 licence rule (the owner's 1-minute store is his only).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| BSH-1 | The licence position of the NSE daily files (bhavcopy) for backtests shown to users: may ATP run a user's backtest on them and show the result, the chart of those bars and the date range? **For the lawyer's list (A6.3).** | Yes, behind the flag `backtest_stored_history` (OFF until the owner confirms the NSE terms, as for `history_backfill`): only the user's own run (statistics, the chart of the bars it ran on, "Prices from ATP's stored end-of-day history (NSE's daily files), <from> to <to>"); no bulk download or export of the bars; no performance claims. | `app/backtest/bar_source.py`, `docs/DATA_SOURCES.md` | open (owner + lawyer) |
+| BSH-2 | The R2 daily import (`r2:*`, collected through the owner's Upstox session) for other users' backtests? | Not read by default: RDY-6 says never the platform's or another user's broker feed. `BACKTEST_STORED_SOURCES=nse_bhav:` (env); the operator adds `r2:` only once its licence allows it. A setting can never add a source outside `nse_bhav:` / `r2:`. | `app/core/config.py`, `.env.example` | open (owner) |
+| BSH-3 | Intraday backtests without a broker. | Refused with one sentence: "Intraday backtests need a connected broker. Connect it on the Broker page, or test the strategy on the Daily chart." Never the owner's private 1-minute store (licensed to him only), never the shared lake's intraday bars (recorded from other organisations' feeds), never sample data. Revisit with a licensed intraday vendor (B7). | `bar_source.INTRADAY_NEEDS_BROKER` | open |
+| BSH-4 | Prices and window of stored history. | Split / bonus adjusted (as a broker's chart history; dividends only with `LAKE_ADJUST_DIVIDENDS`); the broker path's Daily window exactly: at least 400 calendar days, up to yesterday (today's bar is never read); each bar stamped like a broker's Daily candle, so equal bars give an identical result (parity test). Weekly is built from Daily by the India calendar week. | `bar_source.window`, `to_frame`, `weekly` | open |
+| BSH-5 | Which entry points use it. | Every server-side backtest read: the Copilot `run_backtest` / `backtest_draft` tools, the AI draft backtest route, the interview plan (intraday: the plain refusal), the research study job, and the new `POST /api/backtest/bars` that the Backtesting page and the setup "Test it" call when no broker is usable. With a usable broker each path reads exactly what it read before. Unchanged: the screener backtest / history (already lake-only), the strategy chart-run (the chart's own candles), the template adopt route (runs no backtest), Monte Carlo / walk-forward / optimise (they re-use the bars the run was given). | see the list | open |
+| BSH-6 | The v2 broker gate on the Backtesting page. | With the flag on, `/strategies/test` and `/backtest` show their own broker state (the data bar's sentence and "Open Broker") instead of the gate; every other data page keeps the gate. | `ui/dataPages.STORED_HISTORY_PATHS`, `AppShellV2` | open |
+
+
 ## Trader pack: "Enable trader features" (TP, 23 Oct)
 
 Branch `claude/trader-pack`. Code: `backend/app/platform/trader_pack.py`, routes in `app/platform/routes.py`, card

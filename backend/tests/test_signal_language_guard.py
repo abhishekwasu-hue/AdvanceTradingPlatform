@@ -244,7 +244,21 @@ REGISTERED = {
     "app/ai/briefing.py": "daily brief plan texts",
     "app/ai/copilot_chat.py": "Copilot teacher lines",
     "app/chart_analyze/signal_language.py": "Analyze a chart (withheld on a call word)",
+    "app/signals_feed/day_one.py": "Signals day one: the adopted watch's state lines (withheld on a problem)",
 }
+
+
+def test_the_day_one_watch_lines_are_his_own_signals_in_the_signal_language():
+    from app.signals_feed import day_one as D
+    from app.strategy_templates import ids, library
+    lines = [*D.WATCHING.values(), D.WATCHING_ANY, *D.PLAIN.values(), *D.WAITING_ANY.values(), D.NO_DATA_NOTE,
+             *(w for sides in D.WAITING.values() for w in sides.values())]
+    for tid in D.OFFERS:
+        t = library.get(tid)
+        s = ids.adopt(t, D.TIMEFRAME)[1]
+        lines += [library.signal_text(t, s, side) for side in ("long", "short")]
+    for line in lines:
+        _clean(f"DEMO1 · {L.area_label('buyer', 23000, 23100)} {line}", "signal_own", own=["DEMO1"])
 
 
 def test_no_share_card_producer_exists_without_a_guard():

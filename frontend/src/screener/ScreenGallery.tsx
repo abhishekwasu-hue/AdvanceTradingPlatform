@@ -37,9 +37,11 @@ export interface ScreenGalleryProps {
   initialDetail?: string | null;
   /** U9 TX2: the mirror of each long screen, by screen id (absent while `screener_tx2` is off). */
   mirrors?: Record<string, MirrorEntry>;
+  /** Owner order 23 Oct (ui_v2): "Try as a scan" - open the screen and run it on the chosen universe in one tap. */
+  onTry?: (screen: TaxScreen) => void;
 }
 
-export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null, mirrors = {} }: ScreenGalleryProps) {
+export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null, mirrors = {}, onTry }: ScreenGalleryProps) {
   // L1: a Legends screen is shown only with its card (and so its disclaimer); without the library they leave the counts too.
   const taxonomy = useMemo(() => withLegendCards(served, legends), [served, legends]);
   const [filter, setFilter] = useState<GalleryFilter>({ ...NO_FILTER, ...initial });
@@ -107,7 +109,7 @@ export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, lege
           <ul aria-label="Screens" className="screen-gallery-cards mt-3">
             {shown.map((s) => (
               <li key={s.id}>
-                <ScreenCard taxonomy={taxonomy} screen={s} canOpen={canOpen(s)} onOpen={() => onOpen(s)}
+                <ScreenCard taxonomy={taxonomy} screen={s} canOpen={canOpen(s)} onOpen={() => onOpen(s)} onTry={onTry ? () => onTry(s) : undefined}
                             legend={cardFor(legends, s.id)} onAbout={() => setDetail({ id: s.id, focus: true })} mirror={mirrors[s.id] ?? null} />
               </li>
             ))}
@@ -157,8 +159,8 @@ function Count({ n }: { n: number }) {
   );
 }
 
-function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout, mirror }: {
-  taxonomy: Taxonomy; screen: TaxScreen; canOpen: boolean; onOpen: () => void; legend: LegendCardData | null; onAbout: () => void;
+function ScreenCard({ taxonomy, screen, canOpen, onOpen, onTry, legend, onAbout, mirror }: {
+  taxonomy: Taxonomy; screen: TaxScreen; canOpen: boolean; onOpen: () => void; onTry?: () => void; legend: LegendCardData | null; onAbout: () => void;
   mirror: MirrorEntry | null;
 }) {
   const method = taxonomy.methods.find((m) => m.id === screen.method);
@@ -189,6 +191,9 @@ function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout, mirror
           {legend && <Button size="sm" variant="ghost" onClick={onAbout} aria-label={`About ${screen.name}: the method, its sources and the screen`}>About</Button>}
           <Button size="sm" onClick={onOpen} disabled={!canOpen} aria-label={`Open ${screen.name} in the builder`}
                   title={canOpen ? undefined : "This screen's family is not available on this page yet"}>Open</Button>
+          {onTry && canOpen && (
+            <Button size="sm" variant="primary" onClick={onTry} aria-label={`Try ${screen.name} as a scan`} data-testid="screen-try">Try as a scan</Button>
+          )}
         </div>
       </div>
     </article>

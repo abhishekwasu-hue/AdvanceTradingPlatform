@@ -49,6 +49,15 @@ async def _frame(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, d
     return await evidence.server_frame(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days, user=ctx.user)
 
 
+async def _backtest_frame(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, days: int) -> Tuple[pd.DataFrame, str, Dict[str, Any]]:
+    """Owner order 23 Oct: a backtest's bars - the broker session when usable, else ATP's stored Daily history (flag
+    `backtest_stored_history`), else a plain 409 (app/backtest/bar_source.py). With a broker session: `_frame` exactly."""
+    from app.backtest import bar_source
+    bars = await bar_source.resolve(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days, user=ctx.user,
+                                    broker_fetch=lambda: _frame(ctx, symbol, exchange, timeframe, days))
+    return bars.frame, bars.source, bars.info()
+
+
 async def _broker(ctx: ToolContext, symbol: str, exchange: str) -> Tuple[Any, str]:
     """The broker session a quote / chain is read through. BT1b (flag `byob_data_tier`): only the asking user's own
     session at a confirmed broker, for a symbol inside its budget; otherwise 409 (the tool reports the reason)."""
@@ -220,7 +229,7 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
     except (KeyError, PermissionError) as exc:
         return ToolResult(False, None, None, "backtest", error=f"unknown or not allowed strategy {args.strategy_id!r}: {exc}"[:300])
     try:
-        df, source = await _frame(ctx, args.symbol, args.exchange, args.timeframe, args.days)
+        df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, args.timeframe, args.days)
     except HTTPException as exc:
         return _failed("backtest", exc)
     risk = await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()
@@ -231,7 +240,8 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
             "sample": "insufficient" if result.total_trades < WEAK_EVIDENCE_MIN_TRADES else "ok", "min_trades_for_statistics": WEAK_EVIDENCE_MIN_TRADES,
             "note": "Past simulated results on this window only; costs and slippage are approximations.",
             # CP6-15: the losses-in-a-row pause in this run, in plain words (None when it never engaged)
-            "loss_streak_pause": (result.loss_streak or {}).get("note")}
+            "loss_streak_pause": (result.loss_streak or {}).get("note"),
+            "prices": prices["words"], "prices_line": prices["line"]}
     return ToolResult(True, data, _iso(df.index[-1]), source, {"first_bar": _iso(df.index[0]), "last_bar": _iso(df.index[-1])})
 
 
@@ -258,12 +268,13 @@ async def backtest_draft(ctx: ToolContext, args: _DraftBacktestArgs) -> ToolResu
         return ToolResult(False, None, None, "backtest", error=f"the draft is not a complete strategy: {exc.errors()[:2]}"[:300])
     fetch_tf = dbt.FETCH_TIMEFRAME.get(config.timeframe, config.timeframe)
     try:
-        df, source = await _frame(ctx, args.symbol, args.exchange, fetch_tf, dbt.TEST_DAYS)
+        df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, fetch_tf, dbt.TEST_DAYS)
     except HTTPException as exc:
         return _failed("backtest", exc)
     risk = await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()
     data = await asyncio.to_thread(dbt.honest_test, config, df, args.symbol, fetch_tf, risk)    # CPU-bound: off the event loop
     data["exchange"] = args.exchange
+    data["prices"], data["prices_line"] = prices["words"], prices["line"]
     return ToolResult(True, data, _iso(df.index[-1]), source, {"first_bar": _iso(df.index[0]), "last_bar": _iso(df.index[-1])})
 
 

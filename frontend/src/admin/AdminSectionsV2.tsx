@@ -338,6 +338,17 @@ function Tool({ id, name, what, read, render }: { id: string; name: string; what
   );
 }
 
+interface BackfillSegment { by_status?: Record<string, number>; first_done?: string | null; last_done?: string | null }
+
+const SEGMENT_WORDS: Record<string, string> = { cm: "stocks", index: "indices", fo: "F&O futures" };
+
+/** Owner order 23 Oct: the days the shared Daily history holds, per segment ("stocks 2016-01-01 to 2026-10-22"). */
+export function heldRange(segments: Record<string, BackfillSegment> | undefined): string {
+  const held = Object.entries(segments ?? {}).filter(([, v]) => v.first_done && v.last_done)
+    .map(([k, v]) => `${SEGMENT_WORDS[k] ?? k} ${v.first_done} to ${v.last_done}`);
+  return held.length ? `Holds: ${held.join(" · ")}` : "Holds: no daily files yet";
+}
+
 const pairs = (o: Record<string, number> | undefined) => Object.entries(o ?? {}).map(([k, v]) => `${k.toLowerCase()} ${v}`).join(" · ") || "nothing";
 
 export function TestingToolsPanel() {
@@ -359,9 +370,10 @@ export function TestingToolsPanel() {
         <Tool id="history-import" name="History import" what="The stored history import, by dataset." read={consoleApi.historyImport}
           render={(h: { datasets?: Record<string, Record<string, number>>; symbol_count?: number }) =>
             <>{Object.entries(h.datasets ?? {}).map(([k, v]) => `${k}: ${pairs(v)}`).join(" | ") || "nothing imported"}</>} />
-        <Tool id="history-backfill" name="Daily file backfill" what="The exchange daily files backfill, by segment." read={consoleApi.historyBackfill}
-          render={(h: { flag_on?: boolean; segments?: Record<string, { by_status?: Record<string, number> }>; attention?: unknown[] }) =>
-            <>{h.flag_on ? "On" : "Off"} · {Object.entries(h.segments ?? {}).map(([k, v]) => `${k}: ${pairs(v.by_status)}`).join(" | ") || "no files"} · {h.attention?.length ?? 0} need attention</>} />
+        <Tool id="history-backfill" name="Daily file backfill" what="The exchange daily files backfill, by segment, and the range of days the shared history holds (what backtests without a broker can use)." read={consoleApi.historyBackfill}
+          render={(h: { flag_on?: boolean; segments?: Record<string, BackfillSegment>; attention?: unknown[] }) =>
+            <>{h.flag_on ? "On" : "Off"} · {Object.entries(h.segments ?? {}).map(([k, v]) => `${k}: ${pairs(v.by_status)}`).join(" | ") || "no files"} · {h.attention?.length ?? 0} need attention
+              <div data-lake-range>{heldRange(h.segments)}</div></>} />
         <Tool id="history-intraday" name="Intraday history" what="The owner's intraday history load." read={consoleApi.historyIntraday}
           render={(h: { flag_on?: boolean; instruments?: Record<string, unknown>; attention?: unknown[] }) =>
             <>{h.flag_on ? "On" : "Off"} · {Object.keys(h.instruments ?? {}).length} instruments · {h.attention?.length ?? 0} need attention</>} />

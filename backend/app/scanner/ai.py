@@ -28,7 +28,6 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.wording import banned_terms
-from app.ai import settings as ai_settings
 from app.ai.prompt_versions import stamp
 from app.ai.providers import LLMProvider, ProviderError, RuleBasedProvider
 from app.ai.regime import REGIMES, classify_regime
@@ -430,7 +429,10 @@ async def read_scan(session: AsyncSession, tenant: Tenant, user: User, request: 
                     language: str = "en", provider: Optional[LLMProvider] = None) -> ScanRead:
     matches = result.matches[:MAX_MATCHES_TO_READ]
     regimes = _regimes_for(request, matches)
-    provider = provider or await ai_settings.provider_for(session, tenant, task="scanner_read", user_id=user.id)
+    from app.ai import resolve as ai_resolve
+    if provider is None:
+        # Owner order 23 Oct (ai_one_key finished): a scan read is user-started, so the user's own key comes first.
+        provider = await ai_resolve.provider_for_user(session, user, tenant, "scanner_read")
     from app.platform.controls import flag_enabled
     scores = bool(tenant is not None and await flag_enabled(session, "thesis_stock_targets", tenant.id))     # P0.8-D: per-stock scores off by default
     if isinstance(provider, RuleBasedProvider) or not matches:
@@ -453,10 +455,10 @@ async def read_scan(session: AsyncSession, tenant: Tenant, user: User, request: 
             if bad:                                        # ATP review 11: advice / promise wording -> the deterministic read
                 raise ValueError(f"wording check failed ({', '.join(bad[:5])})")
             read.provider, read.model = provider.name, provider.model
-            await ai_settings.mark_used(session, tenant.id)
+            await ai_resolve.mark_used(session, tenant.id, provider)
         except (ProviderError, ValueError, json.JSONDecodeError) as exc:
             AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="error").inc()
-            await ai_settings.mark_used(session, tenant.id, error=str(exc))
+            await ai_resolve.mark_used(session, tenant.id, provider, error=str(exc))
             read = rule_based_read(matches, regimes, scores)
             read.warnings.insert(0, f"{provider.name} did not answer usably ({str(exc)[:120]}); deterministic read used instead")
     if len(result.matches) > MAX_MATCHES_TO_READ:

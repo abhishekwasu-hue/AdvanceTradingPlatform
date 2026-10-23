@@ -11,6 +11,7 @@ import {
   SOURCES, TABS, canDecide, canTradeRole, countLabel, defaultTab, itemForProposal, missingProposalMessage, sourceCaption,
   type FeedSource, type FeedTab, type SignalFeedItem,
 } from "./feed";
+import DayOneV2 from "./DayOneV2";
 import { Direction, SignalDetail, StatusChip, signalDay, signalTime } from "./SignalPartsV2";
 import { setupWords } from "./signalText";
 import { useSignalFeed } from "./useSignalFeed";
@@ -43,6 +44,9 @@ const EMPTY: Record<FeedTab, { title: string; body: string }> = {
   history: { title: "No signals in the last 30 days.", body: "Signals you approve, skip or let expire are kept here for 30 days." },
 };
 
+/** With his day-one watch adopted, an empty list points at it. */
+const WATCHING_BODY = "Your watch above shows where each symbol on your list stands. Setups from your paper bots that wait for your approval land here.";
+
 /**
  * UI2-3 (UI v2 proposal §7, §3 M6 / M7; MOBILE_APP_PLAN §2.1): Signals - "What should I act on?". An inbox of the trades
  * your Autopilot, scans and Copilot suggest, from the read-only `GET /api/signals/feed`:
@@ -72,6 +76,9 @@ export default function SignalsV2() {
   const feed = useSignalFeed(tab, source, symbol);
   // MO4 slice 4: the page's ready-made dish (ui_v2 + growth_v2).
   const dishOn = useFeatures().on("growth_v2");
+  // Signals day one (ui_v2 + strategy_templates): the "pick a ready strategy and a list" card, then his watch.
+  const dayOneOn = useFeatures().on("strategy_templates");
+  const [watching, setWatching] = useState(false);
   const { items } = feed;
 
   useEffect(() => {
@@ -107,6 +114,7 @@ export default function SignalsV2() {
       </header>
 
       {dishOn && <PageDishV2 page="signals" />}
+      {dayOneOn && <DayOneV2 onAdopted={setWatching} />}
 
       <div role="tablist" aria-label="Signals" data-tour="signals-tabs"
         className="grid grid-cols-3 gap-space-1 rounded-panel bg-surface-2 p-space-1 md:flex md:gap-space-6 md:rounded-none md:border-b md:border-subtle md:bg-transparent md:p-0">
@@ -151,7 +159,7 @@ export default function SignalsV2() {
       ) : items.length === 0 ? (
         <div className="rounded-panel border border-subtle bg-surface-1 px-space-6 py-space-10 text-center shadow-card" data-empty data-tour="signals-list">
           <p className="text-t15 font-semibold text-fg">{filtered ? "No signals match these filters." : EMPTY[tab].title}</p>
-          <p className="mt-space-1 text-t14 text-fg-muted">{filtered ? "Show every source and symbol to see the rest." : EMPTY[tab].body}</p>
+          <p className="mt-space-1 text-t14 text-fg-muted">{filtered ? "Show every source and symbol to see the rest." : watching ? WATCHING_BODY : EMPTY[tab].body}</p>
           {filtered && (
             <button type="button" onClick={() => { setSource("all"); setSymbol(null); }}
               className="mt-space-4 inline-flex min-h-11 items-center rounded-control px-space-3 text-t14 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">

@@ -33,6 +33,13 @@ export const DATA_PAGES: readonly DataPage[] = [
 ];
 
 /**
+ * Owner order 23 Oct (flag `backtest_stored_history`): the backtest pages run Daily backtests on ATP's stored history when
+ * no broker is connected, so with the flag on they show the broker state themselves (the data bar: "No broker
+ * connected: Daily backtests use ATP's stored end-of-day history ...") instead of the gate.
+ */
+export const STORED_HISTORY_PATHS: readonly string[] = ["/backtest", "/strategies/test"];
+
+/**
  * UX3-9: sub-paths of a data page that are not data pages themselves - My trades › Orders (`/positions/orders`) is the
  * trader's own order record, which worked without a broker session at `/orders` and still does.
  */

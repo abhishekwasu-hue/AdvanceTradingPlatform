@@ -313,6 +313,28 @@ async def get_run(run_id: int, user: User = Depends(get_current_user), session: 
     return _run_summary(record, full=True)
 
 
+class BacktestBarsBody(BaseModel):
+    """Owner order 23 Oct: the bars a backtest page runs on, chosen by the server (app/backtest/bar_source.py)."""
+    symbol: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9 &._:-]+$")
+    exchange: str = Field(default="NSE", pattern=r"^(NSE|BSE|NFO|BFO|MCX|CDS)$")
+    timeframe: str = Field(min_length=1, max_length=10)
+    lookback_days: int = Field(default=30, ge=1, le=730, description="calendar days; intraday at most 30 (the candles route's caps)")
+    broker: Optional[str] = Field(default=None, max_length=20)
+
+
+@router.post("/api/backtest/bars")
+async def backtest_bars(body: BacktestBarsBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Your broker's bars when its session is usable, else ATP's stored Daily history (flag `backtest_stored_history`),
+    else 409 with what is missing - plus where the prices came from and the date range, in plain words. Reads only: the
+    caller's own organisation's broker session, or the shared Daily lake (never another organisation's private store)."""
+    from app.backtest import bar_source
+    from app.market_data.candles_routes import DAILY_MAX_LOOKBACK_DAYS, INTRADAY_MAX_LOOKBACK_DAYS
+    cap = DAILY_MAX_LOOKBACK_DAYS if bar_source.timeframe_kind(body.timeframe) else INTRADAY_MAX_LOOKBACK_DAYS
+    bars = await bar_source.resolve(session, user.tenant_id, body.symbol, body.exchange, body.timeframe,
+                                    lookback_days=min(body.lookback_days, cap), user=user, broker=body.broker)
+    return {"symbol": body.symbol.strip().upper(), "timeframe": body.timeframe, **bars.info(), "candles": bar_source.frame_bars(bars.frame)}
+
+
 @router.post("/api/backtest/monte-carlo")
 async def backtest_monte_carlo(
     body: BacktestBody, runs: int = 1000, seed: Optional[int] = 42,

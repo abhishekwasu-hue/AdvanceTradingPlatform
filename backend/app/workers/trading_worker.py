@@ -164,6 +164,7 @@ class CycleReport:
     market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
     breakout_fitness_started: bool = False   # U6 BK5: the nightly breakout-fitness task was started this cycle
     intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
+    chain_history_started: bool = False      # TM 9.4: an owner chain-history slot was started this cycle
 
 
 def _just_closed(now: datetime) -> bool:
@@ -283,6 +284,11 @@ class TradingWorker:
         self._intraday_task: Optional["asyncio.Task[None]"] = None
         self._intraday_retry_at = 0.0
         self._intraday_adapters: Dict[Any, Any] = {}   # one owner adapter per IST day, reused by that evening's passes
+        # TM 9.4: the owner's chain history - the last slot started, its task, the adapter of the day, the last report.
+        self._last_chain_slot: Optional[datetime] = None
+        self._chain_task: Optional["asyncio.Task[None]"] = None
+        self._chain_adapters: Dict[Any, Any] = {}
+        self.last_chain_report: Optional[Dict[str, Any]] = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -308,7 +314,7 @@ class TradingWorker:
         self._last_account_refresh: Dict[int, datetime] = {}
         # Phase AR: last market-memory capture per tenant (UTC).
         self._last_memory: Dict[int, datetime] = {}
-        self._last_oi_slot: Dict[str, datetime] = {}      # OI Banner O2: underlying -> last slot attempted
+        self._last_oi_slot: Dict[Tuple[int, str], datetime] = {}   # OI Banner O2 / TM-7: (tenant, underlying) -> last slot attempted
         self.max_seconds_per_tenant = (
             max_seconds_per_tenant if max_seconds_per_tenant is not None else cycle_seconds * MAX_TENANT_SHARE_OF_CYCLE
         )
@@ -323,6 +329,8 @@ class TradingWorker:
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
         if self._intraday_task is not None and not self._intraday_task.done():
             self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
+        if self._chain_task is not None and not self._chain_task.done():
+            self._chain_task.cancel()                # TM 9.4: one slot - a cancelled slot is a gap, the next one runs
         if self._then_warm_task is not None and not self._then_warm_task.done():
             self._then_warm_task.cancel()            # N1 X1: in memory only - the next worker warms again
         if self._vision_task is not None and not self._vision_task.done():
@@ -774,6 +782,15 @@ class TradingWorker:
                         logger.exception("Intraday history pass not started")
                         report.errors.append(f"intraday history: {exc}")
                         await session.rollback()
+                # TM 9.4: the owner's chain history (flag `chain_history`, off by default) - one slot per
+                # CHAIN_HISTORY_SLOT_MINUTES while a venue is open, through the owner's own broker session, drawing from that
+                # session's rate budget only while a reserve stays free for exits. Its own task and sessions; read-only.
+                try:
+                    report.chain_history_started = await self._maybe_start_chain_history(session, now)
+                except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                    logger.exception("Chain history slot not started")
+                    report.errors.append(f"chain history: {exc}")
+                    await session.rollback()
                 # MO3-A1: end (and audit) the read-only "View as user" sessions that expired with no later request -
                 # every few minutes, cheap (an indexed read of the open views).
                 if self._last_view_sweep is None or (now - self._last_view_sweep).total_seconds() >= VIEW_SWEEP_SECONDS:
@@ -866,8 +883,10 @@ class TradingWorker:
 
     async def _oi_banner(self, session: AsyncSession, now: datetime) -> int:
         """OI Banner O2: for every underlying some tenant enabled, one option-chain read per collector slot while its
-        venue is open, through the first of those tenants with a usable broker session. The rows are platform-wide
-        reference data; a slot already stored (by another replica or cycle) is skipped. Never places an order."""
+        venue is open. TM-7 (owner, 23 Oct; RDY-6 data terms): each organisation's slot is read through ITS OWN first
+        usable broker session and stored as ITS rows - never through another organisation's session, never read by
+        another organisation (an organisation without a usable session simply has no slot). A slot already stored (by
+        another replica or cycle) is skipped. Never places an order."""
         from app.option_chain import oi_regime, snapshots as oi_snapshots
         wanted: Dict[str, List[Tuple[int, str]]] = {}
         for tenant_id, underlying, exchange in await oi_snapshots.enabled_underlyings(session):
@@ -881,28 +900,30 @@ class TradingWorker:
             family = session_family(tenants[0][1])
             if family not in open_by_family:
                 open_by_family[family] = (await market_session_status(session, now, tenants[0][1])).is_open
-            if not open_by_family[family] or self._last_oi_slot.get(underlying) == slot:
+            if not open_by_family[family]:
                 continue
-            self._last_oi_slot[underlying] = slot            # once per slot whether or not the read works
-            for tenant_id, _ in sorted(tenants):
+            due = [t for t in sorted({t for t, _ in tenants}) if self._last_oi_slot.get((t, underlying)) != slot]
+            if not due:
+                continue
+            for tenant_id in due:
+                self._last_oi_slot[(tenant_id, underlying)] = slot   # once per slot whether or not the read works
                 # Its own session: a failed read is rolled back without touching the cycle's session.
                 async with self.session_factory() as own:
                     with bind_log_context(tenant_id=tenant_id):
                         try:
                             if await self._byob_on(own, tenant_id):
-                                continue   # BT1b: platform-wide OI rows are never read through a per-user (BYOB) session
+                                continue   # BT1b: the banner is off for this organisation while its BYOB data tier is on
                             broker = await self._first_usable_broker(own, tenant_id, now)
                             if broker is None:
-                                continue
+                                continue   # TM-7: no slot for this organisation - never another organisation's session
                             expiries = await master.expiries(own, underlying, on_or_after=now.astimezone(IST).date())
                             chain = await broker.get_option_chain(master.INDEX_SYMBOLS.get(underlying, underlying), expiries[0] if expiries else None)
                             future_price, future_oi = await self._oi_future_quote(own, broker, underlying, now)
-                            result = await oi_snapshots.collect(own, underlying, chain, now, source=broker.name,
+                            result = await oi_snapshots.collect(own, underlying, chain, now, tenant_id=tenant_id, source=broker.name,
                                                                 future_price=future_price, future_oi=future_oi)
                             await own.commit()
                             stored += 1 if result.status == "OK" else 0
-                            break
-                        except Exception as exc:  # noqa: BLE001 - try the next tenant's session
+                        except Exception as exc:  # noqa: BLE001 - this organisation's slot is missed; the others go on
                             await own.rollback()
                             logger.warning("OI snapshot of %s through tenant %s failed: %s", underlying, tenant_id, exc)
             # O4: each following tenant's banner state and alerts for this slot (also when the read failed: a stale
@@ -1435,6 +1456,32 @@ class TradingWorker:
                 logger.exception("Intraday history pass failed")
 
         self._intraday_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_chain_history(self, session: AsyncSession, now: datetime) -> bool:
+        """TM 9.4: starts one chain-history slot as a background task when a new slot is due, the flag is on for the
+        owner's tenant and the previous slot's task has finished (a slot still running makes this one a gap, never a
+        queue). The slot shares this worker's RateBudget for the owner's session (`acquire_spare`)."""
+        from app.market_lake import chain_recorder
+
+        slot = chain_recorder.due(now, self._last_chain_slot)
+        if slot is None or (self._chain_task is not None and not self._chain_task.done()):
+            return False
+        if not await chain_recorder.enabled(session):
+            return False
+        self._last_chain_slot = slot
+
+        async def run() -> None:
+            try:
+                result = await chain_recorder.record_slot(self.session_factory, now, budget_for=self._budget_for,
+                                                          adapter_cache=self._chain_adapters)
+                self.last_chain_report = result.as_dict()
+                if result.status not in ("ok", "closed"):
+                    logger.info("Chain history slot %s: %s %s", result.slot, result.status, "; ".join(result.notes[:3]))
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("Chain history slot failed")
+
+        self._chain_task = asyncio.get_running_loop().create_task(run())
         return True
 
     async def _maybe_start_market_zones(self, session: AsyncSession, now: datetime) -> bool:

@@ -321,7 +321,7 @@ def test_analyses_answer_carries_the_dish_only_with_markets_view(monkeypatch):
     headers, me = _v2_owner("mo4-dish")
     _store_credentials(me)
     _store_snapshot(name, OptionChain(underlying=name, expiry=expiry, underlying_ltp=116.0, rows=EARLIER.rows),
-                    datetime.now(UTC) - timedelta(minutes=30))
+                    datetime.now(UTC) - timedelta(minutes=30), me["tenant_id"])
     params = {"symbol": name, "expiry": expiry}
     body = client.get("/api/option-chain/analyses", headers=headers, params=params).json()
     assert body["state"] == "ok" and "dish" not in body

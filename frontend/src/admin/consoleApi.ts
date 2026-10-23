@@ -103,6 +103,18 @@ export interface OutboxState { by_status: Record<string, number>; claimed: numbe
 export interface RetentionState { policy: Record<string, unknown>; eligible_now: Record<string, number>; last_run: { at: string; detail: string } | null }
 export interface DeadLetter { id: number; tenant_id: number; channel: string; event_type: string; status: string; error_class: string | null; attempts: number; created_at: string | null }
 
+/** TM 9.4: the owner's chain history recorder (GET /api/admin/chain-history/status) - counts and times only. */
+export interface ChainHistoryRow {
+  underlying: string; exchange: string; trading_day: boolean; chains_today: number; slots_today: number; slots_expected: number;
+  missing_slots: number; gaps: { from: string; to: string }[]; stored_bytes_today: number; raw_bytes_today: number; last_captured_at: string | null;
+}
+export interface ChainHistoryStatus {
+  flag_on: boolean; owner_configured: boolean; owner_session: { broker: string } | null; slot_minutes: number;
+  expiries_per_underlying: number; max_reads_per_slot: number; stocks_enabled: boolean; underlyings: ChainHistoryRow[];
+  totals: { chains: number; days: number; first_day: string | null; last_captured_at: string | null; stored_bytes: number } | null;
+  problem: string | null; checked_at: string;
+}
+
 export const consoleApi = {
   system: () => request<ConsoleSystem>("/admin/console/system"),
   users: (q = "") => request<ConsoleUsers>(`/admin/console/users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
@@ -120,6 +132,7 @@ export const consoleApi = {
   historyImport: () => request<Record<string, unknown>>("/admin/history-import/progress?limit=1"),
   historyBackfill: () => request<Record<string, unknown>>("/admin/history-backfill/progress?limit=1"),
   historyIntraday: () => request<Record<string, unknown>>("/admin/history-intraday/progress?limit=1"),
+  chainHistory: () => request<ChainHistoryStatus>("/admin/chain-history/status"),
 };
 
 /** "3 min ago" / "2 h ago" / "5 d ago" from an ISO time (now passed in for tests). */

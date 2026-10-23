@@ -90,6 +90,13 @@ class OptionChainRow(BaseModel):
     # strike-selection pipeline computes delta from IV / price itself.
     call_delta: Optional[float] = None
     put_delta: Optional[float] = None
+    # TM 9.4: the rest of the broker's Greeks where it sends them (Upstox does), kept by the chain history recorder.
+    call_gamma: Optional[float] = None
+    call_theta: Optional[float] = None
+    call_vega: Optional[float] = None
+    put_gamma: Optional[float] = None
+    put_theta: Optional[float] = None
+    put_vega: Optional[float] = None
 
 
 class OptionChain(BaseModel):

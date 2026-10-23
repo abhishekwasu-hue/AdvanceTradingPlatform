@@ -47,7 +47,9 @@ PACK: Tuple[str, ...] = (
     # The redesigned app every trader page lives on.
     "ui_v2",
     # Data and alerts.
-    "history_backfill", "alerts_stale_guard", "alerts_reliable_outbox", "context_panel", "news_feed",
+    "history_backfill",
+    "chain_history",           # TM 9.4: records only through the owner's own session into his private store (TM-7)
+    "alerts_stale_guard", "alerts_reliable_outbox", "context_panel", "news_feed",
     "markets_view",            # unfinished in the audit: the page and the summary work on the daily data the pack loads
     "telegram_inbound",
     "data_hub",                # TM Part 1 (unfinished in the catalog): one live stream per broker connection, live prices,

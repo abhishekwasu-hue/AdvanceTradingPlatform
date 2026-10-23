@@ -274,10 +274,48 @@ export function useBrokerLogin(refresh: () => void): BrokerLogin {
 }
 
 /**
+ * Day-one fix 2 (README row 19): the one line above a page that runs on ATP's stored Daily history before the day's
+ * broker login - what the page shows now (`what`, one plain sentence) and the one tap that renews the login (or connects
+ * a broker). Neutral styling: nothing is wrong, live prices are simply not there yet.
+ */
+export function StoredDailyNote({ state, what, onConnect, onLogin, busy = null, error = null, codeStep = null, onSubmitCode }: {
+  state: Extract<BrokerGateState, { kind: "login-needed" | "no-broker" }>; what: string; onConnect?: () => void;
+  onLogin?: (broker: BrokerTokenInfo) => void; busy?: string | null; error?: string | null; codeStep?: CodeStep | null;
+  onSubmitCode?: (code: string) => void;
+}) {
+  const name = state.kind === "login-needed" ? brokerDisplayName(state.broker.broker_name) : null;
+  const lead = state.kind === "login-needed"
+    ? `${state.expired ? `Your ${name} session has ended for today.` : `You are not logged in to ${name} today.`} Log in for live prices.`
+    : "Connect your broker for live prices.";
+  return (
+    <section data-stored-daily={state.kind} aria-label="Live prices"
+      className="mb-space-4 flex flex-col gap-space-3 rounded-panel border border-subtle bg-surface-1 px-space-4 py-space-3 text-t14 text-fg sm:flex-row sm:items-center">
+      <p className="min-w-0 flex-1"><span className="font-medium">{lead}</span> <span className="text-fg-muted">{what}</span></p>
+      {state.kind === "login-needed" ? (
+        codeStep && keyOf(codeStep.broker) === keyOf(state.broker) ? (
+          <div className="w-full sm:max-w-sm" data-code-step={keyOf(state.broker)}><CodeForm step={codeStep} onSubmit={onSubmitCode} busy={busy === keyOf(state.broker)} /></div>
+        ) : (
+          <Button variant="primary" icon={<LogIn size={16} aria-hidden />} loading={busy === keyOf(state.broker)} disabled={busy !== null}
+            onClick={() => onLogin?.(state.broker)} className="h-11 w-full shrink-0 px-space-5 text-t14 sm:w-auto">
+            Log in to {name}
+          </Button>
+        )
+      ) : (
+        <a href={CONNECT_BROKER_PATH} onClick={(e) => { if (onConnect) { e.preventDefault(); onConnect(); } }}
+          className="inline-flex h-11 w-full shrink-0 items-center justify-center rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand hover:bg-brand-strong sm:w-auto">
+          Connect a broker
+        </a>
+      )}
+      {error && <div className="basis-full"><ErrorNote text={error} /></div>}
+    </section>
+  );
+}
+
+/**
  * Renders `children` only while the trader's broker session is usable; otherwise the gate (see the RULE above).
  * Needs the router (Connect goes to Settings) and AuthProvider, as every page inside the app shell has.
  */
-export function BrokerGate({ children }: { children: ReactNode }) {
+export function BrokerGate({ children, storedDaily = null }: { children: ReactNode; storedDaily?: string | null }) {
   const { state, refresh } = useBrokerSession();
   const navigate = useNavigate();
   const { busy, error, codeStep, login, submitCode } = useBrokerLogin(refresh);
@@ -286,6 +324,18 @@ export function BrokerGate({ children }: { children: ReactNode }) {
     gateShowing.set(state.kind === "login-needed");
     return () => gateShowing.set(false);
   }, [state.kind]);
+
+  // Day-one fix 2: a page that works on stored Daily history shows its content under a one-tap renew line instead of
+  // the full gate while only the broker login (or the broker) is missing.
+  if (storedDaily && (state.kind === "login-needed" || state.kind === "no-broker")) {
+    return (
+      <>
+        <StoredDailyNote state={state} what={storedDaily} onConnect={() => navigate(CONNECT_BROKER_PATH)} onLogin={login}
+          busy={busy} error={error} codeStep={codeStep} onSubmitCode={submitCode} />
+        {children}
+      </>
+    );
+  }
 
   return (
     <BrokerGateView

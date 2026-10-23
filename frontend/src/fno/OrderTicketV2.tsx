@@ -2,6 +2,7 @@ import * as RD from "@radix-ui/react-dialog";
 import { Minus, Plus, ShieldCheck, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
+import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { formatPrice } from "../ui/format";
 import { useFeatures } from "../ui/useFeatures";
@@ -99,11 +100,13 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
   const budget = useRiskBudget(open && step.kind === "review");
   // 8b slice 4: the events calendar up to this contract's expiry, read on the confirm step (information only).
   const events = useEventRisk(open && step.kind === "review", target?.underlying, target?.expiry);
+  // FNO-8B-28: his own liquidity limits, only while he turned them on (Settings -> My trading defaults); words only.
+  const limits = activeLimits(useLiquidityLimits(open && features.on("ui_v2")));
   const liquidity = useMemo<RiskLine | null>(() => {
     if (!target) return null;
-    if (!chainRows || target.right === "FUT" || target.strike === null) return liquidityLine([], false);
-    return liquidityLine([legLiquidity(chainRows, target.strike, target.right, target.label ?? "This strike")]);
-  }, [chainRows, target]);
+    if (!chainRows || target.right === "FUT" || target.strike === null) return liquidityLine([], false, limits);
+    return liquidityLine([legLiquidity(chainRows, target.strike, target.right, target.label ?? "This strike")], true, limits);
+  }, [chainRows, target, limits]);
 
   // Desktop shortcuts: B = Buy, S = Sell while the ticket is being filled in (never while typing in a field).
   useEffect(() => {

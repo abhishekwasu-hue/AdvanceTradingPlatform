@@ -182,7 +182,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/sets/copilot_jobs.jsonl": "43566266ba2acd7cc345fa90c6c2a94f3073b15100a716e5a37ffd87eab1e922",
     "backend/evals/sets/copilot_safety.jsonl": "6957614b58ca737a77f1445e2d3bd0a13fa5c3063c829e75506e6043a3a37287",
     "backend/evals/sets/copilot_tools.json": "c7946be46843344a0095458d4faa555e8342138d968f3b2a04eacc25a355d8a6",
-    "frontend/e2e/fixtures/copilot_tools_v2.json": "9ab1d0b702c09a1c7d3f20220c38da73124b40e7f56b2f28ead22710ba47039f",
+    "frontend/e2e/fixtures/copilot_tools_v2.json": "726d73ab9c4939de9b1358da0862f08ca2cf67c44ec918c793fadf4ca11c7deb",
     # hand-written API replies for the Playwright tests
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",
     "frontend/e2e/fixtures/actions.json": "49e8cbfacbd96f95bc73a90691ae343bd487140c7ba30b5954031a1a2d96e547",

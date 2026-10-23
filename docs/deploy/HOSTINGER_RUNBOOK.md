@@ -533,7 +533,12 @@ It prints `health: OK` (exit 0), `health: FAILED` (exit 1), or `OWNER ACTION NEE
 
 ## 10b. Alerts to you (A2): the outside check, Telegram, e-mail and the error tracker
 
-`health` answers only when someone runs it. Three things now watch the platform by themselves:
+`health` answers only when someone runs it. Four things now watch the platform by themselves; the first one is the
+**primary** outside monitor (RDY-21):
+
+0. **A free outside uptime service** (step e below; you create it once). It lives outside GitHub and outside the
+   Hostinger host, checks every few minutes and alerts you by Telegram and e-mail. This is the one to trust for
+   "the site is down".
 
 1. **The server checks** (`atp.sh ops-check`, every 5 minutes from the crontab that every `deploy` installs). The host
    facts (the backup status of section 11, disk use, the HTTPS certificate's days left) go to
@@ -543,9 +548,14 @@ It prints `health: OK` (exit 0), `health: FAILED` (exit 1), or `OWNER ACTION NEE
    repeated every 6 hours; "OK again" is messaged once. A run while a deploy or a backup holds the lock is skipped.
    Thresholds are settings (`OPS_*` in `backend/app/core/config.py`); the log is `.deploy/logs/ops-check.log`.
    Admin console → System → **Alerts** shows the same checks, "Check now" and "Send a test".
-2. **The outside check** (GitHub Actions, `.github/workflows/uptime.yml`, every 10 minutes): `/` and
-   `/api/system/health` from GitHub's network. Two failed rounds in a row open an issue labelled `uptime` (GitHub
-   e-mails you), the first good round closes it.
+2. **The second-opinion outside check** (GitHub Actions, `.github/workflows/uptime.yml`, every 10 minutes): `/` and
+   `/api/system/health` from GitHub's network. Two failed rounds in a row (90 s apart) send **one** private Telegram
+   message to you; when the site answers again, **one** "back up" message. Nothing is repeated while it stays down.
+   The repository is public, so it **never** opens a GitHub issue or comment about an outage, and the workflow can
+   only read the code (`contents: read`). What it already sent is remembered between runs in the Actions cache.
+   Without the two Telegram secrets (step d) it sends nothing and only writes a plain notice in its run log; the run
+   stays green either way. The run log of a public repository can be read by anyone, so it holds only "up / down"
+   and the two public addresses - never a chat id or a token.
 3. **The error tracker** (off until you give it a DSN): server errors with personal data removed.
 
 Your steps (once; names only - the values go into `/opt/atp/.env` or GitHub settings, never into git or chat):
@@ -554,10 +564,42 @@ Your steps (once; names only - the values go into `/opt/atp/.env` or GitHub sett
 |---|---|---|
 | a. Telegram for server alerts | Admin console → System → Alerts → **Connect Telegram** | Press Start in the chat that opens. Needs the platform bot (`ATP_TELEGRAM_BOT_TOKEN`, section 4) - the same bot users connect to; your operator chat is kept apart from every organisation. Alternative: the chat id in `OPS_ALERT_TELEGRAM_CHAT_ID`. Then **Send a test**. |
 | b. E-mail for server alerts | `.env` | `PLATFORM_SMTP_HOST`, `PLATFORM_SMTP_PORT`, `PLATFORM_SMTP_USERNAME`, `PLATFORM_SMTP_PASSWORD`, `PLATFORM_SMTP_FROM` (any SMTP provider, e.g. Brevo or Zoho free tiers). Alerts go to `OPS_ALERT_EMAIL` (comma-separated) or, when empty, to `SUPER_ADMIN_EMAILS`. |
-| c. The outside check's e-mail | github.com → your profile → Settings → Notifications | Keep "Issues" e-mails on for this repository (Watching or Participating). Nothing else to set: the workflow uses its own token. |
-| d. Telegram for the outside check (optional) | Repository → Settings → Secrets and variables → Actions → New repository secret | `UPTIME_TELEGRAM_BOT_TOKEN` (a bot from @BotFather - a separate one is best, so a server problem with the platform bot cannot silence it) and `UPTIME_TELEGRAM_CHAT_ID` (your chat with that bot). |
-| e. A free uptime service (recommended, RDY-8) | e.g. UptimeRobot or Better Stack free plan | Two HTTP checks: `https://aialgodesk.tech/` and `https://aialgodesk.tech/api/system/health`, alert after 2 failures, Telegram + e-mail. Its hosted status page can be the footer's Status link: build the frontend with `VITE_STATUS_PAGE_URL=https://...` (RDY-11). |
+| c. (no longer needed) | - | The outside check used to open a GitHub issue; since RDY-21 it never does (public repository). There is nothing to set in GitHub's notification settings. |
+| d. Telegram for the second-opinion check | Repository → Settings → Secrets and variables → Actions → New repository secret | `UPTIME_TELEGRAM_BOT_TOKEN` (a bot from @BotFather - a separate one is best, so a server problem with the platform bot cannot silence it) and `UPTIME_TELEGRAM_CHAT_ID` (your private chat with that bot: send it any message first; your chat id is your own Telegram user id, which @userinfobot shows). Never a group or channel others can read. To test: Actions → "Uptime (outside check)" → Run workflow (it only messages you when the site is down). |
+| e. **The primary monitor: a free uptime service** (RDY-8 / RDY-21) | e.g. UptimeRobot or Better Stack, free plan | See "Set up the primary monitor" below. |
 | f. Error tracker (optional) | GlitchTip (glitchtip.com, free plan) or Sentry (free plan) → new project, platform Python | Copy the project's DSN into `.env` as `ERROR_TRACKER_DSN` (optionally `ERROR_TRACKER_ENVIRONMENT=production`). Deploy. Admin → System → Alerts then says "Error tracker: On". Leave empty to keep it off. |
+| g. Keep the scheduled check alive | Repository → Actions | See "When GitHub pauses the scheduled check" below. |
+
+**Set up the primary monitor (step e, once, about 10 minutes).**
+
+1. Sign up for a free uptime service (UptimeRobot or Better Stack free plan; any service with HTTP checks and
+   Telegram / e-mail alerts works). Use your own e-mail; turn on its two-factor sign-in if offered.
+2. Add the alert contacts: your e-mail (confirm the link it sends) and Telegram (the service's own bot: open the link
+   it shows and press Start in your private chat).
+3. Add **two HTTP(S) monitors**, interval 5 minutes (the free plan's shortest is fine):
+   - `https://aialgodesk.tech/` - expect HTTP 200;
+   - `https://aialgodesk.tech/api/system/health` - expect HTTP 200; if the service offers a keyword check, the keyword
+     `"ok"` (the body is `{"status": "ok"}`).
+4. Alert only after **2 failures in a row** (the setting is usually called "confirmation", "confirm after" or
+   "alert after N failures"; where the service counts time instead of checks, use twice the interval), so one dropped
+   packet does not wake you. Turn on the "back up" (recovery) message too.
+5. Optional: its free hosted status page with both monitors can be the footer's Status link - build the frontend with
+   `VITE_STATUS_PAGE_URL=https://...` (RDY-11). Do not put the status page link anywhere that implies a promise of
+   uptime.
+6. Test once: pause the `/api/system/health` monitor's expectation (e.g. change the keyword to something wrong), wait
+   for two checks, check that the Telegram and e-mail alerts arrive, then set it back and wait for the recovery message.
+
+**When GitHub pauses the scheduled check (60 days).** GitHub disables a scheduled workflow in a public repository
+after 60 days without repository activity (no push, no merged PR). The uptime cron then stops silently - no message
+says so. How this is handled:
+
+- The **primary monitor is outside GitHub** (step e), so an outage is still reported while the cron is paused.
+- To re-enable: github.com → the repository → **Actions** → "Uptime (outside check)" in the list on the left → the
+  banner "This scheduled workflow is disabled" → **Enable workflow**. Then **Run workflow** once to check it.
+- Once a month (with the other monthly checks), open Actions → "Uptime (outside check)" and check that the newest run
+  is less than an hour old. An automatic reminder in the server checks (`ops-check`) was considered and left out for
+  now: it would add a call to GitHub's public API and an eleventh check to Admin → System → Alerts for a case the
+  primary monitor already covers (RDY-21).
 
 What the messages never contain: an e-mail address, a name, a chat id, a token or a host name - states and counts
 only. The error tracker removes tokens, keys, e-mail addresses, phone numbers, cookies, query strings and request

@@ -330,7 +330,7 @@ function Cell({
       </div>
       <ChartV2 candles={data.candles} timeframe={shownTf} symbol={c.symbol} exchange={c.exchange} chartType={cellChartType(c.chart_type)} prefs={prefs}
         live={live.ltp} marketOpen={marketOpen(c.exchange)} onLoadOlder={data.loadOlder} drawingTools={active && !drawingsHidden} volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText}
-        onEngine={onEngine} className={phone ? "h-[46vh] min-h-[240px]" : "min-h-0 flex-1"} />
+        onEngine={onEngine} viewControls={active} className={phone ? "h-[46vh] min-h-[240px]" : "min-h-0 flex-1"} />
       {data.error && (
         <p role="status" className="flex flex-wrap items-center gap-x-space-2 border-t border-subtle px-space-2 py-space-1 text-t12 text-fg">
           {data.error}

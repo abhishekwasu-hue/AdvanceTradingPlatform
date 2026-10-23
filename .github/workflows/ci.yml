@@ -327,7 +327,7 @@ jobs:
 
       # A4 (review A4 notes): the images the server also runs but this repository does not build from its own code - the
       # backup image (postgres:17-alpine + openssl, the production major) and the pinned third-party services. REPORT ONLY
-      # for now (RDY-30): a HIGH inside an upstream image is fixed by the upstream rebuild, not by a change here, so it must
+      # for now (RDY-31): a HIGH inside an upstream image is fixed by the upstream rebuild, not by a change here, so it must
       # not turn every push red. The findings are in the job log; the owner may make them blocking after a clean month.
       - name: Build backup image (production Postgres major)
         if: always()

@@ -4,7 +4,9 @@ import { venueZone } from "../charting/chartTypes";
 import type { LightweightEngine } from "../charting/lightweight";
 import { THEME_EVENT, useAppearance } from "../theme";
 import type { LtpResponse } from "../types";
-import { ChartCore, OVERLAYS_V2, OVERLAY_LABELS_V2, type ChartTypeV2, type LevelLine, type OverlayId } from "./chartCore";
+import { ChartCore, OVERLAYS_V2, OVERLAY_LABELS_V2, type ChartTypeV2, type LevelLine, type OverlayId, type PlotInsets } from "./chartCore";
+import { ChartReadout, ChartViewControls } from "./ChartViewControls";
+import { INITIAL_VIEW, type Readout, type ViewState } from "./gestures";
 import { LiveChip } from "./LiveChip";
 import { readChartPalette, resolveChartTheme } from "./chartTheme";
 import { foldLive, type ChartBar, type TimeframeId } from "./timeframes";
@@ -47,6 +49,11 @@ export interface ChartV2Props {
   drawingTools?: boolean;
   onEngine?: (engine: LightweightEngine | null) => void;
   onTools?: (tools: ReturnType<typeof useDrawingTools>) => void;
+  /** PR 2: the floating Auto / Reset / Latest controls (default on; a Multi-chart cell shows them while it is active). */
+  viewControls?: boolean;
+  /** PR 2: a one-finger vertical drag moves the chart instead of the page (the Charts page in full screen). Off, a
+   * vertical swipe scrolls the page, as before; a mouse drag moves the price either way. */
+  captureTouch?: boolean;
   className?: string;
 }
 
@@ -55,11 +62,14 @@ const NO_LEVELS: readonly LevelLine[] = [];
 
 export default function ChartV2({
   candles, timeframe, symbol, exchange = "NSE", chartType = "candles", prefs = DEFAULT_CHART_PREFS, overlays = NO_OVERLAYS, live,
-  marketOpen, levels = NO_LEVELS, onLoadOlder, volumeLabel = "Volume", emptyText = "No prices for this timeframe yet.", drawingTools = true, onEngine, onTools, className = "h-[480px]",
+  marketOpen, levels = NO_LEVELS, onLoadOlder, volumeLabel = "Volume", emptyText = "No prices for this timeframe yet.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, className = "h-[480px]",
 }: ChartV2Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<HTMLDivElement>(null);
   const [core, setCore] = useState<ChartCore | null>(null);
+  const [view, setView] = useState<ViewState>(INITIAL_VIEW);
+  const [insets, setInsets] = useState<PlotInsets | null>(null);
+  const [readout, setReadout] = useState<Readout | null>(null);
   const [, , appTheme] = useAppearance();
   const theme = resolveChartTheme(prefs.theme, appTheme);
   const callbacks = useRef({ onLoadOlder, onEngine, onTools });
@@ -72,6 +82,7 @@ export default function ChartV2({
     const c = new ChartCore(plotRef.current, {
       palette: readChartPalette(rootRef.current, prefs.candle_colors), grid: prefs.grid, panes: prefs.indicators, type: chartType,
       overlays, zone: venueZone(exchange), timeframe, onLoadOlder: () => callbacks.current.onLoadOlder?.(),
+      onView: setView, onInsets: setInsets, onReadout: setReadout,
     });
     setCore(c);
     callbacks.current.onEngine?.(c.engine);
@@ -88,6 +99,8 @@ export default function ChartV2({
     window.addEventListener(THEME_EVENT, apply);
     return () => window.removeEventListener(THEME_EVENT, apply);
   }, [core, theme, prefs.grid, up, down]);
+
+  useEffect(() => { core?.setInteraction({ vertTouchDrag: captureTouch }); }, [core, captureTouch]);
 
   const { volume, rsi } = prefs.indicators;
   useEffect(() => { core?.setPanes({ volume, rsi }); }, [core, volume, rsi]);
@@ -106,9 +119,10 @@ export default function ChartV2({
 
   return (
     <div ref={rootRef} data-chart-theme={theme} data-chart-grid={prefs.grid ? "on" : "off"} className={`relative w-full ${className}`}
+         data-autoscale={view.autoScale ? "on" : "off"} data-latest-visible={view.latestVisible ? "yes" : "no"} data-crosshair={readout ? "on" : "off"}
          style={{ backgroundColor: "rgb(var(--chart-bg))" }}>
       <div ref={plotRef} className="h-full w-full" />
-      {(overlays.length > 0 || (marketOpen !== undefined && !!live)) && (
+      {(overlays.length > 0 || (marketOpen !== undefined && !!live) || readout) && (
         <div className="pointer-events-none absolute left-space-2 top-space-2 z-10 flex flex-wrap items-center gap-x-space-3 gap-y-space-1">
           {marketOpen !== undefined && <span className="pointer-events-auto empty:hidden"><LiveChip live={live} marketOpen={marketOpen} /></span>}
           {overlays.length > 0 && (
@@ -122,7 +136,12 @@ export default function ChartV2({
               ))}
             </ul>
           )}
+          {readout && core && <ChartReadout readout={readout} format={(p) => core.formatPrice(p)} />}
         </div>
+      )}
+      {viewControls && core && insets && candles.length > 0 && (
+        <ChartViewControls view={view} insets={insets} onAuto={() => core.setAutoScale(!view.autoScale)}
+          onReset={() => core.resetView()} onLatest={() => core.scrollToLatest()} />
       )}
       {candles.length === 0 && (
         <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-space-4 text-center text-t13" style={{ color: "rgb(var(--chart-text))" }}>

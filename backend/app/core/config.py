@@ -84,11 +84,11 @@ def _env_int_in(name: str, default: int, low: int, high: int) -> int:
     return value if low <= value <= high else default
 
 
-# A4 (review R5 c, RDY-27): each refresh slides a session another REFRESH_TOKEN_DAYS, so a device that keeps opening the
+# A4 (review R5 c, RDY-28): each refresh slides a session another REFRESH_TOKEN_DAYS, so a device that keeps opening the
 # app would stay signed in for ever. SESSION_MAX_DAYS is the absolute cap counted from the sign-in itself: after it the
 # person signs in again (and enters the authenticator code again, when two-factor is on), however active the device was.
 SESSION_MAX_DAYS = _env_int_in("SESSION_MAX_DAYS", 90, 1, 3650)
-# A4 (review R5 c, RDY-28): how recent the two-factor check on this session must be for a SUPER_ADMIN write (every route
+# A4 (review R5 c, RDY-29): how recent the two-factor check on this session must be for a SUPER_ADMIN write (every route
 # behind `require_mfa_session` that is not a GET). Admin reads need a checked session, not a recent one, so the console
 # stays usable; a write after the window asks for the authenticator code once more and then carries on. The LIVE step-up
 # (`ensure_live_step_up`) is unchanged: PAPER only in Phase 0, decided with LIVE.

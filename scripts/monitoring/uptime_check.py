@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
-"""Production readiness A2: the outside uptime check, run by .github/workflows/uptime.yml every 10 minutes.
+"""Production readiness A2 (changed by RDY-21): the outside uptime check, run by .github/workflows/uptime.yml.
 
-From a GitHub runner (outside the Hostinger host) it asks the site and the API's liveness endpoint:
+From a GitHub runner (outside the Hostinger host) it asks the site and the API's liveness endpoint every 10 minutes:
 
     UPTIME_BASE_URL (default https://aialgodesk.tech)  ->  GET /  and  GET /api/system/health
 
 A round fails when either answer is not HTTP 200 (or the health body is not {"status": "ok"}) within the timeout.
 Two rounds, UPTIME_RETRY_SECONDS apart (default 90): only **two failures in a row** count as down, so one dropped
-packet never pages anyone. Then, on the repository's own issues (the workflow's GITHUB_TOKEN, `issues: write`):
+packet never pages anyone.
 
-* down, no open uptime issue  -> a new issue (label `uptime`); GitHub e-mails the owner;
-* down, the issue is open      -> its body is updated with the latest failure (an edit sends no e-mail);
-* up again, the issue is open  -> a "back up" comment (e-mailed) and the issue is closed;
-* up, no issue                 -> nothing.
+The repository is PUBLIC, so an outage is never written to a GitHub issue or comment. The only alert goes privately to
+the owner's Telegram chat, through the repository secrets UPTIME_TELEGRAM_BOT_TOKEN and UPTIME_TELEGRAM_CHAT_ID
+(names only; their values are never printed):
 
-Optional Telegram: when the repository secrets UPTIME_TELEGRAM_BOT_TOKEN and UPTIME_TELEGRAM_CHAT_ID exist, the same
-"down" and "back up" lines go there too. Their values are never printed, and nothing secret lives in git.
-Standard library only. Exit 0 unless the script itself could not work (bad settings, GitHub refused the issue call).
+* down, the owner was not told yet       -> one "DOWN" message;
+* down, the owner was already told        -> nothing (no repeat every 10 minutes);
+* up again after a "DOWN" message         -> one "back up" message;
+* up, nothing was sent                    -> nothing.
+
+What was sent is remembered in a small JSON file (UPTIME_STATE_FILE) that the workflow carries from run to run in the
+Actions cache. Without it (the first run, or the cache was evicted) the check starts from "up, nothing sent". Without
+the secrets the run logs a plain notice and sends nothing; the free outside uptime service (runbook 10b) is the
+primary monitor either way. Standard library only. Exit 0 unless the settings are wrong: a down site or a failed
+Telegram call is an alert, never a red workflow run.
 """
 from __future__ import annotations
 
@@ -30,10 +36,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Tuple
 
-LABEL = "uptime"
-TITLE = "Uptime: the site is not answering"
-MARKER = "<!-- atp-uptime-check -->"
 USER_AGENT = "atp-uptime-check (GitHub Actions)"
+DEFAULT_STATE: Dict = {"down": False, "down_alerted": False, "since": None}
+NO_TELEGRAM_NOTICE = ("Notice: Telegram is not set up for the outside check (repository secrets "
+                      "UPTIME_TELEGRAM_BOT_TOKEN and UPTIME_TELEGRAM_CHAT_ID), so no message was sent. "
+                      "The outside uptime service is the primary monitor (runbook section 10b).")
 
 
 @dataclass
@@ -43,10 +50,10 @@ class Probe:
     detail: str
 
 
-def probe(url: str, *, timeout: float, expect_health: bool, opener: Callable = urllib.request.urlopen) -> Probe:
+def probe(url: str, *, timeout: float, expect_health: bool, opener: Optional[Callable] = None) -> Probe:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
     try:
-        with opener(request, timeout=timeout) as response:
+        with (opener or urllib.request.urlopen)(request, timeout=timeout) as response:
             status = getattr(response, "status", 200)
             body = response.read(4096)
     except urllib.error.HTTPError as exc:
@@ -73,45 +80,47 @@ def round_ok(results: List[Probe]) -> bool:
     return all(p.ok for p in results)
 
 
-def decide(down: bool, open_issue: Optional[int]) -> str:
-    """open | update | close | none."""
+def load_state(path: Optional[str]) -> Dict:
+    """The last run's state; a missing or unreadable file is "up, nothing sent"."""
+    state = dict(DEFAULT_STATE)
+    if not path:
+        return state
+    try:
+        with open(path, encoding="utf-8") as fh:
+            stored = json.load(fh)
+    except (OSError, ValueError):
+        return state
+    if isinstance(stored, dict):
+        state["down"] = stored.get("down") is True
+        state["down_alerted"] = stored.get("down_alerted") is True
+        state["since"] = stored.get("since") if isinstance(stored.get("since"), str) else None
+    return state
+
+
+def save_state(path: Optional[str], state: Dict) -> None:
+    if not path:
+        return
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+
+
+def decide(previous: Dict, down: bool) -> str:
+    """alert_down | alert_recovered | none. One DOWN message per outage, one recovery message after it."""
     if down:
-        return "update" if open_issue else "open"
-    return "close" if open_issue else "none"
+        return "none" if previous.get("down_alerted") else "alert_down"
+    return "alert_recovered" if previous.get("down_alerted") else "none"
 
 
-def report(results: List[Probe], when: str) -> str:
-    lines = [MARKER, f"Last checked from outside (GitHub Actions): {when}", "",
-             "Two checks in a row failed:", ""]
-    lines += [f"- `{p.url}`: {'ok' if p.ok else 'FAILED'} ({p.detail})" for p in results]
-    lines += ["", "What to do: open the runbook, section 10 (health) - run `atp.sh health` on the server.",
-              "This issue closes itself when the site answers again."]
-    return "\n".join(lines)
+def telegram_configured() -> bool:
+    return bool(os.environ.get("UPTIME_TELEGRAM_BOT_TOKEN", "").strip()
+                and os.environ.get("UPTIME_TELEGRAM_CHAT_ID", "").strip())
 
 
-class GitHub:
-    def __init__(self, repo: str, token: str, api: str = "https://api.github.com",
-                 opener: Callable = urllib.request.urlopen) -> None:
-        self.repo, self.token, self.api, self.opener = repo, token, api.rstrip("/"), opener
-
-    def call(self, method: str, path: str, payload: Optional[Dict] = None):
-        data = json.dumps(payload).encode() if payload is not None else None
-        request = urllib.request.Request(f"{self.api}/repos/{self.repo}{path}", data=data, method=method, headers={
-            "Authorization": f"Bearer {self.token}", "Accept": "application/vnd.github+json", "User-Agent": USER_AGENT,
-            "X-GitHub-Api-Version": "2022-11-28", **({"Content-Type": "application/json"} if data else {})})
-        with self.opener(request, timeout=30) as response:
-            raw = response.read()
-        return json.loads(raw) if raw else None
-
-    def open_issue(self) -> Optional[int]:
-        items = self.call("GET", f"/issues?state=open&labels={LABEL}&per_page=20") or []
-        for item in items:
-            if "pull_request" not in item and MARKER in (item.get("body") or ""):
-                return int(item["number"])
-        return None
-
-
-def telegram(text: str, *, opener: Callable = urllib.request.urlopen) -> Optional[bool]:
+def telegram(text: str, *, opener: Optional[Callable] = None) -> Optional[bool]:
+    """True sent, False refused / unreachable, None not set up. Never prints the URL: it holds the token."""
     token = os.environ.get("UPTIME_TELEGRAM_BOT_TOKEN", "").strip()
     chat = os.environ.get("UPTIME_TELEGRAM_CHAT_ID", "").strip()
     if not token or not chat:
@@ -120,37 +129,39 @@ def telegram(text: str, *, opener: Callable = urllib.request.urlopen) -> Optiona
     request = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data, method="POST",
                                      headers={"Content-Type": "application/json", "User-Agent": USER_AGENT})
     try:
-        with opener(request, timeout=20) as response:
+        with (opener or urllib.request.urlopen)(request, timeout=20) as response:
             return getattr(response, "status", 200) == 200
-    except Exception:  # noqa: BLE001 - the issue is the alert of record; never print the URL (it holds the token)
+    except Exception:  # noqa: BLE001 - a failed send is retried by the next run
         return False
 
 
-def run(*, base: str, retry_seconds: float, timeout: float, github: Optional[GitHub], sleep: Callable = time.sleep,
-        opener: Callable = urllib.request.urlopen, now: Optional[datetime] = None) -> Dict:
+def run(*, base: str, retry_seconds: float, timeout: float, previous: Optional[Dict] = None,
+        sleep: Optional[Callable] = None, opener: Optional[Callable] = None,
+        now: Optional[datetime] = None) -> Dict:
+    prev = dict(DEFAULT_STATE, **(previous or {}))
     first = [probe(url, timeout=timeout, expect_health=health, opener=opener) for url, health in targets(base)]
     results = first
     down = False
     if not round_ok(first):
-        sleep(retry_seconds)
+        (sleep or time.sleep)(retry_seconds)
         results = [probe(url, timeout=timeout, expect_health=health, opener=opener) for url, health in targets(base)]
         down = not round_ok(results)
     when = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M UTC")
-    issue = github.open_issue() if github else None
-    action = decide(down, issue)
-    sent = None
-    if github is not None:
-        if action == "open":
-            github.call("POST", "/issues", {"title": TITLE, "body": report(results, when), "labels": [LABEL]})
-            sent = telegram(f"AiAlgoDesk is DOWN (checked from outside at {when}): "
-                            + "; ".join(f"{p.url} {p.detail}" for p in results if not p.ok), opener=opener)
-        elif action == "update":
-            github.call("PATCH", f"/issues/{issue}", {"body": report(results, when)})
-        elif action == "close":
-            github.call("POST", f"/issues/{issue}/comments", {"body": f"Back up: both checks answered at {when}."})
-            github.call("PATCH", f"/issues/{issue}", {"state": "closed", "state_reason": "completed"})
-            sent = telegram(f"AiAlgoDesk is back up (checked from outside at {when}).", opener=opener)
-    return {"down": down, "action": action, "issue": issue, "telegram": sent,
+    action = decide(prev, down)
+    sent: Optional[bool] = None
+    alerted = bool(prev["down_alerted"])
+    if action == "alert_down":
+        sent = telegram(f"AiAlgoDesk is DOWN (checked from outside at {when}): "
+                        + "; ".join(f"{p.url} {p.detail}" for p in results if not p.ok), opener=opener)
+        alerted = sent is True                      # not sent: the next run that still sees it down tries again
+    elif action == "alert_recovered":
+        since = f" It was down from {prev['since']}." if prev.get("since") else ""
+        sent = telegram(f"AiAlgoDesk is back up (checked from outside at {when}).{since}", opener=opener)
+        alerted = sent is not True                  # not sent: the next good run tries the recovery message again
+    since = (prev["since"] if prev["down"] and prev.get("since") else when) if down else None
+    state = {"down": down, "down_alerted": alerted, "since": since}
+    return {"down": down, "action": action, "telegram": sent, "state": state,
+            "changed": state != {k: prev.get(k) for k in DEFAULT_STATE},
             "results": [{"url": p.url, "ok": p.ok, "detail": p.detail} for p in results]}
 
 
@@ -159,21 +170,20 @@ def main() -> int:
     if not base.startswith("https://"):
         print("UPTIME_BASE_URL must start with https://")
         return 2
-    repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
-    github = GitHub(repo, token) if repo and token else None
+    state_file = os.environ.get("UPTIME_STATE_FILE", "").strip() or None
+    if not telegram_configured():
+        print(NO_TELEGRAM_NOTICE)
+    result = run(base=base, retry_seconds=float(os.environ.get("UPTIME_RETRY_SECONDS", "90") or 90),
+                 timeout=float(os.environ.get("UPTIME_TIMEOUT_SECONDS", "20") or 20), previous=load_state(state_file))
     try:
-        result = run(base=base, retry_seconds=float(os.environ.get("UPTIME_RETRY_SECONDS", "90") or 90),
-                     timeout=float(os.environ.get("UPTIME_TIMEOUT_SECONDS", "20") or 20), github=github)
-    except urllib.error.HTTPError as exc:
-        print(f"GitHub refused the issue call: HTTP {exc.code}")
-        return 1
-    print(json.dumps(result))
-    summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary:
-        with open(summary, "a", encoding="utf-8") as fh:
-            fh.write(f"Uptime: {'DOWN' if result['down'] else 'up'} - action: {result['action']}\n\n")
-            fh.writelines(f"- {r['url']}: {'ok' if r['ok'] else 'FAILED'} ({r['detail']})\n" for r in result["results"])
+        save_state(state_file, result["state"])
+    except OSError as exc:
+        print(f"Notice: the state file could not be written ({type(exc).__name__}); the next run starts fresh.")
+    print(json.dumps({k: result[k] for k in ("down", "action", "telegram", "changed", "results")}))
+    output = os.environ.get("GITHUB_OUTPUT")
+    if output:
+        with open(output, "a", encoding="utf-8") as fh:
+            fh.write(f"changed={'true' if result['changed'] else 'false'}\n")
     return 0
 
 

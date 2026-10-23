@@ -173,7 +173,7 @@ async def require_checked_mfa_session(
     session: AsyncSession = Depends(get_session),
 ) -> User:
     """A two-factor-checked session, however long ago the check was: for the one admin write that only makes things
-    safer - engaging the global kill switch - so an emergency stop is never held up by a code prompt (A4, RDY-28)."""
+    safer - engaging the global kill switch - so an emergency stop is never held up by a code prompt (A4, RDY-29)."""
     await ensure_mfa_session(session, user, session_id, "This action")
     return user
 

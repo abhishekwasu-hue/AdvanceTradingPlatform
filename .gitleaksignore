@@ -21,3 +21,37 @@ d842627b9a913e646a8f394428ac7868a7070099:.env.example:generic-api-key:43
 5ded68f71733ca26432601bc8c9a8fa61326bb8b:backend/tests/test_p2a_broker_connect.py:generic-api-key:29
 5ded68f71733ca26432601bc8c9a8fa61326bb8b:backend/tests/test_p2a_broker_connect.py:generic-api-key:32
 5ded68f71733ca26432601bc8c9a8fa61326bb8b:backend/tests/test_p2a_broker_connect.py:generic-api-key:34
+# Settings redesign A / MO2 part A / MO2A-2 (23 Oct): the AI key-format cases (obviously fake keys: FAKE..., 0123...,
+# cfk_FAKE...) in backend/tests/fixtures/key_formats.json and its byte-identical frontend copy, and the sha256 pins of
+# those fixtures in scripts/check_public_repo.py, which the generic rule reads as API keys.
+01c2300e131700b40de1d87b5052df3491fbe956:backend/tests/fixtures/key_formats.json:generic-api-key:285
+01c2300e131700b40de1d87b5052df3491fbe956:backend/tests/fixtures/key_formats.json:generic-api-key:305
+01c2300e131700b40de1d87b5052df3491fbe956:backend/tests/fixtures/key_formats.json:generic-api-key:310
+01c2300e131700b40de1d87b5052df3491fbe956:frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:285
+01c2300e131700b40de1d87b5052df3491fbe956:frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:305
+01c2300e131700b40de1d87b5052df3491fbe956:frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:310
+01c2300e131700b40de1d87b5052df3491fbe956:scripts/check_public_repo.py:generic-api-key:140
+01c2300e131700b40de1d87b5052df3491fbe956:scripts/check_public_repo.py:generic-api-key:141
+3c7c043c174dadaa7337feccaf2cde8b516dbd91:backend/tests/fixtures/key_formats.json:generic-api-key:285
+3c7c043c174dadaa7337feccaf2cde8b516dbd91:backend/tests/fixtures/key_formats.json:generic-api-key:305
+3c7c043c174dadaa7337feccaf2cde8b516dbd91:backend/tests/fixtures/key_formats.json:generic-api-key:310
+3c7c043c174dadaa7337feccaf2cde8b516dbd91:frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:285
+3c7c043c174dadaa7337feccaf2cde8b516dbd91:frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:305
+3c7c043c174dadaa7337feccaf2cde8b516dbd91:frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:310
+3c7c043c174dadaa7337feccaf2cde8b516dbd91:scripts/check_public_repo.py:generic-api-key:148
+3c7c043c174dadaa7337feccaf2cde8b516dbd91:scripts/check_public_repo.py:generic-api-key:149
+89fa1490dead8e7b55dfb02629882418fc5dacc0:scripts/check_public_repo.py:generic-api-key:132
+89fa1490dead8e7b55dfb02629882418fc5dacc0:scripts/check_public_repo.py:generic-api-key:133
+c1614e7f66222d519dbe5238c601575cd179db62:scripts/check_public_repo.py:generic-api-key:132
+c1614e7f66222d519dbe5238c601575cd179db62:scripts/check_public_repo.py:generic-api-key:133
+f2452b269dd321502b9dd633002133edc23dc54f:scripts/check_public_repo.py:generic-api-key:132
+f2452b269dd321502b9dd633002133edc23dc54f:scripts/check_public_repo.py:generic-api-key:133
+# The same findings in the checked-out tree (the gitleaks dir step: <file>:<rule>:<line>).
+backend/tests/fixtures/key_formats.json:generic-api-key:285
+backend/tests/fixtures/key_formats.json:generic-api-key:305
+backend/tests/fixtures/key_formats.json:generic-api-key:310
+frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:285
+frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:305
+frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:310
+scripts/check_public_repo.py:generic-api-key:148
+scripts/check_public_repo.py:generic-api-key:149

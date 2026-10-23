@@ -3275,6 +3275,41 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   types and `directionMarker` moved to `charting/markers.ts`.
 - Tests: vitest `src/chart/chartOptions.test.ts` (the builder, the R4 drag test, the ProChart path, the markers). The
   chart e2e baselines are unchanged.
+## 23 Oct - Chart order (row 18), PR 2: both axes, Auto / Reset / Latest on the v2 chart (behind ui_v2)
+
+- Branch `claude/chart-core-axes`, stacked on `claude/chart-core-options`. No migration, no flag (the v2 chart is ui_v2
+  only; ProChart is unchanged for ui_v2 off), no route, no backend change.
+- `chart/gestures.ts` (R3, React-free): `PriceDrag` turns Auto off and pans the price itself with `setVisibleRange`
+  when a plot drag starts with Auto on and moves vertically (a sideways wobble stays a time pan); `latestVisible`;
+  `shiftWheelPosition` (Shift + a vertical wheel pans time where the browser does not make it a sideways wheel).
+- `ChartCore`: binds the layer (presses bubble from the canvases, so a drawing tool that takes a press goes first; a
+  drawing drag or a second finger ends it), reads the Auto state back after the library's own axis drag / double-click
+  / double-tap, `resetView`, `scrollToLatest`, the crosshair readout (the bar as it came), `trackingMode` OnTouchEnd.
+- `chart/ChartViewControls.tsx`: "Auto" (icon + word, tooltip "Fit prices to the screen", CC-6), "Reset", "Latest"
+  (only while the latest bar is off screen), at the price pane's bottom right, chart tokens only, 44 px on a phone;
+  the readout (Open / High / Low / Close / Volume in K / L / Cr). The chart root carries `data-autoscale`,
+  `data-latest-visible`, `data-crosshair`.
+- Charts page: in full screen the chart takes a vertical finger drag (CC-11); Multi-chart: the controls on the active
+  cell only (CC-13).
+- Tests: vitest `src/chart/gestures.test.ts`; e2e `e2e/chart-axes-v2.e2e.ts` (1440 and 390). The existing chart
+  baselines still pass. Questions CC-11..14.
+## 23 Oct - Chart order (row 18), PR 1: one chart options builder + the R4 fix (no visual change)
+
+- Branch `claude/chart-core-options` (the first PR of `docs/design/CHART_COLOUR_REVIEW.md`'s sequence). No migration, no
+  flag, no route, no backend change.
+- `frontend/src/chart/chartOptions.ts`: the one builder of the theme-neutral options (gestures, kinetic scroll, the
+  price axis width, the right offset). `ChartCore` and ProChart's `baseOptions` both take it; the word-for-word copy in
+  ProChart is gone. The values are the same as before (the booleans `axisPressedMouseMove: true` /
+  `axisDoubleClickReset: true` are now the same full objects the library expanded them to).
+- R4: `LightweightEngine.setPanning` no longer writes `handleScroll: true, handleScale: true` (the library expanded
+  that into every sub-option, so after the first drawing drag a phone swipe stopped scrolling the page). The v2 core
+  owns the gesture state (`setInteraction`, suspend / resume); ProChart's engine writes the default state as full objects.
+- The fake library (`chart/lightweightFake.fixture.ts`) gains the price scale, the time scale's scroll position,
+  `resetTimeScale`, the crosshair handlers and `merged()` for the gesture tests of the next PR.
+- `components/CandleChart.tsx` removed: nothing rendered it (grep: no `<CandleChart` in `src/`, the build passes); its
+  types and `directionMarker` moved to `charting/markers.ts`.
+- Tests: vitest `src/chart/chartOptions.test.ts` (the builder, the R4 drag test, the ProChart path, the markers). The
+  chart e2e baselines are unchanged.
 
 ## 23 Oct - Production readiness A2: monitoring and alerts to the operator
 
@@ -3311,7 +3346,7 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   commits have no CI result yet). `rollback` is never gated.
 - Staging (R4, RDY-2 answered: the CI stack): the `deploy-staging.yml` smoke test fails on an unset URL, no answer or
   not ok. The rollback rehearsal runs on every main push (`gate` job), now no longer cancelled.
-- `.github/pull_request_template.md`. Runbook section 8a, `.env.example`. Questions RDY-27..31.
+- `.github/pull_request_template.md`. Runbook section 8a, `.env.example`. Questions RDY-28..32.
 - Tests: `test_a3_deploy_gate.py` (the helper against a fake curl + local JSON, the audit row and the chain), six
   `atp.sh` cases in `test_z11_deploy_bundle.py` (the fake host's curl now serves the GitHub API); shellcheck,
   actionlint clean.

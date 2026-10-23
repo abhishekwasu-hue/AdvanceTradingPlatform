@@ -1,9 +1,12 @@
-"""Production readiness A2: the outside uptime check (.github/workflows/uptime.yml + scripts/monitoring/uptime_check.py).
+"""Production readiness A2, changed by RDY-21: the outside uptime check (.github/workflows/uptime.yml +
+scripts/monitoring/uptime_check.py).
 
-Pinned: two failed rounds in a row = down (one blip pages nobody); down opens one issue (labelled, with the marker),
-later failures edit it, recovery comments and closes it; Telegram only when both optional secrets exist and its token
-never reaches the output; the workflow holds no secret value, pins its action to a SHA, runs only on the owner's
-repository with `issues: write` and passes actionlint when it is installed.
+Pinned: two failed rounds in a row = down (one blip pages nobody); the repository is public, so the check never calls
+GitHub's API (no issue, no comment) and the workflow holds `contents: read` only; Telegram is called only when both
+repository secrets are set, once per outage and once on recovery (state carried in a file between runs, retried when
+a send failed); without the secrets a plain notice is logged and the run exits 0; the token never reaches the output;
+the workflow holds no secret value, pins its actions to SHAs, runs only on the owner's repository and passes actionlint
+when it is installed.
 """
 import importlib.util
 import io
@@ -19,7 +22,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "uptime.yml"
-spec = importlib.util.spec_from_file_location("uptime_check", ROOT / "scripts" / "monitoring" / "uptime_check.py")
+SCRIPT = ROOT / "scripts" / "monitoring" / "uptime_check.py"
+spec = importlib.util.spec_from_file_location("uptime_check", SCRIPT)
 uptime = importlib.util.module_from_spec(spec)
 sys.modules["uptime_check"] = uptime          # dataclasses look the module up by name
 spec.loader.exec_module(uptime)
@@ -40,32 +44,30 @@ class _Resp:
 
 
 class World:
-    """The site (a list of answers per round) and GitHub's issues API."""
-    def __init__(self, rounds, issues=None):
+    """The site (a list of answers per round), Telegram, and a record of anything else that was called."""
+    def __init__(self, rounds, telegram_fails=False):
         self.rounds = list(rounds)          # each: (home_status, health_body or exception)
         self.current = None
-        self.issues = issues or []
-        self.calls: list = []
         self.telegram: list = []
+        self.telegram_fails = telegram_fails
+        self.other: list = []
 
     def opener(self, request, timeout=None):
         url = request.full_url
         if url.startswith("https://api.telegram.org/"):
+            if self.telegram_fails:
+                raise urllib.error.URLError("unreachable")
             self.telegram.append(json.loads(request.data))
             return _Resp(200, b"{}")
-        if url.startswith("https://api.github.com/"):
-            body = json.loads(request.data) if request.data else None
-            self.calls.append((request.get_method(), url.split("/repos/o/r", 1)[1], body))
-            if request.get_method() == "GET":
-                return _Resp(200, json.dumps(self.issues).encode())
-            return _Resp(201, b"{}")
+        if not url.startswith("https://aialgodesk.tech/"):
+            self.other.append(url)
+            raise AssertionError(f"unexpected call: {url}")
         if url.endswith("/api/system/health"):
             answer = self.current[1]
             if isinstance(answer, Exception):
                 raise answer
             return _Resp(200, answer)
-        if self.current is None or url.endswith("/"):
-            self.current = self.rounds.pop(0) if self.rounds else self.current
+        self.current = self.rounds.pop(0) if self.rounds else self.current
         status = self.current[0]
         if status != 200:
             raise urllib.error.HTTPError(url, status, "x", {}, io.BytesIO())
@@ -76,45 +78,81 @@ UP = (200, b'{"status": "ok"}')
 DOWN = (502, TimeoutError("timed out"))
 
 
-def _run(world, monkeypatch, telegram=False):
-    if telegram:
+def _secrets(monkeypatch, on):
+    if on:
         monkeypatch.setenv("UPTIME_TELEGRAM_BOT_TOKEN", "999:FAKE-uptime-bot-token")
         monkeypatch.setenv("UPTIME_TELEGRAM_CHAT_ID", "555")
     else:
         monkeypatch.delenv("UPTIME_TELEGRAM_BOT_TOKEN", raising=False)
         monkeypatch.delenv("UPTIME_TELEGRAM_CHAT_ID", raising=False)
-    gh = uptime.GitHub("o/r", "ghs_fake", opener=world.opener)
-    return uptime.run(base="https://aialgodesk.tech", retry_seconds=0, timeout=1, github=gh, sleep=lambda _s: None, opener=world.opener)
+
+
+def _run(world, monkeypatch, telegram=True, previous=None):
+    _secrets(monkeypatch, telegram)
+    return uptime.run(base="https://aialgodesk.tech", retry_seconds=0, timeout=1, previous=previous,
+                      sleep=lambda _s: None, opener=world.opener)
 
 
 def test_one_blip_pages_nobody(monkeypatch):
     world = World([DOWN, UP])
-    out = _run(world, monkeypatch, telegram=True)
-    assert out["down"] is False and out["action"] == "none"
-    assert [c[0] for c in world.calls] == ["GET"] and world.telegram == []
+    out = _run(world, monkeypatch)
+    assert out["down"] is False and out["action"] == "none" and world.telegram == [] and out["changed"] is False
 
 
-def test_two_failures_open_one_issue_and_telegram_when_set_up(monkeypatch):
+def test_two_failures_send_one_telegram_and_nothing_else(monkeypatch):
     world = World([DOWN, DOWN])
-    out = _run(world, monkeypatch, telegram=True)
-    assert out["down"] is True and out["action"] == "open"
-    method, path, body = world.calls[-1]
-    assert (method, path) == ("POST", "/issues") and body["labels"] == ["uptime"] and uptime.MARKER in body["body"]
-    assert "https://aialgodesk.tech/api/system/health" in body["body"]
-    assert world.telegram and world.telegram[0]["chat_id"] == "555" and "DOWN" in world.telegram[0]["text"]
+    out = _run(world, monkeypatch)
+    assert out["down"] is True and out["action"] == "alert_down" and out["telegram"] is True
+    assert len(world.telegram) == 1 and world.telegram[0]["chat_id"] == "555" and "DOWN" in world.telegram[0]["text"]
+    assert "https://aialgodesk.tech/api/system/health" in world.telegram[0]["text"]
+    assert out["state"]["down"] is True and out["state"]["down_alerted"] is True and out["changed"] is True
+    assert world.other == []                                    # no GitHub API, nothing but the site and Telegram
     assert "FAKE-uptime-bot-token" not in json.dumps(out)
 
 
-def test_an_open_issue_is_edited_while_down_and_closed_on_recovery(monkeypatch):
-    issue = [{"number": 7, "body": uptime.MARKER + " x"}, {"number": 8, "body": "someone else's", "pull_request": {}}]
-    world = World([DOWN, DOWN], issues=issue)
-    assert _run(world, monkeypatch)["action"] == "update"
-    assert world.calls[-1][:2] == ("PATCH", "/issues/7") and "state" not in world.calls[-1][2]
-    world = World([UP], issues=issue)
-    out = _run(world, monkeypatch, telegram=True)
-    assert out["action"] == "close"
-    assert [c[:2] for c in world.calls[1:]] == [("POST", "/issues/7/comments"), ("PATCH", "/issues/7")]
-    assert world.calls[-1][2] == {"state": "closed", "state_reason": "completed"} and "back up" in world.telegram[0]["text"]
+def test_a_long_outage_is_told_once_and_the_recovery_once(monkeypatch):
+    world = World([DOWN, DOWN])
+    first = _run(world, monkeypatch)
+    world = World([DOWN, DOWN])
+    second = _run(world, monkeypatch, previous=first["state"])
+    assert second["action"] == "none" and world.telegram == [] and second["changed"] is False
+    assert second["state"]["since"] == first["state"]["since"]
+    world = World([UP])
+    back = _run(world, monkeypatch, previous=second["state"])
+    assert back["action"] == "alert_recovered" and len(world.telegram) == 1 and "back up" in world.telegram[0]["text"]
+    assert back["state"] == {"down": False, "down_alerted": False, "since": None} and back["changed"] is True
+    world = World([UP])
+    after = _run(world, monkeypatch, previous=back["state"])
+    assert after["action"] == "none" and world.telegram == [] and after["changed"] is False
+
+
+def test_a_failed_send_is_tried_again_next_run(monkeypatch):
+    world = World([DOWN, DOWN], telegram_fails=True)
+    first = _run(world, monkeypatch)
+    assert first["telegram"] is False and first["state"]["down_alerted"] is False
+    world = World([DOWN, DOWN])
+    second = _run(world, monkeypatch, previous=first["state"])
+    assert second["action"] == "alert_down" and len(world.telegram) == 1
+    world = World([UP], telegram_fails=True)
+    back = _run(world, monkeypatch, previous=second["state"])
+    assert back["action"] == "alert_recovered" and back["state"]["down_alerted"] is True    # recovery still owed
+    world = World([UP])
+    again = _run(world, monkeypatch, previous=back["state"])
+    assert again["action"] == "alert_recovered" and len(world.telegram) == 1
+    assert again["state"]["down_alerted"] is False
+
+
+def test_recovery_without_an_earlier_down_message_sends_nothing(monkeypatch):
+    world = World([UP])
+    out = _run(world, monkeypatch, previous={"down": True, "down_alerted": False, "since": "x"})
+    assert out["action"] == "none" and world.telegram == [] and out["changed"] is True
+
+
+def test_without_telegram_secrets_nothing_is_sent(monkeypatch):
+    world = World([DOWN, DOWN])
+    out = _run(world, monkeypatch, telegram=False)
+    assert out["telegram"] is None and world.telegram == [] and world.other == []
+    assert out["state"]["down_alerted"] is False
 
 
 def test_health_must_say_ok():
@@ -123,31 +161,71 @@ def test_health_must_say_ok():
     assert probe.ok is False
     probe = uptime.probe("https://x/api/system/health", timeout=1, expect_health=True, opener=lambda r, timeout=None: _Resp(200, b"<html>"))
     assert probe.ok is False and "not JSON" in probe.detail
-    assert uptime.decide(False, None) == "none" and uptime.decide(True, None) == "open"
+    assert uptime.decide({"down_alerted": False}, False) == "none"
+    assert uptime.decide({"down_alerted": False}, True) == "alert_down"
+    assert uptime.decide({"down_alerted": True}, True) == "none"
+    assert uptime.decide({"down_alerted": True}, False) == "alert_recovered"
 
 
-def test_without_telegram_secrets_nothing_is_sent_there(monkeypatch):
+def test_state_file_round_trip_and_bad_files(tmp_path):
+    path = tmp_path / "s" / "state.json"
+    assert uptime.load_state(str(path)) == uptime.DEFAULT_STATE
+    uptime.save_state(str(path), {"down": True, "down_alerted": True, "since": "2026-10-23 10:00 UTC"})
+    assert uptime.load_state(str(path)) == {"down": True, "down_alerted": True, "since": "2026-10-23 10:00 UTC"}
+    path.write_text("not json")
+    assert uptime.load_state(str(path)) == uptime.DEFAULT_STATE
+    path.write_text('{"down": "yes", "down_alerted": 1, "since": 5}')
+    assert uptime.load_state(str(path)) == uptime.DEFAULT_STATE
+    assert uptime.load_state(None) == uptime.DEFAULT_STATE
+
+
+def test_main_without_secrets_logs_a_plain_notice_and_exits_0(monkeypatch, tmp_path, capsys):
+    _secrets(monkeypatch, False)
     world = World([DOWN, DOWN])
-    out = _run(world, monkeypatch, telegram=False)
-    assert out["telegram"] is None and world.telegram == []
+    monkeypatch.setattr(uptime.urllib.request, "urlopen", world.opener)
+    monkeypatch.setattr(uptime.time, "sleep", lambda _s: None)
+    monkeypatch.setenv("UPTIME_STATE_FILE", str(tmp_path / "state.json"))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "out"))
+    monkeypatch.delenv("UPTIME_BASE_URL", raising=False)
+    monkeypatch.setenv("UPTIME_RETRY_SECONDS", "0")
+    assert uptime.main() == 0
+    printed = capsys.readouterr().out
+    assert "Telegram is not set up" in printed and "primary monitor" in printed
+    assert (tmp_path / "out").read_text() == "changed=true\n"
+    assert json.loads((tmp_path / "state.json").read_text())["down"] is True
 
 
-def test_the_workflow_has_no_secret_values_and_minimal_rights():
+def test_the_script_never_talks_to_github():
+    text = SCRIPT.read_text()
+    assert "api.github.com" not in text and "GITHUB_TOKEN" not in text and "/issues" not in text
+
+
+def test_the_workflow_has_no_secret_values_and_read_only_rights():
     text = WORKFLOW.read_text()
     wf = yaml.safe_load(text)
     on = wf.get("on") or wf.get(True)
     assert on["schedule"][0]["cron"] == "7-59/10 * * * *" and "workflow_dispatch" in on
-    assert wf["permissions"] == {"contents": "read", "issues": "write"}
+    assert wf["permissions"] == {"contents": "read"}
+    assert "issues" not in text and "GITHUB_TOKEN" not in text
     job = wf["jobs"]["probe"]
+    assert "permissions" not in job
     assert job["if"] == "github.repository == 'abhishekwasu-hue/AdvanceTradingPlatform'" and job["timeout-minutes"] <= 10
-    checkout = job["steps"][0]
-    assert checkout["uses"].startswith("actions/checkout@") and len(checkout["uses"].split("@")[1]) == 40
-    assert checkout["with"]["persist-credentials"] is False
-    env = job["steps"][1]["env"]
+    steps = job["steps"]
+    for step in steps:
+        if "uses" in step:
+            assert len(step["uses"].split("@")[1].split()[0]) == 40, step["uses"]        # pinned to a SHA
+    assert steps[0]["with"]["persist-credentials"] is False
+    assert steps[1]["uses"].startswith("actions/cache/restore@") and steps[1]["with"]["restore-keys"] == "uptime-state-"
+    check = steps[2]
+    env = check["env"]
+    assert set(env) == {"UPTIME_BASE_URL", "UPTIME_TELEGRAM_BOT_TOKEN", "UPTIME_TELEGRAM_CHAT_ID"}
     assert env["UPTIME_TELEGRAM_BOT_TOKEN"] == "${{ secrets.UPTIME_TELEGRAM_BOT_TOKEN }}"
     assert env["UPTIME_TELEGRAM_CHAT_ID"] == "${{ secrets.UPTIME_TELEGRAM_CHAT_ID }}"
     for value in env.values():
         assert value.startswith("${{ ") and value.endswith(" }}"), value       # names only, no value in git
+    save = steps[3]
+    assert save["uses"].startswith("actions/cache/save@") and save["if"] == f"steps.{check['id']}.outputs.changed == 'true'"
+    assert save["with"]["key"] == steps[1]["with"]["key"] and save["with"]["path"] == steps[1]["with"]["path"]
 
 
 def test_actionlint_passes():

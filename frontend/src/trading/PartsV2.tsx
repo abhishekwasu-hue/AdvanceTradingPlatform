@@ -1,5 +1,6 @@
 import { Check, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
+import { buttonClass } from "../components/primitives/Button";
 import { toneClass } from "../dashboard/CardV2";
 import type { Tone } from "../dashboard/model";
 import type { GlossaryKey } from "../ui/glossary";
@@ -12,9 +13,11 @@ import { TermHint } from "../ui/TermHint";
  */
 
 /** A v2 button that is not the page's one primary action (UI-11: destructive actions are this neutral button too). */
-export const BUTTON_SECONDARY = "inline-flex h-11 shrink-0 items-center justify-center gap-space-2 rounded-control border border-border bg-surface-1 px-space-4 text-t14 font-semibold text-fg transition-colors duration-fast hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-50 md:h-9";
+// Chart + colour order Part 3: the one Button's own classes (components/primitives/Button.tsx), no longer a copy -
+// the same look (pinned in components/primitives/Button.test.tsx).
+export const BUTTON_SECONDARY = buttonClass({ variant: "outline", size: "v2" });
 /** The page's one primary action. */
-export const BUTTON_PRIMARY = "inline-flex h-11 shrink-0 items-center justify-center gap-space-2 rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-50 md:h-9";
+export const BUTTON_PRIMARY = buttonClass({ variant: "primary", size: "v2" });
 /** A text field or select: 44 px on a phone, 36 px with a mouse. */
 export const FIELD = "h-11 w-full min-w-0 rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-50 md:h-9";
 export const LABEL = "mb-space-1 flex items-center gap-space-1 text-t12 font-medium text-fg-muted";

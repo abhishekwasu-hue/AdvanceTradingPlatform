@@ -49,6 +49,8 @@ from app.auth.dependencies import get_current_user
 from app.core.rate_limit import user_rate_limit
 from app.billing.service import meter
 from app.brokers.base import BrokerInterface
+from app.brokers.catalog import display_name
+from app.brokers.gates import data_sources, market_data_open
 from app.brokers.token_lifecycle import build_adapter, data_is_usable, token_is_usable
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
@@ -155,10 +157,14 @@ async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[s
         wanted = [r for r in records if r.broker_name == broker.lower() and r.account_label == (account_label or "primary")]
         if not wanted:
             raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{broker}' ({account_label})")
+        if not market_data_open(wanted[0].broker_name):
+            raise HTTPException(status_code=409, detail=f"Live prices from {display_name(wanted[0].broker_name)} are not offered yet.")
         if not data_is_usable(wanted[0]):
             raise HTTPException(status_code=409, detail=f"Broker '{broker}' has no valid session token today. Log in to it on the Broker page.")
         return wanted[0]
     # A logged-in session first; else an Upstox row whose analytics token serves market data without the daily login.
+    # Part 1B: never a broker whose market-data gate is closed (Kotak Neo, TM-6).
+    records = data_sources(records)
     usable = [r for r in records if token_is_usable(r)] or [r for r in records if data_is_usable(r)]
     if not usable:
         raise HTTPException(status_code=409, detail="No broker session with a valid token. Add the broker's API key on the Broker page "

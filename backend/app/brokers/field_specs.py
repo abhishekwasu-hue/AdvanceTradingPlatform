@@ -251,6 +251,29 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
             _access_token("Session key", by=BY_LOGIN, legacy=False),
         ),
     ),
+    # Part 1B: the TOTP login of the official SDK (kotakneoapi 3.0.9): consumer key + mobile number + UCC + TOTP, then the
+    # MPIN. Practice mode only (app/brokers/gates.py); the session ATP gets is stored as one encrypted string.
+    "kotak_neo": BrokerSpec(
+        name="kotak_neo", display_name="Kotak Neo", tile_line="One-click login with your stored MPIN and TOTP secret",
+        login_method=LOGIN_TOTP, console_url="https://www.kotakneo.com/platform/kotak-neo-trade-api/",
+        login_note="ATP logs in to Kotak Neo for you with the MPIN and TOTP secret you store here, encrypted.",
+        fields=(
+            FieldSpec("api_key", "Consumer key", KIND_SECRET, required=True, pattern=r"^[\x21-\x7E]{8,4096}$",
+                      format_hint="at least 8 letters, digits or symbols with no spaces", max_length=4096,
+                      help="In the NEO app: More, then Trade API, then generate an application and copy the key."),
+            FieldSpec("mobile_number", "Mobile number", KIND_TEXT, required=True, required_unless=("access_token",),
+                      pattern=r"^[\x21-\x7E]{10,16}$", format_hint="10 to 16 digits or symbols with no spaces (the country code with +)",
+                      max_length=16, help="The mobile number registered with your Kotak account, for example +919800000000.",
+                      example="like +919800000000"),
+            FieldSpec("client_id", "Client code (UCC)", KIND_TEXT, required=True, required_unless=("access_token",),
+                      pattern=r"^[\x21-\x7E]{2,32}$", format_hint="2 to 32 letters, digits or symbols with no spaces", max_length=32,
+                      help="Your Kotak Neo unique client code."),
+            FieldSpec("pin", "MPIN", KIND_PIN, required=True, required_unless=("access_token",), pattern=r"^[0-9]{4,8}$",
+                      format_hint="4 to 8 digits", max_length=8, help="The MPIN you use to log in to Kotak Neo."),
+            _totp_secret("Kotak Neo", required_unless=("access_token",)),
+            _access_token("Session token", by=BY_LOGIN, legacy=False),
+        ),
+    ),
 }
 
 

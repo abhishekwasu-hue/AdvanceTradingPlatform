@@ -41,6 +41,11 @@ DHAN_TOKEN = ".".join(["fake" + "header", "fake" + "payload", "fake" + "sig"])
 COINDCX_KEY = "fa" * 16
 COINDCX_SECRET = "fake" + "0" * 28 + "1"
 
+KOTAK_CONSUMER_KEY = "fake" + "-kotak-consumer-" + "0" * 4 + "1"
+KOTAK_MOBILE = "+91" + "9" + "0" * 9
+KOTAK_UCC = "FAKE" + "UCC1"
+KOTAK_MPIN = "65" + "43"
+
 _BY_BROKER: Dict[str, Dict[str, str]] = {
     "upstox": {"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET},
     "zerodha": {"api_key": KITE_KEY, "api_secret": KITE_SECRET},
@@ -49,6 +54,8 @@ _BY_BROKER: Dict[str, Dict[str, str]] = {
     "shoonya": {"client_id": SHOONYA_USER, "api_secret": SHOONYA_PASSWORD, "api_key": SHOONYA_VENDOR_KEY, "totp_secret": TOTP_SECRET},
     "dhan": {"client_id": DHAN_CLIENT, "access_token": DHAN_TOKEN},
     "coindcx": {"api_key": COINDCX_KEY, "api_secret": COINDCX_SECRET},
+    "kotak_neo": {"api_key": KOTAK_CONSUMER_KEY, "mobile_number": KOTAK_MOBILE, "client_id": KOTAK_UCC, "pin": KOTAK_MPIN,
+                  "totp_secret": TOTP_SECRET},
 }
 
 

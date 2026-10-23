@@ -25,6 +25,7 @@ invented. Before relying on a detail marked *forum only*, open the official page
 | Angel One | TOTP login (`totp_auto`) | SmartAPI key, client code, PIN, TOTP secret | About 24 hours | Yes: one click | https://smartapi.angelbroking.com/docs |
 | Shoonya (Finvasia) | TOTP login (`totp_auto`) | User ID, password, API key, TOTP secret | One trading day | Yes: one click | https://www.shoonya.com/api-documentation |
 | CoinDCX | API key + secret (`api_key_secret`) | API key, API secret | Until revoked | No | https://docs.coindcx.com/ |
+| Kotak Neo (practice only, `ui_v2`) | TOTP login (`totp_auto`) | Consumer key, mobile number, client code (UCC), MPIN, TOTP secret | One trading day (end time not published) | Yes: one click | https://www.kotakneo.com/platform/kotak-neo-trade-api/ |
 
 ## Upstox: the Analytics Token (default)
 
@@ -141,3 +142,14 @@ invented. Before relying on a detail marked *forum only*, open the official page
   broker session, so this was not built. Renewing is one click instead.
 - **Dhan RenewToken and the Fyers refresh token** would remove a daily paste, but they need adapter work and a decision
   on the same rule.
+
+## Kotak Neo: the TOTP login (Part 1B, checked 2026-10-23)
+
+- **Method.** The official SDK `kotakneoapi` 3.0.9 (https://pypi.org/project/kotakneoapi/, 15 Oct 2026;
+  https://github.com/Kotak-Neo/kotak-neo-python): the consumer key from the NEO app (More, Trade API, generate an
+  application) on every call; a login with the registered mobile number, the UCC and the current TOTP, then the MPIN.
+  ATP makes the TOTP from the stored secret, so each morning is one click, as for Angel One and Shoonya.
+- **Why five fields.** The broker's own login needs all five; none can be derived from another.
+- **Practice only.** Real orders and live prices through Kotak Neo stay off until Kotak Neo confirms in writing
+  (`backend/app/brokers/gates.py`, `docs/design/BROKER_KOTAK_NEO.md`); the tile is shown with `ui_v2` on.
+

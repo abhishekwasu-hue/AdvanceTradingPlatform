@@ -48,6 +48,19 @@ A6.3, when it is written, takes these over; `docs/COMPLIANCE_IN.md` is generated
    values (`ind_close_all_<date>.csv`) as reference data for the Sector & index view (not shown on the watchlists).
    Question: is storing and showing those closes covered by the same answer as item 1, or does it need a data licence
    (the licensed EOD source of RDY-6)?
+3. **Kotak Neo: one ATP server IP for many users, and its data (Part 1B, TM-5 / TM-6; owner decision 23 Oct).** Kotak
+   Neo's Trade API takes orders only from a static IP registered with the account, the API session must be created
+   from that same IP, and up to 10 family members may share one IP (only the parent account changes it) - from a
+   search extract of https://www.kotakneo.com/platform/kotak-neo-trade-api/static-ip-details/ (read 23 Oct 2026; the
+   page itself could not be opened). ATP runs on one server with one outgoing IP. The adapter is built with LIVE
+   orders and live prices refused in code (`backend/app/brokers/gates.py`; `docs/design/BROKER_KOTAK_NEO.md`).
+   Questions: (a) may unrelated users' orders leave from ATP's one server IP at all, and does ATP then have to be an
+   empanelled algo provider with Kotak Neo (SEBI retail-algo circular of 4 Feb 2025); (b) if not, is "each user
+   registers his own static IP and his orders leave from it" the only allowed model, and what would ATP need to run
+   for that (nothing of the kind is built); (c) how the "10 family members per IP" rule reads for a platform IP; (d) may
+   ATP show a user his own Kotak Neo prices (quotes, charts, the option chain, the feed) inside ATP - the data-terms
+   row is "pending" until Kotak Neo confirms in writing; (e) Kotak Neo says market orders are not allowed for retail
+   algo orders: is ATP's marketable limit with the user's protection band (TM-3) the accepted way.
 
 ## Phase BB rules
 

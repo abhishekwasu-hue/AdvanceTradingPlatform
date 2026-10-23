@@ -689,6 +689,13 @@ def stream_for(adapter) -> Optional[TickStream]:
         return UpstoxTickStream(adapter)
     if name == "zerodha":
         return KiteTickStream(adapter)
+    if name == "kotak_neo":
+        # Part 1B / TM-6: built, and handed out only while the Kotak Neo market-data gate is open (closed today).
+        from app.brokers import gates
+        if not gates.market_data_open(name):
+            return None
+        from app.market_data.kotak_feed import KotakNeoTickStream
+        return KotakNeoTickStream(adapter)
     return None
 
 

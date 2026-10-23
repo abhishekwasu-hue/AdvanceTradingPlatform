@@ -195,6 +195,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/copilot_reply.json": "9d0013cced7fe29e99d3c2c25e231d96bee15cbd4960f169194abc1247d77bcd",
     # UI2-2: hand-written, made-up dashboard replies for the v2 dashboard screenshots (frontend/e2e/dashboard-v2.e2e.ts)
     "frontend/e2e/fixtures/dashboard_v2.json": "6e9629add17dd3b9801e2db91a4aebc984b2a00055c5e7b137e93653782a110f",
+    # Part 1B: hand-made Kotak Neo API responses in the SDK's documented shapes (made-up ids and numbers; tokens empty).
+    "backend/tests/fixtures/kotak_neo/recorded.json": "378d6a817a689a938577f5114701c5e7448053a5f89fcc6be4f9e6df5cb91da3",
     # P2b: P2a's broker catalog (static, public broker names and how-to steps; no account data).
     "frontend/e2e/fixtures/broker_catalog.json": "075bd516ec146878bbca8bbfcfe3db046527510c7a080f44f71e58eb387eeb20",
     "frontend/e2e/fixtures/drafts.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",

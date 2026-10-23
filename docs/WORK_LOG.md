@@ -3713,3 +3713,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
 - Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
 
+
+## 23 Oct - Terminal master Part 1B: the Kotak Neo adapter (README row 20)
+
+- Branch `claude/broker-kotak-neo`. **No migration.** Design `docs/design/BROKER_KOTAK_NEO.md` (every broker fact with
+  its source, the date read and verified / unverified).
+- `backend/app/brokers/kotak_neo.py`: the TOTP login of the official SDK `kotakneoapi` 3.0.9 (consumer key + mobile +
+  UCC + TOTP, then MPIN), the session kept as one encrypted string, positions / holdings / limits / books / margin,
+  orders (CNC / MIS / NRML / MTF, DAY / IOC, AMO), quotes, history, option chain, scrip master and symbol mapping.
+- `backend/app/brokers/gates.py`: Kotak Neo's LIVE-order and market-data gates, closed in code (owner, 23 Oct:
+  TM-5 / TM-6); the adapter refuses before any request; organisation price picks skip a gated row.
+- TM-3 `backend/app/execution/marketable_limit.py` (+ `BrokerCapabilities.market_orders_allowed`), the same transform in
+  the PAPER adapter (`venue=`); the SEBI rule-set maps algo MARKET entries to a marketable limit for Kotak Neo
+  (`docs/COMPLIANCE_IN.md` regenerated).
+- Charges `backend/app/brokers/broker_charges.py` (only what the broker states, source + date); rate budget row; the
+  SFeed decoder `backend/app/market_data/kotak_feed.py` (OFF behind the gate).
+- Broker page (behind `ui_v2`): the Kotak Neo tile ("Practice only") and the Connect panel's guide with the official
+  links. Screenshots 390 / 1440, light / dark in the scratchpad (not committed).
+- Tests `backend/tests/test_part1b_kotak_neo.py` (recorded fixtures `tests/fixtures/kotak_neo/`), the connect flow in
+  `test_p2a_broker_connect.py`, frontend `src/broker/BrokerScreens.test.tsx`. Lawyer list: `docs/DATA_SOURCES.md`
+  item 3. Questions KN-1..KN-11.

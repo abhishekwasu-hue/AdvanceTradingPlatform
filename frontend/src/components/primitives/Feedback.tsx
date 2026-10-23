@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { chipClass } from "../../ui/Chip";
 import { cx } from "./cx";
 
 /** A placeholder block while data loads (`aria-busy` on the region that contains it). */
@@ -19,18 +20,11 @@ export function EmptyState({ icon, title, body, action }: { icon?: ReactNode; ti
 }
 
 export type Tone = "neutral" | "up" | "down" | "warn" | "info" | "brand";
-const TONE: Record<Tone, string> = {
-  neutral: "border-border bg-surface-2 text-fg-muted",
-  up: "border-up/40 bg-up/10 text-up",
-  down: "border-down/40 bg-down/10 text-down",
-  warn: "border-warn/40 bg-warn/10 text-warn",
-  info: "border-info/40 bg-info/10 text-info",
-  brand: "border-brand/40 bg-brand/10 text-brand",
-};
 
-/** A small label. Tone carries meaning only: up / down for direction or P&L, warn for attention. */
+/** A small label. Tone carries meaning only: up / down for direction or P&L, warn for attention.
+ * Chart + colour order Part 3: the one `Chip` (src/ui/Chip.tsx) in its `badge` shape - the same look as before. */
 export function Badge({ tone = "neutral", children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
-  return <span className={cx("inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs font-semibold", TONE[tone], className)}>{children}</span>;
+  return <span className={chipClass({ tone, shape: "badge", className })}>{children}</span>;
 }
 
 /** A number coloured by its sign (profit / loss), tabular digits, explicit + for gains. Colour-blind safe via tokens. */

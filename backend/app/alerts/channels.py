@@ -152,6 +152,49 @@ class PushConfig(BaseModel):
         return sorted(set(value))
 
 
+class FcmDevice(BaseModel):
+    """B8: one phone that registered for notifications from the AiAlgoDesk app. `token` is the FCM registration token
+    (a per-install secret: whoever holds it can push to that phone) - stored only inside the channel's encrypted config,
+    never returned by the API. `device_id` is an opaque id derived from the token (app/alerts/push_kinds.device_id)."""
+
+    device_id: str = Field(min_length=8, max_length=64, pattern=r"^[0-9a-f]+$")
+    token: str = Field(min_length=20, max_length=4096)
+    user_id: int
+    platform: Literal["android", "ios"] = "android"
+    label: str = Field(default="Phone", max_length=60)
+    # B8: which of the four phone kinds this person wants on this phone (push_kinds.PHONE_KINDS); None = all four.
+    kinds: Optional[List[str]] = Field(default=None, max_length=4)
+    app_version: str = Field(default="", max_length=40)
+    registered_at: str = Field(default="", max_length=40)
+    last_seen_at: str = Field(default="", max_length=40)
+
+    @field_validator("token")
+    @classmethod
+    def _token_chars(cls, value: str) -> str:
+        value = value.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_:\-.]+", value):
+            raise ValueError("That is not a phone notification token")
+        return value
+
+    @field_validator("kinds")
+    @classmethod
+    def _known_kinds(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        from app.alerts.push_kinds import PHONE_KINDS
+        if value is None:
+            return None
+        unknown = [k for k in value if k not in PHONE_KINDS]
+        if unknown:
+            raise ValueError(f"Unknown notification kinds: {', '.join(unknown)}")
+        return sorted(set(value))
+
+
+class FcmConfig(BaseModel):
+    """B8: the organisation's phones, one channel holding every device (like PUSH). Made by the server when the first
+    phone registers (POST /api/mobile/devices); each member sees and changes only their own phones there."""
+
+    devices: List[FcmDevice] = Field(default_factory=list, max_length=50)
+
+
 def e164_numbers(value: List[str]) -> List[str]:
     clean = []
     for number in value:
@@ -352,7 +395,7 @@ class WhatsAppConfig(BaseModel):
 
 
 DLT_FIELDS: Tuple[str, ...] = ("dlt_entity_id", "dlt_template_id", "sender_id")
-ChannelConfig = Union[TelegramConfig, EmailConfig, WebhookConfig, PushConfig, SmsConfig, WhatsAppConfig]
+ChannelConfig = Union[TelegramConfig, EmailConfig, WebhookConfig, PushConfig, SmsConfig, WhatsAppConfig, FcmConfig]
 
 SECRET_FIELDS = {AlertChannelType.TELEGRAM.value: ("bot_token", "inbound_secret"), AlertChannelType.EMAIL.value: ("password",),
                  AlertChannelType.WEBHOOK.value: ("secret",), AlertChannelType.SMS.value: ("headers",),
@@ -372,6 +415,8 @@ def parse_config(channel_type: str, raw: Dict[str, Any]) -> ChannelConfig:
         return SmsConfig.model_validate(raw)
     if channel_type == AlertChannelType.WHATSAPP.value:
         return WhatsAppConfig.model_validate(raw)
+    if channel_type == AlertChannelType.FCM.value:
+        return FcmConfig.model_validate(raw)
     raise ValueError(f"Unknown alert channel type '{channel_type}'")
 
 
@@ -459,6 +504,10 @@ def masked_summary(record: AlertChannelRecord) -> Dict[str, Any]:
         return {"devices": [{"label": s.get("label", "browser"), "endpoint_hint": str(s.get("endpoint", ""))[:40] + "…",
                              "endpoint": s.get("endpoint")} for s in subs], "count": len(subs),
                 "categories": raw.get("categories")}
+    if record.channel_type == AlertChannelType.FCM.value:
+        # B8: the organisation-wide list shows only how many phones there are; each member manages their own phones
+        # under GET /api/mobile/devices. No token, label or member here.
+        return {"count": len(raw.get("devices") or [])}
     if record.channel_type == AlertChannelType.SMS.value:
         return {"url": raw.get("url"), "method": raw.get("method", "POST"), "content_type": raw.get("content_type"),
                 "body_template": raw.get("body_template"), "to_numbers": raw.get("to_numbers", []),

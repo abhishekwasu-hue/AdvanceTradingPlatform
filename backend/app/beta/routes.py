@@ -186,7 +186,10 @@ async def send_feedback(body: FeedbackBody, request: Request, user: User = Depen
                         session: AsyncSession = Depends(get_session)) -> Dict[str, object]:
     """tenant_id and user_id come from the session, never from the body (extra fields are refused)."""
     agent = (request.headers.get("user-agent") or "").strip()[:USER_AGENT_MAX_CHARS] or None
-    row = FeedbackRecord(tenant_id=user.tenant_id, user_id=user.id, message=body.message, app_version=body.app_version,
+    # C12: the inbox never holds a secret, a token or somebody else's e-mail address (app/support/scrub.py).
+    from app.support.scrub import scrub
+    message = scrub(body.message, own_email=user.email).strip()[:FEEDBACK_MAX_CHARS]
+    row = FeedbackRecord(tenant_id=user.tenant_id, user_id=user.id, message=message, app_version=body.app_version,
                          screen=body.screen, user_agent=agent)
     session.add(row)
     await session.commit()

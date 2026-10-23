@@ -58,6 +58,7 @@ def test_platform_checklist_is_super_admin_only_and_reads_config(monkeypatch):
     assert body["target"] == "PLATFORM" and {"jwt_secret", "secrets_key", "smtp", "billing", "worker", "migrations", "redis", "cors", "instrument_master", "holidays"} <= set(items)
     assert items["billing"]["status"] == "info" and items["billing"]["detail"] == "manual"          # manual provider needs no keys
     assert items["smtp"]["status"] in ("ok", "warn") and items["push"]["status"] in ("ok", "info")
+    assert items["fcm"]["status"] in ("ok", "info") and items["fcm"]["link"] == "FCM_SERVICE_ACCOUNT_JSON_BASE64"   # B8
     scheme = config.DATABASE_URL.split("://", 1)[0]
     assert items["database"]["detail"] == scheme and items["database"]["status"] == ("ok" if scheme.startswith("postgresql") else "warn")
 

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_trader
+from app.auth.dependencies import current_session_id, ensure_admin_write_step_up, get_current_user, require_trader
 from app.auth.scopes import require_scope
 from app.core.enums import UserRole
 from app.core.models import RiskConfig
@@ -65,9 +65,12 @@ async def list_events(
 
 
 @router.post("/events", status_code=201, dependencies=[Depends(require_scope("risk:write"))])
-async def create_event(body: MarketEventBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+async def create_event(body: MarketEventBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+                       session_id: Optional[int] = Depends(current_session_id)) -> dict:
     if body.global_event and user.role != UserRole.SUPER_ADMIN.value:
         raise HTTPException(status_code=403, detail="Only the platform operator can add a global market event")
+    if body.global_event:
+        await ensure_admin_write_step_up(session, user, session_id, "Adding a market event for every organisation")
     if body.start_time and body.end_time and body.start_time > body.end_time:
         raise HTTPException(status_code=400, detail="start_time must not be after end_time")
     kind = body.kind.strip().upper() or "OTHER"
@@ -87,12 +90,15 @@ async def create_event(body: MarketEventBody, user: User = Depends(require_trade
 
 
 @router.delete("/events/{event_id}", status_code=204, dependencies=[Depends(require_scope("risk:write"))])
-async def delete_event(event_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> None:
+async def delete_event(event_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+                       session_id: Optional[int] = Depends(current_session_id)) -> None:
     row = await session.get(MarketEventRecord, event_id)
     if row is None:
         raise HTTPException(status_code=404, detail="No such event")
     if row.tenant_id is None and user.role != UserRole.SUPER_ADMIN.value:
         raise HTTPException(status_code=403, detail="Only the platform operator can remove a global market event")
+    if row.tenant_id is None:
+        await ensure_admin_write_step_up(session, user, session_id, "Removing a market event of every organisation")
     if row.tenant_id is not None and row.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="No such event")
     await session.delete(row)

@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 import { mockCharts, type ChartsCalls } from "./chartsMocks";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
+import { warnOnManySolidBrand } from "./solidBrand";
+
+// Chart + colour order Part 3 (CC-8): a warning annotation, never a failure, when a screen shows more than one solid
+// brand button (the one main action per screen).
+test.afterEach(async ({ page }, testInfo) => { await warnOnManySolidBrand(page, testInfo); });
 
 /**
  * UI2-3 (UI v2 proposal §7, §3 M6 / M7; MOBILE_APP_PLAN §2.1): the Signals inbox with the `ui_v2` flag on.

@@ -1326,7 +1326,24 @@ export const BASE_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min
 
 // --- Out-of-app alert delivery (Telegram / email) ---
 
-export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK" | "PUSH" | "SMS" | "WHATSAPP";
+export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK" | "PUSH" | "SMS" | "WHATSAPP" | "FCM";
+
+/** B8: one of the caller's own phones (GET /api/mobile/devices); the notification token is never returned. */
+export interface PhoneDevice {
+  id: string;
+  label: string;
+  platform: "android" | "ios";
+  kinds: string[];
+  app_version: string;
+  registered_at: string;
+  last_seen_at: string;
+}
+
+export interface PhoneDevices {
+  configured: boolean;
+  kinds: { id: string; label: string }[];
+  devices: PhoneDevice[];
+}
 
 export interface AlertChannel {
   channel_type: AlertChannelType;

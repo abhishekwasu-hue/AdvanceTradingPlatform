@@ -6,6 +6,7 @@ import { api, setToken } from "../api/client";
 import { friendlyError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
 import SignInScreen from "../auth/SignInScreen";
+import { deviceLabel } from "../auth/deviceLabel";
 import { type MfaStatus, type SessionInfo } from "../types";
 import MfaCard from "../components/MfaCard";
 import { Card } from "../components/ui";
@@ -29,6 +30,7 @@ export default function AccountPage() {
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
+  const [sessionsMessage, setSessionsMessage] = useState<string | null>(null);
   // Settings redesign B1: with `ui_v2`, Settings → Account & plan is this page, with the plan and billing below.
   const features = useFeatures();
   const v2 = features.on("ui_v2");
@@ -40,6 +42,18 @@ export default function AccountPage() {
     api.listSessions().then(setSessions).catch(() => setSessions([]));
     api.mfaStatus().then(setMfaStatus).catch(() => setMfaStatus(null));
   }, [user]);
+
+  async function logoutOthers() {
+    setError(null);
+    setSessionsMessage(null);
+    try {
+      const { signed_out } = await api.logoutOtherDevices();
+      setSessionsMessage(signed_out === 1 ? "1 other device is signed out." : `${signed_out} other devices are signed out.`);
+    } catch (e) {
+      setError(friendlyError(e));
+    }
+    api.listSessions().then(setSessions).catch(() => {});
+  }
 
   async function revoke(id: number) {
     setError(null);
@@ -152,17 +166,28 @@ export default function AccountPage() {
           <table className="w-full text-xs">
             <tbody>
               {sessions.map((s) => (
-                <tr key={s.id} className="border-t border-border">
-                  <td className="py-1.5 pr-3 text-fg">{s.current ? "This device" : "Other device"}</td>
-                  <td className="py-1.5 pr-3 text-fg-muted">{s.ip_address ?? "-"}</td>
-                  <td className="py-1.5 pr-3 text-fg-muted truncate max-w-[12rem]" title={s.user_agent ?? ""}>{s.user_agent ?? "-"}</td>
-                  <td className="py-1.5 pr-3 text-fg-muted whitespace-nowrap">active {new Date(s.last_used_at).toLocaleString()}</td>
+                <tr key={s.id} className="border-t border-border align-top">
+                  <td className="py-1.5 pr-3">
+                    <div className="text-fg" title={s.user_agent ?? ""}>{deviceLabel(s.user_agent)}{s.current && <span className="ml-1.5 rounded bg-brand/15 px-1.5 py-0.5 text-xs font-medium text-brand">This device</span>}</div>
+                    <div className="text-fg-muted">{s.ip_address ? `${s.ip_address} · ` : ""}active {new Date(s.last_used_at).toLocaleString()}</div>
+                  </td>
                   <td className="py-1.5 text-right">{!s.current && <button onClick={() => revoke(s.id)} className="text-down hover:underline">Sign out</button>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+        {/* A4: "I signed in somewhere I should not have" without having to sign in again here. */}
+        {sessions.some((s) => !s.current) && (
+          <button
+            onClick={logoutOthers}
+            className="mt-3 rounded border border-down/40 hover:bg-down/10 text-down px-3 py-1.5 text-xs transition-colors"
+          >
+            Log out other devices
+          </button>
+        )}
+        {sessionsMessage && <div className="mt-2 text-xs text-fg-muted">{sessionsMessage}</div>}
+        <p className="mt-2 text-xs text-fg-muted">For your safety you are asked to sign in again after a while, even on a device you use every day.</p>
       </Card>
       {v2 && <SupportAccessCard />}
     </div>

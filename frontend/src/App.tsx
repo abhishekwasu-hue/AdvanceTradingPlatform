@@ -2,6 +2,7 @@ import { Bell, LifeBuoy, Menu, MessageSquarePlus, UserCircle2 } from "lucide-rea
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
+import StepUpHost from "./components/StepUpHost";
 import ViewAsBanner from "./admin/ViewAsBanner";
 import { ThemeToggle } from "./components/AppearanceCard";
 import BottomNav from "./components/BottomNav";
@@ -273,6 +274,8 @@ function ShellFeatures({ children }: { children: ReactNode }) {
     <FeaturesProvider userKey={user?.id ?? null}>
       <FeaturesFreshness />
       <V2ThemeDefault />
+      {/* A4: an admin change after the two-factor window asks for the code here, then goes through (both shells). */}
+      <StepUpHost enabled={user?.role === "SUPER_ADMIN"} />
       {children}
     </FeaturesProvider>
   );

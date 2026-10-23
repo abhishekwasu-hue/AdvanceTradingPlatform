@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 import { DEMO_ANALYSES } from "../src/optionChain/analyses.fixture";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
+import { warnOnManySolidBrand } from "./solidBrand";
+
+// Chart + colour order Part 3 (CC-8): a warning annotation, never a failure, when a screen shows more than one solid
+// brand button (the one main action per screen).
+test.afterEach(async ({ page }, testInfo) => { await warnOnManySolidBrand(page, testInfo); });
 
 /**
  * OC1: the automatic Option chain page with the `ui_v2` flag on, on a hand-made chain (e2e/fixtures/option_chain_v2.json,

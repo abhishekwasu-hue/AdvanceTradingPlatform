@@ -26,7 +26,9 @@ export default function WebPushSection({ channel, deliveries, busy, run, test }:
   const floor = (channel?.min_severity ?? "WARNING") as NotificationSeverity;
 
   async function enableHere() {
-    const { public_key } = await api.pushPublicKey();
+    const { public_key, accepting, message } = await api.pushPublicKey();
+    // B8: the server refuses a subscription while it runs on a throwaway key (it would stop working at the next restart).
+    if (accepting === false) throw new Error(message || "Browser notifications are not set up on this server yet.");
     const registration = await navigator.serviceWorker.register("/sw.js");
     const permission = await Notification.requestPermission();
     if (permission !== "granted") throw new Error("Notifications were not allowed in the browser - nothing was registered");

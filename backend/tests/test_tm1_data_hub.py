@@ -607,6 +607,8 @@ def test_flag_is_registered_off_by_default_and_catalogued():
     from app.platform.flag_catalog import FLAG_INFO
     assert "data_hub" in controls.FEATURE_FLAGS and "data_hub" in controls.DEFAULT_OFF_FLAGS
     assert FLAG_INFO["data_hub"].depends_on == ("ui_v2",) and FLAG_INFO["data_hub"].area == "data"
+    from app.platform import trader_pack
+    assert "data_hub" in trader_pack.PACK and trader_pack.PACK.index("ui_v2") < trader_pack.PACK.index("data_hub")
     assert User  # the model the feed reads
 
 

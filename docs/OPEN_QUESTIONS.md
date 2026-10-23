@@ -1405,3 +1405,12 @@ provisional default the A / B / C PRs use until Abhi answers.
 | RDY-10 | Plan prices, cycles, trial days and referral rewards admin-configurable (C11). | A table edited in the admin console (migration), the code values as defaults, every change audited; nothing tied to the marketplace. | `backend/app/plans/registry.py`, `billing/service.py` | open |
 | RDY-11 | Where the footer's "Status" link goes (A2): the in-app `/status` is down when the host is. | The uptime service's hosted status page; the in-app `/status` stays for "degraded" states, linked only while `public_status_page` is on. | `frontend/src/shell/` | open |
 | RDY-12 | "Delete my account" (A5): the DPDP 48-hour notice applies to named classes of data fiduciaries, most likely not ATP. | Self-service request → deactivate → a 48-hour "your account will be deleted; cancel here" e-mail → organisation-level erasure (rows the regulatory period keeps stay under a stable id); a lawyer question for the legal reading. | `backend/app/retention/service.py` | open |
+
+## Chart order PR 2: both axes, Auto / Reset / Latest (23 Oct)
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| CC-11 | A one-finger vertical drag on a phone: chart or page? | The chart takes it only in full screen on the Charts page (`captureTouch`); everywhere else a vertical swipe still scrolls the page, as before. A mouse drag moves the price on every v2 chart. The embedded "tap to activate" (2.3) comes with PR 4 and changes this per chart. | `chart/ChartV2.tsx`, `ChartsPageV2.tsx` | open |
+| CC-12 | What "Reset" goes back to. | As the review: auto price, the library's default zoom (its bar spacing) and the latest bar at the right edge. The chart still opens with every loaded bar fitted. Reset does not repeat that, because with a long history the bars would get very thin. | `chartCore.resetView` | open |
+| CC-13 | The floating controls in the Multi-chart grid. | Only on the active cell, so eight cells do not show 24 buttons (calm principle). A click on a cell makes it active, as it does today. | `MultiChartV2.tsx` | open |
+| CC-14 | When a drag takes the price along. | When it is mostly vertical and has moved 12 px, or when it has moved 40 px vertically in any direction. A sideways pan with a small wobble stays a time pan. The numbers are constants in `chart/gestures.ts`, not settings. | `chart/gestures.ts` | open |

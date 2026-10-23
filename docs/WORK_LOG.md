@@ -3194,3 +3194,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   types and `directionMarker` moved to `charting/markers.ts`.
 - Tests: vitest `src/chart/chartOptions.test.ts` (the builder, the R4 drag test, the ProChart path, the markers). The
   chart e2e baselines are unchanged.
+## 23 Oct - Chart order (row 18), PR 2: both axes, Auto / Reset / Latest on the v2 chart (behind ui_v2)
+
+- Branch `claude/chart-core-axes`, stacked on `claude/chart-core-options`. No migration, no flag (the v2 chart is ui_v2
+  only; ProChart is unchanged for ui_v2 off), no route, no backend change.
+- `chart/gestures.ts` (R3, React-free): `PriceDrag` turns Auto off and pans the price itself with `setVisibleRange`
+  when a plot drag starts with Auto on and moves vertically (a sideways wobble stays a time pan); `latestVisible`;
+  `shiftWheelPosition` (Shift + a vertical wheel pans time where the browser does not make it a sideways wheel).
+- `ChartCore`: binds the layer (presses bubble from the canvases, so a drawing tool that takes a press goes first; a
+  drawing drag or a second finger ends it), reads the Auto state back after the library's own axis drag / double-click
+  / double-tap, `resetView`, `scrollToLatest`, the crosshair readout (the bar as it came), `trackingMode` OnTouchEnd.
+- `chart/ChartViewControls.tsx`: "Auto" (icon + word, tooltip "Fit prices to the screen", CC-6), "Reset", "Latest"
+  (only while the latest bar is off screen), at the price pane's bottom right, chart tokens only, 44 px on a phone;
+  the readout (Open / High / Low / Close / Volume in K / L / Cr). The chart root carries `data-autoscale`,
+  `data-latest-visible`, `data-crosshair`.
+- Charts page: in full screen the chart takes a vertical finger drag (CC-11); Multi-chart: the controls on the active
+  cell only (CC-13).
+- Tests: vitest `src/chart/gestures.test.ts`; e2e `e2e/chart-axes-v2.e2e.ts` (1440 and 390). The existing chart
+  baselines still pass. Questions CC-11..14.

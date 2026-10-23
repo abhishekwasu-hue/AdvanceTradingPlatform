@@ -2,7 +2,7 @@ import { CircleHelp, History, ListChecks, Sparkles } from "lucide-react";
 import { Link } from "react-router";
 import { AnalysisTableView, MiniChart } from "../../optionChain/AnalysisTabsV2";
 import { useCopilotT } from "../i18n";
-import { actionState, stampText, workedLine, type ChatAnswer } from "./model";
+import { actionState, notSetUpLine, stampText, toolsUsedLine, workedLine, type ChatAnswer } from "./model";
 
 /** Job 6: the hand-over to the Paper bot page is the answer's one primary action. */
 const DRAFT_ACTION = "inline-flex min-h-11 w-full items-center justify-center py-space-2 text-center gap-space-2 rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto";
@@ -15,6 +15,8 @@ const DRAFT_ACTION = "inline-flex min-h-11 w-full items-center justify-center py
  */
 export function AnswerV2({ answer, onAsk }: { answer: ChatAnswer; onAsk?: (q: string) => void }) {
   const t = useCopilotT();
+  const used = toolsUsedLine(answer);
+  const adminNotSetUp = notSetUpLine(answer);
   return (
     <article className="space-y-space-3" data-answer={answer.job} data-source={answer.source} aria-label={answer.title}>
       <div className="space-y-space-1">
@@ -73,6 +75,7 @@ export function AnswerV2({ answer, onAsk }: { answer: ChatAnswer; onAsk?: (q: st
           <summary className="flex min-h-11 cursor-pointer items-center gap-space-1 text-t13 font-semibold text-fg md:min-h-0">
             <ListChecks size={14} aria-hidden />{t("chat.worked")}
           </summary>
+          {used && <p className="mt-space-2 text-t13 text-fg" data-tools-used><span className="font-semibold">{t("chat.toolsUsed")}:</span> {used}</p>}
           {answer.worked.length === 0 ? (
             <p className="mt-space-2 text-t13 text-fg-muted">{t("chat.workedNone")}</p>
           ) : (
@@ -89,6 +92,7 @@ export function AnswerV2({ answer, onAsk }: { answer: ChatAnswer; onAsk?: (q: st
             {answer.source === "ai" ? t("chat.wordedAi") : t("chat.wordedRules")}
           </p>
           {answer.note && <p className="mt-space-1 text-t12 text-fg-muted">{answer.note}</p>}
+          {adminNotSetUp && <p className="mt-space-1 text-t12 text-fg-muted" data-admin-not-set-up>{t("chat.notSetUpAdmin")}: {adminNotSetUp}</p>}
         </details>
       )}
       <p className="text-t12 text-fg-muted" data-disclaimer>{answer.disclaimer}</p>

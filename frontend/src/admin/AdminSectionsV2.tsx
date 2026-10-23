@@ -5,7 +5,7 @@ import { CARD } from "../dashboard/CardV2";
 import { startView } from "../api/viewAs";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { growthApi } from "../growth/api";
-import type { Activation } from "../growth/types";
+import type { Activation, GrowthFunnel } from "../growth/types";
 import { useFeatures } from "../ui/useFeatures";
 import {
   ago, consoleApi, maskEmail, shortDate,
@@ -230,10 +230,11 @@ export function ActivationPanel() {
                 sub={f.key === "signed_up" || signedUp === 0 ? undefined : `${Math.round((100 * f.count) / signedUp)}% of sign-ups`} />
             ))}
           </dl>
+          {data.growth_funnel && <GrowthFunnelView funnel={data.growth_funnel} />}
           {data.people.length === 0 ? <p className="text-t12 text-fg-muted">Nobody signed up in this period.</p> : (
             <Scroll>
               <table className="w-full text-t12">
-                <thead><tr><th className={TH}>Person</th><th className={TH}>Plan</th><th className={TH}>Signed up</th><th className={TH}>Broker</th><th className={TH}>Paper bot</th><th className={TH}>Journal</th><th className={TH}>Activated</th></tr></thead>
+                <thead><tr><th className={TH}>Person</th><th className={TH}>Plan</th><th className={TH}>Signed up</th><th className={TH}>Broker</th><th className={TH}>Paper bot</th><th className={TH}>Journal</th><th className={TH}>Week 1</th><th className={TH}>Activated</th></tr></thead>
                 <tbody>
                   {data.people.map((p) => (
                     <tr key={p.id} data-activation-user={p.id} className="border-t border-subtle">
@@ -243,6 +244,7 @@ export function ActivationPanel() {
                       <td className={`${TD} whitespace-nowrap`}>{when(p.broker_at)}</td>
                       <td className={`${TD} whitespace-nowrap`}>{when(p.paper_bot_at)}</td>
                       <td className={`${TD} whitespace-nowrap`}>{when(p.journal_at)}</td>
+                      <td className={`${TD} whitespace-nowrap text-fg-muted`}>{p.active_week1 == null ? "in week 1" : p.active_week1 ? "came back" : "did not"}</td>
                       <td className={TD}>{p.activated_at ? <Pill tone="ok">{shortDate(p.activated_at)}</Pill> : <Pill tone="off">not yet</Pill>}</td>
                     </tr>
                   ))}
@@ -253,6 +255,37 @@ export function ActivationPanel() {
         </>
       )}
     </Panel>
+  );
+}
+
+/** Readiness C13: the growth funnel - each step's people, its share of the step before and of the sign-ups. */
+export function GrowthFunnelView({ funnel }: { funnel: GrowthFunnel }) {
+  const first = funnel.steps[0]?.count ?? 0;
+  return (
+    <section aria-label="Growth funnel" data-growth-funnel className="mb-space-4">
+      <h3 className="text-t14 font-semibold text-fg">Funnel: the first week</h3>
+      <p className="mt-space-1 text-t12 text-fg-muted">
+        People whose first week is over. Each step counts only those who also took every step before it. Active in week 1 = signed in or used the app again on a later day within seven days.
+        {funnel.week1_open > 0 && ` ${funnel.week1_open} more ${funnel.week1_open === 1 ? "person is" : "people are"} still in their first week.`}
+      </p>
+      <ol className="mt-space-3 flex flex-col gap-space-2">
+        {funnel.steps.map((step, i) => {
+          const prev = i === 0 ? step.count : funnel.steps[i - 1].count;
+          const ofFirst = first ? Math.round((100 * step.count) / first) : 0;
+          return (
+            <li key={step.key} data-funnel-step={step.key} className="text-t12">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-space-3">
+                <span className="text-fg">{step.label}</span>
+                <span className="whitespace-nowrap font-tabular text-fg">
+                  <strong>{step.count}</strong>{i > 0 && <span className="text-fg-muted"> · {prev ? Math.round((100 * step.count) / prev) : 0}% of the step before</span>}
+                </span>
+              </div>
+              <span className="mt-space-1 block h-2 rounded-pill bg-surface-2" aria-hidden><span className="block h-2 rounded-pill bg-brand" style={{ width: `${ofFirst}%` }} /></span>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 
@@ -338,6 +371,17 @@ function Tool({ id, name, what, read, render }: { id: string; name: string; what
   );
 }
 
+interface BackfillSegment { by_status?: Record<string, number>; first_done?: string | null; last_done?: string | null }
+
+const SEGMENT_WORDS: Record<string, string> = { cm: "stocks", index: "indices", fo: "F&O futures" };
+
+/** Owner order 23 Oct: the days the shared Daily history holds, per segment ("stocks 2016-01-01 to 2026-10-22"). */
+export function heldRange(segments: Record<string, BackfillSegment> | undefined): string {
+  const held = Object.entries(segments ?? {}).filter(([, v]) => v.first_done && v.last_done)
+    .map(([k, v]) => `${SEGMENT_WORDS[k] ?? k} ${v.first_done} to ${v.last_done}`);
+  return held.length ? `Holds: ${held.join(" · ")}` : "Holds: no daily files yet";
+}
+
 const pairs = (o: Record<string, number> | undefined) => Object.entries(o ?? {}).map(([k, v]) => `${k.toLowerCase()} ${v}`).join(" · ") || "nothing";
 
 export function TestingToolsPanel() {
@@ -359,9 +403,10 @@ export function TestingToolsPanel() {
         <Tool id="history-import" name="History import" what="The stored history import, by dataset." read={consoleApi.historyImport}
           render={(h: { datasets?: Record<string, Record<string, number>>; symbol_count?: number }) =>
             <>{Object.entries(h.datasets ?? {}).map(([k, v]) => `${k}: ${pairs(v)}`).join(" | ") || "nothing imported"}</>} />
-        <Tool id="history-backfill" name="Daily file backfill" what="The exchange daily files backfill, by segment." read={consoleApi.historyBackfill}
-          render={(h: { flag_on?: boolean; segments?: Record<string, { by_status?: Record<string, number> }>; attention?: unknown[] }) =>
-            <>{h.flag_on ? "On" : "Off"} · {Object.entries(h.segments ?? {}).map(([k, v]) => `${k}: ${pairs(v.by_status)}`).join(" | ") || "no files"} · {h.attention?.length ?? 0} need attention</>} />
+        <Tool id="history-backfill" name="Daily file backfill" what="The exchange daily files backfill, by segment, and the range of days the shared history holds (what backtests without a broker can use)." read={consoleApi.historyBackfill}
+          render={(h: { flag_on?: boolean; segments?: Record<string, BackfillSegment>; attention?: unknown[] }) =>
+            <>{h.flag_on ? "On" : "Off"} · {Object.entries(h.segments ?? {}).map(([k, v]) => `${k}: ${pairs(v.by_status)}`).join(" | ") || "no files"} · {h.attention?.length ?? 0} need attention
+              <div data-lake-range>{heldRange(h.segments)}</div></>} />
         <Tool id="history-intraday" name="Intraday history" what="The owner's intraday history load." read={consoleApi.historyIntraday}
           render={(h: { flag_on?: boolean; instruments?: Record<string, unknown>; attention?: unknown[] }) =>
             <>{h.flag_on ? "On" : "Off"} · {Object.keys(h.instruments ?? {}).length} instruments · {h.attention?.length ?? 0} need attention</>} />

@@ -2,16 +2,19 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import BrokerPromptHost from "../broker/BrokerPromptHost";
+import ReferralClaimHost from "../growth/ReferralClaimHost";
 import ConnectAiHostV2 from "../aiKeys/ConnectAiHostV2";
 import { brokerDot } from "../broker/brokerState";
 import { useBrokerConnections } from "../broker/useBrokerConnections";
 import ErrorBoundary from "../components/ErrorBoundary";
 import type { Page } from "../components/Sidebar";
 import LegalAcceptanceBanner from "../legal/LegalAcceptanceBanner";
+import LivePricesBanner from "../live/LivePricesBanner";
 import PwaBanners from "../pwa/PwaBanners";
 import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
+import { STORED_HISTORY_PATHS } from "../ui/dataPages";
 import BottomNavV2 from "./BottomNavV2";
 import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./common";
@@ -21,6 +24,7 @@ import PageTabsV2 from "./PageTabsV2";
 import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
 import { MARKETS_ADDRESS, SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS } from "./aliases";
 import { IDEAS_ADDRESS } from "../ideas/model";
+import { LEARN_ADDRESS } from "../learn/model";
 import { SETTINGS_SECTIONS } from "../settings/paths";
 import { closedFlag } from "./pageFlags";
 import { ComingSoon } from "../ui/ComingSoon";
@@ -135,6 +139,8 @@ export default function AppShellV2() {
   const IdeasPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.ideas ?? NotFound;
   // MO4 slice 2: the Sector & index view (v2 only), the same way.
   const MarketsPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.markets ?? NotFound;
+  // Readiness C13: the Learn page (v2 only), the same way.
+  const LearnPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.learn ?? NotFound;
   const routes = (
     <ErrorBoundary key={key ?? "not-found"} title={key ? title : undefined}>
       <Suspense fallback={<PageLoading />}>
@@ -152,6 +158,7 @@ export default function AppShellV2() {
           <Route path={TRADING_DEFAULTS_ADDRESS} caseSensitive element={<TradingDefaultsPage onNavigate={go} />} />
           <Route path={IDEAS_ADDRESS} caseSensitive element={<IdeasPage onNavigate={go} />} />
           <Route path={MARKETS_ADDRESS} caseSensitive element={<MarketsPage onNavigate={go} />} />
+          <Route path={LEARN_ADDRESS} caseSensitive element={<LearnPage onNavigate={go} />} />
           {SETTINGS_SECTIONS.map(({ key: k, path: p }) => {
             const SectionPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2[k] ?? NotFound;
             return <Route key={p} path={p} caseSensitive element={<SectionPage onNavigate={go} />} />;
@@ -177,7 +184,9 @@ export default function AppShellV2() {
   else if (closed) content = <ComingSoon flag={closed} />;
   // The gate stays mounted while the trader moves between data pages, so the broker status is not re-read per click.
   // A page that shows the broker states itself (UI2-2: the dashboard) is not wrapped (src/shell/pagesV2.ts).
-  else if (shellGates(location.pathname, OWN_BROKER_STATES)) content = <BrokerGate>{routes}</BrokerGate>;
+  else if (shellGates(location.pathname, features.on("backtest_stored_history") ? [...OWN_BROKER_STATES, ...STORED_HISTORY_PATHS] : OWN_BROKER_STATES)) {
+    content = <BrokerGate>{routes}</BrokerGate>;
+  }
   else content = routes;
 
   const wide = key === "screener" || key === "options-builder" || key === "charts";
@@ -195,6 +204,8 @@ export default function AppShellV2() {
           paperOnly={frontPaperOnly || liveHidden} onTour={replayTour} />
         <PwaBanners />
         <LegalAcceptanceBanner />
+        {/* TM Part 1 (flag data_hub): the one notice while live prices reconnect or the broker login needs renewing. */}
+        <LivePricesBanner enabled={!!user && features.on("data_hub")} />
         {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip. */}
         <main id="main" ref={mainRef} tabIndex={-1}
           className={`w-full flex-1 ${key === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${key === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>
@@ -207,6 +218,8 @@ export default function AppShellV2() {
       <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key} dot={dot}
         onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
       <BrokerPromptHost />
+      {/* Readiness C13: a new account names the invite link it arrived with, once (flag `referrals`). */}
+      {user && features.on("referrals") && <ReferralClaimHost />}
       {user && <ConnectAiHostV2 />}
       {user && <TourHost userKey={user.id} role={user.role ?? null} tourId={tourId} />}
       <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} />

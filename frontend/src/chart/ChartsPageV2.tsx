@@ -8,6 +8,7 @@ import type { useDrawingTools } from "../charting/DrawingToolbar";
 import type { LightweightEngine } from "../charting/lightweight";
 import type { DrawingController } from "../charting/tools";
 import { LtpHub } from "../charting/ltpHub";
+import { liveTicks } from "../live/liveTicks";
 import { useLiveLtp } from "../components/chartHelpers";
 import { Sheet } from "../components/primitives/Dialog";
 import { cx } from "../components/primitives/cx";
@@ -94,6 +95,7 @@ export default function ChartsPageV2(_props: PageProps) {
   const exchange = (params.get("exchange") ?? "NSE").trim().toUpperCase() || "NSE";
   const multi = features.on("chart_workspace");
   const watchOn = features.on("watchlists");
+  const hubOn = features.on("data_hub");
   const wide = useMediaQuery("(min-width: 1024px)");
   const phone = useMediaQuery(PHONE_QUERY);
   const [sheet, setSheet] = useState(false);
@@ -168,7 +170,7 @@ export default function ChartsPageV2(_props: PageProps) {
   const watchlist = (touch: boolean, onClose?: () => void) => (
     <WatchlistPanel symbol={symbol} exchange={exchange} onOpen={openItem} listId={view.watchlist_id} onListId={(id) => setView({ watchlist_id: id })}
       systemKey={view.watchlist_system} onSystemKey={(key) => setView({ watchlist_system: key })}
-      storageKey={recentKeyFor(userId)} onClose={onClose} touch={touch} className="h-full" />
+      storageKey={recentKeyFor(userId)} onClose={onClose} touch={touch} className="h-full" liveTicks={hubOn} />
   );
   const setTab = (t: "chart" | "multi") => setParams((prev) => {
     const next = new URLSearchParams(prev);
@@ -200,7 +202,9 @@ export default function ChartsPageV2(_props: PageProps) {
   useEffect(() => { if (stray) clearStart(); }, [stray, clearStart]);
   // The Multi-chart tab's shared reads, for the page's life; the tab itself stays mounted (hidden) after its first visit.
   const pool = useMemo(() => new CandlePool(api.marketDataCandles), [userId]);  // eslint-disable-line react-hooks/exhaustive-deps
-  const ltpHub = useMemo(() => new LtpHub((s, e) => api.marketDataLtp(s, e)), [userId]);  // eslint-disable-line react-hooks/exhaustive-deps
+  // TM Part 1 (flag data_hub): the charts' last price also moves with the live ticks of the user's own connection.
+  const ltpHub = useMemo(() => new LtpHub((s, e) => api.marketDataLtp(s, e), undefined, undefined, hubOn ? liveTicks() : undefined),
+    [userId, hubOn]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => ltpHub.dispose(), [ltpHub]);
   const [multiSeen, setMultiSeen] = useState(tab === "multi");
   if (tab === "multi" && !multiSeen) setMultiSeen(true);

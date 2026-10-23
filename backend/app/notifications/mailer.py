@@ -7,6 +7,7 @@ import asyncio
 import logging
 import smtplib
 from email.message import EmailMessage
+from typing import Dict, Optional
 
 from app.core import config
 
@@ -26,14 +27,18 @@ def _deliver(message: EmailMessage) -> None:
         smtp.send_message(message)
 
 
-async def send(to_address: str, subject: str, body: str) -> bool:
-    """Best effort: True when handed to the SMTP server, False when unconfigured or failed."""
+async def send(to_address: str, subject: str, body: str, headers: Optional[Dict[str, str]] = None) -> bool:
+    """Best effort: True when handed to the SMTP server, False when unconfigured or failed. `headers` (C13) adds
+    extra headers such as List-Unsubscribe; the standard ones above cannot be overridden."""
     if not configured():
         return False
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = config.PLATFORM_SMTP_FROM
     message["To"] = to_address
+    for name, value in (headers or {}).items():
+        if name.lower() not in {"subject", "from", "to"}:
+            message[name] = value
     message.set_content(body)
     try:
         await asyncio.to_thread(_deliver, message)

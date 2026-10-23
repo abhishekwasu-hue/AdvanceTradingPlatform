@@ -18,8 +18,9 @@ import { ADMIN_SECTIONS, ago, consoleApi, isAdminSection, type AdminSection, typ
  * existing cards that belong to it (pages/AdminPage.tsx with `section`), unchanged.
  *
  * The server is the gate (every `/api/admin/*` route: SUPER_ADMIN + two-factor). Here a non-admin sees the plain "This
- * page does not exist" card, never a hint that a console exists. "View as user" is not built in this slice (it needs an
- * audited, time-limited, read-only session on the server first - docs/OPEN_QUESTIONS.md MO3-A1).
+ * page does not exist" card, never a hint that a console exists. MO3-A1: Support › one person › "View as this person"
+ * opens the app as they see it - a time-limited, audited, read-only session on the server (app/auth/view_as.py) with the
+ * banner on top (src/admin/ViewAsBanner.tsx).
  */
 export default function AdminConsoleV2(_props: PageProps) {
   const { user, loading } = useAuth();

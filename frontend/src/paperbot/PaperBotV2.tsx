@@ -21,6 +21,10 @@ import {
 } from "./model";
 import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
 import { templateLinkFromSearch, typedSettings, type TemplateLink } from "../strategyTemplates/link";
+import {
+  EMPTY_PICK, effectivePick, exitClass, exitNotes, exitProblem, stopOptions, targetOptions, templateExitsBody, type ExitPick, type StopSource,
+  type TargetRule,
+} from "../strategyTemplates/exits";
 
 // The full form (options structures, exits, filters) loads only when "More ways to trade" is opened.
 const MoreWaysToTrade = lazy(() => import("../pages/DeploymentsPage"));
@@ -295,7 +299,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   /** Job 6: the strategy the trader just saved from the Copilot's draft, its symbol and the size his idea named. */
   preselect?: Preselect | null;
 }) {
-  const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), timeframe: useId() };
+  const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), timeframe: useId(), stop: useId(),
+    target: useId(), times: useId(), wave: useId(), share: useId(), exitNotes: useId() };
   const [useDefaults, setUseDefaults] = useState(true);
   const ready = useMemo(() => (library ?? []).filter((s) => READY.some((r) => r.id === s.id))
     .sort((a, b) => READY.findIndex((r) => r.id === a.id) - READY.findIndex((r) => r.id === b.id)), [library]);
@@ -312,6 +317,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const [templateTimeframe, setTemplateTimeframe] = useState("");
   const [adoption, setAdoption] = useState<TemplateAdoption | null>(null);
   const [adoptFailed, setAdoptFailed] = useState(false);
+  // Section 5: the template's exits as the user's own choice (empty = the template's defaults)
+  const [exitPick, setExitPick] = useState<ExitPick>(EMPTY_PICK);
   const urlTemplateApplied = useRef(false);
 
   useEffect(() => {
@@ -336,6 +343,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const fromLink = settingsKey !== "{}";
 
   const pickedId = picked?.id ?? null;
+  useEffect(() => { setExitPick(EMPTY_PICK); }, [pickedId]);
+
   useEffect(() => {
     setAdoption(null); setAdoptFailed(false);
     if (!pickedId || !templateTimeframe) return;
@@ -387,11 +396,19 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const ideaLots = preselect && preselect.strategyId === strategyId ? preselect.lots : null;
   const withLots = withIdeaLots(built, ideaLots);
   // A template reads its own candles (the adopted timeframe) and holds as the server said (Daily: for days).
-  const request = picked && adoption ? { ...withLots, timeframe: adoption.deployment.timeframe, holding: adoption.deployment.holding } : withLots;
+  const adopted = picked && adoption ? { ...withLots, timeframe: adoption.deployment.timeframe, holding: adoption.deployment.holding } : withLots;
+  // Section 5: the exit choices this template offers for the instrument the bot will trade; a default choice sends nothing
+  const exitChoices = picked && adoption?.exits ? adoption.exits : null;
+  const cls = exitClass(adopted);
+  const exitsNow = exitChoices ? effectivePick(exitPick, exitChoices, cls) : null;
+  const exitIssue = exitChoices && exitsNow ? exitProblem(exitsNow, exitChoices) : null;
+  const exitsBody = exitChoices && exitsNow ? templateExitsBody(exitsNow, exitChoices, cls) : null;
+  const request = exitsBody ? { ...adopted, template_exits: exitsBody } : adopted;
+  const setExit = (patch: Partial<ExitPick>) => { setExitPick((p) => ({ ...(exitsNow ?? p), ...patch })); setResult(null); };
 
   async function start() {
     setTouched(true);
-    if (problem || !effectiveId) return;
+    if (problem || !effectiveId || exitIssue) return;
     setBusy(true); setResult(null);
     try {
       await api.createDeployment(request);
@@ -461,6 +478,57 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
           )}
           {touched && problem && <p role="alert" className="mt-space-1 text-t13 text-warn">{problem}</p>}
         </div>
+        {exitChoices && exitsNow && (
+          <fieldset className="space-y-space-3 rounded-control border border-subtle p-space-3" data-template-exits aria-describedby={ids.exitNotes}>
+            <legend className="px-space-1 text-t14 font-medium text-fg">Exits for this bot</legend>
+            {stopOptions(exitChoices, cls).length > 1 ? (
+              <div>
+                <label htmlFor={ids.stop} className={LABEL}>Stop</label>
+                <select id={ids.stop} className={FIELD} value={exitsNow.stop} onChange={(e) => setExit({ stop: e.target.value as StopSource })}>
+                  {stopOptions(exitChoices, cls).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            ) : (
+              <div data-exit-stop>
+                <p className={LABEL}>Stop</p>
+                <p className="text-t14 text-fg">{stopOptions(exitChoices, cls)[0]?.label}</p>
+              </div>
+            )}
+            <div>
+              <label htmlFor={ids.target} className={LABEL}>Take profit</label>
+              <select id={ids.target} className={FIELD} value={exitsNow.target} onChange={(e) => setExit({ target: e.target.value as TargetRule })}>
+                {targetOptions(exitChoices, cls).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            {exitsNow.target === "R_MULTIPLE" && (
+              <div>
+                <label htmlFor={ids.times} className={LABEL}>Times my risk</label>
+                <input id={ids.times} className={FIELD} inputMode="decimal" autoComplete="off" value={exitsNow.targetR}
+                  aria-invalid={touched && !!exitIssue} onChange={(e) => setExit({ targetR: e.target.value })} />
+              </div>
+            )}
+            {exitsNow.target === "WAVE_PROJECTION" && (
+              <div className="grid gap-space-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor={ids.wave} className={LABEL}>Measured on</label>
+                  <select id={ids.wave} className={FIELD} value={exitsNow.baseWave} onChange={(e) => setExit({ baseWave: e.target.value })}>
+                    <option value="">Pick a wave</option>
+                    {exitChoices.base_waves.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor={ids.share} className={LABEL}>Share of that wave</label>
+                  <input id={ids.share} className={FIELD} inputMode="decimal" autoComplete="off" value={exitsNow.ratio}
+                    aria-invalid={touched && !!exitIssue} onChange={(e) => setExit({ ratio: e.target.value })} />
+                </div>
+              </div>
+            )}
+            <ul id={ids.exitNotes} className="list-disc space-y-space-1 pl-space-4 text-t13 text-fg-muted" data-exit-notes>
+              {exitNotes(exitsNow, cls).map((n) => <li key={n}>{n}</li>)}
+            </ul>
+            {touched && exitIssue && <p role="alert" className="text-t13 text-warn">{exitIssue}</p>}
+          </fieldset>
+        )}
         <div className="space-y-space-2">
           <p className="text-t14 text-fg-muted">{startSummary(symbol, info, request)}</p>
           {withLots !== built && <p className="text-t13 text-fg-muted" data-idea-lots>The size comes from your idea.</p>}

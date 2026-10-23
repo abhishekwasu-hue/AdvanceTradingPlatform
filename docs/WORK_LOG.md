@@ -3229,6 +3229,33 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   download; `fno8b4-journal-chart-v2-*` baselines re-taken with the button). OPEN_QUESTIONS FNO-8B-28 / FNO-8B-31
   answered and built.
 
+## 23 Oct - CP6-15: the losses-in-a-row pause ends (owner-approved fix; migration b5d7f9a1c3e6)
+
+- Branch `claude/cp6-15-loss-streak`. Found: the pause never ended on either path. Live / PAPER counted the last 20
+  closed trades of all time (`build_trading_day_state`), and both backtest engines reset the counter only on a win;
+  with no new trade there was no win, so after `max_consecutive_losses` losses no entry was ever allowed again.
+- The risk setting "After the losses-in-a-row limit" (`RiskConfig.loss_streak_pause`): "Pause until the next session"
+  (the default; only the current IST session's losses count - live from `trading_day_start()`, in the engines at their
+  IST day roll) or "Pause until I resume" (only losses after the last "Resume after losses in a row"). One shared
+  module `app/risk_engine/loss_streak.py`; `BacktestLossStreak` is what both engines call. The default limit (4) is
+  unchanged. Exits never pass through the risk engine (ADR-0004; tested with the position monitor while paused).
+- Routes: `GET /api/risk-settings/loss-streak` (member) and `POST /api/risk-settings/loss-streak/resume` (trader,
+  `risk:write`, audited `loss_streak_resumed`, 409 under "next session" or with no pause); both in the tenancy table.
+- Backtests: `BacktestResult.loss_streak` (None when the limit was never reached, then left out of the result hash);
+  under "until I resume" it says the pause held to the end of the test. The Copilot's honest test (CP6-2) says it in
+  plain words (`_pause_line`); the Backtesting page shows the note. ENGINE_VERSION 4 -> 5 and 7-options -> 8-options
+  (results change for the same inputs; stored on each run, part of the fingerprint).
+- Fixtures: the C2 golden is checked under "until I resume" (exactly the old counter in a backtest) with the new field
+  left out, so the pinned file is unchanged; the Copilot eval fixture's "too few trades" window is now ten sessions
+  (it had too few trades only because of the bug), `copilot_tools.json` / `copilot_jobs.jsonl` re-pinned.
+- Migration `b5d7f9a1c3e6` (down `a4c6e8f0b2d4`): `risk_settings.loss_streak_pause` String(16) NOT NULL default
+  'next_session', `risk_settings.loss_streak_resumed_at` timestamptz NULL; ROLLBACK_SAFE; upgrade / check / downgrade /
+  upgrade run on a scratch Postgres 16.
+- Frontend (v2 Risk limits): the two-choice setting under the limits, the paused note in Today with "Resume after losses
+  in a row" (a neutral button, only while it can resume) and the last resume time. Tests: backend
+  `tests/test_cp6_15_loss_streak.py` (parity of the three paths for both modes, regressions, routes, audit, exits,
+  migration); vitest `src/trading/model.test.ts`, `TradingV2.test.tsx`; e2e `risk-v2.e2e.ts` (three new cases).
+  Questions CP6-15 answered, CP6-17..21.
 ## 23 Oct - Strategy templates TPL-9: the projected trendline retest (owner decision TPL-Q18) and C4 (behind strategy_templates, PAPER only)
 
 - Branch `claude/tpl-c4-projected`. No migration, no new flag, no new route, no frontend change.
@@ -3258,6 +3285,72 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   existing tests of the listed machinery; main's last Actions runs (Staging stack incl. the rollback rehearsal green;
   CI and Secret scan red, a fix in progress).
 - Questions RDY-1..12 in OPEN_QUESTIONS.
+## 23 Oct - LAB-18: server-side versions of a saved scan (AMW-7 `screen_versions`, owner decision 2026-10-23)
+
+- Branch `claude/lab-18-screen-versions`, stacked on #423 (CP6-15, migration `b5d7f9a1c3e6`). Flags `screener_copilot`
+  (+ `screener_v2`; the page adds `ui_v2`), as #412. No LIVE path, no order path touched.
+- Migration `c6e8a0b2d4f7` (additive, `ROLLBACK_SAFE = True`): table `screen_versions` (tenant FK, screen FK with
+  cascade delete, unique (screen_id, version), indexes on tenant and (screen, saved time)) and the nullable
+  `screens.versions_imported_at`. Upgrade / `alembic check` / downgrade / upgrade run on a scratch Postgres 16; the
+  unique constraint and the cascade checked there by hand.
+- Server (`app/screener/versions.py`, `version_routes.py`): every save that changes a scan writes an immutable version
+  with a plain change line (the page's own words when it sends its builder blocks, else counts); the PUT still updates
+  the current copy; list and read routes; no restore-in-place; at most 50 per scan (oldest pruned); the one upload of
+  a device's history (compiled, capped at 20, idempotent via the marker). Routes classified in the tenancy table.
+- Page: the first load with the feature uploads the device history once per scan and clears the device copy; the
+  Versions dialog lists the server's versions; "Open this version" reads one and loads its blocks, nothing saved.
+- Tests: `tests/test_lab18_screen_versions.py` (flag, saves, no restore, cap, tenancy, import validation and
+  idempotence, model, migration), the tenancy sweep, `src/screener/versionsSync.test.ts`, the panel test,
+  `e2e/screener-versions-v2.e2e.ts` (sync, dialog, open, flag off, baselines 1440 / 390 light / dark).
+  Questions LAB-18a..c.
+## 23 Oct - Strategy templates TPL-10: section 5 "exits as settings" (owner-approved; behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl-exits-settings`, stacked on #423. Migration: yes - `d7f9b1c3e5a8` (additive: five nullable columns
+  on `strategy_deployments`), chained on `b5d7f9a1c3e6` for now; re-chained after LAB-18 at merge; deploy after 15:30 IST.
+- stop_source (template level / premium stop only / spread stop %) and target_rule (none / R multiple / the template's
+  exit signal / spread target % / wave projection) per the precedence table (R4); NULL = byte-identical (pinned against the
+  base branch). R5 built: both backtest engines and the worker act on the exit signal (next price, "Template exit").
+- The v2 Paper bot form shows "Exits for this bot" in plain words, pre-filled with the template's defaults; a default
+  choice sends nothing. Signal text unchanged (no stop / target words).
+- Tests: `tests/test_tpl10_exits_settings.py`, `src/strategyTemplates/exits.test.ts`, e2e with new baselines. Postgres 16:
+  upgrade, check, downgrade, upgrade. Questions TPL-X1..X6; WAVE-11 partly done.
+
+## 23 Oct - MO3-A1: the admin's read-only "View as user" (owner-approved; behind ui_v2 in the admin console)
+
+- Branch `claude/admin-view-as-user`, stacked on `claude/cp6-15-loss-streak` (#423). Migration e8a0c2d4f6b9 (additive:
+  `view_sessions`, `view_session_requests`), chained on b5d7f9a1c3e6 for now; the coordinator re-chains it at merge (one
+  migration block, deploy after 15:30 IST). Upgrade / `alembic check` / downgrade / upgrade run on a scratch Postgres 16.
+- Server: `app/auth/view_as.py` (rules, start / end, validity, masking, request record), `app/auth/view_as_middleware.py`
+  (the one chokepoint: every non-GET of a view token answered 403 before routing; reads that act or hand something out
+  refused too; JSON answers scrubbed; every request recorded), `app/admin/view_as_routes.py` (`/api/admin/view-sessions`
+  SUPER_ADMIN + two-factor; `/api/view-session` banner + End; `/api/me/support-access`). `get_current_user` accepts a view
+  token only while its view session is live (the admin still a SUPER_ADMIN on the same two-factor login session, the
+  person active and not an admin, not ended, not expired, the exact token). No AI call in a view.
+- Client: Support > "View as this person" (required reason), `src/admin/ViewAsBanner.tsx` over either shell ("Viewing
+  as <masked e-mail> - read only", time left, End), the token swap in memory (`src/api/viewState.ts`, `src/api/viewAs.ts`;
+  a 401 in a view never retries as the admin), "Sign out" in a view ends the view, Settings > Account & plan "Support
+  access" card.
+- Tests: `tests/test_mo3_a1_view_as.py` (37: start route 403 for every tenant role, MFA, reason, the non-GET sweep over
+  the whole route table through /api and /api/v1, blocked reads, expiry, admin logout / demotion, audit on both
+  accounts, the chain intact, the person's record, every GET against another organisation's planted rows, secret
+  masking, no AI, the migration), `src/admin/viewAs.test.tsx`, `e2e/view-as-v2.e2e.ts` (+ baselines). Questions
+  MO3-A7..A16; MO3-A1 built.
+- Security review follow-up (same branch): no view into the operator's organisation or one with a SUPER_ADMIN member
+  (start and stale check); a fresh two-factor check (15 min, `VIEW_AS_MFA_FRESH_MINUTES`) to start, with the step-up
+  prompt in the form; expired views ended and audited on admin reads, at start and by a 5-minute worker sweep; an
+  admin's End audited on the actor; admin reads of views audited; no request added to an ended view; one open view per
+  admin (row lock + partial unique index in e8a0c2d4f6b9); a view receives only JSON / PNG / the event stream (anything
+  else 403) and its live stream ends with it; the thesis read's refresh / narrate refused in a view; normal tokens skip
+  the extra decode. Tests 48 (+11), e2e 8. Question MO3-A17; MO3-A16 changed.
+
+## 23 Oct - Migration block: CP6-15 + LAB-18 + exits as settings + View as user (one branch, one deploy)
+
+- Branch `claude/migration-block-23oct`: #423, #426, #427 and #430 merged in that order onto main. The chain is now
+  `a4c6e8f0b2d4` -> `b5d7f9a1c3e6` (CP6-15) -> `c6e8a0b2d4f7` (LAB-18) -> `d7f9b1c3e5a8` (exits as settings, re-chained
+  from `b5d7f9a1c3e6`) -> `e8a0c2d4f6b9` (View as user, re-chained from `b5d7f9a1c3e6`); one head `e8a0c2d4f6b9`. Each
+  migration test asserts "one head, with its own revision on the chain". All four are additive and rollback-safe.
+- Postgres 16: upgrade head, `alembic check` (no diff), downgrade to `a4c6e8f0b2d4`, upgrade head again - clean.
+  Deploy after 15:30 IST.
 ## 23 Oct - Chart order (row 18), PR 1: one chart options builder + the R4 fix (no visual change)
 
 - Branch `claude/chart-core-options` (the first PR of `docs/design/CHART_COLOUR_REVIEW.md`'s sequence). No migration, no
@@ -3351,3 +3444,27 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `atp.sh` cases in `test_z11_deploy_bundle.py` (the fake host's curl now serves the GitHub API); shellcheck,
   actionlint clean.
 
+## 23 Oct - Chart + colour order, Part 3 PR 1: the colour tokens
+
+- Branch `claude/colour-tokens` (from main). Frontend only, **no migration**, no flag (no page changes).
+- `frontend/src/styles/tokens.css`: `--range`, `--range-track`, `--info-tint`, `--ai-tint` (light, dark, colour-blind);
+  the v2-only navy dark surfaces under `:root[data-shell="v2"]` (inert until adoption); colour-blind warn / AI values.
+- `tailwind.config.js` names; the v2 colour check's hint text; the Tokens story lists the new meanings (CC-1 wording).
+- `src/ui/tokens.test.ts`: the new contrast pairs (text 4.5, UI parts 3), navy variants, the distinct-hue test.
+- e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
+
+
+## 23 Oct - Production readiness B9: the private reader port plan (plan only)
+
+- Branch `claude/readiness-b9-private-plan` (from main). **Docs only, no migration**, no code, no flag.
+- Status before: partial - `PRIVATE_PACKAGE.md` and `TRADE_TAKEOVER.md` had the decision, layout and owner steps, but
+  no reader interface, no fallback, no versioning, no path-parity plan and no "when".
+- `docs/design/PRIVATE_PACKAGE.md`: status line (what exists today: the Analyze-a-chart loader, the private fixtures
+  resolver / manifest / export, the guard), repository name `atp-private`, owner steps 4-6 (branch protection, spending
+  limit, a VPS key only for the KB move), and new sections 9 interface (inputs and outputs in `SignalStructure` tokens
+  and the Analyze-a-chart area / line shapes), 10 loading and the generic-template fallback (exits keep running),
+  11 versioning, 12 parity (Trade = ATP, scan = backtest = live, shadow; fixtures never here), 13 private and public
+  CI, 14 when and Abhi's steps.
+- `docs/design/TRADE_TAKEOVER.md`: pointer in the status, the signal-language note in section 10, new section 13.
+- README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
+- Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.

@@ -12,7 +12,12 @@ const MEANING: [string, string][] = [
   ["up", "Only rising price, profit, Long, target"],
   ["down", "Only falling price, loss, Short, stop"],
   ["warn", "Only real warnings: login needed, broker error, near a limit"],
-  ["info", "Not used on v2 trader screens"],
+  ["info", "Information chips, tips, \"What is this?\" (CC-1)"],
+  ["info-tint", "Behind an information chip or tip"],
+  ["ai", "AI entry points only: Copilot, Vision, Connect AI, AI chips"],
+  ["ai-tint", "Behind an AI chip"],
+  ["range", "The marker on a range bar (52-week, day, IV range)"],
+  ["range-track", "The neutral track of a range bar (CC-4)"],
 ];
 // UI2-0 (UI v2 §8): the type roles, with the class each one uses.
 const TYPE: [string, string, string][] = [
@@ -69,7 +74,7 @@ function Tokens() {
         <div className="flex flex-wrap gap-3">{SURFACES.map(([s, use]) => <Swatch key={s} token={s} use={use} tall />)}</div>
       </Section>
 
-      <Section title="Colour carries meaning only" note="A successful state is neutral with a check, never green. Error chips are amber with an icon and a reason.">
+      <Section title="Colour carries meaning only" note="A successful state is neutral with a check, never green. Needs action is amber; an error is red only when money or an order is at stake, otherwise amber - always with an icon and a reason. PAPER is the neutral outline chip.">
         <div className="flex flex-wrap gap-3">{MEANING.map(([t, use]) => <Swatch key={t} token={t} use={use} />)}</div>
       </Section>
 

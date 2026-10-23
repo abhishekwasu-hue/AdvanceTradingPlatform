@@ -1,4 +1,5 @@
 import { request } from "../api/client";
+import type { ServerView } from "../api/viewAs";
 
 /**
  * MO3 addition (a): the admin console's reads. The new sections come from `/api/admin/console/*` (read-only, SUPER_ADMIN
@@ -108,6 +109,8 @@ export const consoleApi = {
   aiCost: (days = 30) => request<ConsoleAiCost>(`/admin/console/ai-cost?days=${days}`),
   supportUser: (id: number) => request<SupportUser>(`/admin/console/support/users/${id}`),
   diagnostics: () => request<ConsoleDiagnostics>("/admin/console/diagnostics"),
+  // MO3-A1: the read-only "View as user" sessions (start / end live in api/viewAs.ts).
+  views: () => request<{ views: (ServerView & { admin_user_id: number | null })[] }>("/admin/view-sessions?limit=20"),
   // Existing admin reads, reused as they are.
   feedback: () => request<FeedbackItem[]>("/admin/beta/feedback?limit=50"),
   outbox: () => request<OutboxState>("/admin/alerts/outbox"),

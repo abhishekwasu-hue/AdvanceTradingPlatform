@@ -13,6 +13,7 @@ import { ErrorState } from "../ui/ErrorState";
 import BillingCard from "../components/BillingCard";
 import PlanUsageV2 from "../growth/PlanUsageV2";
 import { useFeatures } from "../ui/useFeatures";
+import { supportAccess, type SupportAccess } from "../api/viewAs";
 
 /** The signed-in trader's account: e-mail, two-factor, password, sessions. Signed out, App.tsx shows the sign-in screen
  * before any page; this page shows the same screen should it ever render without a user (UX1). */
@@ -162,6 +163,7 @@ export default function AccountPage() {
           </table>
         )}
       </Card>
+      {v2 && <SupportAccessCard />}
     </div>
   );
   if (!v2) return account;
@@ -170,5 +172,38 @@ export default function AccountPage() {
       {account}
       <div id="plan" className="scroll-mt-20 space-y-4">{growth && <PlanUsageV2 />}<BillingCard /></div>
     </div>
+  );
+}
+
+/** MO3-A1: when ATP support opened a read-only view of this account - the person's own record (the server keeps it
+ * whatever happens on this page). */
+export function SupportAccessCard() {
+  const [views, setViews] = useState<SupportAccess[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    supportAccess().then((r) => { if (live) setViews(r.views); }).catch(() => { if (live) setViews([]); });
+    return () => { live = false; };
+  }, []);
+  const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "");
+  return (
+    <Card title="Support access">
+      <div data-support-access className="space-y-2 text-xs">
+        <p className="text-fg-muted">ATP support can open a read-only view of your account to help you. Nothing can be changed, placed or downloaded during it, and every view is listed here.</p>
+        {views === null ? <p className="text-fg-muted" aria-busy="true">Loading…</p> : views.length === 0 ? (
+          <p className="text-fg">Support has never viewed your account.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {views.map((v) => (
+              <li key={v.id} data-support-view={v.id} className="py-1.5">
+                <div className="text-fg">
+                  {v.by} viewed your account (read only) · {when(v.started_at)}{v.active ? " · open now" : v.ended_at ? ` to ${when(v.ended_at)}` : ""}
+                </div>
+                <div className="text-fg-muted break-words">Reason: {v.reason}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Card>
   );
 }

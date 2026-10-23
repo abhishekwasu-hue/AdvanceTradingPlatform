@@ -115,7 +115,8 @@ def test_the_net_result_is_after_the_engines_own_costs():
 
 def test_too_few_trades_judges_no_ratio():
     cfg = sb.config_of(sb.build(BOTH, "NIFTY", 1.5))
-    out = dbt.honest_test(cfg, _candles(period=5.0), "NIFTY", "15min", RISK, holdout=None)
+    # CP6-15: ten sessions (before the fix a longer window had too few trades only because the losses-in-a-row pause never ended)
+    out = dbt.honest_test(cfg, _candles(period=5.0, days=10), "NIFTY", "15min", RISK, holdout=None)
     assert out["sample"] == "too_few" and out["whole"]["trades"] < 30 and out["deflated"] is None
 
 

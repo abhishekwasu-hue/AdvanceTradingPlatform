@@ -44,6 +44,9 @@ class ContractRules:
     max_lots: Optional[int] = None
     # Phase H1: chain-based filters around the rule strike (None/inactive = rule strike only).
     strike_filters: StrikeFilters = StrikeFilters()
+    # Strategy templates section 5: False when a single option's stop is the premium stop only (the deployment's
+    # stop_source PREMIUM_PCT) - the trade then carries no underlying-level stop. True (the default) = as before.
+    underlying_stop: bool = True
 
     @classmethod
     def from_deployment(cls, dep: StrategyDeploymentRecord) -> "ContractRules":
@@ -57,6 +60,7 @@ class ContractRules:
             premium_stop_pct=dep.premium_stop_pct if dep.premium_stop_pct is not None else (DEFAULT_PREMIUM_STOP_PCT.get(position) if position else None),
             max_lots=dep.max_lots,
             strike_filters=StrikeFilters.from_json(getattr(dep, "strike_filters", None)),
+            underlying_stop=getattr(dep, "stop_source", None) != "PREMIUM_PCT",
         )
 
     @property

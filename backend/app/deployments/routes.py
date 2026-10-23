@@ -31,6 +31,8 @@ from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Trad
 from app.instruments import master as instrument_master
 from app.instruments.strike_selection import StrikeFilters
 from app.trading.exit_rules import ExitRules
+from app.strategy_templates import exits as exit_settings
+from app.strategy_templates.exits import TemplateExits, TemplateExitsBody
 from app.ai.regime import parse_filter, validate_filter
 from app.instruments.spreads import (
     MAX_CUSTOM_LEGS, MAX_LEG_RATIO, CustomLeg, custom_legs_json, describe_structure, is_debit, parse_custom_legs, resolve_structure, structure_metrics,
@@ -222,6 +224,9 @@ class DeploymentCreateRequest(ContractRulesRequest):
     # Z3 / BT2: APPROVAL - every entry signal becomes a proposal and only an approved one places a PAPER order. Needs the
     # `approval_only_entries` flag; with the flag on every deployment is approval-only whatever this says.
     entry_mode: Literal["AUTO", "APPROVAL"] = "AUTO"
+    # Strategy templates section 5: a template's exit choice (where the stop comes from, when to take profit); omitted =
+    # as before (the template's own level as the stop, no target; a spread's credit levels).
+    template_exits: Optional[TemplateExitsBody] = None
 
 
 class ContractPreviewRequest(ContractRulesRequest):
@@ -276,6 +281,7 @@ class DeploymentResponse(BaseModel):
     order_style: str = "MARKET"
     market_protection_pct: Optional[float] = None
     entry_mode: str = "AUTO"
+    template_exits: Optional[dict] = None
 
     @classmethod
     def from_record(cls, record: StrategyDeploymentRecord, open_positions: int = 0) -> "DeploymentResponse":
@@ -302,7 +308,14 @@ class DeploymentResponse(BaseModel):
             holding=getattr(record, "holding", None) or "INTRADAY",
             order_style=getattr(record, "order_style", None) or "MARKET", market_protection_pct=getattr(record, "market_protection_pct", None),
             entry_mode=getattr(record, "entry_mode", None) or "AUTO",
+            template_exits=_exits_answer(record),
         )
+
+
+def _exits_answer(record: StrategyDeploymentRecord) -> Optional[dict]:
+    """Section 5: the deployment's exit choice as stored (None: none chosen - the behaviour before)."""
+    choice = TemplateExits.from_record(record)
+    return None if choice.is_default else {k: v for k, v in choice.columns().items() if v is not None}
 
 
 def _check_holding(request: "DeploymentCreateRequest", strategy) -> None:
@@ -335,6 +348,9 @@ def describe_deployment(record: StrategyDeploymentRecord) -> str:
     exits = ExitRules.from_json(getattr(record, "exit_rules", None))
     if exits.active:
         text += f"; exits: {exits.describe()}"
+    template_exits = TemplateExits.from_record(record)
+    if not template_exits.is_default and template_exits.describe():
+        text += f"; {template_exits.describe()}"
     regimes = parse_filter(getattr(record, "regime_filter", None))
     if regimes:
         text += f"; regimes noted (diagnostic only, never blocks): {', '.join(r.lower().replace('_', ' ') for r in regimes)}"
@@ -417,6 +433,11 @@ async def create_deployment(
     if request.strategy_id.startswith(TEMPLATE_PREFIX) and request.mode != ExecutionMode.PAPER:
         # Strategy templates step 2: signals only, PAPER only (owner order section 10) - a template never runs LIVE here.
         raise HTTPException(status_code=400, detail="Strategy templates run on paper only for now")
+    # Section 5: the template's exit choice, checked against the instrument it will trade (plain messages)
+    try:
+        template_exits = exit_settings.checked(strategy, request.template_exits, request.instrument_kind, request.option_strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"problems": exc.args[0]}) from exc
     if request.entry_mode == "APPROVAL":
         from app.execution import approval
         if not await approval.flag_on(session, user.tenant_id):
@@ -519,6 +540,7 @@ async def create_deployment(
         holding=request.holding,
         order_style=request.order_style, market_protection_pct=request.market_protection_pct,
         entry_mode=request.entry_mode,
+        **template_exits.columns(),
     )
     session.add(record)
     try:

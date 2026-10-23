@@ -1601,6 +1601,20 @@ collide on numbers.
 | PRV-5 | New signal-language tokens the reader needs. | Added as generic structure phrases to `app/signals/language.py` and its frontend mirror in a reviewed public PR (shared cases grow with them); when the reader emits them stays private. The package never brings its own text to a screen. | PRIVATE_PACKAGE section 9.3 | open |
 | PRV-6 | A new MAJOR reader version and running deployments. | The host's `ATP_PRIVATE_REF` moves only after the parity checks and a PAPER shadow; each deployment records the reader version it started with; the admin console lists the release note. | PRIVATE_PACKAGE section 11 | open |
 
+## The scan universe is never empty (SU, owner order 23 Oct)
+
+Branch `claude/scan-universe` (behind `ui_v2` + `screener_v2`). Code: `backend/app/screener/universes.py`,
+`frontend/src/screener/universe.ts`, `UniversePicker.tsx`, `ScreenerPage.tsx`. Checked against CLAUDE.md (signals not
+advice: a list of names, no prices; PAPER; no migration; exits untouched), DECISIONS.md and the trader-review order.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| SU-1 | NIFTY 50 when the server has no NIFTY 50 list (the system lists not built yet, or the call failed). | First the system list `index-nifty50`; else the current NIFTY 50 membership the universe sync stores (`index_membership` + `securities`); only when neither exists, a static names-only list in the page (`NIFTY50_FALLBACK`, 50 NSE symbols, no prices or weights; may lag a reconstitution until the system list exists - a stale name just reads "no bars"). | `universe.ts`, `universes.py` | open |
+| SU-2 | A universe over 50 symbols: raise the run cap or batch? | Batch; the run cap stays 50. Each batch is a `/run` with `batch: true`, one in flight at a time; every broker call of a batch takes a token from the credential's shared API budget (`api_budget.BudgetedAdapter`, the budget charts use: half of `rate_budget.py`'s conservative limits), so a batch can never spend past it - a symbol without a token reads "waited for the broker's limit" and the page offers to run again. Batch size = what the per-second share fetches in about 10 s (Upstox 40, Zerodha / others 10); the page waits after each batch for the calls it made at the per-minute share (cached bars cost nothing, so a warm NIFTY 500 runs at once). Raising the cap would make one request hold up to 500 broker calls (minutes on Zerodha) and could not report partial results. Ordinary runs of 50 or fewer are unchanged (no token taken). | `universes.py`, `routes.py` (`fetch_frames budget_out`), `runInBatches` | open |
+| SU-3 | Upstox's 30-minute window: the API budget allows 500 calls per 30 minutes per credential; a cold NIFTY 500 scan on an intraday timeframe (bars + daily context) can use it, and charts then read "budget used" until it frees. | Kept: the budget refuses past the window (never over the broker's allowance), the default stays NIFTY 50, and daily bars are cached and shared. If it bites, cap a batch run's share of the 30-minute window (e.g. half). | `api_budget.py` | open |
+| SU-4 | Scan alerts on a list over 50 stocks. | An alert saved from a run keeps the chosen universe, up to the alert engine's 50 symbols (the first 50 of the list, said in the dialog). Raising the alert cap adds bar-close fetches to the trading worker's budget (which its exits share), so it waits for the owner. | `ScanAlertPanel.tsx`, `alerts/rules_routes.py` | open |
+| SU-5 | A long list's answer (over 50 rows). | Matches first: the matches (and any stock the broker's limit held back) are listed, the others are counted ("425 stocks did not match"), with "Show all". | `ScreenerPage.tsx` | open |
+
 ## Backtests without a daily broker login (BSH, 23 Oct)
 
 Owner order 23 Oct ("backtests without a daily broker login (stored licensed history)"), branch

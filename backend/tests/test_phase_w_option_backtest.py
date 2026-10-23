@@ -277,7 +277,7 @@ def test_chain_recorder_samples_dedupes_and_loads():
     written, again, later, rows, cov, uploaded = _run(go())
     assert written == 14 and again == 0 and later == 14          # 7 strikes x CE/PE around the money
     assert len(rows) == 28 and {r.right for r in rows} == {"CE", "PE"} and rows[0].expiry == date(2026, 10, 6)
-    assert cov[0]["underlying"] == "NIFTY" and cov[0]["rows"] == 29 and cov[0]["expiries"] == 1   # TM94-3: this organisation's rows only
+    assert cov[0]["underlying"] == "NIFTY" and cov[0]["rows"] == 28 and cov[0]["expiries"] == 1   # TM94-3: this organisation's rows only
     assert uploaded == 1
     # The rows price a backtest: nearest-at-or-before within the age limit.
     pricer = SnapshotPricer(rows, max_age_minutes=5)

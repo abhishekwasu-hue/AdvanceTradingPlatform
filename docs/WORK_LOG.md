@@ -3163,3 +3163,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   pre-fill as PAPER, T7 must fire / must not fire, no look-ahead, flags); vitest `src/ideas/ideas.test.tsx`; e2e
   `e2e/idea-library-v2.e2e.ts` (the idea library baselines updated: T7 scans, T5 note, the adopt card on A5). The
   fixture `e2e/fixtures/ideas_v2.json` is now the payload with strategy templates on; its pin is updated.
+
+## 23 Oct - Strategy templates TPL-9: the projected trendline retest (owner decision TPL-Q18) and C4 (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl-c4-projected`. No migration, no new flag, no new route, no frontend change.
+- A new retest choice `trendline_projected` on RetestEntry / RetestEntryRef / the B9 screen: the B5 trendline breakout in
+  line mode, the broken line read at each bar after the breakout (as `channel`). The older `trendline` choice keeps its
+  level frozen at the breakout bar: its outputs are pinned byte for byte against main (touch and reversal retests pinned
+  separately; the reversal pin moves only with a deliberate change of the reversal rule such as TPL-F6), and so are the
+  params hash and default id of every template outside family G. DowTrend / the reversal check are not touched (TPL-F6).
+- C4 trendline breakout and retest (`templates/C4.json`): B4's breakout settings, C3's retest settings, invalidation
+  {the pullback, the breakout's own reference, whichever is farther}, exit a close back across the projected line; two
+  signal-text tokens in structure words. The new choice is in the no-look-ahead cases.
+- Tests: `tests/test_tpl9_c4_trendline_retest.py` (the section 8 gate: must fire / must not on a hand-made falling-line
+  retest that only the projected line holds, invalidation by value, S6, the exit, warm-up, truncation, mirror, scan =
+  backtest = options backtest = worker, property tests, the language guard, ids, adapter, flags, the API). Questions
+  TPL-Q64..Q66; TPL-Q18 answered and built.

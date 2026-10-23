@@ -309,7 +309,7 @@ class _Eval:
                     out["vol_mult"] = float(given["v"])
                 if given["mode"] is not None:
                     out["range_mode"] = str(given["mode"])
-            if given["touches"] is not None and of in ("trendline", "channel"):
+            if given["touches"] is not None and of in ("trendline", "channel", "trendline_projected"):
                 out["tl_min_touches"] = float(given["touches"])
             if given["swing"] is not None and of == "swing":      # step 5 (C2): the swing breakout's own swing degree
                 out["swing_degree"] = int(given["swing"])
@@ -317,7 +317,7 @@ class _Eval:
 
         def retest_entry() -> pd.Series:
             side, of = str(self.ev(args[0], tf)), _text(1, _bkd("retest_of"))
-            if of not in RETEST_WAVE_OF:                     # range / swing / donchian / trendline / channel: the B9 path
+            if of not in RETEST_WAVE_OF:                     # range / swing / donchian / trendline / channel / projected: the B9 path
                 return _breakout(f, "B9", side, {"retest_of": of, "retest_max_bars": num(2, _bkd("retest_max_bars")),
                                                  "retest_reversal": _bool(3, _bkd("retest_reversal")), **retest_forward(of, 7)})
             # R7 (wave templates): the retest of a broken wave line / wave end (app/screener/breakouts/wave_breaks.py)
@@ -1052,8 +1052,8 @@ def _breakout_ref(f: pd.DataFrame, screen: str, what: str, side: str, overrides:
 def _retest_ref(f: pd.DataFrame, what: str, side: str, overrides: Dict[str, Any], stop_mult: float) -> pd.Series:
     """Strategy templates R7 / R2: a B9 retest's prices as a series - read from the same retests the B9 screen finds
     (app/screener/breakouts/retest.py `retest_events`), on the retest bars only (NaN elsewhere); `held_level` holds the
-    latest retest's level (a channel edge projected along its line) until the next retest. Real prices (the down side's
-    mirrored orientation turned back), as RangeBreakoutRef / LineBreakoutRef."""
+    latest retest's level (a channel edge or a projected trendline along its line) until the next retest. Real prices
+    (the down side's mirrored orientation turned back), as RangeBreakoutRef / LineBreakoutRef."""
     from app.screener.breakouts.quality import stop_reference
     from app.screener.breakouts.retest import retest_events
     from app.screener.breakouts.screens import Bars

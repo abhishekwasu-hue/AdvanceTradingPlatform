@@ -35,8 +35,8 @@ async def holdings_for(session: AsyncSession, user: User) -> List[smart_executio
     rows = list(await session.scalars(select(InstrumentRecord).where(
         InstrumentRecord.tradingsymbol.in_(sorted({t.symbol.upper() for t in trades})))))
     by_symbol: Dict[str, InstrumentRecord] = {}
-    for row in rows:
-        by_symbol.setdefault(row.tradingsymbol.upper(), row)
+    for rec in rows:
+        by_symbol.setdefault(rec.tradingsymbol.upper(), rec)
     out: List[smart_execution.Holding] = []
     for t in trades:
         row = by_symbol.get(t.symbol.upper())

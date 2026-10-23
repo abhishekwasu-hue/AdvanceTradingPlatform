@@ -90,11 +90,7 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
             MAINTENANCE: no new entries{status.maintenance_message ? ` - ${status.maintenance_message}` : ""}
           </span>
         )}
-        {user && user.email_verified === false && !paperOnly && (
-          <Link to={pathFor("account")} className="truncate rounded-md border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 text-xs font-bold text-sky-300 hover:bg-sky-500/20" title="LIVE trading and broker credentials may require a verified address">
-            <span className="sm:hidden">Verify</span><span className="hidden sm:inline">Verify your email</span>
-          </Link>
-        )}
+        {/* User-friendly pass item 1: no "Verify your email" chip here; Settings › Account and the v2 Needs attention ask. */}
         {status && status.disabled_brokers.length > 0 && !paperOnly && (
           <span className="rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-xs font-bold text-rose-300">
             LIVE paused on {status.disabled_brokers.join(", ")}

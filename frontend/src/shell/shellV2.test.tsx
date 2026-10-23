@@ -185,13 +185,13 @@ describe("UI2-1 sidebar", () => {
 });
 
 describe("UI2-1 top bar notices", () => {
-  it("uses plain words: maintenance and LIVE paused are warnings, verify email is a link", () => {
+  it("uses plain words: maintenance and LIVE paused are warnings; never an e-mail chip (item 1)", () => {
     const status = { maintenance_mode: true, maintenance_message: "Back at 10:00", disabled_brokers: ["zerodha"] } as never;
     expect(topBarNotices(status, { id: 1, email: "a@b.c", tenant_id: 1, role: "OWNER", email_verified: false })).toEqual([
       { kind: "warn", text: "Maintenance: new trades are paused. Back at 10:00" },
       { kind: "warn", text: "Live trading is paused on zerodha" },
-      { kind: "link", text: "Verify your email", title: "Live trading and broker keys may need a verified address" },
     ]);
+    expect(topBarNotices(null, { id: 1, email: "a@b.c", tenant_id: 1, role: "OWNER", email_verified: false })).toEqual([]);
     expect(topBarNotices(null, null)).toEqual([]);
   });
 });

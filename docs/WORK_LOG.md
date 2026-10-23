@@ -3702,3 +3702,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `admin-trader-pack-v2-{1440,390}-{light,dark}.png`; `admin-controls-v2-*` updated (the new card).
 - Runbook section 4b; questions TP-1..TP-6.
 
+## 23 Oct - Terminal master Part 7 / 8, PR A: PAPER is a broker adapter (TM-1, README row 20)
+
+- `backend/app/execution/paper_adapter.py`: `PaperExecutionAdapter(BrokerInterface)` over the PaperBroker fill and cost
+  model (market / marketable limit / triggered stops, no resting order, partial fills, idempotent `client_ref`, books,
+  india_costs charges); registered as `EXECUTION_ADAPTERS["paper"]` in `app/brokers/registry.py` (not a broker account).
+- `OrderRouter(paper_execution="adapter")` + `execute_signal_for_user(paper_execution=...)`; the F&O ticket's single-leg
+  PAPER order is the first path moved (`fno_ticket.PAPER_EXECUTION`); every other path unchanged.
+- Parity: `tests/test_tm1_paper_adapter.py` (router 60 seeded signals; whole pipeline ticket -> trail -> position ->
+  exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
+- Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
+

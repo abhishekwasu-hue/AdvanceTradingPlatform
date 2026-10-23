@@ -1752,3 +1752,14 @@ Branch `claude/trader-pack`. Code: `backend/app/platform/trader_pack.py`, routes
 | TP-5 | The A4 admin write step-up (`ensure_admin_write_step_up`) is not on main. | The two POSTs use the admin router's SUPER_ADMIN + two-factor session (`require_mfa_session`); when A4 lands they take its step-up like every admin write (note in `routes.py`). | `app/platform/routes.py` | open |
 | TP-6 | "Working" checks are platform-wide counts (organisations with a broker connection, AI keys of organisations and users, ready-made lists, instrument rows, stored daily bars), not one organisation's. | Platform-wide: the admin turns the flags on for the whole platform. A key is never read or decrypted, only counted. | `trader_pack._facts` | open |
 
+## Smart execution and the PAPER adapter (SE, 23 Oct)
+
+Branches `claude/terminal-paper-adapter` (PR A, TM-1) and `claude/terminal-smart-execution` (PR B). Design:
+`docs/design/SMART_EXECUTION.md`. No migration.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| SE-1 | The PAPER adapter's books (order / trade / positions) live in memory for one order flow; the database order trail stays the pipeline's. | One adapter per flow (router call, basket); the persisted trail and positions are unchanged. A persisted paper book comes with the resting order book (TM-2). | `execution/paper_adapter.py` | open |
+| SE-2 | Slippage on a PAPER limit order could fill past the limit. | Capped at the limit price (a limit is a limit). The moved ticket path sends MARKET at the checked price, so parity is unaffected. | `paper_adapter._fill_price` | open |
+| SE-3 | Which path moves first. | The F&O ticket's single-leg PAPER order (`fno_ticket.PAPER_EXECUTION = "adapter"`), unconditionally, with the parity test; every other caller keeps `direct` until its own parity PR. | `paper/fno_ticket.py`, `execution/router.py` | open |
+

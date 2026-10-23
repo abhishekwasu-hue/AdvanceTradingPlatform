@@ -3744,3 +3744,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests `tests/test_tm7_smart_execution.py`, `src/fno/smartExecution.test.tsx`. Screenshots (fixtures, not committed):
   scratchpad `tm-part7/`. Questions SE-4..SE-8. No migration.
 
+## 23 Oct - Day-one fix 7: Signals knows the bot he just started (README row 19, DAY_ONE_TRADER_TEST finding 6)
+
+- Branch `claude/d1-fix-signals-bot` (from main). Frontend only, **no migration**, no new flag (`ui_v2` +
+  `strategy_templates`, the day-one card's own gate).
+- `src/signals/DayOneV2.tsx`: with a PAPER bot running or paused and no list watch adopted yet, the card is "Your paper
+  bot is on" (`BotsView`): the bot's name (the template's name), its symbol, its state and "Just started: it reads its
+  chart on its next round" (`botCheckWords`), "Open Paper bot" and a quiet "Also watch a whole list" (the old setup card,
+  with "Keep my watch" back). No second adopt is asked.
+- Tests: `src/signals/dayOneBots.test.tsx` (3), e2e `e2e/d1-signals-bot-v2.e2e.ts` (no baseline); signals-v2 and
+  signals-day-one-v2 unchanged (they mock no bot).

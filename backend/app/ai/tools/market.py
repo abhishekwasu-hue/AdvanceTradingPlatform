@@ -74,6 +74,20 @@ async def _broker(ctx: ToolContext, symbol: str, exchange: str) -> Tuple[Any, st
     return build_adapter(record), f"broker:{record.broker_name}"
 
 
+async def _hub_connection(ctx: ToolContext) -> Any:
+    """TM Part 1 (flag data_hub): the asking user's own connection on the data hub, or None (flag off, no user, no
+    broker). The tool then reads the same price / chain snapshot every page of that connection reads."""
+    user = ctx.user if getattr(ctx.user, "tenant_id", None) == ctx.tenant_id else None
+    if user is None:
+        return None
+    try:
+        from app.market_data import hub as data_hub
+        conn = await data_hub.user_connection(ctx.session, user)
+    except Exception:  # noqa: BLE001 - the hub is an addition; without it the tool reads as before
+        return None
+    return conn if conn is not None and not conn.renew else None
+
+
 def _failed(source: str, exc: HTTPException) -> ToolResult:
     return ToolResult(False, None, None, source, error=str(exc.detail)[:300])
 
@@ -137,6 +151,12 @@ async def get_quote(ctx: ToolContext, args: _QuoteArgs) -> ToolResult:
     quote = await adapter.get_quote_for_symbol(args.symbol.upper(), args.exchange)
     if quote is None:
         return ToolResult(False, None, None, source, error=f"no quote for {args.symbol} on {args.exchange}")
+    conn = await _hub_connection(ctx)
+    if conn is not None:
+        # One price everywhere: the connection's fresh hub tick is the last price the chart and watchlist show too.
+        tick = await conn.tick_cache.fresh(conn.broker, args.exchange.upper(), args.symbol.upper())
+        if tick is not None:
+            quote = quote.model_copy(update={"ltp": float(tick.ltp), "timestamp": tick.best_ts})
     stamp = _iso(quote.timestamp) or ctx.now.isoformat()
     data = {"symbol": args.symbol.upper(), "ltp": _r(quote.ltp), "open": _r(quote.open), "high": _r(quote.high), "low": _r(quote.low),
             "prev_close": _r(quote.close), "volume": _r(quote.volume, 0),
@@ -170,7 +190,14 @@ async def get_option_chain(ctx: ToolContext, args: _ChainArgs) -> ToolResult:
         adapter, source = await _broker(ctx, args.underlying.upper(), "NFO")
     except HTTPException as exc:
         return _failed("option_chain", exc)
-    chain = await adapter.get_option_chain(args.underlying.upper(), args.expiry)
+    conn = await _hub_connection(ctx)
+    if conn is not None and conn.record is not None:
+        # TM Part 1: the connection's chain snapshot of the last few seconds (the chain page's, say) - no second call.
+        from app.market_data import hub as data_hub
+        chain = await data_hub.shared_chain(int(conn.record.id), args.underlying, args.expiry,
+                                            lambda: adapter.get_option_chain(args.underlying.upper(), args.expiry))
+    else:
+        chain = await adapter.get_option_chain(args.underlying.upper(), args.expiry)
     if not chain.rows:
         return ToolResult(False, None, None, source, error=f"the broker returned an empty chain for {args.underlying}")
     return ToolResult(True, summarise_chain(chain), ctx.now.isoformat(), source, {"read_at": ctx.now.isoformat(), "expiry": str(chain.expiry)})

@@ -69,6 +69,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "ai_research": FlagInfo("AI drafts are back-tested and scored automatically", "ai", "research loop", ("ai_copilot",), "an AI key", "unfinished"),
     "ai_one_key": FlagInfo("Connect AI in one paste: one key for every AI feature", "ai", "Connect AI panel on Copilot and Settings › AI", ("ui_v2",), "", "ready"),
     "daily_rhythm": FlagInfo("Daily rhythm: a brief before the open, a pulse, a closing wrap and a weekly review", "data", "a card on the Dashboard; Telegram by the user's choice (Settings › Alerts)", ("ui_v2",), "Telegram connected for the messages", "unfinished"),
+    "data_hub": FlagInfo("One live price stream per broker connection for every page; live prices in the browser", "data", "prices that move on their own on charts and watchlists; a notice while prices reconnect or the broker login needs renewing", ("ui_v2",), "a broker with a live price stream (Upstox, Zerodha) for streaming, else prices refresh every few seconds", "unfinished"),
     "beta_cohort_gate": FlagInfo("Sign-up needs an invite code; cap on users", "platform", "invite code field", (), "", "decision"),
     "vision_byok": FlagInfo("Use your own AI key to read chart images", "ai", "Settings › AI › Vision key", (), "a user's AI key", "ready"),
     "vision_byok_v3": FlagInfo("Your AI key also reviews scan alerts and a daily chart review", "ai", "comments on alerts", ("vision_byok",), "", "unfinished"),

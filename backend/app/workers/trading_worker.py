@@ -76,6 +76,7 @@ from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs
 from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
 from app.market_data.fanin import UserSessionFanIn
+from app.market_data.hub import DataHub
 from app.market_data.stream import StreamManager
 from app.market_lake.recorder import LakeRecorder
 from app.observability.metrics import MARKET_DATA_STALE
@@ -290,8 +291,10 @@ class TradingWorker:
         # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
         # symbols the tenant's deployments and open positions need (STREAMING_QUOTES_ENABLED).
         self.streams = StreamManager()
+        # TM Part 1: the data hub (flag data_hub, off by default) - one stream per broker connection for every consumer.
+        self.hub = DataHub()
         # BT1: per-user broker sessions for the bring-your-own-broker data tier (flag byob_data_tier, off by default).
-        self.byob = UserSessionFanIn()
+        self.byob = UserSessionFanIn(hub=self.hub)
         self._last_vix: Dict[int, datetime] = {}    # Z5: when each organisation's India VIX reading was last taken
         # Part B2: ticks from those streams also become lake bars (LAKE_TICK_WRITER_ENABLED, off by default).
         self.lake = None
@@ -354,6 +357,7 @@ class TradingWorker:
                 pass
         await self.streams.stop_all()
         await self.byob.close_all()
+        await self.hub.stop_all()
         logger.info("Trading worker %s stopped", self.holder_id)
 
     async def startup_check(self) -> Dict[str, object]:
@@ -1101,6 +1105,17 @@ class TradingWorker:
             # below): a user's credential streams only through the per-user fan-in, never into md:tick:* or the lake.
             await self.streams.drop_prefix(f"{tenant_id}:")
         data_broker = next(iter(adapters.values()), None)
+        # TM Part 1 (flag data_hub): the organisation's own connection streams through the hub (its own keys) - only when
+        # its users do not each bring their own broker (byob: the fan-in owns those connections).
+        hub_org = not byob and await self._hub_on(session, tenant_id)
+        if not hub_org:
+            from app.market_data.hub import org_namespace
+            await self.hub.drop(org_namespace(tenant_id))        # the flag went off (or byob on): back to the old path
+        linked = sorted({a.broker_name for a in accounts if a.status == "ACTIVE"})
+        if data_broker is None and hub_org and linked:
+            # A linked broker whose login ended: the stream stops and the app shows ONE renew notice (never for "no broker
+            # linked"); the token check above already sent the one "session expired" notification.
+            await self.hub.org_without_session(tenant_id, linked)
         if data_broker is None:
             message = "No usable broker session (token expired or missing) - log in again on the Broker page"
             for dep in deployments:
@@ -1121,6 +1136,10 @@ class TradingWorker:
             # BT1b: this organisation's own cache keys - never the platform-wide md:candles / md:tick keys another
             # organisation reads (get_ltp then polls REST unless a tick arrives under these keys).
             market_data.cache_namespace = f"org.t{tenant_id}"
+        if hub_org and hasattr(market_data, "tick_namespace"):
+            # TM Part 1: prices for this organisation's decisions come from its own hub stream (fresh ticks), else REST.
+            from app.market_data.hub import org_namespace
+            market_data.tick_namespace = org_namespace(tenant_id)
         self._cycle_chains = {}
         # Phase T: balances first, so a capital policy decides on this cycle's numbers.
         await self._refresh_accounts(session, accounts, adapters, now)
@@ -1141,7 +1160,11 @@ class TradingWorker:
                                       if account is not None else "primary credential by EXPLICIT")
             routes[dep.id] = (account, label)
         self._routes = routes
-        if app_config.STREAMING_QUOTES_ENABLED and not byob:
+        if hub_org:
+            # TM Part 1: the hub owns this organisation's one stream (no second websocket on the same token).
+            await self.streams.drop_prefix(f"{tenant_id}:")
+            await self._hub_quotes(session, tenant_id, data_broker, deployments, now)
+        elif app_config.STREAMING_QUOTES_ENABLED and not byob:
             # BT1b: with byob_data_tier on, a user's credential is streamed only by the per-user fan-in (its own keys,
             # never the lake) - not also by this org-wide stream (no second websocket on the same token, no shared ticks).
             await self._stream_quotes(session, tenant_id, adapters, data_broker, deployments, report)
@@ -2068,6 +2091,35 @@ class TradingWorker:
                 chain = await market_data.broker.get_option_chain(chain_symbol, expiries[0] if expiries else None)
             written += await chain_recorder.record_chain(session, underlying, chain, now)
         return written
+
+    async def _decision_symbols(self, session: AsyncSession, tenant_id: int, deployments: List[StrategyDeploymentRecord]) -> set:
+        """Every symbol a decision this cycle could need: each deployment's symbol and every open position (contract and
+        its underlying)."""
+        wanted: set = {(d.symbol, d.exchange or "NSE") for d in deployments}
+        open_trades = list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))))
+        venues = await trade_venues(session, open_trades)
+        for trade in open_trades:
+            wanted.add((trade.symbol, venues[trade.id]))
+            if trade.underlying_symbol:
+                from app.trading.position_monitor import underlying_exchange
+                wanted.add((trade.underlying_symbol, underlying_exchange(trade.underlying_symbol)))
+        return wanted
+
+    async def _hub_on(self, session: AsyncSession, tenant_id: int) -> bool:
+        from app.market_data.hub import hub_on
+        try:
+            return await hub_on(session, tenant_id)
+        except Exception:  # noqa: BLE001 - a flag read never breaks trading; off = as before
+            return False
+
+    async def _hub_quotes(self, session: AsyncSession, tenant_id: int, data_broker: BrokerInterface,
+                          deployments: List[StrategyDeploymentRecord], now: datetime) -> None:
+        """TM Part 1: the organisation's one hub stream - decisions' symbols first, then what its pages registered. A
+        broker without a stream stays on REST (the hub says "polling"); streaming never blocks a decision or an exit."""
+        try:
+            await self.hub.ensure_org(tenant_id, data_broker, await self._decision_symbols(session, tenant_id, deployments), now)
+        except Exception as exc:  # noqa: BLE001 - streaming is an optimisation over REST, never a blocker
+            logger.warning("Tenant %s: data hub error: %s", tenant_id, exc)
 
     async def _stream_quotes(self, session: AsyncSession, tenant_id: int, adapters: Dict[str, BrokerInterface], data_broker: BrokerInterface,
                              deployments: List[StrategyDeploymentRecord], report: CycleReport) -> None:

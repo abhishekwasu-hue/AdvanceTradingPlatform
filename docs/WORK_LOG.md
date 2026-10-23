@@ -3563,6 +3563,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
 
+## 23 Oct - Terminal master Part 1: the data hub
+
+- Branch `claude/terminal-data-hub` (from main). **No migration.** Flag `data_hub` (OFF by default, needs `ui_v2`).
+- Backend: `market_data/hub.py` (one stream per broker connection, per-connection tick snapshot, status, renew once and
+  resume, browser feed, shared chain snapshots); `stream.py` (state, stop on a refused token for hub streams only);
+  `fanin.py` (hub sessions: always streamed, renew and reopen, symbols kept); the worker streams the organisation's
+  connection through the hub; `/ltp`, `/quotes`, the option chains, their analyses and the Copilot's quote / chain tools
+  read through it; `live/routes.py`: `ticks` / `hub` events, `PUT /api/live/ticks`, `GET /api/live/hub`; metric
+  outcome `rate_limited` on broker 429s.
+- Frontend: `src/live/liveTicks.ts` (the tab's store), `LivePricesBanner.tsx` (reconnecting / log in again), the
+  watchlist and the charts' last price move with ticks.
+- Proof: `backend/scripts/hub_probe.py` (before / after numbers, reconnect, token expiry, fan-out load); tests
+  `test_tm1_data_hub.py`, `test_tm1_data_hub_load.py`, vitest `live/liveTicks.test.tsx`, e2e `live-prices-v2.e2e.ts`.
+- Questions TMH-1..8; `data_hub` joins the trader pack (#455). README row 20 is not on main yet: its status clause is in the PR body.
+
 ## 23 Oct - Signals day one (README row 19, the trader review's gaps)
 
 - Branch `claude/signals-day-one` (from main). **No migration** (an internal `user_prefs` row). Behind `ui_v2` +

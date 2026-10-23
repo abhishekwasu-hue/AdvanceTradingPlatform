@@ -50,6 +50,8 @@ PACK: Tuple[str, ...] = (
     "history_backfill", "alerts_stale_guard", "alerts_reliable_outbox", "context_panel", "news_feed",
     "markets_view",            # unfinished in the audit: the page and the summary work on the daily data the pack loads
     "telegram_inbound",
+    "data_hub",                # TM Part 1 (unfinished in the catalog): one live stream per broker connection, live prices,
+                               # the reconnecting / renew notice - works end to end today; OFF = everything as before
     # Paper account, risk and journal (the restrictive tools too: they only ever hold back a new paper entry).
     "paper_account", "approval_only_entries", "risk_by_default", "ladder_evidence", "experience_levels",
     "portfolio_risk", "portfolio_risk_caps", "vix_gate", "discipline_engine", "decision_tools",

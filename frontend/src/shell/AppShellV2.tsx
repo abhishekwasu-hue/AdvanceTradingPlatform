@@ -9,6 +9,7 @@ import { useBrokerConnections } from "../broker/useBrokerConnections";
 import ErrorBoundary from "../components/ErrorBoundary";
 import type { Page } from "../components/Sidebar";
 import LegalAcceptanceBanner from "../legal/LegalAcceptanceBanner";
+import LivePricesBanner from "../live/LivePricesBanner";
 import PwaBanners from "../pwa/PwaBanners";
 import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
@@ -197,6 +198,8 @@ export default function AppShellV2() {
           paperOnly={frontPaperOnly} onTour={replayTour} />
         <PwaBanners />
         <LegalAcceptanceBanner />
+        {/* TM Part 1 (flag data_hub): the one notice while live prices reconnect or the broker login needs renewing. */}
+        <LivePricesBanner enabled={!!user && features.on("data_hub")} />
         {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip. */}
         <main id="main" ref={mainRef} tabIndex={-1}
           className={`w-full flex-1 ${key === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${key === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>

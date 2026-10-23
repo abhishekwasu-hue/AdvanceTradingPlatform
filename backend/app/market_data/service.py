@@ -151,6 +151,8 @@ class MarketDataService:
         self.lookback_days = lookback_days
         # BT1: set for a user's own broker session (bring your own broker); None keeps the shared worker cache.
         self.cache_namespace = cache_namespace or None
+        # TM Part 1 (data hub): the connection whose hub stream prices `get_ltp` (None: the cache namespace's ticks).
+        self.tick_namespace: Optional[str] = None
 
     async def get_candles(
         self, symbol: str, exchange: str = "NSE", interval: str = "1min", now: Optional[datetime] = None, fresh: bool = False,
@@ -354,8 +356,15 @@ class MarketDataService:
         Phase S: when a streaming tick for the symbol is younger than TICK_MAX_AGE_SECONDS it is
         the price - it is the exchange's last trade, not a poll - and no REST call is made. An
         older or missing tick falls through to the REST quote exactly as before."""
-        from app.market_data.stream import TickCache, tick_cache
-        ticks = TickCache(self.cache_namespace) if self.cache_namespace else tick_cache
+        from app.market_data.stream import tick_cache
+        namespace = self.tick_namespace or self.cache_namespace
+        if namespace:
+            # BT1 / TM Part 1: the session's own ticks - the hub stream's instance in this process, else its keys and
+            # its hub snapshot.
+            from app.market_data.hub import tick_cache_for
+            ticks = tick_cache_for(namespace)
+        else:
+            ticks = tick_cache
         tick = await ticks.fresh(self.broker.name, exchange, symbol, now)
         if tick is not None:
             return float(tick.ltp)

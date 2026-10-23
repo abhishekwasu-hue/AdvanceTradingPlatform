@@ -133,6 +133,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # turns it on (Settings > Alerts, OFF by default). Built from the user's own data and the market data ATP holds;
     # structure words only, no buy / sell / target / stop wording. OFF: /api/rhythm/* answers 404 and nothing is sent.
     "daily_rhythm": "Daily rhythm: the pre-market brief, mid-session pulse, closing wrap and weekly review on the Dashboard and, by choice, on Telegram",
+    # TM Part 1 (docs/design/DATA_HUB.md; app/market_data/hub.py): the data hub - one session and one market-data
+    # stream per broker connection, shared by every consumer of that connection (charts, chain, watchlists, alerts, the
+    # paper engine), kept to the connection's own keys (never another user's or organisation's), live ticks to the
+    # browser on the existing live stream, a plain "reconnecting" state and ONE renew prompt when the broker ends the
+    # login. `byob_data_tier` still decides whose session a user may read. OFF: everything exactly as before.
+    "data_hub": "Data hub: one live price stream per broker connection for every page, live ticks in the browser, a reconnecting state and one renew prompt",
     # Master Order 4 slice 3 (app/growth; needs `ui_v2`): the plan page with a usage meter (what the user's plan includes
     # and how much of it he used, from the existing limits and counters), the "my discipline this week" share card (his
     # own discipline facts only: no security names, no prices, no call words) and the admin Business view's activation

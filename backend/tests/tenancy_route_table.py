@@ -528,6 +528,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/legal/documents"): P_LEGAL,
     ("GET", "/api/legal/documents/{slug}"): P_LEGAL,
     ("GET", "/api/live/stream"): "member",
+    ("GET", "/api/live/hub"): "member: the state of the caller's own broker connection for prices (no ids)",
+    ("PUT", "/api/live/ticks"): ("self: the caller's own tab's list of symbols for live prices, kept a few minutes under the caller's "
+                                 "id; prices come only from the caller's own broker connection"),
     ("POST", "/api/market-data/candles"): S_OWN_MARKET_DATA,
     ("GET", "/api/market-data/data-tier"): "member",
     ("GET", "/api/market-data/history"): "member",

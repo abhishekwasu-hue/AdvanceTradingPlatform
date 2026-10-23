@@ -19,12 +19,20 @@ export const NOT_CONNECTED_TEXT =
 /**
  * Mobile B1: the Android app's frame around the same React app (the web never renders it). In a debug build, which is
  * never pointed at a real server (ADR-0028 decision 10), a notice says so plainly instead of leaving a sign-in screen
- * that silently fails; it can be closed to look at the layout underneath.
+ * that silently fails; it can be closed to look at the layout underneath. B8: it also starts the app's link handling
+ * (App Links, notification taps), so a link opens the right screen.
  */
 export default function NativeFrame({ children }: { children: ReactNode }) {
   const notConnected = isPlaceholderOrigin(API_ORIGIN);
   const [open, setOpen] = useState(notConnected);
   const [version, setVersion] = useState("");
+  useEffect(() => {
+    // B8: App Links and notification taps open their screen (src/native/links.ts; allow-listed paths only).
+    let stop: (() => void) | null = null;
+    let live = true;
+    void import("./links").then((m) => m.startNativeLinks()).then((s) => { if (live) stop = s; else s(); }, () => undefined);
+    return () => { live = false; stop?.(); };
+  }, []);
   useEffect(() => {
     if (!notConnected) return;
     let live = true;

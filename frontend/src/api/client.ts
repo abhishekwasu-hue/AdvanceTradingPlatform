@@ -21,6 +21,8 @@ import type {
   AdminTenantDetail,
   AdminTenantSummary,
   AlertChannel,
+  PhoneDevice,
+  PhoneDevices,
   AlertChannelUpsert,
   AlertDelivery,
   TelegramInboundStatus,
@@ -1025,7 +1027,17 @@ export const api = {
 
   deleteAlertChannel: (type: string) => request<void>(`/alert-channels/${type}`, { method: "DELETE" }),
 
-  pushPublicKey: () => request<{ public_key: string; configured: boolean }>("/alert-channels/push/public-key"),
+  // B8: `accepting` is false while the server runs on a throwaway VAPID key in production; `message` says so plainly.
+  pushPublicKey: () => request<{ public_key: string; configured: boolean; accepting?: boolean; message?: string | null }>("/alert-channels/push/public-key"),
+
+  // B8 (flag mobile_push): the caller's own phones for notifications from the Android app.
+  phoneDevices: () => request<PhoneDevices>("/mobile/devices"),
+  registerPhone: (body: { token: string; platform: "android" | "ios"; label: string; app_version: string; kinds?: string[] }) =>
+    request<PhoneDevice>("/mobile/devices", { method: "POST", body: JSON.stringify(body) }),
+  updatePhone: (id: string, body: { label?: string; kinds?: string[] }) =>
+    request<PhoneDevice>(`/mobile/devices/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
+  removePhone: (id: string) => request<void>(`/mobile/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  testPhone: (id: string) => request<{ ok: boolean; detail: string }>(`/mobile/devices/${encodeURIComponent(id)}/test`, { method: "POST" }),
 
   testAlertChannel: (type: string) =>
     request<{ ok: boolean; detail: string }>(`/alert-channels/${type}/test`, { method: "POST" }),

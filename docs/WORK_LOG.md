@@ -3432,3 +3432,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `src/ui/tokens.test.ts`: the new contrast pairs (text 4.5, UI parts 3), navy variants, the distinct-hue test.
 - e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
 
+## 23 Oct - Production readiness B8: phone notifications, deep links, store listing prep
+
+- Branch `claude/readiness-b8-mobile`. **No migration** (phones in the organisation's FCM alert channel, encrypted
+  config; `channel_type` is a plain string). New flag `mobile_push` (OFF, catalog entry); new routes
+  `/api/mobile/devices[/{device_id}[/test]]` (classified in the tenancy table).
+- Web Push: `webpush.accepting_subscriptions()` - production / staging refuse new subscriptions while
+  `VAPID_PRIVATE_KEY` is unset (409, plain sentence; `public-key` says `accepting: false`). `atp.sh health` lines for
+  the VAPID key and FCM; Admin → Readiness item `fcm`; runbook section 4 "Browser and phone notifications".
+- FCM: `app/alerts/fcm.py` (RS256 assertion, token cache, v1 send, gone tokens), `push_kinds.py` (signals, approvals,
+  exits, renew; screens; fixed text), dispatcher rows per phone (active members only, per-phone kinds, EMERGENCY always,
+  quiet hours without sound, SUPPRESSED reasons flag_off / not_configured / device_removed / device_gone). Browser push
+  of an entry signal now opens its Signals item.
+- Frontend: `native/deepLinks.ts` (+ test), `native/links.ts`, `native/push.ts` (plug-in through `registerPlugin`, not
+  in the web bundle), `alerts/PhonePushV2.tsx` in Settings → Alerts (app only, `mobile_push`), App Links intent filter.
+- Docs: `docs/design/MOBILE_PUSH.md`, `docs/store/android/LISTING.md`, README row 17, READINESS_STATUS B8, MA-2 steps
+  updated, MA-10..MA-13.
+- Tests: `backend/tests/test_b8_mobile_push.py` (fake FCM sender + mocked Google), the readiness test; vitest
+  `native/deepLinks.test.ts`, `alerts/phonePush.test.ts`.

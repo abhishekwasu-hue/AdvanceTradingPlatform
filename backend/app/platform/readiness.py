@@ -25,7 +25,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.alerts import webpush
+from app.alerts import fcm, webpush
 from app.brokers.token_lifecycle import token_is_usable
 from app.core import config
 from app.db.models import (AiProviderConfigRecord, AlertChannelRecord, BrokerCredentialRecord, KillSwitchRecord, MarketHolidayRecord,
@@ -242,7 +242,11 @@ async def platform_checklist(session: AsyncSession) -> Checklist:
     items.append(Item("smtp", "Platform SMTP configured", "ok" if mailer.configured() else "warn", config.PLATFORM_SMTP_HOST or "not set",
                       "" if mailer.configured() else "Set PLATFORM_SMTP_HOST/PORT/USERNAME/PASSWORD/FROM; without it email verification, password reset and email alerts are disabled.", "PLATFORM_SMTP_HOST"))
     items.append(Item("push", "Web push keys (optional)", "ok" if webpush.configured() else "info", "set" if webpush.configured() else "not set",
-                      "" if webpush.configured() else "Generate VAPID keys (python -m app.alerts.webpush) and set VAPID_PRIVATE_KEY/VAPID_SUBJECT for browser push alerts.", "VAPID_PRIVATE_KEY"))
+                      "" if webpush.configured() else "Generate VAPID keys (python -m app.alerts.webpush) and set VAPID_PRIVATE_KEY/VAPID_SUBJECT for browser push alerts. "
+                      "Until then new browser subscriptions are refused in production (a throwaway key would make them die at the next restart).", "VAPID_PRIVATE_KEY"))
+    items.append(Item("fcm", "Phone notifications for the Android app (optional)", "ok" if fcm.configured() else "info", "set" if fcm.configured() else "not set",
+                      "" if fcm.configured() else "Create the Firebase project (MA-2) and set FCM_SERVICE_ACCOUNT_JSON_BASE64; then turn on the mobile_push flag.",
+                      "FCM_SERVICE_ACCOUNT_JSON_BASE64"))
     razorpay = config.BILLING_PROVIDER == "razorpay"
     keys = bool(config.RAZORPAY_KEY_ID and config.RAZORPAY_KEY_SECRET and config.RAZORPAY_WEBHOOK_SECRET)
     items.append(Item("billing", "Payment gateway", "ok" if (razorpay and keys) else ("todo" if razorpay else "info"),

@@ -605,6 +605,15 @@ report_settings() {
   for k in GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do if env_set "$k"; then n=$((n + 1)); fi; done
   case "$n" in 0) info "Google sign-in (GS-1): not set (optional; no Google button)";; 2) ok "Google sign-in (GS-1): both keys set (the button shows)";;
     *) warn "Google sign-in (GS-1): only one of GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET set - the button stays hidden";; esac
+  # B8: browser notifications need a stable VAPID key; without one the app refuses new browser subscriptions (runbook section 4).
+  if env_set VAPID_PRIVATE_KEY; then
+    ok "browser notifications (Web Push): VAPID_PRIVATE_KEY set - subscriptions survive restarts"
+    case "$(env_get VAPID_SUBJECT)" in ""|*@example.com) warn "browser notifications: VAPID_SUBJECT is not your own contact (mailto:you@yourdomain)";; esac
+  else
+    warn "browser notifications (Web Push): VAPID_PRIVATE_KEY is not set - the app refuses new browser subscriptions until it is (runbook section 4, 'Browser and phone notifications')"
+  fi
+  if env_set FCM_SERVICE_ACCOUNT_JSON_BASE64 || env_set FCM_SERVICE_ACCOUNT_FILE; then ok "phone notifications (Android app, FCM): key set - the mobile_push flag decides who gets them"
+  else info "phone notifications (Android app, FCM): not set (optional; FCM_SERVICE_ACCOUNT_JSON_BASE64) - nothing is sent to phones"; fi
 }
 
 lock() {

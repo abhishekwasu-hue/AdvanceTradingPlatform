@@ -140,6 +140,25 @@ The script reads these optional settings too, but only to report on them (it nev
   the webhook once after the deploy as the platform admin: `POST /api/admin/telegram/platform/register`. Users then
   tap Connect Telegram, press Start in Telegram, and their alerts arrive there; no token or chat id is typed by anyone.
 
+- **Browser and phone notifications (readiness B8).** `health` prints one line for each.
+  - `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (browser notifications, Web Push). Without the key the server makes a
+    throwaway one at every start, so a browser that subscribed would stop getting notifications after the next deploy
+    without anyone noticing. The app therefore **refuses new browser subscriptions** until the key is set, and
+    `health` warns: `browser notifications (Web Push): VAPID_PRIVATE_KEY is not set`. To set it, once:
+    1. Make a key pair with the backend image (it prints two lines and changes nothing):
+       `su - atp -c "cd /opt/atp && docker compose -p atp exec -T backend python -m app.alerts.webpush"`
+    2. `nano /opt/atp/.env`: paste the `VAPID_PRIVATE_KEY=...` line, and set `VAPID_SUBJECT=mailto:<your contact e-mail>`.
+       The `VAPID_PUBLIC_KEY` line is for your notes only (the app works it out from the private key).
+    3. Keep the private key in your password manager (section 6a). Never change it later: a new key drops every
+       browser's subscription (users must press Enable again).
+    4. Deploy (the one deploy line). `health` then says `VAPID_PRIVATE_KEY set - subscriptions survive restarts`.
+  - `FCM_SERVICE_ACCOUNT_JSON_BASE64` (phone notifications for the Android app; optional, MA-2 in
+    docs/OPEN_QUESTIONS.md): the Firebase service account key file, base64 on one line (`base64 -w0 <file>` on your
+    own computer), pasted as the value. `FCM_PROJECT_ID` may stay empty (it is read from the key).
+    `FCM_SERVICE_ACCOUNT_FILE` is an alternative path inside the containers and needs a mount; the base64 value needs
+    none. Empty = nothing is sent to phones (an `info` line, never a failure). Phones get notifications only after the
+    `mobile_push` flag is also turned on in Admin → Controls.
+
 Then run `/opt/atp/deploy/atp.sh install`.
 
 ## 4a. Phase 0 flags (nothing to set)
@@ -295,7 +314,9 @@ stick kept away from the laptop), never in git, chat, e-mail or a screenshot:
 | `OFFSITE_S3_ENDPOINT`, `OFFSITE_S3_ACCESS_KEY`, `OFFSITE_S3_SECRET_KEY`, `OFFSITE_REMOTE` | how the new server reads R2. If they are lost, create a new bucket-scoped token (section 6 step 5) from your Cloudflare account |
 
 Everything else in `.env` can be set again from its provider's console (`METRICS_TOKEN`: a new random value;
-`ATP_TELEGRAM_BOT_TOKEN`: @BotFather; `GOOGLE_OAUTH_*`: Google Cloud console; `DOMAIN`, `ACME_EMAIL`: you know them).
+`ATP_TELEGRAM_BOT_TOKEN`: @BotFather; `GOOGLE_OAUTH_*`: Google Cloud console; `FCM_SERVICE_ACCOUNT_JSON_BASE64`: a new
+key from the Firebase console; `DOMAIN`, `ACME_EMAIL`: you know them). Keep `VAPID_PRIVATE_KEY` too: a new one works,
+but every browser must turn notifications on again.
 
 **Check your copy matches.** `health` prints `escrow: SECRETS_ENCRYPTION_KEY unchanged since <date>` and
 `escrow: BACKUP_ENCRYPTION_PASSPHRASE unchanged since <date>`. If you change the passphrase later, `health` says so

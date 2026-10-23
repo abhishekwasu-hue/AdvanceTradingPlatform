@@ -239,6 +239,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/alert-channels/{channel_type}"): "trader",
     ("PUT", "/api/alert-channels/{channel_type}"): "trader",
     ("POST", "/api/alert-channels/{channel_type}/test"): "trader",
+    # B8 (flag mobile_push): the caller's own phones for app notifications, inside the organisation's FCM channel
+    ("GET", "/api/mobile/devices"): "member: the caller's own phones only (another member's phones are never listed; no token is returned)",
+    ("POST", "/api/mobile/devices"): "self: registers the caller's own phone for notifications (a phone that changes hands is moved, never shared)",
+    ("PATCH", "/api/mobile/devices/{device_id}"): "self: the name and notification kinds of the caller's own phone; another member's id answers 404",
+    ("DELETE", "/api/mobile/devices/{device_id}"): "self: removes the caller's own phone; another member's id answers 404",
+    ("POST", "/api/mobile/devices/{device_id}/test"): "self: a test notification to the caller's own phone; another member's id answers 404",
     ("GET", "/api/alerts/dead-letters"): "member",
     ("POST", "/api/alerts/deliveries/{delivery_id}/retry"): "trader",
     ("GET", "/api/alerts/email-opt-outs"): "member",

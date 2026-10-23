@@ -10,6 +10,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  * - Baselines (NEW): `idea-library-v2-{1440,390,360}-{light,dark}.png`. Other baselines are untouched.
  * - Slice 2 baselines (NEW): `idea-library-adopt-v2-{1440,390}-{light,dark}.png` (a mapped idea's card, IDEA-1).
  * - Slice 3 (UPDATED): T7's scans and T5's scan note change the page; the adopt card is T5 on its real template A5.
+ * - Slice 4 (UPDATED): T6's channel scans and T7's head and shoulders scans change `idea-library-v2-*` (the adopt
+ *   baselines are untouched).
  * The library is the server's own payload (e2e/fixtures/ideas_v2.json, checked by backend/tests/test_idea_library.py);
  * the stages reply is what the server answers for T5's first scan. No real account, symbol or price anywhere.
  * After an intended change: `npx playwright test --project=phone e2e/idea-library-v2.e2e.ts --update-snapshots`.

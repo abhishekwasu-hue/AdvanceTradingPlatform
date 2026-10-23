@@ -244,6 +244,35 @@ def b5(b: "Bars", s: "_Side", p: Dict[str, Any], out: Dict[str, np.ndarray]) -> 
             _fill(out, t, top, t - line.a, line.at(t), "CHANNEL", move=top + line.edge)
 
 
+# ------------------------------------------------------------------------------------------- the trend-side channel line
+def channel_line(b: "Bars", s: "_Side", p: Dict[str, Any], edge_touches: int = 0) -> np.ndarray:
+    """Idea library IDEA-12 (ScreenQL ChannelLine): the trend-side line of the channel B5 reads, on EVERY bar, in the side's
+    orientation - the rising support line of a rising channel (up; the down side's mirrored prices give the falling
+    resistance of a falling channel). At bar t it is the channel b5 itself would read at t (`Lines.select` on the bars
+    before t: the newest second anchor, the touches, the angle and age filters, no close through the line from its first
+    anchor to the bar before t), projected to t; NaN when there is none, or when the channel already broke: a close beyond
+    its far edge before t (that is B5's channel breakout). `edge_touches` (0: not checked, the B5 channel as it is) also
+    asks for that many swing highs on the far edge (within the touch tolerance, from the first anchor to the last swing
+    known before t), so both lines have reactions. Only bars before t decide (no look-ahead); the line's value at t is its
+    projection, so the bar's own touch and close are read against it."""
+    sup = _lines(b, s, p, "support", edges=True)
+    out = np.full(b.n, np.nan)
+    if not len(sup.A):
+        return out
+    highs = swing_positions(s.h, sup.order, True) if edge_touches > 0 else np.zeros(0, dtype=int)
+    for t in range(int(sup.B.min()) + sup.order + 1, b.n):
+        line = sup.select(t)
+        if line is None or line.edge_broken < t:
+            continue
+        if edge_touches > 0:
+            known = highs[(highs >= line.a) & (highs <= t - 1 - sup.order)]
+            far = line.m * known + line.c0 + line.edge
+            if int((np.abs(s.h[known] - far) <= sup.tol * sup.rr[t]).sum()) < edge_touches:
+                continue
+        out[t] = line.at(t)
+    return out
+
+
 # ------------------------------------------------------------------------------------------------------------------ B6
 def _triangle(b: "Bars", s: "_Side", p: Dict[str, Any], out: Dict[str, np.ndarray], vol_ok: np.ndarray, buf: np.ndarray) -> None:
     res, sup = _lines(b, s, p, "resistance"), _lines(b, s, p, "support")
@@ -300,4 +329,4 @@ def b6(b: "Bars", s: "_Side", p: Dict[str, Any], out: Dict[str, np.ndarray]) -> 
 
 RULES = {"B5": b5, "B6": b6}
 
-__all__ = ["SCREENS", "RULES", "Line", "Lines", "swing_positions", "ref_ranges", "b5", "b6"]
+__all__ = ["SCREENS", "RULES", "Line", "Lines", "swing_positions", "ref_ranges", "b5", "b6", "channel_line"]

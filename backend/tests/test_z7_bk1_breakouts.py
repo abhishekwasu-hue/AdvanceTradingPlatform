@@ -81,7 +81,7 @@ def test_screenql_argument_defaults_are_the_parameter_defaults():
     bk3 = {"VCPBreakout", "VCPReady", "DonchianBreakout", "SqueezeBreakout", "MABreakout", "RegimeBreakout",
            "DonchianBreakoutRef", "MABreakoutRef", "VCPBreakoutRef"}   # tests/test_z7_bk3_breakouts.py (the Refs: templates step 4)
     bk4 = {"TrendlineBreakout", "PatternBreakout", "GapBreakout", "GapType", "RetestEntry", "LineBreakoutRef",
-           "RetestEntryRef", "PatternBreakoutRef", "GapBreakoutRef"}   # tests/test_z7_bk4_breakouts.py (RetestEntryRef: strategy templates step 3, R7)
+           "RetestEntryRef", "PatternBreakoutRef", "GapBreakoutRef", "ChannelLine"}   # ChannelLine: idea library IDEA-12   # tests/test_z7_bk4_breakouts.py (RetestEntryRef: strategy templates step 3, R7)
     assert set(want) | bk2 | bk3 | bk4 == set(BREAKOUT_FUNCTIONS)
     for fn, args in want.items():
         spec = {a.name: a for a in FUNCTIONS[fn].args}

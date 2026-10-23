@@ -102,6 +102,9 @@ CONFIRM_STATES: Tuple[str, ...] = ("any", "confirmed", "failed", "unconfirmed")
 PATTERN_V2_EXTRA_BARS = 12                                        # min_bars 3 + 12 = 15: ATR(14) has its first value on bar 14
 AMW_FLAG = "screenql_amw_functions"
 SWING_DEGREES: Tuple[int, ...] = (0, 1, 2, 3)     # D0 smallest .. D3 largest threshold (app/price_action/pa_settings.py)
+# IDEA-14: how many swings of its kind before the latest one PriorSwingHigh / PriorSwingLow read, as words (a structure
+# position, not a value: the idea library's scans carry no fixed number)
+PRIOR_SWING_BACK: Tuple[str, ...] = ("one", "two", "three")
 SWING_MIN_BARS = 100                              # ATR warm-up plus room for a few confirmed pivots
 # S5-A4: history by swing degree. ZigZag pivots are path-dependent: with less history the last pivot can differ from the
 # one a longer history gives. Measured on session-shaped samples (left-truncated vs full): D0 agrees from 100 bars, D1
@@ -338,6 +341,15 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the last CONFIRMED swing high: known only once price has come back from it by the degree's threshold"),
     Spec("SwingLow", "factor", NUM, "price", (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
          doc="the last CONFIRMED swing low: known only once price has come back from it by the degree's threshold"),
+    # idea library IDEA-14: the swing before the latest one (back one), or further back - a head and shoulders compares them
+    Spec("PriorSwingHigh", "factor", NUM, "price", (_DEGREE, Arg("back", STR, "one", False, choices=PRIOR_SWING_BACK)), cost=2.0,
+         min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         doc="the CONFIRMED swing high `back` swing highs before the last one (one: the one before SwingHigh; two: the one"
+             " before that), from the bar that confirmed the last one; missing until enough swing highs are confirmed"),
+    Spec("PriorSwingLow", "factor", NUM, "price", (_DEGREE, Arg("back", STR, "one", False, choices=PRIOR_SWING_BACK)), cost=2.0,
+         min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         doc="the CONFIRMED swing low `back` swing lows before the last one (one: the one before SwingLow; two: the one"
+             " before that), from the bar that confirmed the last one; missing until enough swing lows are confirmed"),
     Spec("SwingDirection", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, values=("UP", "DOWN"),
          doc="UP after a confirmed swing low, DOWN after a confirmed swing high (missing before the first: never matches)"),
     Spec("SwingZoneStrength", "factor", NUM, "index", (Arg("side", STR, choices=("low", "high")), _DEGREE), cost=4.0,
@@ -533,6 +545,14 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
          doc="B5: mode line - the first close above the falling resistance (up) / below the rising support (down) trendline with at least"
              " `touches` swings, by k ATR; mode channel - beyond the far edge of a rising (up) / falling (down) channel"),
+    # idea library IDEA-12: the trend-side line of the B5 channel on every bar (T6 reads a rejection at it)
+    Spec("ChannelLine", "factor", NUM, "price", (_SIDE, _bk("tl_min_touches", "touches", NUM),
+                                                 Arg("edge_touches", NUM, 0, False, bounds=(0.0, 10.0), literal_only=True)),
+         cost=4.0, min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
+         doc="B5 channel's trend-side line at this bar: the rising support of a rising channel (up) / the falling resistance of a"
+             " falling channel (down), with at least `touches` swings on it, read from the bars before this one and projected"
+             " here; missing when there is no channel or it already closed beyond its far edge. edge_touches (0: not"
+             " checked) also needs that many swings on the far edge"),
     Spec("PatternBreakout", "filter", BOOL, None, (_SIDE, _bk("pattern", "pattern", STR), _bk("vol_mult", "v", NUM), _K), cost=4.0,
          min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
          doc="B6: a close above (up) / below (down) a flag, a pennant or a converging triangle by k ATR on volume >= v x average"),

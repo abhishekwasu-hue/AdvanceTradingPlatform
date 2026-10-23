@@ -3531,6 +3531,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
 
 
+## 23 Oct - Idea library slice 4: T6 channel scans, T7 head and shoulders (behind ui_v2 + idea_library)
+
+- Branch `claude/idea-library-4`. No migration, no new flag, no new route.
+- New registry functions (closed bars, causal, no look-ahead): `ChannelLine(side, touches, edge_touches)` - the B5
+  channel's trend-side line on every bar, reusing `breakouts/lines.py` (`Lines.select`, the channel edge), flags as
+  TrendlineBreakout; `PriorSwingHigh` / `PriorSwingLow(degree, back)` - the swings before the latest one.
+- T6 "Try as a scan" (rising / falling channel: a rejection at the trend-side line; settings line touches and far-line
+  touches); T7 adds the head and shoulders right shoulder at an area and the neckline retest (setting: retest within
+  bars). The older scans and functions are byte-identical (pinned). Adopt re-check: no new honest match (IDEA-10).
+- Tests: `tests/test_idea_library_channel_swings.py` (B5 parity, hand-built channel, breaks, truncation, mirror, brute
+  force swings, T6 / T7 must fire / must not fire, pins), registry coverage updates (s1b, bk1, bk4, Z10-a, TX2), vitest
+  `src/ideas/ideas.test.tsx`, e2e `idea-library-v2-*` baselines updated (the adopt baselines unchanged); fixture
+  `e2e/fixtures/ideas_v2.json` regenerated and its pin updated. Questions IDEA-15..17.
+
 ## 23 Oct - Production readiness B9: the private reader port plan (plan only)
 
 - Branch `claude/readiness-b9-private-plan` (from main). **Docs only, no migration**, no code, no flag.

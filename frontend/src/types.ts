@@ -201,6 +201,23 @@ export interface ChartRunResponse {
   last_signal: Signal | null;
 }
 
+/** Owner order 23 Oct: POST /api/backtest/bars - the bars and, in plain words, where they came from. */
+export interface BacktestBarsResponse {
+  symbol: string;
+  timeframe: string;
+  /** "broker:<name>" or "lake:daily" - the label recorded on the run. */
+  source: string;
+  kind: "broker" | "stored";
+  /** Read after "Prices from" (no dates). */
+  words: string;
+  from_day: string | null;
+  to_day: string | null;
+  bars: number;
+  /** "Prices from ..., 2 Jan 2025 to 22 Oct 2026." */
+  line: string;
+  candles: OHLCVBar[];
+}
+
 export interface BacktestResult {
   strategy_id: string;
   symbol: string;

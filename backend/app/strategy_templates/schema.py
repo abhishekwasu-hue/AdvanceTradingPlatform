@@ -337,9 +337,9 @@ class Template(_Strict):
                 raise ValueError(f"{what}: a nested switch must choose by another setting")
         if len({c.by for c in self.confirmations}) != len(self.confirmations):
             raise ValueError("each confirmation needs its own setting")
-        for c in self.confirmations:
-            if c.variants.get(str(by_key[c.by].default)) is not None:
-                raise ValueError(f"confirmation {c.by}: the default choice must be no confirmation (off by default)")
+        for conf in self.confirmations:
+            if conf.variants.get(str(by_key[conf.by].default)) is not None:
+                raise ValueError(f"confirmation {conf.by}: the default choice must be no confirmation (off by default)")
             if self.trigger is None:
                 raise ValueError("a confirmation needs a trigger")
         setups = [s_ for s_ in leaves(self.setup) if isinstance(s_, Setup)]

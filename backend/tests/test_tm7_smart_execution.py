@@ -418,7 +418,24 @@ def test_the_settlement_warning_on_positions_and_once_a_day_as_a_notification(mo
     t = _smart(_org_tenant("se-settle"))
     _price(monkeypatch, 2950.0)
     flagged = _stock_option(t, strike=2900.0, right="CE", days=2)
-    _stock_option(t, strike=3500.0, right="CE", days=2)                  # far out of the money: not flagged
+    other = _stock_option(t, strike=3500.0, right="CE", days=2)          # far out of the money: not flagged
+    try:
+        _settlement_checks(t, flagged)
+    finally:
+        _close_rows([flagged, other])                                    # the database is shared: leave no open rows behind
+
+
+def _close_rows(ids):
+    async def go():
+        async with _session_factory() as session:
+            for trade_id in ids:
+                row = await session.get(TradeRecord, trade_id)
+                row.exit_time, row.exit_price, row.exit_reason = datetime.now(timezone.utc), 20.0, "test cleanup"
+            await session.commit()
+    _run(go())
+
+
+def _settlement_checks(t, flagged):
     out = client.get("/api/paper/fno/settlement", headers=t["headers"])
     assert out.status_code == 200, out.text
     body = out.json()

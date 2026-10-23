@@ -7,6 +7,7 @@ import { openAdmin, type Theme } from "./adminMocks";
  * asks the server for nothing of the console.
  * - Baselines (NEW): `admin-<system|controls|users|testing|support>-v2-{1440,390}-{light,dark}.png` and
  *   `admin-diagnostics-v2-{1440,390}-{light,dark}.png`. Other baselines are untouched.
+ *   MO3-A1 (23 Oct): `admin-support-v2-*` updated - the "View as this person" button and the "Recent views as a user" card.
  * Every reply is made up (e2e/adminMocks.ts). After an intended change:
  * `npx playwright test --project=phone e2e/admin-console-v2.e2e.ts --update-snapshots`.
  */

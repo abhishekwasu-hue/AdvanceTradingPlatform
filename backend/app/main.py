@@ -106,6 +106,8 @@ from app.alerts.routes import router as alerts_router
 from app.team.routes import router as team_router
 from app.admin.routes import router as admin_router
 from app.admin.console import router as admin_console_router
+from app.admin.view_as_routes import admin_router as view_as_admin_router, router as view_as_router
+from app.auth.view_as_middleware import ViewSessionReadOnly
 from app.exports.routes import router as exports_router
 from app.contract_notes.routes import router as contract_notes_router
 from app.observability.middleware import ObservabilityMiddleware
@@ -229,6 +231,9 @@ class _LimitRequestBody:
 
 
 app.add_middleware(_LimitRequestBody)
+# MO3-A1: a read-only "View as user" token can never write - refused here, inside the /api/v1 rewrite (it sees the
+# routers' paths) and before any route (app/auth/view_as_middleware.py).
+app.add_middleware(ViewSessionReadOnly)
 
 
 # Outermost: request id, /api/v1 alias, HTTP metrics (Phase E1/E2). Added before CORS so CORS
@@ -274,6 +279,8 @@ app.include_router(alerts_router)
 app.include_router(team_router)
 app.include_router(admin_router)
 app.include_router(admin_console_router)  # MO3 (a): the admin console's read-only sections (SUPER_ADMIN + two-factor)
+app.include_router(view_as_admin_router)  # MO3-A1: the admin's read-only "View as user" (SUPER_ADMIN + two-factor)
+app.include_router(view_as_router)        # MO3-A1: the view's banner / End, and the person's own record of views
 app.include_router(exports_router)
 app.include_router(contract_notes_router)
 app.include_router(observability_router)

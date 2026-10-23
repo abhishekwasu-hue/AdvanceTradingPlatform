@@ -177,6 +177,51 @@ class UserSessionRecord(Base):
     mfa_verified_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
 
 
+class ViewSessionRecord(Base):
+    """MO3-A1: one read-only "View as user" session a SUPER_ADMIN opened from the admin console's Support section.
+
+    The admin names the person (`user_id`, in `tenant_id`) and a reason; the server hands back a short-lived access token
+    whose SHA-256 is the only thing stored (`token_hash`). That token reads as the person and can never write: every
+    request that is not a read is refused with 403 at one chokepoint (app/auth/view_as_middleware.py). The session is
+    bound to the admin's own two-factor-verified login session (`admin_session_id`): it ends when that one does, when the
+    admin ends it, or at `expires_at`. Every request is recorded in `view_session_requests`; start and end are on the
+    hash-chained audit trail of both accounts, and the person sees the session in Settings > Account & plan."""
+
+    __tablename__ = "view_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    # The person whose account is viewed.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    admin_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    admin_session_id: Mapped[int | None] = mapped_column(ForeignKey("user_sessions.id", ondelete="SET NULL"), nullable=True)
+    reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    ended_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # "ended by support", "expired", "a new view started", "support signed out", ...
+    end_reason: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    refused_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+class ViewSessionRequestRecord(Base):
+    """MO3-A1: every request a "View as user" session made - the method, the path (never the query string or a body),
+    the answer's status and whether the read-only chokepoint refused it."""
+
+    __tablename__ = "view_session_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    view_session_id: Mapped[int] = mapped_column(ForeignKey("view_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    path: Mapped[str] = mapped_column(String(300), nullable=False)
+    status: Mapped[int] = mapped_column(Integer, nullable=False)
+    refused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class TenantInviteRecord(Base):
     """An owner's invitation for someone to join their tenant with a given role. Only a SHA-256 of
     the one-time token is stored (the raw token lives in the invite link, shown to the owner once),

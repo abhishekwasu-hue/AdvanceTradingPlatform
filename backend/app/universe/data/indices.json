@@ -1,5 +1,5 @@
 {
- "_comment": "Screener U1-b: the index catalogue. Constituent file URLs are the index provider's published downloads; check each against the provider's site and docs/DATA_SOURCES.md before UNIVERSE_SYNC_ENABLED. No index size is stored: the quality gate compares a file with the members already held. WL1: `master_names` are other spellings of the index in the broker instrument masters (the system watchlists map an index to the master by its upstox key, its name, its candle symbol or one of these; an index that maps to nothing is listed for the admin). The THEMATIC and STRATEGY file names were added without a download check (the build sandbox cannot reach the provider): confirm each before switching the job on.",
+ "_comment": "Screener U1-b: the index catalogue. Constituent file URLs are the index provider's published downloads; check each against the provider's site and docs/DATA_SOURCES.md before UNIVERSE_SYNC_ENABLED. No index size is stored: the quality gate compares a file with the members already held. WL1: `master_names` are other spellings of the index in the broker instrument masters (the system watchlists map an index to the master by its upstox key, its name, its candle symbol or one of these; an index that maps to nothing is listed for the admin). WL1-5 (23 Oct): every file name was cross-checked against published code that downloads these files (OPEN_QUESTIONS WL1-5 lists the sources); `atp.sh lists-sync` prints the HTTP status of each file from the server before it syncs, so a wrong name shows there and is simply not fetched.",
  "indices": [
   {
    "index_code": "NIFTY50",
@@ -258,7 +258,7 @@
    "index_code": "NIFTYCHEMICALS",
    "name": "NIFTY CHEMICALS",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftychemicals_list.csv",
+   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyChemicals_list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -360,7 +360,7 @@
    "index_code": "NIFTY50VALUE20",
    "name": "NIFTY50 VALUE 20",
    "family": "STRATEGY",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_Nifty50Value20list.csv",
+   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_Nifty50_Value20.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null

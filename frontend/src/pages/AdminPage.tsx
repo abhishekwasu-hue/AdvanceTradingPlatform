@@ -7,6 +7,7 @@ import BetaRolloutCard from "../components/BetaRolloutCard";
 import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
 import FeatureFlagsCard from "../admin/FeatureFlagsCard";
+import TraderPackCard from "../admin/TraderPackCard";
 import AiProviderCard from "../components/AiProviderCard";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import HolidaysCard from "../components/HolidaysCard";
@@ -143,6 +144,9 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
           </div>
         )}
       </Card>}
+
+      {/* Owner decision 23 Oct: "Enable trader features" - the v2 console (ui_v2) only, Controls section. */}
+      {section === "controls" && <TraderPackCard onChanged={() => { api.adminFlags().then(setFlags).catch(() => {}); refreshFeatures(); }} />}
 
       {show("controls") && <Card title="Platform controls">
         <div className="grid lg:grid-cols-2 gap-4 text-xs">

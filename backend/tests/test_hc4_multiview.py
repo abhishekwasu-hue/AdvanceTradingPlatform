@@ -212,7 +212,8 @@ def test_cue_and_sentiment_strings_stay_out_of_the_lines_unless_in_the_closed_vo
     assert macro.untrusted and not any("cautious" in line for line in macro.lines)
     assert "Global markets: SP500 -0.8%." in macro.lines and not any("IGNORE" in line for line in macro.lines)   # known markets only
     risk_on = mv.macro_view(ToolResult(True, {**SNAPSHOT.data, "sentiment": {"label": "RISK_ON", "score": 0.4}}, AS_OF, "market_memory"))
-    assert any("RISK_ON" in line for line in risk_on.lines)
+    assert any("Market sentiment read: risk-on." == line for line in risk_on.lines)   # plain words, not the label
+    assert not any("RISK_ON" in line for line in risk_on.lines)
 
 
 def test_one_time_budget_covers_the_tool_reads(fake_tools, monkeypatch, no_model):

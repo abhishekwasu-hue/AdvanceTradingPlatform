@@ -37,15 +37,15 @@ def _state(base: Dict[str, Any], state: str, message: str) -> Dict[str, Any]:
     return {**base, "state": state, "message": message, "charts": [], "facts": None}
 
 
-async def _session_data(session: AsyncSession, underlying: str, chain_expiry: str, now: datetime):
+async def _session_data(session: AsyncSession, tenant_id: int, underlying: str, chain_expiry: str, now: datetime):
     """(today's stored readings, the baselines when they belong to this expiry, the earlier sessions' closes)."""
     today = now.astimezone(IST).date()
-    slots = await snapshots.day_chains(session, underlying, today)
+    slots = await snapshots.day_chains(session, underlying, today, tenant_id=tenant_id)
     readings = [charts.Reading(s.captured_at, s.chain, s.future_price, s.future_oi) for s in slots]
     baselines: Dict[float, Any] = {}
     if slots and analyses._same_expiry(slots[0].chain.expiry, chain_expiry):
-        baselines = await snapshots.baselines(session, underlying, today)
-    closes = await snapshots.recent_session_closes(session, underlying, today, EARLIER_SESSIONS)
+        baselines = await snapshots.baselines(session, underlying, today, tenant_id=tenant_id)
+    closes = await snapshots.recent_session_closes(session, underlying, today, EARLIER_SESSIONS, tenant_id=tenant_id)
     earlier = [charts.EarlierSession(c.day, c.last.captured_at, analyses.clean_spot(c.last.chain), c.prices) for c in closes]
     return readings, baselines, earlier
 
@@ -84,7 +84,7 @@ async def option_chain_charts(symbol: str = Query(..., min_length=1, max_length=
     baselines: Dict[float, Any] = {}
     earlier: List[charts.EarlierSession] = []
     if not byob:
-        readings, baselines, earlier = await _session_data(session, underlying, chain.expiry, now)
+        readings, baselines, earlier = await _session_data(session, user.tenant_id, underlying, chain.expiry, now)
     settings = await snapshots.settings_for(session, user.tenant_id, underlying)
     body = charts.compute(chain, readings, now, each_side=strikes, interval=interval, baselines=baselines, earlier=earlier,
                           settings=settings, collect_span=config.OI_BANNER_COLLECT_SPAN, history_off=byob)

@@ -1,7 +1,7 @@
 """TM94-3: the Phase W recorder's rows (option_chain_snapshots) belong to the organisation whose own session read them
 
 Revision ID: 3c5e7a9b1d24
-Revises: e8a0c2d4f6b9 (main's head on 23 Oct; #465 adds 250d796123b7 on the same parent - whichever merges second is
+Revises: 250d796123b7 (main's head on 23 Oct; #465 adds 250d796123b7 on the same parent - whichever merges second is
          re-chained onto the other at merge time)
 Create Date: 2026-10-23 21:00:00
 
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = '3c5e7a9b1d24'
-down_revision: Union[str, Sequence[str], None] = 'e8a0c2d4f6b9'
+down_revision: Union[str, Sequence[str], None] = '250d796123b7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 ROLLBACK_SAFE = True

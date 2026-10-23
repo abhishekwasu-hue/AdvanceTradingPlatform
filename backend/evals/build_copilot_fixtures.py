@@ -169,6 +169,33 @@ def build() -> Dict[str, Any]:
     risk = {"capital": 200000.0, "risk_per_trade_pct": 1.0, "max_daily_loss_pct": 3.0, "max_trades_per_day": 5, "max_open_positions": 3,
             "max_consecutive_losses": 3, "min_risk_reward": 1.5, "lot_size": 75, "max_portfolio_risk_pct": 6.0}
     failed = {"ok": False, "error": "no lake bars for this instrument and timeframe in the window"}
+    # Owner order 23 Oct ("its tools are wired"): market memory, the news feed and the screener for jobs 1, 4, 9 and 10.
+    memory = {"symbols": [], "cues": [{"symbol": "INDIA VIX", "last_price": 12.4, "change_pct": -3.1, "bias": None, "captured_at": AS_OF}],
+              "globals": [{"symbol": "SP500", "change_pct": 0.42, "captured_at": AS_OF}, {"symbol": "NIKKEI", "change_pct": -0.3, "captured_at": AS_OF}],
+              "sentiment": {"label": "RISK_ON", "score": 0.3, "as_of": AS_OF}, "newest": AS_OF, "updated_at": AS_OF}
+    news = [{"id": 1, "headline": "Synthetic headline one about the index", "source": "eval", "published_at": AS_OF, "symbols": ["NIFTY"],
+             "severity": 4, "verified": False},
+            {"id": 2, "headline": "Synthetic headline two about a bank", "source": "eval", "published_at": AS_OF, "symbols": ["BANKNIFTY", "SBIN"],
+             "severity": 2, "verified": False},
+            {"id": 3, "headline": "Synthetic headline three", "source": "eval", "published_at": AS_OF, "symbols": ["NIFTY"], "severity": 1,
+             "verified": True}]
+    screen_text = 'Trend() == "UPTREND" AND NearZone("demand")'
+    built = {"ok": True, "text": screen_text, "stages": ['Trend() == "UPTREND"', 'NearZone("demand")'], "problems": [], "base_tf": "1d",
+             "plan": {"lookback": 300, "cost": 2.0, "cross_sectional": False}}
+    universe = {"list": "My swing list", "own": True, "symbols": ["SBIN", "INFY", "TCS", "ITC"], "count": 4, "left_out": 0}
+    ran = {"run_id": 7, "text": screen_text, "base_tf": "1d", "matched": ["SBIN", "ITC"], "scanned": 4, "not_evaluated": {},
+           "stages": [{"text": 'Trend() == "UPTREND"', "survivors": 3}, {"text": 'NearZone("demand")', "survivors": 2}],
+           "data_source": "lake", "disclaimer": "Matches are filters passed, not advice."}
+    explained = {"text": screen_text, "data_source": "lake", "note": "Each condition's numbers are the screen engine's own.",
+                 "symbols": {"SBIN": {"matched": True, "bar_close": "2026-10-20", "stages": [{"text": 'Trend() == "UPTREND"', "passed": True},
+                                                                                           {"text": 'NearZone("demand")', "passed": True}],
+                                      "conditions": []},
+                             "ITC": {"matched": True, "bar_close": "2026-10-20", "stages": [{"text": 'Trend() == "UPTREND"', "passed": True},
+                                                                                          {"text": 'NearZone("demand")', "passed": True}],
+                                     "conditions": []}}}
+    proposed = {"created": True, "proposal_id": 11, "action": "CREATE_ALERT", "status": "PROPOSED",
+                "note": "The person who asked must approve or reject this under AI Copilot; no alert exists until then."}
+    off = {"ok": False, "error": "get_news is not enabled for this organisation (flag ai_agent)"}
     return {
         "_note": "Synthetic, hand-made tool results for the Copilot chat evals (backend/evals/build_copilot_fixtures.py). Not market data.",
         "default": {
@@ -185,6 +212,13 @@ def build() -> Dict[str, Any]:
             # CP6-15: the choppy window is ten sessions - before the fix it had "too few trades" only because the losses-in-a-row
             # pause never ended; now each pause ends at the next session, as on paper
             "backtest_draft:SBIN": ok(_draft_test("SBIN", 5.0, 10.0, risk, days_count=10), "broker:paper"),
+            "get_market_snapshot": ok(memory, "market_memory"),
+            "get_news": ok(news, "news_feed"),
+            "build_screen": ok(built, "screenql_validator"),
+            "get_screen_universe": ok(universe, "watchlists"),
+            "run_screen": ok(ran, "screener_run"),
+            "explain_results": ok(explained, "screen_evidence"),
+            "propose_alert": ok(proposed, "ai_actions"),
         },
         "no_data": {
             "get_market_context": {"ok": False, "error": "get_market_context is not enabled for this organisation (flag context_panel)"},
@@ -198,6 +232,10 @@ def build() -> Dict[str, Any]:
             "get_weekly_review": {"ok": False, "error": "get_weekly_review is not enabled for this organisation (flag discipline_engine)"},
             "backtest_draft:NIFTY": {"ok": False, "error": "No broker session with a valid token. Add the broker's API key on the Broker page "
                                                            "(it is stored encrypted, never in the environment) and log in to it, then try again."},
+            "get_market_snapshot": {"ok": False, "error": "get_market_snapshot is not enabled for this organisation (flag ai_agent)"},
+            "get_news": off,
+            "build_screen": {"ok": False, "error": "build_screen is not enabled for this organisation (flag screener_copilot)"},
+            "get_screen_universe": {"ok": False, "error": "you have no watchlist yet and the NIFTY 50 list is not loaded"},
         },
     }
 

@@ -11,7 +11,7 @@ import chatSource from "./CopilotChatV2.tsx?raw";
 import { ChatView, type ChatViewProps } from "./CopilotChatV2";
 import pageSource from "./CopilotPageV2.tsx?raw";
 import {
-  cleanQuestion, composerPlacement, jobCards, marketLineText, needsKey, settled, stampText, withTurn, workedLine,
+  cleanQuestion, composerPlacement, jobCards, marketLineText, needsKey, notSetUpLine, settled, stampText, toolsUsedLine, withTurn, workedLine,
   type ChatAnswer, type ChatHome, type Turn,
 } from "./model";
 
@@ -169,6 +169,22 @@ describe("the chat-first Copilot page", () => {
     expect(workedLine(ANSWER.worked[1])).toContain("no answer");
     expect(stampText(null)).toBeNull();
     expect(stampText("2026-10-21T03:30:00+00:00")).toContain("IST");
+  });
+
+  it("lists the tools used under How I worked this out, says not set up plainly, and names the flag only to the admin", () => {
+    const tooled: ChatAnswer = {
+      ...ANSWER, job: "views", tools_used: ["Chart structure", "News feed"],
+      worked: [...ANSWER.worked, { tool: "get_market_snapshot", label: "Market memory", ok: false, as_of: null, source: "get_market_snapshot",
+                                   numbers: [], note: "market memory in the Copilot is not set up yet", args: {}, ran: false }],
+    };
+    const member = text(render(<AnswerV2 answer={tooled} />));
+    expect(member).toContain("Tools used: Chart structure, News feed");
+    expect(member).toContain("Market memory: not set up yet");
+    expect(member).not.toContain("flag");
+    expect(toolsUsedLine({ tools_used: [] })).toBeNull();
+    const admin = text(render(<AnswerV2 answer={{ ...tooled, diagnostics: { not_set_up: [{ what: "Market memory", flag: "ai_agent" }] } }} />));
+    expect(admin).toContain("Admin only - not set up here: Market memory: flag ai_agent");
+    expect(notSetUpLine({})).toBeNull();
   });
 
   it("uses tokens only, never a fixed pixel text size, and no order action", () => {

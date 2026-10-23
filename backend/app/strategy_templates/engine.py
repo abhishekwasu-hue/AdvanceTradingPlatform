@@ -78,6 +78,9 @@ class SignalSeries:
     warmup_bars: int = 0
     # Section 5 (exits as settings): extra price series the caller asked for (the WAVE_PROJECTION target), on every bar
     extras: Dict[str, np.ndarray] = field(default_factory=dict)
+    # Signals day one: the setup instances still armed after the last bar (side -> its setup bar position), i.e. waiting for
+    # their trigger. Read only to DESCRIBE the current state; it never changes a signal.
+    armed_end: Dict[str, int] = field(default_factory=dict)
 
     def instance_id(self, t: int) -> Optional[str]:
         """The setup instance of the signal on bar t: side and the setup bar's time (stable across fetch windows)."""
@@ -259,7 +262,9 @@ def compute(recipe: Recipe, frames: Dict[str, pd.DataFrame], symbol: str = "S", 
     for name, part in (extras or {}).items():
         ev.params = part.params
         extra[name] = _num(ev.ev(part.ast, tf), index)
-    return SignalSeries(index, direction, invalidation, setup_bar, reason, exits["long"], exits["short"], evidence, warmup, extra)
+    armed_end: Dict[str, int] = {str(side): int(armed[side]) for side in sides if armed[side] >= 0}
+    return SignalSeries(index, direction, invalidation, setup_bar, reason, exits["long"], exits["short"], evidence, warmup, extra,
+                        armed_end=armed_end)
 
 
 def _num_or_category(value: Any, index: pd.Index) -> np.ndarray:

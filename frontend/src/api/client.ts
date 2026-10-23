@@ -285,7 +285,28 @@ async function rawRequest(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
+/**
+ * A4: the step-up freshness window. A SUPER_ADMIN write whose two-factor check is older than the server's window answers
+ * 403 with `X-Step-Up: mfa`. While a handler is registered (StepUpHost, for platform administrators), `request` asks it
+ * for the authenticator code and repeats the request once; without one the caller gets the error as before.
+ */
+export type StepUpHandler = (reason: string) => Promise<boolean>;
+let stepUpHandler: StepUpHandler | null = null;
+
+export function setStepUpHandler(handler: StepUpHandler | null): void {
+  stepUpHandler = handler;
+}
+
+/** The refusal asks for a code (not "enable two-factor first", which a code cannot fix). */
+function asksForCode(response: Response, message: string): boolean {
+  return response.status === 403 && response.headers.get("x-step-up") === "mfa" && !message.toLowerCase().includes("enable it");
+}
+
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestOnce<T>(path, init, false);
+}
+
+async function requestOnce<T>(path: string, init: RequestInit | undefined, steppedUp: boolean): Promise<T> {
   let response = await rawRequest(path, init);
   if (response.status === 401 && currentView()) {
     // MO3-A1: the view ended on the server (expired, ended elsewhere): never retry as the admin under the person's page.
@@ -312,6 +333,10 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     // Settings redesign A1: an AI call that needs a key answers `ai_not_connected` - the shell opens the Connect AI panel.
     if (response.status === 409 && isNotConnected(error.body)) window.dispatchEvent(new Event(CONNECT_AI_EVENT));
+    const handler = stepUpHandler;
+    if (handler && !steppedUp && !path.startsWith("/auth/") && asksForCode(response, error.message) && (await handler(error.message))) {
+      return requestOnce<T>(path, init, true);
+    }
     throw error;
   }
   if (response.status === 204) return undefined as T;
@@ -523,6 +548,9 @@ export const api = {
     request<{ reset_url: string; expires_at: string; delivered_by_email: boolean }>(`/team/members/${id}/reset-link`, { method: "POST" }),
 
   logoutEverywhere: () => request<void>("/auth/logout-all", { method: "POST" }),
+
+  /** A4: ends every other session of this account; this device stays signed in. */
+  logoutOtherDevices: () => request<{ signed_out: number }>("/auth/logout-others", { method: "POST" }),
 
   listSessions: () => request<SessionInfo[]>("/auth/sessions"),
 

@@ -175,6 +175,7 @@ from app.beta.routes import admin_router as beta_admin_router, feedback_router, 
 from app.journal.routes import router as journal_router
 from app.legal.routes import router as legal_router
 from app.support.routes import router as support_router
+from app.support.desk_routes import admin_router as support_desk_admin_router, router as support_desk_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 from app.platform.deployment_phase import on_startup as deployment_phase_startup
 
@@ -242,6 +243,47 @@ app.add_middleware(_LimitRequestBody)
 app.add_middleware(ViewSessionReadOnly)
 
 
+# A4: the API's own security headers, so they hold even where no Caddy stands in front (the IP edge, a dev host, the CI
+# stack). Caddy's edge values replace these in production (deploy/Caddyfile); a header a route set itself is kept.
+API_SECURITY_HEADERS = (
+    (b"x-content-type-options", b"nosniff"),
+    (b"x-frame-options", b"DENY"),
+    (b"referrer-policy", b"no-referrer"),
+    # JSON needs nothing; the one HTML page (the e-mail unsubscribe form) needs its inline style and its own form target.
+    (b"content-security-policy", b"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; "
+                                 b"base-uri 'none'"),
+    (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
+)
+HSTS_HEADER = (b"strict-transport-security", b"max-age=31536000; includeSubDomains")
+
+
+class _SecurityHeaders:
+    """Pure ASGI (LD-7): adds the headers to every `/api` response; HSTS only over HTTPS (the proxy's X-Forwarded-Proto,
+    trusted only from FORWARDED_ALLOW_IPS)."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or not str(scope.get("path", "")).startswith("/api"):
+            await self.app(scope, receive, send)
+            return
+        extra = API_SECURITY_HEADERS + ((HSTS_HEADER,) if scope.get("scheme") == "https" else ())
+
+        async def _send(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers") or [])
+                present = {name.lower() for name, _ in headers}
+                headers.extend((name, value) for name, value in extra if name not in present)
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, _send)
+
+
+app.add_middleware(_SecurityHeaders)
+
+
 # Outermost: request id, /api/v1 alias, HTTP metrics (Phase E1/E2). Added before CORS so CORS
 # wraps it and its headers are still applied to the rewritten request.
 app.add_middleware(ObservabilityMiddleware)
@@ -252,7 +294,8 @@ app.add_middleware(
     allow_headers=["*"],
     # OC1: a cross-origin page (the Android app) may read these response headers - the request id support asks for, and
     # the data tier of a refused market-data read ("C": not live on this plan).
-    expose_headers=["X-Request-ID", "X-Data-Tier"],
+    # A4: X-Step-Up too, so the app can ask for the authenticator code when an admin change needs a fresh check.
+    expose_headers=["X-Request-ID", "X-Data-Tier", "X-Step-Up"],
 )
 
 
@@ -379,6 +422,8 @@ app.include_router(paper_fno_insights_router)  # F&O 8b slice 1: risk budget + s
 app.include_router(paper_fno_journal_router)  # F&O 8b slice 3: the auto journal drafts + the signal link (ui_v2 + PAPER account)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
 app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)
+app.include_router(support_desk_router)    # C12: Help centre, Report a problem, contact link (ui_v2 + help_centre, off by default)
+app.include_router(support_desk_admin_router)   # C12: the support tickets and desk settings (SUPER_ADMIN + two-factor)
 
 _default_risk_config = RiskConfig()
 

@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_role
+from app.auth.dependencies import get_current_user, require_mfa_session, require_role
 from app.core.enums import UserRole
 from app.db.models import MarketHolidayRecord, User
 from app.db.session import get_session
@@ -44,7 +44,8 @@ async def list_market_holidays(
     return [MarketHolidayResponse(id=r.id, exchange=r.exchange, holiday_date=r.holiday_date, description=r.description) for r in rows]
 
 
-@router.post("", response_model=MarketHolidayResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=MarketHolidayResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_mfa_session)])   # A4 / R5 b: two-factor like every admin write
 async def add_market_holiday(
     request: MarketHolidayCreateRequest,
     user: User = Depends(require_role(UserRole.SUPER_ADMIN)), session: AsyncSession = Depends(get_session),
@@ -63,7 +64,7 @@ async def add_market_holiday(
     return MarketHolidayResponse(id=record.id, exchange=record.exchange, holiday_date=record.holiday_date, description=record.description)
 
 
-@router.delete("/{holiday_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{holiday_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_mfa_session)])
 async def remove_market_holiday(
     holiday_id: int, user: User = Depends(require_role(UserRole.SUPER_ADMIN)), session: AsyncSession = Depends(get_session),
 ) -> None:

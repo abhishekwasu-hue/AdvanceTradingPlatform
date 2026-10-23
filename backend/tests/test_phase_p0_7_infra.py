@@ -92,7 +92,8 @@ def test_ci_runs_the_static_gates_and_pins_every_action_to_a_sha():
     assert lint["permissions"] == {"contents": "read", "pull-requests": "read"}
     # The gates are a separate job: the test job is untouched and both run in parallel.
     assert "needs" not in lint and "needs" not in ci["jobs"]["backend"]
-    assert ci["jobs"]["container-scan"]["needs"] == ["backend", "frontend"]
+    # A4: the image scan has no `needs`, so it reports even while a test job is red.
+    assert "needs" not in ci["jobs"]["container-scan"]
 
 
 def test_lint_configs_exist_and_say_what_they_gate():

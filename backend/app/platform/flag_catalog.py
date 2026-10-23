@@ -91,6 +91,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "alerts_stale_guard": FlagInfo("No alert is sent on old data", "data", "nothing visible", (), "", "behind_the_scenes"),
     "alerts_reliable_outbox": FlagInfo("Alerts never sent twice, retried if lost", "data", "nothing visible", (), "", "behind_the_scenes"),
     "support_bot": FlagInfo("How-to help bot", "ai", "Help button", (), "help pages", "unfinished"),
+    "help_centre": FlagInfo("Help centre, Report a problem and the support contact link", "platform", "Help centre and Report a problem under Settings › Help & tips", ("ui_v2",), "the support number or e-mail in the admin console for the contact link", "unfinished"),
     "legal_pages": FlagInfo("Privacy, Terms, Risk disclosure and acceptance", "platform", "legal pages, sign-up checkboxes", (), "placeholders filled", "decision"),
     "screener_breakouts": FlagInfo("Breakout screens, set 1", "screens", "screens in the gallery", ("screener_v2",), "", "ready"),
     "screener_breakouts_bk3": FlagInfo("Breakout screens, set 2", "screens", "screens", ("screener_breakouts",), "", "ready"),

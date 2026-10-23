@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, useLocation } from "react-router";
 import AlertChannelsCard from "../components/AlertChannelsCard";
 import AiProviderCard from "../components/AiProviderCard";
@@ -30,6 +30,9 @@ import VisionReviewSwitchesV2 from "./VisionReviewSwitchesV2";
  * are today's components, moved here unchanged; `#<id>` in the address (from the Settings search, or an old link)
  * opens the fold that holds it and scrolls to it.
  */
+
+// C12: the Help centre (flag `help_centre`), its own chunk - the page tips and the words load only with it.
+const HelpCentreV2 = lazy(() => import("../support/HelpCentreV2"));
 
 const TITLE: Record<SettingsSectionId, string> = {
   ai: "AI", alerts: "Alerts", appearance: "Appearance", help: "Help & tips", advanced: "Advanced",
@@ -115,8 +118,10 @@ function AlertsSection() {
 
 export function HelpSection() {
   const { user } = useAuth();
+  const helpCentre = useFeatures().on("help_centre");
   return (
-    <div data-settings-help>
+    <div data-settings-help className="space-y-space-4">
+      {helpCentre && <Suspense fallback={null}><HelpCentreV2 /></Suspense>}
       <Card title="Help">
         <div className="space-y-4">
           {user?.role !== "VIEWER" && (

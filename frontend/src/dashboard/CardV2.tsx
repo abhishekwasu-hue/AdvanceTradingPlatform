@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { useId, type ReactNode } from "react";
 import { Link } from "react-router";
+import { chipClass } from "../ui/Chip";
 
 /**
  * UI2-2 (UI v2 proposal §8 "Cards and numbers"): the one v2 card - surface-1, a 1 px subtle outline, the panel radius,
@@ -70,12 +71,13 @@ export function LoadingRowsV2({ rows = 2 }: { rows?: number }) {
 }
 
 /** A small rounded label: Paper (outline), Live (filled with the text colour, §8), Waiting (brand), Taken (neutral). */
+// Chart + colour order Part 3: the one `Chip` (src/ui/Chip.tsx) under the old name - the same look as before.
 export function ChipV2({ children, kind = "outline" }: { children: ReactNode; kind?: "outline" | "solid" | "brand" | "warn" }) {
-  const cls = kind === "solid" ? "bg-fg text-surface-1"
-    : kind === "brand" ? "bg-brand/10 text-brand"
-      : kind === "warn" ? "bg-warn-tint text-warn"
-        : "border border-border text-fg-muted";
-  return <span className={`inline-flex h-5 shrink-0 items-center rounded-pill px-space-2 text-t12 font-medium ${cls}`}>{children}</span>;
+  const look = kind === "solid" ? { variant: "solid" as const }
+    : kind === "brand" ? { tone: "brand" as const }
+      : kind === "warn" ? { tone: "warn" as const }
+        : { variant: "outline" as const };
+  return <span className={chipClass(look)}>{children}</span>;
 }
 
 /** The colour class of a direction: up, down, or the plain text colour. */

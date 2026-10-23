@@ -13,6 +13,7 @@ import { useCostEstimate } from "../../cost";
 import { useCopilotT } from "../../i18n";
 import { copilotPath } from "../../tabs";
 import { Panel } from "../shared";
+import { useFeatures } from "../../../ui/useFeatures";
 
 /**
  * AI drafts: a plain-language idea becomes a rule set (the same schema as the Strategy Builder), shown in words; the
@@ -30,6 +31,8 @@ export function conditionText(c: Condition, t: (key: string, o?: Record<string, 
 
 export default function DraftsPanel({ source, symbol }: { source: CandleSourceState; symbol: string }) {
   const t = useCopilotT();
+  // Owner order 23 Oct: no usable broker - the server tests the draft on ATP's stored Daily history (intraday: a plain refusal).
+  const stored = useFeatures().on("backtest_stored_history") && !!source.sampleHidden && !source.usable;
   const navigate = useNavigate();
   const location = useLocation();
   // The Idea Builder's "ask the AI for a custom rule set" hands its prompt over.
@@ -70,9 +73,9 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
     const tf = d.config?.timeframe ?? "1min";
     const r = await task.run([t("lab.drafts.step.candles"), t("lab.drafts.step.backtest")], async (signal, advance) => {
       // H-C1 a: in broker mode the server fetches the candles itself - only that evidence can approve the draft.
-      if (source.mode === "broker") {
+      if (source.mode === "broker" || stored) {
         advance(1);
-        return api.aiBacktestDraft(d.id, symbol, tf, [], `broker:${source.broker}`, signal);
+        return api.aiBacktestDraft(d.id, symbol, tf, [], `broker:${stored ? "" : source.broker}`, signal);
       }
       const data = await source.fetch([symbol], tf, { count: 600, startPriceFor: () => 100, seedFor: () => 11 });
       const candles = data.candles[symbol.trim().toUpperCase()];
@@ -83,8 +86,9 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
     if (!r) return;
     setSelected(r.draft); refresh();
     // Figures from sample candles are never shown as performance.
-    setMessage(source.mode === "sample" ? t("lab.drafts.sampleResult", { n: r.result.total_trades })
-      : t("lab.drafts.result", { n: r.result.total_trades, win: Math.round(r.result.win_rate * (r.result.win_rate <= 1 ? 100 : 1)), pnl: Math.round(r.result.net_pnl) }));
+    setMessage(source.mode === "sample" && !stored ? t("lab.drafts.sampleResult", { n: r.result.total_trades })
+      : t("lab.drafts.result", { n: r.result.total_trades, win: Math.round(r.result.win_rate * (r.result.win_rate <= 1 ? 100 : 1)), pnl: Math.round(r.result.net_pnl) })
+        + (r.prices?.line ? ` ${r.prices.line}` : ""));
   }
 
   async function decide(fn: () => Promise<AiStrategyDraft>, done: string) {
@@ -168,7 +172,7 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
               <div className="flex flex-wrap items-center gap-2">
                 {(selected.status === "DRAFT" || selected.status === "BACKTESTED") && (
                   <Button size="sm" icon={<FlaskConical size={13} />} disabled={task.busy} onClick={() => void backtest(selected)}>
-                    {selected.status === "BACKTESTED" ? t("lab.drafts.retest") : t("lab.drafts.backtest")} ({source.mode === "broker" ? t("lab.drafts.onBroker") : t("lab.drafts.onSample")})
+                    {selected.status === "BACKTESTED" ? t("lab.drafts.retest") : t("lab.drafts.backtest")} ({source.mode === "broker" ? t("lab.drafts.onBroker") : stored ? t("lab.drafts.onStored") : t("lab.drafts.onSample")})
                   </Button>
                 )}
                 <Button size="sm" variant="ghost" icon={<Pencil size={13} />} onClick={() => { setPrompt(selected.prompt); document.getElementById("draft-prompt")?.focus(); }}>{t("lab.drafts.edit")}</Button>

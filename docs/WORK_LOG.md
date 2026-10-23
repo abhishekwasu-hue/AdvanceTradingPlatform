@@ -3733,3 +3733,25 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests `backend/tests/test_part1b_kotak_neo.py` (recorded fixtures `tests/fixtures/kotak_neo/`), the connect flow in
   `test_p2a_broker_connect.py`, frontend `src/broker/BrokerScreens.test.tsx`. Lawyer list: `docs/DATA_SOURCES.md`
   item 3. Questions KN-1..KN-11.
+
+## 23 Oct - Terminal master Part 1B: the Groww adapter (README row 20)
+
+- Branch `claude/broker-groww`, stacked on `claude/broker-kotak-neo` (#473, not merged when this started: `gates.py`,
+  `marketable_limit.py`, `broker_charges.py` shared). **No migration.** Design `docs/design/BROKER_GROWW.md` (every
+  fact with its source, the date read and verified / unverified / conflicting).
+- `backend/app/brokers/groww.py`: the TOTP and approval logins of the official SDK `growwapi` 1.5.0, the day's token,
+  positions / holdings / margins / order and trade books / order margin, orders (CNC / MIS / NRML / MTF, DAY / IOC),
+  quotes, LTP, history, option chain + Greeks, the instrument CSV and symbol mapping. No native GTT / OCO (TM-23).
+- Gates: Groww's LIVE-order and market-data gates closed in code (TM-5 / TM-6); TM-3 marketable limit and SL band; the
+  SEBI rule-set maps algo MARKET entries to a marketable limit for Groww (`docs/COMPLIANCE_IN.md` regenerated).
+- TM-27: `rate_budget.DailyBudget` (per-day caps by call type, exits never refused) wired into the worker's budgets;
+  the Groww row 3 / s, 80 / min.
+- Charges: percent / cap / minimum rows (`brokerage_for_order`), Groww's stated brokerage, the Rs 499 a month
+  subscription as a platform fee; the PAPER adapter uses them.
+- Feed `backend/app/market_data/groww_feed.py`: nkey + socket token + a minimal NATS client + the protobuf price reader
+  (OFF behind the gate).
+- Broker page (behind `ui_v2`): the Groww tile ("Practice only") and the connect guide. Screenshots 390 / 1440, light /
+  dark in the scratchpad (not committed). Also `tests/test_api.py` now lists the two new adapters (it was missed in #473).
+- Tests `backend/tests/test_part1b_groww.py` (fixtures `tests/fixtures/groww/`), the connect flow in
+  `test_p2a_broker_connect.py`, frontend `BrokerScreens.test.tsx`. Lawyer list: `docs/DATA_SOURCES.md` item 4.
+  Questions GW-1..GW-12.

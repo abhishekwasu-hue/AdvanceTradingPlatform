@@ -61,6 +61,20 @@ A6.3, when it is written, takes these over; `docs/COMPLIANCE_IN.md` is generated
    ATP show a user his own Kotak Neo prices (quotes, charts, the option chain, the feed) inside ATP - the data-terms
    row is "pending" until Kotak Neo confirms in writing; (e) Kotak Neo says market orders are not allowed for retail
    algo orders: is ATP's marketable limit with the user's protection band (TM-3) the accepted way.
+4. **Groww: one ATP server IP for many users, and its data (Part 1B, TM-5 / TM-6; owner decision 23 Oct).** Groww
+   says a static IP is required for API order placement and that Groww whitelists it on the Trade API's API Keys page
+   (a primary and a backup IP); "Groww Cloud" (strategies run on Groww's own servers) is offered as the way around it -
+   from a search extract of https://groww.in/blog/static-ip-api-trading-setup (March 2026, read 23 Oct 2026; groww.in
+   itself could not be opened). Groww's Trade API is a paid plan the user buys from Groww (Rs 499 a month + taxes,
+   search extract of https://groww.in/blog/api-trading-on-groww). ATP runs on one server with one outgoing IP. The
+   adapter is built with LIVE orders and live prices refused in code (`backend/app/brokers/gates.py`;
+   `docs/design/BROKER_GROWW.md`). Questions: (a) may unrelated users' orders leave from ATP's one server IP, each
+   user whitelisting ATP's IP on his own Groww key, and does ATP then have to be an empanelled algo provider with
+   Groww (SEBI retail-algo circular of 4 Feb 2025); (b) if not, what is the allowed model (each user's own IP, or
+   Groww Cloud), and what would ATP need for it (nothing of the kind is built); (c) may ATP show a user his own Groww
+   prices (quotes, charts, the option chain and Greeks, the feed) inside ATP when the user pays Groww for the data -
+   the data-terms row is "pending" until Groww confirms in writing; (d) is ATP's marketable limit with the user's
+   protection band (TM-3) the accepted way for a market order through Groww's API.
 
 ## Phase BB rules
 

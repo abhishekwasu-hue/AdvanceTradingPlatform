@@ -54,6 +54,9 @@ KOTAK_KEY = _sentinel("kotak-consumer")
 KOTAK_SEED = _sentinel("kotak-seed")
 KOTAK_TRADE = _sentinel("kotak-trade")
 KOTAK_MPIN = "7" * 6
+GROWW_KEY = _sentinel("groww-key")
+GROWW_SEED = _sentinel("groww-seed")
+GROWW_TOKEN = _sentinel("groww-token")
 NOW = datetime.now(timezone.utc)
 
 
@@ -138,6 +141,16 @@ async def _fake_transport(self, request: httpx.Request) -> httpx.Response:
                 return _reply(200, {"data": {"token": KOTAK_TRADE, "sid": "trade-sid", "baseUrl": "https://e21.kotaksecurities.com",
                                              "ucc": "KUCC1", "greetingName": "Abhi"}})
             return _reply(200, {"stat": "Not_Ok", "stCode": 1002, "errMsg": "Invalid MPIN"})
+    if host == "api.groww.in":
+        bearer = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        if path == "/v1/token/api/access":
+            sent = json.loads(request.content)
+            if bearer == GROWW_KEY and sent.get("key_type") == "totp" and len(sent.get("totp", "")) == 6:
+                return _reply(200, {"token": GROWW_TOKEN, "isActive": True})
+            return _reply(400, {"status": "FAILURE", "error": {"code": "GA001", "message": "Invalid TOTP"}})
+        if path == "/v1/user/detail" and bearer == GROWW_TOKEN:
+            return _reply(200, {"status": "SUCCESS", "payload": {"ucc": "GUCC1", "active_segments": ["CASH", "FNO"]}})
+        return _reply(401, {"status": "FAILURE", "error": {"code": "GA401", "message": "Invalid token"}})
     return _reply(404, {"status": "error"})
 
 
@@ -165,7 +178,7 @@ def fake_brokers(monkeypatch):
 
 
 SECRETS = (DHAN_A, DHAN_B, DHAN_X, KITE_S, KITE_CODE, KITE_SESSION, ANGEL_SEED, ANGEL_SESSION, OPAQUE_ANALYTICS,
-           OPAQUE_BAD, SHOONYA_SEED, SHOONYA_SESSION, KOTAK_KEY, KOTAK_SEED, KOTAK_TRADE)
+           OPAQUE_BAD, SHOONYA_SEED, SHOONYA_SESSION, KOTAK_KEY, KOTAK_SEED, KOTAK_TRADE, GROWW_KEY, GROWW_SEED, GROWW_TOKEN)
 
 
 # Fernet ciphertext (the stored, encrypted credential, e.g. in SQLAlchemy's echo of an INSERT) is random base64: a
@@ -248,11 +261,12 @@ NEEDED = {
     "shoonya": {"client_id", "api_secret", "api_key", "totp_secret"},
     "coindcx": {"api_key", "api_secret"},
     "kotak_neo": {"api_key", "mobile_number", "client_id", "pin", "totp_secret"},
+    "groww": {"api_key", "totp_secret"},
 }
 # Brokers whose official method cannot be done in one or two fields (docs/brokers/EASIEST_LOGIN.md says why).
 MORE_THAN_TWO = {"fyers": 3, "angel_one": 4, "shoonya": 4, "kotak_neo": 5}
 # Part 1B: listed only with ui_v2 on for the organisation.
-UI_V2_ONLY = {"kotak_neo"}
+UI_V2_ONLY = {"kotak_neo", "groww"}
 
 
 def test_catalog_shape_fields_only_what_the_method_needs():
@@ -491,6 +505,28 @@ def test_kotak_neo_connects_renews_with_one_click_and_stays_practice_only(caplog
     _assert_no_secret(caplog.text)
 
 
+def test_groww_connects_renews_with_one_click_and_stays_practice_only(caplog):
+    """Part 1B: Groww's TOTP key through the connect flow; the day's token is stored encrypted; LIVE orders and live
+    prices stay off (app/brokers/gates.py) whatever the connection's state."""
+    caplog.set_level(logging.DEBUG)
+    from app.brokers import gates
+    from app.brokers.token_lifecycle import build_adapter
+    from app.core.enums import OrderSide
+    headers = _org("groww")
+    out = _connect(headers, "groww", {"api_key": "x" + GROWW_KEY, "totp_secret": GROWW_SEED})
+    assert out["status"] == "not_working" and "TOTP secret" in out["message"]
+    assert _connect(headers, "groww", {"api_key": GROWW_KEY, "totp_secret": GROWW_SEED}) == {"status": "connected", "message": "Connected."}
+    row = _row(_tenant(headers), "groww")
+    assert row.token_status == "VALID" and load_credentials(row).access_token == GROWW_TOKEN
+    assert _connect(headers, "groww", {}, renew=True) == {"status": "connected", "message": "Connected."}
+    adapter = build_adapter(row)
+    with pytest.raises(gates.LiveOrdersClosed):
+        asyncio.run(adapter.exit_position("RELIANCE", "NSE", 1, OrderSide.BUY))
+    with pytest.raises(gates.MarketDataClosed):
+        asyncio.run(adapter.get_ltp_for_symbol("RELIANCE"))
+    _assert_no_secret(caplog.text)
+
+
 def test_the_kotak_neo_tile_is_listed_only_with_ui_v2_on():
     from tests.test_bt1b_guard_all_reads import _flags
     headers = _org("kotak-ui")
@@ -502,6 +538,8 @@ def test_the_kotak_neo_tile_is_listed_only_with_ui_v2_on():
         _flags(ui_v2=[])
     kotak = rows["kotak_neo"]
     assert kotak["gates"]["live_orders"] == "closed" and kotak["gates"]["live_prices"] == "closed" and kotak["guide"]["links"]
+    groww = rows["groww"]
+    assert groww["gates"]["live_orders"] == "closed" and groww["gates"]["live_prices"] == "closed" and groww["guide"]["links"]
     assert rows["upstox"]["gates"]["live_orders"] == "open" and rows["upstox"]["guide"] is None
 
 

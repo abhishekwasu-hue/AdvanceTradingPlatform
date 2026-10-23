@@ -196,6 +196,26 @@ CATALOG: Tuple[BrokerEntry, ...] = (
                 ("Static IP rules", "https://www.kotakneo.com/platform/kotak-neo-trade-api/static-ip-details/"),
                 ("Official API guide", "https://github.com/Kotak-Neo/kotak-neo-python"))),
     ),
+    # Part 1B (docs/design/BROKER_GROWW.md): the easiest official way is the TOTP key - Groww's API key of the TOTP kind
+    # and its TOTP secret; each morning one click makes the day's token. Practice mode only: real orders and live prices
+    # stay off (gates). The approval way (API key + secret, approved daily on Groww) is supported by the adapter.
+    BrokerEntry(
+        broker="groww", name="Groww", method=TOTP_AUTO,
+        fields=(Field("api_key", "API key (TOTP)", SECRET, "From Groww: Trade API, then API Keys"),
+                Field("totp_secret", "TOTP secret", SECRET, "The secret shown with the TOTP key")),
+        how_to=("On Groww open Trade API, then API Keys, and generate a TOTP key; copy the key and the secret it shows.",
+                "Paste both here; ATP makes the six-digit code from the secret, so you never type it.",
+                "Each morning press Renew; Groww ends every session at 6 in the morning."),
+        doc_url="https://groww.in/trade-api/docs/python-sdk",
+        daily_renewal=True, requires_ui_v2=True,
+        guide=(("Practice mode only for now: ATP reads your Groww positions, holdings, funds and orders.",
+                "Real orders and live prices through Groww stay off until Groww confirms in writing that they may be used through ATP.",
+                "Groww's Trade API is a paid Groww plan; Groww asks that orders from connected apps come from a registered fixed internet address.",
+                "ATP never sees your Groww password; the key and secret you store here are encrypted and used only for the daily login."),
+               (("Groww Trade API", "https://groww.in/trade-api"),
+                ("Official API guide", "https://groww.in/trade-api/docs/python-sdk"),
+                ("Static IP rules", "https://groww.in/blog/static-ip-api-trading-setup"))),
+    ),
 )
 
 _BY_BROKER: Dict[str, BrokerEntry] = {e.broker: e for e in CATALOG}

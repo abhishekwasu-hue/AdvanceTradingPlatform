@@ -274,6 +274,23 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
             _access_token("Session token", by=BY_LOGIN, legacy=False),
         ),
     ),
+    # Part 1B: Groww's TOTP key (API key + TOTP secret; growwapi 1.5.0 `get_access_token(api_key, totp=...)`), or the
+    # approval key (API key + secret, approved daily on Groww). Practice mode only (app/brokers/gates.py).
+    "groww": BrokerSpec(
+        name="groww", display_name="Groww", tile_line="One-click login with your stored TOTP secret",
+        login_method=LOGIN_TOTP, console_url="https://groww.in/trade-api",
+        login_note="ATP logs in to Groww for you each morning with the TOTP secret you store here, encrypted.",
+        fields=(
+            FieldSpec("api_key", "API key", KIND_SECRET, required=True, pattern=r"^[\x21-\x7E]{16,4096}$",
+                      format_hint="at least 16 letters, digits or symbols with no spaces", max_length=4096,
+                      help="On Groww: Trade API, then API Keys. Generate a TOTP key and copy it."),
+            _totp_secret("Groww", required_unless=("api_secret", "access_token")),
+            FieldSpec("api_secret", "API secret", KIND_SECRET, pattern=r"^[\x21-\x7E]{8,4096}$",
+                      format_hint="at least 8 letters, digits or symbols with no spaces", max_length=4096, advanced=True,
+                      help="Only for Groww's approval key (approve it on Groww each day); leave empty with a TOTP key."),
+            _access_token("Session token", by=BY_LOGIN, legacy=False),
+        ),
+    ),
 }
 
 

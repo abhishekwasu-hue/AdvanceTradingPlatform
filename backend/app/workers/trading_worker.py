@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.brokers.base import BrokerInterface
 from app.alerts.dispatcher import dispatch_pending
-from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
+from app.brokers.rate_budget import RateBudget, RateLimitedBroker, daily_budget_for, limits_for
 from app.platform import phase0_lock
 from app.execution.ops_throttle import OpsThrottle
 from app.compliance.static_ip import live_entry_problem
@@ -1865,7 +1865,9 @@ class TradingWorker:
         key = (tenant_id, budget_key)
         budget = self._budgets.get(key)
         if budget is None:
-            budget = self._budgets[key] = RateBudget(limits_for(budget_key.split("@")[0]))
+            broker = budget_key.split("@")[0]
+            # TM-27: a broker with per-day caps (Groww) also gets its per-day budget by call type.
+            budget = self._budgets[key] = RateBudget(limits_for(broker), daily=daily_budget_for(broker))
         return budget
 
     def _rate_limited(self, tenant_id: int, budget_key: str, adapter: BrokerInterface) -> BrokerInterface:

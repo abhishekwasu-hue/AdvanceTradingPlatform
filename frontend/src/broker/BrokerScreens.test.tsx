@@ -380,3 +380,57 @@ describe("Part 1B Kotak Neo: practice only, with a plain-words connect guide", (
     for (const entry of CATALOG) expect(panel(entry)).not.toContain("data-broker-guide");
   });
 });
+
+/** Part 1B: Groww's catalog row as the server sends it with ui_v2 on (app/brokers/catalog.py). */
+const GROWW: BrokerCatalogEntry = {
+  broker: "groww", name: "Groww", method: "totp_auto",
+  fields: [
+    { key: "api_key", label: "API key (TOTP)", kind: "secret", placeholder: "From Groww: Trade API, then API Keys" },
+    { key: "totp_secret", label: "TOTP secret", kind: "secret", placeholder: "The secret shown with the TOTP key" },
+  ],
+  how_to: [
+    "On Groww open Trade API, then API Keys, and generate a TOTP key; copy the key and the secret it shows.",
+    "Paste both here; ATP makes the six-digit code from the secret, so you never type it.",
+    "Each morning press Renew; Groww ends every session at 6 in the morning.",
+  ],
+  doc_url: "https://groww.in/trade-api/docs/python-sdk", daily_renewal: true, available: true, renew_fields: [],
+  gates: { live_orders: "closed", live_prices: "closed", note: "Practice mode only for now. ATP can read your Groww positions, holdings, funds and orders." },
+  requires_ui_v2: true,
+  guide: {
+    points: [
+      "Practice mode only for now: ATP reads your Groww positions, holdings, funds and orders.",
+      "Real orders and live prices through Groww stay off until Groww confirms in writing that they may be used through ATP.",
+      "Groww's Trade API is a paid Groww plan; Groww asks that orders from connected apps come from a registered fixed internet address.",
+    ],
+    links: [
+      { label: "Groww Trade API", url: "https://groww.in/trade-api" },
+      { label: "Official API guide", url: "https://groww.in/trade-api/docs/python-sdk" },
+      { label: "Static IP rules", url: "https://groww.in/blog/static-ip-api-trading-setup" },
+    ],
+  },
+};
+
+describe("Part 1B Groww: practice only, two fields, a plain-words connect guide", () => {
+  it("the tile says Practice only", () => {
+    const tile = renderToStaticMarkup(<BrokerTile entry={GROWW} onPick={noop} />);
+    expect(tile).toContain("Groww");
+    expect(tile).toContain("Practice only");
+  });
+
+  it("the connect panel shows the guide and its links before the two fields; no advice words", () => {
+    const html = panel(GROWW);
+    expect(html).toContain('data-broker-guide="groww"');
+    for (const p of GROWW.guide!.points) expect(html).toContain(p.replace(/'/g, "&#x27;"));
+    expect(inputs(html)).toEqual(["api_key", "totp_secret"]);
+    expect(html.indexOf("data-broker-guide")).toBeLessThan(html.indexOf("data-field"));
+    expect(ADVICE.test(html)).toBe(false);
+  });
+
+  it("the daily renew is one button with no guide", () => {
+    const renew = renderToStaticMarkup(
+      <ConnectPanelView entry={GROWW} step={stepFor(GROWW, "renew")} values={{}} onChange={noop} onSubmit={noop} busy={false} result={null} />,
+    );
+    expect(renew).not.toContain("data-broker-guide");
+    expect(inputs(renew)).toEqual([]);
+  });
+});

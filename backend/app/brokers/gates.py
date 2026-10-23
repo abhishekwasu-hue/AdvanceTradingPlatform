@@ -2,11 +2,11 @@
 
 A broker can be connected and read (login, profile, positions, holdings, funds) while two things stay off:
 
-* **LIVE orders** - placing, changing or cancelling a real order at the broker. Closed for Kotak Neo until the lawyer
+* **LIVE orders** - placing, changing or cancelling a real order at the broker. Closed for Kotak Neo and Groww until the lawyer
   and the broker confirm in writing that ATP's model is allowed (one ATP server IP for unrelated users, the static-IP
   rule, the SEBI retail-algo framework: docs/COMPLIANCE_IN.md, docs/DATA_SOURCES.md "For the lawyer").
 * **Market data** - prices, quotes, candles, the option chain and the streaming feed read through that broker. Closed
-  for Kotak Neo until its data terms are "confirmed" (app/market_data/broker_data_terms.json, docs/BROKER_DATA_TERMS.md)
+  for Kotak Neo and Groww until its data terms are "confirmed" (app/market_data/broker_data_terms.json, docs/BROKER_DATA_TERMS.md)
   with the broker's written confirmation.
 
 The gates are code, not a runtime switch: nothing in the admin console, an environment variable or a flag opens them.
@@ -14,7 +14,8 @@ Opening one is a reviewed change to `GATES` below, made only with the written co
 docs/design/BROKER_KOTAK_NEO.md (owner decision, 23 Oct 2026, DECISIONS.md: TM-3 / TM-5 / TM-6). A broker not listed
 here keeps today's behaviour (both open), so the existing adapters are untouched.
 
-The adapter itself checks the gate on every order and every market-data call (app/brokers/kotak_neo.py), so no code
+The adapter itself checks the gate on every order and every market-data call (app/brokers/kotak_neo.py,
+app/brokers/groww.py), so no code
 path - the order router, the multi-leg executor, an exit, a stop, the worker - can reach the broker around it. Places,
 changes and blocks nothing for any other broker.
 """
@@ -45,11 +46,21 @@ class BrokerGates:
 _KOTAK_NOTE = ("Practice mode only for now. ATP can read your Kotak Neo positions, holdings and funds. Real orders and "
                "live prices through Kotak Neo stay off until Kotak Neo confirms in writing that they may be used through ATP.")
 
+_GROWW_NOTE = ("Practice mode only for now. ATP can read your Groww positions, holdings, funds and orders. Real orders and "
+               "live prices through Groww stay off until Groww confirms in writing that they may be used through ATP.")
+
 GATES: Dict[str, BrokerGates] = {
     "kotak_neo": BrokerGates(
         live_orders=CLOSED, market_data=CLOSED, note=_KOTAK_NOTE,
         opens_when=("LIVE orders: the lawyer's opinion and Kotak Neo's written confirmation of the one-server-IP model "
                     "(TM-5). Market data: broker_data_terms.json row 'confirmed' with Kotak Neo's written confirmation (TM-6)."),
+    ),
+    # Part 1B (docs/design/BROKER_GROWW.md): the same two gates, closed for the same reasons (TM-5 / TM-6).
+    "groww": BrokerGates(
+        live_orders=CLOSED, market_data=CLOSED, note=_GROWW_NOTE,
+        opens_when=("LIVE orders: the lawyer's opinion and Groww's written confirmation of the one-server-IP model and its "
+                    "static-IP rule (TM-5). Market data: broker_data_terms.json row 'confirmed' with Groww's written "
+                    "confirmation (TM-6)."),
     ),
 }
 

@@ -1,0 +1,39 @@
+{
+  "_about": "Hand-made Groww Trade API responses in the shapes of Groww's published API reference (the SDK growwapi 1.5.0 unwraps `payload`). Made-up ids, numbers and names; tokens are empty and filled in at run time by the tests.",
+  "token": {"token": "", "tokenRefId": "fake-ref-1", "sessionName": "ATP test", "expiry": "2026-10-24T06:00:00", "isActive": true},
+  "profile": {"status": "SUCCESS", "payload": {"vendor_user_id": "fake-vendor-1", "ucc": "FAKEUCC9", "nse_enabled": true, "bse_enabled": true, "ddpi_enabled": false, "active_segments": ["CASH", "FNO"]}},
+  "instruments_csv": "exchange,exchange_token,trading_symbol,groww_symbol,name,instrument_type,segment,series,isin,underlying_symbol,underlying_exchange_token,expiry_date,strike_price,lot_size,tick_size,freeze_quantity,is_reserved,buy_allowed,sell_allowed\nNSE,2885,RELIANCE,NSE-RELIANCE,Reliance Industries,EQ,CASH,EQ,INE002A01018,,,,,1,0.05,,0,1,1\nNSE,NIFTY,NIFTY,NSE-NIFTY,Nifty 50,IDX,CASH,,,,,,,1,0.05,,0,0,0\nNSE,71472,NIFTY26O2726000CE,NSE-NIFTY-27Oct26-26000-CE,,CE,FNO,,,NIFTY,26000,2026-10-27,26000,65,0.05,1800,0,1,1\nNSE,71473,NIFTY26O2726000PE,NSE-NIFTY-27Oct26-26000-PE,,PE,FNO,,,NIFTY,26000,2026-10-27,26000,65,0.05,1800,0,1,1\nNSE,53001,NIFTY26NOVFUT,NSE-NIFTY-24Nov26-FUT,,FUT,FNO,,,NIFTY,26000,2026-11-24,,65,0.1,1800,0,1,1\nBSE,500325,RELIANCE,BSE-RELIANCE,Reliance Industries,EQ,CASH,A,INE002A01018,,,,,1,0.05,,0,1,1\nNCDEX,9,SKIPME,NCDEX-SKIPME,,FUT,COMMODITY,,,,,,,1,1,,0,1,1\n",
+  "order_list_cash": {"status": "SUCCESS", "payload": {"order_list": [
+    {"groww_order_id": "GFAKE0001", "trading_symbol": "RELIANCE", "order_status": "OPEN", "remark": "", "quantity": 10, "price": 2999.5, "trigger_price": 0, "filled_quantity": 0, "remaining_quantity": 10, "average_fill_price": 0, "validity": "DAY", "exchange": "NSE", "order_type": "LIMIT", "transaction_type": "BUY", "segment": "CASH", "product": "MIS", "created_at": "2026-10-23T09:20:05", "exchange_time": "2026-10-23T09:20:05", "order_reference_id": "ATPFAKE1"}
+  ]}},
+  "order_list_fno": {"status": "SUCCESS", "payload": {"order_list": [
+    {"groww_order_id": "GFAKE0002", "trading_symbol": "NIFTY26O2726000CE", "order_status": "EXECUTED", "quantity": 65, "price": 121.0, "filled_quantity": 65, "average_fill_price": 121.1, "validity": "DAY", "exchange": "NSE", "order_type": "LIMIT", "transaction_type": "SELL", "segment": "FNO", "product": "NRML", "created_at": "2026-10-23T10:01:00", "order_reference_id": null}
+  ]}},
+  "order_list_empty": {"status": "SUCCESS", "payload": {"order_list": []}},
+  "trades": {"status": "SUCCESS", "payload": {"trade_list": [
+    {"price": 121.1, "quantity": 65, "groww_order_id": "GFAKE0002", "groww_trade_id": "fake-fill-1", "exchange_trade_id": "x1", "trade_status": "EXECUTED", "trading_symbol": "NIFTY26O2726000CE", "exchange": "NSE", "segment": "FNO", "product": "NRML", "transaction_type": "SELL", "created_at": "2026-10-23T10:01:02", "trade_date_time": "2026-10-23T10:01:02"}
+  ]}},
+  "positions": {"status": "SUCCESS", "payload": {"positions": [
+    {"trading_symbol": "NIFTY26NOVFUT", "segment": "FNO", "exchange": "NSE", "credit_quantity": 0, "debit_quantity": 65, "quantity": 65, "product": "NRML", "net_price": 25000.0, "net_carry_forward_quantity": 0, "net_carry_forward_price": 0, "realised_pnl": 0, "ltp": 25100.0},
+    {"trading_symbol": "TCS", "segment": "CASH", "exchange": "NSE", "credit_quantity": 5, "credit_price": 3050, "debit_quantity": 5, "debit_price": 3000, "quantity": 0, "product": "MIS", "net_price": 0, "realised_pnl": 250.0, "ltp": 3060.0}
+  ]}},
+  "holdings": {"status": "SUCCESS", "payload": {"holdings": [
+    {"isin": "INE002A01018", "trading_symbol": "RELIANCE", "quantity": 4, "average_price": 2800.5, "pledge_quantity": 0, "demat_locked_quantity": 0, "t1_quantity": 0, "demat_free_quantity": 4}
+  ]}},
+  "margins": {"status": "SUCCESS", "payload": {"clear_cash": 150000.25, "net_margin_used": 25000.0, "brokerage_and_charges": 40.5, "collateral_used": 0, "collateral_available": 0, "equity_margin_details": {"cnc_balance_available": 125000.25, "mis_balance_available": 125000.25}, "fno_margin_details": {"option_buy_balance_available": 125000.25}}},
+  "order_margin": {"status": "SUCCESS", "payload": {"total_requirement": 15500.0, "exposure_required": 3000.0, "span_required": 12500.0, "brokerage_and_charges": 20.0}},
+  "place_order": {"status": "SUCCESS", "payload": {"groww_order_id": "GFAKE0201", "order_status": "OPEN", "order_reference_id": "ATPFAKE2", "remark": "Order placed successfully"}},
+  "modify_order": {"status": "SUCCESS", "payload": {"groww_order_id": "GFAKE0001", "order_status": "MODIFICATION_REQUESTED"}},
+  "cancel_order": {"status": "SUCCESS", "payload": {"groww_order_id": "GFAKE0001", "order_status": "CANCELLATION_REQUESTED"}},
+  "ltp": {"status": "SUCCESS", "payload": {"NSE_RELIANCE": 3001.0, "NSE_NIFTY26O2726000CE": 120.5}},
+  "quote": {"status": "SUCCESS", "payload": {"average_price": 3000.2, "bid_quantity": 120, "bid_price": 3000.9, "day_change": 6.0, "depth": {"buy": [{"price": 3000.9, "quantity": 120}], "sell": [{"price": 3001.1, "quantity": 90}]}, "last_price": 3001.0, "last_trade_time": 1792737000000, "ohlc": {"open": 2996.0, "high": 3010.0, "low": 2990.0, "close": 2995.0}, "offer_price": 3001.1, "offer_quantity": 90, "open_interest": null, "volume": 123456}},
+  "history": {"status": "SUCCESS", "payload": {"candles": [["2026-10-22T09:15:00", 2995.0, 3001.0, 2994.0, 2999.5, 1500], ["2026-10-22T09:20:00", 2999.5, 3003.0, 2998.0, 3002.0, 1200, null]], "interval_in_minutes": 5}},
+  "option_chain": {"status": "SUCCESS", "payload": {"underlying_ltp": 26010.5, "strikes": {
+    "26000": {"CE": {"trading_symbol": "NIFTY26O2726000CE", "ltp": 120.5, "open_interest": 900000, "volume": 50000, "greeks": {"delta": 0.52, "gamma": 0.0011, "theta": -12.1, "vega": 9.8, "rho": 1.2, "iv": 13.4}},
+              "PE": {"trading_symbol": "NIFTY26O2726000PE", "ltp": 110.0, "open_interest": 800000, "volume": 42000, "greeks": {"delta": -0.48, "gamma": 0.0011, "theta": -11.0, "vega": 9.7, "rho": -1.1, "iv": 13.9}}},
+    "25900": {"CE": {"trading_symbol": "NIFTY26O2725900CE", "ltp": 180.0, "open_interest": 400000, "volume": 21000, "greeks": {"delta": 0.61, "iv": 13.1}}}
+  }}},
+  "greeks": {"status": "SUCCESS", "payload": {"greeks": {"delta": 0.52, "gamma": 0.0011, "theta": -12.1, "vega": 9.8, "rho": 1.2, "iv": 13.4, "pop": 0.4}}},
+  "socket_token": {"status": "SUCCESS", "payload": {"token": "", "subscriptionId": "fake-sub-1"}},
+  "failure": {"status": "FAILURE", "error": {"code": "GA001", "message": "Invalid TOTP", "displayMessage": "Invalid TOTP"}}
+}

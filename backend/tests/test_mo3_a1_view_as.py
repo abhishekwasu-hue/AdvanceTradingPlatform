@@ -499,7 +499,7 @@ def test_the_migration_is_one_additive_reversible_step():
     spec = importlib.util.spec_from_file_location("mo3_a1_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module.revision == "e8a0c2d4f6b9" and module.down_revision == "b5d7f9a1c3e6" and module.ROLLBACK_SAFE is True
+    assert module.revision == "e8a0c2d4f6b9" and module.down_revision == "d7f9b1c3e5a8" and module.ROLLBACK_SAFE is True
     source = path.read_text()
     assert source.count("op.create_table(") == 2 and "drop_column" not in source and "add_column" not in source
     assert "op.drop_table('view_sessions')" in source and "op.drop_table('view_session_requests')" in source
@@ -508,7 +508,9 @@ def test_the_migration_is_one_additive_reversible_step():
 
     from scripts.migration_rollback_safety import lint, risky_operations
     assert risky_operations(source) == [] and not [p for p in lint() if p.startswith(path.name)]
-    assert ScriptDirectory.from_config(Config(str(path.parents[2] / "alembic.ini"))).get_heads() == ["e8a0c2d4f6b9"]
+    script = ScriptDirectory.from_config(Config(str(path.parents[2] / "alembic.ini")))
+    heads = script.get_heads()                     # one head, with this revision on its chain (the last of the 23 Oct block)
+    assert len(heads) == 1 and "e8a0c2d4f6b9" in {r.revision for r in script.walk_revisions("base", heads[0])}
 
 
 def test_admin_session_row_must_be_two_factor_verified(world):

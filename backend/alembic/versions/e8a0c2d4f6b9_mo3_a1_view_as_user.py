@@ -1,7 +1,7 @@
 """MO3-A1: the admin's read-only "View as user" - view_sessions and view_session_requests
 
 Revision ID: e8a0c2d4f6b9
-Revises: b5d7f9a1c3e6 (CP6-15, #423 - chained there for now; re-chained onto the migration block's head at merge)
+Revises: d7f9b1c3e5a8 (exits as settings - re-chained after it in the 23 Oct migration block)
 Create Date: 2026-10-23 16:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'e8a0c2d4f6b9'
-down_revision: Union[str, Sequence[str], None] = 'b5d7f9a1c3e6'
+down_revision: Union[str, Sequence[str], None] = 'd7f9b1c3e5a8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - two new tables the previous release never reads or writes (a code-only rollback is fine).

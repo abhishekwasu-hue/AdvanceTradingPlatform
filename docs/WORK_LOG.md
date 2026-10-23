@@ -3450,3 +3450,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   updated, MA-10..MA-13.
 - Tests: `backend/tests/test_b8_mobile_push.py` (fake FCM sender + mocked Google), the readiness test; vitest
   `native/deepLinks.test.ts`, `alerts/phonePush.test.ts`.
+
+## 23 Oct - Production readiness B9: the private reader port plan (plan only)
+
+- Branch `claude/readiness-b9-private-plan` (from main). **Docs only, no migration**, no code, no flag.
+- Status before: partial - `PRIVATE_PACKAGE.md` and `TRADE_TAKEOVER.md` had the decision, layout and owner steps, but
+  no reader interface, no fallback, no versioning, no path-parity plan and no "when".
+- `docs/design/PRIVATE_PACKAGE.md`: status line (what exists today: the Analyze-a-chart loader, the private fixtures
+  resolver / manifest / export, the guard), repository name `atp-private`, owner steps 4-6 (branch protection, spending
+  limit, a VPS key only for the KB move), and new sections 9 interface (inputs and outputs in `SignalStructure` tokens
+  and the Analyze-a-chart area / line shapes), 10 loading and the generic-template fallback (exits keep running),
+  11 versioning, 12 parity (Trade = ATP, scan = backtest = live, shadow; fixtures never here), 13 private and public
+  CI, 14 when and Abhi's steps.
+- `docs/design/TRADE_TAKEOVER.md`: pointer in the status, the signal-language note in section 10, new section 13.
+- README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
+- Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.

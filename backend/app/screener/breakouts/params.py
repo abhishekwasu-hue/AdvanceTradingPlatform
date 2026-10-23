@@ -289,8 +289,9 @@ PARAMS: Tuple[Param, ...] = (
           "minutes = the second opening-range window of spec B16.", 1, 240, group="B8"),
     # --- B9 retest entry (U6 BK4) -----------------------------------------------------------------------------------------
     Param("retest_of", "range", "the breakout a retest follows: range (B1), swing (B2), donchian (B10), trendline or channel (B5), with their own "
-          "parameters", "Spec B9 'breakout already happened'; the fixed-level breakouts of this family.",
-          choices=("range", "swing", "donchian", "trendline", "channel"), group="B9"),
+          "parameters; trendline_projected: the trendline breakout (B5 line mode) with the broken line read at the retest bar (trendline: "
+          "its value at the breakout bar)", "Spec B9 'breakout already happened'; the fixed-level breakouts of this family.",
+          choices=("range", "swing", "donchian", "trendline", "channel", "trendline_projected"), group="B9"),
     Param("retest_max_bars", 10, "the retest comes within this many bars after the breakout (and before any close back inside the level)",
           "Two trading weeks on Daily: a later return is a new base, not a retest.", 1, 100, group="B9"),
     Param("retest_reversal", True, "the retest bar is a logical reversal at the level (app/price_action/reversal.py, as ReversalAt); False: "

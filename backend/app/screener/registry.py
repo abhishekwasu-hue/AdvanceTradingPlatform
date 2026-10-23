@@ -379,7 +379,7 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("SwingLabel", "classifier", CAT, None, (Arg("kind", STR, choices=("high", "low")), _DEGREE), cost=2.0, min_bars=SWING_MIN_BARS,
          degree_min_bars=SWING_DEGREE_MIN_BARS, values=("HH", "LH", "HL", "LL"), flag=AMW_FLAG,
          doc="HH / LH (kind high) or HL / LL (kind low): the last CONFIRMED swing of that kind against the one before it (an equal"
-             " price reads lower); missing before the second swing of that kind"),
+             " price does not extend the structure: an equal high reads LH, an equal low HL); missing before the second swing of that kind"),
     Spec("TimeOfDay", "filter", BOOL, None, (Arg("start", STR, pattern=_HHMM), Arg("end", STR, pattern=_HHMM)), cost=0.5,
          timeframes=INTRADAY_SERIES_TFS, flag=AMW_FLAG,
          doc="the bar starts between start and end (HH:MM, exchange time, both included; start after end wraps past midnight)"),
@@ -469,7 +469,8 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     # swing history (100 / 250 / 600 / 1200 bars by degree) so the trend can be read.
     Spec("DowTrend", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=1, fetch_degree_bars=SWING_DEGREE_MIN_BARS,
          values=("UP", "DOWN", "RANGE"), flag=BREAKOUT_FLAG,
-         doc="Dow trend from CONFIRMED swings: UP (higher high + higher low), DOWN (lower high + lower low), RANGE; missing before"
+         doc="Dow trend from CONFIRMED swings: UP (higher high + higher low), DOWN (lower high + lower low), RANGE (an equal high"
+             " is not higher, an equal low not lower); missing before"
              " both are labelled and on the frame's first 40 (dow_min_bars) / 250 / 600 / 1200 bars (by degree). With @tf it is the higher"
              " timeframe's trend from its closed bars"),
     # U6 BK2: intraday breakouts on the exchange session (app/screener/breakouts/intraday.py, session.py) - closed bars, one

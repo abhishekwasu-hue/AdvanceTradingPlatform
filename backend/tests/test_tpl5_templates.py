@@ -471,10 +471,9 @@ def whole(df):
     return out
 
 
-# The swing structure's labels break a tie (an equal high / low) one way, so a range with an equal swing reads as a range
-# but its mirror as a trend: DowTrend is not mirror-symmetric on ties, whatever the template - its case is left out of
-# the mirror test (it stays in every other test).
-MIRROR = [c for c in CASES if c[1].get("regime") != "structure"]
+# TPL-F6: the swing structure mirrors on ties too (an equal high is not higher, an equal low not lower), so the
+# structure regime's case is in the mirror test like every other (before the fix it was left out).
+MIRROR = list(CASES)
 
 
 def _settled(tid, params, df, md):

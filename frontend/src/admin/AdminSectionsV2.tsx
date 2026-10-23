@@ -1,7 +1,9 @@
-import { Activity, Database, Lock, Search, Users } from "lucide-react";
+import { Activity, Database, Eye, Lock, Search, Users } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { CARD } from "../dashboard/CardV2";
+import { startView } from "../api/viewAs";
+import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { growthApi } from "../growth/api";
 import type { Activation } from "../growth/types";
 import { useFeatures } from "../ui/useFeatures";
@@ -385,6 +387,7 @@ export function SupportPanel({ userId, onUser }: { userId: number | null; onUser
         </form>
         {userId != null && <SupportUserView key={userId} id={userId} />}
       </Panel>
+      <ViewsPanel />
     </>
   );
 }
@@ -405,6 +408,7 @@ function SupportUserView({ id }: { id: number }) {
           {u.trading_paused && <li><Pill tone="warn">new trades paused</Pill></li>}
         </ul>
         <p className="mt-space-2 text-t12 text-fg-muted">Signed up {shortDate(u.signed_up_at)} · last seen {ago(u.last_seen_at)}</p>
+        <ViewAsStart userId={u.id} role={u.role} active={u.active} />
         <h4 className="mt-space-3 text-t14 font-semibold text-fg">Broker</h4>
         {data.brokers.length === 0 ? <p className="text-t12 text-fg-muted">No broker connected.</p> : (
           <ul className="text-t12">{data.brokers.map((b) => (
@@ -437,3 +441,77 @@ function SupportUserView({ id }: { id: number }) {
   );
 }
 
+/** MO3-A1: "View as this person" - a read-only view of the app as they see it, for a limited time, with a reason they will
+ * see. The server refuses every change during it; the banner on top ends it. */
+function ViewAsStart({ userId, role, active }: { userId: number; role: string; active: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // MO3-A1 review: starting a view needs a fresh two-factor check - the server's step-up 403 opens the code prompt.
+  const [stepUp, setStepUp] = useState<string | null>(null);
+  const begin = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await startView(userId, reason.trim());
+    } catch (err) {
+      if (isStepUpError(err)) setStepUp(String(err));
+      else setError(String(err));
+      setBusy(false);
+    }
+  };
+  if (role === "SUPER_ADMIN") return <p className="mt-space-3 text-t12 text-fg-muted" data-view-as-start="admin">An administrator's account cannot be viewed.</p>;
+  if (!active) return <p className="mt-space-3 text-t12 text-fg-muted" data-view-as-start="removed">This account was removed; there is nothing to view.</p>;
+  const ok = reason.trim().length >= 5;
+  if (!open) {
+    return (
+      <button type="button" className={`${BUTTON} mt-space-3`} data-view-as-start="open" onClick={() => setOpen(true)}>
+        <Eye size={16} aria-hidden />View as this person
+      </button>
+    );
+  }
+  return (
+    <form className="mt-space-3 space-y-space-2 rounded-control border border-border bg-surface-2 p-space-3" data-view-as-start="form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!ok || busy) return;
+        await begin();
+      }}>
+      <p className="text-t12 text-fg-muted">
+        Opens the app as this person sees it, for a short time (the banner on top shows how long). Read only: nothing can be changed, placed, connected or
+        downloaded. It is recorded on both accounts, and the person sees it and your reason in their Settings.
+      </p>
+      <label className="flex flex-col gap-space-1 text-t12 text-fg-muted">Why are you opening this account? (required)
+        <textarea value={reason} onChange={(e) => setReason(e.target.value.slice(0, 300))} rows={2} required minLength={5} maxLength={300}
+          className={`rounded-control border border-border bg-surface-1 px-space-2 py-space-1 text-t14 text-fg ${FOCUS}`} />
+      </label>
+      {error && <p className="text-t12 text-down" role="alert">{error}</p>}
+      {stepUp && <StepUpDialog reason={stepUp} onCancel={() => setStepUp(null)} onVerified={() => { setStepUp(null); void begin(); }} />}
+      <div className="flex flex-wrap gap-space-2">
+        <button type="submit" disabled={!ok || busy} className={`${BUTTON} disabled:opacity-60`}>{busy ? "Opening…" : "Start read-only view"}</button>
+        <button type="button" className={BUTTON} onClick={() => { setOpen(false); setReason(""); setError(null); }}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+function ViewsPanel() {
+  const { data, error } = useRead(consoleApi.views);
+  return (
+    <Panel title="Recent views as a user" id="views" note="Every read-only view: whom, why, how long and how many requests (refused changes counted apart).">
+      {!data ? <Loading error={error} /> : data.views.length === 0 ? <p className="text-t12 text-fg-muted">No view yet.</p> : (
+        <ul className="divide-y divide-border text-t12">
+          {data.views.map((v) => (
+            <li key={v.id} data-view={v.id} className="flex flex-wrap items-center gap-space-2 py-space-2">
+              <Pill tone={v.active ? "warn" : "off"}>{v.active ? "open" : (v.end_reason ?? "ended")}</Pill>
+              <span className="text-fg">{v.name ?? "-"}</span>
+              <span className="min-w-0 break-words text-fg-muted">“{v.reason}”</span>
+              <span className="text-fg-muted">{ago(v.started_at)} · {v.requests} requests · {v.refused} refused</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  );
+}

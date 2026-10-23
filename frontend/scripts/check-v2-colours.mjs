@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // UI2-0 (UI v2 proposal §8, §12): v2 screens use the semantic tokens only (surface-*, fg, fg-muted, border, border-subtle,
-// brand, up, down, warn, warn-tint, on-brand). Findings:
+// brand, up, down, warn, warn-tint, on-brand; Part 3 of the chart + colour order: range, range-track, info, info-tint,
+// ai, ai-tint). Findings:
 //  - a raw palette hue class (`text-sky-300`, `bg-violet-500/10`, `border-amber-400`), white / black, or an arbitrary
 //    colour class (`bg-[#0ea5e9]`, `text-[rgb(...)]`);
 //  - a literal colour in an inline style or an SVG attribute (`style={{ color: "#fff" }}`, `fill="#0ea5e9"`,
@@ -90,7 +91,7 @@ function main() {
   for (const f of files) {
     for (const { line, match } of findRawColours(readFileSync(f, "utf8"))) {
       findings += 1;
-      console.error(`${relative(root, f)}:${line}: raw colour "${match}" - use a semantic token (fg, fg-muted, brand, up, down, warn, surface-*, border-subtle)`);
+      console.error(`${relative(root, f)}:${line}: raw colour "${match}" - use a semantic token (fg, fg-muted, brand, up, down, warn, range, info, ai, their -tint, surface-*, border-subtle)`);
     }
   }
   console.log(`v2 colour check: ${files.length} file(s), ${findings} finding(s).`);

@@ -477,6 +477,11 @@ export default function BacktestPage() {
             <StatTile label="Avg Loss" value={result.avg_loss.toFixed(2)} tone={signTone(result.avg_loss)} />
             <StatTile label="Expectancy" value={result.expectancy.toFixed(2)} />
           </div>
+          {result.loss_streak?.note && (
+            <div data-testid="loss-streak-note" role="note" className="rounded border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-fg">
+              {result.loss_streak.note}
+            </div>
+          )}
 
           <Card title="Price Chart — strategy indicators, trade entries &amp; exits">
             <ProChart candles={chartCandles} symbol={symbol} timeframe={selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />

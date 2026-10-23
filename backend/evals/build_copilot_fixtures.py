@@ -123,10 +123,10 @@ DRAFT_IDEA = ("on the 15-minute chart, go long when the 20 EMA crosses above the
               "Stop 1.5 x ATR 14, objective 2R.")
 
 
-def _wave_candles(period: float, amplitude: float, wiggle: float):
+def _wave_candles(period: float, amplitude: float, wiggle: float, days_count: int = 60):
     import numpy as np
     import pandas as pd
-    days = pd.bdate_range("2026-07-01", periods=60)
+    days = pd.bdate_range("2026-07-01", periods=days_count)
     starts = [t for d in days for t in pd.date_range(d + pd.Timedelta("3h45min"), periods=25, freq="15min")]
     i = np.arange(len(starts)).astype(float)
     base = 24000 + amplitude * np.sin(i / period) + wiggle * np.sin(i / 2.3) + i * 0.3
@@ -134,12 +134,12 @@ def _wave_candles(period: float, amplitude: float, wiggle: float):
                         index=pd.DatetimeIndex(starts, tz="UTC"))
 
 
-def _draft_test(symbol: str, period: float, wiggle: float, risk: Dict[str, Any]) -> Dict[str, Any]:
+def _draft_test(symbol: str, period: float, wiggle: float, risk: Dict[str, Any], days_count: int = 60) -> Dict[str, Any]:
     from app.ai import draft_backtest, strategy_builder
     from app.core.models import RiskConfig
     config = strategy_builder.config_of(strategy_builder.build(DRAFT_IDEA, symbol, 1.5))
     rc = RiskConfig(capital=risk["capital"], risk_per_trade_pct=risk["risk_per_trade_pct"], max_consecutive_losses=risk["max_consecutive_losses"])
-    data = draft_backtest.honest_test(config, _wave_candles(period, 150.0, wiggle), symbol, "15min", rc, holdout=None)
+    data = draft_backtest.honest_test(config, _wave_candles(period, 150.0, wiggle, days_count), symbol, "15min", rc, holdout=None)
     data["exchange"] = "NSE"
     return data
 
@@ -182,7 +182,9 @@ def build() -> Dict[str, Any]:
             "get_my_last_trade": ok(_last_trade(), "trades"),
             "get_weekly_review": ok(_weekly_review(), "journal"),
             "backtest_draft:NIFTY": ok(_draft_test("NIFTY", 9.0, 10.0, risk), "broker:paper"),
-            "backtest_draft:SBIN": ok(_draft_test("SBIN", 5.0, 10.0, risk), "broker:paper"),
+            # CP6-15: the choppy window is ten sessions - before the fix it had "too few trades" only because the losses-in-a-row
+            # pause never ended; now each pause ends at the next session, as on paper
+            "backtest_draft:SBIN": ok(_draft_test("SBIN", 5.0, 10.0, risk, days_count=10), "broker:paper"),
         },
         "no_data": {
             "get_market_context": {"ok": False, "error": "get_market_context is not enabled for this organisation (flag context_panel)"},

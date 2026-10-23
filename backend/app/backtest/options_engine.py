@@ -50,6 +50,7 @@ from app.instruments.expiry_data import ExpiryDataMissing, ExpiryDataStale
 from app.instruments.models import ContractSpec
 from app.instruments.spreads import CustomLeg, PlannedLeg, ResolvedLeg, ResolvedStructure, plan_structure, structure_metrics
 from app.market_data.calendar import IST
+from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState, nonfinite_levels
 from app.strategy_engine.base import BaseStrategy
 from app.trading.exit_logic import underlying_exit
@@ -58,7 +59,7 @@ from app.trading.position_monitor import structure_exit_reason, underlying_exit_
 
 logger = logging.getLogger(__name__)
 
-ENGINE_VERSION = "7-options"   # realism 1: closed HTF bars only (6: NIFTY expiries from NSE data too; 5: BANKNIFTY from NSE data; 4: P0.6 dated lots)
+ENGINE_VERSION = "8-options"   # CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (7: realism 1: closed HTF bars only (6: NIFTY expiries from NSE data too; 5: BANKNIFTY from NSE data; 4: P0.6 dated lots)
 NO_NEW_ENTRIES_AFTER = time(15, 0)    # the worker's cut-off for intraday deployments
 SQUARE_OFF_AT = time(15, 15)
 SETTLEMENT_FROM = time(15, 15)        # a bar at/after this on expiry day settles the structure
@@ -91,6 +92,9 @@ class OptionBacktestConfig:
     risk_free_rate: float = 0.07
     # Intraday behaviour, as the worker enforces it for deployments; False holds to exit/expiry.
     intraday: bool = True
+    # Strategy templates section 5: a single option's stop source - None / TEMPLATE_INVALIDATION (the strategy's stop on
+    # the underlying, as before) or PREMIUM_PCT (only the premium floor / ceiling; no underlying-level stop).
+    stop_source: Optional[str] = None
 
     @property
     def is_single(self) -> bool:
@@ -142,6 +146,8 @@ class _Open:
     underlying_t1: Optional[float] = None
     underlying_t2: Optional[float] = None
     premium_level: Optional[float] = None
+    # Strategy templates R5: the signal's (underlying) direction, for the template's exit signal
+    signal_direction: Optional[str] = None
 
 
 class OptionBacktestError(ValueError):
@@ -242,8 +248,13 @@ def run_option_backtest(
         pricer.fallback = b76  # type: ignore[assignment]
     risk_manager = RiskManager(risk_config)
     state = TradingDayState()
+    streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
     time_rules = exit_rules if exit_rules is not None and exit_rules.active else None
     exit_at = time_rules.exit_time_of_day() if time_rules else None
+    # Strategy templates R5 / section 5: the template's exit signal (the user's TEMPLATE_EXIT choice), read on a bar close
+    # of an open position for the signal's own side, closes it at the next bar's open, reason "Template exit".
+    template_exit = bool(getattr(strategy, "acts_on_exit_signal", False))
+    exit_due = False
 
     open_pos: Optional[_Open] = None
     trades: List[Trade] = []
@@ -287,7 +298,7 @@ def run_option_backtest(
         equity_curve.append(equity)
         state.daily_pnl += pnl
         state.open_positions = max(0, state.open_positions - 1)
-        state.consecutive_losses = 0 if pnl > 0 else state.consecutive_losses + 1
+        state.consecutive_losses = streak.closed(pnl, when)
         if reason.startswith("Expiry"):
             settlements += 1
         structures.append({
@@ -337,6 +348,7 @@ def run_option_backtest(
             current_day = bar_day
             state.daily_pnl = 0.0
             state.trades_today = 0
+            state.consecutive_losses = streak.new_session()   # CP6-15: as app/backtest/engine.py
         vol.update(closes[max(0, i - config.realised_vol_window): i + 1])
         high, low, close = float(bar["high"]), float(bar["low"]), float(bar["close"])
 
@@ -352,6 +364,10 @@ def run_option_backtest(
                 if past_close:
                     reason, settle = f"Expiry settlement ({pos.near_expiry.isoformat()})", True
                     exit_spot = float(bar["open"]) if bar_day > pos.near_expiry else close
+                # R5: the template's exit signal on the previous bar's close - out at this bar's open
+                if reason is None and exit_due:
+                    reason, exit_spot = "Template exit", float(bar["open"])
+                exit_due = False
                 # 2. Time rules and the intraday square-off.
                 if reason is None and time_rules is not None and time_rules.time_exit_minutes and at - pos.entry_time >= timedelta(minutes=time_rules.time_exit_minutes):
                     reason = f"Time exit ({time_rules.time_exit_minutes}m in trade)"
@@ -396,6 +412,9 @@ def run_option_backtest(
                 if reason is None and margin_on and margin.call(equity + unrealised(pos, prices), margin_required(pos, exit_spot)):
                     reason = "Margin call"                  # N7 C2c: marked at this bar's close against the requirement then
                     margin_calls += 1
+                if reason is None and template_exit and pos.signal_direction and i + 1 < len(primary_df):
+                    window_now = cursor.at(decision_time(ts, primary_tf))
+                    exit_due = bool(strategy.exit_signal(window_now, pos.signal_direction))   # type: ignore[attr-defined]
                 if reason is not None:
                     fills = {idx: (p if settle else round(broker._slip(p, SignalDirection.LONG if pos.legs[idx].role == "SHORT" else SignalDirection.SHORT), 2))
                              for idx, p in prices.items()}
@@ -447,6 +466,8 @@ def run_option_backtest(
                 margin_refused += 1
                 skipped["margin: equity below the span_like requirement"] += 1
                 continue
+            if open_pos is not None:
+                open_pos.signal_direction = signal.direction.value
             state.trades_today += 1
             state.open_positions += 1
 
@@ -505,6 +526,7 @@ def run_option_backtest(
         exit_rules=time_rules.to_json() if time_rules is not None else None, options=options,
         execution=None if models.is_default else {"models": models.describe(), "margin_refused": margin_refused, "margin_calls": margin_calls,
                                                   "model_prices": b76.count if b76 is not None else 0},
+        loss_streak=streak.report(),
     )
 
 
@@ -608,6 +630,8 @@ def _open_single(signal: Signal, rules: ContractRules, config: OptionBacktestCon
     leg = _Leg(right, "LONG" if bought else "SHORT", float(strike), expiry, 1, fill, quantity)
     meta = {"stop_value": level, "premium_stop_pct": rules.premium_stop_pct, "net_credit": fill if not bought else -fill}
     label = f"{underlying} {'BUY' if bought else 'WRITE'} {int(strike)}{right} {expiry.isoformat()}"
+    # Strategy templates section 5: PREMIUM_PCT - the premium floor / ceiling is the only stop (no underlying-level stop)
+    underlying_stop = None if config.stop_source == "PREMIUM_PCT" else signal.stop_loss
     return _Open(label=label, legs=[leg], meta=meta, lots=lots, quantity=quantity, entry_time=at, entry_time_bar=ts, near_expiry=expiry,
                  direction=trade_direction, entry_unit=fill, single=True, underlying_direction=signal.direction.value,
-                 underlying_stop=signal.stop_loss, underlying_t1=signal.target1, underlying_t2=signal.target2, premium_level=level)
+                 underlying_stop=underlying_stop, underlying_t1=signal.target1, underlying_t2=signal.target2, premium_level=level)

@@ -1,6 +1,6 @@
 from typing import Callable, Optional, Tuple
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ _optional_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> User:
@@ -24,12 +25,14 @@ async def get_current_user(
     except Exception as exc:
         raise unauthorized from exc
 
+    _refuse_view_writes(request, payload)
     user = await session.get(User, user_id)
     if user is None or not user.is_active:
         raise unauthorized
     # Every access token belongs to a login session; a revoked session (logout, log-out-
     # everywhere, member removed, password changed) invalidates the token immediately.
-    if not await _session_alive(session, payload.get("sid")):
+    # MO3-A1: a read-only "View as user" token belongs to its view session instead (app/auth/view_as.py).
+    if not await _token_alive(session, payload, credentials.credentials):
         raise unauthorized
     await _warm_tenant_key(session, user.tenant_id)
     return user
@@ -40,6 +43,23 @@ async def _warm_tenant_key(session: AsyncSession, tenant_id: int) -> None:
     the rest of this request (a dict lookup once cached)."""
     from app.secrets_store.envelope import ensure_tenant_key
     await ensure_tenant_key(session, tenant_id)
+
+
+def _refuse_view_writes(request: Request, payload: dict) -> None:
+    """MO3-A1, the second line behind the middleware (app/auth/view_as_middleware.py): a view token is refused every
+    change here too, so a route can never act on one even if a request reached it some other way."""
+    from app.auth import view_as
+    if view_as.is_view_payload(payload) and view_as.refusal(request.method, request.scope.get("path", ""),
+                                                                    (request.scope.get("query_string") or b"").decode("latin-1")) is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=view_as.READ_ONLY_MESSAGE,
+                            headers={view_as.READ_ONLY_HEADER: "1"})
+
+
+async def _token_alive(session: AsyncSession, payload: dict, token: str) -> bool:
+    from app.auth import view_as
+    if view_as.is_view_payload(payload):
+        return await view_as.session_alive(session, payload, token)
+    return await _session_alive(session, payload.get("sid"))
 
 
 async def _session_alive(session: AsyncSession, session_id) -> bool:
@@ -59,6 +79,7 @@ def current_session_id(credentials: HTTPAuthorizationCredentials = Depends(_bear
 
 
 async def get_current_user_optional(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> Optional[User]:
@@ -69,8 +90,12 @@ async def get_current_user_optional(
         return None
     try:
         payload = decode_access_token(credentials.credentials)
+    except Exception:
+        return None
+    _refuse_view_writes(request, payload)
+    try:
         user = await session.get(User, int(payload["sub"]))
-        if user is None or not user.is_active or not await _session_alive(session, payload.get("sid")):
+        if user is None or not user.is_active or not await _token_alive(session, payload, credentials.credentials):
             return None
         await _warm_tenant_key(session, user.tenant_id)
         return user

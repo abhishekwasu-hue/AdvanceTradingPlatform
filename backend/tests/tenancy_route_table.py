@@ -49,6 +49,9 @@ P_LEGAL = "public: the Privacy notice, Terms of use and Risk disclosure - the si
 P_STATUS_PAGE = "public: the public status page (component states and the incident banner only; rate limited)"
 M_OWN_TAX = ("member: the caller's own closed trades only (tenant and user) - a member never sees another member's trades and "
              "the organisation owner sees only their own (BT1b; tests/test_tax_report_own.py)")
+S_END_VIEW = ("self: ends the read-only support view behind the caller's own token (the one write a view token may make); a "
+              "normal sign-in has no view to end")
+M_OWN_SUPPORT_ACCESS = "member: the caller's own record of when ATP support viewed their account (their own rows only)"
 S_OWN_LEGAL = "self: records the caller's own acceptance of the legal documents' current versions"
 S_SUPPORT = "self: the support bot answers how-to questions from the docs; no tools, reads no positions or orders (rate limited)"
 S_OWN_ACCOUNT = "self: the caller's own account, sessions and two-factor settings"
@@ -114,6 +117,14 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/admin/console/system"): "admin",
     ("GET", "/api/admin/console/users"): "admin",
     ("GET", "/api/admin/console/activation"): "admin",
+    # MO3-A1: the admin's read-only "View as user" (app/admin/view_as_routes.py).
+    ("GET", "/api/admin/view-sessions"): "admin",
+    ("POST", "/api/admin/view-sessions"): "admin",
+    ("GET", "/api/admin/view-sessions/{view_id}"): "admin",
+    ("POST", "/api/admin/view-sessions/{view_id}/end"): "admin",
+    ("GET", "/api/view-session"): "member",
+    ("POST", "/api/view-session/end"): S_END_VIEW,
+    ("GET", "/api/me/support-access"): M_OWN_SUPPORT_ACCESS,
     # A2: Admin > System > Alerts (app/observability/ops_routes.py) - platform-wide, SUPER_ADMIN + two-factor.
     ("GET", "/api/admin/ops-alerts"): "admin",
     ("POST", "/api/admin/ops-alerts/run"): "admin",
@@ -642,6 +653,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/risk-settings"): "member",
     ("PUT", "/api/risk-settings"): "trader",
     ("GET", "/api/risk-settings/ceilings"): "member",
+    ("GET", "/api/risk-settings/loss-streak"): "member",
+    ("POST", "/api/risk-settings/loss-streak/resume"): "trader",
     ("POST", "/api/risk/evaluate"): S_COMPUTE,
     ("GET", "/api/risk/events"): "member",
     ("GET", "/api/risk/limits"): "member",
@@ -682,6 +695,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/screens"): "trader",
     ("PUT", "/api/screener/screens/{screen_id}"): "trader",
     ("POST", "/api/screener/screens/{screen_id}/archive"): "trader",
+    ("GET", "/api/screener/screens/{screen_id}/versions"): "member",               # LAB-18 (AMW-7): the organisation's own screens
+    ("GET", "/api/screener/screens/{screen_id}/versions/{version}"): "member",
+    ("POST", "/api/screener/screens/{screen_id}/versions/import"): "trader",       # LAB-18: the one upload of a device's history
     ("GET", "/api/screener/taxonomy"): "member",
     ("POST", "/api/screener/validate"): S_COMPUTE,
     ("POST", "/api/screener/stages"): S_COMPUTE,

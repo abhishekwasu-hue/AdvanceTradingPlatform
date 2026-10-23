@@ -1,4 +1,9 @@
 /**
+ * LAB-18 (AMW-7, owner decision 2026-10-23): the versions now live on the server (`screen_versions`; every save that
+ * changes the scan writes one). What this file kept on the device before is uploaded ONCE per scan on the first load
+ * with the server feature present (`syncDeviceHistory`), then the device copy is cleared; the page no longer adds to
+ * it. `snapshot()` still builds the builder blocks a save sends with its version.
+ *
  * Handover 11j step 6 "versions" of a saved scan (flag `screener_copilot`, behind `ui_v2`). The server keeps one copy
  * of a saved scan (`PUT /screener/screens/{id}` updates it in place; immutable server versions are AMW-7 and need a
  * migration - OPEN_QUESTIONS LAB-18), so the history is kept ON THIS DEVICE: every save that changes the scan adds a
@@ -8,6 +13,8 @@
  * Pure helpers (tested) plus a small storage wrapper that never throws: private windows and blocked storage just mean
  * no history.
  */
+import { ApiError } from "../api/errors";
+import type { ImportResponse, VersionBuilder } from "./api";
 import type { Registry, Stage } from "./model";
 import { isLive, stageSummary, stageText } from "./model";
 
@@ -115,6 +122,46 @@ export function writeStore(store: VersionStore, storage: Pick<Storage, "setItem"
   try {
     storage?.setItem(VERSIONS_KEY, JSON.stringify(store));
   } catch { /* storage full or blocked: no history, the save itself already happened */ }
+}
+
+/** Removes the device copy (after the first sync uploaded it). Never throws. */
+export function clearStore(storage: Pick<Storage, "removeItem"> | null = safeStorage()): void {
+  try {
+    storage?.removeItem(VERSIONS_KEY);
+  } catch { /* blocked storage: nothing to clear */ }
+}
+
+/** The builder blocks a save keeps with its server version (LAB-18). */
+export function builderOf(v: ScanVersion): VersionBuilder {
+  return { stages: v.stages, texts: v.texts, summaries: v.summaries };
+}
+
+export interface SyncApi { importVersions: (id: number, versions: unknown[]) => Promise<ImportResponse> }
+export interface SyncResult { left: VersionStore; uploaded: number; stopped: boolean }
+
+/** LAB-18 first sync: each scan's device history goes to the server once (`POST .../versions/import`, which validates,
+ * caps and ignores a repeat), oldest scans first, one at a time. A scan leaves the device copy when the server took it
+ * (or already had it), or when the server says it is not this account's scan (404) or will never take it (another 4xx
+ * except 401 / 403 / 429). The server feature being off (503) stops the sync and keeps everything, as do network
+ * errors, 5xx and 401 / 403 / 429 (tried again on the next load). */
+export async function syncDeviceHistory(store: VersionStore, api: SyncApi): Promise<SyncResult> {
+  const left: VersionStore = { ...store };
+  let uploaded = 0;
+  for (const key of Object.keys(store).sort((a, b) => Number(a) - Number(b))) {
+    const id = Number(key);
+    const list = store[key] ?? [];
+    if (!Number.isInteger(id) || id <= 0 || !list.length) { delete left[key]; continue; }
+    try {
+      const res = await api.importVersions(id, list.slice(-MAX_VERSIONS));
+      uploaded += res.imported;
+      delete left[key];
+    } catch (e) {
+      const status = e instanceof ApiError ? e.status : 0;
+      if (status === 503) return { left, uploaded, stopped: true };
+      if (status >= 400 && status < 500 && ![401, 403, 429].includes(status)) delete left[key];
+    }
+  }
+  return { left, uploaded, stopped: false };
 }
 
 function safeStorage(): Storage | null {

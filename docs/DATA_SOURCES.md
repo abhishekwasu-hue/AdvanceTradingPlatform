@@ -27,6 +27,28 @@ whose terms are unclear is **off** until the operator confirms it (Admin, or the
 | NSE archives daily bhavcopies: cash (`cm<DD><MON><YYYY>bhav.csv.zip` until 5 Jul 2024, UDiFF `BhavCopy_NSE_CM_0_0_0_<YYYYMMDD>_F_0000.csv.zip` from 8 Jul 2024), F&O (`fo...bhav.csv.zip` / `BhavCopy_NSE_FO_...`), all-indices close | HB1 daily backfill (10 years) and nightly EOD job: `md_candles` timeframe `day`, sources `nse_bhav:cm|index|fo`; `index_eod`; `md_isin_symbols`; backtests without a broker (flag `backtest_stored_history`, `app/backtest/bar_source.py`: Daily / Weekly only, the run's own result and chart, no bulk export; licence position OPEN_QUESTIONS BSH-1) | free public download files; same terms caveat as the equity lists - the owner confirms the terms before turning the flag on; polite fetching (paced, backoff, no parallel requests); the admin's manual upload of the same files is the alternative | unadjusted daily bars, file SHA-256 per day (`history_backfill_files`), optional raw copy | **off** (`history_backfill` flag) |
 | NSE archives all-indices close (`ind_close_all_<ddmmyyyy>.csv`), F&O market lots (`fo_mktlots.csv`), F&O ban list (`fo_secban.csv`) | Screener U1-c `index_eod`, `fo_membership`, `fo_ban_history` | published download files; same terms caveat as the equity lists; manual upload is the alternative | rows with source, fetched_at, checksum | **off** (`UNIVERSE_SYNC_ENABLED`) |
 
+## For the lawyer
+
+Questions about these sources to take to a lawyer before LIVE / public launch (the one lawyer list of readiness item
+A6.3, when it is written, takes these over; `docs/COMPLIANCE_IN.md` is generated from the SEBI rule-set).
+
+1. **The system watchlists from the NSE / niftyindices files (owner decision 23 Oct, WL1-3 / WL1-4).** The server
+   downloads, once a day after the close (and on the owner's `atp.sh lists-sync`), NSE's published equity / SME / ETF
+   lists and symbol changes (`nsearchives.nseindia.com`), the F&O market lots and ban list, and the index provider's
+   constituent files (`niftyindices.com/IndexConstituent/...`, 37 indices). From them only NAMES are kept and shown:
+   symbols, company names, ISINs, index membership, the sector, the F&O list - no prices from those files on the
+   lists (prices come from each user's own broker session) and nothing is committed to the public repository. The
+   lists are shown read-only to every signed-in user and can be copied into his own list. Both websites' terms
+   restrict automated access and redistribution of their content. Questions: (a) may a SaaS download these published
+   files automatically for its users, at this cadence (one request per file per day, a pause between files, an
+   identifying user agent); (b) may it display the derived names / membership / sector lists to its signed-in users;
+   (c) is a licence from NSE Indices Limited / NSE needed for (a) or (b), and on what terms; (d) what attribution or
+   notice the lists must carry.
+2. **The all-indices closing file (WL1-9).** With the sync on, the nightly job also stores NSE's daily index closing
+   values (`ind_close_all_<date>.csv`) as reference data for the Sector & index view (not shown on the watchlists).
+   Question: is storing and showing those closes covered by the same answer as item 1, or does it need a data licence
+   (the licensed EOD source of RDY-6)?
+
 ## Phase BB rules
 
 * One fetch serves every organisation (shared `news_events` rows, `origin=FEED`, `verified=false`). The

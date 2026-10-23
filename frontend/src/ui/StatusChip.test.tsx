@@ -1,13 +1,21 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { StatusChip, statusTone, type Status } from "./StatusChip";
+import { ColourV2Provider } from "./colourV2";
 
 /** Chart + colour order Part 3, CC-1 / CC-2 (provisional defaults): states never take the P&L colours. */
 describe("StatusChip", () => {
   const html = (status: Status, atStake = false) => renderToStaticMarkup(<StatusChip status={status} atStake={atStake} />);
 
-  it("Connected is a neutral chip with a green check (colour v2): only the icon takes the up colour", () => {
+  it("Connected is neutral with a check - never green - while colour v2 is off (no visual change)", () => {
     const h = html("connected");
+    expect(h).toContain("Connected");
+    expect(h).toContain("lucide-check");
+    expect(h).not.toMatch(/(?<![\w-])(?:text|bg|border)-up\b/);
+  });
+
+  it("Connected is a neutral chip with a green check (colour v2): only the icon takes the up colour", () => {
+    const h = renderToStaticMarkup(<ColourV2Provider on><StatusChip status="connected" /></ColourV2Provider>);
     expect(h).toContain("Connected");
     expect(h).toContain("lucide-check");
     expect(h).toContain("bg-surface-2 text-fg-muted");

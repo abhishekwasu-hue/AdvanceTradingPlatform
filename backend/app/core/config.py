@@ -78,6 +78,26 @@ VIEW_AS_MINUTES = max(5, min(60, int(os.environ.get("VIEW_AS_MINUTES", "30") or 
 VIEW_AS_MFA_FRESH_MINUTES = max(1, min(60, int(os.environ.get("VIEW_AS_MFA_FRESH_MINUTES", "15") or "15")))
 REFRESH_TOKEN_DAYS = int(os.environ.get("REFRESH_TOKEN_DAYS", "30"))
 
+
+def _env_int_in(name: str, default: int, low: int, high: int) -> int:
+    """An integer setting kept inside [low, high]; anything else (unset, not a number, out of range) is the default."""
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return value if low <= value <= high else default
+
+
+# A4 (review R5 c, RDY-28): each refresh slides a session another REFRESH_TOKEN_DAYS, so a device that keeps opening the
+# app would stay signed in for ever. SESSION_MAX_DAYS is the absolute cap counted from the sign-in itself: after it the
+# person signs in again (and enters the authenticator code again, when two-factor is on), however active the device was.
+SESSION_MAX_DAYS = _env_int_in("SESSION_MAX_DAYS", 90, 1, 3650)
+# A4 (review R5 c, RDY-29): how recent the two-factor check on this session must be for a SUPER_ADMIN write (every route
+# behind `require_mfa_session` that is not a GET). Admin reads need a checked session, not a recent one, so the console
+# stays usable; a write after the window asks for the authenticator code once more and then carries on. The LIVE step-up
+# (`ensure_live_step_up`) is unchanged: PAPER only in Phase 0, decided with LIVE.
+MFA_STEP_UP_MINUTES = _env_int_in("MFA_STEP_UP_MINUTES", 30, 1, 24 * 60)
+
 # Fernet key for encrypting broker credentials at rest. Must be set via env in any real
 # deployment - a process-local fallback is generated here only so the app still runs for local
 # development, but anything encrypted with it becomes unreadable across restarts.
@@ -240,6 +260,10 @@ LAKE_LATE_SECONDS = float(os.environ.get("LAKE_LATE_SECONDS", "300"))
 LAKE_MISMATCH_PCT = float(os.environ.get("LAKE_MISMATCH_PCT", "0.5"))
 # Part B4: also adjust prices for dividends in the adjusted view (splits and bonuses always are).
 LAKE_ADJUST_DIVIDENDS = os.environ.get("LAKE_ADJUST_DIVIDENDS", "false").lower() in ("1", "true", "yes")
+# Owner order 23 Oct (app/backtest/bar_source.py): the shared lake's Daily sources a backtest without a broker may read,
+# as source prefixes. Default: the NSE daily files only (RDY-6: licensed EOD only, never the platform's or another user's
+# broker feed). "r2:" adds the R2 daily import once its licence position allows it (OPEN_QUESTIONS BSH-2).
+BACKTEST_STORED_SOURCES = tuple(p.strip() for p in os.environ.get("BACKTEST_STORED_SOURCES", "nse_bhav:").split(",") if p.strip())
 # Part B5: most bars one /api/market-data/history request returns (narrow the window for more).
 LAKE_HISTORY_MAX_BARS = int(os.environ.get("LAKE_HISTORY_MAX_BARS", "5000"))
 # HB0: most 1-minute rows one tenant-store request may READ before resampling (checked with a count first), so a
@@ -327,6 +351,9 @@ TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_
 # the broker's own per-connection cap (app/market_data/broker_data_terms.json) applies on top when it is recorded.
 # 50 is the per-session figure of the beta capacity model (§4), not a broker limit.
 BYOB_SESSION_SYMBOL_CAP = max(1, int(os.environ.get("BYOB_SESSION_SYMBOL_CAP", "50")))
+# TM Part 1 (data hub, flag `data_hub`): an option-chain snapshot is shared within one broker connection for this many
+# seconds (the chain page, a chart and a Copilot question in the same moment make one broker call). 0 = no sharing.
+HUB_CHAIN_SNAPSHOT_SECONDS = max(0, int(os.environ.get("HUB_CHAIN_SNAPSHOT_SECONDS", "5")))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more
 # than BROKER_CIRCUIT_FAILURE_RATIO of the broker calls in the last BROKER_CIRCUIT_WINDOW_SECONDS
@@ -425,6 +452,14 @@ PLATFORM_SMTP_USERNAME = os.environ.get("PLATFORM_SMTP_USERNAME", "")
 PLATFORM_SMTP_PASSWORD = os.environ.get("PLATFORM_SMTP_PASSWORD", "")
 PLATFORM_SMTP_FROM = os.environ.get("PLATFORM_SMTP_FROM", "")
 PLATFORM_SMTP_STARTTLS = os.environ.get("PLATFORM_SMTP_STARTTLS", "true").strip().lower() not in {"0", "false", "no"}
+# Readiness C13: the first-week onboarding e-mails (flag `onboarding_emails`, OFF; nothing is sent without PLATFORM_SMTP_*
+# and PUBLIC_BASE_URL). Hours after sign-up for "connect your broker", "start your first paper bot" and "review your first
+# signal", in that order; each goes once, only inside the first week.
+ONBOARDING_EMAIL_AFTER_HOURS = os.environ.get("ONBOARDING_EMAIL_AFTER_HOURS", "2,48,120").strip()
+ONBOARDING_EMAIL_WINDOW_HOURS = int(os.environ.get("ONBOARDING_EMAIL_WINDOW_HOURS", "168"))
+# Readiness C13: a new account may name the invite code it arrived with for this many days after signing up (flag
+# `referrals`, OFF).
+REFERRAL_CLAIM_DAYS = int(os.environ.get("REFERRAL_CLAIM_DAYS", "7"))
 # When on, LIVE deployments and broker credential storage require a verified email address.
 EMAIL_VERIFICATION_REQUIRED = os.environ.get("EMAIL_VERIFICATION_REQUIRED", "false").strip().lower() in {"1", "true", "yes"}
 
@@ -433,6 +468,15 @@ EMAIL_VERIFICATION_REQUIRED = os.environ.get("EMAIL_VERIFICATION_REQUIRED", "fal
 # `python -m app.alerts.webpush` and keep it stable: rotating it invalidates every subscription.
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "").strip() or None
 VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "mailto:ops@example.com").strip()
+
+# --- Phone notifications for the Android app (readiness B8, docs/design/MOBILE_PUSH.md) ----------------------------
+# Firebase Cloud Messaging HTTP v1. A Firebase service account key (JSON) authorises the server: either base64 on one
+# line in .env (FCM_SERVICE_ACCOUNT_JSON_BASE64, the way on the Hostinger host) or a path to the file
+# (FCM_SERVICE_ACCOUNT_FILE). FCM_PROJECT_ID is optional (the key's own project_id when empty). All empty = phone
+# notifications are off: nothing is sent and the device routes say "not set up on this server yet".
+FCM_PROJECT_ID = os.environ.get("FCM_PROJECT_ID", "").strip()
+FCM_SERVICE_ACCOUNT_FILE = os.environ.get("FCM_SERVICE_ACCOUNT_FILE", "").strip()
+FCM_SERVICE_ACCOUNT_JSON_BASE64 = os.environ.get("FCM_SERVICE_ACCOUNT_JSON_BASE64", "").strip()
 
 # --- The platform's Telegram bot (UX2 fix 5: "Telegram in one tap") --------------------------------
 # One bot for every organisation, created once by the operator with @BotFather. A user taps "Connect Telegram", the app

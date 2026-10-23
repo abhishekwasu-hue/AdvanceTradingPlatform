@@ -137,7 +137,7 @@ export function aiProviderChip(p: Pick<AiProviderConfig, "configured" | "enabled
   return { text: `Connected (${PROVIDER_LABEL[p.provider] ?? p.provider})`, tone: "ok" };
 }
 
-const CHANNEL_NAME: Record<string, string> = { EMAIL: "Email", PUSH: "App notifications", SMS: "SMS", WEBHOOK: "Webhook", WHATSAPP: "WhatsApp" };
+const CHANNEL_NAME: Record<string, string> = { EMAIL: "Email", PUSH: "App notifications", SMS: "SMS", WEBHOOK: "Webhook", WHATSAPP: "WhatsApp", FCM: "Phone notifications" };
 
 /** Alerts: the organisation's channels (GET /alert-channels, a plain read: Telegram is never asked from here). */
 export function alertsChip(channels: readonly Pick<AlertChannel, "channel_type" | "enabled" | "last_error">[] | null): Chip | null {

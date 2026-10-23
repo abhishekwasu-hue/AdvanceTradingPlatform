@@ -7,6 +7,7 @@ import type { StagesResponse } from "./importStages";
 import type { ConfluenceResponse, MirrorsResponse, WatchListsResponse, WatchResponse } from "./library";
 import type { EtfResponse } from "./etf";
 import type { Taxonomy } from "./taxonomy";
+import type { BatchBudget } from "./universe";
 
 export interface Problem { message: string; pos: number | null }
 export interface ValidateResponse { ok: boolean; problems: Problem[]; text: string | null; plan: { cost: number; lookback: Record<string, number> } }
@@ -78,6 +79,10 @@ export const screenerApi = {
     request<ValidateResponse>("/screener/validate", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf }) }),
   run: (source: string, baseTf: string, symbols: string[], exchange = "NSE") =>
     request<RunResponse>("/screener/run", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, symbols, exchange }) }),
+  /** Owner order 23 Oct: one batch of a larger universe - its broker calls take tokens from the session's shared API
+   * budget, and the answer says how many it made (`budget`), so the page paces the next batch. */
+  runBatch: (source: string, baseTf: string, symbols: string[], exchange = "NSE") =>
+    request<RunResponse & { budget?: BatchBudget }>("/screener/run", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, symbols, exchange, batch: true }) }),
   /** D2 live counts while editing: the same evaluation, not stored as a run. */
   preview: (source: string, baseTf: string, symbols: string[], exchange = "NSE") =>
     request<PreviewResponse>("/screener/run", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, symbols, exchange, preview: true }) }),

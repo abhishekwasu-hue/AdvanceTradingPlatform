@@ -155,6 +155,9 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/src/signals/__fixtures__/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
     # Idea library slice 1: the server's own payload of the hand-written idea cards (no market data; synced by a backend test)
     "frontend/e2e/fixtures/ideas_v2.json": "aea13574a934836de671313d324d15049c6867efa2eb4f42456549fbecb66845",
+    # Readiness C13: the Learn page and the marketing pages, the server's own hand-written payloads (backend/tests/test_c13_learning.py).
+    "frontend/e2e/fixtures/learn_v2.json": "45ce93482f856a6cf9bc83c4a3d2cf750582c041b10bac3594c9782edaf99e3d",
+    "frontend/e2e/fixtures/site_v2.json": "c1539facb9bbb4df51d2aad62d3118da77a8ab654c756a972fa7e3a6c2c096e1",
     # made-up rows in NSE's file layouts (the universe importer's tests)
     "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
     "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",
@@ -179,9 +182,10 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
     "backend/evals/sets/qa.jsonl": "845e5902cbc904864ec1f24bbf589194428ec462e164e388ab04b9734469338e",
     "backend/evals/sets/tool_args.jsonl": "578efa3d69f7d860f221068273a074b018e7998b71bdf8c55d5bdbd66d7f862b",
-    "backend/evals/sets/copilot_jobs.jsonl": "f491d36a6dd3c36cb52be54b30dd507dacfce65c19122c316e6da2acda900228",
-    "backend/evals/sets/copilot_safety.jsonl": "faaeb912b7276423e0641bd9abc3d8c638ab8f5a02d6d4ffbce361e5faaeceb0",
-    "backend/evals/sets/copilot_tools.json": "ed4f370b06cb03a2556d04fb076a453624d161e4e39af0af3752864c4870b157",
+    "backend/evals/sets/copilot_jobs.jsonl": "43566266ba2acd7cc345fa90c6c2a94f3073b15100a716e5a37ffd87eab1e922",
+    "backend/evals/sets/copilot_safety.jsonl": "6957614b58ca737a77f1445e2d3bd0a13fa5c3063c829e75506e6043a3a37287",
+    "backend/evals/sets/copilot_tools.json": "c7946be46843344a0095458d4faa555e8342138d968f3b2a04eacc25a355d8a6",
+    "frontend/e2e/fixtures/copilot_tools_v2.json": "726d73ab9c4939de9b1358da0862f08ca2cf67c44ec918c793fadf4ca11c7deb",
     # hand-written API replies for the Playwright tests
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",
     "frontend/e2e/fixtures/actions.json": "49e8cbfacbd96f95bc73a90691ae343bd487140c7ba30b5954031a1a2d96e547",

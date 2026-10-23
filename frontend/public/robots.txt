@@ -1,0 +1,14 @@
+# C13: the public pages may be indexed; the app itself and the API may not.
+User-agent: *
+Allow: /$
+Allow: /features
+Allow: /how-it-works
+Allow: /about
+Allow: /legal/
+Allow: /status
+Disallow: /api/
+Disallow: /settings
+Disallow: /admin
+Disallow: /*?
+
+Sitemap: https://aialgodesk.tech/sitemap.xml

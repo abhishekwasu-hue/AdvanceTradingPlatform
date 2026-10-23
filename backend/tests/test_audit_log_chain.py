@@ -10,6 +10,7 @@ from app.audit.log import verify_audit_chain, write_audit_log
 from app.auth.security import decode_access_token
 from app.db.models import AuditLogRecord, User
 from tests.test_auth_api import _register, _session_factory, client
+from tests.utils import enable_mfa
 
 
 def test_writes_form_a_valid_chain():
@@ -66,6 +67,7 @@ def test_verify_endpoint_reports_intact_chain_for_super_admin():
             await session.commit()
 
     asyncio.run(_promote_to_super_admin())
+    enable_mfa(headers)  # A4: the verify endpoint needs an MFA-verified admin session
 
     response = client.get("/api/audit-logs/verify", headers=headers)
     assert response.status_code == 200

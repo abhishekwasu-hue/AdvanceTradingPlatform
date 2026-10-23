@@ -207,7 +207,8 @@ def test_each_profile_report_carries_the_runners_bcrypt_baseline_in_its_first_li
 
 def test_the_overlay_leaves_production_alone():
     atp = (ROOT / "deploy" / "atp.sh").read_text()
-    assert "deploy/ci" not in atp and "compose.ci" not in atp
+    # deploy/ci/ is the CI-only folder; deploy/ci_gate.py (A3) is production code next to atp.sh, so match the folder
+    assert "deploy/ci/" not in atp and "compose.ci" not in atp
     overlay = yaml.safe_load((CI / "compose.ci.yml").read_text().replace("!override", "").replace("!reset", ""))
     for name, svc in overlay["services"].items():
         for port in svc.get("ports") or []:

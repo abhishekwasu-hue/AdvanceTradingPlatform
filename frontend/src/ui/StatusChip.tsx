@@ -1,12 +1,14 @@
 import { Check, CircleAlert, FlaskConical, Info, Radio, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { Chip, type ChipTone, type ChipVariant } from "./Chip";
+import { useColourV2 } from "./colourV2";
 
 /**
  * Chart + colour order, Part 3 (CC-1, CC-2): the status chip - the word, an icon and a colour by meaning, the same on
  * every page. It never reuses the P&L colours for a state:
- * - connected / done: a neutral chip with a check; the check alone is green (colour v2, owner 23 Oct: "status chips
- *   stay neutral, but the check icon is green") - the chip itself never takes the profit colour;
+ * - connected / done: a neutral chip with a check; with colour v2 on (flag `colour_v2`) the check alone is green
+ *   (owner 23 Oct: "status chips stay neutral, but the check icon is green") - the chip itself never takes the profit
+ *   colour; with the flag off the check stays neutral, exactly as before;
  * - needs action: warn, with a warning icon;
  * - error: warn - or down only when money or an order is at stake (`atStake`);
  * - info: info, with an info icon;
@@ -41,8 +43,10 @@ export function statusTone(status: Status, atStake = false): ChipTone {
 
 export function StatusChip({ status, children, atStake = false, className }: StatusChipProps) {
   const look = LOOK[status];
+  const colour = useColourV2();
   return (
-    <Chip name={status} tone={statusTone(status, atStake)} variant={look.variant} icon={look.icon} iconClassName={look.iconClass} className={className}>
+    <Chip name={status} tone={statusTone(status, atStake)} variant={look.variant} icon={look.icon}
+      iconClassName={colour ? look.iconClass : undefined} className={className}>
       {children ?? look.word}
     </Chip>
   );

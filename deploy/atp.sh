@@ -30,13 +30,22 @@
 #                                                  removes a load-test run's organisation / containers by hand
 #   /opt/atp/deploy/atp.sh reset-password EMAIL    sets a user's new password (asked twice, never shown or logged) and
 #                                                  signs out their sessions - until e-mail (SMTP) is configured
+#   /opt/atp/deploy/atp.sh env-set KEY=VALUE ...  WL1-4: sets NON-secret settings in .env from a short allowlist
+#                                                  (the universe / instrument sync switches), every other line kept,
+#                                                  a mode-600 backup in .deploy/env-backups first; a re-run changes nothing
+#   /opt/atp/deploy/atp.sh lists-sync [--check]    WL1-4: (needs UNIVERSE_SYNC_ENABLED=true) the HTTP status of every
+#                                                  published file, then the instrument master + universe sync (names
+#                                                  only) + the system-watchlists refresh NOW, each group's lists with
+#                                                  their row counts and unmapped symbols; then the API and the worker
+#                                                  pick up the settings. --check: only the file status lines
 #   /opt/atp/deploy/atp.sh schedule | releases | help
 #
 #   --dry-run (anywhere, or ATP_DRY_RUN=1): prints every step it would take; changes nothing on the host.
 #
 # Rules it keeps (tests/test_z11_deploy_bundle.py checks them):
 #   * secrets are read only from /opt/atp/.env, never created, edited or printed - only key NAMES appear in output, and
-#     no secret is ever put on a command line; .env must exist, be mode 600 and hold every required key;
+#     no secret is ever put on a command line; .env must exist, be mode 600 and hold every required key; the one
+#     write is `env-set`: only the non-secret keys of ENV_SET_KEYS, after a mode-600 backup, every other line kept;
 #     SECRETS_ENCRYPTION_KEY must be the one this host first deployed with (a salted scrypt fingerprint is kept in
 #     .deploy/) - it is never rotated here;
 #   * fails closed: any failed step stops the run with a non-zero exit before the next one changes anything, and the
@@ -53,6 +62,11 @@
 #     when the owner ends Phase 0), so a fresh install starts PAPER-only with nothing for the owner to set; `health`
 #     and `install` still ask the owner to act (exit 10) if live_trading is on or phase0_paper_only is off; profiles
 #     come only from COMPOSE_PROFILES in .env;
+#   * A3 (review R3): `deploy` refuses a commit whose checks did not pass on main - CI lint, backend,
+#     backend-lookahead, frontend and the CI staging stack's acceptance, rollback and offsite, read from the public
+#     GitHub API (deploy/ci_gate.py, no token); known-red jobs per CI_GATE_KNOWN_RED in .env (default: load-500,
+#     LD-9). Refused also while they still run and when GitHub cannot be reached. Emergency only:
+#     ATP_ALLOW_UNTESTED=1 ATP_UNTESTED_REASON='...' (logged in .deploy/gate.log, the audit trail and `health`);
 #   * idempotent: running a command again converges on the same state.
 #
 # Exit codes: 0 ok | 1 failed | 2 usage | 3 refused: market session (migration / restart) - for `loadtest`: outside
@@ -78,6 +92,9 @@ COMPOSE_MIN="2.24"
 REQUIRED_KEYS=(POSTGRES_PASSWORD JWT_SECRET_KEY SECRETS_ENCRYPTION_KEY METRICS_TOKEN DOMAIN ACME_EMAIL BACKUP_ENCRYPTION_PASSPHRASE)
 LIVE_SWITCHES=(LIVE_MARKET_PROTECTION LIVE_UPSTOX_OPTION_STOP_LIMIT LIVE_EXIT_IF_NO_STOP LIVE_STRICT_WING_FILL STATIC_IP_REQUIRED_FOR_LIVE)
 APP_IMAGES=(atp-backend atp-worker atp-frontend atp-research-worker atp-backup)
+# WL1-4: the only keys `env-set` may write - plain switches, never a secret or a LIVE switch.
+ENV_SET_KEYS=(UNIVERSE_SYNC_ENABLED UNIVERSE_SYNC_HOUR_IST INSTRUMENT_SYNC_EXCHANGES INSTRUMENT_SYNC_HOUR_IST)
+ENV_BACKUPS_KEEP=10
 
 RELEASE=""          # image tag compose uses (ATP_RELEASE)
 DB_AHEAD=""         # MIGRATION_ALLOW_DB_AHEAD for compose: the exact database revision an older image may start on
@@ -605,6 +622,15 @@ report_settings() {
   for k in GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do if env_set "$k"; then n=$((n + 1)); fi; done
   case "$n" in 0) info "Google sign-in (GS-1): not set (optional; no Google button)";; 2) ok "Google sign-in (GS-1): both keys set (the button shows)";;
     *) warn "Google sign-in (GS-1): only one of GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET set - the button stays hidden";; esac
+  # B8: browser notifications need a stable VAPID key; without one the app refuses new browser subscriptions (runbook section 4).
+  if env_set VAPID_PRIVATE_KEY; then
+    ok "browser notifications (Web Push): VAPID_PRIVATE_KEY set - subscriptions survive restarts"
+    case "$(env_get VAPID_SUBJECT)" in ""|*@example.com) warn "browser notifications: VAPID_SUBJECT is not your own contact (mailto:you@yourdomain)";; esac
+  else
+    warn "browser notifications (Web Push): VAPID_PRIVATE_KEY is not set - the app refuses new browser subscriptions until it is (runbook section 4, 'Browser and phone notifications')"
+  fi
+  if env_set FCM_SERVICE_ACCOUNT_JSON_BASE64 || env_set FCM_SERVICE_ACCOUNT_FILE; then ok "phone notifications (Android app, FCM): key set - the mobile_push flag decides who gets them"
+  else info "phone notifications (Android app, FCM): not set (optional; FCM_SERVICE_ACCOUNT_JSON_BASE64) - nothing is sent to phones"; fi
 }
 
 lock() {
@@ -735,6 +761,7 @@ health_checks() {
   info "running: ${cur:0:12}${cur:+ }$(git -C "$ATP_DIR" log -1 --format='%cd %s' --date=format:'%Y-%m-%d %H:%M' "${cur:-HEAD}" 2>/dev/null | cut -c1-80)"
   if [ -n "$cur" ] && [ "$(git -C "$ATP_DIR" rev-parse HEAD)" != "$cur" ]; then warn "checkout $(git -C "$ATP_DIR" rev-parse --short=12 HEAD) differs from the running release ${cur:0:12}"; fi
   if db_ahead_marker; then warn "database is ahead of the running code since a rollback (revision $(cat "$STATE_DIR/db_ahead"))"; fi
+  gate_report "$cur"
 
   step "secrets key"
   check_key_live
@@ -760,16 +787,22 @@ health_checks() {
 public_domain_check() {
   local domain="$1" code hdrs h missing="" want got
   local here=(--resolve "$domain:443:127.0.0.1" --resolve "www.$domain:443:127.0.0.1")
-  hdrs="$(curl -sk -m 10 -D - -o /dev/null "${here[@]}" "https://$domain/" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
-  if ! printf '%s\n' "$hdrs" | grep -q '^http/'; then
-    bad "https://$domain/ through Caddy here gave no answer, so its security headers could not be checked"
-  else
-    for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy; do
+  # A4: the app page and the API both, and Permissions-Policy plus the CSP's frame-ancestors as well.
+  local page
+  for page in / /api/system/health; do
+    missing=""
+    hdrs="$(curl -sk -m 10 -D - -o /dev/null "${here[@]}" "https://$domain$page" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
+    if ! printf '%s\n' "$hdrs" | grep -q '^http/'; then
+      bad "https://$domain$page through Caddy here gave no answer, so its security headers could not be checked"
+      continue
+    fi
+    for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy permissions-policy; do
       printf '%s\n' "$hdrs" | grep -q "^$h:" || missing="$missing $h"
     done
-    if [ -z "$missing" ]; then ok "https://$domain/ sends HSTS, CSP, X-Frame-Options, X-Content-Type-Options and Referrer-Policy"
-    else bad "https://$domain/ is missing:$missing (deploy/Caddyfile)"; fi
-  fi
+    printf '%s\n' "$hdrs" | grep -q "^content-security-policy:.*frame-ancestors 'none'" || missing="$missing csp-frame-ancestors"
+    if [ -z "$missing" ]; then ok "https://$domain$page sends HSTS, CSP (frame-ancestors), X-Frame-Options, X-Content-Type-Options, Referrer-Policy and Permissions-Policy"
+    else bad "https://$domain$page is missing:$missing (deploy/Caddyfile)"; fi
+  done
   want="301 https://$domain/atp-health-probe?x=1"
   got="$(curl -sk -o /dev/null -m 10 -w '%{http_code} %{redirect_url}' "${here[@]}" "https://www.$domain/atp-health-probe?x=1" 2>/dev/null || true)"
   case "$got" in
@@ -857,6 +890,82 @@ health_until_ok() {
   cat "$STATE_DIR/logs/health-last.txt"
 }
 
+# --- A3: the deploy gate (review R3) ----------------------------------------------------------------------------
+# `deploy` changes nothing until deploy/ci_gate.py has read, from the PUBLIC GitHub API (no token: the repository is
+# public), that the push runs on main for the commit passed: CI_GATE_REQUIRED (default: CI lint, backend,
+# backend-lookahead, frontend; the CI staging stack's acceptance, rollback, offsite) all succeeded, and every other job
+# of those workflows passed, was skipped or is on CI_GATE_KNOWN_RED (default: the 500-user load test, LD-9). Refused
+# when a check failed, is still running, or GitHub cannot be reached. The one way past it is
+# ATP_ALLOW_UNTESTED=1 with ATP_UNTESTED_REASON='...': written to .deploy/gate.log, the audit trail and `health`.
+# `rollback` is never gated: it goes back to a release that already ran here.
+UNTESTED=""   # the reason, when this deploy runs under ATP_ALLOW_UNTESTED=1
+gate_repo() {
+  local r; r="$(env_get CI_GATE_REPO)"
+  if [ -z "$r" ]; then
+    r="$(git -C "$ATP_DIR" remote get-url origin 2>/dev/null | sed -nE 's#^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)([^/]+/[^/]+)$#\2#p' | sed -E 's/\.git$//')"
+  fi
+  printf '%s' "$r"
+}
+gate_log() { [ "$DRY_RUN" = "1" ] || { state_init; printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$STATE_DIR/gate.log"; }; }
+untested_reason() { printf '%s' "${ATP_UNTESTED_REASON:-}" | tr -d '\000-\037\177' | cut -c1-200; }
+
+ci_gate() {   # ci_gate <sha> <ref as typed>
+  local sha="$1" ref="$2"
+  local again="ATP_ALLOW_UNTESTED=1 ATP_UNTESTED_REASON='why it cannot wait' $ATP_DIR/deploy/atp.sh deploy $ref"
+  step "checks on main (only a commit whose tests passed is deployed)"
+  if [ "${ATP_ALLOW_UNTESTED:-0}" = "1" ]; then
+    UNTESTED="$(untested_reason)"
+    [ -n "${UNTESTED// /}" ] || die "ATP_ALLOW_UNTESTED=1 needs a reason, written to the deploy log and the audit trail: $again" 2
+    warn "deploying ${sha:0:12} WITHOUT checking its tests (ATP_ALLOW_UNTESTED=1) - reason: $UNTESTED"
+    gate_log untested "$sha" "$UNTESTED"
+    return 0
+  fi
+  [ -f "$SCRIPT_DIR/ci_gate.py" ] || die "deploy/ci_gate.py is missing next to this script - cannot check the tests" 1
+  local -a genv=("CI_GATE_REPO=$(gate_repo)" "CI_GATE_REQUIRED=$(env_get CI_GATE_REQUIRED)")
+  [ -z "${ENVV[CI_GATE_KNOWN_RED]+x}" ] || genv+=("CI_GATE_KNOWN_RED=$(env_get CI_GATE_KNOWN_RED)")
+  local js rc=0 verdict detail newest red hint=""
+  js="$(env "${genv[@]}" python3 "$SCRIPT_DIR/ci_gate.py" check "$sha")" || rc=$?
+  verdict="$(printf '%s' "$js" | json_get verdict)"
+  detail="$(printf '%s' "$js" | json_get detail)"
+  newest="$(printf '%s' "$js" | json_get newest_passed)"
+  red="$(printf '%s' "$js" | json_get known_red_text)"
+  if [ "$rc" = "0" ] && [ "$verdict" = "pass" ]; then
+    ok "$detail"
+    [ -z "$red" ] || info "known red on main, allowed by CI_GATE_KNOWN_RED: $red"
+    gate_log pass "$sha" "-"
+    return 0
+  fi
+  gate_log refused "$sha" "${verdict:-error}"
+  if [ -n "$newest" ] && git -C "$ATP_DIR" cat-file -e "$newest^{commit}" 2>/dev/null; then
+    hint=" The newest commit that passed: ${newest:0:12} ($(git -C "$ATP_DIR" log -1 --format='%s' "$newest" | cut -c1-60)) - deploy it with: $ATP_DIR/deploy/atp.sh deploy ${newest:0:12}."
+  fi
+  case "$verdict" in
+    pending) die "not deployed: ${detail}. Run the same command again once they finish (CI about 20 minutes, the staging stack about an hour).$hint Nothing was changed." 2 ;;
+    fail) die "not deployed - $detail.$hint Nothing was changed. Emergency only: $again" 2 ;;
+    unreachable) die "not deployed - $detail. Nothing was changed. Try again in a few minutes. Emergency only: $again" 1 ;;
+    *) die "not deployed - the tests could not be checked: ${detail:-deploy/ci_gate.py gave no answer}. Nothing was changed." 2 ;;
+  esac
+}
+
+# The audit trail (hash-chained audit_logs) gets one row per deploy under the override; the new release's backend
+# writes it (backend/scripts/deploy_audit.py, the reason on stdin). A failure only WARNs: .deploy/gate.log has it.
+audit_untested() {
+  [ -n "$UNTESTED" ] && [ "$DRY_RUN" != "1" ] || return 0
+  if printf '%s\n' "$UNTESTED" | dc exec -T backend python scripts/deploy_audit.py deploy_untested "$1" >/dev/null 2>&1; then
+    ok "the untested deploy is in the audit trail (deploy_untested)"
+  else warn "could not write the untested deploy to the audit trail - it is in $STATE_DIR/gate.log"; fi
+}
+
+# `health`: the running release went out under the override.
+gate_report() {
+  local cur="$1" line
+  [ -n "$cur" ] && [ -f "$STATE_DIR/gate.log" ] || return 0
+  line="$(awk -v s="$cur" '$3 == s && ($2 == "untested" || $2 == "pass")' "$STATE_DIR/gate.log" | tail -n 1)"
+  case "$line" in
+    *" untested "*) warn "${cur:0:12} was deployed WITHOUT its tests passing (ATP_ALLOW_UNTESTED, ${line%% *}) - reason: $(printf '%s' "$line" | cut -d' ' -f4-). Deploy a commit that passed when you can." ;;
+  esac
+}
+
 # --- commands ----------------------------------------------------------------------------------------------------
 cmd_health() {
   [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
@@ -911,6 +1020,7 @@ cmd_deploy() {
     die "$ref ($sha) is not on origin/main - deploy merged code only (ATP_ALLOW_UNMERGED=1 to override knowingly)" 2
   fi
   git -C "$ATP_DIR" cat-file -e "$sha:deploy/atp.sh" 2>/dev/null || die "$ref predates deploy/atp.sh - cannot deploy it with this bundle" 2
+  ci_gate "$sha" "$ref"
   prev="$(current_sha)"
   head_before="$(git -C "$ATP_DIR" rev-parse HEAD)"
   RELEASE="$(release_of "$sha")"
@@ -1017,6 +1127,7 @@ cmd_deploy() {
     printf '%s\n' "$sha" > "$STATE_DIR/current"
     rm -f "$STATE_DIR/db_ahead"
     record_images "$sha"
+    audit_untested "$sha"
   fi
 
   step "health"
@@ -1669,6 +1780,10 @@ cmd_releases() {
   printf '%-20s %-8s %-12s %-12s %-54s %s\n' "time (UTC)" kind release previous "pre-migration backup" "schema"
   awk '{printf "%-20s %-8s %-12s %-12s %-54s %s -> %s\n", $1, $2, substr($3,1,12), substr($4,1,12), $5, $6, $7}' "$STATE_DIR/releases.log"
   printf 'running: %s\n' "$(current_sha | cut -c1-12)"
+  if [ -f "$STATE_DIR/gate.log" ]; then
+    printf '\nchecks on main before each deploy (.deploy/gate.log, newest last):\n'
+    tail -n 10 "$STATE_DIR/gate.log" | awk '{r = ""; for (i = 4; i <= NF; i++) r = r " " $i; printf "%-20s %-8s %-12s%s\n", $1, $2, substr($3,1,12), r}'
+  fi
 }
 
 cmd_install() {
@@ -2417,6 +2532,120 @@ cmd_reset_password() {
   esac
 }
 
+# WL1-4 (owner decision 23 Oct): the owner's settings for the universe sync, set without opening an editor. Only the
+# keys of ENV_SET_KEYS with a plain value; every other line of .env (comments, secrets, order) stays byte for byte. A
+# key already assigned has each of its lines replaced; a missing one is appended. Nothing changes -> nothing is
+# written. Before a write: a copy of .env in .deploy/env-backups (mode 600, the newest ENV_BACKUPS_KEEP kept); the new
+# file is written beside .env with mode 600 and moved over it in one step. Values of other keys are never printed.
+cmd_env_set() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  [ $# -gt 0 ] || die "usage: atp.sh env-set KEY=VALUE [KEY=VALUE ...]   (keys: ${ENV_SET_KEYS[*]})" 2
+  local pair key val k allowed
+  for pair in "$@"; do
+    key="${pair%%=*}"; val="${pair#*=}"
+    [ "$key" != "$pair" ] || die "not KEY=VALUE: $key" 2
+    allowed=0
+    for k in "${ENV_SET_KEYS[@]}"; do if [ "$k" = "$key" ]; then allowed=1; fi; done
+    [ "$allowed" = "1" ] || die "$key is not a setting env-set may change (only: ${ENV_SET_KEYS[*]}). Secrets and LIVE switches are edited by hand in $ENV_FILE." 2
+    [[ "$val" =~ ^[A-Za-z0-9_.,:-]{1,64}$ ]] || die "the value for $key may hold only letters, digits and _ . , : - (1 to 64 characters)" 2
+  done
+  lock 0
+  check_env
+  step "settings in $ENV_FILE"
+  local stamp; stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  [ "$DRY_RUN" = "1" ] || mkdir -p "$STATE_DIR/env-backups"
+  python3 -c 'import os, re, sys
+path, backups, stamp, keep, dry = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5] == "1"
+pairs = [p.split("=", 1) for p in sys.argv[6:]]
+raw = open(path, "rb").read().decode("utf-8")
+lines = raw.splitlines(keepends=True)
+if lines and not lines[-1].endswith("\n"):
+    lines[-1] += "\n"
+def value(line):
+    v = line.split("=", 1)[1].strip()
+    return v[1:].split(v[0], 1)[0] if v[:1] in "\"\x27" and v else v.split(" #", 1)[0].strip()
+for key, new in pairs:
+    pat = re.compile(r"^\s*(export\s+)?" + re.escape(key) + r"\s*=")
+    hits = [i for i, line in enumerate(lines) if pat.match(line)]
+    if not hits:
+        lines.append(f"{key}={new}\n")
+        print(f"    added      {key}={new}")
+        continue
+    old = value(lines[hits[-1]])
+    for i in hits:
+        lines[i] = ("export " if pat.match(lines[i]).group(1) else "") + f"{key}={new}\n"
+    word = "unchanged" if old == new and len(hits) == 1 else "set"
+    print(f"    {word:10} {key}={new}" + (f" (was {old})" if old != new else ""))
+out = "".join(lines)
+if out == raw:
+    print("    .env unchanged - nothing written")
+    sys.exit(0)
+if dry:
+    print("    dry-run: .env would be written (after a backup); nothing changed")
+    sys.exit(0)
+backup = os.path.join(backups, f"env.{stamp}")
+fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, "wb") as fh:
+    fh.write(raw.encode("utf-8"))
+old_ones = sorted(f for f in os.listdir(backups) if f.startswith("env."))
+for f in old_ones[:-keep]:
+    os.remove(os.path.join(backups, f))
+tmp = path + ".env-set.tmp"
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "wb") as fh:
+    fh.write(out.encode("utf-8"))
+    fh.flush()
+    os.fsync(fh.fileno())
+try:
+    os.chown(tmp, os.stat(path).st_uid, os.stat(path).st_gid)          # the same owner as before
+except PermissionError:
+    pass
+os.replace(tmp, path)
+print(f"    .env written (mode 600); the previous copy: {backup}")' \
+    "$ENV_FILE" "$STATE_DIR/env-backups" "$stamp" "$ENV_BACKUPS_KEEP" "$DRY_RUN" "$@"
+  info "the API and the worker read these at their next start: $ATP_DIR/deploy/atp.sh lists-sync (or the next deploy)"
+}
+
+# WL1-3 / WL1-4: the universe sync and the system watchlists NOW (backend app/universe/run_now.py, in a one-off
+# container of the worker image, which reads .env as the worker does). The files are only names - no prices - and
+# every file's HTTP status is printed before anything is written. The worker is restarted afterwards (it then runs the
+# nightly sync itself) only through the session gate, so never under open positions in an open session.
+cmd_lists_sync() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local check=0 rc=0 cur
+  case "${1:-}" in "") ;; --check) check=1 ;; *) die "usage: atp.sh lists-sync [--check]" 2 ;; esac
+  [ $# -le 1 ] || die "usage: atp.sh lists-sync [--check]" 2
+  lock 0
+  check_tools
+  check_env
+  is_true "$(env_get UNIVERSE_SYNC_ENABLED)" || die "UNIVERSE_SYNC_ENABLED is not true in $ENV_FILE - nothing was downloaded or changed. Set it first:
+    $ATP_DIR/deploy/atp.sh env-set UNIVERSE_SYNC_ENABLED=true INSTRUMENT_SYNC_EXCHANGES=NSE,BSE" 2
+  cur="$(current_sha)"
+  [ -n "$cur" ] || die "no release recorded on this host - run $ATP_DIR/deploy/atp.sh deploy first" 1
+  RELEASE="$(release_of "$cur")"
+  info "release ${cur:0:12}; UNIVERSE_SYNC_ENABLED=$(env_get UNIVERSE_SYNC_ENABLED), INSTRUMENT_SYNC_EXCHANGES=$(env_get INSTRUMENT_SYNC_EXCHANGES)"
+  if [ "$check" = "1" ]; then
+    step "published files (HTTP status from this server; nothing is written)"
+    rdc run --rm --no-deps -T worker python -m app.universe.run_now --check || rc=$?
+    if [ "$rc" = "0" ]; then ok "every file answered 200"; else warn "some files were not fetched (lines above) - those lists are left as they are"; fi
+    return 0
+  fi
+  step "session gate"
+  session_gate "restart the worker" "$RELEASE"
+  step "universe sync + system watchlists (names only, from the published NSE / niftyindices files)"
+  rdc run --rm --no-deps -T worker python -m app.universe.run_now || rc=$?
+  case "$rc" in
+    0) ok "lists rebuilt (the counts above)" ;;
+    2) die "refused by the sync (lines above) - nothing was changed" 2 ;;
+    *) die "the sync did not finish (exit $rc) - the lists keep what they held; the lines above say where it stopped" 1 ;;
+  esac
+  step "API and worker read the new settings (recreated only when their settings changed)"
+  rdc up -d --no-deps --no-build backend
+  wait_api || die "the API did not pass deep health after picking up the settings - see: $ATP_DIR/deploy/atp.sh health" 1
+  start_workers
+  printf '\nlists-sync: done - the system watchlists are filled; the worker repeats the sync every evening (UNIVERSE_SYNC_HOUR_IST)\n'
+}
+
 main() {
   local args=() a
   for a in "$@"; do
@@ -2444,6 +2673,8 @@ main() {
     loadtest)       cmd_loadtest "$@" ;;
     loadtest-cleanup) cmd_loadtest_cleanup "$@" ;;
     reset-password) cmd_reset_password "$@" ;;
+    env-set)        cmd_env_set "$@" ;;
+    lists-sync)     cmd_lists_sync "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac

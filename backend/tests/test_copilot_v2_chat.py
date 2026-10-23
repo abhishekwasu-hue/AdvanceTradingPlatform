@@ -43,11 +43,13 @@ def test_every_starter_routes_to_its_job(question, job):
 
 
 def test_the_eight_jobs_and_the_starters_match_the_order():
-    assert [j.number for j in chat.JOBS] == list(range(1, 9))
-    assert chat.BUILT == {"brief", "chart", "option_chain", "teacher", "trade_check", "positions", "review", "strategy"}   # slice 3: job 6
+    # the handover's eight jobs, then jobs 9 (screens) and 10 (the full view) of the owner's 23 Oct order ("its tools are wired")
+    assert [j.number for j in chat.JOBS] == list(range(1, 11))
+    assert chat.BUILT == {"brief", "chart", "option_chain", "teacher", "trade_check", "positions", "review", "strategy", "screen", "views"}
     assert [j.starter for j in chat.JOBS] == ["Today's market brief", "Read the NIFTY chart", "Check my trade idea", "How are my open positions?",
                                              "Review my last trade", "Turn my idea into a strategy and test it", "What does the option chain show?",
-                                             "Teach me: what is a demand zone?"]
+                                             "Teach me: what is a demand zone?", "Find stocks in a daily uptrend near a demand zone",
+                                             "Full view of NIFTY"]
     assert all(j.page for j in chat.JOBS if not j.built)            # a job not built yet points at today's page
 
 
@@ -71,7 +73,8 @@ def test_refusals_are_plain_words():
 
 def test_job1_brief_calls_the_context_structure_and_zone_tools():
     out, called, calls = _answer("Today's market brief")
-    assert called == ["get_market_context", "get_chart_structure", "get_chart_structure", "get_market_zones"]
+    # the 23 Oct order: market memory and the news feed follow the context, structure and zone reads
+    assert called == ["get_market_context", "get_chart_structure", "get_chart_structure", "get_market_zones", "get_market_snapshot", "get_news"]
     assert [c["args"].get("symbol") for c in calls[1:3]] == ["NIFTY", "BANKNIFTY"]
     text = "\n".join(out.lines())
     for fact in ("S&P 500: 5,800.2 (+0.42%)", "US 10-year yield: 4.21", "US dollar index: 103.1", "India VIX 12.4 (-3.1%)",
@@ -81,7 +84,9 @@ def test_job1_brief_calls_the_context_structure_and_zone_tools():
     assert {b["type"] for b in out.blocks} == {"table"}
     d = out.as_dict()
     assert d["disclaimer"] == chat.DISCLAIMER and d["tool_calls"] == called
-    assert [s["tool"] for s in d["worked"]] == called and all(s["as_of"] for s in d["worked"])
+    tools = [s for s in d["worked"] if not s["tool"].startswith("calc:")]        # the news count is a calculation step (23 Oct)
+    assert [s["tool"] for s in tools] == called and all(s["as_of"] for s in tools)
+    assert d["tools_used"] == ["Market context", "Chart structure", "Market zones", "Market memory", "News feed"]
 
 
 def test_job2_chart_reader_says_it_reads_atps_zone_layers():
@@ -238,7 +243,7 @@ def test_home_shows_the_no_key_state_the_jobs_and_the_market_line(v2_on, recorde
     assert body["top_line"] == "Ask me anything about the market or your trades."
     assert body["ai"]["ready"] is False and body["ai"]["title"] == "Add a free AI key to start" and body["ai"]["settings"] == "/settings/ai"
     assert body["ai"]["line"] == chat.NO_KEY_LINE
-    assert len(body["jobs"]) == 8 and len(body["starters"]) == 8 and body["disclaimer"] == chat.DISCLAIMER
+    assert len(body["jobs"]) == 10 and len(body["starters"]) == 10 and body["disclaimer"] == chat.DISCLAIMER    # jobs 9-10: 23 Oct order
     assert body["market_line"]["line"].startswith("NIFTY 50 last closed at 24,850.5") and body["market_line"]["reason"] is None
 
 

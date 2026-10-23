@@ -46,6 +46,10 @@ P_TV_WEBHOOK = "public: TradingView webhook, authenticated by the secret token i
 P_UNSUBSCRIBE = "public: signed one-click unsubscribe link"
 P_REGIMES = "public: the market regime catalogue"
 P_LEGAL = "public: the Privacy notice, Terms of use and Risk disclosure - the sign-up form links them before an account exists"
+P_SITE_PAGES = "public: the marketing pages of the front page (static product text; 404 while marketing_site is off)"
+P_ONBOARDING_UNSUBSCRIBE = "public: the first-week e-mails' signed unsubscribe link (the token is the authority)"
+S_OWN_REFERRAL = ("self: the caller's own invite code (created once) or his own account's one referral claim; the referrer is "
+                  "never named to anyone")
 P_STATUS_PAGE = "public: the public status page (component states and the incident banner only; rate limited)"
 M_OWN_TAX = ("member: the caller's own closed trades only (tenant and user) - a member never sees another member's trades and "
              "the organisation owner sees only their own (BT1b; tests/test_tax_report_own.py)")
@@ -62,6 +66,8 @@ S_OWN_ACK = "self: the caller's own Copilot terms acknowledgement"
 S_OWN_INTERVIEW = "self: the caller's own strategy interview; nothing deploys"
 S_COPILOT = "self: a Copilot read or research run for the caller: read-only tools, no order, no other member's data changes"
 S_BACKTEST = "self: a backtest computed for the caller; stores nothing another member relies on"
+S_BACKTEST_BARS = ("self: the bars a backtest runs on, read for the caller (the organisation's own broker session, else the shared "
+                   "Daily history); stores nothing")
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
 S_OWN_LAYOUTS = "self: the caller's own saved chart workspace layouts (per user)"
 S_OWN_WATCHLISTS = "self: the caller's own watchlists (tenant and user); another member's or organisation's list is a 404"
@@ -72,6 +78,8 @@ S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own t
 S_READ_MARKS = "self: read marks are per user"
 S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
 S_FEEDBACK = "self: sends product feedback (rate limited)"
+S_REPORT = ("self: Report a problem - the caller's own scrubbed message and a closed list of context fields into the feedback "
+            "inbox; tenant and user from the session (rate limited)")
 S_NEWS_CLASSIFY = "self: classifies the organisation's pending feed items with its own AI key (metered, like a Copilot question)"
 S_OWN_VERDICTS = "self: the caller's own verdicts on feed items"
 S_PREVIEW = "self: previews the contract a deployment would trade; stores nothing"
@@ -97,6 +105,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/admin/beta/cohort"): "admin",
     ("PUT", "/api/admin/beta/cohort/stage"): "admin",
     ("GET", "/api/admin/beta/feedback"): "admin",
+    ("GET", "/api/admin/support/tickets"): "admin",
+    ("PUT", "/api/admin/support/tickets/{ticket_id}"): "admin",
+    ("GET", "/api/admin/support/settings"): "admin",
+    ("PUT", "/api/admin/support/settings"): "admin",
     ("GET", "/api/admin/beta/invite-codes"): "admin",
     ("POST", "/api/admin/beta/invite-codes"): "admin",
     ("POST", "/api/admin/beta/invite-codes/{code_id}/revoke"): "admin",
@@ -134,6 +146,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/admin/controls/marketplace-terms"): "admin",
     ("GET", "/api/admin/controls/risk-ceilings"): "admin",
     ("PUT", "/api/admin/controls/risk-ceilings"): "admin",
+    ("GET", "/api/admin/controls/trader-pack"): "admin",
+    ("POST", "/api/admin/controls/trader-pack"): "admin",
+    ("POST", "/api/admin/controls/trader-pack/undo"): "admin",
     ("GET", "/api/admin/deployments"): "admin",
     ("GET", "/api/admin/exports/{dataset}"): "admin",
     ("GET", "/api/admin/fx-rates"): "admin",
@@ -239,6 +254,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/alert-channels/{channel_type}"): "trader",
     ("PUT", "/api/alert-channels/{channel_type}"): "trader",
     ("POST", "/api/alert-channels/{channel_type}/test"): "trader",
+    # B8 (flag mobile_push): the caller's own phones for app notifications, inside the organisation's FCM channel
+    ("GET", "/api/mobile/devices"): "member: the caller's own phones only (another member's phones are never listed; no token is returned)",
+    ("POST", "/api/mobile/devices"): "self: registers the caller's own phone for notifications (a phone that changes hands is moved, never shared)",
+    ("PATCH", "/api/mobile/devices/{device_id}"): "self: the name and notification kinds of the caller's own phone; another member's id answers 404",
+    ("DELETE", "/api/mobile/devices/{device_id}"): "self: removes the caller's own phone; another member's id answers 404",
+    ("POST", "/api/mobile/devices/{device_id}/test"): "self: a test notification to the caller's own phone; another member's id answers 404",
     ("GET", "/api/alerts/dead-letters"): "member",
     ("POST", "/api/alerts/deliveries/{delivery_id}/retry"): "trader",
     ("GET", "/api/alerts/email-opt-outs"): "member",
@@ -283,6 +304,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/auth/login-history"): "member",
     ("POST", "/api/auth/logout"): S_OWN_ACCOUNT,
     ("POST", "/api/auth/logout-all"): S_OWN_ACCOUNT,
+    ("POST", "/api/auth/logout-others"): S_OWN_ACCOUNT,
     ("GET", "/api/auth/me"): "member",
     ("POST", "/api/auth/mfa/backup-codes"): S_OWN_ACCOUNT,
     ("POST", "/api/auth/mfa/confirm"): S_OWN_ACCOUNT,
@@ -305,6 +327,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/auth/verify-email/resend"): S_OWN_ACCOUNT,
     ("POST", "/api/auth/verify-email/{token}"): P_SIGN_IN,
     ("POST", "/api/backtest"): S_BACKTEST,
+    ("POST", "/api/backtest/bars"): S_BACKTEST_BARS,
     ("POST", "/api/backtest/monte-carlo"): S_BACKTEST,
     ("POST", "/api/backtest/optimize"): S_BACKTEST,
     ("GET", "/api/backtest/option-chain/coverage"): "member",
@@ -392,6 +415,19 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/growth/share/discipline-week"): "member: the caller's own discipline facts from his own PAPER trades; no names, no prices",
     # MO4 slice 4: the page dishes - the caller's own signals, PAPER positions, journal, lists and scans (+ shared daily history)
     ("GET", "/api/growth/dish/{page}"): "member: the caller's own signals, PAPER positions, journal, watchlists and scan matches; the chart story from the shared daily history",
+    # Readiness C13: the referral flow (ui_v2 + referrals) and the onboarding e-mails' unsubscribe link
+    ("GET", "/api/growth/referral"): "member: the caller's own invite code and link, and how many people joined through it (a count, never who)",
+    ("POST", "/api/growth/referral/code"): S_OWN_REFERRAL,
+    ("POST", "/api/growth/referral/claim"): S_OWN_REFERRAL,
+    ("GET", "/api/growth/onboarding/unsubscribe"): P_ONBOARDING_UNSUBSCRIBE,
+    ("POST", "/api/growth/onboarding/unsubscribe"): P_ONBOARDING_UNSUBSCRIBE,
+    ("GET", "/api/admin/growth/referral-settings"): "admin",
+    ("PUT", "/api/admin/growth/referral-settings"): "admin",
+    # Readiness C13: the Learn section (ui_v2 + learn), the public marketing pages, the operator's video links
+    ("GET", "/api/learn"): "member",
+    ("GET", "/api/site/pages"): P_SITE_PAGES,
+    ("GET", "/api/admin/learn/settings"): "admin",
+    ("PUT", "/api/admin/learn/settings"): "admin",
     ("GET", "/api/custom-strategies"): "member",
     ("POST", "/api/custom-strategies"): "trader",
     ("POST", "/api/custom-strategies/parse"): P_PARSE_ONLY,
@@ -415,6 +451,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/deployments/{deployment_id}/stop"): "trader",
     ("GET", "/api/exports/{dataset}"): "owner",
     ("POST", "/api/feedback"): S_FEEDBACK,
+    ("GET", "/api/support/help"): "member",
+    ("GET", "/api/support/contact"): "member",
+    ("POST", "/api/support/report"): S_REPORT,
     ("GET", "/api/fundamentals/calendar/upcoming"): P_FUNDAMENTALS,
     ("GET", "/api/fundamentals/companies"): P_FUNDAMENTALS,
     ("POST", "/api/fundamentals/companies"): "trader",
@@ -489,6 +528,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/legal/documents"): P_LEGAL,
     ("GET", "/api/legal/documents/{slug}"): P_LEGAL,
     ("GET", "/api/live/stream"): "member",
+    ("GET", "/api/live/hub"): "member: the state of the caller's own broker connection for prices (no ids)",
+    ("PUT", "/api/live/ticks"): ("self: the caller's own tab's list of symbols for live prices, kept a few minutes under the caller's "
+                                 "id; prices come only from the caller's own broker connection"),
     ("POST", "/api/market-data/candles"): S_OWN_MARKET_DATA,
     ("GET", "/api/market-data/data-tier"): "member",
     ("GET", "/api/market-data/history"): "member",
@@ -690,6 +732,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/screens/{screen_id}/versions/{version}"): "member",
     ("POST", "/api/screener/screens/{screen_id}/versions/import"): "trader",       # LAB-18: the one upload of a device's history
     ("GET", "/api/screener/taxonomy"): "member",
+    ("GET", "/api/screener/universes"): "member",            # owner 23 Oct: shared system lists + the org's batch plan
+    ("GET", "/api/screener/universes/{key}"): "member",      # one shared system list's NSE symbols (reference data)
     ("POST", "/api/screener/validate"): S_COMPUTE,
     ("POST", "/api/screener/stages"): S_COMPUTE,
     ("GET", "/api/screener/etf"): "member",
@@ -706,6 +750,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
                                     "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),
+    # Signals day one: the caller's own watch (an internal user_prefs row, tenant and user) and the shared daily history
+    ("GET", "/api/signals/day-one"): "member: the caller's own adopted watch (tenant and user); the shared daily history",
+    ("POST", "/api/signals/day-one/adopt"): "trader",
+    ("POST", "/api/signals/day-one/refresh"): "trader",
+    ("DELETE", "/api/signals/day-one"): "trader",
     ("GET", "/api/status"): P_STATUS_PAGE,
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
     ("GET", "/api/strategies/{strategy_id}"): P_STRATEGY_CATALOGUE,

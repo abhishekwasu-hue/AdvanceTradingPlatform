@@ -199,6 +199,11 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
     from app.chart_analyze.service import erase_user as erase_chart_analyses
     await erase_chart_analyses(session, user)
     # PW6: the "Send feedback" messages they wrote (free text) go with the account too.
+    # C12: and the support-ticket state of those messages (platform_controls rows keyed by the message id).
+    from app.support.desk import forget as forget_tickets
+    feedback_ids = list(await session.scalars(select(FeedbackRecord.id).where(FeedbackRecord.user_id == user.id,
+                                                                              FeedbackRecord.tenant_id == user.tenant_id)))
+    await forget_tickets(session, feedback_ids)
     await session.execute(delete(FeedbackRecord).where(FeedbackRecord.user_id == user.id, FeedbackRecord.tenant_id == user.tenant_id))
     await write_audit_log(session, user.tenant_id, actor_id, "user_erased", f"user #{user.id}{(': ' + reason) if reason else ''}")
     return placeholder

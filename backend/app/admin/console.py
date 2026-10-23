@@ -191,7 +191,9 @@ async def activation(days: int = Query(90, ge=1, le=365), limit: int = Query(200
                      admin: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Who reached which first step after signing up: a broker connected (the first broker credential they added), a
     first paper bot (the first PAPER deployment they created) and a first journal entry (their first auto-captured
-    journal row). "Activated" = all three. Read-only; masked e-mail addresses; behind `growth_v2`."""
+    journal row). "Activated" = all three. C13 adds `growth_funnel` (signed up -> broker -> paper bot -> active in week 1)
+    and each person's `active_week1` (null while the first week is still running). Read-only; masked e-mail addresses;
+    behind `growth_v2`."""
     from app.platform.controls import flag_enabled
     if not await flag_enabled(session, "growth_v2", admin.tenant_id):
         raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": "growth_v2"})
@@ -209,9 +211,12 @@ async def activation(days: int = Query(90, ge=1, le=365), limit: int = Query(200
         .join(broker, broker.c.uid == User.id, isouter=True).join(bot, bot.c.uid == User.id, isouter=True)
         .join(journal, journal.c.uid == User.id, isouter=True)
         .where(User.created_at >= since, User.role != "SUPER_ADMIN").order_by(User.id.desc()))).all()
+    returned = await _came_back(session, [(u.id, _aware(u.created_at)) for u, *_ in rows])
     reached = {key: 0 for key, _ in ACTIVATION_STEPS}
     hours: List[float] = []
     people: List[Dict[str, Any]] = []
+    growth = {key: 0 for key, _ in GROWTH_FUNNEL}
+    week1_open = 0
     for u, t, broker_at, bot_at, journal_at in rows:
         steps = {"broker": _aware(broker_at), "paper_bot": _aware(bot_at), "journal": _aware(journal_at)}
         for key, at in steps.items():
@@ -221,10 +226,19 @@ async def activation(days: int = Query(90, ge=1, le=365), limit: int = Query(200
         activated_at = max(present) if len(present) == len(steps) else None
         if activated_at is not None and signed_up is not None:
             hours.append(max(0.0, (activated_at - signed_up).total_seconds() / 3600))
+        week1_done = signed_up is not None and now - signed_up >= WEEK_ONE
+        active_week1 = (u.id in returned) if week1_done else None
+        if week1_done:
+            # C13: the growth funnel, in order - each step counts the people who also took every step before it.
+            chain = [True, steps["broker"] is not None, steps["paper_bot"] is not None, bool(active_week1)]
+            for (key, _), ok in zip(GROWTH_FUNNEL, _prefix_all(chain)):
+                growth[key] += ok
+        else:
+            week1_open += 1
         if len(people) < limit:
             people.append({"id": u.id, "email": mask_email(u.email), "tenant": org_name(t.name), "plan": get_plan(t.plan).name,
                            "signed_up_at": _iso(signed_up), **{f"{k}_at": _iso(v) for k, v in steps.items()},
-                           "activated_at": _iso(activated_at)})
+                           "activated_at": _iso(activated_at), "active_week1": active_week1})
     total = len(rows)
     median = _median(hours)
     return {
@@ -233,8 +247,54 @@ async def activation(days: int = Query(90, ge=1, le=365), limit: int = Query(200
                   + [{"key": key, "label": label, "count": reached[key]} for key, label in ACTIVATION_STEPS]
                   + [{"key": "activated", "label": "All three (activated)", "count": len(hours)}],
         "median_hours_to_activation": round(median, 1) if median is not None else None,
+        "growth_funnel": {"steps": [{"key": key, "label": label, "count": growth[key]} for key, label in GROWTH_FUNNEL],
+                          "week1_open": week1_open},
         "people": people,
     }
+
+
+# Readiness C13: the growth funnel - signed up -> broker -> paper bot -> active in week 1. Only people whose first week is
+# over are counted (the others are `week1_open`). "Active in week 1" = signed in or used the app again on a later day:
+# a successful sign-in, or a session started or used, between one day and seven days after signing up.
+GROWTH_FUNNEL = (
+    ("signed_up", "Signed up"),
+    ("broker", "Connected a broker"),
+    ("paper_bot", "Started a paper bot"),
+    ("active_week1", "Active in week 1"),
+)
+WEEK_ONE = timedelta(days=7)
+CAME_BACK_AFTER = timedelta(days=1)
+
+
+def _prefix_all(flags: List[bool]) -> List[bool]:
+    """[a, b, c] -> [a, a and b, a and b and c]."""
+    out: List[bool] = []
+    ok = True
+    for flag in flags:
+        ok = ok and flag
+        out.append(ok)
+    return out
+
+
+async def _came_back(session: AsyncSession, people: List[tuple]) -> set:
+    """The ids of the people who signed in or used the app between one and seven days after signing up."""
+    signed = {uid: at for uid, at in people if at is not None}
+    if not signed:
+        return set()
+    ids = list(signed)
+    seen: List[tuple] = []
+    for chunk in (ids[i:i + 500] for i in range(0, len(ids), 500)):
+        seen += (await session.execute(select(LoginEventRecord.user_id, LoginEventRecord.created_at)
+                                       .where(LoginEventRecord.user_id.in_(chunk), LoginEventRecord.success.is_(True)))).all()
+        for uid, created, used in (await session.execute(select(UserSessionRecord.user_id, UserSessionRecord.created_at, UserSessionRecord.last_used_at)
+                                                        .where(UserSessionRecord.user_id.in_(chunk)))).all():
+            seen += [(uid, created), (uid, used)]
+    out = set()
+    for uid, at in seen:
+        start, when = signed.get(uid), _aware(at)
+        if start is not None and when is not None and start + CAME_BACK_AFTER <= when <= start + WEEK_ONE:
+            out.add(uid)
+    return out
 
 
 def _tier(feature: str) -> str:

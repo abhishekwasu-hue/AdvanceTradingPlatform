@@ -49,6 +49,7 @@ from app.core.rate_limit import user_rate_limit
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session, release_connection
 from app.market_data import api_budget, entitlement
+from app.market_data import hub as data_hub
 from app.market_data.candles_routes import _byob, _eod_context, _pick_record, _tier_c
 from app.market_data.entitlement import Entitlement
 from app.market_data.fanin import Priority
@@ -392,10 +393,14 @@ async def quotes(body: QuotesBody, user: User = Depends(get_current_user), sessi
             raise _tier_c(ents)
         record: BrokerCredentialRecord = live.record
         # The session's own ticks only, as BT1 /ltp reads them (never the shared feed - LD-10's open owner question).
-        feeds = [TickCache(namespace=live.session.namespace)]
+        feeds = [data_hub.tick_cache_for(live.session.namespace)]
     else:
         record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
         feeds = [tick_cache]
+        # TM Part 1 (flag data_hub): the organisation's own hub stream carries the list; its ticks, never the shared keys.
+        own = await data_hub.org_feed(session, user.tenant_id, record.broker_name, [(s, e) for e, s in pairs], Priority.WATCHLIST)
+        if own is not None:
+            feeds = [own]
     eod_date, holidays = await _eod_context(session, ents)
     await release_connection(session)       # the broker calls below can take seconds; no pool connection is held
 

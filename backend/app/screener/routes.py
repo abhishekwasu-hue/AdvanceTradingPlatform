@@ -85,6 +85,7 @@ DISCLAIMER = "Matches are symbols that passed the screen's filters on the data s
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
 HOLIDAY_PAD_DAYS = 4               # exchange holidays inside the window
 MAX_INTRADAY_FETCH_DAYS = 60
+BUDGET_WAIT = "waited for the broker's limit - run again shortly"   # a batch symbol the API budget held back
 FETCH_CONCURRENCY = 3     # LD-7: one screen run's broker fetches in flight at once (capped by the broker's burst)
 
 
@@ -126,6 +127,8 @@ class RunBody(BaseModel):
     symbols: List[str] = Field(min_length=1, max_length=MAX_SYMBOLS)
     exchange: str = Field(default="NSE", pattern=r"^(NSE|BSE|NFO|BFO|MCX|CDS)$")
     preview: bool = Field(default=False, description="U5 D2 live counts while editing: the same evaluation, not stored as a run")
+    batch: bool = Field(default=False, description="one batch of a larger universe (app/screener/universes.py): every broker "
+                                                   "call takes a token from the credential's shared API budget")
 
 
 def _compiled(source: Union[str, Dict[str, Any]], base_tf: str, params: Dict[str, Any]) -> Tuple[Any, Any]:
@@ -431,7 +434,7 @@ def fetch_days(lookback: Dict[str, int], base_tf: str) -> int:
 async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
                        lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False, *,
                        user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None,
-                       release: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       release: bool = False, budget_out: Optional[Dict[str, Any]] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
     A missing session raises 409 (the fix is on the Broker page); never a fallback to client data.
     `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars).
@@ -441,7 +444,10 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     reported as EOD-only problems), cached under that session's namespace. No such session -> 409 (Tier C).
     `tier_out` receives the data-tier badge of what was read.
     `release` (LD-7, a request whose session has only read so far): the pool connection goes back before the broker
-    calls; the worker's callers keep their transaction."""
+    calls; the worker's callers keep their transaction.
+    `budget_out` (owner order 23 Oct, a batch of a larger universe): every broker call takes a token from the
+    credential's shared API budget first (api_budget.BudgetedAdapter, as a chart's); a symbol without one is reported
+    "budget used". It receives the calls made and refused and the per-minute share the page paces the next batch by."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
@@ -461,13 +467,18 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
             user = None                                   # never another organisation's member
         own = await live_access.user_source(session, user, [(s, exchange) for s in symbols], priority=Priority.SCREENER)
         record = own.record
-        service = own.market_data(lookback_days=days)
+        adapter: Any = own.adapter()
         allowed = [s for s in symbols if own.allows(s, exchange)]
         problems.update({s: own.reason(s, exchange) for s in symbols if not own.allows(s, exchange)})
         symbols = allowed
     else:
         record = await _pick_record(session, tenant_id, None, "primary")
-        service = MarketDataService(build_adapter(record), lookback_days=days)
+        adapter = build_adapter(record)
+    if budget_out is not None:
+        from app.market_data import api_budget
+        from app.screener.universes import batch_wait_seconds
+        adapter = api_budget.BudgetedAdapter(adapter, record.id, record.broker_name, wait_seconds=batch_wait_seconds(record.broker_name, len(symbols)))
+    service = own.market_data(adapter, lookback_days=days) if own is not None else MarketDataService(adapter, lookback_days=days)
     if release:
         await release_connection(session)
     universe: List[SymbolData] = []
@@ -483,6 +494,8 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
                 return await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
                               else service.get_candles(symbol, exchange, interval)), ""
             except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
+                if type(exc).__name__ == "BudgetUsed":         # a batch's symbol with no budget token (api_budget)
+                    return None, BUDGET_WAIT
                 return None, f"{type(exc).__name__}: {str(exc)[:120]}"
 
     got = await asyncio.gather(*(fetch_one(symbol) for symbol in symbols))
@@ -500,13 +513,18 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         universe.append(SymbolData(symbol, frames, exchange=exchange))         # U6 BK2: the session clock of the symbol
         newest.append(df.index[-1].to_pydatetime())
     if attach_daily and universe:
-        daily_service = own.market_data(lookback_days=5) if own is not None else MarketDataService(build_adapter(record), lookback_days=5)
+        daily_adapter = adapter if budget_out is not None else (own.adapter() if own is not None else build_adapter(record))
+        daily_service = own.market_data(daily_adapter, lookback_days=5) if own is not None else MarketDataService(daily_adapter, lookback_days=5)
         await _attach_daily(daily_service, universe, exchange, now)        # U6 BK1: through the same (BT1b) source
     if own is not None and tier_out is not None:
         # Timed by the data (the stalest symbol's newest bar); nothing read = age unknown = stale.
         oldest = min(newest) if newest else None
         tier_out["data_tier"] = own.badge(timeframe=_FETCH_TF[interval] if oldest is not None else None, last_bar_start=oldest,
                                           now=now or datetime.now(timezone.utc))
+    if budget_out is not None:
+        from app.market_data.api_budget import api_limits
+        budget_out.update({"broker_calls": int(getattr(adapter, "taken", 0)), "refused": int(getattr(adapter, "refused", 0)),
+                           "per_minute": api_limits(record.broker_name).per_minute})
     return universe, problems, f"broker:{record.broker_name}"
 
 
@@ -573,14 +591,14 @@ def screen_and_funnel(ast: Any, validated: Any, universe: List[SymbolData], *, b
 
 
 async def load_universe(session: AsyncSession, user: User, ast: Any, validated: Any, params: Dict[str, Any], symbols: List[str],
-                        exchange: str, base_tf: str, tier: Optional[Dict[str, Any]] = None, *, release: bool = False
-                        ) -> Tuple[List[SymbolData], Dict[str, str], str, Dict[str, Any]]:
+                        exchange: str, base_tf: str, tier: Optional[Dict[str, Any]] = None, *, release: bool = False,
+                        budget: Optional[Dict[str, Any]] = None) -> Tuple[List[SymbolData], Dict[str, str], str, Dict[str, Any]]:
     """A validated screen's universe on server bars with the data its functions read: (universe, per-symbol fetch
     problems, data source, RankScore's systems). The run route and the N3 S9 Copilot tools share it. `release` (LD-7,
     the run route only - its session has only read so far): fetch_frames gives the pool connection back before the
     broker / lake reads; the Copilot tools keep the agent's shared session as it is."""
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, exchange, base_tf, validated.fetch_lookback,
-                                                               user_id=user.id, tier_out=tier, release=release)
+                                                               user_id=user.id, tier_out=tier, release=release, budget_out=budget)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
     if fundamentals_gate.flagged_calls(ast):      # U7 LG3: the reported figures as known by each bar's close (point in time)
@@ -647,8 +665,9 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     # after it, the flag took a second pool checkout and a query per run).
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)
     tier: Dict[str, Any] = {}
+    budget: Optional[Dict[str, Any]] = {} if body.batch else None
     universe, fetch_problems, data_source, systems = await load_universe(session, user, ast, validated, params, symbols, body.exchange,
-                                                                         base_tf, tier, release=True)
+                                                                         base_tf, tier, release=True, budget=budget)
     await release_connection(session)            # LD-7: reads only so far; no pool connection held while the screen runs
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
     # (RankScore's systems ride the context asyncio.to_thread copies into the worker - N3 S7a)
@@ -662,6 +681,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                "funnel": {"universe": len(symbols), **stages}, "disclaimer": DISCLAIMER}
     if tier:
         payload["data_tier"] = tier["data_tier"]          # BT1b: the tier the run actually used (flag byob_data_tier)
+    if budget is not None:
+        payload["budget"] = budget                        # a batch: its broker calls, so the page paces the next one
     if body.preview:
         # U5 D2 review: a preview is not stored, so it returns counts only - the match list itself comes from a Run,
         # which is stored and can be reproduced.
@@ -671,6 +692,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                    "scanned": len(symbols), "matched_count": sum(1 for r in results if r["matched"]), "funnel": counts, "disclaimer": DISCLAIMER}
         if tier:
             preview["data_tier"] = tier["data_tier"]
+        if budget is not None:
+            preview["budget"] = budget
         return preview
     ast_json = json.dumps(nodes.to_json(ast), sort_keys=True)
     run_row = ScreenRunRecord(tenant_id=user.tenant_id, user_id=user.id, screen_id=screen_id, ast_sha256=hashlib.sha256(ast_json.encode()).hexdigest(),

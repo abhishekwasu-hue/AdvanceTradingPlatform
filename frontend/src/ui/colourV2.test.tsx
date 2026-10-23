@@ -18,6 +18,7 @@ import BottomNavV2 from "../shell/BottomNavV2";
 import { navIconClass, navTone } from "../shell/navTone";
 import { SidebarV2View } from "../shell/SidebarV2";
 import { visibleSections } from "../shell/navModel";
+import { DirectionChip as DayOneDirection } from "../signals/DayOneV2";
 import { Direction } from "../signals/SignalPartsV2";
 import type { BrokerLogin } from "./BrokerGate";
 import { ColourV2Provider, colourV2On, useColourV2 } from "./colourV2";
@@ -190,6 +191,14 @@ describe("colour v2 on the pages (off = as before)", () => {
     expect(render(<Direction value="SHORT" className="block text-t12" />, true)).toMatch(/^<span class="mt-space-1 flex"><span data-direction="short"/);
     expect(render(<Direction value="LONG" />, false)).toBe('<span class="font-semibold text-up">Long</span>');
     expect(render(<Direction value={null} />, true)).toBe("");
+  });
+
+  it("Signals day one: the rows take the one shared direction chip; off keeps the day-one chip as it was", () => {
+    expect(render(<DayOneDirection value="LONG" />, true)).toContain('data-direction="long"');
+    expect(render(<DayOneDirection value="SHORT" />, true)).toContain("bg-down-tint text-down");
+    const off = render(<DayOneDirection value="SHORT" />, false);
+    expect(off).not.toContain("data-direction");
+    expect(off).toContain("bg-down/10 text-down");
   });
 
   const chain = (on: boolean) => render(<ChainTableV2 live={liveChain()} prefs={DEFAULT_COLUMNS} centreKey="NIFTY|2026-11-03" onPick={noop} />, on);

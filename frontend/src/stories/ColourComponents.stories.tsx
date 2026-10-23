@@ -8,6 +8,7 @@ import { IconBadge } from "../ui/IconBadge";
 import { RangeBar } from "../ui/RangeBar";
 import { Sparkline } from "../ui/Sparkline";
 import { StatusChip, type Status } from "../ui/StatusChip";
+import { ColourV2Provider } from "../ui/colourV2";
 
 /**
  * Chart + colour order, Part 3 (docs/design/CHART_COLOUR_REVIEW.md, PR sequence item 8): the shared components that
@@ -61,8 +62,11 @@ function ColourComponents() {
         <Sparkline values={[10, 12, 11, 14, 13, 16]} tone="up" /><Sparkline values={[16, 15, 15.5, 13, 12]} tone="down" />
       </Row>
       <Row title="Status chips" note="Connected is neutral with a green check. Needs action is amber. An error is red only when money or an order is at stake. Paper is the neutral outline chip.">
-        {STATUSES.map((s) => <StatusChip key={s} status={s} />)}
-        <StatusChip status="error" atStake>Order not placed</StatusChip>
+        {/* The green check is part of colour v2 (flag `colour_v2`); with the flag off the check stays neutral. */}
+        <ColourV2Provider on>
+          {STATUSES.map((s) => <StatusChip key={s} status={s} />)}
+          <StatusChip status="error" atStake>Order not placed</StatusChip>
+        </ColourV2Provider>
       </Row>
       <Row title="Filter chips" note="Selected: the brand outline and a light tint. Others: outlined.">
         <FilterRow />

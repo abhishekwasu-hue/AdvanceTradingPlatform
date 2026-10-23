@@ -9,6 +9,7 @@ import type { Page } from "../components/Sidebar";
 import { PAGE_FLAGS } from "./pageFlags";
 import { SETTINGS_PATH, type SettingsSectionKey } from "../settings/paths";
 import { IDEAS_ADDRESS, IDEA_FLAG } from "../ideas/model";
+import { LEARN_ADDRESS } from "../learn/model";
 
 /**
  * UI2-1 (UI v2 proposal §2 navigation map, §4 bottom bar): the one navigation model the v2 shell reads - the sidebar,
@@ -21,7 +22,7 @@ import { IDEAS_ADDRESS, IDEA_FLAG } from "../ideas/model";
 
 /** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
  * Settings → Setup (`/settings/setup`, UI2-7), My trading defaults (`/settings/trading-defaults`, part C) and the Settings section pages (`/settings/ai` ..., Settings redesign B). */
-export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | SettingsSectionKey;
+export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | "learn" | SettingsSectionKey;
 
 export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more" | "admin";
 
@@ -85,6 +86,9 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
       item("strategies", "Strategies", "Strategies", "/strategies", Layers, { keywords: ["strategy library", "library"] }),
       item("copilot", "AI Copilot", "AI Copilot", "/copilot", Sparkles, { flag: "ai_copilot", keywords: ["ai", "assistant", "watchtower"] }),
       item("news-events", "News & events", "News & events", "/news-events", Newspaper, { keywords: ["news", "events", "calendar"] }),
+      // Readiness C13 (flag `learn`): short lessons, the glossary and the course videos (education only).
+      item("learn", "Learn", "Learn", LEARN_ADDRESS, GraduationCap,
+        { flag: PAGE_FLAGS.learn, keywords: ["lessons", "course", "videos", "glossary", "words", "basics", "beginner", "how to"] }),
     ],
   },
   {
@@ -162,7 +166,7 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   { ...item("settings-ai", "AI", "AI", SETTINGS_PATH.ai, Sparkles, { keywords: ["ai key", "api key", "connect ai", "claude", "openai", "gemini", "ai limits"] }), section: "account" },
   { ...item("settings-alerts", "Alerts", "Alerts", SETTINGS_PATH.alerts, Bell, { keywords: ["telegram", "alert channels", "email alerts", "sms", "push notifications"] }), section: "account" },
   { ...item("settings-appearance", "Appearance", "Appearance", SETTINGS_PATH.appearance, Palette, { keywords: ["theme", "dark mode", "light mode", "text size", "colour-blind", "reduce motion"] }), section: "account" },
-  { ...item("settings-help", "Help & tips", "Help & tips", SETTINGS_PATH.help, LifeBuoy, { keywords: ["tips", "page tips", "tours", "show get started"] }), section: "account" },
+  { ...item("settings-help", "Help & tips", "Help & tips", SETTINGS_PATH.help, LifeBuoy, { keywords: ["tips", "page tips", "tours", "show get started", "help centre", "help center", "faq", "report a problem", "contact support"] }), section: "account" },
   { ...item("settings-advanced", "Advanced", "Advanced", SETTINGS_PATH.advanced, Wrench, { keywords: ["webhook", "tradingview", "own telegram bot", "integrations"] }), section: "account" },
   // Audit section 5 "Drop from the user navigation": still there, found by search.
   { ...item("quant", "Factor Lab", "Factor Lab", "/quant", Sigma, { keywords: ["quant", "factors"] }), section: "more" },

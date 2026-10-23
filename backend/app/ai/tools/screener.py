@@ -55,6 +55,10 @@ class _Explain(_Screen):
     exchange: str = Field(default="NSE", pattern=EXCHANGE)
 
 
+class _NoArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
 class _Alert(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: str = Field(min_length=10, max_length=300, description="Why, from the tool results - shown to the person who decides")
@@ -429,7 +433,32 @@ async def propose_alert(ctx: ToolContext, args: _Alert) -> ToolResult:
                       _now(ctx), "ai_actions")
 
 
+MAX_UNIVERSE = 50                                     # run_screen's own limit
+FALLBACK_LIST = "index-nifty50"                       # WL1's system list of the NIFTY 50 stocks
+
+
+async def get_screen_universe(ctx: ToolContext, args: _NoArgs) -> ToolResult:
+    """The symbols a Copilot screen runs on: the caller's own first watchlist with NSE symbols (his order), else the
+    NIFTY 50 stocks system list. At most 50 symbols; the name of the list says which one it is. Reads only."""
+    from app.watchlists import service as wl
+    from app.watchlists import system as syswl
+    for row in await wl.list_own(ctx.session, ctx.tenant_id, ctx.user.id):
+        symbols = [i["symbol"] for i in wl.items_of(row) if i.get("exchange", "NSE") == "NSE" and " " not in i["symbol"]]
+        symbols = list(dict.fromkeys(symbols))
+        if symbols:
+            return ToolResult(True, {"list": row.name, "own": True, "symbols": symbols[:MAX_UNIVERSE], "count": min(len(symbols), MAX_UNIVERSE),
+                                     "left_out": max(0, len(symbols) - MAX_UNIVERSE)}, _now(ctx), "watchlists", {"read_at": _now(ctx)})
+    system = await syswl.get(ctx.session, FALLBACK_LIST)
+    symbols = list(dict.fromkeys(i["symbol"] for i in syswl.watch_items(system) if i["exchange"] == "NSE")) if system is not None else []
+    if system is None or not symbols:
+        return ToolResult(False, None, None, "watchlists", error="you have no watchlist yet and the NIFTY 50 list is not loaded")
+    return ToolResult(True, {"list": system.name, "own": False, "symbols": symbols[:MAX_UNIVERSE],
+                             "count": min(len(symbols), MAX_UNIVERSE), "left_out": max(0, len(symbols) - MAX_UNIVERSE)},
+                      system.refreshed_at.isoformat() if system.refreshed_at else _now(ctx), "system_watchlists", {"read_at": _now(ctx)})
+
+
 for _tool in (
+    Tool("get_screen_universe", get_screen_universe.__doc__ or "", _NoArgs, get_screen_universe, flag=FLAG),
     Tool("build_screen", build_screen.__doc__ or "", _Screen, build_screen, flag=FLAG),
     Tool("run_screen", run_screen.__doc__ or "", _Run, run_screen, cost_units=3, timeout_seconds=45.0, flag=FLAG),
     Tool("explain_results", explain_results.__doc__ or "", _Explain, explain_results, cost_units=3, timeout_seconds=45.0, flag=FLAG),

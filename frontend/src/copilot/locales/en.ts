@@ -328,6 +328,7 @@ export const COPILOT_EN = {
       retest: "Re-test",
       onBroker: "broker candles",
       onSample: "sample data",
+      onStored: "stored daily history",
       edit: "Edit the idea",
       approve: "Approve as a strategy",
       reject: "Reject",

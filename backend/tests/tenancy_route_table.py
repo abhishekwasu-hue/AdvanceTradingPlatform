@@ -62,6 +62,8 @@ S_OWN_ACK = "self: the caller's own Copilot terms acknowledgement"
 S_OWN_INTERVIEW = "self: the caller's own strategy interview; nothing deploys"
 S_COPILOT = "self: a Copilot read or research run for the caller: read-only tools, no order, no other member's data changes"
 S_BACKTEST = "self: a backtest computed for the caller; stores nothing another member relies on"
+S_BACKTEST_BARS = ("self: the bars a backtest runs on, read for the caller (the organisation's own broker session, else the shared "
+                   "Daily history); stores nothing")
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
 S_OWN_LAYOUTS = "self: the caller's own saved chart workspace layouts (per user)"
 S_OWN_WATCHLISTS = "self: the caller's own watchlists (tenant and user); another member's or organisation's list is a 404"
@@ -140,6 +142,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/admin/controls/marketplace-terms"): "admin",
     ("GET", "/api/admin/controls/risk-ceilings"): "admin",
     ("PUT", "/api/admin/controls/risk-ceilings"): "admin",
+    ("GET", "/api/admin/controls/trader-pack"): "admin",
+    ("POST", "/api/admin/controls/trader-pack"): "admin",
+    ("POST", "/api/admin/controls/trader-pack/undo"): "admin",
     ("GET", "/api/admin/deployments"): "admin",
     ("GET", "/api/admin/exports/{dataset}"): "admin",
     ("GET", "/api/admin/fx-rates"): "admin",
@@ -318,6 +323,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/auth/verify-email/resend"): S_OWN_ACCOUNT,
     ("POST", "/api/auth/verify-email/{token}"): P_SIGN_IN,
     ("POST", "/api/backtest"): S_BACKTEST,
+    ("POST", "/api/backtest/bars"): S_BACKTEST_BARS,
     ("POST", "/api/backtest/monte-carlo"): S_BACKTEST,
     ("POST", "/api/backtest/optimize"): S_BACKTEST,
     ("GET", "/api/backtest/option-chain/coverage"): "member",
@@ -706,6 +712,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/screens/{screen_id}/versions/{version}"): "member",
     ("POST", "/api/screener/screens/{screen_id}/versions/import"): "trader",       # LAB-18: the one upload of a device's history
     ("GET", "/api/screener/taxonomy"): "member",
+    ("GET", "/api/screener/universes"): "member",            # owner 23 Oct: shared system lists + the org's batch plan
+    ("GET", "/api/screener/universes/{key}"): "member",      # one shared system list's NSE symbols (reference data)
     ("POST", "/api/screener/validate"): S_COMPUTE,
     ("POST", "/api/screener/stages"): S_COMPUTE,
     ("GET", "/api/screener/etf"): "member",

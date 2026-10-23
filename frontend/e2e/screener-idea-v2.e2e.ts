@@ -329,11 +329,13 @@ test.describe("From an idea, 1440", () => {
     await expect(page.getByTestId("scan-versions-open")).toHaveCount(0);
     await page.getByTestId("scan-alert-open").click();
     const alert = page.getByRole("dialog", { name: "Tell me when it matches" });
-    await expect(alert.getByTestId("scan-alert-no-symbols")).toBeVisible();
+    // owner order 23 Oct: the universe is never empty - NIFTY 50 until the trader picks another list
+    await expect(alert).toContainText("for “Scan from my idea” on NIFTY 50 (50 stocks), and tells you when one matches.");
     await page.keyboard.press("Escape");
-    await page.getByLabel("Symbols (up to 50)").fill("RELIANCE, TCS, INFY");
+    await page.getByTestId("universe-select").selectOption("custom");
+    await page.getByLabel("Your symbols (up to 500)").fill("RELIANCE, TCS, INFY");
     await page.getByTestId("scan-alert-open").click();
-    await expect(alert).toContainText("ATP checks each time a daily bar closes for “Scan from my idea” on your 3 symbols, and tells you when one matches.");
+    await expect(alert).toContainText("ATP checks each time a daily bar closes for “Scan from my idea” on your own symbols (3 stocks), and tells you when one matches.");
     await alert.getByTestId("scan-alert-create").click();
     await expect(alert.getByTestId("scan-alert-done")).toBeVisible();
     expect(calls.screens).toHaveLength(1);

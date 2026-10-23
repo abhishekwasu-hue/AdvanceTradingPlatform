@@ -16,6 +16,7 @@ from app.brokers.base import BrokerCapabilities, BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
+    BasketMargin,
     BrokerCredentials,
     BrokerHolding,
     BrokerOrderRequest,
@@ -571,6 +572,24 @@ class UpstoxBroker(BrokerInterface):
         legs = data.get("margins") or []
         total = sum(float(leg.get("total_margin") or 0) for leg in legs if isinstance(leg, dict))
         return total or None
+
+    async def get_basket_margin(self, orders: List[BrokerOrderRequest]) -> Optional[BasketMargin]:
+        """Part 7 / TM-10: the same margin calculator (`POST /charges/margin`) for every leg in one request: Upstox
+        answers `final_margin` (the basket, with the hedge benefit) and `required_margin` (the legs on their own).
+        None when it gives no number."""
+        instruments = []
+        for order in orders:
+            instrument = await self._resolve_instrument(order.symbol, order.exchange)
+            instruments.append({"instrument_key": instrument.instrument_token, "quantity": int(order.quantity),
+                                "transaction_type": order.transaction_type.value, "product": "I" if order.product == "MIS" else "D"})
+        data = await self._request("POST", "/charges/margin", json={"instruments": instruments})
+        final = data.get("final_margin") if isinstance(data, dict) else None
+        required = data.get("required_margin") if isinstance(data, dict) else None
+        if isinstance(final, (int, float)):
+            return BasketMargin(required=float(final), without_hedge=float(required) if isinstance(required, (int, float)) else None)
+        if isinstance(required, (int, float)):
+            return BasketMargin(required=float(required))
+        return None
 
     async def get_margins(self) -> MarginInfo:
         data = await self._request("GET", "/user/get-funds-and-margin")

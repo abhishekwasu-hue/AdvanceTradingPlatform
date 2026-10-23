@@ -89,7 +89,7 @@ async def execute_signal_for_user(
     origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: Optional[int] = None,
     max_quantity: Optional[float] = None, risk_cap_amount: Optional[float] = None, exchange: Optional[str] = None,
     manual_contract_spec: Optional[ContractSpec] = None, manual_contract_meta: Optional[dict] = None,
-    paper_execution: str = "direct",
+    paper_execution: str = "direct", freeze_quantity: Optional[int] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -346,7 +346,7 @@ async def execute_signal_for_user(
             # for the instrument kind actually traded.
             order_style=order_style or "MARKET", market_protection_pct=market_protection_pct,
             is_option=(contract.kind.value == "OPTION") if contract is not None else None,
-            paper_execution=paper_execution,
+            paper_execution=paper_execution, freeze_quantity=freeze_quantity,
         )
         async def hierarchy_check(quantity: float):
             # Phase I1: every applicable risk limit (GLOBAL -> TENANT -> USER -> ACCOUNT ->

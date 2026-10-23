@@ -58,6 +58,7 @@ PACK: Tuple[str, ...] = (
     "paper_account", "approval_only_entries", "risk_by_default", "ladder_evidence", "experience_levels",
     "portfolio_risk", "portfolio_risk_caps", "vix_gate", "discipline_engine", "decision_tools",
     "options_builder", "options_builder_saved", "backtest_optimizer", "backtest_models",
+    "smart_execution",         # TM Part 7: hedge-first sequencing, incomplete state, slicing, margin, delivery warning
     "execution_core", "strategy_templates",   # unfinished in the audit: adopt a template as a PAPER strategy works
     # Watchlists and the screener.
     "watchlists",

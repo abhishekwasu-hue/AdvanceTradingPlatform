@@ -132,6 +132,8 @@ describe("Support and Settings", () => {
     expect(sectionsSource).toContain("Why are you opening this account? (required)");
     expect(sectionsSource).toMatch(/role === "SUPER_ADMIN"\) return/);
     expect(sectionsSource).toContain("the person sees it and your reason in their Settings");
+    expect(sectionsSource).toContain("isStepUpError(err)");               // a stale two-factor check opens the code prompt
+    expect(sectionsSource).toContain("<StepUpDialog");
   });
 
   it("the person's Settings lists when support viewed the account", () => {

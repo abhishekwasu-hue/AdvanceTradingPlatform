@@ -105,6 +105,30 @@ test.describe("View as user behaviour", () => {
     await expect(page.locator("[data-support-user='12']")).toBeVisible();
   });
 
+  test("a stale two-factor check asks for the code, then the view starts", async ({ page }) => {
+    const seen: Seen = { starts: [], ends: [], meAs: [] };
+    let refusedOnce = false;
+    await openAdmin(page, "/admin?section=support&user=12", {
+      routes: async (p) => {
+        await viewRoutes(p, seen);
+        await p.route(/\/api(?:\/v1)?\/admin\/view-sessions$/, (r) => {
+          if (r.request().method() === "POST" && !refusedOnce) {
+            refusedOnce = true;
+            return r.fulfill({ status: 403, headers: { "X-Step-Up": "mfa" },
+              json: { detail: "Viewing an account requires a fresh two-factor check - enter your authenticator code" } });
+          }
+          return r.fallback();
+        });
+      },
+    });
+    await (await startView(page)).click();
+    await expect(page.getByText("Two-factor check required")).toBeVisible();
+    await page.getByPlaceholder("authenticator code").fill("123456");
+    await page.getByRole("button", { name: "Verify" }).click();
+    await expect(page.locator("[data-view-as-banner='12']")).toBeVisible();
+    expect(seen.starts).toHaveLength(1);
+  });
+
   test("an administrator's account offers no view", async ({ page }) => {
     await openAdmin(page, "/admin?section=support&user=12", {
       routes: async (p) => {

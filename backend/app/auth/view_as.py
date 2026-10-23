@@ -20,6 +20,8 @@ reads as that person. What keeps it read-only:
 Every request of a view is recorded (`view_session_requests`); its start and end are on the hash-chained audit trail
 of both accounts; the person sees each view (when, how long, the reason) in Settings > Account & plan.
 """
+import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -28,12 +30,13 @@ import secrets
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import parse_qsl
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.core.config import VIEW_AS_MINUTES
+from app.core.config import VIEW_AS_MFA_FRESH_MINUTES, VIEW_AS_MINUTES
 from app.core.enums import UserRole
 from app.db.models import User, UserSessionRecord, ViewSessionRecord, ViewSessionRequestRecord
 
@@ -102,10 +105,23 @@ def token_hash(token: str) -> str:
 
 # --- the token ---------------------------------------------------------------------------------------------------------
 
+def _payload_mentions_vs(token: str) -> bool:
+    """A cheap look before any JWT parsing: does the token's payload part carry a "vs" key at all? Normal sign-in tokens
+    never do, so they skip the extra decode. Anything that cannot be read is not a view token."""
+    parts = token.split(".")
+    if len(parts) != 3:
+        return False
+    try:
+        raw = base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
+    except (ValueError, binascii.Error):
+        return False
+    return b'"vs"' in raw
+
+
 def unverified_view_claims(token: Optional[str]) -> Optional[Dict[str, Any]]:
     """The claims of a token that SAYS it is a view token, without checking its signature - enough to refuse a write
     (refusing is always safe); never enough to read anything as anyone."""
-    if not token:
+    if not token or not _payload_mentions_vs(token):
         return None
     import jwt
     try:
@@ -131,7 +147,7 @@ def is_view_payload(payload: Dict[str, Any]) -> bool:
     return payload.get("vs") is not None
 
 
-def refusal(method: str, path: str) -> Optional[str]:
+def refusal(method: str, path: str, query: str = "") -> Optional[str]:
     """Why a view may not make this request, or None when it may (a read that only reads)."""
     method = method.upper()
     if method not in SAFE_METHODS:
@@ -139,7 +155,52 @@ def refusal(method: str, path: str) -> Optional[str]:
     for pattern, why in BLOCKED_READS:
         if pattern.search(path):
             return why
+    if query:
+        for pattern, names in BLOCKED_QUERY:
+            if pattern.search(path):
+                for name, value in parse_qsl(query, keep_blank_values=True):
+                    if name in names and value.strip().lower() not in _FALSE_VALUES:
+                        return f"{name} on this read"
     return None
+
+
+def allowed_content_type(content_type: str, status: int) -> bool:
+    """Fail closed on what a view may receive: JSON (scrubbed), PNG images and the live event stream - or an empty
+    answer (204 / 304, a HEAD). Anything else (CSV, PDF, HTML, plain text, other downloads) is refused."""
+    kind = content_type.split(";", 1)[0].strip().lower()
+    if not kind:
+        return status in (204, 304) or status < 200
+    return kind in ALLOWED_CONTENT_TYPES
+
+
+# MO3-A1: the content types a view may receive (everything else is answered 403 by the middleware).
+ALLOWED_CONTENT_TYPES = frozenset({"application/json", "image/png", "text/event-stream"})
+# Query values that make a read act (the thesis read's fresh computation and its AI narration): refused on a view.
+BLOCKED_QUERY: Tuple[Tuple["re.Pattern[str]", frozenset], ...] = (
+    (re.compile(r"^/api/ai/thesis/"), frozenset({"refresh", "narrate"})),
+)
+_FALSE_VALUES = frozenset({"", "0", "false", "f", "no", "n", "off"})
+
+# The current view's expiry (set with `active`), so a stream can end with the view.
+_expires: ContextVar[Optional[float]] = ContextVar("atp_view_as_expires", default=None)
+
+
+def set_expiry(epoch_seconds: Optional[float]) -> Any:
+    return _expires.set(epoch_seconds)
+
+
+def reset_expiry(token: Any) -> None:
+    _expires.reset(token)
+
+
+def stream_seconds(default: float) -> Optional[float]:
+    """For the live stream: the seconds left in the current view when they are fewer than `default`, else None."""
+    exp = _expires.get()
+    if not active() or exp is None:
+        return None
+    import time
+    left = max(0.0, exp - time.time())
+    return left if left < default else None
 
 
 # --- masking -----------------------------------------------------------------------------------------------------------
@@ -199,6 +260,8 @@ async def stale_reason(session: AsyncSession, record: ViewSessionRecord, now: Op
     target = await session.get(User, record.user_id)
     if target is None or not target.is_active or target.role == UserRole.SUPER_ADMIN.value:
         return "the account changed"
+    if await tenant_refusal(session, record.tenant_id, admin) is not None or target.tenant_id != record.tenant_id:
+        return "the account changed"
     return None
 
 
@@ -235,6 +298,40 @@ def clean_reason(reason: Optional[str]) -> str:
     return text[:REASON_MAX]
 
 
+async def tenant_refusal(session: AsyncSession, tenant_id: int, admin: Optional[User] = None) -> Optional[str]:
+    """Why a person of this organisation may not be viewed: it is the operator's own organisation (the admin's), or any
+    member of it is a SUPER_ADMIN - a view reads organisation-wide data (team, brokers, ...), which would expose the
+    platform side. None when it may."""
+    if admin is not None and admin.tenant_id == tenant_id:
+        return "An account in the platform's own organisation cannot be viewed."
+    admins = await session.scalar(select(User.id).where(User.tenant_id == tenant_id, User.role == UserRole.SUPER_ADMIN.value).limit(1))
+    if admins is not None:
+        return "An account in an organisation with an administrator cannot be viewed."
+    return None
+
+
+async def ensure_fresh_two_factor(session: AsyncSession, admin_session_id: Optional[int], now: Optional[datetime] = None) -> None:
+    """Starting a view needs a two-factor check on this login session within VIEW_AS_MFA_FRESH_MINUTES; else the
+    step-up 403 (X-Step-Up: mfa) the client answers with the code prompt."""
+    from app.auth.dependencies import MfaRequired
+    now = now or _utcnow()
+    record = await session.get(UserSessionRecord, admin_session_id) if admin_session_id is not None else None
+    verified = _aware(record.mfa_verified_at) if record is not None else None
+    if verified is None or now - verified > timedelta(minutes=VIEW_AS_MFA_FRESH_MINUTES):
+        raise MfaRequired("Viewing an account requires a fresh two-factor check - enter your authenticator code")
+
+
+async def end_expired(session: AsyncSession, now: Optional[datetime] = None) -> int:
+    """Ends (and audits) every open view past its expiry - views that expired with no later request. Does not commit.
+    Called on the admin reads, at every start and by the trading worker every few minutes."""
+    now = now or _utcnow()
+    rows = list(await session.scalars(select(ViewSessionRecord).where(ViewSessionRecord.ended_at.is_(None),
+                                                                      ViewSessionRecord.expires_at <= now)))
+    for record in rows:
+        await _end(session, record, "expired", now)
+    return len(rows)
+
+
 async def start(session: AsyncSession, admin: User, admin_session_id: Optional[int], target_id: int,
                 reason: Optional[str]) -> Tuple[str, ViewSessionRecord, User]:
     """Opens a view of `target_id` for `admin`: ends the admin's other open views, stores the new one (only the token's
@@ -243,6 +340,7 @@ async def start(session: AsyncSession, admin: User, admin_session_id: Optional[i
     why = clean_reason(reason)
     if admin_session_id is None:
         raise ViewRefused(403, "Sign in again with two-factor to view an account.")
+    await ensure_fresh_two_factor(session, admin_session_id)
     target = await session.get(User, target_id)
     if target is None:
         raise ViewRefused(404, "Nobody with that number.")
@@ -252,10 +350,18 @@ async def start(session: AsyncSession, admin: User, admin_session_id: Optional[i
         raise ViewRefused(400, "An administrator's account cannot be viewed.")
     if not target.is_active:
         raise ViewRefused(400, "This account was removed; there is nothing to view.")
+    refused = await tenant_refusal(session, target.tenant_id, admin)
+    if refused:
+        raise ViewRefused(400, refused)
     now = _utcnow()
+    # One open view per admin: the admin's own row is locked for the start (Postgres; SQLite serialises writers), so two
+    # starts at once cannot both see "no open view"; the partial unique index (migration e8a0c2d4f6b9) is the backstop.
+    await session.scalar(select(User.id).where(User.id == admin.id).with_for_update())
+    await end_expired(session, now)
     for old in await session.scalars(select(ViewSessionRecord).where(
             ViewSessionRecord.admin_user_id == admin.id, ViewSessionRecord.ended_at.is_(None))):
         await _end(session, old, "a new view started", now)
+    await session.flush()
     record = ViewSessionRecord(tenant_id=target.tenant_id, user_id=target.id, admin_user_id=admin.id, admin_session_id=admin_session_id,
                                reason=why, token_hash=secrets.token_hex(32), started_at=now,
                                expires_at=now + timedelta(minutes=VIEW_AS_MINUTES))
@@ -272,8 +378,10 @@ async def start(session: AsyncSession, admin: User, admin_session_id: Optional[i
     return token, record, target
 
 
-async def _end(session: AsyncSession, record: ViewSessionRecord, why: str, now: Optional[datetime] = None) -> bool:
-    """Marks the view ended and writes it on both audit trails. Does not commit. False when it had already ended."""
+async def _end(session: AsyncSession, record: ViewSessionRecord, why: str, now: Optional[datetime] = None,
+               actor: Optional[User] = None) -> bool:
+    """Marks the view ended and writes it on both audit trails - the admin side on `actor` (the admin who ended it) when
+    given, else on the view's own admin. Does not commit. False when it had already ended."""
     if record.ended_at is not None:
         return False
     now = now or _utcnow()
@@ -281,41 +389,47 @@ async def _end(session: AsyncSession, record: ViewSessionRecord, why: str, now: 
     record.ended_at = min(now, expires) if (why == "expired" and expires is not None) else now
     record.end_reason = why[:60]
     counts = f"{record.request_count} reads, {record.refused_count} refused"
-    if record.admin_user_id is not None:
-        admin = await session.get(User, record.admin_user_id)
-        if admin is not None:
-            await write_audit_log(session, admin.tenant_id, admin.id, "support_view_ended",
-                                  f"read-only view #{record.id} of user {record.user_id} ended ({why}; {counts})")
+    admin = actor if actor is not None else (await session.get(User, record.admin_user_id) if record.admin_user_id is not None else None)
+    if admin is not None:
+        by = f"; ended by user {admin.id}" if actor is not None else ""
+        await write_audit_log(session, admin.tenant_id, admin.id, "support_view_ended",
+                              f"read-only view #{record.id} of user {record.user_id} ended ({why}; {counts}{by})")
     await write_audit_log(session, record.tenant_id, record.user_id, "support_view_ended",
                           f"ATP support's read-only view of this account ended ({why})")
     return True
 
 
-async def end(session: AsyncSession, record: ViewSessionRecord, why: str) -> bool:
+async def end(session: AsyncSession, record: ViewSessionRecord, why: str, actor: Optional[User] = None) -> bool:
     """Ends the view (idempotent) and commits."""
-    ended = await _end(session, record, why)
+    ended = await _end(session, record, why, actor=actor)
     await session.commit()
     return ended
 
 
-async def record_request(session: AsyncSession, view_session_id: int, method: str, path: str, status: int, refused: bool) -> None:
-    """One request of a view, recorded; a view found expired (or its admin signed out) is ended here. Commits."""
+async def record_request(session: AsyncSession, view_session_id: int, method: str, path: str, status: int, refused: bool,
+                         began: Optional[datetime] = None) -> None:
+    """One request of a view, recorded - unless the view had already ended before the request began (a view found
+    expired, or its admin signed out, is ended here and the request that found it is not added). Commits."""
     record = await session.get(ViewSessionRecord, view_session_id)
     if record is None:
         return
     now = _utcnow()
+    began = began or now
+    ended = _aware(record.ended_at)
+    if ended is not None and ended < began:
+        return
+    if ended is None:
+        why = await stale_reason(session, record, now)
+        if why is not None:
+            await _end(session, record, why, now)
+            await session.commit()
+            return
     session.add(ViewSessionRequestRecord(view_session_id=record.id, method=method[:10], path=path[:PATH_MAX], status=int(status),
                                          refused=refused, at=now))
     await session.execute(update(ViewSessionRecord).where(ViewSessionRecord.id == record.id).values(
         request_count=ViewSessionRecord.request_count + 1,
         refused_count=ViewSessionRecord.refused_count + (1 if refused else 0),
         last_seen_at=now))
-    await session.flush()
-    await session.refresh(record)
-    if record.ended_at is None:
-        why = await stale_reason(session, record, now)
-        if why is not None:
-            await _end(session, record, why, now)
     await session.commit()
 
 

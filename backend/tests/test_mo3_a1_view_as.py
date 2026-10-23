@@ -574,3 +574,204 @@ def test_a_websocket_with_a_view_token_is_refused(world):
     assert reached == [] and sent == [{"type": "websocket.close", "code": 4403}]
     _run(ViewSessionReadOnly(inner)({**scope, "headers": []}, receive, send))
     assert reached == ["websocket"]
+
+
+# --- the security review's findings (23 Oct) ------------------------------------------------------------------------------
+
+def _set_role(user_id: int, role: str) -> None:
+    async def go():
+        async with _session_factory() as session:
+            (await session.get(User, user_id)).role = role
+            await session.commit()
+    _run(go())
+
+
+def test_review_1_no_view_into_the_operators_organisation_or_one_with_an_admin(world):
+    admin, admin_me = world["admin"], world["admin_me"]
+    colleague = _member("mo3a1-operator-colleague@example.com", admin_me["tenant_id"], "USER")
+    colleague_id = client.get("/api/auth/me", headers=colleague).json()["id"]
+    response = client.post(START, headers=admin, json={"user_id": colleague_id, "reason": "looking at a colleague"})
+    assert response.status_code == 400 and "platform's own organisation" in response.json()["detail"]
+    # A person whose organisation has a SUPER_ADMIN member (another admin's tenant).
+    owner = _bearer(_register("mo3a1-mixed-owner@example.com"))
+    owner_me = client.get("/api/auth/me", headers=owner).json()
+    member = _member("mo3a1-mixed-member@example.com", owner_me["tenant_id"], "USER")
+    member_id = client.get("/api/auth/me", headers=member).json()["id"]
+    view = _bearer(_start(admin, member_id)["token"])
+    assert client.get("/api/team/members", headers=view).status_code == 200
+    _set_role(owner_me["id"], "SUPER_ADMIN")             # the organisation now has an administrator: the open view goes stale
+    assert client.get("/api/team/members", headers=view).status_code == 401
+    response = client.post(START, headers=admin, json={"user_id": member_id, "reason": "again with an admin there"})
+    assert response.status_code == 400 and "organisation with an administrator" in response.json()["detail"]
+    _set_role(owner_me["id"], "OWNER")
+
+
+def _admin_session_verified(headers: Dict[str, str], at: datetime) -> None:
+    sid = jwt.decode(headers["Authorization"].split()[1], options={"verify_signature": False})["sid"]
+
+    async def go():
+        async with _session_factory() as session:
+            (await session.get(UserSessionRecord, sid)).mfa_verified_at = at
+            await session.commit()
+    _run(go())
+
+
+def test_review_2_start_needs_a_fresh_two_factor_check(world):
+    admin, _ = _admin("mo3a1-admin-stale-mfa@example.com")
+    stale = datetime.now(timezone.utc) - timedelta(minutes=config.VIEW_AS_MFA_FRESH_MINUTES + 5)
+    _admin_session_verified(admin, stale)
+    body = {"user_id": world["target_me"]["id"], "reason": "Checking the dashboard"}
+    refused = client.post(START, headers=admin, json=body)
+    assert refused.status_code == 403 and refused.headers.get("X-Step-Up") == "mfa" and "two-factor" in refused.json()["detail"]
+    assert client.get("/api/admin/console/system", headers=admin).status_code == 200      # the console itself still opens
+    _admin_session_verified(admin, datetime.now(timezone.utc))                              # a step-up just now
+    assert client.post(START, headers=admin, json=body).status_code == 200
+
+
+def _age(view_id: int) -> None:
+    async def go():
+        async with _session_factory() as session:
+            (await session.get(ViewSessionRecord, view_id)).expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+            await session.commit()
+    _run(go())
+
+
+def test_review_3a_a_view_that_expires_unseen_is_ended_and_audited(world):
+    admin, _ = _admin("mo3a1-admin-unseen@example.com")
+    view_id = _start(admin, world["target_me"]["id"])["view"]["id"]
+    _age(view_id)
+    assert client.get(START, headers=world["admin"]).status_code == 200                      # an admin read ends it
+    record = _run(_rows(ViewSessionRecord, ViewSessionRecord.id == view_id))[0]
+    assert record.ended_at is not None and record.end_reason == "expired"
+    ended = _run(_rows(AuditLogRecord, AuditLogRecord.event == "support_view_ended"))
+    assert any(f"#{view_id} " in r.detail and "expired" in r.detail for r in ended)
+    # The worker's sweep ends them too (end_expired is what it calls every few minutes).
+    other = _start(admin, world["target_me"]["id"])["view"]["id"]
+    _age(other)
+
+    async def sweep():
+        async with _session_factory() as session:
+            count = await view_as.end_expired(session)
+            await session.commit()
+            return count
+    assert _run(sweep()) >= 1
+    assert _run(_rows(ViewSessionRecord, ViewSessionRecord.id == other))[0].end_reason == "expired"
+
+
+def test_review_3b_an_admin_ending_a_view_is_audited_as_the_actor(world):
+    owner_admin, owner_me = _admin("mo3a1-admin-owner-of-view@example.com")
+    actor, actor_me = _admin("mo3a1-admin-actor@example.com")
+    view_id = _start(owner_admin, world["target_me"]["id"])["view"]["id"]
+    assert client.post(f"{START}/{view_id}/end", headers=actor).json()["ended"] is True
+    on_actor = _run(_rows(AuditLogRecord, AuditLogRecord.user_id == actor_me["id"], AuditLogRecord.event == "support_view_ended"))
+    on_owner = _run(_rows(AuditLogRecord, AuditLogRecord.user_id == owner_me["id"], AuditLogRecord.event == "support_view_ended"))
+    assert any(f"#{view_id} " in r.detail and f"ended by user {actor_me['id']}" in r.detail for r in on_actor)
+    assert not any(f"#{view_id} " in r.detail for r in on_owner)
+
+
+def test_review_3c_admin_reads_of_views_are_audited(world):
+    view_id = _start(world["admin"], world["target_me"]["id"])["view"]["id"]
+    client.get(START, headers=world["admin"])
+    client.get(f"{START}/{view_id}", headers=world["admin"])
+    reads = [r.detail for r in _run(_rows(AuditLogRecord, AuditLogRecord.user_id == world["admin_me"]["id"],
+                                          AuditLogRecord.event == "support_views_read"))]
+    assert any("listed the newest" in d for d in reads) and any(f"read view #{view_id} " in d for d in reads)
+
+
+def test_review_3d_requests_are_not_added_to_an_ended_view(world):
+    started = _start(world["admin"], world["target_me"]["id"])
+    view = _bearer(started["token"])
+    client.post("/api/view-session/end", headers=view)
+    before = _run(_rows(ViewSessionRequestRecord, ViewSessionRequestRecord.view_session_id == started["view"]["id"]))
+    assert client.get("/api/auth/me", headers=view).status_code == 401
+    assert client.post("/api/watchlists", headers=view, json={"name": "x"}).status_code == 403
+    after = _run(_rows(ViewSessionRequestRecord, ViewSessionRequestRecord.view_session_id == started["view"]["id"]))
+    assert len(after) == len(before)
+    record = _run(_rows(ViewSessionRecord, ViewSessionRecord.id == started["view"]["id"]))[0]
+    assert record.request_count == len(before)
+
+
+def test_review_4_one_open_view_per_admin_even_at_the_database(world):
+    from sqlalchemy.exc import IntegrityError
+    admin, admin_me = _admin("mo3a1-admin-race@example.com")
+    _start(admin, world["target_me"]["id"])
+    _start(admin, world["target_me"]["id"])
+    open_ = _run(_rows(ViewSessionRecord, ViewSessionRecord.admin_user_id == admin_me["id"], ViewSessionRecord.ended_at.is_(None)))
+    assert len(open_) == 1
+
+    async def second_open_row():
+        async with _session_factory() as session:
+            now = datetime.now(timezone.utc)
+            session.add(ViewSessionRecord(tenant_id=world["target_me"]["tenant_id"], user_id=world["target_me"]["id"],
+                                          admin_user_id=admin_me["id"], reason="a racing start", token_hash="r" * 64,
+                                          started_at=now, expires_at=now + timedelta(minutes=5)))
+            await session.commit()
+    with pytest.raises(IntegrityError):
+        _run(second_open_row())
+    index = next(i for i in ViewSessionRecord.__table__.indexes if i.name == "uq_view_sessions_open_per_admin")
+    assert index.unique and "ended_at IS NULL" in str(index.dialect_options["postgresql"]["where"])
+    source = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "e8a0c2d4f6b9_mo3_a1_view_as_user.py").read_text()
+    assert "'uq_view_sessions_open_per_admin'" in source and "postgresql_where=sa.text('ended_at IS NULL')" in source
+
+
+def test_review_5_a_view_only_receives_json_png_or_the_event_stream(world):
+    from app.auth.view_as_middleware import ViewSessionReadOnly
+    assert view_as.allowed_content_type("application/json; charset=utf-8", 200)
+    assert view_as.allowed_content_type("image/png", 200) and view_as.allowed_content_type("text/event-stream", 200)
+    for kind in ("text/csv", "text/html; charset=utf-8", "text/plain", "application/pdf", "application/octet-stream", "image/svg+xml"):
+        assert not view_as.allowed_content_type(kind, 200), kind
+    assert view_as.allowed_content_type("", 204) and not view_as.allowed_content_type("", 200)
+    token = _start(world["admin"], world["target_me"]["id"])["token"]
+    secret_body = b"name,secret\nx,mo3a1-leaked-csv\n"
+
+    async def csv_app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"text/csv")]})
+        await send({"type": "http.response.body", "body": secret_body})
+
+    sent: list = []
+
+    async def receive():
+        return {"type": "http.request", "body": b""}
+
+    async def send(message):
+        sent.append(message)
+    scope = {"type": "http", "method": "GET", "path": "/api/some/report", "query_string": b"", "app": app,
+             "headers": [(b"authorization", f"Bearer {token}".encode())]}
+    _run(ViewSessionReadOnly(csv_app)(scope, receive, send))
+    assert sent[0]["status"] == 403 and all(secret_body not in m.get("body", b"") for m in sent)
+    assert b"read-only support view" in b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
+
+
+def test_review_5_the_live_stream_ends_with_the_view():
+    import time
+    marker, expiry = view_as.set_active(True), view_as.set_expiry(time.time() + 42)
+    try:
+        assert 40 < view_as.stream_seconds(300) <= 42
+        assert view_as.stream_seconds(10) is None                        # the stream's own limit is shorter
+    finally:
+        view_as.reset_expiry(expiry)
+        view_as.reset_active(marker)
+    assert view_as.stream_seconds(300) is None                           # not a view: unchanged
+
+
+def test_review_6_the_thesis_read_may_not_refresh_or_narrate_in_a_view(world):
+    view = _bearer(_start(world["admin"], world["target_me"]["id"])["token"])
+    for query in ("refresh=true", "narrate=1", "refresh=yes&language=en", "narrate=on"):
+        response = client.get(f"/api/ai/thesis/NIFTY?{query}", headers=view)
+        assert response.status_code == 403 and response.json()["code"] == view_as.READ_ONLY_CODE, query
+    for query in ("", "refresh=false", "narrate=0&language=en"):
+        assert view_as.refusal("GET", "/api/ai/thesis/NIFTY", query) is None
+    assert view_as.refusal("GET", "/api/ai/brief", "refresh=true") is None
+
+
+def test_review_7_normal_tokens_skip_the_extra_decode(world, monkeypatch):
+    import jwt as pyjwt
+    normal = world["target"]["Authorization"].split()[1]
+    view_token = _start(world["admin"], world["target_me"]["id"])["token"]
+    assert view_as._payload_mentions_vs(view_token) and not view_as._payload_mentions_vs(normal)
+    assert not view_as._payload_mentions_vs("not.a-token") and not view_as._payload_mentions_vs("x.!!!.y")
+    calls = []
+    real = pyjwt.decode
+    monkeypatch.setattr(pyjwt, "decode", lambda *a, **k: calls.append(1) or real(*a, **k))
+    assert view_as.unverified_view_claims(normal) is None and calls == []
+    assert view_as.unverified_view_claims(view_token) is not None and calls == [1]

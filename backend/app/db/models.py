@@ -188,6 +188,9 @@ class ViewSessionRecord(Base):
     hash-chained audit trail of both accounts, and the person sees the session in Settings > Account & plan."""
 
     __tablename__ = "view_sessions"
+    # One open view per admin (with the row lock at start, app/auth/view_as.py).
+    __table_args__ = (Index("uq_view_sessions_open_per_admin", "admin_user_id", unique=True,
+                            postgresql_where=text("ended_at IS NULL"), sqlite_where=text("ended_at IS NULL")),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)

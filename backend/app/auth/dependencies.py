@@ -49,7 +49,8 @@ def _refuse_view_writes(request: Request, payload: dict) -> None:
     """MO3-A1, the second line behind the middleware (app/auth/view_as_middleware.py): a view token is refused every
     change here too, so a route can never act on one even if a request reached it some other way."""
     from app.auth import view_as
-    if view_as.is_view_payload(payload) and view_as.refusal(request.method, request.scope.get("path", "")) is not None:
+    if view_as.is_view_payload(payload) and view_as.refusal(request.method, request.scope.get("path", ""),
+                                                                    (request.scope.get("query_string") or b"").decode("latin-1")) is not None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=view_as.READ_ONLY_MESSAGE,
                             headers={view_as.READ_ONLY_HEADER: "1"})
 

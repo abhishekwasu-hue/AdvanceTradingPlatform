@@ -112,6 +112,10 @@ RHYTHM_EVERY_MINUTES = 5            # MO4: how often the worker looks for daily-
 MAX_TENANT_SHARE_OF_CYCLE = 0.5
 
 
+# MO3-A1: how often the worker ends expired read-only views.
+VIEW_SWEEP_SECONDS = 300
+
+
 @dataclass
 class CycleReport:
     started_at: datetime
@@ -236,6 +240,7 @@ class TradingWorker:
         self._cycle_chains: Dict[str, object] = {}   # chains fetched this tenant cycle, by underlying symbol
         # IST calendar date of the last billing lifecycle sweep (Phase K1): trials, dues, grace.
         self._last_billing_day = None
+        self._last_view_sweep: Optional[datetime] = None
         # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
         self._last_eod_summary_day = None
         self._last_rhythm_check: Optional[datetime] = None     # MO4: the daily rhythm's Telegram sends
@@ -739,6 +744,17 @@ class TradingWorker:
                         logger.exception("Intraday history pass not started")
                         report.errors.append(f"intraday history: {exc}")
                         await session.rollback()
+                # MO3-A1: end (and audit) the read-only "View as user" sessions that expired with no later request -
+                # every few minutes, cheap (an indexed read of the open views).
+                if self._last_view_sweep is None or (now - self._last_view_sweep).total_seconds() >= VIEW_SWEEP_SECONDS:
+                    try:
+                        async with guarded(session):
+                            from app.auth.view_as import end_expired
+                            if await end_expired(session, now):
+                                await session.commit()
+                            self._last_view_sweep = now
+                    except Exception as exc:  # noqa: BLE001 - housekeeping never stops trading
+                        report.errors.append(f"view sessions: {exc}")
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():

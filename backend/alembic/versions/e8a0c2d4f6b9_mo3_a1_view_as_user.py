@@ -44,6 +44,9 @@ def upgrade() -> None:
     op.create_index(op.f('ix_view_sessions_tenant_id'), 'view_sessions', ['tenant_id'], unique=False)
     op.create_index(op.f('ix_view_sessions_user_id'), 'view_sessions', ['user_id'], unique=False)
     op.create_index(op.f('ix_view_sessions_admin_user_id'), 'view_sessions', ['admin_user_id'], unique=False)
+    # One open view per admin: the backstop behind the row lock at start (partial - ended views do not count).
+    op.create_index('uq_view_sessions_open_per_admin', 'view_sessions', ['admin_user_id'], unique=True,
+                    postgresql_where=sa.text('ended_at IS NULL'), sqlite_where=sa.text('ended_at IS NULL'))
 
     op.create_table(
         'view_session_requests',
@@ -63,6 +66,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index(op.f('ix_view_session_requests_view_session_id'), table_name='view_session_requests')
     op.drop_table('view_session_requests')
+    op.drop_index('uq_view_sessions_open_per_admin', table_name='view_sessions')
     op.drop_index(op.f('ix_view_sessions_admin_user_id'), table_name='view_sessions')
     op.drop_index(op.f('ix_view_sessions_user_id'), table_name='view_sessions')
     op.drop_index(op.f('ix_view_sessions_tenant_id'), table_name='view_sessions')

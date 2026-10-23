@@ -15,6 +15,7 @@ untouched (one cheap header look-up).
 """
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from starlette.datastructures import MutableHeaders
@@ -47,6 +48,12 @@ async def _db(app: Any) -> AsyncIterator[Any]:
         await generator.aclose()
 
 
+async def _refuse(scope: Any, receive: Any, send: Any) -> None:
+    response = JSONResponse(status_code=403, content={"detail": view_as.READ_ONLY_MESSAGE, "code": view_as.READ_ONLY_CODE},
+                            headers={view_as.READ_ONLY_HEADER: "1"})
+    await response(scope, receive, send)
+
+
 class ViewSessionReadOnly:
     def __init__(self, app: Any) -> None:
         self.app = app
@@ -65,22 +72,30 @@ class ViewSessionReadOnly:
             await self.app(scope, receive, send)
             return
         method, path = str(scope.get("method", "GET")).upper(), str(scope.get("path", ""))
+        query = (scope.get("query_string") or b"").decode("latin-1")
         verified = view_as.verified_view_claims(token)
-        if view_as.refusal(method, path) is not None:
-            response = JSONResponse(status_code=403, content={"detail": view_as.READ_ONLY_MESSAGE, "code": view_as.READ_ONLY_CODE},
-                                    headers={view_as.READ_ONLY_HEADER: "1"})
-            await response(scope, receive, send)
-            await self._record(scope, verified, method, path, 403, refused=True)
+        began = datetime.now(timezone.utc)
+        if view_as.refusal(method, path, query) is not None:
+            await _refuse(scope, receive, send)
+            await self._record(scope, verified, method, path, 403, refused=True, began=began)
             return
 
         status = {"code": 500}
         held: List[Dict[str, Any]] = []
         chunks: List[bytes] = []
+        blocked = {"on": False}
 
         async def send_scrubbed(message: Dict[str, Any]) -> None:
+            if blocked["on"]:
+                return                                # the refused answer's body never leaves
             if message["type"] == "http.response.start":
-                status["code"] = int(message.get("status", 500))
                 headers = MutableHeaders(scope=message)
+                if not view_as.allowed_content_type(headers.get("content-type", ""), int(message.get("status", 500))):
+                    blocked["on"] = True              # fail closed: a download or page a view may not receive
+                    status["code"] = 403
+                    await _refuse(scope, receive, send)
+                    return
+                status["code"] = int(message.get("status", 500))
                 headers[view_as.READ_ONLY_HEADER] = "1"
                 if headers.get("content-type", "").startswith("application/json"):
                     held.append(message)          # sent with the scrubbed body below
@@ -100,17 +115,20 @@ class ViewSessionReadOnly:
             await send(message)
 
         marker = view_as.set_active(True)
+        expiry = view_as.set_expiry(float(verified["exp"]) if verified and isinstance(verified.get("exp"), (int, float)) else None)
         try:
             await self.app(scope, receive, send_scrubbed)
         finally:
+            view_as.reset_expiry(expiry)
             view_as.reset_active(marker)
-            await self._record(scope, verified, method, path, status["code"], refused=False)
+            await self._record(scope, verified, method, path, status["code"], refused=blocked["on"], began=began)
 
-    async def _record(self, scope: Any, claims: Optional[Dict[str, Any]], method: str, path: str, status: int, *, refused: bool) -> None:
+    async def _record(self, scope: Any, claims: Optional[Dict[str, Any]], method: str, path: str, status: int, *, refused: bool,
+                      began: datetime) -> None:
         if claims is None:
             return
         try:
             async with _db(scope.get("app")) as session:
-                await view_as.record_request(session, int(claims["vs"]), method, path, status, refused)
+                await view_as.record_request(session, int(claims["vs"]), method, path, status, refused, began)
         except Exception as exc:  # noqa: BLE001 - recording must never turn an answer into an error
             logger.warning("view session request not recorded (%s %s): %s", method, path, exc)

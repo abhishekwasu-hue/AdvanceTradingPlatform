@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { CARD } from "../dashboard/CardV2";
 import { startView } from "../api/viewAs";
+import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { growthApi } from "../growth/api";
 import type { Activation } from "../growth/types";
 import { useFeatures } from "../ui/useFeatures";
@@ -448,6 +449,19 @@ function ViewAsStart({ userId, role, active }: { userId: number; role: string; a
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // MO3-A1 review: starting a view needs a fresh two-factor check - the server's step-up 403 opens the code prompt.
+  const [stepUp, setStepUp] = useState<string | null>(null);
+  const begin = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await startView(userId, reason.trim());
+    } catch (err) {
+      if (isStepUpError(err)) setStepUp(String(err));
+      else setError(String(err));
+      setBusy(false);
+    }
+  };
   if (role === "SUPER_ADMIN") return <p className="mt-space-3 text-t12 text-fg-muted" data-view-as-start="admin">An administrator's account cannot be viewed.</p>;
   if (!active) return <p className="mt-space-3 text-t12 text-fg-muted" data-view-as-start="removed">This account was removed; there is nothing to view.</p>;
   const ok = reason.trim().length >= 5;
@@ -463,14 +477,7 @@ function ViewAsStart({ userId, role, active }: { userId: number; role: string; a
       onSubmit={async (e) => {
         e.preventDefault();
         if (!ok || busy) return;
-        setBusy(true);
-        setError(null);
-        try {
-          await startView(userId, reason.trim());
-        } catch (err) {
-          setError(String(err));
-          setBusy(false);
-        }
+        await begin();
       }}>
       <p className="text-t12 text-fg-muted">
         Opens the app as this person sees it, for a short time (the banner on top shows how long). Read only: nothing can be changed, placed, connected or
@@ -481,6 +488,7 @@ function ViewAsStart({ userId, role, active }: { userId: number; role: string; a
           className={`rounded-control border border-border bg-surface-1 px-space-2 py-space-1 text-t14 text-fg ${FOCUS}`} />
       </label>
       {error && <p className="text-t12 text-down" role="alert">{error}</p>}
+      {stepUp && <StepUpDialog reason={stepUp} onCancel={() => setStepUp(null)} onVerified={() => { setStepUp(null); void begin(); }} />}
       <div className="flex flex-wrap gap-space-2">
         <button type="submit" disabled={!ok || busy} className={`${BUTTON} disabled:opacity-60`}>{busy ? "Opening…" : "Start read-only view"}</button>
         <button type="button" className={BUTTON} onClick={() => { setOpen(false); setReason(""); setError(null); }}>Cancel</button>

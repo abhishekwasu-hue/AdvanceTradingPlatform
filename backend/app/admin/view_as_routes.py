@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.log import write_audit_log
 from app.auth import view_as
 from app.auth.dependencies import current_session_id, get_current_user, require_mfa_session, require_role
 from app.db.models import User, ViewSessionRecord, ViewSessionRequestRecord
@@ -47,19 +48,29 @@ async def start_view(body: StartViewBody, admin: User = Depends(require_role()),
 
 
 @admin_router.get("")
-async def list_views(limit: int = Query(50, ge=1, le=200), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    """The newest views, every admin's: who was viewed (masked), why, when, how long and how many requests."""
+async def list_views(limit: int = Query(50, ge=1, le=200), admin: User = Depends(require_role()),
+                     session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """The newest views, every admin's: who was viewed (masked), why, when, how long and how many requests. Views that
+    expired unseen are ended (and audited) first; the read itself is audited."""
+    await view_as.end_expired(session)
+    await write_audit_log(session, admin.tenant_id, admin.id, "support_views_read", f"listed the newest {limit} read-only views")
+    await session.commit()
     rows = (await session.execute(select(ViewSessionRecord, User).join(User, User.id == ViewSessionRecord.user_id)
                                   .order_by(ViewSessionRecord.id.desc()).limit(limit))).all()
     return {"views": [{**view_as.describe(r, u), "admin_user_id": r.admin_user_id} for r, u in rows]}
 
 
 @admin_router.get("/{view_id}")
-async def view_detail(view_id: int, limit: int = Query(200, ge=1, le=1000), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    """One view and its recorded requests, newest first (method, path, status, refused)."""
+async def view_detail(view_id: int, limit: int = Query(200, ge=1, le=1000), admin: User = Depends(require_role()),
+                      session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """One view and its recorded requests, newest first (method, path, status, refused). The read is audited."""
+    await view_as.end_expired(session)
     record = await session.get(ViewSessionRecord, view_id)
     if record is None:
+        await session.commit()
         raise HTTPException(status_code=404, detail="Unknown view")
+    await write_audit_log(session, admin.tenant_id, admin.id, "support_views_read", f"read view #{record.id} and its requests")
+    await session.commit()
     requests: List[ViewSessionRequestRecord] = list(await session.scalars(
         select(ViewSessionRequestRecord).where(ViewSessionRequestRecord.view_session_id == record.id)
         .order_by(ViewSessionRequestRecord.id.desc()).limit(limit)))
@@ -69,11 +80,12 @@ async def view_detail(view_id: int, limit: int = Query(200, ge=1, le=1000), sess
 
 
 @admin_router.post("/{view_id}/end")
-async def end_view(view_id: int, session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def end_view(view_id: int, admin: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Ends a view - any admin may; the end is audited on the admin who ended it."""
     record = await session.get(ViewSessionRecord, view_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Unknown view")
-    ended = await view_as.end(session, record, "ended by support")
+    ended = await view_as.end(session, record, "ended by support", actor=admin)
     return {"ended": ended, "view": view_as.describe(record, await session.get(User, record.user_id))}
 
 

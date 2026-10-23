@@ -3258,3 +3258,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   accounts, the chain intact, the person's record, every GET against another organisation's planted rows, secret
   masking, no AI, the migration), `src/admin/viewAs.test.tsx`, `e2e/view-as-v2.e2e.ts` (+ baselines). Questions
   MO3-A7..A16; MO3-A1 built.
+- Security review follow-up (same branch): no view into the operator's organisation or one with a SUPER_ADMIN member
+  (start and stale check); a fresh two-factor check (15 min, `VIEW_AS_MFA_FRESH_MINUTES`) to start, with the step-up
+  prompt in the form; expired views ended and audited on admin reads, at start and by a 5-minute worker sweep; an
+  admin's End audited on the actor; admin reads of views audited; no request added to an ended view; one open view per
+  admin (row lock + partial unique index in e8a0c2d4f6b9); a view receives only JSON / PNG / the event stream (anything
+  else 403) and its live stream ends with it; the thesis read's refresh / narrate refused in a view; normal tokens skip
+  the extra decode. Tests 48 (+11), e2e 8. Question MO3-A17; MO3-A16 changed.

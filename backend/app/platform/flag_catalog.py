@@ -67,7 +67,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "screener_builder_u2": FlagInfo("Formula blocks in the screen builder", "screens", "builder blocks", ("screener_v2",), "", "ready"),
     "ai_agent": FlagInfo("Copilot reads your positions and news before answering", "ai", "better answers", ("ai_copilot",), "an AI key", "ready"),
     "ai_research": FlagInfo("AI drafts are back-tested and scored automatically", "ai", "research loop", ("ai_copilot",), "an AI key", "unfinished"),
-    "ai_one_key": FlagInfo("Connect AI in one paste: one key for every AI feature", "ai", "Connect AI panel on Copilot and Settings › AI", ("ui_v2",), "", "unfinished"),
+    "ai_one_key": FlagInfo("Connect AI in one paste: one key for every AI feature", "ai", "Connect AI panel on Copilot and Settings › AI", ("ui_v2",), "", "ready"),
     "daily_rhythm": FlagInfo("Daily rhythm: a brief before the open, a pulse, a closing wrap and a weekly review", "data", "a card on the Dashboard; Telegram by the user's choice (Settings › Alerts)", ("ui_v2",), "Telegram connected for the messages", "unfinished"),
     "beta_cohort_gate": FlagInfo("Sign-up needs an invite code; cap on users", "platform", "invite code field", (), "", "decision"),
     "vision_byok": FlagInfo("Use your own AI key to read chart images", "ai", "Settings › AI › Vision key", (), "a user's AI key", "ready"),

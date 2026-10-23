@@ -9,7 +9,7 @@ import type { StrategyDraft } from "../strategyDraft";
  * change or cancel an order (ADR-0006).
  */
 
-export type JobId = "brief" | "chart" | "trade_check" | "positions" | "review" | "strategy" | "option_chain" | "teacher";
+export type JobId = "brief" | "chart" | "trade_check" | "positions" | "review" | "strategy" | "option_chain" | "teacher" | "screen" | "views";
 
 export interface ChatJob {
   id: JobId; number: number; title: string; line: string; starter: string; built: boolean;
@@ -27,7 +27,11 @@ export interface ChatHome {
 export interface WorkedStep {
   tool: string; label: string; ok: boolean; as_of: string | null; source: string | null;
   numbers: { label: string; value: number }[]; note: string | null; args: Record<string, unknown>;
+  /** False: that part of ATP is not set up for this account, so the tool was not read (owner order 23 Oct). */
+  ran?: boolean;
 }
+/** A part of ATP the answer needed that is switched off: what, and (admin only) the flag. */
+export interface NotSetUp { what: string; flag: string }
 export type AnswerBlock =
   | { type: "table"; table: AnalysisTable }
   | { type: "chart"; title: string; chart: AnalysisChart };
@@ -37,6 +41,10 @@ export interface ChatAnswer {
   worked: WorkedStep[]; action: { label: string; to: string } | null; refused: RefusalKind | null; starters: string[];
   concepts: { id: string; title: string }[]; notes: string[]; disclaimer: string; source: "rules" | "ai"; tool_calls: string[];
   ai?: AiState; note?: string;
+  /** "How I worked this out": the plain names of the tools read for this answer (owner order 23 Oct). */
+  tools_used?: string[];
+  /** SUPER_ADMIN only (the server sends it to nobody else): the parts that are not set up, with their flags. */
+  diagnostics?: { not_set_up?: NotSetUp[] } & Record<string, unknown>;
   /** Job 6: the draft paper strategy the Paper bot page's review card shows (never saved by the Copilot). */
   draft?: StrategyDraft | null;
   /** Job 6 follow-up (CP6-2): a next question the page offers as one button, e.g. "Test it on past data" for a complete draft. */
@@ -105,9 +113,21 @@ export function settled(turns: readonly Turn[], id: number, answer: ChatAnswer |
 
 /** "How I worked this out": one line per tool, its time stamp and the numbers it returned. */
 export function workedLine(step: WorkedStep): string {
-  if (!step.ok) return `${step.label}: no answer (${step.note ?? "not available"})`;
+  if (!step.ok) return `${step.label}: ${step.ran === false ? "not set up yet" : `no answer (${step.note ?? "not available"})`}`;
   const numbers = step.numbers.map((n) => `${n.label.replace(/_/g, " ")} ${n.value}`).join(", ");
   return `${step.label}${numbers ? `: ${numbers}` : ""}`;
+}
+
+/** "Tools used: Chart structure, News feed" - the plain names, or null when no tool was read. */
+export function toolsUsedLine(answer: Pick<ChatAnswer, "tools_used">): string | null {
+  const names = answer.tools_used ?? [];
+  return names.length ? names.join(", ") : null;
+}
+
+/** The admin's line: each part that is not set up and the flag it needs (only present in a SUPER_ADMIN's answer). */
+export function notSetUpLine(answer: Pick<ChatAnswer, "diagnostics">): string | null {
+  const rows = answer.diagnostics?.not_set_up ?? [];
+  return rows.length ? rows.map((r) => `${r.what}: flag ${r.flag}`).join("; ") : null;
 }
 
 /** A tool's time stamp as a short IST time ("21 Oct, 09:00 IST"), or null. */

@@ -1601,6 +1601,25 @@ collide on numbers.
 | PRV-5 | New signal-language tokens the reader needs. | Added as generic structure phrases to `app/signals/language.py` and its frontend mirror in a reviewed public PR (shared cases grow with them); when the reader emits them stays private. The package never brings its own text to a screen. | PRIVATE_PACKAGE section 9.3 | open |
 | PRV-6 | A new MAJOR reader version and running deployments. | The host's `ATP_PRIVATE_REF` moves only after the parity checks and a PAPER shadow; each deployment records the reader version it started with; the admin console lists the release note. | PRIVATE_PACKAGE section 11 | open |
 
+## Copilot on the user's own key, tools wired (OKT, 23 Oct)
+
+Owner order 23 Oct ("the Copilot uses the user's own AI key and its tools are wired"), branch
+`claude/copilot-own-key-tools`. Checked against CLAUDE.md (signals not advice, ADR-0006, PAPER only, flags OFF by
+default), DECISIONS.md and the SR / MO2A rows above (SR-2, SR-3, SR-4, SR-6 are kept as they are).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| OKT-1 | The order's screens and multi-view in the chat: new jobs or inside the eight? | Two new jobs after the handover's eight: 9 "Find setups" (screens) and 10 "Full view of a symbol". Jobs 1 and 4 also read the news feed and market memory. | `app/ai/copilot_chat.py` JOBS | open |
+| OKT-2 | Which flag lets the chat read news and market memory? | `ai_agent` (its description already names them); screens `screener_copilot` (+ `screener_v2`); the full view `ai_multiview`. Off: "I don't know yet - ... is not set up"; the flag name only in the SUPER_ADMIN's diagnostics. | `CHAT_TOOL_FLAGS`, `JOB_FLAGS` | open |
+| OKT-3 | The universe of a chat screen. | The user's own first watchlist (his order, NSE symbols, at most 50), else the "NIFTY 50 stocks" system list; the answer names the list. | `tools/screener.get_screen_universe` | open |
+| OKT-4 | May the chat's rules propose an alert? | Yes, only when the trader's own words ask ("alert me when ..."), on one named symbol, through the agent's own guard (his words, one per question, not from third-party text); it is only PROPOSED and he approves it under AI Copilot (ADR-0006). | `chat_routes._runner` | open |
+| OKT-5 | News headline text in a chat answer. | Not shown: a count and the high-severity count, with a pointer to the News page (third-party text may carry trade words). | `copilot_chat._news_line` | open |
+| OKT-6 | The full view's technical part. | ATP's structure reader per timeframe, not the indicator regime (handover 5 C: the regime is an admin diagnostic only). | `copilot_chat.full_view` | open |
+| OKT-7 | "Why did these pass" in the chat. | Each stage's pass / not passed only; the screen engine's own numbers stay on the Screener page (no single prices in the chat). | `copilot_chat.screen` | open |
+| OKT-8 | The user's own key at its own limit, on the Copilot page. | The page still opens and answers from ATP's rules with the plain limit line; never the organisation's key (SR-4). | `chat_routes._provider` | open |
+| OKT-9 | `ai_one_key` catalog status. | `ready` (one key works end to end on any plan, the Free plan included). Switching it ON in production is the owner's step (Admin → Feature flags; it needs `ui_v2`, which is ON). | `platform/flag_catalog.py` | open (owner) |
+| OKT-10 | The scan read ("read this scan") was still on the organisation's key only. | Moved to the user's own key first (user-started, SR-6). The research loop stays on the organisation's key (it queues a background job). | `app/scanner/ai.py` | open |
+
 ## The scan universe is never empty (SU, owner order 23 Oct)
 
 Branch `claude/scan-universe` (behind `ui_v2` + `screener_v2`). Code: `backend/app/screener/universes.py`,

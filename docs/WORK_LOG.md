@@ -3546,6 +3546,24 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
 
+## 23 Oct - Copilot on the user's own key, its tools wired (owner order 23 Oct, README row 19)
+
+- Branch `claude/copilot-own-key-tools` (from main). **No migration.** New user-facing parts behind `ui_v2` plus their
+  flags (`ai_one_key`, `ai_agent`, `screener_copilot`, `ai_multiview`; all unchanged, OFF by default).
+- Verified the review: with `ai_one_key` off only the organisation's key counts (plan + consent + budget); with it on,
+  `resolve.provider_for_user` already put the user's own key first. Finished it: the scan read moved to the resolver;
+  the chat at the user's own limit still answers from the rules (never the organisation's key); `ai_one_key` is `ready`
+  in the flag catalog. A plain member and a Free-plan user connect and use their own key (tests).
+- Chat tools: job 1 adds market memory and the news feed, job 4 the news on the held symbols; new job 9 "Find setups"
+  (the deterministic idea reader -> `build_screen` -> `get_screen_universe` -> `run_screen` -> `explain_results` on
+  "why", or `propose_alert` through the agent's guard) and job 10 "Full view of a symbol" (structure, option chain,
+  news, market memory). A switched-off part reads "... is not set up yet"; the SUPER_ADMIN's diagnostics name the
+  flag. "How I worked this out" lists "Tools used" in plain names. New read tool `get_screen_universe`.
+- Evals: fixtures regenerated (additions only), 12 job cases and 5 safety cases added; both sets at 1.0.
+- Tests: `tests/test_copilot_own_key_tools.py`; updated job-count / tool-list assertions in the chat tests; vitest for
+  "Tools used" and the admin line; e2e `copilot-tools-v2.e2e.ts` (no baselines; `OKT_SHOTS` saves screenshots).
+- No new route (the tenancy table is unchanged). Questions OKT-1..10.
+
 ## 23 Oct - The scan universe is never empty (owner order, trader review row 19)
 
 - Find setups (behind `ui_v2` + `screener_v2`): a universe picker - NIFTY 50 chosen on open (the system list, else the

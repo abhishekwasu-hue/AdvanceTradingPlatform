@@ -50,12 +50,19 @@ CASES = {
 }
 
 
+def _golden_hash(result):
+    """CP6-15 bumped the engine's version label (7-options -> 8-options) and nothing else in these one-trade runs: the
+    golden is compared with the label the golden was recorded under."""
+    assert result.loss_streak is None
+    return result_hash(result.model_copy(update={"options": {**result.options, "engine_version": "7-options"}}))
+
+
 @pytest.mark.parametrize("case", sorted(CASES))
 def test_option_engine_defaults_are_byte_identical(case):
     cfg, direction = CASES[case]
-    assert result_hash(run_option_backtest(_OneShot(direction), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg)) == OPTION_GOLDEN[case]
+    assert _golden_hash(run_option_backtest(_OneShot(direction), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg)) == OPTION_GOLDEN[case]
     again = run_option_backtest(_OneShot(direction), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg, models=ModelSet())
-    assert result_hash(again) == OPTION_GOLDEN[case] and again.execution is None
+    assert _golden_hash(again) == OPTION_GOLDEN[case] and again.execution is None
 
 
 # --- span_like on the single-leg engine -----------------------------------------------------------------------------------------

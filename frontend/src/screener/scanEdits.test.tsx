@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import IdeaPanel, { changeLine, EDIT_EXAMPLES, versionLabel, type IdeaVersion } from "./IdeaPanel";
 import ScanAlertPanel, { DONE, ruleLine, whenLine } from "./ScanAlertPanel";
 import ScanVersionsPanel from "./ScanVersionsPanel";
-import type { IdeaResponse, ScanAlertRule } from "./api";
+import type { IdeaResponse, ScanAlertRule, ServerVersion } from "./api";
 import contract from "./builderTexts.json";
 import { newStage, type Registry, type Stage } from "./model";
 import { addVersion, changes, MAX_VERSIONS, readStore, readsOf, savedAt, snapshot, VERSIONS_KEY, writeStore, type VersionStore } from "./versions";
@@ -109,12 +109,18 @@ describe("the saved scan's versions (on this device)", () => {
   });
 
   it("the versions list shows the newest first and opens an older one", () => {
-    const list = [snapshot(reg, "A", "1d", stages(50), t0), snapshot(reg, "A", "1d", stages(60), t1)];
+    // LAB-18: the list is the server's (oldest first, its own change lines)
+    const list: ServerVersion[] = [
+      { version: 1, number: 1, latest: false, name: "A", base_tf: "1d", conditions: 1, change: ["First saved version."], origin: "device", created_at: t0.toISOString() },
+      { version: 2, number: 2, latest: true, name: "A", base_tf: "1d", conditions: 1, change: ["Added: RSI(14) above 60"], origin: "save", created_at: t1.toISOString() },
+    ];
     const t = text(renderToStaticMarkup(<ScanVersionsPanel versions={list} onOpen={() => undefined} />));
     expect(t.indexOf("Version 2")).toBeLessThan(t.indexOf("Version 1"));
     expect(t).toContain("(latest)");
     expect(t).toContain("Open this version");
-    expect(t).toContain("Kept on this device.");
+    expect(t).toContain("Added: RSI(14) above 60");
+    expect(t).toContain("Kept with your account, the newest 50 for each scan.");
+    expect(t).not.toContain("this device");
     expect(text(renderToStaticMarkup(<ScanVersionsPanel versions={[]} onOpen={() => undefined} />))).toContain("Save the scan to start its history.");
   });
 });

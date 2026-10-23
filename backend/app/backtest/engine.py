@@ -9,6 +9,7 @@ from app.backtest.windows import WindowCursor, bar_length, decision_time
 from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
+from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 from app.strategy_engine.base import BaseStrategy
 from app.backtest.models import ModelSet
@@ -19,7 +20,7 @@ from app.backtest.options import IST, to_utc
 __all__ = ["resample_ohlc", "run_backtest"]
 
 
-ENGINE_VERSION = "4"   # realism 1: a higher-timeframe bar is seen only once it has closed (3: P0.6 daily counters, gap fills)
+ENGINE_VERSION = "5"   # CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (4: realism 1 closed HTF bars; 3: P0.6 daily counters, gap fills)
 
 
 @with_prefix_cache
@@ -66,6 +67,7 @@ def run_backtest(
     margin_calls = 0
     risk_manager = RiskManager(risk_config)
     state = TradingDayState()
+    streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
     contract_spec = get_contract_spec(symbol)
 
     open_trade: Trade | None = None
@@ -76,6 +78,10 @@ def run_backtest(
     initial_stop = 0.0
     best_price: Optional[float] = None
     current_day = None
+    # Strategy templates R5 / section 5: with the user's TEMPLATE_EXIT choice the template's exit signal on a bar close of
+    # an open trade closes it at the next price (the next bar's open), reason "Template exit". Off for every other strategy.
+    template_exit = bool(getattr(strategy, "acts_on_exit_signal", False))
+    exit_due = False
 
     for i in range(min_hist, len(primary_df)):
         bar = primary_df.iloc[i]
@@ -87,6 +93,9 @@ def run_backtest(
             current_day = bar_day
             state.trades_today = 0
             state.daily_pnl = 0.0
+            # CP6-15: "Pause until the next session" starts the losses in a row again here; "until I resume" keeps them
+            # (nobody resumes a test, so that pause holds to the end of the run).
+            state.consecutive_losses = streak.new_session()
 
         if pending is not None and pending[2] == i:
             # N7 C2b: the deferred entry fills at this bar's OPEN (the only number of this bar it reads); this bar's
@@ -106,7 +115,10 @@ def run_backtest(
         if open_trade is not None:
             direction = "LONG" if open_trade.direction == SignalDirection.LONG else "SHORT"
             outcome = None
-            if rules is not None:
+            if exit_due:
+                # R5: the exit signal came on the previous bar's close - out at this bar's open, before anything else
+                outcome, exit_due = ("Template exit", float(bar["open"])), False
+            if outcome is None and rules is not None:
                 # Phase J1: the same rules the position monitor applies live, on this bar's range.
                 # The stop tightened on the previous bar is what this bar is judged against, so
                 # a bar cannot trail its own stop into itself.
@@ -133,6 +145,10 @@ def run_backtest(
                     outcome = ("Margin call", close_px)
                     margin_calls += 1
 
+            if outcome is None and template_exit and i + 1 < len(primary_df):
+                # R5 / S10: read on this bar's close for the open trade's own side; acted on at the next bar's open
+                exit_due = bool(strategy.exit_signal(cursor.at(decision_time(current_time, primary_tf)), direction))   # type: ignore[attr-defined]
+
             if outcome is not None:
                 reason, exit_price = outcome
                 closed = broker.close_trade(open_trade, exit_price, current_time, reason)
@@ -141,7 +157,7 @@ def run_backtest(
                 equity_curve.append(equity)
                 state.daily_pnl += closed.pnl
                 state.open_positions = max(0, state.open_positions - 1)
-                state.consecutive_losses = 0 if closed.pnl > 0 else state.consecutive_losses + 1
+                state.consecutive_losses = streak.closed(closed.pnl, current_time)
                 open_trade = None
 
         if open_trade is None and pending is None:
@@ -212,6 +228,7 @@ def run_backtest(
         exit_rules=rules.to_json() if rules is not None else None,
         execution=None if models.is_default else {"models": models.describe(), "margin_refused": margin_refused, "margin_calls": margin_calls,
                                                   "margin_kind": margin_kind if margin_on else None},
+        loss_streak=streak.report(),
     )
 
 

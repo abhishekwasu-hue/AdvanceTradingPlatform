@@ -11,7 +11,7 @@ import { expectPhoneLayout } from "./phoneLayout";
  * - Flag off: no button. The answer below is the server's own for this idea (app/screener/idea.py), made-up words only.
  * 11j steps 6-7: an edit by chat ("drop the volume condition") with its plain feedback and versions; "Tell me when it
  * matches" saves the scan, then turns on an ordinary bar-close screen alert on the Universe symbols; the saved scan's
- * versions (kept on this device).
+ * versions (LAB-18: kept on the server; e2e/screener-versions-v2.e2e.ts covers the dialog).
  * After an intended change: `npx playwright test --project=phone e2e/screener-idea-v2.e2e.ts --update-snapshots`.
  */
 const read = (path: string): unknown => JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8"));
@@ -226,6 +226,7 @@ const THEMES = ["dark", "light"] as const;
 
 async function open(page: Page, theme: "dark" | "light", options: MockOptions = ON): Promise<{ ideas: unknown[]; screens: unknown[]; rules: unknown[] }> {
   const calls = { ideas: [] as unknown[], screens: [] as unknown[], rules: [] as unknown[] };
+  const versions: unknown[] = [];
   await page.addInitScript((t) => {
     try {
       localStorage.setItem("atp_appearance", JSON.stringify({ theme: t }));
@@ -255,8 +256,12 @@ async function open(page: Page, theme: "dark" | "light", options: MockOptions = 
     if (/\/screens$/.test(url)) {
       const b = route.request().postDataJSON() as { name: string; source: string; base_tf: string };
       calls.screens.push(b);
+      versions.push({ version: 1, number: 1, latest: true, name: b.name, base_tf: b.base_tf, conditions: 6, change: ["First saved version."],
+        origin: "save", created_at: "2026-10-22T08:35:00Z" });
       return route.fulfill({ status: 201, json: { id: 41, name: b.name, text: b.source, base_tf: b.base_tf } });
     }
+    // LAB-18: the server keeps the versions (what the save above wrote)
+    if (/\/screens\/41\/versions$/.test(url)) return route.fulfill({ json: { screen_id: 41, imported: true, max: 50, versions } });
     return route.fulfill({ status: 503, headers: { "X-Feature-Disabled": "screener_gallery" }, json: { detail: "disabled" } });
   });
   await page.goto("/screener");

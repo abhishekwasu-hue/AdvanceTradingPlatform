@@ -20,18 +20,27 @@ export interface TradingMocks {
   /** Answer /paper/account and /paper/ladder (the paper account card with "Pause new PAPER entries"); left out: 404. */
   paperAccount?: boolean;
   /** Replaces fields of the /risk-settings reply. */
-  riskSettings?: Record<string, number>;
+  riskSettings?: Record<string, number | string>;
+  /** CP6-15: replaces fields of the /risk-settings/loss-streak reply (default: not paused, "Pause until the next session"). */
+  lossStreak?: Record<string, unknown>;
 }
+
+/** CP6-15: the losses-in-a-row pause as the risk engine counts it (made-up). */
+export const LOSS_STREAK_CALM = {
+  mode: "next_session", mode_label: "Pause until the next session", limit: 3, losses_in_a_row: 1, paused: false, can_resume: false, ends: null,
+  resumed_at: null, exits_blocked: false,
+};
 
 export interface Writes { calls: { method: string; url: string; body: unknown }[] }
 
-export async function mockTrading(page: Page, { empty = false, positionsFail = false, exposureFail = false, paperAccount = false, riskSettings }: TradingMocks = {}): Promise<Writes> {
+export async function mockTrading(page: Page, { empty = false, positionsFail = false, exposureFail = false, paperAccount = false, riskSettings, lossStreak }: TradingMocks = {}): Promise<Writes> {
   const writes: Writes = { calls: [] };
   const exposure = empty
     ? { ...(T.exposure as object), open_positions: 0, gross_notional: 0, net_notional: 0, long_notional: 0, short_notional: 0, gross_pct_of_capital: 0,
         unrealised_pnl: 0, realised_today: 0, risk_at_stops: 0, risk_pct_of_capital: 0, largest_symbol_pct: 0, by_symbol: [], priced_symbols: [] }
     : T.exposure;
   let events = [...(T.market_events as { id: number }[])];
+  let streak: Record<string, unknown> = { ...LOSS_STREAK_CALM, ...lossStreak };
   const gets: [RegExp, () => unknown][] = [
     [api("/auth/me$"), () => T.me],
     [api("/positions$"), () => (empty ? [] : T.positions)],
@@ -39,6 +48,7 @@ export async function mockTrading(page: Page, { empty = false, positionsFail = f
     [api("/portfolio/exposure"), () => exposure],
     [api("/risk-settings$"), () => ({ ...(T.risk_settings as object), ...riskSettings })],
     [api("/risk-settings/ceilings$"), () => T.ceilings],
+    [api("/risk-settings/loss-streak$"), () => streak],
     [api("/risk-guardian/status$"), () => T.guardian],
     [api("/risk-guardian/events(\\?|$)"), () => events],
     [api("/paper/risk$"), () => T.paper_risk],
@@ -61,6 +71,10 @@ export async function mockTrading(page: Page, { empty = false, positionsFail = f
     try { body = request.postDataJSON(); } catch { body = request.postData(); }
     writes.calls.push({ method, url: path.replace(/^\/api(?:\/v1)?/, ""), body });
     if (method === "POST" && /\/positions\/\d+\/exit-now$/.test(path)) return route.fulfill({ json: T.exit_now });
+    if (method === "POST" && /\/risk-settings\/loss-streak\/resume$/.test(path)) {
+      streak = { ...streak, losses_in_a_row: 0, paused: false, can_resume: false, ends: null, resumed_at: "2026-10-19T05:31:00+00:00" };
+      return route.fulfill({ json: streak });
+    }
     const del = path.match(/\/risk-guardian\/events\/(\d+)$/);
     if (method === "DELETE" && del) { events = events.filter((e) => e.id !== Number(del[1])); return route.fulfill({ status: 204, body: "" }); }
     return route.fallback();

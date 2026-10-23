@@ -50,7 +50,8 @@ function hitsIn(file: string): Hit[] {
   return hits;
 }
 
-describe("banned UI words on user pages (UX audit §8)", () => {
+// It parses every user page with the TypeScript compiler: seconds of CPU, more on a busy CI runner.
+describe("banned UI words on user pages (UX audit §8)", { timeout: 30_000 }, () => {
   it("no user page shows a banned word outside Advanced / the admin console", () => {
     const hits = userPageFiles().flatMap(hitsIn);
     expect(hits.map((h) => `${h.file}:${h.line} [${h.word}] ${h.text}`)).toEqual([]);

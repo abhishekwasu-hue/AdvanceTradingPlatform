@@ -1,9 +1,10 @@
 import { friendlyError } from "../api/errors";
 import { convertedOrUnconverted, humanise, positionRows, todayPnl, type Tone } from "../dashboard/model";
 import type {
-  GuardianModeStatus, MarketEvent, PaperRiskStatus, PortfolioExposure, RiskConfig, RiskLimitType, RiskScope, TradeRecord,
+  GuardianModeStatus, LossStreakPause, LossStreakStatus, MarketEvent, PaperRiskStatus, PortfolioExposure, RiskConfig, RiskLimitType, RiskScope,
+  TradeRecord,
 } from "../types";
-import { formatDateIST, formatINR, formatLots, formatNumber, formatPrice, formatSignedINR } from "../ui/format";
+import { formatDateIST, formatDateTimeIST, formatINR, formatLots, formatNumber, formatPrice, formatSignedINR } from "../ui/format";
 
 /**
  * UI2-9a (UI v2 proposal §2 rows 14, 16, 17; §8 "Cards and numbers"; §9; §13 UI-11): what the v2 My positions, My
@@ -315,6 +316,28 @@ export function todayRisk(config: RiskConfig | null, paper: PaperRiskStatus | nu
     paperUsedPct: share === null ? null : share * 100,
     lockout: paper?.lockout ? `New paper trades are paused for today: ${paper.lockout.reason.trim().replace(/\.$/, "")}. Exits keep working.` : null,
   };
+}
+
+/** CP6-15: the two choices for "After the losses-in-a-row limit", in plain words. */
+export const LOSS_STREAK_CHOICES: { value: LossStreakPause; label: string; help: string }[] = [
+  { value: "next_session", label: "Pause until the next session",
+    help: "New entries start again at the next trading session." },
+  { value: "until_resume", label: "Pause until I resume",
+    help: "New entries stay paused until you resume them on this page. A backtest cannot resume, so there the pause lasts to the end of the test." },
+];
+
+const inARow = (n: number) => `${n} ${n === 1 ? "loss" : "losses"} in a row`;
+
+/** CP6-15: the pause, when it is active, in one plain sentence (null when new entries are not paused by it). */
+export function lossStreakNote(s: LossStreakStatus | null): string | null {
+  if (!s || !s.paused) return null;
+  const ends = s.mode === "until_resume" ? "They stay paused until you resume them." : "They start again at the next session.";
+  return `New entries are paused after ${inARow(s.losses_in_a_row)} (your limit is ${s.limit}). ${ends} Exits keep working.`;
+}
+
+/** CP6-15: when the trader last resumed, for the paused note and the setting (null when never). */
+export function lastResumeText(s: LossStreakStatus | null): string | null {
+  return s?.resumed_at ? `Last resumed ${formatDateTimeIST(s.resumed_at)}.` : null;
 }
 
 export interface GuardianLine { mode: "Paper" | "Live"; state: string; tone: Tone; detail: string[] }

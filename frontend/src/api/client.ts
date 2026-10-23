@@ -143,6 +143,7 @@ import type {
   GuardianStatus,
   MarketEvent,
   MarketEventRequest,
+  LossStreakStatus,
   RiskCeilings,
   OptionBacktestConfig, OptionChainCoverage, OptionChainSnapshotRow,
   MarketplaceCharge, MarketplaceEarnings, MarketplacePayout, MarketplacePurchaseResponse, MarketplaceRevenue, MarketplaceTerms,
@@ -169,6 +170,7 @@ import type { BetaCohort } from "../beta/rollout";
 
 import { API_V1 } from "./base";
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
+import { currentView, setView } from "./viewState";
 import type { LegalAckBody, LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
 import type { SupportReply } from "../support/support";
 import { CONNECT_AI_EVENT, isNotConnected, type AiConnection } from "../aiKeys/connect";
@@ -221,6 +223,9 @@ export function clearToken(): void {
 let refreshInFlight: Promise<boolean> | null = null;
 
 export async function tryRefresh(): Promise<boolean> {
+  // MO3-A1: a read-only "View as user" has no refresh token of its own - the cookie is the admin's, so a refresh ends
+  // the view in this tab (the banner's host brings the admin back).
+  if (currentView()) setView(null);
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
       try {
@@ -238,6 +243,8 @@ export async function tryRefresh(): Promise<boolean> {
           return false;
         }
         const body = (await response.json()) as TokenResponse;
+        // MO3-A1: a view opened while this refresh was in flight keeps the view's token (never the admin's under it).
+        if (currentView()) return false;
         accessToken = body.access_token;
         return true;
       } catch {
@@ -278,6 +285,11 @@ async function rawRequest(path: string, init?: RequestInit): Promise<Response> {
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response = await rawRequest(path, init);
+  if (response.status === 401 && currentView()) {
+    // MO3-A1: the view ended on the server (expired, ended elsewhere): never retry as the admin under the person's page.
+    setView(null);
+    throw await apiErrorFrom(response);
+  }
   if (response.status === 401 && !path.startsWith("/auth/refresh") && !path.startsWith("/auth/login") && !path.startsWith("/auth/register")) {
     if (await tryRefresh()) response = await rawRequest(path, init);
   }
@@ -793,6 +805,9 @@ export const api = {
   // ---- Phase V1: Risk Guardian
   guardianStatus: () => request<GuardianStatus>("/risk-guardian/status"),
   riskCeilings: () => request<RiskCeilings>("/risk-settings/ceilings"),
+  /** CP6-15: the losses-in-a-row pause now, and "Resume after losses in a row" (only under "Pause until I resume"). */
+  lossStreak: () => request<LossStreakStatus>("/risk-settings/loss-streak"),
+  resumeLossStreak: () => request<LossStreakStatus>("/risk-settings/loss-streak/resume", { method: "POST" }),
   listMarketEvents: (from?: string, to?: string) => {
     const params = new URLSearchParams();
     if (from) params.set("from", from);

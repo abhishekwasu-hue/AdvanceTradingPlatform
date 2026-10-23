@@ -36,7 +36,7 @@ import pandas as pd
 from app.screener import nodes as n
 from app.screener.registry import BOOL, FIELDS, FUNCTIONS
 from app.screener.runtime import SymbolData, _Eval
-from app.strategy_templates.compile import SIDES, Recipe, Side
+from app.strategy_templates.compile import SIDES, Part, Recipe, Side
 
 # Series that are legitimately missing between their events: they do not hold the warm-up back. Family G (review finding
 # WB4): the alternate wave count (missing when there is no second reading) and the wave level companions - the wave's
@@ -76,6 +76,8 @@ class SignalSeries:
     exit_short: np.ndarray
     evidence: Dict[int, Tuple[str, ...]] = field(default_factory=dict)
     warmup_bars: int = 0
+    # Section 5 (exits as settings): extra price series the caller asked for (the WAVE_PROJECTION target), on every bar
+    extras: Dict[str, np.ndarray] = field(default_factory=dict)
 
     def instance_id(self, t: int) -> Optional[str]:
         """The setup instance of the signal on bar t: side and the setup bar's time (stable across fetch windows)."""
@@ -130,9 +132,10 @@ def _closed_count(ev: _Eval, tf: str, base_tf: str) -> np.ndarray:
     return _num(aligned, ev.frame(base_tf).index)
 
 
-def compute(recipe: Recipe, frames: Dict[str, pd.DataFrame], symbol: str = "S") -> SignalSeries:
+def compute(recipe: Recipe, frames: Dict[str, pd.DataFrame], symbol: str = "S", extras: Optional[Dict[str, Part]] = None) -> SignalSeries:
     """The whole signal series of a recipe on closed bars (`frames`: ScreenQL timeframe -> bars indexed by bar start; a
-    context timeframe that is missing is resampled from the signal timeframe by the runtime)."""
+    context timeframe that is missing is resampled from the signal timeframe by the runtime). `extras`: more compiled price
+    expressions read on the same bars (section 5's WAVE_PROJECTION target) - they never change the signals."""
     s = recipe.settings
     tf = s.timeframe
     ev = _Eval(SymbolData(symbol, dict(frames)), tf, {}, {}, memo={})
@@ -252,7 +255,11 @@ def compute(recipe: Recipe, frames: Dict[str, pd.DataFrame], symbol: str = "S") 
         setup_bar[t] = s0
         evidence[t] = tuple(e.name for e in recipe.template.evidence if data[side][f"evidence:{e.name}"][t])
     exits = {side: (data[side]["exit"] & ready) if side in data else np.zeros(size, dtype=bool) for side in SIDES}
-    return SignalSeries(index, direction, invalidation, setup_bar, reason, exits["long"], exits["short"], evidence, warmup)
+    extra: Dict[str, np.ndarray] = {}
+    for name, part in (extras or {}).items():
+        ev.params = part.params
+        extra[name] = _num(ev.ev(part.ast, tf), index)
+    return SignalSeries(index, direction, invalidation, setup_bar, reason, exits["long"], exits["short"], evidence, warmup, extra)
 
 
 def _num_or_category(value: Any, index: pd.Index) -> np.ndarray:

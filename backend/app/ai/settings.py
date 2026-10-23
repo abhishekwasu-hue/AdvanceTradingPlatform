@@ -64,6 +64,10 @@ async def provider_for(session: AsyncSession, tenant: Tenant, *, client: Optiona
     `task` picks the model tier: cheap tasks (narration, classification, Q&A) run the operator's fast model at low
     effort, rule-writing tasks the tenant's generation model."""
     from app.ai import metering
+    from app.auth import view_as
+    if view_as.active():
+        # MO3-A1: a read-only support view never calls an outside model (nor spends the organisation's AI budget).
+        return RuleBasedProvider(reason="a read-only support view does not use the AI")
     record = await get_config(session, tenant.id)
     if record is None or not record.enabled or not feature_allowed(tenant, "ai_features"):
         return RuleBasedProvider()

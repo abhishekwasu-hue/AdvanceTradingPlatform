@@ -1269,6 +1269,19 @@ TEST_PARTIAL = ("This tests the draft only: the parts listed under \"Not support
                 "is not a test of your whole idea.")
 
 
+def _pause_line(pause: Dict[str, Any]) -> str:
+    """CP6-15: the losses-in-a-row pause in the test, said plainly (the day it first engaged, in India time)."""
+    from app.ai.draft_backtest import day_label
+    from app.risk_engine.loss_streak import in_a_row
+    limit, day = pause.get("limit"), day_label(pause.get("first_paused_at")) if pause.get("first_paused_at") else None
+    if pause.get("held_to_end"):
+        return (f"After {in_a_row(int(limit or 0))}{f' (on {day})' if day else ''}, new entries paused and stayed paused to the end of the "
+                "test: your setting is \"Pause until I resume\", and nobody can resume a test. The test took no new trade after that.")
+    times = int(pause.get("pauses") or 0)
+    return (f"New entries paused {times} {'time' if times == 1 else 'times'} after {in_a_row(int(limit or 0))}"
+            f"{f' (first on {day})' if day else ''}; each pause ended at the next session, as your setting says.")
+
+
 def _test_lines(answer: Answer, data: Dict[str, Any], partial: bool = False) -> None:
     """The test's facts in plain lines - the sample size, costs and the drawdown always, ratios only on enough trades.
     `partial`: parts of his idea are not in the draft (said first)."""
@@ -1292,6 +1305,9 @@ def _test_lines(answer: Answer, data: Dict[str, Any], partial: bool = False) -> 
                      f"{_f(data.get('slippage_pct_per_fill'), 4)}% on every fill).")
         lines.append(f"Deepest drop from a peak: {_plain_money(whole.get('max_drawdown'))} ({_f(whole.get('max_drawdown_pct'))}% of the "
                      f"capital of {_plain_money(data.get('capital'))} in your risk limits).")
+    pause = data.get("loss_streak")
+    if pause:
+        lines.append(_pause_line(pause))
     if data.get("sample") == "ok":
         lines.append(f"Trades won: {_f(whole.get('win_rate'))}%." + (f" Gains against losses: {_f(whole.get('profit_factor'))}."
                                                                    if whole.get("profit_factor") is not None else ""))

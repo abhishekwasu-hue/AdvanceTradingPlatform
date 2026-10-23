@@ -706,6 +706,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
                                     "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),
+    # Signals day one: the caller's own watch (an internal user_prefs row, tenant and user) and the shared daily history
+    ("GET", "/api/signals/day-one"): "member: the caller's own adopted watch (tenant and user); the shared daily history",
+    ("POST", "/api/signals/day-one/adopt"): "trader",
+    ("POST", "/api/signals/day-one/refresh"): "trader",
+    ("DELETE", "/api/signals/day-one"): "trader",
     ("GET", "/api/status"): P_STATUS_PAGE,
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
     ("GET", "/api/strategies/{strategy_id}"): P_STRATEGY_CATALOGUE,

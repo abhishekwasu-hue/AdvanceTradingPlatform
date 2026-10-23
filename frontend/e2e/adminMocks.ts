@@ -122,6 +122,20 @@ const FEEDBACK = [
   { id: 4, tenant_id: 9, user_id: 14, email: "newbie@example.com", message: "Where do I connect my broker?", app_version: "1.42.0", screen: "/", user_agent: null, created_at: T(60 * 26) },
 ];
 
+// C12: the same inbox as tickets (Admin › Support), with made-up targets, an assignee and one attached error reference.
+export const TICKETS = {
+  tickets: [
+    { ...FEEDBACK[0], kind: "problem", status: "open", assignee_id: null, assignee_email: null, first_response_at: null, closed_at: null,
+      context: { client_time: T(120), error_id: "3f9c2a7e1b", error_screen: "/option-chain", error_at: T(122), error_route: "/api/option-chain/{symbol}", error_status: 503, error_found: true },
+      first_response_due_at: T(-120), first_response_late: false, resolve_due_at: T(-60 * 46), resolve_late: false },
+    { ...FEEDBACK[1], kind: "feedback", status: "answered", assignee_id: 1, assignee_email: "ops@example.com", first_response_at: T(60 * 25), closed_at: null,
+      context: {}, first_response_due_at: T(60 * 22), first_response_late: true, resolve_due_at: T(60 * 26 - 48 * 60), resolve_late: false },
+  ],
+  counts: { open: 1, answered: 1, closed: 0 }, late: 0, assignees: [{ id: 1, email: "ops@example.com" }],
+  targets: { first_response_hours: 4, resolve_hours: 48 },
+};
+export const DESK_SETTINGS = { whatsapp: "", email: "", first_response_hours: 4, resolve_hours: 48 };
+
 const TENANTS = [
   { id: 9, name: "newbie@example.com", plan: "free", status: "active", created_at: T(60 * 30), owners: ["newbie@example.com"], members: 1, active_deployments: 0, live_deployments: 0, open_positions: 0 },
   { id: 7, name: "Desk Seven", plan: "pro", status: "active", created_at: T(60 * 24 * 40), owners: ["owner@example.com"], members: 2, active_deployments: 2, live_deployments: 0, open_positions: 1 },
@@ -178,6 +192,12 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
       ended_at: T(60 * 26 - 12), end_reason: "ended by support", active: false, seconds_left: 0, requests: 23, refused: 1, last_seen_at: T(60 * 26 - 12), admin_user_id: 1 },
   ] }));
   await page.route(A("/admin/beta/feedback(\\?.*)?$"), ok(FEEDBACK));
+  await page.route(A("/admin/support/tickets(\\?.*)?$"), (r) => {
+    if (r.request().method() !== "GET") return r.fallback();
+    const status = new URL(r.request().url()).searchParams.get("ticket_status");
+    return r.fulfill({ json: { ...TICKETS, tickets: TICKETS.tickets.filter((t) => !status || t.status === status) } });
+  });
+  await page.route(A("/admin/support/settings$"), (r) => (r.request().method() === "GET" ? r.fulfill({ json: DESK_SETTINGS }) : r.fallback()));
   await page.route(A("/admin/alerts/outbox$"), ok({ by_status: { DELIVERED: 1200, PENDING: 2, DEAD: 1 }, claimed: 0, oldest_pending_seconds: 14 }));
   await page.route(A("/admin/alerts/dead-letters(\\?.*)?$"), ok([{ id: 77, tenant_id: 7, channel: "TELEGRAM", event_type: "SIGNAL", status: "DEAD", error_class: "http_4xx", attempts: 5, created_at: T(300) }]));
   await page.route(A("/admin/retention$"), ok({ policy: {}, eligible_now: { market_snapshots: 120, login_events: 0 }, last_run: { at: T(60 * 20), detail: "120 rows" } }));

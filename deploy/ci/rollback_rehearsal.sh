@@ -14,7 +14,10 @@
 #
 # N+1 and N+2 are local commits in the clone (never pushed), so the run sets ATP_ALLOW_UNMERGED=1. Also set for the
 # rehearsal only: ATP_ALLOW_SESSION_RESTART=1 and MIGRATION_FORCE=1 (CI may run during market hours on an empty
-# database), ATP_CONFIRM_DB (the confirmation --restore-db asks for). The clone's .env is generated with random values.
+# database), ATP_CONFIRM_DB (the confirmation --restore-db asks for), and ATP_ALLOW_UNTESTED=1 with a reason (A3: the
+# commits under test have no CI result yet - this run is part of it; every deploy here also writes the override to
+# .deploy/gate.log and the audit trail, which the restore check's chain verification then covers). The clone's .env
+# is generated with random values.
 #
 # Needs: a non-root user in the docker group (atp.sh refuses root), docker compose >= 2.24, ports 80/443 and
 # 127.0.0.1:8000/5432/6379 free. Writes the report to $WORK/rollback_report.md (WORK: ATP_REHEARSAL_DIR, default
@@ -31,7 +34,7 @@ DOWN=0
 [ "${1:-}" = "--down" ] && DOWN=1
 [ "$(id -u)" != "0" ] || { echo "run as a non-root user in the docker group (deploy/atp.sh refuses root)" >&2; exit 2; }
 
-export ATP_DIR="$CLONE" ATP_ALLOW_UNMERGED=1 ATP_ALLOW_SESSION_RESTART=1 ATP_HEALTH_TIMEOUT="${ATP_HEALTH_TIMEOUT:-360}"
+export ATP_DIR="$CLONE" ATP_ALLOW_UNMERGED=1 ATP_ALLOW_SESSION_RESTART=1 ATP_ALLOW_UNTESTED=1 ATP_UNTESTED_REASON="CI rehearsal of this commit" ATP_HEALTH_TIMEOUT="${ATP_HEALTH_TIMEOUT:-360}"
 export ATP_FILES_BACKUP_DIR="$WORK/files"
 API="http://127.0.0.1:8000"
 RESULTS=()

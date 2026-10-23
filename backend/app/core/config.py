@@ -78,6 +78,26 @@ VIEW_AS_MINUTES = max(5, min(60, int(os.environ.get("VIEW_AS_MINUTES", "30") or 
 VIEW_AS_MFA_FRESH_MINUTES = max(1, min(60, int(os.environ.get("VIEW_AS_MFA_FRESH_MINUTES", "15") or "15")))
 REFRESH_TOKEN_DAYS = int(os.environ.get("REFRESH_TOKEN_DAYS", "30"))
 
+
+def _env_int_in(name: str, default: int, low: int, high: int) -> int:
+    """An integer setting kept inside [low, high]; anything else (unset, not a number, out of range) is the default."""
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return value if low <= value <= high else default
+
+
+# A4 (review R5 c, RDY-28): each refresh slides a session another REFRESH_TOKEN_DAYS, so a device that keeps opening the
+# app would stay signed in for ever. SESSION_MAX_DAYS is the absolute cap counted from the sign-in itself: after it the
+# person signs in again (and enters the authenticator code again, when two-factor is on), however active the device was.
+SESSION_MAX_DAYS = _env_int_in("SESSION_MAX_DAYS", 90, 1, 3650)
+# A4 (review R5 c, RDY-29): how recent the two-factor check on this session must be for a SUPER_ADMIN write (every route
+# behind `require_mfa_session` that is not a GET). Admin reads need a checked session, not a recent one, so the console
+# stays usable; a write after the window asks for the authenticator code once more and then carries on. The LIVE step-up
+# (`ensure_live_step_up`) is unchanged: PAPER only in Phase 0, decided with LIVE.
+MFA_STEP_UP_MINUTES = _env_int_in("MFA_STEP_UP_MINUTES", 30, 1, 24 * 60)
+
 # Fernet key for encrypting broker credentials at rest. Must be set via env in any real
 # deployment - a process-local fallback is generated here only so the app still runs for local
 # development, but anything encrypted with it becomes unreadable across restarts.
@@ -433,6 +453,15 @@ EMAIL_VERIFICATION_REQUIRED = os.environ.get("EMAIL_VERIFICATION_REQUIRED", "fal
 # `python -m app.alerts.webpush` and keep it stable: rotating it invalidates every subscription.
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "").strip() or None
 VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "mailto:ops@example.com").strip()
+
+# --- Phone notifications for the Android app (readiness B8, docs/design/MOBILE_PUSH.md) ----------------------------
+# Firebase Cloud Messaging HTTP v1. A Firebase service account key (JSON) authorises the server: either base64 on one
+# line in .env (FCM_SERVICE_ACCOUNT_JSON_BASE64, the way on the Hostinger host) or a path to the file
+# (FCM_SERVICE_ACCOUNT_FILE). FCM_PROJECT_ID is optional (the key's own project_id when empty). All empty = phone
+# notifications are off: nothing is sent and the device routes say "not set up on this server yet".
+FCM_PROJECT_ID = os.environ.get("FCM_PROJECT_ID", "").strip()
+FCM_SERVICE_ACCOUNT_FILE = os.environ.get("FCM_SERVICE_ACCOUNT_FILE", "").strip()
+FCM_SERVICE_ACCOUNT_JSON_BASE64 = os.environ.get("FCM_SERVICE_ACCOUNT_JSON_BASE64", "").strip()
 
 # --- The platform's Telegram bot (UX2 fix 5: "Telegram in one tap") --------------------------------
 # One bot for every organisation, created once by the operator with @BotFather. A user taps "Connect Telegram", the app

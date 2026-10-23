@@ -53,6 +53,11 @@
 #     when the owner ends Phase 0), so a fresh install starts PAPER-only with nothing for the owner to set; `health`
 #     and `install` still ask the owner to act (exit 10) if live_trading is on or phase0_paper_only is off; profiles
 #     come only from COMPOSE_PROFILES in .env;
+#   * A3 (review R3): `deploy` refuses a commit whose checks did not pass on main - CI lint, backend,
+#     backend-lookahead, frontend and the CI staging stack's acceptance, rollback and offsite, read from the public
+#     GitHub API (deploy/ci_gate.py, no token); known-red jobs per CI_GATE_KNOWN_RED in .env (default: load-500,
+#     LD-9). Refused also while they still run and when GitHub cannot be reached. Emergency only:
+#     ATP_ALLOW_UNTESTED=1 ATP_UNTESTED_REASON='...' (logged in .deploy/gate.log, the audit trail and `health`);
 #   * idempotent: running a command again converges on the same state.
 #
 # Exit codes: 0 ok | 1 failed | 2 usage | 3 refused: market session (migration / restart) - for `loadtest`: outside
@@ -605,6 +610,15 @@ report_settings() {
   for k in GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do if env_set "$k"; then n=$((n + 1)); fi; done
   case "$n" in 0) info "Google sign-in (GS-1): not set (optional; no Google button)";; 2) ok "Google sign-in (GS-1): both keys set (the button shows)";;
     *) warn "Google sign-in (GS-1): only one of GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET set - the button stays hidden";; esac
+  # B8: browser notifications need a stable VAPID key; without one the app refuses new browser subscriptions (runbook section 4).
+  if env_set VAPID_PRIVATE_KEY; then
+    ok "browser notifications (Web Push): VAPID_PRIVATE_KEY set - subscriptions survive restarts"
+    case "$(env_get VAPID_SUBJECT)" in ""|*@example.com) warn "browser notifications: VAPID_SUBJECT is not your own contact (mailto:you@yourdomain)";; esac
+  else
+    warn "browser notifications (Web Push): VAPID_PRIVATE_KEY is not set - the app refuses new browser subscriptions until it is (runbook section 4, 'Browser and phone notifications')"
+  fi
+  if env_set FCM_SERVICE_ACCOUNT_JSON_BASE64 || env_set FCM_SERVICE_ACCOUNT_FILE; then ok "phone notifications (Android app, FCM): key set - the mobile_push flag decides who gets them"
+  else info "phone notifications (Android app, FCM): not set (optional; FCM_SERVICE_ACCOUNT_JSON_BASE64) - nothing is sent to phones"; fi
 }
 
 lock() {
@@ -735,6 +749,7 @@ health_checks() {
   info "running: ${cur:0:12}${cur:+ }$(git -C "$ATP_DIR" log -1 --format='%cd %s' --date=format:'%Y-%m-%d %H:%M' "${cur:-HEAD}" 2>/dev/null | cut -c1-80)"
   if [ -n "$cur" ] && [ "$(git -C "$ATP_DIR" rev-parse HEAD)" != "$cur" ]; then warn "checkout $(git -C "$ATP_DIR" rev-parse --short=12 HEAD) differs from the running release ${cur:0:12}"; fi
   if db_ahead_marker; then warn "database is ahead of the running code since a rollback (revision $(cat "$STATE_DIR/db_ahead"))"; fi
+  gate_report "$cur"
 
   step "secrets key"
   check_key_live
@@ -760,16 +775,22 @@ health_checks() {
 public_domain_check() {
   local domain="$1" code hdrs h missing="" want got
   local here=(--resolve "$domain:443:127.0.0.1" --resolve "www.$domain:443:127.0.0.1")
-  hdrs="$(curl -sk -m 10 -D - -o /dev/null "${here[@]}" "https://$domain/" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
-  if ! printf '%s\n' "$hdrs" | grep -q '^http/'; then
-    bad "https://$domain/ through Caddy here gave no answer, so its security headers could not be checked"
-  else
-    for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy; do
+  # A4: the app page and the API both, and Permissions-Policy plus the CSP's frame-ancestors as well.
+  local page
+  for page in / /api/system/health; do
+    missing=""
+    hdrs="$(curl -sk -m 10 -D - -o /dev/null "${here[@]}" "https://$domain$page" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
+    if ! printf '%s\n' "$hdrs" | grep -q '^http/'; then
+      bad "https://$domain$page through Caddy here gave no answer, so its security headers could not be checked"
+      continue
+    fi
+    for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy permissions-policy; do
       printf '%s\n' "$hdrs" | grep -q "^$h:" || missing="$missing $h"
     done
-    if [ -z "$missing" ]; then ok "https://$domain/ sends HSTS, CSP, X-Frame-Options, X-Content-Type-Options and Referrer-Policy"
-    else bad "https://$domain/ is missing:$missing (deploy/Caddyfile)"; fi
-  fi
+    printf '%s\n' "$hdrs" | grep -q "^content-security-policy:.*frame-ancestors 'none'" || missing="$missing csp-frame-ancestors"
+    if [ -z "$missing" ]; then ok "https://$domain$page sends HSTS, CSP (frame-ancestors), X-Frame-Options, X-Content-Type-Options, Referrer-Policy and Permissions-Policy"
+    else bad "https://$domain$page is missing:$missing (deploy/Caddyfile)"; fi
+  done
   want="301 https://$domain/atp-health-probe?x=1"
   got="$(curl -sk -o /dev/null -m 10 -w '%{http_code} %{redirect_url}' "${here[@]}" "https://www.$domain/atp-health-probe?x=1" 2>/dev/null || true)"
   case "$got" in
@@ -857,6 +878,82 @@ health_until_ok() {
   cat "$STATE_DIR/logs/health-last.txt"
 }
 
+# --- A3: the deploy gate (review R3) ----------------------------------------------------------------------------
+# `deploy` changes nothing until deploy/ci_gate.py has read, from the PUBLIC GitHub API (no token: the repository is
+# public), that the push runs on main for the commit passed: CI_GATE_REQUIRED (default: CI lint, backend,
+# backend-lookahead, frontend; the CI staging stack's acceptance, rollback, offsite) all succeeded, and every other job
+# of those workflows passed, was skipped or is on CI_GATE_KNOWN_RED (default: the 500-user load test, LD-9). Refused
+# when a check failed, is still running, or GitHub cannot be reached. The one way past it is
+# ATP_ALLOW_UNTESTED=1 with ATP_UNTESTED_REASON='...': written to .deploy/gate.log, the audit trail and `health`.
+# `rollback` is never gated: it goes back to a release that already ran here.
+UNTESTED=""   # the reason, when this deploy runs under ATP_ALLOW_UNTESTED=1
+gate_repo() {
+  local r; r="$(env_get CI_GATE_REPO)"
+  if [ -z "$r" ]; then
+    r="$(git -C "$ATP_DIR" remote get-url origin 2>/dev/null | sed -nE 's#^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)([^/]+/[^/]+)$#\2#p' | sed -E 's/\.git$//')"
+  fi
+  printf '%s' "$r"
+}
+gate_log() { [ "$DRY_RUN" = "1" ] || { state_init; printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$STATE_DIR/gate.log"; }; }
+untested_reason() { printf '%s' "${ATP_UNTESTED_REASON:-}" | tr -d '\000-\037\177' | cut -c1-200; }
+
+ci_gate() {   # ci_gate <sha> <ref as typed>
+  local sha="$1" ref="$2"
+  local again="ATP_ALLOW_UNTESTED=1 ATP_UNTESTED_REASON='why it cannot wait' $ATP_DIR/deploy/atp.sh deploy $ref"
+  step "checks on main (only a commit whose tests passed is deployed)"
+  if [ "${ATP_ALLOW_UNTESTED:-0}" = "1" ]; then
+    UNTESTED="$(untested_reason)"
+    [ -n "${UNTESTED// /}" ] || die "ATP_ALLOW_UNTESTED=1 needs a reason, written to the deploy log and the audit trail: $again" 2
+    warn "deploying ${sha:0:12} WITHOUT checking its tests (ATP_ALLOW_UNTESTED=1) - reason: $UNTESTED"
+    gate_log untested "$sha" "$UNTESTED"
+    return 0
+  fi
+  [ -f "$SCRIPT_DIR/ci_gate.py" ] || die "deploy/ci_gate.py is missing next to this script - cannot check the tests" 1
+  local -a genv=("CI_GATE_REPO=$(gate_repo)" "CI_GATE_REQUIRED=$(env_get CI_GATE_REQUIRED)")
+  [ -z "${ENVV[CI_GATE_KNOWN_RED]+x}" ] || genv+=("CI_GATE_KNOWN_RED=$(env_get CI_GATE_KNOWN_RED)")
+  local js rc=0 verdict detail newest red hint=""
+  js="$(env "${genv[@]}" python3 "$SCRIPT_DIR/ci_gate.py" check "$sha")" || rc=$?
+  verdict="$(printf '%s' "$js" | json_get verdict)"
+  detail="$(printf '%s' "$js" | json_get detail)"
+  newest="$(printf '%s' "$js" | json_get newest_passed)"
+  red="$(printf '%s' "$js" | json_get known_red_text)"
+  if [ "$rc" = "0" ] && [ "$verdict" = "pass" ]; then
+    ok "$detail"
+    [ -z "$red" ] || info "known red on main, allowed by CI_GATE_KNOWN_RED: $red"
+    gate_log pass "$sha" "-"
+    return 0
+  fi
+  gate_log refused "$sha" "${verdict:-error}"
+  if [ -n "$newest" ] && git -C "$ATP_DIR" cat-file -e "$newest^{commit}" 2>/dev/null; then
+    hint=" The newest commit that passed: ${newest:0:12} ($(git -C "$ATP_DIR" log -1 --format='%s' "$newest" | cut -c1-60)) - deploy it with: $ATP_DIR/deploy/atp.sh deploy ${newest:0:12}."
+  fi
+  case "$verdict" in
+    pending) die "not deployed: ${detail}. Run the same command again once they finish (CI about 20 minutes, the staging stack about an hour).$hint Nothing was changed." 2 ;;
+    fail) die "not deployed - $detail.$hint Nothing was changed. Emergency only: $again" 2 ;;
+    unreachable) die "not deployed - $detail. Nothing was changed. Try again in a few minutes. Emergency only: $again" 1 ;;
+    *) die "not deployed - the tests could not be checked: ${detail:-deploy/ci_gate.py gave no answer}. Nothing was changed." 2 ;;
+  esac
+}
+
+# The audit trail (hash-chained audit_logs) gets one row per deploy under the override; the new release's backend
+# writes it (backend/scripts/deploy_audit.py, the reason on stdin). A failure only WARNs: .deploy/gate.log has it.
+audit_untested() {
+  [ -n "$UNTESTED" ] && [ "$DRY_RUN" != "1" ] || return 0
+  if printf '%s\n' "$UNTESTED" | dc exec -T backend python scripts/deploy_audit.py deploy_untested "$1" >/dev/null 2>&1; then
+    ok "the untested deploy is in the audit trail (deploy_untested)"
+  else warn "could not write the untested deploy to the audit trail - it is in $STATE_DIR/gate.log"; fi
+}
+
+# `health`: the running release went out under the override.
+gate_report() {
+  local cur="$1" line
+  [ -n "$cur" ] && [ -f "$STATE_DIR/gate.log" ] || return 0
+  line="$(awk -v s="$cur" '$3 == s && ($2 == "untested" || $2 == "pass")' "$STATE_DIR/gate.log" | tail -n 1)"
+  case "$line" in
+    *" untested "*) warn "${cur:0:12} was deployed WITHOUT its tests passing (ATP_ALLOW_UNTESTED, ${line%% *}) - reason: $(printf '%s' "$line" | cut -d' ' -f4-). Deploy a commit that passed when you can." ;;
+  esac
+}
+
 # --- commands ----------------------------------------------------------------------------------------------------
 cmd_health() {
   [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
@@ -911,6 +1008,7 @@ cmd_deploy() {
     die "$ref ($sha) is not on origin/main - deploy merged code only (ATP_ALLOW_UNMERGED=1 to override knowingly)" 2
   fi
   git -C "$ATP_DIR" cat-file -e "$sha:deploy/atp.sh" 2>/dev/null || die "$ref predates deploy/atp.sh - cannot deploy it with this bundle" 2
+  ci_gate "$sha" "$ref"
   prev="$(current_sha)"
   head_before="$(git -C "$ATP_DIR" rev-parse HEAD)"
   RELEASE="$(release_of "$sha")"
@@ -1017,6 +1115,7 @@ cmd_deploy() {
     printf '%s\n' "$sha" > "$STATE_DIR/current"
     rm -f "$STATE_DIR/db_ahead"
     record_images "$sha"
+    audit_untested "$sha"
   fi
 
   step "health"
@@ -1669,6 +1768,10 @@ cmd_releases() {
   printf '%-20s %-8s %-12s %-12s %-54s %s\n' "time (UTC)" kind release previous "pre-migration backup" "schema"
   awk '{printf "%-20s %-8s %-12s %-12s %-54s %s -> %s\n", $1, $2, substr($3,1,12), substr($4,1,12), $5, $6, $7}' "$STATE_DIR/releases.log"
   printf 'running: %s\n' "$(current_sha | cut -c1-12)"
+  if [ -f "$STATE_DIR/gate.log" ]; then
+    printf '\nchecks on main before each deploy (.deploy/gate.log, newest last):\n'
+    tail -n 10 "$STATE_DIR/gate.log" | awk '{r = ""; for (i = 4; i <= NF; i++) r = r " " $i; printf "%-20s %-8s %-12s%s\n", $1, $2, substr($3,1,12), r}'
+  fi
 }
 
 cmd_install() {

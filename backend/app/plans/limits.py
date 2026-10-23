@@ -79,7 +79,10 @@ async def count_members(session: AsyncSession, tenant_id: int) -> int:
 
 async def count_alert_channels(session: AsyncSession, tenant_id: int) -> int:
     return await session.scalar(
-        select(func.count()).select_from(AlertChannelRecord).where(AlertChannelRecord.tenant_id == tenant_id)
+        # B8: the phone-notification channel (FCM) is made by the app when a phone registers; it is not a channel the
+        # organisation sets up, so it never counts against the plan's alert-channel limit.
+        select(func.count()).select_from(AlertChannelRecord).where(AlertChannelRecord.tenant_id == tenant_id,
+                                                                   AlertChannelRecord.channel_type != "FCM")
     ) or 0
 
 

@@ -1,0 +1,47 @@
+name: Uptime (outside check)
+
+# Production readiness A2: an outside check of the live site from a GitHub runner - not from the Hostinger host, so
+# it still speaks when the host cannot. Every 10 minutes it asks https://aialgodesk.tech/ and /api/system/health
+# (scripts/monitoring/uptime_check.py, standard library only). Two failed rounds in a row (90 s apart) open an issue
+# labelled `uptime` (GitHub e-mails the owner), later failures update its body, and the first good round comments
+# "Back up" and closes it.
+#
+# No secret lives in git. The workflow's own GITHUB_TOKEN (issues: write) is the only credential it needs. Optional
+# Telegram: create the repository secrets UPTIME_TELEGRAM_BOT_TOKEN and UPTIME_TELEGRAM_CHAT_ID (Settings > Secrets and
+# variables > Actions); without them the issue e-mail is the alert. A repository variable UPTIME_BASE_URL can point
+# the check elsewhere (a staging host).
+#
+# Free-tier limits (docs/OPEN_QUESTIONS.md RDY-21): Actions minutes are free for a public repository; GitHub may start
+# a scheduled run several minutes late or skip one under load, and it disables scheduled workflows in a public
+# repository after 60 days without activity (re-enable from the Actions tab). So this is the free second opinion; a
+# free uptime service (RDY-8) is the steadier first one.
+on:
+  schedule:
+    - cron: "7-59/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.repository == 'abhishekwasu-hue/AdvanceTradingPlatform'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: scripts/monitoring
+          persist-credentials: false
+      - name: Check the site and the API from outside
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPTIME_BASE_URL: ${{ vars.UPTIME_BASE_URL }}
+          UPTIME_TELEGRAM_BOT_TOKEN: ${{ secrets.UPTIME_TELEGRAM_BOT_TOKEN }}
+          UPTIME_TELEGRAM_CHAT_ID: ${{ secrets.UPTIME_TELEGRAM_CHAT_ID }}
+        run: python3 scripts/monitoring/uptime_check.py

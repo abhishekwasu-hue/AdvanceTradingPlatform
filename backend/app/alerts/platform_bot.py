@@ -12,6 +12,9 @@ Telegram alert channel (`TelegramConfig.platform_bot`). No bot token or chat id 
   new messages (`getUpdates`) while a trader waits on the Connect screen (`poll_once`).
 * The channel stores the chat id only: the platform token is filled in from the server's setting when the channel is
   read (`channels.decrypt_config`), so it is never stored per organisation.
+* A2: the same bot carries the platform operator's server alerts (app/observability/ops_alerts.py). Admin > System >
+  Alerts makes an operator code (`ops_alerts.LINK_CHANNEL`); `/start <that code>` links the chat as the operator chat,
+  kept apart from every organisation's channels.
 * The chat gets alerts only. It gains no command or approval rights: two-way Telegram stays with an organisation's own
   bot (Settings → Advanced), and `telegram_inbound.service.configure` refuses a platform-bot channel.
 """
@@ -217,6 +220,14 @@ async def handle_update(session: AsyncSession, update: Dict[str, Any], *, client
     if not code:
         await service.reply(_cfg(), chat_id, HELLO, client, parse_mode=None)
         return {"handled": "hello"}
+    # A2: the platform operator's alert chat (a one-time code from Admin > System > Alerts) - never an organisation's.
+    from app.observability import ops_alerts
+    ops = await ops_alerts.consume_link(session, code, chat_id, from_id, now=now) if START_CODE.fullmatch(code) else None
+    if ops is not None:
+        await session.commit()
+        await service.reply(_cfg(), chat_id, ops_alerts.OPS_WELCOME if ops == "linked" else NOT_PRIVATE if ops == "not_private" else BAD_CODE,
+                            client, parse_mode=None)
+        return {"handled": "ops_link", "result": ops}
     record, why = await consume(session, code, chat_id, from_id, now=now)
     await session.commit()
     if record is None:
@@ -230,6 +241,12 @@ async def handle_update(session: AsyncSession, update: Dict[str, Any], *, client
         record.last_error = "The welcome message did not reach Telegram. Send a test to check."
     await session.commit()
     return {"handled": "link", "result": why}
+
+
+async def send_text(chat_id: str, text: str, *, client: Optional[httpx.AsyncClient] = None) -> dict:
+    """A2: one plain message from the platform bot to a chat (the operator's alert chat). Never raises, never logs the token."""
+    from app.telegram_inbound import service
+    return await service.reply(_cfg(), chat_id, text, client, parse_mode=None)
 
 
 async def poll_once(session: AsyncSession, *, client: Optional[httpx.AsyncClient] = None) -> int:
@@ -274,5 +291,5 @@ async def register_webhook(client: Optional[httpx.AsyncClient] = None) -> Dict[s
 
 
 __all__ = ["CHANNEL", "WEBHOOK_PATH", "bot_token", "configured", "webhook_mode", "webhook_secret_ok", "webhook_url", "bot_username",
-           "connect_url", "telegram_channel", "is_platform", "new_code", "pending_code", "consume", "handle_update", "poll_once",
+           "connect_url", "telegram_channel", "is_platform", "new_code", "pending_code", "consume", "handle_update", "send_text", "poll_once",
            "register_webhook"]

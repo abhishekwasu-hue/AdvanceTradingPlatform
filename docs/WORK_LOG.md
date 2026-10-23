@@ -3226,3 +3226,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   existing tests of the listed machinery; main's last Actions runs (Staging stack incl. the rollback rehearsal green;
   CI and Secret scan red, a fix in progress).
 - Questions RDY-1..12 in OPEN_QUESTIONS.
+
+## 23 Oct - Production readiness A2: monitoring and alerts to the operator
+
+- Branch `claude/readiness-a2-monitoring`, stacked on A1 (#422). **No migration** (state in `platform_controls` rows),
+  no new flag; new admin routes `/api/admin/ops-alerts[/run|/test|/telegram]` (SUPER_ADMIN + MFA, in the tenancy table).
+- Server checks: `backend/app/observability/ops_alerts.py` + `backend/scripts/ops_check.py`, run by `atp.sh ops-check`
+  (new cron line `2-59/5`, installed by every deploy; skipped while the deploy lock is held). Ten checks, dedup and
+  recovery messages to the operator Telegram chat (one-time code via the platform bot, or `OPS_ALERT_TELEGRAM_CHAT_ID`)
+  and SMTP (`OPS_ALERT_EMAIL`, else `SUPER_ADMIN_EMAILS`). Admin > System > Alerts card (`AlertsPanelV2`).
+- Outside check: `.github/workflows/uptime.yml` + `scripts/monitoring/uptime_check.py` (issue on two failures in a row,
+  closes on recovery; optional Telegram secrets, names only). actionlint clean.
+- Error tracker: `error_tracker.py`, Sentry SDK (`sentry-sdk` added to requirements) to `ERROR_TRACKER_DSN`, off when
+  unset; PII scrubber with tests.
+- Status page: maintenance headline, incident public notes (admin incidents card: note field, "Public note",
+  "Fix in place"), footer Status link (sidebar, More sheet, sign-in) behind `public_status_page` / `VITE_STATUS_PAGE_URL`.
+- Runbook section 10b (owner steps), `.env.example`, compose env names. Questions RDY-21..26.
+- Tests: `test_a2_monitoring.py`, `test_a2_error_tracker.py`, `test_a2_uptime_check.py`, two `atp.sh ops-check` cases in
+  `test_z11_deploy_bundle.py`; vitest `StatusLink.test.tsx`, `alertsPanel.test.tsx`; e2e `ops-alerts-v2.e2e.ts` with
+  baselines at 360 / 390 / 1440 light / dark; `admin-system-v2-*` baselines refreshed (the Alerts card is new).
+

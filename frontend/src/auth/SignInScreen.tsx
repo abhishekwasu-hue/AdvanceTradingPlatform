@@ -12,6 +12,7 @@ import { ROLE_LABELS, type InviteInfo } from "../types";
 import { useAuth } from "./AuthContext";
 import GoogleSignInButton from "./GoogleSignInButton";
 import { takeGoogleReturn } from "./google";
+import StatusLink from "../status/StatusLink";
 
 /**
  * UX1 (audit P01, problem 2): the sign-in screen a signed-out visitor gets at any address (App.tsx SignInGate) - the
@@ -264,6 +265,7 @@ export default function SignInScreen() {
             </div>
           </section>
           <p className="text-center text-t12 text-fg-muted">Information and education, not investment advice.</p>
+          <footer className="-mt-space-4 flex justify-center empty:hidden" data-sign-in-footer><StatusLink /></footer>
         </div>
       </main>
     </div>

@@ -30,7 +30,8 @@ Run these as the `atp` user on the server (`ssh atp@<SERVER_IP>`). Each one is s
 | Back up now (database and files), copy to R2, then verify | `/opt/atp/deploy/atp.sh backup --verify` |
 | Prove the newest R2 backup restores (scratch database, row counts, audit chain) | `/opt/atp/deploy/atp.sh restore-check` |
 | The last good backup, local and off-site, as one JSON line (exit 1 when older than `BACKUP_MAX_AGE_HOURS`) | `/opt/atp/deploy/atp.sh backup-status` |
-| Install (or refresh) the nightly backup and the weekly restore check in the crontab (every `deploy` does it too) | `/opt/atp/deploy/atp.sh schedule` |
+| Install (or refresh) the nightly backup, the weekly restore check and the 5-minute server checks in the crontab (every `deploy` does it too) | `/opt/atp/deploy/atp.sh schedule` |
+| The server checks once now (backups, disk, certificate, worker, data feed, errors...; messages you only on a change, section 10b) | `/opt/atp/deploy/atp.sh ops-check` |
 | Empty the WAL archive left from before archiving was turned off (section 6c) | `/opt/atp/deploy/atp.sh wal-cleanup` |
 | A new server after the old one is lost: fill its empty database from R2 (section 6b) | `/opt/atp/deploy/atp.sh restore-offsite` |
 | Point-in-time recovery only: an encrypted base backup now (section 6c) | `/opt/atp/deploy/atp.sh base-backup` |
@@ -491,6 +492,44 @@ again after any migration marked `ROLLBACK_SAFE = False`. Write the results in t
 
 It prints `health: OK` (exit 0), `health: FAILED` (exit 1), or `OWNER ACTION NEEDED` (exit 10). The status page
 (Z10 G7) will read the same endpoints.
+
+## 10b. Alerts to you (A2): the outside check, Telegram, e-mail and the error tracker
+
+`health` answers only when someone runs it. Three things now watch the platform by themselves:
+
+1. **The server checks** (`atp.sh ops-check`, every 5 minutes from the crontab that every `deploy` installs). The host
+   facts (the backup status of section 11, disk use, the HTTPS certificate's days left) go to
+   `backend/scripts/ops_check.py`, which adds the app's own checks: the API's error rate, the trading worker's
+   heartbeat, the data feed, broker logins (counts across all users), the database size, user alert delivery and
+   failed sign-ins. A problem is messaged once it has held for two runs (10 minutes); a failure that stays is
+   repeated every 6 hours; "OK again" is messaged once. A run while a deploy or a backup holds the lock is skipped.
+   Thresholds are settings (`OPS_*` in `backend/app/core/config.py`); the log is `.deploy/logs/ops-check.log`.
+   Admin console → System → **Alerts** shows the same checks, "Check now" and "Send a test".
+2. **The outside check** (GitHub Actions, `.github/workflows/uptime.yml`, every 10 minutes): `/` and
+   `/api/system/health` from GitHub's network. Two failed rounds in a row open an issue labelled `uptime` (GitHub
+   e-mails you), the first good round closes it.
+3. **The error tracker** (off until you give it a DSN): server errors with personal data removed.
+
+Your steps (once; names only - the values go into `/opt/atp/.env` or GitHub settings, never into git or chat):
+
+| Step | Where | What |
+|---|---|---|
+| a. Telegram for server alerts | Admin console → System → Alerts → **Connect Telegram** | Press Start in the chat that opens. Needs the platform bot (`ATP_TELEGRAM_BOT_TOKEN`, section 4) - the same bot users connect to; your operator chat is kept apart from every organisation. Alternative: the chat id in `OPS_ALERT_TELEGRAM_CHAT_ID`. Then **Send a test**. |
+| b. E-mail for server alerts | `.env` | `PLATFORM_SMTP_HOST`, `PLATFORM_SMTP_PORT`, `PLATFORM_SMTP_USERNAME`, `PLATFORM_SMTP_PASSWORD`, `PLATFORM_SMTP_FROM` (any SMTP provider, e.g. Brevo or Zoho free tiers). Alerts go to `OPS_ALERT_EMAIL` (comma-separated) or, when empty, to `SUPER_ADMIN_EMAILS`. |
+| c. The outside check's e-mail | github.com → your profile → Settings → Notifications | Keep "Issues" e-mails on for this repository (Watching or Participating). Nothing else to set: the workflow uses its own token. |
+| d. Telegram for the outside check (optional) | Repository → Settings → Secrets and variables → Actions → New repository secret | `UPTIME_TELEGRAM_BOT_TOKEN` (a bot from @BotFather - a separate one is best, so a server problem with the platform bot cannot silence it) and `UPTIME_TELEGRAM_CHAT_ID` (your chat with that bot). |
+| e. A free uptime service (recommended, RDY-8) | e.g. UptimeRobot or Better Stack free plan | Two HTTP checks: `https://aialgodesk.tech/` and `https://aialgodesk.tech/api/system/health`, alert after 2 failures, Telegram + e-mail. Its hosted status page can be the footer's Status link: build the frontend with `VITE_STATUS_PAGE_URL=https://...` (RDY-11). |
+| f. Error tracker (optional) | GlitchTip (glitchtip.com, free plan) or Sentry (free plan) → new project, platform Python | Copy the project's DSN into `.env` as `ERROR_TRACKER_DSN` (optionally `ERROR_TRACKER_ENVIRONMENT=production`). Deploy. Admin → System → Alerts then says "Error tracker: On". Leave empty to keep it off. |
+
+What the messages never contain: an e-mail address, a name, a chat id, a token or a host name - states and counts
+only. The error tracker removes tokens, keys, e-mail addresses, phone numbers, cookies, query strings and request
+bodies before an event leaves the server (`backend/app/observability/error_tracker.py`).
+
+The public status page (`/status`, flag `public_status_page` in Admin → Controls, off until you turn it on) shows
+up / degraded / maintenance and the open incidents. Open an incident in the admin console → System → Incidents and give it a
+**public note** (one sentence, at most 280 characters) - only that note is shown, never the title or the cause. The
+footer's Status link appears once the page is on (or at once with `VITE_STATUS_PAGE_URL`). The in-app page lives on
+this server, so during a full outage use the uptime service's page.
 
 ## 10a. PWA install on Android (manual check, D3)
 

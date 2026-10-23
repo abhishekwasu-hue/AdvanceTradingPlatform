@@ -841,9 +841,9 @@ export const api = {
   adminSetBetaStage: (stage: number, reason?: string) =>
     request<BetaCohort>("/admin/beta/cohort/stage", { method: "PUT", body: JSON.stringify({ stage, reason: reason || undefined }) }),
   adminIncidents: (status?: string) => request<Incident[]>(`/admin/incidents${status ? `?status=${status}` : ""}`),
-  adminCreateIncident: (body: { title: string; severity: string; summary?: string; tenant_id?: number | null }) =>
+  adminCreateIncident: (body: { title: string; severity: string; summary?: string; tenant_id?: number | null; public_note?: string }) =>
     request<Incident>("/admin/incidents", { method: "POST", body: JSON.stringify(body) }),
-  adminUpdateIncident: (id: number, body: Partial<Pick<Incident, "status" | "summary" | "root_cause" | "actions_taken" | "data_loss_minutes" | "downtime_minutes">>) =>
+  adminUpdateIncident: (id: number, body: Partial<Pick<Incident, "status" | "summary" | "root_cause" | "actions_taken" | "data_loss_minutes" | "downtime_minutes">> & { public_note?: string }) =>
     request<Incident>(`/admin/incidents/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   backtestOptimize: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], paramGrid: Record<string, (number | string)[]>, metric = "net_pnl", split = 0.7) =>
     request<OptimizeResult>("/backtest/optimize", { method: "POST", body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, param_grid: paramGrid, metric, split }) }),

@@ -2052,6 +2052,8 @@ export interface Incident {
   source: string; tenant_id: number | null; started_at: string | null; mitigated_at: string | null; resolved_at: string | null;
   root_cause: string | null; actions_taken: string | null; audit_log_from_id: number | null; audit_log_to_id: number | null;
   data_loss_minutes: number | null; downtime_minutes: number | null; opened_by: number | null; created_at: string | null;
+  /** A2: the one sentence the public status page shows under this incident (null = none). */
+  public_note?: string | null;
 }
 
 export interface OptimizeRow {

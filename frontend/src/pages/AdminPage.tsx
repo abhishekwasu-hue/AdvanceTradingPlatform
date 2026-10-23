@@ -56,6 +56,7 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
   const [ceilings, setCeilings] = useState<RiskCeilings | null>(null);
   const [ceilingDraft, setCeilingDraft] = useState<Record<string, string>>({});
   const [incTitle, setIncTitle] = useState("");
+  const [incNote, setIncNote] = useState("");   // A2: the public status page's one sentence
   const [incSeverity, setIncSeverity] = useState("WARNING");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -202,8 +203,9 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
           <select className="rounded bg-surface-2 border border-border px-1 py-1" value={incSeverity} onChange={(e) => setIncSeverity(e.target.value)}>
             {["WARNING", "CRITICAL", "EMERGENCY"].map((s) => <option key={s}>{s}</option>)}
           </select>
-          <button disabled={busy || incTitle.length < 3} onClick={() => act("Incident opened.", () => api.adminCreateIncident({ title: incTitle, severity: incSeverity }).then(() => { setIncTitle(""); return api.adminIncidents().then(setIncidents); }))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1">Open incident</button>
-          <span className="text-fg-muted">The global kill switch opens one automatically. Resolve with a root cause; downtime is measured from the start.</span>
+          <input className="rounded bg-surface-2 border border-border px-2 py-1 w-80" maxLength={280} placeholder="Public note for the status page (optional)" aria-label="Public note for the status page" value={incNote} onChange={(e) => setIncNote(e.target.value)} />
+          <button disabled={busy || incTitle.length < 3} onClick={() => act("Incident opened.", () => api.adminCreateIncident({ title: incTitle, severity: incSeverity, public_note: incNote.trim() || undefined }).then(() => { setIncTitle(""); setIncNote(""); return api.adminIncidents().then(setIncidents); }))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1">Open incident</button>
+          <span className="text-fg-muted">The global kill switch opens one automatically. Resolve with a root cause; downtime is measured from the start. The status page shows only the public note, never the title or the cause.</span>
         </div>
         {incidents.length === 0 ? <div className="text-xs text-fg-muted">No incidents recorded.</div> : (
           <table className="w-full text-xs"><tbody>
@@ -211,9 +213,15 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
               <tr key={i.id} className="border-t border-border/60">
                 <td className="py-1 text-fg-muted">#{i.id} {i.started_at ? new Date(i.started_at).toLocaleString() : ""}</td>
                 <td className={`py-1 font-bold ${i.severity === "EMERGENCY" ? "text-down" : i.severity === "CRITICAL" ? "text-warn" : "text-fg-muted"}`}>{i.severity}</td>
-                <td className="py-1">{i.title} <span className="text-fg-muted">({i.source})</span>{i.root_cause && <div className="text-fg-muted">cause: {i.root_cause}</div>}</td>
+                <td className="py-1">{i.title} <span className="text-fg-muted">({i.source})</span>{i.root_cause && <div className="text-fg-muted">cause: {i.root_cause}</div>}{i.public_note && <div className="text-fg-muted" data-incident-public-note>public: {i.public_note}</div>}</td>
                 <td className="py-1">{i.status}{i.downtime_minutes != null && <span className="text-fg-muted"> · {i.downtime_minutes} min</span>}</td>
                 <td className="py-1 text-right">
+                  {i.status !== "RESOLVED" && i.tenant_id == null && (
+                    <button disabled={busy} onClick={() => { const note = window.prompt("Public note for the status page (empty removes it)", i.public_note ?? ""); if (note !== null) void act("Public note saved.", () => api.adminUpdateIncident(i.id, { public_note: note }).then(() => api.adminIncidents().then(setIncidents))); }} className="mr-3 text-brand hover:underline">Public note</button>
+                  )}
+                  {i.status === "OPEN" && (
+                    <button disabled={busy} onClick={() => void act("Marked as monitoring.", () => api.adminUpdateIncident(i.id, { status: "MITIGATED" }).then(() => api.adminIncidents().then(setIncidents)))} className="mr-3 text-brand hover:underline">Fix in place</button>
+                  )}
                   {i.status !== "RESOLVED" && (
                     <button disabled={busy} onClick={() => { const cause = window.prompt("Root cause") ?? ""; const actions = window.prompt("Actions taken") ?? ""; void act("Incident resolved.", () => api.adminUpdateIncident(i.id, { status: "RESOLVED", root_cause: cause, actions_taken: actions }).then(() => api.adminIncidents().then(setIncidents))); }} className="text-brand hover:underline">Resolve</button>
                   )}

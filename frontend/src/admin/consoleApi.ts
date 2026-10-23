@@ -8,7 +8,7 @@ import { request } from "../api/client";
 export type AdminSection = "system" | "controls" | "users" | "testing" | "support";
 
 export const ADMIN_SECTIONS: { id: AdminSection; label: string; hint: string }[] = [
-  { id: "system", label: "System", hint: "Health, workers, the data feed and the platform go-live checklist" },
+  { id: "system", label: "System", hint: "Alerts, health, workers, the data feed and the platform go-live checklist" },
   { id: "controls", label: "Controls", hint: "Feature flags, maintenance, kill switches and limits" },
   { id: "users", label: "Users & business", hint: "People, organisations, plans and AI cost" },
   { id: "testing", label: "Testing tools", hint: "Read-only state of the operator tools" },

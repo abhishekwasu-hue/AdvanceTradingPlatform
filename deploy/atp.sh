@@ -13,6 +13,9 @@
 #   /opt/atp/deploy/atp.sh restore-check           newest backup from R2 -> scratch database -> checks -> dropped
 #   /opt/atp/deploy/atp.sh backup-status           one JSON line: last good backup, local and off-site, and its age
 #                                                  (exit 1 past BACKUP_MAX_AGE_HOURS - the hook an alert reads)
+#   /opt/atp/deploy/atp.sh ops-check               A2: the server checks (backups, disk, certificate + the app's own:
+#                                                  errors, worker, data feed, broker logins, DB size) -> the operator's
+#                                                  Telegram / e-mail on a change (scheduled every 5 minutes)
 #   /opt/atp/deploy/atp.sh restore-offsite         a NEW server: the newest backup from R2 into its EMPTY database
 #                                                  (runbook section 6b: restore on a clean machine), then `deploy`
 #   /opt/atp/deploy/atp.sh wal-cleanup             empties the WAL archive left from before archiving was turned off
@@ -466,13 +469,15 @@ schedule_block() {
   printf '%s\n' "# BEGIN atp.sh managed block - replaced by 'deploy/atp.sh schedule'; edit outside it" \
     "PATH=/usr/local/bin:/usr/bin:/bin" \
     "17 2 * * * $self backup --scheduled --verify >> $logs/backup.log 2>&1" \
-    "43 3 * * 0 $self restore-check --scheduled >> $logs/restore-check.log 2>&1"
+    "43 3 * * 0 $self restore-check --scheduled >> $logs/restore-check.log 2>&1" \
+    "2-59/5 * * * * $self ops-check >> $logs/ops-check.log 2>&1"
   if pitr_on; then printf '%s\n' "29 4 * * 6 $self base-backup --scheduled >> $logs/base-backup.log 2>&1"; fi
   printf '%s\n' "# END atp.sh managed block"
 }
 schedule_summary() {
   printf 'daily 02:17 backup + R2 copy + restore check, Sunday 03:43 restore check'
   if pitr_on; then printf ', Saturday 04:29 base backup'; fi
+  printf ', server checks every 5 minutes'
 }
 # current | missing | outdated | no-crontab
 schedule_state() {
@@ -1504,6 +1509,40 @@ print(json.dumps({"status": a[0], "problems": a[1], "limit_hours": int(a[2]),
   [ "$status" != "fail" ]
 }
 
+# A2: the operator's server checks. The host facts the app cannot see - the backup status (the A1 hook above), the disk
+# and the HTTPS certificate's days left - go as one JSON object on stdin to backend/scripts/ops_check.py, which adds the
+# app's own checks, sends what changed to the operator's Telegram chat / e-mail (deduplicated) and prints one line.
+# Read-only on the host; never holds the deploy lock (a run that finds it held - a deploy or a backup - is skipped, so a
+# deploy's planned restart is not reported as an outage).
+cmd_ops_check() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  state_init
+  if [ "$DRY_RUN" = "1" ]; then info "would collect the backup status, disk and certificate and run the server checks in the backend"; return 0; fi
+  if [ -e "$STATE_DIR/lock" ] && ! flock -n "$STATE_DIR/lock" true; then
+    info "ops-check skipped: another atp.sh run (a deploy or a backup) is in progress"; return 0
+  fi
+  local bs used domain cert_end="" end_s="" days="" note=""
+  bs="$( (cmd_backup_status) 2>/dev/null | tail -n 1)" || true
+  used="$(df -P "$ATP_DIR" 2>/dev/null | awk 'NR==2 {gsub("%","",$5); print $5}')" || true
+  domain="$(env_get DOMAIN)"
+  if [ "$(env_get CADDYFILE)" = "Caddyfile.ip" ]; then note="ip_only"
+  elif [ -n "$domain" ]; then
+    cert_end="$(timeout 15 openssl s_client -connect 127.0.0.1:443 -servername "$domain" </dev/null 2>/dev/null \
+      | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)" || true
+    if [ -n "$cert_end" ] && end_s="$(date -u -d "$cert_end" +%s 2>/dev/null)"; then days=$(( (end_s - $(date -u +%s)) / 86400 )); fi
+  fi
+  python3 -c 'import json, sys
+a = sys.argv[1:]
+def num(v):
+    return int(v) if v.lstrip("-").isdigit() else None
+try:
+    backup = json.loads(a[0]) if a[0] else None
+except ValueError:
+    backup = None
+print(json.dumps({"backup": backup, "disk_used_percent": num(a[1]), "cert_days_left": num(a[2]), "cert_note": a[3] or None}, sort_keys=True))' \
+    "$bs" "$used" "$days" "$note" | dc exec -T backend python scripts/ops_check.py --host-facts -
+}
+
 # Review R1: the WAL archive is useless once archiving is off (no base backup was ever taken on Hostinger, so it could
 # not be replayed) and only fills the disk. Refuses while the running database archives.
 cmd_wal_cleanup() {
@@ -2397,6 +2436,7 @@ main() {
     restore-check)  cmd_restore_check "$@" ;;
     schedule)       cmd_schedule ;;
     backup-status)  cmd_backup_status ;;
+    ops-check)      cmd_ops_check ;;
     wal-cleanup)    cmd_wal_cleanup ;;
     base-backup)    cmd_base_backup "$@" ;;
     restore-offsite) cmd_restore_offsite ;;

@@ -2016,6 +2016,8 @@ export interface FeatureFlag {
   status?: FlagStatus;
   status_label?: string;
   default_on?: boolean;
+  /** User-friendly pass item 7: why users do not see this feature on this server (e.g. its engine is not installed). */
+  unavailable_reason?: string;
 }
 
 export type FeatureFlags = Record<string, FeatureFlag>;

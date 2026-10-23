@@ -69,6 +69,7 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
                         {flag.turns_on && <span> · Turns on: {flag.turns_on}</span>}
                         {needs.length > 0 && <span> · Needs: {needs.join(", ")}</span>}
                       </div>
+                      {flag.unavailable_reason && <div data-flag-unavailable className="font-medium text-warn">{flag.unavailable_reason}</div>}
                       {blocked && <div data-flag-blocked className="font-medium text-warn">Needs {blockedBy.join(", ")} first</div>}
                       <div className="text-fg-muted">{flag.description}</div>
                     </div>

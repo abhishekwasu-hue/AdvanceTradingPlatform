@@ -3328,3 +3328,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   admin (row lock + partial unique index in e8a0c2d4f6b9); a view receives only JSON / PNG / the event stream (anything
   else 403) and its live stream ends with it; the thesis read's refresh / narrate refused in a view; normal tokens skip
   the extra decode. Tests 48 (+11), e2e 8. Question MO3-A17; MO3-A16 changed.
+
+## 23 Oct - Migration block: CP6-15 + LAB-18 + exits as settings + View as user (one branch, one deploy)
+
+- Branch `claude/migration-block-23oct`: #423, #426, #427 and #430 merged in that order onto main. The chain is now
+  `a4c6e8f0b2d4` -> `b5d7f9a1c3e6` (CP6-15) -> `c6e8a0b2d4f7` (LAB-18) -> `d7f9b1c3e5a8` (exits as settings, re-chained
+  from `b5d7f9a1c3e6`) -> `e8a0c2d4f6b9` (View as user, re-chained from `b5d7f9a1c3e6`); one head `e8a0c2d4f6b9`. Each
+  migration test asserts "one head, with its own revision on the chain". All four are additive and rollback-safe.
+- Postgres 16: upgrade head, `alembic check` (no diff), downgrade to `a4c6e8f0b2d4`, upgrade head again - clean.
+  Deploy after 15:30 IST.

@@ -215,3 +215,50 @@ html { font-size: calc(100% * var(--text-scale)); }
 
 :root[data-cvd="on"] [data-chart-theme="dark"] { --chart-up: 86 180 233; --chart-down: 249 115 22; }
 :root[data-cvd="on"] [data-chart-theme="light"] { --chart-up: 0 114 178; --chart-down: 194 65 12; }
+
+/* Chart + colour order, Part 3 (docs/design/CHART_COLOUR_REVIEW.md R5-R8; OPEN_QUESTIONS CC-1..CC-4): colour by meaning.
+   The brand accent stays ATP blue. New tokens only - nothing above changes value in the normal themes.
+   - range / range-track: a range bar (52-week, day range, IV range). CC-4: a neutral track (--range-track) with a
+     --range marker, the low / high as text. Amber-yellow like warn, but not an alias of it: a range is not a warning;
+   - info-tint: the background of an information chip or tip, under --info text;
+   - ai-tint: the background of an AI chip, under --ai text. AI entry points only (Copilot, Vision, Connect AI) - CC-1;
+   - PAPER keeps the neutral outline chip (CC-2): there is no paper hue; --armed stays LIVE / armed only. */
+:root {
+  --range: 250 204 21;
+  --range-track: 51 65 85;
+  --info-tint: 8 37 54;
+  --ai-tint: 32 24 64;
+}
+
+:root[data-theme="light"] {
+  --range: 161 98 7;           /* yellow-700: yellow-600 fails even 3:1 on the light surfaces (review, CC-4) */
+  --range-track: 203 213 225;
+  --info-tint: 240 249 255;
+  --ai-tint: 245 243 255;
+}
+
+/* Colour-blind (red-green): every meaning keeps a hue apart from the others under a deuteranopia simulation
+   (ui/tokens.test.ts). Loss is orange here and, before this order, the light warn was the same brown-orange as the
+   light loss (indistinguishable to a red-green colour-blind trader), so warn moves to a yellow (dark) / a dark olive
+   (light). The range marker stays in warn's yellow family (the order groups them; the low / high is always text), info
+   and its tint are neutral, and the AI violet is lighter in the dark theme so it is not read as the profit blue.
+   These are the only existing values that change, and only in the colour-blind mode. */
+:root[data-cvd="on"] { --warn: 240 200 40; --info-tint: 30 36 48; --ai: 196 181 253; }
+:root[data-theme="light"][data-cvd="on"] { --warn: 110 90 10; --range: 100 80 0; --info-tint: 241 245 249; --ai: 109 40 217; }
+
+/* CC-3: the deeper navy-slate dark surfaces, for the v2 shell only and only in the dark theme. Scoped to the root
+   attribute `data-shell="v2"` on <html>, so a dialog or sheet portalled to <body> takes the same surfaces. Nothing sets
+   that attribute on <html> yet (AppShellV2 marks its own <div>): the values take effect only when the v2 pages adopt
+   the new look after the owner's OK on the comparison page. ui_v2-off pages and the chart background (--chart-bg)
+   never move with it. */
+:root[data-shell="v2"]:not([data-theme="light"]) {
+  --surface: 11 17 32;
+  --surface-1: 17 25 45;
+  --surface-2: 25 35 60;
+  --surface-3: 33 45 75;
+  --surface-inset: 7 11 22;
+  --border: 45 58 90;
+  --border-subtle: 30 41 66;
+  --glass: 17 25 45;
+  --range-track: 51 65 96;
+}

@@ -7,11 +7,11 @@ import { CANDLE_PRESETS } from "../chart/chartTheme";
  * themes and in the colour-blind variant, computed from tokens.css itself - so a later token change cannot break it
  * silently. Body text needs 4.5:1; large figures (20 px+ or 14 px+ bold) and icons need 3:1.
  */
-function block(selector: string): Record<string, number[]> {
+function block(selector: string, source: string = css): Record<string, number[]> {
   // At a line start, so `[data-chart-theme="light"]` does not also read `:root[data-cvd="on"] [data-chart-theme="light"]`.
-  const re = new RegExp(`(?:^|\\n)${selector.replace(/[[\]"=]/g, (c) => `\\${c}`)}\\s*\\{([^}]*)\\}`, "g");
+  const re = new RegExp(`(?:^|\\n)${selector.replace(/[[\]"=()]/g, (c) => `\\${c}`)}\\s*\\{([^}]*)\\}`, "g");
   const out: Record<string, number[]> = {};
-  for (const m of css.matchAll(re)) {
+  for (const m of source.matchAll(re)) {
     for (const [, name, value] of m[1].matchAll(/--([\w-]+):\s*([\d\s]+);/g)) out[name] = value.trim().split(/\s+/).map(Number);
   }
   return out;
@@ -162,5 +162,107 @@ describe("UI2-4b1 chart tokens", () => {
       }
       expect(preset.colors.up).not.toBe(preset.colors.down);
     }
+  });
+});
+
+/** Chart + colour order, Part 3 (docs/design/CHART_COLOUR_REVIEW.md R5-R8, OPEN_QUESTIONS CC-1..CC-4): colour by
+ * meaning. The new tokens, the v2-only navy dark surfaces and the colour-blind values, all read from tokens.css. */
+describe("Part 3 colour tokens", () => {
+  const V2_SCOPE = ':root[data-shell="v2"]:not([data-theme="light"])';
+  const v2Dark = { ...dark, ...block(V2_SCOPE) };
+  const v2DarkCvd = { ...cvdDark, ...block(V2_SCOPE) };
+  const ALL = { ...THEMES, v2Dark, v2DarkCvd };
+  const NEW = ["range", "range-track", "info-tint", "ai-tint"];
+
+  /** [token, background, minimum]: text 4.5 : 1, UI parts (the range marker, icons on a raised chip) 3 : 1. */
+  const NEW_PAIRS: [string, string, number][] = [
+    // Information and AI text on the page and on cards, and on their own chip tint.
+    ...["surface", "surface-1"].flatMap((bg): [string, string, number][] => [["info", bg, 4.5], ["ai", bg, 4.5]]),
+    ["info", "info-tint", 4.5], ["ai", "ai-tint", 4.5], ["fg", "info-tint", 4.5], ["fg", "ai-tint", 4.5],
+    ["info", "surface-2", 3], ["ai", "surface-2", 3],
+    // The range marker is a UI part: 3 : 1 on every surface a card uses and on its own track.
+    ...["surface", "surface-1", "surface-2", "range-track"].map((bg): [string, string, number] => ["range", bg, 3]),
+  ];
+
+  it.each(Object.entries(ALL))("%s: every new pair meets WCAG AA (text 4.5, UI parts 3)", (_, t) => {
+    for (const [fg, bg, min] of NEW_PAIRS) {
+      expect(t[fg], `--${fg} defined`).toBeDefined();
+      expect(t[bg], `--${bg} defined`).toBeDefined();
+      expect(contrast(t[fg], t[bg]), `${fg} on ${bg}`).toBeGreaterThanOrEqual(min);
+    }
+  });
+
+  it.each([["v2Dark", v2Dark], ["v2DarkCvd", v2DarkCvd]])("%s: the navy surfaces keep every existing v2 pair AA", (_, t) => {
+    for (const [fg, bg, min] of PAIRS) expect(contrast(t[fg], t[bg]), `${fg} on ${bg}`).toBeGreaterThanOrEqual(min);
+    // Layered surfaces: each step is lighter than the one below it, so cards separate without a border.
+    const steps = ["surface-inset", "surface", "surface-1", "surface-2", "surface-3"].map((k) => luminance(t[k]));
+    for (let i = 1; i < steps.length; i += 1) expect(steps[i]).toBeGreaterThan(steps[i - 1]);
+    expect(contrast(t["border-subtle"], t["surface-1"])).toBeLessThan(contrast(t.border, t["surface-1"]));
+  });
+
+  it("the navy surfaces are v2-only and dark-only: surfaces and outlines move, nothing else", () => {
+    expect(Object.keys(block(V2_SCOPE)).sort()).toEqual(
+      ["border", "border-subtle", "glass", "range-track", "surface", "surface-1", "surface-2", "surface-3", "surface-inset"]);
+    expect(v2Dark.surface).not.toEqual(dark.surface);              // a real change for the v2 shell ...
+    expect(v2Dark["chart-bg"]).toEqual(dark["chart-bg"]);          // ... but the chart waits for the comparison (CC-3)
+    expect(v2Dark.brand).toEqual(dark.brand);                      // the brand accent stays ATP blue
+    expect(css).not.toMatch(/:root\[data-shell="v2"\]\[data-theme="light"\]/);
+  });
+
+  it("adds the new tokens in both themes, and changes no existing value of the normal themes", () => {
+    const before = css.split("/* Chart + colour order, Part 3")[0];
+    const oldDark = block(":root", before);
+    const oldLight = { ...oldDark, ...block(':root[data-theme="light"]', before) };
+    for (const name of NEW) {
+      expect(oldDark[name], `--${name} is new`).toBeUndefined();
+      expect(dark[name], `--${name} dark`).toBeDefined();
+      expect(block(':root[data-theme="light"]')[name], `--${name} light`).toBeDefined();
+    }
+    for (const [name, value] of Object.entries(oldDark)) expect(dark[name], name).toEqual(value);
+    for (const [name, value] of Object.entries(oldLight)) expect(light[name], name).toEqual(value);
+    // The brand accent stays ATP blue; PAPER gets no hue of its own (CC-2), and armed keeps its meaning.
+    expect(dark.brand).toEqual([59, 130, 246]);
+    expect(light.brand).toEqual([37, 99, 235]);
+    expect(css).not.toMatch(/--paper\b/);
+    // A range is not a warning: its own token, not an alias of warn.
+    for (const t of [dark, light, cvdDark, cvdLight]) expect(t.range).not.toEqual(t.warn);
+  });
+
+  // "Every meaning keeps a distinct hue" (tokens.css; review, Part 3 notes). Measured as the OKLab distance; in the
+  // colour-blind variants after a deuteranopia simulation (Viénot 1999), because that is how those traders see them.
+  const linear = (v: number) => { const s = v / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
+  function oklab(rgb: number[]): number[] {
+    const [r, g, b] = rgb.map(linear);
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+  }
+  function deuteranopia(rgb: number[]): number[] {
+    const [r, g, b] = rgb.map(linear);
+    const out = [0.367322 * r + 0.860646 * g - 0.227968 * b, 0.280085 * r + 0.672501 * g + 0.047413 * b,
+      -0.01182 * r + 0.04294 * g + 0.968881 * b];
+    return out.map((x) => { const c = Math.min(1, Math.max(0, x)); return 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055); });
+  }
+  const distance = (a: number[], b: number[]) => { const [p, q] = [oklab(a), oklab(b)]; return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); };
+  const MEANINGS = ["up", "down", "warn", "info", "ai"];
+  const pairs = [
+    ...MEANINGS.flatMap((a, i) => MEANINGS.slice(i + 1).map((b) => [a, b])),
+    // The range marker is warn's family by design (the order groups "warn / range"), but never profit, loss, info or AI.
+    ...["up", "down", "info", "ai"].map((b) => ["range", b]),
+  ];
+  it.each([["dark", dark, false], ["light", light, false], ["v2Dark", v2Dark, false],
+    ["cvdDark", cvdDark, true], ["cvdLight", cvdLight, true], ["v2DarkCvd", v2DarkCvd, true]] as const)(
+    "%s: every meaning keeps a distinct hue", (_, t, cvd) => {
+      const see = cvd ? deuteranopia : (c: number[]) => c;
+      const min = cvd ? 0.06 : 0.08;
+      for (const [a, b] of pairs) expect(distance(see(t[a]), see(t[b])), `${a} vs ${b}`).toBeGreaterThanOrEqual(min);
+    });
+
+  it("the distance check can fail: the light warn and the colour-blind light loss were the same colour", () => {
+    const deut = (c: number[]) => deuteranopia(c);
+    expect(distance(deut([180, 83, 9]), deut(cvdLight.down))).toBeLessThan(0.01);   // the old light warn
+    expect(distance(deut(cvdLight.warn), deut(cvdLight.down))).toBeGreaterThanOrEqual(0.06);
   });
 });

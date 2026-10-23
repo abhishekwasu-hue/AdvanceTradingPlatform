@@ -55,3 +55,5 @@ frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:305
 frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:310
 scripts/check_public_repo.py:generic-api-key:148
 scripts/check_public_repo.py:generic-api-key:149
+# A2 (#428): a fake JWT in backend/tests/test_a2_error_tracker.py at its first commit; the test now builds it at runtime.
+37732addf70c4f4d52ee7f1c974f9a073f1d5057:backend/tests/test_a2_error_tracker.py:jwt:16

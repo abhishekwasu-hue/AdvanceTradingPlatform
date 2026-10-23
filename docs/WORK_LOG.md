@@ -3301,3 +3301,30 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_tpl10_exits_settings.py`, `src/strategyTemplates/exits.test.ts`, e2e with new baselines. Postgres 16:
   upgrade, check, downgrade, upgrade. Questions TPL-X1..X6; WAVE-11 partly done.
 
+## 23 Oct - MO3-A1: the admin's read-only "View as user" (owner-approved; behind ui_v2 in the admin console)
+
+- Branch `claude/admin-view-as-user`, stacked on `claude/cp6-15-loss-streak` (#423). Migration e8a0c2d4f6b9 (additive:
+  `view_sessions`, `view_session_requests`), chained on b5d7f9a1c3e6 for now; the coordinator re-chains it at merge (one
+  migration block, deploy after 15:30 IST). Upgrade / `alembic check` / downgrade / upgrade run on a scratch Postgres 16.
+- Server: `app/auth/view_as.py` (rules, start / end, validity, masking, request record), `app/auth/view_as_middleware.py`
+  (the one chokepoint: every non-GET of a view token answered 403 before routing; reads that act or hand something out
+  refused too; JSON answers scrubbed; every request recorded), `app/admin/view_as_routes.py` (`/api/admin/view-sessions`
+  SUPER_ADMIN + two-factor; `/api/view-session` banner + End; `/api/me/support-access`). `get_current_user` accepts a view
+  token only while its view session is live (the admin still a SUPER_ADMIN on the same two-factor login session, the
+  person active and not an admin, not ended, not expired, the exact token). No AI call in a view.
+- Client: Support > "View as this person" (required reason), `src/admin/ViewAsBanner.tsx` over either shell ("Viewing
+  as <masked e-mail> - read only", time left, End), the token swap in memory (`src/api/viewState.ts`, `src/api/viewAs.ts`;
+  a 401 in a view never retries as the admin), "Sign out" in a view ends the view, Settings > Account & plan "Support
+  access" card.
+- Tests: `tests/test_mo3_a1_view_as.py` (37: start route 403 for every tenant role, MFA, reason, the non-GET sweep over
+  the whole route table through /api and /api/v1, blocked reads, expiry, admin logout / demotion, audit on both
+  accounts, the chain intact, the person's record, every GET against another organisation's planted rows, secret
+  masking, no AI, the migration), `src/admin/viewAs.test.tsx`, `e2e/view-as-v2.e2e.ts` (+ baselines). Questions
+  MO3-A7..A16; MO3-A1 built.
+- Security review follow-up (same branch): no view into the operator's organisation or one with a SUPER_ADMIN member
+  (start and stale check); a fresh two-factor check (15 min, `VIEW_AS_MFA_FRESH_MINUTES`) to start, with the step-up
+  prompt in the form; expired views ended and audited on admin reads, at start and by a 5-minute worker sweep; an
+  admin's End audited on the actor; admin reads of views audited; no request added to an ended view; one open view per
+  admin (row lock + partial unique index in e8a0c2d4f6b9); a view receives only JSON / PNG / the event stream (anything
+  else 403) and its live stream ends with it; the thesis read's refresh / narrate refused in a view; normal tokens skip
+  the extra decode. Tests 48 (+11), e2e 8. Question MO3-A17; MO3-A16 changed.

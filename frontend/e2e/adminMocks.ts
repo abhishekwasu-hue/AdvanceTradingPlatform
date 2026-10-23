@@ -150,6 +150,11 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
   await page.route(A("/admin/console/support/users/12$"), ok(SUPPORT_USER));
   await page.route(A("/admin/console/support/users/404$"), (r) => r.fulfill({ status: 404, json: { detail: "Unknown user" } }));
   await page.route(A("/admin/console/diagnostics$"), ok(DIAGNOSTICS));
+  // MO3-A1: the recent read-only views as a user (Support).
+  await page.route(A("/admin/view-sessions(\\?.*)?$"), ok({ views: [
+    { id: 40, user_id: 14, tenant_id: 9, name: "ne*****@example.com", reason: "Could not find the Broker page", started_at: T(60 * 26), expires_at: T(60 * 26 - 30),
+      ended_at: T(60 * 26 - 12), end_reason: "ended by support", active: false, seconds_left: 0, requests: 23, refused: 1, last_seen_at: T(60 * 26 - 12), admin_user_id: 1 },
+  ] }));
   await page.route(A("/admin/beta/feedback(\\?.*)?$"), ok(FEEDBACK));
   await page.route(A("/admin/alerts/outbox$"), ok({ by_status: { DELIVERED: 1200, PENDING: 2, DEAD: 1 }, claimed: 0, oldest_pending_seconds: 14 }));
   await page.route(A("/admin/alerts/dead-letters(\\?.*)?$"), ok([{ id: 77, tenant_id: 7, channel: "TELEGRAM", event_type: "SIGNAL", status: "DEAD", error_class: "http_4xx", attempts: 5, created_at: T(300) }]));

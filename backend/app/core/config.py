@@ -72,6 +72,10 @@ JWT_ALGORITHM = "HS256"
 # revocation (logout, removed member, password change) is checked against the session row on
 # every request anyway. The browser silently refreshes with the long-lived, rotating refresh token.
 JWT_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_MINUTES", "15"))
+# MO3-A1: how long an admin's read-only "View as user" session lasts (minutes, kept between 5 and 60).
+VIEW_AS_MINUTES = max(5, min(60, int(os.environ.get("VIEW_AS_MINUTES", "30") or "30")))
+# MO3-A1: how recent the admin's two-factor check must be to start a view (minutes, 1-60).
+VIEW_AS_MFA_FRESH_MINUTES = max(1, min(60, int(os.environ.get("VIEW_AS_MFA_FRESH_MINUTES", "15") or "15")))
 REFRESH_TOKEN_DAYS = int(os.environ.get("REFRESH_TOKEN_DAYS", "30"))
 
 # Fernet key for encrypting broker credentials at rest. Must be set via env in any real

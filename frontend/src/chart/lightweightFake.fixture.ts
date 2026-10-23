@@ -5,6 +5,7 @@
  * Chart review (first PR): the price scale (`options / applyOptions / setAutoScale / getVisibleRange / setVisibleRange`),
  * the time scale's scroll position (`scrollPosition / scrollToPosition / scrollToRealTime / resetTimeScale`), the
  * crosshair handlers and `merged()` (the chart's options as the library would hold them) for the gesture tests.
+ * Review PR 3: `createSeriesMarkers` (the v5 markers plugin), recorded per series in `markerPlugins`.
  */
 type Options = Record<string, unknown>;
 
@@ -145,6 +146,22 @@ export function createChart(_el: unknown, options: Options) {
   const c = new FakeChart(options);
   made.push(c);
   return c;
+}
+/** The v5 markers plugin, as `createSeriesMarkers` returns it. */
+export class FakeMarkers {
+  list: unknown[] = [];
+  detached = false;
+  constructor(readonly series: FakeSeries) {}
+  setMarkers(m: unknown[]) { this.list = [...m]; }
+  markers() { return this.list; }
+  detach() { this.detached = true; }
+}
+export const markerPlugins: FakeMarkers[] = [];
+export function createSeriesMarkers(series: FakeSeries, markers: unknown[] = []) {
+  const p = new FakeMarkers(series);
+  p.setMarkers(markers);
+  markerPlugins.push(p);
+  return p;
 }
 export const CandlestickSeries = { type: "Candlestick" };
 export const BarSeries = { type: "Bar" };

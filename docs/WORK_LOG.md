@@ -3546,6 +3546,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
 
+## 23 Oct - Backtests without a daily broker login (stored licensed history)
+
+- Branch `claude/backtest-stored-history` (from main). **No migration.** New flag `backtest_stored_history` (OFF; needs
+  `ui_v2`), setting `BACKTEST_STORED_SOURCES` (default `nse_bhav:`).
+- `backend/app/backtest/bar_source.py`: one resolver - the organisation's broker session when usable (unchanged reads),
+  else the shared lake's licensed Daily bars (Weekly built from them), else a plain 409 ("Daily history for X is not
+  stored yet." / "Intraday backtests need a connected broker ..."). Never sample data, never the owner's private
+  1-minute store, never intraday or broker-written lake rows. Lake bars become the exact frame a broker's Daily candles
+  give (parity test: identical results); the window mirrors the broker's (>= 400 days, to yesterday).
+- Wired into the Copilot `run_backtest` / `backtest_draft` tools (the answer says where the prices came from), the AI
+  draft backtest route, the interview plan, the research study job, and new `POST /api/backtest/bars` (tenancy:
+  self). Frontend (ui_v2 + flag): the Backtesting page and setup "Test it" run on stored history without a broker and
+  show "Prices from ..., <from> to <to>." on the result; AI drafts test on the server; the backtest pages skip the
+  broker gate with the flag on. Admin: the daily backfill tool shows the days the lake holds per segment.
+- Tests: `tests/test_backtest_bar_source.py` (12, fake lake rows), `src/backtest/pricesLine.test.tsx` (6). Questions
+  BSH-1..6 (BSH-1 for the lawyer's list).
+
 
 ## 23 Oct - Watchlists: the universe sync ON block (WL1-3 / WL1-4 / WL1-5, README row 19)
 

@@ -12,6 +12,7 @@ import PwaBanners from "../pwa/PwaBanners";
 import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
+import { STORED_HISTORY_PATHS } from "../ui/dataPages";
 import BottomNavV2 from "./BottomNavV2";
 import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./common";
@@ -171,7 +172,9 @@ export default function AppShellV2() {
   else if (closed) content = <ComingSoon flag={closed} />;
   // The gate stays mounted while the trader moves between data pages, so the broker status is not re-read per click.
   // A page that shows the broker states itself (UI2-2: the dashboard) is not wrapped (src/shell/pagesV2.ts).
-  else if (shellGates(location.pathname, OWN_BROKER_STATES)) content = <BrokerGate>{routes}</BrokerGate>;
+  else if (shellGates(location.pathname, features.on("backtest_stored_history") ? [...OWN_BROKER_STATES, ...STORED_HISTORY_PATHS] : OWN_BROKER_STATES)) {
+    content = <BrokerGate>{routes}</BrokerGate>;
+  }
   else content = routes;
 
   const wide = key === "screener" || key === "options-builder" || key === "charts";

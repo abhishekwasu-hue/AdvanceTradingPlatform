@@ -1601,6 +1601,23 @@ collide on numbers.
 | PRV-5 | New signal-language tokens the reader needs. | Added as generic structure phrases to `app/signals/language.py` and its frontend mirror in a reviewed public PR (shared cases grow with them); when the reader emits them stays private. The package never brings its own text to a screen. | PRIVATE_PACKAGE section 9.3 | open |
 | PRV-6 | A new MAJOR reader version and running deployments. | The host's `ATP_PRIVATE_REF` moves only after the parity checks and a PAPER shadow; each deployment records the reader version it started with; the admin console lists the release note. | PRIVATE_PACKAGE section 11 | open |
 
+## Backtests without a daily broker login (BSH, 23 Oct)
+
+Owner order 23 Oct ("backtests without a daily broker login (stored licensed history)"), branch
+`claude/backtest-stored-history`. Code: `backend/app/backtest/bar_source.py`. Checked against CLAUDE.md §3-4 (signals
+only, PAPER, no secrets, public repo), DECISIONS (RDY-6 "licensed EOD only, never the platform's or another user's
+Upstox feed"; RDY-4 legal pages OFF until the lawyer) and the HB0 licence rule (the owner's 1-minute store is his only).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| BSH-1 | The licence position of the NSE daily files (bhavcopy) for backtests shown to users: may ATP run a user's backtest on them and show the result, the chart of those bars and the date range? **For the lawyer's list (A6.3).** | Yes, behind the flag `backtest_stored_history` (OFF until the owner confirms the NSE terms, as for `history_backfill`): only the user's own run (statistics, the chart of the bars it ran on, "Prices from ATP's stored end-of-day history (NSE's daily files), <from> to <to>"); no bulk download or export of the bars; no performance claims. | `app/backtest/bar_source.py`, `docs/DATA_SOURCES.md` | open (owner + lawyer) |
+| BSH-2 | The R2 daily import (`r2:*`, collected through the owner's Upstox session) for other users' backtests? | Not read by default: RDY-6 says never the platform's or another user's broker feed. `BACKTEST_STORED_SOURCES=nse_bhav:` (env); the operator adds `r2:` only once its licence allows it. A setting can never add a source outside `nse_bhav:` / `r2:`. | `app/core/config.py`, `.env.example` | open (owner) |
+| BSH-3 | Intraday backtests without a broker. | Refused with one sentence: "Intraday backtests need a connected broker. Connect it on the Broker page, or test the strategy on the Daily chart." Never the owner's private 1-minute store (licensed to him only), never the shared lake's intraday bars (recorded from other organisations' feeds), never sample data. Revisit with a licensed intraday vendor (B7). | `bar_source.INTRADAY_NEEDS_BROKER` | open |
+| BSH-4 | Prices and window of stored history. | Split / bonus adjusted (as a broker's chart history; dividends only with `LAKE_ADJUST_DIVIDENDS`); the broker path's Daily window exactly: at least 400 calendar days, up to yesterday (today's bar is never read); each bar stamped like a broker's Daily candle, so equal bars give an identical result (parity test). Weekly is built from Daily by the India calendar week. | `bar_source.window`, `to_frame`, `weekly` | open |
+| BSH-5 | Which entry points use it. | Every server-side backtest read: the Copilot `run_backtest` / `backtest_draft` tools, the AI draft backtest route, the interview plan (intraday: the plain refusal), the research study job, and the new `POST /api/backtest/bars` that the Backtesting page and the setup "Test it" call when no broker is usable. With a usable broker each path reads exactly what it read before. Unchanged: the screener backtest / history (already lake-only), the strategy chart-run (the chart's own candles), the template adopt route (runs no backtest), Monte Carlo / walk-forward / optimise (they re-use the bars the run was given). | see the list | open |
+| BSH-6 | The v2 broker gate on the Backtesting page. | With the flag on, `/strategies/test` and `/backtest` show their own broker state (the data bar's sentence and "Open Broker") instead of the gate; every other data page keeps the gate. | `ui/dataPages.STORED_HISTORY_PATHS`, `AppShellV2` | open |
+
+
 ## Trader pack: "Enable trader features" (TP, 23 Oct)
 
 Branch `claude/trader-pack`. Code: `backend/app/platform/trader_pack.py`, routes in `app/platform/routes.py`, card

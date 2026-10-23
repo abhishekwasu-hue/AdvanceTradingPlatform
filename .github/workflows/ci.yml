@@ -245,7 +245,7 @@ jobs:
   frontend:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40  # the build + unit + e2e run reached the old 25-minute limit (cancelled runs on #438 and #450)
     defaults:
       run:
         working-directory: frontend

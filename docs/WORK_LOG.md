@@ -3473,6 +3473,24 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `src/ui/tokens.test.ts`: the new contrast pairs (text 4.5, UI parts 3), navy variants, the distinct-hue test.
 - e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
 
+## 23 Oct - Chart + colour order, Part 3 PR 2: the colour components
+
+- Branch `claude/colour-components`, stacked on PR 1 (#436). Frontend only, **no migration**, no page adoption.
+- `components/primitives/Button.tsx`: `outline`, size `v2`, `buttonClass()`; `trading/PartsV2.tsx` uses it.
+- `ui/Chip.tsx` (+ `FilterChip`), `ui/StatusChip.tsx`, `ui/RangeBar.tsx`; `ChipV2` / `Badge` delegate (same markup).
+- `e2e/solidBrand.ts` (warning annotation, never a failure) in six screenshot specs; `test/solid-brand.test.ts`.
+- Storybook `Design system/Colour by meaning`; vitest `Button.test.tsx`, `Chip.test.tsx`, `StatusChip.test.tsx`,
+  `RangeBar.test.tsx`. e2e: the whole suite, baselines unchanged.
+
+## 23 Oct - Chart + colour order, Part 3 PR 1: the colour tokens
+
+- Branch `claude/colour-tokens` (from main). Frontend only, **no migration**, no flag (no page changes).
+- `frontend/src/styles/tokens.css`: `--range`, `--range-track`, `--info-tint`, `--ai-tint` (light, dark, colour-blind);
+  the v2-only navy dark surfaces under `:root[data-shell="v2"]` (inert until adoption); colour-blind warn / AI values.
+- `tailwind.config.js` names; the v2 colour check's hint text; the Tokens story lists the new meanings (CC-1 wording).
+- `src/ui/tokens.test.ts`: the new contrast pairs (text 4.5, UI parts 3), navy variants, the distinct-hue test.
+- e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
+
 
 ## 23 Oct - Production readiness B9: the private reader port plan (plan only)
 

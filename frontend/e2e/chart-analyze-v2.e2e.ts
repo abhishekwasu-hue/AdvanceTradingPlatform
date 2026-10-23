@@ -177,6 +177,10 @@ for (const size of SIZES) {
         await page.getByTestId("share-button").click();
         await page.getByRole("dialog").getByRole("button", { name: "Create link" }).click();
         await expect(page.getByTestId("share-link")).toBeVisible();
+        // The goto above dropped the font style tag of the first settle(): without it the dialog renders in whatever
+        // "Inter" / sans-serif the machine has (installed here, missing on the CI runner), so the baseline only matched
+        // one machine. Settle again so this screenshot uses the same fixed font as every other baseline.
+        await settle(page);
         // The link holds the test server's address (it differs between runs), so it is masked.
         await expect(page).toHaveScreenshot(`chart-analyze-share-dialog-${size.width}-light.png`, { mask: [page.getByTestId("share-link")], animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 20_000 });
       });

@@ -182,6 +182,13 @@ def run_sql(target, sqls):
             names = [n.strip(" '") for n in low.split("in (")[1].split(")")[0].split(",")]
             st["terminated"].append(names)
             st["held"] = [h for h in st["held"] if h.lower() not in names]
+        elif low.startswith("show archive_mode"):
+            out.append(st.get("archive_mode", "off"))
+        elif "from pg_tables" in low:                                       # restore-offsite: is the database empty?
+            if target not in st["databases"]:
+                rc = 2; return
+            d = st["databases"][target]
+            out.append(str(d.get("tables", 0 if d["rev"] == "-" else 40)))
         elif "to_regclass('public.alembic_version')" in low:
             if target not in st["databases"]:
                 rc = 2; return
@@ -207,6 +214,14 @@ def run_sql(target, sqls):
 if sub == "exec":
     flags, pos = opts_and_services(args)
     svc, cmd = pos[0], pos[1:]
+    if svc == "postgres" and cmd[:2] == ["sh", "-c"] and "/wal_archive" in cmd[2]:   # health: files and MB in the archive
+        out.append(f"{st.get('wal_files', 0)} {st.get('wal_files', 0) * 16}"); finish()
+    if svc == "postgres" and cmd[:1] == ["pg_basebackup"]:
+        # piped into a `run` of the backup service: both processes hold the state, so this one leaves it alone (the
+        # reader's write would lose it) and logs its argv beside it
+        with open(STATE + ".basebackup", "a") as fh:
+            fh.write(json.dumps(cmd) + "\n")
+        sys.stdout.write("BASETAR"); sys.exit(0)
     if svc == "postgres":
         target, sqls = db, []
         for k in range(len(cmd) - 1):
@@ -227,6 +242,12 @@ if sub == "exec":
         if "caddy" not in st["running"]:
             rc = 1; finish()
         sys.stdout.write(st.get("caddy_conf", "")); finish()
+    if svc == "backup" and cmd[:2] == ["cat", "/backups/LAST_BASE_BACKUP_OK"]:
+        if st.get("last_base_ok"):
+            out.append(st["last_base_ok"])
+        else:
+            rc = 1
+        finish()
     if svc == "backup" and cmd[:2] == ["cat", "/backups/LAST_BACKUP_OK"]:
         if st["last_backup_ok"]:
             out.append(st["last_backup_ok"])
@@ -238,6 +259,9 @@ if sub == "exec":
             finish()
         if cmd[:2] == ["python", "scripts/check_secrets_key.py"]:
             out.append("secrets key: ok - 2 organisation data keys open"); finish()
+        if cmd[:2] == ["python", "scripts/ops_check.py"]:                  # A2: the host facts arrive on stdin
+            st["ops_check_input"] = json.loads(sys.stdin.read() or "{}")
+            out.append("ops-check: disk=ok | 0 change(s) to report"); finish()
         if cmd[:2] == ["sh", "-c"] and "flag_posture.py" in cmd[2]:
             if st["posture"] is None:
                 rc = 1
@@ -301,6 +325,32 @@ if sub == "run":
             st["latest"] = name
             st["last_backup_ok"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             finish()
+        if cmd[:2] == ["/scripts/base_backup.sh", "--stdin"]:
+            assert sys.stdin.read() == "BASETAR"
+            stamp = f"2026101{len(st.setdefault('base', []))}T040000Z"
+            st["base"].append(stamp)
+            import hashlib, hmac
+            key = hashlib.pbkdf2_hmac("sha256", os.environ["FAKE_BACKUP_PASS"].encode(), b"atpmacv1", 200000, 32)
+            name = f"base/{stamp}/base.tar.gz.enc"
+            st["hmacs"][name] = "0" * 64 if st.get("base_bad_seal") else hmac.new(key, (name + "\n" + dump_bytes("base.tar.gz.enc")).encode(), "sha256").hexdigest()
+            st["last_base_ok"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            finish()
+        if cmd[:2] == ["-c", "readlink /backups/base/latest"]:
+            if st.get("base"):
+                out.append(st["base"][-1])
+            finish()
+        if cmd[:1] == ["-c"] and "find /wal_archive" in cmd[1]:
+            if "-delete" in cmd[1]:
+                st["wal_files"] = 0
+            else:
+                out.append(str(st.get("wal_files", 0)))
+            finish()
+        if cmd[:1] == ["/scripts/restore.sh"]:                              # restore-offsite: into the configured database
+            assert envs.get("RESTORE_CONFIRM") == "yes"
+            src = backup_by_name(cmd[1]) or {"rev": "-"}
+            st["databases"][db] = {"rev": src["rev"]}
+            st.setdefault("restored", []).append(cmd[1])
+            finish()
         if cmd[:2] == ["-c", "readlink /backups/latest"]:
             if st.get("latest"):
                 out.append(st["latest"])
@@ -337,7 +387,12 @@ if sub == "run":
             finish()
     if svc == "offsite":
         if cmd == ["--once"]:
+            if st.get("offsite_fail"):
+                rc = 1; finish()
             st["offsite_pushes"].append(len(st["backups"])); finish()
+        if entry == "sh" and cmd[:1] == ["/scripts/offsite_prune.sh"]:
+            st.setdefault("prunes", []).append(cmd[1:])
+            rc = st.get("prune_rc", 0); finish()
         if entry == "sh" and cmd[:1] == ["-c"] and "rclone copy /files" in cmd[1]:
             host_dir = [v for v in flags.get("-v", []) if v.endswith(":/files:ro")][0].rsplit(":/files:ro", 1)[0]
             bucket = st["bucket_files_dir"]
@@ -1284,3 +1339,217 @@ def test_the_session_gate_runs_before_postgres_and_redis_are_touched(host):
     assert host.run("deploy").returncode == 0
     gate, up = host.index("session_check.py", before), host.index("up -d --wait postgres redis", before)
     assert -1 < gate < up and host.index(" build --pull", before) < gate
+
+
+# --- A1: the off-site backup (schedule, retention off-site, health ages, the WAL archive, the clean-machine restore) ---
+
+def _ago(hours: float) -> str:
+    import time
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - hours * 3600))
+
+
+def test_deploy_schedules_a_nightly_verified_backup_and_a_weekly_restore_check_and_health_sees_it(host):
+    assert host.run("deploy").returncode == 0
+    cron = host.crontab.read_text()
+    assert f"17 2 * * * {host.dir}/deploy/atp.sh backup --scheduled --verify >>" in cron
+    assert f"43 3 * * 0 {host.dir}/deploy/atp.sh restore-check --scheduled >>" in cron
+    assert "base-backup" not in cron                                                     # point-in-time recovery off
+    res = host.run("health")
+    assert "schedule installed: daily 02:17 backup + R2 copy + restore check, Sunday 03:43 restore check" in res.stdout
+    host.write_env(extra={"PG_ARCHIVE_MODE": "on"})
+    assert "outdated" in host.run("health").stdout or "older than this release" in host.run("health").stdout
+    assert host.run("schedule").returncode == 0
+    assert f"29 4 * * 6 {host.dir}/deploy/atp.sh base-backup --scheduled" in host.crontab.read_text()
+    assert host.crontab.read_text().count("BEGIN atp.sh managed block") == 1
+    host.crontab.write_text("MAILTO=\"\"\n")
+    assert "no backup schedule in the crontab" in host.run("health").stdout
+
+
+def test_health_shows_the_last_good_backup_local_and_off_site_and_fails_past_the_limit(host):
+    host.write_env(extra=R2)
+    assert host.run("deploy").returncode == 0
+    assert host.run("backup").returncode == 0
+    off = (host.dir / ".deploy/last_offsite_ok").read_text().split()
+    assert off[1] == host.state["latest"]                                                # the newest dump that went to R2
+    res = host.run("health")
+    assert "last database backup" in res.stdout and "last off-site copy (R2)" in res.stdout and "(0 h ago)" in res.stdout, res.stdout
+    status = host.run("backup-status")
+    js = json.loads(status.stdout.strip().splitlines()[-1])
+    assert status.returncode == 0 and js["status"] == "ok" and js["limit_hours"] == 26
+    assert js["local"]["age_hours"] == 0 and js["offsite"]["configured"] is True and js["offsite"]["newest"] == host.state["latest"]
+
+    host.state["last_backup_ok"] = _ago(30); host.save()                                 # the nightly dump stopped
+    res = host.run("health")
+    assert res.returncode == 1 and "FAIL  last database backup" in res.stdout and "30 h old (limit 26 h" in res.stdout
+    status = host.run("backup-status")
+    assert status.returncode == 1 and json.loads(status.stdout)["status"] == "fail" and "local backup 30 h old" in status.stdout
+    host.write_env(extra={**R2, "BACKUP_MAX_AGE_HOURS": "48"})
+    assert host.run("health").returncode == 0 and host.run("backup-status").returncode == 0
+
+    host.write_env(extra=R2)
+    (host.dir / ".deploy/last_offsite_ok").write_text(f"{_ago(40)} {host.state['latest']}\n")
+    host.state["last_backup_ok"] = _ago(1); host.save()
+    res = host.run("health")
+    assert res.returncode == 1 and "FAIL  last off-site copy (R2)" in res.stdout
+    deploy = host.run("deploy")                                                          # inside a deploy: a warning only
+    assert deploy.returncode == 0 and "WARN  last off-site copy (R2)" in deploy.stdout, deploy.all
+
+
+def test_backup_prunes_old_r2_copies_and_a_prune_failure_only_warns(host):
+    host.write_env(extra=R2)
+    assert host.run("deploy").returncode == 0
+    res = host.run("backup")
+    assert res.returncode == 0 and host.state["prunes"] == [[]] and "old R2 copies pruned" in res.stdout
+    assert host.index("offsite --once") < host.index("/scripts/offsite_prune.sh")         # pruned after the copy
+    assert "never inside the 14-day lock" in res.stdout and "WAL" not in res.stdout.split("off-site copy (R2)")[1].split("==>")[0]
+    host.state["prune_rc"] = 1; host.save()
+    res = host.run("backup")
+    assert res.returncode == 0 and "pruning old R2 copies failed" in res.stdout
+    host.state["offsite_fail"] = True; host.save()
+    before = (host.dir / ".deploy/last_offsite_ok").read_text()
+    res = host.run("backup")
+    assert res.returncode == 1 and (host.dir / ".deploy/last_offsite_ok").read_text() == before   # a failed copy is not recorded
+
+
+def test_no_backup_without_r2_never_prunes_and_status_warns(host):
+    assert host.run("deploy").returncode == 0
+    assert host.run("backup").returncode == 0
+    assert "prunes" not in host.state and not (host.dir / ".deploy/last_offsite_ok").exists()
+    status = host.run("backup-status")
+    js = json.loads(status.stdout)
+    assert status.returncode == 0 and js["status"] == "warn" and "off-site not configured" in js["problems"]
+
+
+def test_the_wal_archive_left_from_before_is_reported_and_emptied_only_while_archiving_is_off(host):
+    assert host.run("deploy").returncode == 0
+    host.state["wal_files"] = 300; host.save()
+    res = host.run("health")
+    assert "WARN  WAL archiving is off, but 300 file(s) (4800 MB)" in res.stdout and "atp.sh wal-cleanup" in res.stdout
+    host.state["archive_mode"] = "on"; host.save()
+    refused = host.run("wal-cleanup")
+    assert refused.returncode == 2 and "nothing removed" in refused.all and host.state["wal_files"] == 300
+    host.state["archive_mode"] = "off"; host.save()
+    dry = host.run("wal-cleanup", "--dry-run")
+    assert dry.returncode == 0 and host.state["wal_files"] == 300
+    res = host.run("wal-cleanup")
+    assert res.returncode == 0 and "300 file(s) removed" in res.stdout and host.state["wal_files"] == 0
+    assert "WAL archiving off (recovery point: the daily encrypted dump" in host.run("health").stdout
+    assert "already empty" in host.run("wal-cleanup").stdout
+
+
+def test_point_in_time_recovery_on_takes_an_encrypted_sealed_base_backup_and_health_watches_it(host):
+    host.write_env(extra={**R2, "PG_ARCHIVE_MODE": "on"})
+    off = host.run("deploy")
+    assert off.returncode == 0
+    host.state["archive_mode"] = "on"; host.save()
+    assert "no base backup yet - run:" in host.run("health").stdout
+    n = len(host.state["calls"])
+    res = host.run("base-backup")
+    assert res.returncode == 0 and "encrypted and sealed" in res.stdout, res.all
+    (cmd,) = [json.loads(line) for line in Path(str(host.state_path) + ".basebackup").read_text().splitlines()]
+    assert cmd[:3] == ["pg_basebackup", "-U", "atp_user"] and "-D" in cmd and cmd[cmd.index("-D") + 1] == "-" and "fetch" in cmd
+    assert -1 < host.index("/scripts/base_backup.sh --stdin", n) < host.index("offsite --once", n)
+    assert "WAL archiving on: last base backup" in host.run("health").stdout
+    host.state["last_base_ok"] = _ago(24 * 9); host.save()
+    assert "FAIL  WAL archiving on: the last base backup is 216 h old" in host.run("health").stdout
+    host.state["base_bad_seal"] = True; host.save()
+    assert host.run("base-backup").returncode == 1
+    host.write_env(extra=R2)                                                             # off again in .env
+    res = host.run("base-backup")
+    assert res.returncode == 2 and "point-in-time recovery is off" in res.all
+
+
+def test_escrow_lines_show_since_when_the_keys_are_unchanged_and_a_new_passphrase_is_said_once(host):
+    assert host.run("deploy").returncode == 0
+    res = host.run("health")
+    assert "escrow: SECRETS_ENCRYPTION_KEY unchanged since" in res.stdout
+    assert "escrow: BACKUP_ENCRYPTION_PASSPHRASE unchanged since" in res.stdout
+    fp = (host.dir / ".deploy/backup_key.fingerprint").read_text()
+    assert SECRETS["BACKUP_ENCRYPTION_PASSPHRASE"] not in fp and len(fp.strip()) == 64
+    host.write_env(extra={"BACKUP_ENCRYPTION_PASSPHRASE": "FAKEFAKE-backup-pass-NEW-41"})
+    assert "WARN  BACKUP_ENCRYPTION_PASSPHRASE changed since" in host.run("health").stdout
+    res = host.run("backup", extra_env={"FAKE_BACKUP_PASS": "FAKEFAKE-backup-pass-NEW-41"})
+    assert res.returncode == 0 and "need the OLD value" in res.stdout and "FAKEFAKE-backup-pass-NEW-41" not in res.all
+    assert "passphrase changed" in (host.dir / ".deploy/backup_key.changes").read_text()
+    assert "unchanged since" in host.run("health").stdout.split("escrow: BACKUP_ENCRYPTION_PASSPHRASE")[1][:20]
+
+
+def _lost_server(host):
+    """Deploy with R2 and back up; then the server is gone: a new, empty database, nothing but R2 and the .env."""
+    host.write_env(extra=R2)
+    assert host.run("deploy").returncode == 0
+    assert host.run("backup").returncode == 0
+    host.state["databases"] = {host.state["db_name"]: {"rev": "-"}}
+    host.save()
+
+
+def test_restore_offsite_fills_an_empty_database_from_r2_then_deploy_starts_on_it(host):
+    _lost_server(host)
+    res = host.run("restore-offsite", extra_env={"ATP_CONFIRM_DB": "advance_trading_platform"})
+    assert res.returncode == 0, res.all
+    assert host.state["databases"]["advance_trading_platform"]["rev"] == "rev1"
+    assert host.state["restored"] == ["/restore/" + host.state["latest"]]
+    assert "seal (HMAC) verified" in res.stdout and "restore-offsite: done" in res.stdout and "decrypts" in res.stdout
+    assert host.index("up -d --wait postgres") < host.index("offsite_fetch.sh") < host.index("/scripts/restore.sh")
+    assert "status=restored" in (host.dir / ".deploy/restore-checks.log").read_text()
+    deploy = host.run("deploy")
+    assert deploy.returncode == 0 and "schema at head - no migration" in deploy.stdout
+
+
+def test_restore_offsite_never_replaces_data_and_needs_r2_the_right_passphrase_and_the_typed_name(host):
+    _lost_server(host)
+    host.state["databases"]["advance_trading_platform"] = {"rev": "rev1"}; host.save()
+    res = host.run("restore-offsite", extra_env={"ATP_CONFIRM_DB": "advance_trading_platform"})
+    assert res.returncode == 2 and "only fills an EMPTY database" in res.all and "restored" not in host.state
+    host.state["databases"]["advance_trading_platform"] = {"rev": "-"}; host.save()
+    res = host.run("restore-offsite")                                                    # no terminal, no ATP_CONFIRM_DB
+    assert res.returncode == 1 and "not confirmed" in res.all and "restored" not in host.state
+    host.write_env(extra={**R2, "BACKUP_ENCRYPTION_PASSPHRASE": "FAKEFAKE-not-the-escrowed-one"})
+    res = host.run("restore-offsite", extra_env={"ATP_CONFIRM_DB": "advance_trading_platform"})
+    assert res.returncode == 1 and "does not match its seal" in res.all and "restored" not in host.state
+    host.write_env()
+    res = host.run("restore-offsite", extra_env={"ATP_CONFIRM_DB": "advance_trading_platform"})
+    assert res.returncode == 10 and "R2 is not configured" in res.all
+
+
+def test_backup_status_fails_when_the_marker_vanishes_after_backups_have_run(host):
+    assert json.loads(host.run("backup-status").stdout)["status"] == "warn"           # a fresh host: nothing yet
+    assert host.run("deploy").returncode == 0 and host.run("backup").returncode == 0
+    host.state["last_backup_ok"] = None; host.save()                                  # the backups volume is gone
+    res = host.run("backup-status")
+    assert res.returncode == 1 and "marker unreadable" in res.stdout
+    (host.dir / ".deploy/last_restore_check").write_text(f"{_ago(1)} local restore_failed chain=not_run\n")
+    host.state["last_backup_ok"] = _ago(1); host.save()
+    res = host.run("backup-status")
+    assert res.returncode == 1 and json.loads(res.stdout)["restore_check"]["status"] == "restore_failed"
+
+
+# --- A2: the server checks (ops-check) --------------------------------------------------------------------------------
+
+def test_ops_check_is_scheduled_and_hands_the_host_facts_to_the_backend(host):
+    assert host.run("deploy").returncode == 0
+    assert f"2-59/5 * * * * {host.dir}/deploy/atp.sh ops-check >> {host.dir}/.deploy/logs/ops-check.log 2>&1" in host.crontab.read_text()
+    since = len(host.state["calls"])
+    res = host.run("ops-check")
+    assert res.returncode == 0, res.all
+    assert "ops-check: disk=ok" in res.stdout
+    facts = host.state["ops_check_input"]
+    assert facts["disk_used_percent"] == 40 and facts["cert_note"] == "ip_only" and facts["cert_days_left"] is None
+    assert facts["backup"]["status"] in ("ok", "warn", "fail") and "limit_hours" in facts["backup"]
+    assert host.mutating(since) == []                                     # read-only on the host
+
+
+def test_ops_check_skips_while_a_deploy_or_backup_holds_the_lock(host):
+    import time
+    assert host.run("deploy").returncode == 0
+    host.state.pop("ops_check_input", None)
+    host.save()
+    holder = subprocess.Popen(["flock", str(host.dir / ".deploy" / "lock"), "sleep", "10"])
+    try:
+        time.sleep(0.5)
+        res = host.run("ops-check")
+    finally:
+        holder.kill()
+        holder.wait()
+    assert res.returncode == 0 and "ops-check skipped" in res.stdout
+    assert "ops_check_input" not in host.state

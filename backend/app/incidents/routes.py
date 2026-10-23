@@ -18,6 +18,8 @@ class IncidentCreate(BaseModel):
     severity: str = Field(default="WARNING", pattern=r"^(WARNING|CRITICAL|EMERGENCY)$")
     summary: str = Field(default="", max_length=5000)
     tenant_id: Optional[int] = None
+    # A2: the one sentence the public status page shows (platform-wide incidents only); never the title or cause.
+    public_note: Optional[str] = Field(default=None, max_length=280)
 
 
 class IncidentUpdate(BaseModel):
@@ -27,18 +29,21 @@ class IncidentUpdate(BaseModel):
     actions_taken: Optional[str] = Field(default=None, max_length=5000)
     data_loss_minutes: Optional[float] = Field(default=None, ge=0)
     downtime_minutes: Optional[float] = Field(default=None, ge=0)
+    public_note: Optional[str] = Field(default=None, max_length=280)     # "" removes it
 
 
 @router.get("")
 async def list_incidents(status: Optional[str] = Query(default=None), limit: int = Query(default=100, ge=1, le=500),
                          session: AsyncSession = Depends(get_session)) -> List[dict]:
-    return [service.as_dict(r) for r in await service.list_incidents(session, status=status, limit=limit)]
+    notes = await service.public_notes(session)
+    return [service.as_dict(r, notes.get(str(r.id))) for r in await service.list_incidents(session, status=status, limit=limit)]
 
 
 @router.post("", status_code=201)
 async def create_incident(body: IncidentCreate, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
-    record = await service.open_incident(session, title=body.title, severity=body.severity, summary=body.summary, tenant_id=body.tenant_id, user=user)
-    return service.as_dict(record)
+    record = await service.open_incident(session, title=body.title, severity=body.severity, summary=body.summary, tenant_id=body.tenant_id, user=user,
+                                         public_note=body.public_note)
+    return service.as_dict(record, (await service.public_notes(session)).get(str(record.id)))
 
 
 @router.patch("/{incident_id}")
@@ -50,4 +55,4 @@ async def update_incident(incident_id: int, body: IncidentUpdate, user: User = D
         record = await service.update_incident(session, record, user, **body.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return service.as_dict(record)
+    return service.as_dict(record, (await service.public_notes(session)).get(str(record.id)))

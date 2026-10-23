@@ -29,6 +29,12 @@ Run these as the `atp` user on the server (`ssh atp@<SERVER_IP>`). Each one is s
 | Go back one release and put the database back to the backup taken just before that release migrated it | `/opt/atp/deploy/atp.sh rollback --restore-db` |
 | Back up now (database and files), copy to R2, then verify | `/opt/atp/deploy/atp.sh backup --verify` |
 | Prove the newest R2 backup restores (scratch database, row counts, audit chain) | `/opt/atp/deploy/atp.sh restore-check` |
+| The last good backup, local and off-site, as one JSON line (exit 1 when older than `BACKUP_MAX_AGE_HOURS`) | `/opt/atp/deploy/atp.sh backup-status` |
+| Install (or refresh) the nightly backup, the weekly restore check and the 5-minute server checks in the crontab (every `deploy` does it too) | `/opt/atp/deploy/atp.sh schedule` |
+| The server checks once now (backups, disk, certificate, worker, data feed, errors...; messages you only on a change, section 10b) | `/opt/atp/deploy/atp.sh ops-check` |
+| Empty the WAL archive left from before archiving was turned off (section 6c) | `/opt/atp/deploy/atp.sh wal-cleanup` |
+| A new server after the old one is lost: fill its empty database from R2 (section 6b) | `/opt/atp/deploy/atp.sh restore-offsite` |
+| Point-in-time recovery only: an encrypted base backup now (section 6c) | `/opt/atp/deploy/atp.sh base-backup` |
 | Release history | `/opt/atp/deploy/atp.sh releases` |
 | The 500-user load test against this server (its own copy of the stack, section 12a) | `/opt/atp/deploy/ci/loadtest_500.sh` |
 | The 500-session load test against the production stack itself, in NSE market hours, with memory sampled (section 12b) | `/opt/atp/deploy/atp.sh loadtest` |
@@ -93,7 +99,7 @@ Required. `atp.sh` refuses to run while any of these is empty, `CHANGE_ME`, or a
 
 | Key | Value |
 |---|---|
-| `POSTGRES_PASSWORD`, `JWT_SECRET_KEY`, `METRICS_TOKEN`, `BACKUP_ENCRYPTION_PASSPHRASE` | `python3 -c "import secrets;print(secrets.token_urlsafe(48))"` (a different value for each key). Keep a copy of `BACKUP_ENCRYPTION_PASSPHRASE` off the server: without it no backup can be restored or verified. `POSTGRES_PASSWORD` sits inside a database URL, so it must be URL-safe: letters, digits, `-` and `_` only (`token_urlsafe` gives exactly that), never `@ : / ? # %`. |
+| `POSTGRES_PASSWORD`, `JWT_SECRET_KEY`, `METRICS_TOKEN`, `BACKUP_ENCRYPTION_PASSPHRASE` | `python3 -c "import secrets;print(secrets.token_urlsafe(48))"` (a different value for each key). Keep a copy of `BACKUP_ENCRYPTION_PASSPHRASE` off the server: without it no backup can be restored or verified (section 6a lists every value to keep). `POSTGRES_PASSWORD` sits inside a database URL, so it must be URL-safe: letters, digits, `-` and `_` only (`token_urlsafe` gives exactly that), never `@ : / ? # %`. |
 | `SECRETS_ENCRYPTION_KEY` | The **same** key the PAPER PC uses. Never a new one: every stored broker and AI credential depends on it. The first deploy records a salted scrypt fingerprint of it (`.deploy/secrets_key.fingerprint` with a random per-host salt). After that, any run with a different key stops with exit 20. `health` also checks inside the API container that the key opens every organisation's data key. |
 | `DOMAIN`, `ACME_EMAIL` | Section 5. |
 
@@ -103,11 +109,12 @@ Also set:
 ENVIRONMENT=production
 SUPER_ADMIN_EMAILS=<the email you will register with>   # your account gets Admin -> Controls (section 4a)
 CADDYFILE=Caddyfile.ip            # Caddyfile once DNS points at the server (section 5)
-OFFSITE_REMOTE=offsite:atp-backups
+OFFSITE_REMOTE=offsite:atp-backups   # section 6: "offsite:" + your bucket name
 OFFSITE_S3_PROVIDER=Cloudflare
 OFFSITE_S3_ENDPOINT=              # section 6 (owner blocker until filled)
 OFFSITE_S3_ACCESS_KEY=
 OFFSITE_S3_SECRET_KEY=
+OFFSITE_LOCK_DAYS=14              # section 6 step 3: the bucket lock's days (never less than what you set there)
 # COMPOSE_PROFILES=research       # optional services; atp.sh never adds a profile on its own
 # BACKUP_EXTRA_DIRS=/srv/atp-blobs   # optional: host directories to include in the encrypted files archive
 ```
@@ -208,23 +215,143 @@ resolved to the safe values only because of the mode.
 
 ## 6. R2 off-site backups (owner blocker)
 
-1. Cloudflare → R2 → **Create bucket** `atp-backups` (location hint Asia-Pacific). Public access stays off.
-2. Bucket → Settings: turn on **object versioning**, and a **bucket lock** (retention rule) on `backups/` and `files/`
-   for at least 14 days if your plan offers it. An overwritten or deleted object can then still be recovered, even
-   by someone holding the token.
-3. R2 → **Manage API tokens** → **Create API token**: permission **Object Read & Write**, only bucket
-   `atp-backups`, no TTL. Not an admin token: this token must not be able to delete the bucket or change its lock.
-   It is a different token from the read-only `R2_*` one used for the history import.
-4. Put the endpoint `https://<account id>.r2.cloudflarestorage.com`, the access key ID and the secret into `.env` as
-   `OFFSITE_S3_ENDPOINT`, `OFFSITE_S3_ACCESS_KEY` and `OFFSITE_S3_SECRET_KEY`. Do this on the server only.
-5. Bucket → Settings → **Object lifecycle rules**: delete `backups/` and `files/` objects after 35 days. Add no rule
-   for `wal_archive/`: the sync prunes it.
-6. Run `/opt/atp/deploy/atp.sh backup --verify`. Expected: `copied to offsite:atp-backups`, then
-   `seal (HMAC) verified`, `R2 backup ... restored`, `rows (copy / live): ...`, `audit hash chain intact`,
-   `restore-check: OK`.
+Everything that goes to R2 is encrypted and sealed on this server first (AES-256 with `BACKUP_ENCRYPTION_PASSPHRASE`,
+plus an HMAC seal). The WAL archive never goes (section 6c). Do these steps in the Cloudflare dashboard, then on the
+server. Values go only into `/opt/atp/.env` and your password manager (section 6a), never into chat or git.
 
-Until then, `backup` and `restore-check` work on the local copies and print `R2 not configured yet`. Pass
+1. **Bucket.** Cloudflare → R2 → **Create bucket**: name `atp-backups`, location hint Asia-Pacific. Public access
+   stays off (no public URL, no custom domain).
+2. **Versioning.** If the bucket's Settings offer **object versioning**, turn it on: an overwritten or deleted object
+   can then still be recovered. `atp.sh` works the same either way (OPEN_QUESTIONS RDY-14).
+3. **Bucket lock (required).** Bucket → Settings → **Bucket lock rules** → Add rule: prefix empty (the whole
+   bucket), retention **14 days**. Inside those days nobody can delete or overwrite an object, not even someone who
+   has stolen the token. If you choose more than 14 days, put the same number in `.env` as `OFFSITE_LOCK_DAYS`:
+   `atp.sh` never asks R2 to delete an object younger than that number plus one day.
+4. **Lifecycle rules.** Bucket → Settings → **Object lifecycle rules**: keep only the rule that aborts incomplete
+   multipart uploads (R2 adds it by default). Add **no** rule that deletes objects by age: retention is done by
+   `atp.sh` by count (step 8), and an age rule would delete the monthly copies. If an older "delete after 35 days"
+   rule exists from the earlier version of this runbook, delete that rule.
+5. **API token, this bucket only.** R2 → **Manage API tokens** → **Create API token**: permission
+   **Object Read & Write**, **Apply to specific buckets only** → `atp-backups`, TTL none, no IP filter (or the
+   server's IP only). Not an admin token: this token cannot delete the bucket or change its lock. It is a different
+   token from the read-only `R2_*` one used for the history import. Cloudflare shows the **Access Key ID**, the
+   **Secret Access Key** and the **S3 endpoint** (`https://<account id>.r2.cloudflarestorage.com`) **once**: copy all
+   three straight into your password manager (section 6a).
+6. **`.env` on the server** (`nano /opt/atp/.env`, as `atp`). Set these names; `atp.sh` and the compose files read
+   exactly these:
+
+   | Name | What to put |
+   |---|---|
+   | `OFFSITE_REMOTE` | `offsite:atp-backups` (`offsite:` and the bucket name from step 1) |
+   | `OFFSITE_S3_PROVIDER` | `Cloudflare` |
+   | `OFFSITE_S3_ENDPOINT` | the S3 endpoint from step 5 |
+   | `OFFSITE_S3_ACCESS_KEY` | the Access Key ID from step 5 |
+   | `OFFSITE_S3_SECRET_KEY` | the Secret Access Key from step 5 |
+   | `OFFSITE_LOCK_DAYS` | `14`, or the retention days from step 3 if you chose more |
+
+   Optional, defaults shown (retention, section 11): `BACKUP_RETENTION_DAYS=7`, `BACKUP_KEEP_MIN=7`,
+   `BACKUP_KEEP_WEEKLY=4`, `BACKUP_KEEP_MONTHLY=6`, `BACKUP_FILES_KEEP=14`, `OFFSITE_KEEP_PRE_MIGRATION=6`, and the
+   health / alert limit `BACKUP_MAX_AGE_HOURS=26`.
+7. **First copy and check:** `/opt/atp/deploy/atp.sh backup --verify && /opt/atp/deploy/atp.sh health`. Expected:
+   `encrypted, sealed database dumps (daily, weekly, monthly) and the files archive copied to offsite:atp-backups`,
+   `old R2 copies pruned`, `seal (HMAC) verified`, `R2 backup ... restored`, `rows (copy / live): ...`,
+   `audit hash chain intact`, `backup: done`; then in `health`: `last off-site copy (R2) ... (0 h ago)`.
+8. **From then on, nothing to do.** Every night at 02:17 IST the cron block runs `backup --scheduled --verify`: the
+   dump, its R2 copy, the R2 retention, and a restore of the newest R2 copy into a scratch database. Every Sunday at
+   03:43 IST `restore-check` runs once more. `health` shows the last good backup, local and off-site, and fails when
+   either is older than 26 hours.
+
+Until step 6 is done, `backup` and `restore-check` work on the local copies and print `R2 not configured yet`. Pass
 `--require-offsite` to make that a failure.
+
+What R2 holds (prefixes) and how long:
+
+| Prefix | What | Kept (settings in `.env`) |
+|---|---|---|
+| `backups/` | the nightly dumps (`atp_<db>_<UTC stamp>.dump.enc` + `.sha256` + `.hmac`) | the newest `BACKUP_KEEP_MIN` (7) and everything younger than `BACKUP_RETENTION_DAYS` + 1 (8) days |
+| `backups-weekly/` | the first dump of each week | the newest `BACKUP_KEEP_WEEKLY` (4) |
+| `backups-monthly/` | the first dump of each month | the newest `BACKUP_KEEP_MONTHLY` (6) |
+| `backups/pre-migration/` | the dump taken before each migration | the newest `OFFSITE_KEEP_PRE_MIGRATION` (6) |
+| `files/` | the encrypted files archive (`.deploy/` + `BACKUP_EXTRA_DIRS`) | the newest `BACKUP_FILES_KEEP` (14) |
+| `backups/base/` | only with point-in-time recovery on (section 6c) | the newest `BASE_BACKUP_KEEP` (4) |
+
+Nothing younger than `OFFSITE_LOCK_DAYS` + 1 days is ever deleted, whatever the counts say (so R2 briefly holds a
+few more daily copies than the server). A monthly dump is about the size of one daily dump; with the defaults the
+bucket holds about 30 dumps, well inside R2's free 10 GB for a database of a few hundred MB.
+
+## 6a. Key escrow: what you keep off the server (do this once, now)
+
+Every R2 object is ciphertext. If the server is lost, R2 alone is useless without the keys, and the server's `.env`
+is the only other place they exist (the files archive leaves `.env` out on purpose). Keep each of these names' values
+in **your password manager** and in **one offline copy** (printed on paper in a sealed envelope, or an encrypted USB
+stick kept away from the laptop), never in git, chat, e-mail or a screenshot:
+
+| Name in `/opt/atp/.env` | Why it cannot be replaced |
+|---|---|
+| `BACKUP_ENCRYPTION_PASSPHRASE` | opens and authenticates every backup; a different value opens none of them |
+| `SECRETS_ENCRYPTION_KEY` | opens every stored broker / AI credential and MFA secret inside the database |
+| `JWT_SECRET_KEY` | a new value works, but signs everyone out; keep it to restore without that |
+| `POSTGRES_PASSWORD` | not inside the dumps; keep it so a restored server needs no new database login |
+| `OFFSITE_S3_ENDPOINT`, `OFFSITE_S3_ACCESS_KEY`, `OFFSITE_S3_SECRET_KEY`, `OFFSITE_REMOTE` | how the new server reads R2. If they are lost, create a new bucket-scoped token (section 6 step 5) from your Cloudflare account |
+
+Everything else in `.env` can be set again from its provider's console (`METRICS_TOKEN`: a new random value;
+`ATP_TELEGRAM_BOT_TOKEN`: @BotFather; `GOOGLE_OAUTH_*`: Google Cloud console; `DOMAIN`, `ACME_EMAIL`: you know them).
+
+**Check your copy matches.** `health` prints `escrow: SECRETS_ENCRYPTION_KEY unchanged since <date>` and
+`escrow: BACKUP_ENCRYPTION_PASSPHRASE unchanged since <date>`. If you change the passphrase later, `health` says so
+and the next backup records it: backups taken before the change still need the **old** value, so keep the old one in
+escrow too until those backups have left R2 (6 months with the defaults, because of the monthly copies).
+
+## 6b. Restore on a clean machine, from R2 alone
+
+When the server is lost (disk, account, or the box itself). You need: a new Ubuntu 24.04 server, the escrowed values
+(section 6a), and the R2 bucket. CI rehearses exactly this on every change to the deploy bundle (section 11a).
+
+1. Bootstrap the new server (section 2) and get the code (section 3).
+2. Create `/opt/atp/.env` (section 4) with the **escrowed values** for every name in the section 6a table, and the
+   same `DOMAIN`, `ACME_EMAIL`, `CADDYFILE` as before. A new random `METRICS_TOKEN` is fine.
+3. Fill the empty database from R2:
+
+   ```
+   su - atp -c "/opt/atp/deploy/atp.sh restore-offsite"
+   ```
+
+   It builds the images, starts Postgres only, refuses unless the database is **empty**, fetches the newest encrypted
+   dump from R2, checks its seal (a wrong `BACKUP_ENCRYPTION_PASSPHRASE` stops here with nothing written), asks you
+   to type the database name, restores it and prints the schema revision. It also fetches and checks the newest
+   files archive and leaves it in `/var/backups/atp-restore-test` (unpack your `BACKUP_EXTRA_DIRS` from it by hand if
+   you used them; `.deploy/` is rebuilt by the deploy).
+4. Start the release on it, as always:
+
+   ```
+   su - atp -c "/opt/atp/deploy/atp.sh deploy && /opt/atp/deploy/atp.sh health"
+   ```
+
+   `health` runs `check_secrets_key.py`: `secrets key: ok - N organisation data keys open` proves the escrowed
+   `SECRETS_ENCRYPTION_KEY` is the right one. Then point DNS at the new server (section 5) and sign in.
+
+Data written after the newest R2 dump (at most one day) is not in it. The restore never touches a database that
+already holds tables: on a running server use `rollback --restore-db` or `docs/OPERATIONS.md` 1.2.
+
+## 6c. WAL archiving and point-in-time recovery (off on this host)
+
+Postgres used to copy every WAL segment into the `wal_archive` volume, and the hourly off-site copy synced it to R2
+raw. Nothing ever took a base backup, so the archive only grew (up to about 4.6 GB a day) and could never be
+replayed (readiness review R1). Now:
+
+- **Off by default** (`PG_ARCHIVE_MODE` unset or `off`). The recovery point is the nightly encrypted dump plus the
+  dump taken before each migration. `archive_mode` is a restart setting: the first deploy with this change
+  recreates the Postgres container once (a clean shutdown, data kept on its volume). Run that deploy after 15:30 IST.
+- **What piled up before** stays on disk until you run `/opt/atp/deploy/atp.sh wal-cleanup` once. It refuses while
+  the running database still archives. `health` lists the files and MB left, with the command.
+- **The WAL archive never leaves the server**, in either mode: the off-site copy no longer mounts it.
+- **To turn point-in-time recovery on later:** put `PG_ARCHIVE_MODE=on` in `.env`, run
+  `/opt/atp/deploy/atp.sh deploy` (after 15:30 IST: Postgres restarts once), then
+  `/opt/atp/deploy/atp.sh base-backup`. The deploy adds `29 4 * * 6 ... base-backup --scheduled` to the cron block:
+  every Saturday an encrypted, sealed base backup (`pg_basebackup` inside the Postgres container) that is copied to
+  R2 and prunes the archive before the oldest of the newest `BASE_BACKUP_KEEP` (4). `health` shows the last base
+  backup and fails after 8 days without one. The archive itself stays on this server: recovery to an instant is for
+  a mistake on a living server (`docs/OPERATIONS.md` 1.2a), and the off-site recovery point stays the nightly dump.
 
 ## 7. Firewall
 
@@ -355,11 +482,54 @@ again after any migration marked `ROLLBACK_SAFE = False`. Write the results in t
 - **Flags (section 4a):** the deployment phase (`phase0`: the first boot seeded the safe flags, nothing to set), then
   exit 10 only if `live_trading` is on (for anyone) or `phase0_paper_only` is off. The script never changes a flag.
 - **Settings:** the LIVE switches, R2 and the HB0 settings.
-- **Backups:** the age of the last backup (warning after 26 h), the last off-site sync and the last restore check.
+- **Backups:** the last good backup, local (`last database backup <time> (N h ago)`) and off-site
+  (`last off-site copy (R2) <time> (N h ago)`); either one older than `BACKUP_MAX_AGE_HOURS` (26) is a FAIL here and a
+  WARN inside a deploy or rollback. Also the hourly copy's last line, the last restore check, the WAL archive (off and
+  empty, or the files left with `wal-cleanup`; with point-in-time recovery on, the last base backup), whether the
+  cron block is installed and current, and the escrow lines (section 6a). `atp.sh backup-status` gives the same ages
+  as one JSON line for an alert.
 - **Host:** public ports and disk use.
 
 It prints `health: OK` (exit 0), `health: FAILED` (exit 1), or `OWNER ACTION NEEDED` (exit 10). The status page
 (Z10 G7) will read the same endpoints.
+
+## 10b. Alerts to you (A2): the outside check, Telegram, e-mail and the error tracker
+
+`health` answers only when someone runs it. Three things now watch the platform by themselves:
+
+1. **The server checks** (`atp.sh ops-check`, every 5 minutes from the crontab that every `deploy` installs). The host
+   facts (the backup status of section 11, disk use, the HTTPS certificate's days left) go to
+   `backend/scripts/ops_check.py`, which adds the app's own checks: the API's error rate, the trading worker's
+   heartbeat, the data feed, broker logins (counts across all users), the database size, user alert delivery and
+   failed sign-ins. A problem is messaged once it has held for two runs (10 minutes); a failure that stays is
+   repeated every 6 hours; "OK again" is messaged once. A run while a deploy or a backup holds the lock is skipped.
+   Thresholds are settings (`OPS_*` in `backend/app/core/config.py`); the log is `.deploy/logs/ops-check.log`.
+   Admin console → System → **Alerts** shows the same checks, "Check now" and "Send a test".
+2. **The outside check** (GitHub Actions, `.github/workflows/uptime.yml`, every 10 minutes): `/` and
+   `/api/system/health` from GitHub's network. Two failed rounds in a row open an issue labelled `uptime` (GitHub
+   e-mails you), the first good round closes it.
+3. **The error tracker** (off until you give it a DSN): server errors with personal data removed.
+
+Your steps (once; names only - the values go into `/opt/atp/.env` or GitHub settings, never into git or chat):
+
+| Step | Where | What |
+|---|---|---|
+| a. Telegram for server alerts | Admin console → System → Alerts → **Connect Telegram** | Press Start in the chat that opens. Needs the platform bot (`ATP_TELEGRAM_BOT_TOKEN`, section 4) - the same bot users connect to; your operator chat is kept apart from every organisation. Alternative: the chat id in `OPS_ALERT_TELEGRAM_CHAT_ID`. Then **Send a test**. |
+| b. E-mail for server alerts | `.env` | `PLATFORM_SMTP_HOST`, `PLATFORM_SMTP_PORT`, `PLATFORM_SMTP_USERNAME`, `PLATFORM_SMTP_PASSWORD`, `PLATFORM_SMTP_FROM` (any SMTP provider, e.g. Brevo or Zoho free tiers). Alerts go to `OPS_ALERT_EMAIL` (comma-separated) or, when empty, to `SUPER_ADMIN_EMAILS`. |
+| c. The outside check's e-mail | github.com → your profile → Settings → Notifications | Keep "Issues" e-mails on for this repository (Watching or Participating). Nothing else to set: the workflow uses its own token. |
+| d. Telegram for the outside check (optional) | Repository → Settings → Secrets and variables → Actions → New repository secret | `UPTIME_TELEGRAM_BOT_TOKEN` (a bot from @BotFather - a separate one is best, so a server problem with the platform bot cannot silence it) and `UPTIME_TELEGRAM_CHAT_ID` (your chat with that bot). |
+| e. A free uptime service (recommended, RDY-8) | e.g. UptimeRobot or Better Stack free plan | Two HTTP checks: `https://aialgodesk.tech/` and `https://aialgodesk.tech/api/system/health`, alert after 2 failures, Telegram + e-mail. Its hosted status page can be the footer's Status link: build the frontend with `VITE_STATUS_PAGE_URL=https://...` (RDY-11). |
+| f. Error tracker (optional) | GlitchTip (glitchtip.com, free plan) or Sentry (free plan) → new project, platform Python | Copy the project's DSN into `.env` as `ERROR_TRACKER_DSN` (optionally `ERROR_TRACKER_ENVIRONMENT=production`). Deploy. Admin → System → Alerts then says "Error tracker: On". Leave empty to keep it off. |
+
+What the messages never contain: an e-mail address, a name, a chat id, a token or a host name - states and counts
+only. The error tracker removes tokens, keys, e-mail addresses, phone numbers, cookies, query strings and request
+bodies before an event leaves the server (`backend/app/observability/error_tracker.py`).
+
+The public status page (`/status`, flag `public_status_page` in Admin → Controls, off until you turn it on) shows
+up / degraded / maintenance and the open incidents. Open an incident in the admin console → System → Incidents and give it a
+**public note** (one sentence, at most 280 characters) - only that note is shown, never the title or the cause. The
+footer's Status link appears once the page is on (or at once with `VITE_STATUS_PAGE_URL`). The in-app page lives on
+this server, so during a full outage use the uptime service's page.
 
 ## 10a. PWA install on Android (manual check, D3)
 
@@ -399,12 +569,13 @@ window; the account and its alert settings stay on the server.
 
 | What | When | Where |
 |---|---|---|
-| Postgres dump (`pg_dump -Fc`, AES-256, SHA-256 sidecar, HMAC seal). Retention 14 days, never fewer than 7 files. | Compose `backup` service every 24 h; on `atp.sh backup`, which also seals the newest | volume `backups` |
-| Pre-migration dumps | before every migration | `backups/pre-migration/` (last 3 releases, outside the 14-day retention) |
-| WAL archive (point-in-time recovery, recovery point within 5 min) | continuous | volume `wal_archive` |
-| Files archive: `.deploy/` state plus `BACKUP_EXTRA_DIRS`, tar.gz, AES-256, SHA-256, HMAC seal. The newest 14 are kept. | cron 02:17 IST daily (`backup --scheduled`, which skips the dump if the service dumped within 20 h and seals the newest) | `/var/backups/atp-files` |
-| Off-site copy of all of the above | `offsite` service hourly; `atp.sh backup` | R2 `atp-backups/{backups,wal_archive,files}` |
-| Restore check | cron Sunday 03:43 IST; `atp.sh restore-check` | `.deploy/restore-checks.log` |
+| Postgres dump (`pg_dump -Fc`, AES-256, SHA-256 sidecar, HMAC seal). Daily: older than `BACKUP_RETENTION_DAYS` (7) go, never fewer than `BACKUP_KEEP_MIN` (7). | Compose `backup` service every 24 h; on `atp.sh backup`, which also seals the newest | volume `backups` |
+| Weekly and monthly copies: the first dump of each week / month, as a hard link (the same file, no extra space). The newest `BACKUP_KEEP_WEEKLY` (4) / `BACKUP_KEEP_MONTHLY` (6) are kept. | with each dump | `backups/weekly/`, `backups/monthly/` |
+| Pre-migration dumps | before every migration | `backups/pre-migration/` (last 3 releases, outside the daily retention) |
+| WAL archive | **off** (section 6c); with `PG_ARCHIVE_MODE=on`: continuous, pruned by the weekly base backup, never copied off the server | volume `wal_archive` |
+| Files archive: `.deploy/` state plus `BACKUP_EXTRA_DIRS`, tar.gz, AES-256, SHA-256, HMAC seal. The newest 14 are kept. | cron 02:17 IST daily (`backup --scheduled --verify`, which skips the dump if the service dumped within 20 h and seals the newest) | `/var/backups/atp-files` |
+| Off-site copy of the encrypted, sealed files above | `offsite` service hourly; `atp.sh backup` (then prunes R2 to the same counts) | R2 `atp-backups/{backups,backups-weekly,backups-monthly,files}` (section 6) |
+| Restore check | cron daily 02:17 IST (`--verify`, the newest R2 copy) and Sunday 03:43 IST; `atp.sh restore-check` | `.deploy/restore-checks.log` |
 
 **Only encrypted, sealed dumps are restored.**
 
@@ -455,6 +626,28 @@ Production is never written to. The market data lake is in Postgres (ADR-0013 ho
 database, follow `docs/OPERATIONS.md` 1.2 and 1.2a (`restore.sh` or the PITR drill) with the backup service's
 entrypoint overridden:
 `docker compose ... run --rm --entrypoint sh backup /scripts/restore.sh <file>`.
+
+## 11a. The restore rehearsal (CI)
+
+`deploy/ci/offsite_rehearsal.sh` runs in the `offsite` job of `.github/workflows/staging-stack.yml` (on every push to
+`main` and on any branch that changes the deploy bundle). It uses the real `atp.sh` and compose files on a throwaway
+clone, with an S3 stand-in for R2 (`rclone serve s3` in the offsite service's own image, over a directory on the
+runner):
+
+1. `deploy`, with R2 configured; a user signs up through the API;
+2. `backup --verify`: the encrypted dump and files archive go to the bucket, come back, and restore into a scratch
+   database (rows, schema, audit chain); the bucket is checked: sealed dumps under `backups/`, `backups-weekly/`,
+   `backups-monthly/`, the files archive, nothing in the clear, no WAL;
+3. `health` and `backup-status` show the off-site copy at 0 h;
+4. the server is lost: `down -v` removes the database and the backups volume; the clone, `.env` and files archive
+   are deleted. Only the bucket and the section 6a values are kept;
+5. a new clone with a `.env` built from those values only, then `restore-offsite` and `deploy`: deep health, the
+   secrets key opens every organisation's data key, the user from step 1 signs in, the audit chain is intact.
+
+The report is the job summary (artifact `offsite-rehearsal`). `backend/tests/test_backup_scripts.py` runs the same
+path at script level on every PR (backup -> off-site copy -> server gone -> fetch -> seal -> restore into a new
+database -> rows and audit chain). The bucket lock itself cannot be rehearsed in CI: check it once in the Cloudflare
+dashboard (section 6 step 3).
 
 ## 12a. The 500-user load test on this server (one command)
 

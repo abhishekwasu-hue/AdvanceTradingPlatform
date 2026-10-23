@@ -4,8 +4,8 @@
 #     the API, everything else to the frontend, /metrics not reachable from the internet;
 #   * the API bound to 127.0.0.1 only (deploy.sh and the host still reach it), the frontend not
 #     published at all - the only public ports are Caddy's 80/443;
-#   * an off-site copy of the backups and the WAL archive to an S3-compatible bucket (DigitalOcean
-#     Spaces) with rclone, hourly (scripts/backup/offsite_sync.sh).
+#   * an off-site copy of the encrypted backups to an S3-compatible bucket (DigitalOcean Spaces;
+#     Cloudflare R2 on Hostinger) with rclone, hourly (scripts/backup/offsite_sync.sh).
 #
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #   scripts/deploy.sh production          # pull/build -> migration guard -> rolling restart -> health
@@ -75,9 +75,9 @@ services:
       - frontend
     restart: unless-stopped
 
-  # Off-site copy of what the backup service writes. `copy` for the dumps (an off-site file is
-  # never deleted by a local retention run or a mistake on the host), `sync` for the WAL archive
-  # (mirrors the base-backup pruning so it cannot grow without bound).
+  # Off-site copy of what the backup service writes: `copy` (an off-site file is never deleted by a
+  # local retention run or a mistake on the host), encrypted and sealed files only. The WAL archive
+  # never leaves the host (A1, review R1: raw database pages) - so it is not mounted here.
   offsite:
     logging: *default-logging
     image: rclone/rclone:1
@@ -94,7 +94,6 @@ services:
     volumes:
       - ./scripts/backup:/scripts:ro
       - backups:/backups:ro
-      - wal_archive:/wal_archive:ro
     depends_on:
       - backup
     restart: unless-stopped

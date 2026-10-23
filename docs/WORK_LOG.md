@@ -3163,6 +3163,53 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   pre-fill as PAPER, T7 must fire / must not fire, no look-ahead, flags); vitest `src/ideas/ideas.test.tsx`; e2e
   `e2e/idea-library-v2.e2e.ts` (the idea library baselines updated: T7 scans, T5 note, the adopt card on A5). The
   fixture `e2e/fixtures/ideas_v2.json` is now the payload with strategy templates on; its pin is updated.
+## 23 Oct - TPL-F6: the swing structure made mirror-symmetric (DowTrend, SwingLabel, SwingBreakType; no migration)
+
+- Branch `claude/tpl-f6-dowtrend-mirror`. No migration, no flag, no route.
+- The asymmetry (OPEN_QUESTIONS TPL-F6): an equal swing high read LH and an equal swing low read LL - a tie read "lower"
+  on both sides. Now an equal swing does not extend the structure (an equal high LH, an equal low HL) in `Bars.dow` and
+  `SwingLabel`; SwingBreakType and the breakout templates' higher-timeframe filter read `Bars.dow`. ReversalAt was
+  already exact (now tested on tie-rich series). DowTrend / SwingBreakType get mirror rules (`screener/mirror.py`).
+- The params hash of a template that reads the structure records `STRUCTURE_VERSION` "2"; every other hash is unchanged.
+- Tests: `tests/test_tpl_f6_mirror.py` (mirror on every bar over random walks and series with equal highs / lows; fails
+  on the old rule, kept as `legacy_dow` in `tests/mirror_tie_fixtures.py`), the tx2 exactness cases, the E3 structure
+  regime and F2 seeds 2 / 4 / 5 back in their mirror tests, the AMW-3 label test on the new tie rule.
+- The signal count before / after (`backend/tests/tools/tpl_f6_signal_delta.py`, synthetic only): the table is in
+  docs/design/STRATEGY_TEMPLATES_IMPL.md "TPL-F6". Follow-up TPL-F9 (the zigzag's opening swing; the chart / Trade-port
+  structure) open with "unchanged" as the default.
+## 23 Oct - Production readiness A1: the off-site backup (WAL fix, schedule, retention, backup age, key escrow, clean-machine restore)
+
+- Branch `claude/readiness-a1-backup`. No migration, no flag, no route, no UI. Extends `deploy/atp.sh` and
+  `scripts/backup/`; nothing rewritten.
+- R1 (the WAL archive): `archive_mode=${PG_ARCHIVE_MODE:-off}` in `docker-compose.hostinger.yml` and the CI stack
+  (Postgres `stop_grace_period` 60 s for the one recreate); `offsite_sync.sh` copies only encrypted, sealed files
+  (anchored rclone filters) and never the WAL archive, which the offsite service no longer mounts;
+  `atp.sh wal-cleanup` empties what piled up (refuses while archiving is on); PITR later with `PG_ARCHIVE_MODE=on`:
+  `atp.sh base-backup` (pg_basebackup over the postgres container's socket -> `base_backup.sh --stdin`, encrypted +
+  sealed over "base/<stamp>/<file>", `start_wal`, archive pruned), weekly in cron; `pitr_restore.sh` reads it.
+- Schedule: the cron block is built by `schedule_block` - nightly 02:17 `backup --scheduled --verify` (copy, R2
+  retention, restore of the newest R2 copy), Sunday 03:43 `restore-check`, Saturday 04:29 `base-backup` with PITR on;
+  `health` says whether the block is installed and current.
+- Retention as settings: `backup.sh` keeps the first dump of each week / month as hard links in `weekly/` and
+  `monthly/` (4 / 6), daily 7 on Hostinger (seals now removed with their dump); `offsite_prune.sh` prunes R2 by the
+  same counts per prefix (`backups/`, `backups-weekly/`, `backups-monthly/`, `pre-migration/`, `files/`, `base/`),
+  never inside `OFFSITE_LOCK_DAYS` + 1, removing raw WAL left off-site; run after each copy by `atp.sh backup`.
+- Health: the last good backup, local and off-site (`.deploy/last_offsite_ok`, no longer only the container log),
+  with its age; older than `BACKUP_MAX_AGE_HOURS` (26) FAILs in `health`, WARNs inside a deploy; `atp.sh
+  backup-status` prints it as one JSON line (exit 1 on fail) for the A2 alert; escrow lines (since when the secrets
+  key and the backup passphrase are unchanged; a passphrase change is said and recorded once).
+- R2 (key escrow) and the clean machine: runbook sections 6 (bucket, versioning if offered, a required bucket lock,
+  no age lifecycle rule - the 35-day contradiction fixed, the bucket-scoped token, the six `.env` names atp.sh reads),
+  6a (the names to keep in the password manager + one offline copy), 6b (`atp.sh restore-offsite`: a new server's
+  EMPTY database from R2, seal checked, typed name; then `deploy`), 6c (WAL / PITR), 11 / 11a (the rehearsal).
+- Rehearsal: `deploy/ci/offsite_rehearsal.sh`, job `offsite` in `staging-stack.yml` (real atp.sh, an S3 stand-in
+  with `rclone serve s3`: deploy, backup --verify, bucket checked, server lost, new clone from the escrowed values,
+  restore-offsite, deploy, the old user logs in, audit chain); at script level on every PR in
+  `tests/test_backup_scripts.py` (real Postgres).
+- Tests: `tests/test_a1_offsite_backup.py` (tiers, filters, prune with the lock, base backup + PITR seal),
+  `tests/test_z11_deploy_bundle.py` (schedule, ages and FAIL / WARN, prune after copy, backup-status, wal-cleanup,
+  base-backup, escrow lines, restore-offsite and its refusals), `tests/test_hostinger_deploy.py` (compose defaults),
+  `tests/test_phase_ax_first_paper_day.py` (no WAL sync). Questions RDY-13..RDY-20.
 ## 23 Oct - F&O 8b FNO-8B-28 / FNO-8B-31: his own liquidity limits, the journal chart's Download image (behind ui_v2, PAPER only)
 
 - Branch `claude/fno8b-28-31`, on F&O 8b slice 4 (#408). Owner decisions of 23 Oct. No migration, no new flag, no new route.
@@ -3246,3 +3293,40 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   cell only (CC-13).
 - Tests: vitest `src/chart/gestures.test.ts`; e2e `e2e/chart-axes-v2.e2e.ts` (1440 and 390). The existing chart
   baselines still pass. Questions CC-11..14.
+## 23 Oct - Chart order (row 18), PR 1: one chart options builder + the R4 fix (no visual change)
+
+- Branch `claude/chart-core-options` (the first PR of `docs/design/CHART_COLOUR_REVIEW.md`'s sequence). No migration, no
+  flag, no route, no backend change.
+- `frontend/src/chart/chartOptions.ts`: the one builder of the theme-neutral options (gestures, kinetic scroll, the
+  price axis width, the right offset). `ChartCore` and ProChart's `baseOptions` both take it; the word-for-word copy in
+  ProChart is gone. The values are the same as before (the booleans `axisPressedMouseMove: true` /
+  `axisDoubleClickReset: true` are now the same full objects the library expanded them to).
+- R4: `LightweightEngine.setPanning` no longer writes `handleScroll: true, handleScale: true` (the library expanded
+  that into every sub-option, so after the first drawing drag a phone swipe stopped scrolling the page). The v2 core
+  owns the gesture state (`setInteraction`, suspend / resume); ProChart's engine writes the default state as full objects.
+- The fake library (`chart/lightweightFake.fixture.ts`) gains the price scale, the time scale's scroll position,
+  `resetTimeScale`, the crosshair handlers and `merged()` for the gesture tests of the next PR.
+- `components/CandleChart.tsx` removed: nothing rendered it (grep: no `<CandleChart` in `src/`, the build passes); its
+  types and `directionMarker` moved to `charting/markers.ts`.
+- Tests: vitest `src/chart/chartOptions.test.ts` (the builder, the R4 drag test, the ProChart path, the markers). The
+  chart e2e baselines are unchanged.
+
+## 23 Oct - Production readiness A2: monitoring and alerts to the operator
+
+- Branch `claude/readiness-a2-monitoring`, stacked on A1 (#422). **No migration** (state in `platform_controls` rows),
+  no new flag; new admin routes `/api/admin/ops-alerts[/run|/test|/telegram]` (SUPER_ADMIN + MFA, in the tenancy table).
+- Server checks: `backend/app/observability/ops_alerts.py` + `backend/scripts/ops_check.py`, run by `atp.sh ops-check`
+  (new cron line `2-59/5`, installed by every deploy; skipped while the deploy lock is held). Ten checks, dedup and
+  recovery messages to the operator Telegram chat (one-time code via the platform bot, or `OPS_ALERT_TELEGRAM_CHAT_ID`)
+  and SMTP (`OPS_ALERT_EMAIL`, else `SUPER_ADMIN_EMAILS`). Admin > System > Alerts card (`AlertsPanelV2`).
+- Outside check: `.github/workflows/uptime.yml` + `scripts/monitoring/uptime_check.py` (issue on two failures in a row,
+  closes on recovery; optional Telegram secrets, names only). actionlint clean.
+- Error tracker: `error_tracker.py`, Sentry SDK (`sentry-sdk` added to requirements) to `ERROR_TRACKER_DSN`, off when
+  unset; PII scrubber with tests.
+- Status page: maintenance headline, incident public notes (admin incidents card: note field, "Public note",
+  "Fix in place"), footer Status link (sidebar, More sheet, sign-in) behind `public_status_page` / `VITE_STATUS_PAGE_URL`.
+- Runbook section 10b (owner steps), `.env.example`, compose env names. Questions RDY-21..26.
+- Tests: `test_a2_monitoring.py`, `test_a2_error_tracker.py`, `test_a2_uptime_check.py`, two `atp.sh ops-check` cases in
+  `test_z11_deploy_bundle.py`; vitest `StatusLink.test.tsx`, `alertsPanel.test.tsx`; e2e `ops-alerts-v2.e2e.ts` with
+  baselines at 360 / 390 / 1440 light / dark; `admin-system-v2-*` baselines refreshed (the Alerts card is new).
+

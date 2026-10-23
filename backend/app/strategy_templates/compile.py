@@ -41,6 +41,10 @@ from app.strategy_templates.schema import (SIGNAL_TIMEFRAME, ContextSwitch, Setu
 Side = Literal["long", "short"]
 SIDES: Tuple[Side, ...] = ("long", "short")
 ENGINE_VERSION = "1"            # bumps when the state machine's semantics change (part of the params hash)
+# The swing-structure functions' semantics (part of the params hash of a template that reads one of them). "2" (TPL-F6):
+# an equal swing low reads as not lower (HL; it read LL), so an equal high and an equal low are mirror images.
+STRUCTURE_FUNCTIONS: Tuple[str, ...] = ("DowTrend", "SwingBreakType", "SwingLabel")
+STRUCTURE_VERSION = "2"
 
 
 class TemplateError(ValueError):
@@ -263,14 +267,24 @@ def _wave_settings_fingerprint(settings: Settings) -> str:
     return hashlib.sha256(json.dumps(effective, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
+def reads_structure(template: Template) -> bool:
+    """Does any part, variant or context of the template call a swing-structure function (STRUCTURE_FUNCTIONS)?"""
+    text = template.model_dump_json(by_alias=True)
+    return any(re.search(rf"\b{name}\s*\(", text) for name in STRUCTURE_FUNCTIONS)
+
+
 def params_hash(template: Template, settings: Settings) -> str:
     """R9 / section 4: what a signal's provenance records - the same template version, settings, price-action settings
     and engine semantics give the same hash (and the same signals, S11). A family G template also records the wave
-    reading's settings; every other family's hash is exactly what it was before family G."""
+    reading's settings; every other family's hash is exactly what it was before family G. A template that reads the swing
+    structure (STRUCTURE_FUNCTIONS) also records STRUCTURE_VERSION (TPL-F6: its signals changed on equal swings); every
+    other template's hash is exactly what it was before TPL-F6."""
     body = {"template": template.id, "version": template.version, "schema": "atp.template/1", "engine": ENGINE_VERSION,
             "timeframe": settings.timeframe, "sides": settings.sides, "params": settings.params, "pa_settings": _pa_settings_fingerprint()}
     if template.family == "G":
         body["wave_settings"] = _wave_settings_fingerprint(settings)
+    if reads_structure(template):
+        body["structure"] = STRUCTURE_VERSION
     return hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()[:20]
 
 
@@ -411,4 +425,5 @@ def validate_template(template: Template) -> List[str]:
 
 
 __all__ = ["TemplateError", "Settings", "Recipe", "Part", "resolve_settings", "compile_recipe", "compile_part", "validate_template",
-           "fill_timeframes", "chosen", "params_hash", "SIDES", "ENGINE_VERSION"]
+           "fill_timeframes", "chosen", "params_hash", "SIDES", "ENGINE_VERSION",
+           "STRUCTURE_FUNCTIONS", "STRUCTURE_VERSION", "reads_structure"]

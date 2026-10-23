@@ -49,6 +49,27 @@ const SYSTEM = {
   },
 };
 
+// A2: Admin > System > Alerts (the server checks and the operator channels).
+export const OPS = {
+  checked_at: T(2), source: "server",
+  checks: [
+    { key: "error_rate", label: "API error rate", state: "ok", detail: "0.1% of 1,240 requests since the last check failed with a server error.", source: "app", since: T(600), alerted: null },
+    { key: "worker", label: "Trading worker", state: "ok", detail: "Checking in every cycle.", source: "app", since: T(600), alerted: null },
+    { key: "data_feed", label: "Market data feed", state: "ok", detail: "Live decisions are getting fresh data. End-of-day data is up to date (2026-10-21).", source: "app", since: T(600), alerted: null },
+    { key: "broker_tokens", label: "Broker logins", state: "warn", detail: "14 broker connections: 11 working, 3 need a new login; 1 long-lived token expires within 7 days.", source: "app", since: T(240), alerted: "warn" },
+    { key: "backup", label: "Backups", state: "fail", detail: "Off-site copy 31 h old.", source: "server", since: T(90), alerted: "fail" },
+    { key: "disk", label: "Disk space", state: "ok", detail: "41% used.", source: "server", since: T(600), alerted: null },
+    { key: "db_size", label: "Database size", state: "ok", detail: "1.4 GB.", source: "app", since: T(600), alerted: null },
+    { key: "certificate", label: "HTTPS certificate", state: "ok", detail: "Valid for 62 more days.", source: "server", since: T(600), alerted: null },
+    { key: "alert_outbox", label: "Alert delivery", state: "ok", detail: "2 waiting.", source: "app", since: T(600), alerted: null },
+    { key: "sign_in_failures", label: "Failed sign-ins", state: "ok", detail: "3 in 15 minutes.", source: "app", since: T(600), alerted: null },
+  ],
+  schedule: { server_reported_at: T(2), late: false },
+  last_message: { at: T(85), lines: 1, delivered: true },
+  channels: { telegram: { available: true, connected: true, from: "linked", pending: false }, email: { available: true, recipients: 1 } },
+  error_tracker: { on: false },
+};
+
 const USERS = { totals: { users: 4, active_7d: 3, signups_7d: 1 }, users: [
   { id: 14, email: "ne*****@example.com", role: "OWNER", active: true, mfa: false, email_verified: true, tenant_id: 9, tenant: "ne*****@example.com",
     plan: "Free", tenant_status: "active", signed_up_at: T(60 * 30), last_seen_at: T(45) },
@@ -145,6 +166,7 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
   await page.route(A("/market-holidays(\\?.*)?$"), ok([{ id: 1, exchange: "NSE", holiday_date: "2026-11-09", description: "Diwali Balipratipada" }]));
   await page.route(A("/admin/system-watchlists$"), ok({ last_refresh: null, history: [], lists: 0, groups: { INDICES: 0, INDEX_STOCKS: 0, SECTORS: 0, FNO: 0 }, universe_sync_enabled: false, refresh_hour_ist: 18 }));
   await page.route(A("/admin/console/system$"), ok(SYSTEM));
+  await page.route(A("/admin/ops-alerts$"), ok(OPS));
   await page.route(A("/admin/console/users(\\?.*)?$"), ok(USERS));
   await page.route(A("/admin/console/ai-cost(\\?.*)?$"), ok(AI_COST));
   await page.route(A("/admin/console/support/users/12$"), ok(SUPPORT_USER));

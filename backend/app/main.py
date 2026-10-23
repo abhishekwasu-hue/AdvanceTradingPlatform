@@ -88,13 +88,16 @@ from app.watchlists.system_routes import admin_router as system_watchlists_admin
 from app.watchlists.system_routes import router as system_watchlists_router
 from app.chart_analyze.routes import admin_router as chart_analyze_admin_router, router as chart_analyze_router
 from app.signals_feed.routes import router as signals_feed_router
+from app.signals_feed.day_one_routes import router as signals_day_one_router
 from app.me.prefs import router as me_prefs_router
 from app.rhythm.routes import router as rhythm_router
 from app.option_chain.ask_routes import router as oc_ask_router
 from app.me.setup import router as me_setup_router
 from app.context_panel.routes import router as context_panel_router
 from app.markets.routes import router as markets_router
+from app.growth.routes import admin_router as growth_admin_router
 from app.growth.routes import router as growth_router
+from app.learn.routes import router as learn_router
 from app.paper.ticket_routes import router as paper_ticket_router
 from app.paper.fno_routes import router as paper_fno_router
 from app.paper.fno_insights_routes import router as paper_fno_insights_router
@@ -104,6 +107,7 @@ from app.webhooks.routes import router as webhooks_router
 from app.workers.routes import router as workers_router
 from app.deployments.routes import router as deployments_router
 from app.alerts.routes import router as alerts_router
+from app.mobile.devices import router as mobile_devices_router
 from app.team.routes import router as team_router
 from app.admin.routes import router as admin_router
 from app.admin.console import router as admin_console_router
@@ -152,6 +156,7 @@ from app.screener.board import router as screener_board_router
 from app.screener.library_routes import router as screener_library_router
 from app.screener.version_routes import router as screener_version_router
 from app.screener.etf_routes import router as screener_etf_router
+from app.screener.universes import router as screener_universes_router
 from app.lab.pine.routes import router as lab_pine_router
 from app.strategy_templates.routes import router as strategy_templates_router
 from app.idea_library.routes import router as idea_library_router
@@ -174,6 +179,7 @@ from app.beta.routes import admin_router as beta_admin_router, feedback_router, 
 from app.journal.routes import router as journal_router
 from app.legal.routes import router as legal_router
 from app.support.routes import router as support_router
+from app.support.desk_routes import admin_router as support_desk_admin_router, router as support_desk_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 from app.platform.deployment_phase import on_startup as deployment_phase_startup
 
@@ -241,6 +247,47 @@ app.add_middleware(_LimitRequestBody)
 app.add_middleware(ViewSessionReadOnly)
 
 
+# A4: the API's own security headers, so they hold even where no Caddy stands in front (the IP edge, a dev host, the CI
+# stack). Caddy's edge values replace these in production (deploy/Caddyfile); a header a route set itself is kept.
+API_SECURITY_HEADERS = (
+    (b"x-content-type-options", b"nosniff"),
+    (b"x-frame-options", b"DENY"),
+    (b"referrer-policy", b"no-referrer"),
+    # JSON needs nothing; the one HTML page (the e-mail unsubscribe form) needs its inline style and its own form target.
+    (b"content-security-policy", b"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; "
+                                 b"base-uri 'none'"),
+    (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
+)
+HSTS_HEADER = (b"strict-transport-security", b"max-age=31536000; includeSubDomains")
+
+
+class _SecurityHeaders:
+    """Pure ASGI (LD-7): adds the headers to every `/api` response; HSTS only over HTTPS (the proxy's X-Forwarded-Proto,
+    trusted only from FORWARDED_ALLOW_IPS)."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or not str(scope.get("path", "")).startswith("/api"):
+            await self.app(scope, receive, send)
+            return
+        extra = API_SECURITY_HEADERS + ((HSTS_HEADER,) if scope.get("scheme") == "https" else ())
+
+        async def _send(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers") or [])
+                present = {name.lower() for name, _ in headers}
+                headers.extend((name, value) for name, value in extra if name not in present)
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, _send)
+
+
+app.add_middleware(_SecurityHeaders)
+
+
 # Outermost: request id, /api/v1 alias, HTTP metrics (Phase E1/E2). Added before CORS so CORS
 # wraps it and its headers are still applied to the rewritten request.
 app.add_middleware(ObservabilityMiddleware)
@@ -251,7 +298,8 @@ app.add_middleware(
     allow_headers=["*"],
     # OC1: a cross-origin page (the Android app) may read these response headers - the request id support asks for, and
     # the data tier of a refused market-data read ("C": not live on this plan).
-    expose_headers=["X-Request-ID", "X-Data-Tier"],
+    # A4: X-Step-Up too, so the app can ask for the authenticator code when an admin change needs a fresh check.
+    expose_headers=["X-Request-ID", "X-Data-Tier", "X-Step-Up"],
 )
 
 
@@ -281,6 +329,7 @@ app.include_router(telegram_inbound_router)  # Phase BE: Telegram inbound
 app.include_router(workers_router)
 app.include_router(deployments_router)
 app.include_router(alerts_router)
+app.include_router(mobile_devices_router)  # B8: the caller's own phones for app notifications (flag mobile_push)
 app.include_router(team_router)
 app.include_router(admin_router)
 app.include_router(admin_console_router)  # MO3 (a): the admin console's read-only sections (SUPER_ADMIN + two-factor)
@@ -338,6 +387,7 @@ app.include_router(screener_board_router)  # U5 D3a: result-board heatmap / char
 app.include_router(screener_library_router)  # U9 TX2: confluence, mirrors, watch-then-trigger lists (flag screener_tx2, off)
 app.include_router(screener_version_router)  # LAB-18 (AMW-7): a saved screen's versions (flag screener_copilot, off)
 app.include_router(screener_etf_router)  # S10 J: the ETF screen on the shared EOD history (flag screener_etf, off)
+app.include_router(screener_universes_router)  # owner 23 Oct: the lists a scan runs on and the batch plan (flag screener_v2)
 app.include_router(alert_rules_router)
 app.include_router(scan_then_router)
 app.include_router(alert_links_router)
@@ -364,6 +414,7 @@ app.include_router(system_watchlists_admin_router)  # WL1: the admin's view of t
 app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a chart image, educational reading (flag chart_analyze, off)
 app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)
 app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)
+app.include_router(signals_day_one_router)  # Signals day one: the setup card + his adopted watch (ui_v2 + strategy_templates)
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
 app.include_router(rhythm_router)     # MO4: the daily rhythm - pre-market brief, pulse, closing wrap, weekly review (flags ui_v2 + daily_rhythm)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
@@ -371,12 +422,16 @@ app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(markets_router)   # MO4 slice 2: the Sector & index view (flags ui_v2 + markets_view)
 app.include_router(growth_router)    # MO4 slice 3: the plan page + usage meter, the discipline share card (flags ui_v2 + growth_v2)
+app.include_router(growth_admin_router)  # C13: the referral reward wording (SUPER_ADMIN + two-factor)
+app.include_router(learn_router)     # C13: the Learn section (ui_v2 + learn), the public marketing pages (marketing_site)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(paper_fno_router)       # FNO-1: trading from the option chain, PAPER only (flags ui_v2 + paper_account)
 app.include_router(paper_fno_insights_router)  # F&O 8b slice 1: risk budget + setup-aware strikes, read-only (ui_v2)
 app.include_router(paper_fno_journal_router)  # F&O 8b slice 3: the auto journal drafts + the signal link (ui_v2 + PAPER account)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
 app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)
+app.include_router(support_desk_router)    # C12: Help centre, Report a problem, contact link (ui_v2 + help_centre, off by default)
+app.include_router(support_desk_admin_router)   # C12: the support tickets and desk settings (SUPER_ADMIN + two-factor)
 
 _default_risk_config = RiskConfig()
 

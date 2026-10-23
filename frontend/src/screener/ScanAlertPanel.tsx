@@ -26,6 +26,9 @@ export interface ScanAlertPanelProps {
   /** Saves the scan as it is now and gives its id (null when it could not be saved; the page says why). */
   save: () => Promise<number | null>;
   intrabar?: boolean;
+  /** Owner order 23 Oct (ui_v2): the universe the scan runs on, and how many stocks it holds (an alert watches up to 50). */
+  universeName?: string;
+  universeTotal?: number;
   api?: ScanAlertApi;
   initialRules?: ScanAlertRule[];
 }
@@ -48,7 +51,8 @@ export function ruleLine(r: ScanAlertRule): string {
   return `${r.status === "active" ? "On" : "Paused"} · ${whenLine(r.base_tf, r.fire_on ?? "bar_close")} · ${n} ${n === 1 ? "symbol" : "symbols"}`;
 }
 
-export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, intrabar = false, api = scanAlertsApi, initialRules }: ScanAlertPanelProps) {
+export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, intrabar = false, universeName, universeTotal, api = scanAlertsApi,
+  initialRules }: ScanAlertPanelProps) {
   const [rules, setRules] = useState<ScanAlertRule[]>(initialRules ?? []);
   const [fireOn, setFireOn] = useState<"bar_close" | "intrabar">("bar_close");
   const [busy, setBusy] = useState(false);
@@ -95,9 +99,14 @@ export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, 
       ) : (
         <>
           <p className="text-fg">
-            ATP {whenLine(scanTf, fireOn)} for “{name.trim() || "My scan"}” on your {symbols.length} {symbols.length === 1 ? "symbol" : "symbols"}, and
-            tells you when one matches.
+            ATP {whenLine(scanTf, fireOn)} for “{name.trim() || "My scan"}” on {universeName ? <>{universeName} ({symbols.length} {symbols.length === 1 ? "stock" : "stocks"})</>
+              : <>your {symbols.length} {symbols.length === 1 ? "symbol" : "symbols"}</>}, and tells you when one matches.
           </p>
+          {universeName && universeTotal != null && universeTotal > symbols.length && (
+            <p className="text-t12 text-fg-muted" data-testid="scan-alert-first">
+              An alert watches up to {symbols.length} stocks, so this one watches the first {symbols.length} of the {universeTotal} in {universeName}.
+            </p>
+          )}
           <fieldset className="space-y-2">
             <legend className="text-t12 text-fg-muted">When to check</legend>
             <label className="flex items-start gap-2">

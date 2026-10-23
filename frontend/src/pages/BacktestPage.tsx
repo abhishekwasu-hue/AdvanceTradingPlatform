@@ -11,6 +11,8 @@ import {
 } from "../types";
 import { useAuth } from "../auth/AuthContext";
 import { PageHeader } from "../components/primitives";
+import { useUiV2 } from "../ui/useFeatures";
+import { Database } from "lucide-react";
 
 const INDEX_START_PRICES: Record<string, number> = { NIFTY: 24500, "NIFTY 50": 24500, BANKNIFTY: 52500, "NIFTY BANK": 52500, FINNIFTY: 23500, MIDCPNIFTY: 12500, SENSEX: 80500, BANKEX: 60500 };
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -42,7 +44,9 @@ export default function BacktestPage() {
   const [strategyId, setStrategyId] = useState("");
   const [symbol, setSymbol] = useState("NIFTY");
   const [bars, setBars] = useState(600);
-  const source = useCandleSource(30);          // Phase AA
+  const source = useCandleSource(30, { storedHistory: true });   // Phase AA; owner order 23 Oct: stored Daily history without a broker
+  const uiV2 = useUiV2();
+  const [pricesFrom, setPricesFrom] = useState<string | null>(null);
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -198,6 +202,7 @@ export default function BacktestPage() {
       if (!candles?.length) throw new Error(`No candles for ${symbol}`);
       const res = await api.backtest(selected.id, symbol, primaryTf, candles, exitRules(), fetched.label, optionConfig());
       setResult(res);
+      setPricesFrom(fetched.line);
       setChartCandles(candles);
       setMonteCarlo(null);
       setWalkForward(null);
@@ -467,6 +472,11 @@ export default function BacktestPage() {
 
       {result && (
         <>
+          {uiV2 && pricesFrom && (
+            <p data-testid="prices-from" className="flex items-center gap-2 text-sm text-fg-muted">
+              <Database size={16} aria-hidden className="shrink-0" />{pricesFrom}
+            </p>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatTile label="Total Trades" value={result.total_trades} />
             <StatTile label="Win Rate" value={`${result.win_rate.toFixed(1)}%`} />

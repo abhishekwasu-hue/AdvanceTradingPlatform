@@ -59,11 +59,21 @@ export const DEMO_ACTIVATION: Activation = {
     { key: "activated", label: "All three (activated)", count: 2 },
   ],
   median_hours_to_activation: 30.5,
+  // Readiness C13: the growth funnel over the people whose first week is over (the two below are still in it).
+  growth_funnel: {
+    steps: [
+      { key: "signed_up", label: "Signed up", count: 8 },
+      { key: "broker", label: "Connected a broker", count: 5 },
+      { key: "paper_bot", label: "Started a paper bot", count: 3 },
+      { key: "active_week1", label: "Active in week 1", count: 2 },
+    ],
+    week1_open: 2,
+  },
   people: [
     { id: 41, email: "fi**@example.com", tenant: "fi**@example.com", plan: "Free", signed_up_at: "2032-03-10T04:00:00+00:00",
       broker_at: "2032-03-10T05:00:00+00:00", paper_bot_at: "2032-03-10T06:00:00+00:00", journal_at: "2032-03-11T10:00:00+00:00",
-      activated_at: "2032-03-11T10:00:00+00:00" },
+      activated_at: "2032-03-11T10:00:00+00:00", active_week1: true },
     { id: 42, email: "se****@example.com", tenant: "Desk Two", plan: "Pro", signed_up_at: "2032-03-12T04:00:00+00:00",
-      broker_at: "2032-03-12T05:00:00+00:00", paper_bot_at: null, journal_at: null, activated_at: null },
+      broker_at: "2032-03-12T05:00:00+00:00", paper_bot_at: null, journal_at: null, activated_at: null, active_week1: null },
   ],
 };

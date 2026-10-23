@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.ai.rate_limit import ai_rate_limit
-from app.auth.routes import forgot_rate_limit, login_rate_limit, mfa_rate_limit, refresh_rate_limit, register_rate_limit
+from app.auth.routes import (forgot_rate_limit, login_rate_limit, mfa_rate_limit, mfa_user_rate_limit, password_change_rate_limit,
+                             refresh_rate_limit, register_rate_limit, resend_user_rate_limit)
 from app.brokers.routes import oauth_callback_rate_limit
 from app.brokers.models import BrokerProfile
 from app.db.base import Base
@@ -41,6 +42,11 @@ app.dependency_overrides[login_rate_limit] = lambda: None
 app.dependency_overrides[refresh_rate_limit] = lambda: None
 app.dependency_overrides[forgot_rate_limit] = lambda: None
 app.dependency_overrides[mfa_rate_limit] = lambda: None
+# A4: the per-account limits on the signed-in code checks, password change and verification resend likewise
+# (tests/test_a4_security.py re-enables them).
+app.dependency_overrides[mfa_user_rate_limit] = lambda: None
+app.dependency_overrides[password_change_rate_limit] = lambda: None
+app.dependency_overrides[resend_user_rate_limit] = lambda: None
 # H-C1 b: the AI rate limit likewise (one test may run several heavy AI jobs within a minute);
 # tests/test_hc1_ai_rate_limit.py re-enables it.
 app.dependency_overrides[ai_rate_limit] = lambda: None

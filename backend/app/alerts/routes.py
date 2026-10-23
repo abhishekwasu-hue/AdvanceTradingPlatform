@@ -94,8 +94,11 @@ async def _s10_gate(session: AsyncSession, user: User, kind: str, config: Any) -
 
 @router.get("/push/public-key")
 async def push_public_key(user: User = Depends(get_current_user)) -> dict:
-    """Phase O3: the VAPID public key the browser passes as `applicationServerKey`."""
-    return {"public_key": webpush.public_key_b64(), "configured": webpush.configured()}
+    """Phase O3: the VAPID public key the browser passes as `applicationServerKey`. B8: `accepting` is false while the
+    server runs on a throwaway key in production, so the page says so instead of subscribing a device that would die."""
+    accepting = webpush.accepting_subscriptions()
+    return {"public_key": webpush.public_key_b64(), "configured": webpush.configured(), "accepting": accepting,
+            "message": None if accepting else webpush.NOT_SET_UP}
 
 
 @router.get("", response_model=List[AlertChannelResponse])
@@ -116,9 +119,16 @@ async def upsert_alert_channel(
     """Creates or updates the tenant's channel of this type. Secrets left blank on an update keep
     their stored value; the API never returns them."""
     kind = _channel_type_or_404(channel_type)
+    if kind == AlertChannelType.FCM.value:
+        # B8: phone devices are registered by the app itself (POST /api/mobile/devices), never typed in here.
+        raise HTTPException(status_code=400, detail="Phone notifications are turned on in the AiAlgoDesk app on your phone.")
+    incoming = dict(request.config)
+    if kind == AlertChannelType.PUSH.value and (incoming.get("subscription") or incoming.get("subscriptions")) \
+            and not webpush.accepting_subscriptions():
+        # B8: never take a subscription signed for a throwaway key - it would stop working at the next restart, silently.
+        raise HTTPException(status_code=409, detail=webpush.NOT_SET_UP)
     record = await _get_channel(session, user.tenant_id, kind)
     existing_raw = decrypt_raw(record) if record is not None else None
-    incoming = dict(request.config)
     if kind == AlertChannelType.TELEGRAM.value:
         # Phase BE: the inbound settings are owner-only and flag-gated (PUT /api/telegram/inbound); this
         # endpoint never sets them - whatever is stored is carried over, whatever was sent is dropped.

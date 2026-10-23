@@ -76,6 +76,27 @@ def configured() -> bool:
     return bool(getattr(config, "VAPID_PRIVATE_KEY", None))
 
 
+NOT_SET_UP = ("Browser notifications are not set up on this server yet. Your alerts still reach you in the app and on "
+              "Telegram.")
+
+
+def accepting_subscriptions(environment: Optional[str] = None) -> bool:
+    """B8: may a browser subscribe now? Not in production / staging while the key is the throwaway one generated at start-up:
+    every such subscription would die silently at the next restart (the browser keeps a key the server no longer has).
+    A development or test box keeps the ephemeral key working, as before."""
+    if configured():
+        return True
+    return (environment or getattr(config, "ENVIRONMENT", "development")) not in getattr(config, "HARDENED_ENVIRONMENTS", ())
+
+
+def status_line() -> str:
+    """The plain sentence the readiness list and the operator see about the Web Push key."""
+    if configured():
+        return "Browser notifications: the VAPID key is set (VAPID_PRIVATE_KEY); subscriptions survive restarts."
+    return ("Browser notifications: VAPID_PRIVATE_KEY is not set - the server uses a throwaway key, so new browser "
+            "subscriptions are refused until the key is set (runbook section 4).")
+
+
 def generate_keypair() -> Dict[str, str]:
     key = ec.generate_private_key(ec.SECP256R1())
     raw = key.private_numbers().private_value.to_bytes(32, "big")

@@ -2,6 +2,7 @@ import { Bell, LifeBuoy, Menu, MessageSquarePlus, UserCircle2 } from "lucide-rea
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
+import StepUpHost from "./components/StepUpHost";
 import ViewAsBanner from "./admin/ViewAsBanner";
 import { ThemeToggle } from "./components/AppearanceCard";
 import BottomNav from "./components/BottomNav";
@@ -25,6 +26,8 @@ import { setV2ThemeDefault } from "./theme";
 import { useTextSizeSync } from "./appearanceSync";
 import { FeaturesProvider, useFeatures, useUiV2, v2ThemeDefaultFrom } from "./ui/useFeatures";
 import type { SystemStatus } from "./types";
+import { codeFromSearch, rememberCode } from "./growth/referral";
+import { SITE_SLUGS, sitePath } from "./site/site";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
 const ContractChartWindow = lazy(() => import("./pages/ContractChartWindow"));
@@ -45,6 +48,8 @@ const SupportDialog = lazy<ComponentType<SupportDialogProps>>(
   () => import("./support/SupportDialog").catch(() => ({ default: () => null })),
 );
 const LegalPage = lazy(() => import("./legal/LegalPage"));
+// Readiness C13: the public marketing pages (flag `marketing_site`), their own chunk; the invite link's code is kept.
+const SitePage = lazy(() => import("./site/SitePage"));
 // UI2-1: the v2 shell (sidebar sections, bottom bar + More sheet, command bar, /charts, broker gate on data pages) -
 // its own chunk, loaded only while `ui_v2` is on for the organisation.
 const AppShellV2 = lazy(() => import("./shell/AppShellV2"));
@@ -273,6 +278,8 @@ function ShellFeatures({ children }: { children: ReactNode }) {
     <FeaturesProvider userKey={user?.id ?? null}>
       <FeaturesFreshness />
       <V2ThemeDefault />
+      {/* A4: an admin change after the two-factor window asks for the code here, then goes through (both shells). */}
+      <StepUpHost enabled={user?.role === "SUPER_ADMIN"} />
       {children}
     </FeaturesProvider>
   );
@@ -316,6 +323,9 @@ export default function App() {
       </ErrorBoundary>
     );
   }
+  // Readiness C13: an invite link (`/?ref=CODE`) - the code is kept until the new account names it (ReferralClaimHost).
+  const ref = codeFromSearch(window.location.search);
+  if (ref) rememberCode(ref);
   // `?chart=SYMBOL` is a chart opened in its own browser tab (a chart's "New tab" button): just the chart, no shell.
   // `?workspace=1` (CH5) is the multi-chart workspace, also on its own.
   const params = new URLSearchParams(window.location.search);
@@ -349,6 +359,11 @@ export default function App() {
               <Route path="/legal/:slug" caseSensitive element={
                 <ErrorBoundary title="The legal page"><Suspense fallback={null}><LegalPage /></Suspense></ErrorBoundary>
               } />
+              {SITE_SLUGS.map((slug) => (
+                <Route key={slug} path={sitePath(slug)} caseSensitive element={
+                  <ErrorBoundary title="The page"><Suspense fallback={null}><SitePage /></Suspense></ErrorBoundary>
+                } />
+              ))}
               <Route path="*" element={<SignInGate><Shell /></SignInGate>} />
             </Routes>
           )}

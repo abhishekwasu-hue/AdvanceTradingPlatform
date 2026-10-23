@@ -36,6 +36,9 @@ Run these as the `atp` user on the server (`ssh atp@<SERVER_IP>`). Each one is s
 | A new server after the old one is lost: fill its empty database from R2 (section 6b) | `/opt/atp/deploy/atp.sh restore-offsite` |
 | Point-in-time recovery only: an encrypted base backup now (section 6c) | `/opt/atp/deploy/atp.sh base-backup` |
 | Release history | `/opt/atp/deploy/atp.sh releases` |
+| Set one of the universe / instrument sync switches in `.env` (allowlisted non-secret keys only; backup first; section 4c) | `/opt/atp/deploy/atp.sh env-set UNIVERSE_SYNC_ENABLED=true` |
+| Fill the system watchlists now: file check, instrument master, universe sync, lists refresh, counts (section 4c) | `/opt/atp/deploy/atp.sh lists-sync` |
+| Only check that every published list file answers (HTTP status per file; nothing written) | `/opt/atp/deploy/atp.sh lists-sync --check` |
 | The 500-user load test against this server (its own copy of the stack, section 12a) | `/opt/atp/deploy/ci/loadtest_500.sh` |
 | The 500-session load test against the production stack itself, in NSE market hours, with memory sampled (section 12b) | `/opt/atp/deploy/atp.sh loadtest` |
 | Remove a load-test run's synthetic organisation by hand (section 12b) | `/opt/atp/deploy/atp.sh loadtest-cleanup --list` |
@@ -140,6 +143,25 @@ The script reads these optional settings too, but only to report on them (it nev
   the webhook once after the deploy as the platform admin: `POST /api/admin/telegram/platform/register`. Users then
   tap Connect Telegram, press Start in Telegram, and their alerts arrive there; no token or chat id is typed by anyone.
 
+- **Browser and phone notifications (readiness B8).** `health` prints one line for each.
+  - `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (browser notifications, Web Push). Without the key the server makes a
+    throwaway one at every start, so a browser that subscribed would stop getting notifications after the next deploy
+    without anyone noticing. The app therefore **refuses new browser subscriptions** until the key is set, and
+    `health` warns: `browser notifications (Web Push): VAPID_PRIVATE_KEY is not set`. To set it, once:
+    1. Make a key pair with the backend image (it prints two lines and changes nothing):
+       `su - atp -c "cd /opt/atp && docker compose -p atp exec -T backend python -m app.alerts.webpush"`
+    2. `nano /opt/atp/.env`: paste the `VAPID_PRIVATE_KEY=...` line, and set `VAPID_SUBJECT=mailto:<your contact e-mail>`.
+       The `VAPID_PUBLIC_KEY` line is for your notes only (the app works it out from the private key).
+    3. Keep the private key in your password manager (section 6a). Never change it later: a new key drops every
+       browser's subscription (users must press Enable again).
+    4. Deploy (the one deploy line). `health` then says `VAPID_PRIVATE_KEY set - subscriptions survive restarts`.
+  - `FCM_SERVICE_ACCOUNT_JSON_BASE64` (phone notifications for the Android app; optional, MA-2 in
+    docs/OPEN_QUESTIONS.md): the Firebase service account key file, base64 on one line (`base64 -w0 <file>` on your
+    own computer), pasted as the value. `FCM_PROJECT_ID` may stay empty (it is read from the key).
+    `FCM_SERVICE_ACCOUNT_FILE` is an alternative path inside the containers and needs a mount; the base64 value needs
+    none. Empty = nothing is sent to phones (an `info` line, never a failure). Phones get notifications only after the
+    `mobile_push` flag is also turned on in Admin → Controls.
+
 Then run `/opt/atp/deploy/atp.sh install`.
 
 ## 4a. Phase 0 flags (nothing to set)
@@ -181,6 +203,46 @@ Set both flags explicitly in Admin when you leave Phase 0. If the first-boot see
 stored flags row was unreadable and the seed skipped it), switching the mode puts any absent entry back on the normal
 default: `live_trading` ON (it is a kill flag) and `phase0_paper_only` OFF. In Phase 0 mode those absent entries
 resolved to the safe values only because of the mode.
+
+## 4b. Trader features (one button)
+
+After the first deploy, **Admin → Controls → Enable trader features** turns on, in one step, every switch a trader
+needs (the Copilot, strategy templates and the Pine Lab, the screens, the idea library, watchlists, the chart tools,
+the paper account and its risk tools). Each switch it changes is in the audit log (`feature_flag_set`, then
+`trader_pack_enabled`). It never touches `live_trading`, `phase0_paper_only`, `marketplace`, `public_api`,
+`self_signup`, `scan_auto_paper` or any owner-decision flag, so the deploy's flag check (section 4a) stays green.
+The card lists each feature as Working / Needs setup / On / Off; **Undo** puts every switch back exactly as it was
+before the first enable. No migration, nothing to run on the server.
+
+## 4c. The system watchlists: switch the universe sync on (WL1-4, owner decision 23 Oct)
+
+The Indices / Index stocks / Sectors / F&O lists every user sees on Charts are built from the published NSE and
+niftyindices files (names only - symbols and company names, no prices; nothing from them is committed to git). The
+download is off until `.env` says `UNIVERSE_SYNC_ENABLED=true`; `INSTRUMENT_SYNC_EXCHANGES=NSE,BSE` adds SENSEX and
+BANKEX. One block, pasted as root (as `atp` drop the `su` wrapper):
+
+```
+su - atp -c "/opt/atp/deploy/atp.sh deploy && /opt/atp/deploy/atp.sh env-set UNIVERSE_SYNC_ENABLED=true INSTRUMENT_SYNC_EXCHANGES=NSE,BSE && /opt/atp/deploy/atp.sh lists-sync"
+```
+
+- `deploy` first: it brings the release that has `env-set` and `lists-sync` (no migration).
+- `env-set` copies `.env` to `/opt/atp/.deploy/env-backups/env.<UTC time>` (mode 600, the newest 10 kept), then sets
+  the two keys: a key already there is replaced on its own line, a missing key is appended, every other line stays
+  byte for byte. A second run prints `.env unchanged - nothing written`. It accepts only `UNIVERSE_SYNC_ENABLED`,
+  `UNIVERSE_SYNC_HOUR_IST`, `INSTRUMENT_SYNC_EXCHANGES` and `INSTRUMENT_SYNC_HOUR_IST` - never a secret or a LIVE
+  switch (those are edited by hand).
+- `lists-sync` refuses (exit 2) unless `UNIVERSE_SYNC_ENABLED` is true. Then, in a one-off container of the worker
+  image: one HTTP status line per published file (the WL1-5 file names verified from this server), the instrument
+  master for `INSTRUMENT_SYNC_EXCHANGES`, the universe sync on the files just downloaded (the nightly job's quality
+  gates: a short file, a big churn or a changed layout is refused and the list keeps what it had), the system lists
+  rebuilt, and per group every list with its row count and the symbols that did not map to the instrument master.
+  Then the API and the worker are recreated with the new settings (only when they changed; the worker restart goes
+  through the session gate, exit 3 while a session is open with positions). From then on the worker repeats the sync
+  every evening after `UNIVERSE_SYNC_HOUR_IST` (18:00 IST) with NSE closed.
+- A file that answers 404 is skipped and its list is left as it was; send the status lines and the name is fixed in
+  `backend/app/universe/data/indices.json` (`lists-sync --check` re-checks without writing anything).
+- The same lists and the unmapped symbols are on Admin console > System watchlists; "Refresh now" there rebuilds from
+  the tables held (no download).
 
 ## 5. DNS and TLS
 
@@ -295,7 +357,9 @@ stick kept away from the laptop), never in git, chat, e-mail or a screenshot:
 | `OFFSITE_S3_ENDPOINT`, `OFFSITE_S3_ACCESS_KEY`, `OFFSITE_S3_SECRET_KEY`, `OFFSITE_REMOTE` | how the new server reads R2. If they are lost, create a new bucket-scoped token (section 6 step 5) from your Cloudflare account |
 
 Everything else in `.env` can be set again from its provider's console (`METRICS_TOKEN`: a new random value;
-`ATP_TELEGRAM_BOT_TOKEN`: @BotFather; `GOOGLE_OAUTH_*`: Google Cloud console; `DOMAIN`, `ACME_EMAIL`: you know them).
+`ATP_TELEGRAM_BOT_TOKEN`: @BotFather; `GOOGLE_OAUTH_*`: Google Cloud console; `FCM_SERVICE_ACCOUNT_JSON_BASE64`: a new
+key from the Firebase console; `DOMAIN`, `ACME_EMAIL`: you know them). Keep `VAPID_PRIVATE_KEY` too: a new one works,
+but every browser must turn notifications on again.
 
 **Check your copy matches.** `health` prints `escrow: SECRETS_ENCRYPTION_KEY unchanged since <date>` and
 `escrow: BACKUP_ENCRYPTION_PASSPHRASE unchanged since <date>`. If you change the passphrase later, `health` says so
@@ -352,6 +416,44 @@ replayed (readiness review R1). Now:
   R2 and prunes the archive before the oldest of the newest `BASE_BACKUP_KEEP` (4). `health` shows the last base
   backup and fails after 8 days without one. The archive itself stays on this server: recovery to an instant is for
   a mistake on a living server (`docs/OPERATIONS.md` 1.2a), and the off-site recovery point stays the nightly dump.
+
+## 6d. Secret rotation: every server secret by name (A4)
+
+Every value below lives only in `/opt/atp/.env` (mode 600) or in an outside console; none is ever in git, a log, a
+screenshot or chat. **The encryption keys are backed up separately from the data backup**: the backup archives leave
+`.env` out on purpose, and section 6a is where those values are escrowed. After any rotation, update the escrow copy
+the same day (password manager and the offline copy).
+
+Rotate when a value may have leaked (a laptop lost, a value pasted somewhere it should not be, a person who had it
+leaves), and otherwise on the "every" column. A rotation is one consolidated block the session writes for you for the
+current release, run after 15:30 IST; the steps are here so you know what it does and what users will notice.
+
+| Name | Every | What a rotation does | What users notice |
+|---|---|---|---|
+| `JWT_SECRET_KEY` | 12 months | New value in `.env`, the old one in `JWT_PREVIOUS_SECRET_KEYS`, deploy; remove the old one a day later (`docs/OPERATIONS.md` 1.6ab-2). | Nothing with the previous key kept; **everyone is signed out** if it is not kept (do that only after a leak). |
+| `SECRETS_ENCRYPTION_KEY` | only after a leak | Never from a plain deploy: `atp.sh` refuses a changed key (exit 20). The block runs `scripts/reencrypt_secrets.py reencrypt` under the old key, sets the new key and `OLD_SECRETS_ENCRYPTION_KEY`, runs `rotate-master`, restarts, removes `OLD_SECRETS_ENCRYPTION_KEY` and records the new fingerprint (`docs/OPERATIONS.md` 1.6d). | Nothing. **Escrow the new value before the block runs**: dumps taken before the rotation still hold rows that only the old key opens, so keep the old value too until those dumps have left R2 (section 6a). |
+| `BACKUP_ENCRYPTION_PASSPHRASE` | only after a leak | New value in `.env`; the next backup uses it and `health` shows the new escrow date (6a). | Nothing. Backups taken before still need the **old** passphrase: keep it escrowed until they have left R2 (6 months with the defaults). |
+| `POSTGRES_PASSWORD` | 12 months | The database role's password is changed inside Postgres first (`ALTER ROLE`), then the same value goes in `.env`, then deploy. Changing only `.env` locks the app out of its own database. URL-safe characters only (section 4). | A restart of the API and worker (about a minute, after 15:30 IST). |
+| `METRICS_TOKEN` | 12 months | New random value, deploy. | Nothing (only the host's own metrics scrape uses it). |
+| `OFFSITE_S3_ACCESS_KEY`, `OFFSITE_S3_SECRET_KEY` (and `OFFSITE_S3_ENDPOINT`, `OFFSITE_REMOTE`) | 12 months | Create a new bucket-scoped R2 token (section 6 step 5), put both halves in `.env`, run `atp.sh backup`, then delete the old token in Cloudflare. | Nothing. |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (history import, read-only) | 12 months | Same as above for the read-only import token. | Nothing. |
+| `PLATFORM_SMTP_PASSWORD` | when the mail provider asks | New app password at the provider, `.env`, deploy. | Nothing; a wrong value stops verification and reset e-mails until fixed. |
+| `ATP_TELEGRAM_BOT_TOKEN`, `ATP_TELEGRAM_WEBHOOK_SECRET` | only after a leak | @BotFather `/revoke`, new token in `.env`, deploy; with a webhook secret, a new random value and `POST /api/admin/telegram/platform/register` again. | Telegram alerts pause for the minutes in between; users do not reconnect. |
+| `GOOGLE_OAUTH_CLIENT_SECRET` (`GOOGLE_OAUTH_CLIENT_ID`) | 12 months | Add a new secret to the OAuth client in the Google Cloud console, `.env`, deploy, then delete the old secret there. | Nothing. |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | 12 months (billing is off today) | Regenerate in the Razorpay dashboard, `.env`, deploy; the webhook secret also in the dashboard's webhook. | Nothing while billing is off. |
+| `VAPID_PRIVATE_KEY` | only after a leak | A new key pair, `.env`, deploy. | Every browser's push subscription ends; users allow notifications again. |
+| `CAPTCHA_SECRET` | when the provider asks | New secret at the provider, `.env`, deploy. | Nothing. |
+| `ERROR_TRACKER_DSN` | when the tracker asks | New DSN in the tracker's project settings, `.env`, deploy. | Nothing. |
+| `KITE_PUBLISHER_API_KEY` | when Zerodha asks | `.env`, deploy. | Nothing. |
+| `ATP_APP_PASSWORD`, `ATP_MIGRATOR_PASSWORD` (only if the split database roles are in use, `scripts/init_db_roles.py`) | 12 months | Like `POSTGRES_PASSWORD`: `ALTER ROLE` first, then the database URLs in `.env`. | As for `POSTGRES_PASSWORD`. |
+
+Outside `.env`: the GitHub repository secrets `UPTIME_TELEGRAM_BOT_TOKEN` / `UPTIME_TELEGRAM_CHAT_ID` (section 10b,
+repository Settings -> Secrets), the Hostinger panel and SSH keys, the Cloudflare and domain registrar logins, and the
+platform's Upstox app (its keys are stored encrypted inside the database, entered on the Broker page): rotate those in
+their own consoles; nothing on the server changes.
+
+The external penetration test before public launch (readiness A4.9) has its own scope document, kept with you and
+outside this public repository.
 
 ## 7. Firewall
 
@@ -808,7 +910,8 @@ Logs from scheduled runs are in `/opt/atp/.deploy/logs/`. The release history is
 
 ## 13. What `atp.sh` never does
 
-- It never writes, creates or prints `.env` or any secret, and never puts a secret on a command line.
+- It never creates or prints `.env` or any secret, and never puts a secret on a command line. The one write is
+  `env-set` (section 4c): only its allowlisted non-secret switches, after a backup, every other line kept.
 - It never rotates `SECRETS_ENCRYPTION_KEY`.
 - It never turns a feature flag on or off: not `live_trading`, not `phase0_paper_only`, not any other. The Phase 0
   first-boot seed (section 4a) is done by the application in its own deployment mode, never by this script.

@@ -92,7 +92,7 @@ jobs:
   backend:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 55          # the full suite reached ~30 min on 2026-10-12 and runs were cancelled at the old 30-min cap
+    timeout-minutes: 90          # the full suite reached ~54 min on 2026-10-23 (runs cancelled at the old 55-min cap; 30 min before that)
     services:
       postgres:
         image: postgres:16-alpine
@@ -303,7 +303,8 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [backend, frontend]
+    # A4: no `needs` - the scan runs even while a test job is red (it used to be skipped then, review A4 notes), so a
+    # vulnerable image is reported on every push whatever the tests say.
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -328,3 +329,30 @@ jobs:
           severity: "CRITICAL,HIGH"
           exit-code: "1"
           ignore-unfixed: true
+
+      # A4 (review A4 notes): the images the server also runs but this repository does not build from its own code - the
+      # backup image (postgres:17-alpine + openssl, the production major) and the pinned third-party services. REPORT ONLY
+      # for now (RDY-31): a HIGH inside an upstream image is fixed by the upstream rebuild, not by a change here, so it must
+      # not turn every push red. The findings are in the job log; the owner may make them blocking after a clean month.
+      - name: Build backup image (production Postgres major)
+        if: always()
+        run: docker build -q -f deploy/backup.Dockerfile --build-arg PG_IMAGE=postgres:17-alpine -t atp-backup:ci .
+
+      - name: Scan backup image (Trivy, report only)
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: atp-backup:ci
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+          ignore-unfixed: true
+
+      - name: Scan pinned third-party images (Trivy, report only)
+        if: always()
+        run: |
+          # The same list `atp.sh` pulls (deploy/atp.sh); the Trivy binary the action above installed is on PATH.
+          for img in redis:7-alpine caddy:2-alpine rclone/rclone:1; do
+            echo "::group::$img"
+            trivy image --quiet --severity CRITICAL,HIGH --ignore-unfixed --exit-code 0 "$img" || echo "could not scan $img"
+            echo "::endgroup::"
+          done

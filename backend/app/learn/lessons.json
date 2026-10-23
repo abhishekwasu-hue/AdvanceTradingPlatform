@@ -1,0 +1,250 @@
+{
+  "header": {
+    "title": "Learn",
+    "subtitle": "Short lessons on reading the chart, managing risk and practising on paper.",
+    "frame": [
+      "Education only. Nothing here tells you what to trade.",
+      "Practise every idea on paper before you use real money."
+    ]
+  },
+  "groups": [
+    {
+      "id": "structure",
+      "name": "Reading price structure"
+    },
+    {
+      "id": "risk",
+      "name": "Risk and your own settings"
+    },
+    {
+      "id": "paper",
+      "name": "Practise on paper"
+    },
+    {
+      "id": "atp",
+      "name": "How ATP works"
+    }
+  ],
+  "lessons": [
+    {
+      "id": "structure-trend",
+      "group": "structure",
+      "title": "What price structure means",
+      "summary": "Price moves in swings. The way the swings line up tells you whether the market trends or moves sideways.",
+      "points": [
+        "In an uptrend each swing high and each swing low is higher than the one before.",
+        "In a downtrend each swing high and each swing low is lower than the one before.",
+        "When the swings overlap and go nowhere, the market is in a range.",
+        "Read the structure on closed bars only. A bar that is still forming can change."
+      ],
+      "glossary": [],
+      "next": {
+        "label": "Open Charts",
+        "path": "/charts"
+      }
+    },
+    {
+      "id": "structure-areas",
+      "group": "structure",
+      "title": "Buyer areas and seller areas",
+      "summary": "An area is a zone where price turned before. It is a band, not a single line.",
+      "points": [
+        "A buyer area is a zone where buyers stepped in and price turned up.",
+        "A seller area is a zone where sellers stepped in and price turned down.",
+        "An area is stronger when price left it quickly and has not come back many times since.",
+        "Price can pass through an area. An area only tells you where to pay attention."
+      ],
+      "glossary": [],
+      "next": {
+        "label": "Open Charts",
+        "path": "/charts"
+      }
+    },
+    {
+      "id": "structure-pullback",
+      "group": "structure",
+      "title": "Pullbacks and the handover",
+      "summary": "In a trend, price often comes back to an area before it moves on. What happens inside the area matters.",
+      "points": [
+        "A pullback is a move against the trend that comes back toward an area.",
+        "A handover forms when the side that was pushing gives way inside the area.",
+        "Wait for the handover to complete on a closed bar. Early guesses are often wrong.",
+        "If price moves through the area and holds beyond it, the idea is no longer valid."
+      ],
+      "glossary": [],
+      "next": {
+        "label": "Browse ideas",
+        "path": "/ideas"
+      }
+    },
+    {
+      "id": "structure-timeframes",
+      "group": "structure",
+      "title": "Timeframes work together",
+      "summary": "A higher timeframe shows the bigger picture. A lower timeframe shows the detail inside it.",
+      "points": [
+        "Start on the higher timeframe: is the market trending or in a range?",
+        "Find the area on that timeframe.",
+        "Move to the lower timeframe only to watch how price behaves inside the area.",
+        "When the two timeframes disagree, the higher one sets the context."
+      ],
+      "glossary": [],
+      "next": {
+        "label": "Open Charts",
+        "path": "/charts"
+      }
+    },
+    {
+      "id": "structure-divergence",
+      "group": "structure",
+      "title": "RSI divergence in plain words",
+      "summary": "RSI shows how strongly price moved lately. A divergence is when price and RSI disagree.",
+      "points": [
+        "Bearish divergence: price makes a higher high but RSI makes a lower high. The push up is getting weaker.",
+        "Bullish divergence: price makes a lower low but RSI makes a higher low. The push down is getting weaker.",
+        "A divergence is evidence, not a signal on its own. Read it at an area, with the structure.",
+        "Divergence can last a long time in a strong trend."
+      ],
+      "glossary": [
+        "rsi"
+      ],
+      "next": {
+        "label": "Open Charts",
+        "path": "/charts"
+      }
+    },
+    {
+      "id": "risk-before",
+      "group": "risk",
+      "title": "Decide your risk before the trade",
+      "summary": "Before you enter, know where your idea is wrong and how much you accept to lose if it is.",
+      "points": [
+        "Every idea has a point where it is no longer valid. Find it on the chart before you enter.",
+        "Decide how much of your capital one trade may lose. Keep it small and the same every time.",
+        "Your lot size follows from those two answers, not from how sure you feel.",
+        "These are your own settings. ATP never sets them for you."
+      ],
+      "glossary": [
+        "lot"
+      ],
+      "next": {
+        "label": "Open my risk settings",
+        "path": "/risk-management"
+      }
+    },
+    {
+      "id": "risk-daily-limit",
+      "group": "risk",
+      "title": "Your daily loss limit",
+      "summary": "A daily loss limit protects you on a bad day. You choose it; ATP keeps to it.",
+      "points": [
+        "Set the most you are willing to lose in one day.",
+        "When your losses reach it, new entries pause until the next day.",
+        "Closing a trade always works, even when new entries are paused.",
+        "A bad day is normal. The limit keeps one bad day from becoming a bad month."
+      ],
+      "glossary": [
+        "daily-loss-limit",
+        "drawdown"
+      ],
+      "next": {
+        "label": "Open my risk settings",
+        "path": "/risk-management"
+      }
+    },
+    {
+      "id": "risk-options",
+      "group": "risk",
+      "title": "Options carry extra risk",
+      "summary": "Options move faster than shares and lose value as expiry comes closer.",
+      "points": [
+        "Most individual traders in futures and options lose money. Learn on paper first.",
+        "Time works against an option holder: its value shrinks every day until expiry.",
+        "Liquidity matters. A wide gap between the bid and the ask costs you on every trade.",
+        "Know the lot size and the most you can lose before you plan the trade."
+      ],
+      "glossary": [
+        "lot",
+        "expiry",
+        "iv"
+      ],
+      "next": {
+        "label": "Open the option chain",
+        "path": "/option-chain"
+      }
+    },
+    {
+      "id": "paper-why",
+      "group": "paper",
+      "title": "Why practise on paper first",
+      "summary": "Paper trading uses real prices and pretend money. No order reaches your broker.",
+      "points": [
+        "Paper trading shows how an idea behaves without putting money at risk.",
+        "Treat it like real money: the same lot size, the same risk, the same rules.",
+        "Run an idea for many trades before you judge it. A few trades say very little.",
+        "ATP is paper only today. Real-money trading is not switched on."
+      ],
+      "glossary": [
+        "paper"
+      ],
+      "next": {
+        "label": "Start a paper bot",
+        "path": "/deployments"
+      }
+    },
+    {
+      "id": "paper-review",
+      "group": "paper",
+      "title": "Review your paper trades",
+      "summary": "The review is where you learn. Compare what you planned with what happened.",
+      "points": [
+        "Look at each closed trade: did you follow your own rules?",
+        "Note the mistakes that repeat, not only the single bad trade.",
+        "Check how often your daily limit paused new entries, and why.",
+        "Change one setting at a time, then practise again."
+      ],
+      "glossary": [],
+      "next": {
+        "label": "Open my journal",
+        "path": "/analytics/journal"
+      }
+    },
+    {
+      "id": "atp-how",
+      "group": "atp",
+      "title": "How ATP works",
+      "summary": "You connect a broker for prices, pick an idea, set your own settings and practise it on paper.",
+      "points": [
+        "Connect your broker so ATP can read prices. Your broker login stays with your broker.",
+        "Pick an idea from the library, or build your own, and choose its settings.",
+        "Start a paper bot. It watches the market for the structure you chose.",
+        "When the structure appears, you get a signal in plain words. You decide what to do."
+      ],
+      "glossary": [
+        "api-key",
+        "session"
+      ],
+      "next": {
+        "label": "Connect a broker",
+        "path": "/broker"
+      }
+    },
+    {
+      "id": "atp-signals",
+      "group": "atp",
+      "title": "Signals describe structure, not advice",
+      "summary": "A signal says what the structure of your own idea shows. It never tells you what to trade.",
+      "points": [
+        "A signal comes only from an idea you chose and settings you set.",
+        "It describes the structure, for example: the pullback reached a seller area and a handover is forming.",
+        "You decide the trade, the lot size and the exit.",
+        "Past results never promise future results."
+      ],
+      "glossary": [],
+      "next": {
+        "label": "Open Signals",
+        "path": "/signals"
+      }
+    }
+  ]
+}

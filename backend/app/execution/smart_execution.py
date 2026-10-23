@@ -25,7 +25,6 @@ exchange's own data; the AI never calls any of this (ADR-0006).
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, Sequence, Tuple, TypeVar

@@ -147,6 +147,9 @@ CASES_5M = [
     # TPL-F6: the swing structure mirrors (an equal high is not higher, an equal low not lower)
     "DowTrend(0)", 'DowTrend(0) == "UP"', 'DowTrend(0) IN ("DOWN", "RANGE")', 'SwingBreakType("up", 0, 0)',
     'SwingBreakType("down", 0, 0.2) == "CHOCH"',
+    # idea library IDEA-12 / IDEA-14: the channel's trend-side line and the swings before the latest one
+    'ChannelLine("up")', 'ChannelLine("down", 2, 2)', 'ReversalAt(ChannelLine("up", 2, 1), "bullish")', 'PriorSwingHigh(0)',
+    'PriorSwingLow(1, "two")', 'PriorSwingHigh(0) > SwingHigh(0)',
 ]
 CASES_1D = ['NewHighBreakout("up", 4, 0, 0)', "SwingDirection(1)", 'SwingBreakout("up", 1, 0)', "close@1w > SMA(close, 5)@1w",
             'DowTrend(0)@1w != "DOWN"', 'SwingBreakType("up", 1, 0) == "BOS"']
@@ -167,6 +170,7 @@ def test_each_daily_mirror_rule_is_exact_on_reflected_bars(text):
 
 def test_every_mirror_rule_has_an_exactness_case():
     named = set(mr.FIELD_RULES) | set(mr.LEVELS) | set(mr.LINEAR) | set(mr.EXTREMES) | set(mr.SIDED_FILTERS) | set(mr.CATEGORIES)
+    named |= mr.SIDED_LEVELS
     named |= {"Count", "CountStreak", "CrossAbove", "CrossBelow", "ZScore", "PctChange", "RealBreak", "ReversalAt", "SwingZoneStrength",
               "SwingZoneDistance", "Pattern"}
     covered = {getattr(node, "name", None) for text in CASES_5M + CASES_1D for node in n.walk(parse(text))}

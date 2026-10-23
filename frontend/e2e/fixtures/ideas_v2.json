@@ -676,15 +676,61 @@
     "Rising channel; price at the lower channel line; rejection formed.",
     "Falling channel; price at the upper channel line; rejection formed."
    ],
-   "settings": [],
+   "settings": [
+    {
+     "key": "line_touches",
+     "label": "Reactions on the channel line",
+     "help": "How many swings must have touched the line on the trend's side, its two anchors included.",
+     "type": "number",
+     "default": 2,
+     "min": 2.0,
+     "max": 10.0,
+     "step": 1.0,
+     "choices": []
+    },
+    {
+     "key": "edge_touches",
+     "label": "Reactions on the far line",
+     "help": "How many swings must have touched the other line of the channel, drawn parallel through the channel's far extreme.",
+     "type": "number",
+     "default": 2,
+     "min": 1.0,
+     "max": 10.0,
+     "step": 1.0,
+     "choices": []
+    }
+   ],
    "your_decisions": [
     "Which instruments you look at, and the chart timeframe.",
     "Whether you act at the line at all.",
     "Lots, risk per trade and your exit rules, in your own paper bot settings."
    ],
    "provenance": "Channel trading is a widely taught idea, written for ATP as a generic method. No results are claimed for it.",
-   "scans": [],
-   "scan_gaps": "A scan for this idea comes later: Find setups cannot yet tell when price is at a channel line.",
+   "scans": [
+    {
+     "id": "rising",
+     "label": "Rising channel: lower line",
+     "base_tf": "15m",
+     "text": "ReversalAt(ChannelLine(\"up\", $line_touches, $edge_touches), \"bullish\")",
+     "params": {
+      "line_touches": 2,
+      "edge_touches": 2
+     },
+     "available": true
+    },
+    {
+     "id": "falling",
+     "label": "Falling channel: upper line",
+     "base_tf": "15m",
+     "text": "ReversalAt(ChannelLine(\"down\", $line_touches, $edge_touches), \"bearish\")",
+     "params": {
+      "line_touches": 2,
+      "edge_touches": 2
+     },
+     "available": true
+    }
+   ],
+   "scan_gaps": "The scan reads the channel on the scan's own timeframe, until it breaks. A channel on a higher timeframe and a lower-timeframe change of character come later.",
    "adopt": {
     "available": false
    }
@@ -715,7 +761,9 @@
    },
    "structure_words": [
     "Double top formed at a supply area; the neckline broke and the retest was rejected.",
-    "Double bottom formed at a demand area; the neckline broke and the retest was rejected."
+    "Double bottom formed at a demand area; the neckline broke and the retest was rejected.",
+    "Head and shoulders forming at a supply area; the right shoulder was rejected.",
+    "Inverse head and shoulders; the neckline broke and the retest was rejected."
    ],
    "settings": [
     {
@@ -756,6 +804,17 @@
      "max": 5.0,
      "step": 0.1,
      "choices": []
+    },
+    {
+     "key": "retest_max_bars",
+     "label": "Neckline retest within (bars)",
+     "help": "The return to the broken neckline must come within this many bars after the break; a later return is a new structure, not a retest.",
+     "type": "number",
+     "default": 10,
+     "min": 1.0,
+     "max": 100.0,
+     "step": 1.0,
+     "choices": []
     }
    ],
    "your_decisions": [
@@ -786,9 +845,53 @@
       "area_tolerance_pct": 0.5
      },
      "available": false
+    },
+    {
+     "id": "hs_top",
+     "label": "Head and shoulders: right shoulder at supply",
+     "base_tf": "15m",
+     "text": "SwingDirection($swing_size) == \"UP\" AND SwingHigh($swing_size) > PriorSwingHigh($swing_size) AND high < SwingHigh($swing_size) AND ReversalAt(PriorSwingHigh($swing_size), \"bearish\") AND NearZone(\"supply\", $area_tolerance_pct, \"zones\")",
+     "params": {
+      "swing_size": 1,
+      "area_tolerance_pct": 0.5
+     },
+     "available": false
+    },
+    {
+     "id": "hs_bottom",
+     "label": "Inverse head and shoulders: right shoulder at demand",
+     "base_tf": "15m",
+     "text": "SwingDirection($swing_size) == \"DOWN\" AND SwingLow($swing_size) < PriorSwingLow($swing_size) AND low > SwingLow($swing_size) AND ReversalAt(PriorSwingLow($swing_size), \"bullish\") AND NearZone(\"demand\", $area_tolerance_pct, \"zones\")",
+     "params": {
+      "swing_size": 1,
+      "area_tolerance_pct": 0.5
+     },
+     "available": false
+    },
+    {
+     "id": "hs_top_retest",
+     "label": "Head and shoulders: neckline retest",
+     "base_tf": "15m",
+     "text": "PriorSwingHigh($swing_size) > SwingHigh($swing_size) AND PriorSwingHigh($swing_size) > PriorSwingHigh($swing_size, \"two\") AND RetestEntry(\"down\", \"swing\", $retest_max_bars, TRUE, swing=$swing_size)",
+     "params": {
+      "swing_size": 1,
+      "retest_max_bars": 10
+     },
+     "available": true
+    },
+    {
+     "id": "hs_bottom_retest",
+     "label": "Inverse head and shoulders: neckline retest",
+     "base_tf": "15m",
+     "text": "PriorSwingLow($swing_size) < SwingLow($swing_size) AND PriorSwingLow($swing_size) < PriorSwingLow($swing_size, \"two\") AND RetestEntry(\"up\", \"swing\", $retest_max_bars, TRUE, swing=$swing_size)",
+     "params": {
+      "swing_size": 1,
+      "retest_max_bars": 10
+     },
+     "available": true
     }
    ],
-   "scan_gaps": "The scan finds the second top or bottom: after a rise (or a fall), price comes back to the last swing high (or low), rejects it on the scan's own timeframe, at a supply (or demand) area. Head and shoulders and the neckline break with its retest come later.",
+   "scan_gaps": "Double top or bottom: the second top or bottom rejected at an area. Head and shoulders: the right shoulder rejected at an area, or the retest of the broken neckline. All on the scan's own timeframe; a sloped neckline comes later.",
    "adopt": {
     "available": false
    }

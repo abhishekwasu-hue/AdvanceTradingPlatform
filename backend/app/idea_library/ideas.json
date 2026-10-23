@@ -320,15 +320,23 @@
         "Rising channel; price at the lower channel line; rejection formed.",
         "Falling channel; price at the upper channel line; rejection formed."
       ],
-      "settings": [],
+      "settings": [
+        {"key": "line_touches", "label": "Reactions on the channel line", "help": "How many swings must have touched the line on the trend's side, its two anchors included.", "type": "number", "default": 2, "min": 2, "max": 10, "step": 1},
+        {"key": "edge_touches", "label": "Reactions on the far line", "help": "How many swings must have touched the other line of the channel, drawn parallel through the channel's far extreme.", "type": "number", "default": 2, "min": 1, "max": 10, "step": 1}
+      ],
       "your_decisions": [
         "Which instruments you look at, and the chart timeframe.",
         "Whether you act at the line at all.",
         "Lots, risk per trade and your exit rules, in your own paper bot settings."
       ],
       "provenance": "Channel trading is a widely taught idea, written for ATP as a generic method. No results are claimed for it.",
-      "scans": [],
-      "scan_gaps": "A scan for this idea comes later: Find setups cannot yet tell when price is at a channel line."
+      "scans": [
+        {"id": "rising", "label": "Rising channel: lower line", "base_tf": "15m",
+         "text": "ReversalAt(ChannelLine(\"up\", $line_touches, $edge_touches), \"bullish\")"},
+        {"id": "falling", "label": "Falling channel: upper line", "base_tf": "15m",
+         "text": "ReversalAt(ChannelLine(\"down\", $line_touches, $edge_touches), \"bearish\")"}
+      ],
+      "scan_gaps": "The scan reads the channel on the scan's own timeframe, until it breaks. A channel on a higher timeframe and a lower-timeframe change of character come later."
     },
     {
       "id": "T7",
@@ -356,12 +364,15 @@
       },
       "structure_words": [
         "Double top formed at a supply area; the neckline broke and the retest was rejected.",
-        "Double bottom formed at a demand area; the neckline broke and the retest was rejected."
+        "Double bottom formed at a demand area; the neckline broke and the retest was rejected.",
+        "Head and shoulders forming at a supply area; the right shoulder was rejected.",
+        "Inverse head and shoulders; the neckline broke and the retest was rejected."
       ],
       "settings": [
         {"key": "swing_size", "label": "Swing size", "help": "How big a swing must be to count as a top or a bottom, and when the trend before the pattern is read.", "type": "choice", "default": 1,
          "choices": [{"value": 0, "label": "Smallest"}, {"value": 1, "label": "Small"}, {"value": 2, "label": "Medium"}, {"value": 3, "label": "Large"}]},
-        {"key": "area_tolerance_pct", "label": "How close counts as inside the area (%)", "help": "How near price must be to a demand or supply area to count as inside it.", "type": "number", "default": 0.5, "min": 0.1, "max": 5, "step": 0.1}
+        {"key": "area_tolerance_pct", "label": "How close counts as inside the area (%)", "help": "How near price must be to a demand or supply area to count as inside it.", "type": "number", "default": 0.5, "min": 0.1, "max": 5, "step": 0.1},
+        {"key": "retest_max_bars", "label": "Neckline retest within (bars)", "help": "The return to the broken neckline must come within this many bars after the break; a later return is a new structure, not a retest.", "type": "number", "default": 10, "min": 1, "max": 100, "step": 1}
       ],
       "your_decisions": [
         "Which instruments you look at, and the chart timeframe.",
@@ -373,9 +384,17 @@
         {"id": "top", "label": "Double top at supply", "base_tf": "15m",
          "text": "DowTrend($swing_size) == \"UP\" AND ReversalAt(SwingHigh($swing_size), \"bearish\") AND NearZone(\"supply\", $area_tolerance_pct, \"zones\")"},
         {"id": "bottom", "label": "Double bottom at demand", "base_tf": "15m",
-         "text": "DowTrend($swing_size) == \"DOWN\" AND ReversalAt(SwingLow($swing_size), \"bullish\") AND NearZone(\"demand\", $area_tolerance_pct, \"zones\")"}
+         "text": "DowTrend($swing_size) == \"DOWN\" AND ReversalAt(SwingLow($swing_size), \"bullish\") AND NearZone(\"demand\", $area_tolerance_pct, \"zones\")"},
+        {"id": "hs_top", "label": "Head and shoulders: right shoulder at supply", "base_tf": "15m",
+         "text": "SwingDirection($swing_size) == \"UP\" AND SwingHigh($swing_size) > PriorSwingHigh($swing_size) AND high < SwingHigh($swing_size) AND ReversalAt(PriorSwingHigh($swing_size), \"bearish\") AND NearZone(\"supply\", $area_tolerance_pct, \"zones\")"},
+        {"id": "hs_bottom", "label": "Inverse head and shoulders: right shoulder at demand", "base_tf": "15m",
+         "text": "SwingDirection($swing_size) == \"DOWN\" AND SwingLow($swing_size) < PriorSwingLow($swing_size) AND low > SwingLow($swing_size) AND ReversalAt(PriorSwingLow($swing_size), \"bullish\") AND NearZone(\"demand\", $area_tolerance_pct, \"zones\")"},
+        {"id": "hs_top_retest", "label": "Head and shoulders: neckline retest", "base_tf": "15m",
+         "text": "PriorSwingHigh($swing_size) > SwingHigh($swing_size) AND PriorSwingHigh($swing_size) > PriorSwingHigh($swing_size, \"two\") AND RetestEntry(\"down\", \"swing\", $retest_max_bars, TRUE, swing=$swing_size)"},
+        {"id": "hs_bottom_retest", "label": "Inverse head and shoulders: neckline retest", "base_tf": "15m",
+         "text": "PriorSwingLow($swing_size) < SwingLow($swing_size) AND PriorSwingLow($swing_size) < PriorSwingLow($swing_size, \"two\") AND RetestEntry(\"up\", \"swing\", $retest_max_bars, TRUE, swing=$swing_size)"}
       ],
-      "scan_gaps": "The scan finds the second top or bottom: after a rise (or a fall), price comes back to the last swing high (or low), rejects it on the scan's own timeframe, at a supply (or demand) area. Head and shoulders and the neckline break with its retest come later."
+      "scan_gaps": "Double top or bottom: the second top or bottom rejected at an area. Head and shoulders: the right shoulder rejected at an area, or the retest of the broken neckline. All on the scan's own timeframe; a sloped neckline comes later."
     },
     {
       "id": "T8",

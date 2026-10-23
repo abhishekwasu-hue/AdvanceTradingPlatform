@@ -3177,6 +3177,40 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - The signal count before / after (`backend/tests/tools/tpl_f6_signal_delta.py`, synthetic only): the table is in
   docs/design/STRATEGY_TEMPLATES_IMPL.md "TPL-F6". Follow-up TPL-F9 (the zigzag's opening swing; the chart / Trade-port
   structure) open with "unchanged" as the default.
+## 23 Oct - F&O 8b FNO-8B-28 / FNO-8B-31: his own liquidity limits, the journal chart's Download image (behind ui_v2, PAPER only)
+
+- Branch `claude/fno8b-28-31`, on F&O 8b slice 4 (#408). Owner decisions of 23 Oct. No migration, no new flag, no new route.
+- FNO-8B-28: the comparative liquidity check stays the default (no fixed number). New prefs namespace `fno`
+  (`app/me/prefs.py` `FnoPrefs` / `LiquidityLimits`: `on` false by default, `max_spread_pct` above 0 up to 100,
+  `min_oi` a whole number from 1; on needs a limit; strict, unknown keys refused). Settings -> My trading defaults gets
+  the card "My own liquidity limits (F&O)", saved with "Save my defaults" and cleared by "Clear all". While on, the
+  ticket's and basket's "Before you place" liquidity line says whether the strike is inside his own limits
+  (`riskParts.limitWords`); a leg outside turns the line amber. Information only: no button reads it, nothing is held
+  back, exits untouched; the server never reads the namespace (a test).
+- FNO-8B-31: the journal chart stays a redraw on his tap with nothing stored. "Download image" under the drawn chart
+  saves it as a PNG on his device (`fno/snapshotImage.ts`: the SVG on screen, theme colours written in, a heading line,
+  twice the size); a plain file name (`<symbol>-trade-chart-<IST closing day>.png`, never an id); nothing is sent.
+- Tests: `tests/test_fno8b_28_liquidity_limits.py` (+ the allow-list in `test_ui2_4a1_prefs.py`); vitest
+  `src/fno/fno8b2831.test.tsx`; e2e `trading-defaults-v2.e2e.ts` (the limits flow; `trading-defaults-v2-*` baselines
+  re-taken with the new card on) and `fno8b-slice4-v2.e2e.ts` (limits on / inside / off on the ticket, the PNG
+  download; `fno8b4-journal-chart-v2-*` baselines re-taken with the button). OPEN_QUESTIONS FNO-8B-28 / FNO-8B-31
+  answered and built.
+
+## 23 Oct - Strategy templates TPL-9: the projected trendline retest (owner decision TPL-Q18) and C4 (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl-c4-projected`. No migration, no new flag, no new route, no frontend change.
+- A new retest choice `trendline_projected` on RetestEntry / RetestEntryRef / the B9 screen: the B5 trendline breakout in
+  line mode, the broken line read at each bar after the breakout (as `channel`). The older `trendline` choice keeps its
+  level frozen at the breakout bar: its outputs are pinned byte for byte against main (touch and reversal retests pinned
+  separately; the reversal pin moves only with a deliberate change of the reversal rule such as TPL-F6), and so are the
+  params hash and default id of every template outside family G. DowTrend / the reversal check are not touched (TPL-F6).
+- C4 trendline breakout and retest (`templates/C4.json`): B4's breakout settings, C3's retest settings, invalidation
+  {the pullback, the breakout's own reference, whichever is farther}, exit a close back across the projected line; two
+  signal-text tokens in structure words. The new choice is in the no-look-ahead cases.
+- Tests: `tests/test_tpl9_c4_trendline_retest.py` (the section 8 gate: must fire / must not on a hand-made falling-line
+  retest that only the projected line holds, invalidation by value, S6, the exit, warm-up, truncation, mirror, scan =
+  backtest = options backtest = worker, property tests, the language guard, ids, adapter, flags, the API). Questions
+  TPL-Q64..Q66; TPL-Q18 answered and built.
 ## 23 Oct - Production readiness STEP 0: the inventory (docs only)
 
 - Branch `claude/readiness-step0`, stacked on #414 (the order). No code change, no migration, no flag, no route.

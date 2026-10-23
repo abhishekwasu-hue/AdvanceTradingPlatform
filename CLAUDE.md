@@ -41,6 +41,9 @@ again AFTER every compaction, before acting. Begin each report to Abhi with: "Ru
 
 ## 4. Safety
 - Phase 0: PAPER only (live_trading OFF, phase0_paper_only ON). LIVE untouched without Abhi's explicit words.
+- Owner principle (23 Oct, binding; DECISIONS): no paper-phase vs live-phase feature split. Build every feature fully now; it
+  works on the PAPER execution path today and LIVE unchanged (same code path and UI) when Abhi himself switches LIVE on.
+  Never defer, shrink or drop a feature because the account is in PAPER. The LIVE switches stay his alone.
 - Exits are never blocked (ADR-0004). AI never places, blocks or changes orders (ADR-0006).
 - No secrets in git / logs / chat. This repo is PUBLIC: no strategy-sensitive content (KB, Method Pack, golden fixtures,
   charts, journal), no server addresses or credentials; the private method lives in atp-private.

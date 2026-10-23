@@ -110,7 +110,7 @@ MARKET_DATA_STALE = _counter("market_data_stale", "Signal/exit decisions refused
 BROKER_UNCERTAIN_TENANTS = _gauge("broker_uncertain_tenants", "Tenants with LIVE entries blocked pending reconciliation")
 RECONCILIATIONS = _counter("reconciliations", "Position reconciliation runs by source and outcome", ("source", "outcome"))
 # Phase G2: broker call health and the per-broker circuit breaker (0 closed, 1 half-open, 2 open).
-BROKER_CALLS = _counter("broker_calls", "Broker API calls by broker, method and outcome (ok | rejected | failure)", ("broker", "method", "outcome"))
+BROKER_CALLS = _counter("broker_calls", "Broker API calls by broker, method and outcome (ok | rejected | failure | rate_limited)", ("broker", "method", "outcome"))
 BROKER_CIRCUIT_STATE = _gauge("broker_circuit_state", "Circuit breaker state per broker: 0 closed, 1 half-open, 2 open", ("broker",))
 BROKER_CIRCUIT_REJECTIONS = _counter("broker_circuit_rejections", "LIVE entries refused because the broker circuit was open", ("broker",))
 TICKS_RECEIVED = _counter("ticks_received", "Streaming quote ticks received by broker (Phase S)", ("broker",))

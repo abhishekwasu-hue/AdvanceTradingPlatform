@@ -1,4 +1,5 @@
 import type { Page, Route } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { mockApi } from "./mockApi";
 
 /**
@@ -158,6 +159,12 @@ const TENANTS = [
   { id: 7, name: "Desk Seven", plan: "pro", status: "active", created_at: T(60 * 24 * 40), owners: ["owner@example.com"], members: 2, active_deployments: 2, live_deployments: 0, open_positions: 1 },
 ];
 
+// Readiness C13: Admin > Users & business > Learn videos and Invite a friend (one link set, the wording empty).
+const LEARN_LESSONS = (JSON.parse(readFileSync(new URL("./fixtures/learn_v2.json", import.meta.url), "utf8")) as { lessons: { id: string; title: string }[] })
+  .lessons.map(({ id, title }) => ({ id, title }));
+export const LEARN_SETTINGS = { videos: { "atp-how": "https://videos.example.com/how-atp-works" }, course_url: "", lessons: LEARN_LESSONS };
+export const REFERRAL_SETTINGS = { reward_text: "", totals: { joined: 3, referrers: 2, links_created: 5 } };
+
 // TM 9.4: the owner's chain history recorder (Admin › System) - made-up counts, two indices recording, one with gaps.
 const chainRow = (underlying: string, exchange: string, chains: number, slots: number, missing: number, gaps: { from: string; to: string }[]) => ({
   underlying, exchange, trading_day: true, chains_today: chains, slots_today: slots, slots_expected: slots + missing, missing_slots: missing, gaps,
@@ -252,6 +259,8 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
   await page.route(A("/admin/history-import/progress(\\?.*)?$"), ok({ datasets: { daily: { done: 480, pending: 2 } }, symbols: [], symbol_count: 482 }));
   await page.route(A("/admin/history-backfill/progress(\\?.*)?$"), ok({ flag_on: false, segments: { cm: { by_status: { done: 240 } } }, attention: [] }));
   await page.route(A("/admin/history-intraday/progress(\\?.*)?$"), ok({ flag_on: false, tenant_id: null, instruments: {}, attention: [] }));
+  await page.route(A("/admin/learn/settings$"), ok(LEARN_SETTINGS));
+  await page.route(A("/admin/growth/referral-settings$"), ok(REFERRAL_SETTINGS));
   await page.route(A("/admin/chain-history/status$"), ok(CHAIN_HISTORY));
   if (o.routes) await o.routes(page);
   await page.goto(path);

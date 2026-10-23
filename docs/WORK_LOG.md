@@ -3531,6 +3531,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
 
 
+## 23 Oct - Production readiness C13: learning and growth
+
+- Branch `claude/readiness-c13-learning` (from main). **No migration.** Four new flags, all OFF: `learn`, `marketing_site`,
+  `onboarding_emails`, `referrals` (catalogue entries added).
+- Learn (`/learn`, v2 only): `backend/app/learn/` (lessons.json, site.json, content guard reuse, `GET /api/learn`,
+  `GET /api/site/pages`, admin video links `GET` / `PUT /api/admin/learn/settings`); `frontend/src/learn/`.
+- Onboarding e-mails: `backend/app/growth/onboarding.py` (templates, once-only marks in `user_prefs`, signed unsubscribe
+  + List-Unsubscribe, `email_opt_outs` scope `onboarding`), worker hook every 15 min; `mailer.send` takes extra headers.
+- Marketing pages: public `/features`, `/how-it-works`, `/about` (`frontend/src/site/`), SEO tags in `index.html` and per
+  page, `public/robots.txt`, `public/sitemap.xml`, sign-in footer links.
+- Referral: `backend/app/growth/referral.py` (settings interface for C11), routes in `growth/routes.py`; "Invite a friend"
+  on Settings › Account & plan; the code kept from `?ref=` and claimed once after sign-in.
+- Funnel: `growth_funnel` + `active_week1` in the admin activation read; shown in Admin › Users & business.
+- Tests: `backend/tests/test_c13_learning.py` (fake mail server); vitest learn / site / referral / growthSettings; e2e
+  `learn-growth-v2.e2e.ts` with new baselines (360 / 390 / 1440, light / dark); `admin-users-v2-*` and
+  `growth-activation-v2-*` refreshed (new cards and the funnel). Questions RDY-C13-1..8.
+
 ## 23 Oct - Production readiness B9: the private reader port plan (plan only)
 
 - Branch `claude/readiness-b9-private-plan` (from main). **Docs only, no migration**, no code, no flag.
@@ -3561,6 +3578,48 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Admin > System "Chain history" card; `admin-system-v2-*` baselines updated.
 - Docs: `docs/design/CHAIN_HISTORY.md`, DATA_SOURCES line, OPEN_QUESTIONS `TM94-1..7`.
 
+
+## 23 Oct - User-friendly pass item 1: "Verify your email" leaves the top bar
+
+- Branch `claude/ufp-verify-email` (from main), shipped first on the owner's word. Frontend only, **no migration**, no flag.
+- Both top bars (v2 `TopBarV2`, today's `App.tsx`) no longer show the chip on any page.
+- The v2 Dashboard's Needs attention list has one "Verify your email" row (also in PAPER, without LIVE wording), with a
+  "Resend link" button and "Hide for today"; Settings › Account keeps its Email verification card. Both send the link
+  through `src/ui/verifyEmail.ts` and say what happened in the same plain words (never a server text).
+- Tests: `src/ui/verifyEmail.test.tsx`, `dashboard/model.test.ts`, `shell/shellV2.test.tsx`, `setup/getStarted.test.tsx`;
+  e2e `front-page.e2e.ts` (no chip on any page). Baselines refreshed because the chip row is gone from every v2 page
+  (the e2e user has an unverified address): chart-analyze, charts, connect-ai, copilot-chat, fno-insights, fno-workspace,
+  markets, option-chain, settings-index, shell, signals and view-as `*-v2-*` images (103 files).
+- CI fix (e2e failed twice on 5 shots, ratio 0.03): 74 more baselines still showed the chip (the old-shell phone pages
+  of `mobile.e2e.ts` and `broker.e2e.ts`, plus some `*-v2-*` 1440/390 images). Playwright's anti-aliasing tolerance kept
+  them just under the 2% limit here (1.6-1.9%) and just over it on the CI runner (2.0-2.2%), so `--update-snapshots`
+  (changed only) never rewrote them. Found by a full `--update-snapshots=all` run plus a pixel check of the top bar /
+  notice row; only images whose old version shows the chip were replaced. Local diff against them is now 0 pixels
+  (also with the Inter font hidden). No threshold changed, no test skipped.
+
+
+## 23 Oct - Terminal master order: the independent review (docs only)
+
+- Branch `claude/terminal-master-review` (from main). **Docs only, no migration**, no code, no flag.
+- `docs/design/TERMINAL_MASTER_REVIEW.md`: per-part status with file:line evidence, findings F1-F28, broker facts
+  (Kotak Neo, Groww; most unverified - the official sites could not be opened from the build machine), SEBI points for
+  the lawyer, the 9.4 chain-history design (owner's own session, tenant-private), the data-hub gap and measurement, the
+  build plan. Questions TM-1..TM-32. README row 20 is on the PR #461 branch only: its status clause is in the PR body.
+
+## 23 Oct - Terminal master Part 1: the data hub
+
+- Branch `claude/terminal-data-hub` (from main). **No migration.** Flag `data_hub` (OFF by default, needs `ui_v2`).
+- Backend: `market_data/hub.py` (one stream per broker connection, per-connection tick snapshot, status, renew once and
+  resume, browser feed, shared chain snapshots); `stream.py` (state, stop on a refused token for hub streams only);
+  `fanin.py` (hub sessions: always streamed, renew and reopen, symbols kept); the worker streams the organisation's
+  connection through the hub; `/ltp`, `/quotes`, the option chains, their analyses and the Copilot's quote / chain tools
+  read through it; `live/routes.py`: `ticks` / `hub` events, `PUT /api/live/ticks`, `GET /api/live/hub`; metric
+  outcome `rate_limited` on broker 429s.
+- Frontend: `src/live/liveTicks.ts` (the tab's store), `LivePricesBanner.tsx` (reconnecting / log in again), the
+  watchlist and the charts' last price move with ticks.
+- Proof: `backend/scripts/hub_probe.py` (before / after numbers, reconnect, token expiry, fan-out load); tests
+  `test_tm1_data_hub.py`, `test_tm1_data_hub_load.py`, vitest `live/liveTicks.test.tsx`, e2e `live-prices-v2.e2e.ts`.
+- Questions TMH-1..8; `data_hub` joins the trader pack (#455). README row 20 is not on main yet: its status clause is in the PR body.
 
 ## 23 Oct - Signals day one (README row 19, the trader review's gaps)
 
@@ -3658,4 +3717,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   vitest `src/admin/traderPack.test.tsx`, e2e in `e2e/admin-console-v2.e2e.ts` with new baselines
   `admin-trader-pack-v2-{1440,390}-{light,dark}.png`; `admin-controls-v2-*` updated (the new card).
 - Runbook section 4b; questions TP-1..TP-6.
+
+## 23 Oct - Terminal master Part 7 / 8, PR A: PAPER is a broker adapter (TM-1, README row 20)
+
+- `backend/app/execution/paper_adapter.py`: `PaperExecutionAdapter(BrokerInterface)` over the PaperBroker fill and cost
+  model (market / marketable limit / triggered stops, no resting order, partial fills, idempotent `client_ref`, books,
+  india_costs charges); registered as `EXECUTION_ADAPTERS["paper"]` in `app/brokers/registry.py` (not a broker account).
+- `OrderRouter(paper_execution="adapter")` + `execute_signal_for_user(paper_execution=...)`; the F&O ticket's single-leg
+  PAPER order is the first path moved (`fno_ticket.PAPER_EXECUTION`); every other path unchanged.
+- Parity: `tests/test_tm1_paper_adapter.py` (router 60 seeded signals; whole pipeline ticket -> trail -> position ->
+  exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
+- Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
 

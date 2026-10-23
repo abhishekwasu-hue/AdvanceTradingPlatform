@@ -8,6 +8,7 @@ import type { PageProps } from "../routes";
 import { NotFound } from "../shell/common";
 import { useFeatures } from "../ui/useFeatures";
 import AlertsPanelV2 from "./AlertsPanelV2";
+import GrowthSettingsPanelV2 from "./GrowthSettingsPanelV2";
 import ChainHistoryCard from "./ChainHistoryCard";
 import { ActivationPanel, AiCostPanel, BUTTON, FOCUS, Phase0Notice, Pill, SupportPanel, SystemPanels, TestingToolsPanel, UsersPanel } from "./AdminSectionsV2";
 import { SupportDeskSettingsPanel, SupportTicketsPanel } from "./SupportDeskV2";
@@ -67,7 +68,7 @@ export default function AdminConsoleV2(_props: PageProps) {
 
       {section === "system" && <><AlertsPanelV2 /><SystemPanels /><ChainHistoryCard /></>}
       {section === "controls" && <Phase0Notice />}
-      {section === "users" && <><UsersPanel />{growth && <ActivationPanel />}<AiCostPanel /></>}
+      {section === "users" && <><UsersPanel />{growth && <ActivationPanel />}<GrowthSettingsPanelV2 /><AiCostPanel /></>}
       {section === "testing" && <TestingToolsPanel />}
       {section === "support" && (
         <>

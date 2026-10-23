@@ -24,7 +24,8 @@ and tick size), a future needs a stop-loss on both sides (its loss has no limit 
 broker's SPAN margin, which PAPER does not have (said so, with the contract value; never invented).
 
 Placing sends ONE PAPER order through the ordinary pipeline (`execute_signal_for_user`, mode PAPER, the order state
-machine and trail) with the asked lots as the ceiling. `phase0_lock.assert_paper` is asserted right before it. Nothing
+machine and trail) with the asked lots as the ceiling; TM-1: the fill goes through the PaperExecutionAdapter
+(`app/execution/paper_adapter.py`), the same BrokerInterface a LIVE order uses. `phase0_lock.assert_paper` is asserted right before it. Nothing
 here can reach a broker's order API, the AI never calls it (ADR-0006), and nothing here touches an exit (ADR-0004):
 exits go through `POST /api/positions/{id}/exit-now`.
 """
@@ -60,6 +61,9 @@ PRODUCTS = ("MIS", "NRML")
 MAX_LOTS = 500           # a ticket's own upper bound; the exchange's freeze quantity is not in the master yet (FNO-1-2)
 MONTHS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
 PRACTICE = "Practice mode (PAPER): no real order is sent and no money moves."
+# TM-1: the ticket's PAPER order fills through the PaperExecutionAdapter (a BrokerInterface), the first path moved onto it;
+# parity with the direct PaperBroker fill is tests/test_tm1_paper_adapter.py.
+PAPER_EXECUTION = "adapter"
 
 
 @dataclass
@@ -467,7 +471,8 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
         result, order = await execute_signal_for_user(
             session, user, mode=mode, strategy_id=STRATEGY_ID, signal=_signal(contract, ask.side, fill, stop, now, view["fill_note"] or ""),
             idempotency_key=key, holding="SWING" if ask.product == "NRML" else "INTRADAY", max_quantity=float(view["units"]),
-            journal_source="MANUAL", manual_contract_spec=_spec(contract), manual_contract_meta=_meta(contract, ask.side))
+            journal_source="MANUAL", manual_contract_spec=_spec(contract), manual_contract_meta=_meta(contract, ask.side),
+            paper_execution=PAPER_EXECUTION)
     except Exception as exc:  # noqa: BLE001 - shown to the person; the order trail holds what the pipeline recorded
         logger.exception("FNO ticket order failed for user %s", user.id)
         await session.rollback()

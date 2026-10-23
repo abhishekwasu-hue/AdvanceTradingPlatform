@@ -94,7 +94,8 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
     record, byob, refusal = await _record(session, user, underlying)
     if record is None:
         return _state(base, "no_broker", refusal or NO_BROKER)
-    chain, failure = await _read_chain(record, underlying, expiry)
+    from app.market_data import hub as data_hub
+    chain, failure = await _read_chain(record, underlying, expiry, shared=await data_hub.hub_on(session, user.tenant_id))
     if chain is None:
         return _state(base, "unavailable", failure or UNAVAILABLE)
     base["expiry"] = (chain.expiry or "")[:10] or base["expiry"]
@@ -121,10 +122,15 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
     return out
 
 
-async def _read_chain(record: BrokerCredentialRecord, underlying: str, expiry: Optional[date]) -> Tuple[Optional[OptionChain], Optional[str]]:
-    """(chain, None) or (None, the plain sentence). Building the adapter is inside the guard too (a bad stored credential)."""
+async def _read_chain(record: BrokerCredentialRecord, underlying: str, expiry: Optional[date], *,
+                      shared: bool = False) -> Tuple[Optional[OptionChain], Optional[str]]:
+    """(chain, None) or (None, the plain sentence). Building the adapter is inside the guard too (a bad stored credential).
+    `shared` (TM Part 1, flag data_hub): the connection's chain snapshot of the last few seconds when there is one."""
     try:
         adapter = candles_routes.build_adapter(record)
+        if shared:
+            from app.market_data import hub as data_hub
+            return await data_hub.shared_chain(record.id, underlying, expiry, lambda: adapter.get_option_chain(underlying, expiry)), None
         return await adapter.get_option_chain(underlying, expiry), None
     except NotImplementedError:
         return None, NOT_OFFERED

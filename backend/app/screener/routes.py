@@ -113,6 +113,9 @@ class ValidateBody(BaseModel):
 
 class ScreenBody(ValidateBody):
     name: str = Field(min_length=1, max_length=120)
+    # LAB-18: the builder blocks as the page saved them ({stages, texts, summaries}) - kept with the new version so
+    # "Open this version" restores the same blocks and its change line reads in plain words. Optional; never run.
+    builder: Optional[Dict[str, Any]] = None
 
 
 class RunBody(BaseModel):
@@ -364,8 +367,17 @@ async def create_screen(body: ScreenBody, user: User = Depends(require_trader), 
     row = ScreenRecord(tenant_id=user.tenant_id, created_by=user.id, name="", source_text="", ast_json="{}")
     await _apply(session, user, row, body)
     session.add(row)
+    await session.flush()
+    await _record_version(session, user, row, body)
     await session.commit()
     return _screen_dict(row)
+
+
+async def _record_version(session: AsyncSession, user: User, row: ScreenRecord, body: ScreenBody) -> None:
+    """LAB-18 (AMW-7): every save that changes the screen writes an immutable version (flag `screener_copilot`)."""
+    from app.screener import versions
+    if await flag_enabled(session, versions.FLAG, user.tenant_id):
+        await versions.record(session, row, user.id, body.builder)
 
 
 @router.put("/screens/{screen_id}")
@@ -374,6 +386,7 @@ async def update_screen(screen_id: int, body: ScreenBody, user: User = Depends(r
     row = await _owned(session, user, screen_id)
     await _apply(session, user, row, body)
     await _rules_still_valid(session, user, row)
+    await _record_version(session, user, row, body)
     await session.commit()
     return _screen_dict(row)
 

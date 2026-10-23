@@ -1,7 +1,7 @@
 /** U5: the screener endpoints the funnel page uses (S1d API). Same auth, refresh and error handling as every request. */
 import { request } from "../api/client";
 import type { DataTierBadgeInfo } from "../types";
-import type { FunnelResult, Registry } from "./model";
+import type { FunnelResult, Registry, Stage } from "./model";
 import type { LegendsLibrary } from "./legends";
 import type { StagesResponse } from "./importStages";
 import type { ConfluenceResponse, MirrorsResponse, WatchListsResponse, WatchResponse } from "./library";
@@ -24,6 +24,29 @@ export interface PreviewResponse {
   data_tier?: DataTierBadgeInfo;
 }
 export interface SavedScreen { id: number; name: string; text: string; base_tf: string }
+
+/** LAB-18 (AMW-7): the builder blocks a save keeps with its version ({stages, texts, summaries}). */
+export interface VersionBuilder { stages: Stage[]; texts: string[]; summaries: string[] }
+
+/** LAB-18: one immutable server version of a saved scan, as the Versions dialog lists it (oldest first). */
+export interface ServerVersion {
+  version: number;          // the server's number for it (never reused)
+  number: number;           // its place in the list, 1 = the oldest kept
+  latest: boolean;
+  name: string;
+  base_tf: string;
+  conditions: number;
+  change: string[];         // what changed from the one before, in plain lines
+  origin: "save" | "device";
+  created_at: string | null;
+}
+export interface ServerVersionDetail extends ServerVersion {
+  text: string;
+  params: Record<string, number | string | boolean>;
+  builder: VersionBuilder | null;
+}
+export interface VersionsResponse { screen_id: number; imported: boolean; max: number; versions: ServerVersion[] }
+export interface ImportResponse { imported: number; skipped: number; already: boolean }
 
 /** Handover 11j "idea -> scan": one recognised part of the idea (registry functions only). */
 export interface IdeaPart {
@@ -78,9 +101,16 @@ export const screenerApi = {
   idea: (text: string, baseTf: string, edits: string[] = []) =>
     request<IdeaResponse>("/screener/copilot/idea", { method: "POST",
       body: JSON.stringify(edits.length ? { text, base_tf: baseTf, edits } : { text, base_tf: baseTf }) }),
-  save: (name: string, source: string, baseTf: string, id?: number) =>
+  /** LAB-18: with `builder` (flag `screener_copilot`), the save keeps the builder blocks with its new version. */
+  save: (name: string, source: string, baseTf: string, id?: number, builder?: VersionBuilder) =>
     request<SavedScreen>(id ? `/screener/screens/${id}` : "/screener/screens",
-      { method: id ? "PUT" : "POST", body: JSON.stringify({ name, source, base_tf: baseTf }) }),
+      { method: id ? "PUT" : "POST", body: JSON.stringify(builder ? { name, source, base_tf: baseTf, builder } : { name, source, base_tf: baseTf }) }),
+  /** LAB-18 (flag `screener_copilot`; 503 while off): a saved scan's versions, one version in full, and the one upload
+   * of the history this device kept before the server kept it. */
+  versions: (id: number) => request<VersionsResponse>(`/screener/screens/${id}/versions`),
+  version: (id: number, version: number) => request<ServerVersionDetail>(`/screener/screens/${id}/versions/${version}`),
+  importVersions: (id: number, versions: unknown[]) =>
+    request<ImportResponse>(`/screener/screens/${id}/versions/import`, { method: "POST", body: JSON.stringify({ versions }) }),
 };
 
 /** 11j step 7 "Tell me when it matches": the existing alert rules (S3a / S4a bar-close engine), screen rules only.

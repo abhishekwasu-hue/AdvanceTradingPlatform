@@ -91,7 +91,9 @@ def build_order_plan(signal: Signal, contract: ResolvedContract, rules: Contract
         "lot_size": contract.lot_size, "expiry": contract.expiry, "option_position": contract.position.value if contract.position else None,
         "premium_stop_pct": rules.premium_stop_pct if contract.kind == InstrumentKind.OPTION else None,
         "underlying_symbol": contract.underlying_symbol, "underlying_direction": signal.direction.value,
-        "underlying_stop_loss": signal.stop_loss, "underlying_target1": signal.target1, "underlying_target2": signal.target2,
+        # strategy templates section 5: a single option whose stop is the premium stop only carries no underlying stop
+        "underlying_stop_loss": signal.stop_loss if (contract.kind != InstrumentKind.OPTION or rules.underlying_stop) else None,
+        "underlying_target1": signal.target1, "underlying_target2": signal.target2,
         # Z6: read only by the journal (Greeks / IV at entry); not a trade column, persist_trade does not store it.
         "underlying_entry": signal.entry,
     }

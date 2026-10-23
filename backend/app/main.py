@@ -31,7 +31,8 @@ from app.core.models import (
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.routes import router as auth_router
 from app.auth.google_routes import router as google_auth_router
-from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router
+from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router, with_template_exits
+from app.strategy_templates.exits import TemplateExitsBody
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
@@ -106,6 +107,8 @@ from app.alerts.routes import router as alerts_router
 from app.team.routes import router as team_router
 from app.admin.routes import router as admin_router
 from app.admin.console import router as admin_console_router
+from app.admin.view_as_routes import admin_router as view_as_admin_router, router as view_as_router
+from app.auth.view_as_middleware import ViewSessionReadOnly
 from app.exports.routes import router as exports_router
 from app.contract_notes.routes import router as contract_notes_router
 from app.observability.middleware import ObservabilityMiddleware
@@ -147,6 +150,7 @@ from app.screener.breakouts.routes import router as screener_breakouts_router
 from app.screener.evidence_routes import router as screener_evidence_router
 from app.screener.board import router as screener_board_router
 from app.screener.library_routes import router as screener_library_router
+from app.screener.version_routes import router as screener_version_router
 from app.screener.etf_routes import router as screener_etf_router
 from app.lab.pine.routes import router as lab_pine_router
 from app.strategy_templates.routes import router as strategy_templates_router
@@ -232,6 +236,9 @@ class _LimitRequestBody:
 
 
 app.add_middleware(_LimitRequestBody)
+# MO3-A1: a read-only "View as user" token can never write - refused here, inside the /api/v1 rewrite (it sees the
+# routers' paths) and before any route (app/auth/view_as_middleware.py).
+app.add_middleware(ViewSessionReadOnly)
 
 
 # Outermost: request id, /api/v1 alias, HTTP metrics (Phase E1/E2). Added before CORS so CORS
@@ -277,6 +284,8 @@ app.include_router(alerts_router)
 app.include_router(team_router)
 app.include_router(admin_router)
 app.include_router(admin_console_router)  # MO3 (a): the admin console's read-only sections (SUPER_ADMIN + two-factor)
+app.include_router(view_as_admin_router)  # MO3-A1: the admin's read-only "View as user" (SUPER_ADMIN + two-factor)
+app.include_router(view_as_router)        # MO3-A1: the view's banner / End, and the person's own record of views
 app.include_router(ops_alerts_router)  # A2: Admin > System > Alerts - the server checks and the operator channels
 app.include_router(exports_router)
 app.include_router(contract_notes_router)
@@ -327,6 +336,7 @@ app.include_router(screener_breakouts_router)
 app.include_router(screener_evidence_router)  # U8 EV1/EV2: evidence charts (flag evidence_charts, off)
 app.include_router(screener_board_router)  # U5 D3a: result-board heatmap / chart-grid context (flag screener_board_views, off)
 app.include_router(screener_library_router)  # U9 TX2: confluence, mirrors, watch-then-trigger lists (flag screener_tx2, off)
+app.include_router(screener_version_router)  # LAB-18 (AMW-7): a saved screen's versions (flag screener_copilot, off)
 app.include_router(screener_etf_router)  # S10 J: the ETF screen on the shared EOD history (flag screener_etf, off)
 app.include_router(alert_rules_router)
 app.include_router(scan_then_router)
@@ -407,6 +417,7 @@ class BacktestRequest(BaseModel):
     # Phase W: present = run the signals as option structures (app/backtest/options_engine.py).
     options: Optional[OptionBacktestBody] = None
     execution_models: Optional[Dict[str, Any]] = None   # realism C2 (omitted = default models)
+    template_exits: Optional[TemplateExitsBody] = None   # strategy templates section 5 (omitted = as before)
 
 
 class PaperExecuteResponse(BaseModel):
@@ -626,6 +637,7 @@ async def backtest(
     risk_config = request.risk_config or _default_risk_config
 
     body = BacktestBody(**request.model_dump())
+    strategy = with_template_exits(strategy, body)                     # section 5: a template's exit choice (422 if it does not fit)
     runner = await BacktestRunner.build(body, risk_config, session, tenant_id=user.tenant_id if user is not None else None)
     result = await run_in_threadpool(runner.run, strategy, base_df)        # CPU-bound pandas work off the event loop (P0.1 / S3)
     # Phase J2: the run is recorded (strategy, params, data span, metrics) and metered against the plan.

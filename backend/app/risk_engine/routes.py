@@ -8,6 +8,7 @@ from app.core.models import RiskConfig
 from app.db.models import RiskSettingsRecord, User
 from app.db.session import get_session
 from app.platform import controls
+from app.risk_engine import loss_streak
 
 router = APIRouter(prefix="/api/risk-settings", tags=["risk"])
 
@@ -27,6 +28,7 @@ def _record_to_config(record: RiskSettingsRecord) -> RiskConfig:
         dd_level_1_pct=record.dd_level_1_pct if record.dd_level_1_pct is not None else 5.0,
         dd_level_2_pct=record.dd_level_2_pct if record.dd_level_2_pct is not None else 10.0,
         event_size_cut_pct=record.event_size_cut_pct if record.event_size_cut_pct is not None else 50.0,
+        loss_streak_pause=record.loss_streak_pause if record.loss_streak_pause in loss_streak.PAUSE_MODES else loss_streak.NEXT_SESSION,
     )
 
 
@@ -84,7 +86,43 @@ async def update_risk_settings(
     record.dd_level_1_pct = config.dd_level_1_pct
     record.dd_level_2_pct = config.dd_level_2_pct
     record.event_size_cut_pct = config.event_size_cut_pct
+    record.loss_streak_pause = config.loss_streak_pause
 
     await session.commit()
     await session.refresh(record)
     return _record_to_config(record)
+
+
+# --- CP6-15: the losses-in-a-row pause and "Resume after losses in a row" -------------------------------------------------
+
+@router.get("/loss-streak")
+async def get_loss_streak(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """The organisation's losses in a row as the risk engine counts them now, whether new entries are paused, when the
+    pause ends and the last resume. Exits are never paused (ADR-0004)."""
+    from app.trading.persistence import loss_streak_status
+    return await loss_streak_status(session, user.tenant_id)
+
+
+@router.post("/loss-streak/resume", dependencies=[Depends(require_scope("risk:write"))])
+async def resume_after_loss_streak(user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+    """"Resume after losses in a row": with "Pause until I resume", only losses closed after now count from here on.
+    Refused (409) under "Pause until the next session" (the next session ends that pause) and when no pause is active.
+    Audited; it changes no limit and places nothing."""
+    from datetime import datetime, timezone
+
+    from app.audit.log import write_audit_log
+    from app.trading.persistence import loss_streak_status
+    status = await loss_streak_status(session, user.tenant_id)
+    if status["mode"] != loss_streak.UNTIL_RESUME:
+        raise HTTPException(status_code=409, detail="Your setting ends this pause at the next session; there is nothing to resume.")
+    if not status["paused"]:
+        raise HTTPException(status_code=409, detail="New entries are not paused by losses in a row; there is nothing to resume.")
+    record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
+    if record is None:   # unreachable: "until_resume" is only ever read from a saved row
+        raise HTTPException(status_code=409, detail="Save your risk limits first.")
+    record.loss_streak_resumed_at = datetime.now(timezone.utc)
+    record.updated_by = user.id
+    await write_audit_log(session, user.tenant_id, user.id, "loss_streak_resumed",
+                          f"losses_in_a_row={status['losses_in_a_row']} limit={status['limit']}")
+    await session.commit()
+    return await loss_streak_status(session, user.tenant_id)

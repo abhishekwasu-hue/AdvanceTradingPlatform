@@ -177,6 +177,54 @@ class UserSessionRecord(Base):
     mfa_verified_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
 
 
+class ViewSessionRecord(Base):
+    """MO3-A1: one read-only "View as user" session a SUPER_ADMIN opened from the admin console's Support section.
+
+    The admin names the person (`user_id`, in `tenant_id`) and a reason; the server hands back a short-lived access token
+    whose SHA-256 is the only thing stored (`token_hash`). That token reads as the person and can never write: every
+    request that is not a read is refused with 403 at one chokepoint (app/auth/view_as_middleware.py). The session is
+    bound to the admin's own two-factor-verified login session (`admin_session_id`): it ends when that one does, when the
+    admin ends it, or at `expires_at`. Every request is recorded in `view_session_requests`; start and end are on the
+    hash-chained audit trail of both accounts, and the person sees the session in Settings > Account & plan."""
+
+    __tablename__ = "view_sessions"
+    # One open view per admin (with the row lock at start, app/auth/view_as.py).
+    __table_args__ = (Index("uq_view_sessions_open_per_admin", "admin_user_id", unique=True,
+                            postgresql_where=text("ended_at IS NULL"), sqlite_where=text("ended_at IS NULL")),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    # The person whose account is viewed.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    admin_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    admin_session_id: Mapped[int | None] = mapped_column(ForeignKey("user_sessions.id", ondelete="SET NULL"), nullable=True)
+    reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    ended_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # "ended by support", "expired", "a new view started", "support signed out", ...
+    end_reason: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    refused_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+class ViewSessionRequestRecord(Base):
+    """MO3-A1: every request a "View as user" session made - the method, the path (never the query string or a body),
+    the answer's status and whether the read-only chokepoint refused it."""
+
+    __tablename__ = "view_session_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    view_session_id: Mapped[int] = mapped_column(ForeignKey("view_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    path: Mapped[str] = mapped_column(String(300), nullable=False)
+    status: Mapped[int] = mapped_column(Integer, nullable=False)
+    refused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class TenantInviteRecord(Base):
     """An owner's invitation for someone to join their tenant with a given role. Only a SHA-256 of
     the one-time token is stored (the raw token lives in the invite link, shown to the owner once),
@@ -559,6 +607,16 @@ class StrategyDeploymentRecord(Base):
     # only an approved one places a PAPER order - app/execution/approval.py). With the `approval_only_entries` flag on
     # every deployment of the organisation is approval-only whatever this says; APPROVAL never reverts to AUTO by itself.
     entry_mode: Mapped[str] = mapped_column(String(10), nullable=False, default="AUTO", server_default="AUTO")
+    # Strategy templates section 5 ("exits as settings", app/strategy_templates/exits.py): the user's own stop / target
+    # choice for a template deployment. NULL everywhere = exactly the behaviour before (the template's invalidation as the
+    # stop, no target; a structure's credit levels), so every existing row is unchanged. stop_source: TEMPLATE_INVALIDATION
+    # / PREMIUM_PCT / CREDIT_PCT; target_rule: NONE / R_MULTIPLE (target_r) / TEMPLATE_EXIT / CREDIT_PCT / WAVE_PROJECTION
+    # (target_base_wave, target_ratio).
+    stop_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    target_rule: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    target_r: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_base_wave: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    target_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
@@ -781,6 +839,10 @@ class RiskSettingsRecord(Base):
     dd_level_2_pct: Mapped[float] = mapped_column(Float, nullable=False, default=10.0, server_default="10.0")
     event_size_cut_pct: Mapped[float] = mapped_column(Float, nullable=False, default=50.0, server_default="50.0")
     lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # CP6-15 (app/risk_engine/loss_streak.py): when the losses-in-a-row pause ends ("next_session" / "until_resume"), and
+    # the last "Resume after losses in a row" (only losses closed after it count under "until_resume").
+    loss_streak_pause: Mapped[str] = mapped_column(String(16), nullable=False, default="next_session", server_default="next_session")
+    loss_streak_resumed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 
@@ -3062,6 +3124,37 @@ class ScreenRecord(Base):
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    # LAB-18 (AMW-7): when this screen's device history (frontend versions.ts) was uploaded - the import's idempotence
+    # marker; null until the first sync.
+    versions_imported_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class ScreenVersionRecord(Base):
+    """LAB-18 (AMW-7): one immutable version of a saved screen - written by every save that changes it (and by the one
+    upload of the device history). Never updated: "open an older version" loads it into the builder and the next save
+    writes a new version. At most `app.screener.versions.MAX_VERSIONS` per screen (the oldest are pruned). Tenant-scoped
+    like `screens`; deleted with its screen."""
+
+    __tablename__ = "screen_versions"
+    __table_args__ = (UniqueConstraint("screen_id", "version", name="uq_screen_versions_screen_version"),
+                      Index("ix_screen_versions_screen_created", "screen_id", "created_at"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    screen_id: Mapped[int] = mapped_column(ForeignKey("screens.id", ondelete="CASCADE"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)                 # per screen, 1, 2, ... never reused
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)                # canonical ScreenQL text
+    ast_json: Mapped[str] = mapped_column(Text, nullable=False)
+    ast_version: Mapped[str] = mapped_column(String(20), nullable=False, default="screenql/1")
+    base_tf: Mapped[str] = mapped_column(String(4), nullable=False, default="1d")
+    params_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    body_sha256: Mapped[str] = mapped_column(String(64), nullable=False)          # name + text + timeframe + params
+    change: Mapped[str] = mapped_column(String(600), nullable=False, default="")   # plain lines, newline-separated
+    builder_json: Mapped[str | None] = mapped_column(Text, nullable=True)         # the builder blocks as saved
+    origin: Mapped[str] = mapped_column(String(8), nullable=False, default="save")  # save | device
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 class RankingSystemRecord(Base):

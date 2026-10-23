@@ -128,3 +128,14 @@ describe("UI2-9a one primary action, colour and wording", () => {
     expect(riskSource).toContain('title="Risk limits"');
   });
 });
+
+describe("CP6-15 Risk limits: when the losses-in-a-row pause ends", () => {
+  it("the setting is saved with the other limits, and the resume is a neutral button shown only while it can resume", () => {
+    expect(riskSource).toContain("After the losses-in-a-row limit");
+    expect(code(riskSource)).toContain("{ ...config, loss_streak_pause: pauseDraft }");
+    expect(code(riskSource)).toMatch(/streak\.can_resume && \([\s\S]*BUTTON_SECONDARY[\s\S]*"Resume after losses in a row"/);
+    expect(code(riskSource)).toContain("api.resumeLossStreak()");
+    expect(code(riskSource)).toMatch(/pausedNote && streak && \(/);
+    expect(riskSource).toContain("Exits are never paused.");
+  });
+});

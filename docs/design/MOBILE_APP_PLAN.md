@@ -218,6 +218,9 @@ back-button "Leave ATP?" prompt and the Settings → About versions. How to buil
 
 ### 3.3 B2 and B3: files to add
 
+**Status (23 Oct 2026, readiness B8):** the B2 push and deep-link part is built as `docs/design/MOBILE_PUSH.md` says
+(no migration: phones live in the organisation's FCM alert channel; the native push plug-in waits for MA-2, MA-10).
+
 - B2: `frontend/src/native/push.ts`, `frontend/src/native/deepLinks.ts`, `frontend/src/native/share.ts`,
   `frontend/src/alerts/PhonePushSection.tsx`; backend `app/alerts/fcm.py`, `app/mobile/devices.py` (model + routes),
   one Alembic migration; `frontend/public/.well-known/assetlinks.json` generated at build (§6.3).

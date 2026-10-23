@@ -102,6 +102,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "public_status_page": FlagInfo("A public status page", "platform", "/status", (), "", "ready"),
     "market_zones": FlagInfo("Nightly demand / supply and S/R zones on the chart", "charts", "chart layer, zone functions", (), "nightly job", "ready"),
     "markets_view": FlagInfo("Sectors & indices page and the option chain summary in plain words", "data", "Sectors & indices page, a summary on the Option chain page", ("ui_v2",), "the daily market data update", "unfinished"),
+    "mobile_push": FlagInfo("Phone notifications in the Android app", "data", "Phone notifications in the app's Settings; notifications that open the right screen", ("ui_v2",), "the server's FCM key and the app with the notification plug-in", "unfinished"),
     "screener_legends": FlagInfo("Cards on public trading methods with a screen", "screens", "Legends cards", ("screener_v2",), "", "ready"),
     "screener_board_views": FlagInfo("Heat map and chart grid of matches", "screens", "result views", ("screener_v2",), "", "ready"),
     "scan_auto_paper": FlagInfo("Armed scans place PAPER orders without asking", "screens", "paper orders from scans", ("execution_core",), "the Approve step for automatic entries switched off", "decision"),

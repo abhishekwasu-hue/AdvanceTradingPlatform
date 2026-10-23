@@ -9,6 +9,8 @@ import VisionByokCard from "../components/VisionByokCard";
 import WebhookCard from "../components/WebhookCard";
 import { Card } from "../components/ui";
 import TelegramConnectV2 from "../alerts/TelegramConnectV2";
+import PhonePushV2 from "../alerts/PhonePushV2";
+import { isNativeApp } from "../native/platform";
 import RhythmTelegramV2 from "../rhythm/RhythmTelegramV2";
 import ConnectAiPanelV2 from "../aiKeys/ConnectAiPanelV2";
 import KeyGuidesV2 from "../aiKeys/KeyGuidesV2";
@@ -87,9 +89,17 @@ function AiSection() {
 
 function AlertsSection() {
   const rhythm = useFeatures().on("daily_rhythm");
+  // B8: inside the Android app, with mobile_push on, the phone's own notifications come first.
+  const mobilePush = useFeatures().on("mobile_push");
+  const phone = isNativeApp() && mobilePush;
   const [telegramChanged, setTelegramChanged] = useState(0);
   return (
     <div id="alerts" className="space-y-space-4">
+      {phone && (
+        <div id="phone-notifications" className="scroll-mt-20">
+          <Card title="Notifications on this phone"><PhonePushV2 /></Card>
+        </div>
+      )}
       <div id="telegram" className="scroll-mt-20">
         <Card title="Alerts on your phone"><TelegramConnectV2 onChanged={() => setTelegramChanged((n) => n + 1)} /></Card>
       </div>

@@ -270,6 +270,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # page's "What the chain shows" summary (app/option_chain/dish.py). OFF: /api/markets/* answers 404, the page is not
     # in the navigation and the option chain shows no summary. Information only, places no orders.
     "markets_view": "Sector & index view (index and sector moves, breadth, strongest and weakest stocks) and the option chain's plain-words summary (information only)",
+    # B8 (readiness, docs/design/MOBILE_PUSH.md): phone notifications to the Android app (FCM) for signals, approvals,
+    # exits and renew reminders, each opening its screen. OFF: the device routes answer 404 (X-Feature-Disabled) and no
+    # phone delivery is queued. Also needs the server's FCM key (FCM_SERVICE_ACCOUNT_JSON_BASE64). Places no orders.
+    "mobile_push": "Phone notifications in the Android app (signals, approvals, exits, renew reminders), each opening its screen",
     # U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards - publicly described methods with a screen
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.

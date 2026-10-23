@@ -159,10 +159,7 @@ export default function PaperBotV2(_props: PageProps) {
     <div className="space-y-space-4">
       <PageTitleV2 title="Paper bot" subtitle="Your strategy trades with paper money here, so you can watch how it does. No real money is used."
         action={canChange ? <button type="button" className={BUTTON_PRIMARY} onClick={goToForm}>Start a paper bot</button> : undefined} />
-      <PageIntro id="paper-bot" lines={[
-        "Pick a strategy and a symbol; the bot then checks the market on its own and trades on paper, even while the app is closed.",
-        "Pause or stop a bot any time. Your risk limits apply to every paper trade.",
-      ]} />
+      <PageIntro id="paper-bot" lines={["Pick a strategy and a symbol, then start it. The bot keeps checking the market even while the app is closed; pause or stop it any time."]} />
 
       {stepUp && (
         <StepUpDialog reason={stepUp.reason} onCancel={() => setStepUp(null)} onVerified={() => { const r = stepUp.retry; setStepUp(null); void r(); }} />

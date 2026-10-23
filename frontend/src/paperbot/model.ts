@@ -1,5 +1,6 @@
 import { botWithDefaults, structureLabel, type TradingDefaults } from "../settings/tradingDefaults";
 import type { ContractRules, Deployment, DeploymentCreateRequest, StrategyInfo } from "../types";
+import { strategyDisplayName } from "../ui/strategyName";
 
 /**
  * UX2 fix 4 ("Paper bot in three taps", docs/design/UX_AUDIT_FULL.md problem 3 and P18): the rules of the v2 Paper bot
@@ -141,12 +142,8 @@ export function templateOf(id: string): string | null {
 }
 
 export function botName(d: Pick<Deployment, "strategy_id">, names: ReadonlyMap<string, string>): string {
-  const name = names.get(d.strategy_id);
-  if (name) return name;
-  const template = templateOf(d.strategy_id);
-  if (template) return names.get(TEMPLATE_ID_PREFIX + template) ?? "Strategy template";   // never the id itself
-  const words = d.strategy_id.replace(/^custom[:_-]?/i, "").replace(/[_-]+/g, " ").trim();
-  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "My strategy";
+  // The one shared rule (src/ui/strategyName.ts): the Library name, a template's name, else words - never the id.
+  return strategyDisplayName(d.strategy_id, names) || "My strategy";
 }
 
 /** "Option of NIFTY 50" / "RELIANCE" and how long it holds. */

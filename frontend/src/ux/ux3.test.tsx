@@ -45,7 +45,7 @@ describe("UX3 fix 10: signal text in structure words", () => {
     const [row] = signalsToday([action({ symbol: "NIFTY 50", direction: "LONG", proposal_price: 24790, stop_loss: 24720, target1: 24930,
       strategy_id: "orb_nifty", source: "deployment", signal: { reasons: ["Buy above 24,800"] } })], now).rows;
     expect(row).not.toHaveProperty("levels");
-    expect(row.setup).toBe("Orb nifty");                     // the call-word reason is left out; the strategy's name instead
+    expect(row.setup).toBe("Opening Range Breakout");                     // the call-word reason is left out; the strategy's name instead
     expect(JSON.stringify(row)).not.toMatch(/24,?[79]\d0|Entry|Stop|Target/);
   });
 

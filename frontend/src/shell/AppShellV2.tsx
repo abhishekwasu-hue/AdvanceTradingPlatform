@@ -28,6 +28,8 @@ import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2Red
 import SidebarV2 from "./SidebarV2";
 import TopBarV2 from "./TopBarV2";
 import { usePaperOnly } from "../setup/paperOnly";
+import { liveHiddenFrom } from "../settings/useLiveHidden";
+import { useStrategyNames } from "../ui/useStrategyNames";
 import { tourIdFor } from "../tours/pages";
 import { useTours } from "../tours/state";
 import TourHost from "../tours/TourHost";
@@ -59,6 +61,10 @@ export default function AppShellV2() {
   const key = shellKeyFromPath(path);
   // P3: on the front page in PAPER the top bar shows no LIVE or e-mail notice (only after the deployments were read).
   const frontPaperOnly = usePaperOnly(!!user && key === "dashboard");
+  // User-friendly pass item 2: while `phase0_paper_only` is on, no LIVE notice on any page.
+  const liveHidden = liveHiddenFrom(features);
+  // Item 6: the Library's names, read once per sign-in, so no screen shows a strategy id (src/ui/strategyName.ts).
+  useStrategyNames(user?.id ?? null);
   const title = shellTitle(key);
   const role = user?.role ?? null;
   const ctx = useMemo<NavContext>(() => ({ on: features.on, role }), [features.on, role]);
@@ -186,7 +192,7 @@ export default function AppShellV2() {
         <TopBarV2 title={title} user={user} accountPath={accountPath}
           notificationsActive={key === "notifications"} accountActive={key === "account"}
           onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined}
-          paperOnly={frontPaperOnly} onTour={replayTour} />
+          paperOnly={frontPaperOnly || liveHidden} onTour={replayTour} />
         <PwaBanners />
         <LegalAcceptanceBanner />
         {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip. */}

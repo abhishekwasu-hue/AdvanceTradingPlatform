@@ -88,7 +88,7 @@ describe("UI2-9a exits (ADR-0004, UI-11)", () => {
   it("a row: symbol, Long, Paper, size, levels in red and green, live price and signed P&L, a chart link", () => {
     const html = row();
     const words = text(html);
-    for (const s of ["DEMO A", "Long", "Paper", "Buy · 2 lots (150) · avg 100.00", "Stop 95.00", "Target 110.00", "110.00", "+₹1,500.00", "+10.00%"]) {
+    for (const s of ["DEMO A", "Long", "Paper", "Buy · 2 lots (150) · avg 100.00", "Stop 95.00", "Target 110.00", "110.00", "+₹1,500", "+10.00%"]) {
       expect(words, s).toContain(s);
     }
     expect(html).toContain("text-down");

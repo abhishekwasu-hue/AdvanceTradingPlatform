@@ -1,5 +1,5 @@
 import { SETUP_ADDRESS } from "../shell/aliases";
-import { formatNumber } from "../ui/format";
+import { formatINR } from "../ui/format";
 import type { ContractRules, DeploymentCreateRequest } from "../types";
 
 /**
@@ -202,7 +202,7 @@ export const RISK_LABELS: Record<RiskField, string> = {
   capital: "Starting capital", riskPerTradePct: "Risk per trade", dailyLossPct: "Daily loss limit", maxTradesPerDay: "Max trades per day",
 };
 
-const rupees = (v: number) => `₹${formatNumber(Math.round(v))}`;
+const rupees = (v: number) => formatINR(v);   // the money rule: whole rupees (src/ui/format.ts)
 
 /** "With these limits the most you can lose today is ₹3,000." - or null while a figure is not a valid number. */
 export function riskSentence(capital: number, dailyLossPct: number): string | null {

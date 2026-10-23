@@ -165,9 +165,9 @@ describe("UI2-2 active signals (today's entry proposals)", () => {
     expect(s.taken).toBe(1);
     expect(s.rows.map((r) => r.id)).toEqual([2, 3, 5]);
     expect(s.rows[0]).toMatchObject({ time: "10:42", symbol: "NIFTY 50", side: "Long", setup: "Opening-range breakout, retest held",
-      source: "Paper bot · Orb nifty", status: "Waiting for you", waiting: true });
+      source: "Paper bot · Opening Range Breakout", status: "Waiting for you", waiting: true });
     expect(s.rows[0]).not.toHaveProperty("levels");                                 // UX3 fix 10: no prices in signal text
-    expect(s.rows[1]).toMatchObject({ side: "Short", setup: "Orb nifty", source: "Scan · Orb nifty" });
+    expect(s.rows[1]).toMatchObject({ side: "Short", setup: "Opening Range Breakout", source: "Scan · Opening Range Breakout" });
     expect(s.rows[2].status).toBe("Skipped");
     expect(signalsToday(null, NOW)).toEqual({ rows: [], count: 0, waiting: 0, taken: 0 });
   });
@@ -199,7 +199,7 @@ describe("UI2-2 needs attention", () => {
     expect(rows[1].title).toBe("3 trades are waiting for your approval");              // the snoozed one waits
     expect(rows[1].detail).toBe("NIFTY 50 long from Paper bot · NIFTY BANK short from Scan · 1 more · first one expires in 8 min");
     expect(rows[1].action).toEqual({ label: "Review 3 trades", to: "/copilot/watchtower" });
-    expect(rows[2]).toMatchObject({ title: "Paper bot paused “Mean reversion BANKNIFTY”", action: { to: "/deployments" } });
+    expect(rows[2]).toMatchObject({ title: "Paper bot paused “Mean reversion · BANKNIFTY”", action: { to: "/deployments" } });
     expect(rows[3]).toMatchObject({ title: "New trades are paused for today", detail: "Today's loss reached your limit." });
   });
 
@@ -215,14 +215,27 @@ describe("UI2-2 needs attention", () => {
     expect(rows[2].action).toBeUndefined();
   });
 
-  it("P3: in PAPER (no LIVE deployment) no LIVE rows: no 'Live trading is paused', no e-mail row", () => {
+  it("P3: in PAPER (no LIVE deployment) no LIVE rows; the e-mail row stays, once, with no LIVE wording (item 1)", () => {
     const paper = { ...liveBot, mode: "PAPER" } as Deployment;
     for (const deployments of [[], [paper]]) {
       const rows = attentionRows({ ...base, deployments, emailVerified: false,
         status: { maintenance_mode: true, maintenance_message: null, disabled_brokers: ["angel_one"] } });
-      expect(rows.map((r) => r.id)).toEqual(["maintenance"]);
-      for (const r of rows) expect(`${r.title} ${r.detail}`).not.toMatch(/\blive\b|e-?mail|MFA|algo|SEBI/i);
+      expect(rows.map((r) => r.id)).toEqual(["maintenance", "email"]);
+      for (const r of rows) expect(`${r.title} ${r.detail}`).not.toMatch(/\blive\b|MFA|algo|SEBI/i);
+      expect(rows[1]).toMatchObject({ title: "Verify your email", dismissible: true, action: { label: "Verify", to: "/settings/account" } });
     }
+  });
+
+  it("item 2: while phase0_paper_only is on (liveHidden), no LIVE row and no LIVE wording, even with a LIVE bot", () => {
+    const rows = attentionRows({ ...base, deployments: [liveBot], emailVerified: false, liveHidden: true,
+      status: { maintenance_mode: false, maintenance_message: null, disabled_brokers: ["angel_one"] } });
+    expect(rows.map((r) => r.id)).toEqual(["email"]);
+    for (const r of rows) expect(`${r.title} ${r.detail}`).not.toMatch(/\blive\b/i);
+  });
+
+  it("item 1: a verified address has no e-mail row; the row can be hidden for today", () => {
+    expect(attentionRows({ ...base, deployments: [], emailVerified: true }).map((r) => r.id)).not.toContain("email");
+    expect(attentionRows({ ...base, deployments: [], emailVerified: false, dismissed: new Set(["email"]) }).map((r) => r.id)).not.toContain("email");
   });
 
   it("P3: a failed deployments read (null) never hides the LIVE rows", () => {

@@ -311,10 +311,7 @@ export default function ChartAnalyzePageV2() {
 
   return (
     <div className="mx-auto max-w-[1240px] space-y-space-4" data-testid="chart-analyze-page">
-      <PageIntro id="chart-analyze" lines={[
-        "Get an educational reading of a chart: the situation and the possibilities, as the method sees them.",
-        "Upload or paste a screenshot, or paste a TradingView snapshot link, then press Analyze.",
-      ]} />
+      <PageIntro id="chart-analyze" lines={["Upload or paste a chart screenshot, or a TradingView snapshot link, then press Analyze for an educational reading."]} />
       <h1 className="text-t20 font-semibold text-fg md:text-t24">Analyze a chart</h1>
 
       {engineMissing && (

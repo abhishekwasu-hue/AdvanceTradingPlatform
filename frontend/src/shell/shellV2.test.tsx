@@ -9,7 +9,7 @@ import { OWN_BROKER_STATES } from "./pagesV2";
 import { CommandList, isApplePlatform, isCommandShortcut, moveActive, otherDialogOpen, shortcutLabel } from "./CommandBarV2";
 import { MoreSheetContent, moreSheetResults } from "./MoreSheetV2";
 import { searchPages, visibleSections, type NavContext } from "./navModel";
-import { SidebarV2View, initialsOf, roleLabel } from "./SidebarV2";
+import { SidebarV2View, initialsOf, roleLabel, showRoleFor } from "./SidebarV2";
 import { v2RedirectFor } from "./shellRoutes";
 import { topBarNotices } from "./TopBarV2";
 
@@ -130,11 +130,24 @@ describe("UI2-1 sidebar", () => {
     ]);                                                                   // logo, the entries, the account footer
     expect(html).toMatch(/aria-current="page"[^>]*href="\/positions"|href="\/positions"[^>]*aria-current="page"/);
     expect(html).toContain(">AW<");
-    expect(html).toContain("Owner");
+    expect(html).not.toContain("Owner");                                 // members not known: no role label
     expect(html).toContain(">Paper<");
     expect(html).not.toContain("PAPER MODE");
     expect(html).not.toContain("data-broker-dot");                       // no status known: no dot
     expect(html).not.toContain("data-nav-admin");
+  });
+
+  it("user-friendly pass item 3: the role under the name only when the organisation has more than one member", () => {
+    const withMembers = (members: number | null) => renderToStaticMarkup(
+      <MemoryRouter>
+        <SidebarV2View sections={visibleSections(trader)} current="dashboard" user={user} accountPath="/settings/account" members={members} />
+      </MemoryRouter>,
+    );
+    expect(withMembers(1)).not.toContain("data-role-label");
+    expect(withMembers(1)).not.toContain("Owner");
+    expect(withMembers(null)).not.toContain("data-role-label");
+    expect(withMembers(3)).toContain("data-role-label");
+    expect(withMembers(3)).toContain(">Owner<");
   });
 
   it("UX3-9: 13 entries with every feature on; the Admin console set apart for the platform operator", () => {
@@ -176,6 +189,9 @@ describe("UI2-1 sidebar", () => {
 
   it("labels roles and initials plainly", () => {
     expect(roleLabel("SUPER_ADMIN")).toBe("Platform operator");
+    expect(showRoleFor(null)).toBe(false);
+    expect(showRoleFor(1)).toBe(false);
+    expect(showRoleFor(2)).toBe(true);
     expect(roleLabel("OWNER")).toBe("Owner");
     expect(roleLabel("RISK_MANAGER")).toBe("Risk manager");
     expect(initialsOf("abhi.wasu@example.com")).toBe("AW");
@@ -185,13 +201,14 @@ describe("UI2-1 sidebar", () => {
 });
 
 describe("UI2-1 top bar notices", () => {
-  it("uses plain words: maintenance and LIVE paused are warnings, verify email is a link", () => {
+  it("uses plain words: maintenance and LIVE paused are warnings; no e-mail chip on any page (item 1)", () => {
     const status = { maintenance_mode: true, maintenance_message: "Back at 10:00", disabled_brokers: ["zerodha"] } as never;
     expect(topBarNotices(status, { id: 1, email: "a@b.c", tenant_id: 1, role: "OWNER", email_verified: false })).toEqual([
       { kind: "warn", text: "Maintenance: new trades are paused. Back at 10:00" },
       { kind: "warn", text: "Live trading is paused on zerodha" },
-      { kind: "link", text: "Verify your email", title: "Live trading and broker keys may need a verified address" },
     ]);
+    expect(topBarNotices(null, { id: 1, email: "a@b.c", tenant_id: 1, role: "OWNER", email_verified: false })).toEqual([]);
+    expect(topBarNotices(status, null, true)).toEqual([{ kind: "warn", text: "Maintenance: new trades are paused. Back at 10:00" }]);
     expect(topBarNotices(null, null)).toEqual([]);
   });
 });

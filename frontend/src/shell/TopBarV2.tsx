@@ -15,8 +15,11 @@ import { initialsOf } from "./SidebarV2";
  * MO2 part C: a "?" right after the page title replays that page's tips (`onTour`: only on a page that has tips, once
  * the tips' state is known).
  * Notices sit in one row under the bar, in plain words (§3 R18): maintenance and LIVE paused are warnings (amber,
- * with an icon); "Verify your email" is a neutral link. P3: on the front page in PAPER (`paperOnly`) the LIVE-paused and
- * e-mail notices are left out; every other page keeps them.
+ * with an icon). P3: on the front page in PAPER (`paperOnly`) the LIVE-paused notice is left out; the shell also passes
+ * `paperOnly` on every page while `phase0_paper_only` is on (user-friendly pass item 2: no LIVE wording in the paper
+ * phase).
+ * User-friendly pass item 1 (UX audit M13): "Verify your email" is no longer a chip on every page; it is one row in
+ * the Dashboard's Needs attention list (src/dashboard/model.ts) and the Email verification card in Settings › Account.
  */
 
 const iconButton = "flex h-11 w-11 items-center justify-center rounded-control text-fg-muted transition-colors duration-fast hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-9 md:w-9";
@@ -31,21 +34,20 @@ export interface TopBarV2Props {
   /** Present while Help is on for this organisation (flag `support_bot`). */
   onHelp?: () => void;
   onFeedback?: () => void;
-  /** P3: the front page in PAPER (no LIVE deployment, src/setup/paperOnly.ts): no LIVE or e-mail notice. */
+  /** P3: the front page in PAPER (no LIVE deployment, src/setup/paperOnly.ts), or the paper phase: no LIVE notice. */
   paperOnly?: boolean;
   /** MO2 part C: replays this page's tips (present only on a page that has them). */
   onTour?: () => void;
 }
 
-/** The notices under the top bar, in plain words. `paperOnly` (the front page in PAPER) leaves out the LIVE ones. */
-export function topBarNotices(status: SystemStatus | null, user: UserResponse | null, paperOnly = false): { kind: "warn" | "link"; text: string; title?: string }[] {
+/** The notices under the top bar, in plain words. `paperOnly` leaves out the LIVE ones. Never an e-mail chip (item 1). */
+export function topBarNotices(status: SystemStatus | null, _user: UserResponse | null, paperOnly = false): { kind: "warn" | "link"; text: string; title?: string }[] {
   const out: { kind: "warn" | "link"; text: string; title?: string }[] = [];
   if (status?.maintenance_mode) {
     out.push({ kind: "warn", text: `Maintenance: new trades are paused${status.maintenance_message ? `. ${status.maintenance_message}` : ""}` });
   }
   if (paperOnly) return out;
   if (status && status.disabled_brokers.length > 0) out.push({ kind: "warn", text: `Live trading is paused on ${status.disabled_brokers.join(", ")}` });
-  if (user && user.email_verified === false) out.push({ kind: "link", text: "Verify your email", title: "Live trading and broker keys may need a verified address" });
   return out;
 }
 

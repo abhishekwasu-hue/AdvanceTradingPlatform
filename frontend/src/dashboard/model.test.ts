@@ -215,14 +215,20 @@ describe("UI2-2 needs attention", () => {
     expect(rows[2].action).toBeUndefined();
   });
 
-  it("P3: in PAPER (no LIVE deployment) no LIVE rows: no 'Live trading is paused', no e-mail row", () => {
+  it("P3: in PAPER (no LIVE deployment) no LIVE rows; the e-mail row stays, once, with Resend and no LIVE wording (item 1)", () => {
     const paper = { ...liveBot, mode: "PAPER" } as Deployment;
     for (const deployments of [[], [paper]]) {
       const rows = attentionRows({ ...base, deployments, emailVerified: false,
         status: { maintenance_mode: true, maintenance_message: null, disabled_brokers: ["angel_one"] } });
-      expect(rows.map((r) => r.id)).toEqual(["maintenance"]);
-      for (const r of rows) expect(`${r.title} ${r.detail}`).not.toMatch(/\blive\b|e-?mail|MFA|algo|SEBI/i);
+      expect(rows.map((r) => r.id)).toEqual(["maintenance", "email"]);
+      for (const r of rows) expect(`${r.title} ${r.detail}`).not.toMatch(/\blive\b|MFA|algo|SEBI/i);
+      expect(rows[1]).toMatchObject({ title: "Verify your email", dismissible: true, action: { label: "Resend link", resend: true } });
     }
+  });
+
+  it("item 1: no e-mail row once the address is verified, or after Hide for today", () => {
+    expect(attentionRows({ ...base, deployments: [], emailVerified: true }).map((r) => r.id)).not.toContain("email");
+    expect(attentionRows({ ...base, deployments: [], emailVerified: false, dismissed: new Set(["email"]) }).map((r) => r.id)).not.toContain("email");
   });
 
   it("P3: a failed deployments read (null) never hides the LIVE rows", () => {

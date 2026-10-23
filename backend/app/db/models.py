@@ -3066,6 +3066,37 @@ class ScreenRecord(Base):
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    # LAB-18 (AMW-7): when this screen's device history (frontend versions.ts) was uploaded - the import's idempotence
+    # marker; null until the first sync.
+    versions_imported_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class ScreenVersionRecord(Base):
+    """LAB-18 (AMW-7): one immutable version of a saved screen - written by every save that changes it (and by the one
+    upload of the device history). Never updated: "open an older version" loads it into the builder and the next save
+    writes a new version. At most `app.screener.versions.MAX_VERSIONS` per screen (the oldest are pruned). Tenant-scoped
+    like `screens`; deleted with its screen."""
+
+    __tablename__ = "screen_versions"
+    __table_args__ = (UniqueConstraint("screen_id", "version", name="uq_screen_versions_screen_version"),
+                      Index("ix_screen_versions_screen_created", "screen_id", "created_at"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    screen_id: Mapped[int] = mapped_column(ForeignKey("screens.id", ondelete="CASCADE"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)                 # per screen, 1, 2, ... never reused
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)                # canonical ScreenQL text
+    ast_json: Mapped[str] = mapped_column(Text, nullable=False)
+    ast_version: Mapped[str] = mapped_column(String(20), nullable=False, default="screenql/1")
+    base_tf: Mapped[str] = mapped_column(String(4), nullable=False, default="1d")
+    params_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    body_sha256: Mapped[str] = mapped_column(String(64), nullable=False)          # name + text + timeframe + params
+    change: Mapped[str] = mapped_column(String(600), nullable=False, default="")   # plain lines, newline-separated
+    builder_json: Mapped[str | None] = mapped_column(Text, nullable=True)         # the builder blocks as saved
+    origin: Mapped[str] = mapped_column(String(8), nullable=False, default="save")  # save | device
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 class RankingSystemRecord(Base):

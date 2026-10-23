@@ -1,6 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectPhoneLayout } from "./phoneLayout";
 import { AI_CLAUDE, AI_FAILED, AI_NONE, FEATURES, TELEGRAM_PLATFORM, UPSTOX, ZERODHA_LOGIN, openSettings, type Theme } from "./settingsMocks";
+import { warnOnManySolidBrand } from "./solidBrand";
+
+// Chart + colour order Part 3 (CC-8): a warning annotation, never a failure, when a screen shows more than one solid
+// brand button (the one main action per screen).
+test.afterEach(async ({ page }, testInfo) => { await warnOnManySolidBrand(page, testInfo); });
 
 /**
  * Settings redesign part B ("Settings = a short index with status", behind `ui_v2`), on made-up replies:

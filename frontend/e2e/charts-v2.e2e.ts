@@ -2,6 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 import { mockCharts, type ChartsCalls, type ChartsMocks } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
+import { warnOnManySolidBrand } from "./solidBrand";
+
+// Chart + colour order Part 3 (CC-8): a warning annotation, never a failure, when a screen shows more than one solid
+// brand button (the one main action per screen).
+test.afterEach(async ({ page }, testInfo) => { await warnOnManySolidBrand(page, testInfo); });
 
 /**
  * UI2-4b2 (UI v2 proposal §6, Charts page plan §3): the v2 Charts page with the `ui_v2` flag on.

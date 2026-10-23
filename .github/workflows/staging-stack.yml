@@ -35,8 +35,12 @@ on:
         type: boolean
         default: false
 
+# A3 (review R3 / R4): this stack is the staging the deploy gate requires (acceptance, rollback, offsite), so every
+# main commit needs its own result: main pushes get a group per sha (a shared group keeps only one pending run and
+# cancelled the rest); other branches keep one run per branch, the newer push cancelling the older. Cost: about
+# 25-35 runner minutes per job, free on a public repository; merges in a burst queue behind the concurrent-job limit.
 concurrency:
-  group: staging-stack-${{ github.ref_name }}
+  group: staging-stack-${{ github.ref == 'refs/heads/main' && github.sha || github.ref_name }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:

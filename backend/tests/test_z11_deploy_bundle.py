@@ -259,6 +259,9 @@ if sub == "exec":
             finish()
         if cmd[:2] == ["python", "scripts/check_secrets_key.py"]:
             out.append("secrets key: ok - 2 organisation data keys open"); finish()
+        if cmd[:2] == ["python", "scripts/ops_check.py"]:                  # A2: the host facts arrive on stdin
+            st["ops_check_input"] = json.loads(sys.stdin.read() or "{}")
+            out.append("ops-check: disk=ok | 0 change(s) to report"); finish()
         if cmd[:2] == ["sh", "-c"] and "flag_posture.py" in cmd[2]:
             if st["posture"] is None:
                 rc = 1
@@ -1519,3 +1522,34 @@ def test_backup_status_fails_when_the_marker_vanishes_after_backups_have_run(hos
     host.state["last_backup_ok"] = _ago(1); host.save()
     res = host.run("backup-status")
     assert res.returncode == 1 and json.loads(res.stdout)["restore_check"]["status"] == "restore_failed"
+
+
+# --- A2: the server checks (ops-check) --------------------------------------------------------------------------------
+
+def test_ops_check_is_scheduled_and_hands_the_host_facts_to_the_backend(host):
+    assert host.run("deploy").returncode == 0
+    assert f"2-59/5 * * * * {host.dir}/deploy/atp.sh ops-check >> {host.dir}/.deploy/logs/ops-check.log 2>&1" in host.crontab.read_text()
+    since = len(host.state["calls"])
+    res = host.run("ops-check")
+    assert res.returncode == 0, res.all
+    assert "ops-check: disk=ok" in res.stdout
+    facts = host.state["ops_check_input"]
+    assert facts["disk_used_percent"] == 40 and facts["cert_note"] == "ip_only" and facts["cert_days_left"] is None
+    assert facts["backup"]["status"] in ("ok", "warn", "fail") and "limit_hours" in facts["backup"]
+    assert host.mutating(since) == []                                     # read-only on the host
+
+
+def test_ops_check_skips_while_a_deploy_or_backup_holds_the_lock(host):
+    import time
+    assert host.run("deploy").returncode == 0
+    host.state.pop("ops_check_input", None)
+    host.save()
+    holder = subprocess.Popen(["flock", str(host.dir / ".deploy" / "lock"), "sleep", "10"])
+    try:
+        time.sleep(0.5)
+        res = host.run("ops-check")
+    finally:
+        holder.kill()
+        holder.wait()
+    assert res.returncode == 0 and "ops-check skipped" in res.stdout
+    assert "ops_check_input" not in host.state

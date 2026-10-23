@@ -3163,6 +3163,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   pre-fill as PAPER, T7 must fire / must not fire, no look-ahead, flags); vitest `src/ideas/ideas.test.tsx`; e2e
   `e2e/idea-library-v2.e2e.ts` (the idea library baselines updated: T7 scans, T5 note, the adopt card on A5). The
   fixture `e2e/fixtures/ideas_v2.json` is now the payload with strategy templates on; its pin is updated.
+## 23 Oct - TPL-F6: the swing structure made mirror-symmetric (DowTrend, SwingLabel, SwingBreakType; no migration)
+
+- Branch `claude/tpl-f6-dowtrend-mirror`. No migration, no flag, no route.
+- The asymmetry (OPEN_QUESTIONS TPL-F6): an equal swing high read LH and an equal swing low read LL - a tie read "lower"
+  on both sides. Now an equal swing does not extend the structure (an equal high LH, an equal low HL) in `Bars.dow` and
+  `SwingLabel`; SwingBreakType and the breakout templates' higher-timeframe filter read `Bars.dow`. ReversalAt was
+  already exact (now tested on tie-rich series). DowTrend / SwingBreakType get mirror rules (`screener/mirror.py`).
+- The params hash of a template that reads the structure records `STRUCTURE_VERSION` "2"; every other hash is unchanged.
+- Tests: `tests/test_tpl_f6_mirror.py` (mirror on every bar over random walks and series with equal highs / lows; fails
+  on the old rule, kept as `legacy_dow` in `tests/mirror_tie_fixtures.py`), the tx2 exactness cases, the E3 structure
+  regime and F2 seeds 2 / 4 / 5 back in their mirror tests, the AMW-3 label test on the new tie rule.
+- The signal count before / after (`backend/tests/tools/tpl_f6_signal_delta.py`, synthetic only): the table is in
+  docs/design/STRATEGY_TEMPLATES_IMPL.md "TPL-F6". Follow-up TPL-F9 (the zigzag's opening swing; the chart / Trade-port
+  structure) open with "unchanged" as the default.
 ## 23 Oct - Production readiness A1: the off-site backup (WAL fix, schedule, retention, backup age, key escrow, clean-machine restore)
 
 - Branch `claude/readiness-a1-backup`. No migration, no flag, no route, no UI. Extends `deploy/atp.sh` and
@@ -3261,3 +3275,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   types and `directionMarker` moved to `charting/markers.ts`.
 - Tests: vitest `src/chart/chartOptions.test.ts` (the builder, the R4 drag test, the ProChart path, the markers). The
   chart e2e baselines are unchanged.
+
+## 23 Oct - Production readiness A2: monitoring and alerts to the operator
+
+- Branch `claude/readiness-a2-monitoring`, stacked on A1 (#422). **No migration** (state in `platform_controls` rows),
+  no new flag; new admin routes `/api/admin/ops-alerts[/run|/test|/telegram]` (SUPER_ADMIN + MFA, in the tenancy table).
+- Server checks: `backend/app/observability/ops_alerts.py` + `backend/scripts/ops_check.py`, run by `atp.sh ops-check`
+  (new cron line `2-59/5`, installed by every deploy; skipped while the deploy lock is held). Ten checks, dedup and
+  recovery messages to the operator Telegram chat (one-time code via the platform bot, or `OPS_ALERT_TELEGRAM_CHAT_ID`)
+  and SMTP (`OPS_ALERT_EMAIL`, else `SUPER_ADMIN_EMAILS`). Admin > System > Alerts card (`AlertsPanelV2`).
+- Outside check: `.github/workflows/uptime.yml` + `scripts/monitoring/uptime_check.py` (issue on two failures in a row,
+  closes on recovery; optional Telegram secrets, names only). actionlint clean.
+- Error tracker: `error_tracker.py`, Sentry SDK (`sentry-sdk` added to requirements) to `ERROR_TRACKER_DSN`, off when
+  unset; PII scrubber with tests.
+- Status page: maintenance headline, incident public notes (admin incidents card: note field, "Public note",
+  "Fix in place"), footer Status link (sidebar, More sheet, sign-in) behind `public_status_page` / `VITE_STATUS_PAGE_URL`.
+- Runbook section 10b (owner steps), `.env.example`, compose env names. Questions RDY-21..26.
+- Tests: `test_a2_monitoring.py`, `test_a2_error_tracker.py`, `test_a2_uptime_check.py`, two `atp.sh ops-check` cases in
+  `test_z11_deploy_bundle.py`; vitest `StatusLink.test.tsx`, `alertsPanel.test.tsx`; e2e `ops-alerts-v2.e2e.ts` with
+  baselines at 360 / 390 / 1440 light / dark; `admin-system-v2-*` baselines refreshed (the Alerts card is new).
+

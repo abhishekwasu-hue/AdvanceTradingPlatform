@@ -255,12 +255,13 @@ CASES = [("F1", {}, 1), ("F1", {"use_context": True, "context_timeframe": "1h"},
          # TPL-7: the version 2 members (the Bollinger one with its ADX regime: the swing-structure regime breaks ties one
          # way, so E3's own mirror test leaves it out too)
          ("F1", {"source": "ma_pullback"}, 1), ("F2", {"source": "band_reversion"}, 1)]
-# F2's seeds: fixtures where the member A2 is mirror-exact. On some random series the member's DowTrend / ReversalAt are
-# not (a tie broken one way on both sides; pre-existing, OPEN_QUESTIONS TPL-F6) - the pack is the member there too.
 IDS = [f"{tid}-{i}" for i, (tid, _, _) in enumerate(CASES)]
+# TPL-F6: seeds 2, 4 and 5 at swing size 0 were left out of F2's mirror test (DowTrend read an equal swing low as lower,
+# like an equal high, so ties did not mirror); fixed in the structure functions, they are in it now.
+MIRROR_CASES = CASES + [("F2", {"swing_degree": 0}, seed) for seed in (2, 4, 5)]
 
 
-@pytest.mark.parametrize("tid, params, seed", CASES, ids=IDS)
+@pytest.mark.parametrize("tid, params, seed", MIRROR_CASES, ids=[f"{tid}-{i}" for i, (tid, _, _) in enumerate(MIRROR_CASES)])
 def test_mirror_short_equals_long_on_mirrored_prices(tid, params, seed):
     """F2 on mirrored prices bar for bar. F1 from the first bar the two Supertrend directions mirror each other (its first
     direction is seeded up on both series, app/indicators/volatility.supertrend - as the D1 mirror test)."""

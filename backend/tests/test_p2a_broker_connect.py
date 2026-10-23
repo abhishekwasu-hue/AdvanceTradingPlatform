@@ -151,8 +151,14 @@ SECRETS = (DHAN_A, DHAN_B, DHAN_X, KITE_S, KITE_CODE, KITE_SESSION, ANGEL_SEED, 
            OPAQUE_BAD, SHOONYA_SEED, SHOONYA_SESSION)
 
 
+# Fernet ciphertext (the stored, encrypted credential, e.g. in SQLAlchemy's echo of an INSERT) is random base64: a
+# 5-character run of a secret can appear in it by chance, and it reveals nothing. Plaintext stays fully checked.
+_FERNET = re.compile(r"gAAAAA[A-Za-z0-9_=-]{40,}")
+
+
 def _assert_no_secret(text: str) -> None:
     """No secret, nor any run of 5 or more of its characters (a log may name at most a 4-character suffix)."""
+    text = _FERNET.sub("<ciphertext>", text)
     for secret in SECRETS:
         for i in range(len(secret) - 4):
             assert secret[i:i + 5] not in text, f"part of a secret leaked: ...{secret[i:i + 5]}..."

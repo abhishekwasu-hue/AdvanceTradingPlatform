@@ -13,6 +13,8 @@ import { chartTabPath } from "../shell/shellRoutes";
 import type { AiAction } from "../types";
 import { formatChange, formatDateIST, formatINR, formatLots, formatNumber, formatPrice, formatSignedINR, formatTimeIST } from "../ui/format";
 import { glossary, type GlossaryKey } from "../ui/glossary";
+import { useColourV2 } from "../ui/colourV2";
+import { DirectionChip } from "../ui/DirectionChip";
 import {
   canDecide, decisionFailure, decisionMessage, directionLabel, effectiveStatus, levelDelta, riskSentences, sizeAndLoss, sourceCaption, statusLabel,
   type FeedTab, type SignalFeedItem,
@@ -24,6 +26,8 @@ import { LEVEL_LABELS, reasonWords, setupWords } from "./signalText";
  * the levels chart (UI2-4e: the v2 chart with the levels marked), the six key figures, the risk sentences and the decision buttons. Colour carries meaning only:
  * green / red for Long / Short and the user's own exit levels (UX3: those levels sit in the "Your levels" fold), brand for "Waiting" and the one primary action, neutral
  * outlines for every other status.
+ * Colour v2 (flag `colour_v2`): Long / Short are chips (green with an up arrow, red with a down arrow - icon and word,
+ * never colour alone) and "Waiting for you" is amber.
  */
 
 /** "7 Oct" - the day of a signal, without the year (History). */
@@ -39,9 +43,10 @@ export function signalTime(at: string, tab: FeedTab): string {
 export function StatusChip({ item, now, short = false }: { item: SignalFeedItem; now: Date; short?: boolean }) {
   const status = effectiveStatus(item, now);
   const label = short && status === "waiting" ? "Waiting" : statusLabel(item, now);
+  const colour = useColourV2();
   if (status === "waiting") {
     return (
-      <span data-status={status} className="inline-flex shrink-0 items-center gap-space-1 whitespace-nowrap rounded-pill bg-brand/10 px-space-2 py-0.5 text-t12 font-semibold text-brand">
+      <span data-status={status} className={`inline-flex shrink-0 items-center gap-space-1 whitespace-nowrap rounded-pill px-space-2 py-0.5 text-t12 font-semibold ${colour ? "bg-warn-tint text-warn" : "bg-brand/10 text-brand"}`}>
         <Clock size={13} aria-hidden />{label}
       </span>
     );
@@ -55,7 +60,13 @@ export function StatusChip({ item, now, short = false }: { item: SignalFeedItem;
 
 export function Direction({ value, className }: { value: SignalFeedItem["direction"]; className?: string }) {
   const label = directionLabel(value);
+  const colour = useColourV2();
   if (!label) return null;
+  if (colour) {
+    const chip = <DirectionChip side={value === "LONG" ? "long" : "short"} />;
+    // A caller that puts the word on its own line (the desktop list) gets the chip on its own line too.
+    return className?.split(/\s+/).includes("block") ? <span className="mt-space-1 flex">{chip}</span> : chip;
+  }
   return <span className={cx("font-semibold", value === "LONG" ? "text-up" : "text-down", className)}>{label}</span>;
 }
 

@@ -1,6 +1,7 @@
 import { CalendarDays, ChartColumn, Info, Table2, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
+import { useColourV2 } from "../ui/colourV2";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { useChainTrading } from "../fno/ChainTradingV2";
 import { readCarry } from "../fno/hubModel";
@@ -137,6 +138,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
 }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [view, setView] = useState<ChainView>("chain");
+  const colour = useColourV2();          // colour v2: the Calls / Puts headings in their side's colour
   const symbolId = useId();
   const expiryId = useId();
 
@@ -234,7 +236,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         {live && live.rows.length > 0 && (
           <>
             <div aria-hidden className="mb-space-2 flex justify-between text-t12 font-semibold uppercase text-fg-muted">
-              <span>Calls</span><span>Puts</span>
+              <span className={colour ? "text-down" : undefined}>Calls</span><span className={colour ? "text-up" : undefined}>Puts</span>
             </div>
             <ViewToggle view={view} onView={setView} className="absolute -top-space-5 left-1/2 z-10 -translate-x-1/2 md:-top-space-4" />
             <ChainTableV2 live={live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${trading.centreSuffix}`} onPick={(row) => setPicked(row.strike)}

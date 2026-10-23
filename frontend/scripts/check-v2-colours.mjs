@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // UI2-0 (UI v2 proposal §8, §12): v2 screens use the semantic tokens only (surface-*, fg, fg-muted, border, border-subtle,
 // brand, up, down, warn, warn-tint, on-brand; Part 3 of the chart + colour order: range, range-track, info, info-tint,
-// ai, ai-tint). Findings:
+// ai, ai-tint; colour v2: brand-tint, up-tint, down-tint, teal-accent, soft-*, chain-call / chain-put (+ -itm), oi-call,
+// oi-put, nav-insights). Findings:
 //  - a raw palette hue class (`text-sky-300`, `bg-violet-500/10`, `border-amber-400`), white / black, or an arbitrary
 //    colour class (`bg-[#0ea5e9]`, `text-[rgb(...)]`);
 //  - a literal colour in an inline style or an SVG attribute (`style={{ color: "#fff" }}`, `fill="#0ea5e9"`,

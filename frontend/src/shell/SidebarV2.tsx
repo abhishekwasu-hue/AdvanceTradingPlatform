@@ -7,6 +7,8 @@ import { StatusDot } from "../broker/marks";
 import StatusLink from "../status/StatusLink";
 import type { BrokerDot } from "../broker/brokerState";
 import { NAV_PINNED_V2, navDotFor, navEntryFor, type NavItemV2, type NavSectionV2, type ShellKey } from "./navModel";
+import { navIconClass } from "./navTone";
+import { useColourV2 } from "../ui/colourV2";
 
 /**
  * UI2-1 (UI v2 proposal §2, mockup nav-sidebar-1440), UX3-9 (UX audit section 5 "The proposed sidebar"): the desktop
@@ -48,13 +50,14 @@ export interface SidebarV2Props {
 function NavLink({ item, current, dot }: { item: NavItemV2; current: ShellKey | null; dot: BrokerDot | null }) {
   const Icon = item.icon;
   const active = current === item.key;
+  const colour = useColourV2();
   const preload = isPage(item.key) ? () => preloadPage(item.key as Page) : undefined;
   return (
     <Link to={item.path} aria-current={active ? "page" : undefined} onMouseEnter={preload} onFocus={preload}
       className={`flex h-9 items-center gap-space-3 rounded-control [@media(pointer:coarse)]:h-11 px-space-2 text-t14 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
         active ? "bg-brand/10 font-semibold text-fg" : "font-medium text-fg-muted hover:bg-surface-2 hover:text-fg"
       }`}>
-      <Icon size={16} aria-hidden className={active ? "text-brand" : "text-fg-muted"} />
+      <Icon size={16} aria-hidden className={active ? "text-brand" : navIconClass(item.key, colour)} />
       <span className="truncate">{item.label}</span>
       {dot && <StatusDot dot={dot} announce className="ml-auto" />}
     </Link>

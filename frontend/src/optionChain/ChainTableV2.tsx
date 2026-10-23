@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { cx } from "../components/primitives/cx";
+import { useColourV2 } from "../ui/colourV2";
 import { formatPrice } from "../ui/format";
 import {
   CALL_COLUMNS, PUT_COLUMNS, atmIndex, barPercent, centreScrollTop, columnShown, formatCount, formatCountChange, formatGreek,
@@ -25,7 +26,16 @@ import type { ChainLeg, ChainRow, LiveChain } from "./types";
  * - F&O 8b-a (`setup`, the chain opened from one of the user's own signals): the call or put cells his own deployment
  *   settings land on are shaded, and the strike says "Main" / "Wing" ("from your settings" for a screen reader). A mark
  *   only shows; nothing is picked or opened by it.
+ * - Colour v2 (flag `colour_v2`, owner 23 Oct): the calls side sits on a light red tint and the puts side on a light
+ *   green one, an in-the-money strike a step stronger than an out-of-the-money one; the OI bars are red for calls and
+ *   green for puts (a soft fill under the number and a solid edge, 3 : 1); the ATM row is a brand-blue tint. Text stays
+ *   the plain text colours (AA on every tint, tokens.test.ts). Colour-blind mode: orange calls, blue puts.
  */
+const SIDE_TINT = {
+  call: { otm: "bg-chain-call", itm: "bg-chain-call-itm", bar: "border-b-2 border-oi-call bg-oi-call/25", top: "border-b-2 border-oi-call bg-oi-call/40" },
+  put: { otm: "bg-chain-put", itm: "bg-chain-put-itm", bar: "border-b-2 border-oi-put bg-oi-put/25", top: "border-b-2 border-oi-put bg-oi-put/40" },
+} as const;
+
 function cellText(key: ColumnDef["key"], leg: ChainLeg, pct = false): string {
   switch (key) {
     case "oi": return formatCount(leg.oi);
@@ -64,6 +74,7 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
   const atmRow = useRef<HTMLTableRowElement>(null);
   const centred = useRef<string | null>(null);
   const atAt = atmIndex(rows, atm);
+  const colour = useColourV2();
   useLayoutEffect(() => {
     if (centred.current === centreKey || atAt < 0 || !box.current || !atmRow.current) return;
     const head = box.current.querySelector("thead")?.getBoundingClientRect().height ?? 0;
@@ -79,14 +90,16 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
     const pick = onPickLeg ? (e: { stopPropagation: () => void }) => { e.stopPropagation(); onPickLeg(row, side); } : undefined;
     return cols.map((c) => {
       const shown = SHOWN_CLASS[columnShown(c, prefs)];
+      const tint = colour ? (isAtm ? null : itm ? SIDE_TINT[side].itm : SIDE_TINT[side].otm) : (itm ? "bg-surface-2" : null);
       const base = cx("relative whitespace-nowrap px-space-2 py-space-2 font-tabular", side === "call" ? "text-right" : "text-left",
-        marked ? "bg-brand/15" : itm && "bg-surface-2", shown);
+        marked ? "bg-brand/15" : tint, shown);
       if (c.key === "oi") {
         const top = highest[side] === row.strike;
         return (
           <td key={c.key} className={cx(base, top && "font-semibold shadow-[inset_0_0_0_1px_rgb(var(--brand))]")} data-itm={itm || undefined} data-setup={marked ? side : undefined}
             data-max-oi={top ? side : undefined} title={top ? `Highest ${side} OI` : undefined} onClick={pick}>
-            <span aria-hidden className={cx("absolute inset-y-1", side === "call" ? "right-0" : "left-0", top ? "bg-brand/30" : "bg-brand/15")}
+            <span aria-hidden data-oi-bar={side} className={cx("absolute inset-y-1", side === "call" ? "right-0" : "left-0",
+              colour ? (top ? SIDE_TINT[side].top : SIDE_TINT[side].bar) : top ? "bg-brand/30" : "bg-brand/15")}
               style={{ width: `${barPercent(leg.oi, max[side])}%` }} />
             <span className="relative inline-flex items-center gap-space-1">
               {top && side === "put" && <MaxMark />}
@@ -152,13 +165,13 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
                 }}
                 aria-keyshortcuts={onPickLeg ? "C P" : undefined}
                 className={cx("cursor-pointer hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand [&>td]:border-b [&>td]:border-subtle",
-                  isAtm && "bg-brand/10")}>
+                  isAtm && (colour ? "bg-brand-tint" : "bg-brand/10"))}>
                 {legCells("call", calls, row, isAtm)}
-                <th scope="row" className={cx(strikeSticky, "px-space-2 py-space-2 font-tabular font-semibold text-fg border-b border-subtle", isAtm ? "bg-surface-3" : "bg-surface-1")}>
+                <th scope="row" className={cx(strikeSticky, "px-space-2 py-space-2 font-tabular font-semibold text-fg border-b border-subtle", isAtm ? (colour ? "bg-brand-tint" : "bg-surface-3") : "bg-surface-1")}>
                   {held?.has(`${row.strike}|CE`) && <HeldMark side="call" />}
                   {formatStrike(row.strike)}
                   {held?.has(`${row.strike}|PE`) && <HeldMark side="put" />}
-                  {isAtm && <span className="block text-t12 font-medium text-brand">ATM<span className="sr-only">, at the money</span></span>}
+                  {isAtm && <span className={cx("block text-t12", colour ? "font-semibold text-fg" : "font-medium text-brand")}>ATM<span className="sr-only">, at the money</span></span>}
                   {setup && <SetupMark call={setup.get(`${row.strike}|CE`)} put={setup.get(`${row.strike}|PE`)} />}
                 </th>
                 {legCells("put", puts, row, isAtm)}

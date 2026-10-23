@@ -100,6 +100,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     "news_feed": "Live news feed from public sources (unverified items, shared ingest, tenant-key classification)",
     "telegram_inbound": "Telegram commands and approve/reject buttons from whitelisted chats (PAPER + reduce/pause only)",
     "market_thesis": "Per-symbol market thesis with scenarios and a shadow-only size multiplier (never applied)",
+    # Colour order v2 (owner, 23 Oct; docs/design/CHART_COLOUR_REVIEW.md "Colour v2"): the visible, purposeful colour
+    # proposal on the v2 pages - tinted Settings icons, the option chain's call / put tints and OI bars, the P&L tint and
+    # index sparklines on Today, Long / Short chips, tinted navigation and the layered dark surfaces. Needs ui_v2. OFF
+    # (the default, until the owner approves the comparison page): every v2 page looks exactly as before. Layout only -
+    # places no orders and changes no trading behaviour.
+    "colour_v2": "Colour v2: purposeful colour on the v2 pages (tinted icons, option chain tints, P&L tint, sparklines, Long / Short chips; layout only)",
     # N2-5 (P1 spec 1.5, docs/design/N2_P1FGH.md): the market context panel - regime (Dow structure of the NIFTY 50 on
     # daily and weekly bars), breadth, India VIX with its 1-year rank, FII / DII (seam, off until a source is set),
     # global cues and this week's events, each tile with its source and as-of and NA on its own failure. Shared data

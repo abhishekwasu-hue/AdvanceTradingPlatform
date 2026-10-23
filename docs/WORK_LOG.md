@@ -3728,3 +3728,24 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests `tests/test_tm7_smart_execution.py`, `src/fno/smartExecution.test.tsx`. Screenshots (fixtures, not committed):
   scratchpad `tm-part7/`. Questions SE-4..SE-8. No migration.
 
+
+## 23 Oct - SE-7: the multi-leg executor on the smart-execution engine + "if I do not answer" (README row 20)
+
+- Branched from PR B (`claude/terminal-smart-execution`, #468, not merged yet). Flag `smart_execution` (OFF, behind `ui_v2`).
+  With it off, `execution/multileg.py` runs exactly as before (the old LIVE path and its auto-unwind are untouched).
+- `app/execution/multileg_smart.py`: the structure's legs through `smart_execution.run` for LIVE (his broker, from the
+  worker) and PAPER (the PaperExecutionAdapter at the quoted premiums) - one code path. Hedges first; a sold leg only
+  after every hedge is confirmed filled in full; the first leg that does not fill stops the run; nothing is undone by
+  itself: the filled legs (a part fill too) are booked and the group is INCOMPLETE.
+- `app/execution/incomplete_structures.py`: the `incomplete` block on the legs' `group_meta` (no migration), his
+  answer (Complete the rest = recorded, sent by the worker through every entry refusal; Close the filled legs = an exit
+  through `close_group`, sold legs first; Keep them), his rule at the deadline (prefs `on_no_answer` close_filled /
+  keep, `answer_minutes` 1-120, default close after 5), audit rows and STRUCTURE_INCOMPLETE notifications. The
+  structure's exit rules wait while the group is not whole; every leg stays closable.
+- Routes `GET /api/trading/incomplete`, `POST /api/trading/incomplete/{group_id}/answer` (own orders; tenancy table,
+  order-path table: an exit only). Worker: `run_exits` in the exits part, `_complete_rests` after the entry gates.
+- Frontend: `src/fno/IncompleteOrdersV2.tsx` on Positions (filled / not placed, countdown, three taps), the two settings
+  on Settings › My trading defaults.
+- Tests `tests/test_se7_live_multileg.py` (parity old vs new LIVE + PAPER, failure-path change, timer, keep, kill switch
+  and Phase 0 lock, idempotency, tenancy, worker), `src/fno/incompleteOrders.test.tsx`. Screenshots (fixtures, not
+  committed): scratchpad `se7/`. Questions SE7-1..SE7-6. No migration.

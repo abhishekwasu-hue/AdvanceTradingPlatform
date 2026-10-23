@@ -314,6 +314,10 @@ class SmartExecutionPrefs(_Prefs):
     settlement_telegram: bool = True
     protection_band_pct: float = Field(default=0.5, ge=0.05, le=5, allow_inf_nan=False,
                                        description="a marketable limit this far past the price, where market orders are not allowed")
+    # SE-7 (owner, 23 Oct): when a multi-leg order stops half way (INCOMPLETE) and he has not answered within
+    # `answer_minutes`, ATP applies his own choice: close the filled legs (an exit, never blocked) or keep them.
+    on_no_answer: Literal["close_filled", "keep"] = "close_filled"
+    answer_minutes: int = Field(default=5, ge=1, le=120, description="minutes to answer an incomplete multi-leg order before the choice applies")
 
 
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,

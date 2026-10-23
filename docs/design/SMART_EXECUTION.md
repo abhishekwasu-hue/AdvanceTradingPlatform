@@ -69,3 +69,31 @@ trade terminal call the same `run()` when they move (one path at a time). Flag r
 LIVE: the engine and the router path take any `BrokerInterface`; nothing reads or changes `live_trading` or
 `phase0_paper_only`, and every leg still goes through the ordinary pipeline (kill switches, risk engine, chokepoint).
 The LIVE multi-leg executor (`execution/multileg.py`) moves onto `run()` in its own PR with a parity test (SE-7).
+
+## 3. SE-7 - the multi-leg executor on the engine, and "if I do not answer" (owner decision 23 Oct)
+
+Branch `claude/terminal-live-multileg` (from PR B). Flag `smart_execution` (OFF): with it off, `execute_structure` runs
+the old path unchanged; with it on, the legs of every structure (the bots' spreads, condors, straddles) go through the
+engine. No migration (the state is JSON on the legs' existing `group_meta`; the settings are prefs).
+
+| Part | What | Where |
+|---|---|---|
+| One code path | LIVE through his broker adapter (handed in by the trading worker), PAPER through the PaperExecutionAdapter marked at the quoted premiums. Every leg is an ENTRY order (the Phase 0 chokepoint refuses it while the lock holds); `live_trading` / `phase0_paper_only` are never read or changed. | `execution/multileg_smart.py` `place_legs` |
+| TM-11 | Hedges (BUY) first, then the sold legs; a sold leg goes only after every hedge is confirmed filled IN FULL in the broker's book. A leg not filled in full inside the confirmation window is cancelled (a fill landing meanwhile is booked) and stops the run. | `place_legs` -> `smart_execution.run` |
+| No auto-unwind | The filled legs (a part fill at its filled quantity) are booked as the group's positions; the legs not filled end FAILED / REJECTED on the trail; state INCOMPLETE with "Complete the rest" / "Close the filled legs" / "Keep them". Broker-uncertain only when something is unknown (no answer to a placement, a cancel not confirmed). | `multileg._smart_not_complete` |
+| His rule | Prefs `smart_execution.on_no_answer` (`close_filled` default, or `keep`) and `answer_minutes` (5; 1-120), taken when the order stops (the card shows the time left). At the deadline the worker applies it: close = an EXIT through `close_group` (sold legs first, a hedge held while its short is open) - never blocked by a kill switch, the daily-loss lockout, the Phase 0 lock or the broker-uncertain flag; a leg without a price is retried next cycle. Audited (`structure_incomplete*`), notified (`STRUCTURE_INCOMPLETE`: in the app, Telegram where his channel takes the severity; CRITICAL for LIVE). | `execution/incomplete_structures.py` `run_exits`; worker exits part |
+| His taps | `POST /api/trading/incomplete/{group_id}/answer` (`complete_rest` / `close_filled` / `keep`; his own order, or the owner; a second tap does nothing twice). "Complete the rest" is recorded and sent by the worker after the entry gates, through every entry refusal again and the engine (Phase 0: no route reaches an entry order). "Close the filled legs": PAPER at once, LIVE by the worker. | `incomplete_routes.py`, worker `_complete_rests` |
+| While incomplete | The structure's own exit rules wait (they are written for the whole structure); every leg stays closable (Exit now, emergency exit, square-off, the taps, the rule). Completed: the rules apply again. | `position_monitor._monitor_group` |
+| UI | Positions: the incomplete card (filled, not placed, what stopped it, countdown, three taps). Settings › My trading defaults: minutes to answer, close / keep. | `frontend/src/fno/IncompleteOrdersV2.tsx`, `settings/smartExecutionSettings.tsx` |
+
+**The behaviour change in one sentence:** when a leg of a structure does not fill, ATP no longer sells back the filled
+legs at once - it keeps them, says so, and waits for his answer, closing them (sold legs first) only when his own
+"if I do not answer" rule says so.
+
+**Parity evidence** (`backend/tests/test_se7_live_multileg.py`, fake brokers only): old (flag off) vs new (flag on) in
+two identical organisations - LIVE bull put spread and iron condor: identical broker orders (symbol, side, quantity,
+type, product, intent, tag) in the same hedge-first order, identical trades (fill, quantity, stop, expected price, role,
+group economics), identical order trail and notes; PAPER: identical fills and trail, identical exit price / charges /
+P&L when closed, a replay places nothing. The failure path is the documented change (old: BUY, SELL refused, SELL the
+hedge back; new: BUY, SELL refused, the hedge kept, INCOMPLETE). Also: a part-filled hedge sends no sold leg; the rule
+closes LIVE legs short-first with the kill switch and the Phase 0 lock on; keep; idempotency; tenancy; the worker.

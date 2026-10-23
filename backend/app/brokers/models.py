@@ -116,6 +116,9 @@ class BrokerOrderRequest(BaseModel):
     # Z10-c: what the platform built the order for - "ENTRY" for a new position (OrderRouter, the multi-leg executor);
     # None when not stated. Never sent to the broker; the Phase 0 PAPER-only lock refuses only an explicit ENTRY.
     intent: Optional[str] = None
+    # TM-1: the platform's own reference for this one order (an idempotency key): the PAPER adapter returns the first
+    # order for a repeated reference instead of placing twice. Never sent to a broker by the existing adapters.
+    client_ref: Optional[str] = None
 
 
 class BrokerOrderResponse(BaseModel):

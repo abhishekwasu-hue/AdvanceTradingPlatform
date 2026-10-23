@@ -35,6 +35,8 @@ from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BacktestRunRecord, User
 from app.db.session import get_session
 from app.trading.exit_rules import ExitRules
+from app.strategy_templates import exits as exit_settings
+from app.strategy_templates.exits import TemplateExitsBody
 
 router = APIRouter(tags=["backtest"])
 
@@ -112,6 +114,8 @@ class BacktestBody(BaseModel):
     options: Optional[OptionBacktestBody] = None
     # Realism C2: execution models (fill, slippage, ...); omitted = the defaults, i.e. the engine before C2.
     execution_models: Optional[Dict[str, Any]] = None
+    # Strategy templates section 5: a template's exit choice (stop source / target rule); omitted = as before.
+    template_exits: Optional[TemplateExitsBody] = None
 
     @property
     def engine_version(self) -> str:
@@ -127,6 +131,23 @@ async def _strategy(body: BacktestBody, user: Optional[User], session: AsyncSess
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if body.strategy_params:
         strategy.params = {**strategy.params, **body.strategy_params}
+    return with_template_exits(strategy, body)
+
+
+def with_template_exits(strategy, body: "BacktestBody"):
+    """Section 5: the request's exit choice on a template strategy (checked against the instrument the run trades: the
+    underlying, or the option structure in `options`); none = the strategy unchanged. A refusal is a 422 with the
+    plain messages."""
+    if body.template_exits is None:
+        return strategy
+    kind, structure = ("OPTION", body.options.option_strategy) if body.options is not None else ("UNDERLYING", None)
+    try:
+        choice = exit_settings.checked(strategy, body.template_exits, kind, structure)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"problems": exc.args[0]}) from exc
+    if choice.is_default:
+        return strategy
+    strategy.use_exits(choice)
     return strategy
 
 
@@ -151,6 +172,8 @@ class BacktestRunner:
         self.risk = risk
         self.rules = body.exit_rules.to_rules() if body.exit_rules else None
         self.config = body.options.to_config(holidays) if body.options is not None else None
+        if self.config is not None and body.template_exits is not None:
+            self.config.stop_source = body.template_exits.stop_source        # section 5: PREMIUM_PCT on a single option
         self.pricer = pricer
         try:
             self.models = ModelSet(**(body.execution_models or {}))
@@ -215,7 +238,10 @@ class BacktestRunner:
             exit_rules=self.body.exit_rules, options=self.body.options.model_dump(exclude={"option_chain"}) if self.body.options else None,
             option_chain=data_version_of_chain(self.body.options.option_chain) if self.body.options and self.body.options.option_chain else None,
             # C2: only a non-default model set enters the hash, so default runs keep the hash they had before C2.
-            **({} if self.models.is_default else {"execution_models": self.models.describe()}))
+            **({} if self.models.is_default else {"execution_models": self.models.describe()}),
+            # section 5: likewise only a chosen template exit enters it
+            **({"template_exits": self.body.template_exits.model_dump()} if self.body.template_exits is not None
+               and not self.body.template_exits.to_exits().is_default else {}))
         return result
 
 

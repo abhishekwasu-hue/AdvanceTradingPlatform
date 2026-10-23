@@ -92,6 +92,9 @@ class OptionBacktestConfig:
     risk_free_rate: float = 0.07
     # Intraday behaviour, as the worker enforces it for deployments; False holds to exit/expiry.
     intraday: bool = True
+    # Strategy templates section 5: a single option's stop source - None / TEMPLATE_INVALIDATION (the strategy's stop on
+    # the underlying, as before) or PREMIUM_PCT (only the premium floor / ceiling; no underlying-level stop).
+    stop_source: Optional[str] = None
 
     @property
     def is_single(self) -> bool:
@@ -143,6 +146,8 @@ class _Open:
     underlying_t1: Optional[float] = None
     underlying_t2: Optional[float] = None
     premium_level: Optional[float] = None
+    # Strategy templates R5: the signal's (underlying) direction, for the template's exit signal
+    signal_direction: Optional[str] = None
 
 
 class OptionBacktestError(ValueError):
@@ -246,6 +251,10 @@ def run_option_backtest(
     streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
     time_rules = exit_rules if exit_rules is not None and exit_rules.active else None
     exit_at = time_rules.exit_time_of_day() if time_rules else None
+    # Strategy templates R5 / section 5: the template's exit signal (the user's TEMPLATE_EXIT choice), read on a bar close
+    # of an open position for the signal's own side, closes it at the next bar's open, reason "Template exit".
+    template_exit = bool(getattr(strategy, "acts_on_exit_signal", False))
+    exit_due = False
 
     open_pos: Optional[_Open] = None
     trades: List[Trade] = []
@@ -355,6 +364,10 @@ def run_option_backtest(
                 if past_close:
                     reason, settle = f"Expiry settlement ({pos.near_expiry.isoformat()})", True
                     exit_spot = float(bar["open"]) if bar_day > pos.near_expiry else close
+                # R5: the template's exit signal on the previous bar's close - out at this bar's open
+                if reason is None and exit_due:
+                    reason, exit_spot = "Template exit", float(bar["open"])
+                exit_due = False
                 # 2. Time rules and the intraday square-off.
                 if reason is None and time_rules is not None and time_rules.time_exit_minutes and at - pos.entry_time >= timedelta(minutes=time_rules.time_exit_minutes):
                     reason = f"Time exit ({time_rules.time_exit_minutes}m in trade)"
@@ -399,6 +412,9 @@ def run_option_backtest(
                 if reason is None and margin_on and margin.call(equity + unrealised(pos, prices), margin_required(pos, exit_spot)):
                     reason = "Margin call"                  # N7 C2c: marked at this bar's close against the requirement then
                     margin_calls += 1
+                if reason is None and template_exit and pos.signal_direction and i + 1 < len(primary_df):
+                    window_now = cursor.at(decision_time(ts, primary_tf))
+                    exit_due = bool(strategy.exit_signal(window_now, pos.signal_direction))   # type: ignore[attr-defined]
                 if reason is not None:
                     fills = {idx: (p if settle else round(broker._slip(p, SignalDirection.LONG if pos.legs[idx].role == "SHORT" else SignalDirection.SHORT), 2))
                              for idx, p in prices.items()}
@@ -450,6 +466,8 @@ def run_option_backtest(
                 margin_refused += 1
                 skipped["margin: equity below the span_like requirement"] += 1
                 continue
+            if open_pos is not None:
+                open_pos.signal_direction = signal.direction.value
             state.trades_today += 1
             state.open_positions += 1
 
@@ -612,6 +630,8 @@ def _open_single(signal: Signal, rules: ContractRules, config: OptionBacktestCon
     leg = _Leg(right, "LONG" if bought else "SHORT", float(strike), expiry, 1, fill, quantity)
     meta = {"stop_value": level, "premium_stop_pct": rules.premium_stop_pct, "net_credit": fill if not bought else -fill}
     label = f"{underlying} {'BUY' if bought else 'WRITE'} {int(strike)}{right} {expiry.isoformat()}"
+    # Strategy templates section 5: PREMIUM_PCT - the premium floor / ceiling is the only stop (no underlying-level stop)
+    underlying_stop = None if config.stop_source == "PREMIUM_PCT" else signal.stop_loss
     return _Open(label=label, legs=[leg], meta=meta, lots=lots, quantity=quantity, entry_time=at, entry_time_bar=ts, near_expiry=expiry,
                  direction=trade_direction, entry_unit=fill, single=True, underlying_direction=signal.direction.value,
-                 underlying_stop=signal.stop_loss, underlying_t1=signal.target1, underlying_t2=signal.target2, premium_level=level)
+                 underlying_stop=underlying_stop, underlying_t1=signal.target1, underlying_t2=signal.target2, premium_level=level)

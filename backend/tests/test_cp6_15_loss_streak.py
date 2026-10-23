@@ -411,5 +411,6 @@ def test_migration_is_additive_rollback_safe_reversible_and_the_only_head():
     assert "server_default='next_session'" in source and "sa.String(length=16)" in source and "DateTime(timezone=True), nullable=True" in source
     assert "drop_column('risk_settings', 'loss_streak_resumed_at')" in source and "drop_column('risk_settings', 'loss_streak_pause')" in source
     script = ScriptDirectory.from_config(Config(str(root / "alembic.ini")))
-    heads = script.get_heads()                     # one head, with CP6-15's revision in its history (LAB-18 chains on it)
+    heads = script.get_heads()
+    # one head, with CP6-15 on its chain (LAB-18, the exits-as-settings and View-as-user migrations chain after it)
     assert len(heads) == 1 and "b5d7f9a1c3e6" in {r.revision for r in script.walk_revisions("base", heads[0])}

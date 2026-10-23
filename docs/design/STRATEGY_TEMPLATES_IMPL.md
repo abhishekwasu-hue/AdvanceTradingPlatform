@@ -290,6 +290,46 @@ bot form lists the templates from the API. No idea-library card: T5 stays A5 (TP
 The B3 / B4 exits (TPL-Q12 / TPL-Q28) still read the line as of the breakout bar: they are version 1, and a projected exit
 would be a new version (not part of this decision).
 
+## TPL-10: section 5 "exits as settings" (owner decision 2026-10-23: approved, additive migration, after 15:30)
+
+Same flag `strategy_templates` (OFF), PAPER only. ONE additive migration `d7f9b1c3e5a8` (chained on CP6-15's
+`b5d7f9a1c3e6` for now; part of the one migration block). Owner questions TPL-X1..X6; WAVE-11 partly done.
+
+| Part | Where | Status |
+|---|---|---|
+| Five nullable columns on `strategy_deployments`: `stop_source`, `target_rule`, `target_r`, `target_base_wave`, `target_ratio`; NULL = the behaviour before (every existing row) | `alembic/versions/d7f9b1c3e5a8_tpl_exits_as_settings.py`, `db/models.py` | done |
+| The choice, the precedence table per instrument (R4), the checks in plain words, the target level (one function for scan / backtests / worker) | `strategy_templates/exits.py` | done |
+| The adapter takes the choice (`use_exits`): R multiple and wave projection fill target1 and risk_reward; the projection is `WaveProjection($wave_degree, base, ratio)@{wave_tf}`, read on the same bars (`engine.compute(extras=)`); no choice = the Signal exactly as before | `adapter.py`, `engine.py` | done |
+| R5: TEMPLATE_EXIT - both backtest engines read the exit signal on each bar close of an open trade (its own side, never the entry bar) and close at the next bar's open, reason "Template exit"; the worker closes the deployment's own open PAPER trades on the same bar (TPL-X5) | `backtest/engine.py`, `backtest/options_engine.py`, `workers/trading_worker.py` | done |
+| PREMIUM_PCT on a single option: no underlying-level stop on the trade (options backtest, the live order plan via `ContractRules.underlying_stop`); `underlying_exit` checks the targets without a stop | `options_engine.py`, `instruments/contracts.py`, `execution/contract_execution.py`, `trading/exit_logic.py` | done |
+| The routes: `template_exits` on the deployment (stored, answered, described) and backtest requests (422 with plain messages; refused for a strategy that is not a template); adopt answers the choices per instrument | `deployments/routes.py`, `backtest/routes.py`, `main.py`, `strategy_templates/routes.py` | done |
+| The v2 Paper bot form: "Exits for this bot" under the symbol, pre-filled with the template's defaults; a default choice sends nothing | `frontend/src/strategyTemplates/exits.ts`, `paperbot/PaperBotV2.tsx` | done |
+| stop_source NONE, target_rule NEXT_AREA, the invalidation as a spread exit | - | not built (TPL-X1..X3) |
+
+The precedence (R4; first = what NULL means there):
+
+| Instrument | stop_source | target_rule |
+|---|---|---|
+| Shares / future | TEMPLATE_INVALIDATION only | NONE, R_MULTIPLE, TEMPLATE_EXIT, WAVE_PROJECTION (wave templates) |
+| Single option | TEMPLATE_INVALIDATION (+ the premium stop), PREMIUM_PCT (the premium stop only) | as above (levels on the underlying) |
+| Spread / structure | CREDIT_PCT (its stop %) | CREDIT_PCT (its target %), TEMPLATE_EXIT (the credit levels stay) |
+
+The premium stop and the credit levels are independent safety nets that stay as set (the first one hit exits; ADR-0004);
+trailing / break-even / time exits are unchanged. DSL v1 and built-in strategies refuse the choice and keep their own
+stop / target. The signal text never carries any of it.
+
+Tests: `tests/test_tpl10_exits_settings.py` - the default byte for byte against the base branch (21 backtest results:
+seven templates on shares, a single option and a spread), an explicit default the same run, every library template's
+Signal unchanged; the precedence and every refusal; R multiple must fire on the default's bars with the level by value,
+the account's minimum R:R (must not), scan = backtest = worker; the exit signal in both engines (next open, never the
+entry bar, must not without the choice), scan = both engines = worker; the wave projection = the registry's value, no
+projection = no target (never a refusal); the premium stop only (backtest, the live order plan, the underlying target
+without a stop); the signal text; the worker (own deployment, own side, after the entry, PAPER only, never another
+organisation's row); the routes; the migration (additive, rollback-safe, one head, up / down). Run on Postgres 16:
+upgrade, `alembic check`, downgrade, upgrade. Frontend: `src/strategyTemplates/exits.test.ts`, e2e
+`strategy-templates-v2.e2e.ts` (new baselines `strategy-templates-exits-v2-{1440,390,360}-{light,dark}.png`; the
+existing ones unchanged).
+
 ## Not in this PR (next PRs)
 
 - Family A's area templates A1, A8, A3, A4 (an area companion + zone timelines in the template engine, TPL-Q23), A6 / A7
@@ -297,11 +337,10 @@ would be a new version (not part of this decision).
   E3, E5 and the swing degree for C2: done in step 5; the gap companion for B10: done in TPL-8; C4 after TPL-Q18 (done in TPL-9); E2 after an RSI period
   and an extreme companion, TPL-Q49: done in TPL-7), then F. Family F: F1 / F2 built (TPL-6 above); their further
   members D3 and E3 joined in pack version 2 (TPL-7); A1 waits for areas (TPL-Q50); G12 next (TPL-F7).
-- Section 5 "exits as settings" (stop_source / target_rule on the deployment's exit settings): needs a migration and
-  the owner's approval. Until then the adapter's Signal carries only the invalidation as its stop.
-- R4 rest: the stop_source rule per instrument_kind and the precedence table with tests (comes with section 5).
-- R5: the TEMPLATE_EXIT plumbing (both backtest engines and the position monitor read `TemplateStrategy.exit_signal`
-  on each bar close of an open trade; reason "Template exit").
+- Section 5 "exits as settings" (stop_source / target_rule on the deployment's exit settings): done in TPL-10 above
+  (NONE / NEXT_AREA / the invalidation on spreads: TPL-X1..X3).
+- R4 rest: the stop_source rule per instrument_kind and the precedence table with tests: done in TPL-10.
+- R5: the TEMPLATE_EXIT plumbing: done in TPL-10 (both backtest engines and the worker's deployment round, TPL-X5).
 - R2 for the gap family (B10), with its template: done in TPL-8 above.
 - R7 rest: the projected trendline retest (TPL-Q18; done in TPL-9 above, a new choice `trendline_projected`); R10 (NEXT_AREA target). (Forwarding the swing degree for C2: done
   in step 5.)

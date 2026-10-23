@@ -8,7 +8,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  * Strategy templates step 2 (docs/design/STRATEGY_TEMPLATES_IMPL.md): with `ui_v2` and `strategy_templates` on, the v2
  * Paper bot form lists the templates; picking one asks the server for the pre-fill ("Adopt as a paper strategy") and
  * "Start on paper" sends the same PAPER request with the template's strategy id and candles. Nothing starts before that.
- * - Baselines `strategy-templates-v2-{1440,390,360}-{light,dark}.png` (the form with a template picked).
+ * - Baselines `strategy-templates-v2-{1440,390,360}-{light,dark}.png` (the form with a template picked) and, section 5,
+ *   `strategy-templates-exits-v2-{1440,390,360}-{light,dark}.png` (its exits, a multiple of the risk chosen).
  * Every reply is made-up data (e2e/fixtures/setup_v2.json strategies, the templates below): no real account or id.
  * After an intended change: `npx playwright test --project=phone e2e/strategy-templates-v2.e2e.ts --update-snapshots`.
  */
@@ -35,9 +36,20 @@ const BOT = { id: 61, strategy_id: "template:D2:1:15m:both:,5,,,,,", symbol: "RE
   instrument_kind: "UNDERLYING", option_position: null, expiry_rule: null, strike_rule: null, strike_offset: 0, premium_stop_pct: null,
   max_lots: null, contract_rules: "", holding: "INTRADAY" };
 
+// Section 5 (exits as settings): what the server offers for a template with an exit signal (made-up, as the adopt route answers)
+const LEVEL_TARGETS = ["NONE", "R_MULTIPLE", "TEMPLATE_EXIT"];
+const EXITS = {
+  precedence: {
+    UNDERLYING: { stops: ["TEMPLATE_INVALIDATION"], targets: LEVEL_TARGETS }, FUTURE: { stops: ["TEMPLATE_INVALIDATION"], targets: LEVEL_TARGETS },
+    OPTION_SINGLE: { stops: ["TEMPLATE_INVALIDATION", "PREMIUM_PCT"], targets: LEVEL_TARGETS },
+    OPTION_STRUCTURE: { stops: ["CREDIT_PCT"], targets: ["CREDIT_PCT", "TEMPLATE_EXIT"] },
+  },
+  exit_signal: true, wave_projection: false, base_waves: [], target_r: { min: 0.1, max: 20 }, ratio: { min: 0, max: 10 },
+};
+
 interface Server { sent: { method: string; url: string; body: unknown }[] }
 
-async function open(page: Page, o: { theme?: "light" | "dark"; path?: string; templatesOff?: boolean } = {}): Promise<Server> {
+async function open(page: Page, o: { theme?: "light" | "dark"; path?: string; templatesOff?: boolean; exits?: boolean } = {}): Promise<Server> {
   const server: Server = { sent: [] };
   await page.clock.install({ time: new Date(NOW) });
   await page.addInitScript((theme) => {
@@ -71,7 +83,8 @@ async function open(page: Page, o: { theme?: "light" | "dark"; path?: string; te
     return route.fulfill({ json: { template_id: id, name: TEMPLATES.find((t) => t.id === id)!.name, strategy_id: sid,
       deployment: { strategy_id: sid, timeframe: LABEL[tf], holding: tf === "1d" ? "SWING" : "INTRADAY", mode: "PAPER" },
       settings: { timeframe: tf, sides: "both", params: {} },
-      notes: ["Signals only: what to trade, how much and when to get out stay your own choices.", "Paper money only. Nothing starts until you confirm it."] } });
+      notes: ["Signals only: what to trade, how much and when to get out stay your own choices.", "Paper money only. Nothing starts until you confirm it."],
+      ...(o.exits ? { exits: EXITS } : {}) } });
   });
   await page.route(api("/deployments(\\?.*)?$"), (route) => {
     if (route.request().method() !== "POST") return route.fulfill({ json: [BOT] });
@@ -102,9 +115,26 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
       });
     }
 
+    for (const theme of ["light", "dark"] as const) {
+      test(`the exits for this bot, pre-filled with the template's defaults (${theme})`, async ({ page }) => {
+        await open(page, { theme, path: "/deployments?template=D2", exits: true });
+        await expect(form(page).locator("[data-template-exits]")).toContainText("Exits for this bot");
+        await expect(form(page).getByLabel("Stop")).toHaveValue("TEMPLATE_INVALIDATION");          // NIFTY 50: its option
+        await form(page).getByLabel("Take profit").selectOption({ label: "At a multiple of my risk" });
+        await form(page).getByLabel("Times my risk").fill("2");
+        await expect(page).toHaveScreenshot(`strategy-templates-exits-v2-${size.name}-${theme}.png`, SHOT);
+      });
+    }
+
     if (size.mobile) {
       test("no sideways scroll, 44 px targets, nothing hidden behind the bottom bar", async ({ page }) => {
         await open(page, { path: "/deployments?template=D2" });
+        await expectPhoneLayout(page);
+      });
+
+      test("with the exits shown: no sideways scroll, 44 px targets", async ({ page }) => {
+        await open(page, { path: "/deployments?template=D2", exits: true });
+        await form(page).getByLabel("Take profit").selectOption({ label: "At a multiple of my risk" });
         await expectPhoneLayout(page);
       });
     }
@@ -153,6 +183,52 @@ test.describe("Strategy templates behaviour", () => {
     await expect(page.locator("[data-block='bots']")).toContainText("Moving-average crossover");
     const body = await page.locator("main").innerText();
     for (const word of ["template:", "template-pick", "strategy_templates", "deployment", "worker", "Not found"]) expect(body).not.toContain(word);
+  });
+
+  test("the exits: pre-filled with the template's defaults (nothing extra sent); a choice is sent with the same PAPER request", async ({ page }) => {
+    const server = await open(page, { path: "/deployments?template=D2", exits: true });
+    const exits = form(page).locator("[data-template-exits]");
+    await expect(exits.getByLabel("Take profit")).toHaveValue("NONE");
+    await expect(exits.getByLabel("Take profit").locator("option")).toHaveText(
+      ["No fixed target", "At a multiple of my risk", "When the template says the idea has ended"]);
+    // NIFTY 50 trades its option: the stop may be the template's level or only the premium stop
+    await expect(exits.getByLabel("Stop").locator("option")).toHaveText(
+      ["Where the idea is wrong", "Only my premium stop"]);
+    await expect(exits).toContainText("Your premium stop always stays as a safety net.");
+    // a share: one fixed stop, shown as words
+    await form(page).getByLabel("Pick a symbol").selectOption("RELIANCE");
+    await expect(exits.locator("[data-exit-stop]")).toContainText("Where the idea is wrong");
+    await form(page).getByRole("button", { name: "Start on paper" }).click();
+    await expect(form(page)).toContainText("Started on paper: RELIANCE.");
+    expect((server.sent.find((c) => c.url === "/deployments")?.body as Record<string, unknown>).template_exits).toBeUndefined();
+    // a multiple of the risk needs its number first; then it is sent
+    await exits.getByLabel("Take profit").selectOption({ label: "At a multiple of my risk" });
+    await expect(exits).toContainText("Your minimum reward to risk in your risk settings still applies.");
+    await form(page).getByRole("button", { name: "Start on paper" }).click();
+    await expect(exits.getByRole("alert")).toHaveText("Type how many times your risk to take profit at (0.1 to 20).");
+    expect(server.sent.filter((c) => c.url === "/deployments")).toHaveLength(1);
+    await exits.getByLabel("Times my risk").fill("2");
+    await form(page).getByRole("button", { name: "Start on paper" }).click();
+    await expect.poll(() => server.sent.filter((c) => c.url === "/deployments").length).toBe(2);
+    expect((server.sent.filter((c) => c.url === "/deployments").at(-1)?.body as Record<string, unknown>).template_exits)
+      .toEqual({ target_rule: "R_MULTIPLE", target_r: 2 });
+    // the exit signal, on the option of an index, with only the premium stop
+    await form(page).getByLabel("Pick a symbol").selectOption("NIFTY 50");
+    await exits.getByLabel("Stop").selectOption({ label: "Only my premium stop" });
+    await exits.getByLabel("Take profit").selectOption({ label: "When the template says the idea has ended" });
+    await form(page).getByRole("button", { name: "Start on paper" }).click();
+    await expect.poll(() => server.sent.filter((c) => c.url === "/deployments").length).toBe(3);
+    const last = server.sent.filter((c) => c.url === "/deployments").at(-1)?.body as Record<string, unknown>;
+    expect(last.template_exits).toEqual({ stop_source: "PREMIUM_PCT", target_rule: "TEMPLATE_EXIT" });
+    expect(last.mode).toBe("PAPER");
+    const body = await page.locator("main").innerText();
+    for (const word of ["TEMPLATE_", "PREMIUM_PCT", "R_MULTIPLE", "stop_source", "target_rule"]) expect(body).not.toContain(word);
+  });
+
+  test("an older server without exit choices: no exits block, the request as before", async ({ page }) => {
+    await open(page, { path: "/deployments?template=D2" });
+    await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
+    await expect(form(page).locator("[data-template-exits]")).toHaveCount(0);
   });
 
   test("with the flag off: no template group, the form as before", async ({ page }) => {

@@ -165,6 +165,22 @@ const LEARN_LESSONS = (JSON.parse(readFileSync(new URL("./fixtures/learn_v2.json
 export const LEARN_SETTINGS = { videos: { "atp-how": "https://videos.example.com/how-atp-works" }, course_url: "", lessons: LEARN_LESSONS };
 export const REFERRAL_SETTINGS = { reward_text: "", totals: { joined: 3, referrers: 2, links_created: 5 } };
 
+// TM 9.4: the owner's chain history recorder (Admin › System) - made-up counts, two indices recording, one with gaps.
+const chainRow = (underlying: string, exchange: string, chains: number, slots: number, missing: number, gaps: { from: string; to: string }[]) => ({
+  underlying, exchange, trading_day: true, chains_today: chains, slots_today: slots, slots_expected: slots + missing, missing_slots: missing, gaps,
+  stored_bytes_today: chains * 21_000, raw_bytes_today: chains * 88_000, last_captured_at: T(0.4),
+});
+export const CHAIN_HISTORY = {
+  flag_on: true, owner_configured: true, owner_session: { broker: "upstox" }, slot_minutes: 1, expiries_per_underlying: 2, max_reads_per_slot: 12,
+  stocks_enabled: false, checked_at: T(0), problem: null,
+  underlyings: [
+    chainRow("NIFTY", "NSE", 210, 105, 0, []),
+    chainRow("BANKNIFTY", "NSE", 206, 103, 2, [{ from: "2026-10-22T09:41:00+05:30", to: "2026-10-22T09:43:00+05:30" }]),
+    chainRow("SENSEX", "BSE", 196, 98, 7, [{ from: "2026-10-22T09:15:00+05:30", to: "2026-10-22T09:20:00+05:30" }, { from: "2026-10-22T10:12:00+05:30", to: "2026-10-22T10:14:00+05:30" }]),
+  ],
+  totals: { chains: 9_840, days: 12, first_day: "2026-10-07", last_captured_at: T(0.4), stored_bytes: 206_000_000 },
+};
+
 export interface AdminOptions {
   theme?: Theme; role?: string; features?: Record<string, boolean>;
   /** More replies, registered after the ones above (so they win) and before the page opens (MO4 slice 3). */
@@ -245,6 +261,7 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
   await page.route(A("/admin/history-intraday/progress(\\?.*)?$"), ok({ flag_on: false, tenant_id: null, instruments: {}, attention: [] }));
   await page.route(A("/admin/learn/settings$"), ok(LEARN_SETTINGS));
   await page.route(A("/admin/growth/referral-settings$"), ok(REFERRAL_SETTINGS));
+  await page.route(A("/admin/chain-history/status$"), ok(CHAIN_HISTORY));
   if (o.routes) await o.routes(page);
   await page.goto(path);
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });

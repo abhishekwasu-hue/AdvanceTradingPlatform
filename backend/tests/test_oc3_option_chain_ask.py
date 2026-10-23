@@ -533,7 +533,7 @@ def test_a_saved_analysis_re_evaluates_on_a_new_snapshot_without_ai(monkeypatch)
         today = now.astimezone(snapshots.IST).replace(hour=0, minute=0, second=1, microsecond=0)
         at = min(now - timedelta(seconds=1), today.astimezone(timezone.utc) + timedelta(minutes=1))
         async with _session_factory() as session:
-            res = await snapshots.collect(session, symbol, _chain(ce=OPEN_CE, pe=OPEN_PE), at, span=10)
+            res = await snapshots.collect(session, symbol, _chain(ce=OPEN_CE, pe=OPEN_PE), at, tenant_id=t["tenant_id"], span=10)
             await session.commit()
             return res.status
     assert _run(store_open()) == "OK"

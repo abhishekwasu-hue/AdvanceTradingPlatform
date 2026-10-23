@@ -3545,3 +3545,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `docs/design/TRADE_TAKEOVER.md`: pointer in the status, the signal-language note in section 10, new section 13.
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
+
+## 23 Oct - Terminal master order: the independent review (docs only)
+
+- Branch `claude/terminal-master-review` (from main). **Docs only, no migration**, no code, no flag.
+- `docs/design/TERMINAL_MASTER_REVIEW.md`: per-part status with file:line evidence, findings F1-F28, broker facts
+  (Kotak Neo, Groww; most unverified - the official sites could not be opened from the build machine), SEBI points for
+  the lawyer, the 9.4 chain-history design (owner's own session, tenant-private), the data-hub gap and measurement, the
+  build plan. Questions TM-1..TM-32. README row 20 is on the PR #461 branch only: its status clause is in the PR body.

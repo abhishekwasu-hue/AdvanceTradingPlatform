@@ -16,6 +16,7 @@ import { chartView, formatTick } from "../charting/chartTypes";
 import { LightweightEngine, type LineSeriesLike } from "../charting/lightweight";
 import { DEFAULT_SETTINGS, closes, ema, rsi, sma, vwap, type Series } from "../utils/indicators";
 import { chartFontSize } from "../theme";
+import { CHART_FONT_FAMILY, DEFAULT_INTERACTION, baseChartOptions, interactionOptions, type InteractionState } from "./chartOptions";
 import { applyChartTheme, candleOptions, chartThemeOptions, type ChartPalette } from "./chartTheme";
 import { DAILY_OR_LONGER, type ChartBar, type TimeframeId } from "./timeframes";
 
@@ -120,23 +121,23 @@ export class ChartCore {
   private data: ChartBar[] = [];
   private key = "";
   private readonly unsubs: (() => void)[] = [];
+  /** R4: the core is the one owner of the gesture options; every change goes through `setInteraction`. */
+  private interaction: InteractionState = { ...DEFAULT_INTERACTION };
 
   constructor(element: HTMLElement, private opts: ChartCoreOptions) {
     const theme = chartThemeOptions(opts.palette, opts.grid);
     const daily = DAILY_OR_LONGER.has(opts.timeframe ?? "5min");
+    const base = baseChartOptions(this.interaction);
     this.chart = createChart(element, {
       ...theme,
+      ...base,
       autoSize: true,
       // The TradingView attribution logo stays (the library's licence asks for it once per chart).
-      layout: { ...theme.layout, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: chartFontSize(), attributionLogo: true },
-      rightPriceScale: { ...theme.rightPriceScale, minimumWidth: 72 },
-      timeScale: { ...theme.timeScale, timeVisible: !daily, secondsVisible: false, rightOffset: 4,
+      layout: { ...theme.layout, fontFamily: CHART_FONT_FAMILY, fontSize: chartFontSize(), attributionLogo: true },
+      rightPriceScale: { ...theme.rightPriceScale, ...base.rightPriceScale },
+      timeScale: { ...theme.timeScale, ...base.timeScale, timeVisible: !daily,
                    tickMarkFormatter: (t: Time, type: number) => formatTick(t as number, type, opts.zone) },
       localization: { timeFormatter: (t: Time) => crosshairTimeLabel(t as number, this.opts.zone, this.opts.timeframe) },
-      // Touch as on ProChart (PW2): pinch to zoom, a one-finger drag pans while a vertical swipe still scrolls the page.
-      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
-      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
-      kineticScroll: { touch: true, mouse: false },
     });
     const p = opts.palette;
     this.candles = this.chart.addSeries(CandlestickSeries, {
@@ -155,12 +156,24 @@ export class ChartCore {
       color: p.ov[i], lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
     }));
     this.engine = new LightweightEngine(this.chart, this.candles, (y) => this.candles.coordinateToPrice(y),
-                                        { add: (pane, color, title) => this.addStudyLine(pane, color, title), remove: (s) => this.removeStudyLine(s) });
+                                        { add: (pane, color, title) => this.addStudyLine(pane, color, title), remove: (s) => this.removeStudyLine(s) },
+                                        (enabled) => this.setInteraction({ suspended: !enabled }));
     this.engine.setDefaultDrawingColor(p.drawing);
     this.setPanes(opts.panes);
     const nearStart = (range: LogicalRange | null) => { if (range && range.from < 10) this.opts.onLoadOlder?.(); };
     this.chart.timeScale().subscribeVisibleLogicalRangeChange(nearStart);
     this.unsubs.push(() => this.chart.timeScale().unsubscribeVisibleLogicalRangeChange(nearStart));
+  }
+
+  /** The gesture state now (a copy). */
+  interactionState(): InteractionState { return { ...this.interaction }; }
+
+  /** R4: changes the gesture state and writes the full options for it (a drawing drag suspends and resumes here). */
+  setInteraction(change: Partial<InteractionState>): void {
+    const next = { ...this.interaction, ...change };
+    if (next.vertTouchDrag === this.interaction.vertTouchDrag && next.suspended === this.interaction.suspended) return;
+    this.interaction = next;
+    this.chart.applyOptions(interactionOptions(next));
   }
 
   private candlesHidden(): boolean { return this.opts.type === "bars" || this.opts.type === "line"; }

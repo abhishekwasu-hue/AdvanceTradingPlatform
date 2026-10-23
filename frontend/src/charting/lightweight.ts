@@ -10,6 +10,7 @@
  * - events: crosshair, click, visible range.
  * Studies are recorded in the layout; ProChart draws its own until CH6 moves them onto ScreenQL.
  */
+import { DEFAULT_INTERACTION, interactionOptions, type InteractionOptions } from "../chart/chartOptions";
 import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
 import type { ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerData, StudyLine, StudySpec } from "./engine";
 import { DEFAULT_COLOR, layerShapes, timeToLogical, type Converters } from "./geometry";
@@ -34,7 +35,8 @@ export interface CandleSeriesLike {
 }
 interface MouseParamsLike { time?: unknown; point?: { x: number; y: number }; sourceEvent?: unknown }
 export interface ChartLike {
-  applyOptions(options: { handleScroll?: boolean; handleScale?: boolean }): void;
+  // R4: the gesture options are written as full objects (chart/chartOptions), never as the booleans the library expands.
+  applyOptions(options: Partial<InteractionOptions>): void;
   // CH5 crosshair link (optional in the structural slice: test fakes without them simply are not followed).
   setCrosshairPosition?(price: number, time: never, series: never): void;
   clearCrosshairPosition?(): void;
@@ -81,8 +83,10 @@ export class LightweightEngine implements ChartEngine {
   private barTimes: number[] | null = null;                    // the candles' times (epoch s), rebuilt when the data changes
   private defaultColor: string | null = null;                  // UI2-4b1: the chart theme's colour for a default-coloured drawing
 
+  /** `panning` (R4): the owner of the gesture options (the v2 `ChartCore`), asked to suspend / resume them. Without
+   * one (ProChart) the engine writes the default gesture options itself, as full objects. */
   constructor(private readonly chart: ChartLike, private readonly candles: CandleSeriesLike, private readonly priceOf?: (y: number) => number | null,
-              private readonly lines?: LineFactory) {
+              private readonly lines?: LineFactory, private readonly panning?: (enabled: boolean) => void) {
     // CH5: a move with a point but no pointer event behind it was not the user's (a programmatic crosshair); leaving the
     // pane (no point) counts as the user's, so linked charts let go too.
     const cross = (p: MouseParamsLike) => this.emit({ type: "crosshair", time: typeof p.time === "number" ? p.time : null, price: this.price(p),
@@ -161,10 +165,13 @@ export class LightweightEngine implements ChartEngine {
     return t == null || p == null || !Number.isFinite(p) ? null : { t, p };
   }
 
-  /** Scrolling and zooming off while a drawing is dragged, so the chart does not pan under the pointer. */
+  /** Scrolling and zooming off while a drawing is dragged, so the chart does not pan under the pointer. R4: the owner
+   * of the gesture options does it, so resuming gives back exactly the options before (a vertical swipe still scrolls
+   * the page; the axis drag and double-click settings stay). */
   setPanning(enabled: boolean) {
     if (this.disposed) return;                                 // a tool unbinding after the chart was removed (unmount mid-drag)
-    this.chart.applyOptions({ handleScroll: enabled, handleScale: enabled });
+    if (this.panning) { this.panning(enabled); return; }
+    this.chart.applyOptions(interactionOptions({ ...DEFAULT_INTERACTION, suspended: !enabled }));
   }
 
   private price(p: MouseParamsLike): number | null {

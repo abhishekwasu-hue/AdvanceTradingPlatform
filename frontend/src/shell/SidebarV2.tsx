@@ -4,6 +4,7 @@ import { PAGES, preloadPage } from "../routes";
 import type { Page } from "../components/Sidebar";
 import type { UserResponse } from "../types";
 import { StatusDot } from "../broker/marks";
+import StatusLink from "../status/StatusLink";
 import type { BrokerDot } from "../broker/brokerState";
 import { NAV_PINNED_V2, navDotFor, navEntryFor, type NavItemV2, type NavSectionV2, type ShellKey } from "./navModel";
 
@@ -91,6 +92,8 @@ export function SidebarV2View({ sections, current, user, accountPath, pinned = N
           </div>
         )}
       </nav>
+      {/* A2: the footer's Status link (hidden while there is no status page to link to). */}
+      <div className="shrink-0 border-t border-subtle px-space-4 empty:hidden" data-sidebar-footer><StatusLink /></div>
       <Link to={accountPath} aria-current={current === "account" ? "page" : undefined}
         className="flex shrink-0 items-center gap-space-3 border-t border-subtle px-space-4 py-space-3 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand">
         <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-pill bg-surface-2 text-t12 font-semibold text-fg">

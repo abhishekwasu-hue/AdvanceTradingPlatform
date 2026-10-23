@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, CircleHelp, Wrench, XCircle } from "lucide
 import type { ReactNode } from "react";
 import { LogoMark } from "../components/Logo";
 import {
-  COMPONENT_NAMES, STATE_LABEL, STATE_TONE, checkedAt, eodLine, headline, incidentText, marketLine,
+  COMPONENT_NAMES, STATE_LABEL, STATE_TONE, checkedAt, eodLine, incidentText, marketLine, pageHeadline,
   type ComponentState, type StatusLoad,
 } from "./publicStatus";
 
@@ -71,18 +71,19 @@ export function StatusView({ load }: { load: StatusLoad }) {
   const { status } = load;
   const { components, banner } = status;
   const feed = components.data_feed;
+  const top = pageHeadline(status);
   return (
     <Shell>
       <section
         role="status"
         aria-live="polite"
         aria-label="Overall status"
-        data-state={status.status}
+        data-state={top.maintenance ? "maintenance" : status.status}
         className="flex items-center gap-3 rounded-xl border border-border bg-surface-1 p-4"
       >
-        <StateIcon state={status.status} size={22} />
+        {top.maintenance ? <Wrench size={22} aria-hidden className="text-warn" /> : <StateIcon state={status.status} size={22} />}
         <div>
-          <p className="text-base font-semibold">{headline(status.status)}</p>
+          <p className="text-base font-semibold">{top.text}</p>
           <p className="text-xs text-fg-muted">{checkedAt(status.checked_at)}</p>
         </div>
       </section>
@@ -104,7 +105,10 @@ export function StatusView({ load }: { load: StatusLoad }) {
             {banner.incidents.map((incident, n) => (
               <li key={n} className="flex items-start gap-2" data-impact={incident.impact}>
                 <StateIcon state={incident.impact === "major" ? "outage" : "degraded"} />
-                <span>{incidentText(incident)}</span>
+                <span>
+                  {incidentText(incident)}
+                  {incident.note && <span className="block text-fg-muted" data-incident-note>{incident.note}</span>}
+                </span>
               </li>
             ))}
           </ul>

@@ -3351,3 +3351,40 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   migration test asserts "one head, with its own revision on the chain". All four are additive and rollback-safe.
 - Postgres 16: upgrade head, `alembic check` (no diff), downgrade to `a4c6e8f0b2d4`, upgrade head again - clean.
   Deploy after 15:30 IST.
+## 23 Oct - Chart order (row 18), PR 1: one chart options builder + the R4 fix (no visual change)
+
+- Branch `claude/chart-core-options` (the first PR of `docs/design/CHART_COLOUR_REVIEW.md`'s sequence). No migration, no
+  flag, no route, no backend change.
+- `frontend/src/chart/chartOptions.ts`: the one builder of the theme-neutral options (gestures, kinetic scroll, the
+  price axis width, the right offset). `ChartCore` and ProChart's `baseOptions` both take it; the word-for-word copy in
+  ProChart is gone. The values are the same as before (the booleans `axisPressedMouseMove: true` /
+  `axisDoubleClickReset: true` are now the same full objects the library expanded them to).
+- R4: `LightweightEngine.setPanning` no longer writes `handleScroll: true, handleScale: true` (the library expanded
+  that into every sub-option, so after the first drawing drag a phone swipe stopped scrolling the page). The v2 core
+  owns the gesture state (`setInteraction`, suspend / resume); ProChart's engine writes the default state as full objects.
+- The fake library (`chart/lightweightFake.fixture.ts`) gains the price scale, the time scale's scroll position,
+  `resetTimeScale`, the crosshair handlers and `merged()` for the gesture tests of the next PR.
+- `components/CandleChart.tsx` removed: nothing rendered it (grep: no `<CandleChart` in `src/`, the build passes); its
+  types and `directionMarker` moved to `charting/markers.ts`.
+- Tests: vitest `src/chart/chartOptions.test.ts` (the builder, the R4 drag test, the ProChart path, the markers). The
+  chart e2e baselines are unchanged.
+
+## 23 Oct - Production readiness A2: monitoring and alerts to the operator
+
+- Branch `claude/readiness-a2-monitoring`, stacked on A1 (#422). **No migration** (state in `platform_controls` rows),
+  no new flag; new admin routes `/api/admin/ops-alerts[/run|/test|/telegram]` (SUPER_ADMIN + MFA, in the tenancy table).
+- Server checks: `backend/app/observability/ops_alerts.py` + `backend/scripts/ops_check.py`, run by `atp.sh ops-check`
+  (new cron line `2-59/5`, installed by every deploy; skipped while the deploy lock is held). Ten checks, dedup and
+  recovery messages to the operator Telegram chat (one-time code via the platform bot, or `OPS_ALERT_TELEGRAM_CHAT_ID`)
+  and SMTP (`OPS_ALERT_EMAIL`, else `SUPER_ADMIN_EMAILS`). Admin > System > Alerts card (`AlertsPanelV2`).
+- Outside check: `.github/workflows/uptime.yml` + `scripts/monitoring/uptime_check.py` (issue on two failures in a row,
+  closes on recovery; optional Telegram secrets, names only). actionlint clean.
+- Error tracker: `error_tracker.py`, Sentry SDK (`sentry-sdk` added to requirements) to `ERROR_TRACKER_DSN`, off when
+  unset; PII scrubber with tests.
+- Status page: maintenance headline, incident public notes (admin incidents card: note field, "Public note",
+  "Fix in place"), footer Status link (sidebar, More sheet, sign-in) behind `public_status_page` / `VITE_STATUS_PAGE_URL`.
+- Runbook section 10b (owner steps), `.env.example`, compose env names. Questions RDY-21..26.
+- Tests: `test_a2_monitoring.py`, `test_a2_error_tracker.py`, `test_a2_uptime_check.py`, two `atp.sh ops-check` cases in
+  `test_z11_deploy_bundle.py`; vitest `StatusLink.test.tsx`, `alertsPanel.test.tsx`; e2e `ops-alerts-v2.e2e.ts` with
+  baselines at 360 / 390 / 1440 light / dark; `admin-system-v2-*` baselines refreshed (the Alerts card is new).
+

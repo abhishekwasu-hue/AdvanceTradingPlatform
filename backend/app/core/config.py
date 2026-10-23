@@ -445,6 +445,49 @@ ATP_TELEGRAM_BOT_TOKEN = os.environ.get("ATP_TELEGRAM_BOT_TOKEN", "").strip()
 ATP_TELEGRAM_BOT_USERNAME = os.environ.get("ATP_TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
 ATP_TELEGRAM_WEBHOOK_SECRET = os.environ.get("ATP_TELEGRAM_WEBHOOK_SECRET", "").strip()
 
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
+
+# --- Production readiness A2: operator alerts (app/observability/ops_alerts.py) ---------------
+# The server's scheduled check (`deploy/atp.sh ops-check`, every 5 minutes from the crontab `deploy` installs) judges
+# these and messages the platform operator - never a user alert channel, so no user setting can mute it. Where: the
+# operator Telegram chat registered from Admin > System > Alerts (one-time code with the platform bot; or the chat id
+# in OPS_ALERT_TELEGRAM_CHAT_ID) and e-mail through PLATFORM_SMTP_* to OPS_ALERT_EMAIL (comma-separated; empty =
+# SUPER_ADMIN_EMAILS). Thresholds: the Prometheus rules' own numbers where one exists (scripts/monitoring).
+OPS_ALERT_TELEGRAM_CHAT_ID = os.environ.get("OPS_ALERT_TELEGRAM_CHAT_ID", "").strip()
+OPS_ALERT_EMAIL = os.environ.get("OPS_ALERT_EMAIL", "").strip()
+OPS_ALERT_AFTER_CHECKS = max(1, int(_env_float("OPS_ALERT_AFTER_CHECKS", 2)))        # the same verdict twice in a row
+OPS_ALERT_REPEAT_HOURS = _env_float("OPS_ALERT_REPEAT_HOURS", 6)                     # a FAIL still there: remind
+OPS_ERROR_RATE_MAX = _env_float("OPS_ERROR_RATE_MAX", 0.005)                         # rule ApiErrorBudgetBurn
+OPS_ERROR_RATE_MIN_REQUESTS = int(_env_float("OPS_ERROR_RATE_MIN_REQUESTS", 50))
+OPS_HEARTBEAT_MAX_SECONDS = int(_env_float("OPS_HEARTBEAT_MAX_SECONDS", 180))        # rule TradingWorkerStalled
+OPS_FEED_STALE_REFUSALS = int(_env_float("OPS_FEED_STALE_REFUSALS", 5))              # rule MarketDataStale
+OPS_TOKEN_EXPIRY_WARN_DAYS = int(_env_float("OPS_TOKEN_EXPIRY_WARN_DAYS", 7))
+OPS_DISK_WARN_PERCENT = int(_env_float("OPS_DISK_WARN_PERCENT", 85))                 # the same lines as `atp.sh health`
+OPS_DISK_FAIL_PERCENT = int(_env_float("OPS_DISK_FAIL_PERCENT", 95))
+OPS_DB_SIZE_WARN_GB = _env_float("OPS_DB_SIZE_WARN_GB", 8)
+OPS_DB_SIZE_FAIL_GB = _env_float("OPS_DB_SIZE_FAIL_GB", 15)
+OPS_CERT_WARN_DAYS = int(_env_float("OPS_CERT_WARN_DAYS", 14))                        # Caddy renews at 30 days left
+OPS_CERT_FAIL_DAYS = int(_env_float("OPS_CERT_FAIL_DAYS", 3))
+OPS_OUTBOX_BACKLOG = int(_env_float("OPS_OUTBOX_BACKLOG", 20))                       # rule AlertOutboxBacklog
+OPS_LOGIN_FAILURES_15M = int(_env_float("OPS_LOGIN_FAILURES_15M", 50))               # rule CredentialStuffing
+OPS_HOST_FACTS_MAX_MINUTES = int(_env_float("OPS_HOST_FACTS_MAX_MINUTES", 30))
+# Where the scheduled check reads the API's and the worker's Prometheus series (inside the compose network).
+OPS_API_METRICS_URL = os.environ.get("OPS_API_METRICS_URL", "http://127.0.0.1:8000/metrics").strip()
+OPS_WORKER_METRICS_URL = os.environ.get("OPS_WORKER_METRICS_URL", "http://worker:9102/metrics").strip()
+
+# --- Production readiness A2: the error tracker (app/observability/error_tracker.py) ----------
+# A Sentry-protocol DSN (GlitchTip or Sentry, from the owner's account). Empty = OFF: nothing is sent anywhere. Every
+# event passes the PII scrubber first (no tokens, keys, e-mails, phone numbers, cookies, query strings, bodies).
+ERROR_TRACKER_DSN = os.environ.get("ERROR_TRACKER_DSN", "").strip()
+ERROR_TRACKER_ENVIRONMENT = os.environ.get("ERROR_TRACKER_ENVIRONMENT", "").strip()
+ERROR_TRACKER_SAMPLE_RATE = min(1.0, max(0.0, _env_float("ERROR_TRACKER_SAMPLE_RATE", 1.0)))
+
 # --- Billing gateway (Phase K1b) ----------------------------------------------------------
 # "manual" = the operator records bank/UPI payments; "razorpay" = Razorpay Subscriptions with
 # hosted checkout and webhooks. These are the operator's own gateway secrets (platform-level,

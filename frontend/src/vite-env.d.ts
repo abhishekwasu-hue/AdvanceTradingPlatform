@@ -16,3 +16,9 @@ declare module "*/tailwind.config.js" {
   const config: { theme: { extend: Record<string, unknown> & { fontSize: Record<string, [string, { lineHeight: string }]> } } };
   export default config;
 }
+
+/** A2 (RDY-11): the footer's "Status" link goes here when set (an uptime service's hosted status page, https only);
+ * unset = the in-app /status page while the operator has it on. Set at build time; not a secret. */
+interface ImportMetaEnv {
+  readonly VITE_STATUS_PAGE_URL?: string;
+}

@@ -7,6 +7,7 @@ import AdminPage from "../pages/AdminPage";
 import type { PageProps } from "../routes";
 import { NotFound } from "../shell/common";
 import { useFeatures } from "../ui/useFeatures";
+import AlertsPanelV2 from "./AlertsPanelV2";
 import { ActivationPanel, AiCostPanel, BUTTON, FOCUS, Phase0Notice, Pill, SupportPanel, SystemPanels, TestingToolsPanel, UsersPanel } from "./AdminSectionsV2";
 import { ADMIN_SECTIONS, ago, consoleApi, isAdminSection, type AdminSection, type ConsoleDiagnostics } from "./consoleApi";
 
@@ -62,7 +63,7 @@ export default function AdminConsoleV2(_props: PageProps) {
         </ul>
       </nav>
 
-      {section === "system" && <SystemPanels />}
+      {section === "system" && <><AlertsPanelV2 /><SystemPanels /></>}
       {section === "controls" && <Phase0Notice />}
       {section === "users" && <><UsersPanel />{growth && <ActivationPanel />}<AiCostPanel /></>}
       {section === "testing" && <TestingToolsPanel />}

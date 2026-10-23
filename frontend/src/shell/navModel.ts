@@ -166,7 +166,7 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   { ...item("settings-ai", "AI", "AI", SETTINGS_PATH.ai, Sparkles, { keywords: ["ai key", "api key", "connect ai", "claude", "openai", "gemini", "ai limits"] }), section: "account" },
   { ...item("settings-alerts", "Alerts", "Alerts", SETTINGS_PATH.alerts, Bell, { keywords: ["telegram", "alert channels", "email alerts", "sms", "push notifications"] }), section: "account" },
   { ...item("settings-appearance", "Appearance", "Appearance", SETTINGS_PATH.appearance, Palette, { keywords: ["theme", "dark mode", "light mode", "text size", "colour-blind", "reduce motion"] }), section: "account" },
-  { ...item("settings-help", "Help & tips", "Help & tips", SETTINGS_PATH.help, LifeBuoy, { keywords: ["tips", "page tips", "tours", "show get started"] }), section: "account" },
+  { ...item("settings-help", "Help & tips", "Help & tips", SETTINGS_PATH.help, LifeBuoy, { keywords: ["tips", "page tips", "tours", "show get started", "help centre", "help center", "faq", "report a problem", "contact support"] }), section: "account" },
   { ...item("settings-advanced", "Advanced", "Advanced", SETTINGS_PATH.advanced, Wrench, { keywords: ["webhook", "tradingview", "own telegram bot", "integrations"] }), section: "account" },
   // Audit section 5 "Drop from the user navigation": still there, found by search.
   { ...item("quant", "Factor Lab", "Factor Lab", "/quant", Sigma, { keywords: ["quant", "factors"] }), section: "more" },

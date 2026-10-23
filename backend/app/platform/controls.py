@@ -234,6 +234,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Z10-f (docs/design/Z10_LAUNCH_HARDENING.md): the how-to support bot over the help and legal pages. No tools (reads
     # no positions, touches no order), refuses advice, hands low-confidence questions to the feedback form. OFF: 404.
     "support_bot": "Support bot: how-to answers from the help and legal pages (no advice, no account data, no orders)",
+    # C12 (docs/design/READINESS_REVIEW.md): the Help centre (searchable, from the help pages, the glossary and the page
+    # tours) under Settings > Help & tips, "Report a problem" with its context capture into the feedback inbox, and the
+    # support WhatsApp / e-mail link while the market is open. Needs ui_v2. OFF: the routes answer 404, nothing shows.
+    "help_centre": "Help centre, Report a problem and the support contact link (needs ui_v2)",
     # Z10-f: the public legal pages (Privacy notice, Terms of use, Risk disclosure), the acceptance box on sign-up and
     # team join, and the acceptance banner. OFF: the routes answer 404 and sign-up is unchanged. Refused while a document
     # still has an open [PLACEHOLDER] unless the operator overrides (`override_open_placeholders`).

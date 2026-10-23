@@ -199,9 +199,10 @@ def test_opening_range_levels_without_timedelta_index_arithmetic():
     assert "or_high" not in short            # the 15-minute range is published only once it is complete
 
 
-def test_offsite_sync_copies_dumps_and_mirrors_the_wal_archive(tmp_path):
-    """The off-site script with a recording stand-in for rclone: dumps are copied (never deleted off-site), the WAL
-    archive is synced, --once exits with the result."""
+def test_offsite_sync_copies_dumps_and_never_the_wal_archive(tmp_path):
+    """The off-site script with a recording stand-in for rclone: dumps are copied (never deleted off-site), encrypted
+    and sealed files only; the WAL archive is never sent (A1, review R1: raw database pages); --once exits with the
+    result. tests/test_a1_offsite_backup.py checks the filters file by file."""
     script = Path(__file__).resolve().parents[2] / "scripts" / "backup" / "offsite_sync.sh"
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -216,7 +217,8 @@ def test_offsite_sync_copies_dumps_and_mirrors_the_wal_archive(tmp_path):
     run = subprocess.run(["sh", str(script), "--once"], env=env, capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
     calls = log.read_text().splitlines()
-    assert calls[0].startswith(f"copy {tmp_path / 'backups'} spaces:test-bucket/backups") and calls[1].startswith(f"sync {tmp_path / 'wal'} spaces:test-bucket/wal_archive")
+    assert calls[0].startswith(f"copy {tmp_path / 'backups'} spaces:test-bucket/backups") and "--include /atp_*.dump.enc{,.sha256,.hmac}" in calls[0]
+    assert len(calls) == 1 and not any("wal_archive" in c or str(tmp_path / "wal") in c for c in calls)   # the WAL directory exists: left alone
     assert "synced to spaces:test-bucket" in run.stderr
     failed = subprocess.run(["sh", str(script), "--once"], env={**env, "FAKE_RCLONE_EXIT": "3"}, capture_output=True, text=True)
     assert failed.returncode != 0

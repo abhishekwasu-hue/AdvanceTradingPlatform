@@ -8,8 +8,16 @@
 #   /opt/atp/deploy/atp.sh rollback [--to SHA] [--restore-db]
 #                                                  the previous release's images; --restore-db also puts the database
 #                                                  back to the backup taken just before that release migrated it
-#   /opt/atp/deploy/atp.sh backup [--verify]       database dump + files archive, encrypted + sealed, copied to R2
+#   /opt/atp/deploy/atp.sh backup [--verify]       database dump + files archive, encrypted + sealed, copied to R2, old
+#                                                  R2 copies pruned (7 daily / 4 weekly / 6 monthly, never inside the lock)
 #   /opt/atp/deploy/atp.sh restore-check           newest backup from R2 -> scratch database -> checks -> dropped
+#   /opt/atp/deploy/atp.sh backup-status           one JSON line: last good backup, local and off-site, and its age
+#                                                  (exit 1 past BACKUP_MAX_AGE_HOURS - the hook an alert reads)
+#   /opt/atp/deploy/atp.sh restore-offsite         a NEW server: the newest backup from R2 into its EMPTY database
+#                                                  (runbook section 6b: restore on a clean machine), then `deploy`
+#   /opt/atp/deploy/atp.sh wal-cleanup             empties the WAL archive left from before archiving was turned off
+#   /opt/atp/deploy/atp.sh base-backup             point-in-time recovery only (PG_ARCHIVE_MODE=on): encrypted base
+#                                                  backup, prunes the WAL archive (scheduled weekly when on)
 #   /opt/atp/deploy/atp.sh bootstrap               host checks (as root: runs deploy/hostinger/bootstrap.sh)
 #   /opt/atp/deploy/atp.sh loadtest [--force-offhours] [--users N] [--ramp S] [--seconds S] [--think S] [--check]
 #                                                  500 synthetic PAPER sessions against this host in NSE market hours, in
@@ -82,6 +90,7 @@ LT_REPORTED=0       # 1 once its report is written
 LT_HUP=0            # 1 when the terminal went away (output then goes to the run's log only)
 DC_WRAP=()          # a command dc runs docker compose under (setsid during the load test's cleanup: a second Ctrl-C cannot stop it)
 OWNER_ACTION=""     # what health found that only the owner can do (exit 10)
+BACKUP_AGE_STRICT=0 # 1 under `health`: a backup older than BACKUP_MAX_AGE_HOURS FAILs (inside a deploy it WARNs)
 WARNS=0
 FAILS=0
 
@@ -162,10 +171,11 @@ deployment_phase() { local v; v="$(env_get ATP_DEPLOYMENT_PHASE)"; printf '%s' "
 state_init() { [ "$DRY_RUN" = "1" ] || mkdir -p "$STATE_DIR/logs"; }
 current_sha() { cat "$STATE_DIR/current" 2>/dev/null || true; }
 # Salted scrypt of the key (per-host random salt in .deploy/key_salt): the key reaches python on stdin, never argv.
+# $1 = the .env key (default SECRETS_ENCRYPTION_KEY; A1 also keeps one of BACKUP_ENCRYPTION_PASSPHRASE).
 key_fingerprint() {
   local salt; salt="$(cat "$STATE_DIR/key_salt" 2>/dev/null || true)"
   [ -n "$salt" ] || { printf 'no-salt'; return 0; }
-  env_get SECRETS_ENCRYPTION_KEY | python3 -c 'import hashlib, sys
+  env_get "${1:-SECRETS_ENCRYPTION_KEY}" | python3 -c 'import hashlib, sys
 print(hashlib.scrypt(sys.stdin.buffer.read(), salt=bytes.fromhex(sys.argv[1]), n=2 ** 14, r=8, p=1, dklen=32).hex())' "$salt"
 }
 db_ahead_marker() { [ -s "$STATE_DIR/db_ahead" ]; }
@@ -325,6 +335,15 @@ for chunk in iter(lambda: sys.stdin.buffer.read(1 << 20), b""):
     mac.update(chunk)
 print(mac.hexdigest())' "$1"
 }
+# The same with the name given in full (a base backup's seal covers "base/<stamp>/<file>", scripts/backup/common.sh).
+mac_stream_named() {
+  ATP_MAC_PASS="$(env_get BACKUP_ENCRYPTION_PASSPHRASE)" python3 -c 'import hashlib, hmac, os, sys
+key = hashlib.pbkdf2_hmac("sha256", os.environ["ATP_MAC_PASS"].encode(), b"atpmacv1", 200000, 32)
+mac = hmac.new(key, sys.argv[1].encode() + b"\n", digestmod="sha256")
+for chunk in iter(lambda: sys.stdin.buffer.read(1 << 20), b""):
+    mac.update(chunk)
+print(mac.hexdigest())' "$1"
+}
 # ok | missing | mismatch, for a dump in the volume ($1 = path under /backups).
 dump_mac_state() {
   local f="$1" want got
@@ -361,6 +380,140 @@ offsite_state() {
   esac
 }
 restore_dir() { local d; d="$(env_get OFFSITE_RESTORE_DIR)"; printf '%s' "${d:-/var/backups/atp-restore-test}"; }
+
+# --- A1: backup settings, ages and the escrow check (numbers live in .env, not here) ---------------------------
+env_int() { local v; v="$(env_get "$1")"; case "$v" in ''|*[!0-9]*) printf '%s' "$2" ;; *) printf '%s' "$v" ;; esac; }
+backup_max_age_h() { env_int BACKUP_MAX_AGE_HOURS 26; }
+# PG_ARCHIVE_MODE=on in .env: continuous WAL archiving (point-in-time recovery) and its weekly encrypted base backup.
+pitr_on() { case "$(env_get PG_ARCHIVE_MODE | tr '[:upper:]' '[:lower:]')" in on|always) return 0 ;; esac; return 1; }
+age_hours() {   # whole hours since an ISO time; nothing when it cannot be read
+  local t; [ -n "$1" ] || return 0
+  t="$(date -u -d "$1" +%s 2>/dev/null)" || return 0
+  printf '%s' $(( ($(date -u +%s) - t) / 3600 ))
+}
+# The last good backup: local = the dump's LAST_BACKUP_OK marker (scripts/backup/backup.sh); off-site = the last
+# `atp.sh backup` whose R2 copy succeeded (.deploy/last_offsite_ok: "<utc time> <newest dump>"; kept in a file, not
+# read from the offsite container's log, which a restart empties).
+BK_LOCAL_LAST="" BK_LOCAL_AGE="" BK_OFF_LAST="" BK_OFF_NAME="" BK_OFF_AGE=""
+backup_ages() {
+  BK_LOCAL_LAST="$(dc exec -T backup cat /backups/LAST_BACKUP_OK 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
+  BK_LOCAL_AGE="$(age_hours "$BK_LOCAL_LAST")"
+  BK_OFF_LAST="" BK_OFF_NAME="" BK_OFF_AGE=""
+  if [ -s "$STATE_DIR/last_offsite_ok" ]; then
+    read -r BK_OFF_LAST BK_OFF_NAME < "$STATE_DIR/last_offsite_ok" || true
+    BK_OFF_AGE="$(age_hours "$BK_OFF_LAST")"
+  fi
+}
+# A backup past its age limit: FAIL under `health` (what an alert reads), WARN inside a deploy or rollback.
+backup_late() { if [ "$BACKUP_AGE_STRICT" = "1" ]; then bad "$*"; else warn "$*"; fi; }
+
+# Review R2 (key escrow): the backup passphrase's salted fingerprint, kept like the secrets key's. Recorded on the
+# first deploy / backup; when the value changes, the change is said once and recorded (older backups still need the
+# OLD value, so it stays in escrow until they have left R2). Never prints a value.
+backup_key_record() {
+  [ "$DRY_RUN" = "1" ] && return 0
+  [ -s "$STATE_DIR/key_salt" ] || return 0            # the first deploy makes the salt
+  local f="$STATE_DIR/backup_key.fingerprint" fp
+  fp="$(key_fingerprint BACKUP_ENCRYPTION_PASSPHRASE)"
+  if [ -s "$f" ] && [ "$(cat "$f")" = "$fp" ]; then return 0; fi
+  if [ -s "$f" ]; then
+    warn "BACKUP_ENCRYPTION_PASSPHRASE is not the value recorded on $(date -r "$f" '+%Y-%m-%d') - backups taken before today need the OLD value: keep it in escrow until they have left R2 (runbook section 6a). The new value is recorded now."
+    printf '%s passphrase changed\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$STATE_DIR/backup_key.changes"
+  fi
+  printf '%s\n' "$fp" > "$f"; chmod 600 "$f"
+}
+escrow_report() {
+  local f="$STATE_DIR/secrets_key.fingerprint" b="$STATE_DIR/backup_key.fingerprint"
+  if [ -s "$f" ]; then info "escrow: SECRETS_ENCRYPTION_KEY unchanged since $(date -r "$f" '+%Y-%m-%d') - your two escrow copies must hold this value (runbook section 6a)"; fi
+  if [ -s "$b" ]; then
+    if [ "$(cat "$b")" = "$(key_fingerprint BACKUP_ENCRYPTION_PASSPHRASE)" ]; then
+      info "escrow: BACKUP_ENCRYPTION_PASSPHRASE unchanged since $(date -r "$b" '+%Y-%m-%d') - every backup since then opens with it"
+    else warn "BACKUP_ENCRYPTION_PASSPHRASE changed since $(date -r "$b" '+%Y-%m-%d') - older backups need the old value: keep it in escrow (runbook section 6a); the next backup records the new one"; fi
+  fi
+}
+
+# The WAL archive (review R1). Off (the default): nothing should be in it - what is left from before is listed with
+# its cleanup command. On: the newest base backup must be at most 8 days old, or the archive is not pruned.
+wal_report() {
+  local mode n mb last age
+  mode="$(psql_q 'show archive_mode' postgres | tr -d '\r' || true)"
+  # shellcheck disable=SC2016  # expands inside the postgres container
+  read -r n mb < <(dc exec -T postgres sh -c 'printf "%s %s\n" "$(find /wal_archive -type f 2>/dev/null | wc -l)" "$(du -sm /wal_archive 2>/dev/null | cut -f1)"' 2>/dev/null | tr -d '\r' || true) || true
+  n="${n:-?}"; mb="${mb:-?}"
+  case "$mode" in
+    off)
+      if pitr_on; then warn "WAL archiving: PG_ARCHIVE_MODE=on in .env, but the running database has it off - the next deploy applies it"; fi
+      case "$n" in
+        0) ok "WAL archiving off (recovery point: the daily encrypted dump; runbook section 6c turns point-in-time recovery on)" ;;
+        '?') info "WAL archiving off; the archive could not be read" ;;
+        *) warn "WAL archiving is off, but $n file(s) (${mb} MB) from before are still in the archive - remove them with: $ATP_DIR/deploy/atp.sh wal-cleanup" ;;
+      esac ;;
+    on|always)
+      if ! pitr_on; then warn "WAL archiving is on in the running database but not in .env (PG_ARCHIVE_MODE) - the next deploy turns it off"; fi
+      last="$(dc exec -T backup cat /backups/LAST_BASE_BACKUP_OK 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
+      age="$(age_hours "$last")"
+      if [ -z "$age" ]; then warn "WAL archiving on ($n files, ${mb} MB) but no base backup yet - run: $ATP_DIR/deploy/atp.sh base-backup"
+      elif [ "$age" -le 192 ]; then ok "WAL archiving on: last base backup $last (${age} h ago), archive $n files, ${mb} MB"
+      else backup_late "WAL archiving on: the last base backup is ${age} h old (over 8 days) - the archive is not pruned ($n files, ${mb} MB)"; fi ;;
+    *) info "WAL archiving: state unknown (database not reachable)" ;;
+  esac
+}
+
+# The cron block `deploy` and `schedule` install (A1): every night an encrypted backup, its R2 copy and a restore of it
+# into a scratch database (--verify); a second restore check every Sunday; the base backup only with PITR on.
+schedule_block() {
+  local self="$ATP_DIR/deploy/atp.sh" logs="$STATE_DIR/logs"
+  printf '%s\n' "# BEGIN atp.sh managed block - replaced by 'deploy/atp.sh schedule'; edit outside it" \
+    "PATH=/usr/local/bin:/usr/bin:/bin" \
+    "17 2 * * * $self backup --scheduled --verify >> $logs/backup.log 2>&1" \
+    "43 3 * * 0 $self restore-check --scheduled >> $logs/restore-check.log 2>&1"
+  if pitr_on; then printf '%s\n' "29 4 * * 6 $self base-backup --scheduled >> $logs/base-backup.log 2>&1"; fi
+  printf '%s\n' "# END atp.sh managed block"
+}
+schedule_summary() {
+  printf 'daily 02:17 backup + R2 copy + restore check, Sunday 03:43 restore check'
+  if pitr_on; then printf ', Saturday 04:29 base backup'; fi
+}
+# current | missing | outdated | no-crontab
+schedule_state() {
+  command -v crontab >/dev/null 2>&1 || { printf 'no-crontab'; return 0; }
+  local current block
+  current="$(crontab -l 2>/dev/null || true)"
+  block="$(printf '%s\n' "$current" | awk '/^# BEGIN atp.sh managed block/{on=1} on{print} /^# END atp.sh managed block/{on=0}')"
+  if [ -z "$block" ]; then printf 'missing'
+  elif [ "$block" = "$(schedule_block)" ]; then printf 'current'
+  else printf 'outdated'; fi
+}
+schedule_report() {
+  case "$(schedule_state)" in
+    current) ok "schedule installed: $(schedule_summary)" ;;
+    missing) warn "no backup schedule in the crontab of $(id -un) - run: $ATP_DIR/deploy/atp.sh schedule" ;;
+    outdated) warn "the backup schedule in the crontab is older than this release - run: $ATP_DIR/deploy/atp.sh schedule" ;;
+    *) warn "crontab not installed - the nightly backup and the weekly restore check are not scheduled" ;;
+  esac
+}
+
+# Health's backup lines (A1). The A2 alert reads the same through `atp.sh backup-status`.
+backup_report() {
+  local max; max="$(backup_max_age_h)"
+  backup_ages
+  if [ -z "$BK_LOCAL_LAST" ]; then warn "no database backup yet (LAST_BACKUP_OK missing) - run: atp.sh backup"
+  elif [ -z "$BK_LOCAL_AGE" ]; then warn "last database backup: unreadable time '$BK_LOCAL_LAST'"
+  elif [ "$BK_LOCAL_AGE" -le "$max" ]; then ok "last database backup $BK_LOCAL_LAST (${BK_LOCAL_AGE} h ago)"
+  else backup_late "last database backup $BK_LOCAL_LAST is ${BK_LOCAL_AGE} h old (limit ${max} h, BACKUP_MAX_AGE_HOURS)"; fi
+  if [ "$(offsite_state)" = "configured" ]; then
+    if [ -z "$BK_OFF_LAST" ]; then warn "off-site (R2): no copy recorded yet - run: atp.sh backup --verify"
+    elif [ -z "$BK_OFF_AGE" ]; then warn "off-site (R2): unreadable time '$BK_OFF_LAST' in $STATE_DIR/last_offsite_ok"
+    elif [ "$BK_OFF_AGE" -le "$max" ]; then ok "last off-site copy (R2) $BK_OFF_LAST (${BK_OFF_AGE} h ago): ${BK_OFF_NAME:-?}"
+    else backup_late "last off-site copy (R2) $BK_OFF_LAST is ${BK_OFF_AGE} h old (limit ${max} h, BACKUP_MAX_AGE_HOURS)"; fi
+    local sync; sync="$(dc logs --no-color --tail 300 offsite 2>/dev/null | grep -E 'synced|FAILED' | tail -n 1 || true)"
+    case "$sync" in *FAILED*) bad "off-site copy failing: $sync" ;; *synced*) ok "off-site: $sync" ;; *) info "off-site: the hourly copy has logged nothing since its last start" ;; esac
+  else warn "off-site: $(offsite_state | cut -d: -f2-)"; fi
+  if [ -f "$STATE_DIR/last_restore_check" ]; then info "last restore check: $(cat "$STATE_DIR/last_restore_check")"; fi
+  wal_report
+  schedule_report
+  escrow_report
+}
 
 # --- checks ------------------------------------------------------------------------------------------------------
 version_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" = "$2" ]; }
@@ -420,6 +573,7 @@ deploy (a rotation is a separate procedure: scripts/reencrypt_secrets.py, docs/O
       [ -s "$STATE_DIR/key_salt" ] || { openssl rand -hex 16 > "$STATE_DIR/key_salt"; chmod 600 "$STATE_DIR/key_salt"; }
       key_fingerprint > "$STATE_DIR/secrets_key.fingerprint"; chmod 600 "$STATE_DIR/secrets_key.fingerprint"
       ok "SECRETS_ENCRYPTION_KEY fingerprint recorded (salted scrypt, first deploy) - later runs refuse a different key"
+      backup_key_record
     fi
   else
     info "SECRETS_ENCRYPTION_KEY fingerprint not recorded yet (the first deploy records it)"
@@ -582,18 +736,7 @@ health_checks() {
   step "flags and LIVE (read-only)"
   report_flags
   step "backups"
-  local last age
-  last="$(dc exec -T backup cat /backups/LAST_BACKUP_OK 2>/dev/null || true)"
-  if [ -z "$last" ]; then warn "no database backup yet (LAST_BACKUP_OK missing) - run: atp.sh backup"
-  else
-    age=$(( ($(date -u +%s) - $(date -u -d "$last" +%s 2>/dev/null || echo 0)) / 3600 ))
-    if [ "$age" -le 26 ]; then ok "last database backup $last (${age} h ago)"; else warn "last database backup $last is ${age} h old (alert at 26 h)"; fi
-  fi
-  if [ "$(offsite_state)" = "configured" ]; then
-    local sync; sync="$(dc logs --no-color --tail 300 offsite 2>/dev/null | grep -E 'synced|FAILED' | tail -n 1 || true)"
-    case "$sync" in *FAILED*) bad "off-site copy failing: $sync" ;; *synced*) ok "off-site: $sync" ;; *) warn "off-site: no sync logged yet" ;; esac
-  else warn "off-site: $(offsite_state | cut -d: -f2-)"; fi
-  if [ -f "$STATE_DIR/last_restore_check" ]; then info "last restore check: $(cat "$STATE_DIR/last_restore_check")"; fi
+  backup_report
 
   step "host"
   local ports
@@ -715,6 +858,7 @@ cmd_health() {
   check_tools
   check_env report
   RELEASE="$(release_of "$(current_sha)")"
+  BACKUP_AGE_STRICT=1
   health_checks
   health_summary || exit 1
   owner_action_exit
@@ -1091,11 +1235,12 @@ cmd_backup() {
   lock "$([ "$scheduled" = "1" ] && echo 1800 || echo 0)"
   check_tools
   check_env
+  backup_key_record
   RELEASE="$(release_of "$(current_sha)")"
   local r2; r2="$(offsite_state)"
 
   if [ "$files_only" = "0" ]; then
-    step "database dump (pg_dump, AES-256, SHA-256 + HMAC seal, retention ${BACKUP_RETENTION_DAYS:-14} days)"
+    step "database dump (pg_dump, AES-256, SHA-256 + HMAC seal; keeps $(env_int BACKUP_KEEP_MIN 7) daily, $(env_int BACKUP_KEEP_WEEKLY 4) weekly, $(env_int BACKUP_KEEP_MONTHLY 6) monthly)"
     local fresh=0
     if [ "$scheduled" = "1" ] && [ "$DRY_RUN" != "1" ]; then
       local last; last="$(dc exec -T backup cat /backups/LAST_BACKUP_OK 2>/dev/null || true)"
@@ -1119,8 +1264,15 @@ cmd_backup() {
     rdc run --rm --no-deps -T offsite --once || die "copy of the database backups to R2 failed" 1
     # shellcheck disable=SC2016  # $OFFSITE_REMOTE expands inside the rclone container
     rdc run --rm --no-deps -T -v "$FILES_BACKUP_DIR:/files:ro" --entrypoint sh offsite -c \
-      'rclone copy /files "$OFFSITE_REMOTE/files" --include "atp_files_*" -q' || die "copy of the files archive to R2 failed" 1
-    ok "database dumps, WAL and files archive copied to $(env_get OFFSITE_REMOTE)"
+      'rclone copy /files "$OFFSITE_REMOTE/files" --include "/atp_files_*.tar.gz.enc{,.sha256,.hmac}" -q' || die "copy of the files archive to R2 failed" 1
+    ok "encrypted, sealed database dumps (daily, weekly, monthly) and the files archive copied to $(env_get OFFSITE_REMOTE)"
+    if [ "$DRY_RUN" != "1" ]; then
+      local newest; newest="$(dc run --rm --no-deps -T --entrypoint sh backup -c 'readlink /backups/latest' 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
+      printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${newest:--}" > "$STATE_DIR/last_offsite_ok"
+    fi
+    step "off-site retention (scripts/backup/offsite_prune.sh: the same counts, never inside the $(env_int OFFSITE_LOCK_DAYS 14)-day lock)"
+    if rdc run --rm --no-deps -T --entrypoint sh offsite /scripts/offsite_prune.sh; then ok "old R2 copies pruned"
+    else warn "pruning old R2 copies failed (see above) - nothing was lost; is the bucket lock longer than OFFSITE_LOCK_DAYS?"; fi
   else
     warn "R2 not configured yet (${r2#not_configured:}) - the backups stay on this server. Owner blocker: R2 bucket + token in .env (runbook section 6)"
   fi
@@ -1302,20 +1454,175 @@ cmd_schedule() {
   if [ "$quiet" != "quiet" ]; then lock 0; check_tools; fi
   step "schedule (crontab of $(id -un); host time zone, IST after bootstrap)"
   command -v crontab >/dev/null 2>&1 || { warn "crontab not installed - scheduled files backup and weekly restore check are off"; return 0; }
-  local self="$ATP_DIR/deploy/atp.sh" logs="$STATE_DIR/logs" block current
-  block="# BEGIN atp.sh managed block - replaced by 'deploy/atp.sh schedule'; edit outside it
-PATH=/usr/local/bin:/usr/bin:/bin
-17 2 * * * $self backup --scheduled >> $logs/backup.log 2>&1
-43 3 * * 0 $self restore-check --scheduled >> $logs/restore-check.log 2>&1
-# END atp.sh managed block"
+  local logs="$STATE_DIR/logs" block current
+  block="$(schedule_block)"
   current="$(crontab -l 2>/dev/null || true)"
   local others; others="$(printf '%s\n' "$current" | awk '/^# BEGIN atp.sh managed block/{skip=1} !skip{print} /^# END atp.sh managed block/{skip=0}' | sed '/^$/d')"
   local wanted; wanted="$(printf '%s\n%s\n' "$others" "$block" | sed '/^$/d')"
-  if [ "$(printf '%s\n' "$current" | sed '/^$/d')" = "$wanted" ]; then ok "crontab already current (daily 02:17 backup + R2 copy, Sunday 03:43 restore check)"; return 0; fi
-  if [ "$DRY_RUN" = "1" ]; then info "would install the crontab block (daily 02:17 backup + R2 copy, Sunday 03:43 restore check)"; return 0; fi
+  if [ "$(printf '%s\n' "$current" | sed '/^$/d')" = "$wanted" ]; then ok "crontab already current ($(schedule_summary))"; return 0; fi
+  if [ "$DRY_RUN" = "1" ]; then info "would install the crontab block ($(schedule_summary))"; return 0; fi
   state_init; mkdir -p "$logs"
   printf '%s\n' "$wanted" | crontab -
-  ok "crontab installed: daily 02:17 backup + R2 copy, Sunday 03:43 restore check (logs in $logs)"
+  ok "crontab installed: $(schedule_summary) (logs in $logs)"
+}
+
+# A1 / A2 hook: the last good backup as one JSON line on stdout (nothing else there), read-only. status: ok | warn (no
+# backup yet, or R2 not configured - an owner blocker, not an outage) | fail (older than BACKUP_MAX_AGE_HOURS, the
+# marker unreadable after backups have run, or the newest restore check failed). Exit 1 on fail, so a monitor can
+# alert on the exit code alone.
+cmd_backup_status() {
+  RELEASE="$(release_of "$(current_sha)")"
+  local max status="ok" problems="" r2 configured=false rc_line="" rc_time="" rc_status=""
+  max="$(backup_max_age_h)"
+  backup_ages
+  bs_note() { problems="${problems:+$problems; }$2"; case "$1:$status" in fail:*) status="fail" ;; warn:ok) status="warn" ;; esac; }
+  # A host that has run `atp.sh backup` (install does) and now shows no marker: the backups volume or its container is
+  # gone - that is an outage, not a fresh install.
+  if [ -z "$BK_LOCAL_AGE" ] && [ -s "$STATE_DIR/last_backup" ]; then bs_note fail "local backup marker unreadable (backup container or volume down?)"
+  elif [ -z "$BK_LOCAL_AGE" ]; then bs_note warn "no local backup recorded"
+  elif [ "$BK_LOCAL_AGE" -gt "$max" ]; then bs_note fail "local backup ${BK_LOCAL_AGE} h old"; fi
+  r2="$(offsite_state)"
+  if [ "$r2" = "configured" ]; then
+    configured=true
+    if [ -z "$BK_OFF_AGE" ]; then bs_note warn "no off-site copy recorded"
+    elif [ "$BK_OFF_AGE" -gt "$max" ]; then bs_note fail "off-site copy ${BK_OFF_AGE} h old"; fi
+  else bs_note warn "off-site not configured"; fi
+  if [ -s "$STATE_DIR/last_restore_check" ]; then
+    rc_line="$(cat "$STATE_DIR/last_restore_check")"
+    read -r rc_time _ rc_status _ <<<"$rc_line" || true
+    case "$rc_status" in ok|ok_older_schema) ;; *) bs_note fail "last restore check: ${rc_status:-unknown}" ;; esac
+  fi
+  python3 -c 'import json, sys
+a = sys.argv[1:]
+def num(v):
+    return int(v) if v.isdigit() else None
+print(json.dumps({"status": a[0], "problems": a[1], "limit_hours": int(a[2]),
+                  "local": {"last": a[3] or None, "age_hours": num(a[4])},
+                  "offsite": {"configured": a[5] == "true", "last": a[6] or None, "age_hours": num(a[7]), "newest": a[8] or None},
+                  "restore_check": {"last": a[9] or None, "status": a[10] or None}}, sort_keys=True))' \
+    "$status" "$problems" "$max" "$BK_LOCAL_LAST" "$BK_LOCAL_AGE" "$configured" "$BK_OFF_LAST" "$BK_OFF_AGE" "$BK_OFF_NAME" "$rc_time" "$rc_status"
+  [ "$status" != "fail" ]
+}
+
+# Review R1: the WAL archive is useless once archiving is off (no base backup was ever taken on Hostinger, so it could
+# not be replayed) and only fills the disk. Refuses while the running database archives.
+cmd_wal_cleanup() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  lock 0
+  check_tools
+  check_env
+  RELEASE="$(release_of "$(current_sha)")"
+  step "WAL archive cleanup"
+  local mode; mode="$(psql_q 'show archive_mode' postgres | tr -d '\r' || true)"
+  [ -n "$mode" ] || die "cannot read archive_mode from the running database - is it up? (atp.sh health)" 1
+  [ "$mode" = "off" ] || die "WAL archiving is '$mode' in the running database: the archive is in use (base-backup prunes it) - nothing removed" 2
+  local count='find /wal_archive -mindepth 1 -maxdepth 1 -type f | wc -l'
+  local before; before="$(dc run --rm --no-deps -T --entrypoint sh backup -c "$count" 2>/dev/null | tr -d '\r ' | tail -n 1 || true)"
+  if [ "${before:-0}" = "0" ]; then ok "the WAL archive is already empty"; return 0; fi
+  info "$before file(s) in the WAL archive, written before archiving was turned off"
+  rdc run --rm --no-deps -T --entrypoint sh backup -c 'find /wal_archive -mindepth 1 -maxdepth 1 -type f -delete' || die "could not empty the WAL archive" 1
+  [ "$DRY_RUN" = "1" ] && return 0
+  local after; after="$(dc run --rm --no-deps -T --entrypoint sh backup -c "$count" 2>/dev/null | tr -d '\r ' | tail -n 1 || true)"
+  [ "${after:-?}" = "0" ] || die "the WAL archive still holds ${after:-?} file(s)" 1
+  ok "WAL archive emptied ($before file(s) removed); archiving stays off (PG_ARCHIVE_MODE)"
+}
+
+# Point-in-time recovery only (PG_ARCHIVE_MODE=on, runbook section 6c): pg_basebackup inside the postgres container
+# (local socket - replication is allowed there) streamed into the backup container, which encrypts + seals it and
+# prunes the WAL archive before the oldest kept base backup (scripts/backup/base_backup.sh --stdin). Copied to R2.
+cmd_base_backup() {
+  local scheduled=0
+  while [ $# -gt 0 ]; do
+    case "$1" in --scheduled) scheduled=1 ;; *) die "unknown base-backup option $1" 2 ;; esac
+    shift
+  done
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  lock "$([ "$scheduled" = "1" ] && echo 1800 || echo 0)"
+  check_tools
+  check_env
+  RELEASE="$(release_of "$(current_sha)")"
+  pitr_on || die "point-in-time recovery is off (PG_ARCHIVE_MODE is not on in .env) - the daily dump is the recovery point; no base backup is needed (runbook section 6c)" 2
+  step "base backup (encrypted + sealed; prunes the WAL archive before the oldest of the newest $(env_int BASE_BACKUP_KEEP 4))"
+  if [ "$DRY_RUN" = "1" ]; then
+    info "+ docker compose exec -T postgres pg_basebackup -U $(pg_user) -D - -Ft -z -X fetch --checkpoint=fast | docker compose run --rm --no-deps -T --entrypoint sh backup /scripts/base_backup.sh --stdin"
+    return 0
+  fi
+  dc exec -T postgres pg_basebackup -U "$(pg_user)" -D - -Ft -z -X fetch --checkpoint=fast \
+    | dc run --rm --no-deps -T --entrypoint sh backup /scripts/base_backup.sh --stdin || die "base backup failed" 1
+  local stamp want got
+  stamp="$(dc run --rm --no-deps -T --entrypoint sh backup -c 'readlink /backups/base/latest' 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
+  [ -n "$stamp" ] || die "base backup not found after base_backup.sh" 1
+  want="$(dc run --rm --no-deps -T --entrypoint cat backup "/backups/base/$stamp/base.tar.gz.enc.hmac" 2>/dev/null | tr -d '\r\n' || true)"
+  got="$(dc run --rm --no-deps -T --entrypoint cat backup "/backups/base/$stamp/base.tar.gz.enc" | mac_stream_named "base/$stamp/base.tar.gz.enc")" || got=""
+  if [ -n "$want" ] && [ "$want" = "$got" ]; then ok "base backup $stamp encrypted and sealed"; else die "base backup $stamp has no valid seal" 1; fi
+  if [ "$(offsite_state)" = "configured" ]; then
+    if rdc run --rm --no-deps -T offsite --once; then ok "copied to R2 (encrypted; the WAL archive itself stays on this server)"; else die "copy of the base backup to R2 failed" 1; fi
+  else warn "R2 not configured - the base backup is on this server only"; fi
+}
+
+# Review R2, the clean-machine restore (runbook section 6b): a NEW server with only R2 and the escrowed .env values.
+# Fills the EMPTY database with the newest encrypted, sealed dump from R2; `deploy` then starts the release on it.
+# Never replaces data: it refuses a database that holds any table (on a running server use rollback --restore-db, or
+# docs/OPERATIONS.md 1.2).
+cmd_restore_offsite() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  lock 0
+  check_tools
+  check_repo
+  check_env
+  [ "$(offsite_state)" = "configured" ] || die "R2 is not configured in .env ($(offsite_state | cut -d: -f2-)) - put the OFFSITE_* values from your escrow in .env first (runbook section 6b)" 10
+  local sha; sha="$(git -C "$ATP_DIR" rev-parse HEAD)"
+  RELEASE="$(release_of "$(current_sha | grep . || echo "$sha")")"
+  step "images atp-*:$RELEASE"
+  if [ "$DRY_RUN" != "1" ] && images_exist "$RELEASE"; then ok "images for $RELEASE already built"; else rdc build --pull; fi
+  step "database (must be empty)"
+  rdc up -d --wait postgres
+  local db; db="$(pg_db)"
+  if [ "$DRY_RUN" != "1" ]; then
+    local tables; tables="$(psql_q "select count(*) from pg_tables where schemaname not in ('pg_catalog', 'information_schema')" | tr -d '\r' || true)"
+    [ -n "$tables" ] || die "cannot read the database $db - nothing was changed" 1
+    [ "$tables" = "0" ] || die "the database $db already holds $tables table(s): restore-offsite only fills an EMPTY database on a new server. Nothing was changed. (A running server: atp.sh rollback --restore-db, or docs/OPERATIONS.md 1.2.)" 2
+    ok "database $db is empty"
+  fi
+  step "newest database backup from R2 -> $(restore_dir)"
+  local file seal
+  if [ "$DRY_RUN" = "1" ]; then
+    rdc run --rm --no-deps -T -e OFFSITE_REQUIRE_ENCRYPTED=1 --entrypoint sh offsite /scripts/offsite_fetch.sh /restore
+    rdc run --rm --no-deps -T -e RESTORE_CONFIRM=yes --entrypoint sh backup /scripts/restore.sh "/restore/<newest>"
+    return 0
+  fi
+  file="$(dc run --rm --no-deps -T -e OFFSITE_REQUIRE_ENCRYPTED=1 --entrypoint sh offsite /scripts/offsite_fetch.sh /restore | tr -d '\r' | tail -n 1)" || die "could not fetch a backup from R2 (OFFSITE_* values, bucket name)" 1
+  case "$file" in /restore/*.dump.enc) ;; *) die "R2 handed back '$file', not an encrypted dump - refused" 1 ;; esac
+  seal="$(host_mac_state "$(restore_dir)/$(basename "$file")")"
+  case "$seal" in
+    ok) ok "fetched $(basename "$file"), seal (HMAC) verified - BACKUP_ENCRYPTION_PASSPHRASE is the right value" ;;
+    missing) die "$(basename "$file") has no seal - refused" 1 ;;
+    *) die "$(basename "$file") does not match its seal: either BACKUP_ENCRYPTION_PASSPHRASE in .env is not the value the backup was made with, or the file was changed - nothing was restored" 1 ;;
+  esac
+  local answer="${ATP_CONFIRM_DB:-}"
+  if [ -z "$answer" ]; then
+    printf '\nType the database name (%s) to fill it with %s: ' "$db" "$(basename "$file")"
+    read -r answer </dev/tty || answer=""
+  fi
+  [ "$answer" = "$db" ] || die "not confirmed - nothing changed" 1
+  step "restore into $db"
+  rdc run --rm --no-deps -T -e RESTORE_CONFIRM=yes --entrypoint sh backup /scripts/restore.sh "$file" || die "the restore failed - the database may be partly filled: drop it (docker compose ... down -v) and run restore-offsite again" 1
+  local rev; rev="$(db_revision)"
+  ok "restored $(basename "$file"): schema $rev"
+  state_init
+  printf '%s source=R2 status=restored file=%s schema=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$file")" "$rev" >> "$STATE_DIR/restore-checks.log"
+  step "files archive (deploy state + BACKUP_EXTRA_DIRS)"
+  local newest
+  # shellcheck disable=SC2016  # $OFFSITE_REMOTE expands inside the rclone container
+  newest="$(dc run --rm --no-deps -T --entrypoint sh offsite -c \
+    'f="$(rclone lsf "$OFFSITE_REMOTE/files" --files-only --include "atp_files_*.enc" | sort | tail -n 1)"; [ -n "$f" ] && for x in "$f" "$f.sha256" "$f.hmac"; do rclone copyto "$OFFSITE_REMOTE/files/$x" "/restore/$x" 2>/dev/null; done; echo "$f"' \
+    | tr -d '\r' | tail -n 1 || true)"
+  if [ -n "$newest" ]; then
+    verify_files_archive "$(restore_dir)/$newest"
+    info "it stays in $(restore_dir) - unpack BACKUP_EXTRA_DIRS from it by hand if you used them (runbook section 6b); .deploy/ is rebuilt by the next deploy"
+  else warn "no files archive in R2"; fi
+  if [ "$FAILS" -gt 0 ]; then printf '\nrestore-offsite: FAILED - %s failure(s)\n' "$FAILS"; exit 1; fi
+  printf '\nrestore-offsite: done. Now start the release on it: %s/deploy/atp.sh deploy && %s/deploy/atp.sh health\n' "$ATP_DIR" "$ATP_DIR"
 }
 
 cmd_releases() {
@@ -2043,7 +2350,7 @@ print("\n".join("%s %d" % (r["stamp"], r["tenant_id"]) for r in json.load(sys.st
   printf '\nloadtest-cleanup: done\n'
 }
 
-usage() { sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,/--dry-run (anywhere/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # Handover 8d: the owner sets a user's password on the server (backend/scripts/reset_password.py). The password is
 # read from the terminal without echo, twice, and reaches the script on stdin only: never an argument (the process
@@ -2089,6 +2396,10 @@ main() {
     backup)         cmd_backup "$@" ;;
     restore-check)  cmd_restore_check "$@" ;;
     schedule)       cmd_schedule ;;
+    backup-status)  cmd_backup_status ;;
+    wal-cleanup)    cmd_wal_cleanup ;;
+    base-backup)    cmd_base_backup "$@" ;;
+    restore-offsite) cmd_restore_offsite ;;
     releases)       cmd_releases ;;
     loadtest)       cmd_loadtest "$@" ;;
     loadtest-cleanup) cmd_loadtest_cleanup "$@" ;;

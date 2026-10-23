@@ -148,6 +148,33 @@ async def put_flag(name: str, body: FlagBody, user: User = Depends(require_role(
     return await controls.flag_listing(session)                         # UX1: the same fields as the list
 
 
+# --- Owner decision 23 Oct: "Enable trader features" (app/platform/trader_pack.py) -------------------------------------
+# SUPER_ADMIN + a two-factor-verified session (the router's dependencies). The A4 admin write step-up
+# (`ensure_admin_write_step_up`) is not on main yet; when it lands, the two POSTs below take it like every admin write.
+
+@admin_router.get("/trader-pack")
+async def get_trader_pack(session: AsyncSession = Depends(get_session)) -> dict:
+    """Per pack flag: ON / OFF, the plain description and a cheap "working" check; whether Undo has something to restore."""
+    from app.platform import trader_pack
+    return await trader_pack.status(session)
+
+
+@admin_router.post("/trader-pack")
+async def enable_trader_pack(user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    """Turn every trader flag ON (audited, idempotent, never a LIVE / Phase 0 / owner-decision flag)."""
+    from app.platform import trader_pack
+    result = await trader_pack.enable(session, user)
+    return {**result, **await trader_pack.status(session)}
+
+
+@admin_router.post("/trader-pack/undo")
+async def undo_trader_pack(user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    """Restore exactly the stored flag state from before the enable (nothing saved: changes nothing)."""
+    from app.platform import trader_pack
+    result = await trader_pack.undo(session, user)
+    return {**result, **await trader_pack.status(session)}
+
+
 @status_router.get("/features")
 async def my_features(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     """Which optional features are on for the caller's tenant (the UI hides what is off)."""

@@ -419,6 +419,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
     # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
     "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
+    # Owner order 23 Oct (app/backtest/bar_source.py): backtests without a daily broker login. With no usable broker
+    # session, a Daily / Weekly backtest runs on the shared lake's stored end-of-day history (NSE daily files, the R2 daily
+    # import - never the owner's private 1-minute store); intraday still needs a broker. OFF: every backtest path answers
+    # exactly as before (no broker session = 409). A simulation only: places no orders.
+    "backtest_stored_history": "Backtests on ATP's stored daily history when no broker is connected (Daily and Weekly; intraday needs a broker)",
     # S10 (SCREENER_SPEC §5 S10, Phase 0 slice): the ETF screen (J) - NSE ETFs from the shared end-of-day history with
     # traded value and the tracking difference against the index each tracks. OFF: GET /api/screener/etf answers 503 and
     # the Screener page shows no ETF button. Information only, no recommendation, places no orders.

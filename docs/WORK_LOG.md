@@ -3559,3 +3559,58 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - New routes `GET /api/screener/universes`, `/universes/{key}` (member, shared reference data; tenancy table).
   `POST /api/screener/run` takes `batch` (default false = exactly as before). No migration.
 - Questions SU-1..SU-5. README row 19 lives in the open trader-review PR; its status clause is in this PR's body.
+
+## 23 Oct - Backtests without a daily broker login (stored licensed history)
+
+- Branch `claude/backtest-stored-history` (from main). **No migration.** New flag `backtest_stored_history` (OFF; needs
+  `ui_v2`), setting `BACKTEST_STORED_SOURCES` (default `nse_bhav:`).
+- `backend/app/backtest/bar_source.py`: one resolver - the organisation's broker session when usable (unchanged reads),
+  else the shared lake's licensed Daily bars (Weekly built from them), else a plain 409 ("Daily history for X is not
+  stored yet." / "Intraday backtests need a connected broker ..."). Never sample data, never the owner's private
+  1-minute store, never intraday or broker-written lake rows. Lake bars become the exact frame a broker's Daily candles
+  give (parity test: identical results); the window mirrors the broker's (>= 400 days, to yesterday).
+- Wired into the Copilot `run_backtest` / `backtest_draft` tools (the answer says where the prices came from), the AI
+  draft backtest route, the interview plan, the research study job, and new `POST /api/backtest/bars` (tenancy:
+  self). Frontend (ui_v2 + flag): the Backtesting page and setup "Test it" run on stored history without a broker and
+  show "Prices from ..., <from> to <to>." on the result; AI drafts test on the server; the backtest pages skip the
+  broker gate with the flag on. Admin: the daily backfill tool shows the days the lake holds per segment.
+- Tests: `tests/test_backtest_bar_source.py` (12, fake lake rows), `src/backtest/pricesLine.test.tsx` (6). Questions
+  BSH-1..6 (BSH-1 for the lawyer's list).
+
+
+## 23 Oct - Watchlists: the universe sync ON block (WL1-3 / WL1-4 / WL1-5, README row 19)
+
+- Branch `claude/universe-sync-now` (from main, with the owner-orders branch of #453 merged in for row 19). **No
+  migration**, no flag, no frontend change.
+- `deploy/atp.sh env-set KEY=VALUE ...`: the one `.env` write - only `UNIVERSE_SYNC_ENABLED`, `UNIVERSE_SYNC_HOUR_IST`,
+  `INSTRUMENT_SYNC_EXCHANGES`, `INSTRUMENT_SYNC_HOUR_IST`, plain values; a mode-600 backup in `.deploy/env-backups`
+  first (newest 10 kept), every other line byte for byte, an assigned key replaced on its line, a missing one appended,
+  atomic replace with mode 600 and the same owner; a re-run writes nothing. Secrets and LIVE switches are refused.
+- `deploy/atp.sh lists-sync [--check]` -> `python -m app.universe.run_now` in a one-off worker container: refuses
+  unless `UNIVERSE_SYNC_ENABLED`; one HTTP status line per published file (37 index files + the NSE lists + F&O lots /
+  ban; the all-indices closing file is not fetched - names only); each file downloaded once and fed to the existing
+  sync functions (same quality gates); the instrument master for `INSTRUMENT_SYNC_EXCHANGES`; the system lists rebuilt
+  (one retry if the worker's own refresh collides); per group every list with its rows and the unmapped symbols (50
+  per list printed, the rest on the Admin card). Then the API and the worker are recreated with the new settings, the
+  worker through the session gate.
+- WL1-5: niftyindices / nseindia unreachable from here and the web search thin, so the 37 names were compared with
+  six public projects that download these files: 2 fixed (NIFTY50 Value 20, NIFTY Chemicals), 32 confirmed by two or
+  more, 3 by one; the server's status lines are the final check.
+- Runbook section 4b with the one block; DATA_SOURCES "For the lawyer" (COMPLIANCE_IN.md is generated; the A6.3 list
+  does not exist yet); questions WL1-9 (the nightly job's closing-price file), WL1-10.
+- Screenshots: fixture renders only (mocked API, names only) of the four groups, phone 390 + desktop 1440, light +
+  dark; not production data, not committed.
+
+## 23 Oct - Trader pack: "Enable trader features" (owner decision 23 Oct, README row 19)
+
+- Branch `claude/trader-pack` (from main). **No migration**: the saved "before" state lives in the controls store
+  (key `trader_pack`). `DEFAULT_ON_FLAGS` untouched.
+- Backend `app/platform/trader_pack.py`: the pack (62 flags in dependency order), `FORBIDDEN`, the excluded flags with
+  reasons, `enable` (idempotent, audited per flag), `undo` (exact restore), `status` (ON / OFF, plain words, cheap
+  "working" checks: counts only). Routes GET / POST `/api/admin/controls/trader-pack`, POST `.../undo` (SUPER_ADMIN +
+  two-factor; classified in `tests/tenancy_route_table.py`). Tests `tests/test_trader_pack.py` (11).
+- Frontend: the "Trader features" card on the v2 admin console's Controls section (`src/admin/TraderPackCard.tsx`),
+  vitest `src/admin/traderPack.test.tsx`, e2e in `e2e/admin-console-v2.e2e.ts` with new baselines
+  `admin-trader-pack-v2-{1440,390}-{light,dark}.png`; `admin-controls-v2-*` updated (the new card).
+- Runbook section 4b; questions TP-1..TP-6.
+

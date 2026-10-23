@@ -1296,6 +1296,8 @@ def _test_lines(answer: Answer, data: Dict[str, Any], partial: bool = False) -> 
     trades, need = int(whole.get("trades") or 0), data.get("min_trades_for_statistics")
     lines = [TEST_PARTIAL] if partial else []
     lines.append(f"{data.get('symbol')}{chart}, {whole.get('from_day')} to {whole.get('to_day')} ({_f(whole.get('bars'), 0)} candles).")
+    if data.get("prices"):                 # owner order 23 Oct: where the prices came from, in plain words
+        lines.append(f"Prices from {data['prices']}.")
     if trades == 0:
         lines.append("Your rules found no trade in this window.")
     else:

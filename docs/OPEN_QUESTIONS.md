@@ -1485,3 +1485,12 @@ provisional default the A / B / C PRs use until Abhi answers.
 | CC-8 | One-solid-button heuristic: warning or failure? | A warning annotation in the e2e run. | Chart + colour order (docs/design/CHART_COLOUR_REVIEW.md) | **Answered 2026-10-23 (owner): the provisional default is accepted.** Was: open |
 | CC-9 | Embedded charts: an "expand" button next to the existing "Open in Chart tab" link? | One control: "Expand" opens the same chart full screen in place. The Chart-tab link moves into it (no two buttons for the same need). | Chart + colour order (docs/design/CHART_COLOUR_REVIEW.md) | **Answered 2026-10-23 (owner): the provisional default is accepted.** Was: open |
 | CC-10 | Log / % / Invert: per device (like the zoom memory) or saved on the server with the chart settings? | On the server, in `ChartPrefs` (one settings place; a backend field, no migration). The zoom stays per device. | Chart + colour order (docs/design/CHART_COLOUR_REVIEW.md) | **Answered 2026-10-23 (owner): the provisional default is accepted.** Was: open |
+
+## Production readiness C12: support (23 Oct)
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| SUP-1 | The support WhatsApp number and e-mail. | Empty: no contact link shows. Abhi enters them in Admin › Support › "Support contact and targets" (never in git or `.env`); they show in the Help centre only while the NSE session is open (the app's own calendar, holidays included). | `backend/app/support/desk.py` | open |
+| SUP-2 | Response-time targets (first answer, resolve). | None: no ticket is ever "late" until Abhi sets the hours in the same admin card (a suggestion to consider: first answer 4 h, resolve 48 h, counted in clock hours, not market hours). | Admin › Support | open |
+| SUP-3 | When to turn on `help_centre` (Help centre, Report a problem, contact link; needs `ui_v2`). | OFF until Abhi has looked at it on staging; nothing user-facing changes while it is off except that "Send feedback" messages are now scrubbed and the admin inbox shows them as tickets. | `flag_catalog.py` | open |
+| SUP-4 | Ticket state without a migration. | Kept in `platform_controls` rows (`support_ticket:<id>`), like the A2 alert state; erased with the user's feedback. A proper `support_tickets` table (replies in the app, an e-mail to the user on an answer) comes with the SMTP provider and needs a migration; until then the admin answers by WhatsApp / e-mail outside the app. | `backend/app/support/desk.py` | open |

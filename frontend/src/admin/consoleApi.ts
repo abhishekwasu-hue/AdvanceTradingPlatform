@@ -12,7 +12,7 @@ export const ADMIN_SECTIONS: { id: AdminSection; label: string; hint: string }[]
   { id: "controls", label: "Controls", hint: "Feature flags, maintenance, kill switches and limits" },
   { id: "users", label: "Users & business", hint: "People, organisations, plans and AI cost" },
   { id: "testing", label: "Testing tools", hint: "Read-only state of the operator tools" },
-  { id: "support", label: "Support", hint: "Feedback and one person's status" },
+  { id: "support", label: "Support", hint: "Tickets, support contact and one person's status" },
 ];
 
 export function isAdminSection(value: string | null): value is AdminSection {

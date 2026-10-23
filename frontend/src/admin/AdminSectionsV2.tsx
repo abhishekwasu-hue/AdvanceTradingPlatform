@@ -7,7 +7,7 @@ import type { Activation } from "../growth/types";
 import { useFeatures } from "../ui/useFeatures";
 import {
   ago, consoleApi, maskEmail, shortDate,
-  type ConsoleAiCost, type ConsoleSystem, type ConsoleUsers, type DeadLetter, type FeedbackItem, type OutboxState, type RetentionState, type SupportUser,
+  type ConsoleAiCost, type ConsoleSystem, type ConsoleUsers, type DeadLetter, type OutboxState, type RetentionState, type SupportUser,
 } from "./consoleApi";
 
 /**
@@ -385,7 +385,6 @@ export function SupportPanel({ userId, onUser }: { userId: number | null; onUser
         </form>
         {userId != null && <SupportUserView key={userId} id={userId} />}
       </Panel>
-      <FeedbackPanel />
     </>
   );
 }
@@ -438,20 +437,3 @@ function SupportUserView({ id }: { id: number }) {
   );
 }
 
-function FeedbackPanel() {
-  const { data, error } = useRead<FeedbackItem[]>(consoleApi.feedback);
-  return (
-    <Panel title="Feedback from users" id="feedback" note="What people sent with “Send feedback” (the newest 50). Support tickets are not a separate system yet.">
-      {!data ? <Loading error={error} /> : data.length === 0 ? <p className="text-t12 text-fg-muted">No feedback yet.</p> : (
-        <ul className="divide-y divide-border">
-          {data.map((f) => (
-            <li key={f.id} data-feedback={f.id} className="py-space-2">
-              <p className="whitespace-pre-wrap break-words text-t14 text-fg">{f.message}</p>
-              <p className="text-t12 text-fg-muted">{maskEmail(f.email)} · {f.screen} · {f.app_version} · {ago(f.created_at)}</p>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Panel>
-  );
-}

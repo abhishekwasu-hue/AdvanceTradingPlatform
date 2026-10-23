@@ -24,6 +24,23 @@ const FLAGS = {
   self_signup: FLAG("Anyone can sign up", "accounts", "Accounts", false, "owner", "Owner decision"),
 };
 
+// "Enable trader features" (Controls): a short made-up pack; POST enables it, POST .../undo puts it back.
+const PACK_ROW = (name: string, plain: string, on: boolean, state: string, check: string) => ({ name, plain, on, state, check });
+export const TRADER_PACK_BEFORE = [
+  PACK_ROW("ui_v2", "The redesigned app (navigation and pages)", true, "on", "On, nothing to check"),
+  PACK_ROW("history_backfill", "Nightly NSE end-of-day download", true, "working", "Daily bars are stored"),
+  PACK_ROW("paper_account", "Your own paper account and progress ladder", false, "off", "Off"),
+  PACK_ROW("watchlists", "Your own symbol lists", false, "off", "Off"),
+  PACK_ROW("screener_v2", "The screener: saved screens and runs on broker data", true, "working", "2 organisations with a broker connection for screen data"),
+  PACK_ROW("idea_library", "Idea library: method ideas in plain words, each with a scan to try (education only)", false, "off", "Off"),
+  PACK_ROW("ai_copilot", "The AI Copilot page and AI strategy drafts", true, "needs_setup", "No AI key yet: answers come from the built-in rules until a key is connected"),
+];
+export const TRADER_PACK_AFTER = TRADER_PACK_BEFORE.map((r) => (r.on ? r : r.name === "watchlists"
+  ? { ...r, on: true, state: "working", check: "12 ready-made lists with symbols" } : { ...r, on: true, state: "on", check: "On, nothing to check" }));
+const pack = (flags: typeof TRADER_PACK_BEFORE, canUndo: boolean, extra: Record<string, unknown> = {}) => ({
+  flags, all_on: flags.every((f) => f.on), on_count: flags.filter((f) => f.on).length, total: flags.length, can_undo: canUndo,
+  enabled_at: canUndo ? NOW : null, ...extra });
+
 const READINESS = { target: "PLATFORM", ready: false, summary: { ok: 2, todo: 1, warn: 0, info: 0 }, checked_at: T(1), note: "",
   items: [
     { key: "secrets", title: "Secrets set", status: "ok", detail: "All required secrets are set.", fix: "", link: null, scope: "platform" },
@@ -155,6 +172,20 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
     worker_running: true, worker_last_seen_at: T(0.15), worker_last_error: null }));
   await page.route(A("/admin/controls$"), ok({ maintenance_mode: false, maintenance_message: null, disabled_brokers: [] }));
   await page.route(A("/admin/controls/flags$"), ok(FLAGS));
+  let packOn = false;
+  await page.route(A("/admin/controls/trader-pack(/undo)?$"), (r) => {
+    const path = new URL(r.request().url()).pathname;
+    asked.push(path);
+    if (r.request().method() === "POST") {
+      const undo = path.endsWith("/undo");
+      const offBefore = TRADER_PACK_BEFORE.filter((f) => !f.on).map((f) => f.name);
+      const changed = !undo && !packOn ? offBefore : [];
+      const restored = undo && packOn ? offBefore : [];
+      packOn = !undo;
+      return r.fulfill({ json: pack(packOn ? TRADER_PACK_AFTER : TRADER_PACK_BEFORE, packOn, undo ? { restored } : { changed }) });
+    }
+    return r.fulfill({ json: pack(packOn ? TRADER_PACK_AFTER : TRADER_PACK_BEFORE, packOn) });
+  });
   await page.route(A("/admin/controls/risk-ceilings$"), ok({ max_risk_per_trade_pct: 2, max_daily_loss_pct: 5, min_cooldown_minutes: 15 }));
   await page.route(A("/admin/incidents(\\?.*)?$"), ok([]));
   await page.route(A("/admin/beta/cohort$"), ok({ gate_on: false, cap: 50, used: 3, remaining: 47, stage: 50, stages: [10, 50, 200], next_stage: 200, env_cap: 500, capped_by_env: false, headroom: 47 }));

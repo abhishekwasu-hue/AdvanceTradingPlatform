@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_role
+from app.auth.dependencies import current_session_id, ensure_admin_write_step_up, get_current_user, require_role
 from app.auth.scopes import require_scope
 from app.core.enums import RiskLimitType, RiskScope, UserRole
 from app.db.models import RiskEventRecord, RiskLimitRecord, User
@@ -94,10 +94,12 @@ async def list_limits(
 @router.put("/limits", response_model=RiskLimitResponse, dependencies=[Depends(require_scope("risk:write"))])
 async def upsert_limit(
     request: RiskLimitRequest, user: User = Depends(require_role(UserRole.OWNER)), session: AsyncSession = Depends(get_session),
+    session_id: Optional[int] = Depends(current_session_id),
 ) -> RiskLimitResponse:
     if request.scope == RiskScope.GLOBAL:
         if user.role != UserRole.SUPER_ADMIN.value:
             raise HTTPException(status_code=403, detail="GLOBAL limits are set by the platform operator (SUPER_ADMIN)")
+        await ensure_admin_write_step_up(session, user, session_id, "Setting a limit for every organisation")
         tenant_id = None
         scope_id = ""
     else:
@@ -131,6 +133,7 @@ async def upsert_limit(
 @router.delete("/limits/{limit_id}", status_code=204, dependencies=[Depends(require_scope("risk:write"))])
 async def delete_limit(
     limit_id: int, user: User = Depends(require_role(UserRole.OWNER)), session: AsyncSession = Depends(get_session),
+    session_id: Optional[int] = Depends(current_session_id),
 ) -> None:
     record = await session.get(RiskLimitRecord, limit_id)
     if record is None:
@@ -138,6 +141,7 @@ async def delete_limit(
     if record.scope == RiskScope.GLOBAL.value:
         if user.role != UserRole.SUPER_ADMIN.value:
             raise HTTPException(status_code=403, detail="GLOBAL limits are removed by the platform operator")
+        await ensure_admin_write_step_up(session, user, session_id, "Removing a limit of every organisation")
     elif record.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="No such limit")
     await session.delete(record)

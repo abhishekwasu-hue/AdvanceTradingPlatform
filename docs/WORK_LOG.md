@@ -3444,6 +3444,27 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Pen-test scope document handed to the owner outside the repository. Questions RDY-28..32; RDY-3 built as its default.
 - Tests: `test_a4_security.py` (28), `test_z11_deploy_bundle.py` header case; vitest `api/stepUp.test.ts`,
   `auth/deviceLabel.test.ts`, `components/StepUpHost.test.tsx`.
+## 23 Oct - Production readiness A3: safe deploys
+
+- Branch `claude/readiness-a3-safe-deploys`. **No migration**, no flag, no route.
+- Every main commit gets a result (review R3): `ci.yml` and `staging-stack.yml` put main pushes in a concurrency group
+  per sha (the shared group kept one pending run and cancelled the rest: `25c3ca1f`, `d993f430`, `34d20ed3` show
+  *cancelled*); PR branches still cancel their older run. Cost note in both files and runbook 8a.
+- The gate: `deploy/ci_gate.py` (stdlib, `curl` on PATH, public API, no token) + `ci_gate` in `atp.sh deploy`, before
+  the checkout. Required `CI_GATE_REQUIRED` (CI lint, backend, backend-lookahead, frontend; staging stack acceptance,
+  rollback, offsite), known red `CI_GATE_KNOWN_RED` (load-500, LD-9), every other job passed or skipped. Refusals name
+  the newest commit that passed; GitHub unreachable refuses (exit 1). Checked against the live API: `45601034` passes,
+  `2626c1ca` was still running.
+- Override `ATP_ALLOW_UNTESTED=1` + `ATP_UNTESTED_REASON` (required): `.deploy/gate.log`, `atp.sh releases`, a `health`
+  WARN, and the audit row `deploy_untested` (`backend/scripts/deploy_audit.py`). The CI rehearsals set it (their
+  commits have no CI result yet). `rollback` is never gated.
+- Staging (R4, RDY-2 answered: the CI stack): the `deploy-staging.yml` smoke test fails on an unset URL, no answer or
+  not ok. The rollback rehearsal runs on every main push (`gate` job), now no longer cancelled.
+- `.github/pull_request_template.md`. Runbook section 8a, `.env.example`. Questions RDY-28..32.
+- Tests: `test_a3_deploy_gate.py` (the helper against a fake curl + local JSON, the audit row and the chain), six
+  `atp.sh` cases in `test_z11_deploy_bundle.py` (the fake host's curl now serves the GitHub API); shellcheck,
+  actionlint clean.
+
 ## 23 Oct - Chart + colour order, Part 3 PR 1: the colour tokens
 
 - Branch `claude/colour-tokens` (from main). Frontend only, **no migration**, no flag (no page changes).

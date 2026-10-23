@@ -404,9 +404,10 @@ outside this public repository.
 1. **Preflight.** Checks the tools and docker compose ≥ 2.24, that the checkout is clean (no edited files on the
    server), the `.env` rules from section 4, and that the key is unchanged. Reports profiles, LIVE switches, R2 and
    history settings without changing them.
-2. **Release.** Fetches, resolves the ref to a commit, refuses anything not on `origin/main`, and checks out that
-   commit (detached). Every failure from here until the new API is up puts the checkout back on the release that
-   still runs.
+2. **Release.** Fetches, resolves the ref to a commit, refuses anything not on `origin/main`, then asks GitHub
+   whether that commit **passed its checks on main** (section 8a) and refuses it otherwise. Only then it checks out
+   that commit (detached). Every failure from here until the new API is up puts the checkout back on the release
+   that still runs.
 3. Starts Postgres and Redis and waits for them to be healthy.
 4. **Images.** Builds `atp-backend`, `atp-worker`, `atp-frontend` (and `atp-research-worker` with that profile),
    tagged with the first 12 characters of the commit (`deploy/compose.release.yml`). If the images already exist, it
@@ -437,6 +438,69 @@ outside this public repository.
    must be byte-for-byte the same as before; if they cannot be read, that counts as a failure, not as "unchanged".
 10. It installs or refreshes the schedule (section 11), and keeps the images and pre-migration dumps of the last 3
     releases (`ATP_KEEP_RELEASES`).
+
+## 8a. The CI gate: only a tested commit is deployed (A3)
+
+Before `deploy` changes anything it reads, from the **public** GitHub API (no token and no secret on the server:
+the repository is public; `deploy/ci_gate.py` through `curl`), the results of the push runs on `main` for the exact
+commit it is about to deploy:
+
+| Workflow | Jobs that must pass (`CI_GATE_REQUIRED`) |
+|---|---|
+| CI (`ci.yml`) | `lint`, `backend`, `backend-lookahead`, `frontend` |
+| CI staging stack (`staging-stack.yml`, the staging: RDY-2) | `acceptance`, `rollback` (the rollback rehearsal), `offsite` (the off-site restore rehearsal) |
+
+Every **other** job of those two workflows (`perf`, `container-scan`, `gate`, `load-500`) must also have passed or
+been skipped, unless it is on the known-red list `CI_GATE_KNOWN_RED`. Today that list is
+`staging-stack.yml:load-500`: the 500-user load test on the shared runner is red on some main commits (LD-9), it
+measures capacity, not correctness. A job cannot be both required and known-red. `Secret scan (full history)`,
+`android` and `Deploy staging` are not read.
+
+What you see:
+
+| Message | What to do |
+|---|---|
+| `ok <sha> passed every required check on main` | Nothing; the deploy goes on. |
+| `not deployed: the checks for <sha> are still running` | Wait (CI about 20 minutes after the merge, the staging stack about an hour) and run the same command again. It names the newest commit that passed; `atp.sh deploy <that sha>` deploys that one now. |
+| `not deployed - <sha> did not pass its checks: CI job 'backend' failure` | Do not deploy it. It names the newest commit that passed, or wait for the fix to be merged. |
+| `not deployed - <sha> has no CI result on main` | Its run was cancelled before it started. Re-run it in GitHub (Actions → the run → Re-run all jobs), or deploy the newest commit that passed. |
+| `not deployed - GitHub could not be reached` | The server's internet or GitHub is down, or the free API's limit (60 questions an hour from one server) is used up. Try again in a few minutes. |
+
+Every answer is written to `/opt/atp/.deploy/gate.log` (`atp.sh releases` shows its last 10 lines).
+
+**Emergency only (RDY-9):** a fix that cannot wait for CI, or GitHub down while production is broken:
+
+```
+su - atp -c "ATP_ALLOW_UNTESTED=1 ATP_UNTESTED_REASON='what is broken and why it cannot wait' /opt/atp/deploy/atp.sh deploy && /opt/atp/deploy/atp.sh health"
+```
+
+The reason is required (one line, up to 200 characters). It goes into `.deploy/gate.log`, the hash-chained audit
+trail (event `deploy_untested`, no organisation, no user) and every `health` run warns
+"<sha> was deployed WITHOUT its tests passing" until a checked commit is deployed. `rollback` is never gated: it goes
+back to a release that already ran here.
+
+Settings (optional, in `.env`; the defaults need nothing):
+
+```
+# CI_GATE_REPO=owner/name             # default: read from the clone's origin URL (github.com)
+# CI_GATE_REQUIRED="ci.yml:lint ci.yml:backend ci.yml:backend-lookahead ci.yml:frontend staging-stack.yml:acceptance staging-stack.yml:rollback staging-stack.yml:offsite"
+# CI_GATE_KNOWN_RED="staging-stack.yml:load-500"   # set it empty to require load-500 too
+```
+
+Every main commit gets a result: main pushes run in a concurrency group of their own commit (they used to share
+one group, which keeps only one waiting run, so most merge commits were cancelled - review R3). Cost: runner minutes
+are free on a public repository; the limit is the account's concurrent jobs (20 on the free plan), so a burst of
+merges waits in the queue rather than being cancelled. A busy merge day can mean a longer wait before the newest
+commit is deployable; the gate then names an older one that passed.
+
+**Staging (R4, RDY-2):** the CI staging stack **is** the staging: it builds the release's images from the commit and
+runs the acceptance flow, the rollback rehearsal and the off-site restore rehearsal before the gate lets a commit out.
+There is no staging host: `.github/workflows/deploy-staging.yml` runs only when the repository variable
+`STAGING_ENABLED` is `true`, and its smoke test now fails when the host does not answer ok. A second host
+(GHCR images by digest, its own `.env`, `staging.<domain>`) is the owner's cost decision.
+
+**Branch protection (owner, once):** GitHub → Settings → Branches → `main`: require the `lint`, `backend`,
+`backend-lookahead` and `frontend` checks before merging, so a red PR cannot reach main at all.
 
 ## 9. Rollback, and when a migration makes it unsafe
 

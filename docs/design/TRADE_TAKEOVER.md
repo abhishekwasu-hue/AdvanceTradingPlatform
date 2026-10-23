@@ -3,7 +3,8 @@
 Status: **plan** (owner decision, 2026-10-20). Nothing is ported yet: on that date Trade (read at `origin/main`
 acecd23) has no `docs/reader/STABLE.md`, no `reader-layer*` tags, no `parity/` folder in trade-data, no
 `EXPORT_MANIFEST.md` and no `SUNSET.md`. The rows that track the work are section "3a. Trade takeover" of
-`docs/TRADE_PORT_MAP.md` (T1-T14).
+`docs/TRADE_PORT_MAP.md` (T1-T14). The reader port plan of production readiness B9 (23 Oct: interface, loading and
+fallback, versioning, parity, CI, when) is section 13 here and `docs/design/PRIVATE_PACKAGE.md` sections 9-14.
 
 **Where the reader goes (owner decision PR-1, 2026-10-20):** this repository is public, so the reader (T1-T6), the KB
 and the Method Pack (T7), the method part of the Vision checklist (T8) and the Trade-derived goldens (PR-2) go into a
@@ -164,6 +165,11 @@ The Trade bot is rebuilt as ATP features, PAPER only:
 - **The output contract** is Trade's `docs/knowledge/CHART_READER_METHOD.md` section 5: the story; the verdict (enter /
   wait / no trade) with the reason in plain words; the evidence list (present / absent), no scores (A = the required
   set plus at least one confirming piece, B = the required set only); every price exists in the data.
+- **What is shown follows the signal language** (handover 11l, later than this plan): the reader hands ATP token ids
+  (`SignalStructure`, `app/signals/language.py`) and ATP's formatter writes the words, structure words only; the
+  verdict is shown as the setup state (formed / forming / none), never as "enter"; no buy / sell / target /
+  stop-loss wording, no single price; the area's price range only on the user's own signals
+  (`docs/design/PRIVATE_PACKAGE.md` section 9.3).
 
 **Change to the Charts page plan.** In the Charts page plan (UI2-4b), open question CHP-5 proposed that the "Reader
 zones & lines" overlay show market zones (areas) plus price-action levels and trendlines (lines) as a stand-in, because
@@ -189,3 +195,33 @@ reader overlay. Until the reader's last layer is stable the overlay stays hidden
   `SUNSET.md`: stop and disable every Trade service and timer, remove its cron lines, take the final database export
   (and check it), stop the webhook tunnel, then power off. ATP prepares it only when `SUNSET.md` exists, and the
   owner runs it; nothing in ATP reaches the VPS.
+
+## 13. The reader port as a private package (production readiness B9, plan)
+
+The B9 plan (23 Oct) for porting Trade's "decision3" reader. It describes the boundary only; the reading itself stays
+in `atp-private`. Details: `docs/design/PRIVATE_PACKAGE.md` sections 9-14.
+
+- **Interface.** In: closed bars per timeframe (and the near-month future's volume for an index), the user's own
+  reader settings (validated against the package's schema, every number classified as in section 4), the symbol and
+  the last closed bar. Out: the setup state, the structure events, areas, lines and swings, evidence present /
+  absent, data problems, the reader version and the Method Pack hash, all in ATP's signal-language types
+  (`SignalStructure` tokens, the Analyze-a-chart area and line shapes). Internal numbers (the side, the invalidation)
+  feed the strategy adapter and are never shown as text. Pure, deterministic, no I/O, tenant-safe (section 5).
+- **Loading.** `atp_private.reader` is an optional install from the private repository `atp-private` (a read-only
+  checkout on the host at the tag `ATP_PRIVATE_REF`, mounted read-only). Absent or refused by the loader: users keep
+  the generic strategy templates, the reader flags stay off, a reader deployment opens no new entries but its exits
+  keep running (ADR-0004), and the Vision audit runs without the method checklist.
+- **Versioning.** `reader-vMAJOR.MINOR.PATCH` tags in `atp-private`, each naming its Trade layer tags and the Method
+  Pack hash; a public `INTERFACE_VERSION` the loader checks; `ATP_VERSION` in `atp-private`; the provenance on every
+  signal. A MAJOR version moves on the host only after parity and a PAPER shadow.
+- **Parity.** Port parity (Trade = ATP per layer and mirror case), path parity (scan = backtest = options backtest =
+  live worker on one window, no look-ahead, deterministic) and the shadow report (section 11). The golden and parity
+  fixtures stay in `atp-private` (synthetic-input goldens) and the host's private store (licensed-data fixtures); this
+  repository holds at most a manifest of paths and sha256.
+- **CI.** `atp-private` runs its own tests plus ATP's tests at `ATP_VERSION` with the package and its fixtures, a
+  weekly compatibility run against ATP's `main`, and a release job on each tag. Public CI never installs it, tests the
+  boundary with a synthetic fake provider, and skips the private-fixture tests with a visible reason.
+- **When.** After Trade's PAPER results are stable, on Abhi's word; each layer only from its stable tag (section 2).
+- **Abhi's steps.** Create `atp-private` (Private), the host's read-only deploy key, the Claude app's access, branch
+  protection and the spending limit; later one `.env` line and the usual deploy command
+  (`docs/design/PRIVATE_PACKAGE.md` sections 6 and 14).

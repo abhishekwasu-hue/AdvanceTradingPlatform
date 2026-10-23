@@ -308,7 +308,7 @@ export interface AttentionRow {
   title: string;
   detail: string;
   /** A link, or the broker login (run by the block itself). None for a notice with nothing to do here. */
-  action?: { label: string; to: string } | { label: string; login: true };
+  action?: { label: string; to: string } | { label: string; login: true } | { label: string; resend: true };
   /** Settings redesign D: the trader may hide this row until tomorrow (IST), on this device. */
   dismissible?: boolean;
 }
@@ -472,8 +472,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
     });
   }
   // P3: in PAPER (the trader has no LIVE deployment) nothing about LIVE shows on the front page: no "Live trading is
-  // paused" row and no "Verify your email" row (it is asked for live trading); both are in the Go-live checklist. Only a
-  // deployments list that was read can hide them: a failed read (null) keeps them (src/setup/paperOnly.ts).
+  // paused" row. Only a deployments list that was read can hide it: a failed read (null) keeps it (src/setup/paperOnly.ts).
   const paperOnly = paperOnlyFrom(input.deployments);
   if (!paperOnly && input.status && input.status.disabled_brokers.length) {
     rows.push({ id: "live-paused", icon: "warning", tone: "warn", title: `Live trading is paused on ${input.status.disabled_brokers.map(brokerDisplayName).join(", ")}`,
@@ -482,8 +481,12 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
   if (input.status?.maintenance_mode) {
     rows.push({ id: "maintenance", icon: "warning", tone: "warn", title: "Maintenance: new trades are paused", detail: input.status.maintenance_message || "Open positions are still watched." });
   }
-  if (!paperOnly && input.emailVerified === false) {
-    rows.push({ id: "email", icon: "account", tone: "neutral", title: "Verify your email", detail: "Live trading needs a verified address.", action: { label: "Verify", to: "/settings/account" } });
+  // User-friendly pass item 1 (UX audit M13): "Verify your email" is asked for here, once, with Resend - never as a chip
+  // on every page. In PAPER it carries no LIVE wording; it can be hidden for today.
+  if (input.emailVerified === false) {
+    rows.push({ id: "email", icon: "account", tone: "neutral", title: "Verify your email", dismissible: true,
+      detail: paperOnly ? "Open the link we emailed you, so messages about your account reach you." : "Open the link we emailed you. Live trading needs a verified address.",
+      action: { label: "Resend link", resend: true } });
   }
   if (health.telegram) rows.push(health.telegram);
   const dismissed = input.dismissed;

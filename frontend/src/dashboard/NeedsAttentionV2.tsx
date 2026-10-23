@@ -1,5 +1,7 @@
 import { Bell, CircleCheck, LogIn, PauseCircle, ShieldAlert, TriangleAlert, UserCircle2, X, Zap, type LucideIcon } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router";
+import { resendVerification } from "../ui/verifyEmail";
 import { Button } from "../components/primitives";
 import { CodeForm, type BrokerLogin } from "../ui/BrokerGate";
 import { loginNote } from "../ui/brokerSession";
@@ -42,6 +44,9 @@ function Row({ row, primary, loginBroker, login, onHide }: { row: AttentionRow; 
   const step = isLogin && login.codeStep ? login.codeStep : null;
   const detail = isLogin && loginBroker ? loginNote(loginBroker) : row.detail;
   const hideable = !!row.dismissible && !!onHide;
+  const [resent, setResent] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const resend = () => { setSending(true); void resendVerification().then((t) => { setResent(t); setSending(false); }); };
   const button = action && !step;
   const hide = hideable ? (
     <button type="button" className={HIDE} aria-label="Hide for today" title="Hide for today" data-hide={row.id} onClick={() => onHide?.(row.id)}>
@@ -58,6 +63,7 @@ function Row({ row, primary, loginBroker, login, onHide }: { row: AttentionRow; 
           <div className="min-w-0 flex-1">
             <p className="text-t15 font-semibold text-fg">{row.title}</p>
             {detail && <p className="mt-px text-t13 text-fg-muted">{detail}</p>}
+            {resent && <p role="status" className="mt-px text-t13 text-fg" data-resend-note>{resent}</p>}
           </div>
           {/* A notice with nothing to open: the hide button sits beside the words (no empty line on a phone). */}
           {!button && hide && <span className="-my-space-1 shrink-0">{hide}</span>}
@@ -68,6 +74,11 @@ function Row({ row, primary, loginBroker, login, onHide }: { row: AttentionRow; 
               "login" in action ? (
                 <Button variant={primary ? "primary" : "secondary"} icon={<LogIn size={16} aria-hidden />} loading={busy}
                   disabled={loginBroker === null || login.busy !== null} onClick={() => loginBroker && login.login(loginBroker)}
+                  className="h-11 flex-1 px-space-4 text-t14 sm:flex-none md:h-9">
+                  {action.label}
+                </Button>
+              ) : "resend" in action ? (
+                <Button variant={primary ? "primary" : "secondary"} loading={sending} disabled={sending} onClick={resend}
                   className="h-11 flex-1 px-space-4 text-t14 sm:flex-none md:h-9">
                   {action.label}
                 </Button>

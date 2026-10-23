@@ -1,4 +1,5 @@
 import { LogOut, ShieldCheck } from "lucide-react";
+import { resendVerification } from "../ui/verifyEmail";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { api, setToken } from "../api/client";
@@ -97,10 +98,10 @@ export default function AccountPage() {
           <div className="text-xs text-up flex items-center gap-2"><ShieldCheck size={14} /> {user.email} is verified.</div>
         ) : (
           <div className="space-y-2 text-xs">
-            <p className="text-fg-muted">Confirm that {user.email} is yours. Open the link we emailed you, or send a fresh one. LIVE trading and broker credentials may require it.</p>
+            <p className="text-fg-muted">Confirm that {user.email} is yours: open the link we emailed you, or send a fresh one.</p>
             <button
               className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5"
-              onClick={() => api.resendVerification().then((r) => setVerifyMessage(r.already_verified ? "Already verified." : r.sent ? "Verification email sent - check your inbox." : "We could not send the email right now. Ask support to verify your address.")).catch((e) => setVerifyMessage(friendlyError(e)))}
+              onClick={() => void resendVerification().then(setVerifyMessage)}
             >
               Resend verification email
             </button>

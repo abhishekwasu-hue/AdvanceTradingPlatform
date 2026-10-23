@@ -118,6 +118,24 @@ def test_platform_wide_writes_inside_member_routes_need_two_factor():
     assert client.delete(f"/api/risk/limits/{saved.json()['id']}", headers=headers).status_code == 204   # never left for others
 
 
+def test_an_admin_changing_another_organisations_member_needs_a_recent_check(monkeypatch):
+    """Review of A4: scopes / trading pause / trading on for a member of ANOTHER organisation are platform-wide admin
+    writes (step-up); an owner acting on their own organisation's members is unchanged (tests/test_phase_m_closure.py)."""
+    headers, me, secret = _admin("a4-cross-member-admin@example.com")
+    member = _me(_headers(_register("a4-cross-member@example.com")))
+    monkeypatch.setattr("app.core.config.MFA_STEP_UP_MINUTES", 30)
+    _age_sessions(me["id"], mfa_verified_at=datetime.now(timezone.utc) - timedelta(minutes=31))
+    calls = [("put", f"/api/team/members/{member['id']}/scopes", {"deny": [], "grant": []}),
+             ("post", f"/api/team/members/{member['id']}/trading-disable", {"reason": "A4 review test"}),
+             ("post", f"/api/team/members/{member['id']}/trading-enable", None)]
+    for method, path, body in calls:
+        refused = getattr(client, method)(path, headers=headers, json=body)
+        assert refused.status_code == 403 and refused.headers.get("x-step-up") == "mfa", (path, refused.text)
+    assert client.post("/api/auth/mfa/step-up", headers=headers, json={"code": _next_code(secret, 1)}).status_code == 204
+    for method, path, body in calls:
+        assert getattr(client, method)(path, headers=headers, json=body).status_code == 200, path
+
+
 # --- 1b. The step-up freshness window --------------------------------------------------------------------------------
 
 def test_an_admin_write_needs_a_recent_check_a_read_does_not(monkeypatch):

@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_mfa_session, require_owner, require_role
+from app.auth.dependencies import (current_session_id, ensure_admin_write_step_up, get_current_user, require_mfa_session,
+                                   require_owner, require_role)
 from app.core.enums import UserRole
 from app.db.models import User
 from app.db.session import get_session
@@ -170,8 +171,9 @@ async def get_member_scopes(member_id: int, actor: User = Depends(get_current_us
 
 @users_router.put("/{member_id}/scopes")
 async def put_member_scopes(member_id: int, body: ScopeOverridesBody, actor: User = Depends(require_owner),
-                            session: AsyncSession = Depends(get_session)) -> dict:
-    member = await _member(session, member_id, actor)
+                            session: AsyncSession = Depends(get_session),
+                            session_id: Optional[int] = Depends(current_session_id)) -> dict:
+    member = await _member_for_write(session, member_id, actor, session_id, "Changing the permissions of another organisation's member")
     if member.role == UserRole.SUPER_ADMIN.value:
         raise HTTPException(status_code=403, detail="Platform administrators are managed outside the tenant")
     if member.id == actor.id and "team:manage" in body.deny:
@@ -192,9 +194,19 @@ async def _member(session: AsyncSession, member_id: int, actor: User) -> User:
     return member
 
 
-@users_router.post("/{member_id}/trading-disable")
-async def disable_trading(member_id: int, body: TradingDisableBody, actor: User = Depends(require_owner), session: AsyncSession = Depends(get_session)) -> dict:
+async def _member_for_write(session: AsyncSession, member_id: int, actor: User, session_id: Optional[int], why: str) -> User:
+    """A4 review: a SUPER_ADMIN changing a member of ANOTHER organisation is a platform-wide write, so it gets the admin
+    step-up (two-factor, recent); an owner acting inside their own organisation is unchanged."""
     member = await _member(session, member_id, actor)
+    if member.tenant_id != actor.tenant_id:
+        await ensure_admin_write_step_up(session, actor, session_id, why)
+    return member
+
+
+@users_router.post("/{member_id}/trading-disable")
+async def disable_trading(member_id: int, body: TradingDisableBody, actor: User = Depends(require_owner), session: AsyncSession = Depends(get_session),
+                          session_id: Optional[int] = Depends(current_session_id)) -> dict:
+    member = await _member_for_write(session, member_id, actor, session_id, "Pausing trading for another organisation's member")
     member.trading_disabled_reason = body.reason.strip()
     await write_audit_log(session, member.tenant_id, actor.id, "user_trading_disabled", f"{member.email}: {body.reason}")
     await session.commit()
@@ -202,8 +214,9 @@ async def disable_trading(member_id: int, body: TradingDisableBody, actor: User 
 
 
 @users_router.post("/{member_id}/trading-enable")
-async def enable_trading(member_id: int, actor: User = Depends(require_owner), session: AsyncSession = Depends(get_session)) -> dict:
-    member = await _member(session, member_id, actor)
+async def enable_trading(member_id: int, actor: User = Depends(require_owner), session: AsyncSession = Depends(get_session),
+                         session_id: Optional[int] = Depends(current_session_id)) -> dict:
+    member = await _member_for_write(session, member_id, actor, session_id, "Turning trading back on for another organisation's member")
     member.trading_disabled_reason = None
     await write_audit_log(session, member.tenant_id, actor.id, "user_trading_enabled", member.email)
     await session.commit()

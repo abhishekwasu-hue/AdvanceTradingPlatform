@@ -3498,4 +3498,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   e2e `front-page.e2e.ts` (no chip on any page). Baselines refreshed because the chip row is gone from every v2 page
   (the e2e user has an unverified address): chart-analyze, charts, connect-ai, copilot-chat, fno-insights, fno-workspace,
   markets, option-chain, settings-index, shell, signals and view-as `*-v2-*` images (103 files).
+- CI fix (e2e failed twice on 5 shots, ratio 0.03): 74 more baselines still showed the chip (the old-shell phone pages
+  of `mobile.e2e.ts` and `broker.e2e.ts`, plus some `*-v2-*` 1440/390 images). Playwright's anti-aliasing tolerance kept
+  them just under the 2% limit here (1.6-1.9%) and just over it on the CI runner (2.0-2.2%), so `--update-snapshots`
+  (changed only) never rewrote them. Found by a full `--update-snapshots=all` run plus a pixel check of the top bar /
+  notice row; only images whose old version shows the chip were replaced. Local diff against them is now 0 pixels
+  (also with the Inter font hidden). No threshold changed, no test skipped.
 

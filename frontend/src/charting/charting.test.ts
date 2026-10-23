@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ANCHOR_RULES, DrawingConflict, drawingProblem, drawingsApi, type DrawingKind, type DrawingV1, type StoredDrawing } from "./drawings";
+import type { InteractionOptions } from "../chart/chartOptions";
 import { LightweightEngine, type CandleSeriesLike, type ChartLike } from "./lightweight";
 import { LayerPrimitive, type DrawingPrimitive } from "./primitives";
 import type { EngineEvent } from "./engine";
@@ -93,7 +94,7 @@ function fakes() {
       else primitives.splice(primitives.indexOf(p), 1);
     },
   };
-  const options: { handleScroll?: boolean; handleScale?: boolean }[] = [];
+  const options: Partial<InteractionOptions>[] = [];
   const chart: ChartLike & { options: typeof options } = {
     options,
     applyOptions(o) { options.push(o); },

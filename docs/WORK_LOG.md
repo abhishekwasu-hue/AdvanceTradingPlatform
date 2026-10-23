@@ -3258,6 +3258,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   existing tests of the listed machinery; main's last Actions runs (Staging stack incl. the rollback rehearsal green;
   CI and Secret scan red, a fix in progress).
 - Questions RDY-1..12 in OPEN_QUESTIONS.
+## 23 Oct - Chart order (row 18), PR 1: one chart options builder + the R4 fix (no visual change)
+
+- Branch `claude/chart-core-options` (the first PR of `docs/design/CHART_COLOUR_REVIEW.md`'s sequence). No migration, no
+  flag, no route, no backend change.
+- `frontend/src/chart/chartOptions.ts`: the one builder of the theme-neutral options (gestures, kinetic scroll, the
+  price axis width, the right offset). `ChartCore` and ProChart's `baseOptions` both take it; the word-for-word copy in
+  ProChart is gone. The values are the same as before (the booleans `axisPressedMouseMove: true` /
+  `axisDoubleClickReset: true` are now the same full objects the library expanded them to).
+- R4: `LightweightEngine.setPanning` no longer writes `handleScroll: true, handleScale: true` (the library expanded
+  that into every sub-option, so after the first drawing drag a phone swipe stopped scrolling the page). The v2 core
+  owns the gesture state (`setInteraction`, suspend / resume); ProChart's engine writes the default state as full objects.
+- The fake library (`chart/lightweightFake.fixture.ts`) gains the price scale, the time scale's scroll position,
+  `resetTimeScale`, the crosshair handlers and `merged()` for the gesture tests of the next PR.
+- `components/CandleChart.tsx` removed: nothing rendered it (grep: no `<CandleChart` in `src/`, the build passes); its
+  types and `directionMarker` moved to `charting/markers.ts`.
+- Tests: vitest `src/chart/chartOptions.test.ts` (the builder, the R4 drag test, the ProChart path, the markers). The
+  chart e2e baselines are unchanged.
 
 ## 23 Oct - Production readiness A2: monitoring and alerts to the operator
 

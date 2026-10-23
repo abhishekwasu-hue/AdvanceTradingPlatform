@@ -10,7 +10,8 @@ import {
   DEFAULT_SETTINGS, INDICATOR_LABELS, OVERLAYS, PANES, adx, applyLivePrice, bollinger, closes, ema, indicatorsForStrategy, rsi, sma,
   supertrend, vwap, type IndicatorId, type IndicatorSettings, type Series,
 } from "../utils/indicators";
-import type { ChartMarker, PriceLineSpec } from "./CandleChart";
+import type { ChartMarker, PriceLineSpec } from "../charting/markers";
+import { CHART_FONT_FAMILY, baseChartOptions } from "../chart/chartOptions";
 import { THEME_EVENT, chartColors, chartFontSize, resolveChartColor } from "../theme";
 import { useChartStrategies } from "./ChartStrategies";
 import type { ChartEngine } from "../charting/engine";
@@ -22,16 +23,16 @@ import type { ChartType } from "../charting/workspace";
 import { Sheet } from "./primitives";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 
-export type { ChartMarker, PriceLineSpec } from "./CandleChart";
+export type { ChartMarker, PriceLineSpec } from "../charting/markers";
 
-/** URL of the full-window chart for a broker symbol (opened in a new browser tab; see ChartWindow). */
-export { directionMarker } from "./CandleChart";
+export { directionMarker } from "../charting/markers";
 // The light helpers live in chartHelpers (no chart engine) so pages can link to a chart without loading it.
+// chartWindowUrl: the URL of the full-window chart for a broker symbol (opened in a new browser tab; see ChartWindow).
 export { chartWindowUrl, useLiveLtp } from "./chartHelpers";
 
 /**
  * Phase AN: the Pro Chart. TradingView's open-source Lightweight Charts engine (the same one the
- * plain CandleChart used), now with the things a trader expects from a terminal chart:
+ * plain CandleChart used; that component is gone, its marker types live in charting/markers), now with the things a trader expects from a terminal chart:
  *
  * * indicator overlays (EMA fast/slow, SMA, Bollinger, VWAP, Supertrend) and stacked panes
  *   (volume, RSI with its mid/high/low lines, ADX with ±DI and the threshold), all computed in the
@@ -83,21 +84,20 @@ function axisOptions(zone: string | null) {
 function baseOptions(height: number, showTime: boolean, attribution = true, zone: string | null = null) {
   refreshThemeColors();
   const axis = axisOptions(zone);
+  // PW2: touch - pinch to zoom, one-finger drag pans the time axis while a vertical swipe still scrolls the page,
+  // and a long press shows the crosshair (the library's tracking mode; the next tap hides it). The gesture, kinetic and
+  // axis basics come from the one builder the v2 chart uses too (chart review R1).
+  const base = baseChartOptions();
   return {
+    ...base,
     height,
     // The TradingView attribution logo stays on the main pane (the library's licence asks for it once); the stacked indicator panes do not repeat it.
-    layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: COLORS.text, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: chartFontSize(), attributionLogo: attribution },
+    layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: COLORS.text, fontFamily: CHART_FONT_FAMILY, fontSize: chartFontSize(), attributionLogo: attribution },
     grid: { vertLines: { color: COLORS.grid }, horzLines: { color: COLORS.grid } },
     crosshair: { mode: CrosshairMode.Normal },
-    rightPriceScale: { borderColor: COLORS.border, minimumWidth: 72 },
-    timeScale: { visible: showTime, timeVisible: true, secondsVisible: false, borderColor: COLORS.border, rightOffset: 4,
-                 tickMarkFormatter: axis.tick },
+    rightPriceScale: { ...base.rightPriceScale, borderColor: COLORS.border },
+    timeScale: { ...base.timeScale, visible: showTime, timeVisible: true, borderColor: COLORS.border, tickMarkFormatter: axis.tick },
     localization: { timeFormatter: axis.time },
-    // PW2: touch - pinch to zoom, one-finger drag pans the time axis while a vertical swipe still scrolls the page,
-    // and a long press shows the crosshair (the library's tracking mode; the next tap hides it).
-    handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
-    handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
-    kineticScroll: { touch: true, mouse: false },
   };
 }
 

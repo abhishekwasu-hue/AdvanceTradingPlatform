@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { ChartRunResponse, Deployment, OHLCVBar, StrategyInfo } from "../types";
-import type { ChartMarker, PriceLineSpec } from "./CandleChart";
+import type { ChartMarker, PriceLineSpec } from "../charting/markers";
 import { signClass } from "./ui";
 
 /**

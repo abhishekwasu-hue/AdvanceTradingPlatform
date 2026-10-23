@@ -3559,7 +3559,7 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   watchlist and the charts' last price move with ticks.
 - Proof: `backend/scripts/hub_probe.py` (before / after numbers, reconnect, token expiry, fan-out load); tests
   `test_tm1_data_hub.py`, `test_tm1_data_hub_load.py`, vitest `live/liveTicks.test.tsx`, e2e `live-prices-v2.e2e.ts`.
-- Questions TMH-1..7. README row 20 is not on main yet: its status clause is in the PR body.
+- Questions TMH-1..8; `data_hub` joins the trader pack (#455). README row 20 is not on main yet: its status clause is in the PR body.
 
 
 ## 23 Oct - Watchlists: the universe sync ON block (WL1-3 / WL1-4 / WL1-5, README row 19)

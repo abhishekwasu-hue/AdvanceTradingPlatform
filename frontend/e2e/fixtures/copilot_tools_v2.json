@@ -1,0 +1,381 @@
+{
+ "_note": "Made-up data: the backend's rule answers (app/ai/copilot_chat.py) on its synthetic eval fixtures (backend/evals/sets/copilot_tools.json), for the 23 Oct order's tools in the chat.",
+ "answers": {
+  "Full view of NIFTY": {
+   "job": "views",
+   "job_number": 10,
+   "title": "Full view of a symbol",
+   "summary": [
+    "NIFTY: 4 of 4 views read. Last close 24,850.5."
+   ],
+   "answer": "NIFTY: 4 of 4 views read. Last close 24,850.5.",
+   "sections": [
+    {
+     "title": "Structure",
+     "lines": [
+      "Weekly: range",
+      "Daily: up, protected level 24,310, last BOS at 24,790",
+      "1-hour: down (weak), protected level 25,020, last CHoCH at 24,900.5",
+      "15-minute: up, protected level 24,730.5"
+     ]
+    },
+    {
+     "title": "Option chain",
+     "lines": [
+      "Overall PCR is 1.00: put OI 13,92,000 against call OI 13,95,000 across 21 strikes.",
+      "Near the money (the 11 strikes from 24600 to 25100 around ATM 24850) PCR is 1.03, so put OI is larger than call OI there.",
+      "No earlier snapshot of this session is stored for this expiry yet, so the path through the session starts now.",
+      "Max pain is 24850: an expiry there leaves the smallest total in-the-money value of open options (22,55,00,000 OI x points) among the 21 strikes.",
+      "Max pain is 0.50 points (0.00% of spot) below spot 24,850.50.",
+      "The highest put OI is at 24600 (1,52,000) and the highest call OI is at 25100 (1,45,000).",
+      "Spot 24,850.50 lies between them, 250.50 points above the put strike and 249.50 points below the call strike."
+     ]
+    },
+    {
+     "title": "News",
+     "lines": [
+      "2 headlines on NIFTY in the news feed over the last day, 1 of high severity (third-party, unverified unless marked). Read them on the News page."
+     ]
+    },
+    {
+     "title": "Market memory",
+     "lines": [
+      "India VIX 12.4.",
+      "Global markets: SP500 0.42%, NIKKEI -0.3%.",
+      "Market sentiment read: RISK_ON."
+     ]
+    }
+   ],
+   "blocks": [
+    {
+     "type": "table",
+     "table": {
+      "title": "NIFTY structure per timeframe",
+      "columns": [
+       {
+        "key": "tf",
+        "label": "Timeframe",
+        "kind": "text"
+       },
+       {
+        "key": "direction",
+        "label": "Structure",
+        "kind": "text"
+       },
+       {
+        "key": "protected",
+        "label": "Protected level",
+        "kind": "price"
+       },
+       {
+        "key": "last",
+        "label": "Last break",
+        "kind": "text"
+       }
+      ],
+      "rows": [
+       {
+        "tf": "Weekly",
+        "direction": "range",
+        "protected": null,
+        "last": "none"
+       },
+       {
+        "tf": "Daily",
+        "direction": "up",
+        "protected": 24310.0,
+        "last": "BOS 24,790"
+       },
+       {
+        "tf": "1-hour",
+        "direction": "down (weak)",
+        "protected": 25020.0,
+        "last": "CHoCH 24,900.5"
+       },
+       {
+        "tf": "15-minute",
+        "direction": "up",
+        "protected": 24730.5,
+        "last": "none"
+       }
+      ]
+     }
+    }
+   ],
+   "unknowns": [],
+   "worked": [
+    {
+     "tool": "get_chart_structure",
+     "label": "NIFTY structure per timeframe",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "price_action_layer:nse_bhav",
+     "numbers": [
+      {
+       "label": "last_close",
+       "value": 24850.5
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "NIFTY",
+      "timeframe": "1d"
+     },
+     "ran": true
+    },
+    {
+     "tool": "get_option_chain_analyses",
+     "label": "NIFTY option chain analyses",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "option_chain_analyses:broker:paper",
+     "numbers": [
+      {
+       "label": "spot",
+       "value": 24850.5
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "NIFTY"
+     },
+     "ran": true
+    },
+    {
+     "tool": "get_news",
+     "label": "News feed: headlines on NIFTY (third-party)",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "news_feed",
+     "numbers": [],
+     "note": null,
+     "args": {
+      "hours": 24,
+      "min_severity": 1
+     },
+     "ran": true
+    },
+    {
+     "tool": "get_market_snapshot",
+     "label": "Market memory: cues and the sentiment read",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "market_memory",
+     "numbers": [],
+     "note": null,
+     "args": {
+      "symbol": "NIFTY"
+     },
+     "ran": true
+    },
+    {
+     "tool": "calc:news_count:NIFTY",
+     "label": "Headlines counted in the news feed",
+     "ok": true,
+     "as_of": null,
+     "source": "calculation",
+     "numbers": [
+      {
+       "label": "headlines",
+       "value": 2
+      },
+      {
+       "label": "high_severity",
+       "value": 1
+      }
+     ],
+     "note": null,
+     "args": {},
+     "ran": true
+    },
+    {
+     "tool": "calc:views_read",
+     "label": "Views read",
+     "ok": true,
+     "as_of": null,
+     "source": "calculation",
+     "numbers": [
+      {
+       "label": "views_read",
+       "value": 4
+      },
+      {
+       "label": "views",
+       "value": 4
+      }
+     ],
+     "note": null,
+     "args": {},
+     "ran": true
+    }
+   ],
+   "action": null,
+   "refused": null,
+   "starters": [],
+   "concepts": [],
+   "notes": [
+    "The situation from four views of ATP's own data, not a trade recommendation."
+   ],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "draft": null,
+   "followup": null,
+   "tool_calls": [
+    "get_chart_structure",
+    "get_option_chain_analyses",
+    "get_news",
+    "get_market_snapshot"
+   ],
+   "tools_used": [
+    "Chart structure",
+    "Option chain analyses",
+    "News feed",
+    "Market memory"
+   ]
+  },
+  "Find stocks in a daily uptrend near a demand zone": {
+   "job": "screen",
+   "job_number": 9,
+   "title": "Find setups",
+   "summary": [
+    "2 of 4 symbols in My swing list pass this screen on their last closed bar."
+   ],
+   "answer": "2 of 4 symbols in My swing list pass this screen on their last closed bar.",
+   "sections": [
+    {
+     "title": "Your screen",
+     "lines": [
+      "uptrend: the market-structure trend is up",
+      "demand zone: the close is at a buyer area (a demand zone)"
+     ]
+    },
+    {
+     "title": "Assumed (edit them in the Screener)",
+     "lines": [
+      "at the area = within 0.5% of the nearest live zone (the function's default)"
+     ]
+    },
+    {
+     "title": "Passed",
+     "lines": [
+      "SBIN, ITC"
+     ]
+    },
+    {
+     "title": "Each stage",
+     "lines": [
+      "Trend() == \"UPTREND\": 3 left",
+      "NearZone(\"demand\"): 2 left"
+     ]
+    }
+   ],
+   "blocks": [],
+   "unknowns": [],
+   "worked": [
+    {
+     "tool": "build_screen",
+     "label": "Your words as a screen (checked by the screen validator)",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "screenql_validator",
+     "numbers": [],
+     "note": null,
+     "args": {
+      "text": "Trend() == \"UPTREND\" AND NearZone(\"demand\")",
+      "base_tf": "1d"
+     },
+     "ran": true
+    },
+    {
+     "tool": "get_screen_universe",
+     "label": "The symbols to screen (your watchlist)",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "watchlists",
+     "numbers": [
+      {
+       "label": "count",
+       "value": 4
+      }
+     ],
+     "note": null,
+     "args": {},
+     "ran": true
+    },
+    {
+     "tool": "run_screen",
+     "label": "The screen run on My swing list",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "screener_run",
+     "numbers": [
+      {
+       "label": "scanned",
+       "value": 4
+      }
+     ],
+     "note": null,
+     "args": {
+      "text": "Trend() == \"UPTREND\" AND NearZone(\"demand\")",
+      "base_tf": "1d",
+      "symbols": [
+       "SBIN",
+       "INFY",
+       "TCS",
+       "ITC"
+      ],
+      "exchange": "NSE"
+     },
+     "ran": true
+    },
+    {
+     "tool": "calc:matches",
+     "label": "Symbols that passed",
+     "ok": true,
+     "as_of": null,
+     "source": "calculation",
+     "numbers": [
+      {
+       "label": "scanned",
+       "value": 4
+      },
+      {
+       "label": "passed",
+       "value": 2
+      }
+     ],
+     "note": null,
+     "args": {},
+     "ran": true
+    }
+   ],
+   "action": {
+    "label": "Open the Screener",
+    "to": "/screener"
+   },
+   "refused": null,
+   "starters": [],
+   "concepts": [],
+   "notes": [
+    "Matches are the filters passed on each symbol's last closed bar, not advice. The trade decision is yours."
+   ],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "draft": null,
+   "followup": {
+    "label": "Why did these pass?",
+    "question": "Why did these pass: Find stocks in a daily uptrend near a demand zone"
+   },
+   "tool_calls": [
+    "build_screen",
+    "get_screen_universe",
+    "run_screen"
+   ],
+   "tools_used": [
+    "Screen builder",
+    "Your watchlist",
+    "Screener"
+   ]
+  }
+ }
+}

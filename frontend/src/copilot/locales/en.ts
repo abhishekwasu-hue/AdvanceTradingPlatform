@@ -71,6 +71,8 @@ export const COPILOT_EN = {
     youAsked: "You asked",
     worked: "How I worked this out",
     workedNone: "No tool was needed for this answer.",
+    toolsUsed: "Tools used",
+    notSetUpAdmin: "Admin only - not set up here",
     unknown: "What I don't know",
     wordedAi: "Worded by your AI provider from ATP's data, every number checked.",
     wordedRules: "ATP's own sentences, built from its data.",

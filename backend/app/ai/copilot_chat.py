@@ -77,6 +77,11 @@ JOBS: Tuple[Job, ...] = (
         "What does the option chain show?", True),
     Job("teacher", 8, "Teacher", "Explains a trading concept and shows it on your own chart.",
         "Teach me: what is a demand zone?", True),
+    # Owner order 23 Oct ("its tools are wired"): the screener and the multi-view analysis in the chat.
+    Job("screen", 9, "Find setups", "Turns your words into a screen, runs it on your own watchlist and explains the matches; can propose an alert.",
+        "Find stocks in a daily uptrend near a demand zone", True, ("Open the Screener", "/screener")),
+    Job("views", 10, "Full view of a symbol", "Structure, option chain, news and market memory of one symbol, side by side.",
+        "Full view of NIFTY", True),
 )
 BY_ID: Dict[str, Job] = {j.id: j for j in JOBS}
 BUILT = frozenset(j.id for j in JOBS if j.built)
@@ -186,11 +191,15 @@ _ROUTES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("positions", ("open position", "my positions", "open trades", "position watch", "how are my", "my open risk", "risk on my")),
     ("review", ("review my", "last trade", "my trades", "journal", "my mistakes", "weekly review", "post-trade", "post trade", "my week",
                 "my habits", "discipline score")),
+    ("screen", ("alert me", "notify me", "set an alert", "set alert", "create an alert", "create alert", "add an alert", "screen for",
+                "scan for", "find stocks", "find setups", "find me stocks", "which stocks", "stocks with", "stocks that", "stocks in ",
+                "stocks near", "stocks above", "stocks below", "stocks at ", "f&o stocks", "run a screen", "run a scan", "my screen", "screen ", " scan ")),
     ("strategy", ("strategy", "backtest", "idea into", "test my idea", "test it", "go long when", "go short when", "buy when", "sell when",
                   "long when", "short when", "buy if", "sell if", "enter long", "enter short", "my rules", "rules:")),
     ("teacher", ("teach me", "what is", "what are", "what's a", "explain", "meaning of", "define", "how does", "how do i read")),
     ("option_chain", ("option chain", "options chain", "chain", "pcr", "max pain", "open interest", " oi ", "straddle", "expected move",
                       "iv skew", " lot ", " lots ", "option")),
+    ("views", ("full view", "all views", "multi-view", "multiview", "every view", "analyze ", "analyse ", "overview of")),
     ("chart", ("chart", "structure", "trend", "zone", "zones", "levels", "support", "resistance", "read ")),
     ("brief", ("brief", "today", "market", "global", "fii", "dii", "vix", "pre-market", "premarket", "events", "cues", "morning")),
 )
@@ -205,6 +214,9 @@ def route(message: str) -> str:
         if any(w in q for w in words):
             if job == "teacher" and re.search(r"\b(now|today|current|currently|at the moment)\b", q) and not q.lstrip().startswith("teach me"):
                 continue                            # "what is the PCR now" asks for data, not a lesson
+            if job == "screen" and re.match(r"^ (what (is|are)|what's|teach me|explain|define|meaning of)\b", q) and not re.search(
+                    r"alert|notify", q):
+                continue                            # "what is a screen?" is a lesson, not a screen to run
             if job == "strategy" and re.match(r"^ (what (is|are)|what's|teach me|explain|define|meaning of)\b", q):
                 from app.ai import knowledge
                 if knowledge.find_concepts(message, limit=1):
@@ -267,10 +279,11 @@ class Step:
     numbers: List[Dict[str, Any]] = field(default_factory=list)
     note: Optional[str] = None
     args: Dict[str, Any] = field(default_factory=dict)
+    ran: bool = True                                    # False: the tool is not set up for this organisation (not called)
 
     def as_dict(self) -> Dict[str, Any]:
         return {"tool": self.tool, "label": self.label, "ok": self.ok, "as_of": self.as_of, "source": self.source, "numbers": self.numbers,
-                "note": self.note, "args": self.args}
+                "note": self.note, "args": self.args, "ran": self.ran}
 
 
 @dataclass
@@ -292,6 +305,11 @@ class Answer:
     diagnostics: Dict[str, Any] = field(default_factory=dict)
     trusted_text: List[str] = field(default_factory=list)     # tool texts + calculations: where the rule numbers may come from
     signal_v2: bool = False                                     # handover 11l: flag `signal_language_v2` (never served)
+    # Owner order 23 Oct: the chat's own flags (CHAT_FLAGS) as the request read them; None = all on (the rule tests, the evals)
+    flags: Optional[Dict[str, bool]] = None
+
+    def flag_on(self, name: str) -> bool:
+        return self.flags is None or bool(self.flags.get(name))
 
     def section(self, title: str, lines: Sequence[str]) -> None:
         kept = [x for x in lines if x]
@@ -308,7 +326,8 @@ class Answer:
                 "worked": [s.as_dict() for s in self.worked], "action": self.action, "refused": self.refused, "starters": self.starters,
                 "concepts": self.concepts, "notes": self.notes, "disclaimer": DISCLAIMER, "source": "rules", "draft": self.draft,
                 "followup": self.followup,
-                "tool_calls": [s.tool for s in self.worked if not s.tool.startswith("calc:") and s.tool not in NOT_TOOLS]}
+                "tool_calls": [s.tool for s in self.worked if not s.tool.startswith("calc:") and s.tool not in NOT_TOOLS],
+                "tools_used": tools_used(self.worked)}
 
 
 def _f(value: Any, nd: int = 2) -> str:
@@ -352,21 +371,81 @@ def _numbers(data: Any, keys: Sequence[str]) -> List[Dict[str, Any]]:
 NOT_TOOLS = frozenset({"concept_library", "strategy_blocks"})     # steps that read ATP's own fixed lists, not a tool
 PLAIN_FAILURE = "this data is not available on your account yet"
 
+# Owner order 23 Oct ("its tools are wired"): what each tool is called in "How I worked this out" ("Tools used"), and the
+# plain sentence when the part of ATP behind it is switched off ("... is not set up yet"). Never a flag name or a tool id.
+TOOL_NAMES: Dict[str, str] = {
+    "get_market_context": "Market context", "get_chart_structure": "Chart structure", "get_market_zones": "Market zones",
+    "get_option_chain_analyses": "Option chain analyses", "get_risk_limits": "Your risk settings", "get_my_positions": "Your positions",
+    "get_my_last_trade": "Your last trade", "get_weekly_review": "Your weekly review", "backtest_draft": "Backtest engine",
+    "get_news": "News feed", "get_market_snapshot": "Market memory", "get_screen_universe": "Your watchlist",
+    "build_screen": "Screen builder", "run_screen": "Screener", "explain_results": "Screen explanations", "propose_alert": "Alert proposal",
+}
+NOT_SET_UP: Dict[str, str] = {
+    "get_market_context": "the market context panel is not set up yet", "get_chart_structure": "the chart structure reader is not set up yet",
+    "get_market_zones": "the market zones are not set up yet", "get_option_chain_analyses": "the option chain analyses are not set up yet",
+    "get_weekly_review": "the weekly review is not set up yet", "backtest_draft": "the backtest in the Copilot is not set up yet",
+    "get_news": "the news feed in the Copilot is not set up yet", "get_market_snapshot": "market memory in the Copilot is not set up yet",
+    "get_screen_universe": "screens in the Copilot are not set up yet", "build_screen": "screens in the Copilot are not set up yet",
+    "run_screen": "screens in the Copilot are not set up yet", "explain_results": "screens in the Copilot are not set up yet",
+    "propose_alert": "alerts from the Copilot are not set up yet",
+}
+# Tools the chat reads only while a flag of its own is on (the registry does not gate them: the agent's flag `ai_agent`
+# covers news and market memory), and the jobs that need a flag as a whole.
+CHAT_TOOL_FLAGS: Dict[str, str] = {"get_news": "ai_agent", "get_market_snapshot": "ai_agent"}
+JOB_FLAGS: Dict[str, str] = {"screen": "screener_copilot", "views": "ai_multiview"}
+JOB_NOT_SET_UP: Dict[str, str] = {"screen": "screens in the Copilot are not set up", "views": "the full view of a symbol is not set up"}
+CHAT_FLAGS: Tuple[str, ...] = tuple(sorted({*CHAT_TOOL_FLAGS.values(), *JOB_FLAGS.values()}))
+_FLAG_IN = re.compile(r"\(flag ([a-z0-9_]+)\)")
 
-def plain_reason(error: Optional[str]) -> str:
-    """A tool's failure in plain words: never a flag name, an exception class or an internal id."""
+
+def flag_of(error: Optional[str]) -> Optional[str]:
+    """The operator flag named in a tool's refusal ("... is not enabled for this organisation (flag x)"), else None."""
+    m = _FLAG_IN.search(error or "")
+    return m.group(1) if m else None
+
+
+def tools_used(worked: Sequence["Step"]) -> List[str]:
+    """The plain names of the tools that were read for this answer, in order, once each (calculations and ATP's fixed
+    lists are not tools; a tool that is not set up was not read)."""
+    out: List[str] = []
+    for s in worked:
+        if s.tool.startswith("calc:") or s.tool in NOT_TOOLS or not s.ran:
+            continue
+        name = TOOL_NAMES.get(s.tool, s.label)
+        if name not in out:
+            out.append(name)
+    return out
+
+
+def plain_reason(error: Optional[str], tool: Optional[str] = None) -> str:
+    """A tool's failure in plain words: never a flag name, an exception class or an internal id. With `tool`, a part of
+    ATP that is switched off is named ("the news feed in the Copilot is not set up yet")."""
     text = (error or "").strip()
     if not text or "not enabled for this organisation" in text or "flag" in text.lower() or "feature is currently disabled" in text:
-        return PLAIN_FAILURE
+        return NOT_SET_UP.get(tool or "", PLAIN_FAILURE) if text else PLAIN_FAILURE
     if re.search(r"[A-Za-z]+Error\b|Traceback|timed out|invalid arguments|unknown tool", text):
         return "the data could not be read just now"
     return text.rstrip(".")
 
 
+def not_set_up(answer: Answer, what: str, flag: str) -> None:
+    """The admin's diagnostic (SUPER_ADMIN only, chat_routes): which flag a missing part needs."""
+    rows = answer.diagnostics.setdefault("not_set_up", [])
+    if not any(r["what"] == what and r["flag"] == flag for r in rows):
+        rows.append({"what": what, "flag": flag})
+
+
 async def _call(answer: Answer, run: Runner, tool: str, label: str, args: Dict[str, Any], keys: Sequence[str] = ()) -> ToolResult:
-    result = await run(tool, args)
+    gate = CHAT_TOOL_FLAGS.get(tool)
+    if gate is not None and not answer.flag_on(gate):
+        result = ToolResult(False, None, None, tool, error=f"{tool} is not enabled for this organisation (flag {gate})")
+    else:
+        result = await run(tool, args)
+    flag = None if result.ok else flag_of(result.error)
     step = Step(tool, label, result.ok, result.as_of, result.source, _numbers(result.data, keys) if result.ok else [],
-                None if result.ok else plain_reason(result.error), args)
+                None if result.ok else plain_reason(result.error, tool), args, ran=flag is None)
+    if flag is not None:
+        not_set_up(answer, TOOL_NAMES.get(tool, label), flag)
     answer.worked.append(step)
     if result.ok:
         answer.trusted_text.append(json.dumps(result.data, default=str, ensure_ascii=False))     # "-₹1,545.00" stays readable
@@ -390,7 +469,7 @@ FLOW_LABELS = {"net_fii_crore": "FII net (crore)", "net_dii_crore": "DII net (cr
 def _context_lines(answer: Answer, ctx: ToolResult) -> Optional[str]:
     """The context panel's tiles as lines; returns the one-line market read (or None)."""
     if not ctx.ok:
-        answer.unknowns.append(f"I don't know today's global cues, FII / DII flows, India VIX or events: {plain_reason(ctx.error)}.")
+        answer.unknowns.append(f"I don't know today's global cues, FII / DII flows, India VIX or events: {plain_reason(ctx.error, ctx.source)}.")
         return None
     d = ctx.data
     glob, vix, flows, events, structure = d.get("global") or {}, d.get("vix") or {}, d.get("fii_dii") or {}, d.get("events") or {}, d.get("structure") or {}
@@ -490,15 +569,61 @@ async def brief(answer: Answer, run: Runner, message: str) -> None:
             if table:
                 answer.blocks.append(table)
         else:
-            answer.unknowns.append(f"I don't know the {sym} structure: {plain_reason(res.error)}.")
+            answer.unknowns.append(f"I don't know the {sym} structure: {plain_reason(res.error, res.source)}.")
     zones = await _call(answer, run, "get_market_zones", "NIFTY key areas (market zones)", {"symbol": "NIFTY"}, ("price",))
     areas = _zone_lines(zones)
     if areas:
         answer.section("Today's key areas (NIFTY)", areas)
     else:
-        answer.unknowns.append(f"I don't know today's key areas: {plain_reason(zones.error) if not zones.ok else 'no zone is near the price'}.")
+        answer.unknowns.append(f"I don't know today's key areas: {plain_reason(zones.error, zones.source) if not zones.ok else 'no zone is near the price'}.")
+    # Owner order 23 Oct: market memory (the sentiment read, the captured cues) and the news feed's market-moving headlines.
+    snap = await _call(answer, run, "get_market_snapshot", "Market memory: cues and the sentiment read", {})
+    memory = _memory_lines(snap, context_read=ctx.ok)
+    if memory:
+        answer.section("Market memory", memory)
+    elif not snap.ok:
+        answer.unknowns.append(f"I don't know yet what the market memory holds: {plain_reason(snap.error, snap.source)}.")
+    news = await _call(answer, run, "get_news", "News feed: market-moving headlines (third-party)", {"hours": 24, "min_severity": 4})
+    line = _news_line(answer, news, None)
+    if line:
+        answer.section("News", [line])
+    else:
+        answer.unknowns.append(f"I don't know yet what the news says: {plain_reason(news.error, news.source)}.")
     answer.summary = [one] if one else ["Here is what ATP's data shows before the open."]
     answer.diagnostics["one_line"] = one
+
+
+NEWS_NOTE = "third-party, unverified unless marked"
+
+
+def _memory_lines(snap: ToolResult, *, context_read: bool) -> List[str]:
+    """Market memory as plain lines (the multi-view's macro view, app/ai/multiview.macro_view). When the context panel
+    already gave India VIX and the global cues, only the sentiment read is added."""
+    if not snap.ok:
+        return []
+    from app.ai import multiview
+    lines = multiview.macro_view(snap).lines
+    if context_read:
+        lines = [x for x in lines if x.startswith("Market sentiment read")]
+    return lines
+
+
+def _news_line(answer: Answer, news: ToolResult, symbol: Optional[str]) -> Optional[str]:
+    """How many headlines the feed holds (on `symbol`, or market-wide), counted as a calculation. Headline text is
+    third-party and never shown here (it may carry trade words); the News page shows it with its source."""
+    if not news.ok:
+        return None
+    rows = [n for n in news.data or [] if isinstance(n, dict)]
+    if symbol:
+        rows = [n for n in rows if symbol.upper() in [str(x).upper() for x in (n.get("symbols") or [])]]
+    severe = sum(1 for n in rows if (n.get("severity") or 0) >= 4)
+    _calc(answer, f"news_count{':' + symbol if symbol else ''}", "Headlines counted in the news feed", {},
+          {"headlines": len(rows), "high_severity": severe})
+    if not rows:
+        return f"No {'headline on ' + symbol if symbol else 'market-moving headline'} in the news feed over the last day."
+    where = f" on {symbol}" if symbol else ""
+    return (f"{len(rows)} {'headline' if len(rows) == 1 else 'headlines'}{where} in the news feed over the last day, {severe} of high "
+            f"severity ({NEWS_NOTE}). Read them on the News page.")
 
 
 # --- job 2: the chart reader -------------------------------------------------------------------------------------------
@@ -525,7 +650,7 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
         answer.section("Nearest swing levels", _level_lines(res))
     else:
         answer.summary = [f"I can't read the {symbol} chart right now."]
-        answer.unknowns.append(f"I don't know the {symbol} structure: {plain_reason(res.error)}.")
+        answer.unknowns.append(f"I don't know the {symbol} structure: {plain_reason(res.error, res.source)}.")
     areas = _zone_lines(zones)
     if areas:
         answer.section("Key areas", areas)
@@ -535,7 +660,7 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
             {"key": "touches", "label": "Touches", "kind": "number"}],
             "rows": [{k: b.get(k) for k in ("role", "low", "high", "state", "touches")} for b in (zones.data or {}).get("bands") or []]}})
     else:
-        answer.unknowns.append(f"I don't know the {symbol} key areas: {plain_reason(zones.error) if not zones.ok else 'no zone is near the price'}.")
+        answer.unknowns.append(f"I don't know the {symbol} key areas: {plain_reason(zones.error, zones.source) if not zones.ok else 'no zone is near the price'}.")
     answer.section("What to watch", ["Whether the protected level holds or breaks on a closed bar.",
                                      "How the price behaves when it reaches one of the key areas above."] if res.ok else [])
 
@@ -574,7 +699,7 @@ async def option_chain(answer: Answer, run: Runner, message: str) -> None:
             answer.unknowns.append(f"I don't know {', '.join(k.replace('_', ' ') for k in missing)} for this chain: the data is not there yet.")
     else:
         answer.summary = [f"I can't read the {symbol} option chain right now."]
-        answer.unknowns.append(f"I don't know the {symbol} option chain: {plain_reason(oc.error)}.")
+        answer.unknowns.append(f"I don't know the {symbol} option chain: {plain_reason(oc.error, oc.source)}.")
     _size_check(answer, risk, straddle, lots_in(message))
 
 
@@ -692,7 +817,7 @@ def _events_this_week(ctx: ToolResult) -> Optional[List[Dict[str, Any]]]:
 
 def _event_reason(ctx: ToolResult) -> str:
     if not ctx.ok:
-        return plain_reason(ctx.error)
+        return plain_reason(ctx.error, ctx.source)
     return plain_reason(((ctx.data or {}).get("events") or {}).get("reason"))
 
 
@@ -847,7 +972,7 @@ async def trade_check(answer: Answer, run: Runner, message: str) -> None:
         rows = _tf_rows(res, tf)
         answer.section("Trend side", [_trend_line(idea.side, r) for r in rows] or ["The structure has no reading on this timeframe yet."])
     else:
-        answer.unknowns.append(f"I don't know the {symbol} structure: {plain_reason(res.error)}.")
+        answer.unknowns.append(f"I don't know the {symbol} structure: {plain_reason(res.error, res.source)}.")
     if idea.side is None:
         missing.append("The side: bullish or bearish.")
 
@@ -865,7 +990,7 @@ async def trade_check(answer: Answer, run: Runner, message: str) -> None:
             area_lines = [f"{what} is not inside any of ATP's stored areas."] + [f"Nearby: the {_band_text(b)}." for b in near]
         answer.section("Area", area_lines)
     elif not zones.ok:
-        answer.unknowns.append(f"I don't know the {symbol} areas: {plain_reason(zones.error)}.")
+        answer.unknowns.append(f"I don't know the {symbol} areas: {plain_reason(zones.error, zones.source)}.")
     if idea.entry is None:
         missing.append("Your entry price.")
 
@@ -965,7 +1090,7 @@ async def position_watch(answer: Answer, run: Runner, message: str) -> None:
     answer.action = {"label": "Open My positions", "to": "/positions"}
     if not pos.ok:
         answer.summary = ["I can't read your open positions right now."]
-        answer.unknowns.append(f"I don't know your open positions: {plain_reason(pos.error)}.")
+        answer.unknowns.append(f"I don't know your open positions: {plain_reason(pos.error, pos.source)}.")
         return
     d = pos.data
     rows: List[Dict[str, Any]] = d.get("positions") or []
@@ -976,6 +1101,12 @@ async def position_watch(answer: Answer, run: Runner, message: str) -> None:
                                      f"{'trade' if d['closed_today'] == 1 else 'trades'}."])
         return
     ctx = await _call(answer, run, "get_market_context", "This week's events", {})
+    news = await _call(answer, run, "get_news", "News feed: headlines on your symbols (third-party)", {"hours": 24, "min_severity": 1})
+    if news.ok:
+        answer.section("News on your positions", [x for x in (_news_line(answer, news, sym) for sym in
+                                                              dict.fromkeys(str(p.get("underlying") or p["symbol"]) for p in rows)) if x])
+    else:
+        answer.unknowns.append(f"I don't know yet the news on your symbols: {plain_reason(news.error, news.source)}.")
     warnings: List[str] = []
     lines: List[str] = []
     for p in rows:
@@ -1130,7 +1261,7 @@ async def post_trade_coach(answer: Answer, run: Runner, message: str) -> None:
     elif last.ok:
         answer.unknowns.append(f"I don't know your last trade: {(last.data or {}).get('reason') or 'you have no closed trade yet'}.")
     else:
-        answer.unknowns.append(f"I don't know your last trade: {plain_reason(last.error)}.")
+        answer.unknowns.append(f"I don't know your last trade: {plain_reason(last.error, last.source)}.")
 
     if weekly.ok:
         w = weekly.data
@@ -1149,7 +1280,7 @@ async def post_trade_coach(answer: Answer, run: Runner, message: str) -> None:
         if re.search(r"\b(week|weekly|habits?|discipline|patterns?)\b", _norm(message)) or not first:
             first = [(w.get("lines") or [f"No trades were journaled in {w['week']}."])[0]]
     else:
-        answer.unknowns.append(f"I don't know your weekly review and repeated habits: {plain_reason(weekly.error)}.")
+        answer.unknowns.append(f"I don't know your weekly review and repeated habits: {plain_reason(weekly.error, weekly.source)}.")
     answer.summary = first or ["I have nothing to review yet: there is no closed trade in your records."]
     answer.section("How I review", ["I describe what happened, from your own records only. I don't tell you what to trade next."])
 
@@ -1359,13 +1490,181 @@ async def _draft_test(answer: Answer, run: Runner, message: str, draft: Any) -> 
                       {"config": config.model_dump(mode="json"), "symbol": draft.symbol},
                       ("whole.trades", "whole.net_pnl", "whole.costs", "whole.max_drawdown", "min_trades_for_statistics"))
     if not res.ok or not isinstance(res.data, dict):
-        answer.unknowns.append(f"I can't test it right now: {plain_reason(res.error)}. Save it and test it on the Backtesting page, or ask me "
+        answer.unknowns.append(f"I can't test it right now: {plain_reason(res.error, res.source)}. Save it and test it on the Backtesting page, or ask me "
                                "again later.")
         return
     _test_lines(answer, res.data, partial=bool(draft.unsupported or draft.unread))
 
 
 # --- the jobs not built yet, refusals and help -------------------------------------------------------------------------
+
+# --- job 9: find setups (the screener) ------------------------------------------------------------------------------------
+
+SCREENER_PATH = "/screener"
+ACTIONS_PATH = "/copilot/watchtower"                          # where a proposed alert is approved or rejected
+SCREEN_NOTE = "Matches are the filters passed on each symbol's last closed bar, not advice. The trade decision is yours."
+SCREEN_EXAMPLES = ("Find stocks in a daily uptrend near a demand zone.", "Find stocks with RSI oversold on the daily chart.",
+                   "Find stocks above the 50 day EMA with rising volume.", "Find stocks with a bullish break of structure on the 1-hour chart.",
+                   "Find F&O stocks at new 52-week highs.")
+_ALERT_WORDS = re.compile(r"\b(?:please\s+)?(?:alert me|notify me|set (?:an |a )?alert|create (?:an |a )?alert|add (?:an |a )?alert)"
+                          r"(?:\s+(?:on|for))?(?:\s+(?:when|if|once|whenever))?\b", re.I)
+_SCREEN_WORDS = re.compile(r"\b(?:screen for|scan for|find (?:me )?(?:stocks|setups)|which stocks|run a (?:screen|scan)|my screen|why did "
+                           r"(?:these|they) pass:?|show me)\b", re.I)
+MAX_EXPLAIN = 3
+
+
+def _quote(message: str, m: "re.Match[str]") -> str:
+    """The trader's own words around the alert ask (the proposal guard checks them against his message)."""
+    start = max(0, m.start() - 80)
+    return message[start:start + 300].strip()
+
+
+async def screen(answer: Answer, run: Runner, message: str) -> None:
+    """Job 9: the trader's words as a screen (ATP's deterministic idea reader, app/screener/idea.py - nothing invented),
+    checked by the screen validator, run on his own first watchlist (else the NIFTY 50 stocks) and, when he asks why,
+    explained stage by stage. "Alert me when ..." on one symbol proposes an alert he approves himself (ADR-0006: an
+    alert notifies, it never places an order). No price is written here: the stage texts and pass / fail only."""
+    from app.screener import idea
+    answer.action = {"label": "Open the Screener", "to": SCREENER_PATH}
+    alert = _ALERT_WORDS.search(message)
+    symbol = builder_symbol(message) if alert else None
+    text = _ALERT_WORDS.sub(" ", message)
+    text = _SCREEN_WORDS.sub(" ", text)
+    if symbol:
+        text = re.sub(rf"\b(?:NSE:)?{re.escape(symbol)}\b", " ", text, flags=re.I)
+    text = re.sub(r"\b(?:closes|closed|closing|trades|goes|moves|is)\s+(?=above|below|over|under)", " ", text, flags=re.I)
+    draft = idea.read_idea(text, "1d")
+    answer.trusted_text.extend(f"{p.reads} {' '.join(p.assumptions)}" for p in draft.parts)     # ATP's own fixed reader texts
+    unsupported = [f"\"{u['phrase']}\": {u['why']}" for u in draft.unsupported if u.get("phrase")]
+    if not draft.parts:
+        answer.summary = ["I could not turn this into a screen yet: none of its parts is one ATP's screen reader knows."]
+        answer.section("Not supported yet", unsupported)
+        answer.trusted_text.extend(SCREEN_EXAMPLES)                 # ATP's own fixed examples
+        answer.section("Try for example", list(SCREEN_EXAMPLES))
+        return
+    built = await _call(answer, run, "build_screen", "Your words as a screen (checked by the screen validator)",
+                        {"text": idea.joined([p.condition for p in draft.parts]), "base_tf": "1d"})
+    if not built.ok:
+        answer.summary = [f"I don't know yet - {plain_reason(built.error, built.source)}."]
+        return
+    b = built.data or {}
+    answer.section("Your screen", [f"{p.phrase}: {p.reads}" for p in draft.parts])
+    answer.section("Assumed (edit them in the Screener)", [a for p in draft.parts for a in p.assumptions])
+    answer.section("Not supported yet", unsupported)
+    if not b.get("ok"):
+        answer.summary = ["The screen did not pass ATP's checks, so I did not run it."]
+        answer.section("What the check says", [str(p.get("message")) for p in b.get("problems") or [] if p.get("message")])
+        return
+    if alert:
+        await _screen_alert(answer, run, message, alert, symbol, b)
+        return
+    uni = await _call(answer, run, "get_screen_universe", "The symbols to screen (your watchlist)", {}, ("count",))
+    if not uni.ok or not (uni.data or {}).get("symbols"):
+        answer.summary = ["I don't know yet which symbols to screen."]
+        answer.unknowns.append(f"I don't know yet which symbols to screen: {plain_reason(uni.error, uni.source) if not uni.ok else 'your list is empty'}.")
+        return
+    u = uni.data
+    ran = await _call(answer, run, "run_screen", f"The screen run on {u['list']}", {"text": b.get("text"), "base_tf": "1d",
+                                                                                   "symbols": u["symbols"], "exchange": "NSE"}, ("scanned",))
+    if not ran.ok:
+        answer.summary = ["I can't run this screen right now."]
+        answer.unknowns.append(f"I don't know the matches: {plain_reason(ran.error, ran.source)}.")
+        return
+    r = ran.data or {}
+    matched = [str(x) for x in r.get("matched") or []]
+    _calc(answer, "matches", "Symbols that passed", {"scanned": r.get("scanned")}, {"passed": len(matched)})
+    answer.summary = [f"{len(matched)} of {r.get('scanned')} symbols in {u['list']} pass this screen on their last closed bar."]
+    if u.get("left_out"):
+        answer.notes.append("Only the first symbols of the list were screened (the Copilot screens at most one list page at a time).")
+    answer.section("Passed", [", ".join(matched)] if matched else ["None today."])
+    answer.section("Each stage", [f"{st.get('text')}: {st.get('survivors')} left" for st in r.get("stages") or [] if st.get("text")])
+    if r.get("not_evaluated"):
+        answer.unknowns.append(f"I don't know the result for {len(r['not_evaluated'])} symbols: their data could not be read.")
+        _calc(answer, "not_read", "Symbols not read", {}, {"not_read": len(r["not_evaluated"])})
+    answer.notes.append(SCREEN_NOTE)
+    if not matched:
+        return
+    if re.search(r"\b(why|explain|how come)\b", _norm(message)):
+        why = await _call(answer, run, "explain_results", "Why each match passed (the screen engine's own check)",
+                          {"text": b.get("text"), "base_tf": "1d", "symbols": matched[:MAX_EXPLAIN], "exchange": "NSE"})
+        if why.ok:
+            for sym, e in ((why.data or {}).get("symbols") or {}).items():
+                if isinstance(e, dict) and e.get("stages"):
+                    answer.section(f"Why {sym}", [f"{st.get('text')}: {'passed' if st.get('passed') else 'not passed'}" for st in e["stages"]])
+        else:
+            answer.unknowns.append(f"I don't know why they passed: {plain_reason(why.error, why.source)}.")
+    else:
+        answer.followup = {"label": "Why did these pass?", "question": f"Why did these pass: {message.strip()[:900]}"}
+
+
+async def _screen_alert(answer: Answer, run: Runner, message: str, alert: "re.Match[str]", symbol: Optional[str], b: Dict[str, Any]) -> None:
+    if not symbol:
+        answer.summary = ["Name the one symbol the alert should watch (for example RELIANCE), and I will propose it."]
+        return
+    prop = await _call(answer, run, "propose_alert", f"An alert on {symbol}, for you to approve",
+                       {"reason": "The trader asked for an alert on this condition.", "quote": _quote(message, alert), "symbol": symbol,
+                        "condition": b.get("text"), "base_tf": "1d", "exchange": "NSE"})
+    if not prop.ok:
+        answer.summary = [f"I could not propose the alert on {symbol}."]
+        answer.unknowns.append(f"I don't know yet: {plain_reason(prop.error, prop.source)}.")
+        return
+    if not (prop.data or {}).get("created"):
+        answer.summary = [f"The same alert on {symbol} is already waiting for you, or was decided today."]
+    else:
+        answer.summary = [f"I proposed an alert on {symbol} for this screen. It exists only after you approve it.",
+                          "An alert only tells you; it never places an order."]
+    answer.action = {"label": "Review it under AI Copilot", "to": ACTIONS_PATH}
+
+
+# --- job 10: the full view of a symbol (multi-view) -----------------------------------------------------------------------
+
+VIEWS_NOTE = "The situation from four views of ATP's own data, not a trade recommendation."
+
+
+async def full_view(answer: Answer, run: Runner, message: str) -> None:
+    """Job 10 (H-C4's multi-view in the chat): one symbol's structure (ATP's price-action layer, not the indicator
+    regime), its option chain analyses, the news feed's count on it and market memory - each said plainly when missing."""
+    symbol = symbol_in(message)
+    res = await _call(answer, run, "get_chart_structure", f"{symbol} structure per timeframe", {"symbol": symbol, "timeframe": "1d"},
+                      ("last_close",))
+    oc = await _call(answer, run, "get_option_chain_analyses", f"{symbol} option chain analyses", {"symbol": symbol}, ("spot",))
+    news = await _call(answer, run, "get_news", f"News feed: headlines on {symbol} (third-party)", {"hours": 24, "min_severity": 1})
+    snap = await _call(answer, run, "get_market_snapshot", "Market memory: cues and the sentiment read", {"symbol": symbol})
+    read = 0
+    if res.ok:
+        read += 1
+        answer.section("Structure", _structure_lines(symbol, res))
+        table = _structure_table(symbol, res)
+        if table:
+            answer.blocks.append(table)
+    else:
+        answer.unknowns.append(f"I don't know the {symbol} structure: {plain_reason(res.error, res.source)}.")
+    if oc.ok:
+        read += 1
+        found = {a["key"]: a for a in (oc.data or {}).get("analyses") or [] if a.get("state") == "ok"}
+        answer.section("Option chain", list(dict.fromkeys(x for k in ("pcr", "max_pain", "support_resistance")
+                                                          for x in (found.get(k) or {}).get("sentences") or [])))
+    else:
+        answer.unknowns.append(f"I don't know the {symbol} option chain: {plain_reason(oc.error, oc.source)}.")
+    line = _news_line(answer, news, symbol)
+    if line:
+        read += 1
+        answer.section("News", [line])
+    else:
+        answer.unknowns.append(f"I don't know yet the news on {symbol}: {plain_reason(news.error, news.source)}.")
+    memory = _memory_lines(snap, context_read=False)
+    if memory:
+        read += 1
+        answer.section("Market memory", memory)
+    else:
+        answer.unknowns.append(f"I don't know yet what the market memory holds: {plain_reason(snap.error, snap.source) if not snap.ok else 'no fresh cues'}.")
+    _calc(answer, "views_read", "Views read", {}, {"views_read": read, "views": 4})
+    head = f"{symbol}: {read} of 4 views read."
+    if res.ok and (res.data or {}).get("last_close") is not None:
+        head += f" Last close {_f(res.data['last_close'])}."
+    answer.summary = [head]
+    answer.notes.append(VIEWS_NOTE)
+
 
 def not_built(answer: Answer, job: Job) -> None:
     answer.summary = [f"I can't do \"{job.title.lower()}\" yet: it is coming in a later step."]
@@ -1387,7 +1686,7 @@ def help_answer(answer: Answer) -> None:
 
 
 JOB_FNS = {"brief": brief, "chart": chart_reader, "option_chain": option_chain, "teacher": teacher, "trade_check": trade_check,
-           "positions": position_watch, "review": post_trade_coach, "strategy": strategy_builder}
+           "positions": position_watch, "review": post_trade_coach, "strategy": strategy_builder, "screen": screen, "views": full_view}
 
 
 def _grounded_lines(answer: Answer, question: str) -> None:
@@ -1418,9 +1717,10 @@ def _filtered(answer: Answer) -> None:
     answer.summary = [x for x in answer.summary if output_filter.check(x, "en", where="copilot_chat")[0]] or ["Here is what ATP's data shows."]
 
 
-async def answer(message: str, run: Runner, *, signal_v2: bool = False) -> Answer:
+async def answer(message: str, run: Runner, *, signal_v2: bool = False, flags: Optional[Dict[str, bool]] = None) -> Answer:
     """The rule answer for `message`, from the tools `run` reaches. Never raises on a tool failure (it says what is missing).
-    `signal_v2`: flag `signal_language_v2` (handover 11l) - the teacher's "on your chart" lines in the signal language."""
+    `signal_v2`: flag `signal_language_v2` (handover 11l) - the teacher's "on your chart" lines in the signal language.
+    `flags`: the chat's own flags (CHAT_FLAGS) as the request read them; None = all on (the rule tests and the evals)."""
     job_id = route(message)
     if job_id == "refuse":
         out = Answer("refuse", "I can't do that")
@@ -1431,9 +1731,16 @@ async def answer(message: str, run: Runner, *, signal_v2: bool = False) -> Answe
         help_answer(out)
         return out
     job = BY_ID[job_id]
-    out = Answer(job.id, job.title, signal_v2=signal_v2)
+    out = Answer(job.id, job.title, signal_v2=signal_v2, flags=flags)
     if not job.built:
         not_built(out, job)
+        return out
+    gate = JOB_FLAGS.get(job.id)
+    if gate is not None and not out.flag_on(gate):
+        out.summary = [f"I don't know yet - {JOB_NOT_SET_UP[job.id]} on your account."]
+        if job.page:
+            out.action = {"label": job.page[0], "to": job.page[1]}
+        not_set_up(out, job.title, gate)
         return out
     await JOB_FNS[job.id](out, run, message)
     _grounded_lines(out, message)
@@ -1447,7 +1754,7 @@ async def market_line(run: Runner) -> Dict[str, Optional[str]]:
     """"Today's market in one line" from the context panel, or the plain reason it is empty."""
     res = await run("get_market_context", {})
     if not res.ok:
-        return {"line": None, "reason": f"Today's market line is not ready: {plain_reason(res.error)}.", "as_of": None}
+        return {"line": None, "reason": f"Today's market line is not ready: {plain_reason(res.error, res.source)}.", "as_of": None}
     tmp = Answer("brief", "")
     one = _context_lines(tmp, res)
     if not one:
@@ -1476,7 +1783,7 @@ PROMPT_VERSION = prompt_versions.version_of("copilot-chat", CHAT_PROMPT)
 # Jobs 3-5 explain the trader's own plan, positions and record: their AI wording must not instruct at all (the weekly
 # review's strict check, app/journal/review.advice_in: "you should", "consider", "next time", a sentence that opens with
 # a command...). On a finding the rule text stays.
-DESCRIBE_ONLY = frozenset({"trade_check", "positions", "review", "strategy"})
+DESCRIBE_ONLY = frozenset({"trade_check", "positions", "review", "strategy", "screen", "views"})
 
 
 async def narrate(provider: Any, out: Answer, question: str) -> Tuple[Optional[str], str]:

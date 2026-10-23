@@ -33,6 +33,18 @@ Rules (all tested in `frontend/src/settings/tradingDefaults.test.tsx` and `backe
 - The time exits are on the page, empty, and ATP never fills one in (SR-10, SR-C1).
 - Risk limits are a link to the Risk limits page, not a copy (they are tenant rows the server already enforces).
 
+## FNO-8B-28: my own liquidity limits (F&O), on the same page
+
+Owner decision of 23 Oct. The "Before you place" liquidity line keeps its default: the strike compared with the other
+strikes of the chain on screen (no fixed number). The page adds an optional override, OFF by default, in its own card:
+"Max bid-ask gap %" (above 0, up to 100) and "Min open interest" (a whole number). It is not a pre-fill, so it lives in
+its own prefs namespace `fno` (`liquidity: {on, max_spread_pct, min_oi}`, backend `FnoPrefs`; on needs a limit; no
+migration), saved by the same "Save my defaults" button and cleared by "Clear all". While on, the ticket's and the
+basket's liquidity line also says "Inside your own limits (...)", "Outside your own limits: ..." or that a limit cannot
+be checked there. Information only: nothing reads it to place or hold back an order, exits are never touched, and the
+server never reads the namespace (a test). Brokers and option tools show the spread and OI per strike and leave the
+judgement to the trader; this keeps that, with his own numbers when he wants them.
+
 ## C3: what other platforms preset, and what maps
 
 Research on 22 Oct. Only what maps to an existing ATP field was kept.

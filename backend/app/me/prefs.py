@@ -26,6 +26,10 @@
   `daily_rhythm` (Master Order 4) holds whether the daily digests also go to the user's own Telegram chat (OFF by
   default) and which of the four; the worker's "already sent" marks live in the internal row `daily_rhythm_sent`, which
   is not a namespace here (no route reads or writes it).
+  `fno` (FNO-8B-28, owner decision 23 Oct) holds the user's own liquidity limits for the F&O confirm step ("max bid-ask
+  spread %", "min open interest"), OFF by default. While they are on, the "Before you place" liquidity line also says
+  whether the strike is inside his own limits. Information only: the frontend reads it to word that line; no order path,
+  worker or risk check imports it, it never holds back an order and exits are never touched.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -271,9 +275,34 @@ class DailyRhythmPrefs(_Prefs):
     weekly: bool = True
 
 
+MAX_MIN_OI = 1_000_000_000
+
+
+class LiquidityLimits(_Prefs):
+    """FNO-8B-28: his own liquidity limits. Off (and empty) by default: the comparison with the chain on screen is the
+    default and stays. While `on`, at least one limit is set. The limits are kept when he turns them off, so turning
+    them on again brings them back."""
+    on: bool = False
+    max_spread_pct: Optional[float] = Field(default=None, gt=0, le=100, allow_inf_nan=False,
+                                            description="the widest bid-ask gap he accepts, as a percent of the price")
+    min_oi: Optional[int] = Field(default=None, ge=1, le=MAX_MIN_OI, description="the least open interest he accepts")
+
+    @model_validator(mode="after")
+    def _a_limit_when_on(self) -> "LiquidityLimits":
+        if self.on and self.max_spread_pct is None and self.min_oi is None:
+            raise ValueError("set a bid-ask limit or an open interest limit to turn your own limits on")
+        return self
+
+
+class FnoPrefs(_Prefs):
+    """`fno` (FNO-8B-28): the user's own F&O display settings. Read by the frontend only, to word the confirm step."""
+    liquidity: LiquidityLimits = Field(default_factory=LiquidityLimits)
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
-                                       "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs}
+                                       "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
+                                       "fno": FnoPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -406,4 +435,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "TOUR_IDS", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "TOUR_IDS", "FnoPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

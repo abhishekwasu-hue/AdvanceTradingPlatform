@@ -8,6 +8,7 @@
 import { request } from "../api/client";
 import type { ChainLeg, ChainRow } from "../optionChain/types";
 import { formatDateIST, formatINR, formatNumber, formatPrice } from "../ui/format";
+import type { LiquidityLimits } from "../settings/liquidityLimits";
 import type { ContractRight } from "./api";
 import type { RiskBudget, RiskLine } from "./insights";
 
@@ -110,10 +111,78 @@ function facts(l: LegLiquidity): string {
   return parts.join(", ");
 }
 
-/** The liquidity of the order's strike(s). `chainKnown` false (the ticket opened away from the chain): said plainly. */
-export function liquidityLine(items: readonly LegLiquidity[], chainKnown = true): RiskLine | null {
-  if (!chainKnown) return { tone: "info", note: LIQUIDITY_NOTE, text: NO_CHAIN };
+// FNO-8B-28: his own limits (an optional override, OFF by default; src/settings/liquidityLimits.ts). Only words: the line
+// says whether the strike is inside them; nothing reads it and it never holds back an order or an exit.
+export const LIMITS_NOTE = "From the chain on screen, compared with its other strikes and with your own limits.";
+
+const pctWord = (v: number) => {
+  const t = formatNumber(v, 2);
+  return `${t.includes(".") ? t.replace(/\.?0+$/, "") : t}%`;
+};
+
+/** His limits in words: "bid-ask gap up to 2%, open interest at least 5,000". */
+export function limitsText(limits: LiquidityLimits): string {
+  return [
+    limits.max_spread_pct !== null ? `bid-ask gap up to ${pctWord(limits.max_spread_pct)}` : null,
+    limits.min_oi !== null ? `open interest at least ${formatNumber(limits.min_oi, 0)}` : null,
+  ].filter(Boolean).join(", ");
+}
+
+export interface LimitCheck { outside: string[]; unknown: string[] }
+
+/** One leg against his own limits: what is outside them and what cannot be checked (each in plain words). */
+export function checkLimits(l: LegLiquidity, limits: LiquidityLimits): LimitCheck {
+  const outside: string[] = [];
+  const unknown: string[] = [];
+  if (limits.max_spread_pct !== null) {
+    const g = l.onScreen ? gapPct(l) : null;
+    if (g === null) unknown.push("the bid-ask gap");
+    else if (g > limits.max_spread_pct) outside.push(`bid-ask gap ${formatNumber(g, 1)}% is above your ${pctWord(limits.max_spread_pct)}`);
+  }
+  if (limits.min_oi !== null) {
+    if (!l.onScreen || l.oi === null) unknown.push("the open interest");
+    else if (l.oi < limits.min_oi) outside.push(`open interest ${formatNumber(l.oi, 0)} is below your ${formatNumber(limits.min_oi, 0)}`);
+  }
+  return { outside, unknown };
+}
+
+/** The sentence about his own limits for the leg(s), and whether any leg is outside them. */
+export function limitWords(items: readonly LegLiquidity[], limits: LiquidityLimits): { text: string; outside: boolean } {
+  const checks = items.map((l) => ({ l, c: checkLimits(l, limits) }));
+  const many = items.length > 1;
+  const out = checks.filter((x) => x.c.outside.length);
+  if (out.length) {
+    const parts = out.map((x) => (many ? `${x.l.label}: ` : "") + x.c.outside.join("; "));
+    return { outside: true, text: `Outside your own limits: ${parts.join(". ")}.` };
+  }
+  const unknown = checks.filter((x) => x.c.unknown.length);
+  if (unknown.length) {
+    const head = `Your own limits (${limitsText(limits)}) cannot be fully checked here`;
+    if (!many) {
+      const u = unknown[0].c.unknown;
+      return { outside: false, text: `${head}: ${u.join(" and ")} ${u.length > 1 ? "are" : "is"} not known.` };
+    }
+    return { outside: false, text: `${head}: not known for ${unknown.map((x) => `${x.l.label} (${x.c.unknown.join(" and ")})`).join(", ")}.` };
+  }
+  return { outside: false, text: `${many ? "Every leg is inside" : "Inside"} your own limits (${limitsText(limits)}).` };
+}
+
+/** The liquidity of the order's strike(s). `chainKnown` false (the ticket opened away from the chain): said plainly.
+ * `limits` (FNO-8B-28, only while he turned them on): the line also says whether the strike is inside his own limits. */
+export function liquidityLine(items: readonly LegLiquidity[], chainKnown = true, limits: LiquidityLimits | null = null): RiskLine | null {
+  const own = limits && limits.on && (limits.max_spread_pct !== null || limits.min_oi !== null) ? limits : null;
+  const note = own ? LIMITS_NOTE : LIQUIDITY_NOTE;
+  if (!chainKnown) {
+    return { tone: "info", note, text: own ? `${NO_CHAIN} Your own limits (${limitsText(own)}) cannot be checked here.` : NO_CHAIN };
+  }
   if (!items.length) return null;
+  const base = comparedLine(items);
+  if (!own) return base;
+  const w = limitWords(items, own);
+  return { tone: base.tone === "warn" || w.outside ? "warn" : "info", note, text: `${base.text} ${w.text}` };
+}
+
+function comparedLine(items: readonly LegLiquidity[]): RiskLine {
   const thin = items.map((l) => ({ l, p: problems(l) })).filter((x) => x.p.length);
   if (items.length === 1) {
     const [l] = items;

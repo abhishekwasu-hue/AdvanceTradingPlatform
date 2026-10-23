@@ -7,6 +7,7 @@ import type { ChainExpiry, LiveChain } from "../optionChain/types";
 import { PayoffCanvas } from "../optionsBuilder/PayoffCanvas";
 import type { Leg as BuilderLeg } from "../optionsBuilder/model";
 import { kiteFnoBasketLink, openBrokerAppLink } from "../proposals/brokerLinks";
+import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { formatNumber, formatPrice } from "../ui/format";
 import {
   basketApi, type BasketApi, type BasketNumbers, type BasketPreview, type BasketResult, type BasketSettings, type Product,
@@ -110,11 +111,13 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   // chain on screen (information only; the margin part is set beside each step's own margin figure below).
   const lastExpiry = legs.reduce<string | null>((m, l) => (m === null || l.expiry > m ? l.expiry : m), null);
   const events = useEventRisk(open && legs.length > 0, legs[0]?.underlying ?? chain.symbol, lastExpiry);
+  // FNO-8B-28: his own liquidity limits, only while he turned them on (the basket is a v2 page part); words only.
+  const limits = activeLimits(useLiquidityLimits(open && legs.length > 0, fetcher));
   const checks = useMemo<(RiskLine | null)[]>(() => [
     eventLine(events, lastExpiry),
     legs.length ? liquidityLine(legs.map((l) => legLiquidity(l.expiry === live?.expiry && l.underlying === chain.symbol ? rows : [], l.strike, l.right,
-      l.label ?? `${formatNumber(l.strike, 0)} ${l.right}`))) : null,
-  ], [events, lastExpiry, legs, live?.expiry, chain.symbol, rows]);
+      l.label ?? `${formatNumber(l.strike, 0)} ${l.right}`)), true, limits) : null,
+  ], [events, lastExpiry, legs, live?.expiry, chain.symbol, rows, limits]);
 
   useEffect(() => {
     if (!open) return undefined;

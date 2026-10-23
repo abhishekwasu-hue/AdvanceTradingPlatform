@@ -10,6 +10,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  * shown, can be switched off or changed, and empty defaults leave the request byte-identical.
  * - Baselines (NEW): `trading-defaults-v2-{1440,390,360}-{light,dark}.png` (the page with some defaults) and
  *   `paper-bot-defaults-v2-{1440,390}-{light,dark}.png` (the Start card with defaults). Other baselines are untouched.
+ * FNO-8B-28: the "My own liquidity limits (F&O)" card (namespace `fno`), OFF by default, saved with the same button; the
+ *   baselines show it turned on with both limits.
  * Every reply is made up (e2e/fixtures/setup_v2.json strategies, the defaults below): no real account or id.
  * After an intended change: `npx playwright test --project=phone e2e/trading-defaults-v2.e2e.ts --update-snapshots`.
  */
@@ -24,10 +26,13 @@ const SOME = { ...EMPTY, instrument_kind: "OPTION", option_strategy: "SINGLE", o
 const TODAY_BODY = { strategy_id: "orb_15m_5m", symbol: "NIFTY BANK", exchange: "NSE", timeframe: "1min", mode: "PAPER", holding: "INTRADAY",
   instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1 };
 
-interface Server { prefs: unknown | null; version: number; sent: { method: string; url: string; raw: string | null }[] }
+const LIMITS_OFF = { liquidity: { on: false, max_spread_pct: null, min_oi: null } };
+const LIMITS_ON = { liquidity: { on: true, max_spread_pct: 2.5, min_oi: 5000 } };
 
-async function open(page: Page, path: string, o: { theme?: "light" | "dark"; prefs?: unknown | null; features?: Record<string, boolean> } = {}): Promise<Server> {
-  const server: Server = { prefs: o.prefs === undefined ? null : o.prefs, version: o.prefs ? 3 : 0, sent: [] };
+interface Server { prefs: unknown | null; version: number; fno: unknown; fnoVersion: number; sent: { method: string; url: string; raw: string | null }[] }
+
+async function open(page: Page, path: string, o: { theme?: "light" | "dark"; prefs?: unknown | null; fno?: unknown; features?: Record<string, boolean> } = {}): Promise<Server> {
+  const server: Server = { prefs: o.prefs === undefined ? null : o.prefs, version: o.prefs ? 3 : 0, fno: o.fno ?? LIMITS_OFF, fnoVersion: o.fno ? 2 : 0, sent: [] };
   await page.clock.install({ time: new Date(NOW) });
   await page.addInitScript((theme) => {
     try {
@@ -38,13 +43,19 @@ async function open(page: Page, path: string, o: { theme?: "light" | "dark"; pre
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: { ...(F.features as Record<string, boolean>), ...(o.features ?? {}) }, brokers: F.token_status as unknown[] });
   await mockDashboard(page, { me: true });
-  await page.route(api("/me/prefs(/trading_defaults)?(\\?.*)?$"), (route) => {
+  await page.route(api("/me/prefs(/trading_defaults|/fno)?(\\?.*)?$"), (route) => {
     const r = route.request();
     if (r.method() === "GET") {
       // prefs null: the namespace was never saved (the server's empty defaults, version 0)
-      return route.fulfill({ json: { prefs: { trading_defaults: server.prefs ?? EMPTY }, versions: { trading_defaults: server.version } } });
+      return route.fulfill({ json: { prefs: { trading_defaults: server.prefs ?? EMPTY, fno: server.fno },
+        versions: { trading_defaults: server.version, fno: server.fnoVersion } } });
     }
     server.sent.push({ method: r.method(), url: r.url(), raw: r.postData() });
+    if (r.url().includes("/me/prefs/fno")) {
+      server.fno = r.postDataJSON();
+      server.fnoVersion += 1;
+      return route.fulfill({ json: { namespace: "fno", value: server.fno, version: server.fnoVersion } });
+    }
     server.prefs = r.postDataJSON();
     server.version += 1;
     return route.fulfill({ json: { namespace: "trading_defaults", value: server.prefs, version: server.version } });
@@ -70,6 +81,8 @@ async function open(page: Page, path: string, o: { theme?: "light" | "dark"; pre
 const SHOT = { animations: "disabled" as const, fullPage: true, maxDiffPixelRatio: 0.02, timeout: 15_000 };
 const startCard = (page: Page) => page.locator("[data-block='start']");
 const posts = (s: Server) => s.sent.filter((c) => c.url === "/deployments");
+const defaultsSaves = (s: Server) => s.sent.filter((c) => c.url.includes("/me/prefs/trading_defaults"));
+const limitSaves = (s: Server) => s.sent.filter((c) => c.url.includes("/me/prefs/fno"));
 
 for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, { name: "390", width: 390, height: 844, mobile: true },
   { name: "360", width: 360, height: 780, mobile: true }]) {
@@ -78,8 +91,9 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
 
     for (const theme of ["light", "dark"] as const) {
       test(`the page looks the same (${theme})`, async ({ page }) => {
-        await open(page, "/settings/trading-defaults", { theme, prefs: SOME });
+        await open(page, "/settings/trading-defaults", { theme, prefs: SOME, fno: LIMITS_ON });
         await expect(page.getByRole("heading", { level: 1 })).toHaveText("My trading defaults");
+        await expect(page.locator("main").getByLabel("Max bid-ask gap %")).toHaveValue("2.5");
         await expect(page).toHaveScreenshot(`trading-defaults-v2-${size.name}-${theme}.png`, SHOT);
       });
 
@@ -94,7 +108,7 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
 
     if (size.mobile) {
       test("no sideways scroll, 44 px targets, nothing hidden behind the bottom bar", async ({ page }) => {
-        await open(page, "/settings/trading-defaults", { prefs: SOME });
+        await open(page, "/settings/trading-defaults", { prefs: SOME, fno: LIMITS_ON });
         await expectPhoneLayout(page);
       });
     }
@@ -124,16 +138,44 @@ test.describe("My trading defaults behaviour", () => {
     await main.getByLabel("Trailing stop %").fill("1.5");
     await main.getByRole("button", { name: "Save my defaults" }).click();
     await expect(main.locator("[data-note='defaults-note']")).toContainText("Saved.");
-    expect(server.sent).toHaveLength(1);
-    expect(server.sent[0].url).toContain("/me/prefs/trading_defaults?version=0");
-    const body = JSON.parse(server.sent[0].raw ?? "{}") as Record<string, unknown>;
+    expect(defaultsSaves(server)).toHaveLength(1);
+    expect(defaultsSaves(server)[0].url).toContain("/me/prefs/trading_defaults?version=0");
+    expect(limitSaves(server).map((c) => JSON.parse(c.raw ?? "{}"))).toEqual([LIMITS_OFF]);     // his limits stay off
+    const body = JSON.parse(defaultsSaves(server)[0].raw ?? "{}") as Record<string, unknown>;
     expect(body).toEqual({ ...EMPTY, instrument_kind: "OPTION", expiry_rule: "NEXT", max_lots: 2,
       exit_rules: { trailing_stop_pct: 1.5, break_even_at_r: null, time_exit_minutes: null, time_exit_at: null } });
     for (const k of ["mode", "broker_name", "routing_policy", "order_style", "holding"]) expect(body).not.toHaveProperty(k);
 
     await main.getByRole("button", { name: "Clear all" }).click();
     await expect(main.locator("[data-note='defaults-note']")).toContainText("Your defaults are cleared.");
-    expect(JSON.parse(server.sent[1].raw ?? "{}")).toEqual(EMPTY);
+    expect(JSON.parse(defaultsSaves(server)[1].raw ?? "{}")).toEqual(EMPTY);
+  });
+
+  test("FNO-8B-28: his own liquidity limits are off by default, need a limit to turn on, save to their own place and clear", async ({ page }) => {
+    const server = await open(page, "/settings/trading-defaults");
+    const main = page.locator("main");
+    const card = main.locator("[data-block='liquidity']");
+    await expect(card).toContainText("compared with the other strikes on the chain");
+    await expect(card).toContainText("Information only: it never holds back an order or an exit.");
+    const on = card.getByLabel("Use my own limits too");
+    await expect(on).not.toBeChecked();
+    await expect(card.getByLabel("Max bid-ask gap %")).toHaveCount(0);
+    await on.check();
+    await main.getByRole("button", { name: "Save my defaults" }).click();
+    await expect(main.locator("[data-note='defaults-note']")).toHaveText("Set a max bid-ask gap or a min open interest to use your own limits.");
+    expect(server.sent).toEqual([]);
+    await card.getByLabel("Max bid-ask gap %").fill("2.5");
+    await card.getByLabel("Min open interest").fill("5,000");
+    await main.getByRole("button", { name: "Save my defaults" }).click();
+    await expect(main.locator("[data-note='defaults-note']")).toHaveText("Saved. Your own liquidity limits are on; new forms start with the usual settings.");
+    expect(limitSaves(server)).toHaveLength(1);
+    expect(limitSaves(server)[0].url).toContain("/me/prefs/fno?version=0");
+    expect(JSON.parse(limitSaves(server)[0].raw ?? "{}")).toEqual(LIMITS_ON);
+    await page.reload();
+    await expect(page.locator("main [data-block='liquidity']").getByLabel("Min open interest")).toHaveValue("5000");
+    await page.locator("main").getByRole("button", { name: "Clear all" }).click();
+    await expect(page.locator("main [data-note='defaults-note']")).toContainText("Your defaults are cleared.");
+    expect(JSON.parse(limitSaves(server)[1].raw ?? "{}")).toEqual(LIMITS_OFF);
   });
 
   test("the entry choice shows only while approval-only entries is on", async ({ page }) => {

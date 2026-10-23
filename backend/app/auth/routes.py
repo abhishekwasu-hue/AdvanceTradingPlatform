@@ -17,10 +17,10 @@ from app.auth.lockout import HISTORY_LIMIT, is_new_device, recent_failures, reco
 from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, REFRESH_COOKIE_NAME, REFRESH_TOKEN_DAYS, REFRESH_TOKEN_IN_BODY
 from app.auth.passwords import MAX_LENGTH, MIN_LENGTH, password_problem
 from app.webhooks.routes import hash_webhook_token
-from app.auth.sessions import IssuedTokens, revoke_all_sessions, revoke_session, rotate_refresh_token, start_session
+from app.auth.sessions import IssuedTokens, revoke_all_sessions, revoke_session, rotate_refresh_token, session_is_live, start_session
 from app.auth.security import hash_password, hash_password_async, verify_password_async
 from app.core.enums import UserRole
-from app.core.rate_limit import rate_limit
+from app.core.rate_limit import allow as rate_allow, rate_limit, user_rate_limit
 from app.db.models import (
     AlertChannelRecord, LoginEventRecord, PasswordResetRecord, Tenant, TenantInviteRecord, User, UserSessionRecord,
 )
@@ -49,10 +49,20 @@ _DUMMY_PASSWORD_HASH = hash_password("not-a-real-password-used-only-for-timing-p
 # one fake IP, so leaving these active would rate-limit the test suite itself, not just an
 # attacker. See tests/test_auth_api.py, which disables both by default, and
 # tests/test_rate_limiting.py, which re-enables them to test the 429 behavior itself.
-register_rate_limit = rate_limit("auth_register", limit=10, window_seconds=60)
-login_rate_limit = rate_limit("auth_login", limit=10, window_seconds=60)
+# A4: every refusal is a plain sentence that says how long to wait (and a Retry-After header).
+register_rate_limit = rate_limit("auth_register", limit=10, window_seconds=60,
+                                 message="Too many sign-up attempts from this network. Please wait a minute and try again.")
+login_rate_limit = rate_limit("auth_login", limit=10, window_seconds=60,
+                              message="Too many sign-in attempts from this network. Please wait a minute and try again.")
 refresh_rate_limit = rate_limit("auth_refresh", limit=60, window_seconds=60)   # P0.3: every page load refreshes once (shared office IPs)
-forgot_rate_limit = rate_limit("auth_forgot", limit=5, window_seconds=900)
+forgot_rate_limit = rate_limit("auth_forgot", limit=5, window_seconds=900,
+                               message="Too many password-reset requests from this network. Please wait 15 minutes and try again.")
+# A4 (review A4 notes): per ACCOUNT, on top of the per-IP limit, so one person's inbox cannot be flooded from many
+# networks. Over the limit the answer stays the same 202 (no account enumeration); no e-mail is sent.
+FORGOT_PER_ACCOUNT = (3, 3600)
+# A4: guessing the current password with a stolen sign-in is slowed per account.
+password_change_rate_limit = user_rate_limit("auth_password_change", limit=5, window_seconds=900,
+                                             message="Too many password-change attempts. Please wait 15 minutes and try again.")
 
 
 class RegisterRequest(BaseModel):
@@ -298,10 +308,15 @@ async def me(user: User = Depends(get_current_user)) -> UserResponse:
 
 # --- Phase N3: email verification -----------------------------------------------------------------
 
-verify_rate_limit = rate_limit("auth_verify_email", limit=5, window_seconds=300)
+verify_rate_limit = rate_limit("auth_verify_email", limit=5, window_seconds=300,
+                               message="Too many verification attempts from this network. Please wait 5 minutes and try again.")
+# A4: per account as well, so one inbox is not flooded from many networks.
+resend_user_rate_limit = user_rate_limit("auth_verify_resend_user", limit=3, window_seconds=3600,
+                                         message="We have already sent several verification e-mails. Check your inbox (and spam), "
+                                                 "or wait an hour and send a fresh one.")
 
 
-@router.post("/verify-email/resend", dependencies=[Depends(verify_rate_limit)])
+@router.post("/verify-email/resend", dependencies=[Depends(verify_rate_limit), Depends(resend_user_rate_limit)])
 async def resend_verification(http_request: Request, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     if user.email_verified_at is not None:
         return {"sent": False, "already_verified": True}
@@ -453,6 +468,25 @@ async def logout_everywhere(
     await session.commit()
 
 
+class LogoutOthersResponse(BaseModel):
+    signed_out: int
+
+
+@router.post("/logout-others", response_model=LogoutOthersResponse)
+async def logout_other_devices(
+    user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
+    session: AsyncSession = Depends(get_session),
+) -> LogoutOthersResponse:
+    """A4: ends every other session of this user and keeps this device signed in (for "I signed in somewhere I should
+    not have" without having to sign in again here)."""
+    if session_id is None:
+        raise HTTPException(status_code=400, detail="Sign in again, then try once more")
+    count = await revoke_all_sessions(session, user.id, "logout other devices", except_session_id=session_id)
+    await write_audit_log(session, user.tenant_id, user.id, "user_logout_others", f"{count} session(s)")
+    await session.commit()
+    return LogoutOthersResponse(signed_out=count)
+
+
 @router.get("/sessions", response_model=list[SessionResponse])
 async def list_sessions(
     user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
@@ -469,7 +503,7 @@ async def list_sessions(
             created_at=_as_utc(r.created_at).isoformat(), last_used_at=_as_utc(r.last_used_at).isoformat(),
             expires_at=_as_utc(r.expires_at).isoformat(),
         )
-        for r in rows if _as_utc(r.expires_at) > datetime.now(timezone.utc)
+        for r in rows if session_is_live(r)                # A4: past the absolute cap is not a live device either
     ]
 
 
@@ -578,7 +612,7 @@ async def forgot_password(request: ForgotPasswordRequest, http_request: Request,
     When the user's organisation has an email alert channel the link is sent through it;
     otherwise the organisation owner can generate one from the Team tab."""
     user = await session.scalar(select(User).where(User.email == request.email.lower()))
-    if user is not None and user.is_active:
+    if user is not None and user.is_active and await rate_allow("auth_forgot_account", f"u{user.id}", *FORGOT_PER_ACCOUNT):
         token, _ = await _issue_reset(session, user, http_request, None)
         link = app_link(http_request, reset=token)
         delivered = await _email_reset_link(session, user, link)
@@ -632,7 +666,7 @@ async def reset_password(token: str, request: ResetPasswordRequest, http_request
     return _token_response(issued, response)
 
 
-@router.post("/password/change", response_model=TokenResponse)
+@router.post("/password/change", response_model=TokenResponse, dependencies=[Depends(password_change_rate_limit)])
 async def change_password(
     request: ChangePasswordRequest, http_request: Request, response: Response,
     user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
@@ -660,7 +694,13 @@ async def change_password(
 
 # --- Two-factor authentication (Phase C3) --------------------------------------------------------
 
-mfa_rate_limit = rate_limit("auth_mfa", limit=10, window_seconds=60)
+mfa_rate_limit = rate_limit("auth_mfa", limit=10, window_seconds=60,
+                            message="Too many code attempts from this network. Please wait a minute and try again.")
+# A4: the signed-in code checks (step-up, enrol confirm, backup codes, turning it off) are also limited per account, so a
+# stolen sign-in cannot guess codes from many networks. The sign-in code check is held by the login lockout instead.
+mfa_user_rate_limit = user_rate_limit("auth_mfa_user", limit=10, window_seconds=300,
+                                      message="Too many code attempts. Please wait 5 minutes, then enter the current code "
+                                              "from your authenticator app.")
 
 
 class MfaVerifyRequest(BaseModel):
@@ -743,7 +783,7 @@ async def mfa_enrol(user: User = Depends(get_current_user), session: AsyncSessio
     return MfaEnrolResponse(secret=secret, otpauth_uri=mfa.provisioning_uri(secret, user.email))
 
 
-@router.post("/mfa/confirm", response_model=MfaBackupCodesResponse)
+@router.post("/mfa/confirm", response_model=MfaBackupCodesResponse, dependencies=[Depends(mfa_rate_limit), Depends(mfa_user_rate_limit)])
 async def mfa_confirm(
     request: MfaCodeRequest, user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
     session: AsyncSession = Depends(get_session),
@@ -769,7 +809,7 @@ async def mfa_confirm(
     return MfaBackupCodesResponse(backup_codes=codes)
 
 
-@router.post("/mfa/step-up", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(mfa_rate_limit)])
+@router.post("/mfa/step-up", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(mfa_rate_limit), Depends(mfa_user_rate_limit)])
 async def mfa_step_up(
     request: MfaCodeRequest, user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
     session: AsyncSession = Depends(get_session),
@@ -791,7 +831,7 @@ async def mfa_step_up(
     await session.commit()
 
 
-@router.post("/mfa/backup-codes", response_model=MfaBackupCodesResponse, dependencies=[Depends(mfa_rate_limit)])
+@router.post("/mfa/backup-codes", response_model=MfaBackupCodesResponse, dependencies=[Depends(mfa_rate_limit), Depends(mfa_user_rate_limit)])
 async def mfa_regenerate_backup_codes(
     request: MfaCodeRequest, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> MfaBackupCodesResponse:
@@ -806,7 +846,7 @@ async def mfa_regenerate_backup_codes(
     return MfaBackupCodesResponse(backup_codes=codes)
 
 
-@router.post("/mfa/disable", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(mfa_rate_limit)])
+@router.post("/mfa/disable", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(mfa_rate_limit), Depends(mfa_user_rate_limit)])
 async def mfa_disable(
     request: MfaDisableRequest, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> None:

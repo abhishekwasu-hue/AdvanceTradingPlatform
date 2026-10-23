@@ -221,6 +221,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Z10-f (docs/design/Z10_LAUNCH_HARDENING.md): the how-to support bot over the help and legal pages. No tools (reads
     # no positions, touches no order), refuses advice, hands low-confidence questions to the feedback form. OFF: 404.
     "support_bot": "Support bot: how-to answers from the help and legal pages (no advice, no account data, no orders)",
+    # C12 (docs/design/READINESS_REVIEW.md): the Help centre (searchable, from the help pages, the glossary and the page
+    # tours) under Settings > Help & tips, "Report a problem" with its context capture into the feedback inbox, and the
+    # support WhatsApp / e-mail link while the market is open. Needs ui_v2. OFF: the routes answer 404, nothing shows.
+    "help_centre": "Help centre, Report a problem and the support contact link (needs ui_v2)",
     # Z10-f: the public legal pages (Privacy notice, Terms of use, Risk disclosure), the acceptance box on sign-up and
     # team join, and the acceptance banner. OFF: the routes answer 404 and sign-up is unchanged. Refused while a document
     # still has an open [PLACEHOLDER] unless the operator overrides (`override_open_placeholders`).
@@ -266,6 +270,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # page's "What the chain shows" summary (app/option_chain/dish.py). OFF: /api/markets/* answers 404, the page is not
     # in the navigation and the option chain shows no summary. Information only, places no orders.
     "markets_view": "Sector & index view (index and sector moves, breadth, strongest and weakest stocks) and the option chain's plain-words summary (information only)",
+    # B8 (readiness, docs/design/MOBILE_PUSH.md): phone notifications to the Android app (FCM) for signals, approvals,
+    # exits and renew reminders, each opening its screen. OFF: the device routes answer 404 (X-Feature-Disabled) and no
+    # phone delivery is queued. Also needs the server's FCM key (FCM_SERVICE_ACCOUNT_JSON_BASE64). Places no orders.
+    "mobile_push": "Phone notifications in the Android app (signals, approvals, exits, renew reminders), each opening its screen",
     # U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards - publicly described methods with a screen
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.

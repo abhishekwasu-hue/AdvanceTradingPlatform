@@ -417,10 +417,10 @@ def _install(monkeypatch, broker, used=None):
     monkeypatch.setattr(candles_routes, "build_adapter", build)
 
 
-def _store_snapshot(underlying: str, chain_: OptionChain, captured_at: datetime) -> None:
+def _store_snapshot(underlying: str, chain_: OptionChain, captured_at: datetime, tenant_id: Optional[int] = None) -> None:
     async def go():
         async with _session_factory() as session:
-            snap = OISnapshotRecord(underlying=underlying, trade_date=_ist_today(), slot_start=captured_at, captured_at=captured_at,
+            snap = OISnapshotRecord(tenant_id=tenant_id, underlying=underlying, trade_date=_ist_today(), slot_start=captured_at, captured_at=captured_at,
                                     expiry=date.fromisoformat(chain_.expiry), underlying_price=chain_.underlying_ltp, strikes=len(chain_.rows),
                                     source="test")
             session.add(snap)
@@ -531,9 +531,9 @@ def test_ok_returns_the_six_analyses_with_the_session_history(monkeypatch):
     headers, me = _v2_owner("ok")
     _store_credentials(me)
     now = datetime.now(UTC)
-    _store_snapshot(name, OptionChain(underlying=name, expiry=expiry, underlying_ltp=116.0, rows=REFERENCE.rows), now - timedelta(minutes=40))
+    _store_snapshot(name, OptionChain(underlying=name, expiry=expiry, underlying_ltp=116.0, rows=REFERENCE.rows), now - timedelta(minutes=40), me["tenant_id"])
     other = (_ist_today() + timedelta(days=14)).isoformat()      # another expiry: not part of this chain's session
-    _store_snapshot(name, OptionChain(underlying=name, expiry=other, underlying_ltp=116.0, rows=[row(100, 1, 9999)]), now - timedelta(minutes=30))
+    _store_snapshot(name, OptionChain(underlying=name, expiry=other, underlying_ltp=116.0, rows=[row(100, 1, 9999)]), now - timedelta(minutes=30), me["tenant_id"])
     res = client.get(URL, headers=headers, params={"symbol": name.lower(), "expiry": expiry})
     assert res.status_code == 200, res.text
     body = res.json()
@@ -598,7 +598,7 @@ def test_own_broker_tier_reads_no_shared_history(monkeypatch):
         assert refused["message"]
         _store_credentials(me)                                   # the user's own session at a broker
         _store_snapshot(name, OptionChain(underlying=name, expiry=EXPIRY, underlying_ltp=116.0, rows=REFERENCE.rows),
-                        datetime.now(UTC) - timedelta(minutes=10))
+                        datetime.now(UTC) - timedelta(minutes=10), me["tenant_id"])
         body = client.get(URL, headers=headers, params={"symbol": name}).json()
         assert body["state"] == "ok" and used == [me["tenant_id"]]
         assert body["session"]["snapshots"] == 0 and "own-broker" in body["session"]["note"]

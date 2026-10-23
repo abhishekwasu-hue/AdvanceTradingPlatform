@@ -65,6 +65,9 @@ ROUTES_REACHING_BROKER_ORDERS: Dict[Tuple[str, str], str] = {
     ("POST", "/api/positions/{trade_id}/exit-now"):
         "\"Exit now\" on the caller's own position; LIVE is refused before any close (approval.exit_now), so only a PAPER "
         "close runs - the graph keeps the edge because close_group can look a broker up",
+    ("POST", "/api/paper/fno/basket/close-filled"):
+        "TM Part 7 \"Close the filled legs\": the caller's own legs through approval.exit_now one by one (shorts first), "
+        "so LIVE is refused before any close exactly as for Exit now - an exit only (ADR-0004)",
     ("POST", "/api/kill-switch/emergency-exit"):
         "the tenant's emergency stop: engages the kill switch, then closes its open positions (exit, ADR-0004)",
     ("POST", "/api/ai/actions/{action_id}/approve"):

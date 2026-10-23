@@ -3563,6 +3563,22 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
 
+## 23 Oct - Terminal master Part 9.4: chain history, start recording now (+ TM-7 fix of the OI collector)
+
+- Branch `claude/terminal-chain-history` (from main). **Migration `250d796123b7`** (additive, rollback-safe; deploy after
+  15:30 IST). Flag `chain_history` (off by default) - the owner switches it on for his organisation.
+- `app/market_lake/chain_store.py` (tenant-private store, zlib JSON codec, reads that require the tenant, admin counts and
+  gaps), `chain_recorder.py` (one slot per `CHAIN_HISTORY_SLOT_MINUTES` through the owner's own session, the calendar,
+  `acquire_spare` on the worker's budget), `chain_history_routes.py` (`/api/chain-history/coverage|day|range`,
+  `/api/admin/chain-history/status`); worker hook `_maybe_start_chain_history`; retention `RETENTION_CHAIN_HISTORY_DAYS`
+  (0 = kept, TM-8); `OptionChainRow` gamma / theta / vega (Upstox sends them); Upstox reads the SENSEX / BANKEX chain
+  from the BSE master.
+- TM-7 OI collector: each organisation's slots through its own session, stored and read per tenant; pre-fix rows only
+  for the confirmed owner. Every OI reader takes the tenant.
+- Admin > System "Chain history" card; `admin-system-v2-*` baselines updated.
+- Docs: `docs/design/CHAIN_HISTORY.md`, DATA_SOURCES line, OPEN_QUESTIONS `TM94-1..7`.
+
+
 ## 23 Oct - User-friendly pass item 1: "Verify your email" leaves the top bar
 
 - Branch `claude/ufp-verify-email` (from main), shipped first on the owner's word. Frontend only, **no migration**, no flag.
@@ -3724,4 +3740,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Parity: `tests/test_tm1_paper_adapter.py` (router 60 seeded signals; whole pipeline ticket -> trail -> position ->
   exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
 - Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
+
+## 23 Oct - Terminal master Part 7, PR B: smart execution (TM-3 / TM-9 / TM-10 / TM-11, README row 20)
+
+- Branched from PR A (#467, not merged). Flag `smart_execution` (OFF, behind `ui_v2`; catalog "ready", in the trader pack).
+- `app/execution/smart_execution.py`: hedge-first entry and shorts-first exit, `run()` with INCOMPLETE + "Complete the
+  rest" / "Close the filled legs", freeze slicing, marketable limit where market orders are refused, margin view
+  (broker basket margin or the labelled estimate, free balance after), physical-settlement flags.
+- `app/instruments/freeze_limits.py` + `data/freeze_limits.json` (NSE circular, source and as-of in the file;
+  `FREEZE_LIMITS_FILE` loads the exchange's sheet). Router adapter path slices inside one order.
+- `BrokerInterface.get_basket_margin` (Upstox, Kite; wrappers forward); `BrokerCapabilities.market_orders_allowed`.
+- Basket: `smart_view` on preview, `execute_smart`, `POST /basket/close-filled`; `GET /api/paper/fno/settlement`;
+  `app/paper/settlement_watch.py` + worker step (once a day per position, `SETTLEMENT_WARNING`). Prefs `smart_execution`.
+- Frontend `src/fno/SmartExecutionV2.tsx` (confirm block, incomplete card, Delivery ahead on Positions), ticket slicing line.
+- Tests `tests/test_tm7_smart_execution.py`, `src/fno/smartExecution.test.tsx`. Screenshots (fixtures, not committed):
+  scratchpad `tm-part7/`. Questions SE-4..SE-8. No migration.
 

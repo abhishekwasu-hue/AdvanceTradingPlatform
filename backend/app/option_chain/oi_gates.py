@@ -46,14 +46,17 @@ class GateResult:
     passed: List[str] = field(default_factory=list)
 
 
-async def _session_ranges(session: AsyncSession, underlying: str, before: date, settings: OIRegimeSettings, days: int) -> List[oi_regime.DayIv]:
-    """Past sessions (newest last): their last ATM IV and their range from the sampled underlying prices."""
+async def _session_ranges(session: AsyncSession, tenant_id: int, underlying: str, before: date, settings: OIRegimeSettings,
+                          days: int) -> List[oi_regime.DayIv]:
+    """Past sessions of this organisation's stored slots (newest last): their last ATM IV and their range from the
+    sampled underlying prices."""
     out: List[oi_regime.DayIv] = []
+    scope = await snapshots.tenant_scope(session, OISnapshotRecord.tenant_id, tenant_id)
     trade_days = list(await session.scalars(select(OISnapshotRecord.trade_date).where(
-        OISnapshotRecord.underlying == underlying, OISnapshotRecord.trade_date < before).group_by(OISnapshotRecord.trade_date)
+        scope, OISnapshotRecord.underlying == underlying, OISnapshotRecord.trade_date < before).group_by(OISnapshotRecord.trade_date)
         .order_by(OISnapshotRecord.trade_date.desc()).limit(days * 3)))
     for d in sorted(trade_days):
-        slots = await snapshots.day_chains(session, underlying, d)
+        slots = await snapshots.day_chains(session, underlying, d, tenant_id=tenant_id)
         prices = [s.chain.underlying_ltp for s in slots if s.chain.underlying_ltp]
         if not prices:
             continue
@@ -61,13 +64,14 @@ async def _session_ranges(session: AsyncSession, underlying: str, before: date, 
     return out
 
 
-async def _previous_close(session: AsyncSession, underlying: str, before: date, settings: OIRegimeSettings):
-    """The previous session's last slot totals (for the OI-price matrix)."""
+async def _previous_close(session: AsyncSession, tenant_id: int, underlying: str, before: date, settings: OIRegimeSettings):
+    """The previous session's last slot totals of this organisation (for the OI-price matrix)."""
+    scope = await snapshots.tenant_scope(session, OISnapshotRecord.tenant_id, tenant_id)
     prev_day = await session.scalar(select(func.max(OISnapshotRecord.trade_date)).where(
-        OISnapshotRecord.underlying == underlying, OISnapshotRecord.trade_date < before))
+        scope, OISnapshotRecord.underlying == underlying, OISnapshotRecord.trade_date < before))
     if prev_day is None:
         return None
-    slots = await snapshots.day_chains(session, underlying, prev_day)
+    slots = await snapshots.day_chains(session, underlying, prev_day, tenant_id=tenant_id)
     if not slots:
         return None
     step = oi_regime.resolve_strike_step(settings, slots[-1].chain)
@@ -86,11 +90,11 @@ async def check_entry(session: AsyncSession, tenant_id: int, underlying: str, di
 
     settings = await snapshots.settings_for(session, tenant_id, underlying)
     day = now.astimezone(IST).date()
-    latest_capture = await snapshots.latest_capture(session, underlying)
+    latest_capture = await snapshots.latest_capture(session, underlying, tenant_id=tenant_id)
     if oi_regime.is_stale(latest_capture, now, settings.stale_after_minutes):
         block(f"OI data for {underlying} is missing or older than {settings.stale_after_minutes:g} minutes")
         return result
-    slots = await snapshots.day_chains(session, underlying, day)
+    slots = await snapshots.day_chains(session, underlying, day, tenant_id=tenant_id)
     timeline = snapshots.replay(underlying, slots, settings, day)
     if not timeline:
         block(f"no OI snapshot for {underlying} today")
@@ -116,12 +120,12 @@ async def check_entry(session: AsyncSession, tenant_id: int, underlying: str, di
                 block("IV change gate: limit is not set (OI banner settings)")
                 continue
             today_iv = oi_regime.atm_iv(slots[-1].chain) if not oi_regime.is_stale(latest.captured_at, now, settings.iv_max_age_minutes) else None
-            history = await _session_ranges(session, underlying, day, settings, settings.iv_lookback_days)
+            history = await _session_ranges(session, tenant_id, underlying, day, settings, settings.iv_lookback_days)
             change = oi_regime.iv_change_from_average(today_iv, history, day, settings.iv_lookback_days, settings.marubozu_threshold)
             ok, _, reason = oi_regime.check_iv_change_gate(change, settings.iv_change_max_pct)
             (result.passed.append(gate) if ok else block(reason))
         elif gate == "SWING_OI":
-            prev = await _previous_close(session, underlying, day, settings)
+            prev = await _previous_close(session, tenant_id, underlying, day, settings)
             matrix = oi_regime.compute_oi_price_matrix(totals.total_call_oi + totals.total_put_oi,
                                                        (prev.total_call_oi + prev.total_put_oi) if prev else None,
                                                        totals.underlying_price, prev.underlying_price if prev else None)
@@ -132,7 +136,7 @@ async def check_entry(session: AsyncSession, tenant_id: int, underlying: str, di
         elif gate == "OI_WALL":
             level = oi_regime.find_psychological_level(totals.underlying_price, direction, oi_regime.psychological_round_to(settings, totals.strike_step))
             target = round(level / totals.strike_step) * totals.strike_step
-            base = (await snapshots.baselines(session, underlying, day)).get(float(target))
+            base = (await snapshots.baselines(session, underlying, day, tenant_id=tenant_id)).get(float(target))
             side = 0 if direction == Direction.BEARISH.value else 1
             ok, detail = oi_regime.check_oi_wall_confirmation(slots[-1].chain.rows, level, direction, totals.strike_step, base[side] if base else None)
             (result.passed.append(gate) if ok else block(f"OI wall gate: no {detail.side} OI added at {detail.target_strike:g} since the open"

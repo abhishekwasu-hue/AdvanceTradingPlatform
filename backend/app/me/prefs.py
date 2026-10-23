@@ -30,6 +30,9 @@
   spread %", "min open interest"), OFF by default. While they are on, the "Before you place" liquidity line also says
   whether the strike is inside his own limits. Information only: the frontend reads it to word that line; no order path,
   worker or risk check imports it, it never holds back an order and exits are never touched.
+  `smart_execution` (terminal master Part 7) holds the user's own numbers for the smart-execution rules: when the
+  physical-settlement warning starts and how near the money counts, whether it also goes to Telegram, and the protection
+  band of a marketable limit where a broker takes no market orders. Read by `app/execution/smart_execution.py`.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -299,10 +302,24 @@ class FnoPrefs(_Prefs):
     liquidity: LiquidityLimits = Field(default_factory=LiquidityLimits)
 
 
+class SmartExecutionPrefs(_Prefs):
+    """`smart_execution` (terminal master order Part 7): the user's own numbers for the smart-execution rules - the
+    physical-settlement warning (how many days before expiry, how near the money counts, Telegram or not) and the
+    protection band of a marketable limit where a broker takes no market orders (TM-3). The defaults are the settings'
+    starting values, shown on Settings; the rules read only these (no fixed number in a rule). Information and order
+    style only: never holds back an order, never touches an exit (ADR-0004)."""
+    settlement_days_before: int = Field(default=4, ge=0, le=30, description="days before expiry the delivery warning starts")
+    settlement_band_pct: float = Field(default=2.0, ge=0, le=20, allow_inf_nan=False,
+                                       description="an option this close to its strike (% of the strike) counts as near the money")
+    settlement_telegram: bool = True
+    protection_band_pct: float = Field(default=0.5, ge=0.05, le=5, allow_inf_nan=False,
+                                       description="a marketable limit this far past the price, where market orders are not allowed")
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
-                                       "fno": FnoPrefs}
+                                       "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -435,4 +452,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "TOUR_IDS", "FnoPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "TOUR_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

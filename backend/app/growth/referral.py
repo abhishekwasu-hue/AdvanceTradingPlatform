@@ -54,7 +54,7 @@ async def get_settings(session: AsyncSession) -> ReferralSettings:
     try:
         return ReferralSettings(reward_text=str(raw.get("reward_text") or ""))
     except ValueError:
-        return ReferralSettings()
+        return ReferralSettings(reward_text="")
 
 
 async def save_settings(session: AsyncSession, admin: User, body: ReferralSettings) -> ReferralSettings:

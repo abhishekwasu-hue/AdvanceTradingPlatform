@@ -3295,3 +3295,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `test_z11_deploy_bundle.py`; vitest `StatusLink.test.tsx`, `alertsPanel.test.tsx`; e2e `ops-alerts-v2.e2e.ts` with
   baselines at 360 / 390 / 1440 light / dark; `admin-system-v2-*` baselines refreshed (the Alerts card is new).
 
+## 23 Oct - Chart + colour order, Part 3 PR 1: the colour tokens
+
+- Branch `claude/colour-tokens` (from main). Frontend only, **no migration**, no flag (no page changes).
+- `frontend/src/styles/tokens.css`: `--range`, `--range-track`, `--info-tint`, `--ai-tint` (light, dark, colour-blind);
+  the v2-only navy dark surfaces under `:root[data-shell="v2"]` (inert until adoption); colour-blind warn / AI values.
+- `tailwind.config.js` names; the v2 colour check's hint text; the Tokens story lists the new meanings (CC-1 wording).
+- `src/ui/tokens.test.ts`: the new contrast pairs (text 4.5, UI parts 3), navy variants, the distinct-hue test.
+- e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
+

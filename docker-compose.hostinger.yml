@@ -6,8 +6,14 @@
 #
 # What it adds - the 8 GB budget (docs/OPERATIONS.md "Resource budget - 8 GB host"):
 #   * a memory limit per container, so one runaway process is killed instead of the whole host swapping;
-#   * Postgres sized for ~2 GB (shared_buffers 512 MB, work_mem 8 MB, 60 connections) - the WAL archiving of the
-#     base file is repeated here because `command` replaces the whole list;
+#   * Postgres sized for ~2 GB (shared_buffers 512 MB, work_mem 8 MB, 60 connections). `command` replaces the base
+#     file's whole list, so its WAL settings are repeated here - with archiving OFF by default (A1, review R1: nothing
+#     pruned the archive and it held raw database pages). PG_ARCHIVE_MODE=on in .env turns point-in-time recovery on;
+#     deploy/atp.sh then schedules the encrypted weekly base backup that prunes it (runbook section 6c). The daily
+#     encrypted dump stays the recovery point either way;
+#   * backup retention (A1): 7 daily dumps, 4 weekly, 6 monthly (BACKUP_RETENTION_DAYS / BACKUP_KEEP_MIN,
+#     BACKUP_KEEP_WEEKLY, BACKUP_KEEP_MONTHLY), the same counts on R2 (scripts/backup/offsite_prune.sh), never removing
+#     an object inside the bucket lock (OFFSITE_LOCK_DAYS);
 #   * Redis capped at 384 MB, evicting only keys that expire (caches, rate windows) - never a key without a TTL;
 #   * the Caddyfile chosen by CADDYFILE: `Caddyfile` (a domain, Let's Encrypt) or `Caddyfile.ip` (no domain yet:
 #     the server's IP with Caddy's own internal certificate - the browser warns once);
@@ -27,7 +33,7 @@ x-limits: &small
 services:
   postgres:
     command: ["postgres",
-              "-c", "wal_level=replica", "-c", "archive_mode=on", "-c", "archive_timeout=300",
+              "-c", "wal_level=replica", "-c", "archive_mode=${PG_ARCHIVE_MODE:-off}", "-c", "archive_timeout=300",
               "-c", "archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f",
               "-c", "shared_buffers=${PG_SHARED_BUFFERS:-512MB}",
               "-c", "effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}",
@@ -37,6 +43,9 @@ services:
               "-c", "random_page_cost=1.1",
               "-c", "effective_io_concurrency=200"]
     shm_size: 256m
+    # A changed setting above (archive_mode is one) recreates the container on the next deploy: room for a clean
+    # shutdown (the image stops Postgres with SIGINT, a fast shutdown) instead of the 10 s default.
+    stop_grace_period: ${PG_STOP_GRACE:-60s}
     deploy:
       resources:
         limits:
@@ -99,6 +108,14 @@ services:
       - caddy_config:/config
 
   backup:
+    environment:
+      # A1 retention (runbook section 11): daily dumps older than BACKUP_RETENTION_DAYS go, never below BACKUP_KEEP_MIN;
+      # the first dump of each week / month is also kept in weekly/ and monthly/ (scripts/backup/backup.sh).
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+      BACKUP_KEEP_MIN: ${BACKUP_KEEP_MIN:-7}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-4}
+      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-6}
+      BASE_BACKUP_KEEP: ${BASE_BACKUP_KEEP:-4}
     deploy:
       resources:
         limits:
@@ -124,9 +141,19 @@ services:
       RCLONE_CONFIG_B2_TYPE: b2
       RCLONE_CONFIG_B2_ACCOUNT: ${OFFSITE_B2_KEY_ID:-}
       RCLONE_CONFIG_B2_KEY: ${OFFSITE_B2_APPLICATION_KEY:-}
-    volumes:
+      # A1: the same counts on R2 (scripts/backup/offsite_prune.sh, run by deploy/atp.sh backup). OFFSITE_LOCK_DAYS
+      # must be at least the bucket lock's retention: nothing younger than it + 1 day is ever asked to go.
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+      BACKUP_KEEP_MIN: ${BACKUP_KEEP_MIN:-7}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-4}
+      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-6}
+      BACKUP_FILES_KEEP: ${BACKUP_FILES_KEEP:-14}
+      BASE_BACKUP_KEEP: ${BASE_BACKUP_KEEP:-4}
+      OFFSITE_KEEP_PRE_MIGRATION: ${OFFSITE_KEEP_PRE_MIGRATION:-6}
+      OFFSITE_LOCK_DAYS: ${OFFSITE_LOCK_DAYS:-14}
+    # A1: no wal_archive mount - the WAL archive never leaves the host (scripts/backup/offsite_sync.sh).
+    volumes: !override
       - ./scripts/backup:/scripts:ro
       - backups:/backups:ro
-      - wal_archive:/wal_archive:ro
       - ${OFFSITE_LOCAL_DIR:-/var/backups/atp-offsite}:/offsite_local
       - ${OFFSITE_RESTORE_DIR:-/var/backups/atp-restore-test}:/restore

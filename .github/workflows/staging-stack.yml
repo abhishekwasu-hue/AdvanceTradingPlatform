@@ -8,6 +8,8 @@
 #               scenarios at their p95 limits, 0.5 s for reads; login apart - p95 <= 2 s and no failed login; both pass)
 #   rollback    deploy/atp.sh itself on a throwaway clone: deploy N -> N+1 (migration) -> rollback -> verify; then a
 #               non-rollback-safe migration: code-only rollback refused, --restore-db
+#   offsite     A1 (review R2): deploy/atp.sh with an S3 stand-in for R2 - backup --verify to the bucket and back, the
+#               server lost, a new clone from the escrowed values alone, restore-offsite, deploy, the old user logs in
 #
 # When: on push to main, on demand (Actions -> "Staging stack (Phase 0 exit criteria)" -> Run workflow), and on a push
 # to any branch that changes the stack itself. Not on pull requests: about 25-35 runner minutes per job, three jobs,
@@ -274,4 +276,33 @@ jobs:
           path: |
             ${{ runner.temp }}/atp-rehearsal/rollback_report.md
             ${{ runner.temp }}/atp-rehearsal/logs
+          if-no-files-found: ignore
+
+  offsite:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Free runner disk (the release's images)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+
+      - name: Off-site restore rehearsal with deploy/atp.sh (backup --verify to S3, server lost, restore-offsite, deploy)
+        run: deploy/ci/offsite_rehearsal.sh --down
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo "## Off-site restore rehearsal"; cat "$RUNNER_TEMP/atp-offsite/offsite_report.md"; } >> "$GITHUB_STEP_SUMMARY" || true
+          grep -E '^\| ' "$RUNNER_TEMP/atp-offsite/offsite_report.md" | sed -n '3,40p' | while IFS= read -r line; do echo "::notice title=offsite::$line"; done || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: offsite-rehearsal
+          path: |
+            ${{ runner.temp }}/atp-offsite/offsite_report.md
+            ${{ runner.temp }}/atp-offsite/logs
           if-no-files-found: ignore

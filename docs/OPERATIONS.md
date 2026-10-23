@@ -56,11 +56,15 @@ assumption.
 ### 1.2a Point-in-time recovery (Phase O5)
 
 - **Continuous WAL archiving** is on in `docker-compose.yml` (`archive_mode=on`, five-minute
-  `archive_timeout`, segments copied into the `wal_archive` volume). Copy that volume off the host
-  with the dumps.
-- **Weekly base backup**: `docker compose run --rm --entrypoint sh backup /scripts/base_backup.sh` (or from
-  cron). It writes `backups/base/<stamp>/`, keeps the newest `BASE_BACKUP_KEEP` (4) and prunes WAL
-  older than the oldest kept base backup. Alert when `LAST_BASE_BACKUP_OK` is older than 8 days.
+  `archive_timeout`, segments copied into the `wal_archive` volume). On the Hostinger host it is **off**
+  unless `PG_ARCHIVE_MODE=on` is in `.env` (A1, `docs/deploy/HOSTINGER_RUNBOOK.md` section 6c). The
+  archive holds raw database pages: it is never copied off the host (the off-site copy does not mount it).
+- **Weekly base backup**: on Hostinger `deploy/atp.sh base-backup` (scheduled every Saturday when
+  `PG_ARCHIVE_MODE=on`); elsewhere `docker compose run --rm --entrypoint sh backup /scripts/base_backup.sh`
+  (or from cron). It writes `backups/base/<stamp>/` (encrypted and sealed when
+  `BACKUP_ENCRYPTION_PASSPHRASE` is set, the first WAL file in `start_wal`), keeps the newest
+  `BASE_BACKUP_KEEP` (4) and prunes WAL older than the oldest kept base backup. Alert when
+  `LAST_BASE_BACKUP_OK` is older than 8 days (`atp.sh health` fails then).
 - **Recover to an instant** (e.g. just before a bad bulk change at 11:04 IST):
   1. stop the API and worker (`docker compose stop backend worker`);
   2. `docker compose run --rm -v atp_pitr:/pitr --entrypoint sh backup /scripts/pitr_restore.sh latest "2026-09-28 11:03:30+05:30" /pitr`;

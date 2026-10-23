@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -190,3 +191,42 @@ def test_a_database_url_without_a_user_is_refused_rather_than_read_as_the_superu
     assert subprocess.run(["sh", str(SCRIPTS / "backup.sh")], env=env, capture_output=True, text=True).returncode == 0
     run = subprocess.run(["sh", str(SCRIPTS / "verify_backup.sh"), "latest"], env=env, capture_output=True, text=True)
     assert run.returncode == 1 and "names no user" in run.stderr and "restoring" not in run.stderr
+
+
+def test_restore_rehearsal_from_the_off_site_copy_alone_into_a_clean_database(tmp_path):
+    """A1 (review R2): the server is lost. With only the bucket and the escrowed passphrase: fetch the newest dump,
+    check its seal, decrypt and restore it into a NEW empty database, then the copy matches and its audit chain holds.
+    The bucket is a local directory behind a stand-in rclone (the CI staging job runs the same with real rclone against
+    an S3 endpoint: deploy/ci/offsite_rehearsal.sh)."""
+    from tests.test_a1_offsite_backup import FAKE_RCLONE
+    bindir = tmp_path / "bin"; bindir.mkdir()
+    (bindir / "rclone").write_text(FAKE_RCLONE); (bindir / "rclone").chmod(0o755)
+    env = _env(tmp_path / "backups", BACKUP_ENCRYPTION_PASSPHRASE="FAKEFAKE-a1-rehearsal", PATH=f"{bindir}:{os.environ['PATH']}",
+               FAKE_BUCKET=str(tmp_path / "bucket"), FAKE_RCLONE_LOG=str(tmp_path / "rclone.log"), OFFSITE_REMOTE="offsite:atp-backups")
+    assert subprocess.run(["sh", str(SCRIPTS / "backup.sh")], env=env, capture_output=True, text=True).returncode == 0
+    sync = subprocess.run(["sh", str(SCRIPTS / "offsite_sync.sh"), "--once"], env=env, capture_output=True, text=True)
+    assert sync.returncode == 0, sync.stderr
+    shutil.rmtree(tmp_path / "backups")                                               # the server and its disk are gone
+    fetched = subprocess.run(["sh", str(SCRIPTS / "offsite_fetch.sh"), str(tmp_path / "restore")], env={**env, "OFFSITE_REQUIRE_ENCRYPTED": "1"},
+                             capture_output=True, text=True)
+    assert fetched.returncode == 0, fetched.stderr
+    dump = fetched.stdout.strip().splitlines()[-1]
+    assert dump.endswith(".dump.enc") and Path(dump + ".hmac").exists() and b"PGDMP" not in Path(dump).read_bytes()
+    clean = f"a1_clean_{os.getpid()}"
+    clean_url = DB_URL.rsplit("/", 1)[0] + "/" + clean
+    _psql(f'DROP DATABASE IF EXISTS "{clean}"'); _psql(f'CREATE DATABASE "{clean}"')
+    try:
+        wrong = subprocess.run(["sh", str(SCRIPTS / "restore.sh"), dump, clean_url.replace("postgresql+asyncpg://", "postgresql://")],
+                               env={**env, "BACKUP_ENCRYPTION_PASSPHRASE": "not-the-escrowed-value", "RESTORE_CONFIRM": "yes"}, capture_output=True, text=True)
+        assert wrong.returncode == 1 and "does not match its seal" in wrong.stderr
+        assert _psql("select count(*) from pg_tables where schemaname = 'public'", clean) == "0"   # nothing written
+        ok = subprocess.run(["sh", str(SCRIPTS / "restore.sh"), dump, clean_url.replace("postgresql+asyncpg://", "postgresql://")],
+                            env={**env, "RESTORE_CONFIRM": "yes"}, capture_output=True, text=True)
+        assert ok.returncode == 0 and "seal verified" in ok.stderr, ok.stderr
+        for sql in ("select version_num from alembic_version", "select count(*) from tenants", "select count(*) from audit_logs"):
+            assert _psql(sql, clean) == _psql(sql), sql
+        chain = subprocess.run([sys.executable, "-m", "app.audit.verify_chain"], cwd=Path(__file__).resolve().parents[1],
+                               env={**os.environ, "DATABASE_URL": clean_url}, capture_output=True, text=True)
+        assert chain.returncode == 0, chain.stdout + chain.stderr
+    finally:
+        _psql(f'DROP DATABASE IF EXISTS "{clean}"')

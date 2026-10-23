@@ -92,6 +92,11 @@ whitelisting - §6).
 
 ## 5. Backups (H-2: Cloudflare R2)
 
+> **Superseded (A1, 23 Oct 2026):** the current steps are `docs/deploy/HOSTINGER_RUNBOOK.md` sections 6, 6a, 6b, 6c
+> and 11. On Hostinger the WAL archive is now off and never copied to R2; R2 is pruned by `atp.sh` by count, so the
+> 35-day lifecycle rule below must **not** be added (it would delete the monthly copies). This section is kept for
+> the history of the earlier blocks.
+
 | What | How | Where |
 |---|---|---|
 | Daily Postgres dump (encrypted, SHA-256) | compose `backup` service (24 h), retention 14 days | volume `backups` |

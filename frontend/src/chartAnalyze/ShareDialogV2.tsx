@@ -58,10 +58,11 @@ export default function ShareDialogV2({ item, onClose, onChanged }: { item: Anal
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title="Share with my organisation" description={SHARE_EXPLAINER}
-      footer={link ? <>
+      footer={link ? <div className="flex w-full min-w-0 flex-wrap justify-end gap-2">
+        {/* Wraps on a narrow phone with a wide system font instead of running past the dialog's edge. */}
         <Button className="h-11 md:h-9" onClick={() => void run("make")} loading={busy === "make"}>Make a new link</Button>
         <Button variant="primary" className="h-11 md:h-9" icon={<Copy size={16} aria-hidden />} onClick={() => void copy()}>{copied ? "Copied" : "Copy link"}</Button>
-      </> : <>
+      </div> : <>
         <Button className="h-11 md:h-9" onClick={onClose}>Cancel</Button>
         <Button variant="primary" className="h-11 md:h-9" loading={busy === "make"} onClick={() => void run("make")}>Create link</Button>
       </>}>

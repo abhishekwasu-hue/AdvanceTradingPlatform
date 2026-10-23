@@ -671,7 +671,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "alembic" / "versions" / "d7f9b1c3e5a8_tpl_exits_as_settings.py"
 
 
-def test_the_migration_is_additive_rollback_safe_reversible_and_the_one_head():
+def test_the_migration_is_additive_rollback_safe_reversible_and_on_the_one_head_chain():
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
@@ -680,14 +680,16 @@ def test_the_migration_is_additive_rollback_safe_reversible_and_the_one_head():
     spec = importlib.util.spec_from_file_location("tpl10_migration", MIGRATION)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module.revision == "d7f9b1c3e5a8" and module.down_revision == "b5d7f9a1c3e6" and module.ROLLBACK_SAFE is True
+    assert module.revision == "d7f9b1c3e5a8" and module.down_revision == "c6e8a0b2d4f7" and module.ROLLBACK_SAFE is True
     source = MIGRATION.read_text(encoding="utf-8")
     assert risky_operations(source) == [] and not hasattr(module, "ROLLBACK_SAFE_REASON")
     assert not [p for p in lint() if p.startswith(MIGRATION.name)]
     for column in module.COLUMNS:
         assert f"sa.Column('{column}'" in source and f"drop_column('strategy_deployments', '{column}')" in source
     assert source.count("nullable=True") == 5 and "server_default" not in source and "nullable=False" not in source
-    assert ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini"))).get_heads() == ["d7f9b1c3e5a8"]
+    script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
+    heads = script.get_heads()                     # one head, with this revision on its chain (View as user chains after it)
+    assert len(heads) == 1 and "d7f9b1c3e5a8" in {r.revision for r in script.walk_revisions("base", heads[0])}
 
 
 def test_the_model_columns_match_the_migration_and_are_nullable():

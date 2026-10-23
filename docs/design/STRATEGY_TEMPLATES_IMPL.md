@@ -292,8 +292,8 @@ would be a new version (not part of this decision).
 
 ## TPL-10: section 5 "exits as settings" (owner decision 2026-10-23: approved, additive migration, after 15:30)
 
-Same flag `strategy_templates` (OFF), PAPER only. ONE additive migration `d7f9b1c3e5a8` (chained on CP6-15's
-`b5d7f9a1c3e6` for now; part of the one migration block). Owner questions TPL-X1..X6; WAVE-11 partly done.
+Same flag `strategy_templates` (OFF), PAPER only. ONE additive migration `d7f9b1c3e5a8` (chained on LAB-18's
+`c6e8a0b2d4f7` in the 23 Oct migration block). Owner questions TPL-X1..X6; WAVE-11 partly done.
 
 | Part | Where | Status |
 |---|---|---|

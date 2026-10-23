@@ -1,7 +1,7 @@
 """Strategy templates section 5: exits as settings - the template deployment's stop_source / target_rule and their values
 
 Revision ID: d7f9b1c3e5a8
-Revises: b5d7f9a1c3e6 (CP6-15 - chained on it for now; the coordinator re-chains it after LAB-18 at merge, one block)
+Revises: c6e8a0b2d4f7 (LAB-18 - re-chained after it in the 23 Oct migration block)
 Create Date: 2026-10-23 16:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'd7f9b1c3e5a8'
-down_revision: Union[str, Sequence[str], None] = 'b5d7f9a1c3e6'
+down_revision: Union[str, Sequence[str], None] = 'c6e8a0b2d4f7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - five nullable columns with no default; NULL means "as before" (the template's invalidation as

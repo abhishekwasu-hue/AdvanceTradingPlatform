@@ -22,7 +22,7 @@ export class FakePriceScale {
   range: { from: number; to: number } | null = { from: 90, to: 110 };
   constructor(private readonly chart: FakeChart, readonly id: string) {}
   width() { return 0; }
-  options() { return this.opts; }
+  options() { return this.opts as Options & { autoScale: boolean; mode: number }; }
   applyOptions(o: Options) { this.opts = deepMerge(this.opts, o); this.chart.calls.push(`priceScale.applyOptions:${this.id}`); }
   setAutoScale(on: boolean) { this.applyOptions({ autoScale: on }); }
   getVisibleRange() { return this.range; }
@@ -61,6 +61,7 @@ export class FakeSeries {
   removePriceLine(l: FakePriceLine) { this.priceLines = this.priceLines.filter((x) => x !== l); }
   priceToCoordinate(p: number) { return 1000 - p; }
   coordinateToPrice(y: number) { return 1000 - y; }
+  priceFormatter() { return { format: (p: number) => p.toFixed(2) }; }
   subscribeDataChanged() {}
   unsubscribeDataChanged() {}
   attachPrimitive() {}

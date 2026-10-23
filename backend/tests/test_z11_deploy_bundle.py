@@ -257,6 +257,9 @@ if sub == "exec":
     if svc == "backend":
         if cmd[:2] == ["test", "-f"]:
             finish()
+        if cmd[:2] == ["python", "scripts/deploy_audit.py"]:              # A3: the untested deploy's audit row, reason on stdin
+            st.setdefault("audit", []).append({"argv": cmd[2:], "reason": sys.stdin.readline().strip(), "release": rel})
+            finish()
         if cmd[:2] == ["python", "scripts/check_secrets_key.py"]:
             out.append("secrets key: ok - 2 organisation data keys open"); finish()
         if cmd[:2] == ["python", "scripts/ops_check.py"]:                  # A2: the host facts arrive on stdin
@@ -436,6 +439,39 @@ with open(os.environ["FAKE_STATE"]) as fh:
     st = json.load(fh)
 args = sys.argv[1:]
 url = [a for a in args if a.startswith("http")][-1]
+if url.startswith("https://api.github.com/"):        # A3: the public GitHub API the deploy gate reads (no token)
+    gh = st["github"]
+    gh["calls"].append(url)
+    with open(os.environ["FAKE_STATE"], "w") as fh:
+        json.dump(st, fh)
+    assert not any(a.lower().startswith("authorization") for a in args), "the gate sends no token"
+    if gh.get("down"):
+        print("curl: (6) Could not resolve host: api.github.com", file=sys.stderr); sys.exit(6)
+    path, _, query = url.split("/repos/", 1)[1].partition("?")
+    repo, _, rest = path.partition("/actions/")
+    q = dict(kv.split("=", 1) for kv in query.split("&") if "=" in kv)
+    if repo != gh["repo"]:
+        print("curl: (22) The requested URL returned error: 404", file=sys.stderr); sys.exit(22)
+    def runs_for(sha):
+        if sha in gh["commits"]:
+            return gh["commits"][sha]
+        return gh["default"] if gh["default"] is not None else []
+    def public(run):
+        return {k: v for k, v in run.items() if k != "jobs"}
+    every = [r for sha in gh["commits"] for r in gh["commits"][sha]]
+    if rest == "runs":
+        print(json.dumps({"workflow_runs": [public(dict(r, head_sha=q["head_sha"])) for r in runs_for(q["head_sha"])]})); sys.exit(0)
+    if rest.startswith("runs/") and rest.endswith("/jobs"):
+        rid = int(rest.split("/")[1])
+        run = [r for r in every + (gh["default"] or []) if r["id"] == rid][0]
+        print(json.dumps({"jobs": [{"name": n, "status": "completed" if c not in ("in_progress", "queued") else c,
+                                    "conclusion": None if c in ("in_progress", "queued") else c} for n, c in run["jobs"].items()]})); sys.exit(0)
+    if rest.startswith("workflows/") and rest.endswith("/runs"):
+        wf = rest.split("/")[1]
+        ok = [dict(public(r), head_sha=sha) for sha in reversed(list(gh["commits"])) for r in gh["commits"][sha]
+              if r["path"].endswith("/" + wf) and r["conclusion"] == q.get("status")]
+        print(json.dumps({"workflow_runs": ok})); sys.exit(0)
+    print("curl: (22) The requested URL returned error: 404", file=sys.stderr); sys.exit(22)
 backend = st["running"].get("backend")
 db_rev = st["databases"][st["db_name"]]["rev"]
 up = backend is not None and backend["release"] not in st["bad_releases"]
@@ -465,6 +501,25 @@ if url.endswith("/health/deep"):
     sys.exit(0)
 sys.exit(22)
 '''
+
+
+CI_JOBS = ("lint", "backend", "backend-lookahead", "perf", "frontend", "container-scan")
+STACK_JOBS = ("gate", "acceptance", "load-500", "rollback", "offsite")
+
+
+def ci_runs(base_id, ci=None, stack=None, ci_status="completed", stack_status="completed", only=None):
+    """A3: what the GitHub API holds for one main commit - a CI run and a staging-stack run, every job passed unless
+    `ci` / `stack` name other conclusions ({job: "failure" | "in_progress" | ...}); `only` keeps those workflows."""
+    out = []
+    for n, (wf, names, over, status) in enumerate((("ci.yml", CI_JOBS, ci, ci_status), ("staging-stack.yml", STACK_JOBS, stack, stack_status))):
+        if only is not None and wf not in only:
+            continue
+        jobs = {j: "success" for j in names}
+        jobs.update(over or {})
+        bad = [c for c in jobs.values() if c not in ("success", "skipped", "in_progress", "queued")]
+        out.append({"id": base_id * 10 + n, "path": f".github/workflows/{wf}", "status": status,
+                    "conclusion": None if status != "completed" else ("failure" if bad else "success"), "jobs": jobs})
+    return out
 
 
 def _git(cwd, *args, env=None):
@@ -512,6 +567,8 @@ class Host:
                       "bucket_files_dir": str(tmp / "bucket-files"), "restore_dir": str(self.restore_dir),
                       "hmacs": {}, "held": [], "terminated": [], "safety_checks": [], "chain_checked": [], "rollback_safe": True,
                       "session": {"open_sessions": [], "open_positions": 0, "orders_since": 0, "now_ist": "2026-10-11 20:00"},
+                      # A3: every commit passed its checks on main unless a test says otherwise (ci_runs / Host.ci)
+                      "github": {"repo": "example-owner/atp", "calls": [], "down": False, "commits": {}, "default": ci_runs(9)},
                       "posture": {"live_trading": {"on": False, "tenants": 0, "stored": True},
                                   "phase0_paper_only": {"known": True, "on": True, "stored": True}, "stored_on": ["phase0_paper_only"]}}
         self.save()
@@ -532,7 +589,7 @@ class Host:
         values = {"POSTGRES_USER": "atp_user", "POSTGRES_DB": "advance_trading_platform", "DOMAIN": "203.0.113.7",
                   "ACME_EMAIL": "ops@localhost", "CADDYFILE": "Caddyfile.ip", "OFFSITE_REMOTE": "offsite:atp-backups",
                   "OFFSITE_RESTORE_DIR": str(self.restore_dir), "OFFSITE_LOCAL_DIR": str(self.tmp / "offsite-local"),
-                  "BACKUP_EXTRA_DIRS": "", **SECRETS, **(extra or {})}
+                  "BACKUP_EXTRA_DIRS": "", "CI_GATE_REPO": "example-owner/atp", **SECRETS, **(extra or {})}
         lines = [f"{k}={v}" for k, v in values.items() if k not in drop]
         env = self.dir / ".env"
         env.write_text("# fake host .env\n" + "\n".join(lines) + "\n")
@@ -545,6 +602,14 @@ class Host:
 
     def save(self):
         self.state_path.write_text(json.dumps(self.state))
+
+    def ci(self, sha, runs, default=False):
+        """A3: set what the GitHub API says about `sha`; default=None stops passing every other commit."""
+        self.load()
+        self.state["github"]["commits"][sha] = runs
+        if default is None:
+            self.state["github"]["default"] = None
+        self.save()
 
     def load(self):
         self.state = json.loads(self.state_path.read_text())
@@ -1553,3 +1618,89 @@ def test_ops_check_skips_while_a_deploy_or_backup_holds_the_lock(host):
         holder.wait()
     assert res.returncode == 0 and "ops-check skipped" in res.stdout
     assert "ops_check_input" not in host.state
+
+
+# --- A3: the deploy gate (review R3, RDY-9) -------------------------------------------------------------------------
+def _gate_log(host):
+    p = host.dir / ".deploy" / "gate.log"
+    return p.read_text() if p.exists() else ""
+
+
+def test_a_commit_whose_checks_failed_on_main_is_refused_before_anything_changes(host):
+    host.ci(host.sha_a, ci_runs(1))
+    host.ci(host.sha_b, ci_runs(2, ci={"backend": "failure"}), default=None)
+    head = _git(host.dir, "rev-parse", "HEAD")
+    res = host.run("deploy")
+    assert res.returncode == 2, res.all
+    assert "did not pass its checks: CI job 'backend' failure" in res.all and "Nothing was changed" in res.all
+    assert f"The newest commit that passed: {host.sha_a[:12]}" in res.all and f"atp.sh deploy {host.sha_a[:12]}" in res.all
+    assert "ATP_ALLOW_UNTESTED=1 ATP_UNTESTED_REASON=" in res.all                  # the emergency way is named
+    assert host.mutating() == [] and _git(host.dir, "rev-parse", "HEAD") == head and not (host.dir / ".deploy/current").exists()
+    assert f"refused {host.sha_b} fail" in _gate_log(host)
+    assert all("api.github.com/repos/example-owner/atp/" in u for u in host.state["github"]["calls"])
+    res = host.run("deploy", host.sha_a[:12])                                       # the one it named goes out
+    assert res.returncode == 0, res.all
+    assert f"{host.sha_a[:12]} passed every required check on main" in res.all and f"pass {host.sha_a}" in _gate_log(host)
+
+
+def test_checks_still_running_or_never_run_refuse_with_a_plain_message(host):
+    host.ci(host.sha_b, ci_runs(2, stack={"acceptance": "in_progress"}, stack_status="in_progress"), default=None)
+    res = host.run("deploy")
+    assert res.returncode == 2 and "the checks for" in res.all and "staging stack still running" in res.all
+    assert "Run the same command again once they finish" in res.all and host.mutating() == []
+    host.ci(host.sha_b, ci_runs(2, only=("staging-stack.yml",)))                   # main CI cancelled before it started
+    res = host.run("deploy")
+    assert res.returncode == 2 and "has no CI result on main" in res.all and host.mutating() == []
+
+
+def test_the_known_red_load_test_does_not_block_and_the_list_is_a_setting(host):
+    host.ci(host.sha_b, ci_runs(2, stack={"load-500": "failure"}), default=None)
+    res = host.run("deploy")
+    assert res.returncode == 0, res.all
+    assert "known red on main, allowed by CI_GATE_KNOWN_RED: staging stack 'load-500'" in res.all
+    host.write_env(extra={"CI_GATE_KNOWN_RED": ""})                               # the owner empties the list in .env
+    res = host.run("deploy")
+    assert res.returncode == 2 and "'load-500' failure" in res.all
+
+
+def test_github_unreachable_refuses_by_default_and_the_override_needs_a_reason(host):
+    host.load(); host.state["github"]["down"] = True; host.save()
+    res = host.run("deploy")
+    assert res.returncode == 1 and "GitHub could not be reached" in res.all and "Try again in a few minutes" in res.all
+    assert host.mutating() == [] and len(host.state["github"]["calls"]) == 1
+    host.state["github"]["calls"] = []; host.save()
+    res = host.run("deploy", extra_env={"ATP_ALLOW_UNTESTED": "1", "ATP_UNTESTED_REASON": "   "})
+    assert res.returncode == 2 and "needs a reason" in res.all and host.mutating() == []
+    reason = "login page broken for every user; CI runner outage"
+    res = host.run("deploy", extra_env={"ATP_ALLOW_UNTESTED": "1", "ATP_UNTESTED_REASON": reason + "\x1b"})
+    assert res.returncode == 0, res.all
+    assert f"WITHOUT checking its tests (ATP_ALLOW_UNTESTED=1) - reason: {reason}" in res.all
+    assert f"untested {host.sha_b} {reason}" in _gate_log(host)                     # the deploy log
+    assert host.state["audit"] == [{"argv": ["deploy_untested", host.sha_b], "reason": reason, "release": host.sha_b[:12]}]
+    assert "the untested deploy is in the audit trail" in res.all
+    assert host.state["github"]["calls"] == []                                      # the override asks nothing
+    res = host.run("health")
+    assert f"{host.sha_b[:12]} was deployed WITHOUT its tests passing" in res.all and reason in res.all
+    assert "checks on main before each deploy" in host.run("releases").stdout
+    host.load(); host.state["github"]["down"] = False; host.save()
+    assert host.run("deploy").returncode == 0                                       # a checked converge clears the warning
+    assert "deployed WITHOUT" not in host.run("health").all
+
+
+def test_the_gate_needs_to_know_the_repository(host):
+    host.write_env(drop=("CI_GATE_REPO",))                                          # origin here is a local path, not GitHub
+    res = host.run("deploy")
+    assert res.returncode == 2 and "set CI_GATE_REPO=owner/name in .env" in res.all and host.mutating() == []
+
+
+def test_the_rehearsals_and_the_deploy_line_keep_to_the_gate():
+    for rehearsal in ("rollback_rehearsal.sh", "offsite_rehearsal.sh"):
+        text = (ROOT / "deploy" / "ci" / rehearsal).read_text()
+        assert "ATP_ALLOW_UNTESTED=1 ATP_UNTESTED_REASON=" in text, rehearsal     # its commits have no CI result yet
+    text = ATP_SH.read_text()
+    assert text.index('ci_gate "$sha" "$ref"') < text.index('run git -C "$ATP_DIR" checkout -q --detach "$sha"')
+    assert "ci_gate" not in text[text.index("cmd_rollback() {"):text.index("cmd_backup() {")]   # rollback is never gated
+    template = (ROOT / ".github" / "pull_request_template.md").read_text()
+    for line in ("**Migration:**", "**Rollback-safe:**", '/opt/atp/deploy/atp.sh deploy && /opt/atp/deploy/atp.sh health',
+                 "## Self-review notes", "## Screenshots"):
+        assert line in template

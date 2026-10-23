@@ -3424,6 +3424,27 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   baselines at 360 / 390 / 1440 light / dark; `admin-system-v2-*` baselines refreshed (the Alerts card is new).
 
 
+## 23 Oct - Production readiness A4: security
+
+- Branch `claude/readiness-a4-security`. **No migration** (the session cap reads `user_sessions.created_at`), no new
+  flag; one new route `POST /api/auth/logout-others` (own account, in the tenancy table).
+- MFA: `require_mfa_session` on the review's SUPER_ADMIN routes outside the admin routers (news-feed sources / refresh,
+  member verify-email, go-live list + evidence, market holidays add / remove, `/api/system/encryption`,
+  `/api/audit-logs/verify`); `ensure_admin_write_step_up` for GLOBAL risk limits, market events for every organisation
+  and shared company profiles; a sweep test fails on any SUPER_ADMIN-only route without two-factor.
+- `MFA_STEP_UP_MINUTES` (30): admin writes need a recent check, reads a checked session; engaging the global kill switch
+  needs a checked session only. Web: `StepUpHost` (admins) asks for the code once and `api/client.ts` repeats the change.
+- `SESSION_MAX_DAYS` (90): absolute cap from sign-in, on every request and refresh. "Log out other devices" in the
+  session list; devices in plain words (`auth/deviceLabel.ts`).
+- Rate limits: per account on forgot (silent), verify resend, the signed-in code checks and password change; plain 429
+  sentences with `Retry-After`; the AI limiter on `POST /api/news-feed/classify` and the journal's narrated review.
+- Headers: the API's own (`_SecurityHeaders` in `main.py`, HSTS over HTTPS only); `atp.sh health` checks `/` and the API,
+  plus Permissions-Policy and `frame-ancestors`. CI: `container-scan` without `needs`; backup + redis / caddy / rclone
+  images scanned report only. Runbook 6d: rotation of every server secret by name, linked to the 6a escrow.
+- Pen-test scope document handed to the owner outside the repository. Questions RDY-28..32; RDY-3 built as its default.
+- Tests: `test_a4_security.py` (28), `test_z11_deploy_bundle.py` header case; vitest `api/stepUp.test.ts`,
+  `auth/deviceLabel.test.ts`, `components/StepUpHost.test.tsx`.
+
 ## 23 Oct - Production readiness C12: support
 
 - Branch `claude/readiness-c12-support`. **No migration** (ticket state and desk settings in `platform_controls` rows). New

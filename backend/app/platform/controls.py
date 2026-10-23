@@ -145,6 +145,19 @@ FEATURE_FLAGS: Dict[str, str] = {
     # events (read-only). OFF: /api/growth/* and /api/admin/console/activation answer 404 and nothing new is shown. No
     # price, trial, reminder or referral is built; nothing places an order.
     "growth_v2": "Plans and growth: the plan page with a usage meter, the discipline share card and the admin activation events (read-only)",
+    # Readiness C13 (app/learn, app/growth): learning and growth, each OFF by default.
+    # `learn`: the Learn page (short lessons on structure reading, risk, paper practice and how ATP works; the glossary;
+    # the video links the operator sets). Education only, guarded content. OFF: GET /api/learn answers 404, no Learn entry.
+    "learn": "Learn: short lessons in plain English, the glossary and the operator's video links (education only)",
+    # `marketing_site`: the public Features / How it works / About pages for the front page (read globally - a visitor
+    # has no organisation). OFF: GET /api/site/pages answers 404 and the sign-in screen links none of them.
+    "marketing_site": "Public marketing pages: Features, How it works and About on the front page (no claims, no prices)",
+    # `onboarding_emails`: the first-week e-mails (connect your broker, start a paper bot, review your first signal),
+    # once each, with an unsubscribe link; nothing is sent without PLATFORM_SMTP_* and PUBLIC_BASE_URL. Places nothing.
+    "onboarding_emails": "First-week e-mails: connect your broker, start your first paper bot, review your first signal (each once, with unsubscribe)",
+    # `referrals`: each person's own invite link and the new account's one claim; the reward is only described (C11 owns
+    # granting it). Nothing touches the marketplace. OFF: /api/growth/referral* answer 404 and no invite card shows.
+    "referrals": "Invite a friend: your own invite link, and how many people joined through it (no reward is granted automatically)",
     # PW6 (beta spec 4a, Phase 0): the closed-beta gate. ON: sign-up needs a SUPER_ADMIN-issued invite code and stops at
     # BETA_COHORT_CAP accounts. OFF: registration is exactly as before (self_signup still decides). OFF by default.
     "beta_cohort_gate": "Closed beta: sign-up needs an invite code and stops at the cohort cap (BETA_COHORT_CAP, default 500)",

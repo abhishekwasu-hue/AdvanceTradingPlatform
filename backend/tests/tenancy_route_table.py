@@ -46,6 +46,10 @@ P_TV_WEBHOOK = "public: TradingView webhook, authenticated by the secret token i
 P_UNSUBSCRIBE = "public: signed one-click unsubscribe link"
 P_REGIMES = "public: the market regime catalogue"
 P_LEGAL = "public: the Privacy notice, Terms of use and Risk disclosure - the sign-up form links them before an account exists"
+P_SITE_PAGES = "public: the marketing pages of the front page (static product text; 404 while marketing_site is off)"
+P_ONBOARDING_UNSUBSCRIBE = "public: the first-week e-mails' signed unsubscribe link (the token is the authority)"
+S_OWN_REFERRAL = ("self: the caller's own invite code (created once) or his own account's one referral claim; the referrer is "
+                  "never named to anyone")
 P_STATUS_PAGE = "public: the public status page (component states and the incident banner only; rate limited)"
 M_OWN_TAX = ("member: the caller's own closed trades only (tenant and user) - a member never sees another member's trades and "
              "the organisation owner sees only their own (BT1b; tests/test_tax_report_own.py)")
@@ -411,6 +415,19 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/growth/share/discipline-week"): "member: the caller's own discipline facts from his own PAPER trades; no names, no prices",
     # MO4 slice 4: the page dishes - the caller's own signals, PAPER positions, journal, lists and scans (+ shared daily history)
     ("GET", "/api/growth/dish/{page}"): "member: the caller's own signals, PAPER positions, journal, watchlists and scan matches; the chart story from the shared daily history",
+    # Readiness C13: the referral flow (ui_v2 + referrals) and the onboarding e-mails' unsubscribe link
+    ("GET", "/api/growth/referral"): "member: the caller's own invite code and link, and how many people joined through it (a count, never who)",
+    ("POST", "/api/growth/referral/code"): S_OWN_REFERRAL,
+    ("POST", "/api/growth/referral/claim"): S_OWN_REFERRAL,
+    ("GET", "/api/growth/onboarding/unsubscribe"): P_ONBOARDING_UNSUBSCRIBE,
+    ("POST", "/api/growth/onboarding/unsubscribe"): P_ONBOARDING_UNSUBSCRIBE,
+    ("GET", "/api/admin/growth/referral-settings"): "admin",
+    ("PUT", "/api/admin/growth/referral-settings"): "admin",
+    # Readiness C13: the Learn section (ui_v2 + learn), the public marketing pages, the operator's video links
+    ("GET", "/api/learn"): "member",
+    ("GET", "/api/site/pages"): P_SITE_PAGES,
+    ("GET", "/api/admin/learn/settings"): "admin",
+    ("PUT", "/api/admin/learn/settings"): "admin",
     ("GET", "/api/custom-strategies"): "member",
     ("POST", "/api/custom-strategies"): "trader",
     ("POST", "/api/custom-strategies/parse"): P_PARSE_ONLY,

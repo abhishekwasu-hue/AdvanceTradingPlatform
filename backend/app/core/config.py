@@ -452,6 +452,14 @@ PLATFORM_SMTP_USERNAME = os.environ.get("PLATFORM_SMTP_USERNAME", "")
 PLATFORM_SMTP_PASSWORD = os.environ.get("PLATFORM_SMTP_PASSWORD", "")
 PLATFORM_SMTP_FROM = os.environ.get("PLATFORM_SMTP_FROM", "")
 PLATFORM_SMTP_STARTTLS = os.environ.get("PLATFORM_SMTP_STARTTLS", "true").strip().lower() not in {"0", "false", "no"}
+# Readiness C13: the first-week onboarding e-mails (flag `onboarding_emails`, OFF; nothing is sent without PLATFORM_SMTP_*
+# and PUBLIC_BASE_URL). Hours after sign-up for "connect your broker", "start your first paper bot" and "review your first
+# signal", in that order; each goes once, only inside the first week.
+ONBOARDING_EMAIL_AFTER_HOURS = os.environ.get("ONBOARDING_EMAIL_AFTER_HOURS", "2,48,120").strip()
+ONBOARDING_EMAIL_WINDOW_HOURS = int(os.environ.get("ONBOARDING_EMAIL_WINDOW_HOURS", "168"))
+# Readiness C13: a new account may name the invite code it arrived with for this many days after signing up (flag
+# `referrals`, OFF).
+REFERRAL_CLAIM_DAYS = int(os.environ.get("REFERRAL_CLAIM_DAYS", "7"))
 # When on, LIVE deployments and broker credential storage require a verified email address.
 EMAIL_VERIFICATION_REQUIRED = os.environ.get("EMAIL_VERIFICATION_REQUIRED", "false").strip().lower() in {"1", "true", "yes"}
 

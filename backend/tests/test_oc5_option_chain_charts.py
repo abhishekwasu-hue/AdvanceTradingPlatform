@@ -418,13 +418,27 @@ def test_an_empty_session_shows_the_chain_now_and_says_the_rest_builds(monkeypat
     assert broker.reads == [(name, date.fromisoformat(expiry))] and _usage(me["tenant_id"]) == 1
 
 
+def _pin_route_clock(monkeypatch, at: datetime) -> None:
+    """The route reads the session of the IST day of `datetime.now`; pin it so the test does not depend on the hour
+    it runs at (slots stored 16 minutes before 00:05 IST would fall on the previous IST day)."""
+    from app.option_chain import charts_routes
+
+    class _Pinned(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            return at.astimezone(tz) if tz else at.replace(tzinfo=None)
+
+    monkeypatch.setattr(charts_routes, "datetime", _Pinned)
+
+
 def test_the_session_comes_from_the_stored_readings_with_the_baselines_and_futures(monkeypatch):
     name = _name()
-    expiry = (_ist_today() + timedelta(days=6)).isoformat()
+    now = datetime.combine(_ist_today(), datetime.min.time().replace(hour=12), IST).astimezone(UTC)   # midday IST today
+    _pin_route_clock(monkeypatch, now)
+    expiry = (now.astimezone(IST).date() + timedelta(days=6)).isoformat()
     _install(monkeypatch, _ChainBroker({name: _live(name, expiry)}))
     headers, me = _v2_owner("session")
     _store_credentials(me)
-    now = datetime.now(UTC)
     for i, (ch, fut) in enumerate(zip(STORED[:3], FUTURES[:3])):          # three slots, 5 minutes apart, before now
         _store(name, OptionChain(underlying=name, expiry=expiry, underlying_ltp=ch.underlying_ltp, rows=ch.rows),
                now - timedelta(minutes=16 - 5 * i), fut)

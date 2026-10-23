@@ -36,8 +36,8 @@ Run these as the `atp` user on the server (`ssh atp@<SERVER_IP>`). Each one is s
 | A new server after the old one is lost: fill its empty database from R2 (section 6b) | `/opt/atp/deploy/atp.sh restore-offsite` |
 | Point-in-time recovery only: an encrypted base backup now (section 6c) | `/opt/atp/deploy/atp.sh base-backup` |
 | Release history | `/opt/atp/deploy/atp.sh releases` |
-| Set one of the universe / instrument sync switches in `.env` (allowlisted non-secret keys only; backup first; section 4b) | `/opt/atp/deploy/atp.sh env-set UNIVERSE_SYNC_ENABLED=true` |
-| Fill the system watchlists now: file check, instrument master, universe sync, lists refresh, counts (section 4b) | `/opt/atp/deploy/atp.sh lists-sync` |
+| Set one of the universe / instrument sync switches in `.env` (allowlisted non-secret keys only; backup first; section 4c) | `/opt/atp/deploy/atp.sh env-set UNIVERSE_SYNC_ENABLED=true` |
+| Fill the system watchlists now: file check, instrument master, universe sync, lists refresh, counts (section 4c) | `/opt/atp/deploy/atp.sh lists-sync` |
 | Only check that every published list file answers (HTTP status per file; nothing written) | `/opt/atp/deploy/atp.sh lists-sync --check` |
 | The 500-user load test against this server (its own copy of the stack, section 12a) | `/opt/atp/deploy/ci/loadtest_500.sh` |
 | The 500-session load test against the production stack itself, in NSE market hours, with memory sampled (section 12b) | `/opt/atp/deploy/atp.sh loadtest` |
@@ -204,7 +204,17 @@ stored flags row was unreadable and the seed skipped it), switching the mode put
 default: `live_trading` ON (it is a kill flag) and `phase0_paper_only` OFF. In Phase 0 mode those absent entries
 resolved to the safe values only because of the mode.
 
-## 4b. The system watchlists: switch the universe sync on (WL1-4, owner decision 23 Oct)
+## 4b. Trader features (one button)
+
+After the first deploy, **Admin → Controls → Enable trader features** turns on, in one step, every switch a trader
+needs (the Copilot, strategy templates and the Pine Lab, the screens, the idea library, watchlists, the chart tools,
+the paper account and its risk tools). Each switch it changes is in the audit log (`feature_flag_set`, then
+`trader_pack_enabled`). It never touches `live_trading`, `phase0_paper_only`, `marketplace`, `public_api`,
+`self_signup`, `scan_auto_paper` or any owner-decision flag, so the deploy's flag check (section 4a) stays green.
+The card lists each feature as Working / Needs setup / On / Off; **Undo** puts every switch back exactly as it was
+before the first enable. No migration, nothing to run on the server.
+
+## 4c. The system watchlists: switch the universe sync on (WL1-4, owner decision 23 Oct)
 
 The Indices / Index stocks / Sectors / F&O lists every user sees on Charts are built from the published NSE and
 niftyindices files (names only - symbols and company names, no prices; nothing from them is committed to git). The
@@ -901,7 +911,7 @@ Logs from scheduled runs are in `/opt/atp/.deploy/logs/`. The release history is
 ## 13. What `atp.sh` never does
 
 - It never creates or prints `.env` or any secret, and never puts a secret on a command line. The one write is
-  `env-set` (section 4b): only its allowlisted non-secret switches, after a backup, every other line kept.
+  `env-set` (section 4c): only its allowlisted non-secret switches, after a backup, every other line kept.
 - It never rotates `SECRETS_ENCRYPTION_KEY`.
 - It never turns a feature flag on or off: not `live_trading`, not `phase0_paper_only`, not any other. The Phase 0
   first-boot seed (section 4a) is done by the application in its own deployment mode, never by this script.

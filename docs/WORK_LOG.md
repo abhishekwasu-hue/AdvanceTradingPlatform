@@ -3569,3 +3569,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   does not exist yet); questions WL1-9 (the nightly job's closing-price file), WL1-10.
 - Screenshots: fixture renders only (mocked API, names only) of the four groups, phone 390 + desktop 1440, light +
   dark; not production data, not committed.
+
+## 23 Oct - Trader pack: "Enable trader features" (owner decision 23 Oct, README row 19)
+
+- Branch `claude/trader-pack` (from main). **No migration**: the saved "before" state lives in the controls store
+  (key `trader_pack`). `DEFAULT_ON_FLAGS` untouched.
+- Backend `app/platform/trader_pack.py`: the pack (62 flags in dependency order), `FORBIDDEN`, the excluded flags with
+  reasons, `enable` (idempotent, audited per flag), `undo` (exact restore), `status` (ON / OFF, plain words, cheap
+  "working" checks: counts only). Routes GET / POST `/api/admin/controls/trader-pack`, POST `.../undo` (SUPER_ADMIN +
+  two-factor; classified in `tests/tenancy_route_table.py`). Tests `tests/test_trader_pack.py` (11).
+- Frontend: the "Trader features" card on the v2 admin console's Controls section (`src/admin/TraderPackCard.tsx`),
+  vitest `src/admin/traderPack.test.tsx`, e2e in `e2e/admin-console-v2.e2e.ts` with new baselines
+  `admin-trader-pack-v2-{1440,390}-{light,dark}.png`; `admin-controls-v2-*` updated (the new card).
+- Runbook section 4b; questions TP-1..TP-6.
+

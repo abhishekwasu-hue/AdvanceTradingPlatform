@@ -1600,3 +1600,18 @@ collide on numbers.
 | PRV-4 | A reader deployment when the package is missing or refused. | No new entries ("This strategy is paused: its engine is not available"); open positions keep their exits (ADR-0004); users see the generic templates; the reader flags cannot be switched on. | PRIVATE_PACKAGE section 10 | open |
 | PRV-5 | New signal-language tokens the reader needs. | Added as generic structure phrases to `app/signals/language.py` and its frontend mirror in a reviewed public PR (shared cases grow with them); when the reader emits them stays private. The package never brings its own text to a screen. | PRIVATE_PACKAGE section 9.3 | open |
 | PRV-6 | A new MAJOR reader version and running deployments. | The host's `ATP_PRIVATE_REF` moves only after the parity checks and a PAPER shadow; each deployment records the reader version it started with; the admin console lists the release note. | PRIVATE_PACKAGE section 11 | open |
+
+## Trader pack: "Enable trader features" (TP, 23 Oct)
+
+Branch `claude/trader-pack`. Code: `backend/app/platform/trader_pack.py`, routes in `app/platform/routes.py`, card
+`frontend/src/admin/TraderPackCard.tsx` (admin console v2, Controls). No migration (controls key `trader_pack`).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| TP-1 | Ready flags the owner did not list (screener_intrabar, screener_vectorized, screener_venues, screener_breakouts_fitness, screener_etf, ladder_evidence, experience_levels, portfolio_risk_caps, news_feed, telegram_inbound, backtest_optimizer, backtest_models, vision_byok). | In the pack: each is "ready" / "behind the scenes" and serves a trader. experience_levels and portfolio_risk_caps only ever hold back a new PAPER entry (restrictive); exits are never blocked. | `trader_pack.PACK` | open |
+| TP-2 | "Unfinished" flags in the pack: markets_view, strategy_templates, idea_library, ai_one_key, daily_rhythm, strategy_lab_pine. | In: their routes and pages are merged and work end to end today (the catalog status is the 22 Oct audit). Out: market_thesis, ai_research, vision_byok_v3, support_bot, growth_v2, screener_waves, chart_analyze (+ strikes, share), chart_contracts, chart_futures_basis, and the data-less ones (history_import, history_intraday, screener_fundamentals, screener_ownership, screener_legends_lg3, alerts_whatsapp_dlt); reasons in `trader_pack.EXCLUDED_REASONS`. | `trader_pack.py` | open |
+| TP-3 | Undo after a switch was changed by hand after the enable. | Undo still restores the stored state from before the FIRST enable, for every flag the pack changed (exactly what the order says); a second enable never overwrites that saved state. | `trader_pack.undo` | open |
+| TP-4 | A pack flag that was OFF with an organisation allow-list. | Enable turns it ON for everyone and keeps the list; Undo puts back OFF with the same list. | `trader_pack.enable` | open |
+| TP-5 | The A4 admin write step-up (`ensure_admin_write_step_up`) is not on main. | The two POSTs use the admin router's SUPER_ADMIN + two-factor session (`require_mfa_session`); when A4 lands they take its step-up like every admin write (note in `routes.py`). | `app/platform/routes.py` | open |
+| TP-6 | "Working" checks are platform-wide counts (organisations with a broker connection, AI keys of organisations and users, ready-made lists, instrument rows, stored daily bars), not one organisation's. | Platform-wide: the admin turns the flags on for the whole platform. A key is never read or decrypted, only counted. | `trader_pack._facts` | open |
+

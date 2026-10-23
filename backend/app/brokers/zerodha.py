@@ -14,6 +14,7 @@ from app.execution.order_safety import apply_market_protection
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
+    BasketMargin,
     BrokerCredentials,
     BrokerHolding,
     BrokerOrderRequest,
@@ -383,6 +384,20 @@ class ZerodhaBroker(BrokerInterface):
         legs = data if isinstance(data, list) else data.get("data", data)
         if isinstance(legs, list) and legs and isinstance(legs[0], dict) and legs[0].get("total") is not None:
             return float(legs[0]["total"])
+        return None
+
+    async def get_basket_margin(self, orders: List[BrokerOrderRequest]) -> Optional[BasketMargin]:
+        """Part 7 / TM-10: Kite's basket margin (`POST /margins/basket`): `final.total` is the basket with the hedge
+        benefit, `initial.total` the legs on their own. None when Kite gives no number."""
+        payload = [{"exchange": o.exchange, "tradingsymbol": o.symbol, "transaction_type": o.transaction_type.value, "variety": "regular",
+                    "product": o.product, "order_type": o.order_type, "quantity": int(o.quantity), "price": o.price or 0,
+                    "trigger_price": o.trigger_price or 0} for o in orders]
+        data = await self._request("POST", "/margins/basket", json=payload)
+        body = data.get("data", data) if isinstance(data, dict) else {}
+        final = (body.get("final") or {}).get("total") if isinstance(body, dict) else None
+        initial = (body.get("initial") or {}).get("total") if isinstance(body, dict) else None
+        if isinstance(final, (int, float)):
+            return BasketMargin(required=float(final), without_hedge=float(initial) if isinstance(initial, (int, float)) else None)
         return None
 
     async def get_margins(self) -> MarginInfo:

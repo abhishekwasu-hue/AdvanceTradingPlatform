@@ -127,6 +127,8 @@ from app.market_data.quotes_routes import router as market_quotes_router
 from app.market_data.strip_routes import router as market_strip_router
 from app.market_lake.import_routes import backfill_router as history_backfill_admin_router
 from app.market_lake.import_routes import intraday_router as history_intraday_admin_router
+from app.market_lake.chain_history_routes import admin_router as chain_history_admin_router
+from app.market_lake.chain_history_routes import router as chain_history_router
 from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
@@ -362,6 +364,8 @@ app.include_router(market_lake_router)  # Part B5: point-in-time history from th
 app.include_router(history_import_admin_router)  # HB0: R2 history import progress (SUPER_ADMIN, read-only)
 app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill progress + manual uploads (SUPER_ADMIN, flag)
 app.include_router(history_intraday_admin_router)  # HB2: owner intraday history progress (SUPER_ADMIN, read-only)
+app.include_router(chain_history_admin_router)  # TM 9.4: owner chain history status (SUPER_ADMIN, read-only)
+app.include_router(chain_history_router)  # TM 9.4: the organisation's own chain history (flag chain_history)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
 app.include_router(fno_hub_router)         # FNO-3: the symbol hub's F&O facts and the futures chain (flag ui_v2)
 app.include_router(oc_analyses_router)     # OC2: the built-in option chain analyses, read-only (flag ui_v2, off)

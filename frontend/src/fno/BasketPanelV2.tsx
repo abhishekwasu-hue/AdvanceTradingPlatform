@@ -24,6 +24,7 @@ import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
 import { riskLine, structureOf, type RiskBudget, type RiskLine } from "./insights";
 import { eventLine, legLiquidity, liquidityLine, marginLine } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
+import { IncompleteV2, SmartConfirmV2 } from "./SmartExecutionV2";
 import { moneyText, newClientRef, sideWord } from "./ticketModel";
 
 /**
@@ -307,7 +308,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           )}
           {step.kind === "done" && (
             <ResultView result={step.result} onRemaining={() => { void confirm(remainingLegs(step.legs, step.result)); }} onEdit={() => setStep({ kind: "edit" })}
-              onClear={() => { store.clear(); onClose(); }} onClose={onClose} />
+              onClear={() => { store.clear(); onClose(); }} onClose={onClose} api={api} />
           )}
         </RD.Content>
       </RD.Portal>
@@ -603,10 +604,13 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks 
                 );
               })}
             </ol>
+            {p.smart && <SmartConfirmV2 smart={p.smart} />}
             <dl className="rounded-control border border-subtle px-space-3" data-basket="confirm-totals">
-              <Figure label="Total margin (estimate)" testId="total-margin" sub={hedge ? `${hedge.with_hedge.basis} ${hedge.note}` : undefined}>
-                {hedge && hedge.with_hedge.value !== null ? moneyText(hedge.with_hedge.value) : "From your broker"}
-              </Figure>
+              {!p.smart && (
+                <Figure label="Total margin (estimate)" testId="total-margin" sub={hedge ? `${hedge.with_hedge.basis} ${hedge.note}` : undefined}>
+                  {hedge && hedge.with_hedge.value !== null ? moneyText(hedge.with_hedge.value) : "From your broker"}
+                </Figure>
+              )}
               <Figure label="Max loss" testId="total-max-loss">{ext ? (ext.unbounded_loss ? "Unlimited" : moneyText(ext.max_loss)) : "See the chart"}</Figure>
               {p.totals && <Figure label="Charges to open (estimate)" testId="total-charges">{moneyText(p.totals.costs)}</Figure>}
             </dl>
@@ -633,10 +637,14 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks 
 }
 
 /** What happened to each leg, in plain words, and what the user can do (no state). */
-export function ResultView({ result: r, onRemaining, onEdit, onClear, onClose }: {
+export function ResultView({ result: r, onRemaining, onEdit, onClear, onClose, api = basketApi }: {
   result: BasketResult; onRemaining: () => void; onEdit: () => void; onClear: () => void; onClose: () => void;
+  /** TM Part 7: "Close the filled legs" of an incomplete basket. */
+  api?: Pick<BasketApi, "closeFilled">;
 }) {
   const left = r.legs.some((l) => l.status !== "PLACED");
+  // TM Part 7 (flag smart_execution): the incomplete state carries its own two choices.
+  const incomplete = r.state === "INCOMPLETE";
   return (
     <>
       <div className="min-h-0 flex-1 space-y-space-3 overflow-y-auto px-space-4 py-space-3" data-basket="result" data-status={r.status}>
@@ -658,10 +666,11 @@ export function ResultView({ result: r, onRemaining, onEdit, onClear, onClose }:
             </li>
           ))}
         </ol>
-        {r.next_steps.length > 0 && <ul className="space-y-space-1 text-t13 text-fg" data-basket="next-steps">{r.next_steps.map((x) => <li key={x}>{x}</li>)}</ul>}
+        {incomplete && <IncompleteV2 message={r.message ?? resultHeadline(r)} filledTradeIds={r.filled_trade_ids ?? []} onCompleteRest={onRemaining} api={api} />}
+        {!incomplete && r.next_steps.length > 0 && <ul className="space-y-space-1 text-t13 text-fg" data-basket="next-steps">{r.next_steps.map((x) => <li key={x}>{x}</li>)}</ul>}
       </div>
       <div className="flex flex-wrap gap-space-2 border-t border-subtle px-space-4 py-space-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        {left && r.placed > 0 && (
+        {left && r.placed > 0 && !incomplete && (
           <button type="button" onClick={onRemaining} data-basket="remaining" className="min-h-11 flex-1 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand">
             Place the remaining legs
           </button>

@@ -89,6 +89,7 @@ async def execute_signal_for_user(
     origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: Optional[int] = None,
     max_quantity: Optional[float] = None, risk_cap_amount: Optional[float] = None, exchange: Optional[str] = None,
     manual_contract_spec: Optional[ContractSpec] = None, manual_contract_meta: Optional[dict] = None,
+    paper_execution: str = "direct", freeze_quantity: Optional[int] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -116,6 +117,9 @@ async def execute_signal_for_user(
     option chain's order ticket, app/paper/fno_ticket.py): the signal is already on the contract (its premium levels),
     the spec carries the instrument master's lot and tick size, and the meta is stored on the position (kind, exchange,
     expiry, lot size). No underlying levels are stored, so the position exits on its own premium stop or by hand.
+
+    TM-1: `paper_execution` "adapter" fills a PAPER entry through the PaperExecutionAdapter (a BrokerInterface over the
+    same fill and cost model) instead of PaperBroker directly; the default "direct" keeps every other path as it was.
     """
     ticket_quantity = max_quantity
     # Phase F3: when the deployment trades a derived contract, the order goes on the contract
@@ -342,6 +346,7 @@ async def execute_signal_for_user(
             # for the instrument kind actually traded.
             order_style=order_style or "MARKET", market_protection_pct=market_protection_pct,
             is_option=(contract.kind.value == "OPTION") if contract is not None else None,
+            paper_execution=paper_execution, freeze_quantity=freeze_quantity,
         )
         async def hierarchy_check(quantity: float):
             # Phase I1: every applicable risk limit (GLOBAL -> TENANT -> USER -> ACCOUNT ->

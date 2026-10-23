@@ -90,6 +90,13 @@ class OptionChainRow(BaseModel):
     # strike-selection pipeline computes delta from IV / price itself.
     call_delta: Optional[float] = None
     put_delta: Optional[float] = None
+    # TM 9.4: the rest of the broker's Greeks where it sends them (Upstox does), kept by the chain history recorder.
+    call_gamma: Optional[float] = None
+    call_theta: Optional[float] = None
+    call_vega: Optional[float] = None
+    put_gamma: Optional[float] = None
+    put_theta: Optional[float] = None
+    put_vega: Optional[float] = None
 
 
 class OptionChain(BaseModel):
@@ -116,6 +123,17 @@ class BrokerOrderRequest(BaseModel):
     # Z10-c: what the platform built the order for - "ENTRY" for a new position (OrderRouter, the multi-leg executor);
     # None when not stated. Never sent to the broker; the Phase 0 PAPER-only lock refuses only an explicit ENTRY.
     intent: Optional[str] = None
+    # TM-1: the platform's own reference for this one order (an idempotency key): the PAPER adapter returns the first
+    # order for a repeated reference instead of placing twice. Never sent to a broker by the existing adapters.
+    client_ref: Optional[str] = None
+
+
+class BasketMargin(BaseModel):
+    """Part 7 / TM-10: the broker's own margin for a set of orders placed together. `required` is what the broker
+    would block for the whole basket WITH the hedge benefit; `without_hedge` the sum of each order alone, where the
+    broker says it (None otherwise)."""
+    required: float
+    without_hedge: Optional[float] = None
 
 
 class BrokerOrderResponse(BaseModel):

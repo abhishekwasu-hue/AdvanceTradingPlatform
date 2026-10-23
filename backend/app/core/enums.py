@@ -48,6 +48,9 @@ class NotificationType(str, Enum):
     # the collector's own health (stale or failing). Read-only information - never an order (ADR-0006).
     OI_BANNER = "OI_BANNER"
     OI_COLLECTOR = "OI_COLLECTOR"
+    # Terminal master Part 7: a stock F&O position that may settle by delivery (in or near the money before expiry).
+    # Information only - nothing is closed (ADR-0006).
+    SETTLEMENT_WARNING = "SETTLEMENT_WARNING"
 
 
 class NotificationSeverity(str, Enum):

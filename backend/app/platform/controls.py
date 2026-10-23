@@ -139,6 +139,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     # browser on the existing live stream, a plain "reconnecting" state and ONE renew prompt when the broker ends the
     # login. `byob_data_tier` still decides whose session a user may read. OFF: everything exactly as before.
     "data_hub": "Data hub: one live price stream per broker connection for every page, live ticks in the browser, a reconnecting state and one renew prompt",
+    "smart_execution": "Smart execution for multi-leg orders: hedge legs first (shorts closed first on exit), the incomplete-order state with Complete the rest / Close the filled legs, freeze-limit slicing, the margin with the hedge benefit and the free balance after, the physical-settlement warning for stock F&O",
     # Master Order 4 slice 3 (app/growth; needs `ui_v2`): the plan page with a usage meter (what the user's plan includes
     # and how much of it he used, from the existing limits and counters), the "my discipline this week" share card (his
     # own discipline facts only: no security names, no prices, no call words) and the admin Business view's activation

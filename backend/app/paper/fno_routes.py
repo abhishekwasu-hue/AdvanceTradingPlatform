@@ -216,6 +216,36 @@ async def basket_execute(body: ExecuteBody, user: User = Depends(require_trader)
     return await fno_basket.execute(session, user, body.asks(), product=body.product, basket_ref=body.basket_ref, price_lookup=lookup)
 
 
+class CloseFilledBody(BaseModel):
+    trade_ids: List[int] = Field(min_length=1, max_length=fno_basket.MAX_LEGS * 4)
+
+
+async def _smart_enabled(session: AsyncSession, user: User) -> None:
+    await _enabled(session, user)
+    from app.execution.smart_execution import FLAG
+    from app.platform.controls import flag_enabled
+    if not await flag_enabled(session, FLAG, user.tenant_id):
+        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": FLAG})
+
+
+@router.post("/basket/close-filled", dependencies=[Depends(basket_rate_limit)])
+async def basket_close_filled(body: CloseFilledBody, user: User = Depends(require_trader),
+                              session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Part 7 / TM-11 "Close the filled legs": the user's own open legs of an incomplete basket, closed through Exit now,
+    the sold legs first (a hedge is never closed while its short is open). Answers 200 with each leg's outcome."""
+    await _smart_enabled(session, user)
+    return await fno_basket.close_filled(session, user, body.trade_ids)
+
+
+@router.get("/settlement")
+async def settlement(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Part 7: the physical-settlement warning for the caller's own open stock F&O positions (ITM or within his band,
+    the days before expiry from his own settings), with the delivery value. Information only."""
+    await _smart_enabled(session, user)
+    from app.paper import settlement_watch
+    return await settlement_watch.for_user(session, user)
+
+
 @router.post("/basket/broker-link")
 async def basket_broker_link(body: BasketBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _enabled(session, user)

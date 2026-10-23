@@ -8,6 +8,7 @@ import { openAdmin, type Theme } from "./adminMocks";
  * - Baselines (NEW): `admin-<system|controls|users|testing|support>-v2-{1440,390}-{light,dark}.png` and
  *   `admin-diagnostics-v2-{1440,390}-{light,dark}.png`. Other baselines are untouched.
  *   MO3-A1 (23 Oct): `admin-support-v2-*` updated - the "View as this person" button and the "Recent views as a user" card.
+ *   TM 9.4 (23 Oct): `admin-system-v2-*` updated - the "Chain history" card at the end of System.
  * Every reply is made up (e2e/adminMocks.ts). After an intended change:
  * `npx playwright test --project=phone e2e/admin-console-v2.e2e.ts --update-snapshots`.
  */
@@ -67,6 +68,15 @@ test.describe("Admin console behaviour", () => {
       expect(asked.filter((p) => p.includes("/admin/"))).toEqual([]);
     });
   }
+
+  test("System shows the chain history recorder: what is recorded, today's counts and gaps", async ({ page }) => {
+    await openAdmin(page, "/admin");
+    const card = page.locator("[data-console-card='chain-history']");
+    await expect(card).toContainText("Recording");
+    await expect(card).toContainText("Every 1 min");
+    await expect(card.locator("[data-chain-row='NIFTY']")).toContainText("None");
+    await expect(card.locator("[data-chain-row='SENSEX']")).toContainText("7 missing · 09:15–09:20, 10:12–10:14");
+  });
 
   test("the sections switch in place and the address keeps the section", async ({ page }) => {
     await openAdmin(page, "/admin");

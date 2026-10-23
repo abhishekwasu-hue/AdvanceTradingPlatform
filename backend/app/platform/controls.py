@@ -169,6 +169,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # through the OWNER's own broker session (read-only candle endpoints) into the owner's private store only, sharing
     # the worker's rate budget with a reserve kept for exits. OFF: the job, the CLI and the worker hook do nothing.
     "history_intraday": "Owner intraday history: 1-minute bars from the owner's own broker session into the owner's private store (read-only, places no orders)",
+    # TM 9.4 (docs/design/CHAIN_HISTORY.md, TM-7): option-chain snapshots (every strike: LTP, OI, IV, Greeks; spot; time)
+    # recorded at a fixed interval in market hours through the OWNER's own broker session into the owner's private store,
+    # on the worker's rate budget with a reserve kept for exits. OFF: nothing is recorded and the read API answers 404.
+    "chain_history": "Owner chain history: option-chain snapshots from the owner's own broker session into the owner's private store (read-only, places no orders)",
     # Z3 / BT2 (beta spec, Phase 0): every automatic entry (deployments, TradingView webhooks, public API signals) becomes
     # an ENTRY proposal (Approve / Reject / Snooze); Approve places a PAPER order at a re-quoted price. Target exits ask
     # "Exit now?"; protective exits (stop, time stop, square-off, kill switch) stay automatic (ADR-0004). OFF: unchanged.

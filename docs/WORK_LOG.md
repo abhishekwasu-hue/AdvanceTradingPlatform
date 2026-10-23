@@ -3545,3 +3545,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `docs/design/TRADE_TAKEOVER.md`: pointer in the status, the signal-language note in section 10, new section 13.
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
+
+## 23 Oct - Terminal master Part 9.4: chain history, start recording now (+ TM-7 fix of the OI collector)
+
+- Branch `claude/terminal-chain-history` (from main). **Migration `250d796123b7`** (additive, rollback-safe; deploy after
+  15:30 IST). Flag `chain_history` (off by default) - the owner switches it on for his organisation.
+- `app/market_lake/chain_store.py` (tenant-private store, zlib JSON codec, reads that require the tenant, admin counts and
+  gaps), `chain_recorder.py` (one slot per `CHAIN_HISTORY_SLOT_MINUTES` through the owner's own session, the calendar,
+  `acquire_spare` on the worker's budget), `chain_history_routes.py` (`/api/chain-history/coverage|day|range`,
+  `/api/admin/chain-history/status`); worker hook `_maybe_start_chain_history`; retention `RETENTION_CHAIN_HISTORY_DAYS`
+  (0 = kept, TM-8); `OptionChainRow` gamma / theta / vega (Upstox sends them); Upstox reads the SENSEX / BANKEX chain
+  from the BSE master.
+- TM-7 OI collector: each organisation's slots through its own session, stored and read per tenant; pre-fix rows only
+  for the confirmed owner. Every OI reader takes the tenant.
+- Admin > System "Chain history" card; `admin-system-v2-*` baselines updated.
+- Docs: `docs/design/CHAIN_HISTORY.md`, DATA_SOURCES line, OPEN_QUESTIONS `TM94-1..7`.
+

@@ -52,6 +52,8 @@ M_OWN_TAX = ("member: the caller's own closed trades only (tenant and user) - a 
 S_END_VIEW = ("self: ends the read-only support view behind the caller's own token (the one write a view token may make); a "
               "normal sign-in has no view to end")
 M_OWN_SUPPORT_ACCESS = "member: the caller's own record of when ATP support viewed their account (their own rows only)"
+M_OWN_CHAIN_HISTORY = ("member: TM 9.4 - the organisation's own recorded option chains only (tenant-private store, TM-7) and, within it, "
+                       "only the rows read through the caller's own broker session (BT1b); another organisation reads nothing")
 S_OWN_LEGAL = "self: records the caller's own acceptance of the legal documents' current versions"
 S_SUPPORT = "self: the support bot answers how-to questions from the docs; no tools, reads no positions or orders (rate limited)"
 S_OWN_ACCOUNT = "self: the caller's own account, sessions and two-factor settings"
@@ -150,6 +152,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/admin/history-backfill/progress"): "admin",
     ("POST", "/api/admin/history-backfill/upload"): "admin",
     ("GET", "/api/admin/history-intraday/progress"): "admin",
+    ("GET", "/api/admin/chain-history/status"): "admin",
     ("GET", "/api/admin/history-import/progress"): "admin",
     ("GET", "/api/admin/incidents"): "admin",
     ("POST", "/api/admin/incidents"): "admin",
@@ -320,6 +323,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/backtest"): S_BACKTEST,
     ("POST", "/api/backtest/monte-carlo"): S_BACKTEST,
     ("POST", "/api/backtest/optimize"): S_BACKTEST,
+    ("GET", "/api/chain-history/coverage"): M_OWN_CHAIN_HISTORY,
+    ("GET", "/api/chain-history/day"): M_OWN_CHAIN_HISTORY,
+    ("GET", "/api/chain-history/range"): M_OWN_CHAIN_HISTORY,
     ("GET", "/api/backtest/option-chain/coverage"): "member",
     ("GET", "/api/backtest/option-chain/snapshots"): "member",
     ("POST", "/api/backtest/option-chain/snapshots"): "trader",

@@ -1595,3 +1595,19 @@ collide on numbers.
 | PRV-4 | A reader deployment when the package is missing or refused. | No new entries ("This strategy is paused: its engine is not available"); open positions keep their exits (ADR-0004); users see the generic templates; the reader flags cannot be switched on. | PRIVATE_PACKAGE section 10 | open |
 | PRV-5 | New signal-language tokens the reader needs. | Added as generic structure phrases to `app/signals/language.py` and its frontend mirror in a reviewed public PR (shared cases grow with them); when the reader emits them stays private. The package never brings its own text to a screen. | PRIVATE_PACKAGE section 9.3 | open |
 | PRV-6 | A new MAJOR reader version and running deployments. | The host's `ATP_PRIVATE_REF` moves only after the parity checks and a PAPER shadow; each deployment records the reader version it started with; the admin console lists the release note. | PRIVATE_PACKAGE section 11 | open |
+
+## Terminal master Part 9.4: chain history and the OI collector fix (TM94, 23 Oct)
+
+The chain history PR (branch `claude/terminal-chain-history`). Design: `docs/design/CHAIN_HISTORY.md`. Checked against
+CLAUDE.md (signals not advice, PAPER only, public repo), DECISIONS (TM-7, TM-8, RDY-6) and the Terminal master order.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| TM94-1 | Who is "the owner" for the recorder: the SUPER_ADMIN's organisation or a configured tenant? | The configured one, HB0 / HB2's rule: `HISTORY_OWNER_TENANT_ID` confirmed by `HISTORY_OWNER_TENANT_NAME`, the session of `HISTORY_OWNER_USER_ID` (else the lowest-id active OWNER). A role edit can never move the recording; one owner rule for every owner-only data path. | `market_lake/chain_recorder.py` | open (default applied) |
+| TM94-2 | OI rows stored before the fix carry no organisation. | Read only by the confirmed owner (they were read through the first organisation with a session - in production the owner's); nobody when no owner is confirmed. Deleted by the 400-day retention as before. | `option_chain/snapshots.py` | open (default applied) |
+| TM94-3 | The Phase W recorder (`backtest/chain_recorder.py`, `option_chain_snapshots`) also stores platform-wide quotes from deployments' chains. | Same data-terms issue; not changed here (this PR fixes the OI collector as ordered). Next: the same per-tenant rule in its own small PR. | `backtest/chain_recorder.py` | open |
+| TM94-4 | SENSEX chain on Upstox (TM-32). | The adapter now looks SENSEX / BANKEX up in the BSE master; verify on the owner's token on the first day (the admin card shows a gap with the reason if the read fails). | `brokers/upstox.py` | open (verify on the host) |
+| TM94-5 | With `byob_data_tier` on, the OI collector still skips that organisation, although its slots are now its own. | Unchanged (no widening in this PR); can be allowed later through the member's own session. | `workers/trading_worker.py` | open |
+| TM94-6 | Greeks the broker does not send (only Upstox sends them). | Stored as missing; a later reader computes them on read and labels them as computed. Nothing is stored that the broker did not send. | `market_lake/chain_store.py` | open |
+| TM94-7 | The OI collector now reads once per organisation (was once for all). | Each read is on that organisation's own rate budget (one chain call per enabled underlying per 5 minutes); fine for the beta cohort; revisit with the Part 1 data hub. | `workers/trading_worker.py` | open |
+

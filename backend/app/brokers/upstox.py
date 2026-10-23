@@ -80,6 +80,9 @@ def safe_instrument_key(key: str) -> str:
     return text
 
 
+BSE_INDICES = frozenset({"SENSEX", "BANKEX"})
+
+
 def find_instrument(instruments: List[Instrument], symbol: str) -> Optional[Instrument]:
     """The instrument a plain symbol names: exact trading symbol first, then case-insensitive,
     then an index by its display name ("NIFTY 50" -> NSE_INDEX|Nifty 50), then a known alias."""
@@ -419,7 +422,8 @@ class UpstoxBroker(BrokerInterface):
         return expiries[0]
 
     async def get_option_chain(self, underlying: str, expiry: Optional[date] = None) -> OptionChain:
-        instruments = await self.get_instruments("NSE")
+        # TM 9.4 / TM-32: SENSEX and BANKEX are BSE indices (their index row is in the BSE master, not NSE's).
+        instruments = await self.get_instruments("BSE" if " ".join(underlying.split()).upper() in BSE_INDICES else "NSE")
         underlying_match = find_instrument(instruments, underlying)
         instrument_key = underlying_match.instrument_token if underlying_match else underlying
 
@@ -442,10 +446,12 @@ class UpstoxBroker(BrokerInterface):
                     call_change_oi=(call.get("oi") - call.get("prev_oi")) if call.get("oi") is not None and call.get("prev_oi") is not None else None,
                     call_bid=call.get("bid_price"), call_ask=call.get("ask_price"),
                     call_iv=call_greeks.get("iv"), call_delta=call_greeks.get("delta"),
+                    call_gamma=call_greeks.get("gamma"), call_theta=call_greeks.get("theta"), call_vega=call_greeks.get("vega"),
                     put_oi=put.get("oi"), put_ltp=put.get("ltp"), put_volume=put.get("volume"),
                     put_change_oi=(put.get("oi") - put.get("prev_oi")) if put.get("oi") is not None and put.get("prev_oi") is not None else None,
                     put_bid=put.get("bid_price"), put_ask=put.get("ask_price"),
                     put_iv=put_greeks.get("iv"), put_delta=put_greeks.get("delta"),
+                    put_gamma=put_greeks.get("gamma"), put_theta=put_greeks.get("theta"), put_vega=put_greeks.get("vega"),
                 )
             )
         return OptionChain(

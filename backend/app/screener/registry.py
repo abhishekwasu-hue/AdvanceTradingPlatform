@@ -162,19 +162,22 @@ RETEST_WAVE_DOC = ("; wave_line (flag screener_waves): after the first close bey
                    " by k ATR, the retest of that broken line (its value at the retest bar); wave_end: the same after a close beyond"
                    " the end of wave `wave`")
 RETEST_WAVE_OF: Tuple[str, ...] = ("wave_line", "wave_end")
-RETEST_OF_CHOICES: Tuple[str, ...] = ("range", "swing", "donchian", "trendline", "channel") + RETEST_WAVE_OF
+# owner decision TPL-Q18: `trendline_projected` is a new choice (the broken trendline read at the retest bar; C4) - the
+# `trendline` choice keeps its level frozen at the breakout bar, byte-identical
+RETEST_OF_CHOICES: Tuple[str, ...] = ("range", "swing", "donchian", "trendline", "channel", "trendline_projected") + RETEST_WAVE_OF
 # Strategy templates R7 (owner order section 0): RetestEntry forwards the base breakout's own settings, so a breakout +
 # retest template (family C) runs on the user's settings of the matching breakout template; `channel` follows the B5
 # channel breakout and reads the broken edge projected to each bar. Left out, each takes the breakout parameter's default:
 # the older calls run exactly as before.
 RETEST_FORWARD_DOC = ("; channel: the far edge of a rising (up) / falling (down) channel, read along the line at each bar after the"
-                      " breakout. Named arguments (the base breakout's own settings): k= the break distance in ATRs (or the"
-                      " eighth positional argument), n= range bars (range) / channel bars (donchian), v= / mode= the"
+                      " breakout; trendline_projected: the trendline breakout's broken line, read along the line at each bar"
+                      " after the breakout (trendline: its value at the breakout bar). Named arguments (the base breakout's"
+                      " own settings): k= the break distance in ATRs (or the eighth positional argument), n= range bars (range) / channel bars (donchian), v= / mode= the"
                       " range breakout's volume expansion and range mode, touches= the trendline / channel touches, swing= the"
                       " swing breakout's swing degree (swing; the `degree` argument stays the wave degree)")
 _RETEST_FORWARD = (_K, _bk("range_n", "n", "window"), _bk("vol_mult", "v", NUM), _bk("range_mode", "mode", STR),
                    _bk("tl_min_touches", "touches", NUM), _bk("swing_degree", "swing", NUM))
-RETEST_REF_OF: Tuple[str, ...] = ("range", "swing", "donchian", "trendline", "channel")
+RETEST_REF_OF: Tuple[str, ...] = ("range", "swing", "donchian", "trendline", "channel", "trendline_projected")
 RETEST_REF_WHATS: Tuple[str, ...] = ("level", "retest_low", "base_high", "base_low", "held_level", "stop_level_atr", "stop_base",
                                      "stop_midpoint")
 GAP_TFS = ("1m", "3m", "5m", "15m", "1d")
@@ -565,9 +568,11 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          flag=BREAKOUT_FLAG, also_flags=_BK4,
          doc="B9 retest's prices - the same retest as RetestEntry with the same arguments (named: k=, n=, v=, mode=, touches=, swing=),"
              " on its retest bars (missing elsewhere):"
-             " level (the broken level at the retest bar; a channel edge projected there), retest_low (the low of the pullback"
+             " level (the broken level at the retest bar; a channel edge or a trendline_projected line projected there),"
+             " retest_low (the low of the pullback"
              " from the bar after the breakout to the retest bar; the high for the down side), base_high / base_low (the"
-             " breakout's base), held_level (the latest retest's level, held - a channel edge projected - until the next"
+             " breakout's base), held_level (the latest retest's level, held - a channel edge or projected line along its"
+             " line - until the next"
              " retest), stop_level_atr / stop_base / stop_midpoint (the breakout stop reference at the retest bar: the level"
              " less stop_mult ATRs of the bar before, the base's far side, or the base's middle)"),
     # Z7a-3: market zones (demand / supply, order blocks, S/R, gaps with their lifecycle) - research only, places no orders

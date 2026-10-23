@@ -39,6 +39,11 @@ TOKENS: Dict[str, str] = {
                                        " retest of that edge from above held"),
     "channel_retest_held_from_below": ("the close broke down below the lower edge of a falling channel on the {timeframe} chart and"
                                        " the retest of that edge from below held"),
+    # C4 trendline breakout and retest (owner decision TPL-Q18: the broken line read at the retest bar)
+    "trendline_retest_held_from_above": ("the close broke out above a falling trendline on the {timeframe} chart and the retest of"
+                                         " that line from above held"),
+    "trendline_retest_held_from_below": ("the close broke down below a rising trendline on the {timeframe} chart and the retest of"
+                                         " that line from below held"),
     # A2 range edges (idea library T2)
     "range_on_chart": "range on the {timeframe} chart",
     "lower_edge_rejection_formed": "the market reached the lower edge and a rejection formed",

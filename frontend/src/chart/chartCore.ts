@@ -9,10 +9,12 @@
  * draws the price. Theme, grid, chart type, panes and overlays change in place: the chart is built once.
  */
 import {
-  BarSeries, CandlestickSeries, HistogramSeries, LineSeries, LineStyle, createChart, type IChartApi, type IPriceLine, type ISeriesApi,
+  BarSeries, CandlestickSeries, HistogramSeries, LineSeries, LineStyle, createChart, createSeriesMarkers, type IChartApi, type IPriceLine, type ISeriesApi,
+  type ISeriesMarkersPluginApi, type SeriesMarker,
   type AutoscaleInfo, type IPrimitivePaneRenderer, type MouseEventParams, type IPrimitivePaneView, type ISeriesPrimitive, type LogicalRange, type SeriesDefinition, type SeriesPartialOptionsMap, type SeriesType, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 import { chartView, formatTick } from "../charting/chartTypes";
+import type { ChartMarker } from "../charting/markers";
 import { LightweightEngine, type LineSeriesLike } from "../charting/lightweight";
 import { DEFAULT_SETTINGS, closes, ema, rsi, sma, vwap, type Series } from "../utils/indicators";
 import { chartFontSize } from "../theme";
@@ -108,6 +110,23 @@ export class PaneLabel implements ISeriesPrimitive<Time> {
   }
 }
 
+/** Review PR 3: markers (a backtest's entries and exits) on the bars. A marker snaps to the last bar at or before its
+ * time, so it never vanishes on a coarser timeframe; one before the first bar is left out. A colour may be a meaning
+ * ("up" / "down" / "fg"), which follows the chart's palette. Sorted by time, as the library wants them. Pure. */
+export function snapMarkers(markers: readonly ChartMarker[], times: readonly number[], palette: Pick<ChartPalette, "up" | "down" | "text">): SeriesMarker<Time>[] {
+  const colour = (c: string) => (c === "up" ? palette.up : c === "down" ? palette.down : c === "fg" ? palette.text : c);
+  const out: SeriesMarker<Time>[] = [];
+  for (const m of markers) {
+    const t = Math.floor(Date.parse(m.timestamp) / 1000);
+    if (!Number.isFinite(t)) continue;
+    let lo = 0, hi = times.length - 1, best = -1;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (times[mid] <= t) { best = mid; lo = mid + 1; } else hi = mid - 1; }
+    if (best < 0) continue;
+    out.push({ time: times[best] as UTCTimestamp, position: m.position, color: colour(m.color), shape: m.shape, text: m.text });
+  }
+  return out.sort((a, b) => (a.time as number) - (b.time as number));
+}
+
 function lineData(times: UTCTimestamp[], s: Series | null) {
   if (!s) return [];
   return times.map((time, i) => (s[i] == null || !Number.isFinite(s[i]) ? { time } : { time, value: s[i] as number }));
@@ -128,6 +147,9 @@ export class ChartCore {
   private readonly studyLines = new Set<ISeriesApi<"Line">>();
   private levels: LevelLine[] = [];
   private levelLines: IPriceLine[] = [];
+  /** Review PR 3: the markers, on the candle series (it always holds the bars, transparent for Bars and Line). */
+  private markers: readonly ChartMarker[] = [];
+  private markersPlugin: ISeriesMarkersPluginApi<Time> | null = null;
   private data: ChartBar[] = [];
   private key = "";
   private readonly unsubs: (() => void)[] = [];
@@ -414,6 +436,20 @@ export class ChartCore {
     }));
   }
 
+  /** Review PR 3: the markers (replaced as a whole). They sit on the candle series, which always holds the bars, so
+   * they show for every chart type. */
+  setMarkers(markers: readonly ChartMarker[]): void {
+    if (markers.length === 0 && this.markers.length === 0) return;
+    this.markers = markers;
+    this.paintMarkers();
+  }
+
+  private paintMarkers(): void {
+    if (this.markers.length === 0 && !this.markersPlugin) return;
+    this.markersPlugin ??= createSeriesMarkers(this.candles, []);
+    this.markersPlugin.setMarkers(snapMarkers(this.markers, this.data.map((b) => toTime(b.timestamp)), this.opts.palette));
+  }
+
   /** The last-price line: the library's own (the bar's colour, dashed), or neutral and dotted beside level lines. */
   private lastPriceLine() {
     return this.levels.length > 0
@@ -460,6 +496,7 @@ export class ChartCore {
     if (this.levels.length > 0) this.candles.applyOptions(this.lastPriceLine());
     this.paintLabels();
     this.paintVolume(this.data.map((b) => toTime(b.timestamp)));      // volume carries its colour per bar
+    if (this.markers.length > 0) this.paintMarkers();                   // a meaning colour follows the palette
   }
 
   /** New bars. The same `key` (symbol, timeframe, type) keeps the trader's view, shifted by the bars added on the left
@@ -499,6 +536,7 @@ export class ChartCore {
     OVERLAYS_V2.forEach((id, i) => this.overlays[i].setData(overlays.includes(id) ? lineData(times, values[id]()) : []));
     this.paintVolume(times);
     this.rsi?.setData(lineData(times, rsi(cl, DEFAULT_SETTINGS.rsiPeriod)));
+    if (this.markers.length > 0) this.paintMarkers();                   // the bars' times may have changed
   }
 
   /** CH6 study lines: on the price pane, or all together in one pane under volume and RSI. */
@@ -520,6 +558,7 @@ export class ChartCore {
     this.removed = true;
     for (const u of this.unsubs) u();
     this.engine.dispose();
+    this.markersPlugin?.detach();
     this.chart.remove();
   }
 }

@@ -5,10 +5,11 @@ import chartV2Source from "./ChartV2.tsx?raw";
 
 vi.mock("lightweight-charts", () => import("./lightweightFake.fixture"));
 const fake = await import("./lightweightFake.fixture");
-const { ChartCore } = await import("./chartCore");
+const { ChartCore, snapMarkers } = await import("./chartCore");
 const { readChartPalette } = await import("./chartTheme");
 const { default: ChartV2 } = await import("./ChartV2");
 const { DEFAULT_CHART_PREFS } = await import("./useChartPrefs");
+
 
 type Fake = InstanceType<typeof fake.FakeChart>;
 const T0 = Date.parse("2026-03-02T03:45:00Z");
@@ -159,6 +160,55 @@ describe("UI2-4b1 ChartV2: one chart with v5 native panes", () => {
     const { c, chart } = core();
     c.remove();
     expect(chart.removed).toBe(true);
+  });
+});
+
+describe("Chart review PR 3: series markers on the v2 chart", () => {
+  const iso = (i: number, plus = 0) => new Date(T0 + i * 300_000 + plus).toISOString();
+
+  it("snapMarkers: each marker goes to the bar at or before its time; one before the first bar is left out; sorted", () => {
+    const times = bars(5).map((b) => Math.floor(Date.parse(b.timestamp) / 1000));
+    const out = snapMarkers([
+      { timestamp: iso(3, 120_000), position: "aboveBar", color: "down", shape: "circle", text: "Exit" },   // inside bar 3
+      { timestamp: iso(1), position: "belowBar", color: "up", shape: "arrowUp", text: "Entry" },
+      { timestamp: iso(-1), position: "belowBar", color: "#123456", shape: "square", text: "Too early" },
+      { timestamp: "not a time", position: "belowBar", color: "fg", shape: "square", text: "Bad" },
+    ], times, palette);
+    expect(out.map((m) => [m.time, m.text, m.color])).toEqual([[times[1], "Entry", palette.up], [times[3], "Exit", palette.down]]);
+    expect(snapMarkers([{ timestamp: iso(9), position: "aboveBar", color: "fg", shape: "circle", text: "Late" }], times, palette)[0])
+      .toMatchObject({ time: times[4], color: palette.text });                         // after the last bar: the last bar
+  });
+
+  it("markers sit on the candle series and show for every chart type; new bars re-snap them; no plugin without markers", () => {
+    fake.markerPlugins.length = 0;
+    const { c, chart } = core();
+    c.setData(bars(10), "A");
+    c.setMarkers([]);
+    expect(fake.markerPlugins).toHaveLength(0);
+    c.setMarkers([{ timestamp: iso(2), position: "belowBar", color: "up", shape: "arrowUp", text: "Entry" }]);
+    const [plugin] = fake.markerPlugins;
+    expect(plugin.series).toBe(chart.series("Candlestick")[0]);
+    expect(plugin.list).toHaveLength(1);
+    for (const type of ["bars", "line", "heikin_ashi"] as const) { c.setType(type); expect(plugin.list).toHaveLength(1); }
+    c.setData(bars(10, 5), "A");                                                       // the bar of the marker scrolled out
+    expect(plugin.list).toHaveLength(0);
+    c.setMarkers([]);
+    expect(plugin.list).toHaveLength(0);
+    c.remove();
+    expect(plugin.detached).toBe(true);
+  });
+
+  it("a meaning colour follows a new palette", () => {
+    fake.markerPlugins.length = 0;
+    const { c } = core();
+    c.setData(bars(10), "A");
+    c.setMarkers([{ timestamp: iso(2), position: "belowBar", color: "up", shape: "arrowUp", text: "Entry" }]);
+    c.applyTheme({ ...palette, up: "#0d9488" }, false);
+    expect((fake.markerPlugins[0].list[0] as { color: string }).color).toBe("#0d9488");
+  });
+
+  it("ChartV2 passes its markers to the core", () => {
+    expect(chartV2Source).toContain("core?.setMarkers(markers)");
   });
 });
 

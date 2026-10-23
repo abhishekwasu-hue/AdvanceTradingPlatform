@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDrawingTools } from "../charting/DrawingToolbar";
+import type { ChartMarker } from "../charting/markers";
 import { venueZone } from "../charting/chartTypes";
 import type { LightweightEngine } from "../charting/lightweight";
 import { THEME_EVENT, useAppearance } from "../theme";
@@ -38,6 +39,8 @@ export interface ChartV2Props {
   marketOpen?: boolean | null;
   /** UI2-4e: levels to mark (a signal's entry, stop and target). */
   levels?: readonly LevelLine[];
+  /** Review PR 3: markers on the bars (a backtest's entries and exits); each snaps to the bar at or before its time. */
+  markers?: readonly ChartMarker[];
   /** Scrolled back to the oldest bars: load the page before them. */
   onLoadOlder?: () => void;
   /** The volume pane's name (UI2-4b2: where an index's volume comes from). */
@@ -59,10 +62,11 @@ export interface ChartV2Props {
 
 const NO_OVERLAYS: readonly OverlayId[] = [];
 const NO_LEVELS: readonly LevelLine[] = [];
+const NO_MARKERS: readonly ChartMarker[] = [];
 
 export default function ChartV2({
   candles, timeframe, symbol, exchange = "NSE", chartType = "candles", prefs = DEFAULT_CHART_PREFS, overlays = NO_OVERLAYS, live,
-  marketOpen, levels = NO_LEVELS, onLoadOlder, volumeLabel = "Volume", emptyText = "No prices for this timeframe yet.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, className = "h-[480px]",
+  marketOpen, levels = NO_LEVELS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "No prices for this timeframe yet.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, className = "h-[480px]",
 }: ChartV2Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<HTMLDivElement>(null);
@@ -111,6 +115,7 @@ export default function ChartV2({
   useEffect(() => { core?.setOverlays(overlays); }, [core, overlayKey]);  // eslint-disable-line react-hooks/exhaustive-deps
   const levelKey = levels.map((l) => `${l.price}|${l.title}|${l.tone}`).join(",");
   useEffect(() => { core?.setLevels(levels); }, [core, levelKey]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { core?.setMarkers(markers); }, [core, markers]);
   // The chart type is not in the key: setType re-renders the same bars in place, so the trader's zoom stays.
   useEffect(() => { core?.setData(display, `${symbol ?? ""}|${exchange}|${timeframe}`); }, [core, display, symbol, exchange, timeframe]);
 

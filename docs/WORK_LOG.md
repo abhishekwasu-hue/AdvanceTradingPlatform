@@ -3163,3 +3163,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   pre-fill as PAPER, T7 must fire / must not fire, no look-ahead, flags); vitest `src/ideas/ideas.test.tsx`; e2e
   `e2e/idea-library-v2.e2e.ts` (the idea library baselines updated: T7 scans, T5 note, the adopt card on A5). The
   fixture `e2e/fixtures/ideas_v2.json` is now the payload with strategy templates on; its pin is updated.
+## 23 Oct - Production readiness STEP 0: the inventory (docs only)
+
+- Branch `claude/readiness-step0`, stacked on #414 (the order). No code change, no migration, no flag, no route.
+- `docs/READINESS_STATUS.md`: one row per item A1–C13 (sub-bullets split): what exists (path:line), whether it is
+  configured in production (unknown until Abhi pastes `atp.sh health`; each row names the health lines that answer it),
+  what is missing, the work (S / M / L) and what Abhi must do; a table of the ~40 modules that already exist (R9) so
+  nothing is built twice; the migrations the work will need; an owner checklist with env variable names only.
+- `docs/design/READINESS_REVIEW.md`: the independent review of the order against the code (R1–R9), copied in; the
+  inventory follows it where it differs from the order (WAL archive R1, key escrow R2, CI gate R3, staging R4, MFA
+  scope R5, legal draft banner R6, billing switch R7, B7 data terms R8).
+- Verified locally only: `bash -n deploy/atp.sh`, `atp.sh help` (exit 0) and an unknown command (exit 2); the
+  existing tests of the listed machinery; main's last Actions runs (Staging stack incl. the rollback rehearsal green;
+  CI and Secret scan red, a fix in progress).
+- Questions RDY-1..12 in OPEN_QUESTIONS.

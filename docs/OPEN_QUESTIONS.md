@@ -1601,6 +1601,22 @@ collide on numbers.
 | PRV-5 | New signal-language tokens the reader needs. | Added as generic structure phrases to `app/signals/language.py` and its frontend mirror in a reviewed public PR (shared cases grow with them); when the reader emits them stays private. The package never brings its own text to a screen. | PRIVATE_PACKAGE section 9.3 | open |
 | PRV-6 | A new MAJOR reader version and running deployments. | The host's `ATP_PRIVATE_REF` moves only after the parity checks and a PAPER shadow; each deployment records the reader version it started with; the admin console lists the release note. | PRIVATE_PACKAGE section 11 | open |
 
+## Signals day one (SIG1, 23 Oct)
+
+Owner order 23 Oct ("Signals not empty on day one", README row 19). Branch `claude/signals-day-one`. Design:
+`docs/design/SIGNALS_DAY_ONE.md`. Checked against CLAUDE.md sections 2-5, DECISIONS (23 Oct trader review: gaps first;
+the watchlists sync ON) and the strategy templates order (section 8 parity, section 10 PAPER only): no rule is added,
+nothing is placed, no LIVE path, no migration.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| SIG1-1 | What does "adopt as a PAPER strategy in approval-only mode" create? | His own watch (one internal `user_prefs` row: the template's strategy id with its default settings, the list, `PAPER`, entries `APPROVAL` - server constants). No deployment rows: a deployment is one symbol and needs a broker session a new user may not have, and 50 bots would hit the plan limits and the broker budget. The watch only describes; "Start a paper bot with it" opens the existing form with the template picked (approval-only entries there under `approval_only_entries`). | app/signals_feed/day_one.py | open (owner may choose "create the bots") |
+| SIG1-2 | Which ready strategies does the card offer? | A5 Structure flip retest, B1 Range breakout, D3 Moving-average pullback in trend, on the Daily chart, with their own defaults; only those switched on for the organisation (A5 / B1 need the breakout screen flags, D3 none). | `OFFERS` | open |
+| SIG1-3 | Which lists? | The NIFTY 50 system list first (default), the other index-stock, sector and F&O lists, and his own lists with `watchlists` on. The Indices list is not offered (not a list of shares). At most 60 symbols are read; a longer list says so. | `list_choices`, `MAX_WATCH` | open |
+| SIG1-4 | Data for the first run. | The shared daily lake only (NSE bhavcopy / vendor / import, closed bars, split-adjusted), read in one batch (`load_daily`, the one seam a shared history resolver replaces). No broker call; no history = "No Daily history for this symbol yet", never sample data. | `load_daily` | open |
+| SIG1-5 | "Formed recently". | A display window of 5 Daily bars (not a reading rule; the logic is the template's own). | `RECENT_BARS` | open |
+| SIG1-6 | When is the watch read again? | On adopting; on opening Signals when the last read is older than 4 hours; on "Refresh" (at most once a minute). No worker job, no notification. | `STALE_SECONDS`, `MIN_REFRESH_SECONDS` | open |
+
 ## Copilot on the user's own key, tools wired (OKT, 23 Oct)
 
 Owner order 23 Oct ("the Copilot uses the user's own AI key and its tools are wired"), branch

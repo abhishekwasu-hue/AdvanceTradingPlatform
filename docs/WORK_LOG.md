@@ -3546,6 +3546,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
 
+## 23 Oct - Signals day one (README row 19, the trader review's gaps)
+
+- Branch `claude/signals-day-one` (from main). **No migration** (an internal `user_prefs` row). Behind `ui_v2` +
+  `strategy_templates`. PAPER only; nothing creates a deployment, a proposal or an order.
+- Backend: `app/signals_feed/day_one.py` + `day_one_routes.py` (`/api/signals/day-one`, adopt, refresh, stop);
+  `SignalSeries.armed_end` (additive) in `app/strategy_templates/engine.py`; tenancy table rows; the language guard
+  registers the new producer.
+- Frontend: `DayOneV2.tsx` / `dayOne.ts` on Signals; the empty inbox points at the watch.
+- Tests: `test_signals_day_one.py`, the guard, vitest `DayOneV2.test.tsx`, e2e `signals-day-one-v2.e2e.ts`.
+- Design `docs/design/SIGNALS_DAY_ONE.md`; questions SIG1-1..6.
+
 ## 23 Oct - Copilot on the user's own key, its tools wired (owner order 23 Oct, README row 19)
 
 - Branch `claude/copilot-own-key-tools` (from main). **No migration.** New user-facing parts behind `ui_v2` plus their

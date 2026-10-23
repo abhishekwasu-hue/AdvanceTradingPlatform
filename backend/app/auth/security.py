@@ -168,6 +168,16 @@ def create_access_token(user_id: int, email: Optional[str] = None, session_id: O
     return jwt.encode(payload, config.JWT_SECRET_KEY, algorithm=JWT_ALGORITHM, headers={"kid": key_id(config.JWT_SECRET_KEY)})
 
 
+def create_view_token(user_id: int, view_session_id: int, admin_id: int, expires_at: datetime) -> str:
+    """MO3-A1: the access token of a read-only "View as user" session. It reads as the person (`sub`), names the view
+    session (`vs`) and the admin behind it (`imp`), says read-only (`ro`), and carries no login session (`sid`), so no
+    two-factor step-up can ever pass on it. It expires with the view session."""
+    now = datetime.now(timezone.utc)
+    payload: Dict[str, Any] = {"sub": str(user_id), "iss": config.JWT_ISSUER, "aud": config.JWT_AUDIENCE, "iat": now,
+                               "exp": expires_at, "vs": view_session_id, "imp": admin_id, "ro": 1}
+    return jwt.encode(payload, config.JWT_SECRET_KEY, algorithm=JWT_ALGORITHM, headers={"kid": key_id(config.JWT_SECRET_KEY)})
+
+
 def decode_access_token(token: str) -> Dict[str, Any]:
     """Verifies signature (current or a previous secret, picked by `kid` when present), expiry, issuer and
     audience. Raises jwt.PyJWTError on any failure."""

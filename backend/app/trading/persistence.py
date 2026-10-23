@@ -1,13 +1,15 @@
 import json
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import SignalDirection
-from app.core.models import Trade
-from app.db.models import SignalHistoryRecord, TradeRecord, User
+from app.core.models import RiskConfig, Trade
+from app.db.models import RiskSettingsRecord, SignalHistoryRecord, TradeRecord, User
 from app.market_data.calendar import trading_day_start
+from app.risk_engine import loss_streak
 from app.risk_engine.risk_manager import TradingDayState
 from app.signal_scoring.models import EnrichedSignal
 
@@ -102,7 +104,7 @@ async def persist_paper_trade(session: AsyncSession, user: User, trade: Trade) -
     return await persist_trade(session, user, trade, mode="PAPER")
 
 
-async def build_trading_day_state(session: AsyncSession, user: User) -> TradingDayState:
+async def build_trading_day_state(session: AsyncSession, user: User, *, now: Optional[datetime] = None) -> TradingDayState:
     """Derives this tenant's risk-engine counters fresh from its persisted trade history on every
     call, rather than tracking them in a process-memory counter. A single in-memory
     `TradingDayState` shared across a multi-tenant server never reflects one tenant's real
@@ -110,8 +112,12 @@ async def build_trading_day_state(session: AsyncSession, user: User) -> TradingD
     from the DB is slower but always correct, and correct across restarts and multiple server
     processes. Scoped by tenant_id, not user_id: risk limits (daily loss, trade count,
     consecutive losses) are an org-wide budget shared by everyone trading under that tenant.
+
+    CP6-15: the losses in a row count only the current session's losses ("Pause until the next session", the default)
+    or the losses since the trader's last resume ("Pause until I resume") - `loss_streak_count`. Before CP6-15 they
+    counted the last closed trades of all time, so the pause never ended. `now` is for tests.
     """
-    today_start = trading_day_start()      # P0.5 / T6: the Indian trading day, not UTC midnight
+    today_start = trading_day_start(now)   # P0.5 / T6: the Indian trading day, not UTC midnight
     tenant_id = user.tenant_id
 
     open_positions = await session.scalar(
@@ -130,23 +136,65 @@ async def build_trading_day_state(session: AsyncSession, user: User) -> TradingD
         .where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time >= today_start)
     )
 
-    recent_closed = await session.scalars(
-        select(TradeRecord)
-        .where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_not(None))
-        .order_by(TradeRecord.exit_time.desc())
-        .limit(20)
-    )
-    consecutive_losses = 0
-    for trade_record in recent_closed:
-        if trade_record.pnl is not None and trade_record.pnl <= 0:
-            consecutive_losses += 1
-        else:
-            break
+    consecutive_losses = (await loss_streak_count(session, tenant_id, now=now))["losses_in_a_row"]
 
     return TradingDayState(
         trades_today=trades_today or 0, daily_pnl=float(daily_pnl or 0.0) + unrealised,
         consecutive_losses=consecutive_losses, open_positions=open_positions or 0,
     )
+
+
+async def _pause_settings(session: AsyncSession, tenant_id: int) -> Tuple[str, Optional[datetime], int]:
+    """(the pause choice, the last resume, the saved limit) from the tenant's risk settings; the defaults without a row."""
+    row = (await session.execute(
+        select(RiskSettingsRecord.loss_streak_pause, RiskSettingsRecord.loss_streak_resumed_at, RiskSettingsRecord.max_consecutive_losses)
+        .where(RiskSettingsRecord.tenant_id == tenant_id)
+    )).first()
+    if row is None:
+        return loss_streak.NEXT_SESSION, None, RiskConfig().max_consecutive_losses
+    mode = row[0] if row[0] in loss_streak.PAUSE_MODES else loss_streak.NEXT_SESSION
+    return mode, _aware(row[1]), int(row[2])
+
+
+def _aware(value: Optional[datetime]) -> Optional[datetime]:
+    return value.replace(tzinfo=timezone.utc) if value is not None and value.tzinfo is None else value
+
+
+async def loss_streak_count(session: AsyncSession, tenant_id: int, *, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """CP6-15: the tenant's losses in a row as the risk engine counts them (app/risk_engine/loss_streak.py): closed
+    trades from the session's start (next session) or after the last resume (until I resume), newest first, until the
+    first winning trade. Returns the count with the choice, the window's start and the last resume."""
+    mode, resumed_at, limit = await _pause_settings(session, tenant_id)
+    session_start = trading_day_start(now)
+    since = loss_streak.counted_since(mode, session_start=session_start, resumed_at=resumed_at)
+    query = select(TradeRecord.pnl).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_not(None))
+    if since is not None:
+        query = query.where(TradeRecord.exit_time >= since if mode == loss_streak.NEXT_SESSION else TradeRecord.exit_time > since)
+    # Enough rows to reach any saved limit; a window bounded by the session or the resume is short anyway.
+    rows = await session.scalars(query.order_by(TradeRecord.exit_time.desc()).limit(max(20, limit + 1)))
+    return {"mode": mode, "losses_in_a_row": loss_streak.streak_of(rows), "counted_since": since, "resumed_at": resumed_at,
+            "session_start": session_start, "saved_limit": limit}
+
+
+async def loss_streak_status(session: AsyncSession, tenant_id: int, *, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """CP6-15: what the Risk limits page shows - the losses in a row now, the limit the risk engine applies (the saved
+    one, within the platform ceilings), whether new entries are paused, when the pause ends and the last resume.
+    Exits are never paused (ADR-0004)."""
+    from app.platform.controls import clamp_config, risk_ceilings
+    from app.risk_engine.routes import get_tenant_risk_config
+    cfg = await get_tenant_risk_config(tenant_id, session) or RiskConfig()
+    cfg, _ = clamp_config(cfg, await risk_ceilings(session))
+    counted = await loss_streak_count(session, tenant_id, now=now)
+    limit = int(cfg.max_consecutive_losses)
+    paused = loss_streak.is_paused(counted["losses_in_a_row"], limit)
+    mode = counted["mode"]
+    return {
+        "mode": mode, "mode_label": loss_streak.PAUSE_LABELS[mode], "limit": limit, "losses_in_a_row": counted["losses_in_a_row"],
+        "paused": paused, "can_resume": paused and mode == loss_streak.UNTIL_RESUME,
+        "ends": ("at the next session" if mode == loss_streak.NEXT_SESSION else "when you resume") if paused else None,
+        "resumed_at": counted["resumed_at"].isoformat() if counted["resumed_at"] is not None else None,
+        "exits_blocked": False,
+    }
 
 
 async def open_unrealised_pnl(session: AsyncSession, tenant_id: int, *, strategy_id: Optional[str] = None) -> float:

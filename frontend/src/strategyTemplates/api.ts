@@ -1,6 +1,7 @@
 /** Strategy templates step 2 (flag `strategy_templates`; the server answers 404 while it is off): the template cards and
  * "Adopt as a paper strategy" - a PRE-FILL of the paper bot form. Adopting creates nothing; the user reviews and saves. */
 import { request } from "../api/client";
+import type { TemplateExitChoices } from "./exits";
 
 export interface TemplateChoice { value: string; label: string }
 export interface TemplateSetting {
@@ -19,6 +20,8 @@ export interface TemplateAdoption {
   deployment: { strategy_id: string; timeframe: string; holding: "INTRADAY" | "SWING"; mode: "PAPER" };
   settings: { timeframe: string; sides: string; params: Record<string, number | string | boolean> };
   notes: string[];
+  /** Section 5: the exit choices this template offers per instrument (absent from an older server: none shown). */
+  exits?: TemplateExitChoices;
 }
 export interface AdoptRequest { timeframe?: string; sides?: "long" | "short" | "both"; params?: Record<string, number | string | boolean> }
 

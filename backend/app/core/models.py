@@ -1,6 +1,6 @@
 import math
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -118,6 +118,9 @@ class RiskConfig(BaseModel):
     dd_level_1_pct: float = 5.0            # P2: this far below the equity peak, risk per trade is halved
     dd_level_2_pct: float = 10.0           # P3: this far below, new entries pause until reviewed
     event_size_cut_pct: float = 50.0       # M8: default size cut on an event day flagged SIZE_CUT
+    # CP6-15: when the losses-in-a-row pause ends - at the next Indian trading session, or when the trader resumes
+    # (app/risk_engine/loss_streak.py). The same rule live, on paper and in both backtest engines.
+    loss_streak_pause: Literal["next_session", "until_resume"] = "next_session"
 
 
 class RiskDecision(BaseModel):
@@ -181,3 +184,6 @@ class BacktestResult(BaseModel):
     # N7 C2c: what non-default execution models did (margin refusals and calls, model-priced strikes); None on a default
     # run (and then left out of the result hash, so default hashes stay as they were).
     execution: Optional[Dict[str, Any]] = None
+    # CP6-15: what the losses-in-a-row pause did in this run (app/risk_engine/loss_streak.BacktestLossStreak.report); None
+    # when the limit was never reached (and then left out of the result hash).
+    loss_streak: Optional[Dict[str, Any]] = None

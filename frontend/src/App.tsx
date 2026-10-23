@@ -3,6 +3,7 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useSta
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import StepUpHost from "./components/StepUpHost";
+import ViewAsBanner from "./admin/ViewAsBanner";
 import { ThemeToggle } from "./components/AppearanceCard";
 import BottomNav from "./components/BottomNav";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -347,6 +348,8 @@ export default function App() {
       <AuthProvider>
         <ShellFeatures>
         <ToastProvider>
+          {/* MO3-A1: the admin's read-only "View as user" banner, over either shell while a view is open. */}
+          <ViewAsBanner />
           {standalone ? <SignInGate>{standalone}</SignInGate> : (
             <Routes>
               {/* Z10-f: the legal pages are public and stand alone (no shell, no sign-in) - the sign-up form links here. */}

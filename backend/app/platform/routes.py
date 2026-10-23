@@ -153,7 +153,7 @@ async def my_features(user: User = Depends(get_current_user), session: AsyncSess
     return await controls.features_for_tenant(session, user.tenant_id)
 
 
-@status_router.get("/encryption")
+@status_router.get("/encryption", dependencies=[Depends(require_mfa_session)])   # A4 / R5 b
 async def encryption_status(user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
     """Phase N1 (admin): how many secrets still sit under the master key vs tenant data keys."""
     from app.secrets_store import envelope
@@ -210,7 +210,7 @@ async def enable_trading(member_id: int, actor: User = Depends(require_owner), s
     return {"id": member.id, "email": member.email, "trading_disabled_reason": None}
 
 
-@users_router.post("/{member_id}/verify-email")
+@users_router.post("/{member_id}/verify-email", dependencies=[Depends(require_mfa_session)])   # A4 / R5 b
 async def admin_verify_email(member_id: int, actor: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
     """Phase N3 (platform admin): stamp an address verified when no mailer is configured yet."""
     from app.auth.verification import mark_verified

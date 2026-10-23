@@ -1,6 +1,7 @@
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional, Tuple
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -135,22 +136,53 @@ class MfaRequired(HTTPException):
         super().__init__(status_code=status.HTTP_403_FORBIDDEN, detail=detail, headers={"X-Step-Up": "mfa"})
 
 
-async def ensure_mfa_session(session: AsyncSession, user: User, session_id: Optional[int], why: str) -> None:
-    """Raises unless the user has MFA enabled *and* this session passed a TOTP check."""
+async def ensure_mfa_session(session: AsyncSession, user: User, session_id: Optional[int], why: str, *,
+                             within_minutes: Optional[int] = None) -> None:
+    """Raises unless the user has MFA enabled *and* this session passed a TOTP check - and, with `within_minutes`, passed
+    it no longer ago than that (A4: the step-up freshness window for sensitive writes)."""
     if not user.mfa_enabled:
         raise MfaRequired(f"{why} requires two-factor authentication - enable it from the Account tab first")
     record = await session.get(UserSessionRecord, session_id) if session_id is not None else None
     if record is None or record.mfa_verified_at is None:
         raise MfaRequired(f"{why} requires a fresh two-factor check on this session - enter your authenticator code")
+    if within_minutes is not None:
+        verified_at = record.mfa_verified_at
+        verified_at = verified_at.replace(tzinfo=timezone.utc) if verified_at.tzinfo is None else verified_at
+        if datetime.now(timezone.utc) - verified_at > timedelta(minutes=within_minutes):
+            raise MfaRequired(f"{why} needs a fresh two-factor check (the last one was more than {within_minutes} minutes "
+                              "ago). Enter the code from your authenticator app.")
+
+
+_READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 async def require_mfa_session(
+    request: Request, user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
+    session: AsyncSession = Depends(get_session),
+) -> User:
+    """Unconditional step-up: the admin console and platform-wide switches. A read needs a two-factor-checked session; a
+    write also needs the check to be recent (`MFA_STEP_UP_MINUTES`, A4 / review R5 c)."""
+    from app.core.config import MFA_STEP_UP_MINUTES
+    fresh = None if request.method.upper() in _READ_METHODS else MFA_STEP_UP_MINUTES
+    await ensure_mfa_session(session, user, session_id, "This action", within_minutes=fresh)
+    return user
+
+
+async def require_checked_mfa_session(
     user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
     session: AsyncSession = Depends(get_session),
 ) -> User:
-    """Unconditional step-up: the admin console and platform-wide switches."""
+    """A two-factor-checked session, however long ago the check was: for the one admin write that only makes things
+    safer - engaging the global kill switch - so an emergency stop is never held up by a code prompt (A4, RDY-28)."""
     await ensure_mfa_session(session, user, session_id, "This action")
     return user
+
+
+async def ensure_admin_write_step_up(session: AsyncSession, user: User, session_id: Optional[int], why: str) -> None:
+    """A4 / review R5 b: a SUPER_ADMIN write that lives inside a route every member uses (a GLOBAL risk limit, a platform-wide
+    market event, a shared company profile) gets the same check as the admin routers' writes: two-factor, recent."""
+    from app.core.config import MFA_STEP_UP_MINUTES
+    await ensure_mfa_session(session, user, session_id, why, within_minutes=MFA_STEP_UP_MINUTES)
 
 
 async def ensure_live_step_up(session: AsyncSession, user: User, session_id: Optional[int], why: str) -> None:

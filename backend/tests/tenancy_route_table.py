@@ -272,6 +272,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/auth/login-history"): "member",
     ("POST", "/api/auth/logout"): S_OWN_ACCOUNT,
     ("POST", "/api/auth/logout-all"): S_OWN_ACCOUNT,
+    ("POST", "/api/auth/logout-others"): S_OWN_ACCOUNT,
     ("GET", "/api/auth/me"): "member",
     ("POST", "/api/auth/mfa/backup-codes"): S_OWN_ACCOUNT,
     ("POST", "/api/auth/mfa/confirm"): S_OWN_ACCOUNT,

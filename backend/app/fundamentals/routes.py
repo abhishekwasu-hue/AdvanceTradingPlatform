@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user, require_contributor
+from app.auth.dependencies import current_session_id, ensure_admin_write_step_up, get_current_user, require_contributor
 from app.core.enums import UserRole
 from app.core.enums import FundamentalGrade, InvestmentHorizon, PeriodType, QualityLabel, SignalDirection, ValuationLabel
 from app.db.models import CompanyRecord, User
@@ -140,6 +140,7 @@ async def get_company(symbol: str, session: AsyncSession = Depends(get_session),
 @router.put("/companies/{symbol}", response_model=CompanyProfile, dependencies=[Depends(require_contributor)])
 async def update_company(
     symbol: str, profile: CompanyProfile, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    session_id: Optional[int] = Depends(current_session_id),
 ) -> CompanyProfile:
     """Edits this organisation's own company profile. A shared profile changes only through the provider refresh (or a
     platform administrator) - one organisation never rewrites what every other organisation reads."""
@@ -147,6 +148,8 @@ async def update_company(
     if record.tenant_id is None and user.role != UserRole.SUPER_ADMIN.value:
         raise HTTPException(status_code=403, detail="This company's profile is shared reference data: it changes only through the provider "
                                                     "refresh (POST /companies/{symbol}/refresh)")
+    if record.tenant_id is None:
+        await ensure_admin_write_step_up(session, user, session_id, "Editing a company profile every organisation reads")
     _check_source(profile.source)
     db.apply_company_fields(record, profile)
     await session.commit()

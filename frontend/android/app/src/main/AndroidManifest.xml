@@ -28,6 +28,24 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- B8: Android App Links. A link on the production domain to one of these screens (a notification, Telegram's
+                 "Open in app") opens the app there instead of the browser; src/native/deepLinks.ts allows only the
+                 listed paths and ids. Verified by https://aialgodesk.tech/.well-known/assetlinks.json, which needs the
+                 signing fingerprints (MA-3 / MA-4, docs/design/MOBILE_PUSH.md); until then Android opens them in the
+                 browser, as today. No custom scheme: another app could claim one. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="aialgodesk.tech" />
+                <data android:path="/signals" />
+                <data android:path="/positions" />
+                <data android:path="/broker" />
+                <data android:path="/orders" />
+                <data android:path="/notifications" />
+                <data android:pathPrefix="/copilot/watchtower" />
+            </intent-filter>
+
         </activity>
 
         <provider

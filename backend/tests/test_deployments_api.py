@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.db.models import BrokerCredentialRecord, TradeRecord, User
 from tests.broker_fakes import fake_credentials
 from tests.test_auth_api import _register, _session_factory, client
+from tests.utils import enable_mfa
 
 STRATEGY = "ema_rsi_scalper_1m"
 
@@ -238,6 +239,7 @@ def test_market_holidays_admin_api():
             user.role = "SUPER_ADMIN"
             await session.commit()
     _run(promote())
+    enable_mfa(headers)  # A4: holiday edits need an MFA-verified admin session
 
     created = client.post("/api/market-holidays", headers=headers, json=body)
     assert created.status_code == 201 and created.json()["exchange"] == "NSE"

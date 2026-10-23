@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import BrokerPromptHost from "../broker/BrokerPromptHost";
+import ReferralClaimHost from "../growth/ReferralClaimHost";
 import ConnectAiHostV2 from "../aiKeys/ConnectAiHostV2";
 import { brokerDot } from "../broker/brokerState";
 import { useBrokerConnections } from "../broker/useBrokerConnections";
@@ -21,6 +22,7 @@ import PageTabsV2 from "./PageTabsV2";
 import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
 import { MARKETS_ADDRESS, SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS } from "./aliases";
 import { IDEAS_ADDRESS } from "../ideas/model";
+import { LEARN_ADDRESS } from "../learn/model";
 import { SETTINGS_SECTIONS } from "../settings/paths";
 import { closedFlag } from "./pageFlags";
 import { ComingSoon } from "../ui/ComingSoon";
@@ -129,6 +131,8 @@ export default function AppShellV2() {
   const IdeasPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.ideas ?? NotFound;
   // MO4 slice 2: the Sector & index view (v2 only), the same way.
   const MarketsPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.markets ?? NotFound;
+  // Readiness C13: the Learn page (v2 only), the same way.
+  const LearnPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.learn ?? NotFound;
   const routes = (
     <ErrorBoundary key={key ?? "not-found"} title={key ? title : undefined}>
       <Suspense fallback={<PageLoading />}>
@@ -146,6 +150,7 @@ export default function AppShellV2() {
           <Route path={TRADING_DEFAULTS_ADDRESS} caseSensitive element={<TradingDefaultsPage onNavigate={go} />} />
           <Route path={IDEAS_ADDRESS} caseSensitive element={<IdeasPage onNavigate={go} />} />
           <Route path={MARKETS_ADDRESS} caseSensitive element={<MarketsPage onNavigate={go} />} />
+          <Route path={LEARN_ADDRESS} caseSensitive element={<LearnPage onNavigate={go} />} />
           {SETTINGS_SECTIONS.map(({ key: k, path: p }) => {
             const SectionPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2[k] ?? NotFound;
             return <Route key={p} path={p} caseSensitive element={<SectionPage onNavigate={go} />} />;
@@ -201,6 +206,8 @@ export default function AppShellV2() {
       <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key} dot={dot}
         onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
       <BrokerPromptHost />
+      {/* Readiness C13: a new account names the invite link it arrived with, once (flag `referrals`). */}
+      {user && features.on("referrals") && <ReferralClaimHost />}
       {user && <ConnectAiHostV2 />}
       {user && <TourHost userKey={user.id} role={user.role ?? null} tourId={tourId} />}
       <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} />

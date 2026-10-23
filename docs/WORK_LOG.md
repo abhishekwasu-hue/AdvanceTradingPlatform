@@ -3432,3 +3432,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `src/ui/tokens.test.ts`: the new contrast pairs (text 4.5, UI parts 3), navy variants, the distinct-hue test.
 - e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
 
+
+## 23 Oct - Production readiness C13: learning and growth
+
+- Branch `claude/readiness-c13-learning` (from main). **No migration.** Four new flags, all OFF: `learn`, `marketing_site`,
+  `onboarding_emails`, `referrals` (catalogue entries added).
+- Learn (`/learn`, v2 only): `backend/app/learn/` (lessons.json, site.json, content guard reuse, `GET /api/learn`,
+  `GET /api/site/pages`, admin video links `GET` / `PUT /api/admin/learn/settings`); `frontend/src/learn/`.
+- Onboarding e-mails: `backend/app/growth/onboarding.py` (templates, once-only marks in `user_prefs`, signed unsubscribe
+  + List-Unsubscribe, `email_opt_outs` scope `onboarding`), worker hook every 15 min; `mailer.send` takes extra headers.
+- Marketing pages: public `/features`, `/how-it-works`, `/about` (`frontend/src/site/`), SEO tags in `index.html` and per
+  page, `public/robots.txt`, `public/sitemap.xml`, sign-in footer links.
+- Referral: `backend/app/growth/referral.py` (settings interface for C11), routes in `growth/routes.py`; "Invite a friend"
+  on Settings › Account & plan; the code kept from `?ref=` and claimed once after sign-in.
+- Funnel: `growth_funnel` + `active_week1` in the admin activation read; shown in Admin › Users & business.
+- Tests: `backend/tests/test_c13_learning.py` (fake mail server); vitest learn / site / referral / growthSettings; e2e
+  `learn-growth-v2.e2e.ts` with new baselines (360 / 390 / 1440, light / dark); `admin-users-v2-*` and
+  `growth-activation-v2-*` refreshed (new cards and the funnel). Questions RDY-C13-1..8.

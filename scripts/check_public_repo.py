@@ -155,6 +155,9 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/src/signals/__fixtures__/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
     # Idea library slice 1: the server's own payload of the hand-written idea cards (no market data; synced by a backend test)
     "frontend/e2e/fixtures/ideas_v2.json": "aea13574a934836de671313d324d15049c6867efa2eb4f42456549fbecb66845",
+    # Readiness C13: the Learn page and the marketing pages, the server's own hand-written payloads (backend/tests/test_c13_learning.py).
+    "frontend/e2e/fixtures/learn_v2.json": "45ce93482f856a6cf9bc83c4a3d2cf750582c041b10bac3594c9782edaf99e3d",
+    "frontend/e2e/fixtures/site_v2.json": "c1539facb9bbb4df51d2aad62d3118da77a8ab654c756a972fa7e3a6c2c096e1",
     # made-up rows in NSE's file layouts (the universe importer's tests)
     "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
     "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",

@@ -94,7 +94,9 @@ from app.option_chain.ask_routes import router as oc_ask_router
 from app.me.setup import router as me_setup_router
 from app.context_panel.routes import router as context_panel_router
 from app.markets.routes import router as markets_router
+from app.growth.routes import admin_router as growth_admin_router
 from app.growth.routes import router as growth_router
+from app.learn.routes import router as learn_router
 from app.paper.ticket_routes import router as paper_ticket_router
 from app.paper.fno_routes import router as paper_fno_router
 from app.paper.fno_insights_routes import router as paper_fno_insights_router
@@ -371,6 +373,8 @@ app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(markets_router)   # MO4 slice 2: the Sector & index view (flags ui_v2 + markets_view)
 app.include_router(growth_router)    # MO4 slice 3: the plan page + usage meter, the discipline share card (flags ui_v2 + growth_v2)
+app.include_router(growth_admin_router)  # C13: the referral reward wording (SUPER_ADMIN + two-factor)
+app.include_router(learn_router)     # C13: the Learn section (ui_v2 + learn), the public marketing pages (marketing_site)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(paper_fno_router)       # FNO-1: trading from the option chain, PAPER only (flags ui_v2 + paper_account)
 app.include_router(paper_fno_insights_router)  # F&O 8b slice 1: risk budget + setup-aware strikes, read-only (ui_v2)

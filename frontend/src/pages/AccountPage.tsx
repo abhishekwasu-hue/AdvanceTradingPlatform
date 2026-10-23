@@ -12,6 +12,7 @@ import { isAdminViewer } from "../ui/ComingSoon";
 import { ErrorState } from "../ui/ErrorState";
 import BillingCard from "../components/BillingCard";
 import PlanUsageV2 from "../growth/PlanUsageV2";
+import InviteFriendV2 from "../growth/InviteFriendV2";
 import { useFeatures } from "../ui/useFeatures";
 import { supportAccess, type SupportAccess } from "../api/viewAs";
 
@@ -33,6 +34,7 @@ export default function AccountPage() {
   const v2 = features.on("ui_v2");
   // MO4 slice 3: the plan page's usage meter above the plans and billing (ui_v2 + growth_v2).
   const growth = v2 && features.on("growth_v2");
+  const referrals = v2 && features.on("referrals");     // Readiness C13: "Invite a friend"
 
   useEffect(() => {
     if (!user) return;
@@ -170,7 +172,7 @@ export default function AccountPage() {
   return (
     <div className="space-y-4">
       {account}
-      <div id="plan" className="scroll-mt-20 space-y-4">{growth && <PlanUsageV2 />}<BillingCard /></div>
+      <div id="plan" className="scroll-mt-20 space-y-4">{growth && <PlanUsageV2 />}<BillingCard />{referrals && <InviteFriendV2 />}</div>
     </div>
   );
 }

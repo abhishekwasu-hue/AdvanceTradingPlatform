@@ -107,6 +107,7 @@ MAX_CONSECUTIVE_FAILURES = 5
 # How often a VALID token is re-proven against the broker.
 TOKEN_RECHECK_SECONDS = 300
 RHYTHM_EVERY_MINUTES = 5            # MO4: how often the worker looks for daily-rhythm digests due on Telegram
+ONBOARDING_EVERY_MINUTES = 15       # C13: how often the worker looks for first-week onboarding e-mails due
 # Fairness: no tenant may consume more than this share of a cycle evaluating entries. Deployments
 # that don't get their turn are picked up first next cycle (round-robin), so a tenant with many
 # deployments is slowed, never starved - and never starves the others.
@@ -245,6 +246,7 @@ class TradingWorker:
         # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
         self._last_eod_summary_day = None
         self._last_rhythm_check: Optional[datetime] = None     # MO4: the daily rhythm's Telegram sends
+        self._last_onboarding_check: Optional[datetime] = None  # C13: the first-week onboarding e-mails
         self._last_thesis_report_day = None
         self._last_login_reminder_day = None   # D5: the pre-open daily-login reminder, once per IST day
         self._last_analytics_expiry_day = None  # Upstox analytics token: the 7-day / last-day expiry warning, once per IST day
@@ -588,6 +590,17 @@ class TradingWorker:
                             await rhythm_deliver.send_due(own, now)
                     except Exception as exc:  # noqa: BLE001 - a digest never blocks the cycle
                         logger.warning("Daily rhythm sends failed: %s", type(exc).__name__)
+                # Readiness C13 (app/growth/onboarding.py): the first-week e-mails (connect your broker, first paper bot, first
+                # signal review), each once, per organisation behind `onboarding_emails`; nothing without the platform mailer
+                # and PUBLIC_BASE_URL. Its own session; read-only towards trading.
+                if self._last_onboarding_check is None or now - self._last_onboarding_check >= timedelta(minutes=ONBOARDING_EVERY_MINUTES):
+                    self._last_onboarding_check = now
+                    try:
+                        from app.growth import onboarding
+                        async with self.session_factory() as own:
+                            await onboarding.send_due(own, now)
+                    except Exception as exc:  # noqa: BLE001 - an e-mail never blocks the cycle
+                        logger.warning("Onboarding e-mails failed: %s", type(exc).__name__)
                 # Phase AX: the end-of-day summary - once per IST weekday from 15:35, one
                 # notification per organisation with a deployment or a trade today. Read-only.
                 ist_now = now.astimezone(IST)

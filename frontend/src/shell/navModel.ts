@@ -9,6 +9,7 @@ import type { Page } from "../components/Sidebar";
 import { PAGE_FLAGS } from "./pageFlags";
 import { SETTINGS_PATH, type SettingsSectionKey } from "../settings/paths";
 import { IDEAS_ADDRESS, IDEA_FLAG } from "../ideas/model";
+import { LEARN_ADDRESS } from "../learn/model";
 
 /**
  * UI2-1 (UI v2 proposal §2 navigation map, §4 bottom bar): the one navigation model the v2 shell reads - the sidebar,
@@ -21,7 +22,7 @@ import { IDEAS_ADDRESS, IDEA_FLAG } from "../ideas/model";
 
 /** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
  * Settings → Setup (`/settings/setup`, UI2-7), My trading defaults (`/settings/trading-defaults`, part C) and the Settings section pages (`/settings/ai` ..., Settings redesign B). */
-export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | SettingsSectionKey;
+export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | "learn" | SettingsSectionKey;
 
 export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more" | "admin";
 
@@ -85,6 +86,9 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
       item("strategies", "Strategies", "Strategies", "/strategies", Layers, { keywords: ["strategy library", "library"] }),
       item("copilot", "AI Copilot", "AI Copilot", "/copilot", Sparkles, { flag: "ai_copilot", keywords: ["ai", "assistant", "watchtower"] }),
       item("news-events", "News & events", "News & events", "/news-events", Newspaper, { keywords: ["news", "events", "calendar"] }),
+      // Readiness C13 (flag `learn`): short lessons, the glossary and the course videos (education only).
+      item("learn", "Learn", "Learn", LEARN_ADDRESS, GraduationCap,
+        { flag: PAGE_FLAGS.learn, keywords: ["lessons", "course", "videos", "glossary", "words", "basics", "beginner", "how to"] }),
     ],
   },
   {

@@ -12,6 +12,9 @@ import { T, mockTrading } from "./tradingMocks";
  * - The F&O desk (8b-i): on a desktop the cockpit with a chart of the underlying, the chain near his strikes and his
  *   basket on one screen; on a phone a quick switch. Read only; every Exit stays on the position rows.
  * - The journal's chart snapshot (8b-k): drawn on his tap from the underlying's candles (one read); nothing is stored.
+ * FNO-8B-28: with his own liquidity limits on (Settings -> My trading defaults, OFF by default) the liquidity line also
+ *   says whether the strike is inside them - words only. FNO-8B-31: the journal chart's "Download image" saves a PNG on
+ *   his device with a plain file name; nothing is sent (the `fno8b4-journal-chart-v2-*` baselines show the button).
  * Baselines (NEW): `fno8b4-ticket-checks-v2-<360|390|1440>-<theme>.png`, `fno8b4-desk-v2-*` and `fno8b4-journal-chart-v2-*`.
  * After an intended change: `npx playwright test --project=phone e2e/fno8b-slice4-v2.e2e.ts --update-snapshots`; the
  * `fno8b4-journal-chart-v2-*` files are pinned in scripts/check_public_repo.py (ALLOWED_TEST_DATA: made-up trades).
@@ -92,7 +95,7 @@ function ticketPreview(body: Record<string, unknown>) {
 
 interface ChainSeen { posts: MockCalls["posts"] }
 
-async function openChain(page: Page, theme: "light" | "dark", path: string, opts: { items?: unknown[]; basket?: unknown[] } = {}): Promise<ChainSeen> {
+async function openChain(page: Page, theme: "light" | "dark", path: string, opts: { items?: unknown[]; basket?: unknown[]; fno?: unknown } = {}): Promise<ChainSeen> {
   await page.clock.install({ time: new Date("2026-10-27T10:30:00+05:30") });
   await page.addInitScript(([t, basket]) => {
     try {
@@ -116,7 +119,8 @@ async function openChain(page: Page, theme: "light" | "dark", path: string, opts
     if (url.pathname.endsWith("/expiries")) return route.fulfill({ json: DATA.expiries });
     return route.fulfill({ json: { ...DATA.live, expiry: url.searchParams.get("expiry") ?? DATA.live.expiry, market_open: true } });
   });
-  await page.route(api("/me/prefs"), (r) => r.fulfill({ json: { prefs: { fno_baskets: { items: {} } }, versions: { fno_baskets: 0 } } }));
+  await page.route(api("/me/prefs"), (r) => r.fulfill({ json: { prefs: { fno_baskets: { items: {} }, ...(opts.fno ? { fno: opts.fno } : {}) },
+    versions: { fno_baskets: 0, fno: opts.fno ? 1 : 0 } } }));
   await page.route(/\/api(?:\/v1)?\/paper\/fno\//, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -285,7 +289,7 @@ for (const size of SIZES) {
         await expect(desk).toHaveScreenshot(`fno8b4-desk-v2-${size.width}-${theme}.png`, SHOT);
         const journal = page.locator("[data-block='fno-journal']");
         await journal.locator("[data-draft-chart='show']").click();
-        await expect(journal.locator("[data-draft-chart='shown'] svg")).toBeVisible();
+        await expect(journal.locator("[data-draft-chart='shown'] figure svg")).toBeVisible();
         await journal.scrollIntoViewIfNeeded();
         await expect(journal).toHaveScreenshot(`fno8b4-journal-chart-v2-${size.width}-${theme}.png`, SHOT);
       });
@@ -321,6 +325,40 @@ test.describe("8b slice 4 flows", () => {
     expect(seen.posts.filter((p) => p.url.endsWith("/paper/fno/order"))).toHaveLength(1);
   });
 
+  test("FNO-8B-28: his own liquidity limits, only when on, add whether the strike is inside them; the ticket still places on his tap", async ({ page }) => {
+    const seen = await openChain(page, "light", FROM_SIGNAL, { items: [SINGLE_ITEM], fno: { liquidity: { on: true, max_spread_pct: 0.5, min_oi: 500000 } } });
+    await page.locator("[data-setup-item='8'] [data-setup='trade']").tap();
+    const ticket = page.locator("[data-order-ticket]");
+    await ticket.locator("[data-ticket='review']").tap();
+    const checks = ticket.locator("[data-risk-checks='ticket']");
+    await expect(checks).toContainText("Liquidity: bid-ask gap");
+    await expect(checks).toContainText("Outside your own limits: bid-ask gap 0.7% is above your 0.5%; open interest 4,00,000 is below your 5,00,000.");
+    await expect(checks).toContainText("Information only: none of this holds back the order or any exit.");
+    await expect(checks.locator("button, a, input")).toHaveCount(0);
+    await expect(ticket.locator("[data-ticket='place']")).toBeEnabled();
+    await ticket.locator("[data-ticket='place']").tap();
+    await expect(ticket.locator("[data-ticket='result']")).toContainText("Placed in practice mode");
+    expect(seen.posts.filter((p) => p.url.endsWith("/paper/fno/order"))).toHaveLength(1);
+  });
+
+  test("FNO-8B-28: inside his own limits, said plainly; off (the default) the line is the chain comparison alone", async ({ page }) => {
+    await openChain(page, "light", FROM_SIGNAL, { items: [SINGLE_ITEM], fno: { liquidity: { on: true, max_spread_pct: 1, min_oi: 100000 } } });
+    await page.locator("[data-setup-item='8'] [data-setup='trade']").tap();
+    const ticket = page.locator("[data-order-ticket]");
+    await ticket.locator("[data-ticket='review']").tap();
+    await expect(ticket.locator("[data-risk-checks='ticket']")).toContainText("Inside your own limits (bid-ask gap up to 1%, open interest at least 1,00,000).");
+  });
+
+  test("FNO-8B-28: off by default, the confirm step never mentions his own limits", async ({ page }) => {
+    await openChain(page, "light", FROM_SIGNAL, { items: [SINGLE_ITEM] });
+    await page.locator("[data-setup-item='8'] [data-setup='trade']").tap();
+    const ticket = page.locator("[data-order-ticket]");
+    await ticket.locator("[data-ticket='review']").tap();
+    const checks = ticket.locator("[data-risk-checks='ticket']");
+    await expect(checks).toContainText("Liquidity: bid-ask gap");
+    await expect(checks).not.toContainText("your own limits");
+  });
+
   test("the basket's numbers carry the events and each leg's liquidity", async ({ page }) => {
     const seen = await openChain(page, "light", `${FROM_SIGNAL}&trade=1`);
     const panel = page.locator("[data-basket-panel]");
@@ -349,5 +387,23 @@ test.describe("8b slice 4 flows", () => {
     const sent = seen.writes.filter((w) => !/\/auth\/refresh$|\/paper\/fno\/contracts$|\/market-data\/(quotes|candles)$/.test(w.url));
     expect(sent).toEqual([]);
     await expect(page.locator("[data-position='301']").getByTestId("exit-now")).toBeEnabled();
+  });
+
+  test("FNO-8B-31: Download image saves the drawn chart as a PNG with a plain name; nothing is sent", async ({ page }) => {
+    const seen = await openPositions(page, "dark");
+    const journal = page.locator("[data-block='fno-journal']");
+    await journal.locator("[data-draft-chart='show']").tap();
+    await expect(journal.locator("[data-draft-chart='shown'] figure svg")).toBeVisible();
+    const sent: string[] = [];
+    page.on("request", (r) => { if (r.method() !== "GET" && /\/api\//.test(r.url())) sent.push(r.url()); });
+    const [file] = await Promise.all([page.waitForEvent("download"), journal.locator("[data-draft-chart='download']").tap()]);
+    expect(file.suggestedFilename()).toBe("nifty-trade-chart-2026-10-16.png");
+    const path = await file.path();
+    const bytes = readFileSync(path);
+    expect(bytes.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");             // a PNG
+    expect(bytes.readUInt32BE(16)).toBeGreaterThan(500);                                  // drawn at twice the chart's width
+    await expect(journal.locator("[data-draft-chart='download-failed']")).toHaveCount(0);
+    expect(sent.filter((u) => !/\/auth\/refresh$|\/paper\/fno\/contracts$|\/market-data\/(quotes|candles)$/.test(u))).toEqual([]);
+    expect(seen.writes.filter((w) => /journal|upload|image/.test(w.url))).toEqual([]);
   });
 });

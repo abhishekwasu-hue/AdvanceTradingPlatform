@@ -42,7 +42,9 @@ def test_scan_equals_backtest_equals_worker(tf, params, seed):
     scan = parity.scan_answers(strat.recipe, window)
     assert sum(1 for a in scan.values() if a.direction) >= 3, "the fixture must carry signals to compare"
     answers, trades = parity.backtest_answers(strat, window, "S", RISK)
-    assert len(answers) > len(window) // 4
+    # the backtest asks only while flat; since CP6-15 its losses-in-a-row pause ends at the next session, so it holds more
+    # trades and asks on fewer bars than when the pause never ended (one case: 96 of 400) - still a wide comparison
+    assert len(answers) > len(window) // 5
     assert parity.compare(scan, answers, "backtest") == []
     assert trades and parity.compare_trades(scan, trades, lambda ts: ts) == []
     # the worker on each signal bar and its neighbours, every 5th bar and the window's last bar (each call computes the

@@ -50,6 +50,7 @@ from app.instruments.expiry_data import ExpiryDataMissing, ExpiryDataStale
 from app.instruments.models import ContractSpec
 from app.instruments.spreads import CustomLeg, PlannedLeg, ResolvedLeg, ResolvedStructure, plan_structure, structure_metrics
 from app.market_data.calendar import IST
+from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState, nonfinite_levels
 from app.strategy_engine.base import BaseStrategy
 from app.trading.exit_logic import underlying_exit
@@ -58,7 +59,7 @@ from app.trading.position_monitor import structure_exit_reason, underlying_exit_
 
 logger = logging.getLogger(__name__)
 
-ENGINE_VERSION = "7-options"   # realism 1: closed HTF bars only (6: NIFTY expiries from NSE data too; 5: BANKNIFTY from NSE data; 4: P0.6 dated lots)
+ENGINE_VERSION = "8-options"   # CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (7: realism 1: closed HTF bars only (6: NIFTY expiries from NSE data too; 5: BANKNIFTY from NSE data; 4: P0.6 dated lots)
 NO_NEW_ENTRIES_AFTER = time(15, 0)    # the worker's cut-off for intraday deployments
 SQUARE_OFF_AT = time(15, 15)
 SETTLEMENT_FROM = time(15, 15)        # a bar at/after this on expiry day settles the structure
@@ -242,6 +243,7 @@ def run_option_backtest(
         pricer.fallback = b76  # type: ignore[assignment]
     risk_manager = RiskManager(risk_config)
     state = TradingDayState()
+    streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
     time_rules = exit_rules if exit_rules is not None and exit_rules.active else None
     exit_at = time_rules.exit_time_of_day() if time_rules else None
 
@@ -287,7 +289,7 @@ def run_option_backtest(
         equity_curve.append(equity)
         state.daily_pnl += pnl
         state.open_positions = max(0, state.open_positions - 1)
-        state.consecutive_losses = 0 if pnl > 0 else state.consecutive_losses + 1
+        state.consecutive_losses = streak.closed(pnl, when)
         if reason.startswith("Expiry"):
             settlements += 1
         structures.append({
@@ -337,6 +339,7 @@ def run_option_backtest(
             current_day = bar_day
             state.daily_pnl = 0.0
             state.trades_today = 0
+            state.consecutive_losses = streak.new_session()   # CP6-15: as app/backtest/engine.py
         vol.update(closes[max(0, i - config.realised_vol_window): i + 1])
         high, low, close = float(bar["high"]), float(bar["low"]), float(bar["close"])
 
@@ -505,6 +508,7 @@ def run_option_backtest(
         exit_rules=time_rules.to_json() if time_rules is not None else None, options=options,
         execution=None if models.is_default else {"models": models.describe(), "margin_refused": margin_refused, "margin_calls": margin_calls,
                                                   "model_prices": b76.count if b76 is not None else 0},
+        loss_streak=streak.report(),
     )
 
 

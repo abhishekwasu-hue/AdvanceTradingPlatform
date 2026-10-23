@@ -627,6 +627,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/risk-settings"): "member",
     ("PUT", "/api/risk-settings"): "trader",
     ("GET", "/api/risk-settings/ceilings"): "member",
+    ("GET", "/api/risk-settings/loss-streak"): "member",
+    ("POST", "/api/risk-settings/loss-streak/resume"): "trader",
     ("POST", "/api/risk/evaluate"): S_COMPUTE,
     ("GET", "/api/risk/events"): "member",
     ("GET", "/api/risk/limits"): "member",

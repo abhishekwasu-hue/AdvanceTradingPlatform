@@ -9,6 +9,7 @@ from app.backtest.windows import WindowCursor, bar_length, decision_time
 from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
+from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 from app.strategy_engine.base import BaseStrategy
 from app.backtest.models import ModelSet
@@ -19,7 +20,7 @@ from app.backtest.options import IST, to_utc
 __all__ = ["resample_ohlc", "run_backtest"]
 
 
-ENGINE_VERSION = "4"   # realism 1: a higher-timeframe bar is seen only once it has closed (3: P0.6 daily counters, gap fills)
+ENGINE_VERSION = "5"   # CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (4: realism 1 closed HTF bars; 3: P0.6 daily counters, gap fills)
 
 
 @with_prefix_cache
@@ -66,6 +67,7 @@ def run_backtest(
     margin_calls = 0
     risk_manager = RiskManager(risk_config)
     state = TradingDayState()
+    streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
     contract_spec = get_contract_spec(symbol)
 
     open_trade: Trade | None = None
@@ -87,6 +89,9 @@ def run_backtest(
             current_day = bar_day
             state.trades_today = 0
             state.daily_pnl = 0.0
+            # CP6-15: "Pause until the next session" starts the losses in a row again here; "until I resume" keeps them
+            # (nobody resumes a test, so that pause holds to the end of the run).
+            state.consecutive_losses = streak.new_session()
 
         if pending is not None and pending[2] == i:
             # N7 C2b: the deferred entry fills at this bar's OPEN (the only number of this bar it reads); this bar's
@@ -141,7 +146,7 @@ def run_backtest(
                 equity_curve.append(equity)
                 state.daily_pnl += closed.pnl
                 state.open_positions = max(0, state.open_positions - 1)
-                state.consecutive_losses = 0 if closed.pnl > 0 else state.consecutive_losses + 1
+                state.consecutive_losses = streak.closed(closed.pnl, current_time)
                 open_trade = None
 
         if open_trade is None and pending is None:
@@ -212,6 +217,7 @@ def run_backtest(
         exit_rules=rules.to_json() if rules is not None else None,
         execution=None if models.is_default else {"models": models.describe(), "margin_refused": margin_refused, "margin_calls": margin_calls,
                                                   "margin_kind": margin_kind if margin_on else None},
+        loss_streak=streak.report(),
     )
 
 

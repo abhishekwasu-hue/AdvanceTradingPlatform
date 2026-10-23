@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api/errors";
+import type { LossStreakStatus } from "../types";
 import {
+  LOSS_STREAK_CHOICES, lastResumeText, lossStreakNote,
   allocationRows, bookedCurve, checkStatus, closedRows, closedText, drawdownOrderProblem, eventAction, eventRemoveConsequence, eventScope, eventWindow, exitConfirmText,
   failedText, fieldProblem, guardianLine, heldRows, holdingTiles, limitScopeLabel, limitValueText, longShortLine, openCaption, portfolioTiles,
   positionLevels, structureLabel, todayRisk,
@@ -171,3 +173,28 @@ describe("Risk limits", () => {
 });
 
 type TradeRecordMeta = NonNullable<import("../types").TradeRecord["group_meta"]>;
+
+describe("CP6-15 the losses-in-a-row pause", () => {
+  const status = (extra: Partial<LossStreakStatus> = {}): LossStreakStatus => ({
+    mode: "next_session", mode_label: "Pause until the next session", limit: 3, losses_in_a_row: 3, paused: true, can_resume: false,
+    ends: "at the next session", resumed_at: null, exits_blocked: false, ...extra,
+  });
+
+  it("the two choices, the default first, in plain words", () => {
+    expect(LOSS_STREAK_CHOICES.map((c) => c.label)).toEqual(["Pause until the next session", "Pause until I resume"]);
+    expect(LOSS_STREAK_CHOICES[1].help).toContain("A backtest cannot resume, so there the pause lasts to the end of the test.");
+  });
+
+  it("says the pause only while it is active, with when it ends and that exits keep working", () => {
+    expect(lossStreakNote(null)).toBeNull();
+    expect(lossStreakNote(status({ paused: false, losses_in_a_row: 1 }))).toBeNull();
+    expect(lossStreakNote(status())).toBe("New entries are paused after 3 losses in a row (your limit is 3). They start again at the next session. Exits keep working.");
+    expect(lossStreakNote(status({ mode: "until_resume", can_resume: true, limit: 1, losses_in_a_row: 1 })))
+      .toBe("New entries are paused after 1 loss in a row (your limit is 1). They stay paused until you resume them. Exits keep working.");
+  });
+
+  it("shows the last resume in India time", () => {
+    expect(lastResumeText(status())).toBeNull();
+    expect(lastResumeText(status({ resumed_at: "2026-10-23T04:00:00+00:00" }))).toMatch(/^Last resumed 23 Oct 2026, 09:30/);
+  });
+});

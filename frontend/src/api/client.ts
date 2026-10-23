@@ -143,6 +143,7 @@ import type {
   GuardianStatus,
   MarketEvent,
   MarketEventRequest,
+  LossStreakStatus,
   RiskCeilings,
   OptionBacktestConfig, OptionChainCoverage, OptionChainSnapshotRow,
   MarketplaceCharge, MarketplaceEarnings, MarketplacePayout, MarketplacePurchaseResponse, MarketplaceRevenue, MarketplaceTerms,
@@ -793,6 +794,9 @@ export const api = {
   // ---- Phase V1: Risk Guardian
   guardianStatus: () => request<GuardianStatus>("/risk-guardian/status"),
   riskCeilings: () => request<RiskCeilings>("/risk-settings/ceilings"),
+  /** CP6-15: the losses-in-a-row pause now, and "Resume after losses in a row" (only under "Pause until I resume"). */
+  lossStreak: () => request<LossStreakStatus>("/risk-settings/loss-streak"),
+  resumeLossStreak: () => request<LossStreakStatus>("/risk-settings/loss-streak/resume", { method: "POST" }),
   listMarketEvents: (from?: string, to?: string) => {
     const params = new URLSearchParams();
     if (from) params.set("from", from);

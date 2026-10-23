@@ -42,6 +42,12 @@ export function interactionOptions(state: Readonly<InteractionState>): Interacti
   };
 }
 
+/** PR 2 (v2 core only; ProChart keeps the library default): a long press shows the crosshair and lifting the finger
+ * ends it ("lift ends it"), instead of the library's "the next tap ends it". `TrackingModeExitMode.OnTouchEnd` is 0. */
+export function trackingOptions() {
+  return { exitMode: 0 as const };
+}
+
 /** The font of both charts' axes and labels. */
 export const CHART_FONT_FAMILY = "'JetBrains Mono', ui-monospace, monospace";
 

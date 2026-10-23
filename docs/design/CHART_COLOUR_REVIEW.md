@@ -198,6 +198,7 @@ One draft PR each, behind `ui_v2`, with tests. No migration in any of them.
 
 ## Part 3 build notes
 
+- The owner accepted CC-1..CC-14 as proposed (DECISIONS 23 Oct, #434); the build follows those defaults.
 - **PR 1 `claude/colour-tokens` (item 7).** `tokens.css` gains `--range` / `--range-track` (CC-4: a neutral track and an
   amber-yellow marker, not an alias of warn), `--info-tint` and `--ai-tint`, in the dark, light and both colour-blind
   blocks; Tailwind names `range`, `range-track`, `info-tint`, `ai-tint`. The deeper navy-slate dark surfaces

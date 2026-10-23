@@ -3582,6 +3582,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   (also with the Inter font hidden). No threshold changed, no test skipped.
 
 
+## 23 Oct - Terminal master order: the independent review (docs only)
+
+- Branch `claude/terminal-master-review` (from main). **Docs only, no migration**, no code, no flag.
+- `docs/design/TERMINAL_MASTER_REVIEW.md`: per-part status with file:line evidence, findings F1-F28, broker facts
+  (Kotak Neo, Groww; most unverified - the official sites could not be opened from the build machine), SEBI points for
+  the lawyer, the 9.4 chain-history design (owner's own session, tenant-private), the data-hub gap and measurement, the
+  build plan. Questions TM-1..TM-32. README row 20 is on the PR #461 branch only: its status clause is in the PR body.
+
 ## 23 Oct - Terminal master Part 1: the data hub
 
 - Branch `claude/terminal-data-hub` (from main). **No migration.** Flag `data_hub` (OFF by default, needs `ui_v2`).

@@ -281,15 +281,18 @@ test.describe("v2 shell 1440 desktop", () => {
   test("the Charts page opens on NIFTY 50 and on the symbol in the address", async ({ page }) => {
     await open(page, "/charts", "light");
     await expect(page.getByRole("combobox", { name: "Symbol" })).toHaveValue("NIFTY 50");
-    await expect(page.getByRole("heading", { name: "What is this page?" })).toBeVisible();
-    await page.getByRole("button", { name: "Close this explanation" }).click();
-    await expect(page.getByRole("heading", { name: "What is this page?" })).toHaveCount(0);
+    await expect(page.locator("[data-page-intro='open']")).toBeVisible();
+    await page.getByRole("button", { name: "Hide this tip" }).click();
+    await expect(page.locator("[data-page-intro='open']")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "About this page" })).toBeVisible();        // item 5: collapsed, not gone
     // UI2-4b2: the shared symbol picker; with no match, Enter opens the symbol as typed.
     await page.getByRole("combobox", { name: "Symbol" }).fill("reliance");
     await page.getByRole("combobox", { name: "Symbol" }).press("Enter");
     await expect(page).toHaveURL(/\/charts\/RELIANCE$/);
     await page.reload();
-    await expect(page.getByRole("heading", { name: "What is this page?" })).toHaveCount(0);   // closed stays closed
+    await expect(page.locator("[data-page-intro='collapsed']")).toBeVisible();   // collapsed stays collapsed
+    await page.getByRole("button", { name: "About this page" }).click();
+    await expect(page.locator("[data-page-intro='open']")).toBeVisible();
   });
 });
 

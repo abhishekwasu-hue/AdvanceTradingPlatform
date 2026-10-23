@@ -179,7 +179,7 @@ test.describe("Signals v2 decisions at 360 px", () => {
     await expect(page.getByRole("tab", { name: "Today · 7" })).toBeVisible();
     const first = page.locator("[data-signal-card='action:901']");
     await expect(first.getByText("Waiting · 8 min")).toBeVisible();
-    await expect(first.getByText("Fits your risk limits · most you can lose ₹5,250.00")).toBeVisible();
+    await expect(first.getByText("Fits your risk limits · most you can lose ₹5,250")).toBeVisible();
     for (const name of ["Approve", "Skip", "Open chart for NIFTY 50", "More for NIFTY 50"]) await expect(first.getByRole(name.startsWith("Open") ? "link" : "button", { name })).toBeVisible();
     await expect(page.locator("[data-signal-card='action:902']").getByRole("button", { name: "Review" })).toBeVisible();
     await expect(page.locator("[data-signal-chart]")).toHaveCount(0);                      // UI2-4e: the chart is the desktop panel's
@@ -383,9 +383,10 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(page.getByRole("table", { name: "Signals list" }).locator("tbody tr")).toHaveCount(9);
   });
 
-  test("the What-is-this-page card shows on a first visit", async ({ page }) => {
+  test("the page intro shows on a first visit: one line, no box title (item 5)", async ({ page }) => {
     await open(page, "/signals", "light", V2, { intro: true });
-    await expect(page.getByRole("heading", { name: "What is this page?" })).toBeVisible();
+    await expect(page.locator("[data-page-intro='open']")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What is this page?" })).toHaveCount(0);
   });
 
   test("M6: the Library's strategy drawer has 'Try it on a symbol', sample data only under Advanced", async ({ page }) => {

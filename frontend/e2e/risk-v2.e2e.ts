@@ -72,9 +72,9 @@ test.describe("v2 risk 1440 desktop", () => {
     await open(page, "light");
     await expect(page.locator("[data-shell='v2'] header").first()).toContainText("Risk limits");
     const today = page.locator("[data-block='today']");
-    await expect(today.locator("[data-tile='daily-limit']")).toContainText("₹15,000.00");
-    await expect(today.locator("[data-tile='daily-limit']")).toContainText("3.0% of ₹5 L capital");
-    await expect(today.locator("[data-tile='per-trade']")).toContainText("₹5,000.00");
+    await expect(today.locator("[data-tile='daily-limit']")).toContainText("₹15,000");
+    await expect(today.locator("[data-tile='daily-limit']")).toContainText("3.0% of ₹5,00,000 capital");
+    await expect(today.locator("[data-tile='per-trade']")).toContainText("₹5,000");
     await expect(today.locator("[data-tile='paper-used']")).toContainText("39%");
     await expect(today.locator("[data-tile='paper-used']")).toContainText("₹5,775 of ₹15,000 today");
     await expect(today.locator("[data-mode='PAPER']")).toContainText("Normal size");
@@ -152,7 +152,7 @@ test.describe("v2 risk 1440 desktop", () => {
   test("organisation limits and recent checks in plain words", async ({ page }) => {
     await open(page, "light");
     const limits = page.locator("[data-block='org-limits']");
-    await expect(limits.locator("[data-limit='41']")).toContainText("Daily loss₹15,000.00");
+    await expect(limits.locator("[data-limit='41']")).toContainText("Daily loss₹15,000");
     await expect(limits.locator("[data-limit='42']")).toContainText("One symbol: RELIANCE");
     await expect(limits.locator("[data-limit='43']")).toContainText("Platform");
     await expect(limits.locator("[data-limit='43']").getByRole("button", { name: "Remove" })).toHaveCount(0);

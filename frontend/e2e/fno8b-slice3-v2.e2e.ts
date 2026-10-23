@@ -328,7 +328,7 @@ test.describe("8b slice 3 flows", () => {
   test("the cockpit is read only and his journal notes are the only write; Exit now stays enabled", async ({ page }) => {
     const seen = await openPositions(page, "light");
     const cockpit = page.locator("[data-block='fno-cockpit']");
-    await expect(cockpit.locator("[data-tile='cockpit-kept']")).toContainText("₹2,287.50");      // 262.50 + 2,025.00 kept
+    await expect(cockpit.locator("[data-tile='cockpit-kept']")).toContainText("₹2,288");      // 262.50 + 2,025.00 kept, in whole rupees
     await expect(cockpit.locator("[data-cockpit='expiries']")).toContainText("8 days left");
     await expect(cockpit.locator("[data-cockpit='alerts'] li")).toHaveCount(1);                   // his NIFTY one, not the BANKNIFTY one
     await expect(cockpit.locator("button, a")).toHaveCount(0);

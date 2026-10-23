@@ -17,6 +17,8 @@ export const PAGE_FLAGS: Readonly<Partial<Record<Page | "ideas" | "markets", str
   screener: "screener_v2",
   // Idea library slice 1: the v2-only Ideas page (/ideas) while `idea_library` is off.
   ideas: "idea_library",
+  // User-friendly pass item 7: Analyze a chart (the server also answers it as off while its engine is not installed).
+  "chart-analyze": "chart_analyze",
 };
 
 /** What the shell knows about the flags (useFeatures): `answered` is a real answer from the server. */

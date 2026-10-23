@@ -3,6 +3,8 @@ import { attentionRows } from "../dashboard/model";
 import { entriesWord, openCaption } from "../trading/model";
 import { topBarNotices } from "../shell/TopBarV2";
 import { looksLikeSlug } from "../ui/strategyName";
+import { closedFlag } from "../shell/pageFlags";
+import { DROP_TEXT_DESKTOP, DROP_TEXT_PHONE } from "../chartAnalyze/ChartAnalyzePageV2";
 
 /**
  * The owner's user-friendly pass (DECISIONS 23 Oct): guards that keep the six fixes fixed. Each reads the v2 sources
@@ -90,5 +92,23 @@ describe("user-friendly pass: guards", () => {
       expect(src, `${f} turns a strategy id into words by hand`).not.toMatch(/humanise\([^)]*strategy_id/);
     }
     expect(looksLikeSlug("orb_nifty")).toBe(true);
+  });
+
+  it("item 7: Analyze a chart without its engine - out of the nav, 'Coming soon' at its address, never the reason", () => {
+    const off = { answered: true, on: (f: string) => f !== "chart_analyze" };
+    expect(closedFlag("chart-analyze", off)).toBe("chart_analyze");                // the shell shows Coming soon
+    expect(closedFlag("chart-analyze", { answered: true, on: () => true })).toBeNull();
+    const page = SOURCES["./chartAnalyze/ChartAnalyzePageV2.tsx"];
+    expect(page).not.toMatch(/engine not installed|administrator installs/i);
+    expect(page).toContain("if (engineMissing) return <ComingSoon flag={FLAG} />;");
+    expect(SOURCES["./shell/navModel.ts"]).toMatch(/"chart-analyze"[\s\S]{0,200}flag: "chart_analyze"/);
+  });
+
+  it("item 8: the drop zone's sentences start with a capital", () => {
+    for (const text of [DROP_TEXT_DESKTOP, DROP_TEXT_PHONE]) expect(text.charAt(0)).toMatch(/[A-Z]/);
+    const page = SOURCES["./chartAnalyze/ChartAnalyzePageV2.tsx"];
+    expect(page).not.toMatch(/<\/span>paste a screenshot/);
+    // No sentence in a v2 file starts in lower case right after ". " inside JSX text.
+    for (const [f, src] of v2UserFiles()) expect(src, f).not.toMatch(/MB` : ""\}\. [a-z]/);
   });
 });

@@ -594,8 +594,10 @@ def _swing_pivots(f: pd.DataFrame, degree: int) -> List[Any]:
 
 def _swing_label(f: pd.DataFrame, kind: str, degree: int) -> pd.Series:
     """AMW-3: on every bar, the label of the last swing high (HH / LH) or low (HL / LL) CONFIRMED by that bar against the
-    one of the same kind before it - the Dow trend's labels (an equal price reads lower). Missing (None) until two swings
-    of the kind are confirmed. A pivot counts from its confirmation bar, never from its extreme (no look-ahead)."""
+    one of the same kind before it - the Dow trend's labels. An equal price does not extend the structure: an equal high
+    reads LH, an equal low HL (TPL-F6: the two sides are mirror images; before it an equal low read LL). Missing (None)
+    until two swings of the kind are confirmed. A pivot counts from its confirmation bar, never from its extreme (no
+    look-ahead)."""
     if kind not in ("high", "low"):
         raise ScreenRuntimeError(f"unknown swing kind {kind!r}")
     k = "H" if kind == "high" else "L"
@@ -605,8 +607,7 @@ def _swing_label(f: pd.DataFrame, kind: str, degree: int) -> pd.Series:
         if p.kind != k:
             continue
         if prev is not None:
-            higher = p.price > prev
-            out[int(p.confirmed_idx)] = ("HH" if higher else "LH") if k == "H" else ("HL" if higher else "LL")
+            out[int(p.confirmed_idx)] = ("HH" if p.price > prev else "LH") if k == "H" else ("LL" if p.price < prev else "HL")
         prev = p.price
     return pd.Series(out, index=f.index, dtype=object).ffill()
 

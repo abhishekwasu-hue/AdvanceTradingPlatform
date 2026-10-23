@@ -247,11 +247,13 @@ def test_swing_labels_follow_the_confirmed_swings_and_agree_with_the_dow_trend()
     f = synthetic_bars(600, tf="5m", seed=3)
     high, low = _ev('SwingLabel("high")', f, "5m"), _ev('SwingLabel("low")', f, "5m")
     pivots = _swing_pivots(f, 0)
-    for kind, series, names in (("H", high, ("HH", "LH")), ("L", low, ("HL", "LL"))):
+    for kind, series in (("H", high), ("L", low)):
         mine = [p for p in pivots if p.kind == kind]
         assert series.iloc[:int(mine[1].confirmed_idx)].isna().all()             # missing before the second swing of the kind
         for a, b in zip(mine, mine[1:]):
-            assert series.iloc[int(b.confirmed_idx)] == (names[0] if b.price > a.price else names[1])
+            # TPL-F6: an equal swing does not extend the structure (an equal high LH, an equal low HL)
+            want = ("HH" if b.price > a.price else "LH") if kind == "H" else ("LL" if b.price < a.price else "HL")
+            assert series.iloc[int(b.confirmed_idx)] == want
     dow = Bars(f, settings()).dow(0)
     for t in range(len(f)):
         if dow[t] is None or pd.isna(high.iloc[t]) or pd.isna(low.iloc[t]):

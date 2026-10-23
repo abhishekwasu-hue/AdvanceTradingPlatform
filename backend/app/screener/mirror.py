@@ -10,9 +10,11 @@ the reflected bars (prices on whole ticks, several seeds).
 "Exactly" has one warm-up: the swing functions (SwingHigh / SwingLow / SwingDirection / SwingZone*, and the screens
 built on swings) agree from the third confirmed swing of the bars on (`SWING_WARMUP`). Before it, the zigzag's opening
 swing can differ on reflected bars: it starts out testing a high before a low, so when both could confirm on the same
-early bar the two sides open with different swings (seen on bars 13-32 of the test bars in 6 of 40 seeds). Equal highs
-or lows also only mirror when the reflected prices are exact (whole ticks); a float reflection can break such a tie
-the other way.
+early bar the two sides open with different swings (seen on bars 13-32 of the test bars in 6 of 40 seeds). The swing
+structure read from them (DowTrend, SwingBreakType, SwingLabel) labels a swing against the one of its kind before it, so
+after such an opening it agrees once two highs and two lows of the common swings are confirmed. Equal highs or lows
+mirror (TPL-F6: an equal high is not higher, an equal low not lower) when the reflected prices are exact (whole ticks);
+a float reflection can break such a tie the other way.
 
 Each sub-expression is rewritten into an expression on the real bars plus how its value relates to the original's
 value on the reflected bars:
@@ -63,12 +65,14 @@ SIDED_FILTERS = {"RangeBreakout", "SwingBreakout", "NRBreakout", "NewHighBreakou
 # Classifiers: the value map of each (a value not listed stays as it is).
 CATEGORIES: Dict[str, Dict[str, str]] = {
     "SwingDirection": {"UP": "DOWN", "DOWN": "UP"},
+    # TPL-F6: an equal swing high is not higher and an equal swing low not lower, so the structure mirrors exactly
+    "DowTrend": {"UP": "DOWN", "DOWN": "UP"},
+    "SwingBreakType": {},                     # its side argument swaps (SIDED_CATEGORIES); BOS / CHOCH / BREAK stay
     "Sector": {}, "Industry": {}, "McapBucket": {},
 }
+SIDED_CATEGORIES = {"SwingBreakType"}       # classifiers with a side argument (the first one)
 # Checked on synthetic bars and found NOT exactly symmetric - no mirror rule, with the reason (tests keep them out).
-_TIES = "an equal swing high or low is read as lower on both sides, so ties do not mirror"
 NOT_SYMMETRIC: Dict[str, str] = {
-    "DowTrend": _TIES, "SwingBreakType": _TIES,
     "ATRPercentile": "ATR as a percentage of the close depends on the price level",
     "Supertrend": "not checked on reflected prices",
 }
@@ -200,6 +204,11 @@ def _call(node: n.Call) -> Rewritten:  # noqa: C901 - one switch over the rule t
         if not isinstance(arg, n.Str) or arg.value not in PATTERN_SWAP:
             raise NoMirror(_part(node), "this candlestick pattern has no mirrored twin (hammer and shooting star differ by context)")
         return INV, _same_call(node, name, [n.Str(PATTERN_SWAP[arg.value]), *_kept(list(node.args[1:]))])
+    if name in SIDED_CATEGORIES:
+        if not node.args:
+            raise NoMirror(_part(node), "no side")
+        side = _swap_str(node.args[0], SIDE_SWAP, node)
+        return "cat:" + name, _same_call(node, name, [side, *_kept(list(node.args[1:]))])
     if name in CATEGORIES:
         return "cat:" + name, _same_call(node, name, _kept(list(node.args)))
     raise NoMirror(_part(node), f"{name}() has no mirror rule (its answer on reflected prices is not defined here)")
@@ -352,5 +361,5 @@ def reflect_bars(frame, level: Optional[float] = None):  # type: ignore[no-untyp
     return out
 
 
-__all__ = ["SWING_WARMUP", "Mirror", "NoMirror", "mirror", "rewrite", "reflect_bars", "INV", "REFL", "NEG", "COMP", "CATEGORIES", "SIDED_FILTERS",
+__all__ = ["SWING_WARMUP", "Mirror", "NoMirror", "mirror", "rewrite", "reflect_bars", "INV", "REFL", "NEG", "COMP", "CATEGORIES", "SIDED_CATEGORIES", "SIDED_FILTERS",
            "NOT_SYMMETRIC", "FIELD_RULES", "LEVELS", "LINEAR", "EXTREMES", "PATTERN_SWAP"]

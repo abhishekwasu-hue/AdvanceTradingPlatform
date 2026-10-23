@@ -950,8 +950,7 @@ Flag `screener_tx2` (default OFF) on top of `screener_v2` and `screener_gallery`
   synthetic bars against the original on reflected bars (`tests/test_tx2_library.py`), and so is every generated
   pre-built mirror. No mirror, with the reason: a price against a fixed number, a ratio or multiple of a price
   (Minervini, Darvas), PctChange of a price, Supertrend, option-chain / zone functions, and the functions found NOT
-  exact on reflected bars - `DowTrend` and `SwingBreakType` (an equal swing high or low reads as lower on both sides,
-  so ties do not mirror), `ATRPercentile` (ATR / close depends on the price level), the outside-bar patterns and
+  exact on reflected bars - `ATRPercentile` (ATR / close depends on the price level), the outside-bar patterns and
   hammer / shooting star. A screen that reads both sides alike (Crabel NR7) is its own mirror. The breakout
   templates' mirror is the template's own down side (the engine defines it). Mirrors are `<id>.short`, generated per
   request, never filed in taxonomy.json; a card shows "Mirror (down side): <text>" or the reason.
@@ -959,6 +958,10 @@ Flag `screener_tx2` (default OFF) on top of `screener_v2` and `screener_gallery`
     built on swings) are exact from the third confirmed swing on (`mirror.SWING_WARMUP`). Before that, the zigzag's
     opening swing can differ on reflected bars: it tests a high before a low, so when both could confirm on the same
     early bar the two sides open differently. On the test bars that was bars 13-32 in 6 of 40 seeds.
+  - TPL-F6: `DowTrend` (UP <-> DOWN, RANGE stays) and `SwingBreakType` (its side swaps; BOS / CHOCH / BREAK stay) mirror
+    since an equal swing high reads "not higher" (LH) and an equal swing low "not lower" (HL); before, both read
+    "lower", so a tie did not mirror and the two had no mirror rule. After a different opening swing the structure
+    agrees once two highs and two lows of the common swings are confirmed (OPEN_QUESTIONS TPL-F9).
   - The exactness test uses prices on whole ticks (so an equal high or low stays equal after the reflection) and
     three seeds, and skips that warm-up.
 - **Confluence.** `POST /api/screener/library/confluence` runs 2-6 screens (library ids, their mirrors, or
@@ -1752,7 +1755,7 @@ the AMW screener's described behaviour; its tests are behaviour specifications, 
 |---|---|---|
 | `StDev(x, n)` | factor, unit of x | Population standard deviation of x over n bars (divides by n, like Pine's `ta.stdev`; `ZScore` keeps the sample one). Reads a history, so a last-bar-only function inside it is refused. |
 | `RsiDivergence(side, lookback=15, degree=0)` | filter | Regular RSI(14) divergence between the last two **confirmed** swing lows (`bullish`: a lower low with a higher RSI) or highs (`bearish`: a higher high with a lower RSI), from the causal swing engine at `degree`. RSI is read at each swing's extreme bar. True from the second swing's confirmation bar while that swing's extreme is at most `lookback` bars back. |
-| `SwingLabel(kind, degree=0)` | classifier | `HH` / `LH` (kind `high`) or `HL` / `LL` (kind `low`): the last confirmed swing of that kind against the one before it. An equal price reads lower, as in `DowTrend` (tested to agree with it). Missing before the second swing of the kind. |
+| `SwingLabel(kind, degree=0)` | classifier | `HH` / `LH` (kind `high`) or `HL` / `LL` (kind `low`): the last confirmed swing of that kind against the one before it. An equal price does not extend the structure (an equal high reads `LH`, an equal low `HL`; TPL-F6: mirror images of each other), as in `DowTrend` (tested to agree with it). Missing before the second swing of the kind. |
 | `TimeOfDay(start, end)` | filter | The bar's **start** time in exchange time (IST; a naive index is read as UTC) is between `start` and `end`, both `HH:MM` and both included. `start` after `end` wraps past midnight. Intraday timeframes only (1m to 1h). |
 | `Pattern(name, confirm)` v2 names | filter | `bullish_strong_body` / `bearish_strong_body`: body >= 70 % of the range and range >= 1 x ATR(14). `bullish_gap_reversal` / `bearish_gap_reversal`: opened beyond the previous close by >= 0.5 x ATR(14) and closed back across it (a gap down closing above, a gap up closing below). ATR(14) is `app/indicators/volatility.atr` on the bars so far; false on the first 13 bars. |
 | `confirm` on `Pattern`, `PatternBullish`, `PatternBearish` | argument | `any` (the default, the pattern on this bar - the behaviour before AMW-3), or the status this bar gave the pattern on the bar **before**: `confirmed` (bullish: close above the pattern bar's high; bearish: below its low), `failed` (beyond the other side), `unconfirmed` (inside its range, ends included). `doji` and `inside_bar` have no direction, so a status other than `any` is refused. |

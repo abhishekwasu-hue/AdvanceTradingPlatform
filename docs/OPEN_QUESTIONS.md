@@ -1784,3 +1784,14 @@ Branches `claude/terminal-paper-adapter` (PR A, TM-1) and `claude/terminal-smart
 | SE-7 | The LIVE multi-leg executor (`execution/multileg.py`, wings first, auto-unwind) is not on the engine yet. | It moves in its own PR with a parity test (TM-1 rule: one path at a time). Under TM-11 its auto-unwind becomes "Close the filled legs" on the user's tap, which is a behaviour change, so that PR needs Abhi's word. | `execution/multileg.py` | decided 23 Oct: approved - the LIVE executor moves onto this engine in its own PR, with the user's "no answer in N minutes" setting (DECISIONS) |
 | SE-8 | Free balance in PAPER. | The practice balance (starting capital + net closed P&L), labelled "practice balance". Margin already blocked by open positions is not counted, and the page says so. With LIVE, the broker's `get_margins` through his own session. | `fno_basket.practice_balance` | decided 23 Oct: default accepted (DECISIONS) |
 
+
+## Day-one fixes (README row 19, docs/design/DAY_ONE_TRADER_TEST.md)
+
+Checked against CLAUDE.md sections 2, 3 and 8, DECISIONS (23 Oct trader review) and the order files
+(ATP_SESSION_IDEA_LIBRARY.md: "T5. Breakout and retest (structure flip)"; ATP_SESSION_STRATEGY_TEMPLATES.md: A5
+"Structure flip retest").
+
+| # | Question | Provisional default |
+|---|---|---|
+| D1-1 | One name per idea: the idea T5 and the template A5 had two names. Which one stays? | "Breakout and retest" (the idea library's own name, which already says "structure flip" in its heading) as A5's display name; the id, version and params hash are unchanged, so adopted bots keep their behaviour. A2 was already "Range edges" like T2. Abhi may prefer the other name. |
+| D1-2 | Which symbol does the Paper bot form pick when an idea is adopted? | RELIANCE (the first stock in the form's list), only for an idea's link (it carries the idea's settings); a plain template link keeps NIFTY 50 as before. The trader changes it in one tap. |

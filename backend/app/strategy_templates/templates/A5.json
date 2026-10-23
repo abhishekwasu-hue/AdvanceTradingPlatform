@@ -2,7 +2,7 @@
   "schema": "atp.template/1",
   "id": "A5",
   "version": 1,
-  "name": "Structure flip retest",
+  "name": "Breakout and retest",
   "family": "A",
   "idea": "After a level breaks, wait for the market to come back to it from the other side and reject it: old resistance acting as support, or old support as resistance. A retest idea, never a breakout chase.",
   "difficulty": "Beginner",

@@ -3744,3 +3744,16 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests `tests/test_tm7_smart_execution.py`, `src/fno/smartExecution.test.tsx`. Screenshots (fixtures, not committed):
   scratchpad `tm-part7/`. Questions SE-4..SE-8. No migration.
 
+## 23 Oct - Day-one fix 6: adopting an idea (README row 19, DAY_ONE_TRADER_TEST findings 5 and 6)
+
+- Branch `claude/d1-fix-adopt-form` (from main). **No migration**, no new flag (`ui_v2` + `strategy_templates` +
+  `idea_library`, as the adopt path).
+- The Paper bot form lists the settings the bot starts with ("The idea's settings" / "Its settings", in words:
+  `settingRows` in `src/strategyTemplates/link.ts`).
+- An idea's link starts on a stock (RELIANCE, `IDEA_SYMBOL`) instead of NIFTY 50, so the summary no longer reads
+  "Trades a NIFTY 50 option..." for a price-action idea; a stock's summary reads "Trades RELIANCE shares" (was
+  "itself").
+- One name per idea: A5's display name is "Breakout and retest" like its idea T5 (id, version and params hash
+  unchanged). Questions D1-1, D1-2.
+- Tests: `tests/test_d1_one_name_per_idea.py` (2), `src/paperbot/adoptForm.test.tsx` (2), e2e
+  `e2e/d1-adopt-form-v2.e2e.ts` (no baseline).

@@ -1,8 +1,7 @@
 """TM94-3: the Phase W recorder's rows (option_chain_snapshots) belong to the organisation whose own session read them
 
 Revision ID: 3c5e7a9b1d24
-Revises: 250d796123b7 (main's head on 23 Oct; #465 adds 250d796123b7 on the same parent - whichever merges second is
-         re-chained onto the other at merge time)
+Revises: 250d796123b7 (the #465 futures / OI collector revision)
 Create Date: 2026-10-23 21:00:00
 
 - option_chain_snapshots: a nullable tenant_id (the organisation whose own broker session read the chain; NULL = recorded

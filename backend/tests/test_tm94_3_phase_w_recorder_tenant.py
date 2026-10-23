@@ -214,7 +214,7 @@ def test_the_migration_is_additive_rollback_safe_and_the_single_head():
     backend = pathlib.Path(__file__).resolve().parents[1]
     path = backend / "alembic" / "versions" / "3c5e7a9b1d24_tm94_3_phase_w_recorder_tenant.py"
     module = runpy.run_path(str(path), run_name="tm94_3_migration")
-    assert module["ROLLBACK_SAFE"] is True and module["down_revision"] == "e8a0c2d4f6b9"
+    assert module["ROLLBACK_SAFE"] is True and module["down_revision"] == "250d796123b7"
     upgrade = path.read_text().split("def downgrade")[0]
     assert "nullable=True" in upgrade and "drop_" not in upgrade and "execute" not in upgrade   # additive, no row rewrite
     script = ScriptDirectory(str(backend / "alembic"))

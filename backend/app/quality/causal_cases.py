@@ -222,7 +222,7 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
                     'RetestEntry("up", "channel", 20, FALSE, k=0)', 'RetestEntry("down", "range", 20, FALSE, k=0, n=10, v=0, mode="auto")',
                     'RetestEntry("up", "swing", 20, FALSE, k=0, swing=0)',
                     # owner decision TPL-Q18 (C4): the trendline retest with the line projected to the retest bar
-                    'RetestEntry("down", "trendline_projected", 20, FALSE, k=0)', 'RetestEntry("up", "trendline_projected", 20, TRUE)'],
+                    'RetestEntry("down", "trendline_projected", 20, FALSE, k=0)', 'RetestEntry("up", "trendline_projected", 20, FALSE, k=0, touches=3)'],
     "RetestEntryRef": ['RetestEntryRef("held_level", "up", "channel", 20, FALSE, k=0)',
                        'RetestEntryRef("retest_low", "down", "range", 20, FALSE, k=0, v=0)',
                        'RetestEntryRef("stop_level_atr", "up", "trendline", 20, FALSE, 1, k=0)',

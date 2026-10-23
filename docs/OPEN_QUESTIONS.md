@@ -1554,3 +1554,18 @@ provisional default the A / B / C PRs use until Abhi answers.
 | RDY-C13-6 | "Active in week 1" definition. | A successful sign-in, or a session started or used, between 1 and 7 days after sign-up. Only people whose first week is over are counted; the funnel is cumulative (each step needs every step before it). A session's `last_used_at` moves forward, so a person who keeps using the app past day 7 on one session may be missed; a per-day activity record would be exact (later, needs a table). | `backend/app/admin/console.py` | open |
 | RDY-C13-7 | Pricing page in the marketing set. | Not built: prices are hard-coded until C11 makes them admin-set; Features / How it works / About only. The sitemap names the three pages; they say "does not exist" until `marketing_site` is on. | `backend/app/learn/site.json`, `frontend/public/sitemap.xml` | open |
 | RDY-C13-8 | Where Learn sits in the navigation. | A sidebar entry under Insights, shown only while `learn` is on (the order wants it easy to find for beginners); search words "lessons", "course", "glossary". | `frontend/src/shell/navModel.ts` | open |
+
+## Production readiness B9: the private reader port plan (PRV, 23 Oct)
+
+The B9 plan PR (branch `claude/readiness-b9-private-plan`, docs only). Plan: `docs/design/PRIVATE_PACKAGE.md`
+sections 9-14, `docs/design/TRADE_TAKEOVER.md` section 13. Prefix `PRV` (not `RDY`) so parallel readiness PRs cannot
+collide on numbers.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| PRV-1 | The private repository's name. | `atp-private` (the order's name), package `atp_private`, on the same GitHub account as ATP, visibility Private. | PRIVATE_PACKAGE sections 3, 6 | open (owner creates it) |
+| PRV-2 | Licensed-data parity fixtures: in `atp-private` (git) or only in the host's private store? | Only the host store (unchanged from PR-1: never any git repository). `atp-private` holds the goldens built on synthetic inputs and the manifest of the licensed ones (paths and sha256). The private CI runs the synthetic ones; the host runs the licensed ones. | PRIVATE_PACKAGE sections 2, 12 | open |
+| PRV-3 | "Trade's PAPER results are stable": what Abhi checks before saying "start". | Each layer has its `STABLE.md` entry, its stable tag and its parity fixtures; Trade's PAPER bot ran on that version without a reading change for a period Abhi names; then Abhi says "start". ATP builds nothing of the reader before that. | PRIVATE_PACKAGE section 14, TRADE_TAKEOVER section 13 | open (owner decides) |
+| PRV-4 | A reader deployment when the package is missing or refused. | No new entries ("This strategy is paused: its engine is not available"); open positions keep their exits (ADR-0004); users see the generic templates; the reader flags cannot be switched on. | PRIVATE_PACKAGE section 10 | open |
+| PRV-5 | New signal-language tokens the reader needs. | Added as generic structure phrases to `app/signals/language.py` and its frontend mirror in a reviewed public PR (shared cases grow with them); when the reader emits them stays private. The package never brings its own text to a screen. | PRIVATE_PACKAGE section 9.3 | open |
+| PRV-6 | A new MAJOR reader version and running deployments. | The host's `ATP_PRIVATE_REF` moves only after the parity checks and a PAPER shadow; each deployment records the reader version it started with; the admin console lists the release note. | PRIVATE_PACKAGE section 11 | open |

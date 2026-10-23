@@ -92,7 +92,7 @@ jobs:
   backend:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 55          # the full suite reached ~30 min on 2026-10-12 and runs were cancelled at the old 30-min cap
+    timeout-minutes: 90          # the full suite reached ~54 min on 2026-10-23 (runs cancelled at the old 55-min cap; 30 min before that)
     services:
       postgres:
         image: postgres:16-alpine

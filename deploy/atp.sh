@@ -30,13 +30,22 @@
 #                                                  removes a load-test run's organisation / containers by hand
 #   /opt/atp/deploy/atp.sh reset-password EMAIL    sets a user's new password (asked twice, never shown or logged) and
 #                                                  signs out their sessions - until e-mail (SMTP) is configured
+#   /opt/atp/deploy/atp.sh env-set KEY=VALUE ...  WL1-4: sets NON-secret settings in .env from a short allowlist
+#                                                  (the universe / instrument sync switches), every other line kept,
+#                                                  a mode-600 backup in .deploy/env-backups first; a re-run changes nothing
+#   /opt/atp/deploy/atp.sh lists-sync [--check]    WL1-4: (needs UNIVERSE_SYNC_ENABLED=true) the HTTP status of every
+#                                                  published file, then the instrument master + universe sync (names
+#                                                  only) + the system-watchlists refresh NOW, each group's lists with
+#                                                  their row counts and unmapped symbols; then the API and the worker
+#                                                  pick up the settings. --check: only the file status lines
 #   /opt/atp/deploy/atp.sh schedule | releases | help
 #
 #   --dry-run (anywhere, or ATP_DRY_RUN=1): prints every step it would take; changes nothing on the host.
 #
 # Rules it keeps (tests/test_z11_deploy_bundle.py checks them):
 #   * secrets are read only from /opt/atp/.env, never created, edited or printed - only key NAMES appear in output, and
-#     no secret is ever put on a command line; .env must exist, be mode 600 and hold every required key;
+#     no secret is ever put on a command line; .env must exist, be mode 600 and hold every required key; the one
+#     write is `env-set`: only the non-secret keys of ENV_SET_KEYS, after a mode-600 backup, every other line kept;
 #     SECRETS_ENCRYPTION_KEY must be the one this host first deployed with (a salted scrypt fingerprint is kept in
 #     .deploy/) - it is never rotated here;
 #   * fails closed: any failed step stops the run with a non-zero exit before the next one changes anything, and the
@@ -83,6 +92,9 @@ COMPOSE_MIN="2.24"
 REQUIRED_KEYS=(POSTGRES_PASSWORD JWT_SECRET_KEY SECRETS_ENCRYPTION_KEY METRICS_TOKEN DOMAIN ACME_EMAIL BACKUP_ENCRYPTION_PASSPHRASE)
 LIVE_SWITCHES=(LIVE_MARKET_PROTECTION LIVE_UPSTOX_OPTION_STOP_LIMIT LIVE_EXIT_IF_NO_STOP LIVE_STRICT_WING_FILL STATIC_IP_REQUIRED_FOR_LIVE)
 APP_IMAGES=(atp-backend atp-worker atp-frontend atp-research-worker atp-backup)
+# WL1-4: the only keys `env-set` may write - plain switches, never a secret or a LIVE switch.
+ENV_SET_KEYS=(UNIVERSE_SYNC_ENABLED UNIVERSE_SYNC_HOUR_IST INSTRUMENT_SYNC_EXCHANGES INSTRUMENT_SYNC_HOUR_IST)
+ENV_BACKUPS_KEEP=10
 
 RELEASE=""          # image tag compose uses (ATP_RELEASE)
 DB_AHEAD=""         # MIGRATION_ALLOW_DB_AHEAD for compose: the exact database revision an older image may start on
@@ -610,6 +622,15 @@ report_settings() {
   for k in GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do if env_set "$k"; then n=$((n + 1)); fi; done
   case "$n" in 0) info "Google sign-in (GS-1): not set (optional; no Google button)";; 2) ok "Google sign-in (GS-1): both keys set (the button shows)";;
     *) warn "Google sign-in (GS-1): only one of GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET set - the button stays hidden";; esac
+  # B8: browser notifications need a stable VAPID key; without one the app refuses new browser subscriptions (runbook section 4).
+  if env_set VAPID_PRIVATE_KEY; then
+    ok "browser notifications (Web Push): VAPID_PRIVATE_KEY set - subscriptions survive restarts"
+    case "$(env_get VAPID_SUBJECT)" in ""|*@example.com) warn "browser notifications: VAPID_SUBJECT is not your own contact (mailto:you@yourdomain)";; esac
+  else
+    warn "browser notifications (Web Push): VAPID_PRIVATE_KEY is not set - the app refuses new browser subscriptions until it is (runbook section 4, 'Browser and phone notifications')"
+  fi
+  if env_set FCM_SERVICE_ACCOUNT_JSON_BASE64 || env_set FCM_SERVICE_ACCOUNT_FILE; then ok "phone notifications (Android app, FCM): key set - the mobile_push flag decides who gets them"
+  else info "phone notifications (Android app, FCM): not set (optional; FCM_SERVICE_ACCOUNT_JSON_BASE64) - nothing is sent to phones"; fi
 }
 
 lock() {
@@ -2511,6 +2532,120 @@ cmd_reset_password() {
   esac
 }
 
+# WL1-4 (owner decision 23 Oct): the owner's settings for the universe sync, set without opening an editor. Only the
+# keys of ENV_SET_KEYS with a plain value; every other line of .env (comments, secrets, order) stays byte for byte. A
+# key already assigned has each of its lines replaced; a missing one is appended. Nothing changes -> nothing is
+# written. Before a write: a copy of .env in .deploy/env-backups (mode 600, the newest ENV_BACKUPS_KEEP kept); the new
+# file is written beside .env with mode 600 and moved over it in one step. Values of other keys are never printed.
+cmd_env_set() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  [ $# -gt 0 ] || die "usage: atp.sh env-set KEY=VALUE [KEY=VALUE ...]   (keys: ${ENV_SET_KEYS[*]})" 2
+  local pair key val k allowed
+  for pair in "$@"; do
+    key="${pair%%=*}"; val="${pair#*=}"
+    [ "$key" != "$pair" ] || die "not KEY=VALUE: $key" 2
+    allowed=0
+    for k in "${ENV_SET_KEYS[@]}"; do if [ "$k" = "$key" ]; then allowed=1; fi; done
+    [ "$allowed" = "1" ] || die "$key is not a setting env-set may change (only: ${ENV_SET_KEYS[*]}). Secrets and LIVE switches are edited by hand in $ENV_FILE." 2
+    [[ "$val" =~ ^[A-Za-z0-9_.,:-]{1,64}$ ]] || die "the value for $key may hold only letters, digits and _ . , : - (1 to 64 characters)" 2
+  done
+  lock 0
+  check_env
+  step "settings in $ENV_FILE"
+  local stamp; stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  [ "$DRY_RUN" = "1" ] || mkdir -p "$STATE_DIR/env-backups"
+  python3 -c 'import os, re, sys
+path, backups, stamp, keep, dry = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5] == "1"
+pairs = [p.split("=", 1) for p in sys.argv[6:]]
+raw = open(path, "rb").read().decode("utf-8")
+lines = raw.splitlines(keepends=True)
+if lines and not lines[-1].endswith("\n"):
+    lines[-1] += "\n"
+def value(line):
+    v = line.split("=", 1)[1].strip()
+    return v[1:].split(v[0], 1)[0] if v[:1] in "\"\x27" and v else v.split(" #", 1)[0].strip()
+for key, new in pairs:
+    pat = re.compile(r"^\s*(export\s+)?" + re.escape(key) + r"\s*=")
+    hits = [i for i, line in enumerate(lines) if pat.match(line)]
+    if not hits:
+        lines.append(f"{key}={new}\n")
+        print(f"    added      {key}={new}")
+        continue
+    old = value(lines[hits[-1]])
+    for i in hits:
+        lines[i] = ("export " if pat.match(lines[i]).group(1) else "") + f"{key}={new}\n"
+    word = "unchanged" if old == new and len(hits) == 1 else "set"
+    print(f"    {word:10} {key}={new}" + (f" (was {old})" if old != new else ""))
+out = "".join(lines)
+if out == raw:
+    print("    .env unchanged - nothing written")
+    sys.exit(0)
+if dry:
+    print("    dry-run: .env would be written (after a backup); nothing changed")
+    sys.exit(0)
+backup = os.path.join(backups, f"env.{stamp}")
+fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, "wb") as fh:
+    fh.write(raw.encode("utf-8"))
+old_ones = sorted(f for f in os.listdir(backups) if f.startswith("env."))
+for f in old_ones[:-keep]:
+    os.remove(os.path.join(backups, f))
+tmp = path + ".env-set.tmp"
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "wb") as fh:
+    fh.write(out.encode("utf-8"))
+    fh.flush()
+    os.fsync(fh.fileno())
+try:
+    os.chown(tmp, os.stat(path).st_uid, os.stat(path).st_gid)          # the same owner as before
+except PermissionError:
+    pass
+os.replace(tmp, path)
+print(f"    .env written (mode 600); the previous copy: {backup}")' \
+    "$ENV_FILE" "$STATE_DIR/env-backups" "$stamp" "$ENV_BACKUPS_KEEP" "$DRY_RUN" "$@"
+  info "the API and the worker read these at their next start: $ATP_DIR/deploy/atp.sh lists-sync (or the next deploy)"
+}
+
+# WL1-3 / WL1-4: the universe sync and the system watchlists NOW (backend app/universe/run_now.py, in a one-off
+# container of the worker image, which reads .env as the worker does). The files are only names - no prices - and
+# every file's HTTP status is printed before anything is written. The worker is restarted afterwards (it then runs the
+# nightly sync itself) only through the session gate, so never under open positions in an open session.
+cmd_lists_sync() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local check=0 rc=0 cur
+  case "${1:-}" in "") ;; --check) check=1 ;; *) die "usage: atp.sh lists-sync [--check]" 2 ;; esac
+  [ $# -le 1 ] || die "usage: atp.sh lists-sync [--check]" 2
+  lock 0
+  check_tools
+  check_env
+  is_true "$(env_get UNIVERSE_SYNC_ENABLED)" || die "UNIVERSE_SYNC_ENABLED is not true in $ENV_FILE - nothing was downloaded or changed. Set it first:
+    $ATP_DIR/deploy/atp.sh env-set UNIVERSE_SYNC_ENABLED=true INSTRUMENT_SYNC_EXCHANGES=NSE,BSE" 2
+  cur="$(current_sha)"
+  [ -n "$cur" ] || die "no release recorded on this host - run $ATP_DIR/deploy/atp.sh deploy first" 1
+  RELEASE="$(release_of "$cur")"
+  info "release ${cur:0:12}; UNIVERSE_SYNC_ENABLED=$(env_get UNIVERSE_SYNC_ENABLED), INSTRUMENT_SYNC_EXCHANGES=$(env_get INSTRUMENT_SYNC_EXCHANGES)"
+  if [ "$check" = "1" ]; then
+    step "published files (HTTP status from this server; nothing is written)"
+    rdc run --rm --no-deps -T worker python -m app.universe.run_now --check || rc=$?
+    if [ "$rc" = "0" ]; then ok "every file answered 200"; else warn "some files were not fetched (lines above) - those lists are left as they are"; fi
+    return 0
+  fi
+  step "session gate"
+  session_gate "restart the worker" "$RELEASE"
+  step "universe sync + system watchlists (names only, from the published NSE / niftyindices files)"
+  rdc run --rm --no-deps -T worker python -m app.universe.run_now || rc=$?
+  case "$rc" in
+    0) ok "lists rebuilt (the counts above)" ;;
+    2) die "refused by the sync (lines above) - nothing was changed" 2 ;;
+    *) die "the sync did not finish (exit $rc) - the lists keep what they held; the lines above say where it stopped" 1 ;;
+  esac
+  step "API and worker read the new settings (recreated only when their settings changed)"
+  rdc up -d --no-deps --no-build backend
+  wait_api || die "the API did not pass deep health after picking up the settings - see: $ATP_DIR/deploy/atp.sh health" 1
+  start_workers
+  printf '\nlists-sync: done - the system watchlists are filled; the worker repeats the sync every evening (UNIVERSE_SYNC_HOUR_IST)\n'
+}
+
 main() {
   local args=() a
   for a in "$@"; do
@@ -2538,6 +2673,8 @@ main() {
     loadtest)       cmd_loadtest "$@" ;;
     loadtest-cleanup) cmd_loadtest_cleanup "$@" ;;
     reset-password) cmd_reset_password "$@" ;;
+    env-set)        cmd_env_set "$@" ;;
+    lists-sync)     cmd_lists_sync "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac

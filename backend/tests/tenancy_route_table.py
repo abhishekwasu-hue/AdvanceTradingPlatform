@@ -66,6 +66,8 @@ S_OWN_ACK = "self: the caller's own Copilot terms acknowledgement"
 S_OWN_INTERVIEW = "self: the caller's own strategy interview; nothing deploys"
 S_COPILOT = "self: a Copilot read or research run for the caller: read-only tools, no order, no other member's data changes"
 S_BACKTEST = "self: a backtest computed for the caller; stores nothing another member relies on"
+S_BACKTEST_BARS = ("self: the bars a backtest runs on, read for the caller (the organisation's own broker session, else the shared "
+                   "Daily history); stores nothing")
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
 S_OWN_LAYOUTS = "self: the caller's own saved chart workspace layouts (per user)"
 S_OWN_WATCHLISTS = "self: the caller's own watchlists (tenant and user); another member's or organisation's list is a 404"
@@ -144,6 +146,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/admin/controls/marketplace-terms"): "admin",
     ("GET", "/api/admin/controls/risk-ceilings"): "admin",
     ("PUT", "/api/admin/controls/risk-ceilings"): "admin",
+    ("GET", "/api/admin/controls/trader-pack"): "admin",
+    ("POST", "/api/admin/controls/trader-pack"): "admin",
+    ("POST", "/api/admin/controls/trader-pack/undo"): "admin",
     ("GET", "/api/admin/deployments"): "admin",
     ("GET", "/api/admin/exports/{dataset}"): "admin",
     ("GET", "/api/admin/fx-rates"): "admin",
@@ -249,6 +254,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/alert-channels/{channel_type}"): "trader",
     ("PUT", "/api/alert-channels/{channel_type}"): "trader",
     ("POST", "/api/alert-channels/{channel_type}/test"): "trader",
+    # B8 (flag mobile_push): the caller's own phones for app notifications, inside the organisation's FCM channel
+    ("GET", "/api/mobile/devices"): "member: the caller's own phones only (another member's phones are never listed; no token is returned)",
+    ("POST", "/api/mobile/devices"): "self: registers the caller's own phone for notifications (a phone that changes hands is moved, never shared)",
+    ("PATCH", "/api/mobile/devices/{device_id}"): "self: the name and notification kinds of the caller's own phone; another member's id answers 404",
+    ("DELETE", "/api/mobile/devices/{device_id}"): "self: removes the caller's own phone; another member's id answers 404",
+    ("POST", "/api/mobile/devices/{device_id}/test"): "self: a test notification to the caller's own phone; another member's id answers 404",
     ("GET", "/api/alerts/dead-letters"): "member",
     ("POST", "/api/alerts/deliveries/{delivery_id}/retry"): "trader",
     ("GET", "/api/alerts/email-opt-outs"): "member",
@@ -316,6 +327,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/auth/verify-email/resend"): S_OWN_ACCOUNT,
     ("POST", "/api/auth/verify-email/{token}"): P_SIGN_IN,
     ("POST", "/api/backtest"): S_BACKTEST,
+    ("POST", "/api/backtest/bars"): S_BACKTEST_BARS,
     ("POST", "/api/backtest/monte-carlo"): S_BACKTEST,
     ("POST", "/api/backtest/optimize"): S_BACKTEST,
     ("GET", "/api/backtest/option-chain/coverage"): "member",
@@ -717,6 +729,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/screens/{screen_id}/versions/{version}"): "member",
     ("POST", "/api/screener/screens/{screen_id}/versions/import"): "trader",       # LAB-18: the one upload of a device's history
     ("GET", "/api/screener/taxonomy"): "member",
+    ("GET", "/api/screener/universes"): "member",            # owner 23 Oct: shared system lists + the org's batch plan
+    ("GET", "/api/screener/universes/{key}"): "member",      # one shared system list's NSE symbols (reference data)
     ("POST", "/api/screener/validate"): S_COMPUTE,
     ("POST", "/api/screener/stages"): S_COMPUTE,
     ("GET", "/api/screener/etf"): "member",
@@ -733,6 +747,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
                                     "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),
+    # Signals day one: the caller's own watch (an internal user_prefs row, tenant and user) and the shared daily history
+    ("GET", "/api/signals/day-one"): "member: the caller's own adopted watch (tenant and user); the shared daily history",
+    ("POST", "/api/signals/day-one/adopt"): "trader",
+    ("POST", "/api/signals/day-one/refresh"): "trader",
+    ("DELETE", "/api/signals/day-one"): "trader",
     ("GET", "/api/status"): P_STATUS_PAGE,
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
     ("GET", "/api/strategies/{strategy_id}"): P_STRATEGY_CATALOGUE,

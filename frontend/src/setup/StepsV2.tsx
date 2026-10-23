@@ -8,8 +8,10 @@ import { currentPushEnv, pushReadiness, vapidKeyBytes } from "../alerts/push";
 import { ChipV2, LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import type { TelegramLinkCode } from "../alerts/rules";
 import TelegramConnectV2 from "../alerts/TelegramConnectV2";
-import type { AlertChannel, AlertChannelType, PaperRiskStatus, StrategyInfo } from "../types";
+import type { AlertChannel, AlertChannelType, OHLCVBar, PaperRiskStatus, StrategyInfo } from "../types";
+import { STORED_HISTORY_NOTE } from "../backtest/pricesLine";
 import { CONNECT_BROKER_PATH } from "../ui/BrokerGate";
+import { useFeatures } from "../ui/useFeatures";
 import { formatNumber, formatTimeIST } from "../ui/format";
 import {
   RISK_DEFAULTS, RISK_LABELS, SUGGESTIONS, paperDeployment, perTradeText, riskErrors, riskNumbers, riskSentence, testSummary,
@@ -233,7 +235,8 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
 
 // --- Step 3 -----------------------------------------------------------------------------------------------------------
 
-interface Source { broker: string; intradayDays: number; dailyDays: number }
+/** `stored` (owner order 23 Oct, flag backtest_stored_history): no usable broker - Daily tests run on ATP's stored history. */
+interface Source { broker: string; intradayDays: number; dailyDays: number; stored?: boolean }
 
 function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion; info: StrategyInfo; source: Source | null; onChanged: () => void }) {
   const [busy, setBusy] = useState<"test" | "start" | null>(null);
@@ -247,14 +250,26 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
     const daily = timeframe === "day";
     const days = daily ? Math.min(365, source.dailyDays) : Math.min(30, source.intradayDays);
     try {
-      const res = await api.marketDataCandles([s.symbol], timeframe, days, "NSE", source.broker);
-      const bars = res.symbols[s.symbol.toUpperCase()]?.bars ?? Object.values(res.symbols)[0]?.bars ?? [];
+      let bars: OHLCVBar[];
+      let label: string;
+      let line = "";
+      if (source.stored) {
+        const res = await api.backtestBars(s.symbol, timeframe, days);
+        bars = res.candles; label = res.source; line = ` ${res.line}`;
+      } else {
+        const res = await api.marketDataCandles([s.symbol], timeframe, days, "NSE", source.broker);
+        bars = res.symbols[s.symbol.toUpperCase()]?.bars ?? Object.values(res.symbols)[0]?.bars ?? [];
+        label = `broker:${res.source.broker}`;
+      }
       if (!bars.length) throw new Error("no candles");
-      const result = await api.backtest(info.id, s.symbol, timeframe, bars, null, `broker:${res.source.broker}`);
-      setTest({ tone: "ok", text: testSummary(result, days, s.symbol) + (s.option ? " Tested on the index itself, not the option." : "") });
+      const result = await api.backtest(info.id, s.symbol, timeframe, bars, null, label);
+      setTest({ tone: "ok", text: testSummary(result, days, s.symbol) + line + (s.option ? " Tested on the index itself, not the option." : "") });
       onChanged();
     } catch (e) {
-      setTest({ tone: "problem", text: problemText(e, "The test could not run on your broker's prices just now. Try again later, or open Test a strategy.") });
+      // Owner order 23 Oct: on stored history the server's own sentence says what is missing ("Intraday backtests need a
+      // connected broker...", "Daily history for X is not stored yet.").
+      const plain = source.stored && e instanceof ApiError && e.status === 409 ? e.message : null;
+      setTest({ tone: "problem", text: plain ?? problemText(e, "The test could not run on your broker's prices just now. Try again later, or open Test a strategy.") });
     } finally {
       setBusy(null);
     }
@@ -302,6 +317,7 @@ export function StrategyStepV2({ onChanged }: StepProps) {
   const [library, setLibrary] = useState<StrategyInfo[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
+  const storedOn = useFeatures().on("backtest_stored_history");
 
   useEffect(() => {
     let alive = true;
@@ -309,9 +325,10 @@ export function StrategyStepV2({ onChanged }: StepProps) {
     api.marketDataSources().then((r) => {
       const usable = r.sources.find((x) => x.usable && x.tier_a !== false);
       if (alive && usable) setSource({ broker: usable.broker, intradayDays: r.intraday_max_lookback_days || 30, dailyDays: r.daily_max_lookback_days || 365 });
-    }).catch(() => { /* no broker prices: testing waits for a broker */ });
+      else if (alive && storedOn) setSource({ broker: "", intradayDays: 30, dailyDays: 365, stored: true });
+    }).catch(() => { if (alive && storedOn) setSource({ broker: "", intradayDays: 30, dailyDays: 365, stored: true }); });
     return () => { alive = false; };
-  }, []);
+  }, [storedOn]);
 
   if (failed) return <p className={P}>We could not load the strategy library. Try again in a moment, or open the Library.</p>;
   if (!library) return <div aria-busy="true" className="h-40 animate-pulse rounded-control bg-surface-2"><span className="sr-only">Loading</span></div>;
@@ -323,6 +340,7 @@ export function StrategyStepV2({ onChanged }: StepProps) {
     <div className="space-y-space-3">
       <p className="text-t14 text-fg">Pick one to try. A paper bot then trades it with paper money, so you can watch how it does.</p>
       {!source && <p className={P}>Testing uses your broker&apos;s prices. Connect your broker to test a strategy first.</p>}
+      {source?.stored && <p className={P}>{STORED_HISTORY_NOTE}</p>}
       <ul className="space-y-space-3">
         {shown.map(({ s, info }) => <SuggestionCard key={s.strategyId} s={s} info={info} source={source} onChanged={onChanged} />)}
       </ul>

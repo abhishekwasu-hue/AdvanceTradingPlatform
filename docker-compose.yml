@@ -75,6 +75,10 @@ services:
       MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@example.com}
+      # B8: phone notifications (FCM) for the Android app; all empty = off
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FCM_SERVICE_ACCOUNT_JSON_BASE64: ${FCM_SERVICE_ACCOUNT_JSON_BASE64:-}
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
@@ -166,6 +170,10 @@ services:
       UNIVERSE_FILE_URLS: ${UNIVERSE_FILE_URLS:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@example.com}
+      # B8: phone notifications (FCM) for the Android app; all empty = off
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FCM_SERVICE_ACCOUNT_JSON_BASE64: ${FCM_SERVICE_ACCOUNT_JSON_BASE64:-}
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
       # UX2 fix 5: the worker sends the alerts, so it reads the platform bot's token too.
       ATP_TELEGRAM_BOT_TOKEN: ${ATP_TELEGRAM_BOT_TOKEN:-}
       ERROR_TRACKER_DSN: ${ERROR_TRACKER_DSN:-}            # A2: empty = no error tracker

@@ -21,6 +21,8 @@ import type {
   AdminTenantDetail,
   AdminTenantSummary,
   AlertChannel,
+  PhoneDevice,
+  PhoneDevices,
   AlertChannelUpsert,
   AlertDelivery,
   TelegramInboundStatus,
@@ -28,6 +30,7 @@ import type {
   ThesisHistory,
   AnalyticsSummary,
   AuditLogEntry,
+  BacktestBarsResponse,
   BacktestResult,
   BrokerCredentialsInput,
   BrokerTokenInfo,
@@ -428,6 +431,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null, options: options ?? null }),
     }),
+  /** Owner order 23 Oct: the bars a backtest runs on, chosen by the server - your broker when its session is usable, else
+   * ATP's stored Daily history (flag backtest_stored_history), else a 409 that says what is missing. */
+  backtestBars: (symbol: string, timeframe: string, lookbackDays: number, exchange = "NSE") =>
+    request<BacktestBarsResponse>("/backtest/bars", { method: "POST", body: JSON.stringify({ symbol, timeframe, lookback_days: lookbackDays, exchange }) }),
   listBacktests: () => request<BacktestRunSummary[]>("/backtests"),
   optionChainCoverage: () => request<OptionChainCoverage[]>("/backtest/option-chain/coverage"),
   uploadOptionChainSnapshots: (underlying: string, rows: OptionChainSnapshotRow[]) =>
@@ -938,7 +945,7 @@ export const api = {
   aiDrafts: () => request<AiStrategyDraft[]>("/ai/drafts"),
   aiDraft: (id: number) => request<AiStrategyDraft>(`/ai/drafts/${id}`),
   aiBacktestDraft: (id: number, symbol: string, base_timeframe: string, candles: OHLCVBar[], data_source = "sample", signal?: AbortSignal) =>
-    request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult }>(`/ai/drafts/${id}/backtest`, {
+    request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult; prices?: { line: string } | null }>(`/ai/drafts/${id}/backtest`, {
       method: "POST", body: JSON.stringify({ symbol, base_timeframe, ...evidenceBody(candles, data_source) }), signal,
     }),
   aiApproveDraft: (id: number, name?: string, acceptRisk = false) =>
@@ -1053,7 +1060,17 @@ export const api = {
 
   deleteAlertChannel: (type: string) => request<void>(`/alert-channels/${type}`, { method: "DELETE" }),
 
-  pushPublicKey: () => request<{ public_key: string; configured: boolean }>("/alert-channels/push/public-key"),
+  // B8: `accepting` is false while the server runs on a throwaway VAPID key in production; `message` says so plainly.
+  pushPublicKey: () => request<{ public_key: string; configured: boolean; accepting?: boolean; message?: string | null }>("/alert-channels/push/public-key"),
+
+  // B8 (flag mobile_push): the caller's own phones for notifications from the Android app.
+  phoneDevices: () => request<PhoneDevices>("/mobile/devices"),
+  registerPhone: (body: { token: string; platform: "android" | "ios"; label: string; app_version: string; kinds?: string[] }) =>
+    request<PhoneDevice>("/mobile/devices", { method: "POST", body: JSON.stringify(body) }),
+  updatePhone: (id: string, body: { label?: string; kinds?: string[] }) =>
+    request<PhoneDevice>(`/mobile/devices/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
+  removePhone: (id: string) => request<void>(`/mobile/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  testPhone: (id: string) => request<{ ok: boolean; detail: string }>(`/mobile/devices/${encodeURIComponent(id)}/test`, { method: "POST" }),
 
   testAlertChannel: (type: string) =>
     request<{ ok: boolean; detail: string }>(`/alert-channels/${type}/test`, { method: "POST" }),

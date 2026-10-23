@@ -164,6 +164,7 @@ class AlertChannelType(str, Enum):
     PUSH = "PUSH"         # Phase O3: browser Web Push (VAPID + RFC 8291), one channel holding every device
     SMS = "SMS"           # Phase O3: any HTTP SMS gateway (MSG91, Twilio, Textlocal, ...) via a request template
     WHATSAPP = "WHATSAPP"  # S10 seam (flag alerts_whatsapp_dlt): a WhatsApp Business gateway, pre-approved template + opt-in only
+    FCM = "FCM"           # B8 (flag mobile_push): phone notifications to the Android app (Firebase Cloud Messaging HTTP v1)
 
 
 class AlertDeliveryStatus(str, Enum):

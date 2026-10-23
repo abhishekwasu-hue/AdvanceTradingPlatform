@@ -79,7 +79,8 @@ def test_job4_warns_from_the_users_own_positions_and_settings():
     warnings = next(s for s in out.sections if s["title"] == "Warnings")["lines"]
     assert len(warnings) == 7 and out.action == {"label": "Open My positions", "to": "/positions"}
     assert any(b["type"] == "table" and b["table"]["title"] == "Your open positions" for b in out.blocks)
-    assert {s.tool for s in out.worked if s.tool.startswith("calc:")} == {"calc:open_risk_share", "calc:daily_loss_used"}
+    assert {s.tool for s in out.worked if s.tool.startswith("calc:") and not s.tool.startswith("calc:news_count")} == {
+        "calc:open_risk_share", "calc:daily_loss_used"}                       # 23 Oct: plus the news count per held symbol
     none, called = _answer("How are my open positions?", "no_data")
     assert called == ["get_my_positions", "get_risk_limits"] and none.summary[0].startswith("You have no open positions")
 
@@ -223,7 +224,7 @@ def test_the_route_answers_jobs_3_to_5_on_the_real_tools_and_writes_no_order():
             assert body["job"] == job and body["job_number"] in (3, 4, 5) and all(s["ok"] or s["note"] for s in body["worked"])
             assert "diagnostics" not in body and "flag" not in json.dumps(body["unknowns"])
         home = client.get("/api/ai/chat/home", headers=headers).json()
-        assert [j["built"] for j in home["jobs"]] == [True] * 8
+        assert [j["built"] for j in home["jobs"]] == [True] * 10           # jobs 9-10: the 23 Oct order
     finally:
         _run(_flag("ui_v2", False))
     assert _run(snapshot()) == before                     # the Copilot read; it changed no trade and created no order or proposal

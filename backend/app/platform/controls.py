@@ -283,6 +283,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # page's "What the chain shows" summary (app/option_chain/dish.py). OFF: /api/markets/* answers 404, the page is not
     # in the navigation and the option chain shows no summary. Information only, places no orders.
     "markets_view": "Sector & index view (index and sector moves, breadth, strongest and weakest stocks) and the option chain's plain-words summary (information only)",
+    # B8 (readiness, docs/design/MOBILE_PUSH.md): phone notifications to the Android app (FCM) for signals, approvals,
+    # exits and renew reminders, each opening its screen. OFF: the device routes answer 404 (X-Feature-Disabled) and no
+    # phone delivery is queued. Also needs the server's FCM key (FCM_SERVICE_ACCOUNT_JSON_BASE64). Places no orders.
+    "mobile_push": "Phone notifications in the Android app (signals, approvals, exits, renew reminders), each opening its screen",
     # U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards - publicly described methods with a screen
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
@@ -428,6 +432,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
     # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
     "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
+    # Owner order 23 Oct (app/backtest/bar_source.py): backtests without a daily broker login. With no usable broker
+    # session, a Daily / Weekly backtest runs on the shared lake's stored end-of-day history (NSE daily files, the R2 daily
+    # import - never the owner's private 1-minute store); intraday still needs a broker. OFF: every backtest path answers
+    # exactly as before (no broker session = 409). A simulation only: places no orders.
+    "backtest_stored_history": "Backtests on ATP's stored daily history when no broker is connected (Daily and Weekly; intraday needs a broker)",
     # S10 (SCREENER_SPEC §5 S10, Phase 0 slice): the ETF screen (J) - NSE ETFs from the shared end-of-day history with
     # traded value and the tracking difference against the index each tracks. OFF: GET /api/screener/etf answers 503 and
     # the Screener page shows no ETF button. Information only, no recommendation, places no orders.

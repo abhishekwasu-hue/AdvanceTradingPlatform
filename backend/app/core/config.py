@@ -260,6 +260,10 @@ LAKE_LATE_SECONDS = float(os.environ.get("LAKE_LATE_SECONDS", "300"))
 LAKE_MISMATCH_PCT = float(os.environ.get("LAKE_MISMATCH_PCT", "0.5"))
 # Part B4: also adjust prices for dividends in the adjusted view (splits and bonuses always are).
 LAKE_ADJUST_DIVIDENDS = os.environ.get("LAKE_ADJUST_DIVIDENDS", "false").lower() in ("1", "true", "yes")
+# Owner order 23 Oct (app/backtest/bar_source.py): the shared lake's Daily sources a backtest without a broker may read,
+# as source prefixes. Default: the NSE daily files only (RDY-6: licensed EOD only, never the platform's or another user's
+# broker feed). "r2:" adds the R2 daily import once its licence position allows it (OPEN_QUESTIONS BSH-2).
+BACKTEST_STORED_SOURCES = tuple(p.strip() for p in os.environ.get("BACKTEST_STORED_SOURCES", "nse_bhav:").split(",") if p.strip())
 # Part B5: most bars one /api/market-data/history request returns (narrow the window for more).
 LAKE_HISTORY_MAX_BARS = int(os.environ.get("LAKE_HISTORY_MAX_BARS", "5000"))
 # HB0: most 1-minute rows one tenant-store request may READ before resampling (checked with a count first), so a
@@ -461,6 +465,15 @@ EMAIL_VERIFICATION_REQUIRED = os.environ.get("EMAIL_VERIFICATION_REQUIRED", "fal
 # `python -m app.alerts.webpush` and keep it stable: rotating it invalidates every subscription.
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "").strip() or None
 VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "mailto:ops@example.com").strip()
+
+# --- Phone notifications for the Android app (readiness B8, docs/design/MOBILE_PUSH.md) ----------------------------
+# Firebase Cloud Messaging HTTP v1. A Firebase service account key (JSON) authorises the server: either base64 on one
+# line in .env (FCM_SERVICE_ACCOUNT_JSON_BASE64, the way on the Hostinger host) or a path to the file
+# (FCM_SERVICE_ACCOUNT_FILE). FCM_PROJECT_ID is optional (the key's own project_id when empty). All empty = phone
+# notifications are off: nothing is sent and the device routes say "not set up on this server yet".
+FCM_PROJECT_ID = os.environ.get("FCM_PROJECT_ID", "").strip()
+FCM_SERVICE_ACCOUNT_FILE = os.environ.get("FCM_SERVICE_ACCOUNT_FILE", "").strip()
+FCM_SERVICE_ACCOUNT_JSON_BASE64 = os.environ.get("FCM_SERVICE_ACCOUNT_JSON_BASE64", "").strip()
 
 # --- The platform's Telegram bot (UX2 fix 5: "Telegram in one tap") --------------------------------
 # One bot for every organisation, created once by the operator with @BotFather. A user taps "Connect Telegram", the app

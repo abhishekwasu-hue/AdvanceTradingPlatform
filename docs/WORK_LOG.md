@@ -3163,6 +3163,39 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   pre-fill as PAPER, T7 must fire / must not fire, no look-ahead, flags); vitest `src/ideas/ideas.test.tsx`; e2e
   `e2e/idea-library-v2.e2e.ts` (the idea library baselines updated: T7 scans, T5 note, the adopt card on A5). The
   fixture `e2e/fixtures/ideas_v2.json` is now the payload with strategy templates on; its pin is updated.
+## 23 Oct - Production readiness A1: the off-site backup (WAL fix, schedule, retention, backup age, key escrow, clean-machine restore)
+
+- Branch `claude/readiness-a1-backup`. No migration, no flag, no route, no UI. Extends `deploy/atp.sh` and
+  `scripts/backup/`; nothing rewritten.
+- R1 (the WAL archive): `archive_mode=${PG_ARCHIVE_MODE:-off}` in `docker-compose.hostinger.yml` and the CI stack
+  (Postgres `stop_grace_period` 60 s for the one recreate); `offsite_sync.sh` copies only encrypted, sealed files
+  (anchored rclone filters) and never the WAL archive, which the offsite service no longer mounts;
+  `atp.sh wal-cleanup` empties what piled up (refuses while archiving is on); PITR later with `PG_ARCHIVE_MODE=on`:
+  `atp.sh base-backup` (pg_basebackup over the postgres container's socket -> `base_backup.sh --stdin`, encrypted +
+  sealed over "base/<stamp>/<file>", `start_wal`, archive pruned), weekly in cron; `pitr_restore.sh` reads it.
+- Schedule: the cron block is built by `schedule_block` - nightly 02:17 `backup --scheduled --verify` (copy, R2
+  retention, restore of the newest R2 copy), Sunday 03:43 `restore-check`, Saturday 04:29 `base-backup` with PITR on;
+  `health` says whether the block is installed and current.
+- Retention as settings: `backup.sh` keeps the first dump of each week / month as hard links in `weekly/` and
+  `monthly/` (4 / 6), daily 7 on Hostinger (seals now removed with their dump); `offsite_prune.sh` prunes R2 by the
+  same counts per prefix (`backups/`, `backups-weekly/`, `backups-monthly/`, `pre-migration/`, `files/`, `base/`),
+  never inside `OFFSITE_LOCK_DAYS` + 1, removing raw WAL left off-site; run after each copy by `atp.sh backup`.
+- Health: the last good backup, local and off-site (`.deploy/last_offsite_ok`, no longer only the container log),
+  with its age; older than `BACKUP_MAX_AGE_HOURS` (26) FAILs in `health`, WARNs inside a deploy; `atp.sh
+  backup-status` prints it as one JSON line (exit 1 on fail) for the A2 alert; escrow lines (since when the secrets
+  key and the backup passphrase are unchanged; a passphrase change is said and recorded once).
+- R2 (key escrow) and the clean machine: runbook sections 6 (bucket, versioning if offered, a required bucket lock,
+  no age lifecycle rule - the 35-day contradiction fixed, the bucket-scoped token, the six `.env` names atp.sh reads),
+  6a (the names to keep in the password manager + one offline copy), 6b (`atp.sh restore-offsite`: a new server's
+  EMPTY database from R2, seal checked, typed name; then `deploy`), 6c (WAL / PITR), 11 / 11a (the rehearsal).
+- Rehearsal: `deploy/ci/offsite_rehearsal.sh`, job `offsite` in `staging-stack.yml` (real atp.sh, an S3 stand-in
+  with `rclone serve s3`: deploy, backup --verify, bucket checked, server lost, new clone from the escrowed values,
+  restore-offsite, deploy, the old user logs in, audit chain); at script level on every PR in
+  `tests/test_backup_scripts.py` (real Postgres).
+- Tests: `tests/test_a1_offsite_backup.py` (tiers, filters, prune with the lock, base backup + PITR seal),
+  `tests/test_z11_deploy_bundle.py` (schedule, ages and FAIL / WARN, prune after copy, backup-status, wal-cleanup,
+  base-backup, escrow lines, restore-offsite and its refusals), `tests/test_hostinger_deploy.py` (compose defaults),
+  `tests/test_phase_ax_first_paper_day.py` (no WAL sync). Questions RDY-13..RDY-20.
 ## 23 Oct - F&O 8b FNO-8B-28 / FNO-8B-31: his own liquidity limits, the journal chart's Download image (behind ui_v2, PAPER only)
 
 - Branch `claude/fno8b-28-31`, on F&O 8b slice 4 (#408). Owner decisions of 23 Oct. No migration, no new flag, no new route.

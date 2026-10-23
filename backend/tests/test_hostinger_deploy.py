@@ -50,11 +50,11 @@ def test_deploy_block_never_carries_a_secret_and_refuses_root():
         assert must in boot, must
 
 
-def _merged():
+def _merged(extra: str = ""):
     if not shutil.which("docker") or subprocess.run(["docker", "compose", "version"], capture_output=True).returncode:
         pytest.skip("docker compose not available")
     env = ROOT / "backend/.pytest_env_hostinger"
-    env.write_text((ROOT / ".env.example").read_text() + "\nDOMAIN=203.0.113.7\nACME_EMAIL=ops@localhost\nCADDYFILE=Caddyfile.ip\n")
+    env.write_text((ROOT / ".env.example").read_text() + "\nDOMAIN=203.0.113.7\nACME_EMAIL=ops@localhost\nCADDYFILE=Caddyfile.ip\n" + extra)
     try:
         out = subprocess.run(["docker", "compose", "--env-file", str(env), "-f", "docker-compose.yml", "-f", "docker-compose.prod.yml",
                               "-f", "docker-compose.hostinger.yml", "-p", "atp", "config"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
@@ -76,7 +76,7 @@ def test_only_caddy_is_public_and_the_limits_fit_eight_gigabytes():
     assert set(limits) >= {"postgres", "redis", "backend", "worker", "frontend", "caddy", "backup", "offsite"}
     assert sum(limits.values()) <= 7 * 1024 ** 3                                  # room for the OS on an 8 GB host
     pg = " ".join(services["postgres"]["command"])
-    assert "archive_mode=on" in pg and "shared_buffers=512MB" in pg              # WAL archiving kept under the tuning
+    assert "archive_mode=off" in pg and "shared_buffers=512MB" in pg             # A1 / R1: WAL archiving off by default
     assert "volatile-lru" in services["redis"]["command"]                         # never evicts a key without a TTL
     assert services["caddy"]["volumes"][0]["source"].endswith("deploy/Caddyfile.ip")
 
@@ -163,3 +163,29 @@ def test_r2_is_the_off_site_default_with_b2_as_the_alternative_and_no_credential
     runbook = (ROOT / "docs/DEPLOY_HOSTINGER.md").read_text()
     assert "offsite_fetch.sh /restore" in runbook and "verify_backup.sh \"$F\"" in runbook and "Object Read & Write" in runbook
     assert "/var/backups/atp-restore-test" in (ROOT / "deploy/hostinger/bootstrap.sh").read_text()
+
+
+# --- A1: the off-site backup (review R1: the WAL archive; retention as settings) ----------------------------------
+
+def test_wal_archiving_is_off_by_default_turns_on_from_dotenv_and_the_archive_never_leaves_the_host():
+    services = _merged()["services"]
+    assert "archive_mode=off" in " ".join(services["postgres"]["command"])
+    assert services["postgres"]["stop_grace_period"] in ("1m0s", "60s", "1m")         # a clean shutdown when it is recreated
+    assert not any(v.get("target") == "/wal_archive" for v in services["offsite"]["volumes"])  # not even mounted read-only
+    backup, offsite = services["backup"]["environment"], services["offsite"]["environment"]
+    for env in (backup, offsite):
+        assert (env["BACKUP_RETENTION_DAYS"], env["BACKUP_KEEP_MIN"], env["BACKUP_KEEP_WEEKLY"], env["BACKUP_KEEP_MONTHLY"]) == ("7", "7", "4", "6")
+    assert offsite["OFFSITE_LOCK_DAYS"] == "14" and offsite["BACKUP_FILES_KEEP"] == "14"
+    on = _merged("PG_ARCHIVE_MODE=on\nBACKUP_KEEP_MONTHLY=12\nOFFSITE_LOCK_DAYS=30\n")["services"]
+    assert "archive_mode=on" in " ".join(on["postgres"]["command"])
+    assert on["backup"]["environment"]["BACKUP_KEEP_MONTHLY"] == "12" and on["offsite"]["environment"]["OFFSITE_LOCK_DAYS"] == "30"
+
+
+def test_every_compose_file_that_archives_wal_says_so_on_purpose():
+    """The base file keeps archiving for a developer box (no off-site copy there); Hostinger and the CI stack read
+    PG_ARCHIVE_MODE (default off); no compose file mounts the archive into the off-site copy."""
+    for name in ("docker-compose.hostinger.yml", "deploy/ci/compose.ci.yml"):
+        assert "archive_mode=${PG_ARCHIVE_MODE:-off}" in (ROOT / name).read_text(), name
+    for name in ("docker-compose.prod.yml", "docker-compose.hostinger.yml"):
+        offsite = (ROOT / name).read_text().split("\n  offsite:", 1)[1].split("\nvolumes:", 1)[0]   # to the top-level volumes
+        assert "wal_archive" not in offsite.replace("# A1: no wal_archive mount", ""), name

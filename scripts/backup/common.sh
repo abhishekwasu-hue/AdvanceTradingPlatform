@@ -8,6 +8,9 @@ set -eu
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 BACKUP_KEEP_MIN="${BACKUP_KEEP_MIN:-7}"
+# A1: the weekly and monthly tiers (backup.sh): how many of each are kept beside the daily ones. 0 = that tier off.
+BACKUP_KEEP_WEEKLY="${BACKUP_KEEP_WEEKLY:-4}"
+BACKUP_KEEP_MONTHLY="${BACKUP_KEEP_MONTHLY:-6}"
 BACKUP_ENCRYPTION_PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}"
 
 log() { printf '%s backup: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
@@ -70,6 +73,8 @@ _mac_pad() {
   done
   printf '%s' "$_out"
 }
+# hmac_file <file> [name]: name defaults to the file's basename; a base backup passes "base/<stamp>/<file>", so its
+# seal also covers the directory it belongs to (every base backup has the same file names).
 hmac_file() {
   [ -n "$BACKUP_ENCRYPTION_PASSPHRASE" ] || die "the seal needs BACKUP_ENCRYPTION_PASSPHRASE"
   need openssl
@@ -78,14 +83,14 @@ hmac_file() {
   _ipad="$(_mac_pad "$_key" 54)"; _opad="$(_mac_pad "$_key" 92)"
   _inner="$(mktemp "${TMPDIR:-/tmp}/atp_mac.XXXXXX")"
   # shellcheck disable=SC2059  # the format is the octal key block on purpose
-  { printf "$_ipad"; printf '%s\n' "$(basename "$1")"; cat "$1"; } | openssl dgst -sha256 -binary > "$_inner"
+  { printf "$_ipad"; printf '%s\n' "${2:-$(basename "$1")}"; cat "$1"; } | openssl dgst -sha256 -binary > "$_inner"
   # shellcheck disable=SC2059
   { printf "$_opad"; cat "$_inner"; } | openssl dgst -sha256 | sed 's/.*= //'
   rm -f "$_inner"
 }
-seal_file() { hmac_file "$1" > "$1.hmac.part" && mv "$1.hmac.part" "$1.hmac"; }
-# ok | missing | mismatch
+seal_file() { hmac_file "$1" ${2:+"$2"} > "$1.hmac.part" && mv "$1.hmac.part" "$1.hmac"; }
+# ok | missing | mismatch   (seal_state <file> [name], as hmac_file)
 seal_state() {
   [ -s "$1.hmac" ] || { printf 'missing'; return 0; }
-  if [ "$(hmac_file "$1")" = "$(tr -d '\r\n' < "$1.hmac")" ]; then printf 'ok'; else printf 'mismatch'; fi
+  if [ "$(hmac_file "$1" ${2:+"$2"})" = "$(tr -d '\r\n' < "$1.hmac")" ]; then printf 'ok'; else printf 'mismatch'; fi
 }

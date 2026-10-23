@@ -3468,3 +3468,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `docs/design/TRADE_TAKEOVER.md`: pointer in the status, the signal-language note in section 10, new section 13.
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
+
+## 23 Oct - The scan universe is never empty (owner order, trader review row 19)
+
+- Find setups (behind `ui_v2` + `screener_v2`): a universe picker - NIFTY 50 chosen on open (the system list, else the
+  stored NIFTY 50 membership, else a names-only fallback), NIFTY 100 / 500, any index's stocks, a sector, F&O stocks,
+  my watchlists, or my own symbols. A run is never sent empty: an empty choice runs on NIFTY 50 with a plain note.
+- One tap: a gallery card's "Try as a scan" and the Ideas page's "Try as a scan" open the screen and run it on the
+  chosen universe once its text is checked; the blocks stay editable.
+- Over 50 symbols: batches (run cap unchanged), each broker call on the credential's shared API budget, paced by the
+  calls each batch made at the per-minute share; progress, Stop, results growing as each batch lands, held-back
+  stocks named. A long answer lists the matches first. Alerts keep the chosen universe (first 50).
+- New routes `GET /api/screener/universes`, `/universes/{key}` (member, shared reference data; tenancy table).
+  `POST /api/screener/run` takes `batch` (default false = exactly as before). No migration.
+- Questions SU-1..SU-5. README row 19 lives in the open trader-review PR; its status clause is in this PR's body.

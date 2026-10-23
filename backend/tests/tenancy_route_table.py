@@ -690,6 +690,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/screens/{screen_id}/versions/{version}"): "member",
     ("POST", "/api/screener/screens/{screen_id}/versions/import"): "trader",       # LAB-18: the one upload of a device's history
     ("GET", "/api/screener/taxonomy"): "member",
+    ("GET", "/api/screener/universes"): "member",            # owner 23 Oct: shared system lists + the org's batch plan
+    ("GET", "/api/screener/universes/{key}"): "member",      # one shared system list's NSE symbols (reference data)
     ("POST", "/api/screener/validate"): S_COMPUTE,
     ("POST", "/api/screener/stages"): S_COMPUTE,
     ("GET", "/api/screener/etf"): "member",

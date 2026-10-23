@@ -236,6 +236,8 @@ def world():
                 ids["invite_id"] = made.json()["id"]
             if "{version_number}" in route.path:
                 ids["version_number"] = 1                       # the planted version row of the planted strategy
+            if route.path.startswith("/api/screener/screens/{screen_id}/versions/{version}"):
+                ids["version"] = 1                              # LAB-18: the planted version row of the planted screen
             if route.path.startswith("/api/news-events/{event_id}"):
                 made = client.post("/api/news-events", headers=a_headers, json={
                     "category": "RBI_POLICY", "headline": "Z10c", "event_date": "2026-10-09", "sentiment": "Neutral",

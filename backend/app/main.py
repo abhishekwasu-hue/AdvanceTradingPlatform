@@ -147,6 +147,7 @@ from app.screener.breakouts.routes import router as screener_breakouts_router
 from app.screener.evidence_routes import router as screener_evidence_router
 from app.screener.board import router as screener_board_router
 from app.screener.library_routes import router as screener_library_router
+from app.screener.version_routes import router as screener_version_router
 from app.screener.etf_routes import router as screener_etf_router
 from app.lab.pine.routes import router as lab_pine_router
 from app.strategy_templates.routes import router as strategy_templates_router
@@ -323,6 +324,7 @@ app.include_router(screener_breakouts_router)
 app.include_router(screener_evidence_router)  # U8 EV1/EV2: evidence charts (flag evidence_charts, off)
 app.include_router(screener_board_router)  # U5 D3a: result-board heatmap / chart-grid context (flag screener_board_views, off)
 app.include_router(screener_library_router)  # U9 TX2: confluence, mirrors, watch-then-trigger lists (flag screener_tx2, off)
+app.include_router(screener_version_router)  # LAB-18 (AMW-7): a saved screen's versions (flag screener_copilot, off)
 app.include_router(screener_etf_router)  # S10 J: the ETF screen on the shared EOD history (flag screener_etf, off)
 app.include_router(alert_rules_router)
 app.include_router(scan_then_router)

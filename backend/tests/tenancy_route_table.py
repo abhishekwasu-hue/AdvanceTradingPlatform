@@ -669,6 +669,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/screens"): "trader",
     ("PUT", "/api/screener/screens/{screen_id}"): "trader",
     ("POST", "/api/screener/screens/{screen_id}/archive"): "trader",
+    ("GET", "/api/screener/screens/{screen_id}/versions"): "member",               # LAB-18 (AMW-7): the organisation's own screens
+    ("GET", "/api/screener/screens/{screen_id}/versions/{version}"): "member",
+    ("POST", "/api/screener/screens/{screen_id}/versions/import"): "trader",       # LAB-18: the one upload of a device's history
     ("GET", "/api/screener/taxonomy"): "member",
     ("POST", "/api/screener/validate"): S_COMPUTE,
     ("POST", "/api/screener/stages"): S_COMPUTE,

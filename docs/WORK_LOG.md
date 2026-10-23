@@ -3271,3 +3271,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   existing tests of the listed machinery; main's last Actions runs (Staging stack incl. the rollback rehearsal green;
   CI and Secret scan red, a fix in progress).
 - Questions RDY-1..12 in OPEN_QUESTIONS.
+## 23 Oct - LAB-18: server-side versions of a saved scan (AMW-7 `screen_versions`, owner decision 2026-10-23)
+
+- Branch `claude/lab-18-screen-versions`, stacked on #423 (CP6-15, migration `b5d7f9a1c3e6`). Flags `screener_copilot`
+  (+ `screener_v2`; the page adds `ui_v2`), as #412. No LIVE path, no order path touched.
+- Migration `c6e8a0b2d4f7` (additive, `ROLLBACK_SAFE = True`): table `screen_versions` (tenant FK, screen FK with
+  cascade delete, unique (screen_id, version), indexes on tenant and (screen, saved time)) and the nullable
+  `screens.versions_imported_at`. Upgrade / `alembic check` / downgrade / upgrade run on a scratch Postgres 16; the
+  unique constraint and the cascade checked there by hand.
+- Server (`app/screener/versions.py`, `version_routes.py`): every save that changes a scan writes an immutable version
+  with a plain change line (the page's own words when it sends its builder blocks, else counts); the PUT still updates
+  the current copy; list and read routes; no restore-in-place; at most 50 per scan (oldest pruned); the one upload of
+  a device's history (compiled, capped at 20, idempotent via the marker). Routes classified in the tenancy table.
+- Page: the first load with the feature uploads the device history once per scan and clears the device copy; the
+  Versions dialog lists the server's versions; "Open this version" reads one and loads its blocks, nothing saved.
+- Tests: `tests/test_lab18_screen_versions.py` (flag, saves, no restore, cap, tenancy, import validation and
+  idempotence, model, migration), the tenancy sweep, `src/screener/versionsSync.test.ts`, the panel test,
+  `e2e/screener-versions-v2.e2e.ts` (sync, dialog, open, flag off, baselines 1440 / 390 light / dark).
+  Questions LAB-18a..c.

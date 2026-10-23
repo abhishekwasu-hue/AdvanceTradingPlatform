@@ -174,6 +174,7 @@ from app.beta.routes import admin_router as beta_admin_router, feedback_router, 
 from app.journal.routes import router as journal_router
 from app.legal.routes import router as legal_router
 from app.support.routes import router as support_router
+from app.support.desk_routes import admin_router as support_desk_admin_router, router as support_desk_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 from app.platform.deployment_phase import on_startup as deployment_phase_startup
 
@@ -377,6 +378,8 @@ app.include_router(paper_fno_insights_router)  # F&O 8b slice 1: risk budget + s
 app.include_router(paper_fno_journal_router)  # F&O 8b slice 3: the auto journal drafts + the signal link (ui_v2 + PAPER account)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
 app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)
+app.include_router(support_desk_router)    # C12: Help centre, Report a problem, contact link (ui_v2 + help_centre, off by default)
+app.include_router(support_desk_admin_router)   # C12: the support tickets and desk settings (SUPER_ADMIN + two-factor)
 
 _default_risk_config = RiskConfig()
 

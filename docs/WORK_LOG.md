@@ -3468,3 +3468,27 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `docs/design/TRADE_TAKEOVER.md`: pointer in the status, the signal-language note in section 10, new section 13.
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
+
+
+## 23 Oct - Watchlists: the universe sync ON block (WL1-3 / WL1-4 / WL1-5, README row 19)
+
+- Branch `claude/universe-sync-now` (from main, with the owner-orders branch of #453 merged in for row 19). **No
+  migration**, no flag, no frontend change.
+- `deploy/atp.sh env-set KEY=VALUE ...`: the one `.env` write - only `UNIVERSE_SYNC_ENABLED`, `UNIVERSE_SYNC_HOUR_IST`,
+  `INSTRUMENT_SYNC_EXCHANGES`, `INSTRUMENT_SYNC_HOUR_IST`, plain values; a mode-600 backup in `.deploy/env-backups`
+  first (newest 10 kept), every other line byte for byte, an assigned key replaced on its line, a missing one appended,
+  atomic replace with mode 600 and the same owner; a re-run writes nothing. Secrets and LIVE switches are refused.
+- `deploy/atp.sh lists-sync [--check]` -> `python -m app.universe.run_now` in a one-off worker container: refuses
+  unless `UNIVERSE_SYNC_ENABLED`; one HTTP status line per published file (37 index files + the NSE lists + F&O lots /
+  ban; the all-indices closing file is not fetched - names only); each file downloaded once and fed to the existing
+  sync functions (same quality gates); the instrument master for `INSTRUMENT_SYNC_EXCHANGES`; the system lists rebuilt
+  (one retry if the worker's own refresh collides); per group every list with its rows and the unmapped symbols (50
+  per list printed, the rest on the Admin card). Then the API and the worker are recreated with the new settings, the
+  worker through the session gate.
+- WL1-5: niftyindices / nseindia unreachable from here and the web search thin, so the 37 names were compared with
+  six public projects that download these files: 2 fixed (NIFTY50 Value 20, NIFTY Chemicals), 32 confirmed by two or
+  more, 3 by one; the server's status lines are the final check.
+- Runbook section 4b with the one block; DATA_SOURCES "For the lawyer" (COMPLIANCE_IN.md is generated; the A6.3 list
+  does not exist yet); questions WL1-9 (the nightly job's closing-price file), WL1-10.
+- Screenshots: fixture renders only (mocked API, names only) of the four groups, phone 390 + desktop 1440, light +
+  dark; not production data, not committed.

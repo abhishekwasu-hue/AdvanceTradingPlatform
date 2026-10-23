@@ -278,6 +278,10 @@ if sub == "run":
     svc, cmd = pos[0], pos[1:]
     entry = (flags.get("--entrypoint") or [""])[0]
     envs = dict(e.split("=", 1) if "=" in e else (e, os.environ.get(e, "")) for e in flags.get("-e", []))   # -e NAME: from the environment
+    if svc == "worker" and cmd[:3] == ["python", "-m", "app.universe.run_now"]:   # WL1-4: lists-sync (its own tests: test_wl1_run_now)
+        st.setdefault("lists_sync", []).append({"argv": cmd[3:], "release": rel})
+        out.append("Files (HTTP status as seen from this server)" if "--check" in cmd else "Indices - 1 list(s)")
+        rc = st.get("lists_sync_rc", 0); finish()
     if svc == "backend" and cmd[:4] == ["python", "-m", "alembic", "heads"]:
         out.append(f"{st['heads'][rel]} (head)"); finish()
     if svc == "backend" and cmd[:2] == ["python", "scripts/migrate_guard.py"]:
@@ -1704,3 +1708,91 @@ def test_the_rehearsals_and_the_deploy_line_keep_to_the_gate():
     for line in ("**Migration:**", "**Rollback-safe:**", '/opt/atp/deploy/atp.sh deploy && /opt/atp/deploy/atp.sh health',
                  "## Self-review notes", "## Screenshots"):
         assert line in template
+
+
+# --- WL1-4: env-set (the allowlisted .env switches) and lists-sync (the universe sync + system lists NOW) ------------
+
+def _env_text(host):
+    return (host.dir / ".env").read_text()
+
+
+def test_env_set_keeps_every_other_line_backs_up_first_and_is_idempotent(host):
+    env = host.dir / ".env"
+    env.write_text(_env_text(host) + "# owner note: keep me\nexport UNIVERSE_SYNC_ENABLED=false   # off until the terms\n")
+    env.chmod(0o600)
+    if os.getuid() == 0:
+        os.chown(env, 1000, 1000)
+    before = _env_text(host)
+    res = host.run("env-set", "UNIVERSE_SYNC_ENABLED=true", "INSTRUMENT_SYNC_EXCHANGES=NSE,BSE")
+    assert res.returncode == 0, res.all
+    after = _env_text(host)
+    assert "set        UNIVERSE_SYNC_ENABLED=true (was false)" in res.stdout and "added      INSTRUMENT_SYNC_EXCHANGES=NSE,BSE" in res.stdout
+    kept = [ln for ln in before.splitlines() if "UNIVERSE_SYNC_ENABLED" not in ln]
+    assert [ln for ln in after.splitlines() if "UNIVERSE_SYNC_ENABLED" not in ln and "INSTRUMENT_SYNC_EXCHANGES" not in ln] == kept
+    assert "export UNIVERSE_SYNC_ENABLED=true\n" in after and after.endswith("INSTRUMENT_SYNC_EXCHANGES=NSE,BSE\n")
+    assert stat.S_IMODE(env.stat().st_mode) == 0o600
+    backups = sorted((host.dir / ".deploy" / "env-backups").iterdir())
+    assert len(backups) == 1 and backups[0].read_text() == before and stat.S_IMODE(backups[0].stat().st_mode) == 0o600
+    digest = host.env_digest()
+    again = host.run("env-set", "UNIVERSE_SYNC_ENABLED=true", "INSTRUMENT_SYNC_EXCHANGES=NSE,BSE")
+    assert again.returncode == 0 and ".env unchanged - nothing written" in again.stdout
+    assert host.env_digest() == digest and len(list((host.dir / ".deploy" / "env-backups").iterdir())) == 1
+    assert host.mutating() == []                                              # no container touched
+
+
+def test_env_set_refuses_secrets_live_switches_and_odd_values_without_writing(host):
+    digest = host.env_digest()
+    for args in (("JWT_SECRET_KEY=abc",), ("LIVE_EXIT_IF_NO_STOP=true",), ("UNIVERSE_SYNC_ENABLED=true; rm -rf /",),
+                 ("UNIVERSE_SYNC_ENABLED",), ()):
+        res = host.run("env-set", *args)
+        assert res.returncode == 2, (args, res.all)
+        assert "rm -rf" not in res.all
+    assert host.env_digest() == digest and not (host.dir / ".deploy" / "env-backups").exists()
+    dry = host.run("--dry-run", "env-set", "UNIVERSE_SYNC_ENABLED=true")
+    assert dry.returncode == 0 and "would be written" in dry.stdout and host.env_digest() == digest
+
+
+def test_lists_sync_refuses_until_the_owner_switched_the_sync_on(host):
+    assert host.run("deploy").returncode == 0
+    since = len(host.state["calls"])
+    res = host.run("lists-sync")
+    assert res.returncode == 2 and "UNIVERSE_SYNC_ENABLED is not true" in res.all and "env-set UNIVERSE_SYNC_ENABLED=true" in res.all
+    assert "lists_sync" not in host.state and host.mutating(since) == []
+
+
+def test_lists_sync_runs_the_sync_in_the_release_image_then_restarts_api_and_worker(host):
+    assert host.run("deploy").returncode == 0
+    host.write_env(extra={"UNIVERSE_SYNC_ENABLED": "true", "INSTRUMENT_SYNC_EXCHANGES": "NSE,BSE"})
+    since = len(host.state["calls"])
+    res = host.run("lists-sync")
+    assert res.returncode == 0, res.all
+    assert "Indices - 1 list(s)" in res.stdout and "lists-sync: done" in res.stdout
+    assert host.state["lists_sync"] == [{"argv": [], "release": host.sha_b[:12]}]
+    gate, sync = host.index("session_check.py", since), host.index("app.universe.run_now", since)
+    api, worker = host.index("up -d --no-deps --no-build backend", since), host.index("up -d --no-deps --no-build worker", since)
+    assert -1 < gate < sync < api < worker
+
+
+def test_lists_sync_check_only_reads_the_files_and_restarts_nothing(host):
+    assert host.run("deploy").returncode == 0
+    host.write_env(extra={"UNIVERSE_SYNC_ENABLED": "true"})
+    since = len(host.state["calls"])
+    host.state["lists_sync_rc"] = 1; host.save()                             # some file answered 404
+    res = host.run("lists-sync", "--check")
+    assert res.returncode == 0 and "some files were not fetched" in res.stdout
+    assert host.state["lists_sync"] == [{"argv": ["--check"], "release": host.sha_b[:12]}]
+    assert [c for c in host.mutating(since) if "run_now" not in c] == []
+
+
+def test_lists_sync_respects_the_session_gate_and_a_failed_sync_restarts_nothing(host):
+    assert host.run("deploy").returncode == 0
+    host.write_env(extra={"UNIVERSE_SYNC_ENABLED": "true"})
+    host.state["session"].update(open_sessions=["NSE"], open_positions=2); host.save()
+    since = len(host.state["calls"])
+    res = host.run("lists-sync")
+    assert res.returncode == 3 and "lists_sync" not in host.state and host.mutating(since) == []
+    host.state["session"].update(open_sessions=[], open_positions=0); host.state["lists_sync_rc"] = 1; host.save()
+    since = len(host.state["calls"])
+    res = host.run("lists-sync")
+    assert res.returncode == 1 and "the sync did not finish" in res.all
+    assert [c for c in host.mutating(since) if "run_now" not in c] == []

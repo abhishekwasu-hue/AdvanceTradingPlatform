@@ -3450,3 +3450,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `src/ui/tokens.test.ts`: the new contrast pairs (text 4.5, UI parts 3), navy variants, the distinct-hue test.
 - e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
 
+
+## 23 Oct - Colour v2: a visible proposal behind `colour_v2`, and a new comparison page
+
+- Branch `claude/colour-v2`, stacked on Part 3 PR 2 (#440). **No migration.** The owner did not approve the first
+  comparison ("the after is almost identical"); this is the redo with his six additions (DECISIONS 23 Oct).
+- Flag `colour_v2` (controls + flag_catalog, OFF, depends on ui_v2; `tests/test_colour_v2_flag.py`). Nothing changes
+  for users until the owner approves; with the flag off every page renders as before (e2e baselines unchanged).
+- `tokens.css`: brand-tint, up-tint, down-tint, teal-accent, soft-* (icon circles), chain-call / chain-put (+ -itm),
+  oi-call / oi-put, nav-insights, each with colour-blind values; the layered dark surfaces under `:root[data-colour="v2"]`.
+  `tokens.test.ts` "Colour v2 tokens": AA text / 3 : 1 UI pairs in six variants, the OI number over its bar, no existing
+  value changes, colour-blind coverage and no dark-to-light leak, ITM stronger than OTM.
+- Shared pieces: `ui/colourV2.tsx` (provider in AppShellV2, `data-colour` on <html>), `ui/IconBadge.tsx`,
+  `ui/DirectionChip.tsx`, `ui/Sparkline.tsx`, `shell/navTone.ts`, `dashboard/indexSparks.ts` (real broker candles only);
+  StatusChip's check is green (owner's order).
+- Pages (flag on only): Settings index, Today (P&L tint, Needs attention icons, sparklines, Active signals), Option chain,
+  Signals, My trades, sidebar / bottom bar / More sheet. vitest `ui/colourV2.test.tsx` (on and off for every page).
+- Comparison page (not in the repo): before = flag off, after = flag on, Today / Option chain / Signals / My trades /
+  Charts / Settings + the bottom bar, 390 / 1440, light / dark, plus colour-blind; e2e mocks only.

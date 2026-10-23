@@ -39,6 +39,15 @@ export interface DisciplineCard {
 export interface ActivationPerson {
   id: number; email: string; tenant: string; plan: string; signed_up_at: string | null;
   broker_at: string | null; paper_bot_at: string | null; journal_at: string | null; activated_at: string | null;
+  /** Readiness C13: came back between day 1 and day 7; null while the first week is still running. */
+  active_week1?: boolean | null;
+}
+
+/** Readiness C13: signed up -> broker -> paper bot -> active in week 1, each step counting only the people who also took
+ * every step before it, over the people whose first week is over (`week1_open` are still inside it). */
+export interface GrowthFunnel {
+  steps: { key: "signed_up" | "broker" | "paper_bot" | "active_week1"; label: string; count: number }[];
+  week1_open: number;
 }
 
 export interface Activation {
@@ -46,6 +55,7 @@ export interface Activation {
   since: string;
   funnel: { key: string; label: string; count: number }[];
   median_hours_to_activation: number | null;
+  growth_funnel?: GrowthFunnel;
   people: ActivationPerson[];
 }
 

@@ -5,7 +5,7 @@ import { CARD } from "../dashboard/CardV2";
 import { startView } from "../api/viewAs";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { growthApi } from "../growth/api";
-import type { Activation } from "../growth/types";
+import type { Activation, GrowthFunnel } from "../growth/types";
 import { useFeatures } from "../ui/useFeatures";
 import {
   ago, consoleApi, maskEmail, shortDate,
@@ -230,10 +230,11 @@ export function ActivationPanel() {
                 sub={f.key === "signed_up" || signedUp === 0 ? undefined : `${Math.round((100 * f.count) / signedUp)}% of sign-ups`} />
             ))}
           </dl>
+          {data.growth_funnel && <GrowthFunnelView funnel={data.growth_funnel} />}
           {data.people.length === 0 ? <p className="text-t12 text-fg-muted">Nobody signed up in this period.</p> : (
             <Scroll>
               <table className="w-full text-t12">
-                <thead><tr><th className={TH}>Person</th><th className={TH}>Plan</th><th className={TH}>Signed up</th><th className={TH}>Broker</th><th className={TH}>Paper bot</th><th className={TH}>Journal</th><th className={TH}>Activated</th></tr></thead>
+                <thead><tr><th className={TH}>Person</th><th className={TH}>Plan</th><th className={TH}>Signed up</th><th className={TH}>Broker</th><th className={TH}>Paper bot</th><th className={TH}>Journal</th><th className={TH}>Week 1</th><th className={TH}>Activated</th></tr></thead>
                 <tbody>
                   {data.people.map((p) => (
                     <tr key={p.id} data-activation-user={p.id} className="border-t border-subtle">
@@ -243,6 +244,7 @@ export function ActivationPanel() {
                       <td className={`${TD} whitespace-nowrap`}>{when(p.broker_at)}</td>
                       <td className={`${TD} whitespace-nowrap`}>{when(p.paper_bot_at)}</td>
                       <td className={`${TD} whitespace-nowrap`}>{when(p.journal_at)}</td>
+                      <td className={`${TD} whitespace-nowrap text-fg-muted`}>{p.active_week1 == null ? "in week 1" : p.active_week1 ? "came back" : "did not"}</td>
                       <td className={TD}>{p.activated_at ? <Pill tone="ok">{shortDate(p.activated_at)}</Pill> : <Pill tone="off">not yet</Pill>}</td>
                     </tr>
                   ))}
@@ -253,6 +255,37 @@ export function ActivationPanel() {
         </>
       )}
     </Panel>
+  );
+}
+
+/** Readiness C13: the growth funnel - each step's people, its share of the step before and of the sign-ups. */
+export function GrowthFunnelView({ funnel }: { funnel: GrowthFunnel }) {
+  const first = funnel.steps[0]?.count ?? 0;
+  return (
+    <section aria-label="Growth funnel" data-growth-funnel className="mb-space-4">
+      <h3 className="text-t14 font-semibold text-fg">Funnel: the first week</h3>
+      <p className="mt-space-1 text-t12 text-fg-muted">
+        People whose first week is over. Each step counts only those who also took every step before it. Active in week 1 = signed in or used the app again on a later day within seven days.
+        {funnel.week1_open > 0 && ` ${funnel.week1_open} more ${funnel.week1_open === 1 ? "person is" : "people are"} still in their first week.`}
+      </p>
+      <ol className="mt-space-3 flex flex-col gap-space-2">
+        {funnel.steps.map((step, i) => {
+          const prev = i === 0 ? step.count : funnel.steps[i - 1].count;
+          const ofFirst = first ? Math.round((100 * step.count) / first) : 0;
+          return (
+            <li key={step.key} data-funnel-step={step.key} className="text-t12">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-space-3">
+                <span className="text-fg">{step.label}</span>
+                <span className="whitespace-nowrap font-tabular text-fg">
+                  <strong>{step.count}</strong>{i > 0 && <span className="text-fg-muted"> · {prev ? Math.round((100 * step.count) / prev) : 0}% of the step before</span>}
+                </span>
+              </div>
+              <span className="mt-space-1 block h-2 rounded-pill bg-surface-2" aria-hidden><span className="block h-2 rounded-pill bg-brand" style={{ width: `${ofFirst}%` }} /></span>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 

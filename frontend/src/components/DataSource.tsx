@@ -183,7 +183,7 @@ export function PlainDataSourceBar({ source }: { source: CandleSourceState }) {
         <Database size={16} aria-hidden className="shrink-0 text-fg-muted" />
         <span className="min-w-0 flex-1">{STORED_HISTORY_NOTE}</span>
         <label className="flex items-center gap-1 text-fg-muted">History
-          <input type="number" min={1} max={3650} value={source.lookbackDays} onChange={(e) => source.setLookbackDays(Math.max(1, Number(e.target.value) || 1))}
+          <input type="number" min={1} max={730} value={source.lookbackDays} onChange={(e) => source.setLookbackDays(Math.max(1, Number(e.target.value) || 1))}
             className="w-16 rounded border border-border bg-surface-2 px-1 py-0.5 text-fg" /> days
         </label>
         {source.loading && <span className="text-fg-muted">Loading prices…</span>}

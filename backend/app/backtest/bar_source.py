@@ -197,6 +197,8 @@ async def resolve(session: AsyncSession, tenant_id: int, symbol: str, exchange: 
     if not await flag_enabled(session, FLAG, tenant_id):
         raise broker_error                         # flag off: exactly the answer every path gave before
     if timeframe_kind(timeframe) is None:
+        if broker_error.status_code != 409:
+            raise broker_error                     # a session exists but its read failed: say what the broker said
         raise HTTPException(status_code=409, detail=INTRADAY_NEEDS_BROKER)
     if (exchange or "NSE").strip().upper() != "NSE":
         raise HTTPException(status_code=409, detail=STORED_ONLY_NSE.format(exchange=exchange.strip().upper()))

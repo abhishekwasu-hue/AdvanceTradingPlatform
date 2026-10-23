@@ -16,6 +16,7 @@ from app.brokers.base import BrokerCapabilities, BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
+    BasketMargin,
     BrokerCredentials,
     BrokerHolding,
     BrokerOrderRequest,
@@ -78,6 +79,9 @@ def safe_instrument_key(key: str) -> str:
     if not _SAFE_KEY.fullmatch(text) or ".." in text:
         raise BrokerAPIError(f"Refused an unsafe Upstox instrument key: {text[:40]!r}")
     return text
+
+
+BSE_INDICES = frozenset({"SENSEX", "BANKEX"})
 
 
 def find_instrument(instruments: List[Instrument], symbol: str) -> Optional[Instrument]:
@@ -419,7 +423,8 @@ class UpstoxBroker(BrokerInterface):
         return expiries[0]
 
     async def get_option_chain(self, underlying: str, expiry: Optional[date] = None) -> OptionChain:
-        instruments = await self.get_instruments("NSE")
+        # TM 9.4 / TM-32: SENSEX and BANKEX are BSE indices (their index row is in the BSE master, not NSE's).
+        instruments = await self.get_instruments("BSE" if " ".join(underlying.split()).upper() in BSE_INDICES else "NSE")
         underlying_match = find_instrument(instruments, underlying)
         instrument_key = underlying_match.instrument_token if underlying_match else underlying
 
@@ -442,10 +447,12 @@ class UpstoxBroker(BrokerInterface):
                     call_change_oi=(call.get("oi") - call.get("prev_oi")) if call.get("oi") is not None and call.get("prev_oi") is not None else None,
                     call_bid=call.get("bid_price"), call_ask=call.get("ask_price"),
                     call_iv=call_greeks.get("iv"), call_delta=call_greeks.get("delta"),
+                    call_gamma=call_greeks.get("gamma"), call_theta=call_greeks.get("theta"), call_vega=call_greeks.get("vega"),
                     put_oi=put.get("oi"), put_ltp=put.get("ltp"), put_volume=put.get("volume"),
                     put_change_oi=(put.get("oi") - put.get("prev_oi")) if put.get("oi") is not None and put.get("prev_oi") is not None else None,
                     put_bid=put.get("bid_price"), put_ask=put.get("ask_price"),
                     put_iv=put_greeks.get("iv"), put_delta=put_greeks.get("delta"),
+                    put_gamma=put_greeks.get("gamma"), put_theta=put_greeks.get("theta"), put_vega=put_greeks.get("vega"),
                 )
             )
         return OptionChain(
@@ -565,6 +572,24 @@ class UpstoxBroker(BrokerInterface):
         legs = data.get("margins") or []
         total = sum(float(leg.get("total_margin") or 0) for leg in legs if isinstance(leg, dict))
         return total or None
+
+    async def get_basket_margin(self, orders: List[BrokerOrderRequest]) -> Optional[BasketMargin]:
+        """Part 7 / TM-10: the same margin calculator (`POST /charges/margin`) for every leg in one request: Upstox
+        answers `final_margin` (the basket, with the hedge benefit) and `required_margin` (the legs on their own).
+        None when it gives no number."""
+        instruments = []
+        for order in orders:
+            instrument = await self._resolve_instrument(order.symbol, order.exchange)
+            instruments.append({"instrument_key": instrument.instrument_token, "quantity": int(order.quantity),
+                                "transaction_type": order.transaction_type.value, "product": "I" if order.product == "MIS" else "D"})
+        data = await self._request("POST", "/charges/margin", json={"instruments": instruments})
+        final = data.get("final_margin") if isinstance(data, dict) else None
+        required = data.get("required_margin") if isinstance(data, dict) else None
+        if isinstance(final, (int, float)):
+            return BasketMargin(required=float(final), without_hedge=float(required) if isinstance(required, (int, float)) else None)
+        if isinstance(required, (int, float)):
+            return BasketMargin(required=float(required))
+        return None
 
     async def get_margins(self) -> MarginInfo:
         data = await self._request("GET", "/user/get-funds-and-margin")

@@ -91,6 +91,8 @@ export interface OrderPreview {
   can_place: boolean;
   confirm_label: string | null;
   as_of: string;
+  /** TM Part 7 (flag smart_execution): the exchange's freeze limit and the slices (lots) the order goes in. */
+  smart?: { freeze_quantity: number | null; slices: number[]; note: string | null } | null;
 }
 
 export interface OrderResult extends OrderPreview {
@@ -169,7 +171,37 @@ export interface BasketPreview {
   product: Product;
   confirm_label: string | null;
   as_of: string;
+  /** TM Part 7 (flag smart_execution): the order the legs go in, their slices, the margin; null with the flag off. */
+  smart?: SmartView | null;
 }
+
+/** TM Part 7 smart execution: the confirm step's block (backend app/paper/fno_basket.py `smart_view`). */
+export interface SmartSequenceStep { seq: number; leg: number; label: string; side: Side; role: "hedge" | "short"; lots: number; slices: number[]; note: string | null }
+export interface SmartMargin {
+  source: "broker" | "estimate";
+  label: string;
+  required: number | null;
+  without_hedge: number | null;
+  benefit: number | null;
+  free_before: number | null;
+  free_after: number | null;
+  free_source: "broker" | "practice";
+  notes: string[];
+}
+export interface SmartView { sequence: SmartSequenceStep[]; margin: SmartMargin; entry_rule: string; exit_rule: string; incomplete_rule: string }
+export type SmartState = "COMPLETE" | "INCOMPLETE" | "NOTHING_PLACED";
+export interface CloseFilledResult {
+  mode: "PAPER";
+  state: SmartState;
+  actions: string[];
+  message: string;
+  legs: { seq: number; trade_id: number; symbol: string; side: Side; status: "CLOSED" | "FAILED" | "NOT_PLACED"; reasons: string[]; exit_price: number | null; pnl: number | null }[];
+}
+export interface SettlementWarning {
+  trade_id: number; label: string; underlying: string; expiry: string; days_to_expiry: number; state: "ITM" | "NEAR_ITM" | "FUTURE";
+  delivery_value: number | null; quantity: number; obligation: string; message: string;
+}
+export interface SettlementView { warnings: SettlementWarning[]; unpriced: string[]; settings: { days_before: number; band_pct: number; telegram: boolean }; note: string; as_of: string }
 
 export type LegStatus = "PLACED" | "REFUSED" | "FAILED" | "NOT_PLACED";
 export interface BasketResultLeg {
@@ -191,6 +223,11 @@ export interface BasketResult {
   legs: BasketResultLeg[];
   placed: number;
   next_steps: string[];
+  /** TM Part 7 (flag smart_execution): the run's state and the user's two choices when it is INCOMPLETE. */
+  state?: SmartState;
+  actions?: string[];
+  message?: string;
+  filled_trade_ids?: number[];
 }
 
 export interface BrokerBasketOrder { tradingsymbol: string; exchange: string; transaction_type: Side; quantity: number }
@@ -206,5 +243,7 @@ export const basketApi = {
   preview: (ask: BasketAsk) => request<BasketPreview>("/paper/fno/basket/preview", post(ask)),
   execute: (ask: BasketAsk & { basket_ref: string }) => request<BasketResult>("/paper/fno/basket/execute", post(ask)),
   brokerLink: (ask: BasketAsk) => request<BasketBrokerLink>("/paper/fno/basket/broker-link", post(ask)),
+  closeFilled: (trade_ids: number[]) => request<CloseFilledResult>("/paper/fno/basket/close-filled", post({ trade_ids })),
+  settlement: () => request<SettlementView>("/paper/fno/settlement"),
 };
 export type BasketApi = typeof basketApi;

@@ -218,6 +218,7 @@ class RateLimitedBroker(BrokerInterface):
     async def get_holdings(self): return await self._call("get_holdings")
     async def get_margins(self): return await self._call("get_margins")
     async def get_order_margin(self, order): return await self._call("get_order_margin", order)
+    async def get_basket_margin(self, orders): return await self._call("get_basket_margin", orders)
     async def get_quote_for_symbol(self, symbol, exchange="NSE"): return await self._call("get_quote_for_symbol", symbol, exchange)
     async def get_balance(self): return await self._call("get_balance")
     async def disconnect(self): return await self._call("disconnect")

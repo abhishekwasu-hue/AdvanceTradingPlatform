@@ -92,6 +92,13 @@ class OptionChainRow(BaseModel):
     # strike-selection pipeline computes delta from IV / price itself.
     call_delta: Optional[float] = None
     put_delta: Optional[float] = None
+    # TM 9.4: the rest of the broker's Greeks where it sends them (Upstox does), kept by the chain history recorder.
+    call_gamma: Optional[float] = None
+    call_theta: Optional[float] = None
+    call_vega: Optional[float] = None
+    put_gamma: Optional[float] = None
+    put_theta: Optional[float] = None
+    put_vega: Optional[float] = None
 
 
 class OptionChain(BaseModel):
@@ -127,6 +134,14 @@ class BrokerOrderRequest(BaseModel):
     protection_pct: Optional[float] = None
     # An after-market order (Kotak Neo's `am` flag). Adapters that do not take one ignore it.
     after_market: bool = False
+
+
+class BasketMargin(BaseModel):
+    """Part 7 / TM-10: the broker's own margin for a set of orders placed together. `required` is what the broker
+    would block for the whole basket WITH the hedge benefit; `without_hedge` the sum of each order alone, where the
+    broker says it (None otherwise)."""
+    required: float
+    without_hedge: Optional[float] = None
 
 
 class BrokerOrderResponse(BaseModel):

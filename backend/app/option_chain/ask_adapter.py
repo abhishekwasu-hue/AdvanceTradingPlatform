@@ -187,7 +187,7 @@ async def read(session: AsyncSession, user: User, underlying: str, expiry: Optio
     if byob:
         base.history_note = NO_HISTORY_BYOB
     else:
-        slots = await snapshots.day_chains(session, underlying, now.astimezone(IST).date())
+        slots = await snapshots.day_chains(session, underlying, now.astimezone(IST).date(), tenant_id=user.tenant_id)
         base.history = history_points(slots, base.expiry, now)
     return base
 

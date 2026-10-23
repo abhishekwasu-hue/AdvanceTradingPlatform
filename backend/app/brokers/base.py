@@ -8,6 +8,7 @@ from typing import Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
 from app.brokers.models import (
+    BasketMargin,
     BrokerHolding,
     BrokerOrderRequest,
     BrokerOrderResponse,
@@ -202,6 +203,11 @@ class BrokerInterface(ABC):
         """Margin the broker would block for `order` (Phase F3: sizing written options). None
         when the broker does not expose a margin calculator - the caller then refuses to write
         rather than guess."""
+        return None
+
+    async def get_basket_margin(self, orders: List[BrokerOrderRequest]) -> Optional[BasketMargin]:
+        """Part 7 / TM-10: the broker's margin for these orders placed together, with the hedge benefit. None when the
+        broker has no basket margin call - the caller then shows ATP's labelled estimate (never a made-up number)."""
         return None
 
     async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:

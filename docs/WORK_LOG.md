@@ -3196,3 +3196,33 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `tests/test_z11_deploy_bundle.py` (schedule, ages and FAIL / WARN, prune after copy, backup-status, wal-cleanup,
   base-backup, escrow lines, restore-offsite and its refusals), `tests/test_hostinger_deploy.py` (compose defaults),
   `tests/test_phase_ax_first_paper_day.py` (no WAL sync). Questions RDY-13..RDY-20.
+
+## 23 Oct - Strategy templates TPL-9: the projected trendline retest (owner decision TPL-Q18) and C4 (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl-c4-projected`. No migration, no new flag, no new route, no frontend change.
+- A new retest choice `trendline_projected` on RetestEntry / RetestEntryRef / the B9 screen: the B5 trendline breakout in
+  line mode, the broken line read at each bar after the breakout (as `channel`). The older `trendline` choice keeps its
+  level frozen at the breakout bar: its outputs are pinned byte for byte against main (touch and reversal retests pinned
+  separately; the reversal pin moves only with a deliberate change of the reversal rule such as TPL-F6), and so are the
+  params hash and default id of every template outside family G. DowTrend / the reversal check are not touched (TPL-F6).
+- C4 trendline breakout and retest (`templates/C4.json`): B4's breakout settings, C3's retest settings, invalidation
+  {the pullback, the breakout's own reference, whichever is farther}, exit a close back across the projected line; two
+  signal-text tokens in structure words. The new choice is in the no-look-ahead cases.
+- Tests: `tests/test_tpl9_c4_trendline_retest.py` (the section 8 gate: must fire / must not on a hand-made falling-line
+  retest that only the projected line holds, invalidation by value, S6, the exit, warm-up, truncation, mirror, scan =
+  backtest = options backtest = worker, property tests, the language guard, ids, adapter, flags, the API). Questions
+  TPL-Q64..Q66; TPL-Q18 answered and built.
+## 23 Oct - Production readiness STEP 0: the inventory (docs only)
+
+- Branch `claude/readiness-step0`, stacked on #414 (the order). No code change, no migration, no flag, no route.
+- `docs/READINESS_STATUS.md`: one row per item A1–C13 (sub-bullets split): what exists (path:line), whether it is
+  configured in production (unknown until Abhi pastes `atp.sh health`; each row names the health lines that answer it),
+  what is missing, the work (S / M / L) and what Abhi must do; a table of the ~40 modules that already exist (R9) so
+  nothing is built twice; the migrations the work will need; an owner checklist with env variable names only.
+- `docs/design/READINESS_REVIEW.md`: the independent review of the order against the code (R1–R9), copied in; the
+  inventory follows it where it differs from the order (WAL archive R1, key escrow R2, CI gate R3, staging R4, MFA
+  scope R5, legal draft banner R6, billing switch R7, B7 data terms R8).
+- Verified locally only: `bash -n deploy/atp.sh`, `atp.sh help` (exit 0) and an unknown command (exit 2); the
+  existing tests of the listed machinery; main's last Actions runs (Staging stack incl. the rollback rehearsal green;
+  CI and Secret scan red, a fix in progress).
+- Questions RDY-1..12 in OPEN_QUESTIONS.

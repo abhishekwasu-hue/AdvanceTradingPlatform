@@ -258,11 +258,43 @@ companion is in the runtime fixtures (`test_s1b_screen_runtime.py`), the no-look
 lookahead job), the history sweep and the BK4 registry tests. No frontend change: the Paper bot form lists the templates
 from the API. No idea-library card (TPL-Q63).
 
+## TPL-9: the projected trendline retest (owner decision TPL-Q18) and C4 trendline breakout + retest
+
+Same flag `strategy_templates` (OFF), PAPER only, signals only, no migration. Owner decision 2026-10-23 (DECISIONS.md):
+the older trendline retest stays byte-identical; the line projected to the retest bar is a new option, used by C4.
+
+| Part | Where | Status |
+|---|---|---|
+| A NEW retest choice `trendline_projected`: the B5 trendline breakout in line mode (whatever the B9 screen's own `tl_mode`), the broken line (the falling resistance up, the rising support down) read at each bar after the breakout - the "back inside" check, the retest's reach, the touch and the reversal all at the projected value, as `channel`; for RetestEntry, RetestEntryRef (level / held_level projected, retest_low, base, the stop references) and the B9 screen (`retest_of`); `touches=` and `k=` forwarded (R7) | `screener/breakouts/retest.py` (`BASES`, `PROJECTED`, `base_params`, `retest_events`), `params.py`, `registry.py`, `runtime.py` | done |
+| `trendline` unchanged: its level stays frozen at the breakout bar. Pinned byte for byte against main (aa175fea): RetestEntry (both sides, reversal on / off, named arguments), every RetestEntryRef price, the B9 screen's columns and the retest events on five data sets (touch: 14,923 values; reversal: 2,853, pinned separately because a deliberate change of the reversal rule, e.g. TPL-F6, re-pins it), and the params hash + default id of every library / archived template outside family G (64) | `tests/test_tpl9_c4_trendline_retest.py` | done |
+| C4 trendline breakout and retest: B4's own breakout settings (touches, break distance, the edge buffer; the breakout reference choices = B4's invalidation choices), C3's retest settings (retest within, wait for a reversal or a touch), invalidation {the pullback to the line, the breakout's own reference, whichever is farther - default}, exit a close back across the projected line; signal text in structure words (two tokens) | `templates/C4.json`, `language.py` | done |
+| The new choice in the no-look-ahead cases (lookahead job) | `app/quality/causal_cases.py` | done |
+
+Tests: `tests/test_tpl9_c4_trendline_retest.py` - the pins above; the new choice's name and base; a hand-made falling-line
+retest whose pull back closes below the line's breakout-bar value (so the frozen retest has failed) and holds the projected
+line: C4 must fire long and short (mirror) with every invalidation choice by value, must not after a close back through the
+projected line, on a weak retest unless a touch is enough, too late (expiry), with a larger break distance; S6 (a retest
+closing on the line with no buffer); the exit along the projected line (a close below the retest bar's value but above the
+line further on is no exit); the warm-up; on random data the retest level equals the line projected to the retest bar (and
+held along it), not the frozen value, the B9 screen follows it (its `tl_mode` cannot turn it into a channel), named
+arguments reach it and are validated; C4 "fires exactly" on the projected retests with the invalidation by value for
+several settings; a larger break distance or a shorter window never adds a signal; the touches are the breakout's own; the
+shared gate - the mirror test (with the reversal on, a seed where the reversal check is mirror-exact: TPL-F6), the
+truncation test over many t (and bar by bar on the fixture), scan = backtest = options backtest = worker on one trailing
+window, property tests on random valid settings; the language guard and no number / buy / sell / target / stop word in the
+text, "no number written into a rule" and every rule on the projected line, B4's and C3's settings reused, the ids round
+trip and fit, the adapter's signal (no target, risk_reward None, provenance), the flags, no order field, and the API (404 with
+`strategy_templates` off; unavailable without the breakout flags; adopt as a PAPER pre-fill). No frontend change: the Paper
+bot form lists the templates from the API. No idea-library card: T5 stays A5 (TPL-Q48 / TPL-Q22).
+
+The B3 / B4 exits (TPL-Q12 / TPL-Q28) still read the line as of the breakout bar: they are version 1, and a projected exit
+would be a new version (not part of this decision).
+
 ## Not in this PR (next PRs)
 
 - Family A's area templates A1, A8, A3, A4 (an area companion + zone timelines in the template engine, TPL-Q23), A6 / A7
   (their functions); then the rest of B / C / D / E (TPL-Q40: an engine "extreme since the setup" invalidation for D3, E1,
-  E3, E5 and the swing degree for C2: done in step 5; the gap companion for B10: done in TPL-8; C4 after TPL-Q18; E2 after an RSI period
+  E3, E5 and the swing degree for C2: done in step 5; the gap companion for B10: done in TPL-8; C4 after TPL-Q18 (done in TPL-9); E2 after an RSI period
   and an extreme companion, TPL-Q49: done in TPL-7), then F. Family F: F1 / F2 built (TPL-6 above); their further
   members D3 and E3 joined in pack version 2 (TPL-7); A1 waits for areas (TPL-Q50); G12 next (TPL-F7).
 - Section 5 "exits as settings" (stop_source / target_rule on the deployment's exit settings): needs a migration and
@@ -271,6 +303,6 @@ from the API. No idea-library card (TPL-Q63).
 - R5: the TEMPLATE_EXIT plumbing (both backtest engines and the position monitor read `TemplateStrategy.exit_signal`
   on each bar close of an open trade; reason "Template exit").
 - R2 for the gap family (B10), with its template: done in TPL-8 above.
-- R7 rest: the projected trendline retest (TPL-Q18); R10 (NEXT_AREA target). (Forwarding the swing degree for C2: done
+- R7 rest: the projected trendline retest (TPL-Q18; done in TPL-9 above, a new choice `trendline_projected`); R10 (NEXT_AREA target). (Forwarding the swing degree for C2: done
   in step 5.)
 - The stored copy in "My strategies" with provenance (a table: migration), the settings form, Templates page, compare (step 3).

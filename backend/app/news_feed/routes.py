@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import settings as ai_settings
 from app.ai.providers import ProviderError
-from app.auth.dependencies import get_current_user, require_role
+from app.ai.rate_limit import ai_rate_limit
+from app.auth.dependencies import get_current_user, require_mfa_session, require_role
 from app.db.models import Tenant, User
 from app.db.session import get_session
 from app.news_feed import feedback, service
@@ -43,7 +44,7 @@ async def feed_status(user: User = Depends(get_current_user), session: AsyncSess
             "note": "Feed items are unverified: headline and link from the publisher's own feed, nothing scraped, no body stored. Read the source before acting."}
 
 
-@router.put("/sources/{source_id}")
+@router.put("/sources/{source_id}", dependencies=[Depends(require_mfa_session)])   # A4 / R5 b: two-factor like every admin write
 async def toggle_source(source_id: str, body: SourceToggle, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
     if source_id not in BY_ID:
         raise HTTPException(status_code=404, detail="Unknown feed source")
@@ -51,7 +52,7 @@ async def toggle_source(source_id: str, body: SourceToggle, user: User = Depends
     return {"sources": service.source_rows(settings)}
 
 
-@router.post("/refresh")
+@router.post("/refresh", dependencies=[Depends(require_mfa_session)])
 async def refresh_now(user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
     await require_flag(session, service.FLAG, user.tenant_id)
     return await service.ingest(session, datetime.now(timezone.utc))
@@ -64,7 +65,7 @@ async def list_items(hours: int = Query(default=24, ge=1, le=24 * 14), min_sever
     return await service.items(session, user.tenant_id, hours=hours, min_severity=min_severity)
 
 
-@router.post("/classify")
+@router.post("/classify", dependencies=[Depends(ai_rate_limit)])   # A4: an AI call counts toward the plan's AI limit
 async def classify_now(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     """Classify this organisation's pending feed items with its own provider key (metered)."""
     await require_flag(session, service.FLAG, user.tenant_id)

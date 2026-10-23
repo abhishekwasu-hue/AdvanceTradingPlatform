@@ -1,3 +1,5 @@
+import { rememberServerError } from "../support/lastError";
+
 /** P1.1: every failed API call becomes an `ApiError` whose message is a sentence a trader can act on - never a raw
  * status line, a JSON body, an HTML error page from the proxy or a developer hint. The status, the server's own
  * detail and the request id stay on the error for code that branches on them (step-up, feature switched off).
@@ -112,7 +114,10 @@ export async function apiErrorFrom(response: Response): Promise<ApiError> {
   }
   // Every server error carries the reference support needs to find the log line, readable detail or not - except a
   // switched-off feature, which is not an error (handover 8b: "Coming soon", never a reference id).
-  if (status >= 500 && requestId && !featureOff) message += `${/[.!?]$/.test(message) ? "" : "."} Reference: ${requestId}.`;
+  if (status >= 500 && requestId && !featureOff) {
+    message += `${/[.!?]$/.test(message) ? "" : "."} Reference: ${requestId}.`;
+    rememberServerError(requestId);        // C12: "Report a problem" can attach it
+  }
   return new ApiError(status, message, detail, body.slice(0, 2000), requestId, response.headers.get("x-data-tier"));
 }
 

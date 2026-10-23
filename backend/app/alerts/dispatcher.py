@@ -43,9 +43,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.observability.metrics import ALERT_DELIVERIES
-from app.alerts.channels import (DLT_FIELDS, EmailConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, WhatsAppConfig, decrypt_config,
+from app.alerts.channels import (DLT_FIELDS, EmailConfig, FcmConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, WhatsAppConfig, decrypt_config,
                                  decrypt_raw, encrypt_config, severity_reaches)
-from app.alerts import s10_gate, staleness, webpush
+from app.alerts import fcm, push_kinds, s10_gate, staleness, webpush
 from app.alerts.deeplink import app_path, open_in_app_row, push_wanted
 from app.core.enums import NotificationType, AlertChannelType, AlertDeliveryStatus
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
@@ -90,6 +90,50 @@ async def outbox_hardened(session: AsyncSession, tenant_id: int, memo: Optional[
     return on
 
 
+MOBILE_PUSH_FLAG = "mobile_push"
+
+
+class DeliverySkipped(RuntimeError):
+    """B8: a delivery that is not sent on purpose (the phone was removed, its token is gone, the flag is off, the server
+    has no FCM key). The dispatcher records it as SUPPRESSED with `reason_code` - never retried, never a silent SENT."""
+
+    def __init__(self, reason_code: str, reason: str) -> None:
+        super().__init__(reason)
+        self.reason_code = reason_code
+        self.reason = reason
+
+
+async def action_of(session: Optional[AsyncSession], notification: NotificationRecord) -> Optional[str]:
+    """The `action` (ENTRY, EXIT_NOW, ...) of the AI action a notification names, or None."""
+    action_id = getattr(notification, "ai_action_id", None)
+    if session is None or not action_id:
+        return None
+    from app.db.models import AiActionRecord
+    return await session.scalar(select(AiActionRecord.action).where(AiActionRecord.id == action_id,
+                                                                    AiActionRecord.tenant_id == notification.tenant_id))
+
+
+async def _fcm_rows(session: AsyncSession, channel: AlertChannelRecord, notification: NotificationRecord) -> List[str]:
+    """B8: the phones (device ids) that get this notification - one outbox row each, so one phone failing never re-sends
+    to the others. Empty while the flag is off, for a kind phones do not get, or when no phone wants it."""
+    from app.platform.controls import flag_enabled
+    if not await flag_enabled(session, MOBILE_PUSH_FLAG, notification.tenant_id):
+        return []
+    kind = push_kinds.phone_kind(notification, await action_of(session, notification))
+    if kind is None:
+        return []
+    try:
+        devices = decrypt_raw(channel).get("devices") or []
+    except ValueError:
+        return []
+    # Only phones of members still active in this organisation: a removed or deactivated member's phone gets nothing.
+    from app.db.models import User
+    active = set(await session.scalars(select(User.id).where(User.tenant_id == notification.tenant_id, User.is_active.is_(True))))
+    return [str(d.get("device_id")) for d in devices
+            if int(d.get("user_id") or 0) in active and push_kinds.addressed_to(int(d.get("user_id") or 0), notification)
+            and push_kinds.device_wants(d.get("kinds"), kind, notification)]
+
+
 def _push_wants(channel: AlertChannelRecord, notification: NotificationRecord) -> bool:
     try:
         categories = decrypt_raw(channel).get("categories")
@@ -117,6 +161,18 @@ async def enqueue_for_notification(session: AsyncSession, notification: Notifica
             continue
         if channel.channel_type == AlertChannelType.PUSH.value and not _push_wants(channel, notification):
             continue                                       # PW3: a category this organisation turned off for push
+        if channel.channel_type == AlertChannelType.FCM.value:
+            for device in await _fcm_rows(session, channel, notification):
+                device_key = delivery_key(notification.id, channel.id, device) if keyed else None
+                if device_key is not None and device_key in queued:
+                    continue
+                phone_row = AlertDeliveryRecord(
+                    tenant_id=notification.tenant_id, notification_id=notification.id, channel_id=channel.id, address=device,
+                    status=AlertDeliveryStatus.PENDING.value, next_attempt_at=_utcnow(), idem_key=device_key,
+                )
+                session.add(phone_row)
+                rows.append(phone_row)
+            continue
         key = delivery_key(notification.id, channel.id) if keyed else None
         if key is not None and key in queued:
             continue
@@ -337,12 +393,14 @@ async def send_sms(config: Union[SmsConfig, WhatsAppConfig], notification: Notif
         raise RuntimeError(f"{kind}: " + "; ".join(errors))
 
 
-async def send_push(config: PushConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None) -> List[str]:
+async def send_push(config: PushConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
+                    path: Optional[str] = None) -> List[str]:
     """Phase O3: every registered device; returns the endpoints the push service reports gone so
-    the caller can prune them. Raises only when no device could be reached."""
+    the caller can prune them. Raises only when no device could be reached. B8: `path` is the screen of the
+    notification's kind (an entry signal opens its Signals item); app_path when not given."""
     payload = {"title": f"[{notification.severity}] {notification.title}", "body": notification.message[:300],
                "event_type": notification.event_type, "severity": notification.severity, "notification_id": notification.id,
-               "url": app_path(notification)}                        # PW3: opens the exact screen (a same-origin path)
+               "url": path or app_path(notification)}               # PW3: opens the exact screen (a same-origin path)
     gone: List[str] = []
     errors: List[str] = []
     delivered = 0
@@ -423,7 +481,7 @@ async def send_via_channel(
     elif channel.channel_type == AlertChannelType.WEBHOOK.value:
         await send_webhook(config, notification, client, alert, idempotency_key=idempotency_key)  # type: ignore[arg-type]
     elif channel.channel_type == AlertChannelType.PUSH.value:
-        gone = await send_push(config, notification, client)  # type: ignore[arg-type]
+        gone = await send_push(config, notification, client, path=await web_push_path(session, notification))  # type: ignore[arg-type]
         if gone:
             remaining = [s for s in config.subscriptions if str(s.endpoint) not in gone]  # type: ignore[union-attr]
             if remaining:
@@ -432,8 +490,74 @@ async def send_via_channel(
             logger.info("Pruned %d gone push subscription(s) for tenant %s", len(gone), channel.tenant_id)
     elif channel.channel_type in (AlertChannelType.SMS.value, AlertChannelType.WHATSAPP.value):
         await send_sms(config, notification, client, idempotency_key=idempotency_key)  # type: ignore[arg-type]
+    elif channel.channel_type == AlertChannelType.FCM.value:
+        await send_fcm(channel, config, notification, client, address=address, session=session)  # type: ignore[arg-type]
     else:
         raise RuntimeError(f"Unknown channel type {channel.channel_type}")
+
+
+async def web_push_path(session: Optional[AsyncSession], notification: NotificationRecord) -> Optional[str]:
+    """B8: a browser push of an entry signal opens its Signals item (as on the phone); everything else keeps app_path."""
+    if notification.event_type != NotificationType.AI_PROPOSAL.value or not notification.ai_action_id:
+        return None
+    action = await action_of(session, notification)
+    return push_kinds.phone_path("signals", notification) if action == push_kinds.ACTION_ENTRY else None
+
+
+async def _quiet_now(session: Optional[AsyncSession], tenant_id: int, now: Optional[datetime] = None) -> bool:
+    """B8: inside the organisation's quiet hours (Settings > Notifications policy, app/alerts/engine.py)."""
+    if session is None:
+        return False
+    from app.alerts.engine import in_quiet_hours, policy_for
+    return in_quiet_hours(await policy_for(session, tenant_id), now or _utcnow())
+
+
+async def send_fcm(channel: AlertChannelRecord, config: FcmConfig, notification: NotificationRecord,
+                   client: Optional[httpx.AsyncClient] = None, *, address: Optional[str] = None,
+                   session: Optional[AsyncSession] = None) -> None:
+    """B8: one notification to one phone (`address` = its device id, one outbox row per phone), or - for the Settings
+    test, with no address - to the addressee's own phones. The text is the kind's fixed sentence (MA-7). Inside quiet
+    hours a non-urgent push arrives without sound. A token FCM reports gone removes that phone (the caller commits)."""
+    if not fcm.configured():
+        raise DeliverySkipped("not_configured", fcm.NOT_SET_UP)
+    if address is not None and session is not None:
+        from app.platform.controls import flag_enabled
+        if not await flag_enabled(session, MOBILE_PUSH_FLAG, channel.tenant_id):
+            raise DeliverySkipped("flag_off", "Phone notifications were turned off before this was sent")
+    kind = push_kinds.phone_kind(notification, await action_of(session, notification)) or "approvals"
+    title, body = push_kinds.phone_text(kind, notification)
+    if notification.id is None:                        # the Settings test: a plain sentence, opens Notifications
+        title, body, path = "Test from AiAlgoDesk", "Phone notifications are working on this phone.", "/notifications"
+    else:
+        path = push_kinds.phone_path(kind, notification)
+    quiet = not push_kinds.urgent(notification) and await _quiet_now(session, channel.tenant_id)
+    if address is not None:
+        targets = [d for d in config.devices if d.device_id == address]
+        if not targets:
+            raise DeliverySkipped("device_removed", "This phone was removed before the notification was sent")
+    else:
+        targets = [d for d in config.devices if push_kinds.addressed_to(d.user_id, notification)]
+        if not targets:
+            raise RuntimeError("No phone is registered for you yet - turn on notifications in the AiAlgoDesk app")
+    gone: List[str] = []
+    errors: List[str] = []
+    for device in targets:
+        message = fcm.build_message(device.token, title=title, body=body, path=path, kind=kind, notification_id=notification.id,
+                                    quiet=quiet)
+        try:
+            await fcm.send(message, client)
+        except fcm.TokenGone:
+            gone.append(device.device_id)
+        except Exception as exc:  # noqa: BLE001 - the message is ours (no token, key or response body)
+            errors.append(f"{device.label}: {str(exc) or type(exc).__name__}"[:120])
+    if gone:
+        remaining = [d for d in config.devices if d.device_id not in gone]
+        channel.encrypted_config = encrypt_config(FcmConfig(devices=remaining), channel.tenant_id)
+        logger.info("Removed %d phone(s) FCM reports gone for tenant %s", len(gone), channel.tenant_id)
+    if errors:
+        raise RuntimeError("Phone notification: " + "; ".join(errors))
+    if gone and len(gone) == len(targets):
+        raise DeliverySkipped("device_gone", "The phone no longer has the app (or its data was cleared); it was removed")
 
 
 async def _telegram_proposal_buttons(session: AsyncSession, channel: AlertChannelRecord, notification: NotificationRecord,
@@ -674,6 +798,11 @@ async def dispatch_pending(
                 await asyncio.wait_for(_send_one(session, channel, notification, delivery, client, delivery.idem_key), timeout=budget)
             else:
                 await _send_one(session, channel, notification, delivery, client, None)
+        except DeliverySkipped as skipped:
+            # B8: not sent on purpose (phone removed / gone, flag off, no FCM key) - kept with its reason, not retried.
+            if await _finish(session, delivery, claim, status=AlertDeliveryStatus.SUPPRESSED.value, reason_code=skipped.reason_code,
+                             last_error=skipped.reason[:500]):
+                ALERT_DELIVERIES.labels(channel=channel.channel_type, status=AlertDeliveryStatus.SUPPRESSED.value).inc()
         except s10_gate.Refused as refused:
             # S10 (checked in send_via_channel, inside this try): the flag was turned off or the plan no longer pays for
             # WhatsApp - nothing is sent and the reason is kept; not retried.

@@ -16,6 +16,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.security import create_access_token
+from app.core import config
 from app.core.config import JWT_EXPIRE_MINUTES, REFRESH_TOKEN_DAYS, REFRESH_REUSE_GRACE_SECONDS
 from app.db.models import User, UserSessionRecord
 
@@ -40,6 +41,16 @@ def client_info(request: Optional[Request]) -> Tuple[Optional[str], Optional[str
     return ip, (agent[:300] if agent else None)
 
 
+def session_cap(created_at: datetime) -> datetime:
+    """A4 (review R5 c): the moment a session ends however often it is refreshed (`SESSION_MAX_DAYS` after sign-in)."""
+    return _as_utc(created_at) + timedelta(days=config.SESSION_MAX_DAYS)
+
+
+def _next_expiry(created_at: datetime, now: datetime) -> datetime:
+    """The sliding refresh window, never past the absolute cap."""
+    return min(now + timedelta(days=REFRESH_TOKEN_DAYS), session_cap(created_at))
+
+
 class IssuedTokens:
     def __init__(self, access_token: str, refresh_token: str, session: UserSessionRecord) -> None:
         self.access_token = access_token
@@ -54,10 +65,11 @@ async def start_session(
     """Creates the session row and issues both tokens. Does not commit."""
     refresh_token = secrets.token_urlsafe(48)
     ip, agent = client_info(request)
+    now = _utcnow()
     record = UserSessionRecord(
         user_id=user.id, tenant_id=user.tenant_id, refresh_token_hash=hash_refresh_token(refresh_token),
-        ip_address=ip, user_agent=agent, expires_at=_utcnow() + timedelta(days=REFRESH_TOKEN_DAYS),
-        mfa_verified_at=_utcnow() if mfa_verified else None,
+        ip_address=ip, user_agent=agent, created_at=now, last_used_at=now, expires_at=_next_expiry(now, now),
+        mfa_verified_at=now if mfa_verified else None,
     )
     session.add(record)
     await session.flush()
@@ -67,7 +79,10 @@ async def start_session(
 def session_is_live(record: Optional[UserSessionRecord], now: Optional[datetime] = None) -> bool:
     if record is None or record.revoked_at is not None:
         return False
-    return _as_utc(record.expires_at) > (now or _utcnow())
+    now = now or _utcnow()
+    if record.created_at is not None and session_cap(record.created_at) <= now:
+        return False                                    # A4: past the absolute cap, whatever expires_at says
+    return _as_utc(record.expires_at) > now
 
 
 async def rotate_refresh_token(
@@ -108,8 +123,9 @@ async def rotate_refresh_token(
     else:
         record.previous_token_hash = record.refresh_token_hash
     record.refresh_token_hash = hash_refresh_token(new_token)
-    record.last_used_at = _utcnow()
-    record.expires_at = _utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)
+    now = _utcnow()
+    record.last_used_at = now
+    record.expires_at = _next_expiry(record.created_at or now, now)
     ip, agent = client_info(request)
     if ip:
         record.ip_address = ip

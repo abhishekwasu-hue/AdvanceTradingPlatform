@@ -672,6 +672,28 @@ OI_BANNER_SLOT_MINUTES = _bounded_int("OI_BANNER_SLOT_MINUTES", 5, 1, 60)
 OI_BANNER_COLLECT_SPAN = _bounded_int("OI_BANNER_COLLECT_SPAN", 15, 1, 60)
 OI_BANNER_DEFAULTS: dict = _json_object("OI_BANNER_DEFAULTS")
 
+# TM 9.4 chain history (docs/design/CHAIN_HISTORY.md): option-chain snapshots recorded through the OWNER's own broker
+# session (HB2's owner: HISTORY_OWNER_TENANT_ID confirmed by HISTORY_OWNER_TENANT_NAME, the session of
+# HISTORY_OWNER_USER_ID or the lowest-id active OWNER) into the owner's private store (md_tenant_chain_snapshots), only
+# while the `chain_history` flag is on for that tenant. One slot every CHAIN_HISTORY_SLOT_MINUTES while the venue is open
+# (the exchange calendar), for CHAIN_HISTORY_UNDERLYINGS and - when CHAIN_HISTORY_STOCKS_ENABLED - CHAIN_HISTORY_STOCKS,
+# the nearest CHAIN_HISTORY_EXPIRIES expiries each, at most CHAIN_HISTORY_MAX_READS_PER_SLOT chain reads per slot (the
+# indices first). Every read takes a token from the owner session's worker RateBudget through `acquire_spare`, leaving
+# CHAIN_HISTORY_RESERVE of it for the trading worker; a slot without a token is recorded as a gap, never queued.
+CHAIN_HISTORY_SLOT_MINUTES = _bounded_int("CHAIN_HISTORY_SLOT_MINUTES", 1, 1, 60)
+CHAIN_HISTORY_UNDERLYINGS = [k.strip().upper() for k in os.environ.get("CHAIN_HISTORY_UNDERLYINGS", "NIFTY,BANKNIFTY,SENSEX").split(",") if k.strip()]
+CHAIN_HISTORY_STOCKS_ENABLED = os.environ.get("CHAIN_HISTORY_STOCKS_ENABLED", "false").lower() in ("1", "true", "yes")
+CHAIN_HISTORY_STOCKS = [k.strip().upper() for k in os.environ.get("CHAIN_HISTORY_STOCKS", "").split(",") if k.strip()]
+CHAIN_HISTORY_EXPIRIES = _bounded_int("CHAIN_HISTORY_EXPIRIES", 2, 1, 6)
+CHAIN_HISTORY_MAX_READS_PER_SLOT = _bounded_int("CHAIN_HISTORY_MAX_READS_PER_SLOT", 12, 1, 200)
+CHAIN_HISTORY_RESERVE = min(0.95, max(0.0, float(os.environ.get("CHAIN_HISTORY_RESERVE", "0.5") or 0.5)))
+# Seconds one read may wait for a spare token before the slot's remaining reads are skipped (a gap, asked next slot).
+CHAIN_HISTORY_TOKEN_WAIT_SECONDS = _bounded_int("CHAIN_HISTORY_TOKEN_WAIT_SECONDS", 5, 0, 60)
+# Retention: RETENTION_CHAIN_HISTORY_DAYS (app/retention/policy.py; TM-8: 0 = kept until the owner sets a limit).
+# The read API: at most this many days per range request and this many stored chains per response.
+CHAIN_HISTORY_READ_MAX_DAYS = _bounded_int("CHAIN_HISTORY_READ_MAX_DAYS", 31, 1, 366)
+CHAIN_HISTORY_READ_MAX_CHAINS = _bounded_int("CHAIN_HISTORY_READ_MAX_CHAINS", 2000, 10, 50000)
+
 # Z7a-2 market zones: the operator's ZoneSettings fields over the platform's all-daily defaults (JSON object; see
 # app/price_action/zones/store.py PLATFORM_DEFAULTS), the lake instruments the nightly zone job always follows (comma list
 # of keys like "NSE:BANKNIFTY"; tenants add their own in market_zone_settings), the IST hour from which it runs once a day

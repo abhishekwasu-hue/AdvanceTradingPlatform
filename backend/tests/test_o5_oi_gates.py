@@ -50,7 +50,7 @@ def test_gates_fail_closed_without_fresh_data():
     _, me = _owner("o5-stale@example.com")
     nothing = _run(_check(me["tenant_id"], "BULLISH", ["OI_DIFF"], T0))
     assert not nothing.allowed and "missing or older" in nothing.reasons[0]
-    _run(_collect(_chain(), T0))
+    _run(_collect(_chain(), T0, tenant_id=me["tenant_id"]))
     stale = _run(_check(me["tenant_id"], "BULLISH", ["OI_DIFF"], T0 + timedelta(minutes=40)))
     assert not stale.allowed
     assert _run(_check(me["tenant_id"], "BULLISH", [], T0)).allowed                          # no gate requested: no effect
@@ -59,7 +59,7 @@ def test_gates_fail_closed_without_fresh_data():
 def test_each_gate_reads_its_o1_function():
     headers, me = _owner("o5-gates@example.com")
     for i, put in enumerate((2000.0, 2200.0, 2420.0)):                                       # puts above calls, growing
-        _run(_collect(_chain(put=put, put_ltp=10.0 - i * 0.5), T0 + timedelta(minutes=5 * i)))
+        _run(_collect(_chain(put=put, put_ltp=10.0 - i * 0.5), T0 + timedelta(minutes=5 * i), tenant_id=me["tenant_id"]))
     now = T0 + timedelta(minutes=11)
     bull = _run(_check(me["tenant_id"], "BULLISH", ["OI_DIFF", "OI_CONFIRM"], now))
     assert bull.allowed and bull.passed == ["OI_DIFF", "OI_CONFIRM"]
@@ -91,11 +91,11 @@ def test_iv_gate_uses_sideways_sessions_from_stored_snapshots():
         chain = _chain(spot=spot)
         for r in chain.rows:
             r.call_iv, r.put_iv = 10.0, 10.0
-        _run(_collect(chain, day_before + timedelta(minutes=m)))
+        _run(_collect(chain, day_before + timedelta(minutes=m), tenant_id=me["tenant_id"]))
     today = _chain()
     for r in today.rows:
         r.call_iv, r.put_iv = 13.0, 13.0                                                     # +30 % on the sideways baseline
-    _run(_collect(today, T0))
+    _run(_collect(today, T0, tenant_id=me["tenant_id"]))
     blocked = _run(_check(me["tenant_id"], "BULLISH", ["IV_CHANGE"], T0 + timedelta(minutes=1)))
     assert not blocked.allowed and "breakout risk" in blocked.reasons[0]
     _settings(headers, iv_change_max_pct=50)

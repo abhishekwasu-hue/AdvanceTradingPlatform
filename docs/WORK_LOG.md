@@ -3423,6 +3423,45 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `test_z11_deploy_bundle.py`; vitest `StatusLink.test.tsx`, `alertsPanel.test.tsx`; e2e `ops-alerts-v2.e2e.ts` with
   baselines at 360 / 390 / 1440 light / dark; `admin-system-v2-*` baselines refreshed (the Alerts card is new).
 
+## 23 Oct - Production readiness A3: safe deploys
+
+- Branch `claude/readiness-a3-safe-deploys`. **No migration**, no flag, no route.
+- Every main commit gets a result (review R3): `ci.yml` and `staging-stack.yml` put main pushes in a concurrency group
+  per sha (the shared group kept one pending run and cancelled the rest: `25c3ca1f`, `d993f430`, `34d20ed3` show
+  *cancelled*); PR branches still cancel their older run. Cost note in both files and runbook 8a.
+- The gate: `deploy/ci_gate.py` (stdlib, `curl` on PATH, public API, no token) + `ci_gate` in `atp.sh deploy`, before
+  the checkout. Required `CI_GATE_REQUIRED` (CI lint, backend, backend-lookahead, frontend; staging stack acceptance,
+  rollback, offsite), known red `CI_GATE_KNOWN_RED` (load-500, LD-9), every other job passed or skipped. Refusals name
+  the newest commit that passed; GitHub unreachable refuses (exit 1). Checked against the live API: `45601034` passes,
+  `2626c1ca` was still running.
+- Override `ATP_ALLOW_UNTESTED=1` + `ATP_UNTESTED_REASON` (required): `.deploy/gate.log`, `atp.sh releases`, a `health`
+  WARN, and the audit row `deploy_untested` (`backend/scripts/deploy_audit.py`). The CI rehearsals set it (their
+  commits have no CI result yet). `rollback` is never gated.
+- Staging (R4, RDY-2 answered: the CI stack): the `deploy-staging.yml` smoke test fails on an unset URL, no answer or
+  not ok. The rollback rehearsal runs on every main push (`gate` job), now no longer cancelled.
+- `.github/pull_request_template.md`. Runbook section 8a, `.env.example`. Questions RDY-28..32.
+- Tests: `test_a3_deploy_gate.py` (the helper against a fake curl + local JSON, the audit row and the chain), six
+  `atp.sh` cases in `test_z11_deploy_bundle.py` (the fake host's curl now serves the GitHub API); shellcheck,
+  actionlint clean.
+
+## 23 Oct - Chart + colour order, Part 3 PR 1: the colour tokens
+
+- Branch `claude/colour-tokens` (from main). Frontend only, **no migration**, no flag (no page changes).
+- `frontend/src/styles/tokens.css`: `--range`, `--range-track`, `--info-tint`, `--ai-tint` (light, dark, colour-blind);
+  the v2-only navy dark surfaces under `:root[data-shell="v2"]` (inert until adoption); colour-blind warn / AI values.
+- `tailwind.config.js` names; the v2 colour check's hint text; the Tokens story lists the new meanings (CC-1 wording).
+- `src/ui/tokens.test.ts`: the new contrast pairs (text 4.5, UI parts 3), navy variants, the distinct-hue test.
+- e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
+
+## 23 Oct - Chart + colour order, Part 3 PR 2: the colour components
+
+- Branch `claude/colour-components`, stacked on PR 1 (#436). Frontend only, **no migration**, no page adoption.
+- `components/primitives/Button.tsx`: `outline`, size `v2`, `buttonClass()`; `trading/PartsV2.tsx` uses it.
+- `ui/Chip.tsx` (+ `FilterChip`), `ui/StatusChip.tsx`, `ui/RangeBar.tsx`; `ChipV2` / `Badge` delegate (same markup).
+- `e2e/solidBrand.ts` (warning annotation, never a failure) in six screenshot specs; `test/solid-brand.test.ts`.
+- Storybook `Design system/Colour by meaning`; vitest `Button.test.tsx`, `Chip.test.tsx`, `StatusChip.test.tsx`,
+  `RangeBar.test.tsx`. e2e: the whole suite, baselines unchanged.
+
 ## 23 Oct - Chart + colour order, Part 3 PR 1: the colour tokens
 
 - Branch `claude/colour-tokens` (from main). Frontend only, **no migration**, no flag (no page changes).

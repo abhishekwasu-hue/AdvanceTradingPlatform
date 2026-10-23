@@ -209,4 +209,14 @@ One draft PR each, behind `ui_v2`, with tests. No migration in any of them.
   the existing pairs on navy, "no normal-theme value changes", and the distinct-hue test (OKLab distance, after a
   deuteranopia simulation in colour-blind mode; up / down / warn / info / ai pairwise, range against all but warn).
   `gen-palette.mjs` untouched.
+- **PR 2 `claude/colour-components` (item 8).** `Button` gains `outline` and the v2 size (`h-11 md:h-9`); `buttonClass()`
+  is the one class source, and `trading/PartsV2.tsx` `BUTTON_PRIMARY` / `BUTTON_SECONDARY` are now its output (same
+  classes plus `disabled:cursor-not-allowed`). The broker and admin class strings differ in size and focus (no `md:h-9`
+  on the broker buttons), so they stay until their pages adopt `Button`. `ui/Chip.tsx`: one chip (tones neutral /
+  brand / up / down / warn / info / ai; tint / outline / solid; pill / badge); `ChipV2` and `Badge` keep their exports
+  and render byte-identical markup (pinned). `FilterChip` (selected = brand outline + tint). `ui/StatusChip.tsx`
+  (connected / needs-action / error with `atStake` / info / paper / live). `ui/RangeBar.tsx` (`role="meter"`, low /
+  high as text). `e2e/solidBrand.ts`: counts the visible buttons and links painted with `--brand-fill` and adds a
+  `warning` annotation above one; called from `afterEach` in the Today, Option chain, Signals, Positions, Charts and
+  Settings specs. The two page-level `StatusChip`s (Settings, Signals) stay until adoption.
 

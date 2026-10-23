@@ -966,6 +966,8 @@ export type ExecutionMode = "PAPER" | "LIVE";
 
 export interface Deployment {
   id: number;
+  /** Strategy templates section 5: the bot's exit choice as stored (null: none chosen). */
+  template_exits?: TemplateExitsRequest | null;
   regime_filter?: string[] | null;
   oi_gates?: string[] | null;
   holding?: string;
@@ -1136,6 +1138,17 @@ export interface DeploymentCreateRequest extends ContractRules {
   routing_policy?: RoutingPolicy | null;
   route_across_brokers?: boolean;
   exit_rules?: ExitRules | null;
+  /** Strategy templates section 5: a template's own exit choice (omitted = the template's level as the stop, no target). */
+  template_exits?: TemplateExitsRequest | null;
+}
+
+/** Strategy templates section 5 (src/strategyTemplates/exits.ts): where a template bot's stop comes from, when it takes profit. */
+export interface TemplateExitsRequest {
+  stop_source?: "TEMPLATE_INVALIDATION" | "PREMIUM_PCT" | "CREDIT_PCT" | null;
+  target_rule?: "NONE" | "R_MULTIPLE" | "TEMPLATE_EXIT" | "CREDIT_PCT" | "WAVE_PROJECTION" | null;
+  target_r?: number | null;
+  target_base_wave?: string | null;
+  target_ratio?: number | null;
 }
 
 export type RoutingPolicy = "EXPLICIT" | "MOST_MARGIN" | "LEAST_UTILISED" | "FEWEST_POSITIONS";

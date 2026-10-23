@@ -87,6 +87,7 @@ from app.notifications.service import notify
 from app.trading.position_monitor import (broker_for_trade, close_group, close_position, monitor_open_positions,
                                           open_trade_families_by_tenant, trade_venues)
 from app.trading.stop_guard import verify_protective_stops
+from app.strategy_templates.exits import TemplateExits
 
 logger = logging.getLogger(__name__)
 
@@ -1449,6 +1450,10 @@ class TradingWorker:
         adapters: Dict[str, BrokerInterface], now: datetime, entries_allowed: bool,
     ) -> bool:
         strategy = await resolve_strategy(dep.strategy_id, user, session)
+        # Strategy templates section 5: the deployment's own exit choice (none stored: the template exactly as before)
+        template_exits = TemplateExits.from_record(dep)
+        if not template_exits.is_default and hasattr(strategy, "use_exits"):
+            strategy.use_exits(template_exits)
         frames = await _history_source(market_data, strategy).get_frames(dep.symbol, dep.exchange, dep.timeframe, strategy.timeframes)
         # Always persist UTC: a DB that drops tzinfo (SQLite) would otherwise store an IST wall
         # time that reads back as if it were UTC, 5.5h in the future.
@@ -1483,6 +1488,18 @@ class TradingWorker:
             note = regime_note(regime, allowed)
             if note:
                 logger.info("Deployment %s: regime diagnostic (never blocks): %s", dep.id, note)
+
+        if getattr(strategy, "acts_on_exit_signal", False) and await self._template_exit(session, dep, strategy, frames, market_data, user.id):
+            # R5: an open trade closed on the template's exit signal of this bar; as in the backtests, no entry on the bar
+            # the exit was read on (its trade was still open then): that bar's signal, if any, is handled
+            utc = lambda v: (v if v.tzinfo else v.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)  # noqa: E731
+            bar_ts = utc(frames[getattr(strategy, "label")].index[-1].to_pydatetime())
+            if dep.last_signal_at is None or utc(dep.last_signal_at) < bar_ts:
+                dep.last_signal_at = bar_ts
+            dep.last_error = None
+            dep.consecutive_failures = 0
+            await session.commit()
+            return False
 
         signal = strategy.analyze(frames, dep.symbol)
         if not signal.is_tradeable:
@@ -1806,6 +1823,61 @@ class TradingWorker:
             if ops is None:
                 ops = self._ops[key] = OpsThrottle(app_config.OPS_PER_SECOND)
         return RateLimitedBroker(adapter, budget, ops=ops, tenant_id=tenant_id)
+
+    async def _template_exit(self, session: AsyncSession, dep: StrategyDeploymentRecord, strategy: Any, frames, market_data: MarketDataService,
+                             user_id: int) -> int:
+        """Strategy templates R5 / S10 (the user's TEMPLATE_EXIT choice): the deployment's OWN open PAPER trades whose side
+        the template's exit signal ends on the last closed bar are closed at the current price, reason "Template exit".
+        Only a bar that closed after the trade's entry counts (the backtests read it from the bar after the entry). An
+        exit only: it never blocks or delays any other exit (ADR-0004); a failed close is left to the next cycle and the
+        position monitor's own exits."""
+        from app.backtest.windows import bar_length
+        from app.strategy_templates.exits import EXIT_REASON
+        base = frames.get(strategy.label)
+        if base is None or not len(base):
+            return 0
+        start = base.index[-1].to_pydatetime()
+        bar_close = (start if start.tzinfo else start.replace(tzinfo=timezone.utc)) + bar_length(strategy.label)
+        trades = list(await session.scalars(select(TradeRecord).where(
+            TradeRecord.tenant_id == dep.tenant_id, TradeRecord.deployment_id == dep.id, TradeRecord.exit_time.is_(None))))
+        singles: List[TradeRecord] = []
+        groups: Dict[str, List[TradeRecord]] = {}
+        for trade in trades:
+            if trade.mode != ExecutionMode.PAPER.value:
+                continue                                   # templates run on paper only; never a LIVE action from here
+            entered = trade.entry_time if trade.entry_time is None or trade.entry_time.tzinfo else trade.entry_time.replace(tzinfo=timezone.utc)
+            if entered is None or entered >= bar_close:
+                continue
+            side = trade.underlying_direction or trade.direction
+            if not strategy.exit_signal(frames, side):
+                continue
+            if trade.leg_group_id:
+                groups.setdefault(trade.leg_group_id, []).append(trade)
+            else:
+                singles.append(trade)
+        if not singles and not groups:
+            return 0
+        venues = await trade_venues(session, singles + [leg for legs in groups.values() for leg in legs])
+        closed = 0
+        for trade in singles:
+            try:
+                price = await market_data.get_ltp(trade.symbol, venues[trade.id])
+                async with guarded(session, keep=(trade,)):
+                    outcome = await close_position(session, trade, price, EXIT_REASON, broker=None, user_id=user_id)
+                closed += int(outcome.closed)
+            except Exception as exc:  # noqa: BLE001 - left open: the next cycle reads the exit again
+                logger.warning("Deployment %s: template exit of trade %s failed: %s", dep.id, trade.id, exc)
+        for group_id, legs in groups.items():
+            try:
+                prices = {leg.id: await market_data.get_ltp(leg.symbol, venues[leg.id]) for leg in legs}
+                async with guarded(session, keep=tuple(legs)):
+                    outcomes = await close_group(session, legs, prices, EXIT_REASON, broker=None, user_id=user_id)
+                closed += sum(int(o.closed) for o in outcomes)
+            except Exception as exc:  # noqa: BLE001 - left open: the next cycle reads the exit again
+                logger.warning("Deployment %s: template exit of group %s failed: %s", dep.id, group_id, exc)
+        if closed:
+            logger.info("Deployment %s: %d position(s) closed on the template's exit signal", dep.id, closed)
+        return closed
 
     async def _has_open_position(self, session: AsyncSession, dep: StrategyDeploymentRecord) -> bool:
         open_trade = await session.scalar(

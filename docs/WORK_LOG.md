@@ -3220,3 +3220,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   existing tests of the listed machinery; main's last Actions runs (Staging stack incl. the rollback rehearsal green;
   CI and Secret scan red, a fix in progress).
 - Questions RDY-1..12 in OPEN_QUESTIONS.
+## 23 Oct - Strategy templates TPL-10: section 5 "exits as settings" (owner-approved; behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl-exits-settings`, stacked on #423. Migration: yes - `d7f9b1c3e5a8` (additive: five nullable columns
+  on `strategy_deployments`), chained on `b5d7f9a1c3e6` for now; re-chained after LAB-18 at merge; deploy after 15:30 IST.
+- stop_source (template level / premium stop only / spread stop %) and target_rule (none / R multiple / the template's
+  exit signal / spread target % / wave projection) per the precedence table (R4); NULL = byte-identical (pinned against the
+  base branch). R5 built: both backtest engines and the worker act on the exit signal (next price, "Template exit").
+- The v2 Paper bot form shows "Exits for this bot" in plain words, pre-filled with the template's defaults; a default
+  choice sends nothing. Signal text unchanged (no stop / target words).
+- Tests: `tests/test_tpl10_exits_settings.py`, `src/strategyTemplates/exits.test.ts`, e2e with new baselines. Postgres 16:
+  upgrade, check, downgrade, upgrade. Questions TPL-X1..X6; WAVE-11 partly done.
+

@@ -412,4 +412,5 @@ def test_migration_is_additive_rollback_safe_reversible_and_the_only_head():
     assert "drop_column('risk_settings', 'loss_streak_resumed_at')" in source and "drop_column('risk_settings', 'loss_streak_pause')" in source
     script = ScriptDirectory.from_config(Config(str(root / "alembic.ini")))
     heads = script.get_heads()
-    assert heads == ["b5d7f9a1c3e6"]
+    # one head, with CP6-15 on its chain (the templates' exits-as-settings migration d7f9b1c3e5a8 is chained after it)
+    assert len(heads) == 1 and "b5d7f9a1c3e6" in {r.revision for r in script.iterate_revisions(heads[0], "base")}

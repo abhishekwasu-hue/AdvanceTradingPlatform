@@ -559,6 +559,16 @@ class StrategyDeploymentRecord(Base):
     # only an approved one places a PAPER order - app/execution/approval.py). With the `approval_only_entries` flag on
     # every deployment of the organisation is approval-only whatever this says; APPROVAL never reverts to AUTO by itself.
     entry_mode: Mapped[str] = mapped_column(String(10), nullable=False, default="AUTO", server_default="AUTO")
+    # Strategy templates section 5 ("exits as settings", app/strategy_templates/exits.py): the user's own stop / target
+    # choice for a template deployment. NULL everywhere = exactly the behaviour before (the template's invalidation as the
+    # stop, no target; a structure's credit levels), so every existing row is unchanged. stop_source: TEMPLATE_INVALIDATION
+    # / PREMIUM_PCT / CREDIT_PCT; target_rule: NONE / R_MULTIPLE (target_r) / TEMPLATE_EXIT / CREDIT_PCT / WAVE_PROJECTION
+    # (target_base_wave, target_ratio).
+    stop_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    target_rule: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    target_r: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_base_wave: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    target_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)

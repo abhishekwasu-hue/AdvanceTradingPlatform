@@ -78,6 +78,10 @@ def run_backtest(
     initial_stop = 0.0
     best_price: Optional[float] = None
     current_day = None
+    # Strategy templates R5 / section 5: with the user's TEMPLATE_EXIT choice the template's exit signal on a bar close of
+    # an open trade closes it at the next price (the next bar's open), reason "Template exit". Off for every other strategy.
+    template_exit = bool(getattr(strategy, "acts_on_exit_signal", False))
+    exit_due = False
 
     for i in range(min_hist, len(primary_df)):
         bar = primary_df.iloc[i]
@@ -111,7 +115,10 @@ def run_backtest(
         if open_trade is not None:
             direction = "LONG" if open_trade.direction == SignalDirection.LONG else "SHORT"
             outcome = None
-            if rules is not None:
+            if exit_due:
+                # R5: the exit signal came on the previous bar's close - out at this bar's open, before anything else
+                outcome, exit_due = ("Template exit", float(bar["open"])), False
+            if outcome is None and rules is not None:
                 # Phase J1: the same rules the position monitor applies live, on this bar's range.
                 # The stop tightened on the previous bar is what this bar is judged against, so
                 # a bar cannot trail its own stop into itself.
@@ -137,6 +144,10 @@ def run_backtest(
                 if margin.call(marked, margin.required(margin_kind, close_px * open_trade.quantity)):
                     outcome = ("Margin call", close_px)
                     margin_calls += 1
+
+            if outcome is None and template_exit and i + 1 < len(primary_df):
+                # R5 / S10: read on this bar's close for the open trade's own side; acted on at the next bar's open
+                exit_due = bool(strategy.exit_signal(cursor.at(decision_time(current_time, primary_tf)), direction))   # type: ignore[attr-defined]
 
             if outcome is not None:
                 reason, exit_price = outcome

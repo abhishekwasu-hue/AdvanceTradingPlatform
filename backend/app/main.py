@@ -31,7 +31,8 @@ from app.core.models import (
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.routes import router as auth_router
 from app.auth.google_routes import router as google_auth_router
-from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router
+from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router, with_template_exits
+from app.strategy_templates.exits import TemplateExitsBody
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
@@ -403,6 +404,7 @@ class BacktestRequest(BaseModel):
     # Phase W: present = run the signals as option structures (app/backtest/options_engine.py).
     options: Optional[OptionBacktestBody] = None
     execution_models: Optional[Dict[str, Any]] = None   # realism C2 (omitted = default models)
+    template_exits: Optional[TemplateExitsBody] = None   # strategy templates section 5 (omitted = as before)
 
 
 class PaperExecuteResponse(BaseModel):
@@ -622,6 +624,7 @@ async def backtest(
     risk_config = request.risk_config or _default_risk_config
 
     body = BacktestBody(**request.model_dump())
+    strategy = with_template_exits(strategy, body)                     # section 5: a template's exit choice (422 if it does not fit)
     runner = await BacktestRunner.build(body, risk_config, session, tenant_id=user.tenant_id if user is not None else None)
     result = await run_in_threadpool(runner.run, strategy, base_df)        # CPU-bound pandas work off the event loop (P0.1 / S3)
     # Phase J2: the run is recorded (strategy, params, data span, metrics) and metered against the plan.

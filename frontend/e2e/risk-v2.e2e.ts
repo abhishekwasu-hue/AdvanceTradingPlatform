@@ -92,7 +92,7 @@ test.describe("v2 risk 1440 desktop", () => {
     await primaries.click();
     await expect(page.locator("[data-note='save']")).toHaveText("Saved. Every paper and live entry now uses these limits and guardian rules.");
     const put = writes.calls.find((c) => c.method === "PUT" && c.url === "/risk-settings");
-    expect(put?.body).toEqual({ ...(T.risk_settings as object), max_daily_loss_pct: 2.5 });
+    expect(put?.body).toEqual({ ...(T.risk_settings as object), max_daily_loss_pct: 2.5, loss_streak_pause: "next_session" });
   });
 
   test("a value above the platform ceiling is marked next to its field and nothing is sent", async ({ page }) => {
@@ -122,7 +122,7 @@ test.describe("v2 risk 1440 desktop", () => {
     await expect(page.locator("[data-note='save']")).toHaveText("Saved. Every paper and live entry now uses these limits and guardian rules.");
     await expect(page.locator("[data-field='dd_level_1_pct'] [role='alert']")).toHaveCount(0);
     const put = writes.calls.find((c) => c.method === "PUT" && c.url === "/risk-settings");
-    expect(put?.body).toEqual({ ...(T.risk_settings as object), dd_level_1_pct: 5, dd_level_2_pct: 0, max_daily_loss_pct: 2 });
+    expect(put?.body).toEqual({ ...(T.risk_settings as object), dd_level_1_pct: 5, dd_level_2_pct: 0, max_daily_loss_pct: 2, loss_streak_pause: "next_session" });
   });
 
   test("removing an event: a neutral button, then a confirm that names what changes", async ({ page }) => {
@@ -162,6 +162,50 @@ test.describe("v2 risk 1440 desktop", () => {
     for (const gone of ["Risk Guardian status", "Save risk settings", "(R4)", "(P2)", "Phase", "Sample", "recommended"]) {
       await expect(page.locator("main").getByText(gone, { exact: false }), gone).toHaveCount(0);
     }
+  });
+});
+
+// CP6-15: when the losses-in-a-row pause ends - the setting, the paused note and "Resume after losses in a row".
+const PAUSED = { mode: "until_resume", mode_label: "Pause until I resume", limit: 3, losses_in_a_row: 3, paused: true, can_resume: true,
+                 ends: "when you resume", resumed_at: "2026-10-16T05:00:00+00:00" };
+
+test.describe("v2 risk: the losses-in-a-row pause (CP6-15)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("the choice is saved with the other limits; the default is the next session", async ({ page }) => {
+    const writes = await open(page, "light");
+    const choice = page.locator("[data-field='loss_streak_pause']");
+    await expect(choice).toContainText("After the losses-in-a-row limit");
+    await expect(choice.getByLabel("Pause until the next session")).toBeChecked();
+    await expect(choice).toContainText("A backtest cannot resume, so there the pause lasts to the end of the test.");
+    await expect(page.locator("[data-note='loss-streak']")).toHaveCount(0);                // nothing paused: no note
+    await choice.getByLabel("Pause until I resume").check();
+    await page.getByRole("button", { name: "Save limits" }).click();
+    await expect(page.locator("[data-note='save']")).toContainText("Saved.");
+    const put = writes.calls.find((c) => c.method === "PUT" && c.url === "/risk-settings");
+    expect(put?.body).toEqual({ ...(T.risk_settings as object), loss_streak_pause: "until_resume" });
+  });
+
+  test("while paused: the note says when it ends and that exits keep working; Resume is a neutral button", async ({ page }) => {
+    const writes = await open(page, "light", { riskSettings: { loss_streak_pause: "until_resume" }, lossStreak: PAUSED });
+    const note = page.locator("[data-note='loss-streak']");
+    await expect(note).toContainText("New entries are paused after 3 losses in a row (your limit is 3). They stay paused until you resume them. Exits keep working.");
+    await expect(note).toContainText("Last resumed 16 Oct 2026, 10:30");
+    const resume = page.getByRole("button", { name: "Resume after losses in a row" });
+    await expect(resume).not.toHaveClass(/(^|\s)(bg-brand|text-down|bg-down)(\s|$)/);
+    await expect(page.locator("main .bg-brand:is(a, button)")).toHaveCount(1);                // still one primary action
+    await resume.click();
+    await expect(page.locator("[data-note='save']")).toHaveText("Resumed. New entries are allowed again; only losses from now on count towards your limit.");
+    await expect(note).toHaveCount(0);
+    const risk = writes.calls.filter((c) => c.url.startsWith("/risk-settings"));
+    expect(risk.map((c) => `${c.method} ${c.url}`)).toEqual(["POST /risk-settings/loss-streak/resume"]);   // resuming changes no limit
+  });
+
+  test("paused until the next session: the note, and no resume button", async ({ page }) => {
+    await open(page, "light", { lossStreak: { ...PAUSED, mode: "next_session", mode_label: "Pause until the next session", can_resume: false,
+                                              ends: "at the next session", resumed_at: null } });
+    await expect(page.locator("[data-note='loss-streak']")).toContainText("They start again at the next session. Exits keep working.");
+    await expect(page.getByRole("button", { name: "Resume after losses in a row" })).toHaveCount(0);
   });
 });
 

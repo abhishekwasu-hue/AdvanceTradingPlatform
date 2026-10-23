@@ -3163,3 +3163,31 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   pre-fill as PAPER, T7 must fire / must not fire, no look-ahead, flags); vitest `src/ideas/ideas.test.tsx`; e2e
   `e2e/idea-library-v2.e2e.ts` (the idea library baselines updated: T7 scans, T5 note, the adopt card on A5). The
   fixture `e2e/fixtures/ideas_v2.json` is now the payload with strategy templates on; its pin is updated.
+
+## 23 Oct - CP6-15: the losses-in-a-row pause ends (owner-approved fix; migration b5d7f9a1c3e6)
+
+- Branch `claude/cp6-15-loss-streak`. Found: the pause never ended on either path. Live / PAPER counted the last 20
+  closed trades of all time (`build_trading_day_state`), and both backtest engines reset the counter only on a win;
+  with no new trade there was no win, so after `max_consecutive_losses` losses no entry was ever allowed again.
+- The risk setting "After the losses-in-a-row limit" (`RiskConfig.loss_streak_pause`): "Pause until the next session"
+  (the default; only the current IST session's losses count - live from `trading_day_start()`, in the engines at their
+  IST day roll) or "Pause until I resume" (only losses after the last "Resume after losses in a row"). One shared
+  module `app/risk_engine/loss_streak.py`; `BacktestLossStreak` is what both engines call. The default limit (4) is
+  unchanged. Exits never pass through the risk engine (ADR-0004; tested with the position monitor while paused).
+- Routes: `GET /api/risk-settings/loss-streak` (member) and `POST /api/risk-settings/loss-streak/resume` (trader,
+  `risk:write`, audited `loss_streak_resumed`, 409 under "next session" or with no pause); both in the tenancy table.
+- Backtests: `BacktestResult.loss_streak` (None when the limit was never reached, then left out of the result hash);
+  under "until I resume" it says the pause held to the end of the test. The Copilot's honest test (CP6-2) says it in
+  plain words (`_pause_line`); the Backtesting page shows the note. ENGINE_VERSION 4 -> 5 and 7-options -> 8-options
+  (results change for the same inputs; stored on each run, part of the fingerprint).
+- Fixtures: the C2 golden is checked under "until I resume" (exactly the old counter in a backtest) with the new field
+  left out, so the pinned file is unchanged; the Copilot eval fixture's "too few trades" window is now ten sessions
+  (it had too few trades only because of the bug), `copilot_tools.json` / `copilot_jobs.jsonl` re-pinned.
+- Migration `b5d7f9a1c3e6` (down `a4c6e8f0b2d4`): `risk_settings.loss_streak_pause` String(16) NOT NULL default
+  'next_session', `risk_settings.loss_streak_resumed_at` timestamptz NULL; ROLLBACK_SAFE; upgrade / check / downgrade /
+  upgrade run on a scratch Postgres 16.
+- Frontend (v2 Risk limits): the two-choice setting under the limits, the paused note in Today with "Resume after losses
+  in a row" (a neutral button, only while it can resume) and the last resume time. Tests: backend
+  `tests/test_cp6_15_loss_streak.py` (parity of the three paths for both modes, regressions, routes, audit, exits,
+  migration); vitest `src/trading/model.test.ts`, `TradingV2.test.tsx`; e2e `risk-v2.e2e.ts` (three new cases).
+  Questions CP6-15 answered, CP6-17..21.

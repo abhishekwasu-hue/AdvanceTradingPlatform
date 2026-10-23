@@ -202,7 +202,9 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
             "trades": result.total_trades, "win_rate": _r(result.win_rate), "net_pnl": _r(result.net_pnl), "profit_factor": _r(result.profit_factor),
             "max_drawdown": _r(result.max_drawdown), "expectancy": _r(result.expectancy), "capital": _r(risk.capital),
             "sample": "insufficient" if result.total_trades < WEAK_EVIDENCE_MIN_TRADES else "ok", "min_trades_for_statistics": WEAK_EVIDENCE_MIN_TRADES,
-            "note": "Past simulated results on this window only; costs and slippage are approximations."}
+            "note": "Past simulated results on this window only; costs and slippage are approximations.",
+            # CP6-15: the losses-in-a-row pause in this run, in plain words (None when it never engaged)
+            "loss_streak_pause": (result.loss_streak or {}).get("note")}
     return ToolResult(True, data, _iso(df.index[-1]), source, {"first_bar": _iso(df.index[0]), "last_bar": _iso(df.index[-1])})
 
 

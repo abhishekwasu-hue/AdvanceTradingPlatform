@@ -781,6 +781,10 @@ class RiskSettingsRecord(Base):
     dd_level_2_pct: Mapped[float] = mapped_column(Float, nullable=False, default=10.0, server_default="10.0")
     event_size_cut_pct: Mapped[float] = mapped_column(Float, nullable=False, default=50.0, server_default="50.0")
     lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # CP6-15 (app/risk_engine/loss_streak.py): when the losses-in-a-row pause ends ("next_session" / "until_resume"), and
+    # the last "Resume after losses in a row" (only losses closed after it count under "until_resume").
+    loss_streak_pause: Mapped[str] = mapped_column(String(16), nullable=False, default="next_session", server_default="next_session")
+    loss_streak_resumed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 

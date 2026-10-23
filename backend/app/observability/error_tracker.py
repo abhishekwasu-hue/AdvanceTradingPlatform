@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from app.core import config
 
@@ -141,8 +141,9 @@ def init(component: str) -> bool:
         sentry_sdk.init(
             dsn=dsn, environment=config.ERROR_TRACKER_ENVIRONMENT or config.ENVIRONMENT, release=config.APP_VERSION,
             sample_rate=config.ERROR_TRACKER_SAMPLE_RATE, traces_sample_rate=0.0, send_default_pii=False,
-            include_local_variables=False, max_request_body_size="never", before_send=scrub_event,
-            before_breadcrumb=scrub_breadcrumb, server_name=component, default_integrations=True,
+            include_local_variables=False, max_request_body_size="never",
+            # the scrubbers work on plain dicts (sentry's Event / Breadcrumb are TypedDicts of the same shape)
+            before_send=cast(Any, scrub_event), before_breadcrumb=cast(Any, scrub_breadcrumb), server_name=component, default_integrations=True,
             integrations=[LoggingIntegration(level=logging.INFO, event_level=logging.ERROR)],
         )
         sentry_sdk.set_tag("component", component)

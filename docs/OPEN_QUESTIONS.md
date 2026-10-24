@@ -152,7 +152,7 @@ Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-12, TT12-1, T
 | TT12-4 | The organisation-level min reward:risk 1.2 (RiskConfig). | Decided 24 Oct: OFF too, own PR with backtest parity (roadmap P1-2b). | `risk_engine/risk_manager.py` | answered 24 Oct (DECISIONS) |
 | TT12-5 | Where does the user see / change his limits? | Setup step 2 (empty boxes, "Not set") and the "Your paper limits" card on the v2 Risk page. | `setup/StepsV2.tsx`, `trading/RiskV2.tsx` | open |
 
-## TT-8: a basket's legs as one group (24 Oct, `claude/tt8-basket-group`)
+## TT-8: a basket's legs as one group (24 Oct, `claude/tt8-basket-group`, #501)
 
 Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-8) and docs/design/TRADING_TERMINAL_REVIEW.md (gap 5).
 

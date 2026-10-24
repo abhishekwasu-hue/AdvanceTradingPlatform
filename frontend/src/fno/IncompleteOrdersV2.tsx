@@ -1,13 +1,13 @@
 /**
  * SE-7 (owner, 23 Oct; flag smart_execution, behind ui_v2): on Positions, a multi-leg order that stopped half way.
- * What filled, what did not, his three taps - "Complete the rest", "Close the filled legs", "Keep them" - and the time
+ * What filled, what did not, his three taps - "Complete the leg(s)", "Exit the filled leg(s)" (T1-4), "Keep them" - and the time
  * left before his own rule applies (Settings › My trading defaults: close the filled legs, or keep them, after N
  * minutes). Nothing here places or closes anything by itself: the countdown only shows when his rule will apply.
  * Backend: app/execution/incomplete_structures.py, routes app/execution/incomplete_routes.py.
  */
 import { Clock, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { incompleteApi, type IncompleteAction, type IncompleteApi, type IncompleteItem } from "./incompleteApi";
+import { completeLabel, exitFilledLabel, incompleteApi, type IncompleteAction, type IncompleteApi, type IncompleteItem } from "./incompleteApi";
 import { sideWord } from "./ticketModel";
 import { formatNumber } from "../ui/format";
 
@@ -72,11 +72,11 @@ export function IncompleteCardV2({ item, secondsLeft, busy, onAnswer, note }: {
           <div className="grid grid-cols-1 gap-space-2 sm:grid-cols-3">
             <button type="button" onClick={() => onAnswer("complete_rest")} disabled={busy} data-incomplete-action="complete_rest"
               className="min-h-11 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand disabled:opacity-50">
-              Complete the rest
+              {completeLabel(item.pending.length)}
             </button>
             <button type="button" onClick={() => onAnswer("close_filled")} disabled={busy} data-incomplete-action="close_filled"
               className="min-h-11 rounded-control border border-border bg-surface-1 px-space-4 text-t14 font-semibold text-fg disabled:opacity-50">
-              Close the filled legs
+              {exitFilledLabel(item.filled.filter((l) => l.open).length || item.filled.length)}
             </button>
             <button type="button" onClick={() => onAnswer("keep")} disabled={busy} data-incomplete-action="keep"
               className="min-h-11 rounded-control border border-border bg-surface-1 px-space-4 text-t14 font-semibold text-fg disabled:opacity-50">

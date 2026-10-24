@@ -1,5 +1,5 @@
 import { Bot, ChevronDown, ChevronRight, LineChart, ShoppingBasket } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
@@ -12,13 +12,18 @@ import { PracticeFrame, TicketBody, useOrderTicket, type OrderTicketState } from
 import type { BasketLeg } from "../fno/basket";
 import { heldKey, type TicketTarget } from "../fno/ticketModel";
 import type { Side } from "../fno/api";
-import type { LiveChain } from "../optionChain/types";
+import type { ChainLeg, LiveChain } from "../optionChain/types";
 import { chainAround } from "../fno/desk";
-import { PositionRowV2, type RowActions } from "../trading/PositionsV2";
-import { closedText, exitConfirmText, failedText, heldRows } from "../trading/model";
+import { GroupExitSheetV2 } from "../fno/GroupExitsV2";
+import { groupRows, type PositionGroup } from "../fno/contracts";
+import { groupExitApi, type GroupExitAsk } from "../fno/groupExits";
+import { PositionList, useFnoPositions, type RowActions } from "../trading/PositionsV2";
+import { closedText, exitConfirmText, failedText, heldRows, type HeldRow } from "../trading/model";
 import { NoteV2 } from "../trading/PartsV2";
-import type { TradeRecord } from "../types";
-import { EMPTY, formatDateIST, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
+import type { PortfolioExposure, TradeRecord } from "../types";
+import { EMPTY, formatCompactIN, formatDateIST, formatNumber, formatPrice, formatSignedCompactIN, formatTimeIST } from "../ui/format";
+import { SubTabs } from "../ui/SubTabs";
+import type { ChartLive, TerminalSpot } from "./spot";
 import { orderGroup, statusWords, type OrderEvent, type OrderGroup, type OrderRow, type TerminalApi } from "./api";
 
 /**
@@ -46,7 +51,11 @@ export function EmptyText({ children, testId }: { children: ReactNode; testId?: 
 
 // --- Chart ---------------------------------------------------------------------------------------------------------------
 
-export function ChartPanelV2({ symbol, onSymbol }: { symbol: string; onSymbol?: (symbol: string | null) => void }) {
+export function ChartPanelV2({ symbol, onSymbol, live }: {
+  symbol: string; onSymbol?: (symbol: string | null) => void;
+  /** T1-3: the page's one spot when this chart shows the underlying (undefined: the chart reads its own price). */
+  live?: ChartLive | null;
+}) {
   const [draft, setDraft] = useState(symbol);
   useEffect(() => setDraft(symbol), [symbol]);
   const submit = (e: FormEvent) => {
@@ -64,7 +73,7 @@ export function ChartPanelV2({ symbol, onSymbol }: { symbol: string; onSymbol?: 
         </form>
       )}
       <div className="min-h-0 flex-1 [&>section]:flex [&>section]:h-full [&>section]:flex-col">
-        <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" />
+        <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" live={live} />
       </div>
     </div>
   );
@@ -78,9 +87,36 @@ export function chainProblem(read: Read<LiveChain>): string | null {
   return "Connect your broker to see live prices on the option chain.";
 }
 
-export function ChainPanelV2({ underlying, read, trading, rows = 6 }: {
+/** T1-3: one side's figures as traders read them; a missing figure is "–", never 0. */
+export function legFigures(leg: ChainLeg): { oi: string; oiChange: string; iv: string; delta: string; ltp: string } {
+  return {
+    oi: leg.oi === null ? EMPTY : formatCompactIN(leg.oi),
+    oiChange: leg.oi_change === null ? EMPTY : formatSignedCompactIN(leg.oi_change),
+    iv: leg.iv === null ? EMPTY : `${formatNumber(leg.iv, 1)}%`,
+    delta: leg.delta === null ? EMPTY : formatNumber(leg.delta, 2),
+    ltp: leg.ltp === null ? EMPTY : formatPrice(leg.ltp),
+  };
+}
+
+/** The chain's spot line: the page's one spot (T1-3, the chart's too) with its time, once. */
+export function spotLine(spot: TerminalSpot | null | undefined, chain: LiveChain): string {
+  const value = spot?.ltp ?? chain.summary.spot;
+  if (value === null || value === undefined) return "";
+  const word = (spot?.source ?? "chain") === "chain" && chain.summary.spot_source === "last_close" ? "last close" : "spot";
+  const at = spot?.at ?? chain.data_as_of ?? null;
+  return ` · ${word} ${formatPrice(value)}${at ? ` (as of ${formatTimeIST(at)})` : ""}`;
+}
+
+const SIDE_COLUMNS = [["oi", "OI"], ["oiChange", "Chg OI"], ["iv", "IV"], ["delta", "Delta"]] as const;
+
+export function ChainPanelV2({ underlying, read, trading, rows = 6, spot, compact = false }: {
   underlying: string; read: Read<LiveChain>; trading: ChainTrading; rows?: number;
+  /** T1-3: the page's one spot (the chart's too); without it the chain's own. */
+  spot?: TerminalSpot | null;
+  /** Phone / tablet: LTP + OI per side, a row opens to the rest (T1-3). */
+  compact?: boolean;
 }) {
+  const [open, setOpen] = useState<number | null>(null);
   if (!trading.enabled) {
     return <EmptyText testId="chain-off">Trading from the chain needs your practice account. Turn it on in Settings to place practice orders.</EmptyText>;
   }
@@ -98,7 +134,7 @@ export function ChainPanelV2({ underlying, read, trading, rows = 6 }: {
   const shown = chainAround(chain.rows, heldStrikes, chain.summary.atm_strike, rows);
   if (!shown.length) return <EmptyText testId="chain-empty">The chain on this expiry has no strikes to show yet.</EmptyText>;
   const atm = chain.summary.atm_strike;
-  const cell = (r: (typeof shown)[number], side: "call" | "put") => {
+  const ltpCell = (r: (typeof shown)[number], side: "call" | "put") => {
     const right = side === "call" ? "CE" : "PE";
     const mine = trading.held.has(heldKey(r.strike, right));
     const ltp = r[side].ltp;
@@ -114,30 +150,72 @@ export function ChainPanelV2({ underlying, read, trading, rows = 6 }: {
       </td>
     );
   };
+  const fig = (v: string, key: string) => <td key={key} className="px-space-2 text-right font-tabular text-t13 text-fg-muted" data-col={key}>{v}</td>;
+  const strikeCell = (r: (typeof shown)[number]) => {
+    const label = formatNumber(r.strike, 0);
+    const tone = r.strike === atm ? "text-brand" : "text-fg";
+    if (!compact) return <td className={cx("px-space-2 text-center font-tabular font-semibold", tone)}>{label}</td>;
+    const expanded = open === r.strike;
+    return (
+      <td className="p-0">
+        <button type="button" aria-expanded={expanded} aria-controls={`chain-more-${r.strike}`} onClick={() => setOpen(expanded ? null : r.strike)}
+          aria-label={`${label}: ${expanded ? "hide" : "show"} change in OI, IV and delta`} data-expand={r.strike}
+          className={cx("flex min-h-11 w-full items-center justify-center gap-space-1 font-tabular font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand", tone)}>
+          {label}
+          <ChevronDown size={14} aria-hidden className={cx("text-fg-muted transition-transform", expanded && "rotate-180")} />
+        </button>
+      </td>
+    );
+  };
+  const head = "px-space-2 font-medium";
   return (
-    <div className="space-y-space-2" data-panel-body="chain">
-      <p className={MUTED}>
-        {underlying}{chain.expiry ? ` · ${formatDateIST(chain.expiry)} expiry` : ""}{chain.summary.spot !== null ? ` · spot ${formatPrice(chain.summary.spot)}` : ""}
+    <div className="space-y-space-2" data-panel-body="chain" data-chain-view={compact ? "compact" : "full"}>
+      <p className={MUTED} data-chain-spot>
+        {underlying}{chain.expiry ? ` · ${formatDateIST(chain.expiry)} expiry` : ""}{spotLine(spot, chain)}
       </p>
-      <table className="w-full table-fixed text-t13" data-chain-ladder>
-        <thead>
-          <tr className="text-t12 text-fg-muted">
-            <th className="px-space-2 text-right font-medium">Call</th>
-            <th className="px-space-2 text-center font-medium">Strike</th>
-            <th className="px-space-2 text-right font-medium">Put</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-subtle">
-          {shown.map((r) => (
-            <tr key={r.strike} data-strike={r.strike} data-atm={r.strike === atm ? "" : undefined}>
-              {cell(r, "call")}
-              <td className={cx("px-space-2 text-center font-tabular font-semibold", r.strike === atm ? "text-brand" : "text-fg")}>{formatNumber(r.strike, 0)}</td>
-              {cell(r, "put")}
+      <div className="overflow-x-auto">
+        <table className={cx("w-full text-t13", compact && "table-fixed")} data-chain-ladder>
+          <thead>
+            <tr className="text-t12 text-fg-muted">
+              {compact
+                ? <><th className={cx(head, "text-right")}>Call OI</th><th className={cx(head, "text-right")}>Call</th></>
+                : <>{[...SIDE_COLUMNS].map(([k, l]) => <th key={`c-${k}`} className={cx(head, "text-right")}>{l}</th>)}<th className={cx(head, "text-right")}>Call LTP</th></>}
+              <th className={cx(head, "text-center")}>Strike</th>
+              {compact
+                ? <><th className={cx(head, "text-right")}>Put</th><th className={cx(head, "text-right")}>Put OI</th></>
+                : <><th className={cx(head, "text-right")}>Put LTP</th>{[...SIDE_COLUMNS].reverse().map(([k, l]) => <th key={`p-${k}`} className={cx(head, "text-right")}>{l}</th>)}</>}
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className={MUTED}>Tap a price to buy, sell or add it to your basket. P: a contract you hold. The ATM strike is in colour.</p>
+          </thead>
+          <tbody className="divide-y divide-subtle">
+            {shown.map((r) => {
+              const c = legFigures(r.call);
+              const p = legFigures(r.put);
+              return (
+                <Fragment key={r.strike}>
+                  <tr data-strike={r.strike} data-atm={r.strike === atm ? "" : undefined}>
+                    {compact ? fig(c.oi, "call-oi") : [...SIDE_COLUMNS].map(([k]) => fig(c[k], `call-${k}`))}
+                    {ltpCell(r, "call")}
+                    {strikeCell(r)}
+                    {ltpCell(r, "put")}
+                    {compact ? fig(p.oi, "put-oi") : [...SIDE_COLUMNS].reverse().map(([k]) => fig(p[k], `put-${k}`))}
+                  </tr>
+                  {compact && open === r.strike && (
+                    <tr id={`chain-more-${r.strike}`} data-more={r.strike} className="bg-surface-2">
+                      <td colSpan={5} className="px-space-2 py-space-2">
+                        <dl className="grid grid-cols-2 gap-x-space-3 gap-y-space-1 font-tabular text-t13">
+                          <div><dt className="text-fg-muted">Call · Chg OI / IV / Delta</dt><dd className="text-fg">{c.oiChange} · {c.iv} · {c.delta}</dd></div>
+                          <div><dt className="text-fg-muted">Put · Chg OI / IV / Delta</dt><dd className="text-fg">{p.oiChange} · {p.iv} · {p.delta}</dd></div>
+                        </dl>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className={MUTED}>Tap a price to buy, sell or add it to your basket. P: a contract you hold. The ATM strike is in colour.{compact ? " Tap a strike for change in OI, IV and delta." : ""}</p>
     </div>
   );
 }
@@ -162,14 +240,14 @@ export function OrderPanelV2({ ticket, state: t, onClear }: {
   const target = ticket.target;
   const label = target.label ?? (target.right === "FUT" ? `${target.underlying} ${target.expiry} FUT` : `${target.underlying} ${target.strike} ${target.right}`);
   return (
-    <div className="-mx-space-3 -mb-space-3 flex h-full min-h-0 flex-col overflow-hidden" data-panel-body="order" data-step={t.step.kind}>
+    <div className="-mx-space-3 -mb-space-3 flex flex-col md:h-full md:min-h-0 md:overflow-hidden" data-panel-body="order" data-step={t.step.kind}>
       <PracticeFrame />
       <div className="px-space-4 pt-space-2">
         <p className="truncate text-t15 font-semibold text-fg">{label}</p>
         <p className="text-t13 font-tabular text-fg-muted">LTP {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}</p>
       </div>
       <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults}
-        budget={t.budget} events={t.events} liquidity={t.liquidity} keysHint={false}
+        budget={t.budget} events={t.events} liquidity={t.liquidity} keysHint={false} stickyActions
         onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onBack={t.back} onClose={onClear} />
     </div>
   );
@@ -177,12 +255,34 @@ export function OrderPanelV2({ ticket, state: t, onClear }: {
 
 // --- Positions -----------------------------------------------------------------------------------------------------------
 
-export function PositionsPanelV2({ read, canTrade, exitNowOn, onChanged }: {
-  read: Read<TradeRecord[]>; canTrade: boolean; exitNowOn: boolean; onChanged: () => void;
+/** T1-6 "Exit all": every open position through the existing exits, short risk first - each basket group closes its sold
+ *  legs before its hedges (exit-group), then the single sold positions, then the bought ones (Exit now). Nothing here
+ *  is ever disabled and no check stops it (ADR-0004); a leg that does not close is named, the rest still go. Pure order. */
+export function exitAllPlan(rows: readonly HeldRow[], groups: readonly PositionGroup[]): { groups: number[]; sells: number[]; buys: number[] } {
+  const { grouped, single } = groupRows(rows, groups);
+  return {
+    groups: grouped.filter((g) => g.group.kind === "basket").map((g) => g.legs[0].id),
+    sells: [...grouped.filter((g) => g.group.kind !== "basket").flatMap((g) => g.legs), ...single].filter((r) => r.side === "Sell").map((r) => r.id),
+    buys: [...grouped.filter((g) => g.group.kind !== "basket").flatMap((g) => g.legs), ...single].filter((r) => r.side === "Buy").map((r) => r.id),
+  };
+}
+
+export function exitAllConfirmText(count: number): string {
+  return `Exit all ${count} open ${count === 1 ? "position" : "positions"} at the current price? Sold legs close first, then the legs that protect them.`;
+}
+
+export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, fnoOn = false, onChanged }: {
+  read: Read<TradeRecord[]>; exposure?: PortfolioExposure | null; canTrade: boolean; exitNowOn: boolean;
+  /** The PAPER account on: basket legs grouped with "Exit the whole group" (TT-8), as on My trades. */
+  fnoOn?: boolean;
+  onChanged: () => void;
 }) {
   const [note, setNote] = useState<{ kind: "done" | "info" | "warn"; text: string } | null>(null);
-  const list = read.status === "ok" ? read.value : [];
-  const rows = useMemo(() => heldRows(list, null), [list]);
+  const [groupExit, setGroupExit] = useState<GroupExitAsk | null>(null);
+  const [exitingAll, setExitingAll] = useState(false);
+  const list = useMemo(() => (read.status === "ok" ? read.value : []), [read]);
+  const rows = useMemo(() => heldRows(list, exposure), [list, exposure]);
+  const fno = useFnoPositions(list, fnoOn && canTrade);
   if (read.status === "loading") return <LoadingRowsV2 rows={3} />;
   if (read.status === "error") return <EmptyText testId="positions-error">We could not load your positions. We will try again in a moment.</EmptyText>;
   if (!rows.length) return <EmptyText testId="positions-empty">No open positions. Your trades show here as soon as an order fills.</EmptyText>;
@@ -210,18 +310,50 @@ export function PositionsPanelV2({ read, canTrade, exitNowOn, onChanged }: {
       setNote({ kind: "warn", text: failedText(`We could not check the price of ${p.symbol}.`, e) });
     }
   }
-  const actions: RowActions = { exitNowOn, canTrade, onExit: (p) => void exitNow(p), onCheck: (p, price) => void checkPrice(p, price) };
   const byId = new Map(list.map((p) => [p.id, p]));
+  // T1-6 Exit all: one confirm, then the existing exits one after another (sold risk first). Never disabled.
+  async function exitAll() {
+    if (!window.confirm(exitAllConfirmText(rows.length))) return;
+    setExitingAll(true);
+    const plan = exitAllPlan(rows, fno.groups);
+    const failed: string[] = [];
+    for (const id of plan.groups) {
+      try { const r = await groupExitApi.exitGroup(id); r.legs.filter((l) => !l.closed).forEach((l) => failed.push(l.symbol)); }
+      catch { failed.push(byId.get(id)?.symbol ?? "a group"); }
+    }
+    for (const id of [...plan.sells, ...plan.buys]) {
+      try { await api.exitNow(id); } catch { failed.push(byId.get(id)?.symbol ?? "a position"); }
+    }
+    setExitingAll(false);
+    onChanged();
+    setNote(failed.length
+      ? { kind: "warn", text: `Not closed: ${failed.join(", ")}. Exit ${failed.length === 1 ? "it" : "them"} one by one below.` }
+      : { kind: "done", text: "Every open position was sent to close at the current price." });
+  }
+  const actions: RowActions = {
+    exitNowOn, canTrade, onExit: (p) => void exitNow(p), onCheck: (p, price) => void checkPrice(p, price),
+    group: fnoOn && canTrade ? {
+      onLeg: (p, hedge) => setGroupExit({ kind: "leg", tradeId: p.id, symbol: p.symbol, hedge, warning: null }),
+      onGroup: (tradeId, title, legs) => setGroupExit({ kind: "group", tradeId, title, legs }),
+    } : undefined,
+  };
+  const priced = rows.some((r) => r.pnl !== null);
   return (
     <div className="space-y-space-2" data-panel-body="positions">
       {note && <NoteV2 kind={note.kind} testId="terminal-exit">{note.text}</NoteV2>}
-      <ul className="divide-y divide-subtle">
-        {rows.map((r) => {
-          const p = byId.get(r.id);
-          return p ? <PositionRowV2 key={r.id} row={r} position={p} actions={actions} prices={false} /> : null;
-        })}
-      </ul>
-      <p className={MUTED}>Profit or loss of each position is on the status bar and on My trades.</p>
+      {exitNowOn && canTrade && (
+        <div className="flex justify-end">
+          {/* A neutral button, never disabled (ADR-0004); "Exiting…" only while the exits are on their way. */}
+          <button type="button" onClick={() => void exitAll()} data-terminal="exit-all" aria-busy={exitingAll}
+            className="inline-flex min-h-11 items-center rounded-control border border-border px-space-3 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand lg:min-h-9">
+            {exitingAll ? "Exiting…" : `Exit all (${rows.length})`}
+          </button>
+        </div>
+      )}
+      <PositionList rows={rows} byId={byId} actions={actions} prices groups={fno.groups} />
+      <GroupExitSheetV2 ask={groupExit} onClose={() => setGroupExit(null)}
+        onDone={(text, ok) => { setGroupExit(null); setNote({ kind: ok ? "done" : "warn", text }); onChanged(); }} />
+      {!priced && <p className={MUTED}>Profit or loss shows once your broker gives live prices.</p>}
     </div>
   );
 }
@@ -248,14 +380,9 @@ export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; term
   const shown = read.value.filter((o) => orderGroup(o.status) === group);
   return (
     <div className="space-y-space-2" data-panel-body="orders">
-      <div role="tablist" aria-label="Orders" className="flex gap-space-1 rounded-control bg-surface-2 p-space-1">
-        {GROUPS.map((g) => (
-          <button key={g.key} type="button" role="tab" aria-selected={group === g.key} onClick={() => setGroup(g.key)} data-orders-tab={g.key}
-            className={cx("min-h-11 flex-1 rounded-control px-space-2 text-t13 font-semibold lg:min-h-9", group === g.key ? "bg-surface-1 text-fg shadow-card" : "text-fg-muted hover:text-fg")}>
-            {g.label} <span className="font-tabular text-fg-muted">{counts[g.key]}</span>
-          </button>
-        ))}
-      </div>
+      {/* UI-H: the shared SubTabs (a choice inside the panel), as every tab row of the app. */}
+      <SubTabs label="Orders" value={group} onChange={setGroup} size="sm"
+        items={GROUPS.map((g) => ({ key: g.key, label: <>{g.label} <span className="font-tabular">{counts[g.key]}</span></>, ariaLabel: `${g.label} ${counts[g.key]}`, data: { "orders-tab": g.key } }))} />
       {shown.length === 0 ? (
         <EmptyText testId={`orders-${group}-empty`}>
           {group === "open" ? "No orders waiting. Practice orders fill at once at the current price." : group === "executed" ? "No orders filled yet." : "No refused orders."}

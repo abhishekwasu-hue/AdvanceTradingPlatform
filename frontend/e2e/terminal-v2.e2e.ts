@@ -66,7 +66,25 @@ function preview(body: Record<string, unknown>) {
 
 interface Seen { puts: { url: string; body: Record<string, unknown> }[]; orderPosts: { at: number; url: string }[] }
 
-async function open(page: Page, theme: "light" | "dark", opts: { features?: Record<string, boolean>; bars?: number; vary?: boolean } = {}): Promise<Seen> {
+const INCOMPLETE = {
+  group_id: "g1", underlying: "NIFTY", strategy: "Bear call spread", mode: "PAPER", state: "INCOMPLETE",
+  message: "Incomplete: the hedge filled, the sold leg did not go through. Nothing more is sent until you choose.",
+  failure: "The sold leg was not accepted.", deadline: null, seconds_left: null, on_no_answer: "keep", rule: null,
+  filled: [{ trade_id: 42, symbol: "NIFTY 25100 CE 03 NOV 26", side: "BUY", role: "hedge", quantity: 75, entry_price: 80, open: true }],
+  pending: [{ symbol: "NIFTY 25000 CE 03 NOV 26", side: "SELL", role: "sold", quantity: 75 }], actions: ["complete_rest", "close_filled", "keep"],
+};
+const EVALUATION = {
+  ok: true, errors: [], prices: [], today: [], on_date: [], at_expiry: null, days_forward: 0, iv_shift: 0, single_expiry: true,
+  extremes: { max_profit: 3000, max_loss: -4500, unbounded_profit: false, unbounded_loss: false }, profitable: null, breakevens: [25040],
+  summary: { expiry: "2026-11-03", t_years: 0.02, sigma: 0.13, pop: 0.61, expected_move: 300, expected_pnl: 0, greeks: { delta: 0, gamma: 0, theta: 0, vega: 0 }, method: "", model: "" },
+  legs: [], disclaimer: "", net_premium: 3000, reward_to_risk: null, costs: { total: 80, estimated: true },
+  margin: { value: 32000, estimated: true, basis: "Estimate", note: "",
+    hedge: { with_hedge: { value: 32000, estimated: true, basis: "With the hedge" }, without_hedge: { value: 145000, estimated: true, basis: "Sold leg alone" },
+      benefit: 113000, hedged: true, source: "estimate", note: "" } },
+  lot_sizes: [75, 75], labels: [], order: [1, 0],
+};
+
+async function open(page: Page, theme: "light" | "dark", opts: { features?: Record<string, boolean>; bars?: number; vary?: boolean; incomplete?: boolean } = {}): Promise<Seen> {
   await page.clock.install({ time: new Date("2026-10-27T10:30:00+05:30") });
   await page.addInitScript((t) => {
     try {
@@ -136,9 +154,20 @@ async function open(page: Page, theme: "light" | "dark", opts: { features?: Reco
     if (url.pathname.endsWith("/expiries")) return route.fulfill({ json: DATA.expiries });
     return route.fulfill({ json: { ...DATA.live, market_open: true } });
   });
+  // T1-6: live prices for P&L on every card (the My trades read), the two legs as one basket group.
+  await page.route(/\/api(?:\/v1)?\/portfolio\/exposure/, (r) => r.fulfill({ json: {
+    price_source: "ltp", currency: "INR", open_positions: 2, unrealised_pnl: 750, realised_today: 1900,
+    priced_symbols: POSITIONS.map((p) => p.symbol),
+    by_symbol: [{ symbol: POSITIONS[0].symbol, notional: 110 * 75 }, { symbol: POSITIONS[1].symbol, notional: 90 * 75 }],
+  } }));
+  await page.route(/\/api(?:\/v1)?\/trading\/incomplete$/, (r) => r.fulfill({ json: { items: opts.incomplete ? [INCOMPLETE] : [], as_of: NOW } }));
   await page.route(/\/api(?:\/v1)?\/paper\/fno\//, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname.endsWith("/positions/groups")) return route.fulfill({ json: { groups: [{ key: "basket:b1", kind: "basket", name: "Bear call spread", trade_ids: [41, 42], hedge_ids: [42] }] } });
+    if (url.pathname.endsWith("/contracts")) return route.fulfill({ json: { items: [] } });
+    if (url.pathname.endsWith("/basket/settings")) return route.fulfill({ json: { source: null, width_steps: 2, lots: 1, stop_pct: 100, note: "" } });
+    if (url.pathname.endsWith("/basket/evaluate")) return route.fulfill({ json: EVALUATION });
     if (url.pathname.endsWith("/contract")) return route.fulfill({ json: { ...CONTRACT, strike: Number(url.searchParams.get("strike")), right: url.searchParams.get("right") } });
     if (url.pathname.endsWith("/held")) return route.fulfill({ json: [] });
     if (url.pathname.endsWith("/risk-budget") || url.pathname.endsWith("/event-risk")) return route.fulfill({ status: 404, json: { detail: "Not found" } });
@@ -240,6 +269,43 @@ test.describe("v2 terminal 1440", () => {
     expect(taller!.height).toBeGreaterThan(after!.height);
   });
 
+  test("owner fixes T1-3 / T1-6: chain columns and one spot; positions with P&L, plain words, a group exit and Exit all", async ({ page }) => {
+    await open(page, "light");
+    const chain = page.locator("[data-panel='chain']");
+    for (const col of ["call-oi", "call-oiChange", "call-iv", "call-delta", "put-oi", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();
+    await expect(chain.locator("[data-chain-spot]")).toContainText(/spot [\d,.]+/);
+    expect((await chain.locator("[data-chain-spot]").innerText()).match(/as of/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    const positions = page.locator("[data-panel='positions']");
+    await expect(positions.locator("[data-col='pnl']").first()).toBeVisible();
+    await expect(positions.locator("[data-col='pnl']")).toHaveCount(2);
+    await expect(positions).not.toContainText("Manual fno");
+    await expect(positions).not.toContainText("0.05");
+    await expect(positions.locator("[data-testid='exit-group']")).toBeVisible();
+    await expect(positions.locator("[data-terminal='exit-all']")).toHaveText("Exit all (2)");
+    await expect(positions.locator("[data-terminal='exit-all']")).toBeEnabled();
+    await shot(page, "terminal-1440-light-fixes");
+  });
+
+  test("owner fix T1-4: the spread builder - hedge first, net credit, max loss, breakeven, margin with the hedge; a broken leg alert", async ({ page }) => {
+    await open(page, "light", { incomplete: true });
+    for (const [cell, leg] of [["call-24600", "basket-buy"], ["call-24500", "basket-sell"]] as const) {
+      await page.locator(`[data-cell='${cell}']`).click();
+      await page.locator("[data-chain-actions] [data-action='basket']").click();
+      await page.locator(`[data-chain-actions] [data-action='${leg}']`).click();
+      await page.keyboard.press("Escape");                                  // the sheet stays open after "Add"; close it
+      await expect(page.locator("[data-chain-actions]")).toHaveCount(0);
+    }
+    const builder = page.locator("[data-panel='basket']");
+    await expect(builder.locator("[data-leg-role]")).toHaveCount(2);
+    await expect(builder.locator("[data-leg-role]").first()).toHaveAttribute("data-leg-role", "hedge");
+    for (const f of ["net", "max-loss", "breakeven", "margin"]) await expect(builder.locator(`[data-figure='${f}']`)).toBeVisible();
+    await expect(builder.locator("[data-spread='hedge-benefit']")).toBeVisible();
+    const alert = page.locator("[data-terminal='incomplete'] [data-incomplete-action]");
+    await expect(alert.first()).toHaveText("Complete the leg");
+    await expect(alert.nth(1)).toHaveText("Exit the filled leg");
+    await shot(page, "terminal-1440-light-spread-builder");
+  });
+
   test("a price on the chain fills the order panel; the order goes through the one ticket (PAPER)", async ({ page }) => {
     const seen = await open(page, "dark");
     await page.locator("[data-cell='call-24500']").click();
@@ -306,7 +372,20 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
       await expect(page.locator("[data-tab='order']")).toHaveAttribute("aria-selected", "true");
       await expect(page.locator("[data-phone-panel='order'] [data-ticket='review']")).toHaveText("Review Sell order");
       await expect(page.locator("[data-phone-panel='order']")).not.toContainText("Keys: B for Buy");
+      // T1-2: the main action stays in view above the bottom navigation, whatever the scroll.
+      await expect(page.locator("[data-phone-panel='order'] [data-ticket-actions='sticky']")).toBeVisible();
+      const review = await page.locator("[data-phone-panel='order'] [data-ticket='review']").boundingBox();
+      const nav = await page.locator("[data-bottom-nav-v2]").boundingBox();
+      expect(review && nav && review.y + review.height <= nav.y + 1).toBe(true);
+      expect(review && review.height >= 44).toBe(true);
       await shot(page, `terminal-${size.width}-light-order`);
+      // T1-3: LTP + OI per side on a phone; a strike opens the rest.
+      await page.locator("[data-tab='chain']").tap();
+      await expect(page.locator("[data-phone-panel='chain'] [data-col='call-iv']")).toHaveCount(0);
+      await page.locator("[data-phone-panel='chain'] [data-expand]").first().tap();
+      await expect(page.locator("[data-phone-panel='chain'] [data-more]")).toBeVisible();
+      await noSidewaysScroll(page);
+      await shot(page, `terminal-${size.width}-light-chain-expanded`);
     });
   });
 }

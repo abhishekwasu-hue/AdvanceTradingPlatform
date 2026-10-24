@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { useLiveLtp } from "../components/chartHelpers";
+import type { LtpResponse } from "../types";
 import { cx } from "../components/primitives/cx";
 import { ChartSettingsPopover } from "./ChartSettingsPopover";
 import ChartV2 from "./ChartV2";
@@ -39,10 +40,13 @@ export interface EmbeddedChartV2Props {
   /** The chart's own "Open in Chart tab" link (default on); off when the host page shows one with the timeframe. */
   openLink?: boolean;
   className?: string;
+  /** The host's own live price for this symbol (the Terminal: the one spot its chain shows too, T1-3). Given (even null),
+   *  the chart makes no live read of its own. */
+  live?: (Pick<LtpResponse, "ltp" | "timestamp" | "fetched_at">) | null;
 }
 
 export default function EmbeddedChartV2({
-  symbol, exchange = "NSE", levels, timeframe: given, onTimeframe, openLink = true, className = "h-64",
+  symbol, exchange = "NSE", levels, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive,
 }: EmbeddedChartV2Props) {
   const { user } = useAuth();
   const prefs = useChartPrefs(user?.id ?? null);
@@ -61,7 +65,8 @@ export default function EmbeddedChartV2({
   const last = data.candles[data.candles.length - 1];
   // As on the Chart tab: intraday while the market is not known to be closed; day only while its bar is forming.
   const liveOn = DAILY_OR_LONGER.has(timeframe) ? !!last?.forming : marketOpen !== false;
-  const live = useLiveLtp(liveOn && data.candles.length > 0, sym, exchange);
+  const ownLive = useLiveLtp(hostLive === undefined && liveOn && data.candles.length > 0, sym, exchange);
+  const live = hostLive === undefined ? ownLive : { ltp: liveOn ? hostLive : null };
   const emptyText = data.loading ? "Loading prices…" : data.error ? "" : data.empty ?? `No prices for ${sym} on this timeframe yet.`;
 
   return (

@@ -318,7 +318,7 @@ const daysLeftOf = (facts: ContractFacts | undefined): string | null => (known(f
 
 /** FNO-4: what the F&O PAPER positions are (for Add / Adjust) and which legs were placed together (one basket, one
  * structure). Read only; any failure reads as "nothing known", so the list is as before. */
-function useFnoPositions(list: TradeRecord[] | null | undefined, on: boolean) {
+export function useFnoPositions(list: TradeRecord[] | null | undefined, on: boolean) {
   const items = useMemo(() => (list ?? []).filter((p) => p.mode === "PAPER" && isFnoPosition(p)).map(positionItem), [list]);
   const key = items.map(itemKey).sort().join("|");
   const [facts, setFacts] = useState<ReadonlyMap<string, ContractFacts>>(new Map());
@@ -342,7 +342,7 @@ function groupExits(group: PositionGroup, actions: RowActions): boolean {
 
 /** `prices: false` (no broker session): no LTP or P&L columns at all - an entry-price row with nothing made up.
  * FNO-4: legs placed together show together under one line with their combined P&L; every leg keeps its own Exit. */
-function PositionList({ rows, byId, actions, prices = true, groups = [] }: {
+export function PositionList({ rows, byId, actions, prices = true, groups = [] }: {
   rows: HeldRow[]; byId: Map<number, TradeRecord>; actions: RowActions; prices?: boolean; groups?: PositionGroup[];
 }) {
   const { grouped, single } = groupRows(rows, groups);

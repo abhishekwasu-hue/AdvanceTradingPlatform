@@ -10,6 +10,7 @@ import { fnoApi, type FnoApi, type OrderPreview, type OrderResult, type Side } f
 import {
   MAX_LOTS, ORDER_TYPES, PRACTICE_TEXT, PRACTICE_TITLE, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
   draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
+  PRODUCT_UNSET_TEXT,
 } from "./ticketModel";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
 import { riskLine, structureOf, ticketPayoffSentence, type RiskBudget, type RiskLine } from "./insights";
@@ -214,7 +215,7 @@ export function PracticeFrame({ className }: { className?: string } = {}) {
 const sentence = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** The ticket's fields, the confirm step and the buttons (no state, no hooks). */
-export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true }: {
+export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false }: {
   target: TicketTarget; draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string;
   /** Settings part C: the user's own ticket defaults, to mark the fields that still show them. */
   defaults?: DraftDefaults;
@@ -226,6 +227,9 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
   /** Trading Terminal T1: false where the B / S keys are not listened to (the Terminal's order panel). */
   keysHint?: boolean;
   onDraft: (patch: Partial<Draft>) => void; onReview: () => void; onPlace: () => void; onBack: () => void; onClose: () => void;
+  /** Owner fix T1-2 (Terminal, phone): the main action (Review / Place) stays in view, just above the bottom navigation
+   *  (4rem + its border + the home-indicator inset); from md it sits at the end of the panel as before. */
+  stickyActions?: boolean;
 }) {
   const n = needs(draft.orderType);
   const ids = { lots: `${idPrefix}-lots`, price: `${idPrefix}-price`, trigger: `${idPrefix}-trigger`, stop: `${idPrefix}-stop` };
@@ -234,7 +238,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
   const sideTone = draft.side === "BUY" ? "bg-up text-on-brand" : "bg-down text-on-brand";
   return (
     <>
-      <div className="min-h-0 flex-1 space-y-space-3 overflow-y-auto px-space-4 py-space-3" data-ticket-body>
+      <div className={cx("min-h-0 flex-1 space-y-space-3 overflow-y-auto px-space-4 py-space-3", stickyActions && "pb-24 md:pb-space-3")} data-ticket-body>
         {step.kind === "edit" && (
           <>
             <Segmented label="Side" testId="side" value={draft.side} onChange={(v) => onDraft({ side: v })}
@@ -260,6 +264,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             </div>
             <Segmented label="Order type" testId="order-type" value={draft.orderType} onChange={(v) => onDraft({ orderType: v })} options={ORDER_TYPES} />
             <Segmented label="Product" testId="product" value={draft.product} onChange={(v) => onDraft({ product: v })} options={PRODUCTS} />
+            {defaults?.product === undefined && <p className="text-t12 text-fg-muted" data-ticket="product-unset">{PRODUCT_UNSET_TEXT}</p>}
             {(marks.orderType || marks.product) && (
               <p className="text-t12 text-fg-muted" data-from-defaults="type-product">
                 {sentence(fromDefaults.filter((w) => w !== "lots").join(" and "))} {FROM_DEFAULTS}. Tap to change.
@@ -311,7 +316,13 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
         {problem && <p role="alert" className="rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-ticket="problem">{problem}</p>}
       </div>
 
-      <div className="flex gap-space-2 border-t border-subtle px-space-4 py-space-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      <div data-ticket-actions={stickyActions ? "sticky" : undefined}
+        className={cx("flex gap-space-2 border-t border-subtle px-space-4 py-space-3",
+          stickyActions
+            // Phone: pinned just above the bottom navigation (the page scrolls the window, so "sticky" has no box to
+            // stick in); from md: sticky at the end of the panel.
+            ? "fixed inset-x-0 bottom-[calc(4rem+1px+env(safe-area-inset-bottom))] z-10 bg-surface-1 shadow-raised md:sticky md:inset-x-auto md:bottom-0 md:shadow-none md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+            : "pb-[calc(0.75rem+env(safe-area-inset-bottom))]")}>
         {step.kind === "edit" && (
           <button type="button" onClick={onReview} disabled={busy} data-ticket="review"
             className={cx("min-h-11 flex-1 rounded-control px-space-4 text-t15 font-semibold disabled:opacity-60", sideTone)}>

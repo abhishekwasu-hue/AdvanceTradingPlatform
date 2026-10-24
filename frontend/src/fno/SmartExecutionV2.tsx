@@ -5,12 +5,13 @@
  * - `SmartConfirmV2`: on the basket's confirm step, the order the legs go in (hedges first), how a large leg is split
  *   at the exchange's freeze limit, the margin (the broker's with the hedge benefit, or ATP's estimate - labelled) and
  *   the free balance after the order;
- * - `IncompleteV2`: when a later leg did not fill, the clear state with "Complete the rest" / "Close the filled legs";
+ * - `IncompleteV2`: when a later leg did not fill, the clear state with "Complete the leg(s)" / "Exit the filled leg(s)" (T1-4);
  * - `SettlementWarningsV2`: on Positions, stock F&O positions that may settle by delivery, with the value in rupees.
  */
 import { Layers, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { basketApi, type BasketApi, type CloseFilledResult, type SettlementView, type SmartView } from "./api";
+import { completeLabel, exitFilledLabel } from "./incompleteApi";
 import { moneyText, sideWord } from "./ticketModel";
 import { formatNumber } from "../ui/format";
 
@@ -76,8 +77,10 @@ export function SmartConfirmV2({ smart }: { smart: SmartView }) {
 }
 
 /** The incomplete state (TM-11): what filled, what did not, and the two choices - only on the user's tap. */
-export function IncompleteV2({ message, filledTradeIds, onCompleteRest, api = basketApi, onClosed }: {
+export function IncompleteV2({ message, filledTradeIds, pendingCount, onCompleteRest, api = basketApi, onClosed }: {
   message: string; filledTradeIds: number[]; onCompleteRest: () => void; api?: Pick<BasketApi, "closeFilled">;
+  /** The legs still to place (T1-4 wording: "Complete the leg" for one). */
+  pendingCount?: number;
   onClosed?: (r: CloseFilledResult) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -119,11 +122,11 @@ export function IncompleteV2({ message, filledTradeIds, onCompleteRest, api = ba
         <div className="flex flex-wrap gap-space-2">
           <button type="button" onClick={onCompleteRest} disabled={busy} data-smart="complete-rest"
             className="min-h-11 flex-1 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand disabled:opacity-50">
-            Complete the rest
+            {completeLabel(pendingCount ?? 2)}
           </button>
           <button type="button" onClick={() => { void closeFilled(); }} disabled={busy || filledTradeIds.length === 0} data-smart="close-filled"
             className="min-h-11 flex-1 rounded-control border border-border bg-surface-1 px-space-4 text-t14 font-semibold text-fg disabled:opacity-50">
-            {busy ? "Closing…" : "Close the filled legs"}
+            {busy ? "Closing…" : exitFilledLabel(filledTradeIds.length)}
           </button>
         </div>
       )}

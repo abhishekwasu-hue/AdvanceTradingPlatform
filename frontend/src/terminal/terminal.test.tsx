@@ -7,7 +7,20 @@ import {
   firstFree, forSave, layoutFor, layoutProblem, movePanel, nameProblem, openPanel, presetLayout, readPrefs, readingOrder, remove, rename,
   resetToPreset, resizePanel, saveAs, saveOver, switchTo, type Layout, type TerminalPrefs,
 } from "./layoutModel";
-import { BasketPanelBodyV2, OrdersPanelV2, PlaceholderPanelV2, chainProblem } from "./PanelsV2";
+import { BasketPanelBodyV2, ChainPanelV2, OrdersPanelV2, PlaceholderPanelV2, chainProblem, exitAllConfirmText, exitAllPlan, legFigures } from "./PanelsV2";
+import { chartLiveOf, pickSpot } from "./spot";
+import { SpreadBuilderV2, placementOrder, unhedgedSells } from "./SpreadBuilderV2";
+import embeddedSource from "../chart/EmbeddedChartV2.tsx?raw";
+import { TicketBody } from "../fno/OrderTicketV2";
+import { FALLBACK_PRODUCT, PRODUCT_UNSET_TEXT, newDraft } from "../fno/ticketModel";
+import { completeLabel, exitFilledLabel } from "../fno/incompleteApi";
+import type { ChainTrading } from "../fno/ChainTradingV2";
+import type { BasketLeg } from "../fno/basket";
+import type { PositionGroup } from "../fno/contracts";
+import type { ChainLeg, LiveChain } from "../optionChain/types";
+import { NO_STOP, stopText, type HeldRow } from "../trading/model";
+import { strategyDisplayName } from "../ui/strategyName";
+import { formatPrice, formatTimeIST } from "../ui/format";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { StatusBarV2 } from "./StatusBarV2";
 import { MASK, MASK_KEY, feedChip, marginNote, money, readMask, writeMask } from "./statusModel";
@@ -249,13 +262,16 @@ describe("status bar", () => {
 });
 
 describe("phone tabs", () => {
-  it("Chart · Chain · Order · Positions · Orders · Bots, one selected, 44 px targets", () => {
+  it("T1-1: the shared PageTabs - one scrolling row, one selected, 44 px targets, the tab ids the panel names", () => {
     expect(PHONE_TABS.map((t) => t.label)).toEqual(["Chart", "Chain", "Order", "Positions", "Orders", "Bots"]);
     const html = renderToStaticMarkup(<PhoneTabsV2 tab="order" onTab={() => undefined} counts={{ positions: 3 }} />);
     expect(html.match(/role="tab"/g)).toHaveLength(6);
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
-    expect(html).toMatch(/data-tab="order"[^>]*class="[^"]*bg-brand/);
-    expect(html.match(/min-h-11/g)).toHaveLength(6);
+    expect(html).toContain('data-level="primary"');                     // PageTabs, not the old 2 x 3 grid
+    expect(html).toContain('data-mode="scroll"');                       // one row, never wrapped (W0-1)
+    expect(html).not.toContain("grid-cols-3");
+    expect(html).toMatch(/id="terminal-tab-order"[^>]*aria-controls="terminal-panel-order"|aria-controls="terminal-panel-order"[^>]*id="terminal-tab-order"/);
+    expect(html).toContain("data-terminal-tabs");
     expect(text(html)).toContain("Positions 3");
   });
 });
@@ -326,5 +342,132 @@ describe("navigation behind the `terminal` flag (TT-18)", () => {
   it("every panel has a label; ids match the server's allow-list order", () => {
     expect(PANEL_IDS).toEqual(["chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"]);
     for (const id of PANEL_IDS) expect(PANELS[id].label).toMatch(/^[A-Z]/);
+  });
+});
+
+// --- Owner fixes T1-2 .. T1-7 (24 Oct) ----------------------------------------------------------------------------------
+
+const leg = (o: Partial<ChainLeg> = {}): ChainLeg => ({ oi: null, oi_change: null, ltp: null, iv: null, volume: null, bid: null, ask: null, delta: null, gamma: null, theta: null, vega: null, ...o });
+const CHAIN: LiveChain = {
+  underlying: "NIFTY", expiry: "2026-10-27", fetched_at: "2026-10-24T09:00:00Z", market_open: true, data_as_of: "2026-10-24T09:00:00Z",
+  oi_change: { status: "ready", source: "broker", since: null },
+  summary: { spot: 24510, spot_source: "broker", futures: null, atm_strike: 24500, pcr_oi: null, max_pain: null, atm_iv: null, days_to_expiry: 3,
+    max_call_oi_strike: null, max_put_oi_strike: null, total_call_oi: 0, total_put_oi: 0 },
+  rows: [24400, 24500, 24600].map((k) => ({ strike: k,
+    call: leg({ oi: 1250000, oi_change: -50000, ltp: 120.5, iv: 13.2, delta: 0.52 }),
+    put: leg({ oi: k === 24600 ? null : 980000, oi_change: 25000, ltp: 98.05, iv: 14.1, delta: -0.48 }) })),
+};
+const TRADING = { enabled: true, held: new Set<string>(), onPickLeg: () => undefined } as unknown as ChainTrading;
+
+describe("owner fixes T1-2 .. T1-7", () => {
+  it("T1-2: the phone ticket's main action is sticky above the bottom navigation (44 px target)", () => {
+    const target = { underlying: "NIFTY", expiry: "2026-10-27", strike: 24500, right: "CE" as const, label: "NIFTY 27 OCT 24500 CE", lotSize: 75, ltp: 120, bid: 119.9, ask: 120.1 };
+    const draft = newDraft("BUY");
+    const html = renderToStaticMarkup(<TicketBody target={target} draft={draft} step={{ kind: "edit" }} busy={false} problem={null} idPrefix="t"
+      onDraft={() => undefined} onReview={() => undefined} onPlace={() => undefined} onBack={() => undefined} onClose={() => undefined} stickyActions />);
+    expect(html).toMatch(/data-ticket-actions="sticky"[^>]*class="[^"]*fixed inset-x-0 bottom-\[calc\(4rem\+1px\+env\(safe-area-inset-bottom\)\)\][^"]*md:sticky/);
+    expect(html).toMatch(/data-ticket-body[^>]*|class="[^"]*pb-24 md:pb-space-3[^"]*"[^>]*data-ticket-body/);
+    expect(html).toMatch(/data-ticket="review"[^>]*class="[^"]*min-h-11|class="[^"]*min-h-11[^"]*"[^>]*data-ticket="review"/);
+    expect(panelsSource).toContain("stickyActions");
+    const plain = renderToStaticMarkup(<TicketBody target={target} draft={draft} step={{ kind: "edit" }} busy={false} problem={null} idPrefix="u"
+      onDraft={() => undefined} onReview={() => undefined} onPlace={() => undefined} onBack={() => undefined} onClose={() => undefined} />);
+    expect(plain).not.toContain('data-ticket-actions="sticky"');                 // the chain's own ticket sheet is unchanged
+  });
+
+  it("T1-3: desktop shows OI, change in OI, IV, delta and LTP per side; a missing figure is \"–\", never 0", () => {
+    const out = renderToStaticMarkup(<MemoryRouter><ChainPanelV2 underlying="NIFTY" read={{ status: "ok", value: CHAIN }} trading={TRADING} rows={3} /></MemoryRouter>);
+    const t = text(out);
+    for (const h of ["OI", "Chg OI", "IV", "Delta", "Call LTP", "Strike", "Put LTP"]) expect(t).toContain(h);
+    expect(out).toContain('data-chain-view="full"');
+    expect(out).toContain('data-col="call-oi"');
+    expect(out).toContain('data-col="put-delta"');
+    expect(t).toContain("13.2%");
+    expect(t).toContain("0.52");
+    expect(legFigures(leg()).oi).toBe("–");
+    expect(Object.values(legFigures(leg())).every((v) => v === "–")).toBe(true);
+  });
+
+  it("T1-3: phone shows LTP + OI per side; tapping a strike opens the rest", () => {
+    const out = renderToStaticMarkup(<MemoryRouter><ChainPanelV2 underlying="NIFTY" read={{ status: "ok", value: CHAIN }} trading={TRADING} rows={3} compact /></MemoryRouter>);
+    expect(out).toContain('data-chain-view="compact"');
+    expect(out).not.toContain('data-col="call-iv"');
+    expect(out).toContain('data-col="call-oi"');
+    expect(out).toMatch(/data-expand="24500"/);
+    expect(out).toMatch(/aria-expanded="false"/);
+    expect(text(out)).toContain("Tap a strike for change in OI, IV and delta.");
+  });
+
+  it("T1-3: the chain's spot is the chart's spot - one read, one time, shown once", () => {
+    const tick = { symbol: "NIFTY 50", exchange: "NSE", ltp: 24533.4, ts: "2026-10-24T09:01:00Z" };
+    const ltp = { ltp: 24520, timestamp: "2026-10-24T09:00:30Z", fetched_at: "2026-10-24T09:00:31Z" };
+    expect(pickSpot(tick, ltp, CHAIN)).toEqual({ ltp: 24533.4, at: tick.ts, source: "tick" });   // the hub's tick first
+    expect(pickSpot(undefined, ltp, CHAIN)).toEqual({ ltp: 24520, at: ltp.timestamp, source: "ltp" });
+    expect(pickSpot(undefined, null, CHAIN)).toEqual({ ltp: 24510, at: CHAIN.data_as_of, source: "chain" });
+    const spot = pickSpot(tick, ltp, CHAIN);
+    expect(chartLiveOf(spot)).toEqual({ ltp: 24533.4, timestamp: tick.ts, fetched_at: tick.ts });  // the chart gets the same value
+    expect(chartLiveOf(pickSpot(undefined, null, CHAIN))).toBeNull();                             // the chain's own spot never moves the chart
+    const out = text(renderToStaticMarkup(<MemoryRouter><ChainPanelV2 underlying="NIFTY" read={{ status: "ok", value: CHAIN }} trading={TRADING} spot={spot} /></MemoryRouter>));
+    expect(out).toContain(`spot ${formatPrice(24533.4)} (as of ${formatTimeIST(tick.ts)})`);
+    expect(out.match(/as of/g)).toHaveLength(1);
+    expect(pageSource).toMatch(/useTerminalSpot\(/);
+    expect(pageSource).toMatch(/chartLiveOf\(spot\)/);
+  });
+
+  it("T1-4: the spread builder places the hedge (buy) first, then the sell; flags a sell with no hedge", () => {
+    const legs = [
+      { id: "a", underlying: "NIFTY", expiry: "2026-10-27", strike: 24500, right: "PE" as const, side: "SELL" as const, lots: 1, price: 98, label: null, stopLoss: null },
+      { id: "b", underlying: "NIFTY", expiry: "2026-10-27", strike: 24300, right: "PE" as const, side: "BUY" as const, lots: 1, price: 40, label: null, stopLoss: null },
+    ] as unknown as BasketLeg[];
+    expect(placementOrder(legs).map((x) => `${x.role}:${x.leg.strike}`)).toEqual(["hedge:24300", "sell:24500"]);
+    expect(unhedgedSells(legs)).toEqual([]);
+    expect(unhedgedSells([legs[0]])).toEqual([24500]);
+    const out = renderToStaticMarkup(<SpreadBuilderV2 underlying="NIFTY" legs={legs} spot={24510} onOpen={() => undefined} api={{ evaluate: async () => ({ ok: false, errors: [] }) }} />);
+    const t = text(out);
+    expect(t).toMatch(/1\. Hedge · Buy 24,300 PE.*2\. Sell · Sell 24,500 PE/);
+    for (const f of ["Net premium", "Max loss", "Breakeven", "Margin with the hedge"]) expect(t).toContain(f);
+    expect(t).toContain("the hedge (buy) first, then the sell. On exit the sold leg closes first, then the hedge.");
+    expect(t).toContain('"Complete the leg" or "Exit the filled leg"');
+    const naked = text(renderToStaticMarkup(<SpreadBuilderV2 underlying="NIFTY" legs={[legs[0]]} spot={24510} api={{ evaluate: async () => ({ ok: false, errors: [] }) }} />));
+    expect(naked).toContain("has no hedge: its loss has no limit");
+    expect(PANELS.basket.label).toBe("Spread builder");
+  });
+
+  it("T1-4: a broken leg is an alert on the page itself with the owner's two choices", () => {
+    expect(completeLabel(1)).toBe("Complete the leg");
+    expect(exitFilledLabel(1)).toBe("Exit the filled leg");
+    expect(completeLabel(2)).toBe("Complete the legs");
+    expect(pageSource).toContain("<IncompleteOrdersV2 />");                    // above every panel and tab
+  });
+
+  it("T1-5: the product starts from his trading defaults; MIS only when none is saved, and then said", () => {
+    expect(newDraft("BUY", { product: "NRML" }).product).toBe("NRML");
+    expect(newDraft("BUY").product).toBe(FALLBACK_PRODUCT);
+    expect(PRODUCT_UNSET_TEXT).toMatch(/No product saved in My trading defaults/);
+    expect(pageSource).toMatch(/ticketPrefill\(useTradingDefaults/);
+  });
+
+  it("T1-6: plain words - \"Manual trade\", \"no stop\" (never the one-tick placeholder)", () => {
+    expect(strategyDisplayName("manual_fno")).toBe("Manual trade");
+    expect(strategyDisplayName("manual")).toBe("Manual trade");
+    expect(stopText(null)).toBe(NO_STOP);
+    expect(stopText(0.05, true)).toBe(NO_STOP);
+    expect(stopText(0.05)).toBe(formatPrice(0.05));
+    expect(stopText(85.5, true)).toBe(formatPrice(85.5));
+  });
+
+  it("T1-6: Exit all closes groups (sold legs first, on the server), then sold singles, then bought; P&L on every card", () => {
+    const row = (id: number, side: "Buy" | "Sell") => ({ id, side, pnl: 10 }) as unknown as HeldRow;
+    const plan = exitAllPlan([row(1, "Buy"), row(2, "Sell"), row(3, "Sell"), row(4, "Buy")], [{ key: "g", kind: "basket", trade_ids: [3, 4], hedge_ids: [4] } as unknown as PositionGroup]);
+    expect(plan.groups).toEqual([3]);
+    expect(plan.sells).toEqual([2]);
+    expect(plan.buys).toEqual([1]);
+    expect(exitAllConfirmText(4)).toBe("Exit all 4 open positions at the current price? Sold legs close first, then the legs that protect them.");
+    expect(panelsSource).toMatch(/<PositionList rows=\{rows\} byId=\{byId\} actions=\{actions\} prices /);
+    expect(panelsSource).not.toMatch(/data-terminal="exit-all"[^>]*disabled/);   // never disabled (ADR-0004)
+  });
+
+  it("T1-7: the terminal chart's timeframe row is the shared TimeframeTabs", () => {
+    expect(embeddedSource).toContain("<TimeframeTabs");
+    expect(panelsSource).toContain("<EmbeddedChartV2");
   });
 });

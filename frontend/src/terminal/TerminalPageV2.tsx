@@ -23,9 +23,13 @@ import {
   type Layout, type PanelId, type PanelPlace, type PhoneTab, type TerminalPrefs,
 } from "./layoutModel";
 import {
-  BasketPanelBodyV2, ChainPanelV2, ChartPanelV2, OrderPanelV2, OrdersPanelV2, PlaceholderPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
+  ChainPanelV2, ChartPanelV2, OrderPanelV2, OrdersPanelV2, PlaceholderPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
 } from "./PanelsV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
+import { chartLiveOf, useTerminalSpot } from "./spot";
+import { SpreadBuilderV2 } from "./SpreadBuilderV2";
+import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
+import { ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { StatusBarV2 } from "./StatusBarV2";
 import { TerminalGridV2 } from "./TerminalGridV2";
 import { readMask, writeMask } from "./statusModel";
@@ -132,9 +136,18 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
   const [statusL] = usePolled(terminal.status, () => STATUS_MS, signedIn);
   const [positionsL, reloadPositions] = usePolled(terminal.positions, () => LIST_MS, signedIn);
   const [ordersL, reloadOrders] = usePolled(terminal.orders, () => LIST_MS, signedIn);
+  // T1-6: P&L on every position card - the same live-price read as My trades (portfolio exposure).
+  const positionsShown = wants("positions", "positions");
+  const loadExposure = useCallback(() => api.portfolioExposure(true), []);
+  const [exposureL, reloadExposure] = usePolled(loadExposure, () => LIST_MS, signedIn && positionsShown);
   const loadChain = useCallback(() => api.optionChainLive(underlying), [underlying]);
   const [chainL] = usePolled<LiveChain>(loadChain, () => CHAIN_MS, signedIn && chainWanted);
   const live = dataOf(chainL) ?? null;
+  // T1-3: one spot for the chain and the chart (the same read, the same time).
+  const spotSymbol = spotSymbolOf(underlying);
+  // T1-5: the product of the spread builder's numbers from his own trading defaults.
+  const savedProduct = ticketPrefill(useTradingDefaults(features.on("ui_v2"))).product;
+  const spot = useTerminalSpot({ symbol: spotSymbol, hub: features.on("data_hub"), enabled: signedIn, chain: live });
   const [columns, setColumns] = useState<ColumnPrefs>(COLUMNS_OFF);
   const orderPanelShown = narrow || openIds.has("order");
   const trading = useChainTrading({
@@ -142,7 +155,7 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
     onTicket: orderPanelShown ? (t) => { setTicket(t); if (narrow) setTab("order"); } : undefined,
   });
   const legs = useBasket();
-  const afterOrder = () => { reloadPositions(); reloadOrders(); };
+  const afterOrder = () => { reloadPositions(); reloadOrders(); reloadExposure(); };
   const ticketState = useTerminalTicket(ticket, live && ticket && ticket.target.expiry === live.expiry ? live.rows : null, afterOrder);
 
   // A new underlying starts a new order: the panel never keeps a contract of another underlying.
@@ -162,13 +175,16 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
     switch (id) {
       case "chart-1": case "chart-2": case "chart-3": case "chart-4": {
         const p = place ?? working.panels.find((x) => x.id === id) ?? { id, x: 0, y: 0, w: 6, h: 10, open: true };
-        return <ChartPanelV2 symbol={chartSymbol(p)} onSymbol={narrow ? undefined : (s) => setChartSymbol(id, s)} />;
+        const sym = chartSymbol(p);
+        return <ChartPanelV2 symbol={sym} onSymbol={narrow ? undefined : (s) => setChartSymbol(id, s)}
+          live={sym.toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot) : undefined} />;
       }
-      case "chain": return <ChainPanelV2 underlying={underlying} read={asRead(chainL)} trading={trading} rows={narrow ? 5 : 6} />;
+      case "chain": return <ChainPanelV2 underlying={underlying} read={asRead(chainL)} trading={trading} rows={narrow ? 5 : 6} spot={spot} compact={narrow} />;
       case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} />;
-      case "positions": return <PositionsPanelV2 read={asRead(positionsL)} canTrade={canTrade} exitNowOn={exitNowOn} onChanged={afterOrder} />;
+      case "positions": return <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}
+        fnoOn={features.on("paper_account")} onChanged={afterOrder} />;
       case "orders": return <OrdersPanelV2 read={asRead(ordersL)} terminal={terminal} />;
-      case "basket": return <BasketPanelBodyV2 underlying={underlying} legs={legs} onOpen={trading.openBasket} />;
+      case "basket": return <SpreadBuilderV2 underlying={underlying} legs={legs} spot={spot?.ltp ?? null} product={savedProduct} onOpen={trading.openBasket} />;
       case "bots": return <PlaceholderPanelV2 kind="bots" />;
       case "payoff": return <PlaceholderPanelV2 kind="payoff" />;
       default: return null;
@@ -268,16 +284,20 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
 
       {L.note && <NoteV2 kind={L.note.kind} testId="terminal-layout">{L.note.text}</NoteV2>}
 
+      {/* T1-4: a multi-leg order that stopped half way shows at once, above every panel and tab, with "Complete the
+          leg" / "Exit the filled leg" - never a silent naked short. Nothing here places or closes by itself. */}
+      {signedIn && features.on("smart_execution") && <div data-terminal="incomplete"><IncompleteOrdersV2 /></div>}
+
       {narrow ? (
         <div className="space-y-space-3" data-tour="terminal-panels">
           <PhoneTabsV2 tab={tab} onTab={setTab} counts={{ positions: dataOf(positionsL)?.length ?? 0 }} />
-          <section id="terminal-tab-panel" role="tabpanel" aria-labelledby={`terminal-tab-${tab}`} data-phone-panel={tab}
+          <section id={`terminal-panel-${tab}`} role="tabpanel" aria-labelledby={`terminal-tab-${tab}`} data-phone-panel={tab}
             className="rounded-panel border border-subtle bg-surface-1 p-space-3">
             {tab === "chart" && <div className="h-[22rem]">{panel("chart-1")}</div>}
             {tab === "chain" && (
               <div className="space-y-space-3">
                 {panel("chain")}
-                {trading.enabled && <BasketPanelBodyV2 underlying={underlying} legs={legs} onOpen={trading.openBasket} />}
+                {trading.enabled && <SpreadBuilderV2 underlying={underlying} legs={legs} spot={spot?.ltp ?? null} product={savedProduct} onOpen={trading.openBasket} />}
               </div>
             )}
             {tab === "order" && panel("order")}

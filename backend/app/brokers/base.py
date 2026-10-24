@@ -32,8 +32,9 @@ class BrokerCapabilities:
     stop_limit: bool = True                  # SL (stop-loss limit) accepted
     modify_orders: bool = True               # modify_order implemented (else cancel + re-place)
     cancel_orders: bool = True
-    # Part 7 / TM-3: False where the broker refuses MARKET orders for API orders; the smart execution then sends a
-    # marketable limit with the user's own protection band (exits too - never blocked, ADR-0004).
+    # TM-3: the broker takes a MARKET order from an API / algo client. False (Kotak Neo: "market orders are not allowed
+    # for retail algo trading") = a MARKET order goes as a marketable LIMIT a protection band past the reference price
+    # (app/execution/marketable_limit.py), the same transform in PAPER and LIVE; exits are never blocked (ADR-0004).
     market_orders_allowed: bool = True
 
 

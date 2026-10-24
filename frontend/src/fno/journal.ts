@@ -60,7 +60,7 @@ const qty = (v: number) => formatNumber(v, Number.isInteger(v) ? 0 : 2);
 export function legLine(l: DraftLeg): string {
   const lots = l.lot_size && l.lot_size > 0 && l.quantity % l.lot_size === 0 ? ` (${qty(l.quantity / l.lot_size)} lot${l.quantity / l.lot_size === 1 ? "" : "s"})` : "";
   const out = l.exit_price === null ? "" : ` · out ${formatPrice(l.exit_price)}`;
-  const pnl = l.pnl === null ? "" : ` · ${formatSignedINR(l.pnl)}`;
+  const pnl = l.pnl === null ? "" : ` · ${formatSignedINR(l.pnl, { paise: true })}`;
   return `${l.side === "short" ? "Short" : "Long"} ${l.symbol} · ${qty(l.quantity)} units${lots} · in ${formatPrice(l.entry_price)}${out}${pnl}`;
 }
 

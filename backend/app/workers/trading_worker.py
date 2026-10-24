@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.brokers.base import BrokerInterface
 from app.alerts.dispatcher import dispatch_pending
-from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
+from app.brokers.rate_budget import RateBudget, RateLimitedBroker, daily_budget_for, limits_for
 from app.platform import phase0_lock
 from app.execution.ops_throttle import OpsThrottle
 from app.compliance.static_ip import live_entry_problem
@@ -854,8 +854,10 @@ class TradingWorker:
         user = await self._acting_user(session, tenant_id, [])
         if user is None:
             return None
+        from app.brokers.gates import market_data_open
         for account in await list_accounts(session, tenant_id):
-            if account.status == "ACTIVE":
+            # Part 1B: read-only use is a price read; a broker whose market-data gate is closed (Kotak Neo) is skipped.
+            if account.status == "ACTIVE" and market_data_open(account.broker_name):
                 broker = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
                 if broker is not None:
                     return broker
@@ -1249,6 +1251,15 @@ class TradingWorker:
             outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user_id, families=monitored,
                                                     exit_approval=exit_approval, now=now)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
+        # SE-7 (flag smart_execution): incomplete multi-leg orders - his "if I do not answer" rule at the deadline, and the
+        # filled legs he (or his rule) chose to close. An exit: before every entry gate below, never blocked (ADR-0004).
+        try:
+            from app.execution import incomplete_structures
+            report.positions_closed += await incomplete_structures.run_exits(session, tenant_id, market_data.get_ltp, broker=exit_broker,
+                                                                             user_id=user_id, now=now)
+        except Exception as exc:  # noqa: BLE001 - one bad group never ends the exits; retried next cycle
+            logger.error("Tenant %s: incomplete multi-leg orders failed: %s", tenant_id, exc)
+            await session.rollback()
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
         # Phase T: checked per account, against that account's own order book.
         if tenant_row is not None:
@@ -1278,6 +1289,13 @@ class TradingWorker:
                 dep.last_error = WAITING_FOR_CONFIRMED_DATA
             await session.commit()
             return
+        # SE-7: "Complete the rest" he tapped on an incomplete multi-leg order - an entry, so after the entry gates above
+        # and through every entry refusal again; only the worker sends an entry order (Phase 0 freeze).
+        try:
+            await self._complete_rests(session, tenant_id, market_data, adapters, now)
+        except Exception as exc:  # noqa: BLE001 - never stops the cycle
+            logger.error("Tenant %s: completing incomplete multi-leg orders failed: %s", tenant_id, exc)
+            await session.rollback()
         active = [d for d in deployments if d.status == DeploymentStatus.ACTIVE.value]
         # Round-robin start so a tenant whose turn ran out of time last cycle resumes where it
         # stopped rather than re-evaluating the same first few deployments forever.
@@ -1785,6 +1803,26 @@ class TradingWorker:
         logger.info("Deployment %s %s -> executed=%s", dep.id, structure_kind.value, result.executed)
         return result.executed
 
+    async def _complete_rests(self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,
+                              adapters: Dict[str, BrokerInterface], now: datetime) -> None:
+        """SE-7: each incomplete order whose holder tapped "Complete the rest": his own user, the broker of the order's
+        deployment (LIVE; the same checks as a new entry), the engine again (app/execution/incomplete_structures.py)."""
+        from app.execution import incomplete_structures
+        for group_id, legs in (await incomplete_structures.pending_completions(session, tenant_id)).items():
+            block = incomplete_structures.block_of(legs[0]) or {}
+            holder = await session.get(User, block.get("user_id")) if block.get("user_id") else None
+            if holder is None or holder.tenant_id != tenant_id or not holder.is_active:
+                continue
+            broker, refusal = None, None
+            if block.get("mode") == ExecutionMode.LIVE.value:
+                dep = await session.get(StrategyDeploymentRecord, block.get("deployment_id")) if block.get("deployment_id") else None
+                if dep is None or dep.tenant_id != tenant_id:
+                    refusal = "the deployment that placed it is gone"
+                else:
+                    broker, _, refusal = await self._live_broker_for(session, dep, adapters)
+            await incomplete_structures.complete_rest(session, holder, legs, broker=broker, price_lookup=market_data.get_ltp, now=now,
+                                                      refusal=refusal)
+
     async def _live_broker_for(self, session: AsyncSession, dep: StrategyDeploymentRecord, adapters: Dict[str, BrokerInterface]):
         """(broker adapter, account id, skip reason) for a deployment's entry. PAPER: no broker.
         LIVE: the adapter of the routed account, refused when the account is DISABLED, the
@@ -1924,7 +1962,9 @@ class TradingWorker:
         key = (tenant_id, budget_key)
         budget = self._budgets.get(key)
         if budget is None:
-            budget = self._budgets[key] = RateBudget(limits_for(budget_key.split("@")[0]))
+            broker = budget_key.split("@")[0]
+            # TM-27: a broker with per-day caps (Groww) also gets its per-day budget by call type.
+            budget = self._budgets[key] = RateBudget(limits_for(broker), daily=daily_budget_for(broker))
         return budget
 
     def _rate_limited(self, tenant_id: int, budget_key: str, adapter: BrokerInterface) -> BrokerInterface:

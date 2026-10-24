@@ -212,10 +212,7 @@ export default function ChartsPageV2(_props: PageProps) {
   return (
     <div ref={root} data-page="charts-v2" data-fullscreen={fs.on ? "on" : "off"}
       className={cx("flex flex-col gap-space-3", fs.on && "h-full bg-surface p-space-2 md:p-space-3", fs.fallback && "fixed inset-0 z-[60] overflow-y-auto")}>
-      {!fs.on && <PageIntro id="charts" lines={[
-        "See what a symbol is doing: candles, volume and the live price from your broker.",
-        "Search a symbol at the top left. Scroll the chart left for older history; press F for full screen.",
-      ]} />}
+      {!fs.on && <PageIntro id="charts" lines={["Search a symbol at the top left. Scroll the chart left for older history; press F for full screen."]} />}
 
       {!fs.on && <HubTabsView info={hubInfo} current={hubView ?? "chart"} carry={{ expiry: readCarry(params).expiry, timeframe }} />}
 

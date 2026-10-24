@@ -1251,6 +1251,24 @@ export interface BrokerCatalogEntry {
   /** What POST /renew takes each day: [] is one click (or no daily renewal); `request_token` is the address the
    * trader lands on after the broker's own login (method "login_code": Zerodha, Fyers). */
   renew_fields: BrokerCatalogField[];
+  /** Part 1B: whether real orders and live prices go through this broker ("closed" until the broker confirms in
+   * writing - Kotak Neo), with the plain sentence to show while one is closed. Older servers leave it out. */
+  gates?: BrokerGates;
+  /** Part 1B: new user-facing work; the server lists it only with ui_v2 on. */
+  requires_ui_v2?: boolean;
+  /** Part 1B: a short connect guide in plain words with the broker's official links, or null. */
+  guide?: BrokerGuide | null;
+}
+
+export interface BrokerGates {
+  live_orders: "open" | "closed";
+  live_prices: "open" | "closed";
+  note: string;
+}
+
+export interface BrokerGuide {
+  points: string[];
+  links: { label: string; url: string }[];
 }
 
 export type BrokerConnectionStatus = "connected" | "needs_login" | "not_working";
@@ -2050,6 +2068,8 @@ export interface FeatureFlag {
   status?: FlagStatus;
   status_label?: string;
   default_on?: boolean;
+  /** User-friendly pass item 7: why users do not see this feature on this server (e.g. its engine is not installed). */
+  unavailable_reason?: string;
 }
 
 export type FeatureFlags = Record<string, FeatureFlag>;

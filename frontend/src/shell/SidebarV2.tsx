@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import { api } from "../api/client";
 import Logo from "../components/Logo";
 import { PAGES, preloadPage } from "../routes";
 import type { Page } from "../components/Sidebar";
@@ -24,6 +26,25 @@ export function roleLabel(role: string): string {
   return words ? words[0].toUpperCase() + words.slice(1) : "";
 }
 
+/** Owner's user-friendly pass (23 Oct, item 3): the role under the name only in an organisation of more than one
+ * member - a trader on his own is not told he is the "Owner". Unknown (not read yet, or the read failed): hidden. */
+export function showRoleFor(members: number | null | undefined): boolean {
+  return typeof members === "number" && members > 1;
+}
+
+/** How many active members this organisation has (`GET /api/team/tenant` -> `members`); null until known. */
+export function useOrgMembers(userId: number | null): number | null {
+  const [members, setMembers] = useState<number | null>(null);
+  useEffect(() => {
+    setMembers(null);
+    if (userId === null) return;
+    let current = true;
+    api.getTenant().then((t) => { if (current) setMembers(typeof t?.members === "number" ? t.members : null); }, () => { if (current) setMembers(null); });
+    return () => { current = false; };
+  }, [userId]);
+  return members;
+}
+
 /** Two letters for the avatar, from the email's name part ("abhi.wasu@..." -> "AW"). */
 export function initialsOf(email: string): string {
   const name = email.split("@")[0] ?? "";
@@ -43,6 +64,8 @@ export interface SidebarV2Props {
   pinned?: readonly NavItemV2[];
   /** P2b: the broker's status dot on the Broker entry (null: none). */
   dot?: BrokerDot | null;
+  /** Active members of the organisation (null: not known): the role shows only above one (`showRoleFor`). */
+  members?: number | null;
 }
 
 function NavLink({ item, current, dot }: { item: NavItemV2; current: ShellKey | null; dot: BrokerDot | null }) {
@@ -64,7 +87,7 @@ function NavLink({ item, current, dot }: { item: NavItemV2; current: ShellKey | 
 /** Only routed pages have a chunk to preload (Charts, Ideas, Sectors & indices and the Settings sections are v2 pages). */
 const isPage = (key: ShellKey): boolean => (PAGES as string[]).includes(key) && key !== "charts";
 
-export function SidebarV2View({ sections, current, user, accountPath, pinned = NAV_PINNED_V2, dot = null }: SidebarV2Props) {
+export function SidebarV2View({ sections, current, user, accountPath, pinned = NAV_PINNED_V2, dot = null, members = null }: SidebarV2Props) {
   const entry = navEntryFor(current);
   const userItems = sections.filter((s) => s.id !== "admin").flatMap((s) => s.items);
   const adminItems = sections.filter((s) => s.id === "admin").flatMap((s) => s.items);
@@ -103,7 +126,7 @@ export function SidebarV2View({ sections, current, user, accountPath, pinned = N
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-t13 font-semibold text-fg">{user ? user.email : "Sign in"}</span>
-          {user && <span className="block truncate text-t12 text-fg-muted">{roleLabel(user.role)}</span>}
+          {user && showRoleFor(members) && <span className="block truncate text-t12 text-fg-muted" data-role-label>{roleLabel(user.role)}</span>}
         </span>
         <span className="shrink-0 rounded-pill border border-border px-space-2 py-px text-t12 font-medium text-fg-muted">Paper</span>
       </Link>
@@ -112,5 +135,6 @@ export function SidebarV2View({ sections, current, user, accountPath, pinned = N
 }
 
 export default function SidebarV2(props: SidebarV2Props) {
-  return <SidebarV2View {...props} />;
+  const members = useOrgMembers(props.user?.id ?? null);
+  return <SidebarV2View members={members} {...props} />;
 }

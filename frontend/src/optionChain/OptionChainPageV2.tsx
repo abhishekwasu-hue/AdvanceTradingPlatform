@@ -165,10 +165,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
 
   return (
     <div className="space-y-space-4" data-page="option-chain-v2">
-      <PageIntro id="option-chain" lines={[
-        "The option chain of the index or stock you pick, live from your broker.",
-        "The strike nearest the price is in the middle. Tap a row to see all its figures.",
-      ]} />
+      <PageIntro id="option-chain" lines={["Pick an index or stock: the strike nearest the price is in the middle. Tap a row to see all its figures."]} />
       <header className="flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between">
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Option chain</h1>
         <div data-tour="oc-pickers" className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2 md:flex md:gap-space-3">

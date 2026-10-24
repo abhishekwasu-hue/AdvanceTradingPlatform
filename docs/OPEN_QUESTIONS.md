@@ -1614,6 +1614,20 @@ collide on numbers.
 | PRV-5 | New signal-language tokens the reader needs. | Added as generic structure phrases to `app/signals/language.py` and its frontend mirror in a reviewed public PR (shared cases grow with them); when the reader emits them stays private. The package never brings its own text to a screen. | PRIVATE_PACKAGE section 9.3 | open |
 | PRV-6 | A new MAJOR reader version and running deployments. | The host's `ATP_PRIVATE_REF` moves only after the parity checks and a PAPER shadow; each deployment records the reader version it started with; the admin console lists the release note. | PRIVATE_PACKAGE section 11 | open |
 
+## User-friendly pass (UFP, 23 Oct)
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| UFP-1 | Tiles used the lakh shorthand ("₹1.25 L"). Keep it? | No: cards and tiles show whole rupees ("₹1,24,500", the owner's example); from one crore up a narrow tile still says "₹2.4 Cr" so the figure fits a phone. | `src/ui/format.ts` | open |
+| UFP-2 | Where exactly do paise stay? | Order ticket figures (margin, max loss, basket hedge, the compare table), a closed trade's P&L and charges, the "Closed at ..." fill message and the F&O journal drafts. Open-position rows, tiles and sentences are whole rupees. | `formatINR(v, { paise: true })`, guard in `src/ux/userFriendlyPass.test.tsx` | open |
+| UFP-3 | "Verify your email" during the paper phase: show the row at all? | Yes, as the owner asked: one quiet, dismissible-for-today row with "Resend link"; its text has no LIVE wording ("so messages about your account reach you"). | Dashboard Needs attention | open |
+| UFP-4 | What does a collapsed page intro leave on the page? | One small "About this page" button that opens it again; "Skip all tips" (Help) still hides intros completely. | `src/ui/PageIntro.tsx` | open |
+| UFP-5 | The role label for the platform operator in a one-person organisation, and while the member count is unknown | Hidden in both cases (the rule is the organisation size, and unknown fails to hidden). | `src/shell/SidebarV2.tsx` | open |
+| UFP-6 | "live prices" (real-time market data) in the paper phase | Kept: it describes the market feed, not LIVE trading. Only LIVE-trading counts and words are hidden. | v2 pages | open |
+| UFP-7 | The paper-phase word for paper counts | "practice" ("2 practice positions"), matching the ticket's "Practice mode" frame. | `openCaption` | open |
+| UFP-8 | Case of built-in strategy names | As the backend registry names them ("Opening Range Breakout"); custom names exactly as the user typed them. | `src/ui/strategyName.ts` | open |
+| UFP-9 | Analyze a chart without the engine: hide for the platform operator too? | Yes in the user view (nav, Coming soon); the admin flag list shows the flag's stored state and the reason (`unavailable_reason`). | `app/platform/controls.py` | open |
+
 ## Terminal master Part 9.4: chain history and the OI collector fix (TM94, 23 Oct)
 
 The chain history PR (branch `claude/terminal-chain-history`). Design: `docs/design/CHAIN_HISTORY.md`. Checked against
@@ -1783,6 +1797,12 @@ Branches `claude/terminal-paper-adapter` (PR A, TM-1) and `claude/terminal-smart
 | SE-6 | The first failure stops the run, even when later legs could be placed safely (e.g. a second short after the first short failed). | Stop: one clear state, and the user chooses. "Complete the rest" reuses the remaining-legs flow (a fresh check at the live price, hedges first again). | `smart_execution.run` | decided 23 Oct: default accepted (DECISIONS) |
 | SE-7 | The LIVE multi-leg executor (`execution/multileg.py`, wings first, auto-unwind) is not on the engine yet. | It moves in its own PR with a parity test (TM-1 rule: one path at a time). Under TM-11 its auto-unwind becomes "Close the filled legs" on the user's tap, which is a behaviour change, so that PR needs Abhi's word. | `execution/multileg.py` | decided 23 Oct: approved - the LIVE executor moves onto this engine in its own PR, with the user's "no answer in N minutes" setting (DECISIONS) |
 | SE-8 | Free balance in PAPER. | The practice balance (starting capital + net closed P&L), labelled "practice balance". Margin already blocked by open positions is not counted, and the page says so. With LIVE, the broker's `get_margins` through his own session. | `fno_basket.practice_balance` | decided 23 Oct: default accepted (DECISIONS) |
+| SE7-1 | Starting value of "minutes to answer" for an incomplete multi-leg order (the owner set the choice's default, not N). | 5 minutes, bounds 1-120 (prefs `smart_execution.answer_minutes`); the choice defaults to close the filled legs. The deadline and the choice are taken from his settings when the order stops (shown on the card). | `app/me/prefs.py` | provisional |
+| SE7-2 | While a structure is INCOMPLETE (or KEPT), its group exit rules are written for the whole structure and would read a false target / stop on a part of it. | They wait (`incomplete_structures.rules_paused`); every leg stays closable at once: Exit now, the emergency exit, the intraday square-off, "Close the filled legs" and his rule. | `trading/position_monitor.py` | provisional |
+| SE7-3 | Where "Complete the rest" runs. | In the trading worker (next cycle), never from the route: in Phase 0 no API route may reach an entry order (z10c rule 2). It passes every entry refusal again (kill switches, the Phase 0 lock, broker-uncertain, plans; not the approval gate - his tap is the approval). | `incomplete_structures.complete_rest` | provisional |
+| SE7-4 | "Close the filled legs" on LIVE legs from the page. | Recorded by the route and closed by the worker (the LIVE exit path in Phase 0, as for Exit now); PAPER legs close at once. | `incomplete_structures.answer` | provisional |
+| SE7-5 | Broker-uncertain on a stopped structure. | Only when something is really unknown (the broker did not answer a placement, or a cancel is not confirmed in the book); a clean REJECTED leaves LIVE entries open. The old path flagged every failure. | `multileg_smart.place_legs` | provisional |
+| SE7-6 | Not in this PR: freeze slicing of structure legs, the timer for the F&O basket's PAPER incomplete card, a stuck COMPLETING_SENT after a worker crash mid-send (the legs stay closable; reconciliation flags the books). | Next, one at a time. | - | open |
 
 
 ## Day-one fix 8 (README row 19)
@@ -1816,3 +1836,45 @@ built), DECISIONS (TM-7, TM94-3, RDY-6) and the #465 design (`docs/design/CHAIN_
 | TM943-4 | A backtest without an organisation (no login) used to price from the platform-wide rows. | It gets no recorded rows (the synthetic fallback or uploaded rows still work). | `chain_recorder.load_rows` | open |
 | TM943-5 | Migration chain: `3c5e7a9b1d24` and #465's `250d796123b7` both follow `e8a0c2d4f6b9`. | Whichever PR merges second re-chains its `down_revision` onto the other (one head; `alembic heads` must print one line). | `alembic/versions` | open |
 
+
+## Kotak Neo adapter (KN, 23 Oct)
+
+Branch `claude/broker-kotak-neo` (terminal master Part 1B). Design: `docs/design/BROKER_KOTAK_NEO.md`. No migration.
+Checked against CLAUDE.md (PAPER only, exits never blocked, AI places nothing, no secrets, public repo), DECISIONS (23 Oct:
+TM-3 / TM-5 / TM-6 accepted, TM-26 / TM-27 defaults) and the master order Part 1B.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| KN-1 | When may the Kotak Neo gates open? | Both stay closed in code (no flag): LIVE orders until the lawyer and Kotak Neo confirm the one-server-IP model in writing (TM-5); market data until the data-terms row is "confirmed" with Kotak's letter (TM-6). | `brokers/gates.py` | open (owner: lawyer / broker letter) |
+| KN-2 | A position the user opened himself in the Kotak app: may ATP close it? | No: while the LIVE-order gate is closed ATP opens no LIVE position at Kotak Neo and places nothing there; the user's own positions are shown read only and closed in the Kotak app. ADR-0004 is unaffected (no ATP position to exit). | `kotak_neo.py` | open |
+| KN-3 | F&O order quantity: units or lots? | Units (ATP's convention; the positions API reports units). Confirm on the broker's page before the LIVE gate opens. | `kotak_neo.build_order_payload` | open (verify) |
+| KN-4 | When does a Kotak Neo session end? | 06:00 IST default (the conservative one) with a TOTP login each day; the "is it alive" check (get-client-ip) catches an earlier end. | `token_lifecycle.TOKEN_DAILY_EXPIRY_IST` | open (verify) |
+| KN-5 | Rate limits. | 3 / s, burst 5, 120 / min (a third of "10 orders / s", which only a search extract of Kotak's FAQ states); quotes in batches of 50 (SDK docs, 25 / s). No per-day bucket (none published). | `rate_budget.py` | open (verify) |
+| KN-6 | The protection band for a MARKET order Kotak does not take (TM-3) when the user set none. | The platform's stated default for a protected limit, 0.5% (`router.DEFAULT_MARKET_PROTECTION_PCT`); the deployment's `market_protection_pct` when set. Re-pricing attempts and wait come from the caller (not wired to a LIVE path yet: the gate is closed). | `execution/marketable_limit.py` | open |
+| KN-7 | SL-M orders: Kotak's SDK accepts SL-M, but its page says market orders are not allowed for retail algo orders. | Treated as not allowed: a stop goes as SL with its limit a band past the trigger (`stop_market=False`). | `kotak_neo.capabilities` | open (verify) |
+| KN-8 | Which Kotak Neo plan is the user on (brokerage)? | No plan setting yet: PAPER uses the stated row only when the caller names the plan (`venue_plan`); otherwise the user's own brokerage setting. A per-broker plan setting comes with the Performance part (TM-26). | `broker_charges.py`, `paper_adapter.py` | open |
+| KN-9 | The feed URL: the SDK may learn a data-centre-specific URL from Kotak's config service. | ATP uses the SDK's production default; calling the config service is added when the data gate opens. | `market_data/kotak_feed.py` | open |
+| KN-10 | A PAPER deployment on a Kotak Neo account: where do its prices come from? | Not offered until the data gate opens; the organisation's other connection (e.g. Upstox) prices charts, chains and the read-only worker paths (`gates.data_sources`). A deployment bound to a Kotak account is a later step. | `workers/trading_worker.py` | open |
+| KN-11 | Scrip master lot / tick columns (`lLotSize`, `dTickSize`) and units. | Read defensively (tick in paise when >= 1, else as is; 0.05 when odd). Confirm on the first real file. | `kotak_neo.instrument_from_row` | open (verify) |
+
+## Groww adapter (GW, 23 Oct)
+
+Branch `claude/broker-groww` (terminal master Part 1B), stacked on `claude/broker-kotak-neo` (#473). Design:
+`docs/design/BROKER_GROWW.md`. No migration. Checked against CLAUDE.md (PAPER only, exits never blocked, AI places
+nothing, no secrets, public repo), DECISIONS (23 Oct: TM-3 / TM-5 / TM-6 accepted, TM-23 approved, TM-27 default) and
+the master order Part 1B.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| GW-1 | When may the Groww gates open? | Both stay closed in code (no flag): LIVE orders until the lawyer and Groww confirm the one-server-IP / static-IP model in writing (TM-5); market data until the data-terms row is "confirmed" with Groww's letter (TM-6). | `brokers/gates.py` | open (owner: lawyer / broker letter) |
+| GW-2 | When does a Groww token end? Docs (extract): "daily at 06:00", no time zone. | 06:00 IST; the user-details check catches an earlier end. | `token_lifecycle.TOKEN_DAILY_EXPIRY_IST` | open (verify) |
+| GW-3 | Does Groww still cap calls per day (3,000 orders / 5,000 live data / 3,000 non-trading)? Not found in any extract read 23 Oct; newer extracts show per-second / per-minute limits only. | Kept as the conservative per-day budget (TM-27), ATP using at most 90% of each, 10% of the orders kept for exits; remove or change when Groww's page is read. | `rate_budget.DAILY_CAPS` | open (verify) |
+| GW-4 | Does Groww take a plain MARKET / SL-M order from an API client? | Treated as not allowed (TM-3): a marketable limit with the user's band, a stop as SL with a band. | `groww.capabilities`, `in_sebi.json` | open (verify) |
+| GW-5 | Feed subscription limit: 1,000 (docs extract) or 3,000 per user (blog)? | 1,000 per connection (the lower). | `market_data/groww_feed.MAX_SUBSCRIPTIONS` | open (verify) |
+| GW-6 | History: the order says 3 months, the changelog says "from 2020"; the range per call is not published. | 90 days per daily request; intraday per the platform's existing chunking; nothing read while the data gate is closed. | `groww.daily_days_per_request` | open (verify) |
+| GW-7 | The per-day counters are per worker process; the API's chart reads have their own share; an exit's price checks would draw on the live-data cap. | Enough while the data gate is closed (no price read goes to Groww); with the data gate: prices for exits from the stream (TM-27), a Redis-shared daily counter. | `rate_budget.DailyBudget` | open |
+| GW-8 | LTP batch size and the order-reference length. | 50 symbols per LTP call; the reference cut to 20 characters. | `groww.LTP_BATCH`, `max_tag_length` | open (verify) |
+| GW-9 | The tile offers only the TOTP key; the approval key (secret + a daily approval on Groww) is in the adapter and the field map (Advanced) but not in the two-field connect form. | TOTP only in the tile (one click each morning, no daily approval step); add the approval way to the tile only if a user asks. | `catalog.py`, `field_specs.py` | open |
+| GW-10 | Which Groww plan is the user on (brokerage)? | One plan, `standard`, from Groww's help page; PAPER uses it only when the caller names it (`venue_plan`); otherwise the user's own brokerage setting. | `broker_charges.py` | open |
+| GW-11 | Holdings carry no price in Groww's answer (reference). | Holdings show quantity and average only; the mark comes from ATP's own data source. | `groww.get_holdings` | open (verify) |
+| GW-12 | Every response field name is from extracts of Groww's API reference (the SDK passes answers through). | Read defensively; confirm on the first real answers (the fixture is hand-made). | `groww.py` | open (verify) |

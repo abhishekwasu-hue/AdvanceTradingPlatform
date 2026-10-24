@@ -501,10 +501,28 @@ async def flag_listing(session: AsyncSession) -> Dict[str, Dict]:
     from app.platform.flag_catalog import info_for
 
     flags = await feature_flags(session)
+    missing = engine_missing_flags()
     for name, entry in flags.items():
         phase_default = deployment_phase.default_for(name)
         entry.update(info_for(name), default_on=(name not in DEFAULT_OFF_FLAGS) if phase_default is None else phase_default)
+        if name in missing:
+            entry["unavailable_reason"] = missing[name]          # the admin sees the real reason; users never do
     return flags
+
+
+# User-friendly pass item 7: a feature whose server-side engine is absent is unavailable to users, whatever its flag.
+# Analyze a chart needs the private analysis engine (app/chart_analyze/provider.py); without it the user nav hides the
+# page, a direct visit shows "Coming soon", and only the admin flag list says why.
+ENGINE_FLAGS = ("chart_analyze", "chart_analyze_strikes", "chart_analyze_share")
+ENGINE_MISSING_REASON = "The chart analysis engine (private package) is not installed on this server, so users do not see this feature."
+
+
+def engine_missing_flags() -> Dict[str, str]:
+    """{flag: reason} for each flag whose engine is not installed here (empty when it is)."""
+    from app.chart_analyze import provider as chart_engine
+    if chart_engine.load() is not None:
+        return {}
+    return {name: ENGINE_MISSING_REASON for name in ENGINE_FLAGS}
 
 
 def _entry_enabled(entry: Optional[Dict], tenant_id: Optional[int]) -> bool:
@@ -556,7 +574,11 @@ async def features_for_tenant(session: AsyncSession, tenant_id: Optional[int]) -
     # (same answer as flag_enabled per flag, which re-read and re-resolved all flags for each of them: N x N work on
     # every GET /api/system/features, which the UI v2 shell re-reads as the trader moves between pages).
     flags = await feature_flags(session)
-    return {name: _entry_enabled(flags.get(name), tenant_id) for name in FEATURE_FLAGS}
+    answer = {name: _entry_enabled(flags.get(name), tenant_id) for name in FEATURE_FLAGS}
+    for name in engine_missing_flags():                     # item 7: no engine, no feature for users
+        if name in answer:
+            answer[name] = False
+    return answer
 
 
 async def require_flag(session: AsyncSession, name: str, tenant_id: Optional[int]) -> None:

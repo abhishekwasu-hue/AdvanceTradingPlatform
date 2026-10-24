@@ -130,6 +130,7 @@ class PositionGreeksResponse(BaseModel):
 async def open_position_greeks(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> PositionGreeksResponse:
+    from app.brokers.gates import data_sources
     from app.brokers.token_lifecycle import build_adapter, token_is_usable
     from app.db.models import BrokerCredentialRecord
     from app.execution.contract_execution import ContractExecutionError
@@ -153,7 +154,7 @@ async def open_position_greeks(
         adapter = own.adapter() if own is not None else None
     else:
         stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
-        usable = [r for r in stored if token_is_usable(r)]
+        usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
         if rows and not usable:
             raise HTTPException(status_code=409, detail="Greeks need live premiums - no usable broker session (log in on the Broker page)")
         adapter = build_adapter(usable[0]) if usable else None

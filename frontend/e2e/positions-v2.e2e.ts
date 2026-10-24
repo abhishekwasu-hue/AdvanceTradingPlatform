@@ -102,9 +102,9 @@ test.describe("v2 positions 1440 desktop", () => {
     const tiles = page.locator("[data-block='summary']");
     await expect(tiles.locator("[data-tile='open']")).toContainText("3");
     await expect(tiles.locator("[data-tile='open']")).toContainText("2 paper · 1 live");
-    await expect(tiles.locator("[data-tile='open-pnl']")).toContainText("+₹3,720.00");
-    await expect(tiles.locator("[data-tile='booked']")).toContainText("+₹660.00");
-    await expect(tiles.locator("[data-tile='risk']")).toContainText("₹5,970.00");
+    await expect(tiles.locator("[data-tile='open-pnl']")).toContainText("+₹3,720");
+    await expect(tiles.locator("[data-tile='booked']")).toContainText("+₹660");
+    await expect(tiles.locator("[data-tile='risk']")).toContainText("₹5,970");
     await expect(tiles.locator("[data-tile='risk']")).toContainText("1.2% of capital");
 
     const rows = page.locator("[data-block='positions'] [data-position]");
@@ -113,14 +113,14 @@ test.describe("v2 positions 1440 desktop", () => {
     await expect(option).toContainText("Buy · 2 lots (150) · avg 121.80");
     await expect(option).toContainText("On NIFTY 50 (Long): Stop 24,700.00 · Target 24,950.00 · Premium floor 100.00");
     await expect(option).toContainText("142.60");
-    await expect(option).toContainText("+₹3,120.00");
+    await expect(option).toContainText("+₹3,120");
     await expect(option.getByRole("link", { name: "Chart" })).toHaveAttribute("href", "/charts/NIFTY%2050");
     const short = page.locator("[data-position='202']");
     await expect(short).toContainText("Short");
-    await expect(short).toContainText("+₹1,000.00");
+    await expect(short).toContainText("+₹1,000");
     const live = page.locator("[data-position='203']");
     await expect(live).toContainText("Live");
-    await expect(live).toContainText("−₹400.00");
+    await expect(live).toContainText("−₹400");
     await expect(live).toContainText("Close a live position in your broker's app.");
 
     const closed = page.locator("[data-block='history'] [data-closed]");
@@ -182,7 +182,7 @@ test.describe("v2 positions 1440 desktop", () => {
     const card = page.locator("[data-block='exits']");
     await expect(card).toContainText("You can still exit a paper position here.");
     await expect(card.locator("[data-position]")).toHaveCount(3);
-    await expect(card).not.toContainText("+₹3,120.00");                          // no live price, so no P&L
+    await expect(card).not.toContainText("+₹3,120");                          // no live price, so no P&L
     const exit = card.locator("[data-position='202']").getByTestId("exit-now");
     await expect(exit).toBeEnabled();
     page.once("dialog", (d) => void d.accept());
@@ -233,7 +233,7 @@ test.describe("v2 positions 1440 desktop", () => {
     const row = page.locator("[data-position='201']");
     await expect(row.locator("[data-col='ltp']")).toContainText("–");
     await expect(row.locator("[data-col='pnl']")).toContainText("–");
-    await expect(row).not.toContainText("+₹3,120.00");
+    await expect(row).not.toContainText("+₹3,120");
     await expect(page.locator("[data-tile='open-pnl']")).toContainText("–");
   });
 });

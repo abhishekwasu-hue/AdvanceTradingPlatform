@@ -165,7 +165,7 @@ Each step is one PR (or a small group), with before / after pictures and the U1-
 | M10 | AI acknowledgement gate | first Copilot use | `components/AiAcknowledgementGate` | - | USER |
 | M11 | Signal detail (drawer / pane), Library drawer | Signals | `signals/*` | - | USER |
 | M12 | Phone chart sheet (symbol, timeframe, indicators) | Charts | `chart/*` | - | USER |
-| M13 | Page intro ("What is this page?") and the "Verify your email" chip | every page | `ui/PageIntro`, top bar | - | USER |
+| M13 | Page intro ("What is this page?") and the "Verify your email" chip | every page | `ui/PageIntro`, top bar | - | USER **Fixed (user-friendly pass, 23 Oct): the chip is gone from both top bars (one Needs attention row with Resend + Settings › Account); the intro is one short line, collapsible to "About this page", remembered per page** |
 | O1-O7 | Old pages a user reaches with `ui_v2` OFF (today's default): old Dashboard, old Signals generator, old Option chain, old Positions, old Portfolio, old Risk management, the old sidebar with 28 items | same addresses | `pages/*Page.tsx` | old sidebar | retire after fix 3 |
 
 ---
@@ -781,7 +781,7 @@ Settings
 | M10 AI acknowledgement | U1 ✗ (a long legal text first) | one sentence + "Read more" [User] |
 | M11 Signal detail / Library drawer | U4 ✗ (single prices) | the signal formatter [User] |
 | M12 Phone chart sheet | ✓ | keep [User] |
-| M13 Page intro + "Verify your email" chip | U3 ✗ (the chip sits on every page above the content) | the chip → Needs attention on Today, once; intros stay [User] |
+| M13 Page intro + "Verify your email" chip | U3 ✗ (the chip sits on every page above the content) | the chip → Needs attention on Today, once; intros stay [User] - **Fixed 23 Oct (user-friendly pass items 1, 5)** |
 
 ---
 
@@ -1144,8 +1144,26 @@ section 1 (problems 2, 3, 7, 10) and the fix order.
 - **Phone**: wide tables on Orders, Team, Admin, Strategy builder's condition grid, the Copilot market memory; the
   option chain summary strip scrolls sideways.
 - **The "Verify your email" chip** sits on every page between the top bar and the content. Fix: one item in Needs
-  attention on Today, and a line in Settings › Account.
+  attention on Today, and a line in Settings › Account. **Fixed 23 Oct (user-friendly pass item 1).**
 - **Accessibility**: the sign-in fields' labels are not tied to the inputs (`<label>` without `htmlFor`); the Copilot
   gauges carry meaning by needle position only; chart drawing tools are icon-only (check labels).
 - **Colour**: v2 pages use colour for meaning only; old pages use orange for informational boxes (the Sample data box,
   the DPDP box) - amber must mean "needs attention".
+
+## User-friendly pass (owner, 23 Oct) - status
+
+The owner's six screenshot items plus three from the Analyze a chart screenshot, branch `claude/user-friendly-pass-1`
+(item 1 also shipped alone as `claude/ufp-verify-email`). All behind `ui_v2` unless noted.
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | "Verify your email" chip on every page (M13) | Fixed: no chip in either top bar; one dismissible Needs attention row with "Resend link"; Settings › Account card. |
+| 2 | "2 paper · 1 live" in the paper phase | Fixed: while `phase0_paper_only` is on, "2 practice positions", "every entry", "Booked so far"; no LIVE notice in the top bar or LIVE row in Needs attention. |
+| 3 | "Owner" under the name | Fixed: the sidebar shows the role only when the organisation has more than one member (`GET /api/team/tenant`). |
+| 4 | Money with paise (also "Numbers" above) | Fixed: `formatINR` whole rupees with Indian grouping by default; `{ paise: true }` only on tickets, fills, closed-trade P&L and charges; the lakh shorthand is gone from tiles. |
+| 5 | "What is this page?" box + repeated subtitle | Fixed: one short line, no box title, never repeating the subtitle (guard test); "Hide" collapses it to "About this page", remembered per page. |
+| 6 | "Orb nifty" (row 5 above: `orb_nifty`) | Fixed: `src/ui/strategyName.ts` - the Library name, the built-in registry names, else words ("Opening Range Breakout · NIFTY 50"); guard test against slugs. |
+| 7 | "Analysis engine not installed" shown to users | Fixed (server + both shells): without the private engine `/api/system/features` answers `chart_analyze*` off, so the nav hides it and its address shows "Coming soon"; the admin flag list states the reason. |
+| 8 | "... 5 MB. paste a screenshot" | Fixed: each drop-zone sentence starts with a capital. |
+| 9 | The chip still under the top bar | Same as item 1. |
+

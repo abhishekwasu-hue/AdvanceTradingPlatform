@@ -8,9 +8,10 @@ import type { GuardianStatus, LossStreakPause, LossStreakStatus, PaperRiskStatus
 import { formatINR, formatNumber } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { PageIntro } from "../ui/PageIntro";
+import { useLiveHidden } from "../settings/useLiveHidden";
 import { TermHint } from "../ui/TermHint";
 import {
-  LOSS_STREAK_CHOICES, drawdownOrderProblem, failedText, fieldProblem, guardianLine, lastResumeText, lossStreakNote, todayRisk,
+  LOSS_STREAK_CHOICES, drawdownOrderProblem, entriesWord, failedText, fieldProblem, guardianLine, lastResumeText, lossStreakNote, todayRisk,
 } from "./model";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, ShareBarV2, StateChipV2, TileV2, TilesV2 } from "./PartsV2";
 import { MarketEventsV2, OrgLimitsV2, RiskChecksV2 } from "./RiskPartsV2";
@@ -63,6 +64,8 @@ const paperRiskOrNone = () => api.paperRisk().catch((e: unknown) => {
  */
 export default function RiskV2(_props: PageProps = {}) {
   const { user } = useAuth();
+  const liveHidden = useLiveHidden();                       // item 2: "paper and live" only once LIVE is in play
+  const entries = entriesWord(liveHidden);
   const [config, setConfig] = useState<RiskConfig | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [drafts, setDrafts] = useState<Drafts>({});
@@ -128,7 +131,7 @@ export default function RiskV2(_props: PageProps = {}) {
       setConfig(saved);
       setDrafts(draftsOf(saved));
       setPauseDraft(saved.loss_streak_pause ?? "next_session");
-      setNotice({ kind: "done", text: "Saved. Every paper and live entry now uses these limits and guardian rules." });
+      setNotice({ kind: "done", text: `Saved. ${entries.charAt(0).toUpperCase()}${entries.slice(1)} now uses these limits and guardian rules.` });
       refreshGuardian();
     } catch (err) {
       setNotice({ kind: "warn", text: failedText("Your limits were not saved.", err) });
@@ -155,11 +158,8 @@ export default function RiskV2(_props: PageProps = {}) {
 
   return (
     <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="risk-v2">
-      <PageIntro id="risk" lines={[
-        "How much you can lose today, and the limits every paper and live entry is checked against before it is placed.",
-        "Change a limit and save it; exits are never blocked by these limits.",
-      ]} />
-      <PageTitleV2 title="Risk limits" subtitle="How much you can lose today, and the rules every paper and live entry is checked against." />
+      <PageIntro id="risk" lines={["Change a limit and save it; exits are never blocked by these limits."]} />
+      <PageTitleV2 title="Risk limits" subtitle={`How much you can lose today, and the rules ${entries} is checked against.`} />
 
       <CardV2 title="Today" testId="today" tour="risk-today">
         {!config && !loadFailed ? <LoadingRowsV2 rows={2} /> : loadFailed ? <LoadFailedV2 what="your limits" /> : (
@@ -221,13 +221,13 @@ export default function RiskV2(_props: PageProps = {}) {
         <form onSubmit={save} noValidate data-block="limits"
           className="rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card md:p-space-5">
           <h2 data-tour="risk-limits" className="text-t15 font-semibold text-fg">Your limits</h2>
-          <p className="mt-space-1 text-t13 text-fg-muted">Checked before every paper and live entry you place. A limit can never be set above the platform&apos;s ceiling.</p>
+          <p className="mt-space-1 text-t13 text-fg-muted">Checked before {entries} you place. A limit can never be set above the platform&apos;s ceiling.</p>
           <FieldGroup title="Size and daily limits" fields={LIMIT_FIELDS} drafts={drafts} touched={touched} ceilingOf={ceilingOf} minimumOf={minimumOf} problemOf={problemOf}
             onChange={(k, v) => setDrafts((d) => ({ ...d, [k]: v }))} onBlur={(k) => setTouched((t) => ({ ...t, [k]: true }))} />
           <PauseChoice value={pauseDraft} onChange={setPauseDraft} resumedText={pauseDraft === "until_resume" ? resumedText : null} />
           <FieldGroup title="Guardian rules" fields={GUARDIAN_FIELDS} drafts={drafts} touched={touched} ceilingOf={ceilingOf} minimumOf={minimumOf} problemOf={problemOf}
             onChange={(k, v) => setDrafts((d) => ({ ...d, [k]: v }))} onBlur={(k) => setTouched((t) => ({ ...t, [k]: true }))}
-            note="The risk guardian checks these on every entry, paper or live, whatever built the strategy." />
+            note={liveHidden ? "The risk guardian checks these on every entry, whatever built the strategy." : "The risk guardian checks these on every entry, paper or live, whatever built the strategy."} />
           <div className="mt-space-5">
             <button type="submit" disabled={saving} data-tour="risk-save" className={`${BUTTON_PRIMARY} w-full sm:w-auto`}>{saving ? "Saving…" : "Save limits"}</button>
           </div>

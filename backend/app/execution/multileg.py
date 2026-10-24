@@ -39,6 +39,8 @@ from app.execution import approval as approval_gate
 from app.execution.contract_execution import MARGIN_SAFETY, ContractExecutionError, contract_ltp, _is_upstox
 from app.execution.order_persistence import create_order, transition_order
 from app.execution.order_safety import wing_fill_complete
+from app.execution.multileg_smart import LegsRun, entry_specs, place_legs
+from app.execution.paper_adapter import PaperExecutionAdapter
 from app.execution.paper_broker import PaperBroker
 from app.execution.router import OrderRouter
 from app.execution.signal_execution import entry_refusals
@@ -72,6 +74,13 @@ class StructureResult:
     leg_group_id: Optional[str] = None
     metrics: Optional[StructureMetrics] = None
     system_failure: bool = False
+    # SE-7 (flag smart_execution): "COMPLETE" / "INCOMPLETE" / "NOTHING_PLACED" on the engine's path, None on the old one.
+    state: Optional[str] = None
+
+    @property
+    def keeps_entry_slot(self) -> bool:
+        """An INCOMPLETE structure opened real positions (its filled legs): the day's entry slot stays taken."""
+        return bool(self.trades)
 
 
 async def _reject_all(session: AsyncSession, orders: List[OrderRecord], reasons: List[str], *, failed: bool = False) -> None:
@@ -250,7 +259,41 @@ async def execute_structure(
     group_meta.update({"lots": lots, "quantity": quantity, "underlying_symbol": structure.underlying_symbol, "ratios": ratios})
     fills: Dict[str, Tuple[float, Optional[str]]] = {}
 
-    if execution_mode == ExecutionMode.PAPER:
+    from app.execution import smart_execution
+    from app.platform.controls import flag_enabled
+    smart = await flag_enabled(session, smart_execution.FLAG, user.tenant_id)
+    run: Optional[LegsRun] = None
+    if smart:
+        # SE-7: LIVE and PAPER on the smart-execution engine (one code path; PAPER through the PaperExecutionAdapter).
+        if execution_mode == ExecutionMode.LIVE:
+            breaker = breaker_for(broker.name)
+            if not breaker.allow_submission():
+                reasons = notes + [breaker.refusal_reason()]
+                await _reject_all(session, orders, reasons)
+                return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
+        settings = await smart_execution.settings_for(session, user)
+        venue: BrokerInterface
+        if execution_mode == ExecutionMode.LIVE:
+            venue = broker
+        else:
+            practice = PaperExecutionAdapter(PaperBroker())
+            for leg in structure.legs:
+                practice.mark(leg.contract.tradingsymbol, premiums[leg.contract.tradingsymbol], leg.contract.exchange)
+            venue = practice
+        run = await place_legs(venue, entry_specs(structure, quantity), strategy_id=strategy_id, tenant=tenant,
+                               band_pct=settings.protection_band_pct, prices=premiums, live=execution_mode == ExecutionMode.LIVE)
+        notes.extend(run.notes)
+        if execution_mode == ExecutionMode.PAPER:
+            notes.append("Paper fills at the quoted premiums")
+        for key, fill in run.fills.items():
+            fills[key] = (fill.price, fill.order_id if execution_mode == ExecutionMode.LIVE else None)
+        if run.state != smart_execution.COMPLETE:
+            return await _smart_not_complete(
+                session, user, tenant, orders, structure, run, notes, metrics, settings, fills=fills, premiums=premiums,
+                quantity=quantity, lot=lot, group_meta=group_meta, signal=signal, strategy_id=strategy_id, mode=mode,
+                deployment_id=deployment_id, account_id=account_id, stop_credit_pct=stop_credit_pct, started=started,
+                idempotency_key=idempotency_key, broker=broker, group_id=group_id)
+    elif execution_mode == ExecutionMode.PAPER:
         paper = PaperBroker()
         for leg in structure.legs:
             price = premiums[leg.contract.tradingsymbol]
@@ -274,40 +317,10 @@ async def execute_structure(
             return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics, system_failure=True)
 
     # Book every leg.
-    trades: List[TradeRecord] = []
-    latency_ms = int((time.perf_counter() - started) * 1000)
-    now = datetime.now(timezone.utc)
-    for order, leg in zip(orders, structure.legs):
-        fill_price, broker_order_id = fills[leg.contract.tradingsymbol]
-        expected = premiums[leg.contract.tradingsymbol]
-        # Per-leg levels are informational: the group exit is what closes the position.
-        stop = round(fill_price * (2.0 if leg.role == "SHORT" else 0.0), 2)
-        if metrics.debit and leg.role == "LONG":
-            stop = round(fill_price * (1 - min(stop_credit_pct if stop_credit_pct is not None else 50.0, 100.0) / 100.0), 2)
-        trade = Trade(symbol=leg.contract.tradingsymbol, strategy_id=strategy_id, direction=leg.contract.trade_direction,
-                      entry_time=now, entry_price=fill_price, quantity=quantity * leg.ratio, stop_loss=stop,
-                      expected_price=expected, entry_latency_ms=latency_ms)
-        if broker_order_id:
-            order.broker_order_id = broker_order_id
-        venue = broker.name if execution_mode == ExecutionMode.LIVE and broker is not None else "paper broker"
-        order = await transition_order(session, order, OrderStatus.SUBMITTED, detail=f"Submitted to {venue}")
-        order = await transition_order(session, order, OrderStatus.PENDING, detail="Awaiting fill")
-        order = await transition_order(session, order, OrderStatus.FILLED, detail=f"{'Paper' if venue == 'paper broker' else 'Live'} fill {broker_order_id or ''}".strip())
-        ORDERS.labels(mode=mode, status="FILLED").inc()
-        meta = {
-            "instrument_kind": "OPTION", "exchange": leg.contract.exchange, "instrument_key": leg.contract.instrument_key,
-            "lot_size": lot, "expiry": leg.contract.expiry, "option_position": "WRITE" if leg.role == "SHORT" else "BUY",
-            "underlying_symbol": structure.underlying_symbol, "underlying_direction": signal.direction.value,
-            "underlying_stop_loss": signal.stop_loss, "underlying_target1": signal.target1, "underlying_target2": signal.target2,
-            "leg_group_id": group_id, "leg_role": leg.role, "option_strategy": structure.strategy.value, "group_meta": json.dumps(group_meta),
-            "underlying_entry": signal.entry,   # Z6: read only by the journal (Greeks / IV at entry); not stored on the trade
-        }
-        record = await persist_trade(session, user, trade, mode=mode, broker_order_id=broker_order_id, deployment_id=deployment_id, contract_meta=meta,
-                                     account_id=account_id)
-        order.trade_id = record.id
-        order.reasons_json = json.dumps(notes)
-        await transition_order(session, order, OrderStatus.POSITION_OPEN, detail=f"Position opened (trade #{record.id}, group {group_id[:8]})")
-        trades.append(record)
+    trades = await _book_legs(session, user, orders, list(structure.legs), fills, premiums, structure=structure, metrics=metrics,
+                              quantity=quantity, lot=lot, group_id=group_id, group_meta=group_meta, signal=signal,
+                              strategy_id=strategy_id, mode=mode, broker=broker, deployment_id=deployment_id, account_id=account_id,
+                              stop_credit_pct=stop_credit_pct, notes=notes, started=started)
 
     await notify(
         session, user.tenant_id, NotificationType.ENTRY,
@@ -315,7 +328,129 @@ async def execute_structure(
         message="; ".join(notes)[:1000], severity=NotificationSeverity.INFO, user_id=user.id, related_trade_id=trades[0].id,
     )
     logger.info("Structure %s opened: %s legs, %s lots, group %s", structure.strategy.value, len(trades), lots, group_id[:8])
-    return StructureResult(executed=True, reasons=notes, orders=orders, trades=trades, leg_group_id=group_id, metrics=metrics)
+    return StructureResult(executed=True, reasons=notes, orders=orders, trades=trades, leg_group_id=group_id, metrics=metrics,
+                           state=smart_execution.COMPLETE if run is not None else None)
+
+
+def _leg_meta(leg, *, structure: ResolvedStructure, lot: int, signal: Signal, group_id: str, group_meta: Dict) -> Dict:
+    return {
+        "instrument_kind": "OPTION", "exchange": leg.contract.exchange, "instrument_key": leg.contract.instrument_key,
+        "lot_size": lot, "expiry": leg.contract.expiry, "option_position": "WRITE" if leg.role == "SHORT" else "BUY",
+        "underlying_symbol": structure.underlying_symbol, "underlying_direction": signal.direction.value,
+        "underlying_stop_loss": signal.stop_loss, "underlying_target1": signal.target1, "underlying_target2": signal.target2,
+        "leg_group_id": group_id, "leg_role": leg.role, "option_strategy": structure.strategy.value, "group_meta": json.dumps(group_meta),
+        "underlying_entry": signal.entry,   # Z6: read only by the journal (Greeks / IV at entry); not stored on the trade
+    }
+
+
+def leg_stop(fill_price: float, role: str, *, debit: bool, stop_credit_pct: Optional[float]) -> float:
+    """Per-leg levels are informational: the group exit is what closes the position."""
+    stop = round(fill_price * (2.0 if role == "SHORT" else 0.0), 2)
+    if debit and role == "LONG":
+        stop = round(fill_price * (1 - min(stop_credit_pct if stop_credit_pct is not None else 50.0, 100.0) / 100.0), 2)
+    return stop
+
+
+async def _book_legs(
+    session: AsyncSession, user: User, orders: List[OrderRecord], legs: List, fills: Dict[str, Tuple[float, Optional[str]]],
+    premiums: Dict[str, float], *, structure: ResolvedStructure, metrics: StructureMetrics, quantity: float, lot: int, group_id: str,
+    group_meta: Dict, signal: Signal, strategy_id: str, mode: str, broker: Optional[BrokerInterface], deployment_id: Optional[int],
+    account_id: Optional[int], stop_credit_pct: Optional[float], notes: List[str], started: float,
+    quantities: Optional[Dict[str, float]] = None,
+) -> List[TradeRecord]:
+    """Books every leg that has a fill (all of them on the old path; the filled ones of an INCOMPLETE run): its order
+    through SUBMITTED -> PENDING -> FILLED -> POSITION_OPEN and one TradeRecord in the group. `quantities`: the filled
+    quantity per leg where it differs from the order's (a partial fill on the engine's path)."""
+    trades: List[TradeRecord] = []
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    now = datetime.now(timezone.utc)
+    live = mode == ExecutionMode.LIVE.value
+    for order, leg in zip(orders, legs):
+        if leg.contract.tradingsymbol not in fills:
+            continue
+        fill_price, broker_order_id = fills[leg.contract.tradingsymbol]
+        expected = premiums[leg.contract.tradingsymbol]
+        stop = leg_stop(fill_price, leg.role, debit=bool(metrics.debit), stop_credit_pct=stop_credit_pct)
+        filled_qty = (quantities or {}).get(leg.contract.tradingsymbol, quantity * leg.ratio)
+        trade = Trade(symbol=leg.contract.tradingsymbol, strategy_id=strategy_id, direction=leg.contract.trade_direction,
+                      entry_time=now, entry_price=fill_price, quantity=filled_qty, stop_loss=stop,
+                      expected_price=expected, entry_latency_ms=latency_ms)
+        if broker_order_id:
+            order.broker_order_id = broker_order_id
+        venue = broker.name if live and broker is not None else "paper broker"
+        order = await transition_order(session, order, OrderStatus.SUBMITTED, detail=f"Submitted to {venue}")
+        order = await transition_order(session, order, OrderStatus.PENDING, detail="Awaiting fill")
+        order = await transition_order(session, order, OrderStatus.FILLED, detail=f"{'Paper' if venue == 'paper broker' else 'Live'} fill {broker_order_id or ''}".strip())
+        ORDERS.labels(mode=mode, status="FILLED").inc()
+        meta = _leg_meta(leg, structure=structure, lot=lot, signal=signal, group_id=group_id, group_meta=group_meta)
+        record = await persist_trade(session, user, trade, mode=mode, broker_order_id=broker_order_id, deployment_id=deployment_id, contract_meta=meta,
+                                     account_id=account_id)
+        order.trade_id = record.id
+        order.reasons_json = json.dumps(notes)
+        await transition_order(session, order, OrderStatus.POSITION_OPEN, detail=f"Position opened (trade #{record.id}, group {group_id[:8]})")
+        trades.append(record)
+    return trades
+
+
+async def _smart_not_complete(
+    session: AsyncSession, user: User, tenant: Optional[Tenant], orders: List[OrderRecord], structure: ResolvedStructure, run: LegsRun,
+    notes: List[str], metrics: StructureMetrics, settings, *, fills: Dict[str, Tuple[float, Optional[str]]], premiums: Dict[str, float],
+    quantity: float, lot: int, group_meta: Dict, signal: Signal, strategy_id: str, mode: str, deployment_id: Optional[int],
+    account_id: Optional[int], stop_credit_pct: Optional[float], started: float, idempotency_key: str, broker: Optional[BrokerInterface],
+    group_id: str,
+) -> StructureResult:
+    """SE-7 / TM-11: the engine stopped at a leg that did not fill. Nothing is undone by itself: the filled legs are booked
+    as the group's positions (INCOMPLETE, the user's two choices and his own "if I do not answer" setting), the legs not
+    filled end FAILED / REJECTED on the trail. Nothing filled at all: every order ends FAILED, as before."""
+    from app.execution import incomplete_structures, smart_execution
+    failure = run.failure or "a leg did not fill"
+    reasons = notes + [failure]
+    by_key = {leg.contract.tradingsymbol: (order, leg) for order, leg in zip(orders, structure.legs)}
+    if tenant is not None and run.uncertain:
+        await mark_broker_uncertain(session, tenant, f"structure FAILED half way: {run.uncertain}"[:500], user_id=user.id)
+        await session.commit()
+    if not run.fills:
+        await _reject_all(session, orders, reasons, failed=True)
+        await notify(session, user.tenant_id, NotificationType.SYSTEM_FAILURE, title=f"Structure failed: {structure.underlying_symbol}",
+                     message=f"Nothing was placed: {failure}"[:1000], severity=NotificationSeverity.CRITICAL, user_id=user.id,
+                     related_order_id=orders[0].id)
+        return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics, system_failure=True,
+                               state=smart_execution.NOTHING_PLACED)
+    leg_meta = {}
+    for spec in run.pending:
+        _, leg = by_key[spec.key]
+        leg_meta[spec.key] = _leg_meta(leg, structure=structure, lot=lot, signal=signal, group_id=group_id, group_meta={})
+        leg_meta[spec.key].pop("group_meta", None)
+        leg_meta[spec.key]["direction"] = leg.contract.trade_direction.value
+        expiry = leg_meta[spec.key].get("expiry")
+        leg_meta[spec.key]["expiry"] = expiry.isoformat() if hasattr(expiry, "isoformat") else expiry   # JSON on the row
+    block = incomplete_structures.new_block(
+        user_id=user.id, mode=mode, strategy_id=strategy_id, deployment_id=deployment_id, account_id=account_id,
+        idempotency_key=idempotency_key, pending=run.pending, leg_meta=leg_meta, failure=failure, settings=settings,
+        premiums={spec.key: premiums.get(spec.key) for spec in run.pending}, debit=bool(metrics.debit), stop_credit_pct=stop_credit_pct)
+    meta = dict(group_meta)
+    meta["incomplete"] = block
+    filled_orders = [by_key[k][0] for k in run.fills]
+    filled_legs = [by_key[k][1] for k in run.fills]
+    trades = await _book_legs(session, user, filled_orders, filled_legs, fills, premiums, structure=structure, metrics=metrics,
+                              quantity=quantity, lot=lot, group_id=group_id, group_meta=meta, signal=signal, strategy_id=strategy_id,
+                              mode=mode, broker=broker, deployment_id=deployment_id, account_id=account_id,
+                              stop_credit_pct=stop_credit_pct, notes=reasons, started=started,
+                              quantities={k: f.quantity for k, f in run.fills.items()})
+    for key, (order, leg) in by_key.items():
+        if key in run.fills:
+            continue
+        why = run.leg_reasons.get(key) or [failure]
+        order.reasons_json = json.dumps(notes + why)
+        failed = why[0] == failure
+        await transition_order(session, order, OrderStatus.FAILED if failed else OrderStatus.REJECTED, detail="; ".join(why)[:500])
+        ORDERS.labels(mode=order.mode, status=order.status).inc()
+    await session.commit()
+    await incomplete_structures.announce(session, trades, block, structure.underlying_symbol, user_id=user.id)
+    logger.warning("Structure %s INCOMPLETE: %s of %s legs filled, group %s (%s)", structure.strategy.value, len(trades),
+                   len(structure.legs), group_id[:8], failure)
+    return StructureResult(executed=False, reasons=reasons + [block["message"]], orders=orders, trades=trades, leg_group_id=group_id,
+                           metrics=metrics, state=smart_execution.INCOMPLETE)
 
 
 def _economics_note(metrics: StructureMetrics, lot: int) -> str:

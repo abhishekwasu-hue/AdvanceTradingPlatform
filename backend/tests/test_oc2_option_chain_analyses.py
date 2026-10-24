@@ -342,7 +342,7 @@ def test_no_analysis_text_holds_advice_or_buy_sell_words():
             assert not has_advice(line), (result["key"], line)
             assert line.isascii(), (result["key"], line)
     from app.option_chain import analyses_routes as R
-    for line in (R.NO_BROKER, R.UNAVAILABLE, R.NOT_OFFERED, R.NO_CHAIN, R.NO_HISTORY_BYOB, A.NO_HISTORY, A.HISTORY_OFF, A.BU_HISTORY_OFF,
+    for line in (R.NO_BROKER, R.UNAVAILABLE, R.NOT_OFFERED, R.NO_CHAIN, A.NO_HISTORY, A.HISTORY_OFF, A.BU_HISTORY_OFF,
                  A.UNREADABLE):
         assert advice_words(line) == [] and not has_advice(line), line
 
@@ -585,7 +585,7 @@ def test_a_member_reads_through_the_organisation_session_and_the_flag_is_per_org
     assert client.get(URL, headers=other_headers, params={"symbol": name}).status_code == 404
 
 
-def test_own_broker_tier_reads_no_shared_history(monkeypatch):
+def test_own_broker_tier_reads_no_shared_history_only_his_own(monkeypatch):
     name = _name()
     broker = _ChainBroker({name: OptionChain(underlying=name, expiry=EXPIRY, underlying_ltp=118.0, rows=CURRENT.rows)})
     used: List[int] = []
@@ -601,8 +601,9 @@ def test_own_broker_tier_reads_no_shared_history(monkeypatch):
                         datetime.now(UTC) - timedelta(minutes=10), me["tenant_id"])
         body = client.get(URL, headers=headers, params={"symbol": name}).json()
         assert body["state"] == "ok" and used == [me["tenant_id"]]
-        assert body["session"]["snapshots"] == 0 and "own-broker" in body["session"]["note"]
+        # B1: the collector's slot is not read; with none of his own reads yet the path "starts now" (no refusal)
+        assert body["session"]["snapshots"] == 0 and body["session"]["note"] is None
         build = {a["key"]: a for a in body["analyses"]}["build_up"]
-        assert build["state"] == "no_data" and build["sentences"] == [A.BU_HISTORY_OFF]       # the shared collector is not read
+        assert build["state"] == "no_data" and A.BU_HISTORY_OFF not in build["sentences"]
     finally:
         _set_flag("byob_data_tier", me["tenant_id"], on=False)

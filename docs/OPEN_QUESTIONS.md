@@ -173,3 +173,13 @@ Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-8) and docs/d
 | TT8-3 | Partial exit of a leg (N of M lots). | Not in this PR: it needs the trade-row split (TT-9 / TM-17 method) for P&L, journal and orders - its own PR. | - | open (TT-9) |
 | TT8-4 | "Exit this leg" on a leg of a strategy structure (deployment). | Not offered: the structure keeps "Exit now", which closes it whole (its group stop stays valid); the API answers 409 with that sentence. | `fno_groups._check` | open |
 
+### B1 - own-broker chain reads as the user's session snapshots (bug lane, 24 Oct)
+
+Checked against CLAUDE.md, DECISIONS (UI-H Part 1 audit approved, TM-7, TM94-3, TM-8) and DATA_SOURCES (RDY-6): storing a
+person's own-session read, readable only by him, is the TM-7 rule; no source forbids it.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| B1-1 | `md_tenant_chain_snapshots` is unique per (tenant, underlying, expiry, slot), not per member: when two members of one organisation read the same chain in the same 5-minute slot, only the first read is stored (the second member gets a gap for that slot, never the first one's data). | No migration now (retail organisations are one person). If wanted: widen the key with `source` in its own PR (a constraint change, migration after 15:30 IST). | `own_snapshots.record` | open |
+| B1-2 | Which reads are stored: the Option chain Analyses and Charts reads (own-broker tier only). The live chain view and Ask AI reads are not stored yet; Ask AI still shows no session path with the tier on. | Analyses + Charts only. | `analyses_routes`, `charts_routes` | open |
+| B1-3 | Retention: the chain history's own setting (`RETENTION_CHAIN_HISTORY_DAYS`, 0 = kept, TM-8). | Kept until the owner sets a limit. | `retention/service.py` | open |

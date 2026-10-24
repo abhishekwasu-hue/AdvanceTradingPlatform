@@ -7,6 +7,8 @@ import ContractNoteCard from "../components/ContractNoteCard";
 import PaperAccountCard from "../components/PaperAccountCard";
 import PaperTicketCard from "../components/PaperTicketCard";
 import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2, toneClass } from "../dashboard/CardV2";
+import { useColourV2 } from "../ui/colourV2";
+import { DirectionChip } from "../ui/DirectionChip";
 import { signTone } from "../dashboard/model";
 import { dataOf, usePolled, type Loadable } from "../dashboard/useDashboardData";
 import {
@@ -381,15 +383,18 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
   const adjust = actions.fno ? adjustHref(facts) : null;
   // 8b slice 2 on a position of its own (legs placed together carry them on the group): the premium kept and "Tell me when".
   const own = !inGroup && prices ? fnoLegs([row], new Map([[position.id, position]]), actions) : null;
+  const colour = useColourV2();          // colour v2: Long / Short as chips
   return (
     <li className="py-space-3 first:pt-0 last:pb-0" data-position={row.id}>
       <div className="flex items-start gap-space-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-space-2">
             <span className="text-t15 font-semibold text-fg">{row.symbol}</span>
-            <span className={`inline-flex items-center gap-px text-t13 font-medium ${row.side === "Buy" ? "text-up" : "text-down"}`}>
-              {row.side === "Buy" ? <ArrowUpRight size={14} aria-hidden /> : <ArrowDownRight size={14} aria-hidden />}{row.side === "Buy" ? "Long" : "Short"}
-            </span>
+            {colour ? <DirectionChip side={row.side === "Buy" ? "long" : "short"} /> : (
+              <span className={`inline-flex items-center gap-px text-t13 font-medium ${row.side === "Buy" ? "text-up" : "text-down"}`}>
+                {row.side === "Buy" ? <ArrowUpRight size={14} aria-hidden /> : <ArrowDownRight size={14} aria-hidden />}{row.side === "Buy" ? "Long" : "Short"}
+              </span>
+            )}
             <ChipV2 kind={row.mode === "Live" ? "solid" : "outline"}>{row.mode}</ChipV2>
             {row.structure && <ChipV2>{row.structure}</ChipV2>}
           </div>
@@ -534,6 +539,7 @@ function ClosedTradesV2({ trades, onSaved }: { trades: Loadable<TradeRecord[]>; 
 
 function ClosedRowV2({ row, onSaved }: { row: ClosedRow; onSaved: () => void }) {
   const tone = toneClass(signTone(row.pnl));
+  const colour = useColourV2();          // colour v2: Long / Short as chips
   // Today's journal edit (notes, then tags), unchanged; the list reloads instead of the whole page.
   function edit() {
     const notes = window.prompt("Journal notes", row.notes ?? "");
@@ -547,7 +553,8 @@ function ClosedRowV2({ row, onSaved }: { row: ClosedRow; onSaved: () => void }) 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-space-2">
             <span className="text-t15 font-semibold text-fg">{row.symbol}</span>
-            <span className={`text-t13 font-medium ${row.side === "Long" ? "text-up" : "text-down"}`}>{row.side}</span>
+            {colour ? <DirectionChip side={row.side === "Long" ? "long" : "short"} />
+              : <span className={`text-t13 font-medium ${row.side === "Long" ? "text-up" : "text-down"}`}>{row.side}</span>}
             <ChipV2 kind={row.mode === "Live" ? "solid" : "outline"}>{row.mode}</ChipV2>
           </div>
           <p className="mt-px font-tabular text-t13 text-fg-muted">{row.size} · {row.prices} · {row.when}{row.reason ? ` · ${row.reason}` : ""}</p>

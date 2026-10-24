@@ -220,3 +220,41 @@ One draft PR each, behind `ui_v2`, with tests. No migration in any of them.
   `warning` annotation above one; called from `afterEach` in the Today, Option chain, Signals, Positions, Charts and
   Settings specs. The two page-level `StatusChip`s (Settings, Signals) stay until adoption.
 
+
+## Colour v2 (the redo after the owner's 23 Oct review)
+
+The owner did not approve the first comparison: the after looked like the before, and Settings lost colour (INBOX and
+DECISIONS 23 Oct). The rules stay (ATP blue is the one solid main button, colour by meaning, no gradients, no card with
+many colours, CC-1 / CC-2, AA text and 3 : 1 UI parts, colour-blind mode, light and dark). His six additions are built
+behind a new flag `colour_v2` (OFF, needs `ui_v2`), so nothing changes for users until he approves the new comparison.
+
+- **Tokens** (`tokens.css`, new names only): `brand-tint`, `up-tint`, `down-tint`, `teal-accent` (a category teal, the
+  same hue as `signal`), `soft-brand / -ai / -warn / -down / -up / -teal / -info` (the icon circles), `chain-call`,
+  `chain-call-itm`, `chain-put`, `chain-put-itm`, `oi-call`, `oi-put`, `nav-insights`. Colour-blind: every red / green
+  token follows down / up to orange / blue, teal follows signal. The dark theme's layered surfaces (a deeper page,
+  lighter cards with a visible outline and a firmer shadow) sit under `:root[data-colour="v2"]:not([data-theme="light"])`,
+  set on <html> by the v2 shell only while the flag is on. The chart background does not move.
+- **Shared pieces**: `ui/colourV2.tsx` (the switch, read once in AppShellV2 and shared by context; off outside the
+  shell), `ui/IconBadge.tsx`, `ui/DirectionChip.tsx`, `ui/Sparkline.tsx`, `shell/navTone.ts`; StatusChip's check is green
+  (the owner's words: "status chips stay neutral, but the check icon is green"; the chip itself stays neutral).
+- **Pages** (flag on): Settings rows in soft circles (Broker blue, AI violet, Alerts amber, Risk limits red, Appearance
+  teal, Trading defaults sky, Account / Team / Help / Setup / Advanced neutral), neutral chips with a green check / amber
+  needs action; Option chain call / put tints, ITM a step stronger, red / green OI bars (soft fill + a solid edge),
+  a brand-tint ATM row with the "ATM" word in the text colour (brand text on the tint is under 4.5 : 1); Today's P&L
+  tint by sign, Needs attention icons by type (approval brand, paused / login / warning amber, alert teal, red for a
+  failing bot, the loss lockout and a high exposure - CC-1), sparklines from the broker's real 5-minute candles (the
+  old Market pulse's source; nothing from market memory, never sample data); Long / Short chips on Signals, Today and
+  My trades, "Waiting for you" amber; navigation icons by group (Broker brand, Markets info, Trading teal, Insights
+  magenta, AI Copilot violet, the rest neutral), the active bottom-bar tab on a brand-tint pill.
+- **Tests**: `tokens.test.ts` "Colour v2 tokens", `ui/colourV2.test.tsx` (every page on and off), the flag test; e2e
+  baselines unchanged with the flag off.
+- **Owner review, 24 Oct (CV-1..4)**: (CV-1) the phone bottom bar's inactive tabs are neutral grey; the group colours
+  stay in the sidebar and the More sheet, and only the tab on screen is brand. (CV-2) every bottom-bar word keeps to one
+  line, bold included (`whitespace-nowrap`; the bar's tabs share the width by content). (CV-3) the option chain's
+  call / put side tints are gone (red / green mean loss / profit; no large fills) and their four tokens removed; an
+  in-the-money strike keeps its one neutral step (`surface-2`, both sides, as with the flag off); the red / green OI
+  bars, the coloured Calls / Puts headings and the brand-tint ATM row stay; colour-blind mode the same. (CV-4) on a phone
+  Today's P&L leads the market strip (`max-md:order-first`), so it is on screen on open at 390 x 844 with the
+  sparklines on; from md up the strip is unchanged. Tests: `colourV2.test.tsx`, `tokens.test.ts` (the OI bars and
+  figures on the neutral ITM step, no side tint tokens), `e2e/colour-v2.e2e.ts` (CV-1, CV-2 at 360 / 390 for each
+  active tab, CV-4 at 390 x 844, light and dark).

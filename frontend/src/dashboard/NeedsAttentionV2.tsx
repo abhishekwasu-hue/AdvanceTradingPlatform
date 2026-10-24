@@ -6,6 +6,8 @@ import { Button } from "../components/primitives";
 import { CodeForm, type BrokerLogin } from "../ui/BrokerGate";
 import { loginNote } from "../ui/brokerSession";
 import type { BrokerTokenInfo } from "../types";
+import { useColourV2 } from "../ui/colourV2";
+import { IconBadge, type IconTone } from "../ui/IconBadge";
 import { CardV2, LINK_PRIMARY, LINK_SECONDARY, LoadingRowsV2 } from "./CardV2";
 import type { AttentionIcon, AttentionRow } from "./model";
 
@@ -24,6 +26,21 @@ import type { AttentionIcon, AttentionRow } from "./model";
 const ICONS: Record<AttentionIcon, LucideIcon> = {
   approval: Zap, login: LogIn, paused: PauseCircle, lockout: ShieldAlert, alert: Bell, warning: TriangleAlert, account: UserCircle2,
 };
+
+/**
+ * Colour v2 (owner, 23 Oct): the icon's colour by the row's type - an approval brand blue, a pause amber, an alert
+ * teal, an error red. Red (CC-1) only where money or an order is at stake: a bot that hit a problem, the daily loss
+ * lockout, a high exposure. A broker login, a delayed feed and maintenance need action: amber.
+ */
+export function attentionTone(row: Pick<AttentionRow, "id" | "icon">): IconTone {
+  if (row.id === "failing" || row.id === "lockout" || row.id === "exposure") return "down";
+  switch (row.icon) {
+    case "approval": return "brand";
+    case "alert": return "teal";
+    case "account": return "neutral";
+    default: return "warn";                 // paused, login, warning
+  }
+}
 
 export interface NeedsAttentionProps {
   rows: AttentionRow[] | null;
@@ -48,6 +65,7 @@ function Row({ row, primary, loginBroker, login, onHide }: { row: AttentionRow; 
   const [sending, setSending] = useState(false);
   const resend = () => { setSending(true); void resendVerification().then((t) => { setResent(t); setSending(false); }); };
   const button = action && !step;
+  const colour = useColourV2();
   const hide = hideable ? (
     <button type="button" className={HIDE} aria-label="Hide for today" title="Hide for today" data-hide={row.id} onClick={() => onHide?.(row.id)}>
       <X size={18} aria-hidden />
@@ -57,9 +75,11 @@ function Row({ row, primary, loginBroker, login, onHide }: { row: AttentionRow; 
     <li className="py-space-3 first:pt-0 last:pb-0" data-attention={row.id}>
       <div className="flex flex-col gap-space-3 sm:flex-row sm:items-center">
         <div className="flex min-w-0 flex-1 items-start gap-space-3">
-          <span aria-hidden className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-control ${row.tone === "warn" ? "bg-warn-tint text-warn" : "bg-surface-2 text-fg-muted"}`}>
-            <Icon size={18} />
-          </span>
+          {colour ? <IconBadge icon={Icon} tone={attentionTone(row)} /> : (
+            <span aria-hidden className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-control ${row.tone === "warn" ? "bg-warn-tint text-warn" : "bg-surface-2 text-fg-muted"}`}>
+              <Icon size={18} />
+            </span>
+          )}
           <div className="min-w-0 flex-1">
             <p className="text-t15 font-semibold text-fg">{row.title}</p>
             {detail && <p className="mt-px text-t13 text-fg-muted">{detail}</p>}

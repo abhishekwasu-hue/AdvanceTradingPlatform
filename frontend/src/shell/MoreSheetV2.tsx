@@ -10,6 +10,8 @@ import { StatusDot } from "../broker/marks";
 import type { BrokerDot } from "../broker/brokerState";
 import { moreSheetPinned, moreSheetSections, navDotFor, navEntryFor, searchPages, sectionTitle, type NavContext, type NavItemV2, type NavSectionV2, type SectionId, type ShellKey } from "./navModel";
 import StatusLink from "../status/StatusLink";
+import { navIconClass } from "./navTone";
+import { useColourV2 } from "../ui/colourV2";
 
 /**
  * UI2-1 (UI v2 proposal §4, mockup nav-bottom-mobile "More opens a sheet"): the phone's More sheet. A search box, then
@@ -41,12 +43,13 @@ function Tile({ item, current, onPick, caption, dot = null }: { item: NavItemV2;
   const Icon = item.icon;
   // UX3-9: a Settings sub-page lights up Settings, a merged page's tab its entry (navEntryFor).
   const active = current === item.key || navEntryFor(current) === item.key;
+  const colour = useColourV2();
   return (
     <Link to={item.path} onClick={onPick} aria-current={active ? "page" : undefined}
       className={`flex min-h-11 items-center gap-space-2 rounded-control px-space-3 py-space-2 text-t14 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
         active ? "bg-brand/10 text-fg" : "bg-surface-2 text-fg hover:bg-surface-3"
       }`}>
-      <Icon size={18} aria-hidden className={active ? "shrink-0 text-brand" : "shrink-0 text-fg-muted"} />
+      <Icon size={18} aria-hidden className={`shrink-0 ${active ? "text-brand" : navIconClass(item.key, colour)}`} />
       <span className="min-w-0">
         <span className="block truncate">{item.label}</span>
         {caption && <span className="block truncate text-t12 font-normal text-fg-muted">{caption}</span>}

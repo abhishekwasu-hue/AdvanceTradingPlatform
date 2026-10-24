@@ -40,7 +40,10 @@ def master(monkeypatch):
     name = f"ui24iv{uuid.uuid4().hex[:6]}"
     monkeypatch.setattr(index_volume, "MASTER_BROKER", name)
     today = _today()
-    near, nxt = today + timedelta(days=7), today + timedelta(days=35)
+    near = today + timedelta(days=7)
+    # the next contract is in the FOLLOWING calendar month (its symbol is NIFTY<yy><Mon>FUT): today + 35 days fell in
+    # the same month as today + 7 from the 25th on, and both rows got one key
+    nxt = (near.replace(day=1) + timedelta(days=32)).replace(day=min(near.day, 28))
     rows = [InstrumentRecord(broker=name, exchange=x, instrument_key=f"{name}|{t}", tradingsymbol=t, underlying=u, instrument_type="FUT",
                              expiry=e, lot_size=75)
             for x, t, u, e in (("NFO", f"NIFTY{near:%y%b}FUT".upper(), "NIFTY", near), ("NFO", f"NIFTY{nxt:%y%b}FUT".upper(), "NIFTY", nxt),

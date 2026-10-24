@@ -3972,3 +3972,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   the new words (pins updated in `scripts/check_public_repo.py`), `copilot-chat-v2-1440-light.png` re-baselined.
 - Tests `tests/test_d1_copilot_words.py` (4), e2e `e2e/d1-copilot-words-v2.e2e.ts` (no baseline).
 - Not changed: the "More Copilot tools" list (finding 7's last point).
+
+## 24 Oct - Trading Terminal order: the independent review against the code (README row 21)
+
+- Branch `claude/trading-terminal-review` (from main at `66cf80dc`). Docs only: **no migration**, no flag, no code.
+- `docs/design/TRADING_TERMINAL_REVIEW.md`: per-section status T1-T10 (what exists with file paths, the gaps), the
+  modules the order names verified one by one, the conflicts (ADR-0004, ADR-0006, CLAUDE.md section 3, the one order
+  path, idempotency, the z10c guard, tenancy, the owner principle, the Phase 0 lock), the parity table of the three
+  engines, the migrations, and the T1 PR plan.
+- Main findings: a LIVE manual entry has no lawful path under z10c rule 2 (TT-1); approval-only mode refuses manual F&O
+  orders and the trader pack turns it on (TT-2, FNO-1-4 still open); the browser tick path is up to about 2 s, not
+  300 ms (TT-3); TM-2's resting book and trigger engine are not built and gate T2 / T3 (TT-5, TT-6); manual baskets are
+  not groups (TT-8); `risk_by_default` limits are platform defaults, PAPER only (TT-12); Exit all, the kill switch and
+  the positions / orders reads are organisation-wide (TT-13..15).
+- Questions TT-1..TT-30 in `docs/OPEN_QUESTIONS.md` (status open); README row 21 status updated.

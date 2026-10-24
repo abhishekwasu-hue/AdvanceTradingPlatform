@@ -60,6 +60,9 @@ TRIGGER_TICK_SECONDS = float(os.environ.get("TRIGGER_TICK_SECONDS", "1"))
 TRIGGER_TICK_MAX_AGE_SECONDS = float(os.environ.get("TRIGGER_TICK_MAX_AGE_SECONDS", "5"))
 TRIGGER_STALL_SECONDS = int(os.environ.get("TRIGGER_STALL_SECONDS", str(WORKER_CYCLE_SECONDS * 3)))
 HEARTBEAT_EVERY_SECONDS = 5.0
+# An order left FIRING longer than this was interrupted (a worker restart / crash between the claim and its outcome):
+# the next pass settles it from what was actually done - never a second order (`_recover_interrupted`).
+FIRING_STALE_SECONDS = int(os.environ.get("TRIGGER_FIRING_STALE_SECONDS", "60"))
 STALL_TITLE = "Your waiting orders are not being watched right now"
 
 _last_run: Optional[datetime] = None
@@ -220,6 +223,7 @@ async def run_exits(session: AsyncSession, tenant_id: int, prices: PriceFn, *, b
     now = now or datetime.now(timezone.utc)
     report = EngineReport()
     reader = _Prices(prices)
+    await _recover_interrupted(session, tenant_id, book.EXIT, now, paper_only)
     for row in await _resting(session, tenant_id, book.EXIT, paper_only):
         report.checked += 1
         try:
@@ -239,6 +243,7 @@ async def run_entries(session: AsyncSession, tenant_id: int, prices: PriceFn, *,
     now = now or datetime.now(timezone.utc)
     report = EngineReport()
     reader = _Prices(prices)
+    await _recover_interrupted(session, tenant_id, book.ENTRY, now, False)
     rows = await _expire(session, await _resting(session, tenant_id, book.ENTRY, False), now, report)
     for row in rows:
         report.checked += 1
@@ -251,6 +256,52 @@ async def run_entries(session: AsyncSession, tenant_id: int, prices: PriceFn, *,
             await _restore(session, row, now)
     await _mark_run(session, now, report)
     return report
+
+
+async def _recover_interrupted(session: AsyncSession, tenant_id: int, purpose: str, now: datetime, paper_only: bool) -> None:
+    """TM-2 restart safety: an order claimed (FIRING) by a pass that never finished - the worker stopped in between - is
+    settled from what was actually done, so it is neither stuck (an exit never blocked, ADR-0004) nor sent twice:
+    * an EXIT whose position is closed is FILLED (closed by this order) or CANCELLED; an open position waits again;
+    * an ENTRY whose ticket order exists (its idempotency key) takes that order's outcome; with none it waits again (a
+      re-fire goes through the same key, so it can never place a second order)."""
+    from app.db.models import OrderRecord
+    stale = now - timedelta(seconds=FIRING_STALE_SECONDS)
+    query = select(PaperRestingOrderRecord).where(PaperRestingOrderRecord.tenant_id == tenant_id,
+                                                  PaperRestingOrderRecord.status == book.FIRING,
+                                                  PaperRestingOrderRecord.purpose == purpose)
+    if paper_only:
+        query = query.where(PaperRestingOrderRecord.mode == "PAPER")
+    for row in list(await session.scalars(query)):
+        fired = row.fired_at if row.fired_at is None or row.fired_at.tzinfo else row.fired_at.replace(tzinfo=timezone.utc)
+        if fired is not None and fired > stale:
+            continue                       # still in flight in some pass
+        try:
+            if purpose == book.EXIT:
+                trade = await session.get(TradeRecord, row.trade_id) if row.trade_id is not None else None
+                if trade is not None and trade.exit_time is None:
+                    await _back_to_waiting(session, row, "Not finished last time (the engine restarted): waiting again", now)
+                elif trade is not None and (trade.exit_reason or "").endswith("(your waiting order)"):
+                    row.fill_price = trade.exit_price
+                    await _finish(session, row, book.FILLED, f"Closed at {float(trade.exit_price or 0):,.2f}", now)
+                else:
+                    await _finish(session, row, book.CANCELLED, "The position was already closed", now)
+                continue
+            payload = json.loads(row.payload_json or "{}")
+            ref = (payload.get("ask") or {}).get("client_ref")
+            order = await session.scalar(select(OrderRecord).where(
+                OrderRecord.tenant_id == row.tenant_id, OrderRecord.idempotency_key == f"fno:{row.user_id}:{ref}")) if ref else None
+            if order is None:
+                await _back_to_waiting(session, row, "Not finished last time (the engine restarted): waiting again", now)
+            elif order.trade_id is not None:
+                trade = await session.get(TradeRecord, order.trade_id)
+                row.order_id, row.fill_price = order.id, (trade.entry_price if trade is not None else None)
+                await _finish(session, row, book.FILLED, f"Placed at {float(row.fill_price or 0):,.2f}", now)
+            else:
+                row.order_id = order.id
+                await _finish(session, row, book.REJECTED, "Not placed (settled after the engine restarted)", now)
+        except Exception:  # noqa: BLE001 - tried again on the next pass
+            logger.exception("Trigger engine: could not settle interrupted order %s", row.id)
+            await session.rollback()
 
 
 async def _restore(session: AsyncSession, row: PaperRestingOrderRecord, now: datetime) -> None:

@@ -58,9 +58,9 @@ async def _day_view(session: AsyncSession, user: User, underlying: str, day: Opt
     now = datetime.now(timezone.utc)
     settings = await snapshots.settings_for(session, user.tenant_id, underlying)
     day = day or now.astimezone(IST).date()
-    slots = await snapshots.day_chains(session, underlying, day)
+    slots = await snapshots.day_chains(session, underlying, day, tenant_id=user.tenant_id)
     status = await market_session_status(session, now, await _exchange(session, user.tenant_id, underlying))
-    flags = snapshots.staleness(await snapshots.latest_capture(session, underlying), now, settings, status.is_open and day == now.astimezone(IST).date())
+    flags = snapshots.staleness(await snapshots.latest_capture(session, underlying, tenant_id=user.tenant_id), now, settings, status.is_open and day == now.astimezone(IST).date())
     return settings, day, slots, flags
 
 
@@ -114,7 +114,7 @@ async def strikes(underlying: str, day: Optional[date] = Query(default=None, ali
     await _no_byob(session, user)
     underlying = _underlying(underlying)
     settings, day, slots, flags = await _day_view(session, user, underlying, day)
-    base = await snapshots.baselines(session, underlying, day)
+    base = await snapshots.baselines(session, underlying, day, tenant_id=user.tenant_id)
     series = snapshots.strike_series(slots, settings)
     for s in series:
         call0, put0 = base.get(s["strike"], (None, None))

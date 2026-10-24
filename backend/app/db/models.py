@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 from sqlalchemy.sql import false, true
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -2019,16 +2019,20 @@ class InstrumentRecord(Base):
 class OptionChainSnapshotRecord(Base):
     """Phase W: one quoted option at one moment, sampled from the chains the worker already
     fetches for its option deployments (app/backtest/chain_recorder.py) so option backtests
-    can be priced from what the market actually quoted. Platform-wide reference data (a NIFTY
-    quote is the same fact for every tenant), sampled every few minutes for the strikes around
-    the money, trimmed by retention after a bounded number of days."""
+    can be priced from what the market actually quoted. Sampled every few minutes for the strikes
+    around the money, trimmed by retention after a bounded number of days. TM94-3: each row belongs
+    to the organisation whose own broker session read it (`tenant_id`); rows from before the fix
+    have no tenant and are read only by the confirmed owner (`chain_recorder.legacy_owner`)."""
 
     __tablename__ = "option_chain_snapshots"
     __table_args__ = (
         Index("ix_option_chain_snapshots_lookup", "underlying", "expiry", "captured_at"),
+        Index("ix_option_chain_snapshots_tenant_lookup", "tenant_id", "underlying", "captured_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # TM94-3: the organisation the row belongs to; NULL = recorded platform-wide before the fix (owner-only reads).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
     underlying: Mapped[str] = mapped_column(String(30), nullable=False)          # master name: NIFTY
     expiry: Mapped[date] = mapped_column(Date, nullable=False)
     captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, index=True)
@@ -2084,15 +2088,22 @@ class OISnapshotRecord(Base):
     """OI Banner O2: one collector slot of one underlying's option chain (platform-wide reference data, like
     `option_chain_snapshots`). The per-strike OI lives in `strike_oi_snapshots`; every banner reading is computed from
     those rows with the reader's own settings (app/option_chain/oi_regime.py), so nothing tenant-specific is stored
-    here. One row per (underlying, slot): the collector is idempotent per slot."""
+    here. One row per (tenant, underlying, slot): the collector is idempotent per slot.
+
+    TM-7 (owner, 23 Oct; RDY-6 data terms): a slot is read through ONE organisation's own broker session and belongs to
+    that organisation (`tenant_id`); only that organisation reads it (app/option_chain/snapshots.py). Rows stored before
+    the fix have no tenant (NULL) and are read only by the owner's organisation (HISTORY_OWNER_TENANT_ID, confirmed by
+    HISTORY_OWNER_TENANT_NAME)."""
 
     __tablename__ = "oi_snapshots"
     __table_args__ = (
-        UniqueConstraint("underlying", "slot_start", name="uq_oi_snapshot_slot"),
+        UniqueConstraint("tenant_id", "underlying", "slot_start", name="uq_oi_snapshot_tenant_slot"),
         Index("ix_oi_snapshots_day", "underlying", "trade_date"),
+        Index("ix_oi_snapshots_tenant_day", "tenant_id", "underlying", "trade_date"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
     underlying: Mapped[str] = mapped_column(String(30), nullable=False)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)                 # the exchange's (IST) trading day
     slot_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
@@ -2126,12 +2137,14 @@ class StrikeOISnapshotRecord(Base):
 
 class OIDayBaselineRecord(Base):
     """OI Banner O2: the first OI the collector saw for a strike on a trading day - the baseline of the OI-wall check
-    (change in OI since the day began). Written once per (underlying, day, strike), never updated."""
+    (change in OI since the day began). Written once per (tenant, underlying, day, strike), never updated. TM-7: the
+    organisation whose session read it (NULL = stored before the fix; see OISnapshotRecord)."""
 
     __tablename__ = "oi_day_baselines"
-    __table_args__ = (UniqueConstraint("underlying", "trade_date", "strike", name="uq_oi_day_baseline"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "underlying", "trade_date", "strike", name="uq_oi_day_baseline_tenant"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     underlying: Mapped[str] = mapped_column(String(30), nullable=False)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     strike: Mapped[float] = mapped_column(Float, nullable=False)
@@ -2717,6 +2730,37 @@ class MdTenantCandleRecord(Base):
     volume: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     oi: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class MdTenantChainSnapshotRecord(Base):
+    """TM 9.4: one recorded option chain (one underlying, one expiry, one slot) in the tenant-PRIVATE chain history.
+
+    TM-7 (owner, 23 Oct): read only through the owner's own broker session and readable only by the owner's tenant - a
+    separate table that no shared read path touches; the only reader is `app.market_lake.chain_store`, which requires a
+    tenant id. `payload` is the whole chain, every strike (LTP, bid, ask, volume, OI, OI change, IV and the broker's
+    Greeks per side), as zlib-compressed JSON (`codec`). `source` names the session's holder (`broker:<name>:u<id>`,
+    HB2's rule): within the tenant only that user reads the rows (BT1b)."""
+
+    __tablename__ = "md_tenant_chain_snapshots"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "underlying", "expiry", "slot_start", name="uq_md_tenant_chain_slot"),
+        Index("ix_md_tenant_chain_day", "tenant_id", "underlying", "trade_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    expiry: Mapped[date] = mapped_column(Date, nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)                 # the exchange's (IST) trading day
+    slot_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)    # when the chain was read (data time)
+    spot: Mapped[float | None] = mapped_column(Float, nullable=True)
+    strikes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    codec: Mapped[str] = mapped_column(String(20), nullable=False)
+    raw_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)    # the JSON before compression
+    payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 class HistoryImportFileRecord(Base):

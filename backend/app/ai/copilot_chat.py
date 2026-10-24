@@ -1080,7 +1080,7 @@ async def trade_check(answer: Answer, run: Runner, message: str) -> None:
             _calc(answer, "reward_to_risk", "Reward to risk = |objective - entry| / |entry - invalidation|",
                   {"entry": idea.entry, "invalidation": idea.invalidation, "objective": idea.objective}, {"reward_to_risk": rr})
             floor = own.get("min_risk_reward")
-            if floor is not None:
+            if floor is not None and float(floor) > 0:          # TT12-4: 0 = no minimum set
                 lines.append(f"Your reward to risk is {_f(rr)}; your own minimum is {_f(floor)}: {'it meets it' if rr >= float(floor) else 'it is below it'}.")
             else:
                 lines.append(f"Your reward to risk is {_f(rr)}.")
@@ -1349,7 +1349,9 @@ async def strategy_builder(answer: Answer, run: Runner, message: str) -> None:
     from app.strategy_engine.registry import registry
     risk = await _call(answer, run, "get_risk_limits", "Your own risk settings (your minimum reward to risk)", {}, ("min_risk_reward",))
     own = _own_risk(risk)
-    draft = sb.build(message, builder_symbol(message), own.get("min_risk_reward") if own else None)
+    own_rr = own.get("min_risk_reward") if own else None
+    # TT12-4: 0 = no minimum set - then it stays under "Values you decide", never filled in as 0.
+    draft = sb.build(message, builder_symbol(message), own_rr if own_rr is not None and float(own_rr) > 0 else None)
     answer.worked.append(Step("strategy_blocks", "ATP's strategy building blocks (the same as Build a strategy)", True, source="building blocks"))
     answer.trusted_text += [sb.EXAMPLE, sb.TIMEFRAMES_TEXT]
     if draft.empty:

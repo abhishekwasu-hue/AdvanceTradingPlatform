@@ -4102,3 +4102,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   (shared components first).
 - Screenshots (238 captures + committed baselines for the pages the capture mocks cannot answer) and the HTML gallery
   stay outside git; the capture spec was a local-only extension of `e2e/ux-audit-capture.e2e.ts` and is not committed.
+## 24 Oct 2026 - TT-8: a basket's legs as one group (P1-6)
+- Owner decision TT-8: legs of one manual basket are one group with "Exit this leg" / "Exit the whole group"; a hedge
+  exited before its short = a plain warning + confirm, never a block.
+- Backend `app/paper/fno_groups.py`: filled legs tagged on existing columns (`group_meta` basket_group, `leg_role`; no
+  migration, no `leg_group_id` so the monitor keeps each leg's own stop / target). `POST /api/paper/fno/positions/{id}/
+  exit-leg` (`confirm` flag; without it a hedge answers the warning) and `/exit-group` (all legs priced first, then
+  `close_group`: sold legs first). Pricing shared with Exit now (`approval.exit_price`, a pure extraction). No flag,
+  kill switch, limit or approval-only check on either (ADR-0004). z10c: both routes classified as exits.
+- Frontend (ui_v2, PAPER account on): PositionsV2 basket groups show "Exit the whole group" and "Exit this leg" (in place
+  of Exit now on those legs); the confirm sheet `fno/GroupExitsV2.tsx`. Structures keep Exit now.
+- Tests: `tests/test_tt8_basket_group.py` (9), `src/fno/groupExits.test.tsx` (11), `e2e/tt8-basket-group-v2.e2e.ts`
+  (390 + 1440); four e2e flows moved to "Exit this leg"; six `fno4-positions-v2-*` baselines updated.
+- Not done: partial exit (TT-9). Open: TT8-1..4 in docs/OPEN_QUESTIONS.md.
+

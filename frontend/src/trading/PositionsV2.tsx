@@ -41,6 +41,8 @@ import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from ".
 import { PracticeFrame } from "../fno/OrderTicketV2";
 import { SettlementWarningsV2 } from "../fno/SmartExecutionV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
+import { GroupExitSheetV2 } from "../fno/GroupExitsV2";
+import type { GroupExitAsk } from "../fno/groupExits";
 
 // N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
@@ -132,8 +134,16 @@ export default function PositionsV2(_props: PageProps = {}) {
   const [ticket, setTicket] = useState<{ target: TicketTarget; side: Side } | null>(null);
   // 8b slice 2: "Tell me when" (an alert of the existing alert rules, `screener_v2`) and "Compare a change" - information only.
   const [compare, setCompare] = useState<CompareTarget | null>(null);
+  // TT-8: "Exit this leg" / "Exit the whole group" on the legs of one basket - exits, never disabled here (ADR-0004).
+  const [groupExit, setGroupExit] = useState<GroupExitAsk | null>(null);
+  const groupSheet = (
+    <GroupExitSheetV2 ask={groupExit} onClose={() => setGroupExit(null)}
+      onDone={(text, ok) => { setGroupExit(null); setNotice({ kind: ok ? "done" : "warn", text }); reload(); }} />
+  );
   const actions: RowActions = {
     exitNowOn, canTrade, onExit: exitNow, onCheck: checkPrice,
+    group: fnoOn ? { onLeg: (p, hedge) => setGroupExit({ kind: "leg", tradeId: p.id, symbol: p.symbol, hedge, warning: null }),
+      onGroup: (tradeId, title, legs) => setGroupExit({ kind: "group", tradeId, title, legs }) } : undefined,
     fno: fnoOn ? { facts: fno.facts, onAdd: (target, side) => setTicket({ target, side }), alertsOn: features.on("screener_v2"), onCompare: setCompare } : undefined,
   };
 
@@ -160,6 +170,7 @@ export default function PositionsV2(_props: PageProps = {}) {
                     Live prices and profit or loss show once your broker is connected.{exitNowOn && canTrade ? " You can still exit a paper position here." : ""}
                   </p>
                   <PositionList rows={rows} byId={byId} actions={actions} prices={false} groups={fno.groups} />
+                  {groupSheet}
                 </>
               )}
             </CardV2>
@@ -215,7 +226,10 @@ export default function PositionsV2(_props: PageProps = {}) {
         {positions.status === "loading" ? <LoadingRowsV2 /> : positions.status === "error" ? <LoadFailedV2 what="your positions" /> : rows.length === 0 ? (
           <EmptyStateV2 text="No open positions. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
         ) : (
-          <PositionList rows={rows} byId={byId} actions={actions} groups={fno.groups} />
+          <>
+            <PositionList rows={rows} byId={byId} actions={actions} groups={fno.groups} />
+            {groupSheet}
+          </>
         )}
       </CardV2>
 
@@ -258,6 +272,9 @@ export interface RowActions {
   canTrade: boolean;
   onExit: (p: TradeRecord) => void;
   onCheck: (p: TradeRecord, price: number) => void;
+  /** TT-8: the legs of one basket - "Exit this leg" (`hedge`: it protects an open sold leg, so the sheet warns first) and
+   * "Exit the whole group". Absent: grouped legs keep "Exit now" exactly as before. */
+  group?: { onLeg: (p: TradeRecord, hedge: boolean) => void; onGroup: (tradeId: number, title: string, legs: number) => void };
   /** FNO-4: Add / Adjust on an F&O PAPER position (absent: the row is exactly as before). 8b slice 2: the premium kept,
    * "Tell me when" (`alertsOn`: the alert rules' flag) and "Compare a change" - information only, never in place of Exit. */
   fno?: {
@@ -317,15 +334,22 @@ function useFnoPositions(list: TradeRecord[] | null | undefined, on: boolean) {
   return { facts, groups };
 }
 
+/** TT-8: a basket's legs get "Exit this leg" / "Exit the whole group" (a strategy structure keeps "Exit now", which closes
+ * it whole). */
+function groupExits(group: PositionGroup, actions: RowActions): boolean {
+  return group.kind === "basket" && !!actions.group && actions.canTrade;
+}
+
 /** `prices: false` (no broker session): no LTP or P&L columns at all - an entry-price row with nothing made up.
  * FNO-4: legs placed together show together under one line with their combined P&L; every leg keeps its own Exit. */
 function PositionList({ rows, byId, actions, prices = true, groups = [] }: {
   rows: HeldRow[]; byId: Map<number, TradeRecord>; actions: RowActions; prices?: boolean; groups?: PositionGroup[];
 }) {
   const { grouped, single } = groupRows(rows, groups);
-  const row = (r: HeldRow, inGroup = false) => {
+  const row = (r: HeldRow, inGroup = false, group?: PositionGroup) => {
     const p = byId.get(r.id);
-    return p ? <PositionRowV2 key={r.id} row={r} position={p} actions={actions} prices={prices} inGroup={inGroup} /> : null;
+    const groupLeg = group && groupExits(group, actions) ? { hedge: (group.hedge_ids ?? []).includes(r.id) } : undefined;
+    return p ? <PositionRowV2 key={r.id} row={r} position={p} actions={actions} prices={prices} inGroup={inGroup} groupLeg={groupLeg} /> : null;
   };
   return (
     <div className="space-y-space-3">
@@ -336,15 +360,24 @@ function PositionList({ rows, byId, actions, prices = true, groups = [] }: {
             <span className="inline-flex items-center gap-space-2 text-t14 font-semibold text-fg">
               <Layers size={16} aria-hidden className="text-fg-muted" />{groupTitle(g)}
             </span>
-            {prices && (
-              <span className="text-right" data-col="group-pnl">
-                <span className="mr-space-2 text-t12 text-fg-muted">Combined P&amp;L</span>
-                <span className={`font-tabular text-t15 font-semibold ${toneClass(signTone(g.pnl))}`}>{g.pnl === null ? EMPTY : formatSignedINR(g.pnl)}</span>
-              </span>
-            )}
+            <span className="flex flex-wrap items-center gap-space-3">
+              {prices && (
+                <span className="text-right" data-col="group-pnl">
+                  <span className="mr-space-2 text-t12 text-fg-muted">Combined P&amp;L</span>
+                  <span className={`font-tabular text-t15 font-semibold ${toneClass(signTone(g.pnl))}`}>{g.pnl === null ? EMPTY : formatSignedINR(g.pnl)}</span>
+                </span>
+              )}
+              {groupExits(g.group, actions) && (
+                // TT-8: closes every leg, the sold legs first. A neutral button, never disabled (ADR-0004).
+                <button type="button" onClick={() => actions.group?.onGroup(g.legs[0].id, groupTitle(g), g.legs.length)} data-testid="exit-group"
+                  className={BUTTON_SECONDARY}>
+                  Exit the whole group
+                </button>
+              )}
+            </span>
           </div>
           {prices && <GroupInsights group={g} byId={byId} actions={actions} />}
-          <ul className="divide-y divide-subtle">{g.legs.map((r) => row(r, true))}</ul>
+          <ul className="divide-y divide-subtle">{g.legs.map((r) => row(r, true, g.group))}</ul>
         </section>
       ))}
       {single.length > 0 && <ul className="divide-y divide-subtle">{single.map((r) => row(r))}</ul>}
@@ -371,11 +404,13 @@ function GroupInsights({ group, byId, actions }: { group: GroupedLegs<HeldRow>; 
   );
 }
 
-export function PositionRowV2({ row, position, actions, prices = true, inGroup = false }: {
+export function PositionRowV2({ row, position, actions, prices = true, inGroup = false, groupLeg }: {
   row: HeldRow; position: TradeRecord; actions: RowActions; prices?: boolean; inGroup?: boolean;
+  /** TT-8: a leg of one basket - "Exit this leg" in place of "Exit now" (`hedge`: it protects an open sold leg). */
+  groupLeg?: { hedge: boolean };
 }) {
   const tone = toneClass(signTone(row.pnl));
-  const showExit = actions.exitNowOn && actions.canTrade && position.mode === "PAPER";
+  const showExit = !groupLeg && actions.exitNowOn && actions.canTrade && position.mode === "PAPER";
   // FNO-4: Add (the ticket on the same contract and side, PAPER) and Adjust (the chain of its expiry) - only for an F&O
   // PAPER position whose contract is known and still trading. Neither is ever shown in place of Exit.
   const facts = actions.fno && position.mode === "PAPER" && isFnoPosition(position) ? actions.fno.facts.get(itemKey(positionItem(position))) : undefined;
@@ -430,7 +465,13 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
             Exit now
           </button>
         )}
-        {!actions.exitNowOn && <CheckPriceV2 position={position} onCheck={actions.onCheck} />}
+        {groupLeg && (
+          // TT-8: this leg only; a hedge before its sold leg gets a plain warning in the sheet, never a block (ADR-0004).
+          <button type="button" onClick={() => actions.group?.onLeg(position, groupLeg.hedge)} data-testid="exit-leg" className={BUTTON_SECONDARY}>
+            Exit this leg
+          </button>
+        )}
+        {!actions.exitNowOn && !groupLeg && <CheckPriceV2 position={position} onCheck={actions.onCheck} />}
         {target && actions.fno && (
           <button type="button" onClick={() => actions.fno?.onAdd(target, addSide(position))} data-testid="fno-add" className={BUTTON_SECONDARY}>
             <Plus size={16} aria-hidden />Add

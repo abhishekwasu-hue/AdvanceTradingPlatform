@@ -25,6 +25,10 @@ FNO-4, the watchlist's contract rows and the positions page (app/paper/fno_contr
                                           reads no price and leads to no order (a roll only edits the watchlist).
 - `GET  /api/paper/fno/positions/groups`  the caller's open PAPER legs that belong together (one basket, one structure),
                                           for the combined P&L. Same flags as the ticket. Every leg keeps its own Exit.
+
+TT-8, a basket's legs as one group (app/paper/fno_groups.py) - exits, so no flag, kill switch or limit stops them:
+- `POST /api/paper/fno/positions/{id}/exit-leg`    this leg only; a hedge before its sold leg: a warning until confirm.
+- `POST /api/paper/fno/positions/{id}/exit-group`  every open leg of the basket, the sold legs first.
 """
 from datetime import date
 from typing import Any, Dict, List, Literal, Optional
@@ -241,6 +245,29 @@ async def basket_close_filled(body: CloseFilledBody, user: User = Depends(requir
     the sold legs first (a hedge is never closed while its short is open). Answers 200 with each leg's outcome."""
     await _smart_enabled(session, user)
     return await fno_basket.close_filled(session, user, body.trade_ids)
+
+
+class LegExitBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm: bool = False
+
+
+@router.post("/positions/{trade_id}/exit-leg")
+async def exit_leg(trade_id: int, body: Optional[LegExitBody] = None, user: User = Depends(require_trader),
+                   session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """TT-8 "Exit this leg": closes this leg of a basket only. An exit (ADR-0004): no flag, kill switch, limit or
+    approval-only rule stops it. A hedge whose sold leg is still open answers {"status": "CONFIRM", "warning"} and closes
+    nothing until the body carries {"confirm": true} - a warning, never a refusal."""
+    from app.paper import fno_groups
+    return await fno_groups.exit_leg(session, user, trade_id, confirm=bool(body and body.confirm))
+
+
+@router.post("/positions/{trade_id}/exit-group")
+async def exit_group(trade_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """TT-8 "Exit the whole group": every open leg of this leg's basket, the sold legs first. An exit (ADR-0004): never
+    stopped by a flag, the kill switch, a limit or approval-only."""
+    from app.paper import fno_groups
+    return await fno_groups.exit_group(session, user, trade_id)
 
 
 @router.get("/settlement")

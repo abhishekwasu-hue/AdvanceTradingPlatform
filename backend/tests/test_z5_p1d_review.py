@@ -461,7 +461,7 @@ def test_entries_per_day_slot_is_atomic(slot_db_url):
 
 def test_an_entry_refused_later_gives_its_slot_back():
     u = _tenant_t("slots-release")
-    _org(u)
+    _org(u, min_rr=1.2)                                           # P1-2b: the organisation's own minimum (no built-in one)
     _flag(by_default.FLAG, u["tenant_id"])
     client.put("/api/paper/risk", headers=u["headers"], json={"max_trades_per_day": 1})
     async def refused_later():

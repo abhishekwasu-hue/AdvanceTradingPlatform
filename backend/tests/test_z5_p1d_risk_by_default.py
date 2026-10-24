@@ -52,10 +52,11 @@ def _flag(name: str, tenant_id: int, on: bool = True) -> None:
     _run(go())
 
 
-def _org(t: dict, *, capital=1_000_000.0, risk_pct=1.0) -> None:
-    """The organisation's own risk settings: a capital like the PAPER account's, so the user's cap is what binds."""
+def _org(t: dict, *, capital=1_000_000.0, risk_pct=1.0, min_rr=0.0) -> None:
+    """The organisation's own risk settings: a capital like the PAPER account's, so the user's cap is what binds. P1-2b:
+    no minimum reward:risk unless the test sets one (`min_rr`)."""
     body = RiskConfig(capital=capital, risk_per_trade_pct=risk_pct, max_daily_loss_pct=5.0, max_trades_per_day=50, max_open_positions=10,
-                      dd_level_1_pct=20.0, dd_level_2_pct=25.0, stop_cooldown_minutes=0).model_dump()
+                      dd_level_1_pct=20.0, dd_level_2_pct=25.0, stop_cooldown_minutes=0, min_risk_reward=min_rr).model_dump()
     out = client.put("/api/risk-settings", headers=t["headers"], json=body)
     assert out.status_code == 200, out.text
 

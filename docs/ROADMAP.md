@@ -100,16 +100,15 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 ## Status table (the session keeps this current; one line per item)
 | ID | Status | Next action | PR |
 |---|---|---|---|
-| BUG-C1 | waiting for owner | plan sent; Charts: never a blank canvas when closed (history or a plain empty state) | - |
-| BUG-A1 | waiting for owner | plan sent; Analyze a chart: no admin wording for users; engine installed by the deploy + health | - |
-| BUG-M1 | waiting for owner | plan sent; phone timeframe row + header | - |
+| UI-H | in progress | audit approved (#503); Wave 0 shared components next (one SubTabs style; mocks per wave), then Wave 1 | #503 |
+| UI-H-BUG | in progress | bug lane: C1, B2a/B2b, B3+B4+Orders time, A1, B1 - small PRs, each with proof | - |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |
 | P1-2 | in review | notice (TT12-1) added; owner: "Merge" after green CI, then deploy (no migration) | #494 |
-| P1-2b | in progress | org-level min R:R 1.2 OFF, own PR, backtest parity | - |
+| P1-2b | in review | org min R:R OFF (0 = not set; an old stored 1.2 = not set), parity tests live / paper / both backtests; owner: "Merge" after green CI, then deploy (no migration) | #497 |
 | P1-3 | waiting for owner | deploy, universe sync ON, "Enable trader features"; then day-one test on production | #470 |
 | P1-4 | in progress | verify which chart pages still bypass the core; gestures; phone recording | row 18 |
 | P1-5 | waiting for owner | `data_hub` ON via "Enable trader features" after the deploy; API-call numbers before / after | - |
-| P1-6 | in progress | T1 waits for ✅; T2 needs TM-2, TT-1, TT-8; TT-2 in review | #493, #492 |
+| P1-6 | in progress | T1 waits for ✅; T2 needs TM-2, TT-1; TT-2 in review; TT-8 (basket legs as one group, Exit this leg / the whole group) in review; partial exit = TT-9 | #493, #492, #501 |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | P2-1 | not started | next free P1 slot: one flag-audit table with a recommendation per flag | - |
 | P2-2 | not started | Copilot jobs 1-8 + own key + tools end to end (parts built, flags) | - |

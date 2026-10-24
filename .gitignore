@@ -21,3 +21,6 @@ dist/
 .deploy/
 # deploy/atp.sh loadtest: the reports it writes on the server (/opt/atp/reports)
 /reports/
+
+# A1: the private package checkout deploy/atp.sh keeps on the host (never committed here)
+/private/

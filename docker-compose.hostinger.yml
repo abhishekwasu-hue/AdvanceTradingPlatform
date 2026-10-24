@@ -75,6 +75,14 @@ services:
       API_WORKERS: ${API_WORKERS:-2}
       DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+      # A1: the chart analysis engine (private package atp_private), when deploy/atp.sh has installed it; see `volumes`.
+      PYTHONPATH: /opt/atp-private
+      ATP_PRIVATE_VERSION: ${ATP_PRIVATE_VERSION:-none}
+    # A1 (docs/design/PRIVATE_PACKAGE.md §6): the private checkout deploy/atp.sh keeps at /opt/atp/private, read-only.
+    # Never in an image; empty (engine "not installed") until the owner adds the deploy key and ATP_PRIVATE_REF. A changed
+    # checkout changes ATP_PRIVATE_VERSION, so the next `up` recreates the backend and the worker on it.
+    volumes:
+      - ./private:/opt/atp-private:ro
     deploy:
       resources:
         limits:
@@ -84,6 +92,10 @@ services:
   worker:
     environment:
       ATP_DEPLOYMENT_PHASE: ${ATP_DEPLOYMENT_PHASE:-phase0}     # the same mode as the API (see backend above)
+      PYTHONPATH: /opt/atp-private                              # A1: the private package, as for the API above
+      ATP_PRIVATE_VERSION: ${ATP_PRIVATE_VERSION:-none}
+    volumes:
+      - ./private:/opt/atp-private:ro
     deploy:
       replicas: 1          # H-1: exactly one trading worker (ADR-0010); the Redis lock is the backstop, not the plan
       resources:

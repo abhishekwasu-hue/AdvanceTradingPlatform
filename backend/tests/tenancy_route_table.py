@@ -828,6 +828,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/watchlists/system/{key}"): "self: always refused (403) - system lists are read-only; nothing is written",
     ("DELETE", "/api/watchlists/system/{key}"): "self: always refused (403) - system lists are read-only; nothing is written",
     ("POST", "/api/watchlists/system/{key}/copy"): S_OWN_WATCHLISTS,
+    # B2b: the owner's read-only probe of the broker's option chain spot (numbers only) - SUPER_ADMIN + two-factor.
+    ("GET", "/api/admin/option-chain/probe-chain"): "admin",
     ("GET", "/api/admin/system-watchlists"): "admin",
     ("POST", "/api/admin/system-watchlists/refresh"): "admin",
     ("GET", "/api/webhooks/tradingview/token"): "member",

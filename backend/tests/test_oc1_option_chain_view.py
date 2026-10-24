@@ -5,7 +5,7 @@ Every chain here is hand-made (round numbers, no market data). Each summary valu
 - PCR (OI): total put OI / total call OI;
 - max pain: the settlement strike with the smallest total payout to option holders;
 - ATM IV: the mean of the call and put IV at the ATM strike, in percent;
-- days to expiry: calendar days from today (IST);
+- days to expiry: TRADING days from today (IST), weekends and exchange holidays left out (B3);
 - the strikes with the highest call OI and put OI.
 Plus the expiry list and its default (the next expiry on an expiry day), the OI-change states and the two routes.
 """
@@ -92,7 +92,7 @@ def test_summary_values_by_hand():
     # ATM 110: call IV 14.0 (percent), put IV 0.16 (a fraction -> 16.0): mean 15.0
     assert s["atm_iv"] == pytest.approx(15.0)
     # 21 Oct -> 27 Oct
-    assert s["days_to_expiry"] == 6
+    assert s["days_to_expiry"] == 4                       # B3: trading days (Wed -> Tue: Thu, Fri, Mon, Tue)
     assert s["max_call_oi_strike"] == 120 and s["max_put_oi_strike"] == 100
     assert s["spot"] == 114.0 and s["futures"]["ltp"] == 115.0
     assert view["expiry"] == "2026-10-27" and view["oi_change"] == {"status": "ready", "source": "broker", "since": None}
@@ -338,7 +338,7 @@ def test_live_route_reads_the_chain_spot_and_future_through_the_broker(monkeypat
     assert broker.asked == [("NIFTY", date(2026, 10, 27))]
     s = body["summary"]
     assert s["spot"] == 114.0 and s["futures"] == {"symbol": "NIFTY26OCTFUT", "expiry": "2026-10-27", "ltp": 115.5}
-    assert s["atm_strike"] == 110 and s["max_pain"] == 120 and s["days_to_expiry"] == 6 and s["pcr_oi"] == pytest.approx(140 / 120)
+    assert s["atm_strike"] == 110 and s["max_pain"] == 120 and s["days_to_expiry"] == 4 and s["pcr_oi"] == pytest.approx(140 / 120)
     assert body["oi_change"]["status"] == "ready" and body["market_open"] is True and len(body["rows"]) == 4
     # No expiry asked: the default (the next expiry on the 21 Oct expiry day).
     broker.asked.clear()

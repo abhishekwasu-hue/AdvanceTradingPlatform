@@ -3,7 +3,7 @@
  * which expiry to show, the plain-word states, the columns, where the ATM row scrolls to and the number formats.
  * Nothing here reads the network or makes up a number: a missing value is shown as "–" (src/ui/format.ts).
  */
-import { EMPTY, MINUS, formatNumber } from "../ui/format";
+import { EMPTY, MINUS, formatDateTimeIST, formatNumber } from "../ui/format";
 import { FNO_STOCKS } from "../utils/fnoSymbols";
 import type { ChainExpiries, ChainLeg, ChainRow, LiveChain } from "./types";
 
@@ -45,13 +45,19 @@ export const TEXT = {
 
 export type Note = { key: "closed" | "building" | "since"; text: string };
 
+/** B2a: "As of the last session close, 23 Oct 2026, 15:30 IST" - what a closed market's numbers stand on. */
+export function lastCloseText(iso: string): string {
+  return `As of the last session close, ${formatDateTimeIST(iso)}`;
+}
+
 /** The notes above the chain: market closed (the server's answer for the underlying's exchange; the system status
  * until the first answer), OI change still building, or since when the OI change counts (when it is counted from the
  * first reading of the day, not from the broker). */
 export function chainNotes(live: LiveChain | null, marketOpen: boolean | null, sinceText: (iso: string) => string): Note[] {
   const notes: Note[] = [];
   const open = live?.market_open ?? marketOpen;
-  if (open === false) notes.push({ key: "closed", text: TEXT.closed });
+  // B2a: one note for a closed market, saying when the numbers are from (the server's last session close).
+  if (open === false) notes.push({ key: "closed", text: live?.data_as_of ? `Market closed — ${lastCloseText(live.data_as_of).replace(/^As/, "as")}` : TEXT.closed });
   if (live && live.oi_change.status === "building" && open !== false) notes.push({ key: "building", text: TEXT.building });
   if (live && live.oi_change.status === "ready" && live.oi_change.source === "first_reading" && live.oi_change.since) {
     notes.push({ key: "since", text: `OI change since ${sinceText(live.oi_change.since)}` });

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { RiskEvent, RiskLimit, RiskLimitType, RiskScope } from "../types";
 import { Card } from "./ui";
+import { formatDateTimeIST } from "../ui/format";
 
 const SCOPES: { value: RiskScope; label: string; needsId: string | null }[] = [
   { value: "TENANT", label: "Organisation", needsId: null },
@@ -145,7 +146,7 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
               <tbody>
                 {events.map((e) => (
                   <tr key={e.id} className="border-t border-border">
-                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{e.created_at ? new Date(e.created_at).toLocaleString() : "-"}</td>
+                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{e.created_at ? formatDateTimeIST(e.created_at) : "-"}</td>
                     <td className={`py-1 pr-3 font-semibold ${e.status === "BLOCK" ? "text-down" : e.status === "WARN" ? "text-warn" : "text-up"}`}>{e.status}{e.action !== "ALLOW" && e.action !== "BLOCK_ORDER" && e.action !== "WARN" ? ` · ${e.action.toLowerCase().replace("_", " ")}` : ""}</td>
                     <td className="py-1 pr-3 text-fg-muted">{e.strategy_id ?? "-"}{e.symbol ? ` · ${e.symbol}` : ""}</td>
                     <td className="py-1 pr-3 text-fg-muted">{e.reason}{e.order_id ? ` (order #${e.order_id})` : ""}</td>

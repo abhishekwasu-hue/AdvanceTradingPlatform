@@ -229,3 +229,21 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | DH-1 | Where do the broker-read index bars go? | HB2 / TM-7's rule: read only through the owner's own Upstox session (HISTORY_OWNER_TENANT_ID + NAME, HISTORY_OWNER_USER_ID) into his organisation's PRIVATE store (`md_tenant_candles`, source `broker:upstox:u<id>`); only he reads them and the zones built from them. The shared lake is never written, so other users still see only NSE's files until a licensed shared source exists (RDY-6). | `app/market_lake/index_history.py`, `own_bars.py` | open |
 | DH-2 | The Trade reader's closing-auction rule is not in this public repository. | Generic flags only: a 1-minute bar starting at or after 15:30 IST is dropped; a Daily high / low beyond the continuous session's extremes is read at the continuous extreme (open and close held inside); the stored Daily close stays the official close shown to the user. Replace with the Trade rule when it is ported (P5-1). | `index_history.auction_flags`, `own_bars.apply_flags` | open |
 | DH-3 | How much history? | Daily 10 years (Weekly built from it), 1-minute 200 days (1H / 15M built from it; the reader's 1H lookback is 180 days); `LAKE_BACKFILL_DAILY_YEARS`, `LAKE_BACKFILL_INTRADAY_DAYS`. | `app/core/config.py` | open |
+## CP-V review (24 Oct 2026, docs/design/CP_V_REVIEW.md)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| CPV-1 | CP-V and Analyze a chart (P2-5): one feature or two? | One family: CP-V is a new data mode reusing chart_analyze's limits, storage, resolve and contract style; P2-5 keeps the uploaded image and the private engine. | `app/chart_analyze/` | open |
+| CPV-2 | Who pays for the vision call? | `resolve.provider_for_user`: the user's own key first (his USD caps), else the organisation's provider within plan budget and a per-user daily read count, else "Connect your AI". | `app/ai/resolve.py` | open |
+| CPV-3 | Paid-plan gate for keys whose free tier may train on input (Gemini)? | Not needed for CP-V: only the generic checklist, bars and images are sent, never the private method. | `app/ai/resolve.py` | open |
+| CPV-4 | Is the CV8 checklist public-safe? | Yes as plain generic items in a public settings default; the owner's definitions and weights stay in atp-private behind a provider boundary. | settings | open |
+| CPV-5 | "Room to the next opposite zone" and "area of interest" wording. | Ranges only; room shown as the next zone's price range, no points, no R:R; no strikes; disclaimer once. | contract | open |
+| CPV-6 | Can a read be shared? | Download only (PNG with the disclaimer on the image, CSV); no share link. | UI | open |
+| CPV-7 | Price validation rule. | Exact match after tick rounding to a high / low / open / close of a sent bar (and its time) or an engine level; digits in free text stripped; failures listed "not confirmed". | validator | open |
+| CPV-8 | Cache scope. | Per organisation (per user on his own key), key = symbol + last closed bar per TF + bar fingerprint + source + checklist version + model + mode. | chart read store | open |
+| CPV-9 | Four images per call or one composite? | Four images in one call where the provider takes several; a 2x2 composite otherwise. | `app/ai/providers.py` | open |
+| CPV-10 | When is an engine reading "complete" (CV14)? | Per TF: enough closed bars (number in settings), current last bar, no DH3 flag, a trend state, a zone above and below. Advanced when all four TFs are complete; else AI only, naming the TF. | CV14 | open |
+| CPV-11 | Which bars does the code read in Advanced? | The same bar set sent to vision, computed in process (not the lake-only layer endpoint), so "disagree" is real. | CV14 | open |
+| CPV-12 | Bars per TF in the image / table, and the model's confidence. | 120 closed bars per TF (setting); confidence as text high / medium / low only, never a number. | settings | open |
+| CPV-13 | Flag and entry point. | New flag `copilot_chart_read` (off) behind `ui_v2`; a Copilot read tool plus a card; ADR-0006 tests (no write tool). | `app/ai/tools/` | open |
+| CPV-14 | Which symbols count as the user's own (CLAUDE.md §3 price ranges)? | A symbol the user asked about in his own Copilot is his chosen symbol; ranges are shown only to him. | §3 | open |

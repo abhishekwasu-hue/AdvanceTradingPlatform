@@ -8,6 +8,7 @@ import type {
   BacktestRunSummary, CustomStrategyResponse, MarketplaceCharge, MarketplaceEarnings, MarketplaceListing, MarketplacePayout, MarketplaceRevenue,
   MarketplaceSubscription, MarketplaceTerms,
 } from "../types";
+import { formatDateIST } from "../ui/format";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
 const pct = (v: number | null) => (v == null ? "-" : `${(v * (v <= 1 ? 100 : 1)).toFixed(1)}%`);
@@ -146,7 +147,7 @@ export default function MarketplacePage() {
                 <td className="py-1">{inr(c.amount, c.currency)}</td>
                 <td className="py-1"><span className={`rounded-md border px-2 py-0.5 text-xs font-bold ${c.status === "PAID" ? "border-up/40 text-up" : c.status === "OPEN" ? "border-warn/40 text-warn" : "border-border text-fg-muted"}`}>{c.status}</span></td>
                 <td className="py-1 text-fg-muted">{c.status === "OPEN" ? (c.checkout_url ? <a className="text-brand underline" href={c.checkout_url} target="_blank" rel="noreferrer">pay now</a> : `awaiting operator confirmation (charge #${c.id})`) : c.payment_ref ? `ref ${c.payment_ref}` : ""}</td>
-                <td className="py-1 text-fg-muted text-right">{c.created_at ? new Date(c.created_at).toLocaleDateString() : ""}</td>
+                <td className="py-1 text-fg-muted text-right">{c.created_at ? formatDateIST(c.created_at) : ""}</td>
               </tr>
             ))}
           </tbody></table>
@@ -220,14 +221,14 @@ export default function MarketplacePage() {
           {earnings.payouts.length > 0 && (
             <table className="w-full text-xs mt-3"><tbody>
               {earnings.payouts.map((p) => (
-                <tr key={p.id} className="border-t border-border/60"><td className="py-1">Payout #{p.id}</td><td className="py-1">{inr(p.amount, p.currency)}</td><td className="py-1">{p.status}</td><td className="py-1 text-fg-muted">to {p.destination_hint}{p.reference ? ` · ref ${p.reference}` : ""}{p.note ? ` · ${p.note}` : ""}</td><td className="py-1 text-fg-muted text-right">{p.created_at ? new Date(p.created_at).toLocaleDateString() : ""}</td></tr>
+                <tr key={p.id} className="border-t border-border/60"><td className="py-1">Payout #{p.id}</td><td className="py-1">{inr(p.amount, p.currency)}</td><td className="py-1">{p.status}</td><td className="py-1 text-fg-muted">to {p.destination_hint}{p.reference ? ` · ref ${p.reference}` : ""}{p.note ? ` · ${p.note}` : ""}</td><td className="py-1 text-fg-muted text-right">{p.created_at ? formatDateIST(p.created_at) : ""}</td></tr>
               ))}
             </tbody></table>
           )}
           {earnings.sales_rows.length > 0 && (
             <table className="w-full text-xs mt-3"><thead className="text-fg-muted uppercase text-xs"><tr className="text-left"><th className="py-1">Sale</th><th className="py-1">Gross</th><th className="py-1">Fee</th><th className="py-1">Your share</th><th className="py-1">Payout</th></tr></thead><tbody>
               {earnings.sales_rows.map((c) => (
-                <tr key={c.id} className="border-t border-border/60"><td className="py-1">{c.listing_title} · buyer org #{c.buyer_tenant_id} · {c.paid_at ? new Date(c.paid_at).toLocaleDateString() : ""}</td><td className="py-1">{inr(c.amount, c.currency)}</td><td className="py-1 text-fg-muted">{c.platform_fee_pct}% = {inr(c.platform_fee, c.currency)}</td><td className="py-1 text-up">{inr(c.creator_net, c.currency)}</td><td className="py-1 text-fg-muted">{c.payout_id ? `#${c.payout_id}` : "available"}</td></tr>
+                <tr key={c.id} className="border-t border-border/60"><td className="py-1">{c.listing_title} · buyer org #{c.buyer_tenant_id} · {c.paid_at ? formatDateIST(c.paid_at) : ""}</td><td className="py-1">{inr(c.amount, c.currency)}</td><td className="py-1 text-fg-muted">{c.platform_fee_pct}% = {inr(c.platform_fee, c.currency)}</td><td className="py-1 text-up">{inr(c.creator_net, c.currency)}</td><td className="py-1 text-fg-muted">{c.payout_id ? `#${c.payout_id}` : "available"}</td></tr>
               ))}
             </tbody></table>
           )}

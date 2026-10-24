@@ -156,13 +156,14 @@ describe("Analyze a chart: API errors and inputs", () => {
 });
 
 describe("Analyze a chart: the page behind its flag", () => {
-  it("is hidden while the flag is off", async () => {
+  it("is hidden while the flag is off (A1: it first asks the status once, so nothing of the page shows meanwhile)", async () => {
     vi.resetModules();
     vi.doMock("../ui/useFeatures", () => ({ useFeatures: () => ({ loaded: true, on: () => false }) }));
     const { default: Page } = await import("./ChartAnalyzePageV2");
     const html = renderToStaticMarkup(<MemoryRouter><Page /></MemoryRouter>);
-    expect(html).toContain("Page not found");
+    expect(html).toContain('aria-busy="true"');
     expect(html).not.toContain("Analyze a chart");
+    expect(html).not.toContain("Coming soon");
     vi.doUnmock("../ui/useFeatures");
   });
 
@@ -180,5 +181,39 @@ describe("Analyze a chart: the page behind its flag", () => {
     expect(html).not.toMatch(/\b(Buy|Sell|Place order)\b/);
     vi.doUnmock("../ui/useFeatures");
     vi.doUnmock("../ui/PageIntro");
+  });
+});
+
+describe("Analyze a chart: the engine is not installed (A1)", () => {
+  const missing = { installed: false, message: "Analysis engine not installed" };
+  const loadUnavailable = async () => (await import("./ChartAnalyzePageV2")).EngineUnavailable;
+
+  it("a user sees one plain line, no upload or link input, no reason and never 'Coming soon'", async () => {
+    const EngineUnavailable = await loadUnavailable();
+    const html = renderToStaticMarkup(<EngineUnavailable engine={missing} />);
+    expect(html).toContain("Chart analysis is not available right now");
+    expect(html).not.toMatch(/Coming soon|not open for your account|Choose an image|paste a chart link|type="file"|<input/i);
+    expect(html).not.toContain("For admins");
+    expect(html).not.toMatch(/private package|ATP_PRIVATE_REF|deploy key/i);
+  });
+
+  it("the admin also sees why and the owner's install steps", async () => {
+    const EngineUnavailable = await loadUnavailable();
+    const html = renderToStaticMarkup(<EngineUnavailable engine={{ ...missing, reason: "the private package is not installed on this server",
+      owner_steps: "The owner adds the host's read-only deploy key and ATP_PRIVATE_REF, then runs the deploy." }} />);
+    expect(html).toContain("Chart analysis is not available right now");
+    expect(html).toContain("For admins: the analysis engine is missing");
+    expect(html).toContain("Why: the private package is not installed on this server.");
+    expect(html).toContain("ATP_PRIVATE_REF");
+    expect(html).not.toMatch(/<input/);
+  });
+
+  it("the page maps installed=false to that state, not to the generic Coming soon", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(new URL("./ChartAnalyzePageV2.tsx", import.meta.url), "utf8");
+    const unavailable = src.indexOf("if (engineMissing && !off) return <EngineUnavailable engine={status.engine} />;");
+    expect(unavailable).toBeGreaterThan(0);
+    expect(src.indexOf("<ComingSoon")).toBeGreaterThan(unavailable);      // "Coming soon" only for a flag that is off
+    expect(src).toContain("if (!on) return <ComingSoon flag={FLAG} />;");
   });
 });

@@ -295,7 +295,7 @@ def test_dish_lines_from_the_analyses_and_the_first_snapshot():
     assert lines["expected_move"]["state"] == "unknown"                     # the ATM options have no price here
     priced = {p["key"]: p for p in D.build(A.compute_all(PRICED, [], NOW), PRICED, [])["points"]}
     assert priced["expected_move"]["text"] == ("The ATM straddle prices a move of about 11.86% either way by expiry: 104.00 to "
-                                               "132.00, with 6 days to expiry.")
+                                               "132.00, with 4 trading days to expiry.")   # B3: Wed -> Tue = 4 trading days
     for text in _strings(out):
         assert _clean(text), text
 

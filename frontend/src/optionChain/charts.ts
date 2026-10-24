@@ -1,6 +1,7 @@
 import { request } from "../api/client";
 import { MINUS, formatNumber, formatTimeIST } from "../ui/format";
 import { formatStrike, toneClasses, yTick, type Tone } from "./analyses";
+import { lastCloseText } from "./model";
 
 /**
  * OC5 (owner's order, handover 2c): the Option chain "Charts" view's data - `GET /api/option-chain/charts` (read-only;
@@ -62,7 +63,11 @@ export interface ChartsResponse {
   charts: ChainChart[];
   facts: ChartFacts | null;
   spot?: number | null;
+  /** B2b: "last_close" when the market is closed and the spot is the index's last close from our own candles. */
+  spot_source?: "broker" | "last_close";
   data_as_of?: string;
+  /** B2a: true when `data_as_of` is the last session close (the market is closed). */
+  market_closed?: boolean;
   source?: { broker: string; account_label: string };
   window?: { each_side: number; strikes: number[]; atm: number | null };
   intervals?: number[];
@@ -102,7 +107,7 @@ export function chartsStateMessage(data: ChartsResponse): string | null {
 /** "Data as of 10:00 IST · 12 readings since 09:20 IST" - what the charts stand on. */
 export function chartsProvenance(data: ChartsResponse): string {
   const parts: string[] = [];
-  if (data.data_as_of) parts.push(`Data as of ${formatTimeIST(data.data_as_of)}`);
+  if (data.data_as_of) parts.push(data.market_closed ? lastCloseText(data.data_as_of) : `Data as of ${formatTimeIST(data.data_as_of)}`);
   const s = data.session;
   if (s && s.readings > 0 && s.since) parts.push(`${s.readings} stored ${s.readings === 1 ? "reading" : "readings"} since ${formatTimeIST(s.since)}`);
   return parts.join(" · ");

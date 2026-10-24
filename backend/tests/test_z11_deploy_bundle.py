@@ -47,7 +47,7 @@ with open(STATE) as fh:
     st = json.load(fh)
 argv = sys.argv[1:]
 st["calls"].append({"argv": argv, "release": os.environ.get("ATP_RELEASE", ""), "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", ""),
-                   "phase": os.environ.get("ATP_DEPLOYMENT_PHASE", "")})
+                   "phase": os.environ.get("ATP_DEPLOYMENT_PHASE", ""), "private": os.environ.get("ATP_PRIVATE_VERSION", "")})
 rc = 0
 out = []
 APP = {"backend": "atp-backend", "worker": "atp-worker", "frontend": "atp-frontend", "research-worker": "atp-research-worker", "backup": "atp-backup"}
@@ -214,6 +214,9 @@ def run_sql(target, sqls):
 if sub == "exec":
     flags, pos = opts_and_services(args)
     svc, cmd = pos[0], pos[1:]
+    if svc == "backend" and cmd[:3] == ["python", "-m", "app.option_chain.probe"]:   # B2b: probe-chain (own tests: test_b2_as_of_spot)
+        st.setdefault("chain_probes", []).append(cmd[3:])
+        out.append(f"probe-chain {' '.join(cmd[3:])}"); finish()
     if svc == "postgres" and cmd[:2] == ["sh", "-c"] and "/wal_archive" in cmd[2]:   # health: files and MB in the archive
         out.append(f"{st.get('wal_files', 0)} {st.get('wal_files', 0) * 16}"); finish()
     if svc == "postgres" and cmd[:1] == ["pg_basebackup"]:
@@ -257,6 +260,9 @@ if sub == "exec":
     if svc == "backend":
         if cmd[:2] == ["test", "-f"]:
             finish()
+        if cmd[:3] == ["python", "-m", "app.market_data.probe"]:          # C1: probe-candles (read-only; own tests: test_c1_closed_history)
+            st.setdefault("probes", []).append(cmd[3:])
+            out.append(f"probe-{cmd[3]} {' '.join(cmd[4:])}"); finish()
         if cmd[:2] == ["python", "scripts/deploy_audit.py"]:              # A3: the untested deploy's audit row, reason on stdin
             st.setdefault("audit", []).append({"argv": cmd[2:], "reason": sys.stdin.readline().strip(), "release": rel})
             finish()
@@ -265,6 +271,12 @@ if sub == "exec":
         if cmd[:2] == ["python", "scripts/ops_check.py"]:                  # A2: the host facts arrive on stdin
             st["ops_check_input"] = json.loads(sys.stdin.read() or "{}")
             out.append("ops-check: disk=ok | 0 change(s) to report"); finish()
+        if cmd[:2] == ["sh", "-c"] and "engine_status.py" in cmd[2]:      # A1: the chart analysis engine's state
+            if st.get("engine") is None:
+                rc = 1
+            else:
+                out.append(json.dumps(st["engine"]))
+            finish()
         if cmd[:2] == ["sh", "-c"] and "flag_posture.py" in cmd[2]:
             if st["posture"] is None:
                 rc = 1
@@ -1718,6 +1730,19 @@ def test_the_rehearsals_and_the_deploy_line_keep_to_the_gate():
         assert line in template
 
 
+# --- B2b: probe-chain (the owner's read-only option chain spot probe, numbers only) -----------------------------------
+
+def test_probe_chain_is_read_only_and_checks_its_input(host):
+    assert host.run("deploy").returncode == 0
+    since = len(host.state["calls"])
+    res = host.run("probe-chain", "NIFTY")
+    assert res.returncode == 0, res.all
+    assert "probe-chain NIFTY" in res.stdout and host.state["chain_probes"] == [["NIFTY"]] and host.mutating(since) == []
+    for args in (("NIFTY; rm -rf /",), (), ("NIFTY", "BANKNIFTY"), ("N$FTY",)):
+        assert host.run("probe-chain", *args).returncode == 2, args
+    assert len(host.state["chain_probes"]) == 1
+
+
 # --- WL1-4: env-set (the allowlisted .env switches) and lists-sync (the universe sync + system lists NOW) ------------
 
 def _env_text(host):
@@ -1804,3 +1829,18 @@ def test_lists_sync_respects_the_session_gate_and_a_failed_sync_restarts_nothing
     res = host.run("lists-sync")
     assert res.returncode == 1 and "the sync did not finish" in res.all
     assert [c for c in host.mutating(since) if "run_now" not in c] == []
+
+
+# --- C1: probe-candles (the owner's read-only broker probe, counts only) ---------------------------------------------
+
+def test_probe_candles_is_read_only_and_checks_its_input(host):
+    assert host.run("deploy").returncode == 0
+    since = len(host.state["calls"])
+    res = host.run("probe-candles", "NIFTY2610325000CE", "30m")
+    assert res.returncode == 0, res.all
+    assert "probe-candles NIFTY2610325000CE 30m" in res.stdout
+    assert host.state["probes"] == [["candles", "NIFTY2610325000CE", "30m"]] and host.mutating(since) == []
+    for args in (("NIFTY; rm -rf /", "30m"), ("NIFTY", "2min"), ("NIFTY",), ("NIFTY", "D", "N$E")):
+        bad = host.run("probe-candles", *args)
+        assert bad.returncode == 2, (args, bad.all)
+    assert len(host.state["probes"]) == 1

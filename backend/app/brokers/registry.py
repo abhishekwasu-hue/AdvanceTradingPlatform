@@ -8,6 +8,8 @@ from app.brokers.shoonya import ShoonyaBroker
 from app.brokers.angel_one import AngelOneBroker
 from app.brokers.dhan import DhanBroker
 from app.brokers.fyers import FyersBroker
+from app.brokers.kotak_neo import KotakNeoBroker
+from app.brokers.groww import GrowwBroker
 from app.brokers.coindcx import CoinDCXBroker
 from app.brokers.upstox import UpstoxBroker
 from app.brokers.zerodha import ZerodhaBroker
@@ -21,6 +23,8 @@ BROKER_ADAPTERS: Dict[str, Type[BrokerInterface]] = {
     FyersBroker.name: FyersBroker,
     DhanBroker.name: DhanBroker,
     CoinDCXBroker.name: CoinDCXBroker,
+    KotakNeoBroker.name: KotakNeoBroker,
+    GrowwBroker.name: GrowwBroker,
 }
 
 

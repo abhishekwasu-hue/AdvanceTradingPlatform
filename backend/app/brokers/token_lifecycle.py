@@ -54,6 +54,12 @@ TOKEN_DAILY_EXPIRY_IST: Dict[str, time] = {
     "angel_one": time(5, 0),     # SmartAPI JWTs are invalidated in the early morning
     "fyers": time(6, 0),
     "dhan": time(6, 0),
+    # Part 1B: Kotak Neo publishes no session end time (KN-4); the conservative default until it is confirmed. A TOTP
+    # login each day, as SEBI's retail-algo framework asks.
+    "kotak_neo": time(6, 0),
+    # Part 1B: Groww's access token ends daily at 06:00 (Groww's API docs, search extract; the time zone is not stated,
+    # IST assumed - GW-2). A TOTP login each morning (one click) or the approval flow.
+    "groww": time(6, 0),
 }
 _DEFAULT_EXPIRY_IST = time(6, 0)
 # Brokers whose credential is a long-lived API key/secret rather than a daily session token: once a

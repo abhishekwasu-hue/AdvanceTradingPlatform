@@ -38,6 +38,7 @@ import {
 import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from "./PartsV2";
 import { PracticeFrame } from "../fno/OrderTicketV2";
 import { SettlementWarningsV2 } from "../fno/SmartExecutionV2";
+import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
 
 // N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
@@ -194,6 +195,8 @@ export default function PositionsV2(_props: PageProps = {}) {
 
       {/* TM Part 7 (flag smart_execution): stock F&O that may settle by delivery, flagged ahead (information only). */}
       {features.on("smart_execution") && signedIn && <SettlementWarningsV2 />}
+      {/* SE-7 (flag smart_execution): a multi-leg order that stopped half way - his three taps and his rule's countdown. */}
+      {features.on("smart_execution") && signedIn && <IncompleteOrdersV2 />}
 
       {/* MO4 slice 4: the page's ready-made dish (ui_v2 + growth_v2): his risk in plain words, what is coming up. */}
       {features.on("growth_v2") && <PageDishV2 page="positions" />}

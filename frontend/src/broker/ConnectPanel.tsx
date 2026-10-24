@@ -1,4 +1,4 @@
-import { ExternalLink, TriangleAlert } from "lucide-react";
+import { ExternalLink, Info, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import { ApiError, NETWORK_MESSAGE } from "../api/errors";
@@ -30,6 +30,12 @@ import { entryFor, useBrokerCatalog } from "./useBrokerCatalog";
  * public/ and list them here; the panel shows them under the steps.
  */
 export const HOW_TO_IMAGES: Readonly<Record<string, readonly string[]>> = {};
+
+/** Part 1B: real orders through this broker are not offered yet (Kotak Neo, Groww until they confirm in writing): the connection
+ * reads positions, holdings and funds, and practice mode works. */
+export function isPracticeOnly(entry: Pick<BrokerCatalogEntry, "gates">): boolean {
+  return entry.gates?.live_orders === "closed";
+}
 
 export type PanelMode = "connect" | "renew";
 
@@ -155,6 +161,35 @@ export function ConnectPanelView({ entry, step, values, onChange, onSubmit, busy
       </div>
 
       {note && <p role="status" data-note className="text-t14 text-fg">{note}</p>}
+
+      {/* Part 1B: the connect guide in plain words with the broker's own links (Kotak Neo); practice only until the
+          broker confirms in writing. Only on the first connect, not on the daily renew. */}
+      {step.endpoint === "connect" && (entry.guide || isPracticeOnly(entry)) && (
+        <div data-broker-guide={entry.broker} className="space-y-space-2 rounded-control border border-subtle bg-surface-2 px-space-3 py-space-3">
+          {entry.guide ? (
+            <ul className="space-y-space-1 text-t13 text-fg-muted">
+              {entry.guide.points.map((p, i) => (
+                <li key={p} className={`flex items-start gap-space-2 ${i === 0 ? "font-medium text-fg" : ""}`}>
+                  {i === 0 && <Info size={16} aria-hidden className="mt-0.5 shrink-0 text-brand" />}
+                  <span>{p}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="flex items-start gap-space-2 text-t13 text-fg"><Info size={16} aria-hidden className="mt-0.5 shrink-0 text-brand" /><span>{entry.gates?.note}</span></p>
+          )}
+          {entry.guide && entry.guide.links.length > 0 && (
+            <div className="flex flex-wrap gap-x-space-4 gap-y-space-1">
+              {entry.guide.links.map((l) => (
+                <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer" data-guide-link
+                  className="inline-flex min-h-11 items-center gap-space-1 text-t13 text-brand hover:underline">
+                  {l.label} <ExternalLink size={14} aria-hidden />
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {step.login && (
         <div className="space-y-space-2">

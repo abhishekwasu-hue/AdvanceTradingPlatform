@@ -65,6 +65,11 @@ describe("UI2-2 blocks", () => {
     const sig = html(<ActiveSignalsV2 data={{ status: "ok", rows: [], total: 0 }} />);
     expect(sig).toContain("No signals yet today. Your scans and paper bots post them here.");
     expect(sig).toContain('href="/screener/custom"');
+    // Day-one fix 9: with the ready strategies on, the empty day points to the one-tap Signals watch
+    const ready = html(<ActiveSignalsV2 data={{ status: "ok", rows: [], total: 0 }} readyWatch />);
+    expect(ready).toContain("Pick a ready strategy on Signals and it reads every NIFTY 50 stock for you in one tap.");
+    expect(ready).toContain('href="/signals"');
+    expect(ready).toContain("Watch a list on Signals");
     expect(html(<OpenPositionsV2 data={{ status: "error" }} />)).toContain("We could not load your positions. We will try again in a moment.");
   });
 

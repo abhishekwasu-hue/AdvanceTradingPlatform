@@ -77,6 +77,14 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P3-3 | Safe deploys + rollback | row 17 | `atp.sh` rollback tested |
 | P3-4 | Security + DPDP privacy | row 17 | checklist done; the lawyer items listed |
 | P3-5 | Legal pages + SEBI groundwork | row 17, COMPLIANCE_IN.md | text from the lawyer (owner task) |
+| TP-1 | F1 Pre-trade risk card on every order review (single, spread, basket) | ATP_ORDER_TRADER_PROTECTION.md | merged + flag decided + deployed + checked on production; phone + desktop screenshots; owner ✅ |
+| TP-2 | F7 Naked-short warning (review + positions; warning only) | ATP_ORDER_TRADER_PROTECTION.md | merged + flag decided + deployed + checked on production; phone + desktop screenshots; owner ✅ |
+| TP-3 | F3 Charges & slippage meter (per trade, per month) | ATP_ORDER_TRADER_PROTECTION.md | merged + flag decided + deployed + checked on production; phone + desktop screenshots; owner ✅ |
+| TP-4 | F2 Personal rules guard (user-set, all OFF by default; exits always allowed) | ATP_ORDER_TRADER_PROTECTION.md | merged + flag decided + deployed + checked on production; phone + desktop screenshots; owner ✅ |
+| TP-5 | F5 Alerts: zone entry, false / confirmed break, combined-SL distance (screen + Telegram / WhatsApp, confirm step) | ATP_ORDER_TRADER_PROTECTION.md | merged + flag decided + deployed + checked on production; phone + desktop screenshots; owner ✅ |
+| TP-6 | F4 Auto journal + weekly review report | ATP_ORDER_TRADER_PROTECTION.md | merged + flag decided + deployed + checked on production; phone + desktop screenshots; owner ✅ |
+| TP-7 | F6 Option-seller tools: what-if / stress, roll helper, adjustment information | ATP_ORDER_TRADER_PROTECTION.md | merged + flag decided + deployed + checked on production; phone + desktop screenshots; owner ✅ |
+| TP-8 | F8 Copilot post-trade review from the journal (uses CP-V) | ATP_ORDER_TRADER_PROTECTION.md | merged + flag decided + deployed + checked on production; phone + desktop screenshots; owner ✅ |
 
 ### Phase 4 — The advanced terminal
 | ID | Item | Source |
@@ -130,6 +138,14 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P3-3 | not started (parallel) | rollback test of `atp.sh` | - |
 | P3-4 | not started (parallel) | security + DPDP checklist | - |
 | P3-5 | waiting for owner | the lawyer's text | - |
+| TP-1 | not started | starts only after Phase 1 is complete | - |
+| TP-2 | not started | after TP-1 (in order) | - |
+| TP-3 | not started | after TP-2 (in order) | - |
+| TP-4 | not started | after TP-3 (in order) | - |
+| TP-5 | not started | after TP-4 (in order) | - |
+| TP-6 | not started | after TP-5 (in order) | - |
+| TP-7 | not started | after TP-6 (in order) | - |
+| TP-8 | not started | after TP-7 (in order) | - |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |
 | P4-3 | in review | Kotak Neo / Groww merged with LIVE gated; connect guides to check | #473, #481 (merged) |

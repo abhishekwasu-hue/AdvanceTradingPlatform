@@ -38,6 +38,9 @@ ORDER_CALL_SITES: Dict[Tuple[str, str], Tuple[str, str]] = {
         (ENTRY, "the legs of a LIVE option structure; reached only from the trading worker"),
     ("app.execution.multileg._unwind", "place_order"):
         (EXIT, "reverses the filled legs of a structure that failed half way"),
+    ("app.execution.multileg_smart.place_legs", "place_order"):
+        (ENTRY, "SE-7: the legs of a structure on the smart-execution engine (hedges first); from the trading worker only "
+                "(execute_structure, and \"Complete the rest\" which the route only records)"),
     ("app.trading.position_monitor._square_off_live", "place_order"):
         (EXIT, "closes an open LIVE position (stop, target, square-off, emergency exit, approved exit)"),
     ("app.trading.position_monitor._apply_trade_exit_rules", "modify_order"):
@@ -50,6 +53,8 @@ ORDER_CALL_SITES: Dict[Tuple[str, str], Tuple[str, str]] = {
 GATED: Dict[str, str] = {
     "app.execution.signal_execution.execute_signal_for_user": "broker",
     "app.execution.multileg.execute_structure": "broker",
+    "app.execution.multileg_smart.place_legs": "broker",
+    "app.execution.incomplete_structures.complete_rest": "broker",
     "app.execution.router.OrderRouter.__init__": "broker",
     "app.trading.position_monitor.close_position": "broker",
     "app.ai.monitor.execute": "broker",
@@ -68,6 +73,9 @@ ROUTES_REACHING_BROKER_ORDERS: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/basket/close-filled"):
         "TM Part 7 \"Close the filled legs\": the caller's own legs through approval.exit_now one by one (shorts first), "
         "so LIVE is refused before any close exactly as for Exit now - an exit only (ADR-0004)",
+    ("POST", "/api/trading/incomplete/{group_id}/answer"):
+        "SE-7 \"Close the filled legs\" of an incomplete structure: an exit through close_group (sold legs first); the "
+        "route closes PAPER legs only and leaves LIVE legs to the worker; \"Complete the rest\" is only recorded here",
     ("POST", "/api/kill-switch/emergency-exit"):
         "the tenant's emergency stop: engages the kill switch, then closes its open positions (exit, ADR-0004)",
     ("POST", "/api/ai/actions/{action_id}/approve"):

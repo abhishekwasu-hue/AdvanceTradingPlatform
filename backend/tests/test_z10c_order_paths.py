@@ -44,6 +44,10 @@ ORDER_CALL_SITES: Dict[Tuple[str, str], Tuple[str, str]] = {
         (PROTECTIVE, "moves the broker-side stop of an open LIVE position (trailing / break-even)"),
     ("app.trading.stop_guard._guard_one", "place_stop_loss_order"):   # (per position, from verify_protective_stops)
         (PROTECTIVE, "re-arms a missing broker-side stop of an open LIVE position"),
+    # TM-3: re-prices a marketable LIMIT that is already working (entry or exit) through the adapter it is handed; places
+    # nothing new. Classed ENTRY - the strictest - so rule 2 proves no API route reaches it.
+    ("app.execution.marketable_limit.reprice_until_filled", "modify_order"):
+        (ENTRY, "re-prices an already-placed marketable limit at a broker without market orders (TM-3)"),
 }
 
 # Callables that place broker orders only through the broker argument they are given (qualname -> parameter).
@@ -53,6 +57,7 @@ GATED: Dict[str, str] = {
     "app.execution.router.OrderRouter.__init__": "broker",
     "app.trading.position_monitor.close_position": "broker",
     "app.ai.monitor.execute": "broker",
+    "app.execution.marketable_limit.reprice_until_filled": "adapter",
 }
 # Where a broker adapter comes from: everything that builds one goes through these.
 ADAPTER_FACTORIES = frozenset({"app.brokers.registry.get_broker_adapter", "app.brokers.token_lifecycle.build_adapter"})

@@ -35,6 +35,7 @@ _CATEGORY_OF: Dict[str, str] = {
     NotificationType.NEWS_ALERT.value: "alerts",
     NotificationType.RISK_REJECTION.value: "risk",
     NotificationType.DAILY_LOSS_LIMIT.value: "risk",
+    NotificationType.SETTLEMENT_WARNING.value: "risk",
     NotificationType.TOKEN_EXPIRED.value: "account",
     NotificationType.BROKER_DISCONNECT.value: "account",
     NotificationType.SECURITY.value: "account",

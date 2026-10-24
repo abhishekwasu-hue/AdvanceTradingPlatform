@@ -3563,6 +3563,22 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
 
+## 23 Oct - Terminal master Part 9.4: chain history, start recording now (+ TM-7 fix of the OI collector)
+
+- Branch `claude/terminal-chain-history` (from main). **Migration `250d796123b7`** (additive, rollback-safe; deploy after
+  15:30 IST). Flag `chain_history` (off by default) - the owner switches it on for his organisation.
+- `app/market_lake/chain_store.py` (tenant-private store, zlib JSON codec, reads that require the tenant, admin counts and
+  gaps), `chain_recorder.py` (one slot per `CHAIN_HISTORY_SLOT_MINUTES` through the owner's own session, the calendar,
+  `acquire_spare` on the worker's budget), `chain_history_routes.py` (`/api/chain-history/coverage|day|range`,
+  `/api/admin/chain-history/status`); worker hook `_maybe_start_chain_history`; retention `RETENTION_CHAIN_HISTORY_DAYS`
+  (0 = kept, TM-8); `OptionChainRow` gamma / theta / vega (Upstox sends them); Upstox reads the SENSEX / BANKEX chain
+  from the BSE master.
+- TM-7 OI collector: each organisation's slots through its own session, stored and read per tenant; pre-fix rows only
+  for the confirmed owner. Every OI reader takes the tenant.
+- Admin > System "Chain history" card; `admin-system-v2-*` baselines updated.
+- Docs: `docs/design/CHAIN_HISTORY.md`, DATA_SOURCES line, OPEN_QUESTIONS `TM94-1..7`.
+
+
 ## 23 Oct - User-friendly pass item 1: "Verify your email" leaves the top bar
 
 - Branch `claude/ufp-verify-email` (from main), shipped first on the owner's word. Frontend only, **no migration**, no flag.
@@ -3726,3 +3742,57 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - One tap: `StoredLoginAction` ("Log in to <Broker>" through the existing login path; "Connect a broker" / "Open Broker"
   otherwise).
 - Tests: `src/backtest/pricesLine.test.tsx` (+2), e2e `e2e/d1-stored-bar-v2.e2e.ts` (no baseline).
+## 23 Oct - Day-one fix 2: Find setups and Signals before the broker login (README row 19, DAY_ONE_TRADER_TEST finding 2)
+
+- Branch `claude/d1-fix-before-login` (from main). **No migration**, no new flag: behind `ui_v2` + the area flags +
+  `backtest_stored_history` (owner decision flag, OFF by default).
+- Backend `app/screener/stored_history.py`: when the broker path refuses a run for want of a session (409), a Daily /
+  Weekly / Monthly NSE screen reads the same licensed stored Daily bars and window as the stored-history backtest
+  (`bar_source.lake_frame`; today's bar never read), `data_source` `lake:daily`; a missing symbol says "Daily history
+  for X is not stored yet."; intraday screens, other exchanges and the flag off keep the 409 exactly. Hooked in
+  `load_universe`, so the run route and the Copilot's screener tools (its rule answers) share it. Tests
+  `tests/test_d1_screener_stored_history.py` (4).
+- Frontend: `BrokerGate storedDaily` + `StoredDailyNote` - on Find setups and Signals (`STORED_DAILY_PAGES`) the page
+  shows its content under one line with the one-tap "Log in to <Broker>" (or "Connect a broker") instead of the full
+  gate; Charts and the other data pages keep the gate. The Signals day-one watch already reads the shared Daily lake;
+  the Copilot page has no gate. Tests `src/ui/storedDaily.test.tsx` (4), e2e `e2e/d1-before-login-v2.e2e.ts` (no
+  baseline). Charts on stored Daily history is a later PR.
+## 23 Oct - Day-one fix 1: the idea's strategy can be backtested (README row 19, DAY_ONE_TRADER_TEST finding 1)
+
+- Branch `claude/d1-fix-template-backtest` (from main). Frontend only, **no migration**, no new flag: behind `ui_v2` +
+  `strategy_templates` (the stored-history part also `backtest_stored_history`, as before).
+- Strategies › Test lists the adoptable strategy templates ("Strategy templates" group) and opens one from
+  `?template=<id>&timeframe=..&set.<key>=..`; a run asks the server's adopt pre-fill for the strategy id (nothing is
+  created) and backtests it with the existing `/api/backtest` (template ids were already accepted there).
+- The timeframe in plain words (`src/backtest/templateTest.ts`): without broker prices an intraday idea runs on Daily
+  stored history and the page says so; an intraday pick says it needs the broker's prices.
+- "Test it on past prices" on an adoptable idea card, "Test it first on past prices" on the Paper bot form's template.
+- Tests: `src/backtest/templateTest.test.tsx` (6), e2e `e2e/d1-template-backtest-v2.e2e.ts` (390 / 1440, light / dark,
+  no baseline); updated baselines `idea-library-adopt-v2-*`, `strategy-templates-v2-*`, `strategy-templates-exits-v2-*`.
+## 23 Oct - TM94-3: the Phase W option-chain recorder per organisation
+
+- Branch `claude/phase-w-recorder-per-tenant` (from main). **Migration `3c5e7a9b1d24`** (after `e8a0c2d4f6b9`; additive:
+  a nullable `option_chain_snapshots.tenant_id` with its key and a lookup index; rollback-safe; deploy after 15:30 IST).
+  Re-chain with #465's `250d796123b7` at merge (TM943-5).
+- `app/backtest/chain_recorder.py`: `record_chain` / `rows_from_chain` / `last_capture` take the tenant; `scope` /
+  `legacy_owner` / `visible_to` give each reader its own rows and uploads (pre-fix rows only for the confirmed owner).
+  Worker `_record_chains(tenant_id=...)`: only the tenant's own deployments, its own data session, interval per
+  (tenant, underlying). BYOB unchanged.
+- Tests `backend/tests/test_tm94_3_phase_w_recorder_tenant.py` (7); `test_phase_w_option_backtest.py` and
+  `test_z10c_tenancy_fixes.py` now record per tenant. Questions TM943-1..5.
+
+## 23 Oct - Terminal master Part 7, PR B: smart execution (TM-3 / TM-9 / TM-10 / TM-11, README row 20)
+
+- Branched from PR A (#467, not merged). Flag `smart_execution` (OFF, behind `ui_v2`; catalog "ready", in the trader pack).
+- `app/execution/smart_execution.py`: hedge-first entry and shorts-first exit, `run()` with INCOMPLETE + "Complete the
+  rest" / "Close the filled legs", freeze slicing, marketable limit where market orders are refused, margin view
+  (broker basket margin or the labelled estimate, free balance after), physical-settlement flags.
+- `app/instruments/freeze_limits.py` + `data/freeze_limits.json` (NSE circular, source and as-of in the file;
+  `FREEZE_LIMITS_FILE` loads the exchange's sheet). Router adapter path slices inside one order.
+- `BrokerInterface.get_basket_margin` (Upstox, Kite; wrappers forward); `BrokerCapabilities.market_orders_allowed`.
+- Basket: `smart_view` on preview, `execute_smart`, `POST /basket/close-filled`; `GET /api/paper/fno/settlement`;
+  `app/paper/settlement_watch.py` + worker step (once a day per position, `SETTLEMENT_WARNING`). Prefs `smart_execution`.
+- Frontend `src/fno/SmartExecutionV2.tsx` (confirm block, incomplete card, Delivery ahead on Positions), ticket slicing line.
+- Tests `tests/test_tm7_smart_execution.py`, `src/fno/smartExecution.test.tsx`. Screenshots (fixtures, not committed):
+  scratchpad `tm-part7/`. Questions SE-4..SE-8. No migration.
+

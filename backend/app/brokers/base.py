@@ -8,6 +8,7 @@ from typing import Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
 from app.brokers.models import (
+    BasketMargin,
     BrokerHolding,
     BrokerOrderRequest,
     BrokerOrderResponse,
@@ -31,6 +32,9 @@ class BrokerCapabilities:
     stop_limit: bool = True                  # SL (stop-loss limit) accepted
     modify_orders: bool = True               # modify_order implemented (else cancel + re-place)
     cancel_orders: bool = True
+    # Part 7 / TM-3: False where the broker refuses MARKET orders for API orders; the smart execution then sends a
+    # marketable limit with the user's own protection band (exits too - never blocked, ADR-0004).
+    market_orders_allowed: bool = True
 
 
 # Platform tick for the limit leg of a stop-limit protective order (NSE equity / F&O tick).
@@ -198,6 +202,11 @@ class BrokerInterface(ABC):
         """Margin the broker would block for `order` (Phase F3: sizing written options). None
         when the broker does not expose a margin calculator - the caller then refuses to write
         rather than guess."""
+        return None
+
+    async def get_basket_margin(self, orders: List[BrokerOrderRequest]) -> Optional[BasketMargin]:
+        """Part 7 / TM-10: the broker's margin for these orders placed together, with the hedge benefit. None when the
+        broker has no basket margin call - the caller then shows ATP's labelled estimate (never a made-up number)."""
         return None
 
     async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:

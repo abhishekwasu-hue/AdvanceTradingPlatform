@@ -355,6 +355,7 @@ export function Review({ preview: p, budget, events, liquidity }: {
           {problems.map((r) => <li key={r}>{r}</li>)}
         </ul>
       )}
+      {p.smart?.note && <p className="text-t13 text-fg-muted" data-ticket="slices">{p.smart.note}</p>}
       {p.warnings.length > 0 && (
         <ul className="space-y-space-1 text-t13 text-fg-muted" data-ticket="warnings">
           {p.warnings.map((w) => <li key={w}>{w}</li>)}

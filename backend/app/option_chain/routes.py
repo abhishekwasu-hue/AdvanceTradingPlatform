@@ -317,7 +317,9 @@ async def live(underlying: str, expiry: Optional[date] = Query(default=None), us
     spot, spot_source = await as_of.resolve_spot(user, session, name, chain, spot, when, source.get("broker"),
                                                  source.get("account_label") or "primary")
     oi = await chain_view.oi_change_state(chain, tenant_id=user.tenant_id, underlying=name, now=now, market_open=status.is_open)
-    view = chain_view.build_view(chain, spot=spot, future=future, expiry=expiry or chain_view.parse_expiry(chain.expiry), now=now, oi=oi)
+    closed = await family_holidays(session, _holiday_family(name))          # B3: days to expiry in trading days
+    view = chain_view.build_view(chain, spot=spot, future=future, expiry=expiry or chain_view.parse_expiry(chain.expiry), now=now, oi=oi,
+                                 holidays=closed)
     view["market_open"] = status.is_open
     view["summary"]["spot_source"] = spot_source
     view["data_as_of"] = when.at.isoformat()

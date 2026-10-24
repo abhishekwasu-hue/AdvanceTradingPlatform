@@ -11,6 +11,7 @@ import { Card, DirectionBadge, StatTile, signClass } from "../components/ui";
 import type { PositionGreeks, TradeRecord } from "../types";
 import { PageHeader } from "../components/primitives";
 import { useFeatures } from "../ui/useFeatures";
+import { formatTimeIST } from "../ui/format";
 
 // N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
@@ -143,7 +144,7 @@ export default function PositionsPage() {
             <div className="mt-3 space-y-2 text-xs">
               <div className="flex flex-wrap gap-4 font-semibold text-fg">
                 <span>Net Δ {greeks.net.net_delta}</span><span>Γ {greeks.net.net_gamma}</span><span>Θ {greeks.net.net_theta}/day</span><span>V {greeks.net.net_vega}</span>
-                <span className="text-fg-muted font-normal">as of {new Date(greeks.as_of).toLocaleTimeString()}</span>
+                <span className="text-fg-muted font-normal">as of {formatTimeIST(greeks.as_of)}</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">

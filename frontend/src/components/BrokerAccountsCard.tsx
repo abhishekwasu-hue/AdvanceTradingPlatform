@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { BrokerAccount, SmokeReport } from "../types";
 import { Card } from "./ui";
+import { formatDateTimeIST, formatTimeIST } from "../ui/format";
 
 /**
  * Phase I2: the trading accounts behind the stored broker credentials - balance, margin and
@@ -88,12 +89,12 @@ export default function BrokerAccountsCard({ refreshKey = 0 }: { refreshKey?: nu
                 <span>margin used <span className="text-fg">{money(a.used_margin)}</span></span>
                 <span>realised <span className={a.realized_pnl != null && a.realized_pnl < 0 ? "text-down" : "text-fg"}>{money(a.realized_pnl)}</span></span>
                 <span>unrealised <span className={a.unrealized_pnl != null && a.unrealized_pnl < 0 ? "text-down" : "text-fg"}>{money(a.unrealized_pnl)}</span></span>
-                <span>{a.last_sync_at ? `synced ${new Date(a.last_sync_at).toLocaleString()}` : "never synced"}{a.last_sync_error ? ` · ${a.last_sync_error}` : ""}</span>
+                <span>{a.last_sync_at ? `synced ${formatDateTimeIST(a.last_sync_at)}` : "never synced"}{a.last_sync_error ? ` · ${a.last_sync_error}` : ""}</span>
               </div>
               {smoke[a.id] && (
                 <div className={`mt-2 rounded border px-2 py-1.5 ${smoke[a.id]!.ok ? "border-up/40" : "border-down/40"}`}>
                   <div className={`font-semibold ${smoke[a.id]!.ok ? "text-up" : "text-down"}`}>
-                    Read-only check {smoke[a.id]!.ok ? "passed" : "failed"} · {smoke[a.id]!.summary} · {new Date(smoke[a.id]!.started_at).toLocaleTimeString()}
+                    Read-only check {smoke[a.id]!.ok ? "passed" : "failed"} · {smoke[a.id]!.summary} · {formatTimeIST(smoke[a.id]!.started_at)}
                   </div>
                   <ul className="mt-1 space-y-0.5">
                     {smoke[a.id]!.steps.map((st) => (

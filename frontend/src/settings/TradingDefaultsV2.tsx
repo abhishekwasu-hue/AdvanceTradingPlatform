@@ -9,6 +9,7 @@ import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2 } f
 import { DEBIT_STRUCTURES, WIDTH_STRUCTURES, WINGED_STRUCTURES } from "../types";
 import { SIGN_IN_PATH } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
+import ChainSettingsV2 from "./chainSettings";
 import SmartExecutionSettingsV2 from "./smartExecutionSettings";
 import {
   EMPTY_DEFAULTS, EXPIRIES, KINDS, POSITIONS, RISK_LIMITS_PATH, STRIKES, STRUCTURES, TICKET_ORDER_TYPES, TICKET_PRODUCTS,
@@ -93,6 +94,8 @@ export default function TradingDefaultsV2(_props: PageProps = {}) {
             onSave={() => void save(form, limits)} onClear={() => void save(formOf(EMPTY_DEFAULTS), limitsFormOf(LIMITS_OFF), true)} />}
       {/* TM Part 7 (flag smart_execution): his own numbers for multi-leg orders and the delivery warning. */}
       {features.on("smart_execution") && <SmartExecutionSettingsV2 />}
+      {/* B4: his own Option chain settings - the PCR zone edges of "What the chain shows". */}
+      <ChainSettingsV2 />
     </div>
   );
 }

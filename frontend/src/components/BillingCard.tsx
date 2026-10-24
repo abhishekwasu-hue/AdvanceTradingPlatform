@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Card } from "./ui";
 import { PlanLimitsV2, planTileLine } from "./PlanLimitsV2";
 import type { BillingOverview, BillingTransaction, PlanCatalogueEntry } from "../types";
+import { formatDateIST } from "../ui/format";
 
 const inr = (v: number, ccy = "INR") => (v === 0 ? "Free" : `${ccy === "INR" ? "₹" : ccy + " "}${v.toLocaleString("en-IN")}`);
 
@@ -42,9 +43,9 @@ export default function BillingCard() {
           <span className="inline-flex items-center gap-1.5 rounded-md border border-brand/40 bg-brand/10 px-2 py-0.5 font-bold text-brand"><CreditCard size={13} /> {sub.plan_name}</span>
           <span className={`rounded-md border px-2 py-0.5 text-xs font-bold ${sub.status === "ACTIVE" || sub.status === "TRIALING" ? "border-up/40 text-up" : sub.status === "PAST_DUE" ? "border-warn/40 text-warn" : "border-border text-fg-muted"}`}>{sub.status}</span>
           {sub.billing_cycle && <span className="text-fg-muted text-xs">{sub.billing_cycle.toLowerCase()} · {inr(sub.billing_cycle === "YEARLY" ? sub.price_yearly : sub.price_monthly, sub.currency)}</span>}
-          {sub.current_period_end && <span className="text-fg-muted text-xs">period ends {new Date(sub.current_period_end).toLocaleDateString()}</span>}
-          {sub.trial_end && sub.status === "TRIALING" && <span className="text-warn text-xs">trial ends {new Date(sub.trial_end).toLocaleDateString()}</span>}
-          {sub.grace_until && <span className="text-down text-xs">grace until {new Date(sub.grace_until).toLocaleDateString()} - pay to avoid suspension</span>}
+          {sub.current_period_end && <span className="text-fg-muted text-xs">period ends {formatDateIST(sub.current_period_end)}</span>}
+          {sub.trial_end && sub.status === "TRIALING" && <span className="text-warn text-xs">trial ends {formatDateIST(sub.trial_end)}</span>}
+          {sub.grace_until && <span className="text-down text-xs">grace until {formatDateIST(sub.grace_until)} - pay to avoid suspension</span>}
           {sub.cancel_at_period_end && <span className="text-fg-muted text-xs">cancels at period end</span>}
           {sub.checkout_url && sub.status !== "CANCELLED" && (
             <a href={sub.checkout_url} target="_blank" rel="noreferrer" className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs">
@@ -111,7 +112,7 @@ export default function BillingCard() {
           <table className="w-full text-xs"><tbody>
             {txns.slice(0, 8).map((t) => (
               <tr key={t.id} className="border-t border-border/60">
-                <td className="py-1 text-fg-muted">{new Date(t.created_at).toLocaleDateString()}</td>
+                <td className="py-1 text-fg-muted">{formatDateIST(t.created_at)}</td>
                 <td className="py-1">{t.kind}</td>
                 <td className="py-1">{t.description}</td>
                 <td className="py-1 text-right">{inr(t.amount, t.currency)}</td>

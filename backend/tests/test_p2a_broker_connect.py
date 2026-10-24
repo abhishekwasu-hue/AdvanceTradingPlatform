@@ -560,9 +560,11 @@ def test_a_login_address_without_the_code_never_replaces_the_session():
 
 def test_dhan_session_ends_at_the_tokens_own_exp():
     headers = _org("dhanexp")
-    schedule = default_token_expiry("dhan", NOW)
+    # The clock at this test, not NOW (fixed at import): a long suite run could otherwise put exp in the past.
+    now = datetime.now(timezone.utc)
+    schedule = default_token_expiry("dhan", now)
     assert schedule is not None
-    exp = NOW + (schedule - NOW) / 2          # before the daily schedule at any time of day, so the token's own exp wins
+    exp = now + (schedule - now) / 2          # before the daily schedule at any time of day, so the token's own exp wins
     pasted = jwt.encode({"sub": "1000001", "exp": int(exp.timestamp())}, "dhan-side-signing-key-for-tests-only", algorithm="HS256")
     DHAN_GOOD.add(pasted)
     assert _connect(headers, "dhan", {"client_id": "1000001", "access_token": pasted})["status"] == "connected"

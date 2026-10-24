@@ -110,7 +110,9 @@ class RiskConfig(BaseModel):
     max_trades_per_day: int = 20
     max_open_positions: int = 3
     max_consecutive_losses: int = 4
-    min_risk_reward: float = 1.2
+    # TT12-4 (owner, 24 Oct): no built-in minimum reward:risk - 0 = not set (no minimum), on LIVE, paper and both
+    # backtest engines alike. Only a value the organisation sets itself filters entries (never exits, ADR-0004).
+    min_risk_reward: float = 0.0
     lot_size: int = 1
     # Phase V1 (Risk Guardian): the rules the engine keeps whatever built the strategy.
     max_portfolio_risk_pct: float = 6.0    # R4: loss if every open stop hits + this trade, % of capital

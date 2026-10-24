@@ -31,7 +31,7 @@ from app.risk_engine import by_default
 
 NAMESPACE = "notices"
 LIMITS_NOT_SET = "limits_not_set"
-TEXT = {LIMITS_NOT_SET: "Your risk limits are now not set — set your own in Settings › Risk"}
+TEXT = {LIMITS_NOT_SET: "Your risk limits are now OFF by default — set your own in Settings → Risk"}
 LINK = {LIMITS_NOT_SET: "/risk-management"}
 MARK = {LIMITS_NOT_SET: "limits_not_set_seen_at"}
 PAGE_FLAG = "ui_v2"

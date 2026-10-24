@@ -22,7 +22,7 @@ import MoreSheetV2 from "./MoreSheetV2";
 import { navEntryFor, visiblePinned, visibleSections, type NavContext } from "./navModel";
 import PageTabsV2 from "./PageTabsV2";
 import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
-import { MARKETS_ADDRESS, SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS } from "./aliases";
+import { MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS } from "./aliases";
 import { IDEAS_ADDRESS } from "../ideas/model";
 import { LEARN_ADDRESS } from "../learn/model";
 import { SETTINGS_SECTIONS } from "../settings/paths";
@@ -141,6 +141,8 @@ export default function AppShellV2() {
   const MarketsPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.markets ?? NotFound;
   // Readiness C13: the Learn page (v2 only), the same way.
   const LearnPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.learn ?? NotFound;
+  // Trading Terminal T1: the Terminal (v2 only), the same way.
+  const TerminalPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.terminal ?? NotFound;
   const routes = (
     <ErrorBoundary key={key ?? "not-found"} title={key ? title : undefined}>
       <Suspense fallback={<PageLoading />}>
@@ -159,6 +161,7 @@ export default function AppShellV2() {
           <Route path={IDEAS_ADDRESS} caseSensitive element={<IdeasPage onNavigate={go} />} />
           <Route path={MARKETS_ADDRESS} caseSensitive element={<MarketsPage onNavigate={go} />} />
           <Route path={LEARN_ADDRESS} caseSensitive element={<LearnPage onNavigate={go} />} />
+          <Route path={TERMINAL_ADDRESS} caseSensitive element={<TerminalPage onNavigate={go} />} />
           {SETTINGS_SECTIONS.map(({ key: k, path: p }) => {
             const SectionPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2[k] ?? NotFound;
             return <Route key={p} path={p} caseSensitive element={<SectionPage onNavigate={go} />} />;
@@ -190,7 +193,7 @@ export default function AppShellV2() {
   }
   else content = routes;
 
-  const wide = key === "screener" || key === "options-builder" || key === "charts";
+  const wide = key === "screener" || key === "options-builder" || key === "charts" || key === "terminal";
   return (
     <div className="flex min-h-screen bg-surface" data-shell="v2">
       <a href="#main"

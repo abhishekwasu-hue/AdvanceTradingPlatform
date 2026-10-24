@@ -47,6 +47,8 @@ export interface ChainTrading {
   layer: ReactNode;
   /** 8b-b: open the ticket / basket pre-filled (never places). Absent while the PAPER account is off. */
   tradeSetup?: (t: SetupTrade) => void;
+  /** Trading Terminal T1: open the basket panel (the same panel as the strip's badge). Absent while the PAPER account is off. */
+  openBasket?: () => void;
 }
 
 export function spotSymbolOf(underlying: string): string {
@@ -54,8 +56,11 @@ export function spotSymbolOf(underlying: string): string {
   return map[underlying] ?? underlying;
 }
 
-export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, exitNow = api.exitNow, expiries = [], signal = null, insights = insightsApi }: {
+export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, exitNow = api.exitNow, expiries = [], signal = null, insights = insightsApi, onTicket }: {
   symbol: string;
+  /** Trading Terminal T1: Buy / Sell from the action sheet go to the Terminal's order panel instead of the modal ticket
+   * (the same ticket state and the same order path, src/fno/OrderTicketV2.tsx useOrderTicket). Absent: as before. */
+  onTicket?: (t: { target: TicketTarget; side: Side }) => void;
   /** 8b-b: the user's own signal the chain was opened from ("action:12"), for the journal note after he places. */
   signal?: string | null;
   insights?: Pick<InsightsApi, "linkJournal">;
@@ -100,8 +105,10 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
 
   function trade(side: Side, contract: FnoContract | null) {
     if (!target) return;
-    setTicket({ side, target: { underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right,
-      label: contract?.label ?? null, lotSize: contract?.lot_size ?? null, ltp: target.leg.ltp, bid: target.leg.bid, ask: target.leg.ask } });
+    const picked = { side, target: { underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right,
+      label: contract?.label ?? null, lotSize: contract?.lot_size ?? null, ltp: target.leg.ltp, bid: target.leg.bid, ask: target.leg.ask } };
+    if (onTicket) onTicket(picked);
+    else setTicket(picked);
     setAction(null);
   }
 
@@ -153,6 +160,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
     onPickLeg: (r, side) => { setNote(null); setAction({ strike: r.strike, side }); },
     centreSuffix: recentre ? `|${recentre}` : "",
     tradeSetup,
+    openBasket: () => setBasketOpen(true),
     strip: live ? (
       <ChainBottomStripV2 summary={live.summary} pct={prefs.pct === true} onPct={(pct) => onPrefs({ ...prefs, pct })}
         onRecentre={() => setRecentre((n) => n + 1)} basketCount={legs.length} onBasket={() => setBasketOpen(true)} />

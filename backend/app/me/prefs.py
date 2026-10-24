@@ -33,6 +33,11 @@
   `smart_execution` (terminal master Part 7) holds the user's own numbers for the smart-execution rules: when the
   physical-settlement warning starts and how near the money counts, whether it also goes to Telegram, and the protection
   band of a marketable limit where a broker takes no market orders. Read by `app/execution/smart_execution.py`.
+  `terminal` (Trading Terminal T1, review TT-16) holds the user's own Terminal layouts: at most MAX_TERMINAL_LAYOUTS, each a
+  name, the preset it started from and its panels on a 12-column grid (position, size, open or closed, a chart's symbol),
+  sized so the most a user can save stays inside MAX_BODY_BYTES (a test proves it), and which layout is in use. The
+  presets themselves live in the frontend code (src/terminal/layoutModel.ts), so "reset to the preset" needs no server.
+  Layout only: no order path, worker or risk check imports it.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -206,8 +211,10 @@ class AppearancePrefs(_Prefs):
 
 # MO2 part C: the pages that have a page tour (frontend src/tours/pages.ts TOUR_IDS, kept equal by a test). An allow-list,
 # so a stored mark is always one of these and the namespace stays small.
-TOUR_IDS: Tuple[str, ...] = ("dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings", "copilot")
-TourId = Literal["dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings", "copilot"]
+TOUR_IDS: Tuple[str, ...] = ("dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings", "copilot",
+                             "terminal")
+TourId = Literal["dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings", "copilot",
+                 "terminal"]
 
 
 def _required_mark(value: datetime) -> datetime:
@@ -320,10 +327,92 @@ class SmartExecutionPrefs(_Prefs):
     answer_minutes: int = Field(default=5, ge=1, le=120, description="minutes to answer an incomplete multi-leg order before the choice applies")
 
 
+# Trading Terminal T1 (TT-16, TT-17): the user's own layouts. The grid is ATP's own: 12 columns, rows of one fixed height.
+MAX_TERMINAL_LAYOUTS = 10
+TERMINAL_COLUMNS = 12
+TERMINAL_ROWS = 64
+TERMINAL_MAX_HEIGHT = 32
+TERMINAL_LAYOUT_ID = r"^[a-z0-9]{4,16}$"
+TERMINAL_LAYOUT_NAME = r"^[A-Za-z0-9][A-Za-z0-9 &()+\-/.,:']{0,39}$"
+TerminalPreset = Literal["option_seller", "quick_trade", "multi_chart"]
+TerminalPanelId = Literal["chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"]
+TERMINAL_PANEL_IDS: Tuple[str, ...] = ("chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket",
+                                       "bots", "payoff")
+TERMINAL_UNDERLYING = r"^[A-Z0-9&_\- ]{1,30}$"
+
+
+class TerminalPanel(_Prefs):
+    """One panel of a layout: where it sits on the 12-column grid, its size, and whether it is open. A chart keeps its
+    own symbol (the Multi-chart preset shows four); every other panel follows the layout's underlying."""
+    id: TerminalPanelId
+    x: int = Field(ge=0, lt=TERMINAL_COLUMNS)
+    y: int = Field(ge=0, lt=TERMINAL_ROWS)
+    w: int = Field(ge=1, le=TERMINAL_COLUMNS)
+    h: int = Field(ge=1, le=TERMINAL_MAX_HEIGHT)
+    open: bool = True
+    symbol: Optional[str] = Field(default=None, pattern=BASKET_SYMBOL)
+
+    @model_validator(mode="after")
+    def _inside(self) -> "TerminalPanel":
+        if self.x + self.w > TERMINAL_COLUMNS:
+            raise ValueError(f"a panel must fit inside the {TERMINAL_COLUMNS} columns")
+        if self.y + self.h > TERMINAL_ROWS:
+            raise ValueError("a panel must fit inside the grid")
+        if self.symbol is not None and not self.id.startswith("chart-"):
+            raise ValueError("only a chart panel has its own symbol")
+        return self
+
+
+def _overlap(a: TerminalPanel, b: TerminalPanel) -> bool:
+    return a.x < b.x + b.w and b.x < a.x + a.w and a.y < b.y + b.h and b.y < a.y + a.h
+
+
+class TerminalLayout(_Prefs):
+    name: str = Field(pattern=TERMINAL_LAYOUT_NAME, max_length=40)
+    preset: TerminalPreset = "option_seller"
+    underlying: Optional[str] = Field(default=None, pattern=TERMINAL_UNDERLYING)
+    panels: List[TerminalPanel] = Field(min_length=1, max_length=len(TERMINAL_PANEL_IDS))
+    saved_at: MarkTime = Field(default=None)
+
+    @model_validator(mode="after")
+    def _panels(self) -> "TerminalLayout":
+        ids = [p.id for p in self.panels]
+        if len(set(ids)) != len(ids):
+            raise ValueError("each panel appears once in a layout")
+        shown = [p for p in self.panels if p.open]
+        if not shown:
+            raise ValueError("a layout needs at least one open panel")
+        for i, a in enumerate(shown):
+            for b in shown[i + 1:]:
+                if _overlap(a, b):
+                    raise ValueError(f"the {a.id} and {b.id} panels overlap")
+        return self
+
+
+class TerminalPrefs(_Prefs):
+    """`terminal` (Trading Terminal T1, TT-16): the user's own layouts by id, and the one in use - a preset's name or one
+    of his layouts' ids. Empty = the "Option seller" preset (T-D1: the default for a new user)."""
+    layouts: Dict[Annotated[str, StringConstraints(pattern=TERMINAL_LAYOUT_ID)], TerminalLayout] = Field(default_factory=dict)
+    active: Optional[str] = Field(default=None, max_length=16)
+
+    @model_validator(mode="after")
+    def _rules(self) -> "TerminalPrefs":
+        if len(self.layouts) > MAX_TERMINAL_LAYOUTS:
+            raise ValueError(f"at most {MAX_TERMINAL_LAYOUTS} saved layouts; delete one first")
+        names = [layout.name.strip().lower() for layout in self.layouts.values()]
+        if len(set(names)) != len(names):
+            raise ValueError("two layouts cannot have the same name")
+        presets = ("option_seller", "quick_trade", "multi_chart")
+        if self.active is not None and self.active not in presets and self.active not in self.layouts:
+            raise ValueError("the layout in use must be a preset or one of your layouts")
+        return self
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
-                                       "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs}
+                                       "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs,
+                                       "terminal": TerminalPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -456,4 +545,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "TOUR_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

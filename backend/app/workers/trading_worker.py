@@ -241,7 +241,7 @@ class TradingWorker:
         # IST calendar date of the last retention run (Phase D3) - once a day is plenty.
         self._last_retention_day = None
         # Phase W: last option-chain capture per underlying (UTC), so a chain is fetched once per interval.
-        self._last_chain_capture: Dict[str, datetime] = {}
+        self._last_chain_capture: Dict[Tuple[int, str], datetime] = {}   # TM94-3: (tenant, underlying) -> last attempt
         self._cycle_chains: Dict[str, object] = {}   # chains fetched this tenant cycle, by underlying symbol
         # IST calendar date of the last billing lifecycle sweep (Phase K1): trials, dues, grace.
         self._last_billing_day = None
@@ -1355,11 +1355,13 @@ class TradingWorker:
         self._tenant_cursor[tenant_id] = (start + evaluated) % max(1, len(active))
 
         # Phase W: sample the option chains of this tenant's ACTIVE option deployments for later
-        # backtests - one fetch per underlying per interval, platform-wide, never on a closed venue.
+        # backtests - one fetch per underlying per interval through THIS organisation's own data session, stored as its
+        # own rows (TM94-3), never on a closed venue.
         try:
             async with guarded(session):
-                if not byob:   # BT1b: platform-wide reference rows are not recorded from a per-user (BYOB) broker session
-                    report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
+                if not byob:   # BT1b: not recorded from a per-user (BYOB) broker session (unchanged by TM94-3)
+                    report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families,
+                                                                            tenant_id=tenant_id)
         except Exception as exc:  # noqa: BLE001 - reference data; never stops the cycle
             logger.warning("Tenant %s: option-chain recording failed: %s", tenant_id, exc)
 
@@ -2127,28 +2129,31 @@ class TradingWorker:
             await sync_account(session, account, adapter)
 
     async def _record_chains(self, session: AsyncSession, deployments: List[StrategyDeploymentRecord], market_data: MarketDataService,
-                             now: datetime, open_families) -> int:
-        """Phase W: record the chains of the underlyings this tenant trades as options."""
+                             now: datetime, open_families, *, tenant_id: int) -> int:
+        """Phase W: record the chains of the underlyings this tenant trades as options. TM94-3: `market_data` is this
+        organisation's own data session; only its own deployments are looked at and the rows are stored as its own."""
         if not chain_recorder.recording_enabled():
             return 0
         interval = timedelta(minutes=chain_recorder.CHAIN_SNAPSHOT_INTERVAL_MINUTES)
         wanted: Dict[str, str] = {}
         for dep in deployments:
+            if dep.tenant_id != tenant_id:
+                continue       # never record one organisation's underlyings through another's session
             if (dep.instrument_kind or "UNDERLYING") != InstrumentKind.OPTION.value or session_family(dep.exchange) not in open_families:
                 continue
             underlying = master.underlying_of(dep.symbol)
             wanted[underlying] = master.INDEX_SYMBOLS.get(underlying, dep.symbol.upper().strip())
         written = 0
         for underlying, chain_symbol in wanted.items():
-            last = self._last_chain_capture.get(underlying)
+            last = self._last_chain_capture.get((tenant_id, underlying))
             if last is not None and now - last < interval:
                 continue
-            self._last_chain_capture[underlying] = now   # once per interval whether or not the fetch works
+            self._last_chain_capture[(tenant_id, underlying)] = now   # once per interval whether or not the fetch works
             chain = self._cycle_chains.get(chain_symbol)   # already fetched for a strike filter this cycle
             if chain is None:
                 expiries = await master.expiries(session, underlying, on_or_after=now.astimezone(IST).date())
                 chain = await market_data.broker.get_option_chain(chain_symbol, expiries[0] if expiries else None)
-            written += await chain_recorder.record_chain(session, underlying, chain, now)
+            written += await chain_recorder.record_chain(session, underlying, chain, now, tenant_id=tenant_id)
         return written
 
     async def _decision_symbols(self, session: AsyncSession, tenant_id: int, deployments: List[StrategyDeploymentRecord]) -> set:

@@ -2019,16 +2019,20 @@ class InstrumentRecord(Base):
 class OptionChainSnapshotRecord(Base):
     """Phase W: one quoted option at one moment, sampled from the chains the worker already
     fetches for its option deployments (app/backtest/chain_recorder.py) so option backtests
-    can be priced from what the market actually quoted. Platform-wide reference data (a NIFTY
-    quote is the same fact for every tenant), sampled every few minutes for the strikes around
-    the money, trimmed by retention after a bounded number of days."""
+    can be priced from what the market actually quoted. Sampled every few minutes for the strikes
+    around the money, trimmed by retention after a bounded number of days. TM94-3: each row belongs
+    to the organisation whose own broker session read it (`tenant_id`); rows from before the fix
+    have no tenant and are read only by the confirmed owner (`chain_recorder.legacy_owner`)."""
 
     __tablename__ = "option_chain_snapshots"
     __table_args__ = (
         Index("ix_option_chain_snapshots_lookup", "underlying", "expiry", "captured_at"),
+        Index("ix_option_chain_snapshots_tenant_lookup", "tenant_id", "underlying", "captured_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # TM94-3: the organisation the row belongs to; NULL = recorded platform-wide before the fix (owner-only reads).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
     underlying: Mapped[str] = mapped_column(String(30), nullable=False)          # master name: NIFTY
     expiry: Mapped[date] = mapped_column(Date, nullable=False)
     captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, index=True)

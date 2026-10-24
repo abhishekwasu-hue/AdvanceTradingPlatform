@@ -135,7 +135,8 @@ def test_uploaded_option_chain_history_stays_with_the_uploading_organisation():
 
     uploader, _ = _owner("z10c-fix-chain-a@example.com")
     other, _ = _owner("z10c-fix-chain-b@example.com")
-    viewer = _member("z10c-fix-chain-viewer@example.com", client.get("/api/auth/me", headers=uploader).json()["tenant_id"], "VIEWER")
+    uploader_tenant = client.get("/api/auth/me", headers=uploader).json()["tenant_id"]
+    viewer = _member("z10c-fix-chain-viewer@example.com", uploader_tenant, "VIEWER")
     now = datetime(2026, 9, 25, 5, 0, tzinfo=timezone.utc)
     row = {"timestamp": now.isoformat(), "expiry": "2026-09-30", "strike": 26000.0, "right": "CE", "ltp": 1.11}
     body = {"underlying": "Z10CIDX", "rows": [row]}
@@ -154,5 +155,6 @@ def test_uploaded_option_chain_history_stays_with_the_uploading_organisation():
         async with _session_factory() as session:
             chain = OptionChain(underlying="Z10CIDX", expiry="2026-09-30", underlying_ltp=26000.0,
                                 rows=[OptionChainRow(strike=26000.0, call_ltp=50.0, put_ltp=40.0)])
-            return await chain_recorder.record_chain(session, "Z10CIDX", chain, now + timedelta(minutes=1), interval_minutes=5)
+            return await chain_recorder.record_chain(session, "Z10CIDX", chain, now + timedelta(minutes=1), interval_minutes=5,
+                                                     tenant_id=uploader_tenant)
     assert asyncio.run(capture()) == 2      # the uploads inside the interval did not stop the recorder's own capture

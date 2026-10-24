@@ -3729,6 +3729,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
 - Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
 
+## 23 Oct - TM94-3: the Phase W option-chain recorder per organisation
+
+- Branch `claude/phase-w-recorder-per-tenant` (from main). **Migration `3c5e7a9b1d24`** (after `e8a0c2d4f6b9`; additive:
+  a nullable `option_chain_snapshots.tenant_id` with its key and a lookup index; rollback-safe; deploy after 15:30 IST).
+  Re-chain with #465's `250d796123b7` at merge (TM943-5).
+- `app/backtest/chain_recorder.py`: `record_chain` / `rows_from_chain` / `last_capture` take the tenant; `scope` /
+  `legacy_owner` / `visible_to` give each reader its own rows and uploads (pre-fix rows only for the confirmed owner).
+  Worker `_record_chains(tenant_id=...)`: only the tenant's own deployments, its own data session, interval per
+  (tenant, underlying). BYOB unchanged.
+- Tests `backend/tests/test_tm94_3_phase_w_recorder_tenant.py` (7); `test_phase_w_option_backtest.py` and
+  `test_z10c_tenancy_fixes.py` now record per tenant. Questions TM943-1..5.
+
 ## 23 Oct - Terminal master Part 7, PR B: smart execution (TM-3 / TM-9 / TM-10 / TM-11, README row 20)
 
 - Branched from PR A (#467, not merged). Flag `smart_execution` (OFF, behind `ui_v2`; catalog "ready", in the trader pack).

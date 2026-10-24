@@ -1784,3 +1784,18 @@ Branches `claude/terminal-paper-adapter` (PR A, TM-1) and `claude/terminal-smart
 | SE-7 | The LIVE multi-leg executor (`execution/multileg.py`, wings first, auto-unwind) is not on the engine yet. | It moves in its own PR with a parity test (TM-1 rule: one path at a time). Under TM-11 its auto-unwind becomes "Close the filled legs" on the user's tap, which is a behaviour change, so that PR needs Abhi's word. | `execution/multileg.py` | decided 23 Oct: approved - the LIVE executor moves onto this engine in its own PR, with the user's "no answer in N minutes" setting (DECISIONS) |
 | SE-8 | Free balance in PAPER. | The practice balance (starting capital + net closed P&L), labelled "practice balance". Margin already blocked by open positions is not counted, and the page says so. With LIVE, the broker's `get_margins` through his own session. | `fno_basket.practice_balance` | decided 23 Oct: default accepted (DECISIONS) |
 
+
+## TM94-3: the Phase W recorder per organisation (23 Oct)
+
+Branch `claude/phase-w-recorder-per-tenant`. Owner decision TM94-3 (DECISIONS, 23 Oct): the same per-tenant rule as the
+OI collector (#465, TM-7). Checked against CLAUDE.md (data only through the user's own session, public repo, keep what is
+built), DECISIONS (TM-7, TM94-3, RDY-6) and the #465 design (`docs/design/CHAIN_HISTORY.md` on that branch).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| TM943-1 | Rows recorded before the fix carry no organisation. | Read only by the confirmed owner (`HISTORY_OWNER_TENANT_ID` + `HISTORY_OWNER_TENANT_NAME`, the same `legacy_owner` rule as #465); nobody when no owner is confirmed; retention (400 days) deletes them as before. Not assigned to an organisation by guess. | `backtest/chain_recorder.py` | open |
+| TM943-2 | Uploaded rows (`source = upload:<tenant id>`) before the fix have no `tenant_id`. | No backfill (no row rewrite, rollback-safe): the readers keep honouring the source; new uploads also carry `tenant_id`. | migration `3c5e7a9b1d24` | open |
+| TM943-3 | Two organisations trading options on the same underlying now each read the chain (was once for all). | Each read is on that organisation's own session and rate budget (one chain call per underlying per 5 minutes, usually the chain its strike filter fetched that cycle anyway). Fine for the beta cohort. | `workers/trading_worker.py` | open |
+| TM943-4 | A backtest without an organisation (no login) used to price from the platform-wide rows. | It gets no recorded rows (the synthetic fallback or uploaded rows still work). | `chain_recorder.load_rows` | open |
+| TM943-5 | Migration chain: `3c5e7a9b1d24` and #465's `250d796123b7` both follow `e8a0c2d4f6b9`. | Whichever PR merges second re-chains its `down_revision` onto the other (one head; `alembic heads` must print one line). | `alembic/versions` | open |
+

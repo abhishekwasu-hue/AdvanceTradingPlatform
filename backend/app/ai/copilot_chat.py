@@ -79,7 +79,7 @@ JOBS: Tuple[Job, ...] = (
         "Teach me: what is a demand zone?", True),
     # Owner order 23 Oct ("its tools are wired"): the screener and the multi-view analysis in the chat.
     Job("screen", 9, "Find setups", "Turns your words into a screen, runs it on your own watchlist and explains the matches; can propose an alert.",
-        "Find stocks in a daily uptrend near a demand zone", True, ("Open the Screener", "/screener")),
+        "Find stocks in a daily uptrend near a demand zone", True, ("Open Find setups", "/screener")),
     Job("views", 10, "Full view of a symbol", "Structure, option chain, news and market memory of one symbol, side by side.",
         "Full view of NIFTY", True),
 )
@@ -265,6 +265,35 @@ def lots_in(message: str) -> Optional[int]:
 # --- the answer --------------------------------------------------------------------------------------------------------
 
 TF_LABELS = {"1w": "Weekly", "1d": "Daily", "1h": "1-hour", "15m": "15-minute"}
+
+# Day-one fix 5 (README row 19): the Copilot's answers in a beginner's words - no structure codes, no ISO dates.
+TREND_WORDS = {"UPTREND": "up", "UP": "up", "BULLISH": "up", "DOWNTREND": "down", "DOWN": "down", "BEARISH": "down",
+               "RANGE": "sideways", "SIDEWAYS": "sideways", "NEUTRAL": "sideways"}
+EVENT_WORDS = {"BOS": "break past the last swing (a break of structure)",
+               "CHOCH": "first break against the trend (a change of character)",
+               "MSS": "first break against the trend (a market structure shift)"}
+PCR_WORDS = "PCR (put-call ratio) is the open interest of puts divided by that of calls; above 1 means more put positions open."
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def trend_words(value: Any) -> str:
+    """"UPTREND" -> "up"; unknown words are lowered as before, nothing is read as "unknown" twice."""
+    raw = str(value or "").strip()
+    return TREND_WORDS.get(raw.upper().replace(" ", ""), raw.lower() or "not known yet")
+
+
+def event_words(value: Any) -> str:
+    raw = str(value or "").strip()
+    return EVENT_WORDS.get(raw.upper(), raw)
+
+
+def day_words(value: Any) -> str:
+    """"2026-10-20" (or an ISO time) -> "20 Oct 2026"; anything else as given."""
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(value or ""))
+    if not m:
+        return str(value)
+    return f"{int(m.group(3))} {_MONTHS[int(m.group(2)) - 1]} {m.group(1)}"
+
 # Labels the rules write themselves (their digits are the platform's words, not market numbers).
 FIXED_TEXT = " ".join(TF_LABELS.values()) + " " + " ".join(f"Job {j.number}" for j in JOBS)
 
@@ -504,9 +533,9 @@ def _context_lines(answer: Answer, ctx: ToolResult) -> Optional[str]:
         answer.unknowns.append(f"I don't know this week's events: {plain_reason(events.get('reason'))}.")
     one = None
     if structure.get("status") not in (None, "na") and structure.get("close") is not None:
-        when = f" ({structure['as_of']})" if structure.get("as_of") else ""
-        one = (f"{structure.get('market') or 'NIFTY 50'} last closed at {_f(structure['close'])}{when}; Dow structure daily "
-               f"{str(structure.get('daily') or 'unknown').lower()}, weekly {str(structure.get('weekly') or 'unknown').lower()}")
+        when = f" ({day_words(structure['as_of'])})" if structure.get("as_of") else ""
+        one = (f"{structure.get('market') or 'NIFTY 50'} last closed at {_f(structure['close'])}{when}; by its swing highs and lows the "
+               f"daily trend is {trend_words(structure.get('daily'))}, the weekly {trend_words(structure.get('weekly'))}")
         one += f"; {vix_line}." if vix_line else "."
     return one
 
@@ -518,11 +547,11 @@ def _structure_rows(res: ToolResult) -> List[Dict[str, Any]]:
 def _structure_lines(symbol: str, res: ToolResult) -> List[str]:
     out = []
     for r in _structure_rows(res):
-        line = f"{TF_LABELS[r['tf']]}: {r.get('direction') or 'none'}"
+        line = f"{TF_LABELS[r['tf']]}: {trend_words(r.get('direction')) if r.get('direction') else 'no clear trend'}"
         if r.get("protected") is not None:
             line += f", protected level {_f(r['protected'])}"
         if r.get("last_event") and r.get("last_event_price") is not None:
-            line += f", last {r['last_event']} at {_f(r['last_event_price'])}"
+            line += f", last {event_words(r['last_event'])} at {_f(r['last_event_price'])}"
         out.append(line)
     return out
 
@@ -534,8 +563,9 @@ def _structure_table(symbol: str, res: ToolResult) -> Optional[Dict[str, Any]]:
     return {"type": "table", "table": {"title": f"{symbol} structure per timeframe", "columns": [
         {"key": "tf", "label": "Timeframe", "kind": "text"}, {"key": "direction", "label": "Structure", "kind": "text"},
         {"key": "protected", "label": "Protected level", "kind": "price"}, {"key": "last", "label": "Last break", "kind": "text"}],
-        "rows": [{"tf": TF_LABELS[r["tf"]], "direction": r.get("direction") or "none", "protected": r.get("protected"),
-                  "last": f"{r['last_event']} {_f(r['last_event_price'])}" if r.get("last_event") and r.get("last_event_price") is not None else "none"}
+        "rows": [{"tf": TF_LABELS[r["tf"]], "direction": trend_words(r.get("direction")) if r.get("direction") else "no clear trend",
+                  "protected": r.get("protected"),
+                  "last": f"{event_words(r['last_event'])} {_f(r['last_event_price'])}" if r.get("last_event") and r.get("last_event_price") is not None else "none"}
                  for r in rows]}}
 
 
@@ -1521,13 +1551,31 @@ def _quote(message: str, m: "re.Match[str]") -> str:
     return message[start:start + 300].strip()
 
 
+def stage_words(parts: Sequence[Any]) -> Callable[[Any, int], str]:
+    """Day-one fix 5: a screen stage in the reader's own plain words ("RSI is above 60 on the Daily chart"), never its
+    ScreenQL text; matched by the condition's text, else by position when the stages are the parts one for one."""
+    def norm(t: Any) -> str:
+        return re.sub(r"\s+", "", str(t or ""))
+    def cap(t: Any) -> str:
+        t = str(t or "")
+        return t[:1].upper() + t[1:]
+    by_text = {norm(p.condition): cap(p.reads) for p in parts}
+    plain = [cap(p.reads) for p in parts]
+
+    def words(text: Any, i: int) -> str:
+        if norm(text) in by_text:
+            return str(by_text[norm(text)])
+        return str(plain[i]) if i < len(plain) else f"Condition {i + 1}"
+    return words
+
+
 async def screen(answer: Answer, run: Runner, message: str) -> None:
     """Job 9: the trader's words as a screen (ATP's deterministic idea reader, app/screener/idea.py - nothing invented),
     checked by the screen validator, run on his own first watchlist (else the NIFTY 50 stocks) and, when he asks why,
     explained stage by stage. "Alert me when ..." on one symbol proposes an alert he approves himself (ADR-0006: an
     alert notifies, it never places an order). No price is written here: the stage texts and pass / fail only."""
     from app.screener import idea
-    answer.action = {"label": "Open the Screener", "to": SCREENER_PATH}
+    answer.action = {"label": "Open Find setups", "to": SCREENER_PATH}
     alert = _ALERT_WORDS.search(message)
     symbol = builder_symbol(message) if alert else None
     text = _ALERT_WORDS.sub(" ", message)
@@ -1551,7 +1599,7 @@ async def screen(answer: Answer, run: Runner, message: str) -> None:
         return
     b = built.data or {}
     answer.section("Your screen", [f"{p.phrase}: {p.reads}" for p in draft.parts])
-    answer.section("Assumed (edit them in the Screener)", [a for p in draft.parts for a in p.assumptions])
+    answer.section("Assumed (edit them in Find setups)", [a for p in draft.parts for a in p.assumptions])
     answer.section("Not supported yet", unsupported)
     if not b.get("ok"):
         answer.summary = ["The screen did not pass ATP's checks, so I did not run it."]
@@ -1579,7 +1627,8 @@ async def screen(answer: Answer, run: Runner, message: str) -> None:
     if u.get("left_out"):
         answer.notes.append("Only the first symbols of the list were screened (the Copilot screens at most one list page at a time).")
     answer.section("Passed", [", ".join(matched)] if matched else ["None today."])
-    answer.section("Each stage", [f"{st.get('text')}: {st.get('survivors')} left" for st in r.get("stages") or [] if st.get("text")])
+    reads = stage_words(draft.parts)
+    answer.section("Each stage", [f"{reads(st.get('text'), i)}: {st.get('survivors')} left" for i, st in enumerate(r.get("stages") or []) if st.get("text")])
     if r.get("not_evaluated"):
         answer.unknowns.append(f"I don't know the result for {len(r['not_evaluated'])} symbols: their data could not be read.")
         _calc(answer, "not_read", "Symbols not read", {}, {"not_read": len(r["not_evaluated"])})
@@ -1592,7 +1641,8 @@ async def screen(answer: Answer, run: Runner, message: str) -> None:
         if why.ok:
             for sym, e in ((why.data or {}).get("symbols") or {}).items():
                 if isinstance(e, dict) and e.get("stages"):
-                    answer.section(f"Why {sym}", [f"{st.get('text')}: {'passed' if st.get('passed') else 'not passed'}" for st in e["stages"]])
+                    answer.section(f"Why {sym}", [f"{reads(st.get('text'), i)}: {'passed' if st.get('passed') else 'not passed'}"
+                                                  for i, st in enumerate(e["stages"])])
         else:
             answer.unknowns.append(f"I don't know why they passed: {plain_reason(why.error, why.source)}.")
     else:
@@ -1644,8 +1694,8 @@ async def full_view(answer: Answer, run: Runner, message: str) -> None:
     if oc.ok:
         read += 1
         found = {a["key"]: a for a in (oc.data or {}).get("analyses") or [] if a.get("state") == "ok"}
-        answer.section("Option chain", list(dict.fromkeys(x for k in ("pcr", "max_pain", "support_resistance")
-                                                          for x in (found.get(k) or {}).get("sentences") or [])))
+        chain_lines = list(dict.fromkeys(x for k in ("pcr", "max_pain", "support_resistance") for x in (found.get(k) or {}).get("sentences") or []))
+        answer.section("Option chain", ([PCR_WORDS] if found.get("pcr") and chain_lines else []) + chain_lines)
     else:
         answer.unknowns.append(f"I don't know the {symbol} option chain: {plain_reason(oc.error, oc.source)}.")
     line = _news_line(answer, news, symbol)

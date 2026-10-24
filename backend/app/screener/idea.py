@@ -104,7 +104,7 @@ def _zone(role: str) -> Builder:
 
     def build(m: re.Match, tf: str) -> Tuple[str, str, List[str]]:
         return (f'NearZone("{role}"){_at(tf)}', f"the close is at a {side} area (a {role} zone){_on(tf)}",
-                ["at the area = within 0.5% of the nearest live zone (the function's default)"])
+                ["at the area = within 0.5% of the nearest live zone (the usual setting)"])
     return build
 
 
@@ -116,19 +116,19 @@ def _rsi(m: re.Match, tf: str) -> Optional[Tuple[str, str, List[str]]]:
     v = f"{value:g}"
     at = _at(tf)
     if word in ("above", "over", "greater than", ">", "more than"):
-        return f"RSI(){at} > {v}", f"RSI is above {v}{_on(tf)}", ["RSI over 14 bars (the function's default)"]
+        return f"RSI(){at} > {v}", f"RSI is above {v}{_on(tf)}", ["RSI over 14 bars (the usual setting)"]
     if word in ("below", "under", "less than", "<"):
-        return f"RSI(){at} < {v}", f"RSI is below {v}{_on(tf)}", ["RSI over 14 bars (the function's default)"]
+        return f"RSI(){at} < {v}", f"RSI is below {v}{_on(tf)}", ["RSI over 14 bars (the usual setting)"]
     lo, hi = max(0.0, value - 5), min(100.0, value + 5)
     return (f"RSI(){at} >= {lo:g} AND RSI(){at} <= {hi:g}", f"RSI is between {lo:g} and {hi:g}{_on(tf)}",
-            [f"near {v} = within 5 points of it", "RSI over 14 bars (the function's default)"])
+            [f"near {v} = within 5 points of it", "RSI over 14 bars (the usual setting)"])
 
 
 def _rsi_zone(kind: str) -> Builder:
     def build(m: re.Match, tf: str) -> Tuple[str, str, List[str]]:
         if kind == "oversold":
-            return f"RSI(){_at(tf)} < 30", f"RSI is below 30{_on(tf)}", ["oversold = RSI below 30", "RSI over 14 bars (the function's default)"]
-        return f"RSI(){_at(tf)} > 70", f"RSI is above 70{_on(tf)}", ["overbought = RSI above 70", "RSI over 14 bars (the function's default)"]
+            return f"RSI(){_at(tf)} < 30", f"RSI is below 30{_on(tf)}", ["oversold = RSI below 30", "RSI over 14 bars (the usual setting)"]
+        return f"RSI(){_at(tf)} > 70", f"RSI is above 70{_on(tf)}", ["overbought = RSI above 70", "RSI over 14 bars (the usual setting)"]
     return build
 
 

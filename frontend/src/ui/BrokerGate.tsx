@@ -1,7 +1,7 @@
 import { ExternalLink, KeyRound, LogIn, Plug, TriangleAlert, UserCircle2 } from "lucide-react";
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { gateShowing } from "../live/gateShowing";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
 import { Button } from "../components/primitives";
@@ -271,6 +271,35 @@ export function useBrokerLogin(refresh: () => void): BrokerLogin {
   }
 
   return { busy, error, codeStep, login, submitCode };
+}
+
+/**
+ * Day-one fix 3: the one tap beside "Daily backtests use ATP's stored end-of-day history": "Log in to <Broker>" when a
+ * broker is stored but not logged in today (its existing login path), otherwise the Broker page.
+ */
+export function StoredLoginAction() {
+  const { state, refresh } = useBrokerSession();
+  const { busy, error, codeStep, login, submitCode } = useBrokerLogin(refresh);
+  if (state.kind !== "login-needed") {
+    return (
+      <Link to={CONNECT_BROKER_PATH} className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0" data-stored-login="broker-page">
+        {state.kind === "no-broker" ? "Connect a broker" : "Open Broker"}
+      </Link>
+    );
+  }
+  const t = state.broker;
+  const name = brokerDisplayName(t.broker_name);
+  return (
+    <div className="flex flex-col gap-space-2" data-stored-login="login">
+      {codeStep && keyOf(codeStep.broker) === keyOf(t) ? <CodeForm step={codeStep} onSubmit={submitCode} busy={busy === keyOf(t)} /> : (
+        <Button variant="secondary" icon={<LogIn size={16} aria-hidden />} loading={busy === keyOf(t)} disabled={busy !== null} onClick={() => login(t)}
+          className="h-11 px-space-4 text-t14 md:h-9">
+          Log in to {name}
+        </Button>
+      )}
+      {error && <ErrorNote text={error} />}
+    </div>
+  );
 }
 
 /**

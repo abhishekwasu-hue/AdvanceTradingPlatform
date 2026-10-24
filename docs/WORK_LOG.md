@@ -3729,6 +3729,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
 - Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
 
+## 23 Oct - Day-one fix 3: the stored-history bar (README row 19, DAY_ONE_TRADER_TEST finding 3)
+
+- Branch `claude/d1-fix-stored-bar` (from main). Frontend only, **no migration**, no new flag (`ui_v2` +
+  `backtest_stored_history`, as the bar before).
+- Wording: a stored broker that is only not logged in today reads "Not logged in to <Broker> today: Daily backtests use
+  ATP's stored end-of-day history. Intraday backtests need today's login." (`storedHistoryLoginNote`); "No broker
+  connected: ..." stays for an account without a broker.
+- Phone: the sentence has its own line (it wrapped one word per line beside the controls).
+- History: "About 1 year" (400 days, the server's Daily minimum, default) / "2 years" as two buttons (the strategy
+  select stays the page's first combobox), its own `storedDays` in `useCandleSource` (the broker lookback is untouched).
+- One tap: `StoredLoginAction` ("Log in to <Broker>" through the existing login path; "Connect a broker" / "Open Broker"
+  otherwise).
+- Tests: `src/backtest/pricesLine.test.tsx` (+2), e2e `e2e/d1-stored-bar-v2.e2e.ts` (no baseline).
 ## 23 Oct - Day-one fix 2: Find setups and Signals before the broker login (README row 19, DAY_ONE_TRADER_TEST finding 2)
 
 - Branch `claude/d1-fix-before-login` (from main). **No migration**, no new flag: behind `ui_v2` + the area flags +

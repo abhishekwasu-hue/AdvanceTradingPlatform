@@ -58,7 +58,7 @@ docs/WORKING_RULES.md. Begin each report with "Rules re-read: CLAUDE.md, roadmap
 ## 7. PRs and deploy
 - One `claude/<name>` branch and one draft PR per item; merge when CI is green (DECISIONS 23 Oct), except where the
   owner holds a ✅. With every PR: the deploy line and migration yes / no.
-- Deploy (Abhi), detached so a dropped network cannot stop it: `su - atp -c "nohup sh -c '/opt/atp/deploy/atp.sh deploy
+- Deploy (Abhi, detached): `su - atp -c "nohup sh -c '/opt/atp/deploy/atp.sh deploy
   && /opt/atp/deploy/atp.sh health' > /tmp/atp-deploy.log 2>&1 &"`, then `tail -n 15 /tmp/atp-deploy.log`. Production: https://aialgodesk.tech. New user-facing work goes behind `ui_v2`.
 - CI checks and guards: docs/WORKING_RULES.md. Text sizes and colours only from the tokens.
 

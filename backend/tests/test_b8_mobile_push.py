@@ -418,7 +418,10 @@ def test_quiet_hours_deliver_without_sound_but_critical_rings(sent):
 
     async def policy():
         async with _session_factory() as session:
-            session.add(NotificationPolicyRecord(tenant_id=tenant, timezone="UTC", quiet_start="00:00", quiet_end="23:59"))
+            # A window around the clock now (it may cross midnight), so the test never runs in the 23:59 gap.
+            now = datetime.now(timezone.utc)
+            start, end = (now - timedelta(hours=2)).strftime("%H:%M"), (now + timedelta(hours=2)).strftime("%H:%M")
+            session.add(NotificationPolicyRecord(tenant_id=tenant, timezone="UTC", quiet_start=start, quiet_end=end))
             await session.commit()
     _run(policy())
     _register(headers, _token())

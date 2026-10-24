@@ -146,14 +146,14 @@ describe("UI2-4e the v2 chart on other pages", () => {
     expect(html).toContain('aria-label="Chart settings"');
     expect(html).toMatch(/aria-label="Open in Chart tab"[^>]*href="\/charts\/NIFTY%2050\?tf=5min"/);
     const tfs = [...html.matchAll(/aria-pressed="(?:true|false)"[^>]*>([^<]+)</g)].map((m) => m[1]);
-    expect(tfs).toEqual(["1m", "3m", "5m", "15m", "30m", "1H", "D"]);
+    expect(tfs).toEqual(["1 min", "3 min", "5 min", "15 min", "30 min", "1 hour", "Daily"]);
     expect(html).not.toMatch(/candles via|refreshes every|as of|source/i);
   });
 
   it("a host that shows its own link turns the chart's off, and keeps the timeframe", () => {
     const html = render(<EmbeddedChartV2 symbol="SBIN" timeframe="15min" onTimeframe={() => undefined} openLink={false} />);
     expect(html).not.toContain("Open in Chart tab");
-    expect(html).toMatch(/aria-pressed="true"[^>]*>15m</);
+    expect(html).toMatch(/aria-pressed="true"[^>]*>15 min</);
   });
 
   it("Signals under v2: the detail shows the v2 chart of the signal (its code loads on demand); today's Signals page keeps ProChart", () => {

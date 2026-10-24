@@ -11,18 +11,18 @@ export type TimeframeId = (typeof TIMEFRAMES)[number];
 
 interface TimeframeSpec { label: string; seconds: number; historyDays: number; olderDays: number }
 
-/** Labels as the trader reads them; history = calendar days on first load (a few hundred bars), older = per "load older"
+/** Labels as the trader reads them (day-one fix 8: words, "Daily" / "1 hour", not "D" / "1H"); history = calendar days on first load (a few hundred bars), older = per "load older"
  * page. Intraday is built from one-minute bars, 30 days at most per request; week / month follow the server's defaults. */
 const SPEC: Record<TimeframeId, TimeframeSpec> = {
-  "1min": { label: "1m", seconds: 60, historyDays: 5, olderDays: 5 },
-  "3min": { label: "3m", seconds: 180, historyDays: 7, olderDays: 7 },
-  "5min": { label: "5m", seconds: 300, historyDays: 10, olderDays: 10 },
-  "15min": { label: "15m", seconds: 900, historyDays: 20, olderDays: 20 },
-  "30min": { label: "30m", seconds: 1_800, historyDays: 30, olderDays: 30 },
-  "60min": { label: "1H", seconds: 3_600, historyDays: 30, olderDays: 30 },
-  day: { label: "D", seconds: 86_400, historyDays: 730, olderDays: 730 },
-  week: { label: "W", seconds: 7 * 86_400, historyDays: 1_826, olderDays: 1_826 },
-  month: { label: "M", seconds: 30 * 86_400, historyDays: 7_300, olderDays: 7_300 },
+  "1min": { label: "1 min", seconds: 60, historyDays: 5, olderDays: 5 },
+  "3min": { label: "3 min", seconds: 180, historyDays: 7, olderDays: 7 },
+  "5min": { label: "5 min", seconds: 300, historyDays: 10, olderDays: 10 },
+  "15min": { label: "15 min", seconds: 900, historyDays: 20, olderDays: 20 },
+  "30min": { label: "30 min", seconds: 1_800, historyDays: 30, olderDays: 30 },
+  "60min": { label: "1 hour", seconds: 3_600, historyDays: 30, olderDays: 30 },
+  day: { label: "Daily", seconds: 86_400, historyDays: 730, olderDays: 730 },
+  week: { label: "Weekly", seconds: 7 * 86_400, historyDays: 1_826, olderDays: 1_826 },
+  month: { label: "Monthly", seconds: 30 * 86_400, historyDays: 7_300, olderDays: 7_300 },
 };
 
 /** Day, week and month: the bars the daily route builds (live only moves a bar the server marked `forming`). */

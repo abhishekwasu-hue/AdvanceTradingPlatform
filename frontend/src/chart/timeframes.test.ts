@@ -8,8 +8,8 @@ const bar = (timestamp: string, close: number, extra: Partial<ChartBar> = {}): C
   ({ timestamp, open: close, high: close + 1, low: close - 1, close, volume: 10, ...extra });
 
 describe("UI2-4b1 the one timeframe list", () => {
-  it("is 1m 3m 5m 15m 30m 1H D W M, in that order, with the candle route's ids", () => {
-    expect(TIMEFRAMES.map(timeframeLabel)).toEqual(["1m", "3m", "5m", "15m", "30m", "1H", "D", "W", "M"]);
+  it("is 1 min ... Monthly in words (day-one fix 8), in that order, with the candle route's ids", () => {
+    expect(TIMEFRAMES.map(timeframeLabel)).toEqual(["1 min", "3 min", "5 min", "15 min", "30 min", "1 hour", "Daily", "Weekly", "Monthly"]);
     expect([...TIMEFRAMES]).toEqual(["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"]);
     const seconds = TIMEFRAMES.map(timeframeSeconds);
     expect([...seconds].sort((a, b) => a - b)).toEqual(seconds);                  // shortest to longest

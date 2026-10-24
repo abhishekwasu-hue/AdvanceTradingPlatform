@@ -1805,6 +1805,12 @@ Branches `claude/terminal-paper-adapter` (PR A, TM-1) and `claude/terminal-smart
 | SE7-6 | Not in this PR: freeze slicing of structure legs, the timer for the F&O basket's PAPER incomplete card, a stuck COMPLETING_SENT after a worker crash mid-send (the legs stay closable; reconciliation flags the books). | Next, one at a time. | - | open |
 
 
+## Day-one fix 8 (README row 19)
+
+| # | Question | Provisional default |
+|---|---|---|
+| D1-3 | Which list does Charts show on a new trader's first open? | The NIFTY 50 stocks (a list of stocks to look through; Find setups and Signals open on the same list), then Indices when that list is missing. A remembered or own list still wins. Checked against DECISIONS 2026-10-21 (the three groups, no first-open list named) and CLAUDE.md §2. |
+
 ## Day-one fixes (README row 19, docs/design/DAY_ONE_TRADER_TEST.md)
 
 Checked against CLAUDE.md sections 2, 3 and 8, DECISIONS (23 Oct trader review) and the order files

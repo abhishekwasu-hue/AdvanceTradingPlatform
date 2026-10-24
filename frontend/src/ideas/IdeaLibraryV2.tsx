@@ -1,4 +1,4 @@
-import { BookOpen, ChevronDown, Play, Search } from "lucide-react";
+import { BookOpen, ChevronDown, History, Play, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/errors";
@@ -7,7 +7,7 @@ import type { PageProps } from "../routes";
 import { PageTitleV2 } from "../trading/PartsV2";
 import { ComingSoon } from "../ui/ComingSoon";
 import { useFeatures } from "../ui/useFeatures";
-import { paperBotPathFor } from "../strategyTemplates/link";
+import { paperBotPathFor, testPathFor } from "../strategyTemplates/link";
 import { ideasApi, type Idea, type IdeaLibrary } from "./api";
 import { ALL_GROUPS, IDEA_FLAG, defaultText, ideasIn, rangeText, screenerPathFor, suggestIdeas } from "./model";
 
@@ -160,6 +160,7 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
   const open = idea.scans.filter((s) => s.available);
   const adoptPath = adoptOn ? adoptPathFor(idea) : null;
   const adoptNote = adoptPath && idea.adopt.available ? idea.adopt.note ?? null : null;
+  const testPath = adoptPath ? testPathForIdea(idea) : null;
   return (
     <article id={`idea-${idea.id}`} aria-labelledby={titleId} data-idea={idea.id} className={`${CARD} flex scroll-mt-space-6 flex-col p-space-4 md:p-space-5`}>
       <div className="flex flex-wrap items-center gap-space-2">
@@ -195,9 +196,18 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
 
       {adoptPath && (
         <div className="mt-space-3" data-block="idea-adopt">
-          <Link to={adoptPath} className={LINK_PRIMARY} data-adopt={idea.adopt.available ? idea.adopt.template : undefined} aria-label={`Adopt as a paper strategy: ${idea.name}`}>
-            <Play size={14} aria-hidden />Adopt as a paper strategy
-          </Link>
+          <div className="flex flex-wrap items-center gap-space-2">
+            <Link to={adoptPath} className={LINK_PRIMARY} data-adopt={idea.adopt.available ? idea.adopt.template : undefined} aria-label={`Adopt as a paper strategy: ${idea.name}`}>
+              <Play size={14} aria-hidden />Adopt as a paper strategy
+            </Link>
+            {/* Day-one fix 1: the idea's own strategy on past prices first (Strategies › Test; nothing starts). */}
+            {testPath && (
+              <Link to={testPath} className={LINK_SECONDARY} data-test-idea={idea.adopt.available ? idea.adopt.template : undefined}
+                aria-label={`Test it on past prices: ${idea.name}`}>
+                <History size={14} aria-hidden />Test it on past prices
+              </Link>
+            )}
+          </div>
           <p className="mt-space-2 text-t12 text-fg-muted">{ADOPT_NOTE}</p>
           {adoptNote && <p className="mt-space-1 text-t12 text-fg-muted" data-state="adopt-note">{adoptNote}</p>}
         </div>
@@ -273,6 +283,12 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
 
 /** What "Adopt as a paper strategy" does, in plain words (PAPER only; the user saves it himself). */
 export const ADOPT_NOTE = "Opens the paper bot form with this idea's settings filled in. You review it and start it yourself; it runs on paper only.";
+
+/** Day-one fix 1: the Strategies › Test link of an idea the server lets the user adopt now, or null. */
+export function testPathForIdea(idea: Pick<Idea, "adopt">): string | null {
+  const a = idea.adopt;
+  return a.available ? testPathFor({ template: a.template, timeframe: a.timeframe, params: a.params }) : null;
+}
 
 /** The Paper bot link of an idea the server lets the user adopt now, or null ("comes later"). */
 export function adoptPathFor(idea: Pick<Idea, "adopt">): string | null {

@@ -5,7 +5,7 @@
  *
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
-import { BellRing, Code2, History, Layers, LayoutGrid, Lightbulb, Play, Save } from "lucide-react";
+import { BellRing, ChevronDown, Code2, History, Layers, LayoutGrid, Lightbulb, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -15,8 +15,9 @@ import { useToast } from "../components/Toast";
 import type { PageProps } from "../routes";
 import { screenerApi, type IdeaResponse, type PreviewResponse, type RunResponse, type ServerVersion } from "../screener/api";
 import { FreshnessPill } from "../screener/FreshnessPill";
+import { PlainTimeframes } from "../screener/TimeframeChip";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
-import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
+import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, timeframeWords, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
 import { ResultViews } from "../screener/ResultViews";
 import { EtfPanel } from "../screener/EtfPanel";
@@ -124,6 +125,10 @@ export default function ScreenerPage(_props: PageProps) {
   // Owner order 23 Oct (ui_v2): the universe is a list picked from the system lists (NIFTY 50 on open), a watchlist or
   // the trader's own symbols - never empty; a list longer than one run goes in batches paced by the broker's budget.
   const universeV2 = features.on("ui_v2");
+  // Day-one fix 4 (ui_v2): Pine Script, Library tools, the formula block and "Live counts while editing" sit behind
+  // "Advanced"; the trader's page shows his list, the timeframe in words and the ready scans.
+  const [advancedOpen, setAdvanced] = useState(false);
+  const advanced = !universeV2 || advancedOpen;
   const [universes, setUniverses] = useState<UniversesResponse | null>(null);
   const [universesDone, setUniversesDone] = useState(false);
   const [choice, setChoice] = useState(DEFAULT_CHOICE);
@@ -192,6 +197,8 @@ export default function ScreenerPage(_props: PageProps) {
   // breakout family joins with U6 BK1).
   const canOpen = useCallback((s: TaxScreen) => !!registry && ((s.source === "starter" && STARTERS.some((t) => t.id === s.id))
     || (builderU2 && (s.source === "legends" || s.source === "breakouts"))), [registry, builderU2]);
+  // Day-one fix 4: the page opens on something to do - three ready scans from the library, one tap each.
+  const readyScans = useMemo(() => (taxonomy?.screens ?? []).filter((s) => s.source === "starter" && canOpen(s)).slice(0, 3), [taxonomy, canOpen]);
   const openScreen = (s: TaxScreen, runNow = false) => {
     const starter = STARTERS.find((t) => t.id === s.id);
     if (!registry || !canOpen(s)) return;
@@ -394,7 +401,8 @@ export default function ScreenerPage(_props: PageProps) {
   // A long list's answer leads with what matters: the matches (and any stock the broker's limit held back); the rest
   // are counted, and listed on request.
   const [showAll, setShowAll] = useState(false);
-  const longAnswer = universeV2 && (run?.results.length ?? 0) > RUN_MAX;
+  // Day-one fix 4: on v2 every answer leads with its matches; the ones that did not match are counted, listed on request.
+  const longAnswer = universeV2 && (run?.results.length ?? 0) > 0;
   const shownResults = useMemo(() => {
     if (!run) return null;
     if (!longAnswer || showAll) return run.results;
@@ -458,13 +466,14 @@ export default function ScreenerPage(_props: PageProps) {
   if (loadError) return <ErrorState message={loadError} />;
 
   return (
+    <PlainTimeframes.Provider value={universeV2}>
     <div className="screener-page pb-20 sm:pb-0">
       {dishOn && <PageDishV2 page="screener" className="mb-4" />}
       {/* Header strip: name (edit in place), freshness, Run (primary) / Save */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label className={cx("min-w-0 flex-1", ideaOn && "basis-full sm:basis-0")}>
+        <label className={cx("min-w-0 flex-1", universeV2 ? "basis-full" : ideaOn && "basis-full sm:basis-0")}>
           <span className="sr-only">Scan name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120}
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder={universeV2 ? "Untitled scan" : undefined}
                  className="w-full max-w-md rounded-control border border-transparent bg-transparent px-1 text-t24 font-semibold text-fg hover:border-border focus:border-border focus:outline-none focus:ring-2 focus:ring-brand" />
         </label>
         <FreshnessPill ranAt={ranAt} source={run?.data_source ?? null} scanTf={scanTf} />
@@ -473,14 +482,19 @@ export default function ScreenerPage(_props: PageProps) {
         {taxonomy && (
           <Button size="sm" onClick={() => setGalleryOpen(true)} data-testid="browse-screens"><LayoutGrid size={14} /> Browse screens</Button>
         )}
-        {taxonomy && mirrors && (
+        {advanced && taxonomy && mirrors && (
           <Button size="sm" onClick={() => setToolsOpen(true)} data-testid="library-tools-open"><Layers size={14} /> Library tools</Button>
         )}
         {etfOn && <Button size="sm" onClick={() => setEtfOpen(true)} data-testid="etf-open"><LayoutGrid size={14} /> ETFs</Button>}
         {ideaOn && <Button size="sm" onClick={() => setIdeaOpen(true)} data-testid="idea-open-dialog"><Lightbulb size={14} /> From an idea</Button>}
-        {pineOn && <Button size="sm" onClick={() => setPineOpen(true)} data-testid="pine-open"><Code2 size={14} /> Pine Script</Button>}
+        {advanced && pineOn && <Button size="sm" onClick={() => setPineOpen(true)} data-testid="pine-open"><Code2 size={14} /> Pine Script</Button>}
         {ideaOn && (
           <Button size="sm" onClick={() => setAlertOpen(true)} disabled={!text} data-testid="scan-alert-open"><BellRing size={14} /> Tell me when it matches</Button>
+        )}
+        {universeV2 && ((taxonomy && mirrors) || pineOn || builderU2) && (
+          <Button size="sm" variant="ghost" onClick={() => setAdvanced((v) => !v)} aria-expanded={advancedOpen} data-testid="screener-advanced">
+            Advanced <ChevronDown size={14} aria-hidden className={cx("transition-transform", advancedOpen && "rotate-180")} />
+          </Button>
         )}
         {ideaOn && scanVersions.length > 0 && (
           <Button size="sm" onClick={() => setVersionsOpen(true)} data-testid="scan-versions-open"><History size={14} /> Versions ({scanVersions.length})</Button>
@@ -518,8 +532,8 @@ export default function ScreenerPage(_props: PageProps) {
           <div>
           <label className="mt-3 block text-t12 text-fg-muted" htmlFor="screener-tf">Scan timeframe</label>
           <select id="screener-tf" value={scanTf} onChange={(e) => setScanTf(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-control border border-border bg-surface-2 px-2 font-mono text-t13 text-fg focus:outline-none focus:ring-2 focus:ring-brand">
-            {TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{tf}</option>)}
+                  className={cx("mt-1 h-9 w-full rounded-control border border-border bg-surface-2 px-2 text-t13 text-fg focus:outline-none focus:ring-2 focus:ring-brand", !universeV2 && "font-mono")}>
+            {TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{timeframeWords(tf, universeV2)}</option>)}
           </select>
           </div>
           {universeV2 && symbols.length > RUN_MAX && (
@@ -527,10 +541,12 @@ export default function ScreenerPage(_props: PageProps) {
               Live counts show for lists of up to {RUN_MAX} stocks. Run scans all {symbols.length}, {plan.size} at a time, within your broker&apos;s limits.
             </p>
           )}
+          {advanced && (
           <label className="mt-3 flex items-center gap-2 text-t12 text-fg-muted">
             <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} className="h-3.5 w-3.5 accent-[rgb(var(--signal))]" data-testid="live-counts" />
             Live counts while editing
           </label>
+          )}
           <p className="mt-4 text-t12 text-fg-muted">Closed bars only, read from your broker. A scan lists symbols that meet your own conditions; it is not advice.</p>
           </div>
         </aside>
@@ -539,7 +555,7 @@ export default function ScreenerPage(_props: PageProps) {
         <div className="screener-canvas">
           {registry ? (
             <FunnelCanvas stages={stages} registry={registry} scanTf={scanTf} universe={symbols.length} funnel={shown?.funnel ?? null}
-                          fresh={!!shown} live={liveFresh} matched={matchedNow} problems={allProblems} runKey={runKey} onChange={setStages} formula={builderU2} />
+                          fresh={!!shown} live={liveFresh} matched={matchedNow} problems={allProblems} runKey={runKey} onChange={setStages} formula={builderU2 && advanced} />
           ) : (
             <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-1" aria-label="Loading the conditions" />
           )}
@@ -575,9 +591,25 @@ export default function ScreenerPage(_props: PageProps) {
           )}
           {longAnswer && (hiddenCount > 0 || showAll) && (
             <p className="flex flex-wrap items-center justify-between gap-2 text-t13 text-fg-muted" data-testid="results-hidden">
-              <span>{showAll ? `Showing all ${run?.results.length ?? 0} stocks.` : `${hiddenCount} stocks did not match; they are not listed.`}</span>
-              <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)}>{showAll ? "Matches only" : "Show all"}</Button>
+              <span>{showAll ? `Showing all ${run?.results.length ?? 0} stocks.` : `${hiddenCount} ${hiddenCount === 1 ? "stock did" : "stocks did"} not match; they are not listed.`}</span>
+              <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)}>{showAll ? "Matches only" : `Show the ${hiddenCount} that did not match`}</Button>
             </p>
+          )}
+          {universeV2 && !run && !running && stages.length === 0 && readyScans.length > 0 && (
+            <section className="rounded-panel border border-border bg-surface-1 p-4" data-testid="ready-scans" aria-labelledby="ready-scans-title">
+              <h2 id="ready-scans-title" className="text-t15 font-semibold text-fg">Start with a ready scan</h2>
+              <p className="mt-1 text-t13 text-fg-muted">One tap runs it on {universe.name || "your list"}. You can change every condition afterwards.</p>
+              <ul className="mt-3 space-y-2">
+                {readyScans.map((s) => (
+                  <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-subtle px-3 py-2">
+                    <span className="min-w-0 flex-1 text-t14 font-medium text-fg">{s.name}</span>
+                    <Button size="sm" variant="primary" onClick={() => openScreen(s, true)} aria-label={`Run ${s.name}`} data-testid="ready-scan-run">
+                      <Play size={14} aria-hidden /> Run
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
           <ResultViews results={shownResults} running={running} runKey={runKey} stale={!!run && !fresh}
                        why={fresh && registry ? (symbol) => whyChips(registry, stages, run?.funnel ?? null, symbol) : undefined}
@@ -666,5 +698,6 @@ export default function ScreenerPage(_props: PageProps) {
         </div>
       </div>
     </div>
+    </PlainTimeframes.Provider>
   );
 }

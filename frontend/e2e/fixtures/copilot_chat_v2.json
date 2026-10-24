@@ -10,7 +10,7 @@
    "reason": null
   },
   "market_line": {
-   "line": "NIFTY 50 last closed at 24,850.5 (2026-10-20); Dow structure daily uptrend, weekly range; India VIX 12.4 (-3.1%).",
+   "line": "NIFTY 50 last closed at 24,850.5 (20 Oct 2026); by its swing highs and lows the daily trend is up, the weekly sideways; India VIX 12.4 (-3.1%).",
    "reason": null,
    "as_of": "2026-10-21T03:30:00+00:00"
   },
@@ -126,7 +126,7 @@
      "title": "Structure per timeframe",
      "lines": [
       "Weekly: range",
-      "Daily: up, protected level 24,310, last BOS at 24,790",
+      "Daily: up, protected level 24,310, last break past the last swing (a break of structure) at 24,790",
       "1-hour: down (weak), protected level 25,020, last CHoCH at 24,900.5",
       "15-minute: up, protected level 24,730.5"
      ]
@@ -736,9 +736,9 @@
    "job_number": 1,
    "title": "Pre-market brief",
    "summary": [
-    "NIFTY 50 last closed at 24,850.5 (2026-10-20); Dow structure daily uptrend, weekly range; India VIX 12.4 (-3.1%)."
+    "NIFTY 50 last closed at 24,850.5 (20 Oct 2026); by its swing highs and lows the daily trend is up, the weekly sideways; India VIX 12.4 (-3.1%)."
    ],
-   "answer": "NIFTY 50 last closed at 24,850.5 (2026-10-20); Dow structure daily uptrend, weekly range; India VIX 12.4 (-3.1%).",
+   "answer": "NIFTY 50 last closed at 24,850.5 (20 Oct 2026); by its swing highs and lows the daily trend is up, the weekly sideways; India VIX 12.4 (-3.1%).",
    "sections": [
     {
      "title": "Global cues",
@@ -765,7 +765,7 @@
      "title": "NIFTY structure",
      "lines": [
       "Weekly: range",
-      "Daily: up, protected level 24,310, last BOS at 24,790",
+      "Daily: up, protected level 24,310, last break past the last swing (a break of structure) at 24,790",
       "1-hour: down (weak), protected level 25,020, last CHoCH at 24,900.5",
       "15-minute: up, protected level 24,730.5"
      ]
@@ -774,7 +774,7 @@
      "title": "BANKNIFTY structure",
      "lines": [
       "Weekly: range",
-      "Daily: up, protected level 51,200, last BOS at 51,950",
+      "Daily: up, protected level 51,200, last break past the last swing (a break of structure) at 51,950",
       "1-hour: down (weak), protected level 52,480, last CHoCH at 52,150",
       "15-minute: up, protected level 51,980"
      ]

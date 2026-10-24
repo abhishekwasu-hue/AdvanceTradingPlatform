@@ -678,7 +678,7 @@ async def _close_group_legs(session: AsyncSession, row: GroupExitRecord, reader:
     """Close every leg of a FIRING combined exit that is still open - sold legs first, then the hedges (a short that does
     not close keeps its hedges open; close_group alerts). Legs closed already (this pass, an earlier pass, or before a
     restart) are skipped; each leg's own close claims it once, so nothing is closed twice."""
-    from app.trading.position_monitor import close_group
+    from app.trading.position_monitor import close_group, venue_for
     trades = [t for t in [await session.get(TradeRecord, i) for i in gx.trade_ids(row)] if t is not None]
     still_open = [t for t in trades if t.exit_time is None]
     if still_open:
@@ -686,8 +686,10 @@ async def _close_group_legs(session: AsyncSession, row: GroupExitRecord, reader:
             for t in still_open:
                 await book.cancel_for_trade(session, t.id, "Cancelled: your combined exit is closing this position", now)
             await session.commit()
-        prices = {t.id: p for t in still_open if (p := await reader.get(t.symbol, t.exchange)) is not None}
-        spot = await reader.get(row.spot_symbol, row.spot_exchange) if row.spot_symbol and row.spot_exchange else None
+        prices = {t.id: p for t in still_open if (p := await reader.get(t.symbol, await venue_for(session, t))) is not None}
+        spot: Optional[float] = None
+        if row.spot_symbol and row.spot_exchange:
+            spot = await reader.get(row.spot_symbol, row.spot_exchange)
         reason = "Combined stop-loss" if row.fired_kind == gx.SL else "Combined target"
         outcomes = await close_group(session, still_open, prices, reason, broker=broker, user_id=row.user_id,
                                      underlying_price=spot)

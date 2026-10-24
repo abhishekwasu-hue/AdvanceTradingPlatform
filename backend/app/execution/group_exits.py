@@ -76,9 +76,11 @@ def is_short(leg: Any) -> bool:
     return str(getattr(leg, "direction", None) or getattr(leg, "side", "")).upper() == "SHORT"
 
 
-def leg_view(trade: TradeRecord) -> Dict[str, Any]:
-    """One frozen leg: what the measure needs, read once when the exit is set."""
-    return {"trade_id": trade.id, "symbol": trade.symbol, "exchange": trade.exchange, "direction": trade.direction,
+def leg_view(trade: TradeRecord, venue: Optional[str] = None) -> Dict[str, Any]:
+    """One frozen leg: what the measure needs, read once when the exit is set (`venue`: the exit paths' own
+    `position_monitor.venue_for`, so a legacy row without an exchange is priced where it trades)."""
+    return {"trade_id": trade.id, "symbol": trade.symbol, "exchange": venue or trade.exchange or "",
+            "direction": trade.direction,
             "role": "SHORT" if is_short(trade) else "LONG", "quantity": float(trade.quantity),
             "entry_price": float(trade.entry_price), "mode": trade.mode}
 
@@ -266,10 +268,11 @@ async def create(session: AsyncSession, user: User, ask: GroupExitAsk, *, now_va
                 errors.append(f"The {name} equals the value now - it would fire at once")
     if errors:
         raise GroupExitError("; ".join(errors))
+    from app.trading.position_monitor import venue_for
     at = _now(now)
     row = GroupExitRecord(
         tenant_id=user.tenant_id, user_id=user.id, client_ref=ask.client_ref, mode=trades[0].mode, origin=ask.origin,
-        scope=ask.scope, basket_ref=ask.basket_ref, legs_json=json.dumps([leg_view(t) for t in trades]),
+        scope=ask.scope, basket_ref=ask.basket_ref, legs_json=json.dumps([leg_view(t, await venue_for(session, t)) for t in trades]),
         measure=ask.measure, spot_symbol=(ask.spot_symbol or None), spot_exchange=(ask.spot_exchange or None),
         sl_value=ask.sl_value, target_value=ask.target_value, basis_value=now_value, check_mode=ask.check_mode,
         timeframe_minutes=ask.timeframe_minutes if ask.check_mode == CLOSE else None, status=ARMED, version=1,

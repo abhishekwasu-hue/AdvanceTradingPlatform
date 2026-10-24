@@ -205,13 +205,14 @@ async def _room(session: AsyncSession, user: User, count: int) -> Optional[str]:
 
 async def preview(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str, spot: Optional[float],
                   price_lookup: Optional[fno_ticket.PriceLookup], live_only: bool = False, now: Optional[datetime] = None,
-                  with_smart: bool = True) -> Dict[str, Any]:
+                  with_smart: bool = True, origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
     """The confirm step: each leg as the ticket sees it (placement order), the basket's own checks, and the totals at
-    the prices it would fill at. Reads only."""
+    the prices it would fill at. Reads only. `origin` comes from the route (TT-2: "manual" only on the basket routes)."""
     now = now or datetime.now(timezone.utc)
     rows: List[Dict[str, Any]] = []
     for seq, (i, leg) in enumerate(hedge_first(legs), start=1):
-        view = await fno_ticket.assess(session, user, _ask(leg, product), price_lookup=price_lookup, live_only=live_only, now=now)
+        view = await fno_ticket.assess(session, user, _ask(leg, product), price_lookup=price_lookup, live_only=live_only, now=now,
+                                       origin=origin)
         rows.append({"seq": seq, "leg": i, "role": "hedge" if leg.side == "BUY" else "short", **view})
     refusals: List[str] = []
     room = await _room(session, user, len(legs))
@@ -305,7 +306,8 @@ def _smart_rows(outcome: Any, legs: Sequence[LegAsk], results: Dict[int, Dict[st
 
 
 async def execute_smart(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str, basket_ref: str,
-                        price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None) -> Dict[str, Any]:
+                        price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None,
+                        origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
     """Execute basket through the smart-execution engine: hedges first, and the first leg that does not fill stops the
     run (TM-11: no SELL before every hedge is filled) with the INCOMPLETE state and its two choices."""
     from app.execution import smart_execution
@@ -314,7 +316,8 @@ async def execute_smart(session: AsyncSession, user: User, legs: Sequence[LegAsk
     holder = {"user": user}
 
     async def place(index: int, seq: int):
-        result = await fno_ticket.place(session, holder["user"], _ask(legs[index], product, f"{basket_ref}-{seq}"), price_lookup=price_lookup, now=now)
+        result = await fno_ticket.place(session, holder["user"], _ask(legs[index], product, f"{basket_ref}-{seq}"), price_lookup=price_lookup, now=now,
+                                        origin=origin)
         holder["user"] = await session.get(User, user_id) or holder["user"]    # a rollback in the pipeline expires it
         results[index] = result
         return result.get("status") == "PLACED", list(result.get("reasons") or []), result
@@ -383,12 +386,13 @@ def _next_steps(status: str, rows: Sequence[Dict[str, Any]]) -> List[str]:
 
 
 async def execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str, basket_ref: str,
-                  price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None) -> Dict[str, Any]:
+                  price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None,
+                  origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
     """Places every leg as PAPER, hedge legs first, or nothing when the check at the live price refuses anything."""
     now = now or datetime.now(timezone.utc)
     smart = await fno_ticket.smart_on(session, user.tenant_id)
     check = await preview(session, user, legs, product=product, spot=None, price_lookup=price_lookup, live_only=True, now=now,
-                          with_smart=False)
+                          with_smart=False, origin=origin)
     await session.commit()
     if not check["can_execute"]:
         reasons = list(check["refusals"]) + [f"{r['label']}: {(r['errors'] + r['refusals'] + ['it cannot be placed now'])[0]}"
@@ -398,7 +402,8 @@ async def execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, 
         return {"mode": fno_ticket.MODE, "status": "REFUSED", "reasons": reasons, "legs": refused, "placed": 0, "next_steps": [
             "Nothing was placed. Fix what it says and try again."]}
     if smart:
-        return await execute_smart(session, user, legs, product=product, basket_ref=basket_ref, price_lookup=price_lookup, now=now)
+        return await execute_smart(session, user, legs, product=product, basket_ref=basket_ref, price_lookup=price_lookup, now=now,
+                                   origin=origin)
     rows: List[Dict[str, Any]] = []
     user_id = user.id
     hedge_failed = False
@@ -409,7 +414,8 @@ async def execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, 
                          "order_id": None, "trade_id": None,
                          "reasons": ["Not placed because a hedge leg did not fill: on its own this sold leg would be uncovered."]})
             continue
-        result = await fno_ticket.place(session, user, _ask(leg, product, f"{basket_ref}-{seq}"), price_lookup=price_lookup, now=now)
+        result = await fno_ticket.place(session, user, _ask(leg, product, f"{basket_ref}-{seq}"), price_lookup=price_lookup, now=now,
+                                        origin=origin)
         user = await session.get(User, user_id) or user        # a rollback inside the pipeline (a repeated tap) expires it
         status = result.get("status", "FAILED")
         if status != "PLACED" and leg.side == "BUY":

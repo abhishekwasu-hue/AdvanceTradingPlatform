@@ -45,11 +45,26 @@ def _chain(spot=24510.0, step=50.0, n=41, call=1000.0, put=2000.0, call_ltp=10.0
     return OptionChain(underlying=UND, expiry=expiry, underlying_ltp=spot, rows=rows)
 
 
-async def _collect(chain, when, **kw):
-    async with _session_factory() as session:
-        result = await snapshots.collect(session, UND, chain, when, **kw)
-        await session.commit()
-        return result
+_DEFAULT_TENANT: dict = {}
+
+
+def default_tenant() -> int:
+    """TM-7: every slot belongs to the organisation whose session read it; the pure tests use one organisation."""
+    if "id" not in _DEFAULT_TENANT:
+        _, me = _owner("o2-default-tenant@example.com")
+        _DEFAULT_TENANT["id"] = me["tenant_id"]
+    return _DEFAULT_TENANT["id"]
+
+
+def _collect(chain, when, tenant_id=None, **kw):
+    tenant = tenant_id or default_tenant()               # resolved before the coroutine runs (_owner runs its own loop)
+
+    async def go():
+        async with _session_factory() as session:
+            result = await snapshots.collect(session, UND, chain, when, tenant_id=tenant, **kw)
+            await session.commit()
+            return result
+    return go()
 
 
 async def _count(model):
@@ -67,25 +82,27 @@ def test_collect_is_idempotent_per_slot_and_keeps_a_wide_window():
     nxt = _run(_collect(_chain(call=5000.0), T0 + timedelta(minutes=5), span=15))
     assert nxt.status == "OK" and nxt.baselines == 0                                     # the day's baseline is written once
 
+    tenant = default_tenant()
+
     async def base():
         async with _session_factory() as session:
-            return await snapshots.baselines(session, UND, DAY)
+            return await snapshots.baselines(session, UND, DAY, tenant_id=tenant)
     assert set(v[0] for v in _run(base()).values()) == {1000.0}                         # the first OI seen, never updated
     assert _run(_collect(OptionChain(underlying=UND, expiry="", underlying_ltp=None, rows=_chain().rows), T0 + timedelta(minutes=10))).status == "EMPTY"
     with pytest.raises(ValueError):
         snapshots.normalise_underlying("BAD;SYMBOL")
 
 
-async def _replay(settings=None, day=DAY):
+async def _replay(settings=None, day=DAY, tenant_id=None):
     async with _session_factory() as session:
-        slots = await snapshots.day_chains(session, UND, day)
+        slots = await snapshots.day_chains(session, UND, day, tenant_id=tenant_id)
     return snapshots.replay(UND, slots, settings or oi_regime.OIRegimeSettings(), day), slots
 
 
 def test_replay_rebuilds_the_banner_from_stored_strikes():
     _run(_collect(_chain(), T0))
     _run(_collect(_chain(put=2200.0, put_ltp=9.5), T0 + timedelta(minutes=5)))         # put OI up, put premium down
-    timeline, slots = _run(_replay())
+    timeline, slots = _run(_replay(tenant_id=default_tenant()))
     assert len(timeline) == 2 and len(slots[0].chain.rows) == 31
     first, second = timeline[0].state, timeline[1].state
     assert first.first_of_day and first.message == oi_regime.INSUFFICIENT_HISTORY_MESSAGE
@@ -99,11 +116,11 @@ def test_replay_rebuilds_the_banner_from_stored_strikes():
 def test_each_tenant_settings_apply_on_read():
     _run(_collect(_chain(), T0))
     _run(_collect(_chain(put=2030.0, put_ltp=9.95), T0 + timedelta(minutes=5)))       # +1.5 % OI, -0.5 % premium
-    default, _ = _run(_replay())
+    default, _ = _run(_replay(tenant_id=default_tenant()))
     assert default[1].state.put_class == OIClass.FLAT                                    # under the 2 % / 1 % defaults
-    loose, _ = _run(_replay(oi_regime.OIRegimeSettings(oi_threshold_pct=1.0, premium_threshold_pct=0.25)))
+    loose, _ = _run(_replay(oi_regime.OIRegimeSettings(oi_threshold_pct=1.0, premium_threshold_pct=0.25), tenant_id=default_tenant()))
     assert loose[1].state.put_class == OIClass.WRITING
-    narrow, _ = _run(_replay(oi_regime.OIRegimeSettings(atm_range=2)))
+    narrow, _ = _run(_replay(oi_regime.OIRegimeSettings(atm_range=2), tenant_id=default_tenant()))
     assert narrow[1].totals.total_call_oi == 5 * 1000.0                                  # the reader's ATM range
 
 
@@ -118,8 +135,9 @@ def test_staleness_flags():
 
 def test_history_api_intervals_strikes_and_banner():
     headers, _ = _owner("o2-history@example.com")
+    other_headers, _other = _owner("o2-history-other@example.com")
     for m, put in ((0, 2000.0), (5, 2100.0), (10, 2200.0), (15, 2300.0)):
-        _run(_collect(_chain(put=put), T0 + timedelta(minutes=m)))
+        _run(_collect(_chain(put=put), T0 + timedelta(minutes=m), tenant_id=_["tenant_id"]))
     five = client.get(f"/api/option-chain/{UND}/history", params={"date": DAY.isoformat()}, headers=headers).json()
     assert len(five["rows"]) == 4 and five["rows"][0]["slot"].startswith("2026-03-10T09:35") and "stale" in five and "market_open" in five
     ten = client.get(f"/api/option-chain/{UND}/history", params={"date": DAY.isoformat(), "interval": 10}, headers=headers).json()
@@ -131,6 +149,10 @@ def test_history_api_intervals_strikes_and_banner():
     assert empty["banner"] is None and empty["message"] == oi_regime.INSUFFICIENT_HISTORY_MESSAGE
     assert client.get("/api/option-chain/BAD;X/banner", headers=headers).status_code in (404, 422)
     assert client.get(f"/api/option-chain/{UND}/history").status_code == 401
+    # TM-7: the slots were read through this organisation's own session - another organisation reads none of them
+    theirs = client.get(f"/api/option-chain/{UND}/history", params={"date": DAY.isoformat()}, headers=other_headers).json()
+    assert theirs["rows"] == []
+    assert client.get(f"/api/option-chain/{UND}/strikes", params={"date": DAY.isoformat()}, headers=other_headers).json()["strikes"] == []
 
 
 def test_settings_are_per_tenant_validated_and_owner_only():
@@ -214,7 +236,8 @@ def test_retention_trims_old_oi_rows_only():
     assert _run(_count(OISnapshotRecord)) == 1 and _run(_count(StrikeOISnapshotRecord)) == 31
 
 
-def test_worker_tries_the_next_tenant_when_a_read_fails(monkeypatch):
+def test_a_failed_read_misses_only_that_tenants_slot(monkeypatch):
+    """TM-7: each organisation reads through its own session; one's failure is its own gap, never filled from another's."""
     from app.workers import trading_worker as tw
     first_headers, first = _owner("o2-fail-a@example.com")
     second_headers, second = _owner("o2-fail-b@example.com")
@@ -240,13 +263,18 @@ def test_worker_tries_the_next_tenant_when_a_read_fails(monkeypatch):
             return await worker._oi_banner(session, T0)
     assert _run(cycle()) == 1 and good.calls == [UND]
 
+    async def owners():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(OISnapshotRecord.tenant_id).where(OISnapshotRecord.underlying == UND)))
+    assert _run(owners()) == [second["tenant_id"]]
+
 
 def test_dashboard_banners_list_only_this_tenants_enabled_underlyings():
-    headers, _ = _owner("o3-banners@example.com")
+    headers, _me = _owner("o3-banners@example.com")
     other_headers, _ = _owner("o3-banners-other@example.com")
     assert client.put(f"/api/option-chain/{UND}/settings", json={"enabled": True}, headers=headers).status_code == 200
     assert client.put("/api/option-chain/OTHERIDX/settings", json={"enabled": True}, headers=other_headers).status_code == 200
-    _run(_collect(_chain(), datetime.now(timezone.utc)))
+    _run(_collect(_chain(), datetime.now(timezone.utc), tenant_id=_me["tenant_id"]))
     mine = client.get("/api/option-chain/banners", headers=headers).json()["banners"]
     assert [b["underlying"] for b in mine] == [UND] and mine[0]["banner"]["first_of_day"] is True
     assert [b["underlying"] for b in client.get("/api/option-chain/banners", headers=other_headers).json()["banners"]] == ["OTHERIDX"]

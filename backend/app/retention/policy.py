@@ -66,6 +66,9 @@ class RetentionPolicy:
     # H-C1 e: days after which an llm_calls row's text is scrubbed (the row, its hashes, model, cost stay). 0 = keep the
     # text (the default: removing it is the operator's data-retention decision, OPEN_QUESTIONS H-6).
     llm_text_days: int = 0
+    # TM 9.4 / TM-8: the owner's private chain history (md_tenant_chain_snapshots). 0 = kept (the default until the owner
+    # sets a limit); a set value is floored at MIN_DAYS.
+    chain_history_days: int = 0
 
     def as_dict(self) -> dict:
         return {
@@ -78,6 +81,7 @@ class RetentionPolicy:
             "llm_text_days": self.llm_text_days, "market_zones_daily_days": self.market_zones_daily_days,
             "market_zones_weekly_days": self.market_zones_weekly_days, "market_zones_tenant_idle_days": self.market_zones_tenant_idle_days,
             "screen_evidence_days": self.screen_evidence_days, "vision_skipped_days": self.vision_skipped_days,
+            "chain_history_days": self.chain_history_days,
             "never_deleted": list(NEVER_DELETED),
         }
 
@@ -98,6 +102,7 @@ def load_policy() -> RetentionPolicy:
         news_feed_days=_days("RETENTION_NEWS_FEED_DAYS", 365),
         ai_candidates_days=_days("RETENTION_AI_CANDIDATES_DAYS", 30),
         llm_text_days=_llm_text_days(),
+        chain_history_days=_keep_unless_set("RETENTION_CHAIN_HISTORY_DAYS"),
         market_zones_daily_days=_days("RETENTION_MARKET_ZONES_DAILY_DAYS", 90),
         market_zones_weekly_days=_days("RETENTION_MARKET_ZONES_WEEKLY_DAYS", 730),
         market_zones_tenant_idle_days=_days("RETENTION_MARKET_ZONES_TENANT_IDLE_DAYS", 30),
@@ -108,8 +113,13 @@ def load_policy() -> RetentionPolicy:
 
 def _llm_text_days() -> int:
     """0 (keep) unless set; a set value is floored at MIN_DAYS like the others."""
+    return _keep_unless_set("RETENTION_LLM_TEXT_DAYS")
+
+
+def _keep_unless_set(name: str) -> int:
+    """0 (keep) unless `name` is set to a positive number of days; a set value is floored at MIN_DAYS."""
     try:
-        value = int(os.environ.get("RETENTION_LLM_TEXT_DAYS", "0") or 0)
+        value = int(os.environ.get(name, "0") or 0)
     except ValueError:
         return 0
     return 0 if value <= 0 else max(MIN_DAYS, value)

@@ -54,7 +54,9 @@ class RiskManager:
         bad = nonfinite_levels(signal)
         if bad:
             return RiskDecision(approved=False, reasons=[f"Signal {bad} is not a finite number"])
-        if signal.risk_reward is not None and signal.risk_reward < self.config.min_risk_reward:
+        # TT12-4: a minimum reward:risk applies only when the organisation set one (0 = not set: no R:R filter at all).
+        # Entries only: exits never pass through here (ADR-0004).
+        if self.config.min_risk_reward > 0 and signal.risk_reward is not None and signal.risk_reward < self.config.min_risk_reward:
             reasons.append(
                 f"Risk/Reward {signal.risk_reward:.2f} below configured minimum {self.config.min_risk_reward:.2f}"
             )

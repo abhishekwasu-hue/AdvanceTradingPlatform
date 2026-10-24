@@ -139,6 +139,16 @@ closed rows: docs/archive/OPEN_QUESTIONS_CLOSED.md. Both are moved, never delete
 |---|---|---|---|---|
 | TT2-1 | TT-2 names the ticket, the basket and the Terminal. The older plan-before-trade PAPER ticket (`paper/ticket.py`, Z5 / P1-d) is also the user's own order, but under approval-only mode it still raises an entry proposal he then approves himself. | Unchanged for now: only the F&O ticket and basket routes (and later the Terminal) set the origin "manual", as the decision lists. If Abhi wants the plan ticket to count as his approval too, it is a one-line route change plus a test. Checked against CLAUDE.md §3-4, DECISIONS (TT-2) and ATP_SESSION_TRADING_TERMINAL.md. | `paper/ticket.py:288`, `paper/fno_routes.py` | open (provisional default in use) |
 
+## P1-2b: the organisation's min reward:risk OFF (24 Oct, `claude/p1-2b-org-min-rr-off`)
+
+Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT12-4, TT12-1) and ADR-0004.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| P12B-1 | `risk_settings.min_risk_reward` is NOT NULL and held the built-in 1.2 in every row nobody changed; the row cannot tell "set" from "inherited". | TT12-1 rule, no migration: a stored 1.2 reads as not set (0). An organisation that now sets exactly 1.2 itself is stored one float step above 1.2 (`math.nextafter`), which reads back as 1.2 and applies. Any other stored value is kept. | `risk_engine/routes.py` `org_min_rr_read` | open (provisional default in use) |
+| P12B-2 | The options backtest dropped the signal's reward:risk for a single contract, while the live / paper contract order keeps it: with a minimum set, the two disagreed. | The options backtest keeps it for a single contract (as live) and not for a multi-leg structure (as live, `execution/multileg.py`); engine label 9-options. No effect while no minimum is set. | `backtest/options_engine.py` `_size_lots` | open (provisional default in use) |
+| P12B-3 | Custom (no-code) strategies had a built-in min R:R 1.2 (`CustomStrategyConfig`, the text parser, the Builder form pre-filled 1.2). | Done in #497 (owner: no hidden filter anywhere): not set by default; a stored 1.2 = not set (TT12-1 rule); any other stored value kept; a 1.2 the user types in the Builder is kept (stored one float step above, applies as 1.2). The interview's 1.5 / 2.0 and the AI drafts' stated minimum stay visible proposals. | `strategy_engine/declarative.py`, `nlu_parser.py`, `StrategyBuilderPage.tsx` | answered 24 Oct (DECISIONS) |
+| P12B-4 | The level gate (`price_action/level_gate/settings.py`) default `min_rr` 3.0 is Trade's own value (golden parity with the Trade repo) and is shown as a visible pre-filled setting ("Default: 3") in the Scan Then drawer (flag `scan_then`, off). | Not changed in #497. Proposal: keep 3.0 as the visible default for Abhi's own method (it is his stated rule, golden-pinned); for other users' Scan Then templates show the field empty ("not set" = no R:R filter) once `scan_then` opens to users. | `level_gate/settings.py:15`, `screener/then/ThenPanel.tsx` | open (owner) |
 ## TT-12: platform-default limits start off (24 Oct, `claude/tt12-limits-off`, #494)
 
 Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-12, TT12-1, TT12-4) and ATP_SESSION_TRADING_TERMINAL.md (T6).

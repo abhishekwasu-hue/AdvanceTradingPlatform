@@ -27,7 +27,7 @@ const LIMIT_FIELDS: FieldSpec[] = [
   { key: "max_trades_per_day", label: "Trades per day", help: "New entries allowed in one day." },
   { key: "max_open_positions", label: "Open positions", help: "Positions open at the same time." },
   { key: "max_consecutive_losses", label: "Losses in a row", help: "New entries pause after this many losing trades in a row. The choice below says when they start again." },
-  { key: "min_risk_reward", label: "Lowest reward to risk", hint: "reward-risk", step: "0.1", help: "A trade whose target pays less than this for each rupee at risk is refused." },
+  { key: "min_risk_reward", label: "Lowest reward to risk", hint: "reward-risk", step: "0.1", help: "0 = not set: no minimum. Set your own and a trade whose target pays less than this for each rupee at risk is refused." },
   { key: "lot_size", label: "Lot size", hint: "lot", help: "Units in one lot, used to size an order." },
 ];
 

@@ -381,12 +381,13 @@ export default function StrategyBuilderPage() {
               </div>
             </div>
             <div>
-              <label className="block text-xs text-fg-muted mb-1">Min R:R to trade</label>
+              <label className="block text-xs text-fg-muted mb-1">Min R:R to trade (optional)</label>
+              {/* P1-2b: empty = not set (no minimum); a stored own 1.2 comes back one float step above 1.2, shown as 1.2. */}
               <input
-                type="number" step="0.1"
+                type="number" step="0.1" placeholder="Not set"
                 className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-                value={config.min_rr}
-                onChange={(e) => setConfig({ ...config, min_rr: Number(e.target.value) })}
+                value={config.min_rr == null ? "" : Math.round(config.min_rr * 1000) / 1000}
+                onChange={(e) => setConfig({ ...config, min_rr: e.target.value.trim() === "" ? null : Number(e.target.value) })}
               />
             </div>
           </div>

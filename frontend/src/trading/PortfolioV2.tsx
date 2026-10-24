@@ -8,6 +8,7 @@ import { dataOf, usePolled } from "../dashboard/useDashboardData";
 import type { PageProps } from "../routes";
 import { formatINR, formatNumber, formatSignedINR } from "../ui/format";
 import { PageIntro } from "../ui/PageIntro";
+import { useLiveHidden } from "../settings/useLiveHidden";
 import { allocationRows, bookedCurve, longShortLine, portfolioTiles, type AllocationRow } from "./model";
 import { NoteV2, PageTitleV2, ShareBarV2, StateChipV2, TileV2, TilesV2 } from "./PartsV2";
 
@@ -26,6 +27,7 @@ const every = (ms: number) => () => ms;
 export default function PortfolioV2(_props: PageProps = {}) {
   const { user } = useAuth();
   const signedIn = !!user;
+  const liveHidden = useLiveHidden();                       // item 2: no "paper and live" in the paper phase
   const [positions] = usePolled(api.listPositions, every(REFRESH_MS), signedIn);
   const [trades] = usePolled(api.listTrades, every(REFRESH_MS * 2), signedIn);
   const [exposure] = usePolled(() => api.portfolioExposure(true), every(REFRESH_MS), signedIn);
@@ -44,10 +46,7 @@ export default function PortfolioV2(_props: PageProps = {}) {
 
   return (
     <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="portfolio-v2">
-      <PageIntro id="portfolio" lines={[
-        "Where your money is: how much sits in open positions, in which symbols, and what you have booked so far.",
-        "Each symbol shows its share of your capital, its open profit or loss and what it would lose at its stop.",
-      ]} />
+      <PageIntro id="portfolio" lines={["Each symbol shows its share of your capital, its open profit or loss and what it would lose at its stop."]} />
       <PageTitleV2 title="My portfolio" subtitle="Where your money is right now, and what you have booked so far." />
 
       <section aria-label="Summary" data-block="summary" data-tour="portfolio-summary">
@@ -57,7 +56,7 @@ export default function PortfolioV2(_props: PageProps = {}) {
               sub={tiles.investedPct === null ? undefined : `${formatNumber(tiles.investedPct, 0)}% of capital`} />
             <TileV2 testId="open-pnl" label="Open P&L" hint="open-pnl" value={formatSignedINR(tiles.openPnl, { compact: true })} tone={signTone(tiles.openPnl)}
               sub={tiles.openPnl === null && (pos?.length ?? 0) > 0 ? "waiting for live prices" : undefined} />
-            <TileV2 testId="booked" label="Booked so far (paper and live)" value={formatSignedINR(tiles.booked, { compact: true })} tone={signTone(tiles.booked)}
+            <TileV2 testId="booked" label={liveHidden ? "Booked so far" : "Booked so far (paper and live)"} value={formatSignedINR(tiles.booked, { compact: true })} tone={signTone(tiles.booked)}
               sub={done ? `${closedCount} closed ${closedCount === 1 ? "trade" : "trades"}` : undefined} />
             <TileV2 testId="risk" label="Risk at stops" hint="risk-at-stops" value={formatINR(tiles.riskAtStops, { compact: true })}
               sub={tiles.riskPct === null ? undefined : `${formatNumber(tiles.riskPct, 1)}% of capital`} />

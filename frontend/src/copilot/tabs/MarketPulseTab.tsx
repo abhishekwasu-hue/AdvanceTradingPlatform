@@ -11,6 +11,7 @@ import { useCopilotT } from "../i18n";
 import MemoryPanel from "./pulse/MemoryPanel";
 import ThesisPanel from "./pulse/ThesisPanel";
 import { ageText, money, Panel, Stagger, StaggerItem, TabSkeleton } from "./shared";
+import { strategyDisplayName } from "../../ui/strategyName";
 
 /**
  * Market Pulse: today's read of the market in one screen - the 3D sentiment gauge, the regime dial, the briefing's
@@ -182,7 +183,7 @@ export default function MarketPulseTab() {
             {brief.deployments.map((d) => (
               <div key={d.id} className="rounded-xl border border-border bg-surface-2/50 p-3">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <b className="text-fg">#{d.id} {d.strategy_id}</b>
+                  <b className="text-fg">{strategyDisplayName(d.strategy_id)}</b>
                   <span className="text-xs text-fg-muted">{d.symbol} · {d.timeframe} · {d.mode}{d.holding === "SWING" ? ` · ${t("pulse.swing")}` : ""}</span>
                   <Badge className="ml-auto" tone={d.state === "error" || d.state === "stale" ? "down" : d.state === "regime" ? "warn" : d.state === "ok" ? "up" : "neutral"}>{t(`pulse.state.${d.state}`)}</Badge>
                 </div>

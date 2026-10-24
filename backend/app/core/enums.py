@@ -51,6 +51,8 @@ class NotificationType(str, Enum):
     # Terminal master Part 7: a stock F&O position that may settle by delivery (in or near the money before expiry).
     # Information only - nothing is closed (ADR-0006).
     SETTLEMENT_WARNING = "SETTLEMENT_WARNING"
+    # SE-7: a multi-leg order stopped half way (INCOMPLETE), his answer, and his "if I do not answer" rule applied.
+    STRUCTURE_INCOMPLETE = "STRUCTURE_INCOMPLETE"
 
 
 class NotificationSeverity(str, Enum):

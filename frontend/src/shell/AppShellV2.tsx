@@ -14,7 +14,7 @@ import PwaBanners from "../pwa/PwaBanners";
 import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
-import { STORED_HISTORY_PATHS } from "../ui/dataPages";
+import { STORED_HISTORY_PATHS, storedDailyFor } from "../ui/dataPages";
 import BottomNavV2 from "./BottomNavV2";
 import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./common";
@@ -32,6 +32,8 @@ import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2Red
 import SidebarV2 from "./SidebarV2";
 import TopBarV2 from "./TopBarV2";
 import { usePaperOnly } from "../setup/paperOnly";
+import { liveHiddenFrom } from "../settings/useLiveHidden";
+import { useStrategyNames } from "../ui/useStrategyNames";
 import { tourIdFor } from "../tours/pages";
 import { useTours } from "../tours/state";
 import TourHost from "../tours/TourHost";
@@ -63,6 +65,10 @@ export default function AppShellV2() {
   const key = shellKeyFromPath(path);
   // P3: on the front page in PAPER the top bar shows no LIVE or e-mail notice (only after the deployments were read).
   const frontPaperOnly = usePaperOnly(!!user && key === "dashboard");
+  // User-friendly pass item 2: while `phase0_paper_only` is on, no LIVE notice on any page.
+  const liveHidden = liveHiddenFrom(features);
+  // Item 6: the Library's names, read once per sign-in, so no screen shows a strategy id (src/ui/strategyName.ts).
+  useStrategyNames(user?.id ?? null);
   const title = shellTitle(key);
   const role = user?.role ?? null;
   const ctx = useMemo<NavContext>(() => ({ on: features.on, role }), [features.on, role]);
@@ -179,7 +185,8 @@ export default function AppShellV2() {
   // The gate stays mounted while the trader moves between data pages, so the broker status is not re-read per click.
   // A page that shows the broker states itself (UI2-2: the dashboard) is not wrapped (src/shell/pagesV2.ts).
   else if (shellGates(location.pathname, features.on("backtest_stored_history") ? [...OWN_BROKER_STATES, ...STORED_HISTORY_PATHS] : OWN_BROKER_STATES)) {
-    content = <BrokerGate>{routes}</BrokerGate>;
+    // Day-one fix 2: with stored history on, Find setups and Signals keep their Daily content before the broker login.
+    content = <BrokerGate storedDaily={features.on("backtest_stored_history") ? storedDailyFor(location.pathname) : null}>{routes}</BrokerGate>;
   }
   else content = routes;
 
@@ -195,7 +202,7 @@ export default function AppShellV2() {
         <TopBarV2 title={title} user={user} accountPath={accountPath}
           notificationsActive={key === "notifications"} accountActive={key === "account"}
           onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined}
-          paperOnly={frontPaperOnly} onTour={replayTour} />
+          paperOnly={frontPaperOnly || liveHidden} onTour={replayTour} />
         <PwaBanners />
         <LegalAcceptanceBanner />
         {/* TM Part 1 (flag data_hub): the one notice while live prices reconnect or the broker login needs renewing. */}

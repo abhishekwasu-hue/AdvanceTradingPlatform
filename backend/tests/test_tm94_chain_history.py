@@ -497,7 +497,9 @@ def test_migration_is_additive_rollback_safe_and_the_only_head():
     from alembic.config import Config
     from alembic.script import ScriptDirectory
     script = ScriptDirectory.from_config(Config(str(backend / "alembic.ini")))
-    assert script.get_heads() == ["250d796123b7"]
+    heads = script.get_heads()
+    assert len(heads) == 1
+    assert "250d796123b7" in {rev.revision for rev in script.walk_revisions(base="base", head=heads[0])}
 
 
 # --- TM-7: the OI collector --------------------------------------------------------------------------------------------

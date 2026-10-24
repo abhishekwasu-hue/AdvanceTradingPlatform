@@ -65,6 +65,11 @@ describe("UI2-2 blocks", () => {
     const sig = html(<ActiveSignalsV2 data={{ status: "ok", rows: [], total: 0 }} />);
     expect(sig).toContain("No signals yet today. Your scans and paper bots post them here.");
     expect(sig).toContain('href="/screener/custom"');
+    // Day-one fix 9: with the ready strategies on, the empty day points to the one-tap Signals watch
+    const ready = html(<ActiveSignalsV2 data={{ status: "ok", rows: [], total: 0 }} readyWatch />);
+    expect(ready).toContain("Pick a ready strategy on Signals and it reads every NIFTY 50 stock for you in one tap.");
+    expect(ready).toContain('href="/signals"');
+    expect(ready).toContain("Watch a list on Signals");
     expect(html(<OpenPositionsV2 data={{ status: "error" }} />)).toContain("We could not load your positions. We will try again in a moment.");
   });
 
@@ -72,7 +77,8 @@ describe("UI2-2 blocks", () => {
     const out = html(<OpenPositionsV2 data={{ status: "ok", total: 1, rows: [{ id: 1, symbol: "RELIANCE", mode: "Live", side: "Buy", detail: "Buy · 50 shares · avg 2,962.20", ltp: 2948.2, pnl: -700, pnlPct: -0.47 }] }} />);
     expect(out).not.toContain("<table");
     expect(out).toContain("Live");
-    expect(out).toContain("−₹700.00");
+    expect(out).toContain("−₹700");
+    expect(out).not.toContain("−₹700.00");                                   // a card: whole rupees
     expect(out).toContain("text-down");
     expect(out).toContain('href="/positions"');
   });

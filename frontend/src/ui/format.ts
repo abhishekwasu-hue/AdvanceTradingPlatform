@@ -60,32 +60,39 @@ function trimZeros(s: string): string {
 }
 
 /**
- * Rupees: formatINR(124500) -> "₹1,24,500.00"; negatives "−₹700.00".
- * `compact` (tiles only): "₹1.25 L", "₹2.4 Cr"; below one lakh the whole rupees, "₹85,000".
+ * The money rule (owner's user-friendly pass, 23 Oct): one formatter, two precisions.
+ * - Summaries, cards, tiles and sentences show WHOLE rupees with Indian grouping: formatINR(123456.4) -> "₹1,23,456".
+ * - Paise only where they matter - order tickets, fills and the P&L detail of a closed trade - and only when the caller
+ *   asks for them: formatINR(123456.4, { paise: true }) -> "₹1,23,456.40".
+ * - `compact` (narrow tiles): whole rupees up to one crore, then "₹2.4 Cr" - the lakh shorthand is not used, so a
+ *   card reads "₹1,23,456" and never "₹1.23 L".
+ * Negatives use "−" ("−₹700"); a figure that rounds to zero is never signed.
  */
-export function formatINR(v: Num, opts: { compact?: boolean } = {}): string {
+export interface MoneyOptions {
+  /** Two decimals: order tickets, fills and P&L detail rows only. */
+  paise?: boolean;
+  /** Narrow tiles: "₹2.4 Cr" from one crore up. Ignored with `paise`. */
+  compact?: boolean;
+}
+
+export function formatINR(v: Num, opts: MoneyOptions = {}): string {
   if (!finite(v)) return EMPTY;
-  if (!opts.compact) {
-    const sign = v < 0 && !roundsToZero(v, 2) ? MINUS : "";
-    return `${sign}${RUPEE}${magnitude(v, 2)}`;
-  }
+  const decimals = opts.paise ? 2 : 0;
   const abs = Math.abs(v);
   let body: string;
-  const lakhs = Number((abs / 1e5).toFixed(2));
-  if (abs >= 1e7 || lakhs >= 100) body = `${trimZeros(magnitude(abs / 1e7, 2))} Cr`;     // 1,00,000 Cr and up stay grouped
-  else if (Math.round(abs) >= 1e5) body = `${trimZeros(lakhs.toFixed(2))} L`;
-  else body = magnitude(abs, 0);
-  const sign = v < 0 && body !== "0" ? MINUS : "";
+  if (opts.compact && !opts.paise && Math.round(abs) >= 1e7) body = `${trimZeros(magnitude(abs / 1e7, 2))} Cr`;   // 1,00,000 Cr and up stay grouped
+  else body = magnitude(abs, decimals);
+  const sign = v < 0 && !roundsToZero(v, decimals) ? MINUS : "";
   return `${sign}${RUPEE}${body}`;
 }
 
-/** Signed rupees, for P&L: "+₹3,120.00" / "−₹700.00". Zero (after rounding) is "₹0.00": neither profit nor loss. */
-export function formatSignedINR(v: Num, opts: { compact?: boolean } = {}): string {
+/** Signed rupees, for P&L: "+₹3,120" / "−₹700" ({ paise: true }: "+₹3,120.50"). Zero after rounding is "₹0": neither
+ * profit nor loss. */
+export function formatSignedINR(v: Num, opts: MoneyOptions = {}): string {
   if (!finite(v)) return EMPTY;
   const plain = formatINR(v, opts);
   if (plain.startsWith(MINUS)) return plain;
-  const zero = opts.compact ? plain === `${RUPEE}0` : roundsToZero(v, 2);
-  return zero ? plain : `+${plain}`;
+  return roundsToZero(v, opts.paise ? 2 : 0) ? plain : `+${plain}`;
 }
 
 /** The decimals a tick size implies: 0.05 -> 2, 0.0025 -> 4, 1 -> 0. A missing or odd tick means 2 (NSE equity). */

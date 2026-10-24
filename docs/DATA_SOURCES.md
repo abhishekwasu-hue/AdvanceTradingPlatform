@@ -27,6 +27,7 @@ whose terms are unclear is **off** until the operator confirms it (Admin, or the
 | System watchlists (WL1: "Indices", "<INDEX> stocks (<count>)", "Sectors", "F&O stocks (<count>)") | the watchlist panel (read-only lists, "Copy to my list") | built by the server from the rows above and the broker instrument master; no download of their own, nothing new from outside | `system_watchlists` (one row per list), `system_watchlist_refreshes` (the added / removed symbols and the unmapped symbols per run, last 90 runs) | rebuilt daily after `UNIVERSE_SYNC_HOUR_IST`; Indices works with the sync off |
 | NSE archives daily bhavcopies: cash (`cm<DD><MON><YYYY>bhav.csv.zip` until 5 Jul 2024, UDiFF `BhavCopy_NSE_CM_0_0_0_<YYYYMMDD>_F_0000.csv.zip` from 8 Jul 2024), F&O (`fo...bhav.csv.zip` / `BhavCopy_NSE_FO_...`), all-indices close | HB1 daily backfill (10 years) and nightly EOD job: `md_candles` timeframe `day`, sources `nse_bhav:cm|index|fo`; `index_eod`; `md_isin_symbols`; backtests without a broker (flag `backtest_stored_history`, `app/backtest/bar_source.py`: Daily / Weekly only, the run's own result and chart, no bulk export; licence position OPEN_QUESTIONS BSH-1) | free public download files; same terms caveat as the equity lists - the owner confirms the terms before turning the flag on; polite fetching (paced, backoff, no parallel requests); the admin's manual upload of the same files is the alternative | unadjusted daily bars, file SHA-256 per day (`history_backfill_files`), optional raw copy | **off** (`history_backfill` flag) |
 | NSE archives all-indices close (`ind_close_all_<ddmmyyyy>.csv`), F&O market lots (`fo_mktlots.csv`), F&O ban list (`fo_secban.csv`) | Screener U1-c `index_eod`, `fo_membership`, `fo_ban_history` | published download files; same terms caveat as the equity lists; manual upload is the alternative | rows with source, fetched_at, checksum | **off** (`UNIVERSE_SYNC_ENABLED`) |
+| Each organisation's own broker session - option chains (Phase W recorder) | option backtest pricing from recorded quotes (`option_chain_snapshots`, `app/backtest/chain_recorder.py`) | the session holder's own API agreement (TM94-3 / TM-7): an organisation's chains are read only through its own data session and stored and read only as its own rows; rows from before 23 Oct only for the confirmed owner | strikes around the money every 5 min while its option deployments run, 400 days | on (`CHAIN_SNAPSHOT_INTERVAL_MINUTES`) |
 
 ## For the lawyer
 
@@ -49,6 +50,33 @@ A6.3, when it is written, takes these over; `docs/COMPLIANCE_IN.md` is generated
    values (`ind_close_all_<date>.csv`) as reference data for the Sector & index view (not shown on the watchlists).
    Question: is storing and showing those closes covered by the same answer as item 1, or does it need a data licence
    (the licensed EOD source of RDY-6)?
+3. **Kotak Neo: one ATP server IP for many users, and its data (Part 1B, TM-5 / TM-6; owner decision 23 Oct).** Kotak
+   Neo's Trade API takes orders only from a static IP registered with the account, the API session must be created
+   from that same IP, and up to 10 family members may share one IP (only the parent account changes it) - from a
+   search extract of https://www.kotakneo.com/platform/kotak-neo-trade-api/static-ip-details/ (read 23 Oct 2026; the
+   page itself could not be opened). ATP runs on one server with one outgoing IP. The adapter is built with LIVE
+   orders and live prices refused in code (`backend/app/brokers/gates.py`; `docs/design/BROKER_KOTAK_NEO.md`).
+   Questions: (a) may unrelated users' orders leave from ATP's one server IP at all, and does ATP then have to be an
+   empanelled algo provider with Kotak Neo (SEBI retail-algo circular of 4 Feb 2025); (b) if not, is "each user
+   registers his own static IP and his orders leave from it" the only allowed model, and what would ATP need to run
+   for that (nothing of the kind is built); (c) how the "10 family members per IP" rule reads for a platform IP; (d) may
+   ATP show a user his own Kotak Neo prices (quotes, charts, the option chain, the feed) inside ATP - the data-terms
+   row is "pending" until Kotak Neo confirms in writing; (e) Kotak Neo says market orders are not allowed for retail
+   algo orders: is ATP's marketable limit with the user's protection band (TM-3) the accepted way.
+4. **Groww: one ATP server IP for many users, and its data (Part 1B, TM-5 / TM-6; owner decision 23 Oct).** Groww
+   says a static IP is required for API order placement and that Groww whitelists it on the Trade API's API Keys page
+   (a primary and a backup IP); "Groww Cloud" (strategies run on Groww's own servers) is offered as the way around it -
+   from a search extract of https://groww.in/blog/static-ip-api-trading-setup (March 2026, read 23 Oct 2026; groww.in
+   itself could not be opened). Groww's Trade API is a paid plan the user buys from Groww (Rs 499 a month + taxes,
+   search extract of https://groww.in/blog/api-trading-on-groww). ATP runs on one server with one outgoing IP. The
+   adapter is built with LIVE orders and live prices refused in code (`backend/app/brokers/gates.py`;
+   `docs/design/BROKER_GROWW.md`). Questions: (a) may unrelated users' orders leave from ATP's one server IP, each
+   user whitelisting ATP's IP on his own Groww key, and does ATP then have to be an empanelled algo provider with
+   Groww (SEBI retail-algo circular of 4 Feb 2025); (b) if not, what is the allowed model (each user's own IP, or
+   Groww Cloud), and what would ATP need for it (nothing of the kind is built); (c) may ATP show a user his own Groww
+   prices (quotes, charts, the option chain and Greeks, the feed) inside ATP when the user pays Groww for the data -
+   the data-terms row is "pending" until Groww confirms in writing; (d) is ATP's marketable limit with the user's
+   protection band (TM-3) the accepted way for a market order through Groww's API.
 
 ## Phase BB rules
 

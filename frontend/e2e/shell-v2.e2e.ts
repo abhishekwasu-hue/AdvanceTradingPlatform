@@ -179,13 +179,13 @@ test.describe("v2 shell 1440 desktop", () => {
     });
   }
 
-  test("UX3-9: one flat list of 13 entries in task order, Broker first; the page on screen is marked", async ({ page }) => {
+  test("UX3-9: one flat list of 13 entries in task order, Today first and Broker above Settings; the page on screen is marked", async ({ page }) => {
     await open(page, "/", "light", { ...V2, features: { ui_v2: true, ai_copilot: true, screener_v2: true } });
     const nav = page.getByRole("navigation", { name: "Pages" });
     await expect(nav.locator("button[aria-expanded]")).toHaveCount(0);                  // nothing folds away
     await expect(nav.getByRole("link")).toHaveText([
-      "Broker", "Today", "Charts", "Option chain", "Find setups", "Signals", "Paper bot", "My trades", "Performance",
-      "Strategies", "AI Copilot", "News & events", "Settings",
+      "Today", "Charts", "Option chain", "Find setups", "Signals", "Paper bot", "My trades", "Performance",
+      "Strategies", "AI Copilot", "News & events", "Broker", "Settings",
     ]);
     await expect(nav.getByRole("link", { name: "Today" })).toHaveAttribute("aria-current", "page");
     await page.goto("/signals");
@@ -281,15 +281,18 @@ test.describe("v2 shell 1440 desktop", () => {
   test("the Charts page opens on NIFTY 50 and on the symbol in the address", async ({ page }) => {
     await open(page, "/charts", "light");
     await expect(page.getByRole("combobox", { name: "Symbol" })).toHaveValue("NIFTY 50");
-    await expect(page.getByRole("heading", { name: "What is this page?" })).toBeVisible();
-    await page.getByRole("button", { name: "Close this explanation" }).click();
-    await expect(page.getByRole("heading", { name: "What is this page?" })).toHaveCount(0);
+    await expect(page.locator("[data-page-intro='open']")).toBeVisible();
+    await page.getByRole("button", { name: "Hide this tip" }).click();
+    await expect(page.locator("[data-page-intro='open']")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "About this page" })).toBeVisible();        // item 5: collapsed, not gone
     // UI2-4b2: the shared symbol picker; with no match, Enter opens the symbol as typed.
     await page.getByRole("combobox", { name: "Symbol" }).fill("reliance");
     await page.getByRole("combobox", { name: "Symbol" }).press("Enter");
     await expect(page).toHaveURL(/\/charts\/RELIANCE$/);
     await page.reload();
-    await expect(page.getByRole("heading", { name: "What is this page?" })).toHaveCount(0);   // closed stays closed
+    await expect(page.locator("[data-page-intro='collapsed']")).toBeVisible();   // collapsed stays collapsed
+    await page.getByRole("button", { name: "About this page" }).click();
+    await expect(page.locator("[data-page-intro='open']")).toBeVisible();
   });
 });
 

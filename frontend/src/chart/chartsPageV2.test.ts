@@ -227,7 +227,7 @@ describe("UI2-4b2 chart labels", () => {
   it("an index's volume names its future", () => {
     expect(volumeLabelFor(null)).toBe("Volume");
     expect(volumeLabelFor({ symbol: "NIFTY26OCTFUT", expiry: "2026-10-27", exchange: "NFO", underlying: "NIFTY", from: null, label: "" }))
-      .toBe("Volume · NIFTY OCT FUT");
+      .toBe("Volume of the NIFTY October future");                       // day-one fix 8: words, not the contract code
     expect(volumeLabelFor({ symbol: "X", expiry: "", exchange: "NFO", underlying: "NIFTY", from: null, label: "" })).toBe("Volume");
   });
 });

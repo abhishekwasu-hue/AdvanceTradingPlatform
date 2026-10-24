@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.brokers.gates import gates_for
 from app.brokers.registry import available_brokers
 
 ANALYTICS_TOKEN = "analytics_token"
@@ -60,6 +61,11 @@ class BrokerEntry:
     daily_renewal: bool
     # What POST /{broker}/renew takes each day (empty: one click, or no daily renewal at all).
     renew_fields: Tuple[Field, ...] = field(default_factory=tuple)
+    # Part 1B: shown only with `ui_v2` on (new user-facing work); the Broker page leaves the tile out otherwise.
+    requires_ui_v2: bool = False
+    # Part 1B: the plain-words connect guide (a few points and the broker's official links), for a broker whose
+    # connection needs more than the three steps; None for the others.
+    guide: Optional[Tuple[Tuple[str, ...], Tuple[Tuple[str, str], ...]]] = None
 
     def field_keys(self) -> Tuple[str, ...]:
         return tuple(f.key for f in self.fields)
@@ -77,7 +83,11 @@ class BrokerEntry:
         return {"broker": self.broker, "name": self.name, "method": self.method,
                 "fields": [f.as_dict() for f in self.fields], "how_to": list(self.how_to), "doc_url": self.doc_url,
                 "daily_renewal": self.daily_renewal, "available": self.broker in available_brokers(),
-                "renew_fields": [f.as_dict() for f in self.renew_fields]}
+                "renew_fields": [f.as_dict() for f in self.renew_fields],
+                # TM-5 / TM-6 (app/brokers/gates.py): whether real orders and live prices go through this broker.
+                "gates": gates_for(self.broker).as_dict(), "requires_ui_v2": self.requires_ui_v2,
+                "guide": None if self.guide is None else {"points": list(self.guide[0]),
+                                                          "links": [{"label": label, "url": url} for label, url in self.guide[1]]}}
 
 
 # Upstox's second option: a pasted daily access token (for LIVE orders later). Accepted by connect / renew in place of
@@ -163,6 +173,48 @@ CATALOG: Tuple[BrokerEntry, ...] = (
                 "Paste both here; no daily login is needed."),
         doc_url="https://docs.coindcx.com/",
         daily_renewal=False,
+    ),
+    # Part 1B (docs/design/BROKER_KOTAK_NEO.md): the official method is a TOTP login with the consumer key, the mobile
+    # number, the UCC and the MPIN (kotakneoapi 3.0.9). Practice mode only: real orders and live prices stay off (gates).
+    BrokerEntry(
+        broker="kotak_neo", name="Kotak Neo", method=TOTP_AUTO,
+        fields=(Field("api_key", "Consumer key", SECRET, "From the NEO app: More, then Trade API"),
+                Field("mobile_number", "Mobile number", TEXT, "The number on your Kotak account, with +91"),
+                Field("client_id", "Client code (UCC)", TEXT, "Your Kotak Neo client code"),
+                Field("pin", "MPIN", SECRET, "The MPIN you use to log in to Kotak Neo"),
+                Field("totp_secret", "TOTP secret", SECRET, "The key shown when you registered TOTP")),
+        how_to=("In the Kotak Neo app open More, then Trade API, and generate an application; copy its consumer key.",
+                "On the same Trade API page register TOTP and copy the secret key it shows (not the six-digit code).",
+                "Paste the key, your mobile number, client code, MPIN and TOTP secret here; each morning press Renew."),
+        doc_url="https://www.kotakneo.com/platform/kotak-neo-trade-api/",
+        daily_renewal=True, requires_ui_v2=True,
+        guide=(("Practice mode only for now: ATP reads your Kotak Neo positions, holdings and funds.",
+                "Real orders and live prices through Kotak Neo stay off until Kotak Neo confirms in writing that they may be used through ATP.",
+                "Kotak Neo asks that orders from connected apps come from a registered fixed internet address, and it does not take market orders from them.",
+                "ATP never sees your Kotak Neo password; the MPIN and secret key you store here are encrypted and used only for the daily login."),
+               (("Kotak Neo Trade API", "https://www.kotakneo.com/platform/kotak-neo-trade-api/"),
+                ("Static IP rules", "https://www.kotakneo.com/platform/kotak-neo-trade-api/static-ip-details/"),
+                ("Official API guide", "https://github.com/Kotak-Neo/kotak-neo-python"))),
+    ),
+    # Part 1B (docs/design/BROKER_GROWW.md): the easiest official way is the TOTP key - Groww's API key of the TOTP kind
+    # and its TOTP secret; each morning one click makes the day's token. Practice mode only: real orders and live prices
+    # stay off (gates). The approval way (API key + secret, approved daily on Groww) is supported by the adapter.
+    BrokerEntry(
+        broker="groww", name="Groww", method=TOTP_AUTO,
+        fields=(Field("api_key", "API key (TOTP)", SECRET, "From Groww: Trade API, then API Keys"),
+                Field("totp_secret", "TOTP secret", SECRET, "The secret shown with the TOTP key")),
+        how_to=("On Groww open Trade API, then API Keys, and generate a TOTP key; copy the key and the secret it shows.",
+                "Paste both here; ATP makes the six-digit code from the secret, so you never type it.",
+                "Each morning press Renew; Groww ends every session at 6 in the morning."),
+        doc_url="https://groww.in/trade-api/docs/python-sdk",
+        daily_renewal=True, requires_ui_v2=True,
+        guide=(("Practice mode only for now: ATP reads your Groww positions, holdings, funds and orders.",
+                "Real orders and live prices through Groww stay off until Groww confirms in writing that they may be used through ATP.",
+                "Groww's Trade API is a paid Groww plan; Groww asks that orders from connected apps come from a registered fixed internet address.",
+                "ATP never sees your Groww password; the key and secret you store here are encrypted and used only for the daily login."),
+               (("Groww Trade API", "https://groww.in/trade-api"),
+                ("Official API guide", "https://groww.in/trade-api/docs/python-sdk"),
+                ("Static IP rules", "https://groww.in/blog/static-ip-api-trading-setup"))),
     ),
 )
 

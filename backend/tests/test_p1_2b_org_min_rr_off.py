@@ -181,3 +181,74 @@ def test_exits_never_pass_through_the_minimum():
     for rel in ("trading/position_monitor.py", "trading/exit_rules.py"):
         text = (root / rel).read_text()
         assert "validate_and_size" not in text and "min_risk_reward" not in text, rel
+
+
+# --- the strategy's own signal builder (scanner, signals, live / paper worker and both backtests call analyze) -------------------
+
+from app.core.enums import StrategyCategory  # noqa: E402
+from app.strategy_engine.base import BaseStrategy  # noqa: E402
+
+
+class _Built(BaseStrategy):
+    """A strategy that builds its signals with BaseStrategy.build_signal at a first target of 1.0 R and names no `min_rr`
+    of its own (the case the old built-in 1.2 filtered silently)."""
+    id = "p1_2b_built"
+    name = "built"
+    description = "test"
+    category = StrategyCategory.INDICATOR_BASED
+    timeframes = ["1min"]
+    default_params: Dict = {}
+
+    def min_history(self):
+        return {"1min": 5}
+
+    def analyze(self, data, symbol):
+        ts = data["1min"].index[-1]
+        if ts in ATTEMPTS:
+            return self.build_signal(symbol, ts, SignalDirection.LONG, PRICE, PRICE * 0.99, 80, ["test"], target_rr=(1.0, 2.0))
+        return self.no_trade(symbol, ts, [])
+
+
+def _signals(strategy) -> List[Signal]:
+    df = _frame()
+    return [strategy.analyze({"1min": df.loc[:ts]}, "NIFTY 50") for ts in ATTEMPTS]
+
+
+def _all_paths(strategy_factory, cfg: RiskConfig) -> Dict[str, List[bool]]:
+    """Scanner / signals (the strategy's own signal), the live / paper path (signal + the router's RiskManager) and both
+    backtest engines, for the same bars."""
+    sigs = _signals(strategy_factory())
+    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=cfg)
+    ocfg = options_engine.OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY,
+                                               implied_volatility=0.14, max_lots=1)
+    return {
+        "scanner": [s.is_tradeable for s in sigs],
+        "live": [s.is_tradeable and router.risk_manager.validate_and_size(s, TradingDayState()).approved for s in sigs],
+        "backtest": _taken(underlying_engine.run_backtest(strategy_factory(), _frame(), "NIFTY 50", "1min", cfg)),
+        "options": _taken(options_engine.run_option_backtest(strategy_factory(), _frame(), "NIFTY 50", "1min", cfg, ocfg)),
+    }
+
+
+def test_regression_no_strategy_default_filters_by_reward_risk():
+    got = _all_paths(_Built, _risk())
+    assert got == {k: [True] * len(ATTEMPTS) for k in got}, got
+    assert all(s.risk_reward == 1.0 for s in _signals(_Built()))
+
+
+@pytest.mark.parametrize("own, expected", [(1.2, False), (1.0, True), (0.8, True)])
+def test_a_strategys_own_min_rr_applies_the_same_on_every_path(own, expected):
+    got = _all_paths(lambda: _Built(min_rr=own), _risk())
+    assert got == {k: [expected] * len(ATTEMPTS) for k in got}, got
+
+
+@pytest.mark.parametrize("org, expected", [(1.2, False), (1.0, True)])
+def test_an_organisation_minimum_applies_the_same_after_the_strategy(org, expected):
+    got = _all_paths(_Built, _risk(org))
+    assert got["live"] == got["backtest"] == got["options"] == [expected] * len(ATTEMPTS), got
+    assert got["scanner"] == [True] * len(ATTEMPTS)          # the signal itself is not filtered; the risk engine decides
+
+
+def test_the_built_in_strategies_keep_their_own_stated_minimum():
+    from app.strategy_engine.registry import registry
+    for s in registry.list_all():
+        assert s.params.get("min_rr") is not None and float(s.params["min_rr"]) <= float(s.params["target_rr"][0]), s.id

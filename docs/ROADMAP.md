@@ -102,6 +102,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 |---|---|---|---|
 | UI-H | in progress | audit approved (#503); Wave 0 shared components next (one SubTabs style; mocks per wave), then Wave 1 | #503 |
 | UI-H-BUG | in progress | bug lane: C1 (merged #506: history ends at the last session close, empty state with its reason, `atp.sh probe-candles`), B2a/B2b (merged #507: "as of" the last session close, "Spot: last close", `atp.sh probe-chain`), B3+B4+Orders time (merged #508), A1 (merged #505), B1 (#509: own-broker chain reads = the user's session snapshots; Analyses / Charts / OI reads no longer refused) - small PRs, each with proof | C1: #506; B2: #507; B3/B4: #508; A1: #505; B1: #509 |
+| DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |
 | P1-2 | in review | notice (TT12-1) added; owner: "Merge" after green CI, then deploy (no migration) | #494 |
 | P1-2b | in review | org min R:R OFF (0 = not set; an old stored 1.2 = not set), parity tests live / paper / both backtests; owner: "Merge" after green CI, then deploy (no migration) | #497 |

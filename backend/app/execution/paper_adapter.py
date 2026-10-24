@@ -203,13 +203,14 @@ class PaperExecutionAdapter(BrokerInterface):
         side = "buy" if order.transaction_type == OrderSide.BUY else "sell"
         day: date = (when.astimezone(IST) if when.tzinfo else when).date()
         brokerage = self.paper_broker.brokerage_per_order
+        segment = india_costs.segment_for(instrument_kind(order.symbol))
         if self.venue:
-            from app.brokers.broker_charges import brokerage_per_order as stated_brokerage
-            stated = stated_brokerage(self.venue, self.venue_plan, day)
+            # Part 1B: the broker's stated brokerage for this order (flat, or Groww's percent with a cap and a minimum).
+            from app.brokers.broker_charges import brokerage_for_order
+            stated = brokerage_for_order(self.venue, self.venue_plan, day, segment, float(price) * float(quantity))
             if stated is not None:
                 brokerage = stated
-        cost = india_costs.leg_cost(day, side, price, quantity, india_costs.segment_for(instrument_kind(order.symbol)),
-                                    brokerage_per_order=brokerage)
+        cost = india_costs.leg_cost(day, side, price, quantity, segment, brokerage_per_order=brokerage)
         self._charges[order_id] = round(self._charges.get(order_id, 0.0) + float(cost["total"]), 2)
 
     async def modify_order(self, order_id: str, quantity: Optional[float] = None, price: Optional[float] = None,

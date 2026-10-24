@@ -150,6 +150,9 @@
         "brokers": {
           "kotak_neo": {
             "market_for_algo": "map_to_limit"
+          },
+          "groww": {
+            "market_for_algo": "map_to_limit"
           }
         }
       },

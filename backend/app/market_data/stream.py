@@ -696,6 +696,13 @@ def stream_for(adapter) -> Optional[TickStream]:
             return None
         from app.market_data.kotak_feed import KotakNeoTickStream
         return KotakNeoTickStream(adapter)
+    if name == "groww":
+        # Part 1B / TM-6: built, and handed out only while the Groww market-data gate is open (closed today).
+        from app.brokers import gates as _gates
+        if not _gates.market_data_open(name):
+            return None
+        from app.market_data.groww_feed import GrowwTickStream
+        return GrowwTickStream(adapter)
     return None
 
 

@@ -1836,3 +1836,25 @@ TM-3 / TM-5 / TM-6 accepted, TM-26 / TM-27 defaults) and the master order Part 1
 | KN-9 | The feed URL: the SDK may learn a data-centre-specific URL from Kotak's config service. | ATP uses the SDK's production default; calling the config service is added when the data gate opens. | `market_data/kotak_feed.py` | open |
 | KN-10 | A PAPER deployment on a Kotak Neo account: where do its prices come from? | Not offered until the data gate opens; the organisation's other connection (e.g. Upstox) prices charts, chains and the read-only worker paths (`gates.data_sources`). A deployment bound to a Kotak account is a later step. | `workers/trading_worker.py` | open |
 | KN-11 | Scrip master lot / tick columns (`lLotSize`, `dTickSize`) and units. | Read defensively (tick in paise when >= 1, else as is; 0.05 when odd). Confirm on the first real file. | `kotak_neo.instrument_from_row` | open (verify) |
+
+## Groww adapter (GW, 23 Oct)
+
+Branch `claude/broker-groww` (terminal master Part 1B), stacked on `claude/broker-kotak-neo` (#473). Design:
+`docs/design/BROKER_GROWW.md`. No migration. Checked against CLAUDE.md (PAPER only, exits never blocked, AI places
+nothing, no secrets, public repo), DECISIONS (23 Oct: TM-3 / TM-5 / TM-6 accepted, TM-23 approved, TM-27 default) and
+the master order Part 1B.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| GW-1 | When may the Groww gates open? | Both stay closed in code (no flag): LIVE orders until the lawyer and Groww confirm the one-server-IP / static-IP model in writing (TM-5); market data until the data-terms row is "confirmed" with Groww's letter (TM-6). | `brokers/gates.py` | open (owner: lawyer / broker letter) |
+| GW-2 | When does a Groww token end? Docs (extract): "daily at 06:00", no time zone. | 06:00 IST; the user-details check catches an earlier end. | `token_lifecycle.TOKEN_DAILY_EXPIRY_IST` | open (verify) |
+| GW-3 | Does Groww still cap calls per day (3,000 orders / 5,000 live data / 3,000 non-trading)? Not found in any extract read 23 Oct; newer extracts show per-second / per-minute limits only. | Kept as the conservative per-day budget (TM-27), ATP using at most 90% of each, 10% of the orders kept for exits; remove or change when Groww's page is read. | `rate_budget.DAILY_CAPS` | open (verify) |
+| GW-4 | Does Groww take a plain MARKET / SL-M order from an API client? | Treated as not allowed (TM-3): a marketable limit with the user's band, a stop as SL with a band. | `groww.capabilities`, `in_sebi.json` | open (verify) |
+| GW-5 | Feed subscription limit: 1,000 (docs extract) or 3,000 per user (blog)? | 1,000 per connection (the lower). | `market_data/groww_feed.MAX_SUBSCRIPTIONS` | open (verify) |
+| GW-6 | History: the order says 3 months, the changelog says "from 2020"; the range per call is not published. | 90 days per daily request; intraday per the platform's existing chunking; nothing read while the data gate is closed. | `groww.daily_days_per_request` | open (verify) |
+| GW-7 | The per-day counters are per worker process; the API's chart reads have their own share; an exit's price checks would draw on the live-data cap. | Enough while the data gate is closed (no price read goes to Groww); with the data gate: prices for exits from the stream (TM-27), a Redis-shared daily counter. | `rate_budget.DailyBudget` | open |
+| GW-8 | LTP batch size and the order-reference length. | 50 symbols per LTP call; the reference cut to 20 characters. | `groww.LTP_BATCH`, `max_tag_length` | open (verify) |
+| GW-9 | The tile offers only the TOTP key; the approval key (secret + a daily approval on Groww) is in the adapter and the field map (Advanced) but not in the two-field connect form. | TOTP only in the tile (one click each morning, no daily approval step); add the approval way to the tile only if a user asks. | `catalog.py`, `field_specs.py` | open |
+| GW-10 | Which Groww plan is the user on (brokerage)? | One plan, `standard`, from Groww's help page; PAPER uses it only when the caller names it (`venue_plan`); otherwise the user's own brokerage setting. | `broker_charges.py` | open |
+| GW-11 | Holdings carry no price in Groww's answer (reference). | Holdings show quantity and average only; the mark comes from ATP's own data source. | `groww.get_holdings` | open (verify) |
+| GW-12 | Every response field name is from extracts of Groww's API reference (the SDK passes answers through). | Read defensively; confirm on the first real answers (the fixture is hand-made). | `groww.py` | open (verify) |

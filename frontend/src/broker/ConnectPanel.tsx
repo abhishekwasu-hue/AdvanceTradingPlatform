@@ -31,7 +31,7 @@ import { entryFor, useBrokerCatalog } from "./useBrokerCatalog";
  */
 export const HOW_TO_IMAGES: Readonly<Record<string, readonly string[]>> = {};
 
-/** Part 1B: real orders through this broker are not offered yet (Kotak Neo until it confirms in writing): the connection
+/** Part 1B: real orders through this broker are not offered yet (Kotak Neo, Groww until they confirm in writing): the connection
  * reads positions, holdings and funds, and practice mode works. */
 export function isPracticeOnly(entry: Pick<BrokerCatalogEntry, "gates">): boolean {
   return entry.gates?.live_orders === "closed";

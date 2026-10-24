@@ -184,7 +184,8 @@ def test_backfill_writes_only_the_owners_private_store_through_his_own_session_a
                   MdTenantCandleRecord.timeframe == "day", MdTenantCandleRecord.source == source) > 200
     assert _count(MdTenantCandleRecord, MdTenantCandleRecord.tenant_id == owner.tenant_id, MdTenantCandleRecord.timeframe == "1m",
                   MdTenantCandleRecord.instrument_key == key) == 750                       # Thursday + Friday (today's endpoint)
-    assert _count(MdCandleRecord, MdCandleRecord.source.like("broker:%")) == 0             # the shared lake is never written
+    # the shared lake is never written (scoped to this owner's source: other tests share this DB and write their own rows)
+    assert _count(MdCandleRecord, MdCandleRecord.source == source) == 0
     assert any(c[0] == "intraday" for c in broker.calls)                                    # a session that closed today
     first_calls = len(broker.calls)
     again = owner.run(broker)                                                                # the re-run: only the growing windows

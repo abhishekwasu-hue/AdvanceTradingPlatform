@@ -53,6 +53,8 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-4 | One chart core + both-axis scroll / Auto / Reset / Latest (J2) | row 18 Parts 1–2 | every chart page uses the core; gesture tests; phone recording |
 | P1-5 | Data hub ON (live prices everywhere) | row 20 Part 1 | flag `data_hub` ON in production; API-call numbers before / after |
 | P1-6 | Terminal T1 → T2 → T3 (J4) | row 21 | `terminal` ON after the owner's ✅ on screenshots |
+| P1-6c | CX Combined stop-loss / target on positions (Terminal + My trades) | ATP_ORDER_CX_SX.md | CX1-CX7 tests pass; phone + desktop screenshots; owner ✅ |
+| P1-6d | SX Strategy-level SL / target / trailing at entry (spread + basket tickets), same engine as CX | ATP_ORDER_CX_SX.md | SX1-SX8 tests pass; ticket + chip screenshots; owner ✅ |
 | P1-7 | Smart execution ON | row 20 Part 7 (#474 merged) | flag ON; basket confirm step checked on production |
 | P1-8 | WL1 Watchlists (J2): ready-made system lists (Indices, Index stocks, Sectors, F&O) + own lists, live prices, phone layout | handover item 4; INBOX 24 Oct | `watchlists` ON in production, the lists filled by the universe sync, a Watchlist entry on the phone bar, live prices checked on production; owner ✅ on screenshots |
 
@@ -112,6 +114,8 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-4 | in progress | verify which chart pages still bypass the core; gestures; phone recording | row 18 |
 | P1-5 | waiting for owner | `data_hub` ON via "Enable trader features" after the deploy; API-call numbers before / after | - |
 | P1-6 | in progress | T1 approved with fixes T1-1..T1-7 (24 Oct); `terminal` ON after their comparison page. T2 target 29 Oct: TT-1 LIVE sender (own PR; LIVE switch stays the owner's), TT-9 partial exit + reverse, TT-10 modify / cancel (PAPER). T3 target 2 Nov: spot / premium exit triggers, group exits, trailing (on the TM-2 engine) | #493 |
+| P1-6c | review | independent review against the code (docs/design/CX_SX_REVIEW.md), then build after T1 fixes (3-item limit) | - |
+| P1-6d | review | same review as P1-6c; build with / right after CX (same engine) | - |
 | P1-8 | in progress | on main: server lists + Charts watchlist panel (chooser, search, sort, copy to my list, live ticks with `data_hub`). Missing: `watchlists` flag OFF in production; lists empty until the universe sync runs (P1-3); no Watchlist entry of its own on the phone bar (only inside Charts). Plan: (1) owner turns on via "Enable trader features" + System tab refresh; (2) W-PR: Watchlist page / phone bar entry using the same panel, behind ui_v2; (3) screenshots for ✅ | - |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | P2-1 | not started | next free P1 slot: one flag-audit table with a recommendation per flag | - |

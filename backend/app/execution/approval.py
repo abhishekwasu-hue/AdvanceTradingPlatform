@@ -36,7 +36,7 @@ import json
 import logging
 import math
 from datetime import datetime, timedelta, timezone
-from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -582,6 +582,23 @@ def recent_mark(trade: TradeRecord, now: Optional[datetime] = None) -> bool:
     return timedelta(0) <= now - seen <= timedelta(minutes=app_config.EXIT_NOW_MAX_MARK_AGE_MINUTES)
 
 
+async def exit_price(session: AsyncSession, leg: TradeRecord, lookup: Any) -> Tuple[float, str]:
+    """The price "Exit now" closes a leg at (and TT-8's leg / group exits): the live price of the person's own entitlement
+    (`lookup`, from `price_lookup_for_user`), else the monitor's last price while recent (review V2) - never a typed price
+    (review M2). Returns (price, "live price" | "last seen price"); raises ValueError when there is neither."""
+    from app.trading.position_monitor import venue_for
+    if lookup is not None:
+        try:
+            return float(await lookup(leg.symbol, await venue_for(session, leg))), "live price"
+        except Exception as exc:  # noqa: BLE001 - fall back below
+            logger.warning("Exit now: no live price for %s: %s", leg.symbol, type(exc).__name__)
+    if leg.mark_price and recent_mark(leg):
+        return float(leg.mark_price), "last seen price"
+    raise ValueError(f"No recent price for {leg.symbol}: no live quote, and the monitor's last price is missing or older than "
+                     f"{app_config.EXIT_NOW_MAX_MARK_AGE_MINUTES} min / not from today's session. Nothing was closed - the stop "
+                     "and target keep working; try again when a live price is available")
+
+
 async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via: str = "web"):
     """"Exit now": closes a PAPER position at once, whatever is pending or snoozed (ADR-0004). Priced at the live price of
     the person's own entitlement, else the last price the monitor saw for it if recent (review V2) - never a typed price
@@ -590,22 +607,13 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
     structure closes the whole structure. The close itself is claimed atomically in `close_position` (review M3).
     Returns the close outcomes; raises ValueError when there is no price at all, or for LIVE."""
     from app.ai.worker_bridge import price_lookup_for_user
-    from app.trading.position_monitor import close_group, close_position, venue_for
+    from app.trading.position_monitor import close_group, close_position
     if trade.mode != "PAPER":
         raise ValueError("LIVE positions are closed in the broker app - ATP places no broker order in Phase 0")
     lookup = await price_lookup_for_user(session, user)
 
     async def price_of(leg: TradeRecord) -> Tuple[float, str]:
-        if lookup is not None:
-            try:
-                return float(await lookup(leg.symbol, await venue_for(session, leg))), "live price"
-            except Exception as exc:  # noqa: BLE001 - fall back below
-                logger.warning("Exit now: no live price for %s: %s", leg.symbol, type(exc).__name__)
-        if leg.mark_price and recent_mark(leg):
-            return float(leg.mark_price), "last seen price"
-        raise ValueError(f"No recent price for {leg.symbol}: no live quote, and the monitor's last price is missing or older than "
-                         f"{app_config.EXIT_NOW_MAX_MARK_AGE_MINUTES} min / not from today's session. Nothing was closed - the stop "
-                         "and target keep working; try again when a live price is available")
+        return await exit_price(session, leg, lookup)
 
     legs = [trade]
     if trade.leg_group_id:

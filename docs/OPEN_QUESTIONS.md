@@ -151,3 +151,15 @@ Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-12, TT12-1, T
 | TT12-3 | With no risk per trade of his own, what sizes the equity plan ticket and the F&O ticket? | The organisation's own risk per trade (RiskConfig, after the platform ceilings), exactly as with the flag off. No platform number is added. | `paper/ticket.py` assess | open |
 | TT12-4 | The organisation-level min reward:risk 1.2 (RiskConfig). | Decided 24 Oct: OFF too, own PR with backtest parity (roadmap P1-2b). | `risk_engine/risk_manager.py` | answered 24 Oct (DECISIONS) |
 | TT12-5 | Where does the user see / change his limits? | Setup step 2 (empty boxes, "Not set") and the "Your paper limits" card on the v2 Risk page. | `setup/StepsV2.tsx`, `trading/RiskV2.tsx` | open |
+
+## TT-8: a basket's legs as one group (24 Oct, `claude/tt8-basket-group`)
+
+Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-8) and docs/design/TRADING_TERMINAL_REVIEW.md (gap 5).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| TT8-1 | Where is the group stored? `leg_group_id` makes the monitor judge the legs as one strategy structure (group stop from `group_meta`), which would switch off each manual leg's own stop / target. | No migration, no `leg_group_id`: `group_meta` {"basket_group": basket id} + `leg_role` SHORT / LONG on each filled leg. Older baskets are found from their order keys. Risk counting, journal and monitor are unchanged. | `paper/fno_groups.py` | open (provisional default in use) |
+| TT8-2 | LIVE: today's "Exit now" refuses LIVE ("close it in the broker app"). The new exits are built LIVE-ready: a LIVE leg goes out through its own broker session (`broker_for_trade`), as the monitor's and the kill switch's LIVE exits do. | Kept so (owner principle 23 Oct: one code path). Manual baskets are PAPER only today, so no LIVE group exists until TT-1; the Phase 0 lock still applies. | `fno_groups.exit_leg / exit_group` | open |
+| TT8-3 | Partial exit of a leg (N of M lots). | Not in this PR: it needs the trade-row split (TT-9 / TM-17 method) for P&L, journal and orders - its own PR. | - | open (TT-9) |
+| TT8-4 | "Exit this leg" on a leg of a strategy structure (deployment). | Not offered: the structure keeps "Exit now", which closes it whole (its group stop stays valid); the API answers 409 with that sentence. | `fno_groups._check` | open |
+

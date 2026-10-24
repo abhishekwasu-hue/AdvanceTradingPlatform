@@ -71,6 +71,11 @@ export async function mockTrading(page: Page, { empty = false, positionsFail = f
     try { body = request.postDataJSON(); } catch { body = request.postData(); }
     writes.calls.push({ method, url: path.replace(/^\/api(?:\/v1)?/, ""), body });
     if (method === "POST" && /\/positions\/\d+\/exit-now$/.test(path)) return route.fulfill({ json: T.exit_now });
+    // TT-8: "Exit this leg" / "Exit the whole group" on the legs of one basket (made-up closes).
+    const groupExit = path.match(/\/paper\/fno\/positions\/(\d+)\/exit-(leg|group)$/);
+    if (method === "POST" && groupExit) {
+      return route.fulfill({ json: { status: "CLOSED", group: "made-up", legs: [{ trade_id: Number(groupExit[1]), symbol: "Made-up leg", closed: true, exit_price: 41, pnl: -300, warnings: [] }] } });
+    }
     if (method === "POST" && /\/risk-settings\/loss-streak\/resume$/.test(path)) {
       streak = { ...streak, losses_in_a_row: 0, paused: false, can_resume: false, ends: null, resumed_at: "2026-10-19T05:31:00+00:00" };
       return route.fulfill({ json: streak });

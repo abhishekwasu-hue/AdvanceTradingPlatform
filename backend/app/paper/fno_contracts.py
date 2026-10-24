@@ -239,23 +239,19 @@ def basket_ref_of(idempotency_key: Optional[str], user_id: int) -> Optional[str]
 
 
 async def position_groups(session: AsyncSession, user: Any) -> List[Dict[str, Any]]:
-    """The caller's own open PAPER positions that belong together: the legs of one basket (from their orders' keys) and
-    the legs of one multi-leg structure (`leg_group_id`). Only groups of two or more open legs; tenant and user scoped.
-    Read only: the positions page sums their P&L; every leg keeps its own Exit."""
-    from app.db.models import OrderRecord, TradeRecord
+    """The caller's own open PAPER positions that belong together: the legs of one basket (TT-8: the stored group, else their
+    orders' keys) and the legs of one multi-leg structure (`leg_group_id`). Only groups of two or more open legs; tenant and user scoped.
+    Read only: the positions page sums their P&L. A basket also lists `hedge_ids` (TT-8: its bought legs that protect an
+    open sold leg) for "Exit this leg" / "Exit the whole group"."""
+    from app.db.models import TradeRecord
+    from app.paper import fno_groups
     trades = list(await session.scalars(select(TradeRecord).where(
         TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.mode == "PAPER",
         TradeRecord.exit_time.is_(None))))
     if not trades:
         return []
-    ids = [t.id for t in trades]
-    orders = await session.execute(select(OrderRecord.trade_id, OrderRecord.idempotency_key).where(
-        OrderRecord.tenant_id == user.tenant_id, OrderRecord.user_id == user.id, OrderRecord.trade_id.in_(ids)))
-    basket_of: Dict[int, str] = {}
-    for trade_id, key in orders.all():
-        ref = basket_ref_of(key, user.id)
-        if ref and trade_id is not None:
-            basket_of.setdefault(int(trade_id), ref)
+    # TT-8: the group stored on the legs first, else their orders' keys (baskets placed before TT-8).
+    basket_of = await fno_groups.basket_refs(session, user.tenant_id, user.id, [t for t in trades if not t.leg_group_id])
     groups: Dict[str, Dict[str, Any]] = {}
     for t in sorted(trades, key=lambda x: x.id):
         if t.id in basket_of:
@@ -264,5 +260,10 @@ async def position_groups(session: AsyncSession, user: Any) -> List[Dict[str, An
             key, kind, name = f"structure:{t.leg_group_id}", "structure", (t.option_strategy or "Strategy").replace("_", " ").title()
         else:
             continue
-        groups.setdefault(key, {"key": key, "kind": kind, "name": name, "trade_ids": []})["trade_ids"].append(t.id)
+        group = groups.setdefault(key, {"key": key, "kind": kind, "name": name, "trade_ids": [], "hedge_ids": []})
+        group["trade_ids"].append(t.id)
+    for group in groups.values():
+        if group["kind"] == "basket":         # TT-8: the bought legs that protect an open sold leg (the UI's warning)
+            legs = [t for t in trades if t.id in group["trade_ids"]]
+            group["hedge_ids"] = [t.id for t in legs if fno_groups.shorts_protected(t, legs)]
     return [g for g in groups.values() if len(g["trade_ids"]) >= 2]

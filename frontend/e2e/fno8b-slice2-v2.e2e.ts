@@ -187,7 +187,7 @@ test.describe("8b slice 2 flows, 1440", () => {
     await expect(single.getByTestId("exit-now")).toBeEnabled();
   });
 
-  test("Compare a change sends nothing but the engine's numbers; Exit now still works after it", async ({ page }) => {
+  test("Compare a change sends nothing but the engine's numbers; an exit still works after it", async ({ page }) => {
     const seen = await openPositions(page, "light", { basket: BASKET });
     await page.locator("[data-group='basket']").getByTestId("fno-compare").click();
     const dialog = page.locator("[data-adjust-compare]");
@@ -201,9 +201,9 @@ test.describe("8b slice 2 flows, 1440", () => {
     await expect(dialog.getByRole("button", { name: /place|execute|exit/i })).toHaveCount(0);
     await page.keyboard.press("Escape");
     expect(actionsOf(seen)).toEqual([]);
-    page.once("dialog", (d) => void d.accept());
-    await page.locator("[data-position='301']").getByTestId("exit-now").click();
-    await expect.poll(() => seen.writes.map((c) => `${c.method} ${c.url}`)).toContain("POST /positions/301/exit-now");
+    await page.locator("[data-position='301']").getByTestId("exit-leg").click();       // TT-8: a basket leg exits on its own
+    await page.getByTestId("group-exit-confirm").click();
+    await expect.poll(() => seen.writes.map((c) => `${c.method} ${c.url}`)).toContain("POST /paper/fno/positions/301/exit-leg");
   });
 
   test("without the alert rules' flag: no Tell me when; the premium kept and Compare stay", async ({ page }) => {

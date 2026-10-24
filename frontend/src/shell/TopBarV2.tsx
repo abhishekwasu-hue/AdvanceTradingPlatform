@@ -15,7 +15,9 @@ import { initialsOf } from "./SidebarV2";
  * MO2 part C: a "?" right after the page title replays that page's tips (`onTour`: only on a page that has tips, once
  * the tips' state is known).
  * Notices sit in one row under the bar, in plain words (§3 R18): maintenance and LIVE paused are warnings (amber,
- * with an icon). P3: on the front page in PAPER (`paperOnly`) the LIVE-paused notice is left out.
+ * with an icon). P3: on the front page in PAPER (`paperOnly`) the LIVE-paused notice is left out; the shell also passes
+ * `paperOnly` on every page while `phase0_paper_only` is on (user-friendly pass item 2: no LIVE wording in the paper
+ * phase).
  * User-friendly pass item 1 (UX audit M13): "Verify your email" is never a chip on every page; it is one row in the
  * Dashboard's Needs attention list (with Resend) and the Email verification card in Settings › Account.
  */
@@ -32,13 +34,13 @@ export interface TopBarV2Props {
   /** Present while Help is on for this organisation (flag `support_bot`). */
   onHelp?: () => void;
   onFeedback?: () => void;
-  /** P3: the front page in PAPER (no LIVE deployment, src/setup/paperOnly.ts): no LIVE or e-mail notice. */
+  /** P3: the front page in PAPER (no LIVE deployment, src/setup/paperOnly.ts), or the paper phase: no LIVE notice. */
   paperOnly?: boolean;
   /** MO2 part C: replays this page's tips (present only on a page that has them). */
   onTour?: () => void;
 }
 
-/** The notices under the top bar, in plain words. `paperOnly` (the front page in PAPER) leaves out the LIVE ones. */
+/** The notices under the top bar, in plain words. `paperOnly` leaves out the LIVE ones. Never an e-mail chip (item 1). */
 export function topBarNotices(status: SystemStatus | null, _user: UserResponse | null, paperOnly = false): { kind: "warn" | "link"; text: string; title?: string }[] {
   const out: { kind: "warn" | "link"; text: string; title?: string }[] = [];
   if (status?.maintenance_mode) {

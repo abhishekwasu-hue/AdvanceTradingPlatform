@@ -72,7 +72,7 @@ test.describe("v2 portfolio 1440 desktop", () => {
     await expect(page.locator("[data-shell='v2'] header").first()).toContainText("My trades");      // UX3-9: My trades › Money
     await expect(page.getByRole("navigation", { name: "My trades" }).getByRole("link", { name: "Money" })).toHaveAttribute("aria-current", "page");
     const tiles = page.locator("[data-block='summary']");
-    await expect(tiles.locator("[data-tile='invested']")).toContainText("₹1.62 L");
+    await expect(tiles.locator("[data-tile='invested']")).toContainText("₹1,61,990");
     await expect(tiles.locator("[data-tile='invested']")).toContainText("32% of capital");
     await expect(tiles.locator("[data-tile='open-pnl']")).toContainText("+₹3,720");
     await expect(tiles.locator("[data-tile='booked']")).toContainText("+₹973");
@@ -84,12 +84,12 @@ test.describe("v2 portfolio 1440 desktop", () => {
     await expect(rows.first()).toHaveAttribute("data-symbol", "RELIANCE");
     await expect(rows.first()).toContainText("₹73,000");
     await expect(rows.first()).toContainText("15% of capital");
-    await expect(rows.first()).toContainText("Open P&L +₹1,000.00");
-    await expect(rows.first()).toContainText("Loss at the stop ₹1,500.00");
+    await expect(rows.first()).toContainText("Open P&L +₹1,000");
+    await expect(rows.first()).toContainText("Loss at the stop ₹1,500");
     await expect(page.locator("[data-long-short]")).toHaveText("Long ₹88,990 · Short ₹73,000 · Net ₹15,990");
 
     const booked = page.locator("[data-block='booked']");
-    await expect(booked.getByRole("img")).toHaveAttribute("aria-label", "Booked P&L over 3 closed trades, now +₹972.50");
+    await expect(booked.getByRole("img")).toHaveAttribute("aria-label", "Booked P&L over 3 closed trades, now +₹973");
     await expect(page.getByRole("link", { name: "Risk limits" })).toHaveAttribute("href", "/risk-management");
   });
 

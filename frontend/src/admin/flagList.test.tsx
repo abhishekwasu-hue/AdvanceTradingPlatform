@@ -51,4 +51,12 @@ describe("UX1 admin Feature flags list", () => {
     expect(html.match(/data-flag-blocked/g)?.length).toBe(1);
     expect(html).toContain('placeholder="Search flags"');
   });
+
+  it("item 7: states why users do not see a feature on this server (admin only)", () => {
+    const flags: FeatureFlags = { ...FLAGS, chart_contracts: { ...FLAGS.chart_contracts, unavailable_reason: "The chart analysis engine (private package) is not installed on this server, so users do not see this feature." } };
+    const html = renderToStaticMarkup(
+      <FeatureFlagsCard flags={flags} tenants={{}} onTenants={() => {}} busy={false} onSet={() => {}} onSaveList={() => {}} />);
+    expect(html.match(/data-flag-unavailable/g)?.length).toBe(1);
+    expect(html).toContain("is not installed on this server");
+  });
 });

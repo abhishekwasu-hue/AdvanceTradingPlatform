@@ -3590,6 +3590,43 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   e2e `front-page.e2e.ts` (no chip on any page). Baselines refreshed because the chip row is gone from every v2 page
   (the e2e user has an unverified address): chart-analyze, charts, connect-ai, copilot-chat, fno-insights, fno-workspace,
   markets, option-chain, settings-index, shell, signals and view-as `*-v2-*` images (103 files).
+
+## 23 Oct - User-friendly pass (items 2-8), branch `claude/user-friendly-pass-1`
+
+- Frontend behind `ui_v2` plus one server rule; **no migration**, no new flag. Item 1 shipped first in #450 (merged in
+  here). Status table: `docs/design/UX_AUDIT_FULL.md` "User-friendly pass"; questions UFP-1..9.
+- Item 2: `liveHiddenFrom` (phase0_paper_only) drives "2 practice positions", "every entry", "Booked so far", the top
+  bar's LIVE notice on every page and the LIVE rows of Needs attention; risk tour text says "Every entry".
+- Item 3: the sidebar's role label only when `GET /api/team/tenant` says more than one member (`showRoleFor`).
+- Item 4: `formatINR` / `formatSignedINR` whole rupees by default, `{ paise: true }` on the ticket figures, the compare
+  table, closed-trade P&L and charges, the "Closed at" message and F&O journal drafts; compact keeps only "Cr".
+- Item 5: `PageIntro` is one line with "Hide", collapsing to "About this page" (remembered per page; Skip all tips hides
+  it); every page's intro rewritten so it never repeats the subtitle.
+- Item 6: `src/ui/strategyName.ts` (Library names remembered by the shell, built-in names, words for anything else);
+  dashboard, positions, portfolio, risk checks, paper bot and the Copilot pulse use it.
+- Item 7: `/api/system/features` answers `chart_analyze*` off without `atp_private.chart_analyze`; the admin flag list
+  shows `unavailable_reason`; the page shows the standard Coming soon (`PAGE_FLAGS["chart-analyze"]`).
+- Item 8: the drop-zone sentences are capitalised.
+- Tests: `src/ux/userFriendlyPass.test.tsx` (guards for all items), `src/ui/strategyName.test.ts`, `format.test.ts`,
+  `PageIntro.test.tsx`, `flagList.test.tsx`, `backend/tests/test_ufp_engine_gate.py`; updated model and page tests.
+- e2e: text checks moved to whole rupees, the intro and Coming soon; baselines refreshed (107 files): chart-analyze,
+  charts-v2 (+ multi, watchlist, chartlight-on-dark), connect-ai-v2, copilot-chat-v2, fno4-positions / watchlist,
+  fno8b-setup-chain, fno8b3-cockpit, markets-v2 (+ indices, list), option-chain-v2 (+ charts), paper-bot-v2,
+  portfolio-v2, positions-v2, risk-v2, signals-v2, strategy-templates-v2 (+ exits). Causes: the role label, the
+  collapsed intro, whole rupees and strategy names.
+
+
+## 23 Oct - User-friendly pass item 1: "Verify your email" leaves the top bar
+
+- Branch `claude/ufp-verify-email` (from main), shipped first on the owner's word. Frontend only, **no migration**, no flag.
+- Both top bars (v2 `TopBarV2`, today's `App.tsx`) no longer show the chip on any page.
+- The v2 Dashboard's Needs attention list has one "Verify your email" row (also in PAPER, without LIVE wording), with a
+  "Resend link" button and "Hide for today"; Settings › Account keeps its Email verification card. Both send the link
+  through `src/ui/verifyEmail.ts` and say what happened in the same plain words (never a server text).
+- Tests: `src/ui/verifyEmail.test.tsx`, `dashboard/model.test.ts`, `shell/shellV2.test.tsx`, `setup/getStarted.test.tsx`;
+  e2e `front-page.e2e.ts` (no chip on any page). Baselines refreshed because the chip row is gone from every v2 page
+  (the e2e user has an unverified address): chart-analyze, charts, connect-ai, copilot-chat, fno-insights, fno-workspace,
+  markets, option-chain, settings-index, shell, signals and view-as `*-v2-*` images (103 files).
 - CI fix (e2e failed twice on 5 shots, ratio 0.03): 74 more baselines still showed the chip (the old-shell phone pages
   of `mobile.e2e.ts` and `broker.e2e.ts`, plus some `*-v2-*` 1440/390 images). Playwright's anti-aliasing tolerance kept
   them just under the 2% limit here (1.6-1.9%) and just over it on the CI runner (2.0-2.2%), so `--update-snapshots`

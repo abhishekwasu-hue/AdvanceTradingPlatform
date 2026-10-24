@@ -169,7 +169,7 @@ test.describe("F&O 8b slice 1 flows", () => {
       "If NIFTY closes at or below 24,500 at expiry you lose the premium, at most about ₹11,300; above 24,650 you gain, more the higher it closes.");
     const line = ticket.locator("[data-risk-line='warn']");
     await expect(line).toContainText("is 2.3% of your capital");
-    await expect(line).toContainText("That is more than your risk per trade of ₹5,000.00 (1%).");
+    await expect(line).toContainText("That is more than your risk per trade of ₹5,000 (1%).");
     await expect(line).toContainText("Information only: it does not hold back the order or any exit.");
     await expect(ticket.locator("[data-ticket='place']")).toBeEnabled();
     await ticket.locator("[data-explain='ticket'] summary").tap();

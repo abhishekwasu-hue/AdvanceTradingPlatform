@@ -104,10 +104,7 @@ export default function SignalsV2() {
 
   return (
     <div className="space-y-space-4" data-page="signals-v2">
-      <PageIntro id="signals" lines={[
-        "Trades your paper bots, scans and Copilot suggest, in one list. Nothing is placed until you approve it.",
-        "Open a signal to see its levels and why it was suggested, then approve or skip it.",
-      ]} />
+      <PageIntro id="signals" lines={["Open a signal to see its levels and why it was suggested, then approve or skip it."]} />
       <header>
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Signals</h1>
         <p className="hidden text-t14 text-fg-muted md:mt-space-1 md:block">Trades your paper bots, scans and Copilot suggest. Nothing is placed until you approve it.</p>

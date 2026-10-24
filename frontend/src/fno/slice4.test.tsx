@@ -115,9 +115,9 @@ const BUDGET: RiskBudget = { capital: 500_000, per_trade: { amount: 5_000, pct: 
 
 describe("8b-d the margin part", () => {
   it("sets the margin estimate beside his PAPER balance, a warning when it is more", () => {
-    expect(marginLine(50_000, BUDGET)).toMatchObject({ tone: "info", text: "Margin estimate ₹50,000.00 is 25% of your PAPER balance of ₹2,00,000.00." });
-    expect(marginLine(250_000, BUDGET)).toMatchObject({ tone: "warn", text: "Margin estimate ₹2,50,000.00 is more than your PAPER balance of ₹2,00,000.00." });
-    expect(marginLine(null, BUDGET)?.text).toBe("The margin is not estimated here, so it is not set beside your PAPER balance of ₹2,00,000.00.");
+    expect(marginLine(50_000, BUDGET)).toMatchObject({ tone: "info", text: "Margin estimate ₹50,000 is 25% of your PAPER balance of ₹2,00,000." });
+    expect(marginLine(250_000, BUDGET)).toMatchObject({ tone: "warn", text: "Margin estimate ₹2,50,000 is more than your PAPER balance of ₹2,00,000." });
+    expect(marginLine(null, BUDGET)?.text).toBe("The margin is not estimated here, so it is not set beside your PAPER balance of ₹2,00,000.");
     expect(marginLine(50_000, { ...BUDGET, paper_balance: undefined })).toBeNull();
     expect(marginLine(50_000, BUDGET)?.note).toContain("margin your open positions use is not taken off");
   });
@@ -144,7 +144,7 @@ describe("8b-d the parts are information only", () => {
     expect(html).toContain("Before you place (information only)");
     expect(html).toContain("No event in your events calendar between today and the 3 Nov 2026 expiry.");
     expect(html).toContain(NO_CHAIN);
-    expect(html).toContain("Margin estimate ₹11,250.00 is 5.6% of your PAPER balance");
+    expect(html).toContain("Margin estimate ₹11,250 is 5.6% of your PAPER balance");
     expect(ticketSource).toContain("disabled={busy || !step.preview.can_place}");          // unchanged: the parts are not read by it
     expect(riskPartsSource).not.toMatch(/disabled|onClick/);
     expect(basketSource).toContain("<RiskChecksV2 testId=\"basket-confirm\"");

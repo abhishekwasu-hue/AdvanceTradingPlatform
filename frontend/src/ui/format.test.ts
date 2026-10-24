@@ -36,32 +36,49 @@ describe("UI2-0 format: Indian grouping", () => {
 });
 
 describe("UI2-0 format: rupees", () => {
-  it("formatINR: ₹, Indian grouping, 2 decimals", () => {
-    expect(formatINR(124500)).toBe("₹1,24,500.00");
-    expect(formatINR(0)).toBe("₹0.00");
-    expect(formatINR(3120.456)).toBe("₹3,120.46");
-    expect(formatINR(-700)).toBe(`${MINUS}₹700.00`);
+  it("the money rule: whole rupees with Indian grouping by default (summaries, cards, sentences)", () => {
+    expect(formatINR(123456)).toBe("₹1,23,456");
+    expect(formatINR(124500)).toBe("₹1,24,500");
+    expect(formatINR(0)).toBe("₹0");
+    expect(formatINR(3120.456)).toBe("₹3,120");
+    expect(formatINR(3120.5)).toBe("₹3,121");
+    expect(formatINR(-700)).toBe(`${MINUS}₹700`);
+    expect(formatINR(-0.4)).toBe("₹0");                                     // rounds to zero: never "−₹0"
+    expect(formatINR(124500)).not.toContain(".");
   });
 
-  it("formatINR compact: lakh and crore for tiles", () => {
-    expect(formatINR(124500, { compact: true })).toBe("₹1.25 L");
-    expect(formatINR(100000, { compact: true })).toBe("₹1 L");
+  it("paise only when asked for (order tickets, fills, P&L detail rows)", () => {
+    expect(formatINR(124500, { paise: true })).toBe("₹1,24,500.00");
+    expect(formatINR(3120.456, { paise: true })).toBe("₹3,120.46");
+    expect(formatINR(-700, { paise: true })).toBe(`${MINUS}₹700.00`);
+    expect(formatINR(-0.004, { paise: true })).toBe("₹0.00");
+    expect(formatINR(2.4e7, { paise: true, compact: true })).toBe("₹2,40,00,000.00");   // paise win over compact
+  });
+
+  it("compact (narrow tiles): whole rupees up to a crore, then crore; never the lakh shorthand", () => {
+    expect(formatINR(124500, { compact: true })).toBe("₹1,24,500");
+    expect(formatINR(100000, { compact: true })).toBe("₹1,00,000");
+    expect(formatINR(85000, { compact: true })).toBe("₹85,000");
+    expect(formatINR(99999.6, { compact: true })).toBe("₹1,00,000");
+    expect(formatINR(-250000, { compact: true })).toBe(`${MINUS}₹2,50,000`);
     expect(formatINR(24000000, { compact: true })).toBe("₹2.4 Cr");
     expect(formatINR(10000000, { compact: true })).toBe("₹1 Cr");
-    expect(formatINR(9999999, { compact: true })).toBe("₹1 Cr");          // 99.99999 L rounds up into crore
-    expect(formatINR(85000, { compact: true })).toBe("₹85,000");
-    expect(formatINR(99999.6, { compact: true })).toBe("₹1 L");
-    expect(formatINR(-250000, { compact: true })).toBe(`${MINUS}₹2.5 L`);
+    expect(formatINR(9999999.6, { compact: true })).toBe("₹1 Cr");          // rounds up into a crore
+    expect(formatINR(9999999, { compact: true })).toBe("₹99,99,999");
     expect(formatINR(-0.3, { compact: true })).toBe("₹0");
+    expect(formatINR(124500, { compact: true })).not.toMatch(/ L\b/);
   });
 
   it("formatSignedINR: always signed, except a true zero", () => {
-    expect(formatSignedINR(3120)).toBe("+₹3,120.00");
-    expect(formatSignedINR(-700)).toBe(`${MINUS}₹700.00`);
-    expect(formatSignedINR(0)).toBe("₹0.00");
-    expect(formatSignedINR(0.004)).toBe("₹0.00");
-    expect(formatSignedINR(-0.004)).toBe("₹0.00");
-    expect(formatSignedINR(124500, { compact: true })).toBe("+₹1.25 L");
+    expect(formatSignedINR(3120)).toBe("+₹3,120");
+    expect(formatSignedINR(-700)).toBe(`${MINUS}₹700`);
+    expect(formatSignedINR(0)).toBe("₹0");
+    expect(formatSignedINR(0.4)).toBe("₹0");
+    expect(formatSignedINR(-0.4)).toBe("₹0");
+    expect(formatSignedINR(3120.5, { paise: true })).toBe("+₹3,120.50");
+    expect(formatSignedINR(0.004, { paise: true })).toBe("₹0.00");
+    expect(formatSignedINR(-0.004, { paise: true })).toBe("₹0.00");
+    expect(formatSignedINR(124500, { compact: true })).toBe("+₹1,24,500");
     expect(formatSignedINR(0.2, { compact: true })).toBe("₹0");
   });
 });

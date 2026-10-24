@@ -1614,6 +1614,20 @@ collide on numbers.
 | PRV-5 | New signal-language tokens the reader needs. | Added as generic structure phrases to `app/signals/language.py` and its frontend mirror in a reviewed public PR (shared cases grow with them); when the reader emits them stays private. The package never brings its own text to a screen. | PRIVATE_PACKAGE section 9.3 | open |
 | PRV-6 | A new MAJOR reader version and running deployments. | The host's `ATP_PRIVATE_REF` moves only after the parity checks and a PAPER shadow; each deployment records the reader version it started with; the admin console lists the release note. | PRIVATE_PACKAGE section 11 | open |
 
+## User-friendly pass (UFP, 23 Oct)
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| UFP-1 | Tiles used the lakh shorthand ("₹1.25 L"). Keep it? | No: cards and tiles show whole rupees ("₹1,24,500", the owner's example); from one crore up a narrow tile still says "₹2.4 Cr" so the figure fits a phone. | `src/ui/format.ts` | open |
+| UFP-2 | Where exactly do paise stay? | Order ticket figures (margin, max loss, basket hedge, the compare table), a closed trade's P&L and charges, the "Closed at ..." fill message and the F&O journal drafts. Open-position rows, tiles and sentences are whole rupees. | `formatINR(v, { paise: true })`, guard in `src/ux/userFriendlyPass.test.tsx` | open |
+| UFP-3 | "Verify your email" during the paper phase: show the row at all? | Yes, as the owner asked: one quiet, dismissible-for-today row with "Resend link"; its text has no LIVE wording ("so messages about your account reach you"). | Dashboard Needs attention | open |
+| UFP-4 | What does a collapsed page intro leave on the page? | One small "About this page" button that opens it again; "Skip all tips" (Help) still hides intros completely. | `src/ui/PageIntro.tsx` | open |
+| UFP-5 | The role label for the platform operator in a one-person organisation, and while the member count is unknown | Hidden in both cases (the rule is the organisation size, and unknown fails to hidden). | `src/shell/SidebarV2.tsx` | open |
+| UFP-6 | "live prices" (real-time market data) in the paper phase | Kept: it describes the market feed, not LIVE trading. Only LIVE-trading counts and words are hidden. | v2 pages | open |
+| UFP-7 | The paper-phase word for paper counts | "practice" ("2 practice positions"), matching the ticket's "Practice mode" frame. | `openCaption` | open |
+| UFP-8 | Case of built-in strategy names | As the backend registry names them ("Opening Range Breakout"); custom names exactly as the user typed them. | `src/ui/strategyName.ts` | open |
+| UFP-9 | Analyze a chart without the engine: hide for the platform operator too? | Yes in the user view (nav, Coming soon); the admin flag list shows the flag's stored state and the reason (`unavailable_reason`). | `app/platform/controls.py` | open |
+
 ## Terminal master Part 9.4: chain history and the OI collector fix (TM94, 23 Oct)
 
 The chain history PR (branch `claude/terminal-chain-history`). Design: `docs/design/CHAIN_HISTORY.md`. Checked against

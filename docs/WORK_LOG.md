@@ -4053,3 +4053,7 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   not groups (TT-8); `risk_by_default` limits are platform defaults, PAPER only (TT-12); Exit all, the kill switch and
   the positions / orders reads are organisation-wide (TT-13..15).
 - Questions TT-1..TT-30 in `docs/OPEN_QUESTIONS.md` (status open); README row 21 status updated.
+
+## 24 Oct 2026 - day-one trader test rerun (README row 19 done)
+- The eight-step day-one test updated to the fixed pages and rerun on main at 390 / 1440, light / dark: 4 / 4 pass.
+- docs/design/DAY_ONE_TRADER_TEST.md: a rerun section with each finding's status and the follow-ups.

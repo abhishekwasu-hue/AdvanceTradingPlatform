@@ -49,7 +49,7 @@ const FIFTY = [...(/NIFTY50_FALLBACK: readonly string\[\] = \[([\s\S]*?)\];/.exe
   readFileSync(new URL("../src/screener/universe.ts", import.meta.url), "utf8"))?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
 const QUESTION = "Find stocks in a daily uptrend near a demand zone";
 const STORED_LINE = "Prices from ATP's stored end-of-day history (NSE's daily files), 23 Oct 2025 to 22 Oct 2026.";
-const STORED_NOTE = "No broker connected: Daily backtests use ATP's stored end-of-day history. Intraday backtests need your broker.";
+const STORED_NOTE = /Daily backtests use ATP's stored end-of-day history\. Intraday backtests need (your broker|today's login)\./;
 
 // --- the system lists (names only) --------------------------------------------------------------------------------
 const named = (symbols: string[], exchange = "NSE") => symbols.map((symbol) => ({ symbol, exchange, name: symbol }));
@@ -381,12 +381,13 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
           await page.getByRole("button", { name: "Watchlist", exact: true }).click();
           await expect(panel).toBeVisible();
         }
-        await expect(panel.getByRole("button", { name: /^Choose a list\. Shown: / })).toContainText("Indices (5)");
+        await expect(panel.getByRole("button", { name: /^Choose a list\. Shown: / })).toContainText("NIFTY 50 stocks (50)");
         await expect(panel.getByText(/^Read-only list/)).toBeVisible();
         await shot("02a-charts-watchlist");
         await panel.getByRole("button", { name: /^Choose a list\. Shown: / }).click();
         await expect(panel.locator("[data-list-browser] [data-group] h3 button")).toHaveText([/Indices/, /Index stocks/, /Sectors/, /F&O/, /My lists/]);
-        await panel.getByRole("button", { name: /^Index stocks/ }).click();
+        // The list on screen (NIFTY 50 stocks, day-one fix 8) sits in Index stocks, so that group is already open.
+        await expect(panel.getByRole("button", { name: /^Index stocks/ })).toHaveAttribute("aria-expanded", "true");
         await expect(panel.getByRole("button", { name: /^NIFTY 50 stocks/ })).toBeVisible();
         await page.mouse.move(0, 0);
         await shot("02b-charts-list-groups");
@@ -438,10 +439,11 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await shot("05b-idea-adopt-form");
         expect(world.posts.filter((p) => p.url === "/deployments")).toHaveLength(0);           // nothing starts from a link
 
-        // 6 The next morning, before his broker login: the data pages show the login gate; Test a strategy runs on stored history
+        // 6 The next morning, before his broker login: Find setups keeps its Daily content under a one-tap login line (day-one
+        // fix 2); Test a strategy runs on stored history
         world.broker = false;
         await go("/screener");
-        await expect(page.locator("[data-broker-gate]")).toBeVisible();
+        await expect(page.locator("[data-stored-daily]")).toBeVisible();
         await shot("06a-find-setups-before-login");
         await go("/strategies/test");
         await expect(page.locator("[data-plain-data-source='stored']")).toContainText(STORED_NOTE);
@@ -471,6 +473,8 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         // 8 Logged in again: Signals' day-one card, then his watch with each symbol's structure state
         world.broker = true;
         await go("/signals");
+        // Day-one fix 7: with his paper bot on, Signals shows it first; watching a whole list is one tap away.
+        await page.locator("[data-day-one-also-list]").click();
         const card = page.locator("[data-day-one='setup']");
         await expect(card.getByRole("heading", { name: "Pick a ready strategy and a list to watch" })).toBeVisible();
         await expect(card.getByLabel("List to watch")).toHaveValue("system:index-nifty50");

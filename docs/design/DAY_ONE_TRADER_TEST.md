@@ -94,6 +94,34 @@ What worked well: NIFTY 50 is chosen on open and "Try as a scan" runs in one tap
 words; the stored-history "Prices from ..." line is clear; the Paper bot states "each entry waits for your Approve" and
 starts PAPER only; the Signals watch reads every symbol in structure words with the new setups first.
 
+## Rerun after the fixes (24 Oct 2026)
+
+The same eight steps were run again on main after the nine fixes merged (#472, #475-#480, #482, #483), at 390 and 1440,
+light and dark: all four runs pass. The assertions follow the new pages: the first list on Charts is "NIFTY 50 stocks
+(50)", Find setups before the login keeps its Daily content under a one-tap login line (`[data-stored-daily]`), the
+stored-history note names the broker that is not logged in today, and Signals shows the bot he just started first, with
+"Also watch a whole list" one tap away.
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | The idea's strategy cannot be backtested | fixed (#472: "Test it on past prices" / "Test it first", Daily stored history) |
+| 2 | Before the login nearly every page is a wall | fixed for Find setups, Signals and the Copilot's scans (#475); Charts on stored Daily history is still to do |
+| 3 | The stored-history bar is wrong on the phone | fixed (#476) |
+| 4 | Test a strategy is the old developer page | partly: the source line and the history range are plain (#476); "Event-driven", the JSON optimisation grid, "Monte Carlo + walk-forward" and the default "VWAP + Supertrend" are still on the page - follow-up |
+| 5 | Adopting an idea quietly picks an option | fixed (#479: the idea's settings are listed and it starts on a stock); the two "Start" buttons on the Paper bot page - follow-up |
+| 6 | Signals does not know the bot he just started | fixed (#480) |
+| 7 | The Copilot answer shows code | fixed (#478); "More Copilot tools" without explanations - follow-up |
+| 8 | Find setups speaks builder language | fixed (#477: "Daily", Advanced for Pine / formula / live counts, ready scans on open, matches first); gallery card texts and the empty "Stages" column - follow-up |
+| 9 | Charts shorthand and odd default | fixed (#482) |
+| 10 | Today has no next step to the ready watch | fixed (#483) |
+| 11 | Ideas: off scans and jargon | open - follow-up (check with the trader pack on first) |
+| 12 | Signals wording | open - follow-up |
+| 13 | Phone Copilot sticky box | open - check on a device |
+
+Developer words the rerun still records (never a failure; `words-<width>-<theme>.json`): indicator names in strategy
+names (EMA, VWAP, Supertrend) on the scan, idea and Paper bot pages, and "Event-driven", "JSON", "Monte Carlo",
+"walk-forward" on Test a strategy (finding 4).
+
 ## Running it
 
 ```

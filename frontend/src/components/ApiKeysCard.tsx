@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "./ui";
 import type { ApiKey } from "../types";
+import { formatDateIST, formatDateTimeIST } from "../ui/format";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
 
@@ -78,7 +79,7 @@ export default function ApiKeysCard() {
               <td className="py-1 font-mono text-fg-muted">atp_{k.key_prefix}_…</td>
               <td className="py-1 text-fg-muted">{k.scopes.join(", ")}</td>
               <td className="py-1 text-fg-muted">{k.rate_limit_per_minute}/min</td>
-              <td className="py-1 text-fg-muted">{k.last_used_at ? `used ${new Date(k.last_used_at).toLocaleString()}` : "never used"}{k.expires_at ? ` · expires ${new Date(k.expires_at).toLocaleDateString()}` : ""}</td>
+              <td className="py-1 text-fg-muted">{k.last_used_at ? `used ${formatDateTimeIST(k.last_used_at)}` : "never used"}{k.expires_at ? ` · expires ${formatDateIST(k.expires_at)}` : ""}</td>
               <td className="py-1 text-right">{k.revoked_at ? <span className="text-fg-muted">revoked</span> : isOwner && <button disabled={busy} onClick={() => api.revokeApiKey(k.id).then(refresh).catch((e) => setError(String(e)))} className="text-down hover:underline">Revoke</button>}</td>
             </tr>
           ))}

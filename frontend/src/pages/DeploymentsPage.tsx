@@ -37,6 +37,7 @@ import {
   ROUTING_POLICIES,
   type RoutingPolicy,
 } from "../types";
+import { formatDateTimeIST } from "../ui/format";
 
 // Index symbols have no cash leg: picking one switches the form to options (server rejects UNDERLYING on an index).
 const INDEX_SYMBOLS = new Set(["NIFTY 50", "NIFTY", "NIFTY BANK", "BANKNIFTY", "NIFTY FIN SERVICE", "FINNIFTY", "NIFTY MID SELECT", "MIDCPNIFTY", "NIFTY NEXT 50", "SENSEX", "BANKEX"]);
@@ -70,7 +71,7 @@ function ago(iso: string | null): string {
   const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
   if (seconds < 90) return `${seconds}s ago`;
   if (seconds < 5400) return `${Math.round(seconds / 60)}m ago`;
-  return new Date(iso).toLocaleString();
+  return formatDateTimeIST(iso);
 }
 
 /** UX2 fix 4: `paperOnly` is the v2 Paper bot page's "More ways to trade" - this form only, PAPER only (no mode switch, no

@@ -249,6 +249,17 @@ test.describe("Option chain v2 states", () => {
     await expect(page.getByText("Market closed — showing the last session's chain")).toBeVisible();
   });
 
+  test("B2: a closed market is 'as of the last session close' and a spot from our own last close is labelled", async ({ page }) => {
+    await open(page, "light", { marketOpen: false, live: (b) => ({ ...b, data_as_of: "2026-10-23T15:30:00+05:30",
+      summary: { ...(b.summary as Record<string, unknown>), spot_source: "last_close" } }) });
+    await chainReady(page);
+    if (process.env.B2_SHOT) await page.screenshot({ path: process.env.B2_SHOT });
+    await expect(page.getByText("Market closed — as of the last session close, 23 Oct 2026, 15:30 IST")).toBeVisible();
+    await expect(page.getByText("Market closed — showing the last session's chain")).toHaveCount(0);
+    await expect(page.locator("[data-summary='spot']")).toContainText("Spot: last close");
+    await expectPhoneLayout(page);
+  });
+
   test("no broker: only the 'Connect your broker' card, never a chain or sample data", async ({ page }) => {
     const calls = await open(page, "light", { options: { features: { ui_v2: true }, brokers: [] } });
     await expect(page.locator("[data-broker-gate='no-broker']")).toBeVisible();

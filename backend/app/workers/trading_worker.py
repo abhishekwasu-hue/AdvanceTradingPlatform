@@ -164,6 +164,7 @@ class CycleReport:
     market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
     breakout_fitness_started: bool = False   # U6 BK5: the nightly breakout-fitness task was started this cycle
     intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
+    lake_backfill_started: bool = False      # DATA-H: the owner's index-history pass was started this cycle
     chain_history_started: bool = False      # TM 9.4: an owner chain-history slot was started this cycle
 
 
@@ -283,6 +284,9 @@ class TradingWorker:
         self._last_intraday_day: Optional[date] = None
         self._intraday_task: Optional["asyncio.Task[None]"] = None
         self._intraday_retry_at = 0.0
+        self._last_lake_backfill_day: Optional[date] = None
+        self._lake_backfill_task: Optional["asyncio.Task[None]"] = None
+        self._lake_backfill_retry_at = 0.0
         self._intraday_adapters: Dict[Any, Any] = {}   # one owner adapter per IST day, reused by that evening's passes
         # TM 9.4: the owner's chain history - the last slot started, its task, the adapter of the day, the last report.
         self._last_chain_slot: Optional[datetime] = None
@@ -327,6 +331,8 @@ class TradingWorker:
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
         if self._market_zones_task is not None and not self._market_zones_task.done():
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
+        if self._lake_backfill_task is not None and not self._lake_backfill_task.done():
+            self._lake_backfill_task.cancel()        # DATA-H: resumable - a window is written and recorded in one transaction
         if self._intraday_task is not None and not self._intraday_task.done():
             self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
         if self._chain_task is not None and not self._chain_task.done():
@@ -348,6 +354,16 @@ class TradingWorker:
             await self.reconcile_on_start()
         except Exception:  # noqa: BLE001 - never prevents the worker from starting
             logger.exception("Start-up reconciliation failed")
+        # TM2-4: every order the engine left "Sending" (FIRING) when the worker stopped is looked up at its broker by its
+        # client id and settled - exits first - before the first cycle and the tick loop (never a second order).
+        from app.execution import trigger_engine
+        try:
+            async with self.session_factory() as session:
+                await trigger_engine.reconcile_on_start(session)
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting; each pass settles them after the ack timeout
+            logger.exception("Trigger engine start-up reconciliation failed")
+        # TM-2 / TT-6: the trigger engine on live ticks between cycles (the cycle runs it too, as the fallback).
+        tick_task = asyncio.create_task(trigger_engine.tick_loop(self.session_factory, self._stop))
         while not self._stop.is_set():
             started = time.monotonic()
             try:
@@ -365,6 +381,7 @@ class TradingWorker:
                 await asyncio.wait_for(self._stop.wait(), timeout=max(1.0, self.cycle_seconds - elapsed))
             except asyncio.TimeoutError:
                 pass
+        tick_task.cancel()
         await self.streams.stop_all()
         await self.byob.close_all()
         await self.hub.stop_all()
@@ -441,6 +458,14 @@ class TradingWorker:
                     self._stale_skips = 0
                     await self._process_tenants(session, now, report, open_tenants=set(open_by_tenant))
                     report.stale_skips = self._stale_skips
+                    # TM-2 / TT-26: waiting orders not watched (the engine did not run) -> their owners are told.
+                    try:
+                        from app.execution import trigger_engine
+                        await trigger_engine.check_stall(session, now, market_open=True)
+                    except Exception as exc:  # noqa: BLE001 - an alert never breaks trading
+                        logger.exception("Trigger engine stall check failed")
+                        report.errors.append(f"trigger engine stall check: {exc}")
+                        await session.rollback()
                     # P0.1 / S2: a long evaluation phase must not let the lock lapse under the housekeeping below.
                     if report.lock_aborted or not await self._keep_lock(session, report, "after the tenants"):
                         return report   # H-1: another replica holds the lock - its cycle runs the housekeeping
@@ -782,6 +807,15 @@ class TradingWorker:
                         logger.exception("Intraday history pass not started")
                         report.errors.append(f"intraday history: {exc}")
                         await session.rollback()
+                # DATA-H DH2: the owner's index history (Daily + 1-minute of LAKE_BACKFILL_INDICES) - once per IST day from
+                # LAKE_BACKFILL_HOUR_IST, NSE closed, through the owner's own session into his private store; its own task.
+                if not nse.is_open:
+                    try:
+                        report.lake_backfill_started = await self._maybe_start_lake_backfill(session, now)
+                    except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                        logger.exception("Index history pass not started")
+                        report.errors.append(f"index history: {exc}")
+                        await session.rollback()
                 # TM 9.4: the owner's chain history (flag `chain_history`, off by default) - one slot per
                 # CHAIN_HISTORY_SLOT_MINUTES while a venue is open, through the owner's own broker session, drawing from that
                 # session's rate budget only while a reserve stays free for exits. Its own task and sessions; read-only.
@@ -1087,6 +1121,10 @@ class TradingWorker:
             open_tenants = set(await session.scalars(select(TradeRecord.tenant_id).where(TradeRecord.exit_time.is_(None)).distinct()))
         for tenant_id in open_tenants:
             by_tenant.setdefault(tenant_id, [])
+        # TM-2: an organisation whose only business is a waiting order still gets its trigger-engine pass.
+        from app.execution import trigger_engine
+        for tenant_id in await trigger_engine.tenants_with_resting(session):
+            by_tenant.setdefault(tenant_id, [])
         by_tenant = dict(sorted(by_tenant.items()))
 
         for tenant_id, tenant_deployments in by_tenant.items():
@@ -1260,6 +1298,16 @@ class TradingWorker:
         except Exception as exc:  # noqa: BLE001 - one bad group never ends the exits; retried next cycle
             logger.error("Tenant %s: incomplete multi-leg orders failed: %s", tenant_id, exc)
             await session.rollback()
+        # TM-2 / TT-6: the one trigger engine - armed exits (stops first) on this cycle's prices and his candles, before
+        # every entry gate below and never blocked (ADR-0004); a LIVE position's exit goes out through its own session.
+        try:
+            from app.execution import trigger_engine
+            engine_exits = await trigger_engine.run_exits(session, tenant_id, market_data.get_ltp, broker=exit_broker,
+                                                          candles=lambda s, e: market_data.get_today_minutes(s, e, now), now=now)
+            report.positions_closed += engine_exits.filled
+        except Exception as exc:  # noqa: BLE001 - retried next cycle (and on the next tick)
+            logger.error("Tenant %s: trigger engine exits failed: %s", tenant_id, exc)
+            await session.rollback()
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
         # Phase T: checked per account, against that account's own order book.
         if tenant_row is not None:
@@ -1295,6 +1343,15 @@ class TradingWorker:
             await self._complete_rests(session, tenant_id, market_data, adapters, now)
         except Exception as exc:  # noqa: BLE001 - never stops the cycle
             logger.error("Tenant %s: completing incomplete multi-leg orders failed: %s", tenant_id, exc)
+            await session.rollback()
+        # TM-2 / TM-23: waiting entries the price reached - each through the order ticket's own pipeline, every entry
+        # check (kill switch, the PAPER chokepoint, risk) again now. PAPER only; nothing reaches a broker here.
+        try:
+            from app.execution import trigger_engine
+            await trigger_engine.run_entries(session, tenant_id, market_data.get_ltp,
+                                             candles=lambda s, e: market_data.get_today_minutes(s, e, now), now=now)
+        except Exception as exc:  # noqa: BLE001 - never stops the cycle
+            logger.error("Tenant %s: trigger engine entries failed: %s", tenant_id, exc)
             await session.rollback()
         active = [d for d in deployments if d.status == DeploymentStatus.ACTIVE.value]
         # Round-robin start so a tenant whose turn ran out of time last cycle resumes where it
@@ -1460,6 +1517,35 @@ class TradingWorker:
                 logger.exception("Intraday history pass failed")
 
         self._intraday_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_lake_backfill(self, session: AsyncSession, now: datetime) -> bool:
+        """DATA-H DH2: starts the owner's index-history pass (app/market_lake/index_history.py) once per IST day from
+        LAKE_BACKFILL_HOUR_IST (NSE closed): it appends the closed session and fills anything still missing. Off with
+        LAKE_BACKFILL_AFTER_CLOSE=false or without a configured owner; an unfinished pass is retried at most every 30
+        minutes. Its requests take the credential's shared API budget (app/market_data/api_budget.py)."""
+        from app.market_lake import index_history, own_bars
+
+        if not app_config.LAKE_BACKFILL_AFTER_CLOSE:
+            return False
+        day = index_history.nightly_due(now, self._last_lake_backfill_day)
+        if day is None or (self._lake_backfill_task is not None and not self._lake_backfill_task.done()):
+            return False
+        if time.monotonic() < self._lake_backfill_retry_at:
+            return False
+        if await own_bars.history_owner(session) is None:
+            return False
+        self._lake_backfill_retry_at = time.monotonic() + 30 * 60
+
+        async def run() -> None:
+            try:
+                result = await index_history.run_pass(self.session_factory)
+                if result.complete or result.status in ("not_configured",):
+                    self._last_lake_backfill_day = day
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("Index history pass failed")
+
+        self._lake_backfill_task = asyncio.get_running_loop().create_task(run())
         return True
 
     async def _maybe_start_chain_history(self, session: AsyncSession, now: datetime) -> bool:

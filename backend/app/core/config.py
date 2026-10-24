@@ -345,6 +345,19 @@ def _iso_dates(name: str) -> "tuple[frozenset, list]":
 
 
 HISTORY_INTRADAY_BLACKOUT_DATES, HISTORY_INTRADAY_BLACKOUT_ERRORS = _iso_dates("HISTORY_INTRADAY_BLACKOUT_DATES")
+# DATA-H (owner, 24 Oct; app/market_lake/index_history.py): the index history the chart reader and the Copilot read -
+# Daily (Weekly is built from it) for LAKE_BACKFILL_DAILY_YEARS and 1-minute bars (15M / 1H are built from them) for
+# LAKE_BACKFILL_INTRADAY_DAYS (at least the reader's longest intraday lookback, 1H = 180 days), read through HB2's
+# owner session (HISTORY_OWNER_TENANT_ID + NAME, HISTORY_OWNER_USER_ID) into the owner's PRIVATE store only. The worker
+# appends each closed session from LAKE_BACKFILL_HOUR_IST (off with LAKE_BACKFILL_AFTER_CLOSE=false).
+LAKE_BACKFILL_INDICES = [k.strip().upper() for k in os.environ.get("LAKE_BACKFILL_INDICES", "NIFTY,BANKNIFTY,SENSEX,FINNIFTY").split(",")
+                         if k.strip()]
+LAKE_BACKFILL_DAILY_YEARS = max(1, min(25, int(os.environ.get("LAKE_BACKFILL_DAILY_YEARS", "10") or 10)))
+LAKE_BACKFILL_INTRADAY_DAYS = max(45, min(730, int(os.environ.get("LAKE_BACKFILL_INTRADAY_DAYS", "200") or 200)))
+LAKE_BACKFILL_AFTER_CLOSE = os.environ.get("LAKE_BACKFILL_AFTER_CLOSE", "true").lower() in ("1", "true", "yes")
+LAKE_BACKFILL_HOUR_IST = max(16, min(23, int(os.environ.get("LAKE_BACKFILL_HOUR_IST", "16") or 16)))
+LAKE_BACKFILL_BUDGET_SECONDS = max(10, int(os.environ.get("LAKE_BACKFILL_BUDGET_SECONDS", "900") or 900))
+LAKE_BACKFILL_PAUSE_SECONDS = max(0.0, float(os.environ.get("LAKE_BACKFILL_PAUSE_SECONDS", "0.3") or 0.3))
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 # BT1 (beta spec §2/§4): bring-your-own-broker data tier, read only with the `byob_data_tier` flag on (off by default).
 # The ATP budget of symbols one user's broker session carries (positions > open charts > watchlist > screener universe);
@@ -368,6 +381,10 @@ BROKER_CIRCUIT_OPEN_SECONDS = float(os.environ.get("BROKER_CIRCUIT_OPEN_SECONDS"
 # Autonomous trading worker (app/workers/trading_worker.py) cadence in seconds. 60 matches the
 # 1-minute base candle; anything shorter mostly re-reads the same cached candles.
 WORKER_CYCLE_SECONDS = int(os.environ.get("WORKER_CYCLE_SECONDS", "60"))
+# TM2-4 (owner, 24 Oct): a waiting order the trigger engine sent and that is still "Sending" (FIRING) after this many
+# seconds is looked up at its broker by its own client id / tag and settled from what is there (found: its state; not
+# found: sent once with the same id). On worker start every FIRING order is settled this way before any new work.
+TRIGGER_ACK_TIMEOUT_SECONDS = float(os.environ.get("TRIGGER_ACK_TIMEOUT_SECONDS", "5"))
 
 # The risk-free rate used to discount option payoffs in the Black-Scholes Greeks engine
 # (app/option_chain/greeks.py) - approximates the short-term Indian G-Sec/repo yield. Configurable

@@ -34,6 +34,8 @@ export interface ChainRow { strike: number; call: ChainLeg; put: ChainLeg }
 
 export interface ChainSummary {
   spot: number | null;
+  /** B2b: "last_close" when the market is closed and the spot is the index's last close from our own candles. */
+  spot_source?: "broker" | "last_close";
   futures: { symbol: string; expiry: string; ltp: number | null } | null;
   atm_strike: number | null;
   pcr_oi: number | null;
@@ -61,4 +63,6 @@ export interface LiveChain {
   rows: ChainRow[];
   fetched_at: string;
   market_open: boolean;
+  /** B2a: the chain's capture time while open, the last session close while closed (never the request time). */
+  data_as_of?: string;
 }

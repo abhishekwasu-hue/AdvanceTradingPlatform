@@ -15,6 +15,7 @@ import { Badge, Button, Input, Select } from "./primitives";
 import { Card } from "./ui";
 import type { ThenTemplate } from "../screener/then/model";
 import { useFeatures } from "../ui/useFeatures";
+import { formatDateTimeIST, formatTimeIST } from "../ui/format";
 
 // N1 X1b (flag scan_then): a rule's Then chip and drawer, loaded only when the flag is on (its i18n bundle stays out of
 // this page's chunk otherwise).
@@ -72,7 +73,7 @@ function RuleRow({ rule, onChanged, thenOn, then }: { rule: AlertRule; onChanged
           <tbody>
             {events.map((ev) => (
               <tr key={ev.id} className="border-t border-border">
-                <td className="py-1 font-tabular">{new Date(ev.bar_time).toLocaleString()}</td>
+                <td className="py-1 font-tabular">{formatDateTimeIST(ev.bar_time)}</td>
                 <td>{ev.symbol}</td>
                 <td>{ev.status}</td>
                 <td className="text-fg-muted">{reasonLabel(ev.reason)}</td>
@@ -218,7 +219,7 @@ function PersonalChannels() {
           <div className="rounded border border-border bg-surface-2 px-3 py-2 text-xs space-y-1">
             <div>Send this to the organisation's bot in a <b>private</b> chat:</div>
             <code className="block font-tabular text-sm text-fg select-all">{code.command}</code>
-            <div className="text-fg-muted">Works once, until {new Date(code.expires_at).toLocaleTimeString()}.</div>
+            <div className="text-fg-muted">Works once, until {formatTimeIST(code.expires_at)}.</div>
           </div>
         )}
       </div>

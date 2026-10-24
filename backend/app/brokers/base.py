@@ -175,6 +175,15 @@ class BrokerInterface(ABC):
     @abstractmethod
     async def get_order_book(self) -> List[BrokerOrderStatus]: ...
 
+    async def find_order_by_client_id(self, client_id: str) -> Optional[BrokerOrderStatus]:
+        """TM2-4: the order this platform placed with `client_id` as its tag, from the broker's own order book (the tag
+        the broker echoes back: Zerodha / Upstox `tag`, Fyers `orderTag`, Angel `ordertag`, Dhan `correlationId`, Kotak
+        `GuiOrdId`, Groww `order_reference_id`, Shoonya `remarks`, CoinDCX `client_order_id`), cut to this broker's tag
+        length. None: no such order in the book. An unreadable book raises - "unknown" is never "not there"."""
+        wanted = client_id[: self.max_tag_length] if self.max_tag_length else client_id
+        matches = [o for o in await self.get_order_book() if o.tag and o.tag == wanted]
+        return matches[-1] if matches else None
+
     @abstractmethod
     async def get_trade_book(self) -> List[BrokerTradeEntry]: ...
 

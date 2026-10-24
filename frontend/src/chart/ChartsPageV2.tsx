@@ -187,7 +187,7 @@ export default function ChartsPageV2(_props: PageProps) {
   };
 
   const drawingText = drawingNote(tools?.view?.message) ?? placeHint(tools?.view?.tool, phone);
-  const emptyText = data.loading || waiting ? "Loading prices…" : data.error ? "" : `No prices for ${symbol} on this timeframe yet.`;
+  const emptyText = data.loading || waiting ? "Loading prices…" : data.error ? "" : data.empty ?? `No prices for ${symbol} on this timeframe yet.`;
   // UI2-4d: a cell's "Open in Chart tab" - its symbol on the Chart tab, with its timeframe.
   const openChart = (sym: string, exch: string, tf: TimeframeId) => {
     setView({ timeframe: tf });

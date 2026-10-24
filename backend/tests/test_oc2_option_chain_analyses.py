@@ -256,12 +256,12 @@ def test_expected_move_spot_plus_minus_the_atm_straddle():
     first = chain([row(110, call_ltp=9, put_ltp=4), row(120, call_ltp=5.0, put_ltp=10.0), row(130, call_ltp=1, put_ltp=15)], 116.0)
     out = A.expected_move(now_chain, [A.Snapshot(REF_AT, first)], NOW)
     # ATM 120: straddle 6.5 + 8.0 = 14.5; range 118 - 14.5 = 103.5 to 132.5; 14.5 / 118 = 12.288 %; 27 Oct - 21 Oct = 6 days
-    assert out["values"] == {"atm": 120, "straddle": 14.5, "lower": 103.5, "upper": 132.5, "move_pct": 12.29, "dte": 6}
+    assert out["values"] == {"atm": 120, "straddle": 14.5, "lower": 103.5, "upper": 132.5, "move_pct": 12.29, "dte": 4}
     # 09:20: spot 116, ATM 120 (4 away, 110 is 6 away): straddle 5 + 10 = 15 -> 101 to 131
     assert [(r["straddle"], r["lower"], r["upper"]) for r in out["tables"][1]["rows"]] == [(15.0, 101.0, 131.0), (14.5, 103.5, 132.5)]
     assert out["sentences"] == [
         "The ATM straddle at 120 is 14.50 (call 6.50 + put 8.00).",
-        "Taken as the move to expiry, it gives a range of 103.50 to 132.50, about 12.29% either side of spot 118.00, with 6 days to expiry.",
+        "Taken as the move to expiry, it gives a range of 103.50 to 132.50, about 12.29% either side of spot 118.00, with 4 trading days to expiry.",
         "Since 09:20 IST the straddle moved from 15.00 to 14.50.",
     ]
     assert [s["key"] for s in out["chart"]["series"]] == ["upper", "spot", "lower"]
@@ -342,7 +342,7 @@ def test_no_analysis_text_holds_advice_or_buy_sell_words():
             assert not has_advice(line), (result["key"], line)
             assert line.isascii(), (result["key"], line)
     from app.option_chain import analyses_routes as R
-    for line in (R.NO_BROKER, R.UNAVAILABLE, R.NOT_OFFERED, R.NO_CHAIN, R.NO_HISTORY_BYOB, A.NO_HISTORY, A.HISTORY_OFF, A.BU_HISTORY_OFF,
+    for line in (R.NO_BROKER, R.UNAVAILABLE, R.NOT_OFFERED, R.NO_CHAIN, A.NO_HISTORY, A.HISTORY_OFF, A.BU_HISTORY_OFF,
                  A.UNREADABLE):
         assert advice_words(line) == [] and not has_advice(line), line
 
@@ -496,6 +496,9 @@ def test_an_adapter_that_cannot_be_built_is_a_plain_state(monkeypatch):
 
 
 def test_a_spot_of_zero_from_the_broker_is_a_200_with_the_spot_missing(monkeypatch):
+    from app.option_chain import as_of
+    # B2: while the market is open (closed: our own last close fills a missing spot - tests/test_b2_as_of_spot.py).
+    monkeypatch.setattr(as_of, "as_of_for", lambda now, holidays, exchange: as_of.AsOf(now, False))
     name = _name()
     rows = [r.model_copy(update={"call_ltp": 7.0, "put_ltp": 4.0}) for r in FIVE.rows]
     _install(monkeypatch, _ChainBroker({name: OptionChain(underlying=name, expiry=EXPIRY, underlying_ltp=0.0, rows=rows)}))
@@ -585,7 +588,7 @@ def test_a_member_reads_through_the_organisation_session_and_the_flag_is_per_org
     assert client.get(URL, headers=other_headers, params={"symbol": name}).status_code == 404
 
 
-def test_own_broker_tier_reads_no_shared_history(monkeypatch):
+def test_own_broker_tier_reads_no_shared_history_only_his_own(monkeypatch):
     name = _name()
     broker = _ChainBroker({name: OptionChain(underlying=name, expiry=EXPIRY, underlying_ltp=118.0, rows=CURRENT.rows)})
     used: List[int] = []
@@ -601,8 +604,9 @@ def test_own_broker_tier_reads_no_shared_history(monkeypatch):
                         datetime.now(UTC) - timedelta(minutes=10), me["tenant_id"])
         body = client.get(URL, headers=headers, params={"symbol": name}).json()
         assert body["state"] == "ok" and used == [me["tenant_id"]]
-        assert body["session"]["snapshots"] == 0 and "own-broker" in body["session"]["note"]
+        # B1: the collector's slot is not read; with none of his own reads yet the path "starts now" (no refusal)
+        assert body["session"]["snapshots"] == 0 and body["session"]["note"] is None
         build = {a["key"]: a for a in body["analyses"]}["build_up"]
-        assert build["state"] == "no_data" and build["sentences"] == [A.BU_HISTORY_OFF]       # the shared collector is not read
+        assert build["state"] == "no_data" and A.BU_HISTORY_OFF not in build["sentences"]
     finally:
         _set_flag("byob_data_tier", me["tenant_id"], on=False)

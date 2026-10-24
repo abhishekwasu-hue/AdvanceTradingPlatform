@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.brokers.models import OptionChain, OptionChainRow
 from app.db.models import MdTenantChainSnapshotRecord
 from app.market_data.calendar import EXCHANGE_SESSIONS, IST, session_family
-from app.market_lake.tenant_store import holder_visible
+from app.market_lake.tenant_store import HOLDER_PREFIX, holder_visible
 
 CODEC = "zlib-json-v1"
 # Per side, in this order, after the strike: the OptionChainRow attribute is "<side>_<attr>".
@@ -216,6 +216,31 @@ async def coverage(session: AsyncSession, tenant_id: int, *, underlying: Optiona
             for u, d, n, e, lo, hi in await session.execute(query)]
 
 
+# ---------------------------------------------------------------- one member's own reads (B1)
+
+def _holder_only(tenant_id: Optional[int], user_id: int):
+    """Only the rows read through `user_id`'s own broker session (source `broker:<name>:u<id>`) - never the tenant's
+    other rows, never another member's (B1: with the own-broker data tier the analyses use the user's own reads only)."""
+    tenant = _require_tenant(tenant_id)
+    return (R.tenant_id == tenant) & R.source.like(f"{HOLDER_PREFIX}%:u{int(user_id)}")
+
+
+async def holder_day(session: AsyncSession, tenant_id: int, user_id: int, underlying: str, day: date) -> List[StoredChain]:
+    """`user_id`'s own stored chains of `underlying` on the IST trading day `day`, oldest first (then by expiry)."""
+    out: List[StoredChain] = []
+    query = select(R).where(_holder_only(tenant_id, user_id), R.underlying == underlying, R.trade_date == day)
+    for row in await session.scalars(query.order_by(R.slot_start, R.expiry)):
+        out.append(StoredChain(row.underlying, row.expiry, _utc(row.slot_start), _utc(row.captured_at), row.spot,
+                               decode(row.payload, row.codec)))
+    return out
+
+
+async def holder_underlyings(session: AsyncSession, tenant_id: int, user_id: int, day: date) -> List[str]:
+    """The underlyings `user_id` has own stored chains of on `day` (names only)."""
+    query = select(R.underlying).where(_holder_only(tenant_id, user_id), R.trade_date == day).group_by(R.underlying).order_by(R.underlying)
+    return [str(u) for u in await session.scalars(query)]
+
+
 # ---------------------------------------------------------------- the admin status (counts only)
 
 def expected_slots(day: date, now: datetime, minutes: int, exchange: str = "NSE") -> List[datetime]:
@@ -285,4 +310,4 @@ async def totals(session: AsyncSession, tenant_id: int) -> Dict[str, Any]:
 
 
 __all__ = ["CODEC", "FIELD_NAMES", "encode", "decode", "write", "WriteResult", "exists", "slot_start", "StoredChain", "read_range",
-           "read_day", "count", "coverage", "expected_slots", "gap_ranges", "day_slots", "totals"]
+           "read_day", "count", "coverage", "holder_day", "holder_underlyings", "expected_slots", "gap_ranges", "day_slots", "totals"]

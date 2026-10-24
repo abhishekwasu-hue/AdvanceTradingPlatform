@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "./ui";
 import type { AiProviderConfig, AiProviderName } from "../types";
+import { formatDateIST, formatDateTimeIST } from "../ui/format";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
 
@@ -49,7 +50,7 @@ export default function AiProviderCard() {
         <div className="text-xs mb-3 flex flex-wrap gap-3">
           <span className="inline-flex items-center gap-1 rounded-md border border-brand/40 bg-brand/10 px-2 py-0.5 font-bold text-brand"><Sparkles size={12} /> {config.provider} · {config.model || config.models?.strong || config.default_models[config.provider]}</span>
           <span className="text-fg-muted">{config.configured ? (config.api_key_set ? "key stored (encrypted)" : "no key needed") : "not configured - rule-based"}</span>
-          {config.last_used_at && <span className="text-fg-muted">last used {new Date(config.last_used_at).toLocaleString()}</span>}
+          {config.last_used_at && <span className="text-fg-muted">last used {formatDateTimeIST(config.last_used_at)}</span>}
           {config.last_error && <span className="text-down">{config.last_error}</span>}
           {!config.ai_features_allowed && <span className="text-warn">external providers need the Pro or Business plan</span>}
         </div>
@@ -115,7 +116,7 @@ export default function AiProviderCard() {
       {isOwner && form.provider !== "rule_based" && config?.data_consent && (
         <div className="mt-3 rounded border border-warn/40 bg-warn/10 p-3 text-xs">
           <div className="font-semibold text-warn mb-1">Data-sharing consent (DPDP) · version {config.data_consent.version}
-            {config.data_consent.accepted && <span className="ml-2 text-up">accepted {config.data_consent.accepted_at ? new Date(config.data_consent.accepted_at).toLocaleDateString() : ""}</span>}
+            {config.data_consent.accepted && <span className="ml-2 text-up">accepted {config.data_consent.accepted_at ? formatDateIST(config.data_consent.accepted_at) : ""}</span>}
           </div>
           <p className="text-fg">{config.data_consent.text.en}</p>
           {!config.data_consent.accepted && <label className="mt-2 flex items-start gap-2 text-fg">

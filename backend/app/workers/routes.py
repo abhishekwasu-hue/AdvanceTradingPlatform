@@ -31,6 +31,9 @@ class WorkerStatusResponse(BaseModel):
     market_open: bool
     market_status: str
     next_market_open: Optional[str]
+    # TM-2 / TT-6: the trigger engine's last run (waiting orders and armed exits), for the Terminal's status bar.
+    trigger_engine_last_run_at: Optional[str] = None
+    trigger_engine_seconds_since: Optional[int] = None
 
 
 @router.get("/worker-status", response_model=WorkerStatusResponse)
@@ -44,13 +47,17 @@ async def worker_status(
     record = await session.scalar(select(WorkerHeartbeatRecord).where(WorkerHeartbeatRecord.worker_name == "trading_worker"))
     session_status = await market_session_status(session)
     now = datetime.now(timezone.utc)
+    from app.execution import trigger_engine
+    engine_seen = await trigger_engine.heartbeat(session)
+    engine = {"trigger_engine_last_run_at": engine_seen.isoformat() if engine_seen else None,
+              "trigger_engine_seconds_since": int((now - engine_seen).total_seconds()) if engine_seen else None}
 
     if record is None:
         return WorkerStatusResponse(
             worker_name="trading_worker", running=False, healthy=False, last_seen_at=None, seconds_since_heartbeat=None,
             cycle_count=0, last_cycle_ms=None, last_error=None, cycle_seconds=WORKER_CYCLE_SECONDS,
             market_open=session_status.is_open, market_status=session_status.reason,
-            next_market_open=session_status.next_open.isoformat() if session_status.next_open else None,
+            next_market_open=session_status.next_open.isoformat() if session_status.next_open else None, **engine,
         )
 
     last_seen = record.last_seen_at if record.last_seen_at.tzinfo else record.last_seen_at.replace(tzinfo=timezone.utc)
@@ -61,5 +68,5 @@ async def worker_status(
         last_seen_at=last_seen.isoformat(), seconds_since_heartbeat=age, cycle_count=record.cycle_count,
         last_cycle_ms=record.last_cycle_ms, last_error=record.last_error, cycle_seconds=WORKER_CYCLE_SECONDS,
         market_open=session_status.is_open, market_status=session_status.reason,
-        next_market_open=session_status.next_open.isoformat() if session_status.next_open else None,
+        next_market_open=session_status.next_open.isoformat() if session_status.next_open else None, **engine,
     )

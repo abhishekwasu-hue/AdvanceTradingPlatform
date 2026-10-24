@@ -239,6 +239,13 @@ def tick_cache_for(namespace: str) -> TickCache:
     return _hub_caches.get(namespace) or HubSnapshotReader(namespace=namespace)
 
 
+def live_ticks(namespace: str) -> Dict[str, list]:
+    """TM-2 / TT-6: the newest tick per symbol of a connection streaming in THIS process ({"EXCH:SYMBOL": [ltp, iso
+    time]}), for the trigger engine's tick pass inside the worker. Empty when no stream of that connection runs here."""
+    cache = _hub_caches.get(namespace)
+    return dict(cache.latest) if cache is not None else {}
+
+
 _snapshot_memo: Dict[str, Tuple[float, Dict[str, list]]] = {}
 
 

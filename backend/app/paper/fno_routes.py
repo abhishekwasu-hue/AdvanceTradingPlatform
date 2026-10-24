@@ -9,7 +9,11 @@ ordinary pipeline (app/paper/fno_ticket.py); there is no mode in the body and no
   option (`right` CE / PE with its strike) or, FNO-3, a future (`right` FUT, no strike).
 - `GET  /api/paper/fno/held`           the caller's open PAPER option positions on one underlying and expiry.
 - `POST /api/paper/fno/order/preview`  the ticket checked: price, units, margin, max loss, risk checks in plain words.
-- `POST /api/paper/fno/order`          place it (at the live price; the pipeline checks again).
+- `POST /api/paper/fno/order`          place it (at the live price; the pipeline checks again). TM-2: with
+  `rest_if_waiting` a limit / stop the price has not reached waits in the resting book instead of being refused.
+- `GET  /api/paper/fno/resting`        TM-2: the caller's own waiting orders and armed exits.
+- `POST /api/paper/fno/resting/exit`   TM-2: arm a stop / target on the caller's own position (nothing is sent now).
+- `POST /api/paper/fno/resting/{id}/cancel`  TM-2: cancel the caller's own waiting order.
 
 FNO-2, the basket (app/paper/fno_basket.py), same flags, same PAPER-only path - each leg is one ticket order:
 - `POST /api/paper/fno/basket/evaluate`     the basket's payoff, max profit / loss, breakevens, PoP, Greeks, margin with
@@ -86,6 +90,10 @@ class OrderBody(BaseModel):
     stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     chain_ltp: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     client_ref: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9-]{8,64}$")
+    # TM-2: "wait for my price" - a limit / stop the price has not reached rests in the resting book (needs client_ref).
+    rest_if_waiting: bool = False
+    trigger_mode: Literal["TOUCH", "CLOSE"] = "TOUCH"
+    timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
 
     @model_validator(mode="after")
     def _strike_for_options_only(self) -> "OrderBody":
@@ -140,6 +148,71 @@ async def place(body: OrderBody, user: User = Depends(require_trader), session: 
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
     return await fno_ticket.place(session, user, body.ask(), price_lookup=lookup, origin=MANUAL)
+
+
+# --- TM-2: the caller's own waiting orders and armed exits -------------------------------------------------------------
+
+resting_rate_limit = user_rate_limit("paper_fno_resting", limit=60, window_seconds=60)
+
+
+class ArmExitBody(BaseModel):
+    """A stop or a target on the caller's own open position, waiting for its price (T-D2 / TT-7: every value his own)."""
+    model_config = ConfigDict(extra="forbid")
+    trade_id: int = Field(ge=1)
+    kind: Literal["STOP", "TARGET"]
+    order_type: Literal["SL-M", "LIMIT", "MARKET"]
+    level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)     # the premium level (PREMIUM)
+    trigger_source: Literal["PREMIUM", "SPOT"] = "PREMIUM"
+    spot_level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    spot_side: Optional[Literal["ABOVE", "BELOW"]] = None
+    trigger_mode: Literal["TOUCH", "CLOSE"] = "TOUCH"
+    timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+    client_ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
+
+
+@router.get("/resting")
+async def resting(include_done: bool = Query(default=False), user: User = Depends(get_current_user),
+                  session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
+    """The caller's own waiting orders and armed exits (with `include_done`, the recent finished ones too)."""
+    await _enabled(session, user)
+    from app.execution import resting_book
+    return [resting_book.view(r) for r in await resting_book.list_for_user(session, user, include_final=include_done)]
+
+
+@router.post("/resting/exit", dependencies=[Depends(resting_rate_limit)])
+async def arm_exit(body: ArmExitBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Arms a stop or a target on the caller's own open position. Nothing is sent now: the trigger engine closes the
+    position when the price reaches it (never blocked, ADR-0004)."""
+    await _enabled(session, user)
+    from app.db.models import TradeRecord
+    from app.execution import resting_book
+    trade = await session.get(TradeRecord, body.trade_id)
+    if trade is None or trade.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Not found")
+    if trade.user_id != user.id:
+        raise HTTPException(status_code=403, detail="This is not your position")
+    trigger = resting_book.Trigger(source=body.trigger_source, mode=body.trigger_mode, timeframe_minutes=body.timeframe_minutes,
+                                   spot_level=body.spot_level, spot_side=body.spot_side)
+    try:
+        row = await resting_book.arm_exit(session, user, trade, client_ref=f"exit:{body.client_ref}", kind=body.kind,
+                                          order_type=body.order_type, level=body.level or 0.0, trigger=trigger)
+    except resting_book.RestingOrderError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await session.commit()
+    return resting_book.view(row)
+
+
+@router.post("/resting/{order_id}/cancel", dependencies=[Depends(resting_rate_limit)])
+async def cancel_resting(order_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Cancels the caller's own waiting order (one already sent or done is returned as it is)."""
+    await _enabled(session, user)
+    from app.execution import resting_book
+    try:
+        row = await resting_book.cancel(session, user, order_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Not found") from exc
+    return resting_book.view(row)
 
 
 # --- FNO-2: the basket ------------------------------------------------------------------------------------------------

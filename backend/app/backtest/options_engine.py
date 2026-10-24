@@ -54,6 +54,7 @@ from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState, nonfinite_levels
 from app.strategy_engine.base import BaseStrategy
 from app.trading.exit_logic import underlying_exit
+from app.trading.trigger_rules import ABOVE, BELOW, closed_beyond
 from app.trading.exit_rules import ExitRules
 from app.trading.position_monitor import structure_exit_reason, underlying_exit_reason
 
@@ -403,9 +404,10 @@ def run_option_backtest(
                     if pos.single:
                         price = prices[0]
                         leg = pos.legs[0]
-                        if leg.role == "LONG" and price <= pos.premium_level:
+                        # TT-7: the shared close rule (app/trading/trigger_rules.py) - the premium at this bar's close.
+                        if leg.role == "LONG" and closed_beyond(pos.premium_level, BELOW, price):
                             reason = f"Premium floor ({pos.premium_level:g})"
-                        elif leg.role == "SHORT" and price >= pos.premium_level:
+                        elif leg.role == "SHORT" and closed_beyond(pos.premium_level, ABOVE, price):
                             reason = f"Premium ceiling ({pos.premium_level:g})"
                     else:
                         reason = structure_exit_reason(pos.meta, structure_value(prices, pos), None)

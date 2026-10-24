@@ -4078,3 +4078,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 ## 24 Oct 2026 - day-one trader test rerun (README row 19 done)
 - The eight-step day-one test updated to the fixed pages and rerun on main at 390 / 1440, light / dark: 4 / 4 pass.
 - docs/design/DAY_ONE_TRADER_TEST.md: a rerun section with each finding's status and the follow-ups.
+
+## 24 Oct 2026 - TM-2: the resting PAPER order book + the one trigger engine (P1-6)
+- Migration `7e2a4c6b8d10` (additive, `ROLLBACK_SAFE`): table `paper_resting_orders` (tenant + user, `client_ref` unique per
+  user, trigger source premium / spot, level, side, touch / close, timeframe, status, order trail).
+- `execution/resting_book.py`: keep / list / cancel waiting entries; arm a stop / target on the user's own position.
+- `execution/trigger_engine.py`: one engine in the worker - live hub ticks every second (touch, PAPER), else every
+  cycle (exits before the entry gates, entries after them); entries fire through the ticket's own `place` (kill switch,
+  PAPER chokepoint, risk again); exits through `close_position`, never blocked; heartbeat `trigger_engine` on
+  `GET /api/system/worker-status`; stall alert to the owners (in-app + Telegram).
+- `trading/trigger_rules.py` (TT-7): touch / close / stop-first / closed candles, used by `exit_logic` (monitor and
+  `backtest/engine.py`) and `backtest/options_engine.py`. `PaperExecutionAdapter(keep_resting=True)` + `on_price`.
+- Ticket: `rest_if_waiting` (+ touch / close and timeframe); routes `GET /api/paper/fno/resting`,
+  `POST /api/paper/fno/resting/exit`, `POST /api/paper/fno/resting/{id}/cancel` (tenancy table updated). No UI (T2).
+- Tests: `test_tm2_trigger_rules.py` (12), `test_tm2_trigger_engine.py` (12); z10c, tenancy sweep, TM-1 adapter, smart
+  execution, ticket / basket, backtest parity and worker suites green. Open questions TM2-1..3.

@@ -106,7 +106,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-3 | waiting for owner | deploy, universe sync ON, "Enable trader features"; then day-one test on production | #470 |
 | P1-4 | in progress | verify which chart pages still bypass the core; gestures; phone recording | row 18 |
 | P1-5 | waiting for owner | `data_hub` ON via "Enable trader features" after the deploy; API-call numbers before / after | - |
-| P1-6 | in progress | T1 waits for ✅; T2 needs TM-2, TT-1, TT-8; TT-2 in review | #493, #492 |
+| P1-6 | in progress | T1 waits for ✅; TM-2 in review (resting book + trigger engine; migration after 15:30 IST); T2 then needs TT-1, TT-8 | #493, #492, TM-2 PR |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | P2-1 | not started | next free P1 slot: one flag-audit table with a recommendation per flag | - |
 | P2-2 | not started | Copilot jobs 1-8 + own key + tools end to end (parts built, flags) | - |

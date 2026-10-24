@@ -3729,6 +3729,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
 - Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
 
+## 23 Oct - Day-one fix 4: Find setups in a trader's words (README row 19, DAY_ONE_TRADER_TEST finding 8)
+
+- Branch `claude/d1-fix-find-setups` (from main). Frontend only, **no migration**, no new flag: everything behind
+  `ui_v2` (the page's own flags as before).
+- Timeframes in words ("Daily", "15 min", never "1d"): the scan timeframe select and every stage chip
+  (`TIMEFRAME_WORDS`, the `PlainTimeframes` context; off v2 the codes stay).
+- "Advanced" (a ghost button) holds Pine Script, Library tools, the formula block and "Live counts while editing".
+- The scan's name has its own line with the placeholder "Untitled scan" (the empty name showed a lone "|"; "Momentum"
+  was cut to "Moment").
+- A ready dish on open: "Start with a ready scan" - three library scans, one tap runs one on the chosen list.
+- Every answer leads with its matches; "N stocks did not match" with "Show the N that did not match".
+- Tests: `src/screener/plainWords.test.tsx` (3), e2e `e2e/d1-find-setups-v2.e2e.ts` (no baseline); updated baselines
+  `scan-universe-v2-{1440-dark,390-dark,390-light}` (the page's new header and words).
+- Left for later: the gallery cards' own texts ("RSI(14) at or below 30", "Method × setup matrix") and the empty
+  "Stages" column.
 ## 23 Oct - Day-one fix 3: the stored-history bar (README row 19, DAY_ONE_TRADER_TEST finding 3)
 
 - Branch `claude/d1-fix-stored-bar` (from main). Frontend only, **no migration**, no new flag (`ui_v2` +

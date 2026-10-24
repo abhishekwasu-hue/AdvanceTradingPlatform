@@ -92,7 +92,7 @@ export function legFigures(leg: ChainLeg): { oi: string; oiChange: string; iv: s
   return {
     oi: leg.oi === null ? EMPTY : formatCompactIN(leg.oi),
     oiChange: leg.oi_change === null ? EMPTY : formatSignedCompactIN(leg.oi_change),
-    iv: leg.iv === null ? EMPTY : `${formatNumber(leg.iv, 1)}%`,
+    iv: leg.iv === null ? EMPTY : formatNumber(leg.iv, 1),
     delta: leg.delta === null ? EMPTY : formatNumber(leg.delta, 2),
     ltp: leg.ltp === null ? EMPTY : formatPrice(leg.ltp),
   };
@@ -107,7 +107,7 @@ export function spotLine(spot: TerminalSpot | null | undefined, chain: LiveChain
   return ` · ${word} ${formatPrice(value)}${at ? ` (as of ${formatTimeIST(at)})` : ""}`;
 }
 
-const SIDE_COLUMNS = [["oi", "OI"], ["oiChange", "Chg OI"], ["iv", "IV"], ["delta", "Delta"]] as const;
+const SIDE_COLUMNS = [["oi", "OI"], ["oiChange", "Chg OI"], ["iv", "IV %"], ["delta", "Delta"]] as const;
 
 export function ChainPanelV2({ underlying, read, trading, rows = 6, spot, compact = false }: {
   underlying: string; read: Read<LiveChain>; trading: ChainTrading; rows?: number;
@@ -142,7 +142,7 @@ export function ChainPanelV2({ underlying, read, trading, rows = 6, spot, compac
       <td className="p-0">
         <button type="button" onClick={() => trading.onPickLeg?.(r, side)} data-cell={`${side}-${r.strike}`}
           aria-label={`${underlying} ${formatNumber(r.strike, 0)} ${right}${ltp === null ? "" : `, ${formatPrice(ltp)}`}${mine ? ", you hold it" : ""}`}
-          className={cx("flex min-h-11 w-full items-center justify-end gap-space-1 px-space-2 text-right font-tabular text-t13 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand lg:min-h-9",
+          className={cx("flex min-h-11 w-full items-center justify-end gap-space-1 whitespace-nowrap px-space-1 text-right font-tabular text-t13 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand lg:min-h-9",
             mine ? "font-semibold text-brand" : "text-fg")}>
           {mine && <span className="rounded-pill bg-brand px-space-1 text-t12 text-on-brand" aria-hidden>P</span>}
           {ltp === null ? EMPTY : formatPrice(ltp)}
@@ -150,11 +150,11 @@ export function ChainPanelV2({ underlying, read, trading, rows = 6, spot, compac
       </td>
     );
   };
-  const fig = (v: string, key: string) => <td key={key} className="px-space-2 text-right font-tabular text-t13 text-fg-muted" data-col={key}>{v}</td>;
+  const fig = (v: string, key: string) => <td key={key} className="whitespace-nowrap px-0.5 text-right font-tabular text-t13 text-fg-muted" data-col={key}>{v}</td>;
   const strikeCell = (r: (typeof shown)[number]) => {
     const label = formatNumber(r.strike, 0);
     const tone = r.strike === atm ? "text-brand" : "text-fg";
-    if (!compact) return <td className={cx("px-space-2 text-center font-tabular font-semibold", tone)}>{label}</td>;
+    if (!compact) return <td className={cx("whitespace-nowrap px-space-1 text-center font-tabular font-semibold", tone)}>{label}</td>;
     const expanded = open === r.strike;
     return (
       <td className="p-0">
@@ -167,7 +167,7 @@ export function ChainPanelV2({ underlying, read, trading, rows = 6, spot, compac
       </td>
     );
   };
-  const head = "px-space-2 font-medium";
+  const head = "whitespace-nowrap px-0.5 font-medium";
   return (
     <div className="space-y-space-2" data-panel-body="chain" data-chain-view={compact ? "compact" : "full"}>
       <p className={MUTED} data-chain-spot>
@@ -203,8 +203,8 @@ export function ChainPanelV2({ underlying, read, trading, rows = 6, spot, compac
                     <tr id={`chain-more-${r.strike}`} data-more={r.strike} className="bg-surface-2">
                       <td colSpan={5} className="px-space-2 py-space-2">
                         <dl className="grid grid-cols-2 gap-x-space-3 gap-y-space-1 font-tabular text-t13">
-                          <div><dt className="text-fg-muted">Call · Chg OI / IV / Delta</dt><dd className="text-fg">{c.oiChange} · {c.iv} · {c.delta}</dd></div>
-                          <div><dt className="text-fg-muted">Put · Chg OI / IV / Delta</dt><dd className="text-fg">{p.oiChange} · {p.iv} · {p.delta}</dd></div>
+                          <div><dt className="text-fg-muted">Call · Chg OI / IV % / Delta</dt><dd className="text-fg">{c.oiChange} · {c.iv} · {c.delta}</dd></div>
+                          <div><dt className="text-fg-muted">Put · Chg OI / IV % / Delta</dt><dd className="text-fg">{p.oiChange} · {p.iv} · {p.delta}</dd></div>
                         </dl>
                       </td>
                     </tr>
@@ -382,7 +382,7 @@ export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; term
     <div className="space-y-space-2" data-panel-body="orders">
       {/* UI-H: the shared SubTabs (a choice inside the panel), as every tab row of the app. */}
       <SubTabs label="Orders" value={group} onChange={setGroup} size="sm"
-        items={GROUPS.map((g) => ({ key: g.key, label: <>{g.label} <span className="font-tabular">{counts[g.key]}</span></>, ariaLabel: `${g.label} ${counts[g.key]}`, data: { "orders-tab": g.key } }))} />
+        items={GROUPS.map((g) => ({ key: g.key, label: <>{g.label}<span className="ml-space-1 font-tabular">{counts[g.key]}</span></>, ariaLabel: `${g.label} ${counts[g.key]}`, data: { "orders-tab": g.key } }))} />
       {shown.length === 0 ? (
         <EmptyText testId={`orders-${group}-empty`}>
           {group === "open" ? "No orders waiting. Practice orders fill at once at the current price." : group === "executed" ? "No orders filled yet." : "No refused orders."}

@@ -76,7 +76,8 @@ export const PRESETS: Record<PresetId, { name: string; description: string; pane
   option_seller: {
     name: "Option seller",
     description: "The chart, the option chain and the order panel side by side; your positions, basket and orders below.",
-    panels: [p("chart-1", 0, 0, 5, 11), p("chain", 5, 0, 3, 11), p("order", 8, 0, 4, 11),
+    // T1-3: the chain gets half of the twelve columns, so its OI / change in OI / IV / delta / LTP per side fit on one line.
+    panels: [p("chart-1", 0, 0, 3, 11), p("chain", 3, 0, 6, 11), p("order", 9, 0, 3, 11),
       p("positions", 0, 11, 5, 7), p("basket", 5, 11, 3, 7), p("orders", 8, 11, 4, 7),
       p("bots", 0, 18, 6, 6, false), p("payoff", 6, 18, 6, 6, false)],
   },

@@ -15,7 +15,7 @@ export function PhoneTabsV2({ tab, onTab, counts = {} }: {
     const shown = typeof n === "number" && n > 0;
     return {
       key: t.key,
-      label: shown ? <>{t.label} <span className="font-tabular text-fg-muted">{n}</span></> : t.label,
+      label: shown ? <>{t.label}<span className="ml-space-1 font-tabular text-fg-muted">{n}</span></> : t.label,
       ariaLabel: shown ? `${t.label} ${n}` : undefined,
       data: { tab: t.key },
     };

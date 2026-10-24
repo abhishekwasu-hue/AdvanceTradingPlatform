@@ -71,7 +71,7 @@ describe("layout model: move, resize, open, close", () => {
   const seller = () => presetLayout("option_seller").panels;
 
   it("a move that covers another open panel is refused; a free move is kept inside the grid", () => {
-    expect(movePanel(seller(), "chain", 4, 0)).toBeNull();                       // onto the chart
+    expect(movePanel(seller(), "chain", 1, 0)).toBeNull();                       // onto the chart
     const moved = movePanel(seller(), "positions", 0, 20);
     expect(moved?.find((p) => p.id === "positions")).toMatchObject({ x: 0, y: 20 });
     const clamped = movePanel(seller(), "positions", -3, 30);
@@ -79,7 +79,7 @@ describe("layout model: move, resize, open, close", () => {
   });
 
   it("a resize keeps the panel's minimum and refuses an overlap", () => {
-    expect(resizePanel(seller(), "chart-1", 7, 11)).toBeNull();                    // into the chain
+    expect(resizePanel(seller(), "chart-1", 5, 11)).toBeNull();                    // into the chain
     const small = resizePanel(seller(), "chart-1", 1, 1);
     expect(small?.find((p) => p.id === "chart-1")).toMatchObject({ w: PANELS["chart-1"].minW, h: PANELS["chart-1"].minH });
   });
@@ -92,7 +92,7 @@ describe("layout model: move, resize, open, close", () => {
     expect(chart2.find((p) => p.id === "chart-2")).toMatchObject({ open: true });
     expect(layoutProblem(chart2)).toBeNull();
     const closed = closePanel(seller(), "chain");
-    expect(closed.find((p) => p.id === "chain")).toMatchObject({ open: false, x: 5, y: 0 });
+    expect(closed.find((p) => p.id === "chain")).toMatchObject({ open: false, x: 3, y: 0 });
     const one = [{ id: "chart-1" as const, x: 0, y: 0, w: 6, h: 6, open: true }];
     expect(closePanel(one, "chart-1")[0].open).toBe(true);
     expect(firstFree(seller(), 12, 6)).toEqual({ x: 0, y: 18 });
@@ -377,11 +377,11 @@ describe("owner fixes T1-2 .. T1-7", () => {
   it("T1-3: desktop shows OI, change in OI, IV, delta and LTP per side; a missing figure is \"–\", never 0", () => {
     const out = renderToStaticMarkup(<MemoryRouter><ChainPanelV2 underlying="NIFTY" read={{ status: "ok", value: CHAIN }} trading={TRADING} rows={3} /></MemoryRouter>);
     const t = text(out);
-    for (const h of ["OI", "Chg OI", "IV", "Delta", "Call LTP", "Strike", "Put LTP"]) expect(t).toContain(h);
+    for (const h of ["OI", "Chg OI", "IV %", "Delta", "Call LTP", "Strike", "Put LTP"]) expect(t).toContain(h);
     expect(out).toContain('data-chain-view="full"');
     expect(out).toContain('data-col="call-oi"');
     expect(out).toContain('data-col="put-delta"');
-    expect(t).toContain("13.2%");
+    expect(t).toContain("13.2");
     expect(t).toContain("0.52");
     expect(legFigures(leg()).oi).toBe("–");
     expect(Object.values(legFigures(leg())).every((v) => v === "–")).toBe(true);

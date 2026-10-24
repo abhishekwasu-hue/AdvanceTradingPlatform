@@ -3729,6 +3729,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
 - Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
 
+## 23 Oct - Day-one fix 2: Find setups and Signals before the broker login (README row 19, DAY_ONE_TRADER_TEST finding 2)
+
+- Branch `claude/d1-fix-before-login` (from main). **No migration**, no new flag: behind `ui_v2` + the area flags +
+  `backtest_stored_history` (owner decision flag, OFF by default).
+- Backend `app/screener/stored_history.py`: when the broker path refuses a run for want of a session (409), a Daily /
+  Weekly / Monthly NSE screen reads the same licensed stored Daily bars and window as the stored-history backtest
+  (`bar_source.lake_frame`; today's bar never read), `data_source` `lake:daily`; a missing symbol says "Daily history
+  for X is not stored yet."; intraday screens, other exchanges and the flag off keep the 409 exactly. Hooked in
+  `load_universe`, so the run route and the Copilot's screener tools (its rule answers) share it. Tests
+  `tests/test_d1_screener_stored_history.py` (4).
+- Frontend: `BrokerGate storedDaily` + `StoredDailyNote` - on Find setups and Signals (`STORED_DAILY_PAGES`) the page
+  shows its content under one line with the one-tap "Log in to <Broker>" (or "Connect a broker") instead of the full
+  gate; Charts and the other data pages keep the gate. The Signals day-one watch already reads the shared Daily lake;
+  the Copilot page has no gate. Tests `src/ui/storedDaily.test.tsx` (4), e2e `e2e/d1-before-login-v2.e2e.ts` (no
+  baseline). Charts on stored Daily history is a later PR.
 ## 23 Oct - Day-one fix 1: the idea's strategy can be backtested (README row 19, DAY_ONE_TRADER_TEST finding 1)
 
 - Branch `claude/d1-fix-template-backtest` (from main). Frontend only, **no migration**, no new flag: behind `ui_v2` +

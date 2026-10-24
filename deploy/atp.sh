@@ -2658,7 +2658,7 @@ cmd_lists_sync() {
 cmd_probe_candles() {
   [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
   local usage='usage: atp.sh probe-candles "SYMBOL" TIMEFRAME [EXCHANGE]   (TIMEFRAME: 1m 3m 5m 15m 30m 1H D)'
-  [ $# -ge 2 ] && [ $# -le 3 ] || die "$usage" 2
+  if [ $# -lt 2 ] || [ $# -gt 3 ]; then die "$usage" 2; fi
   [[ "$1" =~ ^[A-Za-z0-9\ \&._-]{1,60}$ ]] || die "the symbol may hold only letters, digits, spaces and & . _ - (1 to 60 characters)" 2
   [[ "$2" =~ ^(1m|3m|5m|15m|30m|1H|1h|60m|D|d|1D|1min|3min|5min|15min|30min|60min|day)$ ]] || die "$usage" 2
   [ $# -lt 3 ] || [[ "$3" =~ ^[A-Za-z_]{2,10}$ ]] || die "the exchange is a short name such as NSE, NFO, BFO or MCX" 2

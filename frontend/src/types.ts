@@ -2218,7 +2218,9 @@ export interface CandlesResponse {
   source: { broker: string; account_label: string }; exchange: string; timeframe: string; base_interval: string; lookback_days: number; before?: string | null; fetched_at: string;
   symbols: Record<string, { bars: (OHLCVBar & { forming?: boolean })[]; count: number; first: string | null; last: string | null; error: string | null; data_tier?: DataTierBadgeInfo | null;
     /** UI2-4a2: an index's volume from its near-month future (asked for with `volume_from_future`). */
-    volume_source?: CandleVolumeSource | null }>; warnings: string[]; note: string;
+    volume_source?: CandleVolumeSource | null;
+    /** C1: present when the broker sent no candles at all - the plain reason the chart shows. */
+    empty_reason?: string }>; warnings: string[]; note: string;
   data_tier?: DataTierBadgeInfo;
 }
 

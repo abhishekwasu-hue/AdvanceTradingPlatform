@@ -302,7 +302,7 @@ function Cell({
   useEffect(() => () => link.register(index, null), [link, index]);
   const n = index + 1;
   const waiting = tf === null || data.loading || (!running && data.candles.length === 0);
-  const emptyText = waiting ? "Loading prices…" : data.error ? "" : `No prices for ${c.symbol} on this timeframe yet.`;
+  const emptyText = waiting ? "Loading prices…" : data.error ? "" : data.empty ?? `No prices for ${c.symbol} on this timeframe yet.`;
 
   return (
     <section ref={ref} aria-label={`Chart ${n}: ${c.symbol} ${timeframeLabel(shownTf)}`} data-cell={index} data-active={active ? "true" : "false"}

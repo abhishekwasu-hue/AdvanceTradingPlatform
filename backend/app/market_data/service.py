@@ -23,7 +23,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, time as dtime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
@@ -32,7 +32,7 @@ from app.cache.client import cache_get, cache_set
 from app.core.models import OHLCVBar, bars_to_dataframe
 from app.core.resampling import resample_ohlc
 from app.market_data import periods, shared_candles
-from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN
+from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, previous_session_close
 from app.market_data.freshness import StaleMarketDataError, quote_is_stale
 from app.observability.metrics import MARKET_DATA_STALE
 
@@ -153,6 +153,9 @@ class MarketDataService:
         self.cache_namespace = cache_namespace or None
         # TM Part 1 (data hub): the connection whose hub stream prices `get_ltp` (None: the cache namespace's ticks).
         self.tick_namespace: Optional[str] = None
+        # C1: the exchange holidays the history window skips (set by callers holding a database session - the chart
+        # route); empty = weekends only, as the market calendar does without its table.
+        self.holidays: Set[date] = set()
 
     async def get_candles(
         self, symbol: str, exchange: str = "NSE", interval: str = "1min", now: Optional[datetime] = None, fresh: bool = False,
@@ -294,11 +297,22 @@ class MarketDataService:
         """Phase AS: daily strategies need a year of bars (EMA 200, 52-week levels), not days."""
         return max(self.lookback_days, DAILY_MIN_LOOKBACK_DAYS) if interval == "day" else self.lookback_days
 
+    def history_window(self, exchange: str, interval: str, now: Optional[datetime] = None) -> Tuple[datetime, datetime]:
+        """C1: (from, to) of the completed-history call, IST. It ends at the close of the newest trading day before today
+        (the market calendar), not "now - 1 day": on a Saturday, a Sunday or a holiday the chart still ends at the last
+        session's close, and a minute-precision broker no longer loses that session's bars after the clock time of
+        "now". It starts `lookback` calendar days before now, and never after the start of that last session's day (a
+        short lookback across a weekend still holds the last session). A 24x7 venue keeps "now - 1 day"."""
+        now_ist = (now or datetime.now(timezone.utc)).astimezone(IST)
+        close = previous_session_close(now_ist, self.holidays, exchange)
+        history_to = close if close is not None else now_ist - timedelta(days=1)
+        history_from = now_ist - timedelta(days=self._lookback(interval))
+        last_day_start = datetime.combine(history_to.date(), dtime(0, 0), tzinfo=IST)
+        return min(history_from, last_day_start), history_to
+
     async def _fetch(self, symbol: str, exchange: str, interval: str, now: Optional[datetime], *, fresh: bool = False) -> List[OHLCVBar]:
         now_utc = now or datetime.now(timezone.utc)
-        now_ist = now_utc.astimezone(IST)
-        history_to = now_ist - timedelta(days=1)
-        history_from = now_ist - timedelta(days=self._lookback(interval))
+        history_from, history_to = self.history_window(exchange, interval, now_utc)
         # LD-10: each broker call through the shared copy (shared_candles) - the same request window, the same bars,
         # whoever asks; the fetch, when one is needed, goes through this service's own adapter (the user's budget).
         by_date = bool(getattr(self.broker, "history_by_date", False))

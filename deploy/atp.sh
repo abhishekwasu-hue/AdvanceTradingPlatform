@@ -39,6 +39,11 @@
 #                                                  only) + the system-watchlists refresh NOW, each group's lists with
 #                                                  their row counts and unmapped symbols; then the API and the worker
 #                                                  pick up the settings. --check: only the file status lines
+#   /opt/atp/deploy/atp.sh probe-candles "SYMBOL" TIMEFRAME [EXCHANGE]
+#                                                  C1, read-only: the two broker calls of one chart (history + today's
+#                                                  intraday) through the owner's own broker session, as counts - the
+#                                                  window, bars per call, first / last bar time and close, the empty /
+#                                                  error reason. TIMEFRAME: 1m 5m 15m 30m 1H D. No token, nothing written
 #   /opt/atp/deploy/atp.sh probe-chain UNDERLYING  B2b, read-only: one option chain (nearest expiry) through the owner's
 #                                                  own broker session - the broker's raw underlying spot beside the ATM
 #                                                  strike and our own last index close. No token, nothing written
@@ -2739,6 +2744,28 @@ cmd_lists_sync() {
   printf '\nlists-sync: done - the system watchlists are filled; the worker repeats the sync every evening (UNIVERSE_SYNC_HOUR_IST)\n'
 }
 
+# C1 (owner, 24 Oct): the broker's own answer for one chart, as counts (backend app/market_data/probe.py, the same
+# handler as the admin-only GET /api/admin/market-data/probe-candles), run in the backend container as the platform
+# owner's account through his own stored broker session. Read-only: no container is started or changed, nothing is
+# written, no token or other price is printed.
+cmd_probe_candles() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local usage='usage: atp.sh probe-candles "SYMBOL" TIMEFRAME [EXCHANGE]   (TIMEFRAME: 1m 3m 5m 15m 30m 1H D)'
+  if [ $# -lt 2 ] || [ $# -gt 3 ]; then die "$usage" 2; fi
+  [[ "$1" =~ ^[A-Za-z0-9\ \&._-]{1,60}$ ]] || die "the symbol may hold only letters, digits, spaces and & . _ - (1 to 60 characters)" 2
+  [[ "$2" =~ ^(1m|3m|5m|15m|30m|1H|1h|60m|D|d|1D|1min|3min|5min|15min|30min|60min|day)$ ]] || die "$usage" 2
+  [ $# -lt 3 ] || [[ "$3" =~ ^[A-Za-z_]{2,10}$ ]] || die "the exchange is a short name such as NSE, NFO, BFO or MCX" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would ask the broker for %s at %s (counts only; nothing written)\n' "$1" "$2"; return 0; fi
+  check_tools
+  local rc=0
+  dc exec -T backend python -m app.market_data.probe candles "$@" || rc=$?
+  case "$rc" in
+    0) ;;
+    2|3) exit "$rc" ;;      # the probe printed why (a bad input; no usable broker session)
+    *) die "the probe did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
 main() {
   local args=() a
   for a in "$@"; do
@@ -2769,6 +2796,7 @@ main() {
     reset-password) cmd_reset_password "$@" ;;
     env-set)        cmd_env_set "$@" ;;
     lists-sync)     cmd_lists_sync "$@" ;;
+    probe-candles)  cmd_probe_candles "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac

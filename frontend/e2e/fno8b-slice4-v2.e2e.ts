@@ -386,7 +386,7 @@ test.describe("8b slice 4 flows", () => {
     expect(reads).toEqual(["POST"]);                                     // the one candle read (the chart page's own)
     const sent = seen.writes.filter((w) => !/\/auth\/refresh$|\/paper\/fno\/contracts$|\/market-data\/(quotes|candles)$/.test(w.url));
     expect(sent).toEqual([]);
-    await expect(page.locator("[data-position='301']").getByTestId("exit-now")).toBeEnabled();
+    await expect(page.locator("[data-position='301']").getByTestId("exit-leg")).toBeEnabled();     // TT-8: a basket leg
   });
 
   test("FNO-8B-31: Download image saves the drawn chart as a PNG with a plain name; nothing is sent", async ({ page }) => {

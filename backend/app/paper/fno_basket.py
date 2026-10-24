@@ -385,6 +385,12 @@ def _next_steps(status: str, rows: Sequence[Dict[str, Any]]) -> List[str]:
     return steps
 
 
+async def _group(session: AsyncSession, user: User, basket_ref: str, rows: Sequence[Dict[str, Any]]) -> None:
+    """TT-8: the filled legs of this basket are stored as one group (app/paper/fno_groups.py)."""
+    from app.paper import fno_groups
+    await fno_groups.tag_filled(session, user, basket_ref, [r["trade_id"] for r in rows if r.get("status") == "PLACED" and r.get("trade_id")])
+
+
 async def execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str, basket_ref: str,
                   price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None,
                   origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
@@ -402,8 +408,10 @@ async def execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, 
         return {"mode": fno_ticket.MODE, "status": "REFUSED", "reasons": reasons, "legs": refused, "placed": 0, "next_steps": [
             "Nothing was placed. Fix what it says and try again."]}
     if smart:
-        return await execute_smart(session, user, legs, product=product, basket_ref=basket_ref, price_lookup=price_lookup, now=now,
-                                   origin=origin)
+        result = await execute_smart(session, user, legs, product=product, basket_ref=basket_ref, price_lookup=price_lookup, now=now,
+                                     origin=origin)
+        await _group(session, user, basket_ref, result["legs"])
+        return result
     rows: List[Dict[str, Any]] = []
     user_id = user.id
     hedge_failed = False
@@ -428,6 +436,7 @@ async def execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, 
     status = "PLACED" if placed == len(rows) else ("PARTIAL" if placed else "REFUSED")
     if status != "PLACED":
         logger.info("FNO basket %s for user %s: %s of %s legs placed", basket_ref, user.id, placed, len(rows))
+    await _group(session, user, basket_ref, rows)
     return {"mode": fno_ticket.MODE, "status": status, "reasons": [], "legs": rows, "placed": placed, "next_steps": _next_steps(status, rows)}
 
 

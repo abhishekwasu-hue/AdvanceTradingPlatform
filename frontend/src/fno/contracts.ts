@@ -59,7 +59,11 @@ export type ContractFacts =
   };
 export type KnownContract = Extract<ContractFacts, { known: true }>;
 
-export interface PositionGroup { key: string; kind: "basket" | "structure"; name: string; trade_ids: number[] }
+export interface PositionGroup {
+  key: string; kind: "basket" | "structure"; name: string; trade_ids: number[];
+  /** TT-8: a basket's bought legs that protect an open sold leg ("Exit this leg" warns first). */
+  hedge_ids?: number[];
+}
 
 export const contractsApi = {
   lookup: (items: readonly WatchItem[]) =>

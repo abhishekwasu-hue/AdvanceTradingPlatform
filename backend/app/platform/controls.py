@@ -469,11 +469,13 @@ FEATURE_FLAGS: Dict[str, str] = {
     # the same line. A registered flag is OFF by default automatically (DEFAULT_OFF_FLAGS below is computed).
 }
 # Flags that start ON (kill-flag semantics: a feature is on until the operator turns it off). This list is CLOSED: it
-# holds exactly the flags that were ON by default before DEFAULT_OFF_FLAGS was computed. Do not add to it - never turn a
-# flag on; tests/test_flags_default_off_computed.py pins both sets.
+# holds exactly the flags that were ON by default before DEFAULT_OFF_FLAGS was computed, plus the ones the owner himself
+# ordered ON by default (DECISIONS). Do not add to it otherwise - never turn a flag on; tests/test_flags_default_off_computed.py
+# pins both sets.
 DEFAULT_ON_FLAGS: frozenset[str] = frozenset({
     "ai_copilot",          # Phase N kill switch for AI strategy drafts; the AI never places orders (ADR-0006)
     "backtest_optimizer",  # Phase N kill switch for optimisation grid runs; a simulation, places no orders
+    "colour_v2",           # owner ✅ 24 Oct (DECISIONS): colour v2 ON by default; layout only, needs ui_v2, places no orders
     "live_trading",        # Phase N kill switch for new LIVE deployments only; LIVE itself is gated by the trading:live
                            # scope, the plan, step-up and the phase0_paper_only lock (Phase 0 mode seeds this OFF)
     "marketplace",         # Phase N kill switch for marketplace listings and subscriptions

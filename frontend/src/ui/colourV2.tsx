@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, type ReactNode } from "react";
 
 /**
  * Colour v2 (owner, 23 Oct; docs/design/CHART_COLOUR_REVIEW.md "Colour v2"): the visible, purposeful colour proposal,
- * behind the `colour_v2` flag (OFF; needs `ui_v2`). The v2 shell reads the flag once and shares the answer here, so a
+ * behind the `colour_v2` flag (ON by default since the owner's ✅ on 24 Oct; needs `ui_v2`). The v2 shell reads the flag once and shares the answer here, so a
  * page or shared component asks `useColourV2()` instead of reading the flags itself. Outside the shell (a unit test, a
  * story, the old shell) the answer is false: every page looks exactly as before.
  *

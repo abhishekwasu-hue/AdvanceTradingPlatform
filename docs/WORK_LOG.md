@@ -4093,3 +4093,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 ## 24 Oct 2026 - day-one trader test rerun (README row 19 done)
 - The eight-step day-one test updated to the fixed pages and rerun on main at 390 / 1440, light / dark: 4 / 4 pass.
 - docs/design/DAY_ONE_TRADER_TEST.md: a rerun section with each finding's status and the follow-ups.
+
+## 24 Oct 2026 - UI-H Part 1: the UI/UX audit (no app code)
+- Branch `claude/ui-h-audit` (from main at `341de6f8`). **No migration**, no flag, no app code: docs only.
+- docs/ui/UI_AUDIT.md: every v2 user page / tab plus Settings and the admin console, 390 / 1440 px, light / dark, with
+  `ui_v2` + `colour_v2` (+ `terminal`, captured from the T1 branch), and a market-closed state; scored against H1-H10;
+  the 10 worst issues; the read-only root causes of C1, A1, B1-B4, max pain and the Puts column; the wave order
+  (shared components first).
+- Screenshots (238 captures + committed baselines for the pages the capture mocks cannot answer) and the HTML gallery
+  stay outside git; the capture spec was a local-only extension of `e2e/ux-audit-capture.e2e.ts` and is not committed.

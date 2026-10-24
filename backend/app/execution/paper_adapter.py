@@ -65,6 +65,15 @@ def instrument_kind(symbol: str) -> str:
     return "UNDERLYING"
 
 
+def _capabilities_of(venue: Optional[str]) -> Optional[BrokerCapabilities]:
+    """The broker's own capabilities when practising for it; None for no venue or an unknown one."""
+    if not venue:
+        return None
+    from app.brokers.registry import BROKER_ADAPTERS     # local: the registry imports this module
+    adapter_cls = BROKER_ADAPTERS.get(venue)
+    return getattr(adapter_cls, "capabilities", None) if adapter_cls is not None else None
+
+
 class PaperExecutionAdapter(BrokerInterface):
     """The PAPER execution venue behind `BrokerInterface` (TM-1). One instance per order flow (a ticket, a basket, a
     router call); it never holds another user's orders."""
@@ -77,8 +86,18 @@ class PaperExecutionAdapter(BrokerInterface):
 
     def __init__(self, paper_broker: Optional[PaperBroker] = None, *, price_lookup: Optional[PriceLookup] = None,
                  liquidity: Optional[Liquidity] = None, funds: Optional[float] = None,
-                 clock: Optional[Callable[[], datetime]] = None) -> None:
+                 clock: Optional[Callable[[], datetime]] = None, venue: Optional[str] = None,
+                 venue_plan: Optional[str] = None) -> None:
         self.paper_broker = paper_broker or PaperBroker()
+        # Part 1B (owner principle: the same code path for PAPER and LIVE): practising for a broker account (`venue`, a
+        # registry name such as "kotak_neo") applies that broker's own order transform - a MARKET order where the broker
+        # takes none goes as the same marketable LIMIT (app/execution/marketable_limit.py) - and the brokerage that
+        # broker states for `venue_plan` (app/brokers/broker_charges.py) when it states one. None: as before.
+        self.venue = venue
+        self.venue_plan = venue_plan
+        self.venue_capabilities = _capabilities_of(venue)
+        if self.venue_capabilities is not None:
+            self.capabilities = self.venue_capabilities      # stops too: SL with a band where the venue takes no SL-M
         self.price_lookup = price_lookup
         self.liquidity = liquidity
         self.funds = funds
@@ -159,6 +178,10 @@ class PaperExecutionAdapter(BrokerInterface):
         if ltp is None:
             self._orders[order_id] = self._status(order_id, order, status="REJECTED")
             return BrokerOrderResponse(order_id=order_id, status="REJECTED", message=NO_PRICE.format(symbol=order.symbol))
+        if self.venue_capabilities is not None:
+            from app.execution.marketable_limit import to_venue_order
+            order, _venue_note = to_venue_order(order, self.venue_capabilities, ltp)
+            self._requests[order_id] = order
         fill, note = self._fill_price(order, ltp)
         if fill is None:
             self._orders[order_id] = self._status(order_id, order, status="REJECTED")
@@ -179,8 +202,14 @@ class PaperExecutionAdapter(BrokerInterface):
                                              transaction_type=order.transaction_type, quantity=quantity, price=price, timestamp=when))
         side = "buy" if order.transaction_type == OrderSide.BUY else "sell"
         day: date = (when.astimezone(IST) if when.tzinfo else when).date()
+        brokerage = self.paper_broker.brokerage_per_order
+        if self.venue:
+            from app.brokers.broker_charges import brokerage_per_order as stated_brokerage
+            stated = stated_brokerage(self.venue, self.venue_plan, day)
+            if stated is not None:
+                brokerage = stated
         cost = india_costs.leg_cost(day, side, price, quantity, india_costs.segment_for(instrument_kind(order.symbol)),
-                                    brokerage_per_order=self.paper_broker.brokerage_per_order)
+                                    brokerage_per_order=brokerage)
         self._charges[order_id] = round(self._charges.get(order_id, 0.0) + float(cost["total"]), 2)
 
     async def modify_order(self, order_id: str, quantity: Optional[float] = None, price: Optional[float] = None,

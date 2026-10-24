@@ -854,8 +854,10 @@ class TradingWorker:
         user = await self._acting_user(session, tenant_id, [])
         if user is None:
             return None
+        from app.brokers.gates import market_data_open
         for account in await list_accounts(session, tenant_id):
-            if account.status == "ACTIVE":
+            # Part 1B: read-only use is a price read; a broker whose market-data gate is closed (Kotak Neo) is skipped.
+            if account.status == "ACTIVE" and market_data_open(account.broker_name):
                 broker = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
                 if broker is not None:
                     return broker

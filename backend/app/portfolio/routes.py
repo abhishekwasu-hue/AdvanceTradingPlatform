@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
+from app.brokers.gates import data_sources
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
@@ -53,7 +54,7 @@ async def exposure(live_prices: bool = Query(default=True), user: User = Depends
                 adapter, symbols = None, []
         else:
             stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
-            usable = [r for r in stored if token_is_usable(r)]
+            usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
             adapter = build_adapter(usable[0]) if usable else None
             symbols = list({t.symbol for t in trades})
         if adapter is not None:

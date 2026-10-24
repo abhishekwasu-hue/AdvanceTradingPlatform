@@ -1816,3 +1816,23 @@ built), DECISIONS (TM-7, TM94-3, RDY-6) and the #465 design (`docs/design/CHAIN_
 | TM943-4 | A backtest without an organisation (no login) used to price from the platform-wide rows. | It gets no recorded rows (the synthetic fallback or uploaded rows still work). | `chain_recorder.load_rows` | open |
 | TM943-5 | Migration chain: `3c5e7a9b1d24` and #465's `250d796123b7` both follow `e8a0c2d4f6b9`. | Whichever PR merges second re-chains its `down_revision` onto the other (one head; `alembic heads` must print one line). | `alembic/versions` | open |
 
+
+## Kotak Neo adapter (KN, 23 Oct)
+
+Branch `claude/broker-kotak-neo` (terminal master Part 1B). Design: `docs/design/BROKER_KOTAK_NEO.md`. No migration.
+Checked against CLAUDE.md (PAPER only, exits never blocked, AI places nothing, no secrets, public repo), DECISIONS (23 Oct:
+TM-3 / TM-5 / TM-6 accepted, TM-26 / TM-27 defaults) and the master order Part 1B.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| KN-1 | When may the Kotak Neo gates open? | Both stay closed in code (no flag): LIVE orders until the lawyer and Kotak Neo confirm the one-server-IP model in writing (TM-5); market data until the data-terms row is "confirmed" with Kotak's letter (TM-6). | `brokers/gates.py` | open (owner: lawyer / broker letter) |
+| KN-2 | A position the user opened himself in the Kotak app: may ATP close it? | No: while the LIVE-order gate is closed ATP opens no LIVE position at Kotak Neo and places nothing there; the user's own positions are shown read only and closed in the Kotak app. ADR-0004 is unaffected (no ATP position to exit). | `kotak_neo.py` | open |
+| KN-3 | F&O order quantity: units or lots? | Units (ATP's convention; the positions API reports units). Confirm on the broker's page before the LIVE gate opens. | `kotak_neo.build_order_payload` | open (verify) |
+| KN-4 | When does a Kotak Neo session end? | 06:00 IST default (the conservative one) with a TOTP login each day; the "is it alive" check (get-client-ip) catches an earlier end. | `token_lifecycle.TOKEN_DAILY_EXPIRY_IST` | open (verify) |
+| KN-5 | Rate limits. | 3 / s, burst 5, 120 / min (a third of "10 orders / s", which only a search extract of Kotak's FAQ states); quotes in batches of 50 (SDK docs, 25 / s). No per-day bucket (none published). | `rate_budget.py` | open (verify) |
+| KN-6 | The protection band for a MARKET order Kotak does not take (TM-3) when the user set none. | The platform's stated default for a protected limit, 0.5% (`router.DEFAULT_MARKET_PROTECTION_PCT`); the deployment's `market_protection_pct` when set. Re-pricing attempts and wait come from the caller (not wired to a LIVE path yet: the gate is closed). | `execution/marketable_limit.py` | open |
+| KN-7 | SL-M orders: Kotak's SDK accepts SL-M, but its page says market orders are not allowed for retail algo orders. | Treated as not allowed: a stop goes as SL with its limit a band past the trigger (`stop_market=False`). | `kotak_neo.capabilities` | open (verify) |
+| KN-8 | Which Kotak Neo plan is the user on (brokerage)? | No plan setting yet: PAPER uses the stated row only when the caller names the plan (`venue_plan`); otherwise the user's own brokerage setting. A per-broker plan setting comes with the Performance part (TM-26). | `broker_charges.py`, `paper_adapter.py` | open |
+| KN-9 | The feed URL: the SDK may learn a data-centre-specific URL from Kotak's config service. | ATP uses the SDK's production default; calling the config service is added when the data gate opens. | `market_data/kotak_feed.py` | open |
+| KN-10 | A PAPER deployment on a Kotak Neo account: where do its prices come from? | Not offered until the data gate opens; the organisation's other connection (e.g. Upstox) prices charts, chains and the read-only worker paths (`gates.data_sources`). A deployment bound to a Kotak account is a later step. | `workers/trading_worker.py` | open |
+| KN-11 | Scrip master lot / tick columns (`lLotSize`, `dTickSize`) and units. | Read defensively (tick in paise when >= 1, else as is; 0.05 when odd). Confirm on the first real file. | `kotak_neo.instrument_from_row` | open (verify) |

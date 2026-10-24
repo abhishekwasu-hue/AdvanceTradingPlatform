@@ -36,6 +36,10 @@ BROKER_RATE_LIMITS: Dict[str, RateLimits] = {
     "upstox": RateLimits(per_second=8.0, burst=10, per_minute=200),
     "zerodha": RateLimits(per_second=2.0, burst=3, per_minute=100),
     "shoonya": RateLimits(per_second=3.0, burst=5, per_minute=120),
+    # Part 1B: Kotak Neo states 25 requests / s for quotes (SDK docs, quotes.md) and, in a search extract of its FAQ,
+    # up to 10 orders / s; no per-minute or per-day figure is published (docs/design/BROKER_KOTAK_NEO.md). A third of
+    # the order figure, as for the others; the SDK's own optional client limiter defaults to 10 / s and 300 / min.
+    "kotak_neo": RateLimits(per_second=3.0, burst=5, per_minute=120),
 }
 DEFAULT_RATE_LIMITS = RateLimits(per_second=2.0, burst=3, per_minute=100)
 

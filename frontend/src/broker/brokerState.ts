@@ -100,6 +100,7 @@ export const ASK_OWNER = "Ask the owner of your organisation to connect a broker
 /** The broker ids the app knows (the catalog's), for anything read from an address - never echo an unknown one. */
 export const KNOWN_BROKERS: Readonly<Record<string, string>> = {
   upstox: "Upstox", zerodha: "Zerodha", fyers: "Fyers", angel_one: "Angel One", shoonya: "Shoonya", dhan: "Dhan", coindcx: "CoinDCX",
+  kotak_neo: "Kotak Neo",
 };
 
 /** A row that cannot fix itself with Renew: not working, or needs a login it cannot renew - "Connect again" instead. */

@@ -526,6 +526,7 @@ async def user_connection(session: Any, user: Any, now: Optional[datetime] = Non
     """None when the hub is off for the user's organisation or no broker is linked (the broker gate covers that)."""
     from sqlalchemy import select
 
+    from app.brokers.gates import data_sources
     from app.brokers.token_lifecycle import data_is_usable, token_is_usable
     from app.db.models import BrokerCredentialRecord
     from app.market_data import entitlement
@@ -549,6 +550,8 @@ async def user_connection(session: Any, user: Any, now: Optional[datetime] = Non
         return UserConnection(namespace=ref.namespace, broker=ref.broker, account_label=ref.account_label, byob=True, renew=True, record=shown[0])
     records = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)
                                          .order_by(BrokerCredentialRecord.broker_name, BrokerCredentialRecord.account_label)))
+    # Part 1B: a broker whose market-data gate is closed (Kotak Neo, TM-6) is never the organisation's price source.
+    records = data_sources(records)
     if not records:
         return None
     usable = [r for r in records if token_is_usable(r, now)] or [r for r in records if data_is_usable(r, now)]

@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
 from app.brokers.registry import available_brokers
+from app.brokers.gates import data_sources
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
 from app.accounts.routing import RoutingPolicy
 from app.accounts.service import get_account
@@ -653,7 +654,7 @@ async def _usable_adapter(session: AsyncSession, tenant_id: int, user: Optional[
         underlying = instrument_master.underlying_of(symbol or "")
         return await _own_adapter(session, user, underlying or (symbol or ""), "NFO")
     stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)))
-    usable = [r for r in stored if token_is_usable(r)]
+    usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
     return build_adapter(usable[0]) if usable else None
 
 
@@ -672,7 +673,7 @@ async def _spot_from_broker(session: AsyncSession, tenant_id: int, symbol: str, 
             return None
     else:
         stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)))
-        usable = [r for r in stored if token_is_usable(r)]
+        usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
         if not usable:
             return None
         adapter = None

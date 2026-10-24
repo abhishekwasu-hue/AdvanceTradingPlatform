@@ -10,7 +10,7 @@ from tests.test_auth_api import client
 from tests.test_tt12_limits_off import OLD, _store
 from tests.test_z5_p1d_risk_by_default import _flag, _tenant_t
 
-TEXT = "Your risk limits are now not set — set your own in Settings › Risk"
+TEXT = "Your risk limits are now OFF by default — set your own in Settings → Risk"
 
 
 def _org(tag: str, ui_v2: bool = True, risk: bool = True) -> dict:

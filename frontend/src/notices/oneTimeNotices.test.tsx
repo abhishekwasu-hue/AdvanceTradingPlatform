@@ -10,7 +10,7 @@ import { dismissNotice, readNotices, resetDismissedForTests, type OneTimeNotice 
 /** TT12-1: the one-time "risk limits are now not set" notice - shown while the server says it is due, gone for good
  * once dismissed (in this tab at once, on the server for every device), only in the v2 shell. */
 
-const TEXT = "Your risk limits are now not set — set your own in Settings › Risk";
+const TEXT = "Your risk limits are now OFF by default — set your own in Settings → Risk";
 const NOTICE: OneTimeNotice = { id: "limits_not_set", text: TEXT, link: "/risk-management" };
 
 let seenOnServer = false;
@@ -33,7 +33,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 describe("TT12-1 one-time notice", () => {
   it("shows the exact text with a way to the Risk page and a close button", () => {
     const html = renderToStaticMarkup(<MemoryRouter><NoticeCard notice={NOTICE} onDismiss={() => undefined} /></MemoryRouter>);
-    expect(html).toContain("Your risk limits are now not set — set your own in Settings › Risk");
+    expect(html).toContain("Your risk limits are now OFF by default — set your own in Settings → Risk");
     expect(html).toContain('href="/risk-management"');
     expect(html).toContain('aria-label="Dismiss"');
     expect(html).not.toMatch(/text-\[\d+px\]/);

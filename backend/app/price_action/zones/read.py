@@ -101,6 +101,17 @@ async def read_as_of(session: AsyncSession, key: str, at: Any, tenant_id: Option
     return _snapshot(result.run, result.rows, result.scope, getattr(result, "fallback", False))
 
 
+async def read_holder(session: AsyncSession, key: str, at: Any, tenant_id: Optional[int], user_id: Optional[int]) -> Optional[Snapshot]:
+    """DATA-H: the latest snapshot of the member's own holder scope (built from his private bars) with as_of <= at, live
+    rows only; None when he has none. Only the member himself is ever passed here."""
+    if not tenant_id or not user_id:
+        return None
+    from app.price_action.zones.job import holder_scope
+    scope = holder_scope(int(tenant_id), int(user_id))
+    run = await store.latest_run(session, scope, store.normalise_key(key), _aware_utc(at))
+    return _snapshot(run, await store.rows_of(session, run), scope) if run is not None else None
+
+
 MAX_TIMELINE_RUNS = 500                # snapshots one timeline reads at most; past that the series refuses (never a silent False)
 _ROW_COLUMNS = ("run_id", "zone_key", "zone_type", "timeframe", "zone_low", "zone_high", "strength", "state", "touches", "remembered")
 _IN_CHUNK = 500                        # ids per IN (...) - under SQLite's parameter limit

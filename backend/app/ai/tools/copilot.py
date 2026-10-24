@@ -32,6 +32,8 @@ SYMBOL = Field(default="NIFTY", min_length=1, max_length=40, pattern=r"^[A-Za-z0
 MAX_EVENTS = 8
 MAX_LEVELS = 6
 MAX_BANDS = 6
+STRUCTURE_MIN_BARS = 30    # DH5: bars a timeframe's structure read needs before the Copilot states it
+TF_WORDS = {"1w": "weekly", "1d": "daily", "1h": "1-hour", "15m": "15-minute"}
 # The NSE index names the shared lake keys indices by (app/context_panel/service.index_key).
 INDEX_NAMES = {"NIFTY": "NIFTY 50", "NIFTY 50": "NIFTY 50", "NIFTY50": "NIFTY 50", "BANKNIFTY": "NIFTY BANK", "NIFTY BANK": "NIFTY BANK",
                "NIFTYBANK": "NIFTY BANK", "FINNIFTY": "NIFTY FINANCIAL SERVICES", "NIFTY FIN SERVICE": "NIFTY FINANCIAL SERVICES",
@@ -61,11 +63,15 @@ class _ChainArgs(BaseModel):
 
 
 def lake_key(symbol: str) -> str:
-    """The shared lake's instrument key for an index name or an NSE stock symbol ("NIFTY" -> "NSE_INDEX:NIFTY50")."""
+    """The shared lake's instrument key for an index name or an NSE stock symbol ("NIFTY" -> "NSE_INDEX:NIFTY50"); a
+    BSE index (SENSEX, BANKEX) -> "BSE_INDEX:SENSEX" (DATA-H: the key its history is stored under)."""
     from app.context_panel.service import index_key
+    from app.instruments.master import INDEX_EXCHANGE
     value = " ".join(symbol.strip().upper().split())
     if ":" in value:
         return value
+    if INDEX_EXCHANGE.get(value) == "BSE":
+        return f"BSE_INDEX:{value}"
     if value in INDEX_NAMES:
         return index_key(INDEX_NAMES[value])
     return f"NSE:{value.replace(' ', '')}"
@@ -120,11 +126,18 @@ async def get_market_context(ctx: ToolContext, args: _NoArgs) -> ToolResult:
 # --- job 2: the price-action layer and the market zones -------------------------------------------------------------------
 
 def summarise_structure(layer: Dict[str, Any]) -> Dict[str, Any]:
-    """Per timeframe the structure direction, the protected level and the last BOS / CHoCH; the nearest live levels."""
+    """Per timeframe the structure direction, the protected level and the last BOS / CHoCH; the nearest live levels.
+    DH5: a timeframe with fewer than STRUCTURE_MIN_BARS bars is marked `short` (its direction is not a reading)."""
+    from app.context_panel.service import short_history
     rows: List[Dict[str, Any]] = []
     for row in layer.get("mtf") or []:
         last = row.get("last_event") or {}
-        rows.append({"tf": row.get("tf"), "direction": row.get("direction"), "protected": row.get("protected"), "bars": row.get("bars"),
+        bars = int(row.get("bars") or 0)
+        short = bars < STRUCTURE_MIN_BARS
+        note = short_history(bars, STRUCTURE_MIN_BARS, f"{TF_WORDS.get(str(row.get('tf')), row.get('tf'))} bars",
+                             str(layer.get("instrument") or "")) if short else None
+        rows.append({"tf": row.get("tf"), "direction": row.get("direction"), "protected": row.get("protected"), "bars": bars,
+                     "needed": STRUCTURE_MIN_BARS, "short": short, "note": note, "source": row.get("source"),
                      "as_of": row.get("as_of"), "last_event": last.get("name"), "last_event_price": last.get("price")})
     state = layer.get("structure_state") or {}
     levels = [{"kind": lv.get("kind"), "price": lv.get("price"), "degree": lv.get("degree"), "status": lv.get("status")}
@@ -139,9 +152,12 @@ def summarise_structure(layer: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def get_chart_structure(ctx: ToolContext, args: _ChartArgs) -> ToolResult:
-    """ATP's price-action layer on shared lake bars: the structure per timeframe (weekly, daily, 1-hour, 15-minute) with
-    the protected level and the last break of structure, and the nearest unbroken swing levels above and below."""
+    """ATP's price-action layer on shared lake bars (and the reader's own stored history): the structure per timeframe
+    (weekly, daily, 1-hour, 15-minute) with the protected level and the last break of structure, the nearest unbroken
+    swing levels above and below, and the official last close with its date and source."""
     from app.charts import price_action_layer as pal
+    from app.context_panel.service import short_history
+    from app.market_lake import own_bars
     key = lake_key(args.symbol)
     try:
         layer = await pal.price_action_layer(instrument=key, tf=args.timeframe, at=None, start=None, degree=pal.DEFAULT_DEGREE, debug=False,
@@ -149,8 +165,12 @@ async def get_chart_structure(ctx: ToolContext, args: _ChartArgs) -> ToolResult:
     except HTTPException as exc:
         return _refused("price_action_layer", exc)
     data = summarise_structure(layer)
+    # DH6: the last close the Copilot states is the session's official close from the stored Daily bars, labelled -
+    # never a strike, a chain's spot or a placeholder.
+    data["official_close"] = await own_bars.official_close(ctx.session, key, await own_bars.scope_for(ctx.session, ctx.user, key))
     if not data["bars"]:
-        return ToolResult(False, None, None, "price_action_layer", error=layer.get("reason") or "no bars for this instrument")
+        return ToolResult(False, None, None, "price_action_layer",
+                          error=short_history(0, STRUCTURE_MIN_BARS, f"{TF_WORDS.get(args.timeframe, args.timeframe)} bars", key))
     return ToolResult(True, {"symbol": args.symbol.upper(), **data}, data["as_of"], f"price_action_layer:{layer.get('source') or 'lake'}",
                       {"last_bar": data["as_of"]})
 

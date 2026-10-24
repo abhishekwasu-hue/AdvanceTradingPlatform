@@ -3744,3 +3744,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests `tests/test_tm7_smart_execution.py`, `src/fno/smartExecution.test.tsx`. Screenshots (fixtures, not committed):
   scratchpad `tm-part7/`. Questions SE-4..SE-8. No migration.
 
+## 23 Oct - Day-one fix 8: Charts in a trader's words (README row 19, DAY_ONE_TRADER_TEST finding 9)
+
+- Branch `claude/d1-fix-charts-words` (from main). Frontend only, **no migration**, no new flag (the v2 charts, `ui_v2`).
+- Timeframes in words on every v2 chart (`src/chart/timeframes.ts`): "1 min, 3 min, 5 min, 15 min, 30 min, 1 hour,
+  Daily, Weekly, Monthly" (were "1m ... 1H, D, W, M").
+- The volume pane: "Volume of the NIFTY October future" (was "Volume · NIFTY OCT FUT").
+- The first open (no own list, nothing remembered) shows the NIFTY 50 stocks, then Indices (`pickList`), the same list
+  Find setups and Signals open on. Question D1-3.
+- Tests: the chart unit tests updated; e2e `charts-v2` / `signals-v2` button names and baselines
+  `charts-v2-watchlist-1440-{light,dark}`, `charts-v2-watchlist-system-1440-light` updated; new e2e
+  `e2e/d1-charts-words-v2.e2e.ts` (no baseline).
+- Not changed: "Indicators · 2" and the RSI pane, the phone group "Indices" holding one list "Indices".

@@ -1784,3 +1784,9 @@ Branches `claude/terminal-paper-adapter` (PR A, TM-1) and `claude/terminal-smart
 | SE-7 | The LIVE multi-leg executor (`execution/multileg.py`, wings first, auto-unwind) is not on the engine yet. | It moves in its own PR with a parity test (TM-1 rule: one path at a time). Under TM-11 its auto-unwind becomes "Close the filled legs" on the user's tap, which is a behaviour change, so that PR needs Abhi's word. | `execution/multileg.py` | decided 23 Oct: approved - the LIVE executor moves onto this engine in its own PR, with the user's "no answer in N minutes" setting (DECISIONS) |
 | SE-8 | Free balance in PAPER. | The practice balance (starting capital + net closed P&L), labelled "practice balance". Margin already blocked by open positions is not counted, and the page says so. With LIVE, the broker's `get_margins` through his own session. | `fno_basket.practice_balance` | decided 23 Oct: default accepted (DECISIONS) |
 
+
+## Day-one fix 8 (README row 19)
+
+| # | Question | Provisional default |
+|---|---|---|
+| D1-3 | Which list does Charts show on a new trader's first open? | The NIFTY 50 stocks (a list of stocks to look through; Find setups and Signals open on the same list), then Indices when that list is missing. A remembered or own list still wins. Checked against DECISIONS 2026-10-21 (the three groups, no first-open list named) and CLAUDE.md §2. |

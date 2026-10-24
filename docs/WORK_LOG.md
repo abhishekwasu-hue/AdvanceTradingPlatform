@@ -3744,3 +3744,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests `tests/test_tm7_smart_execution.py`, `src/fno/smartExecution.test.tsx`. Screenshots (fixtures, not committed):
   scratchpad `tm-part7/`. Questions SE-4..SE-8. No migration.
 
+## 23 Oct - Day-one fix 9: Today's next step and the sidebar order (README row 19, DAY_ONE_TRADER_TEST finding 10)
+
+- Branch `claude/d1-fix-today-nav` (from main). Frontend only, **no migration**, no new flag (`ui_v2`; the Today link
+  also `strategy_templates`).
+- Today: with the ready strategies on, an empty "Active signals" block reads "No signals yet today. Pick a ready strategy
+  on Signals and it reads every NIFTY 50 stock for you in one tap." with "Watch a list on Signals" (was "Set up a scan",
+  the empty builder).
+- Sidebar: Today first; Broker (always shown, with its status dot) sits just above Settings. The phone's More sheet is
+  unchanged.
+- Tests: `src/shell/shellV2.test.tsx`, `src/dashboard/DashboardV2.test.tsx` updated; e2e `e2e/d1-today-v2.e2e.ts` (no
+  baseline); `e2e/broker.e2e.ts` and `e2e/shell-v2.e2e.ts` order assertions updated (the 1440 baselines stay within their tolerance).

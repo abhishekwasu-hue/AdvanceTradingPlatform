@@ -179,13 +179,13 @@ test.describe("v2 shell 1440 desktop", () => {
     });
   }
 
-  test("UX3-9: one flat list of 13 entries in task order, Broker first; the page on screen is marked", async ({ page }) => {
+  test("UX3-9: one flat list of 13 entries in task order, Today first and Broker above Settings; the page on screen is marked", async ({ page }) => {
     await open(page, "/", "light", { ...V2, features: { ui_v2: true, ai_copilot: true, screener_v2: true } });
     const nav = page.getByRole("navigation", { name: "Pages" });
     await expect(nav.locator("button[aria-expanded]")).toHaveCount(0);                  // nothing folds away
     await expect(nav.getByRole("link")).toHaveText([
-      "Broker", "Today", "Charts", "Option chain", "Find setups", "Signals", "Paper bot", "My trades", "Performance",
-      "Strategies", "AI Copilot", "News & events", "Settings",
+      "Today", "Charts", "Option chain", "Find setups", "Signals", "Paper bot", "My trades", "Performance",
+      "Strategies", "AI Copilot", "News & events", "Broker", "Settings",
     ]);
     await expect(nav.getByRole("link", { name: "Today" })).toHaveAttribute("aria-current", "page");
     await page.goto("/signals");

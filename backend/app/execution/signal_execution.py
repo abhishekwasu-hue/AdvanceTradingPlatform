@@ -102,7 +102,9 @@ async def execute_signal_for_user(
 
     Z3 / BT2: `origin` says who asks - "approval" (an APPROVED entry proposal, whose id is `approval_action_id`) or
     "automatic" (the default: worker, webhook, public API, console). Under approval-only mode any entry without an
-    approved proposal is REJECTED here (app/execution/approval.py::gate_refusal) - there is no bypass.
+    approved proposal is REJECTED here (app/execution/approval.py::gate_refusal). TT-2: "manual" is the user's own order,
+    confirmed by him on the F&O ticket / basket routes (the only callers that pass it); his confirmation is the approval.
+    It never carries a deployment - a deployment entry stays refused without an approved proposal.
 
     Z5 / P1-d: `max_quantity` caps the size (a PAPER ticket's checked quantity); `risk_cap_amount` is the user's checked
     cap for this entry (a ticket's, an override included). With the `risk_by_default` flag on, a PAPER entry is sized
@@ -169,7 +171,10 @@ async def execute_signal_for_user(
         tenant = await session.get(Tenant, user.tenant_id)
         kill_switch_reasons = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
                                                    broker_name=getattr(broker, "name", None) if broker is not None else None)
-        gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id, origin=origin,
+        # TT-2: "manual" counts only for a manual order (journal source MANUAL, no deployment); anything else is automatic.
+        manual = origin == approval_gate.ORIGIN_MANUAL and deployment_id is None and journal_source == "MANUAL"
+        gate_origin = origin if origin != approval_gate.ORIGIN_MANUAL or manual else approval_gate.ORIGIN_AUTOMATIC
+        gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id, origin=gate_origin,
                                                 approval_action_id=approval_action_id)
         if gate:
             kill_switch_reasons.insert(0, gate)

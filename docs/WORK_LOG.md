@@ -3810,6 +3810,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `admin-trader-pack-v2-{1440,390}-{light,dark}.png`; `admin-controls-v2-*` updated (the new card).
 - Runbook section 4b; questions TP-1..TP-6.
 
+
+## 23 Oct - The day-one trader test (owner order 23 Oct, README row 19)
+
+- Branch `claude/day-one-trader-test` (from main). Test and docs only: no product code, **no migration**.
+- `frontend/e2e/day-one-trader-v2.e2e.ts`: one new PAPER user, Today → Charts watchlist (system groups) → Find setups
+  (NIFTY 50, a gallery scan in one tap) → Copilot (tools used) → Ideas (Try as a scan / Adopt) → Test a strategy on
+  stored Daily history (no broker login) → Paper bot, approval-only → Signals day-one watch; 390 / 1440, light / dark.
+  The trader pack flags are read from `trader_pack.py`; `backtest_stored_history` (an owner decision flag) is on only in
+  the mocked features. No baselines committed; `D1T_SHOTS=<folder>` saves the screenshots.
+- Findings, ranked: `docs/design/DAY_ONE_TRADER_TEST.md` (top: the idea's strategy cannot be backtested - templates
+  are not on Strategies › Test; before the day's login every data page is a gate; the stored-history bar says "No
+  broker connected" and breaks at 390).
 ## 23 Oct - Terminal master Part 7 / 8, PR A: PAPER is a broker adapter (TM-1, README row 20)
 
 - `backend/app/execution/paper_adapter.py`: `PaperExecutionAdapter(BrokerInterface)` over the PaperBroker fill and cost
@@ -4057,3 +4069,27 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Parity: neither backtest engine reads risk by default (AST test); with nothing set the PAPER pipeline sizes exactly as
   the backtest RiskManager does; ticket preview, pipeline and proposal refusals agree.
 - Tests: `tests/test_tt12_limits_off.py` (16); existing risk tests set the old numbers as the user's own. Questions TT12-1..5.
+## 24 Oct - TT-2: a manual order the user confirms is his approval (answers FNO-1-4)
+
+- Branch `claude/tt2-manual-approval` (from main at `1b13f776`). **No migration**, no new flag.
+- Owner decision (DECISIONS 24 Oct, TT-2): with `approval_only_entries` on, an order the user places and confirms himself
+  on the F&O ticket or the basket (later the Terminal) passes; bot and signal entries keep needing an approved proposal.
+- `execution/approval.py`: new origin `ORIGIN_MANUAL`; `gate_refusal` lets it through only without a deployment and
+  without a proposal id. `execution/signal_execution.py`: "manual" counts only with the journal source MANUAL and no
+  deployment, otherwise it is treated as automatic. `paper/fno_ticket.py` / `paper/fno_basket.py`: an `origin` keyword
+  (default automatic). `paper/fno_routes.py`: the four routes (ticket preview + place, basket preview + execute) pass
+  "manual"; the request bodies forbid extra fields, so the browser cannot set it.
+- Unchanged: risk, kill switch, the Phase 0 PAPER lock (asserted at the chokepoint), idempotency, the F&O ban,
+  experience gates; exits (ADR-0004); the AI never places orders (ADR-0006); z10c guard green.
+- Plain refusal text (only reached now by a non-route caller): "Your organisation approves every automatic entry first
+  (approval-only mode). Place this order yourself from the order ticket or the basket." No frontend change was needed:
+  the ticket only shows the server's refusals, so the old refusal is simply gone.
+- Tests: `tests/test_tt2_manual_approval.py` (8): ticket and basket pass, risk and kill switch still refuse, a deployment
+  entry is still proposed (and a deployment entry calling itself "manual" is refused), a forged "origin" is refused (422)
+  on the ticket and ignored on the console path, the PAPER lock holds, only `fno_routes.py` sets the manual origin.
+  `tests/test_z3_approval_entries.py` comments updated.
+- Provisional: TT2-1 (the plan-before-trade PAPER ticket keeps raising a proposal) in `docs/OPEN_QUESTIONS.md`.
+
+## 24 Oct 2026 - day-one trader test rerun (README row 19 done)
+- The eight-step day-one test updated to the fixed pages and rerun on main at 390 / 1440, light / dark: 4 / 4 pass.
+- docs/design/DAY_ONE_TRADER_TEST.md: a rerun section with each finding's status and the follow-ups.

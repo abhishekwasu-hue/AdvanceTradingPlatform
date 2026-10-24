@@ -5,7 +5,9 @@ Flag `market_zones` (off by default). Which instruments: MARKET_ZONES_SYMBOLS (p
 everyone) plus each tenant's followed instruments (market_zone_settings.enabled, when the flag is on for that tenant).
 A tenant whose resolved settings equal the platform's shares the platform snapshot; otherwise it gets its own scope.
 Inputs are the lake's shared candles only (md_candles - no tenant column; HB0's tenant-private md_tenant_candles is never
-read), point-in-time (`ingested_at <= run time`), so a replayed run sees what was known then.
+read), point-in-time (`ingested_at <= run time`), so a replayed run sees what was known then. The one exception is
+DATA-H's holder scope (`own:<tenant>:u<user>`): the history owner's own index history, built from his private bars and
+read back only by him (app/charts/zones_layer.py).
 
 Bars: the lake labels a bar by its END; the zone functions take START-labelled frames (Trade's convention) plus a
 `close_at` column. A timeframe the lake does not hold is rebuilt in memory from the instrument's 1-minute bars (read
@@ -222,17 +224,28 @@ def assemble(native: Dict[str, Tuple[str, List[RowTuple]]], m1: List[RowTuple], 
 
 
 async def load_frames(session: AsyncSession, key: str, s: ZoneSettings, now: datetime,
-                      extend_to: Optional[Dict[str, datetime]] = None) -> Frames:
+                      extend_to: Optional[Dict[str, datetime]] = None, private: Optional[Tuple[int, int]] = None) -> Frames:
     """Every frame the settings use, bars closed by `now` only (history frames with `warmup_bars` extra bars before the
     window). extend_to {tf: time}: read back at least to that time (a remembered level's tracker resumes after it - its
-    bars must be there), still within MAX_DAYS_BY_TF. The reads stream on the loop; every DataFrame is built in a thread."""
+    bars must be there), still within MAX_DAYS_BY_TF. The reads stream on the loop; every DataFrame is built in a thread.
+    DATA-H: `private` (tenant_id, user_id) - a holder scope's run (`holder_scope`) reads that member's own private bars
+    instead of the shared lake's where they hold more bars of the window (own_bars.prefer_own; closing-auction flags
+    applied). Only a holder scope passes it; the platform and tenant scopes read the shared lake only."""
+    from app.market_lake import own_bars
     sess = exchange_session(key)
     starts = _plan_reads(s, sess, now, extend_to)
     native: Dict[str, Tuple[str, List[RowTuple]]] = {}
     missing: List[str] = []
+
+    async def pick(label: str, start: datetime) -> List[RowTuple]:
+        rows = await _fetch(session, key, label, start, now)
+        if private is None:
+            return rows
+        own = await own_bars.fetch_rows(session, private, key, label, start, now, point_in_time="ingested")
+        return own if own_bars.prefer_own(rows, own) else rows
     for tf in sorted(starts):
         for label in LAKE_LABELS.get(tf, (tf,)):
-            rows = await _fetch(session, key, label, starts[tf], now)
+            rows = await pick(label, starts[tf])
             if rows:
                 native[tf] = (label, rows)
                 break
@@ -242,13 +255,15 @@ async def load_frames(session: AsyncSession, key: str, s: ZoneSettings, now: dat
     m1: List[RowTuple] = []
     if missing:                                              # one 1-minute read for every rebuilt timeframe
         start = max(min(starts[tf] for tf in missing), now - timedelta(days=REBUILD_MAX_DAYS))
-        m1 = native["1m"][1] if "1m" in native and starts["1m"] <= start else await _fetch(session, key, "1m", start, now)
+        m1 = native["1m"][1] if "1m" in native and starts["1m"] <= start else await pick("1m", start)
     return await asyncio.to_thread(assemble, native, m1, starts, s, sess, now, extend_to)
 
 
-async def source_probe(session: AsyncSession, key: str, s: ZoneSettings, now: datetime) -> Tuple[Optional[datetime], Optional[datetime]]:
+async def source_probe(session: AsyncSession, key: str, s: ZoneSettings, now: datetime,
+                       private: Optional[Tuple[int, int]] = None) -> Tuple[Optional[datetime], Optional[datetime]]:
     """(newest bar END, newest ingest) the run would read - cheap aggregates. Equal to what a stored run read means the
-    run would come out the same, so a resumed pass skips it without loading anything."""
+    run would come out the same, so a resumed pass skips it without loading anything. DATA-H: with `private`, the
+    member's own rows count too."""
     sess = exchange_session(key)
     starts = _plan_reads(s, sess, now, None)
     labels = {label for tf in starts for label in LAKE_LABELS.get(tf, (tf,))}
@@ -257,7 +272,28 @@ async def source_probe(session: AsyncSession, key: str, s: ZoneSettings, now: da
     row = (await session.execute(select(func.max(MdCandleRecord.ts), func.max(MdCandleRecord.ingested_at)).where(
         MdCandleRecord.instrument_key == key, MdCandleRecord.timeframe.in_(sorted(labels)), MdCandleRecord.ts > min(starts.values()),
         MdCandleRecord.ts <= now, MdCandleRecord.ingested_at <= now))).one()
-    return (_as_utc(row[0]) if row[0] is not None else None, _as_utc(row[1]) if row[1] is not None else None)
+    last, ingested = (_as_utc(row[0]) if row[0] is not None else None, _as_utc(row[1]) if row[1] is not None else None)
+    if private is not None:
+        from app.market_lake import own_bars
+        own = await own_bars.probe(session, private, key, sorted(labels), min(starts.values()), now)
+        if own[0] is not None:
+            last = max(filter(None, (last, _as_utc(own[0]))))
+        if own[3] is not None:
+            ingested = max(filter(None, (ingested, min(_as_utc(own[3]), now))))
+    return last, ingested
+
+
+def holder_scope(tenant_id: int, user_id: int) -> str:
+    """DATA-H: the zones scope of one member's own history (built from his private bars, read only by him)."""
+    return f"own:{int(tenant_id)}:u{int(user_id)}"
+
+
+def holder_of(scope: str) -> Optional[Tuple[int, int]]:
+    """(tenant_id, user_id) of a holder scope; None for the platform and tenant scopes."""
+    parts = str(scope or "").split(":")
+    if len(parts) == 3 and parts[0] == "own" and parts[1].isdigit() and parts[2].startswith("u") and parts[2][1:].isdigit():
+        return int(parts[1]), int(parts[2][1:])
+    return None
 
 
 def _last_close(frames: List[pd.DataFrame]) -> Tuple[Optional[datetime], Optional[float]]:
@@ -299,7 +335,8 @@ async def run_instrument(session: AsyncSession, key: str, *, settings: Optional[
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         raise ValueError("run_instrument: `now` must be timezone-aware")
-    probe = await source_probe(session, key, s, now)
+    private = holder_of(scope)
+    probe = await source_probe(session, key, s, now, private)
     if probe[0] is None:
         return InstrumentResult("no_data")
     prev_run = await latest_run(session, scope, key, now)
@@ -307,7 +344,7 @@ async def run_instrument(session: AsyncSession, key: str, *, settings: Optional[
             (_utc_or_none(prev_run.source_last_ts), _utc_or_none(prev_run.source_ingested_at)) == probe:
         return InstrumentResult("exists")                # nothing new in the lake since that run: same snapshot, not reloaded
     previous = await rows_of(session, prev_run)
-    loaded = await load_frames(session, key, s, now, extend_to=_resume_points(previous, s))
+    loaded = await load_frames(session, key, s, now, extend_to=_resume_points(previous, s), private=private)
     as_of, price = _last_close([*loaded.frames.values(), *loaded.dyn.values()])
     if as_of is None:
         return InstrumentResult("no_data")
@@ -350,6 +387,14 @@ async def plan(session: AsyncSession) -> Dict[Tuple[str, str], Tuple[Optional[in
             jobs.setdefault((PLATFORM_SCOPE, key), (None, plat))
         else:
             jobs[(tenant_scope(tenant_id), key)] = (tenant_id, s)
+    # DATA-H: the history owner's own index history (app/market_lake/index_history.py) - one holder scope per index he
+    # holds private bars of, while the flag is on for his tenant. Read only by him (zones_layer).
+    from app.market_lake import index_history, own_bars
+    holder = await own_bars.history_owner(session)
+    if holder is not None and await flag_enabled(session, FLAG, holder[0]):
+        for t in index_history.targets()[0]:
+            if await own_bars.has_rows(session, holder, t.key):
+                jobs[(holder_scope(*holder), normalise_key(t.key))] = (holder[0], await settings_for(session, holder[0], t.key))
     return jobs
 
 

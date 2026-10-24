@@ -345,6 +345,19 @@ def _iso_dates(name: str) -> "tuple[frozenset, list]":
 
 
 HISTORY_INTRADAY_BLACKOUT_DATES, HISTORY_INTRADAY_BLACKOUT_ERRORS = _iso_dates("HISTORY_INTRADAY_BLACKOUT_DATES")
+# DATA-H (owner, 24 Oct; app/market_lake/index_history.py): the index history the chart reader and the Copilot read -
+# Daily (Weekly is built from it) for LAKE_BACKFILL_DAILY_YEARS and 1-minute bars (15M / 1H are built from them) for
+# LAKE_BACKFILL_INTRADAY_DAYS (at least the reader's longest intraday lookback, 1H = 180 days), read through HB2's
+# owner session (HISTORY_OWNER_TENANT_ID + NAME, HISTORY_OWNER_USER_ID) into the owner's PRIVATE store only. The worker
+# appends each closed session from LAKE_BACKFILL_HOUR_IST (off with LAKE_BACKFILL_AFTER_CLOSE=false).
+LAKE_BACKFILL_INDICES = [k.strip().upper() for k in os.environ.get("LAKE_BACKFILL_INDICES", "NIFTY,BANKNIFTY,SENSEX,FINNIFTY").split(",")
+                         if k.strip()]
+LAKE_BACKFILL_DAILY_YEARS = max(1, min(25, int(os.environ.get("LAKE_BACKFILL_DAILY_YEARS", "10") or 10)))
+LAKE_BACKFILL_INTRADAY_DAYS = max(45, min(730, int(os.environ.get("LAKE_BACKFILL_INTRADAY_DAYS", "200") or 200)))
+LAKE_BACKFILL_AFTER_CLOSE = os.environ.get("LAKE_BACKFILL_AFTER_CLOSE", "true").lower() in ("1", "true", "yes")
+LAKE_BACKFILL_HOUR_IST = max(16, min(23, int(os.environ.get("LAKE_BACKFILL_HOUR_IST", "16") or 16)))
+LAKE_BACKFILL_BUDGET_SECONDS = max(10, int(os.environ.get("LAKE_BACKFILL_BUDGET_SECONDS", "900") or 900))
+LAKE_BACKFILL_PAUSE_SECONDS = max(0.0, float(os.environ.get("LAKE_BACKFILL_PAUSE_SECONDS", "0.3") or 0.3))
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 # BT1 (beta spec §2/§4): bring-your-own-broker data tier, read only with the `byob_data_tier` flag on (off by default).
 # The ATP budget of symbols one user's broker session carries (positions > open charts > watchlist > screener universe);

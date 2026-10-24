@@ -327,21 +327,46 @@ def _to_frame(rows: List[RowTuple], tf: str, key: str, end: datetime, rebuild: b
     return df[["timestamp", "bar_end", "open", "high", "low", "close", "volume"]].reset_index(drop=True)
 
 
+async def _own(session: AsyncSession, private: Optional[Tuple[int, int]], key: str, label: str, start: datetime, end: datetime,
+               limit: int) -> List[RowTuple]:
+    """DATA-H: the reader's own private bars of one label (empty without a private scope); over `limit` -> refused."""
+    if private is None:
+        return []
+    from app.market_lake import own_bars
+    try:
+        return await own_bars.fetch_rows(session, private, key, label, start, end, limit=limit)
+    except ValueError as exc:
+        raise WindowTooLarge(str(exc)) from None
+
+
 async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, end: datetime,
-                     max_bars: Optional[int] = None) -> Tuple[pd.DataFrame, Optional[str]]:
+                     max_bars: Optional[int] = None, private: Optional[Tuple[int, int]] = None) -> Tuple[pd.DataFrame, Optional[str]]:
     """The lake's own `tf` bars, else `tf` rebuilt from its 1-minute bars (intraday) or, weekly, from its daily bars.
-    (frame, source label). `max_bars` (CH6 studies): the row cap's bar count, MAX_BARS by default."""
+    (frame, source label). `max_bars` (CH6 studies): the row cap's bar count, MAX_BARS by default.
+    DATA-H: `private` (tenant_id, user_id) - the reader's own private bars (app/market_lake/own_bars.py) are read
+    instead of the shared lake's when they hold more bars of the window (one source per frame, never mixed; source
+    label `own:<label>`), with the closing-auction flags applied."""
+    from app.market_lake.own_bars import prefer_own
     for label in LAKE_LABELS[tf]:
         rows = await _fetch(session, key, label, start, end, (max_bars or MAX_BARS) * ROWS_PER_BAR)
+        own = await _own(session, private, key, label, start, end, (max_bars or MAX_BARS) * ROWS_PER_BAR)
+        if prefer_own(rows, own):
+            return await asyncio.to_thread(_to_frame, own, tf, key, end, False), f"own:{label}"
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, False), f"lake:{label}"
     if tf == "1w":
-        daily, src = await load_frame(session, key, "1d", start, end)
+        daily, src = await load_frame(session, key, "1d", start, end, private=private)
         return (await asyncio.to_thread(PC.weekly_from_daily, daily), src) if len(daily) else (daily, None)
     if tf in INTRADAY_MINUTES and tf != "1m":
         if end - start > timedelta(days=REBUILD_MAX_DAYS) and await _has_rows(session, key, "1m", start, end):
             raise WindowTooLarge(f"{tf} is rebuilt from 1-minute bars for at most {REBUILD_MAX_DAYS} days; choose a later `start`")
-        rows = await _fetch(session, key, "1m", start, end, (max_bars or MAX_BARS) * INTRADAY_MINUTES[tf] * ROWS_PER_BAR)
+        limit = (max_bars or MAX_BARS) * INTRADAY_MINUTES[tf] * ROWS_PER_BAR
+        if private is not None and end - start > timedelta(days=REBUILD_MAX_DAYS):
+            private = None                                    # the same cap for the reader's own 1-minute bars
+        rows = await _fetch(session, key, "1m", start, end, limit)
+        own = await _own(session, private, key, "1m", start, end, limit)
+        if prefer_own(rows, own):
+            return await asyncio.to_thread(_to_frame, own, tf, key, end, True), "own:1m"
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, True), "lake:1m"
     return pd.DataFrame(columns=FRAME_COLS), None
@@ -378,15 +403,23 @@ async def _probe(session: AsyncSession, key: str, label: str, start: datetime, e
     return row[0], int(row[1] or 0), int(row[2] or 0)
 
 
-async def _mtf_key(session: AsyncSession, key: str, tf: str, start: datetime, end: datetime) -> Tuple[Any, ...]:
+async def _mtf_key(session: AsyncSession, key: str, tf: str, start: datetime, end: datetime,
+                   private: Optional[Tuple[int, int]] = None) -> Tuple[Any, ...]:
     """The cache key of a top-down row: the instrument, the timeframe, the window start, the lake label read and its probe -
-    the end of the last bar that closed by `end` and what else could change the bars (rows, versions)."""
+    the end of the last bar that closed by `end` and what else could change the bars (rows, versions). DATA-H: with a
+    private scope, also that scope and its own probe (a row built from one member's bars is never served to another)."""
     labels = list(LAKE_LABELS[tf]) + (["1d"] if tf == "1w" else ["1m"] if tf in INTRADAY_MINUTES and tf != "1m" else [])
+    base: Tuple[Any, ...] = (key, tf, start, None, None)
     for label in labels:
         probe = await _probe(session, key, label, start, end)
         if probe[1]:
-            return (key, tf, start, label, probe)
-    return (key, tf, start, None, None)
+            base = (key, tf, start, label, probe)
+            break
+    if private is None:
+        return base
+    from app.market_lake import own_bars
+    own = await own_bars.probe(session, private, key, labels, start, end)
+    return base + (("own", private, own[:3]),)
 
 
 _MTF_CACHE: "OrderedDict[tuple, Tuple[float, Dict[str, Any]]]" = OrderedDict()
@@ -473,7 +506,8 @@ MtfItem = Tuple[str, tuple, Optional[Dict[str, Any]], Optional[pd.DataFrame], Op
 
 
 async def mtf_frames(session: AsyncSession, key: str, when: datetime,
-                     daily: Optional[Tuple[datetime, pd.DataFrame, Optional[str]]] = None) -> List[MtfItem]:
+                     daily: Optional[Tuple[datetime, pd.DataFrame, Optional[str]]] = None,
+                     private: Optional[Tuple[int, int]] = None) -> List[MtfItem]:
     """The DB half of the top-down rows (W / D / 1H / 15m) as of `when`: per timeframe its cache key, and either the
     row already known (a cache hit, or a refusal row) or the bars to build it from. No computation here, so the
     connection is released before the build (`mtf_build`). `daily`: (start, frame, source) of daily bars this request
@@ -481,20 +515,21 @@ async def mtf_frames(session: AsyncSession, key: str, when: datetime,
     out: List[MtfItem] = []
     for t in PC.MTF_TFS:
         start = _anchor(when, MTF_DAYS[t])
-        ck = await _mtf_key(session, key, t, start, when)
+        ck = await _mtf_key(session, key, t, start, when, private)
         hit = _MTF_CACHE.get(ck)
         if hit is not None and hit[0] >= time.monotonic():
             _MTF_CACHE.move_to_end(ck)
             out.append((t, ck, hit[1], None, None))
             continue
         try:
-            if ck[3] in ("1d", "day") and daily is not None and daily[0] <= start:
+            if (ck[3] in ("1d", "day") or (daily is not None and str(daily[2] or "").startswith("own:"))) and t in ("1d", "1w") \
+                    and daily is not None and daily[0] <= start:
                 f = daily[1][pd.to_datetime(daily[1]["bar_end"], utc=True) > pd.Timestamp(start)].reset_index(drop=True)
                 src = daily[2]
                 if t == "1w":
                     f = await asyncio.to_thread(PC.weekly_from_daily, f)
             else:
-                f, src = await load_frame(session, key, t, start, when)
+                f, src = await load_frame(session, key, t, start, when, private=private)
         except WindowTooLarge:
             out.append((t, (), PC.mtf_row(None, t, "refused: window too large"), None, None))   # the row says so; the layer still answers
             continue
@@ -523,11 +558,11 @@ def mtf_remember(items: Sequence[MtfItem], rows: Sequence[Dict[str, Any]]) -> No
 
 
 async def mtf_rows(session: AsyncSession, key: str, when: datetime, daily: Optional[Tuple[datetime, pd.DataFrame, Optional[str]]] = None,
-                   *, owner: Any) -> List[Dict[str, Any]]:
+                   *, owner: Any, private: Optional[Tuple[int, int]] = None) -> List[Dict[str, Any]]:
     """Both halves: the bars read, the session released, the rows built in a slot (a caller that builds more in the
     same request uses `mtf_frames` + `mtf_build` inside its own one slot). `owner` (the user id) is required: the
     slot's per-user lock is keyed by it (re-review LOW-2)."""
-    items = await mtf_frames(session, key, when, daily)
+    items = await mtf_frames(session, key, when, daily, private)
     if all(row is not None for _t, _ck, row, _f, _s in items):
         return [row for _t, _ck, row, _f, _s in items if row is not None]
     rows = await _in_slot(session, owner, mtf_build, items)
@@ -606,7 +641,9 @@ async def price_action_layer(instrument: str = Query(..., min_length=1, max_leng
     if key is None or key == "*":
         # not an instrument the lake keys (an option contract, odd characters): the chart just has no layer
         return {**head, **build(pd.DataFrame(columns=["timestamp", "bar_end", "open", "high", "low", "close"]), tf, degree, debug), "reason": NO_BARS}
-    cache_key = (key, tf, begin, when, degree, debug, mtf)
+    from app.market_lake import own_bars
+    private = await own_bars.scope_for(session, user, key)     # DATA-H: the reader's own bars, only his
+    cache_key = (key, tf, begin, when, degree, debug, mtf, private)
     hit = None if debug else _cached(cache_key)
     if hit is None:
         daily: Optional[Tuple[datetime, pd.DataFrame, Optional[str]]] = None
@@ -614,16 +651,16 @@ async def price_action_layer(instrument: str = Query(..., min_length=1, max_leng
             if tf == "1d" and mtf:
                 # one daily read for the chart and the D / W rows of the top-down panel
                 wide = min(begin, _anchor(when, MTF_DAYS["1w"]))
-                full, source = await load_frame(session, key, "1d", wide, when)
+                full, source = await load_frame(session, key, "1d", wide, when, private=private)
                 daily = (wide, full, source)
                 frame = full[pd.to_datetime(full["bar_end"], utc=True) > pd.Timestamp(begin)].reset_index(drop=True) if len(full) else full
             else:
-                frame, source = await load_frame(session, key, tf, begin, when)
+                frame, source = await load_frame(session, key, tf, begin, when, private=private)
         except WindowTooLarge as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
         if len(frame) > MAX_BARS:
             raise HTTPException(status_code=422, detail=f"the window holds {len(frame)} bars, more than {MAX_BARS}; choose a later `start`")
-        items = await mtf_frames(session, key, when, daily) if mtf else None
+        items = await mtf_frames(session, key, when, daily, private) if mtf else None
         # every bar is read: the session goes back to the pool before the wait for a build slot (CH6a re-review MED)
         content = await _in_slot(session, owner, _build_with_mtf, frame, tf, degree, debug, items)
         if items is not None:

@@ -544,6 +544,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/market-data/quotes"): S_OWN_MARKET_DATA,
     ("POST", "/api/market-data/option-chains"): S_OWN_MARKET_DATA,
     ("GET", "/api/market-data/sources"): "member",
+    # C1: the owner's read-only probe of one chart's broker calls (counts only) - SUPER_ADMIN + two-factor.
+    ("GET", "/api/admin/market-data/probe-candles"): "admin",
     ("GET", "/api/market-holidays"): "member",
     ("POST", "/api/market-holidays"): "admin",
     ("DELETE", "/api/market-holidays/{holiday_id}"): "admin",

@@ -145,6 +145,44 @@ def session_status(now: Optional[datetime] = None, holidays: Iterable[date] = ()
     return SessionStatus(True, f"{spec.name} regular session open", None)
 
 
+def _session_day(spec: ExchangeSession, day: date, holidays: Set[date]) -> bool:
+    return (day.weekday() < 5 or not spec.weekdays_only) and day not in holidays
+
+
+def _close_on(spec: ExchangeSession, day: date) -> datetime:
+    return datetime.combine(day, spec.close, tzinfo=IST)
+
+
+def last_session_close(now: Optional[datetime] = None, holidays: Iterable[date] = (), exchange: str = "NSE") -> Optional[datetime]:
+    """C1 / B2a: the close (IST, aware) of the newest regular session that had ended at `now` - today's close once it has
+    passed, else the close of the newest trading day before today. None for a 24x7 venue (it never closes)."""
+    spec = EXCHANGE_SESSIONS[session_family(exchange)]
+    if spec.always_open:
+        return None
+    now_ist = to_ist(now)
+    holiday_set = set(holidays)
+    today = now_ist.date()
+    if _session_day(spec, today, holiday_set) and now_ist.time() >= spec.close:
+        return _close_on(spec, today)
+    return previous_session_close(now_ist, holiday_set, exchange)
+
+
+def previous_session_close(now: Optional[datetime] = None, holidays: Iterable[date] = (), exchange: str = "NSE") -> Optional[datetime]:
+    """C1: the close of the newest trading day BEFORE today (IST) - where completed history ends, while today's own bars
+    (if today is a trading day) come from the broker's intraday call. On a Saturday, a Sunday or a holiday this is the
+    last trading day's close, so a chart opened then still ends at that close. None for a 24x7 venue."""
+    spec = EXCHANGE_SESSIONS[session_family(exchange)]
+    if spec.always_open:
+        return None
+    holiday_set = set(holidays)
+    day = to_ist(now).date() - timedelta(days=1)
+    for _ in range(60):          # bounded, like next_trading_day
+        if _session_day(spec, day, holiday_set):
+            break
+        day -= timedelta(days=1)
+    return _close_on(spec, day)
+
+
 def intraday_cutoffs(exchange: Optional[str]) -> tuple[Optional[time], Optional[time]]:
     """(no_new_entries_after, square_off_at) for the venue's clock; (None, None) for 24x7 venues."""
     spec = EXCHANGE_SESSIONS[session_family(exchange)]

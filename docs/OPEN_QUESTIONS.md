@@ -173,3 +173,13 @@ Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-8) and docs/d
 | TT8-3 | Partial exit of a leg (N of M lots). | Not in this PR: it needs the trade-row split (TT-9 / TM-17 method) for P&L, journal and orders - its own PR. | - | open (TT-9) |
 | TT8-4 | "Exit this leg" on a leg of a strategy structure (deployment). | Not offered: the structure keeps "Exit now", which closes it whole (its group stop stays valid); the API answers 409 with that sentence. | `fno_groups._check` | open |
 
+
+## C1: chart history ends at the last session close (24 Oct, `claude/bug-c1-closed-history`)
+
+Checked against CLAUDE.md (§4 safety: read-only, no secrets, nothing run on the server; §7 ui_v2), DECISIONS (UI-H Part 1 audit approved, 24 Oct: C1) and the UI-H audit's C1 root cause.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| C1-1 | How does `atp.sh probe-candles` act "with the owner's own session"? | It runs the same read-only handler as the admin-only `GET /api/admin/market-data/probe-candles` inside the backend container, as the platform owner's account (the first `SUPER_ADMIN_EMAILS` user), through his own stored broker session. No login token is minted or printed; the HTTP route keeps SUPER_ADMIN + two-factor. | `app/market_data/probe.py` | open |
+| C1-2 | The history window's start. | Still `lookback` calendar days before now, but never after the start of the last session's day (a short lookback across a weekend or holiday still holds that session). | `MarketDataService.history_window` | open |
+| C1-3 | A first answer with no candles. | The chart shows the server's reason and asks for the whole history again on each refresh (every 60 s), so a new contract's first bars appear by themselves. | `CandleFeed.tick` | open |

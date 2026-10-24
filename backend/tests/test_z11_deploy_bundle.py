@@ -257,6 +257,9 @@ if sub == "exec":
     if svc == "backend":
         if cmd[:2] == ["test", "-f"]:
             finish()
+        if cmd[:3] == ["python", "-m", "app.market_data.probe"]:          # C1: probe-candles (read-only; own tests: test_c1_closed_history)
+            st.setdefault("probes", []).append(cmd[3:])
+            out.append(f"probe-{cmd[3]} {' '.join(cmd[4:])}"); finish()
         if cmd[:2] == ["python", "scripts/deploy_audit.py"]:              # A3: the untested deploy's audit row, reason on stdin
             st.setdefault("audit", []).append({"argv": cmd[2:], "reason": sys.stdin.readline().strip(), "release": rel})
             finish()
@@ -1804,3 +1807,18 @@ def test_lists_sync_respects_the_session_gate_and_a_failed_sync_restarts_nothing
     res = host.run("lists-sync")
     assert res.returncode == 1 and "the sync did not finish" in res.all
     assert [c for c in host.mutating(since) if "run_now" not in c] == []
+
+
+# --- C1: probe-candles (the owner's read-only broker probe, counts only) ---------------------------------------------
+
+def test_probe_candles_is_read_only_and_checks_its_input(host):
+    assert host.run("deploy").returncode == 0
+    since = len(host.state["calls"])
+    res = host.run("probe-candles", "NIFTY2610325000CE", "30m")
+    assert res.returncode == 0, res.all
+    assert "probe-candles NIFTY2610325000CE 30m" in res.stdout
+    assert host.state["probes"] == [["candles", "NIFTY2610325000CE", "30m"]] and host.mutating(since) == []
+    for args in (("NIFTY; rm -rf /", "30m"), ("NIFTY", "2min"), ("NIFTY",), ("NIFTY", "D", "N$E")):
+        bad = host.run("probe-candles", *args)
+        assert bad.returncode == 2, (args, bad.all)
+    assert len(host.state["probes"]) == 1

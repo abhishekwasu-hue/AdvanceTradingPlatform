@@ -106,6 +106,28 @@ export function fadeSides(scrollLeft: number, clientWidth: number, scrollWidth: 
   return { left: scrollLeft > 2, right: scrollLeft + clientWidth < scrollWidth - 2 };
 }
 
+/**
+ * The edge fade (W0-1; owner 24 Oct: visible in light AND dark). It is built only from the surface token under the row -
+ * `surface` (the page) under PageTabs, `surface-2` (the track) under SubTabs - which each theme redefines, so it matches
+ * the background in both themes. It is solid for its outer third, still 80 % in the middle and clears to the same
+ * colour at 0 % (never "transparent", which is transparent white and greys a dark theme). The partly hidden tab under
+ * it is the scroll cue.
+ */
+// Written out in full so Tailwind sees every class.
+export const FADE_STOPS = {
+  primary: "from-surface from-30% via-surface/80 to-surface/0",
+  secondary: "from-surface-2 from-30% via-surface-2/80 to-surface-2/0",
+} as const;
+
+export function fadeClass(level: "primary" | "secondary", side: "left" | "right"): string {
+  return cx(
+    "pointer-events-none absolute inset-y-0 z-10 w-12",
+    side === "left" ? "left-0 bg-gradient-to-r" : "right-0 bg-gradient-to-l",
+    FADE_STOPS[level],
+    level === "secondary" && (side === "left" ? "rounded-l-panel" : "rounded-r-panel"),
+  );
+}
+
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 /** The row's fades and keeping the active tab in view (both levels). */
@@ -179,12 +201,10 @@ export function TabRow<K extends string>({
     "subtabs-scroll flex max-w-full overflow-x-auto",
     primary ? cx(PAGETAB_TRACK, "gap-space-1 md:gap-space-4") : cx(SUBTAB_TRACK, "gap-space-1"),
   );
-  // The fade takes the colour of what is under the row: the track for SubTabs, the page for PageTabs.
-  const fadeFrom = primary ? "from-surface" : "from-surface-2";
   const fades = (
     <>
-      {fade.left && <span aria-hidden data-fade="left" className={cx("pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r to-transparent", fadeFrom, !primary && "rounded-l-panel")} />}
-      {fade.right && <span aria-hidden data-fade="right" className={cx("pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l to-transparent", fadeFrom, !primary && "rounded-r-panel")} />}
+      {fade.left && <span aria-hidden data-fade="left" className={fadeClass(level, "left")} />}
+      {fade.right && <span aria-hidden data-fade="right" className={fadeClass(level, "right")} />}
     </>
   );
   const wrap = cx("relative min-w-0", primary ? "w-full" : mode === "segments" ? "w-full md:w-fit" : "w-full", className);

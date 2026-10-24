@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import css from "../styles/tokens.css?raw";
 import { PageTabs } from "./PageTabs";
-import { PAGETAB_ACTIVE, PAGETAB_IDLE, SUBTAB_ACTIVE, SUBTAB_IDLE, SUBTAB_TRACK, SubTabs, fadeSides, nextKey, rowMode } from "./SubTabs";
+import { FADE_STOPS, fadeClass, PAGETAB_ACTIVE, PAGETAB_IDLE, SUBTAB_ACTIVE, SUBTAB_IDLE, SUBTAB_TRACK, SubTabs, fadeSides, nextKey, rowMode } from "./SubTabs";
 import { TimeframeTabs, splitTimeframes } from "./TimeframeTabs";
 
 const ITEMS = [
@@ -145,3 +145,34 @@ describe("UI-H H2: the active sub-tab contrast tokens", () => {
     expect(ratio(t["fg"], t["surface-1"])).toBeGreaterThanOrEqual(4.5);          // the hovered inactive tab
   });
 });
+
+describe("UI-H W0-1: the edge fade reads in light AND dark", () => {
+  const dark = block(":root");
+  const light = { ...dark, ...block(':root[data-theme="light"]') };
+  const v2dark = { ...dark, ...block(':root[data-colour="v2"]:not([data-theme="light"])') };
+  it("built only from the surface token under the row, solid at the edge and 80 % mid-way, never 'transparent'", () => {
+    expect(fadeClass("primary", "right")).toContain("from-surface from-30% via-surface/80 to-surface/0");
+    expect(fadeClass("secondary", "left")).toContain("from-surface-2 from-30% via-surface-2/80 to-surface-2/0");
+    for (const side of ["left", "right"] as const) for (const level of ["primary", "secondary"] as const) {
+      const c = fadeClass(level, side);
+      expect(c).not.toContain("transparent");
+      expect(c).toContain("w-12");
+      expect(c).toMatch(/\bvia-surface(-2)?\/(8|9)\d\b/);
+    }
+    expect(Object.values(FADE_STOPS).join(" ")).not.toMatch(/(white|black|#)/);
+  });
+  it("each theme has its own surfaces, so the same classes give a light fade in light and a dark fade in dark", () => {
+    expect(light["surface"]).not.toEqual(dark["surface"]);
+    expect(light["surface-2"]).not.toEqual(dark["surface-2"]);
+    expect(lum(light["surface"])).toBeGreaterThan(0.5);
+    expect(lum(dark["surface"])).toBeLessThan(0.1);
+  });
+  it.each([["dark", dark], ["light", light], ["v2 dark", v2dark]])("%s: the fade colours are this theme's own surfaces, and a tab's text under them visibly fades", (_, t) => {
+    for (const token of ["surface", "surface-2"]) {
+      expect(t[token], `--${token}`).toBeDefined();
+      expect(ratio(t["fg"], t[token])).toBeGreaterThanOrEqual(4.5);        // text vs the fade's solid stop: a clear fade
+      expect(ratio(t["fg-muted"], t[token])).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+

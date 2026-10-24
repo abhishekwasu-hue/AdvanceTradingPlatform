@@ -60,9 +60,10 @@ async def _record(session: AsyncSession, user: User, underlying: str) -> tuple:
         return None, False, NO_BROKER
 
 
-async def _history(session: AsyncSession, underlying: str, now: datetime) -> List[analyses.Snapshot]:
-    """Today's stored collector slots for the underlying, read before `now` (the expiry is matched in analyses.py)."""
-    slots = await snapshots.day_chains(session, underlying, now.astimezone(IST).date())
+async def _history(session: AsyncSession, tenant_id: int, underlying: str, now: datetime) -> List[analyses.Snapshot]:
+    """Today's stored collector slots of this organisation for the underlying, read before `now` (the expiry is matched
+    in analyses.py)."""
+    slots = await snapshots.day_chains(session, underlying, now.astimezone(IST).date(), tenant_id=tenant_id)
     return [analyses.Snapshot(s.captured_at, s.chain) for s in slots if s.captured_at < now]
 
 
@@ -105,7 +106,7 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
         return _state(base, "no_data", NO_CHAIN)
 
     chain = analyses.clean_spot(chain)                       # a spot of 0 (some brokers' "no price") is missing, not a number
-    history = [] if byob else await _history(session, underlying, now)
+    history = [] if byob else await _history(session, user.tenant_id, underlying, now)
     kept = analyses.session_history(chain, history)
     results = analyses.compute_all(chain, history, now, history_off=byob)
     out: Dict[str, Any] = {**base, "state": "ok", "message": None, "spot": chain.underlying_ltp, "data_as_of": now.isoformat(),

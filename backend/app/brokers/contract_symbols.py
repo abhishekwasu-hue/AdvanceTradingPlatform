@@ -259,6 +259,13 @@ class ContractSymbolBroker(BrokerInterface):
         symbol = await self._out(order.symbol, order.exchange)
         return await self.inner.get_order_margin(order if symbol == order.symbol else order.model_copy(update={"symbol": symbol}))
 
+    async def get_basket_margin(self, orders: List[BrokerOrderRequest]):
+        out = []
+        for order in orders:
+            symbol = await self._out(order.symbol, order.exchange)
+            out.append(order if symbol == order.symbol else order.model_copy(update={"symbol": symbol}))
+        return await self.inner.get_basket_margin(out)
+
     async def place_stop_loss_order(self, symbol, exchange, transaction_type, quantity, trigger_price, product="MIS", tag=None, is_option=None):
         extra = {"is_option": is_option} if is_option is not None else {}
         return await self.inner.place_stop_loss_order(await self._out(symbol, exchange), exchange, transaction_type, quantity, trigger_price, product, tag, **extra)

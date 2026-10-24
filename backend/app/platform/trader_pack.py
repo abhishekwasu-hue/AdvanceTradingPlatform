@@ -47,7 +47,9 @@ PACK: Tuple[str, ...] = (
     # The redesigned app every trader page lives on.
     "ui_v2",
     # Data and alerts.
-    "history_backfill", "alerts_stale_guard", "alerts_reliable_outbox", "context_panel", "news_feed",
+    "history_backfill",
+    "chain_history",           # TM 9.4: records only through the owner's own session into his private store (TM-7)
+    "alerts_stale_guard", "alerts_reliable_outbox", "context_panel", "news_feed",
     "markets_view",            # unfinished in the audit: the page and the summary work on the daily data the pack loads
     "telegram_inbound",
     "data_hub",                # TM Part 1 (unfinished in the catalog): one live stream per broker connection, live prices,
@@ -56,6 +58,7 @@ PACK: Tuple[str, ...] = (
     "paper_account", "approval_only_entries", "risk_by_default", "ladder_evidence", "experience_levels",
     "portfolio_risk", "portfolio_risk_caps", "vix_gate", "discipline_engine", "decision_tools",
     "options_builder", "options_builder_saved", "backtest_optimizer", "backtest_models",
+    "smart_execution",         # TM Part 7: hedge-first sequencing, incomplete state, slicing, margin, delivery warning
     "execution_core", "strategy_templates",   # unfinished in the audit: adopt a template as a PAPER strategy works
     # Watchlists and the screener.
     "watchlists",

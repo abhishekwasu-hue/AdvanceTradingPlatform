@@ -136,7 +136,7 @@ export default function DashboardV2(_props: PageProps = {}) {
               <OpenPositionsV2 data={positions} />
             </div>
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:space-y-space-6" : "lg:space-y-space-6"}`}>
-              <ActiveSignalsV2 data={signalRows} />
+              <ActiveSignalsV2 data={signalRows} readyWatch={features.on("strategy_templates")} />
               <TodaySummaryV2 tiles={todayTiles(exposure, dataOf(data.summary), dataOf(data.risk), signals)} loading={tilesLoading} />
             </div>
           </div>

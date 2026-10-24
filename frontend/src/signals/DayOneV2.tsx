@@ -1,7 +1,10 @@
 import { ArrowDownRight, ArrowUpRight, ChevronDown, RefreshCw } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
+import { api as mainApi } from "../api/client";
 import { ApiError } from "../api/errors";
+import { TEMPLATE_ID_PREFIX, botName, botStatusText, lastChecked } from "../paperbot/model";
+import type { Deployment } from "../types";
 import { cx } from "../components/primitives/cx";
 import { CARD, LINK_PRIMARY, LINK_SECONDARY, LoadingRowsV2 } from "../dashboard/CardV2";
 import { paperBotPathFor } from "../strategyTemplates/link";
@@ -26,8 +29,20 @@ const BUTTON = "inline-flex min-h-11 items-center justify-center gap-space-2 rou
  * bars. Then: his watch - each symbol's state in structure words, the new setups and the ones waiting for a trigger first.
  * The server answers 404 while `ui_v2` or `strategy_templates` is off: nothing shows.
  */
-export default function DayOneV2({ api = dayOneApi, onAdopted }: { api?: Api; onAdopted?: (adopted: boolean) => void }) {
+export default function DayOneV2({ api = dayOneApi, onAdopted, loadBots = () => mainApi.listDeployments(false) }: {
+  api?: Api; onAdopted?: (adopted: boolean) => void; loadBots?: () => Promise<Deployment[]>;
+}) {
   const [state, setState] = useState<State>({ status: "loading" });
+  // Day-one fix 7: the paper bots he already runs (a bot he just started from an idea, for example). With one running
+  // and no watch adopted yet, the card shows his bot instead of asking him to adopt a strategy again.
+  const [bots, setBots] = useState<Deployment[] | null>(null);
+  const [alsoList, setAlsoList] = useState(false);
+  const loader = useRef(loadBots);
+  useEffect(() => {
+    let live = true;
+    loader.current().then((b) => { if (live) setBots(Array.isArray(b) ? b : []); }).catch(() => { if (live) setBots([]); });
+    return () => { live = false; };
+  }, []);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [changing, setChanging] = useState(false);
@@ -58,8 +73,53 @@ export default function DayOneV2({ api = dayOneApi, onAdopted }: { api?: Api; on
     return <WatchView watch={data.adopted} canAct={data.can_adopt} busy={busy} problem={problem}
       onRefresh={() => act(api.refresh)} onChange={() => { setChanging(true); setProblem(null); }} onStop={() => act(api.stop)} />;
   }
-  return <SetupView data={data} busy={busy} problem={problem} onCancel={data.adopted ? () => setChanging(false) : undefined}
+  const running = (bots ?? []).filter((b) => b.mode === "PAPER" && (b.status === "ACTIVE" || b.status === "PAUSED"));
+  if (!data.adopted && running.length > 0 && !alsoList) {
+    return <BotsView bots={running} offers={data.offers} onAlsoList={data.can_adopt && data.offers.length ? () => setAlsoList(true) : undefined} />;
+  }
+  return <SetupView data={data} busy={busy} problem={problem}
+    onCancel={data.adopted ? () => setChanging(false) : alsoList ? () => setAlsoList(false) : undefined}
     onAdopt={(id, list) => act(() => api.adopt(id, list))} />;
+}
+
+/** "Starts on its next round" for a running bot that has not checked yet (a just-started bot), else "Checked ... ago". */
+export function botCheckWords(b: Pick<Deployment, "status" | "last_evaluated_at">, now: number = Date.now()): string {
+  if (!b.last_evaluated_at) return b.status === "ACTIVE" ? "Just started: it reads its chart on its next round" : "Not checked yet";
+  return lastChecked(b.last_evaluated_at, now);
+}
+
+/** Day-one fix 7: his own running paper bots, in place of "Pick a ready strategy" (he already picked one). */
+export function BotsView({ bots, offers, onAlsoList, now }: {
+  bots: Deployment[]; offers: DayOneOffer[]; onAlsoList?: () => void; now?: number;
+}) {
+  const titleId = useId();
+  const names = new Map<string, string>(offers.map((o) => [TEMPLATE_ID_PREFIX + o.id, o.name] as [string, string]));
+  const one = bots.length === 1;
+  return (
+    <section aria-labelledby={titleId} className={cx(CARD, "space-y-space-3 p-space-4 md:p-space-5")} data-day-one="bots" data-tour="signals-day-one">
+      <div>
+        <h2 id={titleId} className="text-t15 font-semibold text-fg">{one ? "Your paper bot is on" : `Your ${bots.length} paper bots are on`}</h2>
+        <p className="mt-space-1 text-t14 text-fg-muted">
+          {one ? "It reads its chart by itself. When it finds a setup, the signal shows below" : "They read their charts by themselves. When one finds a setup, the signal shows below"}
+          {" "}under Waiting for you or Today. Paper money only.
+        </p>
+      </div>
+      <ul className="divide-y divide-subtle rounded-panel border border-subtle">
+        {bots.map((b) => (
+          <li key={b.id} className="flex flex-col gap-space-1 px-space-3 py-space-3 md:flex-row md:items-center md:justify-between" data-day-one-bot={b.id}>
+            <span className="min-w-0">
+              <span className="block text-t14 font-semibold text-fg">{botName(b, names)} · {b.symbol}</span>
+              <span className="block text-t13 text-fg-muted">{botStatusText(b)} · {botCheckWords(b, now)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-space-2">
+        <Link to="/deployments" className={LINK_SECONDARY}>Open Paper bot</Link>
+        {onAlsoList && <button type="button" className={BUTTON} onClick={onAlsoList} data-day-one-also-list>Also watch a whole list</button>}
+      </div>
+    </section>
+  );
 }
 
 /** The first-visit card: pick a ready strategy and a list, see its settings, confirm. */

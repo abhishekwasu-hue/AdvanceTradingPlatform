@@ -51,13 +51,18 @@ export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
   );
 }
 
-export function ActiveSignalsV2({ data }: { data: Rows<SignalRow> }) {
+/** Day-one fix 9: with the ready strategies on (`strategy_templates`), an empty day points to the one-tap Signals watch. */
+export const READY_WATCH_TEXT = "No signals yet today. Pick a ready strategy on Signals and it reads every NIFTY 50 stock for you in one tap.";
+
+export function ActiveSignalsV2({ data, readyWatch = false }: { data: Rows<SignalRow>; readyWatch?: boolean }) {
   // Colour v2: Long / Short as chips (icon + word), "Waiting for you" amber.
   const colour = useColourV2();
   return (
     <CardV2 title="Active signals" more={{ label: "View all", to: "/signals" }} testId="signals" tour="dashboard-signals">
       {data.status === "loading" ? <LoadingRowsV2 /> : data.status === "error" ? <LoadFailedV2 what="today's signals" /> : data.rows.length === 0 ? (
-        <EmptyStateV2 text="No signals yet today. Your scans and paper bots post them here." action={{ label: "Set up a scan", to: "/screener/custom" }} />
+        readyWatch
+          ? <EmptyStateV2 text={READY_WATCH_TEXT} action={{ label: "Watch a list on Signals", to: "/signals" }} />
+          : <EmptyStateV2 text="No signals yet today. Your scans and paper bots post them here." action={{ label: "Set up a scan", to: "/screener/custom" }} />
       ) : (
         <ul className="divide-y divide-subtle">
           {data.rows.map((s) => (

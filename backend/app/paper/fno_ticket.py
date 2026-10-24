@@ -439,8 +439,19 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         charges = {"total": round(cost["total"], 2), "estimated": True}
     can_place = not errors and not refusals and fill is not None
     label = contract.label if contract else contract_label(master.underlying_of(ask.underlying), ask.expiry, ask.strike, right)
+    contract_view = contract.as_dict() if contract else None
+    smart = None
+    if contract is not None and units and await smart_on(session, user.tenant_id):
+        from app.execution import smart_execution
+        from app.instruments.freeze_limits import freeze_limit
+        freeze = freeze_limit(contract.underlying)
+        assert contract_view is not None
+        contract_view["freeze_quantity"] = freeze
+        parts = smart_execution.slice_units(int(units), contract.lot_size, freeze)
+        smart = {"freeze_quantity": freeze, "slices": [p // contract.lot_size for p in parts],
+                 "note": smart_execution.slice_note(int(units), contract.lot_size, freeze, contract.underlying)}
     return {
-        "mode": MODE, "practice": PRACTICE, "contract": contract.as_dict() if contract else None, "label": label,
+        "mode": MODE, "practice": PRACTICE, "contract": contract_view, "label": label, "smart": smart,
         "side": side, "lots": ask.lots, "lot_size": lot_size, "units": units, "order_type": ask.order_type, "product": ask.product,
         "price": price, "price_source": price_source, "fill_price": fill, "fill_note": fill_note or None,
         "stop_loss": ask.stop_loss, "margin": margin_line, "max_loss": loss, "charges": charges, "risk": risk,
@@ -467,12 +478,18 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     fill = float(view["fill_price"])
     stop = position_stop(ask.side, ask.stop_loss, contract.tick_size)
     key = f"fno:{user.id}:{ask.client_ref}" if ask.client_ref else None
+    freeze = (view.get("smart") or {}).get("freeze_quantity")
+    band = None
+    if view.get("smart") is not None:
+        # TM-3: the marketable limit's band, where a venue takes no market order, is the user's own setting.
+        from app.execution.smart_execution import settings_for
+        band = (await settings_for(session, user)).protection_band_pct
     try:
         result, order = await execute_signal_for_user(
             session, user, mode=mode, strategy_id=STRATEGY_ID, signal=_signal(contract, ask.side, fill, stop, now, view["fill_note"] or ""),
             idempotency_key=key, holding="SWING" if ask.product == "NRML" else "INTRADAY", max_quantity=float(view["units"]),
             journal_source="MANUAL", manual_contract_spec=_spec(contract), manual_contract_meta=_meta(contract, ask.side),
-            paper_execution=PAPER_EXECUTION)
+            paper_execution=PAPER_EXECUTION, freeze_quantity=freeze, market_protection_pct=band)
     except Exception as exc:  # noqa: BLE001 - shown to the person; the order trail holds what the pipeline recorded
         logger.exception("FNO ticket order failed for user %s", user.id)
         await session.rollback()
@@ -484,6 +501,13 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     reasons = [plain(r) for r in (result.reasons or [])]
     return {**view, "status": "PLACED" if result.executed else "REFUSED", "reasons": reasons if not result.executed else [],
             "order_id": order.id, "trade_id": order.trade_id, "filled": filled, "mode": order.mode}
+
+
+async def smart_on(session: AsyncSession, tenant_id: int) -> bool:
+    """Part 7 smart execution (flag `smart_execution`): freeze slicing, the sequencing preview, the broker margin."""
+    from app.execution.smart_execution import FLAG
+    from app.platform.controls import flag_enabled
+    return await flag_enabled(session, FLAG, tenant_id)
 
 
 async def held(session: AsyncSession, user: User, underlying: str, expiry: date) -> List[Dict[str, Any]]:

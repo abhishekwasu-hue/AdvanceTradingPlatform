@@ -1617,6 +1617,22 @@ collide on numbers.
 | PRV-5 | New signal-language tokens the reader needs. | Added as generic structure phrases to `app/signals/language.py` and its frontend mirror in a reviewed public PR (shared cases grow with them); when the reader emits them stays private. The package never brings its own text to a screen. | PRIVATE_PACKAGE section 9.3 | open |
 | PRV-6 | A new MAJOR reader version and running deployments. | The host's `ATP_PRIVATE_REF` moves only after the parity checks and a PAPER shadow; each deployment records the reader version it started with; the admin console lists the release note. | PRIVATE_PACKAGE section 11 | open |
 
+## Terminal master Part 9.4: chain history and the OI collector fix (TM94, 23 Oct)
+
+The chain history PR (branch `claude/terminal-chain-history`). Design: `docs/design/CHAIN_HISTORY.md`. Checked against
+CLAUDE.md (signals not advice, PAPER only, public repo), DECISIONS (TM-7, TM-8, RDY-6) and the Terminal master order.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| TM94-1 | Who is "the owner" for the recorder: the SUPER_ADMIN's organisation or a configured tenant? | The configured one, HB0 / HB2's rule: `HISTORY_OWNER_TENANT_ID` confirmed by `HISTORY_OWNER_TENANT_NAME`, the session of `HISTORY_OWNER_USER_ID` (else the lowest-id active OWNER). A role edit can never move the recording; one owner rule for every owner-only data path. | `market_lake/chain_recorder.py` | open (default applied) |
+| TM94-2 | OI rows stored before the fix carry no organisation. | Read only by the confirmed owner (they were read through the first organisation with a session - in production the owner's); nobody when no owner is confirmed. Deleted by the 400-day retention as before. | `option_chain/snapshots.py` | open (default applied) |
+| TM94-3 | The Phase W recorder (`backtest/chain_recorder.py`, `option_chain_snapshots`) also stores platform-wide quotes from deployments' chains. | Same data-terms issue; not changed here (this PR fixes the OI collector as ordered). Next: the same per-tenant rule in its own small PR. | `backtest/chain_recorder.py` | decided 23 Oct: approved - the same per-tenant rule for the Phase W recorder, in its own PR (DECISIONS) |
+| TM94-4 | SENSEX chain on Upstox (TM-32). | The adapter now looks SENSEX / BANKEX up in the BSE master; verify on the owner's token on the first day (the admin card shows a gap with the reason if the read fails). | `brokers/upstox.py` | open (verify on the host) |
+| TM94-5 | With `byob_data_tier` on, the OI collector still skips that organisation, although its slots are now its own. | Unchanged (no widening in this PR); can be allowed later through the member's own session. | `workers/trading_worker.py` | open |
+| TM94-6 | Greeks the broker does not send (only Upstox sends them). | Stored as missing; a later reader computes them on read and labels them as computed. Nothing is stored that the broker did not send. | `market_lake/chain_store.py` | open |
+| TM94-7 | The OI collector now reads once per organisation (was once for all). | Each read is on that organisation's own rate budget (one chain call per enabled underlying per 5 minutes); fine for the beta cohort; revisit with the Part 1 data hub. | `workers/trading_worker.py` | open |
+
+
 ## Terminal master order: the independent review (TM, 23 Oct)
 
 The review PR (branch `claude/terminal-master-review`, docs only). Review: `docs/design/TERMINAL_MASTER_REVIEW.md`;
@@ -1762,7 +1778,38 @@ Branches `claude/terminal-paper-adapter` (PR A, TM-1) and `claude/terminal-smart
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
-| SE-1 | The PAPER adapter's books (order / trade / positions) live in memory for one order flow; the database order trail stays the pipeline's. | One adapter per flow (router call, basket); the persisted trail and positions are unchanged. A persisted paper book comes with the resting order book (TM-2). | `execution/paper_adapter.py` | open |
-| SE-2 | Slippage on a PAPER limit order could fill past the limit. | Capped at the limit price (a limit is a limit). The moved ticket path sends MARKET at the checked price, so parity is unaffected. | `paper_adapter._fill_price` | open |
-| SE-3 | Which path moves first. | The F&O ticket's single-leg PAPER order (`fno_ticket.PAPER_EXECUTION = "adapter"`), unconditionally, with the parity test; every other caller keeps `direct` until its own parity PR. | `paper/fno_ticket.py`, `execution/router.py` | open |
+| SE-1 | The PAPER adapter's books (order / trade / positions) live in memory for one order flow; the database order trail stays the pipeline's. | One adapter per flow (router call, basket); the persisted trail and positions are unchanged. A persisted paper book comes with the resting order book (TM-2). | `execution/paper_adapter.py` | decided 23 Oct: default accepted (DECISIONS) |
+| SE-2 | Slippage on a PAPER limit order could fill past the limit. | Capped at the limit price (a limit is a limit). The moved ticket path sends MARKET at the checked price, so parity is unaffected. | `paper_adapter._fill_price` | decided 23 Oct: default accepted (DECISIONS) |
+| SE-3 | Which path moves first. | The F&O ticket's single-leg PAPER order (`fno_ticket.PAPER_EXECUTION = "adapter"`), unconditionally, with the parity test; every other caller keeps `direct` until its own parity PR. | `paper/fno_ticket.py`, `execution/router.py` | decided 23 Oct: default accepted (DECISIONS) |
+| SE-4 | Freeze limit source and rule. TM-9's default was a `freeze_qty` column in the master; the task said no migration, so the limit comes from a maintained table and the exchange's own sheet instead (a column can come later with TM-2's migration). Is an order of exactly the freeze quantity frozen? The index values are from public coverage of NSE circular NSE/FAOP/76693 (the exchange site was unreachable from the build machine). | Slices are whole lots STRICTLY below the limit (safe: costs one lot per slice at most). The owner / operator checks the values against the circular, and loads the exchange's sheet (`FREEZE_LIMITS_FILE`) for stock F&O; a symbol not in either is never sliced. | `instruments/freeze_limits.py`, `data/freeze_limits.json` | decided 23 Oct: verified by the owner (NSE limits effective 05 Oct 2026; SENSEX / BANKEX from the BSE file; slicing strictly below the limit) (DECISIONS) |
+| SE-5 | Starting values of the user settings: delivery warning from 4 days before expiry, "near the money" 2% of the strike, Telegram on; protection band 0.5% (the router's existing default). | As listed. These are the settings' starting values, each the user's own to change (prefs `smart_execution`); no number is fixed in a rule. | `me/prefs.py` | decided 23 Oct: default accepted (DECISIONS) |
+| SE-6 | The first failure stops the run, even when later legs could be placed safely (e.g. a second short after the first short failed). | Stop: one clear state, and the user chooses. "Complete the rest" reuses the remaining-legs flow (a fresh check at the live price, hedges first again). | `smart_execution.run` | decided 23 Oct: default accepted (DECISIONS) |
+| SE-7 | The LIVE multi-leg executor (`execution/multileg.py`, wings first, auto-unwind) is not on the engine yet. | It moves in its own PR with a parity test (TM-1 rule: one path at a time). Under TM-11 its auto-unwind becomes "Close the filled legs" on the user's tap, which is a behaviour change, so that PR needs Abhi's word. | `execution/multileg.py` | decided 23 Oct: approved - the LIVE executor moves onto this engine in its own PR, with the user's "no answer in N minutes" setting (DECISIONS) |
+| SE-8 | Free balance in PAPER. | The practice balance (starting capital + net closed P&L), labelled "practice balance". Margin already blocked by open positions is not counted, and the page says so. With LIVE, the broker's `get_margins` through his own session. | `fno_basket.practice_balance` | decided 23 Oct: default accepted (DECISIONS) |
+
+
+## Day-one fixes (README row 19, docs/design/DAY_ONE_TRADER_TEST.md)
+
+Checked against CLAUDE.md sections 2, 3 and 8, DECISIONS (23 Oct trader review) and the order files
+(ATP_SESSION_IDEA_LIBRARY.md: "T5. Breakout and retest (structure flip)"; ATP_SESSION_STRATEGY_TEMPLATES.md: A5
+"Structure flip retest").
+
+| # | Question | Provisional default |
+|---|---|---|
+| D1-1 | One name per idea: the idea T5 and the template A5 had two names. Which one stays? | "Breakout and retest" (the idea library's own name, which already says "structure flip" in its heading) as A5's display name; the id, version and params hash are unchanged, so adopted bots keep their behaviour. A2 was already "Range edges" like T2. Abhi may prefer the other name. |
+| D1-2 | Which symbol does the Paper bot form pick when an idea is adopted? | RELIANCE (the first stock in the form's list), only for an idea's link (it carries the idea's settings); a plain template link keeps NIFTY 50 as before. The trader changes it in one tap. |
+
+## TM94-3: the Phase W recorder per organisation (23 Oct)
+
+Branch `claude/phase-w-recorder-per-tenant`. Owner decision TM94-3 (DECISIONS, 23 Oct): the same per-tenant rule as the
+OI collector (#465, TM-7). Checked against CLAUDE.md (data only through the user's own session, public repo, keep what is
+built), DECISIONS (TM-7, TM94-3, RDY-6) and the #465 design (`docs/design/CHAIN_HISTORY.md` on that branch).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| TM943-1 | Rows recorded before the fix carry no organisation. | Read only by the confirmed owner (`HISTORY_OWNER_TENANT_ID` + `HISTORY_OWNER_TENANT_NAME`, the same `legacy_owner` rule as #465); nobody when no owner is confirmed; retention (400 days) deletes them as before. Not assigned to an organisation by guess. | `backtest/chain_recorder.py` | open |
+| TM943-2 | Uploaded rows (`source = upload:<tenant id>`) before the fix have no `tenant_id`. | No backfill (no row rewrite, rollback-safe): the readers keep honouring the source; new uploads also carry `tenant_id`. | migration `3c5e7a9b1d24` | open |
+| TM943-3 | Two organisations trading options on the same underlying now each read the chain (was once for all). | Each read is on that organisation's own session and rate budget (one chain call per underlying per 5 minutes, usually the chain its strike filter fetched that cycle anyway). Fine for the beta cohort. | `workers/trading_worker.py` | open |
+| TM943-4 | A backtest without an organisation (no login) used to price from the platform-wide rows. | It gets no recorded rows (the synthetic fallback or uploaded rows still work). | `chain_recorder.load_rows` | open |
+| TM943-5 | Migration chain: `3c5e7a9b1d24` and #465's `250d796123b7` both follow `e8a0c2d4f6b9`. | Whichever PR merges second re-chains its `down_revision` onto the other (one head; `alembic heads` must print one line). | `alembic/versions` | open |
 

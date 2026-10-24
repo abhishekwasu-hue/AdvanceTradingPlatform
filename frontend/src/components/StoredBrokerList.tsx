@@ -1,4 +1,5 @@
 import type { StoredBrokerInfo } from "../types";
+import { formatDateTimeIST } from "../ui/format";
 
 /** The label a stored credential row acts on: rows saved before accounts existed are the primary one. */
 export const rowLabel = (s: StoredBrokerInfo) => s.account_label ?? "primary";
@@ -19,7 +20,7 @@ export default function StoredBrokerList({ stored, busy, onAuthenticate, onDelet
           <div>
             <span className="font-medium text-fg capitalize">{s.broker_name}</span>{" "}
             <span className="text-xs text-fg-muted">/ {rowLabel(s)}</span>{" "}
-            <span className="text-fg-muted text-xs">updated {new Date(s.updated_at).toLocaleString()}</span>
+            <span className="text-fg-muted text-xs">updated {formatDateTimeIST(s.updated_at)}</span>
           </div>
           <div className="flex gap-3">
             <button onClick={() => onAuthenticate(s.broker_name, rowLabel(s))} disabled={busy} className="text-xs text-brand hover:underline disabled:opacity-50">

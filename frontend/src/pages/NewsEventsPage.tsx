@@ -14,6 +14,7 @@ import {
   type NewsTrust,
   type NewsVerdict,
 } from "../types";
+import { formatDateTimeIST } from "../ui/format";
 
 /** Phase BB: feed items are unverified - a severity chip and the badge say so on every row. */
 function severityClass(severity: number): string {
@@ -59,7 +60,7 @@ function FeedSourcesCard({ isAdmin }: { isAdmin: boolean }) {
         ))}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-fg-muted">
-        {status.last_run.at && <span>last fetch {new Date(status.last_run.at).toLocaleString()} · {status.last_run.new ?? 0} new · {status.last_run.alerts ?? 0} alerts · {(status.last_run.errors ?? []).length} errors</span>}
+        {status.last_run.at && <span>last fetch {formatDateTimeIST(status.last_run.at)} · {status.last_run.new ?? 0} new · {status.last_run.alerts ?? 0} alerts · {(status.last_run.errors ?? []).length} errors</span>}
         {isAdmin && status.enabled && <button disabled={busy} onClick={refresh} className="rounded border border-border px-2 py-0.5 text-fg hover:bg-surface-2 disabled:opacity-50">Fetch now</button>}
       </div>
     </CollapsibleCard>

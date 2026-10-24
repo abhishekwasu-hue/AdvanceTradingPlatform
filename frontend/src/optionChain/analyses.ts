@@ -1,6 +1,7 @@
 import { request } from "../api/client";
 import { EMPTY, MINUS, formatChange, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
+import { lastCloseText } from "./model";
 
 /**
  * OC2 (owner's order, PART C1): the built-in option chain analyses shown as tabs below the v2 option chain - the data
@@ -49,7 +50,11 @@ export interface AnalysesResponse {
   message: string | null;
   analyses: Analysis[];
   spot?: number | null;
+  /** B2b: "last_close" when the market is closed and the spot is the index's last close from our own candles. */
+  spot_source?: "broker" | "last_close";
   data_as_of?: string;
+  /** B2a: true when `data_as_of` is the last session close (the market is closed). */
+  market_closed?: boolean;
   source?: { broker: string; account_label: string };
   session?: { snapshots: number; since: string | null; note: string | null };
   near_atm_strikes?: number;
@@ -124,7 +129,7 @@ export function stateMessage(data: AnalysesResponse): string | null {
 /** "Data as of 10:00 IST · 4 earlier snapshots since 09:20 IST" - what the numbers stand on. */
 export function provenance(data: AnalysesResponse): string {
   const parts: string[] = [];
-  if (data.data_as_of) parts.push(`Data as of ${formatTimeIST(data.data_as_of)}`);
+  if (data.data_as_of) parts.push(data.market_closed ? lastCloseText(data.data_as_of) : `Data as of ${formatTimeIST(data.data_as_of)}`);
   const s = data.session;
   if (s && s.snapshots > 0 && s.since) parts.push(`${s.snapshots} earlier ${s.snapshots === 1 ? "snapshot" : "snapshots"} since ${formatTimeIST(s.since)}`);
   else if (s && !s.note) parts.push("No earlier snapshot this session yet");

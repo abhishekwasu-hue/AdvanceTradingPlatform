@@ -15,6 +15,7 @@ import {
   placesAutoPaper, visibleModes, withOverride,
   type ConfirmTf, type ThenBody, type ThenIntent, type ThenMode, type ThenTemplate,
 } from "./model";
+import { formatDateTimeIST } from "../../ui/format";
 
 export function ThenChip({ template }: { template: ThenTemplate | null }) {
   const t = useThenT();
@@ -41,7 +42,7 @@ function StatusTable({ template, t }: { template: ThenTemplate; t: ThenT }) {
   return (
     <div className="space-y-1">
       <div className="text-xs font-medium text-fg">{t("status.title")}</div>
-      {template.last_bar_at && <div className="text-xs text-fg-muted font-tabular">{t("status.lastBar", { time: new Date(template.last_bar_at).toLocaleString() })}</div>}
+      {template.last_bar_at && <div className="text-xs text-fg-muted font-tabular">{t("status.lastBar", { time: formatDateTimeIST(template.last_bar_at) })}</div>}
       {template.last_problem && <div role="alert" className="text-xs text-down">{t("status.problem", { problem: template.last_problem })}</div>}
       {rows.length === 0 ? <div className="text-xs text-fg-muted">{t("status.none")}</div> : (
         <table className="w-full text-xs">
@@ -77,7 +78,7 @@ function IntentsTable({ intents, t }: { intents: ThenIntent[] | null; t: ThenT }
               const outcome = outcomeOf(i);
               return (
                 <tr key={i.id} className="border-t border-border align-top">
-                  <td className="py-1 font-tabular">{i.created_at ? new Date(i.created_at).toLocaleString() : ""}</td>
+                  <td className="py-1 font-tabular">{i.created_at ? formatDateTimeIST(i.created_at) : ""}</td>
                   <td className="font-medium">{i.symbol}</td>
                   <td>{i.direction === "SHORT" ? t("intents.SHORT") : t("intents.LONG")}</td>
                   <td className="font-tabular">

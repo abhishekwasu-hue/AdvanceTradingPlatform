@@ -76,6 +76,32 @@ export function firstImage(files: FileList | File[] | null | undefined): File | 
   return null;
 }
 
+/** A1: the analysis engine is not installed on this server. Users see one plain line and no upload or link inputs; the
+ * admin (the server sends `reason` / `owner_steps` to SUPER_ADMIN only) also sees why and what the owner does. */
+export function EngineUnavailable({ engine }: { engine: AnalyzeStatus["engine"] }) {
+  return (
+    <div className="mx-auto max-w-[1240px] space-y-space-4" data-testid="chart-analyze-unavailable">
+      <h1 className="text-t20 font-semibold text-fg md:text-t24">Analyze a chart</h1>
+      <section className={card} role="status">
+        <div className="flex items-start gap-space-3">
+          <TriangleAlert size={20} aria-hidden className="mt-0.5 shrink-0 text-warn" />
+          <div>
+            <p className="text-t15 font-semibold text-fg">Chart analysis is not available right now</p>
+            <p className="mt-space-1 text-t14 text-fg-muted">Your saved analyses are kept. Please check again later.</p>
+          </div>
+        </div>
+        {engine.reason ? (
+          <div className="mt-space-4 rounded-control border border-subtle bg-surface-2 p-space-3" data-testid="engine-admin-detail">
+            <p className="text-t14 font-semibold text-fg">For admins: the analysis engine is missing</p>
+            <p className="mt-space-1 text-t14 text-fg-muted">Why: {engine.reason}.</p>
+            {engine.owner_steps ? <p className="mt-space-1 break-words text-t14 text-fg-muted">{engine.owner_steps}</p> : null}
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 export default function ChartAnalyzePageV2() {
   const features = useFeatures();
   const on = features.on(FLAG);
@@ -119,6 +145,15 @@ export default function ChartAnalyzePageV2() {
   }, []);
 
   useEffect(() => { if (on) void reload(); }, [on, reload]);
+  // A1: with the engine missing the server answers the flag as off for users (the nav hides the page). A direct visit
+  // asks the status once, so the page can say the feature is not available instead of "Page not found".
+  const [probed, setProbed] = useState(false);
+  useEffect(() => {
+    if (!features.loaded || on) return;
+    let live = true;
+    chartAnalyzeApi.status().then((s) => { if (live) setStatus(s); }, () => undefined).finally(() => { if (live) setProbed(true); });
+    return () => { live = false; };
+  }, [features.loaded, on]);
   useEffect(() => () => { if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current); }, []);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
@@ -294,8 +329,12 @@ export default function ChartAnalyzePageV2() {
     pick(firstImage(e.dataTransfer?.files));
   };
 
-  if (!features.loaded) return <div className="h-40 animate-pulse rounded-panel bg-surface-2" aria-busy="true" />;
-  if (!on || off) {
+  const engineMissing = status?.engine.installed === false;
+  if (!features.loaded || (!on && !probed)) return <div className="h-40 animate-pulse rounded-panel bg-surface-2" aria-busy="true" />;
+  // A1: the engine (private package) is not installed - a real "not available" state, never "Coming soon".
+  if (engineMissing && !off) return <EngineUnavailable engine={status.engine} />;
+  if (!on) return <ComingSoon flag={FLAG} />;                 // the flag is off: the shell's standard page (SELF_GATED)
+  if (off) {
     return (
       <div className={card}>
         <h1 className="text-t20 font-semibold text-fg">Page not found</h1>
@@ -308,10 +347,6 @@ export default function ChartAnalyzePageV2() {
     return <SharedAnalysisV2 token={sharedToken} onBack={() => { params.delete("shared"); setParams(params, { replace: true }); }} />;
   }
 
-  const engineMissing = status?.engine.installed === false;
-  // User-friendly pass item 7: without the analysis engine the feature is unavailable - the server answers the flag as
-  // off (the nav hides the page); should the page still be reached, the standard "Coming soon" shows, never the reason.
-  if (engineMissing) return <ComingSoon flag={FLAG} />;
   const limits = status?.limits;
   const working = phase !== "idle";
   const maxMb = status ? Math.round((status.upload.max_bytes / (1024 * 1024)) * 10) / 10 : null;

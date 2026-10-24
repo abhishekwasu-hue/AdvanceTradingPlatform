@@ -294,3 +294,13 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | CPV-12 | Bars per TF in the image / table, and the model's confidence. | 120 closed bars per TF (setting); confidence as text high / medium / low only, never a number. | settings | open |
 | CPV-13 | Flag and entry point. | New flag `copilot_chart_read` (off) behind `ui_v2`; a Copilot read tool plus a card; ADR-0006 tests (no write tool). | `app/ai/tools/` | open |
 | CPV-14 | Which symbols count as the user's own (CLAUDE.md §3 price ranges)? | A symbol the user asked about in his own Copilot is his chosen symbol; ranges are shown only to him. | §3 | open |
+## UI-H Wave 0: the shared components (24 Oct, `claude/ui-h-wave0`)
+
+Checked against CLAUDE.md (sections 2, 3, 7, 8), DECISIONS 24 Oct (UI-H H1-H10 and the approval with changes, item 3:
+one navigation style) and docs/ui/UI_AUDIT.md (Wave 0 list).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| UH0-1 | Compact money: the 23 Oct money rule says "no lakh shorthand" (₹1,23,456, Cr only from one crore); H4 asks for Cr / L / K. | Counts (OI, volume, OI change) get Cr / L / K with the full value on tap / hover; money keeps the 23 Oct rule (whole rupees, "₹2.4 Cr" from one crore) until the owner says otherwise. | `src/ui/format.ts` `formatCompactIN`, `IndianNumber` | open |
+| UH0-2 | Settings has no tab / sub-tab navigation row (the index is a list). The Appearance "Text size" / "Theme" buttons are choices in a form, not navigation. | Left as they are in Wave 0 (no restyle outside tab rows); the Settings wave (4) decides their look. | `components/AppearanceCard.tsx` | open |
+| UH0-3 | Phone tab rows: wrap or one scrolling line? | Wrap by default (every tab always visible); one line with a visible scroll bar and the active tab scrolled into view only for long rows of names (My analyses, the small chart's timeframes). | `src/ui/SubTabs.tsx` | closed: owner W0-1 (24 Oct) - no wrapping; ≤ 5 equal widths, > 5 one scrolling row with edge fades; timeframes = main five + More |

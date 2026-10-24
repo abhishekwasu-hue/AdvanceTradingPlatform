@@ -186,7 +186,7 @@ test.describe("v2 dashboard 1440 desktop", () => {
 
   test("one primary button: the first Needs attention action", async ({ page }) => {
     await open(page, "light");
-    const primaries = page.locator("main .bg-brand:is(a, button)");
+    const primaries = page.locator("main .bg-brand:is(a, button):not([data-subtab])");
     await expect(primaries).toHaveCount(1);
     await expect(primaries).toHaveText("Review 2 trades");
     await expect(page.locator("[data-attention='approvals']").getByRole("link", { name: "Review 2 trades" })).toHaveAttribute("href", "/copilot/watchtower");
@@ -264,7 +264,7 @@ test.describe("v2 dashboard 1440 desktop", () => {
     const signals = page.locator("[data-block='signals']");
     await expect(signals).toContainText("No signals yet today. Your scans and paper bots post them here.");
     await expect(signals.getByRole("link", { name: "Set up a scan" })).toHaveAttribute("href", "/screener/custom");
-    await expect(page.locator("main .bg-brand:is(a, button)")).toHaveCount(0);
+    await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(0);
   });
 
   test("market closed: the last close with when it opens", async ({ page }) => {

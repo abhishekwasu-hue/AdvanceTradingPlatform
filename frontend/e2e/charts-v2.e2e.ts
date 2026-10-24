@@ -157,12 +157,18 @@ test.describe("v2 Charts 1440 desktop", () => {
     const calls = await open(page, "light");
     await chartReady(page);
     const group = page.getByRole("group", { name: "Timeframe" });
-    await expect(group.getByRole("button")).toHaveText(["1 min", "3 min", "5 min", "15 min", "30 min", "1 hour", "Daily", "Weekly", "Monthly"]);
+    // UI-H W0-1: the most-used timeframes in one row, the rest under More.
+    await expect(group.getByRole("button")).toHaveText(["1 min", "5 min", "15 min", "1 hour", "Daily", "More"]);
     await expect(group.getByRole("button", { name: "5 min", exact: true })).toHaveAttribute("aria-pressed", "true");
     const ids: Record<string, string> = { "1 min": "1min", "3 min": "3min", "5 min": "5min", "15 min": "15min", "30 min": "30min", "1 hour": "60min", Daily: "day", Weekly: "week",
       Monthly: "month" };
     for (const [label, tf] of Object.entries(ids)) {
-      await group.getByRole("button", { name: label, exact: true }).click();
+      const inRow = group.getByRole("button", { name: label, exact: true });
+      if (await inRow.count()) await inRow.click();
+      else {
+        await group.getByRole("button", { name: /^More timeframes$|^(3 min|30 min|Weekly|Monthly)$/ }).click();
+        await page.getByRole("menuitemradio", { name: label, exact: true }).click();
+      }
       await expect(group.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect.poll(() => calls.candles.some((c) => c.timeframe === tf && !c.before)).toBe(true);
       await chartReady(page);
@@ -177,7 +183,9 @@ test.describe("v2 Charts 1440 desktop", () => {
   test("week and month are offered only when the server supports them", async ({ page }) => {
     await open(page, "light", { timeframes: ["1min", "3min", "5min", "15min", "30min", "60min", "day"] });
     await chartReady(page);
-    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button")).toHaveText(["1 min", "3 min", "5 min", "15 min", "30 min", "1 hour", "Daily"]);
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button")).toHaveText(["1 min", "5 min", "15 min", "1 hour", "Daily", "More"]);
+    await page.getByRole("button", { name: "More timeframes" }).click();
+    await expect(page.getByRole("menuitemradio")).toHaveText(["3 min", "30 min"]);
   });
 
   test("older history: scrolling back asks once, and not again after the broker had none", async ({ page }) => {

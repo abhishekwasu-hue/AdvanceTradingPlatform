@@ -101,7 +101,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 ## Status table (the session keeps this current; one line per item)
 | ID | Status | Next action | PR |
 |---|---|---|---|
-| UI-H | in progress | audit approved (#503); Wave 0 shared components next (one SubTabs style; mocks per wave), then Wave 1 | #503 |
+| UI-H | in progress | audit approved (#503); Wave 0 in review: shared components in src/ui (PageHeader, StatusBadge, SummaryCard, SubTabs, HelpPopover, IndianNumber, ResponsiveTable, ChartFrame, Disclaimer, UnavailableState) and every in-app tab row on PageTabs (primary, underline) or SubTabs (secondary, filled), no wrapping, timeframes + More (owner fixes W0-1 / W0-2; 3 legacy rows listed in the guard); next Wave 1 | #503, Wave 0 PR |
 | UI-H-BUG | in progress | bug lane: C1 (merged #506: history ends at the last session close, empty state with its reason, `atp.sh probe-candles`), B2a/B2b (merged #507: "as of" the last session close, "Spot: last close", `atp.sh probe-chain`), B3+B4+Orders time (merged #508), A1 (merged #505), B1 (#509: own-broker chain reads = the user's session snapshots; Analyses / Charts / OI reads no longer refused) - small PRs, each with proof | C1: #506; B2: #507; B3/B4: #508; A1: #505; B1: #509 |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
 | CP-V | in progress | independent review of ATP_ORDER_CP_V.md against the code first; build after DATA-H (CV1 lake fallback) | - |

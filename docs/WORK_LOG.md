@@ -3729,6 +3729,73 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
 - Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
 
+## 23 Oct - Day-one fix 4: Find setups in a trader's words (README row 19, DAY_ONE_TRADER_TEST finding 8)
+
+- Branch `claude/d1-fix-find-setups` (from main). Frontend only, **no migration**, no new flag: everything behind
+  `ui_v2` (the page's own flags as before).
+- Timeframes in words ("Daily", "15 min", never "1d"): the scan timeframe select and every stage chip
+  (`TIMEFRAME_WORDS`, the `PlainTimeframes` context; off v2 the codes stay).
+- "Advanced" (a ghost button) holds Pine Script, Library tools, the formula block and "Live counts while editing".
+- The scan's name has its own line with the placeholder "Untitled scan" (the empty name showed a lone "|"; "Momentum"
+  was cut to "Moment").
+- A ready dish on open: "Start with a ready scan" - three library scans, one tap runs one on the chosen list.
+- Every answer leads with its matches; "N stocks did not match" with "Show the N that did not match".
+- Tests: `src/screener/plainWords.test.tsx` (3), e2e `e2e/d1-find-setups-v2.e2e.ts` (no baseline); updated baselines
+  `scan-universe-v2-{1440-dark,390-dark,390-light}` (the page's new header and words).
+- Left for later: the gallery cards' own texts ("RSI(14) at or below 30", "Method × setup matrix") and the empty
+  "Stages" column.
+## 23 Oct - Day-one fix 3: the stored-history bar (README row 19, DAY_ONE_TRADER_TEST finding 3)
+
+- Branch `claude/d1-fix-stored-bar` (from main). Frontend only, **no migration**, no new flag (`ui_v2` +
+  `backtest_stored_history`, as the bar before).
+- Wording: a stored broker that is only not logged in today reads "Not logged in to <Broker> today: Daily backtests use
+  ATP's stored end-of-day history. Intraday backtests need today's login." (`storedHistoryLoginNote`); "No broker
+  connected: ..." stays for an account without a broker.
+- Phone: the sentence has its own line (it wrapped one word per line beside the controls).
+- History: "About 1 year" (400 days, the server's Daily minimum, default) / "2 years" as two buttons (the strategy
+  select stays the page's first combobox), its own `storedDays` in `useCandleSource` (the broker lookback is untouched).
+- One tap: `StoredLoginAction` ("Log in to <Broker>" through the existing login path; "Connect a broker" / "Open Broker"
+  otherwise).
+- Tests: `src/backtest/pricesLine.test.tsx` (+2), e2e `e2e/d1-stored-bar-v2.e2e.ts` (no baseline).
+## 23 Oct - Day-one fix 2: Find setups and Signals before the broker login (README row 19, DAY_ONE_TRADER_TEST finding 2)
+
+- Branch `claude/d1-fix-before-login` (from main). **No migration**, no new flag: behind `ui_v2` + the area flags +
+  `backtest_stored_history` (owner decision flag, OFF by default).
+- Backend `app/screener/stored_history.py`: when the broker path refuses a run for want of a session (409), a Daily /
+  Weekly / Monthly NSE screen reads the same licensed stored Daily bars and window as the stored-history backtest
+  (`bar_source.lake_frame`; today's bar never read), `data_source` `lake:daily`; a missing symbol says "Daily history
+  for X is not stored yet."; intraday screens, other exchanges and the flag off keep the 409 exactly. Hooked in
+  `load_universe`, so the run route and the Copilot's screener tools (its rule answers) share it. Tests
+  `tests/test_d1_screener_stored_history.py` (4).
+- Frontend: `BrokerGate storedDaily` + `StoredDailyNote` - on Find setups and Signals (`STORED_DAILY_PAGES`) the page
+  shows its content under one line with the one-tap "Log in to <Broker>" (or "Connect a broker") instead of the full
+  gate; Charts and the other data pages keep the gate. The Signals day-one watch already reads the shared Daily lake;
+  the Copilot page has no gate. Tests `src/ui/storedDaily.test.tsx` (4), e2e `e2e/d1-before-login-v2.e2e.ts` (no
+  baseline). Charts on stored Daily history is a later PR.
+## 23 Oct - Day-one fix 1: the idea's strategy can be backtested (README row 19, DAY_ONE_TRADER_TEST finding 1)
+
+- Branch `claude/d1-fix-template-backtest` (from main). Frontend only, **no migration**, no new flag: behind `ui_v2` +
+  `strategy_templates` (the stored-history part also `backtest_stored_history`, as before).
+- Strategies › Test lists the adoptable strategy templates ("Strategy templates" group) and opens one from
+  `?template=<id>&timeframe=..&set.<key>=..`; a run asks the server's adopt pre-fill for the strategy id (nothing is
+  created) and backtests it with the existing `/api/backtest` (template ids were already accepted there).
+- The timeframe in plain words (`src/backtest/templateTest.ts`): without broker prices an intraday idea runs on Daily
+  stored history and the page says so; an intraday pick says it needs the broker's prices.
+- "Test it on past prices" on an adoptable idea card, "Test it first on past prices" on the Paper bot form's template.
+- Tests: `src/backtest/templateTest.test.tsx` (6), e2e `e2e/d1-template-backtest-v2.e2e.ts` (390 / 1440, light / dark,
+  no baseline); updated baselines `idea-library-adopt-v2-*`, `strategy-templates-v2-*`, `strategy-templates-exits-v2-*`.
+## 23 Oct - TM94-3: the Phase W option-chain recorder per organisation
+
+- Branch `claude/phase-w-recorder-per-tenant` (from main). **Migration `3c5e7a9b1d24`** (after `e8a0c2d4f6b9`; additive:
+  a nullable `option_chain_snapshots.tenant_id` with its key and a lookup index; rollback-safe; deploy after 15:30 IST).
+  Re-chain with #465's `250d796123b7` at merge (TM943-5).
+- `app/backtest/chain_recorder.py`: `record_chain` / `rows_from_chain` / `last_capture` take the tenant; `scope` /
+  `legacy_owner` / `visible_to` give each reader its own rows and uploads (pre-fix rows only for the confirmed owner).
+  Worker `_record_chains(tenant_id=...)`: only the tenant's own deployments, its own data session, interval per
+  (tenant, underlying). BYOB unchanged.
+- Tests `backend/tests/test_tm94_3_phase_w_recorder_tenant.py` (7); `test_phase_w_option_backtest.py` and
+  `test_z10c_tenancy_fixes.py` now record per tenant. Questions TM943-1..5.
+
 ## 23 Oct - Terminal master Part 7, PR B: smart execution (TM-3 / TM-9 / TM-10 / TM-11, README row 20)
 
 - Branched from PR A (#467, not merged). Flag `smart_execution` (OFF, behind `ui_v2`; catalog "ready", in the trader pack).
@@ -3755,3 +3822,41 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   unchanged.
 - Tests: `src/shell/shellV2.test.tsx`, `src/dashboard/DashboardV2.test.tsx` updated; e2e `e2e/d1-today-v2.e2e.ts` (no
   baseline); `e2e/broker.e2e.ts` and `e2e/shell-v2.e2e.ts` order assertions updated (the 1440 baselines stay within their tolerance).
+## 23 Oct - Day-one fix 7: Signals knows the bot he just started (README row 19, DAY_ONE_TRADER_TEST finding 6)
+
+- Branch `claude/d1-fix-signals-bot` (from main). Frontend only, **no migration**, no new flag (`ui_v2` +
+  `strategy_templates`, the day-one card's own gate).
+- `src/signals/DayOneV2.tsx`: with a PAPER bot running or paused and no list watch adopted yet, the card is "Your paper
+  bot is on" (`BotsView`): the bot's name (the template's name), its symbol, its state and "Just started: it reads its
+  chart on its next round" (`botCheckWords`), "Open Paper bot" and a quiet "Also watch a whole list" (the old setup card,
+  with "Keep my watch" back). No second adopt is asked.
+- Tests: `src/signals/dayOneBots.test.tsx` (3), e2e `e2e/d1-signals-bot-v2.e2e.ts` (no baseline); signals-v2 and
+  signals-day-one-v2 unchanged (they mock no bot).
+## 23 Oct - Day-one fix 6: adopting an idea (README row 19, DAY_ONE_TRADER_TEST findings 5 and 6)
+
+- Branch `claude/d1-fix-adopt-form` (from main). **No migration**, no new flag (`ui_v2` + `strategy_templates` +
+  `idea_library`, as the adopt path).
+- The Paper bot form lists the settings the bot starts with ("The idea's settings" / "Its settings", in words:
+  `settingRows` in `src/strategyTemplates/link.ts`).
+- An idea's link starts on a stock (RELIANCE, `IDEA_SYMBOL`) instead of NIFTY 50, so the summary no longer reads
+  "Trades a NIFTY 50 option..." for a price-action idea; a stock's summary reads "Trades RELIANCE shares" (was
+  "itself").
+- One name per idea: A5's display name is "Breakout and retest" like its idea T5 (id, version and params hash
+  unchanged). Questions D1-1, D1-2.
+- Tests: `tests/test_d1_one_name_per_idea.py` (2), `src/paperbot/adoptForm.test.tsx` (2), e2e
+  `e2e/d1-adopt-form-v2.e2e.ts` (no baseline).
+## 23 Oct - Day-one fix 5: the Copilot's answers in a beginner's words (README row 19, DAY_ONE_TRADER_TEST finding 7)
+
+- Branch `claude/d1-fix-copilot-words` (from main). **No migration**, no flag change (the Copilot's own flags).
+- `app/ai/copilot_chat.py`: a scan answer's "Each stage" / "Why <symbol>" lines use the idea reader's own plain words
+  (`stage_words`: "The market-structure trend is up: 3 left", never `Trend() == "UPTREND"`); "Open Find setups" and
+  "edit them in Find setups" (the v2 page name, not "the Screener"); the market line "by its swing highs and lows the
+  daily trend is up, the weekly sideways" with an India date ("20 Oct 2026") instead of "Dow structure daily uptrend"
+  and "(2026-10-20)"; structure lines and table name BOS / CHoCH in words ("break past the last swing (a break of
+  structure)", "first break against the trend (a change of character)"); the option chain section opens with what PCR
+  is (max pain is already explained in its own sentence).
+- `app/screener/idea.py`: "(the function's default)" -> "(the usual setting)".
+- Evals `copilot_jobs.jsonl` facts updated (3), e2e fixtures `copilot_tools_v2.json` / `copilot_chat_v2.json` patched to
+  the new words (pins updated in `scripts/check_public_repo.py`), `copilot-chat-v2-1440-light.png` re-baselined.
+- Tests `tests/test_d1_copilot_words.py` (4), e2e `e2e/d1-copilot-words-v2.e2e.ts` (no baseline).
+- Not changed: the "More Copilot tools" list (finding 7's last point).

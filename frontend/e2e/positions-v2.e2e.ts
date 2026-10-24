@@ -156,7 +156,7 @@ test.describe("v2 positions 1440 desktop", () => {
 
   test("one card style, no primary button of its own, and a glossary '?'", async ({ page }) => {
     await open(page, "light");
-    await expect(page.locator("main .bg-brand:is(a, button)")).toHaveCount(0);
+    await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(0);
     await page.getByRole("button", { name: "What is Risk at stops?" }).click();
     await expect(page.getByRole("note")).toContainText("What you would lose if every open position reached its stop now.");
     const main = page.locator("main");

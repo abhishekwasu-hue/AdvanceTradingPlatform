@@ -110,7 +110,9 @@ export function SubTabs<K extends string>({
   };
 
   const tabClass = (on: boolean) => cx(
-    "inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-control px-space-3 text-t14 transition-colors duration-fast",
+    // `full` shares the width equally, so a tab keeps a little less side padding (four tabs fit a 360 px phone).
+    "inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-control text-t14 transition-colors duration-fast",
+    full ? "px-space-2" : "px-space-3",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1",
     size === "sm" ? "md:min-h-8 md:px-space-2" : "md:min-h-9",
     full ? "min-w-0 flex-1" : layout === "scroll" ? "shrink-0" : "flex-auto md:flex-none",

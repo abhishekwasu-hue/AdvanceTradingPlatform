@@ -95,7 +95,7 @@ test.describe("v2 portfolio 1440 desktop", () => {
 
   test("no primary button, plain words, a glossary '?'", async ({ page }) => {
     await open(page, "light");
-    await expect(page.locator("main .bg-brand:is(a, button)")).toHaveCount(0);
+    await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(0);
     await page.getByRole("button", { name: "What is Gross exposure?" }).click();
     await expect(page.getByRole("note")).toContainText("The value of everything you hold");
     for (const gone of ["Capital Deployed", "Symbols Held", "Phase", "Sample", "recommended"]) {

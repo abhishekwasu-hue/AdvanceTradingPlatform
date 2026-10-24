@@ -47,7 +47,7 @@ with open(STATE) as fh:
     st = json.load(fh)
 argv = sys.argv[1:]
 st["calls"].append({"argv": argv, "release": os.environ.get("ATP_RELEASE", ""), "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", ""),
-                   "phase": os.environ.get("ATP_DEPLOYMENT_PHASE", "")})
+                   "phase": os.environ.get("ATP_DEPLOYMENT_PHASE", ""), "private": os.environ.get("ATP_PRIVATE_VERSION", "")})
 rc = 0
 out = []
 APP = {"backend": "atp-backend", "worker": "atp-worker", "frontend": "atp-frontend", "research-worker": "atp-research-worker", "backup": "atp-backup"}
@@ -268,6 +268,12 @@ if sub == "exec":
         if cmd[:2] == ["python", "scripts/ops_check.py"]:                  # A2: the host facts arrive on stdin
             st["ops_check_input"] = json.loads(sys.stdin.read() or "{}")
             out.append("ops-check: disk=ok | 0 change(s) to report"); finish()
+        if cmd[:2] == ["sh", "-c"] and "engine_status.py" in cmd[2]:      # A1: the chart analysis engine's state
+            if st.get("engine") is None:
+                rc = 1
+            else:
+                out.append(json.dumps(st["engine"]))
+            finish()
         if cmd[:2] == ["sh", "-c"] and "flag_posture.py" in cmd[2]:
             if st["posture"] is None:
                 rc = 1

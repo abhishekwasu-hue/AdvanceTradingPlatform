@@ -259,6 +259,73 @@ def test_engine_not_installed(monkeypatch):
     assert _row(item["id"]).status == "ready"
 
 
+def _make_super_admin(user_id: int) -> None:
+    from app.db.models import User
+
+    async def go():
+        async with _session_factory() as session:
+            (await session.get(User, user_id)).role = "SUPER_ADMIN"
+            await session.commit()
+    _run(go())
+
+
+def test_engine_missing_the_admin_sees_why_and_the_owner_steps_a_user_never_does():
+    """A1: a user gets only installed=false; SUPER_ADMIN also gets the reason and the owner's install steps."""
+    provider.set_for_tests(None)
+    user = _owner("a1user")
+    assert client.get(f"{BASE}/status", headers=user["headers"]).json()["engine"] == {"installed": False, "message": "Analysis engine not installed"}
+    admin = _owner("a1admin")
+    _make_super_admin(admin["user_id"])
+    got = client.get(f"{BASE}/status", headers=admin["headers"]).json()["engine"]
+    assert got["installed"] is False and got["reason"] == provider.REASON_ABSENT
+    assert "ATP_PRIVATE_REF" in got["owner_steps"] and "atp_private_ro" in got["owner_steps"]
+    provider.set_for_tests(FakeProvider())
+    got = client.get(f"{BASE}/status", headers=admin["headers"]).json()["engine"]
+    assert got["installed"] is True and "reason" not in got and "owner_steps" not in got
+
+
+def test_the_loader_names_why_the_engine_is_off(monkeypatch):
+    """A1: the loader's reason, read by the admin's status and `atp.sh health` (scripts/engine_status.py)."""
+    import importlib
+    import subprocess
+    import sys
+    import types
+    from pathlib import Path
+
+    provider.reset_for_tests()
+    real = importlib.import_module
+
+    def fake_import(name, module=None):
+        if name != provider.MODULE:
+            return real(name)
+        if module is None:
+            raise ModuleNotFoundError("No module named 'atp_private'", name="atp_private")
+        return module
+
+    cases = [
+        (None, provider.REASON_ABSENT),
+        (types.SimpleNamespace(), "the private package has no get_provider()"),
+        (types.SimpleNamespace(get_provider=lambda: (_ for _ in ()).throw(RuntimeError("secret method text"))), "the engine failed to start (RuntimeError)"),
+        (types.SimpleNamespace(get_provider=lambda: object()), "the engine does not match ATP's analysis interface"),
+        (types.SimpleNamespace(get_provider=FakeProvider), None),
+    ]
+    try:
+        for module, reason in cases:
+            provider.reset_for_tests()
+            monkeypatch.setattr(provider.importlib, "import_module", lambda name, m=module: fake_import(name, m))
+            state = provider.describe(admin=True)
+            if reason is None:
+                assert state["installed"] is True and state["name"]
+            else:
+                assert state == {"installed": False, "message": provider.NOT_INSTALLED, "reason": reason, "owner_steps": provider.OWNER_STEPS}
+                assert "secret method text" not in json.dumps(state)
+    finally:
+        provider.reset_for_tests()
+    backend = Path(__file__).resolve().parents[1]
+    out = subprocess.run([sys.executable, "scripts/engine_status.py"], cwd=backend, capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0 and json.loads(out.stdout.strip().splitlines()[-1]) == {"installed": False, "reason": provider.REASON_ABSENT}
+
+
 def test_without_any_ai_the_user_is_told_why():
     """The real AI path: no organisation provider and no own key -> a clear refusal, nothing is called."""
     who = _owner("noai")

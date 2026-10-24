@@ -3645,6 +3645,43 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   e2e `front-page.e2e.ts` (no chip on any page). Baselines refreshed because the chip row is gone from every v2 page
   (the e2e user has an unverified address): chart-analyze, charts, connect-ai, copilot-chat, fno-insights, fno-workspace,
   markets, option-chain, settings-index, shell, signals and view-as `*-v2-*` images (103 files).
+
+## 23 Oct - User-friendly pass (items 2-8), branch `claude/user-friendly-pass-1`
+
+- Frontend behind `ui_v2` plus one server rule; **no migration**, no new flag. Item 1 shipped first in #450 (merged in
+  here). Status table: `docs/design/UX_AUDIT_FULL.md` "User-friendly pass"; questions UFP-1..9.
+- Item 2: `liveHiddenFrom` (phase0_paper_only) drives "2 practice positions", "every entry", "Booked so far", the top
+  bar's LIVE notice on every page and the LIVE rows of Needs attention; risk tour text says "Every entry".
+- Item 3: the sidebar's role label only when `GET /api/team/tenant` says more than one member (`showRoleFor`).
+- Item 4: `formatINR` / `formatSignedINR` whole rupees by default, `{ paise: true }` on the ticket figures, the compare
+  table, closed-trade P&L and charges, the "Closed at" message and F&O journal drafts; compact keeps only "Cr".
+- Item 5: `PageIntro` is one line with "Hide", collapsing to "About this page" (remembered per page; Skip all tips hides
+  it); every page's intro rewritten so it never repeats the subtitle.
+- Item 6: `src/ui/strategyName.ts` (Library names remembered by the shell, built-in names, words for anything else);
+  dashboard, positions, portfolio, risk checks, paper bot and the Copilot pulse use it.
+- Item 7: `/api/system/features` answers `chart_analyze*` off without `atp_private.chart_analyze`; the admin flag list
+  shows `unavailable_reason`; the page shows the standard Coming soon (`PAGE_FLAGS["chart-analyze"]`).
+- Item 8: the drop-zone sentences are capitalised.
+- Tests: `src/ux/userFriendlyPass.test.tsx` (guards for all items), `src/ui/strategyName.test.ts`, `format.test.ts`,
+  `PageIntro.test.tsx`, `flagList.test.tsx`, `backend/tests/test_ufp_engine_gate.py`; updated model and page tests.
+- e2e: text checks moved to whole rupees, the intro and Coming soon; baselines refreshed (107 files): chart-analyze,
+  charts-v2 (+ multi, watchlist, chartlight-on-dark), connect-ai-v2, copilot-chat-v2, fno4-positions / watchlist,
+  fno8b-setup-chain, fno8b3-cockpit, markets-v2 (+ indices, list), option-chain-v2 (+ charts), paper-bot-v2,
+  portfolio-v2, positions-v2, risk-v2, signals-v2, strategy-templates-v2 (+ exits). Causes: the role label, the
+  collapsed intro, whole rupees and strategy names.
+
+
+## 23 Oct - User-friendly pass item 1: "Verify your email" leaves the top bar
+
+- Branch `claude/ufp-verify-email` (from main), shipped first on the owner's word. Frontend only, **no migration**, no flag.
+- Both top bars (v2 `TopBarV2`, today's `App.tsx`) no longer show the chip on any page.
+- The v2 Dashboard's Needs attention list has one "Verify your email" row (also in PAPER, without LIVE wording), with a
+  "Resend link" button and "Hide for today"; Settings › Account keeps its Email verification card. Both send the link
+  through `src/ui/verifyEmail.ts` and say what happened in the same plain words (never a server text).
+- Tests: `src/ui/verifyEmail.test.tsx`, `dashboard/model.test.ts`, `shell/shellV2.test.tsx`, `setup/getStarted.test.tsx`;
+  e2e `front-page.e2e.ts` (no chip on any page). Baselines refreshed because the chip row is gone from every v2 page
+  (the e2e user has an unverified address): chart-analyze, charts, connect-ai, copilot-chat, fno-insights, fno-workspace,
+  markets, option-chain, settings-index, shell, signals and view-as `*-v2-*` images (103 files).
 - CI fix (e2e failed twice on 5 shots, ratio 0.03): 74 more baselines still showed the chip (the old-shell phone pages
   of `mobile.e2e.ts` and `broker.e2e.ts`, plus some `*-v2-*` 1440/390 images). Playwright's anti-aliasing tolerance kept
   them just under the 2% limit here (1.6-1.9%) and just over it on the CI runner (2.0-2.2%), so `--update-snapshots`
@@ -3784,6 +3821,26 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
 - Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
 
+
+## 23 Oct - Terminal master Part 1B: the Kotak Neo adapter (README row 20)
+
+- Branch `claude/broker-kotak-neo`. **No migration.** Design `docs/design/BROKER_KOTAK_NEO.md` (every broker fact with
+  its source, the date read and verified / unverified).
+- `backend/app/brokers/kotak_neo.py`: the TOTP login of the official SDK `kotakneoapi` 3.0.9 (consumer key + mobile +
+  UCC + TOTP, then MPIN), the session kept as one encrypted string, positions / holdings / limits / books / margin,
+  orders (CNC / MIS / NRML / MTF, DAY / IOC, AMO), quotes, history, option chain, scrip master and symbol mapping.
+- `backend/app/brokers/gates.py`: Kotak Neo's LIVE-order and market-data gates, closed in code (owner, 23 Oct:
+  TM-5 / TM-6); the adapter refuses before any request; organisation price picks skip a gated row.
+- TM-3 `backend/app/execution/marketable_limit.py` (+ `BrokerCapabilities.market_orders_allowed`), the same transform in
+  the PAPER adapter (`venue=`); the SEBI rule-set maps algo MARKET entries to a marketable limit for Kotak Neo
+  (`docs/COMPLIANCE_IN.md` regenerated).
+- Charges `backend/app/brokers/broker_charges.py` (only what the broker states, source + date); rate budget row; the
+  SFeed decoder `backend/app/market_data/kotak_feed.py` (OFF behind the gate).
+- Broker page (behind `ui_v2`): the Kotak Neo tile ("Practice only") and the Connect panel's guide with the official
+  links. Screenshots 390 / 1440, light / dark in the scratchpad (not committed).
+- Tests `backend/tests/test_part1b_kotak_neo.py` (recorded fixtures `tests/fixtures/kotak_neo/`), the connect flow in
+  `test_p2a_broker_connect.py`, frontend `src/broker/BrokerScreens.test.tsx`. Lawyer list: `docs/DATA_SOURCES.md`
+  item 3. Questions KN-1..KN-11.
 ## 23 Oct - Day-one fix 4: Find setups in a trader's words (README row 19, DAY_ONE_TRADER_TEST finding 8)
 
 - Branch `claude/d1-fix-find-setups` (from main). Frontend only, **no migration**, no new flag: everything behind
@@ -3851,6 +3908,28 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests `backend/tests/test_tm94_3_phase_w_recorder_tenant.py` (7); `test_phase_w_option_backtest.py` and
   `test_z10c_tenancy_fixes.py` now record per tenant. Questions TM943-1..5.
 
+
+## 23 Oct - Terminal master Part 1B: the Groww adapter (README row 20)
+
+- Branch `claude/broker-groww`, stacked on `claude/broker-kotak-neo` (#473, not merged when this started: `gates.py`,
+  `marketable_limit.py`, `broker_charges.py` shared). **No migration.** Design `docs/design/BROKER_GROWW.md` (every
+  fact with its source, the date read and verified / unverified / conflicting).
+- `backend/app/brokers/groww.py`: the TOTP and approval logins of the official SDK `growwapi` 1.5.0, the day's token,
+  positions / holdings / margins / order and trade books / order margin, orders (CNC / MIS / NRML / MTF, DAY / IOC),
+  quotes, LTP, history, option chain + Greeks, the instrument CSV and symbol mapping. No native GTT / OCO (TM-23).
+- Gates: Groww's LIVE-order and market-data gates closed in code (TM-5 / TM-6); TM-3 marketable limit and SL band; the
+  SEBI rule-set maps algo MARKET entries to a marketable limit for Groww (`docs/COMPLIANCE_IN.md` regenerated).
+- TM-27: `rate_budget.DailyBudget` (per-day caps by call type, exits never refused) wired into the worker's budgets;
+  the Groww row 3 / s, 80 / min.
+- Charges: percent / cap / minimum rows (`brokerage_for_order`), Groww's stated brokerage, the Rs 499 a month
+  subscription as a platform fee; the PAPER adapter uses them.
+- Feed `backend/app/market_data/groww_feed.py`: nkey + socket token + a minimal NATS client + the protobuf price reader
+  (OFF behind the gate).
+- Broker page (behind `ui_v2`): the Groww tile ("Practice only") and the connect guide. Screenshots 390 / 1440, light /
+  dark in the scratchpad (not committed). Also `tests/test_api.py` now lists the two new adapters (it was missed in #473).
+- Tests `backend/tests/test_part1b_groww.py` (fixtures `tests/fixtures/groww/`), the connect flow in
+  `test_p2a_broker_connect.py`, frontend `BrokerScreens.test.tsx`. Lawyer list: `docs/DATA_SOURCES.md` item 4.
+  Questions GW-1..GW-12.
 ## 23 Oct - Terminal master Part 7, PR B: smart execution (TM-3 / TM-9 / TM-10 / TM-11, README row 20)
 
 - Branched from PR A (#467, not merged). Flag `smart_execution` (OFF, behind `ui_v2`; catalog "ready", in the trader pack).
@@ -3866,6 +3945,39 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests `tests/test_tm7_smart_execution.py`, `src/fno/smartExecution.test.tsx`. Screenshots (fixtures, not committed):
   scratchpad `tm-part7/`. Questions SE-4..SE-8. No migration.
 
+## 23 Oct - Day-one fix 8: Charts in a trader's words (README row 19, DAY_ONE_TRADER_TEST finding 9)
+
+- Branch `claude/d1-fix-charts-words` (from main). Frontend only, **no migration**, no new flag (the v2 charts, `ui_v2`).
+- Timeframes in words on every v2 chart (`src/chart/timeframes.ts`): "1 min, 3 min, 5 min, 15 min, 30 min, 1 hour,
+  Daily, Weekly, Monthly" (were "1m ... 1H, D, W, M").
+- The volume pane: "Volume of the NIFTY October future" (was "Volume · NIFTY OCT FUT").
+- The first open (no own list, nothing remembered) shows the NIFTY 50 stocks, then Indices (`pickList`), the same list
+  Find setups and Signals open on. Question D1-3.
+- Tests: the chart unit tests updated; e2e `charts-v2` / `signals-v2` button names and baselines
+  `charts-v2-watchlist-1440-{light,dark}`, `charts-v2-watchlist-system-1440-light` updated; new e2e
+  `e2e/d1-charts-words-v2.e2e.ts` (no baseline).
+- Not changed: "Indicators · 2" and the RSI pane, the phone group "Indices" holding one list "Indices".
+
+## 23 Oct - SE-7: the multi-leg executor on the smart-execution engine + "if I do not answer" (README row 20)
+
+- Branched from PR B (`claude/terminal-smart-execution`, #468, not merged yet). Flag `smart_execution` (OFF, behind `ui_v2`).
+  With it off, `execution/multileg.py` runs exactly as before (the old LIVE path and its auto-unwind are untouched).
+- `app/execution/multileg_smart.py`: the structure's legs through `smart_execution.run` for LIVE (his broker, from the
+  worker) and PAPER (the PaperExecutionAdapter at the quoted premiums) - one code path. Hedges first; a sold leg only
+  after every hedge is confirmed filled in full; the first leg that does not fill stops the run; nothing is undone by
+  itself: the filled legs (a part fill too) are booked and the group is INCOMPLETE.
+- `app/execution/incomplete_structures.py`: the `incomplete` block on the legs' `group_meta` (no migration), his
+  answer (Complete the rest = recorded, sent by the worker through every entry refusal; Close the filled legs = an exit
+  through `close_group`, sold legs first; Keep them), his rule at the deadline (prefs `on_no_answer` close_filled /
+  keep, `answer_minutes` 1-120, default close after 5), audit rows and STRUCTURE_INCOMPLETE notifications. The
+  structure's exit rules wait while the group is not whole; every leg stays closable.
+- Routes `GET /api/trading/incomplete`, `POST /api/trading/incomplete/{group_id}/answer` (own orders; tenancy table,
+  order-path table: an exit only). Worker: `run_exits` in the exits part, `_complete_rests` after the entry gates.
+- Frontend: `src/fno/IncompleteOrdersV2.tsx` on Positions (filled / not placed, countdown, three taps), the two settings
+  on Settings › My trading defaults.
+- Tests `tests/test_se7_live_multileg.py` (parity old vs new LIVE + PAPER, failure-path change, timer, keep, kill switch
+  and Phase 0 lock, idempotency, tenancy, worker), `src/fno/incompleteOrders.test.tsx`. Screenshots (fixtures, not
+  committed): scratchpad `se7/`. Questions SE7-1..SE7-6. No migration.
 ## 23 Oct - Day-one fix 9: Today's next step and the sidebar order (README row 19, DAY_ONE_TRADER_TEST finding 10)
 
 - Branch `claude/d1-fix-today-nav` (from main). Frontend only, **no migration**, no new flag (`ui_v2`; the Today link

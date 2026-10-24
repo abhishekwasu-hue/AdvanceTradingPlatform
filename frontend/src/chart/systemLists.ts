@@ -66,12 +66,14 @@ export function groupOf(ref: ListRef | null, system: readonly SystemGroup[]): st
 }
 
 /** Which list to show: the one the page remembers when it still exists; else the trader's first own list (as before);
- * else the system "Indices" list (a ready list on the first open), else the first system list; null when there is none. */
+ * else the NIFTY 50 stocks (day-one fix 8), else the system "Indices" list (a ready list on the first open), else the first system list; null when there is none. */
 export function pickList(systemKey: string | null, listId: number | null, own: readonly WatchlistV2[], system: readonly SystemGroup[]): ListRef | null {
   const keys = system.flatMap((g) => g.lists.map((l) => l.key));
   if (systemKey && keys.includes(systemKey)) return { kind: "system", key: systemKey };
   if (listId != null && own.some((l) => l.id === listId)) return { kind: "own", id: listId };
   if (own.length > 0) return { kind: "own", id: own[0].id };
+  // Day-one fix 8: a list of stocks to look through first - the NIFTY 50 stocks (Find setups and Signals open on them too)
+  if (keys.includes("index-nifty50")) return { kind: "system", key: "index-nifty50" };
   if (keys.includes("indices")) return { kind: "system", key: "indices" };
   return keys.length > 0 ? { kind: "system", key: keys[0] } : null;
 }

@@ -142,7 +142,7 @@ export function resultText(r: OrderResult): string {
 }
 
 export function moneyText(v: number | null | undefined): string {
-  return typeof v === "number" && Number.isFinite(v) ? formatINR(v) : "–";
+  return typeof v === "number" && Number.isFinite(v) ? formatINR(v, { paise: true }) : "–";
 }
 
 /** A held leg in one line: "Bought 1 lot at 100.00". */

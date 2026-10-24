@@ -25,7 +25,6 @@ exchange's own data; the AI never calls any of this (ADR-0006).
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, Sequence, Tuple, TypeVar
@@ -46,11 +45,16 @@ class SmartSettings:
     settlement_band_pct: float
     settlement_telegram: bool
     protection_band_pct: float
+    # SE-7: what happens to the filled legs of an incomplete multi-leg order he has not answered within `answer_minutes`.
+    on_no_answer: str = "close_filled"
+    answer_minutes: int = 5
 
     @classmethod
     def from_prefs(cls, values: Dict[str, Any]) -> "SmartSettings":
         return cls(settlement_days_before=int(values["settlement_days_before"]), settlement_band_pct=float(values["settlement_band_pct"]),
-                   settlement_telegram=bool(values["settlement_telegram"]), protection_band_pct=float(values["protection_band_pct"]))
+                   settlement_telegram=bool(values["settlement_telegram"]), protection_band_pct=float(values["protection_band_pct"]),
+                   on_no_answer=str(values.get("on_no_answer", cls.on_no_answer)),
+                   answer_minutes=int(values.get("answer_minutes", cls.answer_minutes)))
 
 
 async def settings_for(session: Any, user: Any) -> SmartSettings:
@@ -103,10 +107,10 @@ def order_type_for(market_orders_allowed: bool, side: str, price: float, band_pc
     for a buy, below for a sell - on the tick), so the order is marketable and still fills in a fast move."""
     if market_orders_allowed:
         return "MARKET", None
-    band = max(0.0, float(band_pct)) / 100.0
-    raw = price * (1 + band) if side.upper() == "BUY" else price * (1 - band)
-    steps = math.ceil(round(raw / tick, 6)) if side.upper() == "BUY" else math.floor(round(raw / tick, 6))
-    return "LIMIT", round(max(tick, steps * tick), 2)
+    # One price rule for every path (TM-3): the same function the broker adapters and the PAPER adapter use.
+    from app.core.enums import OrderSide
+    from app.execution.marketable_limit import marketable_limit_price
+    return "LIMIT", marketable_limit_price(price, OrderSide.BUY if side.upper() == "BUY" else OrderSide.SELL, band_pct, tick)
 
 
 # --- the run: one state machine for entries and exits (TM-11) -------------------------------------------------------

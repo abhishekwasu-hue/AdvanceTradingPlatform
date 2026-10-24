@@ -323,7 +323,8 @@ def test_shoonya_requires_core_credentials():
 # --- Registry --------------------------------------------------------------------
 
 def test_registry_lists_all_seven_brokers():
-    assert set(available_brokers()) == {"zerodha", "upstox", "shoonya", "angel_one", "fyers", "dhan", "coindcx"}
+    # Part 1B added Kotak Neo and Groww (nine adapters; LIVE orders and live prices gated: app/brokers/gates.py).
+    assert set(available_brokers()) == {"zerodha", "upstox", "shoonya", "angel_one", "fyers", "dhan", "coindcx", "kotak_neo", "groww"}
 
 
 def test_registry_returns_correct_adapter_type():

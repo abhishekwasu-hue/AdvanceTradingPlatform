@@ -163,7 +163,7 @@ def test_the_map_agrees_with_the_login_sets_and_the_callback_routes():
     assert {n for n, s in specs.items() if s.login_method == fs.LOGIN_API_KEY} == tl.PERMANENT_KEY_BROKERS
     oauth = {n for n, s in specs.items() if s.login_method == fs.LOGIN_OAUTH}
     assert oauth == tl.OAUTH_BROKERS | set(tl.LOGIN_URL_BROKERS) | set(tl.OAUTH_CALLBACK_BROKERS)
-    assert {n for n, s in specs.items() if s.login_method == fs.LOGIN_TOTP} == {"angel_one", "shoonya"}
+    assert {n for n, s in specs.items() if s.login_method == fs.LOGIN_TOTP} == {"angel_one", "shoonya", "kotak_neo", "groww"}
     routes = {(r.method, r.path) for r in iter_api_routes(app)}
     for name in oauth:
         assert ("GET", specs[name].oauth_start_path) in routes and ("GET", specs[name].oauth_callback_path) in routes, name

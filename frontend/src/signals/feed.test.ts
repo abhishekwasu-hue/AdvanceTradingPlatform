@@ -89,8 +89,8 @@ describe("UI2-3 statuses and labels", () => {
 describe("UI2-3 risk sentences from the existing pre-check", () => {
   it("within the cap: plain sentences, no warning", () => {
     const lines = riskSentences({ risk_check: riskCheck(), portfolio_impact: null });
-    expect(lines[0]).toEqual({ text: "Most you can lose (₹5,250.00) is within your ₹6,000.00 per-trade limit.", warn: false });
-    expect(lines[1].text).toBe("Costs about ₹64.50; reward to risk after costs is 1.90.");
+    expect(lines[0]).toEqual({ text: "Most you can lose (₹5,250) is within your ₹6,000 per-trade limit.", warn: false });
+    expect(lines[1].text).toBe("Costs about ₹65; reward to risk after costs is 1.90.");
     expect(lines.every((l) => !l.warn)).toBe(true);
     expect(sizeAndLoss({ risk_check: riskCheck() })).toEqual({ quantity: 75, lotSize: 75, maxLoss: 5250 });
   });

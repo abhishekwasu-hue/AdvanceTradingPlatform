@@ -5,6 +5,7 @@ import type { SetupHealthItem } from "../setup/model";
 import { paperOnlyFrom } from "../setup/paperOnly";
 import { reasonWords, setupWords } from "../signals/signalText";
 import { EMPTY, formatDateIST, formatLots, formatPrice, formatTimeIST } from "../ui/format";
+import { botDisplayName, strategyDisplayName } from "../ui/strategyName";
 import type { OiBannerResponse } from "../oi/types";
 import type {
   AiAction, AnalyticsSummary, Deployment, NotificationEntry, PaperRiskStatus, PortfolioExposure, SystemStatus, TradeRecord,
@@ -257,7 +258,8 @@ const STATUS: Record<string, SignalStatus> = {
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
-/** "orb_breakout_15m" -> "Orb breakout 15m". */
+/** An internal code in words: "target_1_hit" -> "Target 1 hit". Not for strategy ids: those go through
+ * `strategyDisplayName` (src/ui/strategyName.ts), which never shows a slug. */
 export function humanise(id: string): string {
   const words = id.replace(/[_-]+/g, " ").trim();
   return words ? words[0].toUpperCase() + words.slice(1) : "";
@@ -269,7 +271,7 @@ function signalRow(a: AiAction): SignalRow {
   const reasons = Array.isArray(signal.reasons) ? signal.reasons.filter((r): r is string => typeof r === "string" && r.trim() !== "") : [];
   // UX3 fix 10 (signal language, CLAUDE.md): no "Entry · Stop · Target" prices on the row; the Signals page holds the
   // user's own levels one tap away. The setup is the first reason in structure words, else the strategy's name.
-  const strategy = humanise(str(e.strategy_id));
+  const strategy = strategyDisplayName(str(e.strategy_id), null, { index: false });
   return {
     id: a.id,
     time: formatTimeIST(a.created_at, { suffix: false }),
@@ -331,6 +333,8 @@ export interface AttentionInput {
   unread: NotificationEntry[] | null;
   status: SystemStatus | null;
   emailVerified: boolean | undefined;
+  /** `phase0_paper_only` is on (or not known yet): nothing about LIVE in any row (user-friendly pass item 2). */
+  liveHidden?: boolean;
   /** Where approvals are made today (UI2-3 moves them to Signals). */
   approvalsPath: string;
   /** Settings redesign D: what in the setup needs an action now (`GET /api/me/setup` -> `health`); null = not known. */
@@ -387,7 +391,8 @@ function minutesLeft(expires: string | null, nowMs: number): number | null {
 
 /** Up to MAX_ATTENTION rows, most urgent first (§5): the broker login (nothing is priced without it, so it leads, as in
  * the phone mockup); approvals waiting; Autopilot paused or failing;
- * the daily-loss lockout; a real exposure warning; unseen alerts; LIVE paused by the operator; e-mail not verified.
+ * the daily-loss lockout; a real exposure warning; unseen alerts; LIVE paused by the operator (never in the paper
+ * phase); e-mail not verified (the only place it is asked for, item 1).
  * Settings redesign D adds the setup-health rows (`input.health`): the Upstox Analytics Token ending ("Renew", after the
  * broker login), delayed prices and a failing AI key ("Fix", after the exposure warning), and Telegram not connected
  * ("Connect", last, and only once the Get started card is hidden). A row marked `dismissible` that the trader hid today
@@ -441,7 +446,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
     const d = paused[0];
     rows.push({
       id: "paused", icon: "paused", tone: "warn",
-      title: paused.length === 1 ? `Paper bot paused “${humanise(d.strategy_id)} ${d.symbol}”` : `${paused.length} paper bots are paused`,
+      title: paused.length === 1 ? `Paper bot paused “${botDisplayName(d.strategy_id, d.symbol)}”` : `${paused.length} paper bots are paused`,
       detail: paused.length === 1 ? (d.pause_reason ? `${d.pause_reason} Nothing else is affected.` : "It stays paused until you resume it.")
         : "They stay paused until you resume them.",
       action: { label: "Review", to: "/deployments" }, dismissible: true,
@@ -449,7 +454,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
   } else if (failing.length) {
     rows.push({
       id: "failing", icon: "paused", tone: "warn",
-      title: failing.length === 1 ? `Paper bot “${humanise(failing[0].strategy_id)} ${failing[0].symbol}” hit a problem` : `${failing.length} paper bots hit a problem`,
+      title: failing.length === 1 ? `Paper bot “${botDisplayName(failing[0].strategy_id, failing[0].symbol)}” hit a problem` : `${failing.length} paper bots hit a problem`,
       detail: "Open Paper bot to see what happened and what to do.", action: { label: "Review", to: "/deployments" }, dismissible: true,
     });
   }
@@ -472,8 +477,9 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
     });
   }
   // P3: in PAPER (the trader has no LIVE deployment) nothing about LIVE shows on the front page: no "Live trading is
-  // paused" row. Only a deployments list that was read can hide it: a failed read (null) keeps it (src/setup/paperOnly.ts).
-  const paperOnly = paperOnlyFrom(input.deployments);
+  // paused" row. Only a deployments list that was read can hide it: a failed read (null) keeps it
+  // (src/setup/paperOnly.ts). While `phase0_paper_only` is on (`liveHidden`) it never shows.
+  const paperOnly = paperOnlyFrom(input.deployments) || !!input.liveHidden;
   if (!paperOnly && input.status && input.status.disabled_brokers.length) {
     rows.push({ id: "live-paused", icon: "warning", tone: "warn", title: `Live trading is paused on ${input.status.disabled_brokers.map(brokerDisplayName).join(", ")}`,
       detail: "Paper trading carries on. Live orders wait until it is resumed." });

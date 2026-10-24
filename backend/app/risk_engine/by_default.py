@@ -486,7 +486,8 @@ def releases_unused_entry_slot(func: Callable[P, Awaitable[R]]) -> Callable[P, A
         try:
             result = await func(*args, **kwargs)
             outcome = result[0] if isinstance(result, tuple) else result
-            if RESERVED.get() is not None and not getattr(outcome, "executed", False):
+            # SE-7: an INCOMPLETE structure opened real positions (its filled legs) - the slot stays taken.
+            if RESERVED.get() is not None and not getattr(outcome, "executed", False) and not getattr(outcome, "keeps_entry_slot", False):
                 session, user = (kwargs.get("session") or args[0]), (kwargs.get("user") or args[1])
                 await release_entry(session, user)  # type: ignore[arg-type]
             return result

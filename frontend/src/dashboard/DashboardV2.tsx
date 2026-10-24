@@ -8,6 +8,7 @@ import { useSetup } from "../setup/useSetup";
 import { BrokerGateView, CONNECT_BROKER_PATH, SIGN_IN_PATH, useBrokerLogin } from "../ui/BrokerGate";
 import { useBrokerSession, type BrokerGateState } from "../ui/brokerSession";
 import { useFeatures } from "../ui/useFeatures";
+import { liveHiddenFrom } from "../settings/useLiveHidden";
 import { useBigText } from "../theme";
 import { useColourV2 } from "../ui/colourV2";
 import { useIndexSparks } from "./indexSparks";
@@ -101,7 +102,7 @@ export default function DashboardV2(_props: PageProps = {}) {
   const health = serverHealth && user?.role === "VIEWER" ? serverHealth.filter((h) => h.key === "ai_key" || h.key === "data_feed") : serverHealth;
   const attention = attentionKnown ? attentionRows({
     nowMs: now, broker, brokerRows, pending: dataOf(data.pending), deployments, risk: dataOf(data.risk), exposure, unread: dataOf(data.unread),
-    status: dataOf(data.status), emailVerified: user?.email_verified, approvalsPath,
+    status: dataOf(data.status), emailVerified: user?.email_verified, liveHidden: liveHiddenFrom(features), approvalsPath,
     health, getStartedShowing: card !== null, dismissed: hidden.hidden,
   }) : null;
   const positions: Rows<PositionRow> = rowsOf(data.positions, (p) => ({ rows: positionRows(p, exposure), total: p.length }));

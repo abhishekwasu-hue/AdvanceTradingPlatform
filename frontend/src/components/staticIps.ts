@@ -8,7 +8,7 @@ export const STATIC_IP_BROKERS = ["upstox", "zerodha", "fyers", "dhan", "angel_o
 /** How a registry broker id is shown to a person (the same names as `backend/app/market_data/broker_data_terms.json`). */
 export const BROKER_DISPLAY_NAMES: Record<string, string> = {
   upstox: "Upstox", zerodha: "Zerodha", fyers: "Fyers", dhan: "Dhan", angel_one: "Angel One", shoonya: "Shoonya / Finvasia",
-  coindcx: "CoinDCX",
+  coindcx: "CoinDCX", kotak_neo: "Kotak Neo", groww: "Groww",
 };
 
 /** A broker's display name; an id with no entry is shown with underscores as spaces and each word capitalised. */

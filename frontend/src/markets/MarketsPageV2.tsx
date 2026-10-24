@@ -376,10 +376,7 @@ export default function MarketsPageV2(_props: PageProps) {
 
   return (
     <div className="space-y-space-4" data-page="markets-v2">
-      <PageIntro id="markets" lines={[
-        "How each sector and index moved, with how many of its stocks rose or fell and its strongest and weakest stocks.",
-        "Tap a sector or index to see its stocks; tap a stock to open its chart.",
-      ]} />
+      <PageIntro id="markets" lines={["How each sector and index moved. Tap one to see its stocks, then a stock to open its chart."]} />
       <header className="flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between">
         <h1 id={headingId} className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Sectors &amp; indices</h1>
         {!listKey && (

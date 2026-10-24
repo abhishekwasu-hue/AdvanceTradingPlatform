@@ -55,10 +55,10 @@ describe("UI2-3 detail panel", () => {
     expect(words).toContain("−2.00");                                 // stop below the entry
     expect(words).toContain("+4.00");
     expect(words).toContain("1 lot (75)");
-    expect(words).toContain("−₹5,250.00");
+    expect(words).toContain("−₹5,250");
     expect(words).toContain("Why this signal");
     expect(words).toContain("Fits your risk limits");
-    expect(words).toContain("Most you can lose (₹5,250.00) is within your ₹6,000.00 per-trade limit.");
+    expect(words).toContain("Most you can lose (₹5,250) is within your ₹6,000 per-trade limit.");
     expect(words).toContain("Approve paper trade");
     expect(words).toContain("Skip");
     expect(html).toContain('href="/charts/DEMO%2050?tf=5min"');      // UI2-4e: with the detail chart's timeframe
@@ -88,7 +88,7 @@ describe("UI2-3 detail panel", () => {
 
   it("phone card content: Approve, Skip, a chart button and More, each 44 px", () => {
     const html = inRouter(<SignalDetail item={feedItem()} proposal={proposal} now={NOW} compact canTrade onDone={noop} onError={noop} />);
-    expect(text(html)).toContain("Fits your risk limits · most you can lose ₹5,250.00");
+    expect(text(html)).toContain("Fits your risk limits · most you can lose ₹5,250");
     expect(text(html)).toContain("Approve");
     expect(html).toContain('aria-label="Open chart for DEMO 50"');
     expect(html.match(/min-h-11/g)?.length ?? 0).toBeGreaterThanOrEqual(4);

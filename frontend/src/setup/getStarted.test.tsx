@@ -153,6 +153,7 @@ describe("P3 nothing about LIVE on the front page in PAPER", () => {
     expect(topBarNotices(status, user, true).map((n) => n.text)).toEqual(["Maintenance: new trades are paused"]);
     expect(paperOnlySource).toContain("api.listDeployments(true)");              // stopped LIVE deployments count
     expect(shellSource).toMatch(/usePaperOnly\(!!user && key === "dashboard"\)/);
+    expect(shellSource).toContain("paperOnly={frontPaperOnly || liveHidden}");     // item 2: the paper phase, every page
     expect(appSource).toMatch(/usePaperOnly\(!!user && page === "dashboard"\)/);
     expect(appSource).not.toMatch(/email_verified === false/);                       // item 1: no chip in today's bar
     expect(appSource).toMatch(/disabled_brokers\.length > 0 && !paperOnly/);

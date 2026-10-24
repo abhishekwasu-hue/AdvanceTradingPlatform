@@ -146,7 +146,7 @@ for (const size of SIZES) {
         await mockChartAnalyze(page, "forming");
         await page.goto("/chart-analyze");
         await analyzeUpload(page);
-        await page.getByRole("button", { name: "Close this explanation" }).click().catch(() => undefined);
+        await page.getByRole("button", { name: "Hide this tip" }).click().catch(() => undefined);
         await settle(page);
         await expect(page.getByTestId("image-only-label")).toHaveText("Image-only analysis: prices and volume are read from the picture and may be approximate");
         await expect(page).toHaveScreenshot(`chart-analyze-${size.width}-${theme}.png`, { fullPage: true, animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 20_000 });
@@ -350,14 +350,15 @@ test.describe("Analyze a chart: the flow", () => {
     await expect(page.getByTestId("disclaimer")).toBeVisible();
   });
 
-  test("engine not installed: the note and the disabled Analyze agree", async ({ page }) => {
+  test("engine not installed: the standard Coming soon, never the install reason (user-friendly pass item 7)", async ({ page }) => {
     await open(page, "/chart-analyze", "light");
     await mockChartAnalyze(page, "formed");
     await page.route(/\/api(?:\/v1)?\/chart-analyze\/status$/, (route) =>
       route.fulfill({ json: fixtureStatus({ engine: { installed: false, message: "Analysis engine not installed" } }) }));
     await page.goto("/chart-analyze");
-    await expect(page.getByRole("status").filter({ hasText: "Analysis engine not installed" })).toContainText("cannot be analysed");
-    await expect(page.getByRole("button", { name: "Analyze", exact: true })).toBeDisabled();
+    await expect(page.getByRole("heading", { name: "Coming soon" })).toBeVisible();
+    await expect(page.locator("main")).not.toContainText(/not installed|administrator installs/i);
+    await expect(page.getByRole("button", { name: "Analyze", exact: true })).toHaveCount(0);
   });
 
   test("delete asks first, then removes the analysis", async ({ page }) => {
@@ -467,7 +468,7 @@ test.describe("Analyze a chart: the flow", () => {
     await expect(page.getByRole("toolbar", { name: "Chart controls" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Analyze a chart" })).toHaveCount(0);
     await page.goto("/chart-analyze");
-    await expect(page.getByText("Page not found")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Coming soon" })).toBeVisible();      // item 7: the shell's standard page
     await expect(page.getByTestId("chart-analyze-page")).toHaveCount(0);
   });
 });

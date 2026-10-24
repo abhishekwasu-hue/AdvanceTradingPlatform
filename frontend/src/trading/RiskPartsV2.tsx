@@ -5,6 +5,7 @@ import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2 } from "../da
 import type { MarketEvent, RiskEvent, RiskLimit, RiskLimitType, RiskScope, UserResponse } from "../types";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { formatDateIST, formatDateTimeIST } from "../ui/format";
+import { strategyDisplayName } from "../ui/strategyName";
 import {
   EVENT_KINDS, LIMIT_SCOPES, LIMIT_TYPES, checkStatus, eventAction, eventKindLabel, eventRemoveConsequence, eventScope, eventWindow,
   failedText, limitScopeLabel, limitTypeLabel, limitValueText,
@@ -303,7 +304,7 @@ export function RiskChecksV2() {
                   </div>
                   <p className="mt-px text-t13 text-fg">{e.reason}</p>
                   <p className="mt-px text-t12 text-fg-muted">
-                    {formatDateTimeIST(e.created_at)}{e.strategy_id ? ` · ${e.strategy_id}` : ""}{e.symbol ? ` · ${e.symbol}` : ""}{e.order_id ? ` · order #${e.order_id}` : ""}
+                    {formatDateTimeIST(e.created_at)}{e.strategy_id ? ` · ${strategyDisplayName(e.strategy_id)}` : ""}{e.symbol ? ` · ${e.symbol}` : ""}{e.order_id ? ` · order #${e.order_id}` : ""}
                   </p>
                 </li>
               );

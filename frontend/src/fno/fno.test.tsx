@@ -154,7 +154,7 @@ describe("FNO-1 chain action sheet: each action", () => {
   it("a held contract shows its P&L with Add and Exit; Exit is never disabled", () => {
     const { els, on, html } = body({ held: [HELD, { ...HELD, trade_id: 8, right: "PE" }] });
     expect(text(html)).toContain("Bought 1 lot at 240.00");
-    expect(text(html)).toContain("P&L +₹750.00");                             // at the chain's LTP 250: (250 - 240) x 75
+    expect(text(html)).toContain("P&L +₹750");                             // at the chain's LTP 250: (250 - 240) x 75
     expect(els.filter((e) => (e.props as Record<string, unknown>)["data-held-trade"] !== undefined)).toHaveLength(1);   // the call only
     const exit = by(els, "data-action", "held-exit");
     expect(exit.disabled).toBeUndefined();

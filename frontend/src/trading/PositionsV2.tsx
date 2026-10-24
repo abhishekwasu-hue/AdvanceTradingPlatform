@@ -32,6 +32,7 @@ import { EMPTY, formatINR, formatNumber, formatPct, formatPrice, formatSignedINR
 import { PageIntro } from "../ui/PageIntro";
 import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
+import { liveHiddenFrom } from "../settings/useLiveHidden";
 import PageDishV2 from "../growth/PageDishV2";
 import {
   closedRows, closedText, exitConfirmText, failedText, heldRows, holdingTiles, openCaption, type ClosedRow, type HeldRow,
@@ -39,6 +40,7 @@ import {
 import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from "./PartsV2";
 import { PracticeFrame } from "../fno/OrderTicketV2";
 import { SettlementWarningsV2 } from "../fno/SmartExecutionV2";
+import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
 
 // N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
@@ -81,6 +83,7 @@ export default function PositionsV2(_props: PageProps = {}) {
   const exitNowOn = features.on("approval_only_entries") || features.on("paper_account");
   const portfolioRiskOn = features.on("portfolio_risk");
   const canTrade = !!user && user.role !== "VIEWER";
+  const liveHidden = liveHiddenFrom(features);
 
   const { state: broker, refresh: refreshBroker } = useBrokerSession();
   const connected = broker.kind === "connected";
@@ -174,17 +177,14 @@ export default function PositionsV2(_props: PageProps = {}) {
 
   return (
     <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="positions-v2">
-      <PageIntro id="positions" lines={[
-        "Everything you hold right now, with its live price and profit or loss.",
-        "Open a position's chart, or exit a paper position at the current price.",
-      ]} />
+      <PageIntro id="positions" lines={["Open a position's chart, or exit a paper position at the current price."]} />
       <PageTitleV2 title="My positions" subtitle="What you hold now and how it is doing." />
       {!!list?.length && list.every((p) => p.mode === "PAPER") && <PracticeFrame className="rounded-control" />}
 
       <section aria-label="Summary" data-block="summary" data-tour="positions-summary">
         {positions.status === "loading" ? <LoadingRowsV2 rows={2} /> : (
           <TilesV2>
-            <TileV2 testId="open" label="Open positions" value={positions.status === "ok" ? String(tiles.open) : EMPTY} sub={positions.status === "ok" ? openCaption(tiles) : undefined} />
+            <TileV2 testId="open" label="Open positions" value={positions.status === "ok" ? String(tiles.open) : EMPTY} sub={positions.status === "ok" ? openCaption(tiles, liveHidden) : undefined} />
             <TileV2 testId="open-pnl" label="Open P&L" hint="open-pnl" value={formatSignedINR(tiles.openPnl)} tone={signTone(tiles.openPnl)}
               sub={tiles.open === 0 ? undefined : tiles.openPnl === null ? "waiting for live prices" : "at live prices"} />
             <TileV2 testId="booked" label="Booked today" hint="booked-pnl" value={formatSignedINR(tiles.booked)} tone={signTone(tiles.booked)}
@@ -197,6 +197,8 @@ export default function PositionsV2(_props: PageProps = {}) {
 
       {/* TM Part 7 (flag smart_execution): stock F&O that may settle by delivery, flagged ahead (information only). */}
       {features.on("smart_execution") && signedIn && <SettlementWarningsV2 />}
+      {/* SE-7 (flag smart_execution): a multi-leg order that stopped half way - his three taps and his rule's countdown. */}
+      {features.on("smart_execution") && signedIn && <IncompleteOrdersV2 />}
 
       {/* MO4 slice 4: the page's ready-made dish (ui_v2 + growth_v2): his risk in plain words, what is coming up. */}
       {features.on("growth_v2") && <PageDishV2 page="positions" />}
@@ -568,7 +570,7 @@ function ClosedRowV2({ row, onSaved }: { row: ClosedRow; onSaved: () => void }) 
         </div>
         <div className="w-28 shrink-0 text-right">
           <div className="text-t12 text-fg-muted">P&amp;L</div>
-          <div className={`font-tabular text-t15 font-semibold ${tone}`}>{formatSignedINR(row.pnl)}</div>
+          <div className={`font-tabular text-t15 font-semibold ${tone}`}>{formatSignedINR(row.pnl, { paise: true })}</div>
           <button type="button" onClick={edit} className="mt-space-1 inline-flex min-h-11 items-center text-t13 font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-0">
             {row.notes || row.tags.length ? "Edit note" : "Add a note"}
           </button>

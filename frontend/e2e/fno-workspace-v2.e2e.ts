@@ -213,7 +213,7 @@ for (const size of SIZES) {
         await openPositions(page, theme);
         const block = page.locator("[data-group='basket']");
         await expect(block).toContainText("Basket · 2 legs");
-        await expect(block.locator("[data-col='group-pnl']")).toContainText("262.50");   // (80 - 72.5) x 75 + (41 - 45) x 75
+        await expect(block.locator("[data-col='group-pnl']")).toContainText("₹263");   // whole rupees; (80 - 72.5) x 75 + (41 - 45) x 75
         await block.scrollIntoViewIfNeeded();
         await page.mouse.move(0, 0);
         await expect(page.locator("[data-block='positions']")).toHaveScreenshot(`fno4-positions-v2-${size.width}-${theme}.png`, SHOT);

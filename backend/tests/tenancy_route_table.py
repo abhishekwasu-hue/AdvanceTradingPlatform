@@ -568,6 +568,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/me/prefs/{namespace}"): S_OWN_PREFS,
     # UI2-7: the caller's own setup wizard progress (the `setup` preferences plus steps worked out from their own rows)
     ("GET", "/api/me/setup"): "member: the caller's own setup progress only (tenant and user)",
+    ("GET", "/api/me/notices"): "member: the caller's own one-time notices only (tenant and user; TT12-1)",
+    ("POST", "/api/me/notices/{notice_id}/seen"): S_OWN_PREFS,
     ("PUT", "/api/me/setup"): S_OWN_PREFS,
     # MO4: the daily rhythm - the caller's own digests (own trades, signals, journal; the organisation's market memory and
     # events) and the caller's own Telegram choice

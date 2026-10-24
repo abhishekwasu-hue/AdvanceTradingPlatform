@@ -100,8 +100,11 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 ## Status table (the session keeps this current; one line per item)
 | ID | Status | Next action | PR |
 |---|---|---|---|
+| BUG-C1 | waiting for owner | plan sent; Charts: never a blank canvas when closed (history or a plain empty state) | - |
+| BUG-A1 | waiting for owner | plan sent; Analyze a chart: no admin wording for users; engine installed by the deploy + health | - |
+| BUG-M1 | waiting for owner | plan sent; phone timeframe row + header | - |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |
-| P1-2 | in review | add the one-time "limits now not set" notice (TT12-1); merge after CI; deploy | #494 |
+| P1-2 | in review | notice (TT12-1) added; owner: "Merge" after green CI, then deploy (no migration) | #494 |
 | P1-2b | in review | org min R:R OFF (0 = not set; an old stored 1.2 = not set), parity tests live / paper / both backtests; owner: "Merge" after green CI, then deploy (no migration) | #497 |
 | P1-3 | waiting for owner | deploy, universe sync ON, "Enable trader features"; then day-one test on production | #470 |
 | P1-4 | in progress | verify which chart pages still bypass the core; gestures; phone recording | row 18 |

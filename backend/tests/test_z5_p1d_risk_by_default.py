@@ -61,6 +61,16 @@ def _org(t: dict, *, capital=1_000_000.0, risk_pct=1.0, min_rr=0.0) -> None:
     assert out.status_code == 200, out.text
 
 
+# TT-12 (owner, 24 Oct): every limit starts off. The tests of the limits' mechanics set the values the old platform
+# defaults had as the user's OWN (risk per trade 1%, daily loss 2%, 10 entries a day, minimum reward:risk 1.5).
+OWN = {"risk_per_trade_pct": 1.0, "daily_loss_pct": 2.0, "max_trades_per_day": 10, "min_rr": 1.5}
+
+
+def _mine(t: dict, **values) -> None:
+    out = client.put("/api/paper/risk", headers=t["headers"], json={**OWN, **values})
+    assert out.status_code == 200, out.text
+
+
 def _earlier_today(minutes: float) -> datetime:
     """`minutes` before now, but never before today's IST midnight: the risk checks count the IST day, and a test run
     just after midnight must still see its trades as today's (the wall clock never decides a test)."""
@@ -182,11 +192,10 @@ def test_settings_defaults_bounds_and_ceilings():
     _flag(by_default.FLAG, t["tenant_id"])
     body = client.get("/api/paper/risk", headers=t["headers"]).json()
     assert body["settings"] == by_default.RiskSettings.defaults().as_dict()
-    assert body["settings"] == {"risk_per_trade_pct": app_config.RISK_DEFAULT_RISK_PER_TRADE_PCT, "risk_per_trade_amount": app_config.RISK_DEFAULT_RISK_PER_TRADE_AMOUNT,
-                                "daily_loss_pct": app_config.RISK_DEFAULT_DAILY_LOSS_PCT, "max_trades_per_day": app_config.RISK_DEFAULT_MAX_TRADES_PER_DAY,
-                                "min_rr": app_config.RISK_DEFAULT_MIN_RR,
-                                # N1 F2: the portfolio caps, 0 = no limit by default
-                                "max_sector_pct": 0.0, "max_correlated_risk_pct": 0.0, "max_open_positions": 0}
+    # TT-12: nothing set - every limit is off ("Not set"): no risk cap, no daily loss limit, no entries cap, no minimum R:R.
+    assert body["settings"] == {"risk_per_trade_pct": 0.0, "risk_per_trade_amount": 0.0, "daily_loss_pct": 0.0, "max_trades_per_day": 0,
+                                "min_rr": 0.0, "max_sector_pct": 0.0, "max_correlated_risk_pct": 0.0, "max_open_positions": 0}
+    assert body["set"] == [] and body["risk_cap"]["amount"] is None and body["today"]["limit"] == 0 and body["today"]["used"] is None
     assert body["capital_basis"] == app_config.PAPER_STARTING_CAPITAL and body["lockout"] is None
     assert "never locked" in body["exits"]
     assert client.put("/api/paper/risk", headers=t["headers"], json={"risk_per_trade_pct": 3.0}).status_code == 422     # above the 2% ceiling
@@ -194,6 +203,7 @@ def test_settings_defaults_bounds_and_ceilings():
     assert client.put("/api/paper/risk", headers=t["headers"], json={"bogus": 1}).status_code == 422
     out = client.put("/api/paper/risk", headers=t["headers"], json={"risk_per_trade_pct": 0.5, "min_rr": 2.0})
     assert out.status_code == 200 and out.json()["settings"]["risk_per_trade_pct"] == 0.5 and out.json()["settings"]["min_rr"] == 2.0
+    assert out.json()["set"] == ["min_rr", "risk_per_trade_pct"] and out.json()["change"]["deferred"] == {}
 
     async def audited():
         async with _session_factory() as session:
@@ -203,7 +213,8 @@ def test_settings_defaults_bounds_and_ceilings():
 
 
 def test_stored_settings_out_of_bounds_fall_back_to_defaults():
-    s = by_default.RiskSettings.from_json(json.dumps({"risk_per_trade_pct": 99, "daily_loss_pct": 3.0, "max_trades_per_day": True, "min_rr": "x"}))
+    s = by_default.RiskSettings.from_json(json.dumps({"risk_per_trade_pct": 99, "daily_loss_pct": 3.0, "max_trades_per_day": True, "min_rr": "x",
+                                                      "_set": ["risk_per_trade_pct", "daily_loss_pct", "max_trades_per_day", "min_rr"]}))
     d = by_default.RiskSettings.defaults()
     assert s.risk_per_trade_pct == d.risk_per_trade_pct and s.daily_loss_pct == 3.0 and s.max_trades_per_day == d.max_trades_per_day and s.min_rr == d.min_rr
     assert by_default.RiskSettings.from_json("not json") == d
@@ -276,6 +287,7 @@ def test_ticket_preview_sizes_from_the_cap_and_shows_the_cost_line():
     t = _tenant_t("preview")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)
     view = _preview(t)
     s = view["sizing"]
     assert s["user_cap"] == 10_000.0 and s["cap"] == 10_000.0 and s["binding"] == "your cap"
@@ -303,6 +315,7 @@ def test_ticket_places_one_paper_order_at_the_live_price_and_stores_the_plan(mon
     t = _tenant_t("place")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)
     _price(monkeypatch, None)
     out = _place(t)
     assert out["status"] == "REFUSED" and any("No live price" in r for r in out["reasons"])
@@ -341,6 +354,7 @@ def test_override_needs_a_reason_is_bounded_logged_and_counted(monkeypatch):
     t = _tenant_t("override")
     _org(t, risk_pct=2.0)                                          # the organisation allows 20,000; the user's cap is 10,000
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)
     _price(monkeypatch, 100.0)
     over = _preview(t, quantity=8000)
     assert not over["can_place"] and any("needs an override" in r for r in over["refusals"]) and over["sizing"]["gauge"] == 1.6
@@ -373,6 +387,7 @@ def test_daily_loss_lockout_refuses_new_entries_and_proposals_but_never_exits(mo
     t = _tenant_t("lock")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)
     member = _member(t)
     stranger = _tenant_t("lock-other")
     _org(stranger)
@@ -421,6 +436,7 @@ def test_a_locked_users_stop_still_closes_the_position(monkeypatch):
     t = _tenant_t("lock-stop")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)
     _flag(vix_gate.FLAG, t["tenant_id"])
     _vix_clock(monkeypatch)
     _vix(t, 30.0, 20.0)                                           # a VIX spike too: still no exit is held
@@ -466,6 +482,7 @@ def test_plans_and_risk_state_are_the_users_own(monkeypatch):
     t = _tenant_t("iso")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)
     member = _member(t)
     _price(monkeypatch, 100.0)
     assert _place(t)["status"] == "PLACED"
@@ -598,6 +615,7 @@ def test_under_approval_only_the_ticket_raises_a_proposal_and_approve_keeps_its_
     t = _tenant_t("ticket-approval")
     _org(t, risk_pct=2.0)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)
     _approval_flag(t["tenant_id"])
     _price(monkeypatch, 100.0)
     out = _place(t, quantity=6000, override=True, override_reason="High conviction setup, documented")

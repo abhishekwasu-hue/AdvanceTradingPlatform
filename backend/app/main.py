@@ -93,6 +93,7 @@ from app.me.prefs import router as me_prefs_router
 from app.rhythm.routes import router as rhythm_router
 from app.option_chain.ask_routes import router as oc_ask_router
 from app.me.setup import router as me_setup_router
+from app.me.notices import router as me_notices_router
 from app.context_panel.routes import router as context_panel_router
 from app.markets.routes import router as markets_router
 from app.growth.routes import admin_router as growth_admin_router
@@ -424,6 +425,7 @@ app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences 
 app.include_router(rhythm_router)     # MO4: the daily rhythm - pre-market brief, pulse, closing wrap, weekly review (flags ui_v2 + daily_rhythm)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
 app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress (stored marks + steps worked out; reads only)
+app.include_router(me_notices_router)  # TT12-1: one-time notices (risk limits now not set; ui_v2; per user)
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(markets_router)   # MO4 slice 2: the Sector & index view (flags ui_v2 + markets_view)
 app.include_router(growth_router)    # MO4 slice 3: the plan page + usage meter, the discipline share card (flags ui_v2 + growth_v2)

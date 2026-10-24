@@ -2753,7 +2753,8 @@ export interface TicketPlan {
 export interface TicketView {
   symbol: string; direction: "LONG" | "SHORT"; setup: TicketSetup; setup_label: string | null; mode: "PAPER";
   entry: number; stop_loss: number; target: number; time_stop: string | null; invalidation: string | null;
-  reward_risk: number | null; min_reward_risk: number; sizing: TicketSizing;
+  /** null: no minimum (TT-12, only the trader's own minimum is checked). */
+  reward_risk: number | null; min_reward_risk: number | null; sizing: TicketSizing;
   checklist: { key: string; label: string; checked: boolean; auto: boolean }[]; checklist_complete: boolean;
   costs: TicketCostLine | null; errors: string[]; refusals: string[]; warnings: string[]; can_place: boolean;
   confirm_label: string | null; as_of: string;
@@ -2784,10 +2785,13 @@ export interface VixGateStatus {
 /** Z5 / P1-d: the caller's risk-by-default state (GET /api/paper/risk; 404 while the `risk_by_default` flag is off). */
 export interface PaperRiskStatus {
   mode: "PAPER"; settings: RiskByDefaultSettings; effective: RiskByDefaultSettings; defaults: RiskByDefaultSettings; notes: string[];
-  /** A loosening waits for the next IST day (a tightening applies at once). */
-  pending: { values: Partial<RiskByDefaultSettings>; from: string } | null;
+  /** TT-12: the keys the trader set himself; every other limit is off ("Not set"). Absent from an older server. */
+  set?: (keyof RiskByDefaultSettings)[];
+  /** A loosening of a limit he set waits for the next IST day (a tightening applies at once); null = cleared. */
+  pending: { values: Partial<Record<keyof RiskByDefaultSettings, number | null>>; from: string } | null;
   bounds: Record<keyof RiskByDefaultSettings, [number, number]>; labels: Record<keyof RiskByDefaultSettings, string>;
-  capital_basis: number; risk_cap: { amount: number; binding: string; by_pct: number };
+  /** amount null: no cap of his own (TT-12); the organisation's risk per trade still sizes the entry. */
+  capital_basis: number; risk_cap: { amount: number | null; binding: string | null; by_pct: number | null };
   today: { realised: number; open_marks: number; pnl: number; worst: number; limit: number; used: number | null; entries: number; max_entries: number };
   lockout: { kind: string; reason: string; pnl: number; limit: number; locked_at: string; until: string } | null;
   overrides: { today: number; total: number }; override_max_multiple: number; override_min_reason_chars: number;
@@ -2809,5 +2813,5 @@ export interface StrikeBreachBlock {
 /** Z5 / P1-d: the caller's risk by default applied to a waiting entry proposal (flag risk_by_default). */
 export interface ProposalRiskCheck {
   sizing: TicketSizing; costs: TicketCostLine | null; refusals: string[]; warnings: string[]; errors: string[];
-  reward_risk: number | null; min_reward_risk: number;
+  reward_risk: number | null; min_reward_risk: number | null;
 }

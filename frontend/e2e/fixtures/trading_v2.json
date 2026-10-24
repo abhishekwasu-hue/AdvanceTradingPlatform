@@ -422,6 +422,9 @@
  },
  "paper_risk": {
   "mode": "PAPER",
+  "settings": {"risk_per_trade_pct": 0, "risk_per_trade_amount": 0, "daily_loss_pct": 1.5, "max_trades_per_day": 6, "min_rr": 0},
+  "set": ["daily_loss_pct", "max_trades_per_day"],
+  "capital_basis": 1000000,
   "today": {
    "realised": 660,
    "open_marks": 3720,

@@ -3534,6 +3534,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   main's look with the flag off - StatusChip's green check now needs `colour_v2` (`useColourV2`); AppShellV2 keeps the
   colour provider and main's live-prices banner and referral host; the Signals day-one rows (new on main) take the
   shared DirectionChip with the flag on. Comparison v3 for the owner (same six pages, 390 / 1440, light / dark).
+## 24 Oct - Colour v2: the owner's review points CV-1..4 (#447)
+
+- Branch `claude/colour-v2`. Frontend only, **no migration**; everything behind `colour_v2` (with the flag off every
+  page renders as before; the flag-off baselines pass unchanged). INBOX / DECISIONS 24 Oct; OPEN_QUESTIONS CV-1..4.
+- CV-1 `shell/BottomNavV2.tsx`: inactive tabs and More neutral grey; only the tab on screen is brand (group colours stay
+  in the sidebar and the More sheet). CV-2: each tab word `whitespace-nowrap` (bold included), checked at 360 / 390.
+- CV-3 `optionChain/ChainTableV2.tsx`: no call / put side tints (tokens `chain-call` / `chain-put` (+ `-itm`) removed
+  from `tokens.css` / `tailwind.config.js`); ITM one neutral step (`surface-2`, as with the flag off); OI bars, Calls /
+  Puts headings and the ATM row kept. `tokens.test.ts`: the OI bars, the number over them and the up / down figures on
+  the neutral ITM step in all six variants.
+- CV-4 `dashboard/MarketStripV2.tsx`: below md the P&L row leads the strip (`max-md:order-first`); desktop unchanged.
+- Tests: `ui/colourV2.test.tsx` (CV-1..4 classes), `ui/tokens.test.ts`, new `e2e/colour-v2.e2e.ts` (flag on: every label
+  on one line for each active tab at 360 / 390, inactive tabs grey on Signals and Option chain, the P&L inside 390 x 844
+  above the bottom bar in light and dark). Comparison v5 (only the changed pictures) for the owner, not in the repo.
+
 ## 23 Oct - Production readiness B8: phone notifications, deep links, store listing prep
 
 - Branch `claude/readiness-b8-mobile`. **No migration** (phones in the organisation's FCM alert channel, encrypted

@@ -248,3 +248,13 @@ behind a new flag `colour_v2` (OFF, needs `ui_v2`), so nothing changes for users
   magenta, AI Copilot violet, the rest neutral), the active bottom-bar tab on a brand-tint pill.
 - **Tests**: `tokens.test.ts` "Colour v2 tokens", `ui/colourV2.test.tsx` (every page on and off), the flag test; e2e
   baselines unchanged with the flag off.
+- **Owner review, 24 Oct (CV-1..4)**: (CV-1) the phone bottom bar's inactive tabs are neutral grey; the group colours
+  stay in the sidebar and the More sheet, and only the tab on screen is brand. (CV-2) every bottom-bar word keeps to one
+  line, bold included (`whitespace-nowrap`; the bar's tabs share the width by content). (CV-3) the option chain's
+  call / put side tints are gone (red / green mean loss / profit; no large fills) and their four tokens removed; an
+  in-the-money strike keeps its one neutral step (`surface-2`, both sides, as with the flag off); the red / green OI
+  bars, the coloured Calls / Puts headings and the brand-tint ATM row stay; colour-blind mode the same. (CV-4) on a phone
+  Today's P&L leads the market strip (`max-md:order-first`), so it is on screen on open at 390 x 844 with the
+  sparklines on; from md up the strip is unchanged. Tests: `colourV2.test.tsx`, `tokens.test.ts` (the OI bars and
+  figures on the neutral ITM step, no side tint tokens), `e2e/colour-v2.e2e.ts` (CV-1, CV-2 at 360 / 390 for each
+  active tab, CV-4 at 390 x 844, light and dark).

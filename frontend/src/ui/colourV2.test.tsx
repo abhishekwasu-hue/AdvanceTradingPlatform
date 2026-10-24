@@ -169,6 +169,13 @@ describe("colour v2 on the pages (off = as before)", () => {
     expect(off).not.toContain("data-pnl-tint");
   });
 
+  it("Today (CV-4): on a phone the P&L leads the strip, above the indices; from md up and with the flag off as before", () => {
+    const pnl = (html: string) => /<div data-pnl="true"[^>]*class="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(pnl(render(stripView(6846.5, { "NIFTY 50": [1, 2] }), true)).split(" ")).toContain("max-md:order-first");
+    expect(pnl(render(stripView(0), true)).split(" ")).toContain("max-md:order-first");
+    expect(pnl(render(stripView(6846.5), false))).not.toContain("order-");
+  });
+
   it("Today: the sparkline reads the last session of real broker candles, and nothing from market memory", () => {
     const bar = (ts: string, close: number) => ({ timestamp: ts, open: close, high: close, low: close, close, volume: 0 });
     expect(lastSessionCloses([])).toEqual([]);
@@ -207,21 +214,24 @@ describe("colour v2 on the pages (off = as before)", () => {
     return { row: row?.[0] ?? "", tds: row?.[1].match(/<td[\s\S]*?<\/td>/g) ?? [] };
   };
 
-  it("Option chain: calls red-tinted, puts green-tinted, ITM a step stronger, red / green OI bars, a brand ATM row", () => {
+  it("Option chain (CV-3): no side tint; ITM one neutral step on both sides; red / green OI bars; a brand ATM row", () => {
     const html = chain(true);
     // Spot 24,480: 24,200 is an ITM call and an OTM put; 24,800 an OTM call and an ITM put; 24,500 is the ATM row.
+    expect(html).not.toMatch(/chain-call|chain-put|bg-up-tint|bg-down-tint|bg-up\/|bg-down\//);
     const low = cells(html, 24200).tds;
     const high = cells(html, 24800).tds;
-    expect(low[0]).toContain("bg-chain-call-itm");
-    expect(low[low.length - 1]).toContain("bg-chain-put ");
-    expect(high[0]).toContain("bg-chain-call ");
-    expect(high[high.length - 1]).toContain("bg-chain-put-itm");
+    for (const td of [low[0], high[high.length - 1]]) expect(td).toMatch(/^<td[^>]*class="[^"]*bg-surface-2/);
+    for (const td of [low[low.length - 1], high[0]]) expect(td).not.toMatch(/^<td[^>]*class="[^"]*bg-surface-2/);
+    // The same neutral step as with the flag off, cell for cell.
+    const off = chain(false);
+    const shaded = (h: string) => [24200, 24800].flatMap((k) => cells(h, k).tds.map((td) => /^<td[^>]*class="[^"]*bg-surface-2/.test(td)));
+    expect(shaded(html)).toEqual(shaded(off));
     expect(html).toContain('data-oi-bar="call" class="absolute inset-y-1 right-0 border-b-2 border-oi-call');
     expect(html).toContain('data-oi-bar="put" class="absolute inset-y-1 left-0 border-b-2 border-oi-put');
     expect(html).not.toMatch(/bg-brand\/15"[^>]*data-oi-bar|data-oi-bar[^>]*bg-brand\//);
     const atm = cells(html, 24500);
     expect(atm.row).toMatch(/^<tr[^>]*class="[^"]*bg-brand-tint/);
-    for (const td of atm.tds) expect(td).not.toMatch(/bg-chain-/);
+    for (const td of atm.tds) expect(td).not.toMatch(/bg-surface-2/);
   });
 
   it("Option chain off: exactly today's shading (ITM surface-2, brand OI bars, the brand ATM row)", () => {
@@ -242,6 +252,15 @@ describe("colour v2 on the pages (off = as before)", () => {
     const barOn = render(<BottomNavV2 current="signals" moreOpen={false} onMore={noop} />, true);
     expect(barOn.match(/data-nav-pill="true"/g)).toHaveLength(1);
     expect(barOn).toMatch(/data-nav-pill="true" class="[^"]*bg-brand-tint text-brand/);
+    // CV-1: the bar's other tabs are neutral grey - no group colour in the bar (it stays in the sidebar and the sheet).
+    expect(barOn).not.toMatch(/text-(?:teal-accent|nav-insights|info|ai)\b/);
+    expect(barOn.match(/<span class="flex h-8 w-14[^"]*text-fg-muted"/g)).toHaveLength(4);
+    for (const current of ["dashboard", "charts", "positions", null] as const) {
+      const bar = render(<BottomNavV2 current={current} moreOpen={false} onMore={noop} />, true);
+      expect(bar.match(/text-brand/g) ?? [], String(current)).toHaveLength(current ? 2 : 0);
+    }
+    // CV-2: every word on one line (the bold active one included).
+    expect(barOn.match(/<span data-nav-label="true" class="whitespace-nowrap">/g)).toHaveLength(5);
     const barOff = render(<BottomNavV2 current="signals" moreOpen={false} onMore={noop} />, false);
     expect(barOff).not.toContain("data-nav-pill");
     expect(barOff).not.toContain("brand-tint");

@@ -23,12 +23,11 @@ const semantic = {
   // Chart + colour order Part 3 (CC-1..CC-4): the range bar (a neutral track, an amber-yellow marker), the info and AI
   // chip backgrounds. `bg-range-track`, `bg-range`, `bg-info-tint text-info`, `bg-ai-tint text-ai`.
   range: v("range"), "range-track": v("range-track"), "info-tint": v("info-tint"), "ai-tint": v("ai-tint"),
-  // Colour v2 (owner, 23 Oct; behind `colour_v2`): soft tints by meaning, the option chain's sides and OI bars, the
-  // soft icon circles and the Insights group colour. `bg-up-tint text-up`, `bg-soft-ai text-ai`, `bg-chain-call`...
+  // Colour v2 (owner, 23 Oct; behind `colour_v2`): soft tints by meaning, the option chain's OI bars, the
+  // soft icon circles and the Insights group colour. `bg-up-tint text-up`, `bg-soft-ai text-ai`, `bg-oi-call`...
   "brand-tint": v("brand-tint"), "up-tint": v("up-tint"), "down-tint": v("down-tint"), "teal-accent": v("teal-accent"),
   "soft-brand": v("soft-brand"), "soft-ai": v("soft-ai"), "soft-warn": v("soft-warn"), "soft-down": v("soft-down"),
   "soft-up": v("soft-up"), "soft-teal": v("soft-teal"), "soft-info": v("soft-info"),
-  "chain-call": v("chain-call"), "chain-call-itm": v("chain-call-itm"), "chain-put": v("chain-put"), "chain-put-itm": v("chain-put-itm"),
   "oi-call": v("oi-call"), "oi-put": v("oi-put"), "nav-insights": v("nav-insights"),
   // aliases kept for pages not yet migrated
   bg: v("surface"), panel: v("surface-1"), panel2: v("surface-2"), panel3: v("surface-3"),

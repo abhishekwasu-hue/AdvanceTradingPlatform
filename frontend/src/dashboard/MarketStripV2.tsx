@@ -16,7 +16,8 @@ import type { MarketStrip, StripIndex } from "./types";
  * P&L with its booked / open split. A remembered level (market memory, before a broker login) says when it was taken;
  * no price at all is "–", never 0.
  * Colour v2 (flag `colour_v2`): each index carries a small line of its real 5-minute closes (`sparks`, from
- * indexSparks.ts; none without them) in the colour of its change, and today's P&L sits on a light tint of its sign.
+ * indexSparks.ts; none without them) in the colour of its change, and today's P&L sits on a light tint of its sign;
+ * on a phone the P&L leads the strip (CV-4).
  */
 
 export interface MarketStripProps {
@@ -81,6 +82,9 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
   const sign = signTone(total);
   // Colour v2: the P&L on a light tint of its sign (none at zero or while unknown).
   const pnlTint = !colour || (sign !== "up" && sign !== "down") ? "" : `rounded-control px-space-3 py-space-2 ${sign === "up" ? "bg-up-tint" : "bg-down-tint"}${big ? "" : " xl:rounded-none xl:rounded-r-panel"}`;
+  // CV-4 (owner, 24 Oct): on a phone the P&L comes first in the strip, above the indices and their sparklines, so it is
+  // on screen when Today opens (390 x 844); from md up the order is as before.
+  const pnlFirst = colour ? " max-md:order-first" : "";
   return (
     <section aria-label="Market" data-block="strip" data-tour="dashboard-strip" className={`${CARD} grid gap-space-4 p-space-4 md:p-space-5 ${L("xl:grid-cols-[repeat(3,minmax(0,1fr))_auto_auto] xl:gap-0 xl:p-0")}`}>
       {/* Item 1: on the narrowest phones (under 380 px; any phone at the larger text sizes) the two indices share a row
@@ -109,7 +113,7 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
           </StatusChip>
         )}
       </div>
-      <div data-pnl-tint={pnlTint ? sign : undefined} className={`flex items-center justify-between gap-space-3 ${L("xl:flex-col xl:items-end xl:justify-center xl:p-space-5 xl:text-right")}${pnlTint ? ` ${pnlTint}` : ""}`}>
+      <div data-pnl data-pnl-tint={pnlTint ? sign : undefined} className={`flex items-center justify-between gap-space-3 ${L("xl:flex-col xl:items-end xl:justify-center xl:p-space-5 xl:text-right")}${pnlTint ? ` ${pnlTint}` : ""}${pnlFirst}`}>
         <div className={`flex shrink-0 items-center gap-space-1 whitespace-nowrap text-t14 text-fg-muted ${L("xl:text-t13")}`}>
           Today&apos;s P&amp;L <TermHint term="todays-pnl" align="end" />
         </div>

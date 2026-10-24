@@ -275,25 +275,29 @@ describe("Colour v2 tokens", () => {
   const cv2DarkCvd = { ...cvdDark, ...block(CV2_SCOPE) };
   const ALL = { ...THEMES, cv2Dark, cv2DarkCvd };
   const NEW = ["brand-tint", "up-tint", "down-tint", "teal-accent", "soft-brand", "soft-ai", "soft-warn", "soft-down", "soft-up",
-    "soft-teal", "soft-info", "chain-call", "chain-call-itm", "chain-put", "chain-put-itm", "oi-call", "oi-put", "nav-insights"];
+    "soft-teal", "soft-info", "oi-call", "oi-put", "nav-insights"];
   /** Everything red or green (and teal, which follows signal) has a colour-blind value. */
   const CVD = ["up-tint", "down-tint", "teal-accent", "soft-ai", "soft-warn", "soft-down", "soft-up", "soft-teal", "soft-info",
-    "chain-call", "chain-call-itm", "chain-put", "chain-put-itm", "oi-call", "oi-put"];
-  const SIDES = ["chain-call", "chain-call-itm", "chain-put", "chain-put-itm", "brand-tint"];
+    "oi-call", "oi-put"];
+  /** CV-3 (owner, 24 Oct): the option chain's cells - a card (out of the money), the one neutral in-the-money step
+   * (`surface-2`, both sides) and the ATM row. No side is tinted. */
+  const CHAIN = ["surface-1", "surface-2", "brand-tint"];
   /** `alpha` of `top` over `bottom` (the OI bar's soft fill under its number). */
   const over = (top: number[], bottom: number[], alpha: number) => top.map((c, i) => Math.round(alpha * c + (1 - alpha) * bottom[i]));
 
   const PAIRS_V2: [string, string, number][] = [
     // Text on every new tint: body text and captions (4.5), a P&L figure and the Long / Short words in their own colour.
-    ...["brand-tint", "up-tint", "down-tint", ...SIDES].flatMap((bg): [string, string, number][] => [["fg", bg, 4.5], ["fg-muted", bg, 4.5]]),
+    ...["brand-tint", "up-tint", "down-tint", ...CHAIN].flatMap((bg): [string, string, number][] => [["fg", bg, 4.5], ["fg-muted", bg, 4.5]]),
     ["up", "up-tint", 4.5], ["down", "down-tint", 4.5],
     // Icons are UI parts (3 : 1): brand on its tint (the active bottom-bar pill), each meaning on its soft circle.
     ["brand", "brand-tint", 3],
     ["brand", "soft-brand", 3], ["ai", "soft-ai", 3], ["warn", "soft-warn", 3], ["down", "soft-down", 3], ["up", "soft-up", 3],
     ["teal-accent", "soft-teal", 3], ["info", "soft-info", 3],
-    // The OI bars (UI parts) on their side's tints, on the ATM row and on a card.
-    ...["chain-call", "chain-call-itm", "brand-tint", "surface-1"].map((bg): [string, string, number] => ["oi-call", bg, 3]),
-    ...["chain-put", "chain-put-itm", "brand-tint", "surface-1"].map((bg): [string, string, number] => ["oi-put", bg, 3]),
+    // The OI bars (UI parts) on a card, on the neutral in-the-money step and on the ATM row (CV-3).
+    ...CHAIN.flatMap((bg): [string, string, number][] => [["oi-call", bg, 3], ["oi-put", bg, 3]]),
+    // In-the-money cells (CV-3): the strike's figures, the change in its loss / profit colour (large figures and icons
+    // 3 : 1, as on a hovered row), the Calls / Puts headings above the table (on the card, body text).
+    ["up", "surface-2", 3], ["down", "surface-2", 3], ["up", "surface-1", 4.5], ["down", "surface-1", 4.5],
     // Navigation icons in their group colour on the sidebar and the bottom bar (surface-1), and on a hovered row.
     ...["info", "teal-accent", "nav-insights", "brand", "ai", "fg-muted"].flatMap((fg): [string, string, number][] => [[fg, "surface-1", 3], [fg, "surface-2", 3]]),
   ];
@@ -304,9 +308,14 @@ describe("Colour v2 tokens", () => {
       expect(t[bg], `--${bg} defined`).toBeDefined();
       expect(contrast(t[fg], t[bg]), `${fg} on ${bg}`).toBeGreaterThanOrEqual(min);
     }
-    // The number over its OI bar's soft fill (25 %) stays AA, on both sides, in and out of the money and on the ATM row.
-    for (const [bar, bgs] of [["oi-call", ["chain-call", "chain-call-itm", "brand-tint"]], ["oi-put", ["chain-put", "chain-put-itm", "brand-tint"]]] as const) {
-      for (const bg of bgs) expect(contrast(t.fg, over(t[bar], t[bg], 0.25)), `fg on ${bar}/25 over ${bg}`).toBeGreaterThanOrEqual(4.5);
+    // The number over its OI bar's soft fill (25 %, the highest strike's 40 %) stays AA, on both sides, in and out of
+    // the money and on the ATM row; the bar's solid edge stays 3 : 1 against its own fill.
+    for (const bar of ["oi-call", "oi-put"]) {
+      for (const bg of CHAIN) {
+        for (const alpha of [0.25, 0.4]) {
+          expect(contrast(t.fg, over(t[bar], t[bg], alpha)), `fg on ${bar}/${alpha} over ${bg}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
     }
   });
 
@@ -362,18 +371,22 @@ describe("Colour v2 tokens", () => {
     for (const t of [dark, cvdDark]) { expect(t["oi-call"]).toEqual(t.down); expect(t["oi-put"]).toEqual(t.up); }
     // In the colour-blind themes the call side is orange-ish and the put side blue-ish (red > blue for calls, blue > red for puts).
     for (const t of [cvdDark, cvdLight]) {
-      for (const k of ["chain-call", "chain-call-itm", "oi-call", "down-tint", "soft-down"]) expect(t[k][0], k).toBeGreaterThan(t[k][2]);
-      for (const k of ["chain-put", "chain-put-itm", "oi-put", "up-tint", "soft-up"]) expect(t[k][2], k).toBeGreaterThan(t[k][0]);
+      for (const k of ["oi-call", "down-tint", "soft-down"]) expect(t[k][0], k).toBeGreaterThan(t[k][2]);
+      for (const k of ["oi-put", "up-tint", "soft-up"]) expect(t[k][2], k).toBeGreaterThan(t[k][0]);
     }
   });
 
-  it("an in-the-money strike is a step stronger than an out-of-the-money one, on both sides and in every variant", () => {
+  it("CV-3: the option chain has no side tints; in the money is one neutral step off the card, in every variant", () => {
+    for (const name of ["chain-call", "chain-call-itm", "chain-put", "chain-put-itm"]) expect(css).not.toContain(`--${name}:`);
     for (const t of Object.values(ALL)) {
-      const page = luminance(t["surface-1"]);
-      const away = (k: string) => Math.abs(luminance(t[k]) - page) + distanceRgb(t[k], t["surface-1"]);
-      expect(away("chain-call-itm")).toBeGreaterThan(away("chain-call"));
-      expect(away("chain-put-itm")).toBeGreaterThan(away("chain-put"));
-      expect(t["chain-call"]).not.toEqual(t["chain-put"]);
+      const [card, itm] = [t["surface-1"], t["surface-2"]];
+      // Neutral: no channel stands out from the others more than on the card itself (a grey / slate step, not a hue).
+      const spread = (c: number[]) => Math.max(...c) - Math.min(...c);
+      expect(spread(itm)).toBeLessThanOrEqual(spread(card) + 24);
+      // One visible step: different from the card, but far less than a pressed / selected row.
+      expect(contrast(itm, card)).toBeGreaterThan(1.04);
+      expect(contrast(itm, card)).toBeLessThan(contrast(t["surface-3"], card) + 0.001);
+      expect(distanceRgb(itm, card)).toBeGreaterThan(0);
     }
   });
 });

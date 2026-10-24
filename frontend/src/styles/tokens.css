@@ -271,9 +271,8 @@ html { font-size: calc(100% * var(--text-scale)); }
    - teal-accent: a category colour (Appearance, an alert), the same hue as `signal`; never profit, loss or a warning;
    - soft-*: the soft circles behind a Settings or Needs-attention icon (phone-settings look), one per meaning, under
      that meaning's own colour (3 : 1 for the icon);
-   - chain-call / chain-put (+ -itm): the option chain's calls side (a light red) and puts side (a light green); an
-     in-the-money strike a step stronger than an out-of-the-money one. Text on them stays fg / fg-muted (AA);
-   - oi-call / oi-put: the OI bars, red for calls and green for puts (3 : 1 on their side's tints and on the ATM row);
+   - oi-call / oi-put: the option chain's OI bars, red for calls and green for puts (3 : 1 on a card, on the neutral
+     in-the-money step `surface-2` and on the ATM row). The chain's sides take no tint (CV-3, owner 24 Oct);
    - nav-insights: the muted group colour of the Insights pages in the navigation (Markets use info, Trading teal).
    Colour-blind (red-green): everything that is red / green follows up / down to blue / orange; teal-accent follows signal. */
 :root {
@@ -288,10 +287,6 @@ html { font-size: calc(100% * var(--text-scale)); }
   --soft-up: 16 64 42;
   --soft-teal: 12 66 66;
   --soft-info: 14 58 86;
-  --chain-call: 38 24 36;
-  --chain-call-itm: 56 30 44;
-  --chain-put: 14 40 38;
-  --chain-put-itm: 16 56 48;
   --oi-call: 239 68 68;
   --oi-put: 34 197 94;
   --nav-insights: 224 140 236;
@@ -309,10 +304,6 @@ html { font-size: calc(100% * var(--text-scale)); }
   --soft-up: 220 252 231;
   --soft-teal: 204 251 241;
   --soft-info: 224 242 254;
-  --chain-call: 254 244 244;
-  --chain-call-itm: 252 228 228;
-  --chain-put: 241 252 245;
-  --chain-put-itm: 222 246 230;
   --oi-call: 220 38 38;
   --oi-put: 21 140 65;
   --nav-insights: 162 28 175;
@@ -328,10 +319,6 @@ html { font-size: calc(100% * var(--text-scale)); }
   --soft-up: 18 50 80;
   --soft-teal: 64 34 56;
   --soft-info: 40 48 62;
-  --chain-call: 44 32 22;
-  --chain-call-itm: 62 42 20;
-  --chain-put: 18 34 54;
-  --chain-put-itm: 20 46 74;
   --oi-call: 249 115 22;
   --oi-put: 86 180 233;
 }
@@ -346,10 +333,6 @@ html { font-size: calc(100% * var(--text-scale)); }
   --soft-up: 219 236 250;
   --soft-teal: 247 228 240;
   --soft-info: 236 240 245;
-  --chain-call: 255 246 236;
-  --chain-call-itm: 254 232 208;
-  --chain-put: 240 246 254;
-  --chain-put-itm: 222 234 250;
   --oi-call: 214 76 10;
   --oi-put: 2 132 199;
 }

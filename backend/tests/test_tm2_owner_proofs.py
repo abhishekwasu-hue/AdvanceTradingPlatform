@@ -10,8 +10,9 @@
 4. AI never places, blocks or changes orders: no app/ai module imports or calls the resting book or the trigger engine.
 5. Migration 7e2a4c6b8d10 is additive and round-trips (upgrade -> downgrade -> upgrade).
 6. Restart: resting orders are rows (not memory); two passes over the same tick and a claim race fire once; an order a
-   stopped worker left half-way (FIRING) is settled on the next pass - an exit fires exactly once, an entry whose
-   order exists takes that order and is never placed again."""
+   stopped worker left half-way (FIRING) is looked up at its broker by its client id on worker start (TM2-4), exits
+   first: found -> its state (no second order); not found -> sent once with the same id; while running, after the ack
+   timeout. PAPER and a LIVE broker session take the same path."""
 import ast
 import importlib.util
 import inspect
@@ -21,7 +22,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
-from app.db.models import OrderRecord, PaperRestingOrderRecord, User
+from app.db.models import OrderRecord, PaperRestingOrderRecord, TradeRecord, User
 from app.execution import resting_book, trigger_engine
 from app.market_data import hub
 from app.platform import controls, phase0_lock
@@ -312,7 +313,7 @@ def test_point6_a_resting_order_survives_a_restart_and_fills_once(setup):
 
 
 def _claim_only(row_id, at):
-    """A pass that claimed the order and then the worker stopped (nothing else done)."""
+    """A pass that claimed the order (FIRING) and then the worker stopped (nothing else done)."""
     async def go():
         async with _session_factory() as session:
             row = await session.get(PaperRestingOrderRecord, row_id)
@@ -320,53 +321,250 @@ def _claim_only(row_id, at):
     _run(go())
 
 
-def test_point6_an_exit_left_firing_by_a_stopped_worker_fires_exactly_once_after_restart(setup):
-    t, expiry, strike, symbol = setup
-    trade_id = _open_trade(t, expiry, strike, symbol)
-    stop = _arm(t, trade_id, kind="STOP", order_type="SL-M", level=80.0)
-    now = datetime.now(timezone.utc)
-    _claim_only(stop["id"], now - timedelta(seconds=trigger_engine.FIRING_STALE_SECONDS + 5))
+def _start(now):
+    """A worker restart: the engine's in-process state is gone, then the start-up reconciliation (TM2-4)."""
     _restart()
-    first = _exits(t["tenant_id"], {symbol: 79.0}, now=now)
-    second = _exits(t["tenant_id"], {symbol: 79.0}, now=now)
-    trade = _trade(trade_id)
-    assert (first.filled, second.filled) == (1, 0) and trade.exit_time is not None   # not stuck: the exit fired
-    row = _row(stop["id"])
-    assert row.status == "FILLED" and [s["status"] for s in resting_book.trail(row)] == ["RESTING", "RESTING", "FILLED"]
+
+    async def go():
+        async with _session_factory() as session:
+            return await trigger_engine.reconcile_on_start(session, now)
+    return _run(go())
 
 
-def test_point6_a_fresh_firing_order_is_left_to_the_pass_that_claimed_it(setup):
+def _spy_paper_sends(monkeypatch):
+    from app.execution.paper_adapter import PaperExecutionAdapter
+    sent = []
+    original = PaperExecutionAdapter.place_order
+
+    async def spy(self, order):
+        sent.append(order.client_ref)
+        return await original(self, order)
+    monkeypatch.setattr(PaperExecutionAdapter, "place_order", spy)
+    return sent
+
+
+# PAPER broker ----------------------------------------------------------------------------------------------------------
+
+def test_tm24_paper_crash_mid_exit_fills_the_exit_once_right_after_restart(setup):
     t, expiry, strike, symbol = setup
     trade_id = _open_trade(t, expiry, strike, symbol)
     stop = _arm(t, trade_id, kind="STOP", order_type="SL-M", level=80.0)
     now = datetime.now(timezone.utc)
-    _claim_only(stop["id"], now)                                        # in flight in another pass right now
-    assert _exits(t["tenant_id"], {symbol: 79.0}, now=now).filled == 0
-    assert _row(stop["id"]).status == "FIRING" and _trade(trade_id).exit_time is None
+    _claim_only(stop["id"], now)                                         # the worker stopped right after the claim
+    _start(now)                                                          # looked up: not at the paper exchange
+    row = _row(stop["id"])
+    assert row.status == "FIRING" and row.fired_at is None and "same id" in row.status_note
+    first = _exits(t["tenant_id"], {symbol: 79.0}, now=now)              # the first pass sends it once
+    second = _exits(t["tenant_id"], {symbol: 79.0}, now=now)
+    assert (first.filled, second.filled) == (1, 0) and _trade(trade_id).exit_time is not None
+    assert _row(stop["id"]).status == "FILLED"
 
 
-def test_point6_an_entry_placed_before_the_worker_stopped_is_never_placed_again(setup, monkeypatch):
+def test_tm24_paper_crash_after_the_exit_was_accepted_closes_nothing_twice(setup, monkeypatch):
+    t, expiry, strike, symbol = setup
+    trade_id = _open_trade(t, expiry, strike, symbol)
+    stop = _arm(t, trade_id, kind="STOP", order_type="SL-M", level=80.0)
+    now = datetime.now(timezone.utc)
+    finish = trigger_engine._finish
+
+    async def crash(session, row, status, note, at):
+        if row.id == stop["id"] and status == "FILLED":
+            raise SystemExit("worker stopped")                          # after the paper exchange filled and the trade closed
+        await finish(session, row, status, note, at)
+    monkeypatch.setattr(trigger_engine, "_finish", crash)
+    with pytest.raises(SystemExit):
+        _exits(t["tenant_id"], {symbol: 79.0}, now=now)
+    monkeypatch.setattr(trigger_engine, "_finish", finish)
+    closed = _trade(trade_id)
+    assert closed.exit_time is not None and _row(stop["id"]).status == "FIRING"
+    sent = _spy_paper_sends(monkeypatch)
+    _start(now)
+    row = _row(stop["id"])
+    assert row.status == "FILLED" and row.fill_price == pytest.approx(closed.exit_price) and sent == []   # found: adopted
+    assert _exits(t["tenant_id"], {symbol: 79.0}, now=now).filled == 0 and sent == []
+    assert _trade(trade_id).exit_price == pytest.approx(closed.exit_price)
+
+
+def test_tm24_paper_crash_after_the_entry_was_accepted_places_no_second_order(setup, monkeypatch):
     t, expiry, strike, symbol = setup
     row_id = _rest(t, expiry, strike)["resting_order"]["id"]
     now = datetime.now(timezone.utc)
-    stale = now - timedelta(seconds=trigger_engine.FIRING_STALE_SECONDS + 5)
     finish = trigger_engine._finish
     crashed = []
 
-    async def crash_after_the_order(session, row, status, note, at):
+    async def crash(session, row, status, note, at):
         if not crashed and row.id == row_id:
             crashed.append(row.order_id)
-            raise SystemExit("worker stopped")                          # not an Exception: _restore never runs
+            raise SystemExit("worker stopped")                          # not an Exception: nothing in the pass catches it
         await finish(session, row, status, note, at)
-    monkeypatch.setattr(trigger_engine, "_finish", crash_after_the_order)
+    monkeypatch.setattr(trigger_engine, "_finish", crash)
     with pytest.raises(SystemExit):
-        _entries(t["tenant_id"], {symbol: 94.0}, now=stale)
+        _entries(t["tenant_id"], {symbol: 94.0}, now=now)
     monkeypatch.setattr(trigger_engine, "_finish", finish)
     assert _row(row_id).status == "FIRING" and crashed[0]
     before = _orders(t["tenant_id"])
-    _restart()
-    report = _entries(t["tenant_id"], {symbol: 94.0}, now=now)
+    _start(now)
     row = _row(row_id)
-    assert row.status == "FILLED" and row.order_id == crashed[0] and report.filled == 0
-    assert _orders(t["tenant_id"]) == before                            # the order the stopped pass placed, no second
+    assert row.status == "FILLED" and row.order_id == crashed[0]          # found by its client id: adopted at start-up
+    assert _entries(t["tenant_id"], {symbol: 94.0}, now=now).filled == 0 and _orders(t["tenant_id"]) == before
+
+
+def test_tm24_paper_crash_mid_entry_sends_it_once_with_the_same_id(setup):
+    t, expiry, strike, symbol = setup
+    row_id = _rest(t, expiry, strike)["resting_order"]["id"]
+    now = datetime.now(timezone.utc)
+    before = _orders(t["tenant_id"])
+    _claim_only(row_id, now)
+    _start(now)
+    assert _row(row_id).status == "FIRING"
+    assert _entries(t["tenant_id"], {symbol: 94.0}, now=now).filled == 1
     assert _entries(t["tenant_id"], {symbol: 94.0}, now=now).filled == 0
+    assert _orders(t["tenant_id"]) - before == 1 and _row(row_id).status == "FILLED"
+
+
+def test_tm24_the_paper_adapter_answers_the_lookup_by_client_id():
+    from app.brokers.models import BrokerOrderRequest, BrokerOrderStatus
+    from app.core.enums import OrderSide
+    from app.execution.paper_adapter import PaperExecutionAdapter
+    durable = BrokerOrderStatus(order_id="EXIT-1", symbol="X", transaction_type=OrderSide.SELL, quantity=1, filled_quantity=1,
+                                order_type="MARKET", status="COMPLETE", average_price=10.0, tag="exit:abc")
+
+    async def book(wanted):
+        return durable if wanted == "exit:abc" else None
+
+    async def go():
+        adapter = PaperExecutionAdapter(book=book)
+        adapter.mark("X", 11.0, "NFO")
+        found = await adapter.find_order_by_client_id("exit:abc")
+        missing = await adapter.find_order_by_client_id("exit:new")
+        again = await adapter.place_order(BrokerOrderRequest(symbol="X", exchange="NFO", transaction_type=OrderSide.SELL,
+                                                             quantity=1, order_type="MARKET", client_ref="exit:abc"))
+        fresh = await adapter.place_order(BrokerOrderRequest(symbol="X", exchange="NFO", transaction_type=OrderSide.SELL,
+                                                             quantity=1, order_type="MARKET", client_ref="exit:new"))
+        mine = await adapter.find_order_by_client_id("exit:new")
+        return found, missing, again, fresh, mine
+    found, missing, again, fresh, mine = _run(go())
+    assert found is durable and missing is None
+    assert again.order_id == "EXIT-1" and again.raw.get("duplicate")       # the same id never fills twice
+    assert fresh.status == "COMPLETE" and mine is not None and mine.order_id == fresh.order_id
+
+
+# LIVE broker (a fake broker session; LIVE switches untouched - an exit of an existing LIVE position) ------------------
+
+def _live_setup():
+    from tests.test_reexit_guard import _Book, _live_trade
+    from tests.test_trading_worker import _tenant
+    t = _tenant(f"tm24-{_ref()}@example.com")
+    return t, _Book, _live_trade
+
+
+def _arm_live(t, trade_id):
+    async def go():
+        async with _session_factory() as session:
+            user = await session.get(User, t["user_id"])
+            trade = await session.get(TradeRecord, trade_id)
+            row = await resting_book.arm_exit(session, user, trade, client_ref=f"exit:{_ref()}", kind="STOP", order_type="SL-M",
+                                              level=98.0)
+            await session.commit()
+            return row.id
+    return _run(go())
+
+
+def _live_exits(t, broker, now):
+    async def go():
+        async with _session_factory() as session:
+            return await trigger_engine.run_exits(session, t["tenant_id"], _prices({"RXG": 97.0}), broker=broker, now=now)
+    return _run(go())
+
+
+def _prices(table):
+    async def lookup(symbol, exchange="NFO"):
+        if symbol not in table:
+            raise LookupError(symbol)
+        return float(table[symbol])
+    return lookup
+
+
+def test_tm24_live_crash_mid_exit_fills_the_exit_once_right_after_restart():
+    t, _Book, _live_trade = _live_setup()
+    trade_id = _live_trade(t, exit_order_id=None)
+    row_id = _arm_live(t, trade_id)
+    now = datetime.now(timezone.utc)
+    _claim_only(row_id, now)
+    _start(now)                                                          # no broker session at start-up: sent on the cycle
+    assert _row(row_id).status == "FIRING" and _row(row_id).fired_at is None
+    broker = _Book(ltp=97.0)
+    first = _live_exits(t, broker, now)
+    second = _live_exits(t, broker, now)
+    assert len(broker.placed) == 1 and broker.placed[0].transaction_type.value == "SELL"
+    assert (first.filled, second.filled) == (1, 0) and _trade(trade_id).exit_time is not None and _row(row_id).status == "FILLED"
+
+
+def test_tm24_live_crash_after_the_broker_accepted_sends_no_second_order():
+    from app.brokers.models import BrokerOrderStatus
+    from app.core.enums import OrderSide
+    t, _Book, _live_trade = _live_setup()
+    trade_id = _live_trade(t, exit_order_id="OLD-1")                    # the exit ledger recorded the broker's id ...
+    row_id = _arm_live(t, trade_id)
+    now = datetime.now(timezone.utc)
+    _claim_only(row_id, now)                                             # ... then the worker stopped before booking it
+    broker = _Book(ltp=97.0)
+    broker.orders["OLD-1"] = BrokerOrderStatus(order_id="OLD-1", symbol="RXG", transaction_type=OrderSide.SELL, quantity=1,
+                                               filled_quantity=1, order_type="MARKET", status="COMPLETE", average_price=96.5)
+    _start(now)
+    report = _live_exits(t, broker, now)
+    trade = _trade(trade_id)
+    assert broker.placed == [] and report.filled == 1                   # found at the broker: adopted, nothing sent
+    assert trade.exit_time is not None and trade.exit_price == pytest.approx(96.5) and _row(row_id).status == "FILLED"
+    assert _live_exits(t, broker, now).filled == 0 and broker.placed == []
+
+
+def test_tm24_the_live_lookup_reads_the_brokers_book_by_tag():
+    from app.brokers.models import BrokerOrderStatus
+    from app.core.enums import OrderSide
+    _t, _Book, _x = _live_setup()
+    broker = _Book()
+    broker.max_tag_length = 8
+    broker.orders["A"] = BrokerOrderStatus(order_id="A", symbol="RXG", transaction_type=OrderSide.SELL, quantity=1,
+                                           order_type="MARKET", status="OPEN", tag="exit:abc")
+    assert _run(broker.find_order_by_client_id("exit:abcdef")).order_id == "A"      # cut to the broker's tag length
+    assert _run(broker.find_order_by_client_id("exit:zzz")) is None
+    broker.book_error = RuntimeError("book down")
+    with pytest.raises(RuntimeError):                                    # unknown is never "not there"
+        _run(broker.find_order_by_client_id("exit:abc"))
+
+
+# Order and the running timeout -----------------------------------------------------------------------------------------
+
+def test_tm24_exits_are_reconciled_before_entries(setup, monkeypatch):
+    t, expiry, strike, symbol = setup
+    trade_id = _open_trade(t, expiry, strike, symbol)
+    entry_id = _rest(t, expiry, strike)["resting_order"]["id"]
+    stop = _arm(t, trade_id, kind="STOP", order_type="SL-M", level=80.0)
+    now = datetime.now(timezone.utc)
+    _claim_only(entry_id, now)                                           # the entry was claimed first ...
+    _claim_only(stop["id"], now)
+    seen = []
+    original = trigger_engine._reconcile
+
+    async def spy(session, row, *a, **k):
+        if row.id in (entry_id, stop["id"]):
+            seen.append(row.purpose)
+        return await original(session, row, *a, **k)
+    monkeypatch.setattr(trigger_engine, "_reconcile", spy)
+    _start(now)
+    assert seen == ["EXIT", "ENTRY"]                                     # ... the exit is settled first
+
+
+def test_tm24_an_order_still_sending_after_the_ack_timeout_is_settled_while_running(setup):
+    t, expiry, strike, symbol = setup
+    trade_id = _open_trade(t, expiry, strike, symbol)
+    stop = _arm(t, trade_id, kind="STOP", order_type="SL-M", level=80.0)
+    now = datetime.now(timezone.utc)
+    _claim_only(stop["id"], now)
+    assert _exits(t["tenant_id"], {symbol: 79.0}, now=now).filled == 0  # within the ack timeout: left to its pass
+    assert _row(stop["id"]).status == "FIRING" and _trade(trade_id).exit_time is None
+    later = now + timedelta(seconds=trigger_engine.TRIGGER_ACK_TIMEOUT_SECONDS + 1)
+    assert _exits(t["tenant_id"], {symbol: 79.0}, now=later).filled == 1   # no restart: looked up, sent once
+    assert _exits(t["tenant_id"], {symbol: 79.0}, now=later).filled == 0
+    assert _trade(trade_id).exit_time is not None and _row(stop["id"]).status == "FILLED"

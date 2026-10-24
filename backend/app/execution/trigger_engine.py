@@ -45,7 +45,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.base import BrokerInterface
-from app.core.config import WORKER_CYCLE_SECONDS
+from app.core.config import TRIGGER_ACK_TIMEOUT_SECONDS, WORKER_CYCLE_SECONDS
 from app.db.models import PaperRestingOrderRecord, TradeRecord, User, WorkerHeartbeatRecord
 from app.execution import resting_book as book
 from app.trading import trigger_rules
@@ -60,9 +60,6 @@ TRIGGER_TICK_SECONDS = float(os.environ.get("TRIGGER_TICK_SECONDS", "1"))
 TRIGGER_TICK_MAX_AGE_SECONDS = float(os.environ.get("TRIGGER_TICK_MAX_AGE_SECONDS", "5"))
 TRIGGER_STALL_SECONDS = int(os.environ.get("TRIGGER_STALL_SECONDS", str(WORKER_CYCLE_SECONDS * 3)))
 HEARTBEAT_EVERY_SECONDS = 5.0
-# An order left FIRING longer than this was interrupted (a worker restart / crash between the claim and its outcome):
-# the next pass settles it from what was actually done - never a second order (`_recover_interrupted`).
-FIRING_STALE_SECONDS = int(os.environ.get("TRIGGER_FIRING_STALE_SECONDS", "60"))
 STALL_TITLE = "Your waiting orders are not being watched right now"
 
 _last_run: Optional[datetime] = None
@@ -101,7 +98,7 @@ def _rank(row: PaperRestingOrderRecord) -> Tuple[int, int, int]:
 
 
 async def tenants_with_resting(session: AsyncSession, *, paper_only: bool = False) -> Set[int]:
-    query = select(PaperRestingOrderRecord.tenant_id).where(PaperRestingOrderRecord.status == book.RESTING)
+    query = select(PaperRestingOrderRecord.tenant_id).where(PaperRestingOrderRecord.status.in_((book.RESTING, book.FIRING)))
     if paper_only:
         query = query.where(PaperRestingOrderRecord.mode == "PAPER")
     return set(await session.scalars(query.distinct()))
@@ -223,7 +220,7 @@ async def run_exits(session: AsyncSession, tenant_id: int, prices: PriceFn, *, b
     now = now or datetime.now(timezone.utc)
     report = EngineReport()
     reader = _Prices(prices)
-    await _recover_interrupted(session, tenant_id, book.EXIT, now, paper_only)
+    await _resolve_firing(session, tenant_id, book.EXIT, reader, broker, now, report, paper_only)
     for row in await _resting(session, tenant_id, book.EXIT, paper_only):
         report.checked += 1
         try:
@@ -243,7 +240,7 @@ async def run_entries(session: AsyncSession, tenant_id: int, prices: PriceFn, *,
     now = now or datetime.now(timezone.utc)
     report = EngineReport()
     reader = _Prices(prices)
-    await _recover_interrupted(session, tenant_id, book.ENTRY, now, False)
+    await _resolve_firing(session, tenant_id, book.ENTRY, reader, None, now, report, False)
     rows = await _expire(session, await _resting(session, tenant_id, book.ENTRY, False), now, report)
     for row in rows:
         report.checked += 1
@@ -256,52 +253,6 @@ async def run_entries(session: AsyncSession, tenant_id: int, prices: PriceFn, *,
             await _restore(session, row, now)
     await _mark_run(session, now, report)
     return report
-
-
-async def _recover_interrupted(session: AsyncSession, tenant_id: int, purpose: str, now: datetime, paper_only: bool) -> None:
-    """TM-2 restart safety: an order claimed (FIRING) by a pass that never finished - the worker stopped in between - is
-    settled from what was actually done, so it is neither stuck (an exit never blocked, ADR-0004) nor sent twice:
-    * an EXIT whose position is closed is FILLED (closed by this order) or CANCELLED; an open position waits again;
-    * an ENTRY whose ticket order exists (its idempotency key) takes that order's outcome; with none it waits again (a
-      re-fire goes through the same key, so it can never place a second order)."""
-    from app.db.models import OrderRecord
-    stale = now - timedelta(seconds=FIRING_STALE_SECONDS)
-    query = select(PaperRestingOrderRecord).where(PaperRestingOrderRecord.tenant_id == tenant_id,
-                                                  PaperRestingOrderRecord.status == book.FIRING,
-                                                  PaperRestingOrderRecord.purpose == purpose)
-    if paper_only:
-        query = query.where(PaperRestingOrderRecord.mode == "PAPER")
-    for row in list(await session.scalars(query)):
-        fired = row.fired_at if row.fired_at is None or row.fired_at.tzinfo else row.fired_at.replace(tzinfo=timezone.utc)
-        if fired is not None and fired > stale:
-            continue                       # still in flight in some pass
-        try:
-            if purpose == book.EXIT:
-                trade = await session.get(TradeRecord, row.trade_id) if row.trade_id is not None else None
-                if trade is not None and trade.exit_time is None:
-                    await _back_to_waiting(session, row, "Not finished last time (the engine restarted): waiting again", now)
-                elif trade is not None and (trade.exit_reason or "").endswith("(your waiting order)"):
-                    row.fill_price = trade.exit_price
-                    await _finish(session, row, book.FILLED, f"Closed at {float(trade.exit_price or 0):,.2f}", now)
-                else:
-                    await _finish(session, row, book.CANCELLED, "The position was already closed", now)
-                continue
-            payload = json.loads(row.payload_json or "{}")
-            ref = (payload.get("ask") or {}).get("client_ref")
-            order = await session.scalar(select(OrderRecord).where(
-                OrderRecord.tenant_id == row.tenant_id, OrderRecord.idempotency_key == f"fno:{row.user_id}:{ref}")) if ref else None
-            if order is None:
-                await _back_to_waiting(session, row, "Not finished last time (the engine restarted): waiting again", now)
-            elif order.trade_id is not None:
-                trade = await session.get(TradeRecord, order.trade_id)
-                row.order_id, row.fill_price = order.id, (trade.entry_price if trade is not None else None)
-                await _finish(session, row, book.FILLED, f"Placed at {float(row.fill_price or 0):,.2f}", now)
-            else:
-                row.order_id = order.id
-                await _finish(session, row, book.REJECTED, "Not placed (settled after the engine restarted)", now)
-        except Exception:  # noqa: BLE001 - tried again on the next pass
-            logger.exception("Trigger engine: could not settle interrupted order %s", row.id)
-            await session.rollback()
 
 
 async def _restore(session: AsyncSession, row: PaperRestingOrderRecord, now: datetime) -> None:
@@ -317,7 +268,6 @@ async def _restore(session: AsyncSession, row: PaperRestingOrderRecord, now: dat
 
 async def _evaluate_exit(session: AsyncSession, row: PaperRestingOrderRecord, prices: _Prices, candles: Optional[CandleFn],
                          broker: Optional[BrokerInterface], now: datetime, report: EngineReport) -> None:
-    from app.trading.position_monitor import close_position
     trade = await session.get(TradeRecord, row.trade_id) if row.trade_id is not None else None
     if trade is None or trade.exit_time is not None:
         await _finish(session, row, book.CANCELLED, "The position was already closed", now)
@@ -333,22 +283,37 @@ async def _evaluate_exit(session: AsyncSession, row: PaperRestingOrderRecord, pr
     if contract_price is None:
         report.waiting += 1
         return
-    fire_type = fire_order_type(row.order_type)
     from app.paper.fno_ticket import paper_fill
-    if fire_type == "LIMIT" and paper_fill("LIMIT", row.side, contract_price, row.price, None)[0] is None:
+    if fire_order_type(row.order_type) == "LIMIT" and paper_fill("LIMIT", row.side, contract_price, row.price, None)[0] is None:
         await _keep_as_limit(session, row, now)
         report.waiting += 1
         return
     if not await _claim(session, row, now):
+        return
+    await _send_exit(session, row, trade, contract_price, broker, now, report)
+
+
+def _exit_reason(row: PaperRestingOrderRecord) -> str:
+    return f"{'Stop' if row.kind == book.STOP else 'Target'} (your waiting order)"
+
+
+async def _send_exit(session: AsyncSession, row: PaperRestingOrderRecord, trade: TradeRecord, contract_price: float,
+                     broker: Optional[BrokerInterface], now: datetime, report: EngineReport) -> None:
+    """Sends a claimed (FIRING) exit: the position closes through the one exit path, with this order's client id."""
+    from app.paper.fno_ticket import paper_fill
+    from app.trading.position_monitor import close_position
+    fire_type = fire_order_type(row.order_type)
+    if fire_type == "LIMIT" and paper_fill("LIMIT", row.side, contract_price, row.price, None)[0] is None:
+        await _keep_as_limit(session, row, now)
+        report.waiting += 1
         return
     underlying = None
     if row.trigger_source == book.SPOT:
         underlying = row.last_price
     exit_price = contract_price
     if trade.mode == "PAPER":
-        exit_price = await _paper_fill(row, fire_type, contract_price)
-    reason = f"{'Stop' if row.kind == book.STOP else 'Target'} (your waiting order)"
-    outcome = await close_position(session, trade, exit_price, reason, broker=broker, user_id=row.user_id, now=now,
+        exit_price = await _paper_fill(session, row, fire_type, contract_price)
+    outcome = await close_position(session, trade, exit_price, _exit_reason(row), broker=broker, user_id=row.user_id, now=now,
                                    underlying_price=underlying)
     await session.refresh(row)
     if outcome.closed:
@@ -366,12 +331,13 @@ async def _evaluate_exit(session: AsyncSession, row: PaperRestingOrderRecord, pr
     report.waiting += 1
 
 
-async def _paper_fill(row: PaperRestingOrderRecord, fire_type: str, price: float) -> float:
-    """The PAPER fill of a reached exit on the paper exchange (TM-1's adapter: the same slippage and limit cap)."""
+async def _paper_fill(session: AsyncSession, row: PaperRestingOrderRecord, fire_type: str, price: float) -> float:
+    """The PAPER fill of a reached exit on the paper exchange (TM-1's adapter: the same slippage and limit cap), sent
+    with the order's own client id (a second send of the same id returns the first, TM2-4)."""
     from app.brokers.models import BrokerOrderRequest
     from app.core.enums import OrderSide
     from app.execution.paper_adapter import PaperExecutionAdapter
-    adapter = PaperExecutionAdapter()
+    adapter = PaperExecutionAdapter(book=durable_book(session, row))
     adapter.mark(row.symbol, price, row.exchange)
     request = BrokerOrderRequest(symbol=row.symbol, exchange=row.exchange, transaction_type=OrderSide(row.side),
                                  quantity=float(row.quantity), order_type=fire_type, price=row.price if fire_type == "LIMIT" else None,
@@ -385,7 +351,6 @@ async def _paper_fill(row: PaperRestingOrderRecord, fire_type: str, price: float
 
 async def _evaluate_entry(session: AsyncSession, row: PaperRestingOrderRecord, prices: _Prices, candles: Optional[CandleFn],
                           now: datetime, report: EngineReport) -> None:
-    from app.execution.approval import ORIGIN_AUTOMATIC
     from app.paper import fno_ticket
     reached = await _reached(row, prices, candles, now)
     if not reached:
@@ -394,18 +359,30 @@ async def _evaluate_entry(session: AsyncSession, row: PaperRestingOrderRecord, p
     if contract_price is None:
         report.waiting += 1
         return
-    fire_type = fire_order_type(row.order_type)
-    if fire_type == "LIMIT" and fno_ticket.paper_fill("LIMIT", row.side, contract_price, row.price, None)[0] is None:
+    if fire_order_type(row.order_type) == "LIMIT" and fno_ticket.paper_fill("LIMIT", row.side, contract_price, row.price, None)[0] is None:
         await _keep_as_limit(session, row, now)
         report.waiting += 1
         return
     if not await _claim(session, row, now):
         return
+    await _send_entry(session, row, contract_price, now, report)
+
+
+async def _send_entry(session: AsyncSession, row: PaperRestingOrderRecord, contract_price: float, now: datetime,
+                      report: EngineReport) -> None:
+    """Sends a claimed (FIRING) entry through the order ticket's own pipeline, with the ticket's own client id."""
+    from app.execution.approval import ORIGIN_AUTOMATIC
+    from app.paper import fno_ticket
     if row.mode != "PAPER":
         # TM-23 / owner principle: the same object reaches the LIVE path once the LIVE manual path (TT-1) and the owner's
         # LIVE switches allow it; until then nothing is sent.
         await _finish(session, row, book.REJECTED, "Live manual orders are not switched on: nothing was placed", now)
         report.rejected += 1
+        return
+    fire_type = fire_order_type(row.order_type)
+    if fire_type == "LIMIT" and fno_ticket.paper_fill("LIMIT", row.side, contract_price, row.price, None)[0] is None:
+        await _keep_as_limit(session, row, now)
+        report.waiting += 1
         return
     user = await session.get(User, row.user_id)
     if user is None or not user.is_active or user.tenant_id != row.tenant_id:
@@ -436,6 +413,184 @@ async def _evaluate_entry(session: AsyncSession, row: PaperRestingOrderRecord, p
     await _finish(session, row, book.REJECTED, reasons, now)
     await _notify(session, row, f"Waiting order not placed: {row.symbol}", f"Your price was reached, but: {reasons}", warning=True)
     report.rejected += 1
+
+
+# --- TM2-4: an order left "Sending" (FIRING) - settled from its broker by its own client id --------------------------------
+
+def client_id(row: PaperRestingOrderRecord) -> Optional[str]:
+    """The id the order goes out with: an entry's ticket idempotency key (the pipeline's order), an exit's client_ref."""
+    if row.purpose == book.EXIT:
+        return row.client_ref
+    try:
+        ref = (json.loads(row.payload_json or "{}").get("ask") or {}).get("client_ref")
+    except (TypeError, ValueError):
+        ref = None
+    return f"fno:{row.user_id}:{ref}" if ref else None
+
+
+def durable_book(session: AsyncSession, row: PaperRestingOrderRecord) -> Callable[[str], Awaitable[Optional[Any]]]:
+    """The paper exchange's order book by client id for this order, read from the order / trade rows - so a lookup
+    after a restart sees what the stopped worker placed."""
+    async def durable(wanted: str) -> Optional[Any]:
+        return await _paper_book(session, row, wanted)
+    return durable
+
+
+def paper_venue(session: AsyncSession, row: PaperRestingOrderRecord) -> Any:
+    """The paper exchange for this order: TM-1's adapter with the durable order book by client id."""
+    from app.execution.paper_adapter import PaperExecutionAdapter
+    return PaperExecutionAdapter(book=durable_book(session, row))
+
+
+async def _paper_book(session: AsyncSession, row: PaperRestingOrderRecord, wanted: str) -> Optional[Any]:
+    from app.brokers.models import BrokerOrderStatus
+    from app.core.enums import OrderSide
+    from app.db.models import OrderRecord
+    if wanted != client_id(row):
+        return None
+    side, kind = OrderSide(row.side), fire_order_type(row.order_type)
+    if row.purpose == book.ENTRY:
+        order = await session.scalar(select(OrderRecord).where(OrderRecord.tenant_id == row.tenant_id,
+                                                               OrderRecord.idempotency_key == wanted))
+        if order is None:
+            return None
+        trade = await session.get(TradeRecord, order.trade_id) if order.trade_id is not None else None
+        filled = trade is not None
+        return BrokerOrderStatus(order_id=str(order.id), symbol=row.symbol, transaction_type=side, quantity=float(row.quantity),
+                                 filled_quantity=float(row.quantity) if filled else 0.0, order_type=kind,
+                                 status="COMPLETE" if filled else "REJECTED", average_price=trade.entry_price if trade else None,
+                                 tag=wanted)
+    trade = await session.get(TradeRecord, row.trade_id) if row.trade_id is not None else None
+    if trade is None or trade.exit_time is None or trade.exit_reason != _exit_reason(row):
+        return None
+    return BrokerOrderStatus(order_id=f"EXIT-{trade.id}", symbol=row.symbol, transaction_type=side, quantity=float(row.quantity),
+                             filled_quantity=float(row.quantity), order_type=kind, status="COMPLETE",
+                             average_price=trade.exit_price, tag=wanted)
+
+
+async def _take_over(session: AsyncSession, row: PaperRestingOrderRecord, now: datetime) -> bool:
+    """FIRING as last seen -> FIRING owned by this pass, exactly once (two passes never settle the same order)."""
+    seen = row.fired_at
+    same = PaperRestingOrderRecord.fired_at.is_(None) if seen is None else PaperRestingOrderRecord.fired_at == seen
+    taken = await session.execute(update(PaperRestingOrderRecord).where(
+        PaperRestingOrderRecord.id == row.id, PaperRestingOrderRecord.status == book.FIRING, same).values(
+        fired_at=now, updated_at=now).execution_options(synchronize_session=False))
+    if getattr(taken, "rowcount", 0) != 1:
+        await session.rollback()
+        return False
+    await session.commit()
+    await session.refresh(row)
+    return True
+
+
+async def _send_later(session: AsyncSession, row: PaperRestingOrderRecord, note: str, now: datetime) -> None:
+    """Not at its broker: sent once, with the same id, on the next pass that has its price (and, for a LIVE exit, its
+    broker session). It stays "Sending" (FIRING, no claim time) and comes first in that pass."""
+    row.fired_at, row.status_note, row.updated_at = None, note, now
+    book.add_trail(row, book.FIRING, note, now)
+    await session.commit()
+
+
+async def _reconcile(session: AsyncSession, row: PaperRestingOrderRecord, prices: Optional[_Prices],
+                     broker: Optional[BrokerInterface], now: datetime, report: EngineReport) -> None:
+    """One FIRING order this pass took over: looked up at its broker by its client id - found: its state is adopted;
+    not found: sent once with the same id (the PAPER adapter and the live adapters answer the same lookup)."""
+    again = "Not at the broker: sent once with the same id"
+    if row.purpose == book.ENTRY and row.mode != "PAPER":
+        await _finish(session, row, book.REJECTED, "Live manual orders are not switched on: nothing was placed", now)
+        report.rejected += 1
+        return
+    if row.purpose == book.EXIT:
+        trade = await session.get(TradeRecord, row.trade_id) if row.trade_id is not None else None
+        if trade is None:
+            await _finish(session, row, book.CANCELLED, "The position was already closed", now)
+            report.cancelled += 1
+            return
+        if trade.mode != "PAPER":
+            # LIVE: the one exit path looks the exit up in the broker's order book by its tag and adopts it, or sends it
+            # once with the same tag (position_monitor's exit ledger and re-exit guard).
+            price = await prices.get(row.symbol, row.exchange) if prices is not None else None
+            if broker is None or price is None:
+                await _send_later(session, row, "Checked at the broker on the next pass with its session", now)
+                return
+            await _send_exit(session, row, trade, price, broker, now, report)
+            return
+        found = await paper_venue(session, row).find_order_by_client_id(row.client_ref)
+        if found is not None and found.status == "COMPLETE":
+            row.fill_price = found.average_price
+            await _finish(session, row, book.FILLED, f"Closed at {float(found.average_price or 0):,.2f} (found after a restart)", now)
+            if row.trade_id is not None and await book.cancel_for_trade(session, row.trade_id, "The position closed (another exit filled)", now):
+                await session.commit()
+            report.filled += 1
+            return
+        if trade.exit_time is not None:
+            await _finish(session, row, book.CANCELLED, "The position was already closed", now)
+            report.cancelled += 1
+            return
+        price = await prices.get(row.symbol, row.exchange) if prices is not None else None
+        if price is None:
+            await _send_later(session, row, again + " at the next price", now)
+            return
+        await _send_exit(session, row, trade, price, None, now, report)
+        return
+    wanted = client_id(row)
+    found = await paper_venue(session, row).find_order_by_client_id(wanted) if wanted else None
+    if found is not None:
+        row.order_id = int(found.order_id)
+        if found.status == "COMPLETE":
+            row.fill_price = found.average_price
+            await _finish(session, row, book.FILLED, f"Placed at {float(found.average_price or 0):,.2f} (found after a restart)", now)
+            report.filled += 1
+        else:
+            await _finish(session, row, book.REJECTED, "Not placed (its order was refused before the restart)", now)
+            report.rejected += 1
+        return
+    price = await prices.get(row.symbol, row.exchange) if prices is not None else None
+    if price is None:
+        await _send_later(session, row, again + " at the next price", now)
+        return
+    await _send_entry(session, row, price, now, report)
+
+
+def _overdue(row: PaperRestingOrderRecord, now: datetime, timeout: float) -> bool:
+    if row.fired_at is None:
+        return True                        # settled at start-up as "not at the broker": sent on this pass
+    fired = row.fired_at if row.fired_at.tzinfo else row.fired_at.replace(tzinfo=timezone.utc)
+    return (now - fired).total_seconds() >= timeout
+
+
+async def _resolve_firing(session: AsyncSession, tenant_id: Optional[int], purpose: Optional[str], prices: Optional[_Prices],
+                          broker: Optional[BrokerInterface], now: datetime, report: EngineReport, paper_only: bool,
+                          timeout: Optional[float] = None) -> None:
+    """Every FIRING order (of the organisation and purpose; None = all) still not acknowledged after the ack timeout
+    (`timeout` 0: every one, at start-up) - exits first - settled through `_reconcile`, before any new trigger."""
+    timeout = TRIGGER_ACK_TIMEOUT_SECONDS if timeout is None else timeout
+    query = select(PaperRestingOrderRecord).where(PaperRestingOrderRecord.status == book.FIRING)
+    if tenant_id is not None:
+        query = query.where(PaperRestingOrderRecord.tenant_id == tenant_id)
+    if purpose is not None:
+        query = query.where(PaperRestingOrderRecord.purpose == purpose)
+    if paper_only:
+        query = query.where(PaperRestingOrderRecord.mode == "PAPER")
+    for row in sorted(await session.scalars(query), key=_rank):
+        if not _overdue(row, now, timeout) or not await _take_over(session, row, now):
+            continue
+        try:
+            await _reconcile(session, row, prices, broker, now, report)
+        except Exception as exc:  # noqa: BLE001 - it stays FIRING and is settled again after the ack timeout
+            logger.exception("Trigger engine: settling order %s failed", row.id)
+            report.errors.append(f"settle {row.id}: {type(exc).__name__}")
+            await session.rollback()
+
+
+async def reconcile_on_start(session: AsyncSession, now: Optional[datetime] = None) -> EngineReport:
+    """TM2-4: on worker start, before the first cycle and the tick loop, every FIRING order of every organisation is
+    looked up at its broker by its client id, exits first: found -> its state; not found -> sent once with the same id
+    on the first pass that has its price (and, for a LIVE exit, the position's broker session)."""
+    now = now or datetime.now(timezone.utc)
+    report = EngineReport()
+    await _resolve_firing(session, None, None, None, None, now, report, False, timeout=0.0)
+    return report
 
 
 # --- heartbeat and stall alert (TT-6 / TT-26) ----------------------------------------------------------------------------

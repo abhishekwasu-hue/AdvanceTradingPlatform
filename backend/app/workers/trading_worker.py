@@ -348,8 +348,15 @@ class TradingWorker:
             await self.reconcile_on_start()
         except Exception:  # noqa: BLE001 - never prevents the worker from starting
             logger.exception("Start-up reconciliation failed")
-        # TM-2 / TT-6: the trigger engine on live ticks between cycles (the cycle runs it too, as the fallback).
+        # TM2-4: every order the engine left "Sending" (FIRING) when the worker stopped is looked up at its broker by its
+        # client id and settled - exits first - before the first cycle and the tick loop (never a second order).
         from app.execution import trigger_engine
+        try:
+            async with self.session_factory() as session:
+                await trigger_engine.reconcile_on_start(session)
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting; each pass settles them after the ack timeout
+            logger.exception("Trigger engine start-up reconciliation failed")
+        # TM-2 / TT-6: the trigger engine on live ticks between cycles (the cycle runs it too, as the fallback).
         tick_task = asyncio.create_task(trigger_engine.tick_loop(self.session_factory, self._stop))
         while not self._stop.is_set():
             started = time.monotonic()

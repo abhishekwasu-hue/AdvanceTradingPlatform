@@ -54,6 +54,9 @@ from app.execution.paper_broker import IST, PaperBroker
 NAME = "paper"
 PriceLookup = Callable[[str, str], Awaitable[float]]
 Liquidity = Callable[[BrokerOrderRequest], float]
+# TM2-4: the paper exchange's durable order book by client id (what a stopped worker already placed), e.g. the trigger
+# engine's reading of the order / trade rows. None: this adapter's own in-memory book only.
+OrderBookLookup = Callable[[str], Awaitable[Optional[BrokerOrderStatus]]]
 NO_PRICE = "No live price for {symbol}: practice mode fills only at a price it can read - nothing was placed"
 TERMINAL = ("COMPLETE", "REJECTED", "CANCELLED")
 RESTING = "Waiting for your price: it fills when the price reaches it"
@@ -91,9 +94,10 @@ class PaperExecutionAdapter(BrokerInterface):
     def __init__(self, paper_broker: Optional[PaperBroker] = None, *, price_lookup: Optional[PriceLookup] = None,
                  liquidity: Optional[Liquidity] = None, funds: Optional[float] = None,
                  clock: Optional[Callable[[], datetime]] = None, venue: Optional[str] = None,
-                 venue_plan: Optional[str] = None, keep_resting: bool = False) -> None:
+                 venue_plan: Optional[str] = None, keep_resting: bool = False, book: Optional[OrderBookLookup] = None) -> None:
         self.paper_broker = paper_broker or PaperBroker()
         self.keep_resting = keep_resting
+        self.book = book
         self._resting: List[str] = []
         # Part 1B (owner principle: the same code path for PAPER and LIVE): practising for a broker account (`venue`, a
         # registry name such as "kotak_neo") applies that broker's own order transform - a MARKET order where the broker
@@ -168,7 +172,23 @@ class PaperExecutionAdapter(BrokerInterface):
                                  status=status, price=request.price, average_price=average, placed_at=self.clock(),
                                  tag=request.tag, product=request.product, exchange=request.exchange)
 
+    async def find_order_by_client_id(self, client_id: str) -> Optional[BrokerOrderStatus]:
+        """TM2-4: the order placed with this client id (`client_ref`) - this adapter's own book, then the durable `book`
+        - or None when the paper exchange never took one. The same lookup the live adapters answer from their order
+        book by tag (BrokerInterface.find_order_by_client_id)."""
+        if client_id in self._by_ref:
+            return self._orders.get(self._by_ref[client_id])
+        if self.book is None:
+            return None
+        found = await self.book(client_id)
+        if found is not None:
+            self._orders[found.order_id] = found
+            self._by_ref[client_id] = found.order_id
+        return found
+
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
+        if order.client_ref and order.client_ref not in self._by_ref and self.book is not None:
+            await self.find_order_by_client_id(order.client_ref)     # TM2-4: already placed before a restart -> that one
         if order.client_ref and order.client_ref in self._by_ref:
             first = self._orders[self._by_ref[order.client_ref]]
             return BrokerOrderResponse(order_id=first.order_id, status=first.status, message="Already placed (same reference)",

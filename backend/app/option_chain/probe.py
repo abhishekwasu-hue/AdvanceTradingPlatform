@@ -139,9 +139,15 @@ def format_chain(r: Dict[str, Any]) -> List[str]:
 async def _main_async(underlying: str) -> int:
     from app.db.session import _session_factory
     from app.option_chain.snapshots import normalise_underlying
-    name = normalise_underlying(underlying)
+    from app.secrets_store.envelope import ensure_tenant_key
+    try:
+        name = normalise_underlying(underlying)
+    except ValueError:
+        print("probe-chain: enter an index or stock name, for example NIFTY")
+        return 2
     async with _session_factory() as session:
         user = await _owner(session)
+        await ensure_tenant_key(session, user.tenant_id)  # the web route loads it at sign-in; the CLI must load it here
         try:
             result = await run_chain_probe(session, user, name)
         except HTTPException as exc:
@@ -155,11 +161,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="probe", description="B2b: the broker's spot in an option chain, as numbers")
     parser.add_argument("underlying")
     args = parser.parse_args(argv)
-    try:
-        return asyncio.run(_main_async(args.underlying))
-    except ValueError:
-        print("probe-chain: enter an index or stock name, for example NIFTY")
-        return 2
+    return asyncio.run(_main_async(args.underlying))
 
 
 if __name__ == "__main__":

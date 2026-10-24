@@ -3124,6 +3124,16 @@ W runs the same structures on historical bars.
   is the same fact for every tenant), deduplicated across tenants by interval, trimmed by
   retention after `RETENTION_CHAIN_SNAPSHOTS_DAYS` (default 400). Tenants can also upload rows
   (`POST /api/backtest/option-chain/snapshots`); coverage and raw rows are readable.
+  **TM94-3 (owner, 23 Oct; the TM-7 rule of the OI collector, migration `3c5e7a9b1d24`):** the
+  rows are no longer platform-wide. Each organisation's cycle reads its chains through ITS OWN
+  data session and stores them under its tenant (`option_chain_snapshots.tenant_id`); the
+  interval is per (organisation, underlying), so one organisation's capture never stands in for
+  another's. Every reader (`load_rows`, `coverage`, the upload dedupe, the backtest pricer and
+  `GET /api/backtest/option-chain/coverage|snapshots`) takes the caller's tenant and returns its
+  own recorded rows and uploads only; no tenant = nothing. Rows recorded before the fix (no
+  tenant) are read only by the confirmed owner (`HISTORY_OWNER_TENANT_ID` +
+  `HISTORY_OWNER_TENANT_NAME`); with no confirmed owner nobody reads them, and retention deletes
+  them after 400 days as before. `byob_data_tier` on: unchanged (nothing recorded, reads refused).
 * **API.** `BacktestBody.options` (an `OptionBacktestBody`: the deployment's option fields plus
   `pricing` synthetic|snapshots|uploaded, IV, conventions, `intraday`) on `POST /api/backtest`,
   `/monte-carlo` and `/walk-forward`; one `BacktestRunner` dispatches, so a run record stores

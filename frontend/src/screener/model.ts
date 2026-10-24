@@ -32,6 +32,14 @@ export type Registry = Record<string, RegistryEntry>;
 export const TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "1d", "1w", "1M"] as const;
 export type Timeframe = (typeof TIMEFRAMES)[number];
 
+/** Day-one fix 4 (ui_v2): a timeframe in the words a trader uses ("Daily", not "1d"). Unknown values are shown as given. */
+export const TIMEFRAME_WORDS: Readonly<Record<string, string>> = {
+  "1m": "1 min", "3m": "3 min", "5m": "5 min", "15m": "15 min", "30m": "30 min", "1h": "1 hour", "1d": "Daily", "1w": "Weekly", "1M": "Monthly",
+};
+export function timeframeWords(tf: string, plain: boolean): string {
+  return plain ? TIMEFRAME_WORDS[tf] ?? tf : tf;
+}
+
 /** A window argument the registry gives no default for (SMA's n, ORHigh's minutes): the builder starts here. */
 export const DEFAULT_WINDOW = 20;
 export const DEFAULT_OR_MINUTES = 15;

@@ -14,7 +14,7 @@
      "title": "Structure",
      "lines": [
       "Weekly: range",
-      "Daily: up, protected level 24,310, last BOS at 24,790",
+      "Daily: up, protected level 24,310, last break past the last swing (a break of structure) at 24,790",
       "1-hour: down (weak), protected level 25,020, last CHoCH at 24,900.5",
       "15-minute: up, protected level 24,730.5"
      ]
@@ -250,9 +250,9 @@
      ]
     },
     {
-     "title": "Assumed (edit them in the Screener)",
+     "title": "Assumed (edit them in Find setups)",
      "lines": [
-      "at the area = within 0.5% of the nearest live zone (the function's default)"
+      "at the area = within 0.5% of the nearest live zone (the usual setting)"
      ]
     },
     {
@@ -264,8 +264,8 @@
     {
      "title": "Each stage",
      "lines": [
-      "Trend() == \"UPTREND\": 3 left",
-      "NearZone(\"demand\"): 2 left"
+      "The market-structure trend is up: 3 left",
+      "The close is at a buyer area (a demand zone): 2 left"
      ]
     }
    ],
@@ -350,7 +350,7 @@
     }
    ],
    "action": {
-    "label": "Open the Screener",
+    "label": "Open Find setups",
     "to": "/screener"
    },
    "refused": null,

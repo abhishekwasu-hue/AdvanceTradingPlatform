@@ -10,7 +10,7 @@ import { NAV_PINNED_V2, navDotFor, navEntryFor, type NavItemV2, type NavSectionV
 
 /**
  * UI2-1 (UI v2 proposal §2, mockup nav-sidebar-1440), UX3-9 (UX audit section 5 "The proposed sidebar"): the desktop
- * and tablet sidebar - Broker first with its status dot, then the 13 entries in task order in one flat list (no section
+ * and tablet sidebar - the 13 entries (Today first; day-one fix 9 puts Broker, with its status dot, just above Settings) in task order in one flat list (no section
  * headings, nothing folds away), and the Admin console set apart at the bottom for the platform operator only. Pages
  * whose feature is off are not listed at all (the caller passes `visibleSections(...)`). A merged page's tab or a
  * Settings sub-page lights up its entry (navEntryFor). Phones use the bottom bar and the More sheet instead (md and up
@@ -78,10 +78,12 @@ export function SidebarV2View({ sections, current, user, accountPath, pinned = N
       </div>
       <nav aria-label="Pages" data-tour="nav-sidebar" className="flex-1 overflow-y-auto px-space-2 py-space-3">
         <ul className="space-y-px" data-nav-list>
+          {/* Day-one fix 9: Today first; Broker (always shown, with its dot) sits just above Settings. */}
+          {userItems.filter((i) => i.key !== "settings").map((item) => <li key={item.key}><NavLink item={item} current={entry} dot={navDotFor(item.key, dot)} /></li>)}
           {pinned.map((item) => (
             <li key={item.key} data-nav-pinned><NavLink item={item} current={entry} dot={navDotFor(item.key, dot)} /></li>
           ))}
-          {userItems.map((item) => <li key={item.key}><NavLink item={item} current={entry} dot={navDotFor(item.key, dot)} /></li>)}
+          {userItems.filter((i) => i.key === "settings").map((item) => <li key={item.key}><NavLink item={item} current={entry} dot={null} /></li>)}
         </ul>
         {adminItems.length > 0 && (
           <div className="mt-space-3 border-t border-subtle pt-space-3" data-nav-admin>

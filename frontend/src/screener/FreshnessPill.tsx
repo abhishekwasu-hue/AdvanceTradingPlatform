@@ -23,6 +23,13 @@ export function formatIst(d: Date): string {
 
 export const FRESHNESS_TICK_MS = 30e3;
 
+/** Day-one fix 2: where a run's bars came from, in plain words (stored history is not a developer label). */
+export function sourceWords(source: string): string {
+  if (source.startsWith("lake")) return "ATP's stored end-of-day history";
+  if (source.startsWith("broker:")) return "your broker";
+  return source;
+}
+
 export interface FreshnessPillProps { ranAt: Date | null; source: string | null; scanTf: string; now?: Date }
 
 export function FreshnessPill({ ranAt, source, scanTf, now }: FreshnessPillProps) {
@@ -37,7 +44,7 @@ export function FreshnessPill({ ranAt, source, scanTf, now }: FreshnessPillProps
     return <span className="inline-flex h-6 items-center rounded-full border border-border px-2.5 text-t12 text-fg-muted">Not run yet</span>;
   }
   return (
-    <span role="status" title={source ? `Data from ${source}` : undefined}
+    <span role="status" title={source ? `Data from ${sourceWords(source)}` : undefined}
           className={cx("inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-t12",
             f.stale ? "border-warn/60 text-warn" : "border-border text-fg-muted")}>
       <span aria-hidden className={cx("h-1.5 w-1.5 rounded-full", f.stale ? "bg-warn" : "bg-signal")} />

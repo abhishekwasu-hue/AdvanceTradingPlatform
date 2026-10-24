@@ -214,6 +214,9 @@ def run_sql(target, sqls):
 if sub == "exec":
     flags, pos = opts_and_services(args)
     svc, cmd = pos[0], pos[1:]
+    if svc == "backend" and cmd[:3] == ["python", "-m", "app.option_chain.probe"]:   # B2b: probe-chain (own tests: test_b2_as_of_spot)
+        st.setdefault("chain_probes", []).append(cmd[3:])
+        out.append(f"probe-chain {' '.join(cmd[3:])}"); finish()
     if svc == "postgres" and cmd[:2] == ["sh", "-c"] and "/wal_archive" in cmd[2]:   # health: files and MB in the archive
         out.append(f"{st.get('wal_files', 0)} {st.get('wal_files', 0) * 16}"); finish()
     if svc == "postgres" and cmd[:1] == ["pg_basebackup"]:
@@ -1722,6 +1725,19 @@ def test_the_rehearsals_and_the_deploy_line_keep_to_the_gate():
     for line in ("**Migration:**", "**Rollback-safe:**", '/opt/atp/deploy/atp.sh deploy && /opt/atp/deploy/atp.sh health',
                  "## Self-review notes", "## Screenshots"):
         assert line in template
+
+
+# --- B2b: probe-chain (the owner's read-only option chain spot probe, numbers only) -----------------------------------
+
+def test_probe_chain_is_read_only_and_checks_its_input(host):
+    assert host.run("deploy").returncode == 0
+    since = len(host.state["calls"])
+    res = host.run("probe-chain", "NIFTY")
+    assert res.returncode == 0, res.all
+    assert "probe-chain NIFTY" in res.stdout and host.state["chain_probes"] == [["NIFTY"]] and host.mutating(since) == []
+    for args in (("NIFTY; rm -rf /",), (), ("NIFTY", "BANKNIFTY"), ("N$FTY",)):
+        assert host.run("probe-chain", *args).returncode == 2, args
+    assert len(host.state["chain_probes"]) == 1
 
 
 # --- WL1-4: env-set (the allowlisted .env switches) and lists-sync (the universe sync + system lists NOW) ------------

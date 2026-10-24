@@ -17,6 +17,7 @@ import { PageHeader } from "../components/primitives";
 import { useFeatures } from "../ui/useFeatures";
 import { maskEmail, orgName, type AdminSection } from "../admin/consoleApi";
 import type { PageProps } from "../routes";
+import { formatDateTimeIST } from "../ui/format";
 
 const STATUSES = ["active", "suspended"];
 
@@ -215,7 +216,7 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
           <table className="w-full text-xs"><tbody>
             {incidents.slice(0, 15).map((i) => (
               <tr key={i.id} className="border-t border-border/60">
-                <td className="py-1 text-fg-muted">#{i.id} {i.started_at ? new Date(i.started_at).toLocaleString() : ""}</td>
+                <td className="py-1 text-fg-muted">#{i.id} {i.started_at ? formatDateTimeIST(i.started_at) : ""}</td>
                 <td className={`py-1 font-bold ${i.severity === "EMERGENCY" ? "text-down" : i.severity === "CRITICAL" ? "text-warn" : "text-fg-muted"}`}>{i.severity}</td>
                 <td className="py-1">{i.title} <span className="text-fg-muted">({i.source})</span>{i.root_cause && <div className="text-fg-muted">cause: {i.root_cause}</div>}{i.public_note && <div className="text-fg-muted" data-incident-public-note>public: {i.public_note}</div>}</td>
                 <td className="py-1">{i.status}{i.downtime_minutes != null && <span className="text-fg-muted"> · {i.downtime_minutes} min</span>}</td>
@@ -320,7 +321,7 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
             <tbody>
               {logs.map((l) => (
                 <tr key={l.id} className="border-t border-border">
-                  <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</td>
+                  <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{formatDateTimeIST(l.created_at)}</td>
                   <td className="py-1 pr-3 text-fg-muted">{l.tenant_id ?? "-"}</td>
                   <td className="py-1 pr-3 text-fg-muted">{email(l.user_email)}</td>
                   <td className="py-1 pr-3 font-medium text-fg">{l.event}</td>

@@ -28,7 +28,7 @@ from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.market_data import candles_routes, entitlement
 from app.market_data.fanin import Priority
-from app.option_chain import analyses, dish, snapshots
+from app.option_chain import analyses, as_of, dish, snapshots
 from app.option_chain.snapshots import IST
 
 logger = logging.getLogger(__name__)
@@ -106,10 +106,21 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
         return _state(base, "no_data", NO_CHAIN)
 
     chain = analyses.clean_spot(chain)                       # a spot of 0 (some brokers' "no price") is missing, not a number
+    # B2: the chain's capture time, or the last session close while the market is closed (never the request time); a
+    # closed market's missing or strike-rounded spot is the index's last close from our own candles, labelled.
+    when = await as_of.chain_as_of(session, underlying, now)
+    spot, spot_source = await as_of.resolve_spot(user, session, underlying, chain, chain.underlying_ltp, when,
+                                                 record.broker_name, record.account_label)
+    if spot != chain.underlying_ltp:
+        chain = chain.model_copy(update={"underlying_ltp": spot})
     history = [] if byob else await _history(session, user.tenant_id, underlying, now)
     kept = analyses.session_history(chain, history)
-    results = analyses.compute_all(chain, history, now, history_off=byob)
-    out: Dict[str, Any] = {**base, "state": "ok", "message": None, "spot": chain.underlying_ltp, "data_as_of": now.isoformat(),
+    from app.market_data.calendar import family_holidays
+    from app.option_chain.chain_view import spot_instrument
+    closed = await family_holidays(session, spot_instrument(underlying)[1])   # B3: trading days to expiry (BSE for SENSEX)
+    results = analyses.compute_all(chain, history, now, history_off=byob, holidays=closed)
+    out: Dict[str, Any] = {**base, "state": "ok", "message": None, "spot": chain.underlying_ltp, "spot_source": spot_source,
+                           "data_as_of": when.at.isoformat(), "market_closed": when.closed,
                            "source": {"broker": record.broker_name, "account_label": record.account_label},
                            "session": {"snapshots": len(kept), "since": kept[0].at.isoformat() if kept else None,
                                        "note": NO_HISTORY_BYOB if byob else None},
@@ -118,7 +129,12 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
     # MO4 slice 2: "What the chain shows" (app/option_chain/dish.py) from the same six analyses - with `markets_view` on only.
     from app.platform.controls import flag_enabled
     if await flag_enabled(session, DISH_FLAG, user.tenant_id):
-        out["dish"] = dish.build(results, chain, history, history_off=byob)
+        from app.me import prefs
+        own, _ = await prefs.read_one("option_chain", user, session)      # B4: his own PCR zone edges
+        zones = own.get("pcr_zones") or {}
+        raw = [zones.get(k) for k in ("very_low_below", "low_below", "balanced_max", "high_max")]
+        edges = [float(e) for e in raw if isinstance(e, (int, float))]
+        out["dish"] = dish.build(results, chain, history, history_off=byob, pcr_edges=edges if len(edges) == 4 else None)
     return out
 
 

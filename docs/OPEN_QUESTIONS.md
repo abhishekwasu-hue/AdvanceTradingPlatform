@@ -173,3 +173,22 @@ Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-8) and docs/d
 | TT8-3 | Partial exit of a leg (N of M lots). | Not in this PR: it needs the trade-row split (TT-9 / TM-17 method) for P&L, journal and orders - its own PR. | - | open (TT-9) |
 | TT8-4 | "Exit this leg" on a leg of a strategy structure (deployment). | Not offered: the structure keeps "Exit now", which closes it whole (its group stop stays valid); the API answers 409 with that sentence. | `fno_groups._check` | open |
 
+
+## UI-H-BUG: A1 (#505) and B3 + B4 + Orders time (24 Oct, `claude/bug-a1-engine-install`, `claude/bug-b3-b4-time`)
+
+Checked against CLAUDE.md (sections 2, 3, 4, 8), DECISIONS 24 Oct (UI-H Part 1 audit approved) and PRIVATE_PACKAGE.md §6.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| BUG-1 | A1: the private repository's address. | `git@github.com:<ATP's owner>/atp-private.git`; `ATP_PRIVATE_REPO` in `.env` overrides. | `deploy/atp.sh` | open |
+| BUG-2 | B4: where the PCR zone edges are set. | Settings › My trading defaults › "Option chain settings" (per user, prefs `option_chain`); the Option chain page itself has only the Columns menu. | `settings/chainSettings.tsx` | open |
+| BUG-3 | B3: the futures rows (`futures_chain.py`) still count calendar days to expiry. | Left as is (not in the audit's B3); the same helper `trading_days_until` fits when wanted. | `option_chain/futures_chain.py` | open |
+## B2: option chain "as of" and spot after hours (24 Oct, `claude/bug-b2-as-of-spot`)
+
+Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's time and source; §4 safety: read-only, no secrets; §7 ui_v2), DECISIONS (UI-H Part 1 audit approved, 24 Oct: B2a / B2b) and the UI-H audit's B2 root cause.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| B2-1 | When is the broker's after-hours spot "strike-rounded"? | Market closed, and the spot is missing or equals one of the chain's strikes exactly. Then the spot is our own last one-minute close of the index (labelled "Spot: last close"); with no candle, the broker's value stays. `atp.sh probe-chain` shows the raw value so the owner can confirm. | `app/option_chain/as_of.py` | open |
+| B2-2 | `data_as_of` while open. | The read time: the chain is read now (or the data hub's copy of the last few seconds). The OptionChain answer has no capture time of its own. | `as_of.as_of_for` | open |
+| B2-3 | How does `atp.sh probe-chain` act "with the owner's own session"? | The same read-only handler as the admin-only `GET /api/admin/option-chain/probe-chain`, run in the backend container as the platform owner's account (the first `SUPER_ADMIN_EMAILS` user) through his own stored broker session; no login token is minted or printed. | `app/option_chain/probe.py` | open |

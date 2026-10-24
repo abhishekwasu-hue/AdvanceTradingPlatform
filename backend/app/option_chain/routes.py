@@ -36,7 +36,7 @@ from app.brokers.models import OptionChain
 from app.market_data.calendar import family_holidays, market_session_status
 from app.market_data.candles_routes import chains_rate_limit, ltp_rate_limit
 from app.platform.controls import flag_enabled
-from app.option_chain import chain_view, oi_regime, snapshots
+from app.option_chain import as_of, chain_view, oi_regime, snapshots
 from app.option_chain.snapshots import IST
 
 router = APIRouter(prefix="/api/option-chain", tags=["option-chain"])
@@ -311,7 +311,16 @@ async def live(underlying: str, expiry: Optional[date] = Query(default=None), us
         future = {"symbol": contract.symbol, "expiry": contract.expiry.isoformat(),
                   "ltp": await _last_price(contract.symbol, contract.exchange, source, user, session)}
     status = await market_session_status(session, now, spot_exchange)
+    # B2: the chain's capture time, or the last session close while closed; a closed market's missing or strike-rounded
+    # spot is the index's last close from our own candles ("Spot: last close").
+    when = await as_of.chain_as_of(session, name, now)
+    spot, spot_source = await as_of.resolve_spot(user, session, name, chain, spot, when, source.get("broker"),
+                                                 source.get("account_label") or "primary")
     oi = await chain_view.oi_change_state(chain, tenant_id=user.tenant_id, underlying=name, now=now, market_open=status.is_open)
-    view = chain_view.build_view(chain, spot=spot, future=future, expiry=expiry or chain_view.parse_expiry(chain.expiry), now=now, oi=oi)
+    closed = await family_holidays(session, _holiday_family(name))          # B3: days to expiry in trading days
+    view = chain_view.build_view(chain, spot=spot, future=future, expiry=expiry or chain_view.parse_expiry(chain.expiry), now=now, oi=oi,
+                                 holidays=closed)
     view["market_open"] = status.is_open
+    view["summary"]["spot_source"] = spot_source
+    view["data_as_of"] = when.at.isoformat()
     return view

@@ -25,6 +25,14 @@ export const PAGE_FLAGS: Readonly<Partial<Record<Page | "ideas" | "markets" | "l
   terminal: "terminal",
 };
 
+/**
+ * A1 (UI-H bug lane): pages that show their own closed state at their address, because the flag alone cannot say why.
+ * Analyze a chart is answered as off while its engine is not installed: the page then says "Chart analysis is not
+ * available right now" (never "Coming soon"), and shows the shell's standard "Coming soon" only when the flag is off.
+ * They still leave the navigation while their flag is off.
+ */
+export const SELF_GATED: ReadonlySet<string> = new Set(["chart-analyze"]);
+
 /** What the shell knows about the flags (useFeatures): `answered` is a real answer from the server. */
 export interface FlagsKnown {
   answered: boolean;
@@ -38,7 +46,7 @@ export interface FlagsKnown {
  * server whatever the client shows.
  */
 export function closedFlag(page: Page | string | null, flags: FlagsKnown): string | null {
-  if (!page) return null;
+  if (!page || SELF_GATED.has(page)) return null;
   const flag = PAGE_FLAGS[page as keyof typeof PAGE_FLAGS];
   if (!flag || !flags.answered) return null;
   return flags.on(flag) ? null : flag;

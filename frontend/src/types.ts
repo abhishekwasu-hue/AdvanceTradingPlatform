@@ -688,7 +688,8 @@ export interface CustomStrategyConfig {
   stop_loss_atr_mult: number;
   atr_period: number;
   target_rr: [number, number];
-  min_rr: number;
+  /** P1-2b: null = not set (no minimum reward:risk); only a value the user types filters. */
+  min_rr: number | null;
 }
 
 export interface CustomStrategyResponse {
@@ -716,7 +717,7 @@ export function defaultCustomStrategyConfig(): CustomStrategyConfig {
     stop_loss_atr_mult: 1.0,
     atr_period: 14,
     target_rr: [1.5, 2.0],
-    min_rr: 1.2,
+    min_rr: null,
   };
 }
 
@@ -2217,7 +2218,9 @@ export interface CandlesResponse {
   source: { broker: string; account_label: string }; exchange: string; timeframe: string; base_interval: string; lookback_days: number; before?: string | null; fetched_at: string;
   symbols: Record<string, { bars: (OHLCVBar & { forming?: boolean })[]; count: number; first: string | null; last: string | null; error: string | null; data_tier?: DataTierBadgeInfo | null;
     /** UI2-4a2: an index's volume from its near-month future (asked for with `volume_from_future`). */
-    volume_source?: CandleVolumeSource | null }>; warnings: string[]; note: string;
+    volume_source?: CandleVolumeSource | null;
+    /** C1: present when the broker sent no candles at all - the plain reason the chart shows. */
+    empty_reason?: string }>; warnings: string[]; note: string;
   data_tier?: DataTierBadgeInfo;
 }
 
@@ -2753,7 +2756,8 @@ export interface TicketPlan {
 export interface TicketView {
   symbol: string; direction: "LONG" | "SHORT"; setup: TicketSetup; setup_label: string | null; mode: "PAPER";
   entry: number; stop_loss: number; target: number; time_stop: string | null; invalidation: string | null;
-  reward_risk: number | null; min_reward_risk: number; sizing: TicketSizing;
+  /** null: no minimum (TT-12, only the trader's own minimum is checked). */
+  reward_risk: number | null; min_reward_risk: number | null; sizing: TicketSizing;
   checklist: { key: string; label: string; checked: boolean; auto: boolean }[]; checklist_complete: boolean;
   costs: TicketCostLine | null; errors: string[]; refusals: string[]; warnings: string[]; can_place: boolean;
   confirm_label: string | null; as_of: string;
@@ -2784,10 +2788,13 @@ export interface VixGateStatus {
 /** Z5 / P1-d: the caller's risk-by-default state (GET /api/paper/risk; 404 while the `risk_by_default` flag is off). */
 export interface PaperRiskStatus {
   mode: "PAPER"; settings: RiskByDefaultSettings; effective: RiskByDefaultSettings; defaults: RiskByDefaultSettings; notes: string[];
-  /** A loosening waits for the next IST day (a tightening applies at once). */
-  pending: { values: Partial<RiskByDefaultSettings>; from: string } | null;
+  /** TT-12: the keys the trader set himself; every other limit is off ("Not set"). Absent from an older server. */
+  set?: (keyof RiskByDefaultSettings)[];
+  /** A loosening of a limit he set waits for the next IST day (a tightening applies at once); null = cleared. */
+  pending: { values: Partial<Record<keyof RiskByDefaultSettings, number | null>>; from: string } | null;
   bounds: Record<keyof RiskByDefaultSettings, [number, number]>; labels: Record<keyof RiskByDefaultSettings, string>;
-  capital_basis: number; risk_cap: { amount: number; binding: string; by_pct: number };
+  /** amount null: no cap of his own (TT-12); the organisation's risk per trade still sizes the entry. */
+  capital_basis: number; risk_cap: { amount: number | null; binding: string | null; by_pct: number | null };
   today: { realised: number; open_marks: number; pnl: number; worst: number; limit: number; used: number | null; entries: number; max_entries: number };
   lockout: { kind: string; reason: string; pnl: number; limit: number; locked_at: string; until: string } | null;
   overrides: { today: number; total: number }; override_max_multiple: number; override_min_reason_chars: number;
@@ -2809,5 +2816,5 @@ export interface StrikeBreachBlock {
 /** Z5 / P1-d: the caller's risk by default applied to a waiting entry proposal (flag risk_by_default). */
 export interface ProposalRiskCheck {
   sizing: TicketSizing; costs: TicketCostLine | null; refusals: string[]; warnings: string[]; errors: string[];
-  reward_risk: number | null; min_reward_risk: number;
+  reward_risk: number | null; min_reward_risk: number | null;
 }

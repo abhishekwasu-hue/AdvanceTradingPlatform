@@ -61,7 +61,7 @@ export default function EmbeddedChartV2({
   // As on the Chart tab: intraday while the market is not known to be closed; day only while its bar is forming.
   const liveOn = DAILY_OR_LONGER.has(timeframe) ? !!last?.forming : marketOpen !== false;
   const live = useLiveLtp(liveOn && data.candles.length > 0, sym, exchange);
-  const emptyText = data.loading ? "Loading prices…" : data.error ? "" : `No prices for ${sym} on this timeframe yet.`;
+  const emptyText = data.loading ? "Loading prices…" : data.error ? "" : data.empty ?? `No prices for ${sym} on this timeframe yet.`;
 
   return (
     <section aria-label={`Chart of ${sym}`} data-embedded-chart={sym} className="overflow-hidden rounded-panel border border-subtle bg-surface-1">

@@ -11,9 +11,12 @@ What it simulates, and nothing more:
 
 * **prices** - the paper exchange's last price per symbol: `mark(symbol, price)` (the caller's own live read, e.g. the
   price the router already checked), else the optional `price_lookup` (the user's own session). No price, no fill;
-* **fills** - only what the price reaches NOW (`app.paper.fno_ticket.paper_fill`): a market order at the price, a
-  marketable limit, a triggered SL / SL-M. PAPER keeps no resting order yet (FNO-1-3; the resting book is TM-2, a later
-  part): an order that would rest is REJECTED with plain words, never kept silently;
+* **fills** - only what the price reaches (`app.paper.fno_ticket.paper_fill`): a market order at the price, a
+  marketable limit, a triggered SL / SL-M. TM-2: with `keep_resting=True` an order that must wait for its price (a
+  limit not reached yet, a stop not triggered yet) RESTS as OPEN and fills on the first price that reaches it
+  (`on_price`, the same fill and cost model as an immediate fill); the trigger engine keeps the durable book
+  (app/execution/resting_book.py). Without it (every caller before TM-2) such an order is REJECTED with plain words,
+  exactly as before;
 * **partial fills** - an optional `liquidity(order) -> fillable quantity` hook (default: the whole quantity). The rest of
   a partly filled order stays OPEN until the caller cancels it, as at a broker;
 * **idempotency** - a request with the same `client_ref` returns the first order (a second tap never places twice);
@@ -51,8 +54,12 @@ from app.execution.paper_broker import IST, PaperBroker
 NAME = "paper"
 PriceLookup = Callable[[str, str], Awaitable[float]]
 Liquidity = Callable[[BrokerOrderRequest], float]
+# TM2-4: the paper exchange's durable order book by client id (what a stopped worker already placed), e.g. the trigger
+# engine's reading of the order / trade rows. None: this adapter's own in-memory book only.
+OrderBookLookup = Callable[[str], Awaitable[Optional[BrokerOrderStatus]]]
 NO_PRICE = "No live price for {symbol}: practice mode fills only at a price it can read - nothing was placed"
 TERMINAL = ("COMPLETE", "REJECTED", "CANCELLED")
+RESTING = "Waiting for your price: it fills when the price reaches it"
 
 
 def instrument_kind(symbol: str) -> str:
@@ -87,8 +94,11 @@ class PaperExecutionAdapter(BrokerInterface):
     def __init__(self, paper_broker: Optional[PaperBroker] = None, *, price_lookup: Optional[PriceLookup] = None,
                  liquidity: Optional[Liquidity] = None, funds: Optional[float] = None,
                  clock: Optional[Callable[[], datetime]] = None, venue: Optional[str] = None,
-                 venue_plan: Optional[str] = None) -> None:
+                 venue_plan: Optional[str] = None, keep_resting: bool = False, book: Optional[OrderBookLookup] = None) -> None:
         self.paper_broker = paper_broker or PaperBroker()
+        self.keep_resting = keep_resting
+        self.book = book
+        self._resting: List[str] = []
         # Part 1B (owner principle: the same code path for PAPER and LIVE): practising for a broker account (`venue`, a
         # registry name such as "kotak_neo") applies that broker's own order transform - a MARKET order where the broker
         # takes none goes as the same marketable LIMIT (app/execution/marketable_limit.py) - and the brokerage that
@@ -162,7 +172,23 @@ class PaperExecutionAdapter(BrokerInterface):
                                  status=status, price=request.price, average_price=average, placed_at=self.clock(),
                                  tag=request.tag, product=request.product, exchange=request.exchange)
 
+    async def find_order_by_client_id(self, client_id: str) -> Optional[BrokerOrderStatus]:
+        """TM2-4: the order placed with this client id (`client_ref`) - this adapter's own book, then the durable `book`
+        - or None when the paper exchange never took one. The same lookup the live adapters answer from their order
+        book by tag (BrokerInterface.find_order_by_client_id)."""
+        if client_id in self._by_ref:
+            return self._orders.get(self._by_ref[client_id])
+        if self.book is None:
+            return None
+        found = await self.book(client_id)
+        if found is not None:
+            self._orders[found.order_id] = found
+            self._by_ref[client_id] = found.order_id
+        return found
+
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
+        if order.client_ref and order.client_ref not in self._by_ref and self.book is not None:
+            await self.find_order_by_client_id(order.client_ref)     # TM2-4: already placed before a restart -> that one
         if order.client_ref and order.client_ref in self._by_ref:
             first = self._orders[self._by_ref[order.client_ref]]
             return BrokerOrderResponse(order_id=first.order_id, status=first.status, message="Already placed (same reference)",
@@ -184,8 +210,16 @@ class PaperExecutionAdapter(BrokerInterface):
             self._requests[order_id] = order
         fill, note = self._fill_price(order, ltp)
         if fill is None:
+            if self.keep_resting and self._can_rest(order):
+                # TM-2: it waits for its price (OPEN, nothing filled) instead of being refused.
+                self._orders[order_id] = self._status(order_id, order, status="OPEN")
+                self._resting.append(order_id)
+                return BrokerOrderResponse(order_id=order_id, status="OPEN", message=RESTING, raw={"resting": True})
             self._orders[order_id] = self._status(order_id, order, status="REJECTED")
             return BrokerOrderResponse(order_id=order_id, status="REJECTED", message=note)
+        return self._fill_now(order_id, order, fill, note)
+
+    def _fill_now(self, order_id: str, order: BrokerOrderRequest, fill: float, note: str) -> BrokerOrderResponse:
         fillable = float(order.quantity) if self.liquidity is None else max(0.0, min(float(order.quantity), float(self.liquidity(order))))
         if fillable <= 0:
             self._orders[order_id] = self._status(order_id, order, status="OPEN")
@@ -195,6 +229,36 @@ class PaperExecutionAdapter(BrokerInterface):
         self._orders[order_id] = self._status(order_id, order, status=status, filled=fillable, average=fill)
         return BrokerOrderResponse(order_id=order_id, status=status, message=note,
                                    raw={"average_price": fill, "filled_quantity": fillable, "charges": self._charges[order_id]})
+
+    @staticmethod
+    def _can_rest(order: BrokerOrderRequest) -> bool:
+        kind = (order.order_type or "MARKET").upper()
+        if kind == "LIMIT":
+            return order.price is not None
+        if kind == "SL":
+            return order.price is not None and order.trigger_price is not None
+        return kind == "SL-M" and order.trigger_price is not None
+
+    def resting(self) -> List[str]:
+        """The ids of the orders waiting for their price (TM-2)."""
+        return list(self._resting)
+
+    async def on_price(self, symbol: str, price: float, exchange: str = "NSE") -> List[BrokerOrderResponse]:
+        """TM-2: a new price for `symbol` on the paper exchange - every resting order it reaches fills now, through the
+        same fill and cost model as an immediate order. A triggered SL whose limit the price is already past keeps
+        waiting at its limit, as at an exchange."""
+        self.mark(symbol, price, exchange)
+        filled: List[BrokerOrderResponse] = []
+        for order_id in list(self._resting):
+            request = self._requests[order_id]
+            if request.symbol.upper() != symbol.upper():
+                continue
+            fill, note = self._fill_price(request, float(price))
+            if fill is None:
+                continue
+            self._resting.remove(order_id)
+            filled.append(self._fill_now(order_id, request, fill, note))
+        return filled
 
     def _record_fill(self, order_id: str, order: BrokerOrderRequest, price: float, quantity: float) -> None:
         when = self.clock()
@@ -234,6 +298,8 @@ class PaperExecutionAdapter(BrokerInterface):
         if current.status in TERMINAL:
             return BrokerOrderResponse(order_id=order_id, status=current.status, message=f"The order is already {current.status.lower()}")
         self._orders[order_id] = current.model_copy(update={"status": "CANCELLED"})
+        if order_id in self._resting:
+            self._resting.remove(order_id)
         return BrokerOrderResponse(order_id=order_id, status="CANCELLED", message="Cancelled")
 
     def order(self, order_id: str) -> Optional[BrokerOrderStatus]:

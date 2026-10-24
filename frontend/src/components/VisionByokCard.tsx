@@ -6,6 +6,7 @@ import { BYOK_CHANGED_EVENT } from "../aiKeys/detect";
 import { Card } from "./ui";
 import type { ByokAuditScope, ByokChannels, ByokPrefsInput, ByokProviderName, ByokProviderStatus, ByokStatus } from "../types";
 import { capUsage, formatUsd, keyShapeError, parseCap } from "./visionByok";
+import { formatDateTimeIST } from "../ui/format";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
 const button = "rounded border border-border px-2 py-1 text-xs hover:bg-surface-2 disabled:opacity-50";
@@ -22,7 +23,7 @@ const CHANNEL_LABELS: { key: keyof ByokChannels; label: string }[] = [
 ];
 
 function when(value: string | null): string {
-  return value ? new Date(value).toLocaleString() : "never";
+  return value ? formatDateTimeIST(value) : "never";
 }
 
 /** BYOK-V1: each user's own AI provider API key for Vision chart review (operator flag `vision_byok`). The key is typed

@@ -16,6 +16,10 @@ import { useAppearance } from "../theme";
 import { useTours } from "../tours/state";
 import type { AiProviderConfig, AlertChannel, BillingOverview } from "../types";
 import { SIGN_IN_PATH } from "../ui/BrokerGate";
+import { useColourV2 } from "../ui/colourV2";
+import { Chip as ToneChip } from "../ui/Chip";
+import { IconBadge, type IconTone } from "../ui/IconBadge";
+import { StatusChip as ToneStatusChip } from "../ui/StatusChip";
 import { useFeatures } from "../ui/useFeatures";
 import {
   COMING_SOON, DEFAULTS_CHIP, SETTINGS_ROWS, aiChip, aiProviderChip, alertsChip, appearanceChip, brokerChip, planChip, searchSettings, tipsChip,
@@ -37,6 +41,12 @@ const ICONS: Record<RowId, LucideIcon> = {
   help: LifeBuoy, setup: ListTodo, advanced: Wrench,
 };
 
+/** Colour v2 (owner, 23 Oct): each row's icon in a soft circle by meaning, like a phone's settings. */
+export const ROW_TONES: Record<RowId, IconTone> = {
+  broker: "brand", ai: "ai", alerts: "warn", risk: "down", appearance: "teal", defaults: "info",
+  account: "neutral", team: "neutral", help: "neutral", setup: "neutral", advanced: "neutral",
+};
+
 const TONE: Record<Chip["tone"], string> = {
   ok: "border-up/40 bg-up/10 text-up",
   warn: "border-warn/40 bg-warn-tint text-warn",
@@ -47,6 +57,14 @@ const TONE: Record<Chip["tone"], string> = {
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand";
 
 export function StatusChip({ chip }: { chip: Chip }) {
+  const colour = useColourV2();
+  // Colour v2: the chips stay neutral, the check of a good state is green and "needs action" amber (CC-1: a problem
+  // that puts no money or order at stake is amber too).
+  if (colour) {
+    if (chip.tone === "off") return <ToneChip name="off" variant="outline">{chip.text}</ToneChip>;
+    const status = chip.tone === "ok" ? "connected" : chip.tone === "warn" ? "needs-action" : "error";
+    return <ToneStatusChip status={status}>{chip.text}</ToneStatusChip>;
+  }
   return (
     <span data-chip={chip.tone}
       className={`inline-flex min-h-6 max-w-full items-center rounded-pill border px-space-2 text-t12 font-medium ${TONE[chip.tone]}`}>
@@ -58,9 +76,12 @@ export function StatusChip({ chip }: { chip: Chip }) {
 /** One row: the icon, the name with its chip (under the name on a phone, beside it from `sm`), the chevron. */
 export function IndexRow({ row, chip }: { row: SettingsRow; chip: Chip | null }) {
   const Icon = ICONS[row.id];
+  const colour = useColourV2();
   const body = (
     <>
-      <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-surface-2 text-fg-muted"><Icon size={18} /></span>
+      {colour
+        ? <IconBadge icon={Icon} tone={ROW_TONES[row.id]} />
+        : <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-surface-2 text-fg-muted"><Icon size={18} /></span>}
       <span className="flex min-w-0 flex-1 flex-col items-start gap-space-1 sm:flex-row sm:items-center sm:justify-between sm:gap-space-3">
         <span className="text-t14 font-medium text-fg">{row.name}</span>
         {chip && <StatusChip chip={chip} />}

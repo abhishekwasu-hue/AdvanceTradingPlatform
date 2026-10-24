@@ -92,7 +92,9 @@ from app.signals_feed.day_one_routes import router as signals_day_one_router
 from app.me.prefs import router as me_prefs_router
 from app.rhythm.routes import router as rhythm_router
 from app.option_chain.ask_routes import router as oc_ask_router
+from app.option_chain.probe import admin_router as oc_probe_admin_router
 from app.me.setup import router as me_setup_router
+from app.me.notices import router as me_notices_router
 from app.context_panel.routes import router as context_panel_router
 from app.markets.routes import router as markets_router
 from app.terminal.routes import router as terminal_router
@@ -125,6 +127,7 @@ from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
 from app.market_data.candles_routes import router as market_candles_router
+from app.market_data.probe import admin_router as market_probe_admin_router
 from app.market_data.quotes_routes import router as market_quotes_router
 from app.market_data.strip_routes import router as market_strip_router
 from app.market_lake.import_routes import backfill_router as history_backfill_admin_router
@@ -360,6 +363,7 @@ app.include_router(ai_chat_router)   # handover item 5: the chat-first Copilot (
 app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(quant_router)        # Phase Z: factor and risk models
 app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages
+app.include_router(market_probe_admin_router)  # C1: the owner's read-only broker probe (SUPER_ADMIN + two-factor)
 app.include_router(market_quotes_router)  # UI2-4a2-pre: batch watchlist quotes (one multi-quote broker call)
 app.include_router(market_strip_router)  # UI2-2: the v2 dashboard's market strip (read-only, one call)
 app.include_router(market_lake_router)  # Part B5: point-in-time history from the market data lake
@@ -424,7 +428,9 @@ app.include_router(signals_day_one_router)  # Signals day one: the setup card + 
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
 app.include_router(rhythm_router)     # MO4: the daily rhythm - pre-market brief, pulse, closing wrap, weekly review (flags ui_v2 + daily_rhythm)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
+app.include_router(oc_probe_admin_router)  # B2b: the owner's read-only option chain spot probe (SUPER_ADMIN + two-factor)
 app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress (stored marks + steps worked out; reads only)
+app.include_router(me_notices_router)  # TT12-1: one-time notices (risk limits now not set; ui_v2; per user)
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(markets_router)   # MO4 slice 2: the Sector & index view (flags ui_v2 + markets_view)
 app.include_router(terminal_router)  # Trading Terminal T1: the status bar's figures, the caller's own (ui_v2 + terminal)

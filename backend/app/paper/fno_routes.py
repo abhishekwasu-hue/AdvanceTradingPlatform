@@ -9,7 +9,11 @@ ordinary pipeline (app/paper/fno_ticket.py); there is no mode in the body and no
   option (`right` CE / PE with its strike) or, FNO-3, a future (`right` FUT, no strike).
 - `GET  /api/paper/fno/held`           the caller's open PAPER option positions on one underlying and expiry.
 - `POST /api/paper/fno/order/preview`  the ticket checked: price, units, margin, max loss, risk checks in plain words.
-- `POST /api/paper/fno/order`          place it (at the live price; the pipeline checks again).
+- `POST /api/paper/fno/order`          place it (at the live price; the pipeline checks again). TM-2: with
+  `rest_if_waiting` a limit / stop the price has not reached waits in the resting book instead of being refused.
+- `GET  /api/paper/fno/resting`        TM-2: the caller's own waiting orders and armed exits.
+- `POST /api/paper/fno/resting/exit`   TM-2: arm a stop / target on the caller's own position (nothing is sent now).
+- `POST /api/paper/fno/resting/{id}/cancel`  TM-2: cancel the caller's own waiting order.
 
 FNO-2, the basket (app/paper/fno_basket.py), same flags, same PAPER-only path - each leg is one ticket order:
 - `POST /api/paper/fno/basket/evaluate`     the basket's payoff, max profit / loss, breakevens, PoP, Greeks, margin with
@@ -25,6 +29,10 @@ FNO-4, the watchlist's contract rows and the positions page (app/paper/fno_contr
                                           reads no price and leads to no order (a roll only edits the watchlist).
 - `GET  /api/paper/fno/positions/groups`  the caller's open PAPER legs that belong together (one basket, one structure),
                                           for the combined P&L. Same flags as the ticket. Every leg keeps its own Exit.
+
+TT-8, a basket's legs as one group (app/paper/fno_groups.py) - exits, so no flag, kill switch or limit stops them:
+- `POST /api/paper/fno/positions/{id}/exit-leg`    this leg only; a hedge before its sold leg: a warning until confirm.
+- `POST /api/paper/fno/positions/{id}/exit-group`  every open leg of the basket, the sold legs first.
 """
 from datetime import date
 from typing import Any, Dict, List, Literal, Optional
@@ -37,12 +45,17 @@ from app.auth.dependencies import get_current_user, require_trader
 from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
+from app.execution.approval import ORIGIN_MANUAL
 from app.paper import fno_basket, fno_contracts, fno_ticket
 
 router = APIRouter(prefix="/api/paper/fno", tags=["paper"])
 UI_V2_FLAG = "ui_v2"
 MAX_PRICE = 1e7
 SYMBOL = r"^[A-Za-z0-9&_\- ]{1,30}$"
+# TT-2 (owner, 24 Oct; answers FNO-1-4): an order the user places and confirms himself on the ticket or the basket is his
+# approval under approval-only mode. The origin is decided here, by the route - the request bodies forbid extra fields,
+# so the browser cannot set it - and only these four routes (preview + place, basket preview + execute) pass it.
+MANUAL = ORIGIN_MANUAL
 place_rate_limit = user_rate_limit("paper_fno_order", limit=30, window_seconds=60)
 basket_rate_limit = user_rate_limit("paper_fno_basket", limit=10, window_seconds=60)
 evaluate_rate_limit = user_rate_limit("paper_fno_basket_eval", limit=120, window_seconds=60)
@@ -81,6 +94,10 @@ class OrderBody(BaseModel):
     stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     chain_ltp: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     client_ref: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9-]{8,64}$")
+    # TM-2: "wait for my price" - a limit / stop the price has not reached rests in the resting book (needs client_ref).
+    rest_if_waiting: bool = False
+    trigger_mode: Literal["TOUCH", "CLOSE"] = "TOUCH"
+    timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
 
     @model_validator(mode="after")
     def _strike_for_options_only(self) -> "OrderBody":
@@ -123,7 +140,7 @@ async def preview(body: OrderBody, user: User = Depends(require_trader), session
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)            # the caller's own entitlement (BT1), never a teammate's
-    view = await fno_ticket.assess(session, user, body.ask(), price_lookup=lookup)
+    view = await fno_ticket.assess(session, user, body.ask(), price_lookup=lookup, origin=MANUAL)
     await session.commit()
     return view
 
@@ -134,7 +151,72 @@ async def place(body: OrderBody, user: User = Depends(require_trader), session: 
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
-    return await fno_ticket.place(session, user, body.ask(), price_lookup=lookup)
+    return await fno_ticket.place(session, user, body.ask(), price_lookup=lookup, origin=MANUAL)
+
+
+# --- TM-2: the caller's own waiting orders and armed exits -------------------------------------------------------------
+
+resting_rate_limit = user_rate_limit("paper_fno_resting", limit=60, window_seconds=60)
+
+
+class ArmExitBody(BaseModel):
+    """A stop or a target on the caller's own open position, waiting for its price (T-D2 / TT-7: every value his own)."""
+    model_config = ConfigDict(extra="forbid")
+    trade_id: int = Field(ge=1)
+    kind: Literal["STOP", "TARGET"]
+    order_type: Literal["SL-M", "LIMIT", "MARKET"]
+    level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)     # the premium level (PREMIUM)
+    trigger_source: Literal["PREMIUM", "SPOT"] = "PREMIUM"
+    spot_level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    spot_side: Optional[Literal["ABOVE", "BELOW"]] = None
+    trigger_mode: Literal["TOUCH", "CLOSE"] = "TOUCH"
+    timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+    client_ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
+
+
+@router.get("/resting")
+async def resting(include_done: bool = Query(default=False), user: User = Depends(get_current_user),
+                  session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
+    """The caller's own waiting orders and armed exits (with `include_done`, the recent finished ones too)."""
+    await _enabled(session, user)
+    from app.execution import resting_book
+    return [resting_book.view(r) for r in await resting_book.list_for_user(session, user, include_final=include_done)]
+
+
+@router.post("/resting/exit", dependencies=[Depends(resting_rate_limit)])
+async def arm_exit(body: ArmExitBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Arms a stop or a target on the caller's own open position. Nothing is sent now: the trigger engine closes the
+    position when the price reaches it (never blocked, ADR-0004)."""
+    await _enabled(session, user)
+    from app.db.models import TradeRecord
+    from app.execution import resting_book
+    trade = await session.get(TradeRecord, body.trade_id)
+    if trade is None or trade.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Not found")
+    if trade.user_id != user.id:
+        raise HTTPException(status_code=403, detail="This is not your position")
+    trigger = resting_book.Trigger(source=body.trigger_source, mode=body.trigger_mode, timeframe_minutes=body.timeframe_minutes,
+                                   spot_level=body.spot_level, spot_side=body.spot_side)
+    try:
+        row = await resting_book.arm_exit(session, user, trade, client_ref=f"exit:{body.client_ref}", kind=body.kind,
+                                          order_type=body.order_type, level=body.level or 0.0, trigger=trigger)
+    except resting_book.RestingOrderError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await session.commit()
+    return resting_book.view(row)
+
+
+@router.post("/resting/{order_id}/cancel", dependencies=[Depends(resting_rate_limit)])
+async def cancel_resting(order_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Cancels the caller's own waiting order (one already sent or done is returned as it is)."""
+    await _enabled(session, user)
+    from app.execution import resting_book
+    try:
+        row = await resting_book.cancel(session, user, order_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Not found") from exc
+    return resting_book.view(row)
 
 
 # --- FNO-2: the basket ------------------------------------------------------------------------------------------------
@@ -202,7 +284,7 @@ async def basket_preview(body: BasketBody, user: User = Depends(require_trader),
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
-    view = await fno_basket.preview(session, user, body.asks(), product=body.product, spot=body.spot, price_lookup=lookup)
+    view = await fno_basket.preview(session, user, body.asks(), product=body.product, spot=body.spot, price_lookup=lookup, origin=MANUAL)
     await session.commit()
     return view
 
@@ -213,7 +295,8 @@ async def basket_execute(body: ExecuteBody, user: User = Depends(require_trader)
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
-    return await fno_basket.execute(session, user, body.asks(), product=body.product, basket_ref=body.basket_ref, price_lookup=lookup)
+    return await fno_basket.execute(session, user, body.asks(), product=body.product, basket_ref=body.basket_ref, price_lookup=lookup,
+                                    origin=MANUAL)
 
 
 class CloseFilledBody(BaseModel):
@@ -235,6 +318,29 @@ async def basket_close_filled(body: CloseFilledBody, user: User = Depends(requir
     the sold legs first (a hedge is never closed while its short is open). Answers 200 with each leg's outcome."""
     await _smart_enabled(session, user)
     return await fno_basket.close_filled(session, user, body.trade_ids)
+
+
+class LegExitBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm: bool = False
+
+
+@router.post("/positions/{trade_id}/exit-leg")
+async def exit_leg(trade_id: int, body: Optional[LegExitBody] = None, user: User = Depends(require_trader),
+                   session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """TT-8 "Exit this leg": closes this leg of a basket only. An exit (ADR-0004): no flag, kill switch, limit or
+    approval-only rule stops it. A hedge whose sold leg is still open answers {"status": "CONFIRM", "warning"} and closes
+    nothing until the body carries {"confirm": true} - a warning, never a refusal."""
+    from app.paper import fno_groups
+    return await fno_groups.exit_leg(session, user, trade_id, confirm=bool(body and body.confirm))
+
+
+@router.post("/positions/{trade_id}/exit-group")
+async def exit_group(trade_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """TT-8 "Exit the whole group": every open leg of this leg's basket, the sold legs first. An exit (ADR-0004): never
+    stopped by a flag, the kill switch, a limit or approval-only."""
+    from app.paper import fno_groups
+    return await fno_groups.exit_group(session, user, trade_id)
 
 
 @router.get("/settlement")

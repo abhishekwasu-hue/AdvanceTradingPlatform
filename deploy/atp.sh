@@ -4,7 +4,8 @@
 #
 #   /opt/atp/deploy/atp.sh install                 first time: bootstrap checks -> deploy -> health -> backup + verify
 #   /opt/atp/deploy/atp.sh deploy [REF]            every update: REF = origin/main (default), a tag or a commit
-#   /opt/atp/deploy/atp.sh health                  read-only: containers, API, deep health, TLS, key, flags, backups
+#   /opt/atp/deploy/atp.sh health                  read-only: containers, API, deep health, TLS, key, flags, chart
+#                                                  analysis engine (OK / MISSING), backups
 #   /opt/atp/deploy/atp.sh rollback [--to SHA] [--restore-db]
 #                                                  the previous release's images; --restore-db also puts the database
 #                                                  back to the backup taken just before that release migrated it
@@ -38,6 +39,14 @@
 #                                                  only) + the system-watchlists refresh NOW, each group's lists with
 #                                                  their row counts and unmapped symbols; then the API and the worker
 #                                                  pick up the settings. --check: only the file status lines
+#   /opt/atp/deploy/atp.sh probe-candles "SYMBOL" TIMEFRAME [EXCHANGE]
+#                                                  C1, read-only: the two broker calls of one chart (history + today's
+#                                                  intraday) through the owner's own broker session, as counts - the
+#                                                  window, bars per call, first / last bar time and close, the empty /
+#                                                  error reason. TIMEFRAME: 1m 5m 15m 30m 1H D. No token, nothing written
+#   /opt/atp/deploy/atp.sh probe-chain UNDERLYING  B2b, read-only: one option chain (nearest expiry) through the owner's
+#                                                  own broker session - the broker's raw underlying spot beside the ATM
+#                                                  strike and our own last index close. No token, nothing written
 #   /opt/atp/deploy/atp.sh schedule | releases | help
 #
 #   --dry-run (anywhere, or ATP_DRY_RUN=1): prints every step it would take; changes nothing on the host.
@@ -212,6 +221,7 @@ dc() {
   local ahead="$DB_AHEAD"
   if [ -z "$ahead" ] && db_ahead_marker; then ahead="$(cat "$STATE_DIR/db_ahead")"; fi
   (cd "$ATP_DIR" && ATP_RELEASE="${RELEASE:-latest}" MIGRATION_ALLOW_DB_AHEAD="$ahead" ATP_DEPLOYMENT_PHASE="$(deployment_phase)" \
+    ATP_PRIVATE_VERSION="$(private_version)" \
     ${DC_WRAP[@]+"${DC_WRAP[@]}"} docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml \
     -f deploy/compose.release.yml -p "$PROJECT" "$@")
 }
@@ -767,6 +777,8 @@ health_checks() {
   check_key_live
   step "flags and LIVE (read-only)"
   report_flags
+  step "chart analysis engine"
+  engine_report
   step "backups"
   backup_report
 
@@ -966,6 +978,72 @@ gate_report() {
   esac
 }
 
+# --- A1 (UI-H bug lane): the chart analysis engine, the private package atp_private (docs/design/PRIVATE_PACKAGE.md §6) -
+# A read-only checkout at $ATP_DIR/private (git-ignored), fetched with the host's read-only deploy key
+# (~/.ssh/atp_private_ro, through GIT_SSH_COMMAND) at the tag ATP_PRIVATE_REF in .env; docker-compose.hostinger.yml
+# mounts it read-only into the backend and the worker and puts it on PYTHONPATH. Optional: without the key or the tag
+# the deploy goes on and says in one line what the owner adds. The key's path is printed, never its content; git's
+# own output is not printed (the private repository's address is not a secret, but nothing of its content is shown).
+PRIVATE_DIR="$ATP_DIR/private"
+private_key() { printf '%s' "${ATP_PRIVATE_KEY:-$HOME/.ssh/atp_private_ro}"; }
+private_repo() {
+  local r owner; r="$(env_get ATP_PRIVATE_REPO)"
+  if [ -z "$r" ]; then owner="$(gate_repo)"; owner="${owner%%/*}"; [ -z "$owner" ] || r="git@github.com:$owner/atp-private.git"; fi
+  printf '%s' "$r"
+}
+private_version() {   # its own .git only: $ATP_DIR/private sits inside ATP's checkout, whose HEAD must never be read here
+  local v=""
+  [ ! -d "$PRIVATE_DIR/.git" ] || v="$(git -C "$PRIVATE_DIR" rev-parse -q --verify HEAD 2>/dev/null || true)"
+  if [ -n "$v" ]; then printf '%s' "${v:0:12}"; else printf 'none'; fi
+}
+private_install() {
+  local ref key repo owner_line
+  ref="$(env_get ATP_PRIVATE_REF)"; key="$(private_key)"; repo="$(private_repo)"
+  owner_line="the owner adds the read-only deploy key ~/.ssh/atp_private_ro and ATP_PRIVATE_REF=<tag> in .env (runbook 'Chart analysis engine')"
+  step "chart analysis engine (private package atp_private)"
+  [ "$DRY_RUN" = "1" ] || mkdir -p "$PRIVATE_DIR"          # the mount source exists even before the first install
+  if [ -z "$ref" ] && [ ! -f "$key" ]; then warn "chart analysis engine not installed - $owner_line"; return 0; fi
+  if [ -z "$ref" ]; then warn "chart analysis engine not installed - the owner adds ATP_PRIVATE_REF=<tag of atp-private> in .env"; return 0; fi
+  if [ ! -f "$key" ]; then warn "chart analysis engine not installed - the owner adds the read-only deploy key ~/.ssh/atp_private_ro (runbook 'Chart analysis engine')"; return 0; fi
+  case "$ref" in -*|*..*|*[!A-Za-z0-9._/-]*) warn "chart analysis engine not installed - ATP_PRIVATE_REF in .env is not a tag name"; return 0 ;; esac
+  [ -n "$repo" ] || { warn "chart analysis engine not installed - the owner adds ATP_PRIVATE_REPO (the private repository's ssh address) in .env"; return 0; }
+  if [ "$DRY_RUN" = "1" ]; then info "would fetch tag $ref of the private package into $PRIVATE_DIR with the deploy key"; return 0; fi
+  local ssh_cmd="ssh -i $key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+  [ -d "$PRIVATE_DIR/.git" ] || git init -q "$PRIVATE_DIR" >/dev/null 2>&1 || { warn "chart analysis engine not installed - could not create $PRIVATE_DIR"; return 0; }
+  if ! GIT_SSH_COMMAND="$ssh_cmd" GIT_TERMINAL_PROMPT=0 git -C "$PRIVATE_DIR" fetch -q --depth 1 --no-tags "$repo" "+refs/tags/$ref:refs/tags/$ref" >/dev/null 2>&1; then
+    warn "chart analysis engine: could not fetch tag $ref from the private repository (is the deploy key added there, read-only, and does the tag exist?) - the checkout stays at $(private_version)"
+    return 0
+  fi
+  # the container's own user (not this one) imports it: the code is world-readable inside the checkout (umask 022,
+  # this script's 077 would hide it); .git stays private to the deploy user, and nothing here is a credential
+  if (umask 022 && git -C "$PRIVATE_DIR" -c advice.detachedHead=false checkout -q --force --detach "refs/tags/$ref" >/dev/null 2>&1 \
+      && git -C "$PRIVATE_DIR" clean -qfdx >/dev/null 2>&1 \
+      && find "$PRIVATE_DIR" -path "$PRIVATE_DIR/.git" -prune -o -exec chmod go+rX,go-w {} + 2>/dev/null) \
+      && chmod 755 "$PRIVATE_DIR"; then
+    ok "chart analysis engine source at tag $ref ($(private_version)), mounted read-only into the backend and the worker"
+  else warn "chart analysis engine: could not check out tag $ref in $PRIVATE_DIR"; fi
+}
+
+# `health`: the engine as the running backend's loader sees it (backend/scripts/engine_status.py). MISSING only WARNs:
+# Analyze a chart is optional and its page says it is not available.
+engine_report() {
+  local js line
+  js="$(dc exec -T backend sh -c 'test -f scripts/engine_status.py && python scripts/engine_status.py' 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
+  if [ -z "$js" ]; then info "chart analysis engine: not reported by this release"; return 0; fi
+  line="$(printf '%s' "$js" | python3 -c 'import json, sys
+clean = lambda v: "".join(ch for ch in str(v) if ch.isprintable())[:120]
+try:
+    d = json.load(sys.stdin)
+except ValueError:
+    print("? the answer could not be read"); sys.exit(0)
+print(("OK " + clean(d.get("name")) + " " + clean(d.get("version"))) if d.get("installed") else ("MISSING " + clean(d.get("reason") or "unknown")))')"
+  case "$line" in
+    "OK "*) ok "chart analysis engine: OK (${line#OK })" ;;
+    "MISSING "*) warn "chart analysis engine: MISSING (${line#MISSING })" ;;
+    *) warn "chart analysis engine: unknown (${line#? })" ;;
+  esac
+}
+
 # --- commands ----------------------------------------------------------------------------------------------------
 cmd_health() {
   [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
@@ -1029,6 +1107,7 @@ cmd_deploy() {
   if [ "$prev" = "$sha" ]; then info "same release as running - converging (idempotent re-run)"; fi
   RESTORE_CHECKOUT="${prev:-$head_before}"
   run git -C "$ATP_DIR" checkout -q --detach "$sha"
+  private_install
 
   step "images atp-*:$RELEASE (built from the commit, reused by a rollback; nothing running is touched)"
   if [ "$DRY_RUN" != "1" ] && images_exist "$RELEASE"; then ok "images for $RELEASE already built"
@@ -2504,6 +2583,25 @@ print("\n".join("%s %d" % (r["stamp"], r["tenant_id"]) for r in json.load(sys.st
   printf '\nloadtest-cleanup: done\n'
 }
 
+# B2b (owner, 24 Oct): the broker's own spot in an option chain answer (backend app/option_chain/probe.py, the same
+# handler as the admin-only GET /api/admin/option-chain/probe-chain), run in the backend container as the platform
+# owner's account through his own stored broker session. Read-only: no container is started or changed, nothing is
+# written, no token is printed.
+cmd_probe_chain() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  [ $# -eq 1 ] || die "usage: atp.sh probe-chain UNDERLYING   (for example NIFTY, BANKNIFTY, SENSEX)" 2
+  [[ "$1" =~ ^[A-Za-z0-9\ \&_-]{1,30}$ ]] || die "the underlying may hold only letters, digits, spaces and & _ - (1 to 30 characters)" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would read one option chain for %s (numbers only; nothing written)\n' "$1"; return 0; fi
+  check_tools
+  local rc=0
+  dc exec -T backend python -m app.option_chain.probe "$1" || rc=$?
+  case "$rc" in
+    0) ;;
+    2|3) exit "$rc" ;;      # the probe printed why (a bad name; no usable broker session)
+    *) die "the probe did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
 usage() { sed -n '2,/--dry-run (anywhere/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # Handover 8d: the owner sets a user's password on the server (backend/scripts/reset_password.py). The password is
@@ -2646,6 +2744,28 @@ cmd_lists_sync() {
   printf '\nlists-sync: done - the system watchlists are filled; the worker repeats the sync every evening (UNIVERSE_SYNC_HOUR_IST)\n'
 }
 
+# C1 (owner, 24 Oct): the broker's own answer for one chart, as counts (backend app/market_data/probe.py, the same
+# handler as the admin-only GET /api/admin/market-data/probe-candles), run in the backend container as the platform
+# owner's account through his own stored broker session. Read-only: no container is started or changed, nothing is
+# written, no token or other price is printed.
+cmd_probe_candles() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local usage='usage: atp.sh probe-candles "SYMBOL" TIMEFRAME [EXCHANGE]   (TIMEFRAME: 1m 3m 5m 15m 30m 1H D)'
+  if [ $# -lt 2 ] || [ $# -gt 3 ]; then die "$usage" 2; fi
+  [[ "$1" =~ ^[A-Za-z0-9\ \&._-]{1,60}$ ]] || die "the symbol may hold only letters, digits, spaces and & . _ - (1 to 60 characters)" 2
+  [[ "$2" =~ ^(1m|3m|5m|15m|30m|1H|1h|60m|D|d|1D|1min|3min|5min|15min|30min|60min|day)$ ]] || die "$usage" 2
+  [ $# -lt 3 ] || [[ "$3" =~ ^[A-Za-z_]{2,10}$ ]] || die "the exchange is a short name such as NSE, NFO, BFO or MCX" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would ask the broker for %s at %s (counts only; nothing written)\n' "$1" "$2"; return 0; fi
+  check_tools
+  local rc=0
+  dc exec -T backend python -m app.market_data.probe candles "$@" || rc=$?
+  case "$rc" in
+    0) ;;
+    2|3) exit "$rc" ;;      # the probe printed why (a bad input; no usable broker session)
+    *) die "the probe did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
 main() {
   local args=() a
   for a in "$@"; do
@@ -2670,11 +2790,13 @@ main() {
     base-backup)    cmd_base_backup "$@" ;;
     restore-offsite) cmd_restore_offsite ;;
     releases)       cmd_releases ;;
+    probe-chain)    cmd_probe_chain "$@" ;;
     loadtest)       cmd_loadtest "$@" ;;
     loadtest-cleanup) cmd_loadtest_cleanup "$@" ;;
     reset-password) cmd_reset_password "$@" ;;
     env-set)        cmd_env_set "$@" ;;
     lists-sync)     cmd_lists_sync "$@" ;;
+    probe-candles)  cmd_probe_candles "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac

@@ -75,6 +75,12 @@ ROUTES_REACHING_BROKER_ORDERS: Dict[Tuple[str, str], str] = {
     ("POST", "/api/positions/{trade_id}/exit-now"):
         "\"Exit now\" on the caller's own position; LIVE is refused before any close (approval.exit_now), so only a PAPER "
         "close runs - the graph keeps the edge because close_group can look a broker up",
+    ("POST", "/api/paper/fno/positions/{trade_id}/exit-leg"):
+        "TT-8 \"Exit this leg\": closes one leg of the caller's own basket (holder or owner only); a LIVE leg is squared off "
+        "through its own broker session exactly as every LIVE exit (broker_for_trade) - an exit only (ADR-0004)",
+    ("POST", "/api/paper/fno/positions/{trade_id}/exit-group"):
+        "TT-8 \"Exit the whole group\": every open leg of the caller's own basket through close_group (sold legs first; a "
+        "LIVE short that does not close keeps its hedges) - an exit only (ADR-0004)",
     ("POST", "/api/paper/fno/basket/close-filled"):
         "TM Part 7 \"Close the filled legs\": the caller's own legs through approval.exit_now one by one (shorts first), "
         "so LIVE is refused before any close exactly as for Exit now - an exit only (ADR-0004)",

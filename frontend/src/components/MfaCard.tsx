@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { Card } from "./ui";
 import type { MfaStatus } from "../types";
+import { formatDateIST } from "../ui/format";
 
 /**
  * Account-tab card for TOTP two-factor authentication: enrol (QR + manual key), confirm with
@@ -39,7 +40,7 @@ export default function MfaCard({ status, onChange }: { status: MfaStatus | null
       <div className="flex items-center gap-2 text-sm mb-2">
         {status.enabled ? <ShieldCheck size={16} className="text-up" /> : <ShieldOff size={16} className="text-warn" />}
         <span className={status.enabled ? "text-up font-semibold" : "text-warn font-semibold"}>
-          {status.enabled ? `Enabled${status.enabled_at ? ` since ${new Date(status.enabled_at).toLocaleDateString()}` : ""}` : "Not enabled"}
+          {status.enabled ? `Enabled${status.enabled_at ? ` since ${formatDateIST(status.enabled_at)}` : ""}` : "Not enabled"}
         </span>
         {status.enabled && <span className="text-xs text-fg-muted">· {status.backup_codes_remaining} backup codes left · this session {status.session_verified ? "verified" : "not yet verified"}</span>}
       </div>

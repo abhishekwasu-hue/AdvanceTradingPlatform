@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { mockCharts, type ChartsCalls, type ChartsMocks } from "./chartsMocks";
+import { api, mockCharts, type ChartsCalls, type ChartsMocks } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 import { warnOnManySolidBrand } from "./solidBrand";
@@ -967,6 +967,29 @@ test.describe("v2 Charts 390 phone", () => {
       await expect(page).toHaveScreenshot(`charts-v2-390-${theme}.png`, SHOT);
     });
   }
+
+  test("C1: an empty broker answer shows the server's reason over the chart, never a blank canvas", async ({ page }) => {
+    const reason = "No candles yet for this contract. It may be a new contract, or your broker sent no data for this period up to the last session close (23 Oct, 15:30 IST).";
+    await open(page, "light", { market: "closed", before: (p) => p.route(api("/market-data/candles$"), (r) => {
+      const body = r.request().postDataJSON() as { symbols: string[]; timeframe: string; lookback_days: number };
+      return r.fulfill({ json: { source: { broker: "upstox", account_label: "primary" }, exchange: "NSE", timeframe: body.timeframe,
+        base_interval: "1min", lookback_days: body.lookback_days, before: null, fetched_at: "2026-10-24T06:30:00Z", warnings: [], note: "",
+        symbols: { [body.symbols[0]]: { bars: [], count: 0, first: null, last: null, error: null, volume_source: null, empty_reason: reason } } } });
+    }) });
+    await expect(page.getByText("Loading prices…")).toHaveCount(0);
+    if (process.env.C1_SHOT) await page.screenshot({ path: process.env.C1_SHOT, fullPage: true });
+    await expect(page.getByText(reason)).toBeVisible();
+    // Painted on top: the element at the text's centre is the empty state, not the chart's canvas over it.
+    const top = await page.locator("[data-chart-empty]").evaluate((el) => {
+      const range = document.createRange(); range.selectNodeContents(el); const t = range.getBoundingClientRect();
+      (el as HTMLElement).style.pointerEvents = "auto";          // elementFromPoint skips pointer-events: none
+      const hit = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2);
+      (el as HTMLElement).style.pointerEvents = "";
+      return hit === el || el.contains(hit) ? "empty-state" : hit?.tagName ?? "none";
+    });
+    expect(top).toBe("empty-state");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  });
 
   test("no sideways scroll, 44 px targets, nothing hidden behind the bottom bar", async ({ page }) => {
     await open(page, "dark", { intro: true });

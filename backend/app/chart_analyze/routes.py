@@ -32,6 +32,7 @@ from app.auth.dependencies import get_current_user, require_mfa_session, require
 from app.chart_analyze import FLAG, SHARE_FLAG, STRIKES_FLAG, contract, imaging, limits, linkfetch, service, share, storage, strikes
 from app.chart_analyze import provider as engine_provider
 from app.chart_analyze import settings as settings_mod
+from app.core.enums import UserRole
 from app.core.rate_limit import charge_user
 from app.db.models import Tenant, User
 from app.db.session import get_session
@@ -100,7 +101,8 @@ async def _read_upload(file: UploadFile, settings: Dict[str, Any]) -> bytes:
 async def status(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     settings = await _gate(session, user)
     tenant = await _tenant(session, user)
-    return {"enabled": True, "engine": engine_provider.describe(),
+    # A1: the admin also sees why the engine is missing and the owner's install steps; a user only "not available".
+    return {"enabled": True, "engine": engine_provider.describe(admin=user.role == UserRole.SUPER_ADMIN.value),
             "modes": {"image_only": True, "hybrid": False}, "hybrid_note": service.HYBRID_SOON,
             "limits": await limits.usage(session, user, tenant, settings),
             "upload": {"types": ["image/png", "image/jpeg"], "max_bytes": int(settings["max_image_bytes"]),

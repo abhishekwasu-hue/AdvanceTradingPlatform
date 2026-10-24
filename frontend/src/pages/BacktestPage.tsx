@@ -16,6 +16,7 @@ import { templatesApi, type StrategyTemplate } from "../strategyTemplates/api";
 import { templateLinkFromSearch, typedSettings, type TemplateLink } from "../strategyTemplates/link";
 import { TEMPLATE_PICK, templateTimeframeFor } from "../backtest/templateTest";
 import { Database } from "lucide-react";
+import { formatDateTimeIST } from "../ui/format";
 
 const INDEX_START_PRICES: Record<string, number> = { NIFTY: 24500, "NIFTY 50": 24500, BANKNIFTY: 52500, "NIFTY BANK": 52500, FINNIFTY: 23500, MIDCPNIFTY: 12500, SENSEX: 80500, BANKEX: 60500 };
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -763,7 +764,7 @@ export default function BacktestPage() {
               <tbody>
                 {runs.map((r) => (
                   <tr key={r.id} className="border-t border-border">
-                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{r.created_at ? new Date(r.created_at).toLocaleString() : "-"}</td>
+                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{r.created_at ? formatDateTimeIST(r.created_at) : "-"}</td>
                     <td className="py-1 pr-3 text-fg">{r.strategy_id}</td>
                     <td className="py-1 pr-3">{r.symbol} · {r.base_timeframe}</td>
                     <td className="py-1 pr-3 text-fg-muted">{r.data_source} · {r.bars} bars · engine v{r.engine_version}</td>

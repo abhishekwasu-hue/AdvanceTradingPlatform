@@ -10,7 +10,9 @@ here, before anything is placed:
 * **the price** - the live price on the user's own broker session (`price_lookup_for_user`, never a teammate's); a
   preview without one uses the price the chain showed, labelled so. PAPER fills at once only what the price reaches
   now: a market order at the live price, a limit order that is marketable, an SL / SL-M order whose trigger the price
-  has passed. A resting order is not kept (it is refused with plain words) - open question FNO-1-3;
+  has passed. TM-2: with "wait for my price" (`rest_if_waiting`) a limit / stop order the price has not reached RESTS
+  in the resting book (app/execution/resting_book.py) and the one trigger engine places it - through this same `place`,
+  every check again - when the price reaches it; without it, such an order is refused with plain words, as before;
 * **the margin** - the Options Builder's labelled estimate (`options_builder.metrics.margin_estimate`): a bought option
   needs its premium; a sold one needs the broker's SPAN margin, which PAPER does not have (said so, never invented);
 * **the max loss** - a bought option: the premium (or down to its stop); a sold option: up to its stop, which is
@@ -44,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import AssetClass, SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal
 from app.db.models import InstrumentRecord, Tenant, TradeRecord, User
+from app.execution.approval import ORIGIN_AUTOMATIC
 from app.instruments import master
 from app.instruments.models import ContractSpec
 from app.market_data.calendar import to_ist
@@ -81,6 +84,9 @@ class OrderAsk:
     stop_loss: Optional[float] = None       # the position's stop (premium); required for a SELL
     chain_ltp: Optional[float] = None       # what the chain showed: a preview's price when no live price can be read
     client_ref: Optional[str] = None        # the ticket's own id: a second tap on Place never places twice
+    rest_if_waiting: bool = False           # TM-2: a limit / stop the price has not reached waits for it (needs client_ref)
+    trigger_mode: str = "TOUCH"             # TT-7: TOUCH (any print) or CLOSE (a closed candle of his timeframe)
+    timeframe_minutes: Optional[int] = None
 
 
 @dataclass
@@ -271,8 +277,8 @@ PLAIN = (
     (re.compile(r"^Daily loss limit breached"), "Today's loss limit is reached: no new entries today. Exits still work."),
     (re.compile(r"^Computed position size is below one lot"), "One lot risks more than your risk per trade allows. Set a closer "
                                                                "stop-loss or a smaller position."),
-    (re.compile(r"^Approval-only mode"), "Your organisation approves every entry first (approval-only mode). Orders from the chain "
-                                         "cannot be sent for approval yet."),
+    (re.compile(r"^Approval-only mode"), "Your organisation approves every automatic entry first (approval-only mode). "
+                                         "Place this order yourself from the order ticket or the basket."),
 )
 
 
@@ -347,8 +353,12 @@ async def _price(lookup: Optional[PriceLookup], contract: Contract) -> Tuple[Opt
 
 
 async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_lookup: Optional[PriceLookup],
-                 live_only: bool = False, now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Everything the confirm step shows, checked. Reads only (no entry slot is taken, nothing is stored)."""
+                 live_only: bool = False, now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC) -> Dict[str, Any]:
+    """Everything the confirm step shows, checked. Reads only (no entry slot is taken, nothing is stored).
+
+    TT-2: `origin` is set by the server from the route - "manual" only on the ticket / basket routes, where the user
+    confirms the order himself (his approval under approval-only mode). Any other caller stays "automatic" and needs an
+    approved proposal, as before."""
     from app.execution import approval
     from app.execution.signal_execution import entry_refusals
     from app.paper import experience
@@ -388,17 +398,28 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
             errors.append(f"{problem}. Nothing can be placed without it.")
 
     fill, fill_note = None, ""
+    resting = False
     if price is not None and not errors:
         fill, fill_note = paper_fill(ask.order_type, side, price, ask.price, ask.trigger_price)
-        if fill is None:
-            refusals.append(fill_note)
-    reference = fill if fill is not None else (ask.price or price)
+        if fill is None and ask.rest_if_waiting and rest_errors(ask):
+            errors.extend(rest_errors(ask))           # it would wait, but cannot be kept as it is
+        elif fill is None:
+            if ask.rest_if_waiting:
+                # TM-2: it waits for its price in the resting book; the trigger engine places it then, checked again.
+                resting = True
+                warnings.append(f"Waits for your price {rest_level(ask):,.2f} and is placed when the price reaches it "
+                                "(every check runs again then). It lasts until today's close; cancel it any time.")
+            else:
+                refusals.append(fill_note)
+    # The figures below are at the fill price, or at the order's own price while it waits (TM-2).
+    basis = fill if fill is not None else (rest_level(ask) if resting else None)
+    reference = basis if basis is not None else (ask.price or price)
     if reference is not None and not errors:
         errors.extend(stop_errors(side, float(reference), ask.stop_loss, what))
 
     tenant = await session.get(Tenant, user.tenant_id)
     refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, MODE, STRATEGY_ID, user=user, reserve=False))
-    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=approval.ORIGIN_AUTOMATIC, approval_action_id=None)
+    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=None)
     if gate:
         refusals.append(plain(gate))
     direction = SignalDirection.LONG if side == "BUY" else SignalDirection.SHORT
@@ -412,12 +433,12 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
             warnings.append(ban_note)
 
     risk: Dict[str, Any] = {}
-    if contract is not None and fill is not None and not errors and units:
+    if contract is not None and basis is not None and not errors and units:
         cfg, guard_reasons, notes = await _effective_config(session, user, direction.value, contract.tradingsymbol, now)
         refusals.extend(plain(r) for r in guard_reasons)
         warnings.extend(n for n in notes if n)
         stop = position_stop(side, ask.stop_loss, tick)
-        decision = RiskManager(cfg).validate_and_size(_signal(contract, side, fill, stop, now, fill_note), await build_trading_day_state(session, user),
+        decision = RiskManager(cfg).validate_and_size(_signal(contract, side, basis, stop, now, fill_note), await build_trading_day_state(session, user),
                                                       contract_spec=_spec(contract))
         cap_amount = round(cfg.capital * cfg.risk_per_trade_pct / 100.0, 2)
         risk = {"risk_per_trade": cap_amount, "allowed_lots": int(decision.quantity // contract.lot_size) if decision.approved else 0}
@@ -427,17 +448,17 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
             refusals.append(f"Your risk per trade (₹{cap_amount:,.0f}) allows {risk['allowed_lots']} lot(s) at this stop-loss. "
                             "Lower the lots or set a closer stop-loss.")
 
-    loss = max_loss(side, fill, ask.stop_loss, units, future) if fill is not None and units and not errors else None
+    loss = max_loss(side, basis, ask.stop_loss, units, future) if basis is not None and units and not errors else None
     margin_line = None
-    if contract is not None and fill is not None and not errors and units:
-        margin_line = future_margin(fill, units) if future else margin(side, right, float(contract.strike or 0.0), fill, ask.lots,
-                                                                         contract.lot_size, contract.expiry)
+    if contract is not None and basis is not None and not errors and units:
+        margin_line = future_margin(basis, units) if future else margin(side, right, float(contract.strike or 0.0), basis, ask.lots,
+                                                                          contract.lot_size, contract.expiry)
     charges = None
-    if fill is not None and units and not errors:
+    if basis is not None and units and not errors:
         from app.execution.india_costs import leg_cost
-        cost = leg_cost(today, "buy" if side == "BUY" else "sell", fill, units, "FUTURE" if future else "OPTION")
+        cost = leg_cost(today, "buy" if side == "BUY" else "sell", basis, units, "FUTURE" if future else "OPTION")
         charges = {"total": round(cost["total"], 2), "estimated": True}
-    can_place = not errors and not refusals and fill is not None
+    can_place = not errors and not refusals and basis is not None
     label = contract.label if contract else contract_label(master.underlying_of(ask.underlying), ask.expiry, ask.strike, right)
     contract_view = contract.as_dict() if contract else None
     smart = None
@@ -454,27 +475,30 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         "mode": MODE, "practice": PRACTICE, "contract": contract_view, "label": label, "smart": smart,
         "side": side, "lots": ask.lots, "lot_size": lot_size, "units": units, "order_type": ask.order_type, "product": ask.product,
         "price": price, "price_source": price_source, "fill_price": fill, "fill_note": fill_note or None,
+        "resting": resting, "rest_level": rest_level(ask) if resting else None,
         "stop_loss": ask.stop_loss, "margin": margin_line, "max_loss": loss, "charges": charges, "risk": risk,
         "errors": errors, "refusals": refusals, "warnings": warnings, "can_place": can_place,
-        "confirm_label": f"Place PAPER order: {side.title()} {ask.lots} lot{'s' if ask.lots != 1 else ''} ({units:g} qty)" if can_place and units else None,
+        "confirm_label": f"{'Place waiting' if resting else 'Place'} PAPER order: {side.title()} {ask.lots} lot{'s' if ask.lots != 1 else ''} ({units:g} qty)" if can_place and units else None,
         "as_of": now.isoformat(),
     }
 
 
 async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_lookup: Optional[PriceLookup],
-                now: Optional[datetime] = None) -> Dict[str, Any]:
+                now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC) -> Dict[str, Any]:
     """Checks the ticket again at the live price and places ONE PAPER order through the ordinary pipeline, or says why
     not. Never a broker order: the mode is PAPER, asserted at the chokepoint under the Phase 0 lock."""
     from app.execution.signal_execution import execute_signal_for_user
     from app.platform import phase0_lock
     now = now or datetime.now(timezone.utc)
-    view = await assess(session, user, ask, price_lookup=price_lookup, live_only=True, now=now)
+    view = await assess(session, user, ask, price_lookup=price_lookup, live_only=True, now=now, origin=origin)
     if not view["can_place"]:
         await session.commit()
         return {**view, "status": "REFUSED", "reasons": view["errors"] + view["refusals"], "order_id": None, "trade_id": None, "filled": None}
     await phase0_lock.is_on(session, user.tenant_id)            # refreshes the lock state the assertion reads
     mode = phase0_lock.assert_paper(MODE, user.tenant_id)
     contract = await find_contract(session, ask.underlying, ask.expiry, ask.strike, ask.right)
+    if view.get("resting"):
+        return await _rest(session, user, ask, contract, view, mode, now, origin)
     fill = float(view["fill_price"])
     stop = position_stop(ask.side, ask.stop_loss, contract.tick_size)
     key = f"fno:{user.id}:{ask.client_ref}" if ask.client_ref else None
@@ -489,7 +513,7 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
             session, user, mode=mode, strategy_id=STRATEGY_ID, signal=_signal(contract, ask.side, fill, stop, now, view["fill_note"] or ""),
             idempotency_key=key, holding="SWING" if ask.product == "NRML" else "INTRADAY", max_quantity=float(view["units"]),
             journal_source="MANUAL", manual_contract_spec=_spec(contract), manual_contract_meta=_meta(contract, ask.side),
-            paper_execution=PAPER_EXECUTION, freeze_quantity=freeze, market_protection_pct=band)
+            paper_execution=PAPER_EXECUTION, freeze_quantity=freeze, market_protection_pct=band, origin=origin)
     except Exception as exc:  # noqa: BLE001 - shown to the person; the order trail holds what the pipeline recorded
         logger.exception("FNO ticket order failed for user %s", user.id)
         await session.rollback()
@@ -501,6 +525,55 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     reasons = [plain(r) for r in (result.reasons or [])]
     return {**view, "status": "PLACED" if result.executed else "REFUSED", "reasons": reasons if not result.executed else [],
             "order_id": order.id, "trade_id": order.trade_id, "filled": filled, "mode": order.mode}
+
+
+def rest_level(ask: OrderAsk) -> float:
+    """The price a waiting order watches: a limit's price, a stop's trigger."""
+    value = ask.price if ask.order_type == "LIMIT" else ask.trigger_price
+    return float(value or 0.0)
+
+
+def rest_errors(ask: OrderAsk) -> List[str]:
+    """TM-2: what a waiting order needs before it can be kept."""
+    from app.execution import resting_book
+    errors: List[str] = []
+    if ask.order_type not in resting_book.WAITING_TYPES:
+        errors.append("Only a limit or a stop order can wait for its price.")
+    if not ask.client_ref:
+        errors.append("A waiting order needs the ticket's reference (refresh the page and try again).")
+    errors.extend(resting_book.trigger_errors(resting_book.Trigger(mode=ask.trigger_mode, timeframe_minutes=ask.timeframe_minutes)))
+    return errors
+
+
+def ask_payload(ask: OrderAsk) -> Dict[str, Any]:
+    out = dict(vars(ask))
+    out["expiry"] = ask.expiry.isoformat()
+    return out
+
+
+def ask_from_payload(payload: Dict[str, Any]) -> OrderAsk:
+    values = dict(payload)
+    values["expiry"] = date.fromisoformat(str(values["expiry"]))
+    return OrderAsk(**values)
+
+
+async def _rest(session: AsyncSession, user: User, ask: OrderAsk, contract: Contract, view: Dict[str, Any], mode: str,
+                now: datetime, origin: str) -> Dict[str, Any]:
+    """TM-2: keeps the checked order in the resting book (nothing is sent now)."""
+    from app.execution import resting_book
+    assert ask.client_ref is not None
+    try:
+        row = await resting_book.rest_entry(
+            session, user, client_ref=f"fno:{ask.client_ref}", symbol=contract.tradingsymbol, exchange=contract.exchange,
+            side=ask.side, quantity=float(view["units"]), order_type=ask.order_type, price=ask.price, trigger_price=ask.trigger_price,
+            ask=ask_payload(ask), origin=origin, mode=mode,
+            trigger=resting_book.Trigger(mode=ask.trigger_mode, timeframe_minutes=ask.timeframe_minutes), now=now)
+    except resting_book.RestingOrderError as exc:
+        await session.rollback()
+        return {**view, "status": "REFUSED", "reasons": [str(exc)], "order_id": None, "trade_id": None, "filled": None}
+    await session.commit()
+    return {**view, "status": "RESTING", "reasons": [], "order_id": None, "trade_id": None, "filled": None,
+            "resting_order": resting_book.view(row)}
 
 
 async def smart_on(session: AsyncSession, tenant_id: int) -> bool:

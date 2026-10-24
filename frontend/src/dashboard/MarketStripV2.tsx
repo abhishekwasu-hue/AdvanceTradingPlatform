@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { EMPTY, formatChange, formatPct, formatPrice, formatSignedINR } from "../ui/format";
 import { useBigText } from "../theme";
 import { TermHint } from "../ui/TermHint";
+import { useColourV2 } from "../ui/colourV2";
+import { Sparkline } from "../ui/Sparkline";
 import { CARD, toneClass } from "./CardV2";
 import { indexCaption, signTone, vixNote, type TodayPnl } from "./model";
 import type { Loadable } from "./useDashboardData";
@@ -13,6 +15,9 @@ import type { MarketStrip, StripIndex } from "./types";
  * change) from GET /api/market/strip, one OI line per index (desktop), the market's state, the broker chip and today's
  * P&L with its booked / open split. A remembered level (market memory, before a broker login) says when it was taken;
  * no price at all is "–", never 0.
+ * Colour v2 (flag `colour_v2`): each index carries a small line of its real 5-minute closes (`sparks`, from
+ * indexSparks.ts; none without them) in the colour of its change, and today's P&L sits on a light tint of its sign;
+ * on a phone the P&L leads the strip (CV-4).
  */
 
 export interface MarketStripProps {
@@ -22,6 +27,8 @@ export interface MarketStripProps {
   broker: { text: string; tone: "neutral" | "warn"; connected: boolean } | null;
   pnl: TodayPnl;
   nowMs: number;
+  /** Colour v2: each index's closes in its last session, by key (left out or empty: no line). */
+  sparks?: Record<string, number[]>;
 }
 
 function Change({ index }: { index: StripIndex }) {
@@ -35,8 +42,9 @@ function Change({ index }: { index: StripIndex }) {
   );
 }
 
-function IndexCell({ index, oi, nowMs }: { index: StripIndex; oi?: string; nowMs: number }) {
+function IndexCell({ index, oi, nowMs, spark }: { index: StripIndex; oi?: string; nowMs: number; spark?: number[] }) {
   const caption = indexCaption(index, nowMs);
+  const tone = signTone(index.change ?? index.change_pct);
   const note = index.key === "INDIA VIX" ? vixNote(index.ltp) : oi;
   return (
     <div className="min-w-0" data-index={index.key}>
@@ -45,6 +53,9 @@ function IndexCell({ index, oi, nowMs }: { index: StripIndex; oi?: string; nowMs
       </div>
       <div className="mt-space-1 font-tabular text-t18 font-semibold text-fg md:text-t20">{formatPrice(index.ltp)}</div>
       <Change index={index} />
+      {spark && spark.length > 1 && (
+        <Sparkline values={spark} tone={tone === "up" ? "up" : tone === "down" ? "down" : "neutral"} className="mt-space-1 h-7 w-full max-w-[8rem]" />
+      )}
       {caption && <div className="mt-space-1 text-t12 text-fg-muted">{caption}</div>}
       {note && <div className="mt-space-1 hidden text-t12 text-fg-muted md:block">{note}</div>}
     </div>
@@ -59,7 +70,7 @@ function StatusChip({ children, tone }: { children: ReactNode; tone: "neutral" |
   );
 }
 
-export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowMs }: MarketStripProps) {
+export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowMs, sparks }: MarketStripProps) {
   const data = strip.status === "ok" ? strip.data : null;
   const total = pnl.total;
   // Item 1: the one-row desktop strip only at the Normal text size; at Large / Extra large it stays stacked (indices,
@@ -67,6 +78,13 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
   const big = useBigText();
   const L = (cls: string) => (big ? "" : cls);
   const cell = (n: number) => (n === 2 ? (big ? "col-span-2 sm:col-span-1" : "col-span-2 min-[380px]:col-span-1") : "");
+  const colour = useColourV2();
+  const sign = signTone(total);
+  // Colour v2: the P&L on a light tint of its sign (none at zero or while unknown).
+  const pnlTint = !colour || (sign !== "up" && sign !== "down") ? "" : `rounded-control px-space-3 py-space-2 ${sign === "up" ? "bg-up-tint" : "bg-down-tint"}${big ? "" : " xl:rounded-none xl:rounded-r-panel"}`;
+  // CV-4 (owner, 24 Oct): on a phone the P&L comes first in the strip, above the indices and their sparklines, so it is
+  // on screen when Today opens (390 x 844); from md up the order is as before.
+  const pnlFirst = colour ? " max-md:order-first" : "";
   return (
     <section aria-label="Market" data-block="strip" data-tour="dashboard-strip" className={`${CARD} grid gap-space-4 p-space-4 md:p-space-5 ${L("xl:grid-cols-[repeat(3,minmax(0,1fr))_auto_auto] xl:gap-0 xl:p-0")}`}>
       {/* Item 1: on the narrowest phones (under 380 px; any phone at the larger text sizes) the two indices share a row
@@ -74,7 +92,7 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
       <div className={`grid grid-cols-2 gap-space-3 ${big ? "sm:grid-cols-3" : "min-[380px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.8fr)] xl:contents"}`}>
         {data ? data.indices.map((i, n) => (
           <div key={i.key} className={`${L("xl:border-r xl:border-subtle xl:p-space-5")} ${cell(n)}`}>
-            <IndexCell index={i} oi={oi[i.key]} nowMs={nowMs} />
+            <IndexCell index={i} oi={oi[i.key]} nowMs={nowMs} spark={colour ? sparks?.[i.key] : undefined} />
           </div>
         )) : ["NIFTY 50", "BANK NIFTY", "INDIA VIX"].map((label, n) => (
           <div key={label} className={`min-w-0 ${L("xl:border-r xl:border-subtle xl:p-space-5")} ${cell(n)}`}>
@@ -95,7 +113,7 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
           </StatusChip>
         )}
       </div>
-      <div className={`flex items-center justify-between gap-space-3 ${L("xl:flex-col xl:items-end xl:justify-center xl:p-space-5 xl:text-right")}`}>
+      <div data-pnl data-pnl-tint={pnlTint ? sign : undefined} className={`flex items-center justify-between gap-space-3 ${L("xl:flex-col xl:items-end xl:justify-center xl:p-space-5 xl:text-right")}${pnlTint ? ` ${pnlTint}` : ""}${pnlFirst}`}>
         <div className={`flex shrink-0 items-center gap-space-1 whitespace-nowrap text-t14 text-fg-muted ${L("xl:text-t13")}`}>
           Today&apos;s P&amp;L <TermHint term="todays-pnl" align="end" />
         </div>

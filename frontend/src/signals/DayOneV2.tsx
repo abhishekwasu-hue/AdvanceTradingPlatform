@@ -8,6 +8,8 @@ import type { Deployment } from "../types";
 import { cx } from "../components/primitives/cx";
 import { CARD, LINK_PRIMARY, LINK_SECONDARY, LoadingRowsV2 } from "../dashboard/CardV2";
 import { paperBotPathFor } from "../strategyTemplates/link";
+import { useColourV2 } from "../ui/colourV2";
+import { DirectionChip as SharedDirectionChip } from "../ui/DirectionChip";
 import { formatTimeIST } from "../ui/format";
 import {
   STANDS_OUT, STATE_LABEL, dayOneApi, headline, listRef, listValue, rowArea, rowText,
@@ -310,8 +312,13 @@ function Row({ row }: { row: DayOneRow }) {
   );
 }
 
-/** Long = green with an up arrow, Short = red with a down arrow: icon and word, never colour alone. */
-function DirectionChip({ value }: { value: "LONG" | "SHORT" }) {
+/**
+ * Long = green with an up arrow, Short = red with a down arrow: icon and word, never colour alone. With colour v2 on
+ * (flag `colour_v2`) it is the one shared direction chip (ui/DirectionChip), the same as on every other page.
+ */
+export function DirectionChip({ value }: { value: "LONG" | "SHORT" }) {
+  const colour = useColourV2();
+  if (colour) return <SharedDirectionChip side={value === "LONG" ? "long" : "short"} />;
   const up = value === "LONG";
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (

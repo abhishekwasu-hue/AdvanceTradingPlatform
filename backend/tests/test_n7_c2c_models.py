@@ -51,7 +51,7 @@ CASES = {
 
 
 def _golden_hash(result):
-    """CP6-15 bumped the engine's version label (7-options -> 8-options) and nothing else in these one-trade runs: the
+    """CP6-15 (7 -> 8-options) and P1-2b (-> 9-options) bumped the engine's version label and nothing else in these one-trade runs: the
     golden is compared with the label the golden was recorded under."""
     assert result.loss_streak is None
     return result_hash(result.model_copy(update={"options": {**result.options, "engine_version": "7-options"}}))

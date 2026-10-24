@@ -38,6 +38,9 @@
   sized so the most a user can save stays inside MAX_BODY_BYTES (a test proves it), and which layout is in use. The
   presets themselves live in the frontend code (src/terminal/layoutModel.ts), so "reset to the preset" needs no server.
   Layout only: no order path, worker or risk check imports it.
+  `notices` (TT12-1) holds when a one-time notice was seen (app/me/notices.py), so it never shows twice on any device.
+  `option_chain` (B4, UI-H bug lane) holds his own Option chain settings: the PCR zone edges that word "What the chain
+  shows" (defaults = the values used before). Display words only.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -408,11 +411,43 @@ class TerminalPrefs(_Prefs):
         return self
 
 
+class NoticesPrefs(_Prefs):
+    """`notices` (TT12-1): when a one-time notice was seen (dismissed, or made moot by the user's own action). Only
+    marks; what a notice says and who gets it live in app/me/notices.py."""
+    limits_not_set_seen_at: MarkTime = Field(default=None, description="the 'risk limits are now not set' notice was seen")
+
+
+class PcrZonesPrefs(_Prefs):
+    """B4 (UI-H bug lane): his own PCR zone edges for "What the chain shows" (app/option_chain/dish.py). The defaults are
+    the values the page used before (the OI banner's bands, oi_regime.PcrBands): under 0.70 very low, under 0.90 low,
+    up to 1.00 balanced, up to 1.30 high, above that very high. Display words only: nothing trades on them."""
+    very_low_below: float = Field(default=0.70, gt=0, le=10, allow_inf_nan=False)
+    low_below: float = Field(default=0.90, gt=0, le=10, allow_inf_nan=False)
+    balanced_max: float = Field(default=1.00, gt=0, le=10, allow_inf_nan=False)
+    high_max: float = Field(default=1.30, gt=0, le=10, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _ascending(self) -> "PcrZonesPrefs":
+        edges = self.edges()
+        if list(edges) != sorted(edges) or len(set(edges)) != len(edges):
+            raise ValueError("the PCR zone edges must go up from very low to high")
+        return self
+
+    def edges(self) -> Tuple[float, float, float, float]:
+        return (self.very_low_below, self.low_below, self.balanced_max, self.high_max)
+
+
+class OptionChainPrefs(_Prefs):
+    """`option_chain` (B4): his own Option chain settings - today the PCR zone edges. Read by the analyses route to
+    word the PCR zone line; no order path, worker or risk check imports it."""
+    pcr_zones: PcrZonesPrefs = Field(default_factory=PcrZonesPrefs)
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
-                                       "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs,
-                                       "terminal": TerminalPrefs}
+                                       "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs,
+                                       "option_chain": OptionChainPrefs, "terminal": TerminalPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -545,4 +580,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

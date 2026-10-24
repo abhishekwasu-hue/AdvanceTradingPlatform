@@ -35,10 +35,11 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from app.brokers.models import OptionChain, OptionChainRow
 from app.core.config import RISK_FREE_RATE
+from app.market_data.calendar import trading_days_until
 from app.option_chain.models import OptionType
 
 logger = logging.getLogger(__name__)
@@ -537,7 +538,8 @@ def straddle_of(chain: OptionChain) -> Optional[Tuple[float, float, float]]:
     return r.strike, float(r.call_ltp), float(r.put_ltp)
 
 
-def expected_move(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> Dict[str, Any]:
+def expected_move(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False,
+                  holidays: Iterable[date] = ()) -> Dict[str, Any]:
     spot = chain.underlying_ltp
     found = straddle_of(chain)
     if spot is None or found is None:
@@ -546,7 +548,7 @@ def expected_move(chain: OptionChain, history: Sequence[Snapshot], now: datetime
     atm, c, p = found
     straddle = c + p
     lower, upper, pct = spot - straddle, spot + straddle, straddle / spot * 100
-    dte = _dte(chain.expiry, now)
+    dte = _dte(chain.expiry, now, holidays)
     tables = [_table("Now", [_column("atm", "ATM strike", "strike"), _column("call", "Call", "price"), _column("put", "Put", "price"),
                              _column("straddle", "Straddle", "price"), _column("lower", "Lower", "price"), _column("upper", "Upper", "price"),
                              _column("move_pct", "Move %", "pct")],
@@ -555,7 +557,7 @@ def expected_move(chain: OptionChain, history: Sequence[Snapshot], now: datetime
     sentences = [f"The ATM straddle at {fmt_strike(atm)} is {fmt_number(straddle, 2)} (call {fmt_number(c, 2)} + put {fmt_number(p, 2)}).",
                  f"Taken as the move to expiry, it gives a range of {fmt_number(lower, 2)} to {fmt_number(upper, 2)}, about "
                  f"{pct:.2f}% either side of spot {fmt_number(spot, 2)}"
-                 + (f", with {dte} {'day' if dte == 1 else 'days'} to expiry." if dte is not None and dte >= 0 else ".")]
+                 + (f", with {dte} trading {'day' if dte == 1 else 'days'} to expiry." if dte is not None and dte >= 0 else ".")]
     past = session_history(chain, history)
     path: List[Dict[str, Any]] = []
     for at, ch in [(s.at, s.chain) for s in past] + [(now, chain)]:
@@ -595,10 +597,11 @@ def _expiry_date(expiry: str) -> Optional[date]:
         return None
 
 
-def _dte(expiry: str, now: datetime) -> Optional[int]:
+def _dte(expiry: str, now: datetime, holidays: Iterable[date] = ()) -> Optional[int]:
+    """B3: trading days to expiry (app/market_data/calendar.py), the same count as the chain page's summary."""
     day = _expiry_date(expiry)
     aware = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
-    return (day - aware.astimezone(IST).date()).days if day else None
+    return trading_days_until(aware.astimezone(IST).date(), day, holidays) if day else None
 
 
 # ---------------------------------------------------------------- 6. IV smile / skew
@@ -717,7 +720,8 @@ _TITLES: Dict[str, Tuple[str, str]] = {
 }
 
 
-def compute_all(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> List[Dict[str, Any]]:
+def compute_all(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False,
+                holidays: Iterable[date] = ()) -> List[Dict[str, Any]]:
     """The six analyses in tab order. `history` may hold other expiries or empty slots; each analysis keeps only the
     earlier snapshots of this chain's expiry (`session_history`). A spot of 0 or not a number is treated as missing, and
     one analysis that fails on an odd chain becomes that tab's `no_data` (logged by type only) - never a failed response.
@@ -727,7 +731,10 @@ def compute_all(chain: OptionChain, history: Sequence[Snapshot], now: datetime, 
     out: List[Dict[str, Any]] = []
     for key, fn in ANALYSES:
         try:
-            out.append(fn(chain, history, now, history_off=history_off))
+            if fn is expected_move:                         # B3: the trading-day count needs the exchange's closed days
+                out.append(expected_move(chain, history, now, history_off=history_off, holidays=holidays))
+            else:
+                out.append(fn(chain, history, now, history_off=history_off))
         except Exception as exc:  # noqa: BLE001 - one tab's failure must not take the other five down
             logger.warning("Option chain analysis %s failed: %s", key, type(exc).__name__)
             title, method = _TITLES[key]

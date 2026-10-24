@@ -2,8 +2,13 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { useState, type ReactNode } from "react";
 import { Button } from "../components/primitives";
 import { Chip, FilterChip, type ChipTone } from "../ui/Chip";
+import { Bell, Palette, Plug, Shield, SlidersHorizontal, Sparkles, UserCircle2 } from "lucide-react";
+import { DirectionChip } from "../ui/DirectionChip";
+import { IconBadge } from "../ui/IconBadge";
 import { RangeBar } from "../ui/RangeBar";
+import { Sparkline } from "../ui/Sparkline";
 import { StatusChip, type Status } from "../ui/StatusChip";
+import { ColourV2Provider } from "../ui/colourV2";
 
 /**
  * Chart + colour order, Part 3 (docs/design/CHART_COLOUR_REVIEW.md, PR sequence item 8): the shared components that
@@ -47,9 +52,21 @@ function ColourComponents() {
       <Row title="Chips - badge shape (the P1.2 Badge)">
         {TONES.map((t) => <Chip key={t} tone={t} shape="badge">{t}</Chip>)}
       </Row>
-      <Row title="Status chips" note="Connected is neutral with a check. Needs action is amber. An error is red only when money or an order is at stake. Paper is the neutral outline chip.">
-        {STATUSES.map((s) => <StatusChip key={s} status={s} />)}
-        <StatusChip status="error" atStake>Order not placed</StatusChip>
+      <Row title="Colour v2 - soft icon circles" note="One soft circle per meaning, like a phone's settings: Broker blue, AI violet, Alerts amber, Risk limits red, Appearance teal, Trading defaults sky, Account neutral.">
+        <IconBadge icon={Plug} tone="brand" /><IconBadge icon={Sparkles} tone="ai" /><IconBadge icon={Bell} tone="warn" />
+        <IconBadge icon={Shield} tone="down" /><IconBadge icon={Palette} tone="teal" /><IconBadge icon={SlidersHorizontal} tone="info" />
+        <IconBadge icon={UserCircle2} tone="neutral" />
+      </Row>
+      <Row title="Colour v2 - direction chips and sparklines" note="Long / Short: icon and word, never colour alone. A sparkline only from real prices (these are made up for the story).">
+        <DirectionChip side="long" /><DirectionChip side="short" />
+        <Sparkline values={[10, 12, 11, 14, 13, 16]} tone="up" /><Sparkline values={[16, 15, 15.5, 13, 12]} tone="down" />
+      </Row>
+      <Row title="Status chips" note="Connected is neutral with a green check. Needs action is amber. An error is red only when money or an order is at stake. Paper is the neutral outline chip.">
+        {/* The green check is part of colour v2 (flag `colour_v2`); with the flag off the check stays neutral. */}
+        <ColourV2Provider on>
+          {STATUSES.map((s) => <StatusChip key={s} status={s} />)}
+          <StatusChip status="error" atStake>Order not placed</StatusChip>
+        </ColourV2Provider>
       </Row>
       <Row title="Filter chips" note="Selected: the brand outline and a light tint. Others: outlined.">
         <FilterRow />

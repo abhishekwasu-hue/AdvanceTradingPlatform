@@ -56,7 +56,8 @@ from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session, release_connection
 from app.market_data import api_budget, entitlement, index_volume, periods
-from app.market_data.calendar import EXCHANGE_SESSIONS, IST, family_holidays, load_holidays, session_family, session_status
+from app.market_data.calendar import (EXCHANGE_SESSIONS, IST, family_holidays, last_session_close, load_holidays, session_family,
+                                      session_status)
 from app.market_data.data_terms import terms_for
 from app.market_data.entitlement import DataTier, Entitlement
 from app.market_data.fanin import FLAG as BYOB_FLAG, Priority
@@ -360,6 +361,24 @@ async def _future_bars(service: MarketDataService, fut: index_volume.NearFuture,
     return got.bars
 
 
+def _is_contract(symbol: str, exchange: str) -> bool:
+    s = symbol.upper()
+    return exchange.upper() in ("NFO", "BFO", "MCX", "CDS", "BCD", "NSE_FO", "BSE_FO", "MCX_FO") or (
+        s.endswith(("CE", "PE", "FUT")) and any(ch.isdigit() for ch in s))
+
+
+def empty_reason(symbol: str, exchange: str, holidays, now: datetime, before: Optional[date] = None) -> str:
+    """C1: the plain reason a chart shows when the broker sent no candles at all - never a silent empty canvas."""
+    what = "this contract" if _is_contract(symbol, exchange) else "this symbol"
+    if before is not None:
+        return f"No older candles for {what} from your broker."
+    close = last_session_close(now, holidays, exchange)
+    upto = f" up to the last session close ({close.strftime('%d %b, %H:%M')} IST)" if close is not None else ""
+    why = ("It may be a new contract, or your broker sent no data for this period" if what == "this contract"
+           else "Your broker sent no data for this period")
+    return f"No candles yet for {what}. {why}{upto}."
+
+
 @router.post("/candles", dependencies=[Depends(candles_rate_limit)])
 async def candles(body: CandlesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     started = time.monotonic()
@@ -405,6 +424,8 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     # every API worker); a cached answer costs none. A symbol that gets no token says so; the others still load.
     budgeted = api_budget.BudgetedAdapter(build_adapter(record), record.id, record.broker_name)
     service = MarketDataService(cast(BrokerInterface, budgeted), lookback_days=lookback, cache_namespace=namespace)
+    # C1: history ends at the last session close by the exchange's own calendar (holidays included).
+    service.holidays = await family_holidays(session, session_family(exchange))
     now = datetime.now(timezone.utc)
     today = now.astimezone(IST).date()
     window = _period_window(period, body.before, lookback, today) if period is not None else None
@@ -502,6 +523,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
             fetched += 1
             if not bars:
                 warnings.append(f"{symbol}: the broker returned no candles")
+                out[symbol]["empty_reason"] = empty_reason(symbol, exchange, service.holidays, now, body.before)
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
             logger.info("Candle shaping failed for %s:%s: %s", exchange, symbol, exc)
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": f"{type(exc).__name__}: {exc}"[:300], "volume_source": None}

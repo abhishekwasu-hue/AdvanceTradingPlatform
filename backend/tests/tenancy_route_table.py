@@ -546,6 +546,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/market-data/quotes"): S_OWN_MARKET_DATA,
     ("POST", "/api/market-data/option-chains"): S_OWN_MARKET_DATA,
     ("GET", "/api/market-data/sources"): "member",
+    # C1: the owner's read-only probe of one chart's broker calls (counts only) - SUPER_ADMIN + two-factor.
+    ("GET", "/api/admin/market-data/probe-candles"): "admin",
     ("GET", "/api/market-holidays"): "member",
     ("POST", "/api/market-holidays"): "admin",
     ("DELETE", "/api/market-holidays/{holiday_id}"): "admin",
@@ -570,6 +572,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/me/prefs/{namespace}"): S_OWN_PREFS,
     # UI2-7: the caller's own setup wizard progress (the `setup` preferences plus steps worked out from their own rows)
     ("GET", "/api/me/setup"): "member: the caller's own setup progress only (tenant and user)",
+    ("GET", "/api/me/notices"): "member: the caller's own one-time notices only (tenant and user; TT12-1)",
+    ("POST", "/api/me/notices/{notice_id}/seen"): S_OWN_PREFS,
     ("PUT", "/api/me/setup"): S_OWN_PREFS,
     # MO4: the daily rhythm - the caller's own digests (own trades, signals, journal; the organisation's market memory and
     # events) and the caller's own Telegram choice
@@ -593,11 +597,13 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/notifications/{notification_id}/read"): S_READ_MARKS,
     ("POST", "/api/option-chain/analyze"): S_COMPUTE,
     ("GET", "/api/option-chain/analyses"): ("member: the six option chain analyses from the organisation's broker session (or, with "
-                                            "the own-broker tier on, the caller's own) plus shared collector snapshots; stores only the "
-                                            "usage count (OC2, flag ui_v2)"),
+                                            "the own-broker tier on, the caller's own) plus the organisation's collector snapshots (or, with that "
+                                            "tier, the caller's own earlier reads only); stores the usage count and, with that tier, "
+                                            "the caller's own read under his tenant and user (OC2 / B1, flag ui_v2)"),
     ("GET", "/api/option-chain/charts"): ("member: the Option chain chart series from the organisation's broker session (or, with the "
-                                          "own-broker tier on, the caller's own) plus shared collector snapshots; stores only the usage "
-                                          "count (OC5, flag ui_v2)"),
+                                          "own-broker tier on, the caller's own) plus the organisation's collector snapshots (or, with that "
+                                          "tier, the caller's own earlier reads only); stores the usage count and, with that tier, the "
+                                          "caller's own read under his tenant and user (OC5 / B1, flag ui_v2)"),
     # OC3 (flag ui_v2): the caller's question -> an analysis spec evaluated on the option chain read through a broker session
     ("POST", "/api/option-chain/ask"): ("self: an Ask AI read for the caller - the AI writes an analysis spec, the server evaluates it on "
                                         "the option chain; stores only the metered AI call and an audit row; no order (rate limited)"),
@@ -635,6 +641,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/paper/fno/contract"): "member",           # FNO-1: the instrument master's contract (platform-wide data)
     ("GET", "/api/paper/fno/held"): "member: the caller's own open PAPER option positions only (tenant and user)",
     ("POST", "/api/paper/fno/order"): "trader",              # FNO-1: one PAPER order from the chain's ticket
+    ("GET", "/api/paper/fno/resting"): "member: the caller's own waiting orders and armed exits only (tenant and user, TM-2)",
+    ("POST", "/api/paper/fno/resting/exit"): "trader",       # TM-2: a stop / target on the caller's own position (404 other tenant, 403 another member's)
+    ("POST", "/api/paper/fno/resting/{order_id}/cancel"): "trader",   # TM-2: the caller's own waiting order (404 otherwise)
     ("POST", "/api/paper/fno/order/preview"): "trader",
     ("POST", "/api/paper/fno/basket/evaluate"): S_COMPUTE,     # FNO-2: the basket's numbers (instrument master + the body)
     ("GET", "/api/paper/fno/basket/settings"): "member: the caller's own options settings (their deployments) only",
@@ -642,6 +651,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/basket/execute"): "trader",       # FNO-2: every leg one PAPER order, hedge legs first
     ("POST", "/api/paper/fno/basket/broker-link"): S_COMPUTE,  # the legs pre-filled for the user's broker app; sends nothing
     ("POST", "/api/paper/fno/basket/close-filled"): "trader",  # TM Part 7: the caller's own legs (404 other tenant, 403 another member's), shorts first
+    ("POST", "/api/paper/fno/positions/{trade_id}/exit-leg"): "trader",    # TT-8: the caller's own leg (404 other tenant, 403 another member's)
+    ("POST", "/api/paper/fno/positions/{trade_id}/exit-group"): "trader",  # TT-8: the caller's own basket, sold legs first
     ("GET", "/api/paper/fno/settlement"): "member: the caller's own open stock F&O positions only (delivery warning)",
     ("GET", "/api/trading/incomplete"): "member: the caller's own incomplete multi-leg orders only (SE-7)",
     ("POST", "/api/trading/incomplete/{group_id}/answer"): "trader",   # SE-7: his own order (404 other tenant, 403 another member's)
@@ -824,6 +835,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/watchlists/system/{key}"): "self: always refused (403) - system lists are read-only; nothing is written",
     ("DELETE", "/api/watchlists/system/{key}"): "self: always refused (403) - system lists are read-only; nothing is written",
     ("POST", "/api/watchlists/system/{key}/copy"): S_OWN_WATCHLISTS,
+    # B2b: the owner's read-only probe of the broker's option chain spot (numbers only) - SUPER_ADMIN + two-factor.
+    ("GET", "/api/admin/option-chain/probe-chain"): "admin",
     ("GET", "/api/admin/system-watchlists"): "admin",
     ("POST", "/api/admin/system-watchlists/refresh"): "admin",
     ("GET", "/api/webhooks/tradingview/token"): "member",

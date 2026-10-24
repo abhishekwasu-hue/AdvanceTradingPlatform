@@ -9,11 +9,13 @@ import { useBrokerConnections } from "../broker/useBrokerConnections";
 import ErrorBoundary from "../components/ErrorBoundary";
 import type { Page } from "../components/Sidebar";
 import LegalAcceptanceBanner from "../legal/LegalAcceptanceBanner";
+import OneTimeNoticesV2 from "../notices/OneTimeNoticesV2";
 import LivePricesBanner from "../live/LivePricesBanner";
 import PwaBanners from "../pwa/PwaBanners";
 import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
+import { ColourV2Provider, colourV2On } from "../ui/colourV2";
 import { STORED_HISTORY_PATHS, storedDailyFor } from "../ui/dataPages";
 import BottomNavV2 from "./BottomNavV2";
 import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
@@ -194,50 +196,56 @@ export default function AppShellV2() {
   else content = routes;
 
   const wide = key === "screener" || key === "options-builder" || key === "charts" || key === "terminal";
+  // Colour v2 (flag `colour_v2`, OFF until the owner approves): shared with every page and shared component below.
+  const colour = colourV2On(features.on);
   return (
-    <div className="flex min-h-screen bg-surface" data-shell="v2">
-      <a href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-space-2 focus:top-space-2 focus:z-[70] focus:rounded-control focus:bg-surface-1 focus:px-space-3 focus:py-space-2 focus:text-t14 focus:text-fg focus:shadow-raised">
-        Skip to content
-      </a>
-      <SidebarV2 sections={sections} pinned={pinned} dot={dot} current={key} user={user} accountPath={accountPath} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBarV2 title={title} user={user} accountPath={accountPath}
-          notificationsActive={key === "notifications"} accountActive={key === "account"}
-          onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined}
-          paperOnly={frontPaperOnly || liveHidden} onTour={replayTour} />
-        <PwaBanners />
-        <LegalAcceptanceBanner />
-        {/* TM Part 1 (flag data_hub): the one notice while live prices reconnect or the broker login needs renewing. */}
-        <LivePricesBanner enabled={!!user && features.on("data_hub")} />
-        {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip. */}
-        <main id="main" ref={mainRef} tabIndex={-1}
-          className={`w-full flex-1 ${key === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${key === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>
-          {/* UX3-9: a merged page's tabs (My trades, Strategies, Performance) above the tab on screen. */}
-          {!legacy && !redirect && <PageTabsV2 current={key} ctx={ctx} />}
-          {content}
-        </main>
+    <ColourV2Provider on={colour}>
+      <div className="flex min-h-screen bg-surface" data-shell="v2">
+        <a href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-space-2 focus:top-space-2 focus:z-[70] focus:rounded-control focus:bg-surface-1 focus:px-space-3 focus:py-space-2 focus:text-t14 focus:text-fg focus:shadow-raised">
+          Skip to content
+        </a>
+        <SidebarV2 sections={sections} pinned={pinned} dot={dot} current={key} user={user} accountPath={accountPath} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TopBarV2 title={title} user={user} accountPath={accountPath}
+            notificationsActive={key === "notifications"} accountActive={key === "account"}
+            onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined}
+            paperOnly={frontPaperOnly || liveHidden} onTour={replayTour} />
+          <PwaBanners />
+          <LegalAcceptanceBanner />
+          {/* TT12-1: one-time notices (the server decides who; seen once per user, stored in his prefs). */}
+          <OneTimeNoticesV2 />
+          {/* TM Part 1 (flag data_hub): the one notice while live prices reconnect or the broker login needs renewing. */}
+          <LivePricesBanner enabled={!!user && features.on("data_hub")} />
+          {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip. */}
+          <main id="main" ref={mainRef} tabIndex={-1}
+            className={`w-full flex-1 ${key === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${key === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>
+            {/* UX3-9: a merged page's tabs (My trades, Strategies, Performance) above the tab on screen. */}
+            {!legacy && !redirect && <PageTabsV2 current={key} ctx={ctx} />}
+            {content}
+          </main>
+        </div>
+        <BottomNavV2 current={navEntryFor(key)} dot={dot} moreOpen={moreOpen} onMore={() => setMoreOpen((o) => !o)} onPick={() => setMoreOpen(false)} />
+        <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key} dot={dot}
+          onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
+        <BrokerPromptHost />
+        {/* Readiness C13: a new account names the invite link it arrived with, once (flag `referrals`). */}
+        {user && features.on("referrals") && <ReferralClaimHost />}
+        {user && <ConnectAiHostV2 />}
+        {user && <TourHost userKey={user.id} role={user.role ?? null} tourId={tourId} />}
+        <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} />
+        {supportOn && supportLoaded && (
+          <Suspense fallback={null}>
+            <SupportDialog open={supportOpen} onOpenChange={setSupportOpen}
+              onFeedback={(draft) => { setSupportOpen(false); openFeedback(draft); }} />
+          </Suspense>
+        )}
+        {user && feedbackLoaded && (
+          <Suspense fallback={null}>
+            <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} pathname={location.pathname} initialText={feedbackDraft} />
+          </Suspense>
+        )}
       </div>
-      <BottomNavV2 current={navEntryFor(key)} dot={dot} moreOpen={moreOpen} onMore={() => setMoreOpen((o) => !o)} onPick={() => setMoreOpen(false)} />
-      <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key} dot={dot}
-        onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
-      <BrokerPromptHost />
-      {/* Readiness C13: a new account names the invite link it arrived with, once (flag `referrals`). */}
-      {user && features.on("referrals") && <ReferralClaimHost />}
-      {user && <ConnectAiHostV2 />}
-      {user && <TourHost userKey={user.id} role={user.role ?? null} tourId={tourId} />}
-      <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} />
-      {supportOn && supportLoaded && (
-        <Suspense fallback={null}>
-          <SupportDialog open={supportOpen} onOpenChange={setSupportOpen}
-            onFeedback={(draft) => { setSupportOpen(false); openFeedback(draft); }} />
-        </Suspense>
-      )}
-      {user && feedbackLoaded && (
-        <Suspense fallback={null}>
-          <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} pathname={location.pathname} initialText={feedbackDraft} />
-        </Suspense>
-      )}
-    </div>
+    </ColourV2Provider>
   );
 }

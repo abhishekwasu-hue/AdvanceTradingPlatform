@@ -264,7 +264,9 @@ def test_the_order_pipeline_refuses_an_automatic_entry_without_an_approved_propo
             await monitor.decide(session, row, other_user, approve=True, note=None)
     _run(approve_foreign())
     assert "not an approved entry" in _run(go(origin="approval", approval_action_id=foreign))[2][0]
-    # No origin bypasses the gate (review M1): a caller calling itself "manual" is refused like any other.
+    # Review M1 + TT-2: "manual" counts only for a manual order (journal source MANUAL, no deployment) - the F&O ticket /
+    # basket routes are its only callers (tests/test_tt2_manual_approval.py). Anything else calling itself "manual" is
+    # refused like any other automatic entry.
     result, status, reasons = _run(go(origin="manual"))
     assert not result.executed and status == "REJECTED" and "Approval-only mode" in reasons[0]
 
@@ -302,8 +304,9 @@ def test_every_order_entry_point_is_reviewed_for_approval():
                                    "app/paper/ticket.py": {"execute_signal_for_user"},
                                    "app/paper/fno_ticket.py": {"execute_signal_for_user"},
                                    "app/execution/core/dispatcher.py": {"execute_signal_for_user"}}
-    # FNO-1: the option chain's manual PAPER ticket refuses under approval-only mode (it cannot raise a proposal yet,
-    # OPEN_QUESTIONS FNO-1-4): `assess` asks the gate, `place` places only what `assess` allowed, PAPER only.
+    # FNO-1 + TT-2 (answers FNO-1-4): the option chain's manual PAPER ticket asks the gate with the origin its route
+    # gives ("manual" only on the ticket / basket routes: the user's own confirmed order is his approval); `place` places
+    # only what `assess` allowed, PAPER only.
     fno_src = (BACKEND / "app" / "paper" / "fno_ticket.py").read_text()
     assert fno_src.index("approval.gate_refusal(") < fno_src.index("execute_signal_for_user(")
     assert 'if not view["can_place"]:' in fno_src and 'MODE = "PAPER"' in fno_src

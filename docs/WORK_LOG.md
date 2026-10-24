@@ -3494,6 +3494,61 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `src/ui/tokens.test.ts`: the new contrast pairs (text 4.5, UI parts 3), navy variants, the distinct-hue test.
 - e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
 
+## 23 Oct - Chart + colour order, Part 3 PR 2: the colour components
+
+- Branch `claude/colour-components`, stacked on PR 1 (#436). Frontend only, **no migration**, no page adoption.
+- `components/primitives/Button.tsx`: `outline`, size `v2`, `buttonClass()`; `trading/PartsV2.tsx` uses it.
+- `ui/Chip.tsx` (+ `FilterChip`), `ui/StatusChip.tsx`, `ui/RangeBar.tsx`; `ChipV2` / `Badge` delegate (same markup).
+- `e2e/solidBrand.ts` (warning annotation, never a failure) in six screenshot specs; `test/solid-brand.test.ts`.
+- Storybook `Design system/Colour by meaning`; vitest `Button.test.tsx`, `Chip.test.tsx`, `StatusChip.test.tsx`,
+  `RangeBar.test.tsx`. e2e: the whole suite, baselines unchanged.
+
+## 23 Oct - Chart + colour order, Part 3 PR 1: the colour tokens
+
+- Branch `claude/colour-tokens` (from main). Frontend only, **no migration**, no flag (no page changes).
+- `frontend/src/styles/tokens.css`: `--range`, `--range-track`, `--info-tint`, `--ai-tint` (light, dark, colour-blind);
+  the v2-only navy dark surfaces under `:root[data-shell="v2"]` (inert until adoption); colour-blind warn / AI values.
+- `tailwind.config.js` names; the v2 colour check's hint text; the Tokens story lists the new meanings (CC-1 wording).
+- `src/ui/tokens.test.ts`: the new contrast pairs (text 4.5, UI parts 3), navy variants, the distinct-hue test.
+- e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
+
+
+## 23 Oct - Colour v2: a visible proposal behind `colour_v2`, and a new comparison page
+
+- Branch `claude/colour-v2`, stacked on Part 3 PR 2 (#440). **No migration.** The owner did not approve the first
+  comparison ("the after is almost identical"); this is the redo with his six additions (DECISIONS 23 Oct).
+- Flag `colour_v2` (controls + flag_catalog, OFF, depends on ui_v2; `tests/test_colour_v2_flag.py`). Nothing changes
+  for users until the owner approves; with the flag off every page renders as before (e2e baselines unchanged).
+- `tokens.css`: brand-tint, up-tint, down-tint, teal-accent, soft-* (icon circles), chain-call / chain-put (+ -itm),
+  oi-call / oi-put, nav-insights, each with colour-blind values; the layered dark surfaces under `:root[data-colour="v2"]`.
+  `tokens.test.ts` "Colour v2 tokens": AA text / 3 : 1 UI pairs in six variants, the OI number over its bar, no existing
+  value changes, colour-blind coverage and no dark-to-light leak, ITM stronger than OTM.
+- Shared pieces: `ui/colourV2.tsx` (provider in AppShellV2, `data-colour` on <html>), `ui/IconBadge.tsx`,
+  `ui/DirectionChip.tsx`, `ui/Sparkline.tsx`, `shell/navTone.ts`, `dashboard/indexSparks.ts` (real broker candles only);
+  StatusChip's check is green (owner's order).
+- Pages (flag on only): Settings index, Today (P&L tint, Needs attention icons, sparklines, Active signals), Option chain,
+  Signals, My trades, sidebar / bottom bar / More sheet. vitest `ui/colourV2.test.tsx` (on and off for every page).
+- Comparison page (not in the repo): before = flag off, after = flag on, Today / Option chain / Signals / My trades /
+  Charts / Settings + the bottom bar, 390 / 1440, light / dark, plus colour-blind; e2e mocks only.
+- Up to date with main (merge, no history rewrite; owner order 23 Oct): the components that reached main in #440 keep
+  main's look with the flag off - StatusChip's green check now needs `colour_v2` (`useColourV2`); AppShellV2 keeps the
+  colour provider and main's live-prices banner and referral host; the Signals day-one rows (new on main) take the
+  shared DirectionChip with the flag on. Comparison v3 for the owner (same six pages, 390 / 1440, light / dark).
+## 24 Oct - Colour v2: the owner's review points CV-1..4 (#447)
+
+- Branch `claude/colour-v2`. Frontend only, **no migration**; everything behind `colour_v2` (with the flag off every
+  page renders as before; the flag-off baselines pass unchanged). INBOX / DECISIONS 24 Oct; OPEN_QUESTIONS CV-1..4.
+- CV-1 `shell/BottomNavV2.tsx`: inactive tabs and More neutral grey; only the tab on screen is brand (group colours stay
+  in the sidebar and the More sheet). CV-2: each tab word `whitespace-nowrap` (bold included), checked at 360 / 390.
+- CV-3 `optionChain/ChainTableV2.tsx`: no call / put side tints (tokens `chain-call` / `chain-put` (+ `-itm`) removed
+  from `tokens.css` / `tailwind.config.js`); ITM one neutral step (`surface-2`, as with the flag off); OI bars, Calls /
+  Puts headings and the ATM row kept. `tokens.test.ts`: the OI bars, the number over them and the up / down figures on
+  the neutral ITM step in all six variants.
+- CV-4 `dashboard/MarketStripV2.tsx`: below md the P&L row leads the strip (`max-md:order-first`); desktop unchanged.
+- Tests: `ui/colourV2.test.tsx` (CV-1..4 classes), `ui/tokens.test.ts`, new `e2e/colour-v2.e2e.ts` (flag on: every label
+  on one line for each active tab at 360 / 390, inactive tabs grey on Signals and Option chain, the P&L inside 390 x 844
+  above the bottom bar in light and dark). Comparison v5 (only the changed pictures) for the owner, not in the repo.
+
 ## 23 Oct - Production readiness B8: phone notifications, deep links, store listing prep
 
 - Branch `claude/readiness-b8-mobile`. **No migration** (phones in the organisation's FCM alert channel, encrypted
@@ -3755,6 +3810,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `admin-trader-pack-v2-{1440,390}-{light,dark}.png`; `admin-controls-v2-*` updated (the new card).
 - Runbook section 4b; questions TP-1..TP-6.
 
+
+## 23 Oct - The day-one trader test (owner order 23 Oct, README row 19)
+
+- Branch `claude/day-one-trader-test` (from main). Test and docs only: no product code, **no migration**.
+- `frontend/e2e/day-one-trader-v2.e2e.ts`: one new PAPER user, Today → Charts watchlist (system groups) → Find setups
+  (NIFTY 50, a gallery scan in one tap) → Copilot (tools used) → Ideas (Try as a scan / Adopt) → Test a strategy on
+  stored Daily history (no broker login) → Paper bot, approval-only → Signals day-one watch; 390 / 1440, light / dark.
+  The trader pack flags are read from `trader_pack.py`; `backtest_stored_history` (an owner decision flag) is on only in
+  the mocked features. No baselines committed; `D1T_SHOTS=<folder>` saves the screenshots.
+- Findings, ranked: `docs/design/DAY_ONE_TRADER_TEST.md` (top: the idea's strategy cannot be backtested - templates
+  are not on Strategies › Test; before the day's login every data page is a gate; the stored-history bar says "No
+  broker connected" and breaks at 390).
 ## 23 Oct - Terminal master Part 7 / 8, PR A: PAPER is a broker adapter (TM-1, README row 20)
 
 - `backend/app/execution/paper_adapter.py`: `PaperExecutionAdapter(BrokerInterface)` over the PaperBroker fill and cost
@@ -4010,3 +4077,80 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_terminal_t1.py` (19), `src/terminal/terminal.test.tsx` (24), `e2e/terminal-v2.e2e.ts` (1440 /
   390 / 360, light / dark, flag off; no baselines yet, T1-13). T8 measured in headless Chromium (see the PR).
 - Questions T1-1..T1-14 in `docs/OPEN_QUESTIONS.md`.
+## TT-12: every platform-default limit starts off (24 Oct)
+
+- Branch `claude/tt12-limits-off` (from main). Owner decision TT-12 (DECISIONS 24 Oct; approved behaviour change, CLAUDE.md section 8).
+- Before: with `risk_by_default` on, every user's PAPER entries got 1 % risk per trade, a 2 % daily loss lockout, 10
+  entries a day and a minimum reward:risk 1.5 that nobody stated (Setup pre-filled 1 % / 3 % / 10).
+- After: nothing set = all four off (no cap of his own, no lockout, no entries cap, no reward:risk filter). His own
+  values are marked under `_set` in the same JSON (no migration); an older row keeps only values that differ from the
+  old defaults (TT12-1). "Loosen only from tomorrow" holds for values he set; setting one that was off applies at once;
+  `PUT /api/paper/risk` with null clears a key. `GET` adds `set`.
+- Setup step 2 shows empty boxes ("Not set") for risk per trade, daily loss, trades a day and lowest reward to risk; the
+  v2 Risk page gets "Your paper limits" with "Not set". The plan ticket strip says "Not set" instead of a cap.
+- Exits untouched (ADR-0004): tests prove Exit now, a stop and Exit all close with the strictest limits and a lockout.
+- Parity: neither backtest engine reads risk by default (AST test); with nothing set the PAPER pipeline sizes exactly as
+  the backtest RiskManager does; ticket preview, pipeline and proposal refusals agree.
+- Tests: `tests/test_tt12_limits_off.py` (16); existing risk tests set the old numbers as the user's own. Questions TT12-1..5.
+## 24 Oct - TT-2: a manual order the user confirms is his approval (answers FNO-1-4)
+
+- Branch `claude/tt2-manual-approval` (from main at `1b13f776`). **No migration**, no new flag.
+- Owner decision (DECISIONS 24 Oct, TT-2): with `approval_only_entries` on, an order the user places and confirms himself
+  on the F&O ticket or the basket (later the Terminal) passes; bot and signal entries keep needing an approved proposal.
+- `execution/approval.py`: new origin `ORIGIN_MANUAL`; `gate_refusal` lets it through only without a deployment and
+  without a proposal id. `execution/signal_execution.py`: "manual" counts only with the journal source MANUAL and no
+  deployment, otherwise it is treated as automatic. `paper/fno_ticket.py` / `paper/fno_basket.py`: an `origin` keyword
+  (default automatic). `paper/fno_routes.py`: the four routes (ticket preview + place, basket preview + execute) pass
+  "manual"; the request bodies forbid extra fields, so the browser cannot set it.
+- Unchanged: risk, kill switch, the Phase 0 PAPER lock (asserted at the chokepoint), idempotency, the F&O ban,
+  experience gates; exits (ADR-0004); the AI never places orders (ADR-0006); z10c guard green.
+- Plain refusal text (only reached now by a non-route caller): "Your organisation approves every automatic entry first
+  (approval-only mode). Place this order yourself from the order ticket or the basket." No frontend change was needed:
+  the ticket only shows the server's refusals, so the old refusal is simply gone.
+- Tests: `tests/test_tt2_manual_approval.py` (8): ticket and basket pass, risk and kill switch still refuse, a deployment
+  entry is still proposed (and a deployment entry calling itself "manual" is refused), a forged "origin" is refused (422)
+  on the ticket and ignored on the console path, the PAPER lock holds, only `fno_routes.py` sets the manual origin.
+  `tests/test_z3_approval_entries.py` comments updated.
+- Provisional: TT2-1 (the plan-before-trade PAPER ticket keeps raising a proposal) in `docs/OPEN_QUESTIONS.md`.
+
+## 24 Oct 2026 - day-one trader test rerun (README row 19 done)
+- The eight-step day-one test updated to the fixed pages and rerun on main at 390 / 1440, light / dark: 4 / 4 pass.
+- docs/design/DAY_ONE_TRADER_TEST.md: a rerun section with each finding's status and the follow-ups.
+
+## 24 Oct 2026 - TM-2: the resting PAPER order book + the one trigger engine (P1-6)
+- Migration `7e2a4c6b8d10` (additive, `ROLLBACK_SAFE`): table `paper_resting_orders` (tenant + user, `client_ref` unique per
+  user, trigger source premium / spot, level, side, touch / close, timeframe, status, order trail).
+- `execution/resting_book.py`: keep / list / cancel waiting entries; arm a stop / target on the user's own position.
+- `execution/trigger_engine.py`: one engine in the worker - live hub ticks every second (touch, PAPER), else every
+  cycle (exits before the entry gates, entries after them); entries fire through the ticket's own `place` (kill switch,
+  PAPER chokepoint, risk again); exits through `close_position`, never blocked; heartbeat `trigger_engine` on
+  `GET /api/system/worker-status`; stall alert to the owners (in-app + Telegram).
+- `trading/trigger_rules.py` (TT-7): touch / close / stop-first / closed candles, used by `exit_logic` (monitor and
+  `backtest/engine.py`) and `backtest/options_engine.py`. `PaperExecutionAdapter(keep_resting=True)` + `on_price`.
+- Ticket: `rest_if_waiting` (+ touch / close and timeframe); routes `GET /api/paper/fno/resting`,
+  `POST /api/paper/fno/resting/exit`, `POST /api/paper/fno/resting/{id}/cancel` (tenancy table updated). No UI (T2).
+- Tests: `test_tm2_trigger_rules.py` (12), `test_tm2_trigger_engine.py` (12); z10c, tenancy sweep, TM-1 adapter, smart
+  execution, ticket / basket, backtest parity and worker suites green. Open questions TM2-1..3.
+
+## 24 Oct 2026 - UI-H Part 1: the UI/UX audit (no app code)
+- Branch `claude/ui-h-audit` (from main at `341de6f8`). **No migration**, no flag, no app code: docs only.
+- docs/ui/UI_AUDIT.md: every v2 user page / tab plus Settings and the admin console, 390 / 1440 px, light / dark, with
+  `ui_v2` + `colour_v2` (+ `terminal`, captured from the T1 branch), and a market-closed state; scored against H1-H10;
+  the 10 worst issues; the read-only root causes of C1, A1, B1-B4, max pain and the Puts column; the wave order
+  (shared components first).
+- Screenshots (238 captures + committed baselines for the pages the capture mocks cannot answer) and the HTML gallery
+  stay outside git; the capture spec was a local-only extension of `e2e/ux-audit-capture.e2e.ts` and is not committed.
+## 24 Oct 2026 - TT-8: a basket's legs as one group (P1-6)
+- Owner decision TT-8: legs of one manual basket are one group with "Exit this leg" / "Exit the whole group"; a hedge
+  exited before its short = a plain warning + confirm, never a block.
+- Backend `app/paper/fno_groups.py`: filled legs tagged on existing columns (`group_meta` basket_group, `leg_role`; no
+  migration, no `leg_group_id` so the monitor keeps each leg's own stop / target). `POST /api/paper/fno/positions/{id}/
+  exit-leg` (`confirm` flag; without it a hedge answers the warning) and `/exit-group` (all legs priced first, then
+  `close_group`: sold legs first). Pricing shared with Exit now (`approval.exit_price`, a pure extraction). No flag,
+  kill switch, limit or approval-only check on either (ADR-0004). z10c: both routes classified as exits.
+- Frontend (ui_v2, PAPER account on): PositionsV2 basket groups show "Exit the whole group" and "Exit this leg" (in place
+  of Exit now on those legs); the confirm sheet `fno/GroupExitsV2.tsx`. Structures keep Exit now.
+- Tests: `tests/test_tt8_basket_group.py` (9), `src/fno/groupExits.test.tsx` (11), `e2e/tt8-basket-group-v2.e2e.ts`
+  (390 + 1440); four e2e flows moved to "Exit this leg"; six `fno4-positions-v2-*` baselines updated.
+- Not done: partial exit (TT-9). Open: TT8-1..4 in docs/OPEN_QUESTIONS.md.
+

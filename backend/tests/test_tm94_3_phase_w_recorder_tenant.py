@@ -218,6 +218,8 @@ def test_the_migration_is_additive_rollback_safe_and_the_single_head():
     upgrade = path.read_text().split("def downgrade")[0]
     assert "nullable=True" in upgrade and "drop_" not in upgrade and "execute" not in upgrade   # additive, no row rewrite
     script = ScriptDirectory(str(backend / "alembic"))
-    assert script.get_heads() == ["3c5e7a9b1d24"]
+    heads = script.get_heads()
+    assert len(heads) == 1
+    assert "3c5e7a9b1d24" in {rev.revision for rev in script.walk_revisions(base="base", head=heads[0])}
     column = OptionChainSnapshotRecord.__table__.c.tenant_id
     assert column.nullable and {fk.column.table.name for fk in column.foreign_keys} == {"tenants"}

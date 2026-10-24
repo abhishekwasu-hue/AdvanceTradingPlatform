@@ -94,13 +94,14 @@ describe("user-friendly pass: guards", () => {
     expect(looksLikeSlug("orb_nifty")).toBe(true);
   });
 
-  it("item 7: Analyze a chart without its engine - out of the nav, 'Coming soon' at its address, never the reason", () => {
+  it("item 7 + A1: Analyze a chart without its engine - out of the nav, 'not available' at its address, the reason for admins only", () => {
     const off = { answered: true, on: (f: string) => f !== "chart_analyze" };
-    expect(closedFlag("chart-analyze", off)).toBe("chart_analyze");                // the shell shows Coming soon
-    expect(closedFlag("chart-analyze", { answered: true, on: () => true })).toBeNull();
+    expect(closedFlag("chart-analyze", off)).toBeNull();                         // A1: the page answers its own closed state
+    expect(closedFlag("journal", { answered: true, on: () => false })).toBe("discipline_engine");   // the others: the shell's
     const page = SOURCES["./chartAnalyze/ChartAnalyzePageV2.tsx"];
     expect(page).not.toMatch(/engine not installed|administrator installs/i);
-    expect(page).toContain("if (engineMissing) return <ComingSoon flag={FLAG} />;");
+    expect(page).toContain("if (engineMissing && !off) return <EngineUnavailable engine={status.engine} />;");
+    expect(page).toContain("if (!on) return <ComingSoon flag={FLAG} />;");
     expect(SOURCES["./shell/navModel.ts"]).toMatch(/"chart-analyze"[\s\S]{0,200}flag: "chart_analyze"/);
   });
 

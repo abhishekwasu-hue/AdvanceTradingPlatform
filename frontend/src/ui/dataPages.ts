@@ -40,6 +40,23 @@ export const DATA_PAGES: readonly DataPage[] = [
 export const STORED_HISTORY_PATHS: readonly string[] = ["/backtest", "/strategies/test"];
 
 /**
+ * Day-one fix 2 (README row 19, flag `backtest_stored_history`): pages whose Daily parts run on ATP's stored end-of-day
+ * history before the day's broker login. While only the login (or the broker) is missing they show their content under
+ * one line with the one-tap login (`StoredDailyNote`) instead of the full gate; the sentence says what still works.
+ */
+export const STORED_DAILY_PAGES: Readonly<Record<string, string>> = {
+  "/screener": "Until then, Daily scans run on the closed Daily bars in ATP's stored end-of-day history; intraday scans need the login.",
+  "/signals": "Until then, your Daily watch reads ATP's stored end-of-day history; your signals and approvals are all here.",
+};
+
+/** The stored-Daily sentence for a path (its sub-paths too), or null. */
+export function storedDailyFor(pathname: string): string | null {
+  const clean = `/${pathname.replace(/^\/+|\/+$/g, "")}`;
+  const hit = Object.keys(STORED_DAILY_PAGES).find((p) => clean === p || clean.startsWith(`${p}/`));
+  return hit ? STORED_DAILY_PAGES[hit] : null;
+}
+
+/**
  * UX3-9: sub-paths of a data page that are not data pages themselves - My trades › Orders (`/positions/orders`) is the
  * trader's own order record, which worked without a broker session at `/orders` and still does.
  */

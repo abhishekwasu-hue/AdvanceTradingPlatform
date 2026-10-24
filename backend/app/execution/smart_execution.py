@@ -45,11 +45,16 @@ class SmartSettings:
     settlement_band_pct: float
     settlement_telegram: bool
     protection_band_pct: float
+    # SE-7: what happens to the filled legs of an incomplete multi-leg order he has not answered within `answer_minutes`.
+    on_no_answer: str = "close_filled"
+    answer_minutes: int = 5
 
     @classmethod
     def from_prefs(cls, values: Dict[str, Any]) -> "SmartSettings":
         return cls(settlement_days_before=int(values["settlement_days_before"]), settlement_band_pct=float(values["settlement_band_pct"]),
-                   settlement_telegram=bool(values["settlement_telegram"]), protection_band_pct=float(values["protection_band_pct"]))
+                   settlement_telegram=bool(values["settlement_telegram"]), protection_band_pct=float(values["protection_band_pct"]),
+                   on_no_answer=str(values.get("on_no_answer", cls.on_no_answer)),
+                   answer_minutes=int(values.get("answer_minutes", cls.answer_minutes)))
 
 
 async def settings_for(session: Any, user: Any) -> SmartSettings:

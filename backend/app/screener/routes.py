@@ -597,8 +597,17 @@ async def load_universe(session: AsyncSession, user: User, ast: Any, validated: 
     problems, data source, RankScore's systems). The run route and the N3 S9 Copilot tools share it. `release` (LD-7,
     the run route only - its session has only read so far): fetch_frames gives the pool connection back before the
     broker / lake reads; the Copilot tools keep the agent's shared session as it is."""
-    universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, exchange, base_tf, validated.fetch_lookback,
-                                                               user_id=user.id, tier_out=tier, release=release, budget_out=budget)
+    try:
+        universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, exchange, base_tf, validated.fetch_lookback,
+                                                                   user_id=user.id, tier_out=tier, release=release, budget_out=budget)
+    except HTTPException as exc:
+        # Day-one fix 2: before the day's broker login a Daily screen reads ATP's stored end-of-day history (flag
+        # `backtest_stored_history`); anything else keeps the broker path's own answer.
+        from app.screener.stored_history import stored_universe
+        stored = await stored_universe(session, user.tenant_id, exc, symbols, exchange, base_tf, validated.fetch_lookback)
+        if stored is None:
+            raise
+        universe, fetch_problems, data_source = stored
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
     if fundamentals_gate.flagged_calls(ast):      # U7 LG3: the reported figures as known by each bar's close (point in time)

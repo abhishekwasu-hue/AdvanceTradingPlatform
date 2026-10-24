@@ -80,6 +80,9 @@ async def set_risk(body: RiskSettingsBody, user: User = Depends(require_trader),
         change = await ticket.save_settings(session, user, values)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # TT12-1: setting any limit makes the one-time "risk limits are now not set" notice moot (app/me/notices.py).
+    from app.me import notices
+    await notices.mark_seen(session, user, notices.LIMITS_NOT_SET)
     return {**await ticket.risk_status(session, user), "change": change}
 
 

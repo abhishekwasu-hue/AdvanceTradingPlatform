@@ -146,6 +146,24 @@ def explicit_keys(stored: Dict[str, Any]) -> Set[str]:
     return {k for k, (low, high) in BOUNDS.items() if _valid(stored.get(k), low, high) and float(stored[k]) != float(old[k])}
 
 
+def reset_by_tt12(text: Optional[str]) -> bool:
+    """TT12-1 notice: whether this stored row is one whose limits TT-12 turned into "Not set" - saved before TT-12 (no
+    `_set`), holding at least one limit that was on at the old platform default, and no value the user chose himself
+    (a stored or deferred value that differs from the old default). A new user (no row) or one who saved since TT-12
+    never qualifies. Pure; reads only."""
+    stored = _stored(text)
+    if not stored or isinstance(stored.get(SET_KEY), list) or explicit_keys(stored):
+        return False
+    old = legacy_defaults()
+    pending = stored.get(PENDING_KEY)
+    waiting = pending.get("values") if isinstance(pending, dict) else None
+    if isinstance(waiting, dict) and any(k in BOUNDS and v is not None and (not isinstance(v, (int, float)) or float(v) != float(old[k]))
+                                         for k, v in waiting.items()):
+        return False                                     # a deferred change he chose himself is his own value
+    return any(is_on(k, float(old[k])) and _valid(stored.get(k), low, high) and float(stored[k]) == float(old[k])
+               for k, (low, high) in BOUNDS.items())
+
+
 def is_on(key: str, value: float) -> bool:
     """Whether a limit restricts anything: every key reads 0 as off (no limit / no minimum)."""
     return float(value) > 0

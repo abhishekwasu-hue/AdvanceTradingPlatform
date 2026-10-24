@@ -101,6 +101,21 @@ def _get(model, id_):
     return _run(go())
 
 
+@pytest.fixture(autouse=True)
+def _no_live_exits_left():
+    """Every combined exit a test leaves armed or exiting is ended afterwards: the worker visits organisations that
+    have one (tenants_with_resting), and other test files count the organisations a worker cycle processed."""
+    yield
+
+    async def end():
+        from sqlalchemy import update
+        async with _session_factory() as session:
+            await session.execute(update(GroupExitRecord).where(GroupExitRecord.status.in_(gx.LIVE_STATUSES)).values(
+                status=gx.CANCELLED))
+            await session.commit()
+    _run(end())
+
+
 @pytest.fixture
 def closes(monkeypatch):
     """Every close_position call, in order (trade id), through the real close."""
@@ -163,13 +178,18 @@ def test_two_passes_on_one_reading_fire_the_combined_exit_once(closes):
     short, hedge = _spread(t, "CXB")
     row = _arm(t, [short, hedge], measure=gx.MTM_INR, target_value=500.0)
 
-    async def both():
+    async def race():                                   # two passes both saw it ARMED: only one claim wins
         async with _session_factory() as a, _session_factory() as b:
-            table = {"CXBSHORT": 80.0, "CXBHEDGE": 38.0}                         # MTM +900
-            return await asyncio.gather(trigger_engine.run_exits(a, t["tenant_id"], _prices(table), now=NOW),
-                                        trigger_engine.run_exits(b, t["tenant_id"], _prices(table), now=NOW))
-    _run(both())
-    assert sorted(closes) == sorted([short, hedge]) and len(closes) == 2
+            row_a = await a.get(GroupExitRecord, row.id)
+            row_b = await b.get(GroupExitRecord, row.id)
+            row_a.last_value = row_b.last_value = 900.0
+            return (await trigger_engine._claim_group(a, row_a, gx.TARGET, NOW),
+                    await trigger_engine._claim_group(b, row_b, gx.TARGET, NOW))
+    assert _run(race()) == (True, False)
+    table = {"CXBSHORT": 80.0, "CXBHEDGE": 38.0}
+    for _ in range(3):                                  # the cycle and the tick pass on the same reading
+        _pass(t, table)
+    assert closes == [short, hedge]
     assert _get(GroupExitRecord, row.id).status == gx.DONE and _get(GroupExitRecord, row.id).fired_kind == gx.TARGET
 
 

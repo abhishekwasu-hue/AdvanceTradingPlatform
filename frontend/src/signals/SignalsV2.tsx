@@ -15,6 +15,7 @@ import DayOneV2 from "./DayOneV2";
 import { Direction, SignalDetail, StatusChip, signalDay, signalTime } from "./SignalPartsV2";
 import { setupWords } from "./signalText";
 import { useSignalFeed } from "./useSignalFeed";
+import { SubTabs } from "../ui/SubTabs";
 
 /** Desktop gets the list and the detail side by side from this width (UI v2 §8: "detail panels 430 px"). The seven
  * columns need about 660 px beside the 430 px panel, which a 1440 px window has and 1280-1439 does not; below it the
@@ -113,22 +114,16 @@ export default function SignalsV2() {
       {dishOn && <PageDishV2 page="signals" />}
       {dayOneOn && <DayOneV2 onAdopted={setWatching} />}
 
-      <div role="tablist" aria-label="Signals" data-tour="signals-tabs"
-        className="grid grid-cols-3 gap-space-1 rounded-panel bg-surface-2 p-space-1 md:flex md:gap-space-6 md:rounded-none md:border-b md:border-subtle md:bg-transparent md:p-0">
-        {TABS.map((t) => {
-          const on = t.id === tab;
+      <SubTabs label="Signals" value={tab} data={{ tour: "signals-tabs" }}
+        onChange={(t) => { setTab(t); setPicked(null); setMessage(null); }}
+        items={TABS.map((t) => {
           const n = count(t.id);
-          return (
-            <button key={t.id} type="button" role="tab" aria-selected={on} onClick={() => { setTab(t.id); setPicked(null); setMessage(null); }}
-              className={cx("min-h-11 rounded-control px-space-2 text-t14 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
-                "md:-mb-px md:rounded-none md:border-b-2 md:px-0",
-                on ? "bg-surface-1 font-semibold text-fg shadow-card md:border-brand md:bg-transparent md:shadow-none" : "text-fg-muted hover:text-fg md:border-transparent")}>
-              <span className="md:hidden">{t.short}{n !== undefined ? ` · ${n}` : ""}</span>
-              <span className="hidden md:inline">{t.label}{n !== undefined && <sup className="ml-space-1 text-t12 font-normal text-fg-muted">{n}</sup>}</span>
-            </button>
-          );
-        })}
-      </div>
+          return {
+            key: t.id,
+            short: `${t.short}${n !== undefined ? ` · ${n}` : ""}`,
+            label: <>{t.label}{n !== undefined && <sup className="ml-space-1 text-t12 font-normal">{n}</sup>}</>,
+          };
+        })} />
 
       <p className="text-t14 text-fg-muted md:hidden">Nothing is placed until you approve it.</p>
 

@@ -6,6 +6,7 @@ import { cx } from "../components/primitives/cx";
 import type { PageProps } from "../routes";
 import { chartTabPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
+import { SubTabs } from "../ui/SubTabs";
 import {
   PERIODS, UNKNOWN, advanceShare, asOfText, breadthText, closeText, dishLines, fetchList, fetchOverview, heatClass, isPeriod,
   leadersAndLaggards, moveText, rankGroups, relativeText, toneText, type ListMember, type MarketGroup, type MarketList,
@@ -42,20 +43,11 @@ function useLoad<T>(load: () => Promise<T>, key: string): [Load<T>, () => void] 
   return [state, useCallback(() => setNonce((n) => n + 1), [])];
 }
 
+/** UI-H Wave 0 (H2): the shared SubTabs (a toggle group: both rows pick a view of the same list). */
 function Segmented<T extends string>({ label, items, value, onChange }: {
   label: string; items: readonly { key: T; label: string }[]; value: T; onChange: (v: T) => void;
 }) {
-  return (
-    <div role="group" aria-label={label} className="inline-flex items-center gap-space-1 rounded-panel bg-surface-2 p-space-1">
-      {items.map((it) => (
-        <button key={it.key} type="button" aria-pressed={value === it.key} onClick={() => onChange(it.key)}
-          className={cx("inline-flex h-11 items-center rounded-control px-space-3 text-t13 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-7",
-            value === it.key ? "bg-surface-1 font-semibold text-fg shadow-card" : "text-fg-muted hover:text-fg")}>
-          {it.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <SubTabs kind="toggle" label={label} items={items} value={value} onChange={onChange} size="sm" />;
 }
 
 function Move({ value, className = "" }: { value: number | null; className?: string }) {

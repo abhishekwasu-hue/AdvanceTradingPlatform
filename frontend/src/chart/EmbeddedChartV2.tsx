@@ -13,6 +13,7 @@ import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs } from "./useChartPrefs";
 import { useMarketStatus } from "./useMarketStatus";
 import { usePageVisible } from "../utils/usePageVisible";
+import { SubTabs } from "../ui/SubTabs";
 
 /**
  * UI2-4e (Charts page plan §3, CHP-10): the v2 chart inside another v2 page (the Signals detail today), the same
@@ -66,14 +67,9 @@ export default function EmbeddedChartV2({
   return (
     <section aria-label={`Chart of ${sym}`} data-embedded-chart={sym} className="overflow-hidden rounded-panel border border-subtle bg-surface-1">
       <div role="toolbar" aria-label={`Chart controls for ${sym}`} className="flex items-center gap-space-1 border-b border-subtle p-space-1">
-        <div role="group" aria-label="Timeframe" className="flex min-w-0 flex-1 gap-space-1 overflow-x-auto">
-          {TIMEFRAMES.map((tf) => (
-            <button key={tf} type="button" aria-pressed={tf === timeframe} onClick={() => setTimeframe(tf)}
-              className={cx("min-h-11 min-w-11 shrink-0 rounded-control px-space-1 text-t13 md:min-h-9 md:min-w-9", focus,
-                tf === timeframe ? "bg-surface-3 font-semibold text-fg" : "text-fg-muted hover:bg-surface-2 hover:text-fg")}>
-              {timeframeLabel(tf)}
-            </button>
-          ))}
+        <div className="min-w-0 flex-1">
+          <SubTabs kind="toggle" label="Timeframe" size="sm" layout="scroll" value={timeframe} onChange={setTimeframe}
+            items={TIMEFRAMES.map((tf) => ({ key: tf, label: timeframeLabel(tf) }))} />
         </div>
         <ChartSettingsPopover prefs={prefs.prefs} onChange={prefs.update} error={prefs.error} />
         {openLink && (

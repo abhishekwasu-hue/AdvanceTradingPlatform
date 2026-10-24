@@ -17,6 +17,7 @@ import { HubTabsView, useHubInfo } from "../fno/SymbolHubTabsV2";
 import { pathFor, type PageProps } from "../routes";
 import { chartsPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
+import { SubTabs } from "../ui/SubTabs";
 import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import { useFeatures } from "../ui/useFeatures";
 import PageDishV2 from "../growth/PageDishV2";
@@ -225,15 +226,8 @@ export default function ChartsPageV2(_props: PageProps) {
       )}
 
       {multi && !fs.on && !hubView && (
-        <div role="tablist" aria-label="Charts" className="flex gap-space-1 rounded-panel bg-surface-2 p-space-1 sm:w-fit">
-          {(["chart", "multi"] as const).map((t) => (
-            <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
-              className={cx("min-h-11 flex-1 rounded-control px-space-4 text-t14 sm:flex-none md:min-h-9", focus,
-                tab === t ? "bg-surface-1 font-semibold text-fg shadow-card" : "text-fg-muted hover:text-fg")}>
-              {t === "chart" ? "Chart" : "Multi-chart"}
-            </button>
-          ))}
-        </div>
+        <SubTabs label="Charts" value={tab} onChange={setTab} className="sm:w-fit"
+          items={[{ key: "chart", label: "Chart" }, { key: "multi", label: "Multi-chart" }] as const} />
       )}
 
       {/* MO4 slice 4: what this chart shows, in structure words, and what is his on it (ui_v2 + growth_v2); folded at
@@ -255,14 +249,9 @@ export default function ChartsPageV2(_props: PageProps) {
                   {chip.text}
                 </span>
               )}
-              <div role="group" aria-label="Timeframe" data-tour="charts-timeframes" className="order-6 flex w-full gap-space-1 overflow-x-auto md:order-none md:w-auto">
-                {offered.map((tf) => (
-                  <button key={tf} type="button" aria-pressed={tf === timeframe} onClick={() => setView({ timeframe: tf })}
-                    className={cx("min-h-11 min-w-11 shrink-0 rounded-control px-space-2 text-t13 md:min-h-9 md:min-w-9", focus,
-                      tf === timeframe ? "bg-surface-3 font-semibold text-fg" : "text-fg-muted hover:bg-surface-2 hover:text-fg")}>
-                    {timeframeLabel(tf)}
-                  </button>
-                ))}
+              <div className="order-6 w-full md:order-none md:w-auto">
+                <SubTabs kind="toggle" label="Timeframe" size="sm" value={timeframe} onChange={(tf) => setView({ timeframe: tf })}
+                  data={{ tour: "charts-timeframes" }} items={offered.map((tf) => ({ key: tf, label: timeframeLabel(tf) }))} />
               </div>
               <label className="sr-only" htmlFor="charts-type">Chart type</label>
               <select id="charts-type" value={view.type} onChange={(e) => setView({ type: e.target.value as ChartTypeV2 })}

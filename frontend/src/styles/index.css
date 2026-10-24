@@ -40,6 +40,17 @@ table {
   background: rgb(var(--border));
 }
 
+/* UI-H Wave 0 (H2): a SubTabs row in its one-line "scroll" layout keeps a thin, always-visible scroll bar, so a phone
+   user can see more tabs sit to the side (the active one is scrolled into view by the component). */
+.subtabs-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--border)) transparent;
+  scroll-snap-type: x proximity;
+}
+.subtabs-scroll > * {
+  scroll-snap-align: start;
+}
+
 /* Placeholder text in inputs: the browser default grey was hard to read on the dark inputs. */
 input::placeholder,
 textarea::placeholder {

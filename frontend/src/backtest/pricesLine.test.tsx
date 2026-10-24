@@ -1,12 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { heldRange } from "../admin/AdminSectionsV2";
 import { NEEDS_BROKER_FOR_DATA, PlainDataSourceBar, type CandleSourceState } from "../components/DataSource";
 import { OWN_BROKER_STATES } from "../shell/pagesV2";
 import { shellGates } from "../shell/shellRoutes";
 import { STORED_HISTORY_PATHS } from "../ui/dataPages";
-import { dayWords, pricesLine, STORED_HISTORY_NOTE } from "./pricesLine";
+import { dayWords, pricesLine, STORED_HISTORY_CHOICES, STORED_HISTORY_NOTE, storedHistoryLoginNote } from "./pricesLine";
+
+// The bar's login action reads the broker session (AuthProvider); here it is a plain stand-in.
+vi.mock("../ui/BrokerGate", () => ({ StoredLoginAction: () => <a href="/broker" data-stored-login="stub">Open Broker</a> }));
 
 const noop = () => undefined;
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
@@ -38,6 +41,27 @@ describe("owner order 23 Oct: where a backtest's prices came from", () => {
     expect(html).toContain('data-plain-data-source="stored"');
     expect(html).toContain('href="/broker"');
     expect(html).not.toMatch(/sample|bhavcopy|lake|backend|lookback/i);
+  });
+
+  it("day-one fix 3: a broker that is only not logged in today is named, never 'No broker connected'", () => {
+    const sources = [{ broker: "upstox", account_label: "primary", token_status: "EXPIRED", usable: false }] as CandleSourceState["sources"];
+    const html = renderToStaticMarkup(<MemoryRouter><PlainDataSourceBar source={source({ stored: true, sources })} /></MemoryRouter>);
+    expect(text(html)).toContain(storedHistoryLoginNote("Upstox"));
+    expect(storedHistoryLoginNote("Upstox")).toBe("Not logged in to Upstox today: Daily backtests use ATP's stored end-of-day history. "
+      + "Intraday backtests need today's login.");
+    expect(text(html)).not.toContain("No broker connected");
+    expect(html).toContain('data-stored-login="stub"');
+  });
+
+  it("day-one fix 3: History is a plain choice of about a year (the server's Daily minimum) or two, never '30 days'", () => {
+    const html = renderToStaticMarkup(<MemoryRouter><PlainDataSourceBar source={source({ stored: true, storedDays: 400 })} /></MemoryRouter>);
+    expect(STORED_HISTORY_CHOICES.map((c) => c.days)).toEqual([400, 730]);
+    expect(text(html)).toContain("History About 1 year 2 years");
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).not.toContain("<select");      // the strategy select stays the page's first combobox
+    expect(html).not.toMatch(/type="number"/);
+    // the sentence has its own line on the phone (it wrapped one word per line beside the controls)
+    expect(html).toContain("flex-col");
   });
 
   it("without stored history the bar is as before", () => {

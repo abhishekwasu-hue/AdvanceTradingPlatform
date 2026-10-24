@@ -20,7 +20,7 @@ import {
   startSummary, strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
 import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
-import { settingRows, templateLinkFromSearch, typedSettings, type TemplateLink } from "../strategyTemplates/link";
+import { settingRows, templateLinkFromSearch, testPathFor, typedSettings, type TemplateLink } from "../strategyTemplates/link";
 import {
   EMPTY_PICK, effectivePick, exitClass, exitNotes, exitProblem, stopOptions, targetOptions, templateExitsBody, type ExitPick, type StopSource,
   type TargetRule,
@@ -477,6 +477,11 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
                 </dl>
               </div>
             )}
+            {/* Day-one fix 1: test this template with these settings on past prices first (nothing starts). */}
+            <Link to={testPathFor({ template: picked.id, timeframe: templateTimeframe || null, params: linkSettings })}
+              className="mt-space-1 inline-flex min-h-11 items-center text-t14 font-medium text-brand hover:underline md:min-h-0" data-template-test>
+              Test it first on past prices
+            </Link>
           </div>
         )}
         <div>

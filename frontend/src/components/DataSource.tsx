@@ -7,7 +7,9 @@ import type { CandleSource, DataTierBadgeInfo, OHLCVBar, OptionChain } from "../
 import { DataTierBadge } from "./DataTierBadge";
 import { useFeatures } from "../ui/useFeatures";
 import { generateSampleCandles } from "../utils/sampleData";
-import { pricesLine, STORED_HISTORY_NOTE } from "../backtest/pricesLine";
+import { pricesLine, STORED_HISTORY_CHOICES, STORED_HISTORY_DEFAULT_DAYS, STORED_HISTORY_NOTE, storedHistoryLoginNote } from "../backtest/pricesLine";
+import { brokerDisplayName } from "../ui/brokerSession";
+import { StoredLoginAction } from "../ui/BrokerGate";
 
 /** Phase AA: one switch for every research page - deterministic sample candles, or the tenant's
  * own broker candles through the backend (`POST /api/market-data/candles`). The hook owns the
@@ -56,6 +58,9 @@ export interface CandleSourceState {
   /** Owner order 23 Oct (flag backtest_stored_history, ui_v2): no usable broker, so a backtest page runs on ATP's stored
    * Daily history (the server picks the bars; intraday is refused with a plain sentence). */
   stored?: boolean;
+  /** Day-one fix 3: the stored Daily history a run reads, in days (its own choice: the broker's lookback is not touched). */
+  storedDays?: number;
+  setStoredDays?: (d: number) => void;
   /** Phase AD: the broker's live option chains in broker mode; `sampleFor` builds the sample chain otherwise. */
   fetchChains: (underlyings: string[], sampleFor: (symbol: string) => OptionChain, expiry?: string) => Promise<{ chains: Record<string, OptionChain>; warnings: string[] }>;
 }
@@ -74,6 +79,7 @@ export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?
   const [mode, setMode] = useState<CandleMode>("sample");
   const [broker, setBroker] = useState("");
   const [lookbackDays, setLookbackDays] = useState(defaultLookbackDays);
+  const [storedDays, setStoredDays] = useState(STORED_HISTORY_DEFAULT_DAYS);
   const [sources, setSources] = useState<CandleSource[]>([]);
   const [loading, setLoading] = useState(false);
   const [dataTier, setDataTier] = useState<DataTierBadgeInfo | undefined>(undefined);
@@ -110,7 +116,7 @@ export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?
         let line: string | null = null;
         let label = "lake:daily";
         for (const s of clean) {
-          const res = await api.backtestBars(s, timeframe, lookbackDays);
+          const res = await api.backtestBars(s, timeframe, storedDays);
           candles[s] = res.candles;
           line = line ?? res.line;
           label = res.source;
@@ -171,6 +177,7 @@ export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?
   }
 
   return { mode, setMode, broker, setBroker, lookbackDays, setLookbackDays, sources, usable, loading, label, fetch, fetchChains, sampleHidden, stored,
+           storedDays, setStoredDays,
            dataTier: mode === "broker" ? dataTier : undefined };
 }
 
@@ -178,16 +185,34 @@ export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?
 export function PlainDataSourceBar({ source }: { source: CandleSourceState }) {
   const usable = source.sources.filter((s) => s.usable);
   if (!source.usable && source.stored) {
+    // Day-one fix 3: a stored broker that is only not logged in today is named as such; the sentence has its own line
+    // on the phone (it wrapped one word per line beside the controls); History is a plain choice of how far back.
+    const stored = source.sources[0];
+    const note = stored ? storedHistoryLoginNote(brokerDisplayName(stored.broker)) : STORED_HISTORY_NOTE;
     return (
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg" data-plain-data-source="stored">
-        <Database size={16} aria-hidden className="shrink-0 text-fg-muted" />
-        <span className="min-w-0 flex-1">{STORED_HISTORY_NOTE}</span>
-        <label className="flex items-center gap-1 text-fg-muted">History
-          <input type="number" min={1} max={730} value={source.lookbackDays} onChange={(e) => source.setLookbackDays(Math.max(1, Number(e.target.value) || 1))}
-            className="w-16 rounded border border-border bg-surface-2 px-1 py-0.5 text-fg" /> days
-        </label>
-        {source.loading && <span className="text-fg-muted">Loading prices…</span>}
-        <Link to="/broker" className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">Open Broker</Link>
+      <div className="mb-4 flex flex-col gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg md:flex-row md:items-center md:gap-3" data-plain-data-source="stored">
+        <p className="flex min-w-0 items-start gap-2 md:flex-1">
+          <Database size={16} aria-hidden className="mt-0.5 shrink-0 text-fg-muted" />
+          <span>{note}</span>
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <div role="group" aria-label="History" className="flex items-center gap-2 text-fg-muted" data-stored-history>
+            <span aria-hidden>History</span>
+            <span className="inline-flex overflow-hidden rounded border border-border">
+              {STORED_HISTORY_CHOICES.map((c, i) => {
+                const on = (source.storedDays ?? STORED_HISTORY_DEFAULT_DAYS) === c.days;
+                return (
+                  <button key={c.days} type="button" aria-pressed={on} onClick={() => source.setStoredDays?.(c.days)}
+                    className={`min-h-11 px-3 md:min-h-0 md:py-0.5 ${i > 0 ? "border-l border-border" : ""} ${on ? "bg-surface-2 font-semibold text-fg" : "text-fg-muted"}`}>
+                    {c.label}
+                  </button>
+                );
+              })}
+            </span>
+          </div>
+          {source.loading && <span className="text-fg-muted">Loading prices…</span>}
+          <StoredLoginAction />
+        </div>
       </div>
     );
   }

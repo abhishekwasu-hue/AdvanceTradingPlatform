@@ -9,6 +9,7 @@ import { useBrokerConnections } from "../broker/useBrokerConnections";
 import ErrorBoundary from "../components/ErrorBoundary";
 import type { Page } from "../components/Sidebar";
 import LegalAcceptanceBanner from "../legal/LegalAcceptanceBanner";
+import OneTimeNoticesV2 from "../notices/OneTimeNoticesV2";
 import LivePricesBanner from "../live/LivePricesBanner";
 import PwaBanners from "../pwa/PwaBanners";
 import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
@@ -209,6 +210,8 @@ export default function AppShellV2() {
             paperOnly={frontPaperOnly || liveHidden} onTour={replayTour} />
           <PwaBanners />
           <LegalAcceptanceBanner />
+          {/* TT12-1: one-time notices (the server decides who; seen once per user, stored in his prefs). */}
+          <OneTimeNoticesV2 />
           {/* TM Part 1 (flag data_hub): the one notice while live prices reconnect or the broker login needs renewing. */}
           <LivePricesBanner enabled={!!user && features.on("data_hub")} />
           {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip. */}

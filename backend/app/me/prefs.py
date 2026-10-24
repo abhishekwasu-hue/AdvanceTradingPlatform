@@ -33,6 +33,7 @@
   `smart_execution` (terminal master Part 7) holds the user's own numbers for the smart-execution rules: when the
   physical-settlement warning starts and how near the money counts, whether it also goes to Telegram, and the protection
   band of a marketable limit where a broker takes no market orders. Read by `app/execution/smart_execution.py`.
+  `notices` (TT12-1) holds when a one-time notice was seen (app/me/notices.py), so it never shows twice on any device.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -320,10 +321,16 @@ class SmartExecutionPrefs(_Prefs):
     answer_minutes: int = Field(default=5, ge=1, le=120, description="minutes to answer an incomplete multi-leg order before the choice applies")
 
 
+class NoticesPrefs(_Prefs):
+    """`notices` (TT12-1): when a one-time notice was seen (dismissed, or made moot by the user's own action). Only
+    marks; what a notice says and who gets it live in app/me/notices.py."""
+    limits_not_set_seen_at: MarkTime = Field(default=None, description="the 'risk limits are now not set' notice was seen")
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
-                                       "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs}
+                                       "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -456,4 +463,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "TOUR_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "NoticesPrefs", "TOUR_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

@@ -2500,7 +2500,8 @@ class PaperAccountRecord(Base):
     paused_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     paused_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Z5 / P1-d: the user's own risk-by-default settings (risk per trade, daily loss limit, trades per day, minimum
-    # reward:risk) as JSON; NULL = the platform defaults (app/risk_engine/by_default.py).
+    # reward:risk) as JSON, with `_set` listing the keys he set himself; NULL or a key not set = off (TT-12,
+    # app/risk_engine/by_default.py).
     risk_settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Z5 / P1-d: the entries-per-day slots taken on `entries_day` (IST), updated atomically per entry (by_default.reserve_entry).
     entries_day: Mapped[date | None] = mapped_column(Date, nullable=True)

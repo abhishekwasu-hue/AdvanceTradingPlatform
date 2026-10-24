@@ -182,6 +182,9 @@ import type { MarketStrip } from "../dashboard/types";
 import type { RhythmKind, RhythmPrefs, RhythmSettings, RhythmToday } from "../rhythm/types";
 import type { ChainExpiries, LiveChain } from "../optionChain/types";
 
+/** TT12-1: the window event the shell's one-time notices listen for (a saved risk limit makes one moot). */
+export const NOTICES_CHANGED = "atp:notices-changed";
+
 export { ApiError, friendlyError } from "./errors";
 
 /** P0.8-D: fired when an AI route answers 428 ai_acknowledgement_required. */
@@ -612,7 +615,15 @@ export const api = {
 
   /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
   paperRisk: () => request<PaperRiskStatus>("/paper/risk"),
-  setPaperRisk: (values: Partial<RiskByDefaultSettings>) => request<PaperRiskStatus>("/paper/risk", { method: "PUT", body: JSON.stringify(values) }),
+  setPaperRisk: async (values: Partial<Record<keyof RiskByDefaultSettings, number | null>>) => {
+    const out = await request<PaperRiskStatus>("/paper/risk", { method: "PUT", body: JSON.stringify(values) });
+    // TT12-1: setting a limit marks the one-time "limits now not set" notice seen on the server; the shell re-reads.
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(NOTICES_CHANGED));
+    return out;
+  },
+  // TT12-1: the signed-in user's one-time notices (src/notices/oneTimeNotices.ts; the server decides who gets one).
+  meNotices: () => request<{ notices: { id: string; text: string; link: string }[] }>("/me/notices"),
+  noticeSeen: (id: string) => request<{ notices: { id: string; text: string; link: string }[] }>(`/me/notices/${encodeURIComponent(id)}/seen`, { method: "POST" }),
   previewTicket: (plan: TicketPlan) => request<TicketView>("/paper/ticket/preview", { method: "POST", body: JSON.stringify(plan) }),
   placeTicket: (plan: TicketPlan) => request<TradePlanView>("/paper/ticket", { method: "POST", body: JSON.stringify(plan) }),
   paperPlans: () => request<TradePlanView[]>("/paper/plans"),

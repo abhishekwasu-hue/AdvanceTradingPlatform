@@ -138,3 +138,16 @@ closed rows: docs/archive/OPEN_QUESTIONS_CLOSED.md. Both are moved, never delete
 | # | Question | Provisional decision + reason | Applies to | Status |
 |---|---|---|---|---|
 | TT2-1 | TT-2 names the ticket, the basket and the Terminal. The older plan-before-trade PAPER ticket (`paper/ticket.py`, Z5 / P1-d) is also the user's own order, but under approval-only mode it still raises an entry proposal he then approves himself. | Unchanged for now: only the F&O ticket and basket routes (and later the Terminal) set the origin "manual", as the decision lists. If Abhi wants the plan ticket to count as his approval too, it is a one-line route change plus a test. Checked against CLAUDE.md §3-4, DECISIONS (TT-2) and ATP_SESSION_TRADING_TERMINAL.md. | `paper/ticket.py:288`, `paper/fno_routes.py` | open (provisional default in use) |
+
+## TT-12: platform-default limits start off (24 Oct, `claude/tt12-limits-off`, #494)
+
+Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-12, TT12-1, TT12-4) and ATP_SESSION_TRADING_TERMINAL.md (T6).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| TT12-1 | A settings row saved before TT-12 cannot tell "the user set this" from "the platform default he inherited". | No migration. New saves list the user's own keys under `_set`; an old row counts a value only when it differs from the old default (equal = unset). A one-time notice tells the affected users: "Your risk limits are now not set — set your own in Settings › Risk". | `risk_engine/by_default.py`, `me/notices.py` | answered 24 Oct: accepted + notice (DECISIONS) |
+| TT12-1a | Who gets the notice: a user whose old row mixes old-default values with values of his own? | Only users with NO value of their own (every stored limit equal to the old default, at least one of them on), behind `ui_v2` and `risk_by_default`. A mixed user keeps his own values and sees no notice (the text "your risk limits are now not set" would be half wrong). Seen = dismissed or any limit saved; the mark lives in prefs `notices`. | `by_default.reset_by_tt12` | open (provisional default in use) |
+| TT12-2 | Should "loosen only from tomorrow" also apply when a limit goes from off to a value, or when he clears one? | Off -> any value is a tightening: at once. Clearing (null) a limit he set is a loosening: from the next IST day; clearing an unset key is at once. | `by_default.plan_change` | open |
+| TT12-3 | With no risk per trade of his own, what sizes the equity plan ticket and the F&O ticket? | The organisation's own risk per trade (RiskConfig, after the platform ceilings), exactly as with the flag off. No platform number is added. | `paper/ticket.py` assess | open |
+| TT12-4 | The organisation-level min reward:risk 1.2 (RiskConfig). | Decided 24 Oct: OFF too, own PR with backtest parity (roadmap P1-2b). | `risk_engine/risk_manager.py` | answered 24 Oct (DECISIONS) |
+| TT12-5 | Where does the user see / change his limits? | Setup step 2 (empty boxes, "Not set") and the "Your paper limits" card on the v2 Risk page. | `setup/StepsV2.tsx`, `trading/RiskV2.tsx` | open |

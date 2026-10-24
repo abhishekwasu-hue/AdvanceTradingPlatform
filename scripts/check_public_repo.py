@@ -213,7 +213,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/option_chain_charts.json": "26645da956042b696609fa5515bb62ca052a83ec4d6f6f41576790fedb1aaa25",
     "frontend/e2e/fixtures/options_builder.json": "bf6df3ea9f5caddb5e3acc1d2f8360875a3cd72550f194156b21266fd550e1f0",
     "frontend/e2e/fixtures/provider.json": "6aabdd6f537fd8ce0a735b8ec21ed11e8f590ea3718263cc470f0916e53c7b32",
-    "frontend/e2e/fixtures/setup_v2.json": "cff0561b071bfa9bfb79e7e4b85029ddc0cbb3f395a64cd7d0c209aebdd419e7",
+    "frontend/e2e/fixtures/setup_v2.json": "8cedb077243878f1e3ee50c22996a933359db0a0127084b2eb471c637a54261b",
     # P3: hand-written, made-up replies for the front page and the go-live checklist (no real account, broker or token)
     "frontend/e2e/fixtures/front_page.json": "a2a51de38eec31a2a2735557596a4599d3a1efd73c4bd39d929ca822447d850d",
     "frontend/e2e/fixtures/signals_v2.json": "8a8c59c855e923dd02db351c5f8753d26851310cd5af5e2f405b9c78339338a8",
@@ -221,7 +221,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/thesis.json": "fafc2234d7b94bb57a0a860e95d3d3cf8052796ef9d9011db2d12cf486b3bac7",
     "frontend/e2e/fixtures/thesis_history.json": "f3226989acc68ddf2bbfa69ff8a5353011a90a480befc57c0bfa0c988ccd5a6c",
     "frontend/e2e/fixtures/thesis_report.json": "e85180cb3f957bf048f9bffe63e3237bb760333376e255f1ae76f6d9df2e287d",
-    "frontend/e2e/fixtures/trading_v2.json": "46bc6543f0f50524ef77c82ee261b19afe100722ee8c49d5a6a3fb6cda207265",
+    "frontend/e2e/fixtures/trading_v2.json": "c9fc66383c29a2a5dc38d9de57bff8d27b9ba75b74578fa839b2eb420a73afef",
     "frontend/e2e/fixtures/copilot_chat_v2.json": "510074a7e7d49ba552bccccc17fae05ca6a5b05b110cd6d4e017420d5cebeb03",
 }
 

@@ -14,6 +14,7 @@ import {
   LOSS_STREAK_CHOICES, drawdownOrderProblem, entriesWord, failedText, fieldProblem, guardianLine, lastResumeText, lossStreakNote, todayRisk,
 } from "./model";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, ShareBarV2, StateChipV2, TileV2, TilesV2 } from "./PartsV2";
+import { LIMIT_FIELDS as SETUP_LIMIT_FIELDS, RISK_LABELS, SETUP_PATH, limitText, type LimitField } from "../setup/model";
 import { MarketEventsV2, OrgLimitsV2, RiskChecksV2 } from "./RiskPartsV2";
 
 interface FieldSpec { key: keyof RiskConfig; label: string; unit?: string; hint?: GlossaryKey; ceiling?: string; minimum?: string; help: string; step?: string }
@@ -215,6 +216,8 @@ export default function RiskV2(_props: PageProps = {}) {
         )}
       </CardV2>
 
+      {paper && <OwnPaperLimitsV2 paper={paper} />}
+
       {notice && <NoteV2 kind={notice.kind} testId="save">{notice.text}</NoteV2>}
 
       {config && (
@@ -238,6 +241,42 @@ export default function RiskV2(_props: PageProps = {}) {
       <OrgLimitsV2 canEdit={canEditOrg} />
       <RiskChecksV2 />
     </div>
+  );
+}
+
+/** TT-12 (owner decision, 24 Oct): the trader's own paper limits, each "Not set" until he sets it himself - no platform
+ * number is applied for him. Changed in Setup's risk step (empty boxes, his own numbers). */
+function OwnPaperLimitsV2({ paper }: { paper: PaperRiskStatus }) {
+  const values: Record<LimitField, number | undefined> = {
+    riskPerTradePct: paper.settings?.risk_per_trade_pct, dailyLossPct: paper.settings?.daily_loss_pct,
+    maxTradesPerDay: paper.settings?.max_trades_per_day, minRr: paper.settings?.min_rr,
+  };
+  const none = SETUP_LIMIT_FIELDS.every((f) => limitText(f, paper.set, values[f]) === "Not set");
+  return (
+    <CardV2 title="Your paper limits" testId="own-paper-limits">
+      <div className="space-y-space-3">
+        <p className="text-t13 text-fg-muted">
+          {none ? "You have not set any. Nothing stops a new paper trade until you do." : "Only the limits you set apply. Not set means no limit."}
+        </p>
+        <dl className="grid grid-cols-1 divide-y divide-subtle rounded-control border border-subtle sm:grid-cols-2 sm:divide-y-0">
+          {SETUP_LIMIT_FIELDS.map((f) => {
+            const text = limitText(f, paper.set, values[f]);
+            return (
+              <div key={f} className="flex items-center justify-between gap-space-3 px-space-3 py-space-2 md:px-space-4" data-limit={f}>
+                <dt className="text-t14 text-fg">{RISK_LABELS[f]}</dt>
+                <dd className={`text-t14 font-tabular ${text === "Not set" ? "text-fg-muted" : "font-semibold text-fg"}`}>{text}</dd>
+              </div>
+            );
+          })}
+        </dl>
+        <div className="flex flex-col gap-space-2 sm:flex-row sm:items-center">
+          <Link to={SETUP_PATH} className={`${BUTTON_SECONDARY} w-full sm:w-auto`} data-testid="own-limits-change">
+            {none ? "Set your limits" : "Change your limits"}
+          </Link>
+          <p className="text-t13 text-fg-muted">They only stop new paper trades. Closing a trade always works.</p>
+        </div>
+      </div>
+    </CardV2>
   );
 }
 

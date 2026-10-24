@@ -817,8 +817,11 @@ def _choice(name: str, default: str, choices: tuple) -> str:
 TAX_FNO_TURNOVER_METHOD = _choice("TAX_FNO_TURNOVER_METHOD", "ABS_PNL", TAX_FNO_TURNOVER_METHODS)
 
 # Z5 / P1-d (P1 spec 1.1, 1.2, 2.2; Phase 0): risk by default and the plan-before-trade PAPER ticket (flag
-# `risk_by_default`, off by default). Every user starts with these defaults and may change their own within the bounds
-# (the platform's risk ceilings still clamp them, strictest wins - ADR-0003):
+# `risk_by_default`, off by default). TT-12 (owner decision, 24 Oct): every limit starts OFF for every user until he sets
+# his own value; the RISK_DEFAULT_* values below are no longer applied to anyone. They are kept only to read a settings
+# row saved before TT-12 (a save then wrote every key, so a stored value equal to one of these may not be the user's own
+# choice and counts as unset - app/risk_engine/by_default.py `explicit_keys`). A user's own values stay within the
+# bounds and the platform's risk ceilings (strictest wins - ADR-0003):
 # - RISK_DEFAULT_RISK_PER_TRADE_PCT: the most a PAPER entry may lose at its stop, % of the user's PAPER capital basis
 #   (starting capital + realised net P&L before today); RISK_DEFAULT_RISK_PER_TRADE_AMOUNT: the same cap in rupees
 #   (0 = no rupee cap). The stricter of the two is the cap; the ticket sizes the quantity from it and the stop distance.
@@ -827,7 +830,7 @@ TAX_FNO_TURNOVER_METHOD = _choice("TAX_FNO_TURNOVER_METHOD", "ABS_PNL", TAX_FNO_
 # - RISK_DEFAULT_DAILY_LOSS_PCT: today's PAPER net P&L (realised + today's open marks) at or below minus this % of the
 #   capital basis locks new PAPER entries for the rest of the IST day. Exits are never locked (ADR-0004).
 # - RISK_DEFAULT_MAX_TRADES_PER_DAY: new PAPER entries per IST day (0 = no limit).
-# - RISK_DEFAULT_MIN_RR: a plan's reward:risk (target vs stop, from the entry) must be at least this.
+# - RISK_DEFAULT_MIN_RR: a plan's reward:risk (target vs stop, from the entry) must be at least this (only when he set it).
 # - The cost line's brokerage per order and slippage estimate are the paper broker's own (`PaperBroker`), so the ticket
 #   shows what a PAPER fill is charged.
 RISK_DEFAULT_RISK_PER_TRADE_PCT = _bounded_float("RISK_DEFAULT_RISK_PER_TRADE_PCT", 1.0, 0.05, 5.0)

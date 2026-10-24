@@ -221,3 +221,22 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | B2-1 | When is the broker's after-hours spot "strike-rounded"? | Market closed, and the spot is missing or equals one of the chain's strikes exactly. Then the spot is our own last one-minute close of the index (labelled "Spot: last close"); with no candle, the broker's value stays. `atp.sh probe-chain` shows the raw value so the owner can confirm. | `app/option_chain/as_of.py` | open |
 | B2-2 | `data_as_of` while open. | The read time: the chain is read now (or the data hub's copy of the last few seconds). The OptionChain answer has no capture time of its own. | `as_of.as_of_for` | open |
 | B2-3 | How does `atp.sh probe-chain` act "with the owner's own session"? | The same read-only handler as the admin-only `GET /api/admin/option-chain/probe-chain`, run in the backend container as the platform owner's account (the first `SUPER_ADMIN_EMAILS` user) through his own stored broker session; no login token is minted or printed. | `app/option_chain/probe.py` | open |
+
+## CP-V review (24 Oct 2026, docs/design/CP_V_REVIEW.md)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| CPV-1 | CP-V and Analyze a chart (P2-5): one feature or two? | One family: CP-V is a new data mode reusing chart_analyze's limits, storage, resolve and contract style; P2-5 keeps the uploaded image and the private engine. | `app/chart_analyze/` | open |
+| CPV-2 | Who pays for the vision call? | `resolve.provider_for_user`: the user's own key first (his USD caps), else the organisation's provider within plan budget and a per-user daily read count, else "Connect your AI". | `app/ai/resolve.py` | open |
+| CPV-3 | Paid-plan gate for keys whose free tier may train on input (Gemini)? | Not needed for CP-V: only the generic checklist, bars and images are sent, never the private method. | `app/ai/resolve.py` | open |
+| CPV-4 | Is the CV8 checklist public-safe? | Yes as plain generic items in a public settings default; the owner's definitions and weights stay in atp-private behind a provider boundary. | settings | open |
+| CPV-5 | "Room to the next opposite zone" and "area of interest" wording. | Ranges only; room shown as the next zone's price range, no points, no R:R; no strikes; disclaimer once. | contract | open |
+| CPV-6 | Can a read be shared? | Download only (PNG with the disclaimer on the image, CSV); no share link. | UI | open |
+| CPV-7 | Price validation rule. | Exact match after tick rounding to a high / low / open / close of a sent bar (and its time) or an engine level; digits in free text stripped; failures listed "not confirmed". | validator | open |
+| CPV-8 | Cache scope. | Per organisation (per user on his own key), key = symbol + last closed bar per TF + bar fingerprint + source + checklist version + model + mode. | chart read store | open |
+| CPV-9 | Four images per call or one composite? | Four images in one call where the provider takes several; a 2x2 composite otherwise. | `app/ai/providers.py` | open |
+| CPV-10 | When is an engine reading "complete" (CV14)? | Per TF: enough closed bars (number in settings), current last bar, no DH3 flag, a trend state, a zone above and below. Advanced when all four TFs are complete; else AI only, naming the TF. | CV14 | open |
+| CPV-11 | Which bars does the code read in Advanced? | The same bar set sent to vision, computed in process (not the lake-only layer endpoint), so "disagree" is real. | CV14 | open |
+| CPV-12 | Bars per TF in the image / table, and the model's confidence. | 120 closed bars per TF (setting); confidence as text high / medium / low only, never a number. | settings | open |
+| CPV-13 | Flag and entry point. | New flag `copilot_chart_read` (off) behind `ui_v2`; a Copilot read tool plus a card; ADR-0006 tests (no write tool). | `app/ai/tools/` | open |
+| CPV-14 | Which symbols count as the user's own (CLAUDE.md §3 price ranges)? | A symbol the user asked about in his own Copilot is his chosen symbol; ranges are shown only to him. | §3 | open |

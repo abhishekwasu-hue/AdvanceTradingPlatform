@@ -165,11 +165,13 @@ async def _owner(session: AsyncSession) -> User:
 
 async def _main_async(args: argparse.Namespace) -> int:
     from app.db.session import _session_factory
+    from app.secrets_store.envelope import ensure_tenant_key
     tf = normalise_timeframe(args.timeframe)
     symbol = args.symbol.strip().upper()
     exchange = (args.exchange or guess_exchange(symbol)).upper()
     async with _session_factory() as session:
         user = await _owner(session)
+        await ensure_tenant_key(session, user.tenant_id)  # the web route loads it at sign-in; the CLI must load it here
         try:
             result = await run_candles_probe(session, user, symbol, exchange, tf)
         except HTTPException as exc:

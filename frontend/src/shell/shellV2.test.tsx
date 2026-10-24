@@ -121,12 +121,12 @@ describe("UI2-1 sidebar", () => {
   );
   const hrefs = (html: string) => [...html.matchAll(/<a [^>]*href="([^"]*)"/g)].map((m) => m[1]);
 
-  it("UX3-9: one flat list in task order, Broker first - no section headings, nothing folds", () => {
+  it("UX3-9: one flat list in task order, Today first and Broker above Settings (day-one fix 9) - no section headings, nothing folds", () => {
     const html = sidebar(trader, "positions");
     expect(html).not.toContain("aria-expanded");
     expect(hrefs(html)).toEqual([
-      "/", "/broker", "/", "/charts", "/option-chain", "/signals", "/deployments", "/positions", "/analytics", "/strategies",
-      "/news-events", "/settings", "/settings/account",
+      "/", "/", "/charts", "/option-chain", "/signals", "/deployments", "/positions", "/analytics", "/strategies",
+      "/news-events", "/broker", "/settings", "/settings/account",
     ]);                                                                   // logo, the entries, the account footer
     expect(html).toMatch(/aria-current="page"[^>]*href="\/positions"|href="\/positions"[^>]*aria-current="page"/);
     expect(html).toContain(">AW<");
@@ -142,8 +142,8 @@ describe("UI2-1 sidebar", () => {
     const html = sidebar(all, "dashboard");
     const entries = hrefs(html).slice(1, -1);
     expect(entries).toEqual([
-      "/broker", "/", "/charts", "/option-chain", "/markets", "/screener", "/signals", "/deployments", "/positions",
-      "/analytics", "/strategies", "/copilot", "/news-events", "/learn", "/settings", "/admin",   // C13: Learn (flag `learn`)
+      "/", "/charts", "/option-chain", "/markets", "/screener", "/signals", "/deployments", "/positions",
+      "/analytics", "/strategies", "/copilot", "/news-events", "/learn", "/broker", "/settings", "/admin",   // C13: Learn (flag `learn`)
     ]);
     expect(html.indexOf("data-nav-admin")).toBeLessThan(html.indexOf('href="/admin"'));
   });

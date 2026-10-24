@@ -333,12 +333,14 @@ test.describe("desktop 1440", () => {
     expect(oauthLabel).toBe("primary");
   });
 
-  test("the v2 shell shows the same Broker page, with Broker first in its sidebar", async ({ page }) => {
+  test("the v2 shell shows the same Broker page, with Broker just above Settings in its sidebar (day-one fix 9)", async ({ page }) => {
     await open(page, "/broker", { session: LATER, mocks: { features: { ui_v2: true }, connections: [UPSTOX_DATA, ZERODHA_LOGIN] } });
     await expect(page.locator("[data-shell='v2']")).toBeVisible();
     await expect(page.locator("[data-broker-page]")).toBeVisible();
     const nav = page.getByRole("navigation", { name: "Pages" });
-    await expect(nav.getByRole("link").first()).toContainText("Broker");
+    await expect(nav.getByRole("link").first()).toContainText("Today");
+    await expect(nav.getByRole("link").last()).toContainText("Settings");
+    await expect(nav.getByRole("link").nth(-2)).toContainText("Broker");
     await expect(nav.locator("[data-broker-dot='needs_login']")).toBeVisible();
   });
 });

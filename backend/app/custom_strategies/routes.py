@@ -12,7 +12,7 @@ from app.custom_strategies.resolver import CUSTOM_PREFIX
 from app.db.models import CustomStrategyRecord, StrategyVersionRecord, User
 from app.db.session import get_session
 from app.plans.limits import check_can_add_custom_strategy, load_tenant
-from app.strategy_engine.declarative import CustomStrategyConfig, DeclarativeStrategy
+from app.strategy_engine.declarative import CustomStrategyConfig, DeclarativeStrategy, OwnCustomStrategyConfig
 from app.strategy_engine.nlu_parser import ParseResult, parse_strategy_description
 
 router = APIRouter(prefix="/api/custom-strategies", tags=["custom-strategies"])
@@ -83,7 +83,7 @@ class StrategyVersionResponse(BaseModel):
 
 @router.post("", response_model=CustomStrategyResponse, status_code=201, dependencies=[Depends(require_scope("strategies:write"))])
 async def create_custom_strategy(
-    config: CustomStrategyConfig,
+    config: OwnCustomStrategyConfig,
     user: User = Depends(require_trader),
     session: AsyncSession = Depends(get_session),
 ) -> CustomStrategyResponse:
@@ -140,7 +140,7 @@ async def delete_custom_strategy(
 
 @router.put("/{strategy_id}", response_model=CustomStrategyResponse, dependencies=[Depends(require_scope("strategies:write"))])
 async def update_custom_strategy(
-    strategy_id: int, config: CustomStrategyConfig,
+    strategy_id: int, config: OwnCustomStrategyConfig,
     user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> CustomStrategyResponse:
     """Edits a strategy by appending a new immutable version and repointing the live pointer at

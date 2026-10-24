@@ -568,6 +568,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/me/prefs/{namespace}"): S_OWN_PREFS,
     # UI2-7: the caller's own setup wizard progress (the `setup` preferences plus steps worked out from their own rows)
     ("GET", "/api/me/setup"): "member: the caller's own setup progress only (tenant and user)",
+    ("GET", "/api/me/notices"): "member: the caller's own one-time notices only (tenant and user; TT12-1)",
+    ("POST", "/api/me/notices/{notice_id}/seen"): S_OWN_PREFS,
     ("PUT", "/api/me/setup"): S_OWN_PREFS,
     # MO4: the daily rhythm - the caller's own digests (own trades, signals, journal; the organisation's market memory and
     # events) and the caller's own Telegram choice
@@ -643,6 +645,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/basket/execute"): "trader",       # FNO-2: every leg one PAPER order, hedge legs first
     ("POST", "/api/paper/fno/basket/broker-link"): S_COMPUTE,  # the legs pre-filled for the user's broker app; sends nothing
     ("POST", "/api/paper/fno/basket/close-filled"): "trader",  # TM Part 7: the caller's own legs (404 other tenant, 403 another member's), shorts first
+    ("POST", "/api/paper/fno/positions/{trade_id}/exit-leg"): "trader",    # TT-8: the caller's own leg (404 other tenant, 403 another member's)
+    ("POST", "/api/paper/fno/positions/{trade_id}/exit-group"): "trader",  # TT-8: the caller's own basket, sold legs first
     ("GET", "/api/paper/fno/settlement"): "member: the caller's own open stock F&O positions only (delivery warning)",
     ("GET", "/api/trading/incomplete"): "member: the caller's own incomplete multi-leg orders only (SE-7)",
     ("POST", "/api/trading/incomplete/{group_id}/answer"): "trader",   # SE-7: his own order (404 other tenant, 403 another member's)

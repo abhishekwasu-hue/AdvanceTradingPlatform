@@ -146,3 +146,38 @@ closed rows: docs/archive/OPEN_QUESTIONS_CLOSED.md. Both are moved, never delete
 | TM2-1 | A waiting entry on the underlying's level (spot trigger), and LIVE waiting entries. | Entries wait on their own price only; a spot trigger is for exits (T-D2 is about exits). A LIVE waiting entry is kept but never fired until the LIVE manual path (TT-1) and Abhi's LIVE switches allow it (same object, same path). Checked against CLAUDE.md §3-4, DECISIONS (TM-2, TM-23, TT-1) and the Terminal review. | `execution/resting_book.py`, `trigger_engine._evaluate_entry` | open (provisional default in use) |
 | TM2-2 | How long does a waiting entry live, and does a fired SL whose limit is passed wait? | A DAY order (until 15:30 IST of the day it was placed), as at the exchange; a triggered SL past its limit keeps waiting at its limit. Armed exits live until the position closes; when one fills, the others are cancelled. | `resting_book.day_end`, `trigger_engine._keep_as_limit` | open (provisional default in use) |
 | TM2-3 | The tick pass runs inside the worker on the organisation's hub stream (flag `data_hub`); a user's own BYOB stream is not read there yet. | Touch triggers of PAPER orders on hub ticks every second (`TRIGGER_TICK_SECONDS`); everything else, and every organisation without a hub stream, once per worker cycle. A stall (no run for 3 cycles in market hours) tells the owners in the app and on Telegram. | `trigger_engine.tick_pass`, `check_stall` | open (provisional default in use) |
+
+## P1-2b: the organisation's min reward:risk OFF (24 Oct, `claude/p1-2b-org-min-rr-off`)
+
+Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT12-4, TT12-1) and ADR-0004.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| P12B-1 | `risk_settings.min_risk_reward` is NOT NULL and held the built-in 1.2 in every row nobody changed; the row cannot tell "set" from "inherited". | TT12-1 rule, no migration: a stored 1.2 reads as not set (0). An organisation that now sets exactly 1.2 itself is stored one float step above 1.2 (`math.nextafter`), which reads back as 1.2 and applies. Any other stored value is kept. | `risk_engine/routes.py` `org_min_rr_read` | open (provisional default in use) |
+| P12B-2 | The options backtest dropped the signal's reward:risk for a single contract, while the live / paper contract order keeps it: with a minimum set, the two disagreed. | The options backtest keeps it for a single contract (as live) and not for a multi-leg structure (as live, `execution/multileg.py`); engine label 9-options. No effect while no minimum is set. | `backtest/options_engine.py` `_size_lots` | open (provisional default in use) |
+| P12B-3 | Custom (no-code) strategies had a built-in min R:R 1.2 (`CustomStrategyConfig`, the text parser, the Builder form pre-filled 1.2). | Done in #497 (owner: no hidden filter anywhere): not set by default; a stored 1.2 = not set (TT12-1 rule); any other stored value kept; a 1.2 the user types in the Builder is kept (stored one float step above, applies as 1.2). The interview's 1.5 / 2.0 and the AI drafts' stated minimum stay visible proposals. | `strategy_engine/declarative.py`, `nlu_parser.py`, `StrategyBuilderPage.tsx` | answered 24 Oct (DECISIONS) |
+| P12B-4 | The level gate (`price_action/level_gate/settings.py`) default `min_rr` 3.0 is Trade's own value (golden parity with the Trade repo) and is shown as a visible pre-filled setting ("Default: 3") in the Scan Then drawer (flag `scan_then`, off). | Not changed in #497. Proposal: keep 3.0 as the visible default for Abhi's own method (it is his stated rule, golden-pinned); for other users' Scan Then templates show the field empty ("not set" = no R:R filter) once `scan_then` opens to users. | `level_gate/settings.py:15`, `screener/then/ThenPanel.tsx` | open (owner) |
+## TT-12: platform-default limits start off (24 Oct, `claude/tt12-limits-off`, #494)
+
+Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-12, TT12-1, TT12-4) and ATP_SESSION_TRADING_TERMINAL.md (T6).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| TT12-1 | A settings row saved before TT-12 cannot tell "the user set this" from "the platform default he inherited". | No migration. New saves list the user's own keys under `_set`; an old row counts a value only when it differs from the old default (equal = unset). A one-time notice tells the affected users: "Your risk limits are now not set — set your own in Settings › Risk". | `risk_engine/by_default.py`, `me/notices.py` | answered 24 Oct: accepted + notice (DECISIONS) |
+| TT12-1a | Who gets the notice: a user whose old row mixes old-default values with values of his own? | Only users with NO value of their own (every stored limit equal to the old default, at least one of them on), behind `ui_v2` and `risk_by_default`. A mixed user keeps his own values and sees no notice (the text "your risk limits are now not set" would be half wrong). Seen = dismissed or any limit saved; the mark lives in prefs `notices`. | `by_default.reset_by_tt12` | open (provisional default in use) |
+| TT12-2 | Should "loosen only from tomorrow" also apply when a limit goes from off to a value, or when he clears one? | Off -> any value is a tightening: at once. Clearing (null) a limit he set is a loosening: from the next IST day; clearing an unset key is at once. | `by_default.plan_change` | open |
+| TT12-3 | With no risk per trade of his own, what sizes the equity plan ticket and the F&O ticket? | The organisation's own risk per trade (RiskConfig, after the platform ceilings), exactly as with the flag off. No platform number is added. | `paper/ticket.py` assess | open |
+| TT12-4 | The organisation-level min reward:risk 1.2 (RiskConfig). | Decided 24 Oct: OFF too, own PR with backtest parity (roadmap P1-2b). | `risk_engine/risk_manager.py` | answered 24 Oct (DECISIONS) |
+| TT12-5 | Where does the user see / change his limits? | Setup step 2 (empty boxes, "Not set") and the "Your paper limits" card on the v2 Risk page. | `setup/StepsV2.tsx`, `trading/RiskV2.tsx` | open |
+
+## TT-8: a basket's legs as one group (24 Oct, `claude/tt8-basket-group`, #501)
+
+Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-8) and docs/design/TRADING_TERMINAL_REVIEW.md (gap 5).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| TT8-1 | Where is the group stored? `leg_group_id` makes the monitor judge the legs as one strategy structure (group stop from `group_meta`), which would switch off each manual leg's own stop / target. | No migration, no `leg_group_id`: `group_meta` {"basket_group": basket id} + `leg_role` SHORT / LONG on each filled leg. Older baskets are found from their order keys. Risk counting, journal and monitor are unchanged. | `paper/fno_groups.py` | open (provisional default in use) |
+| TT8-2 | LIVE: today's "Exit now" refuses LIVE ("close it in the broker app"). The new exits are built LIVE-ready: a LIVE leg goes out through its own broker session (`broker_for_trade`), as the monitor's and the kill switch's LIVE exits do. | Kept so (owner principle 23 Oct: one code path). Manual baskets are PAPER only today, so no LIVE group exists until TT-1; the Phase 0 lock still applies. | `fno_groups.exit_leg / exit_group` | open |
+| TT8-3 | Partial exit of a leg (N of M lots). | Not in this PR: it needs the trade-row split (TT-9 / TM-17 method) for P&L, journal and orders - its own PR. | - | open (TT-9) |
+| TT8-4 | "Exit this leg" on a leg of a strategy structure (deployment). | Not offered: the structure keeps "Exit now", which closes it whole (its group stop stays valid); the API answers 409 with that sentence. | `fno_groups._check` | open |
+

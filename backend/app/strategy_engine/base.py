@@ -85,8 +85,10 @@ class BaseStrategy(ABC):
             target1 = entry - rr1 * risk
             target2 = entry - rr2 * risk
 
-        min_rr = self.params.get("min_rr", 1.2)
-        if rr1 < min_rr:
+        # P1-2b (TT12-4): no built-in minimum. Only a strategy whose own params name `min_rr` (white box, shown with the
+        # strategy) filters its signals; none named = no reward:risk filter.
+        min_rr = self.params.get("min_rr")
+        if min_rr is not None and float(min_rr) > 0 and rr1 < float(min_rr):
             reasons = reasons + [f"Risk/Reward {rr1:.2f} below minimum {min_rr:.2f}"]
             return self.no_trade(symbol, timestamp, reasons)
 

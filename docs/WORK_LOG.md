@@ -4054,6 +4054,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   the positions / orders reads are organisation-wide (TT-13..15).
 - Questions TT-1..TT-30 in `docs/OPEN_QUESTIONS.md` (status open); README row 21 status updated.
 
+## TT-12: every platform-default limit starts off (24 Oct)
+
+- Branch `claude/tt12-limits-off` (from main). Owner decision TT-12 (DECISIONS 24 Oct; approved behaviour change, CLAUDE.md section 8).
+- Before: with `risk_by_default` on, every user's PAPER entries got 1 % risk per trade, a 2 % daily loss lockout, 10
+  entries a day and a minimum reward:risk 1.5 that nobody stated (Setup pre-filled 1 % / 3 % / 10).
+- After: nothing set = all four off (no cap of his own, no lockout, no entries cap, no reward:risk filter). His own
+  values are marked under `_set` in the same JSON (no migration); an older row keeps only values that differ from the
+  old defaults (TT12-1). "Loosen only from tomorrow" holds for values he set; setting one that was off applies at once;
+  `PUT /api/paper/risk` with null clears a key. `GET` adds `set`.
+- Setup step 2 shows empty boxes ("Not set") for risk per trade, daily loss, trades a day and lowest reward to risk; the
+  v2 Risk page gets "Your paper limits" with "Not set". The plan ticket strip says "Not set" instead of a cap.
+- Exits untouched (ADR-0004): tests prove Exit now, a stop and Exit all close with the strictest limits and a lockout.
+- Parity: neither backtest engine reads risk by default (AST test); with nothing set the PAPER pipeline sizes exactly as
+  the backtest RiskManager does; ticket preview, pipeline and proposal refusals agree.
+- Tests: `tests/test_tt12_limits_off.py` (16); existing risk tests set the old numbers as the user's own. Questions TT12-1..5.
 ## 24 Oct - TT-2: a manual order the user confirms is his approval (answers FNO-1-4)
 
 - Branch `claude/tt2-manual-approval` (from main at `1b13f776`). **No migration**, no new flag.
@@ -4093,3 +4108,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `POST /api/paper/fno/resting/exit`, `POST /api/paper/fno/resting/{id}/cancel` (tenancy table updated). No UI (T2).
 - Tests: `test_tm2_trigger_rules.py` (12), `test_tm2_trigger_engine.py` (12); z10c, tenancy sweep, TM-1 adapter, smart
   execution, ticket / basket, backtest parity and worker suites green. Open questions TM2-1..3.
+
+## 24 Oct 2026 - TT-8: a basket's legs as one group (P1-6)
+- Owner decision TT-8: legs of one manual basket are one group with "Exit this leg" / "Exit the whole group"; a hedge
+  exited before its short = a plain warning + confirm, never a block.
+- Backend `app/paper/fno_groups.py`: filled legs tagged on existing columns (`group_meta` basket_group, `leg_role`; no
+  migration, no `leg_group_id` so the monitor keeps each leg's own stop / target). `POST /api/paper/fno/positions/{id}/
+  exit-leg` (`confirm` flag; without it a hedge answers the warning) and `/exit-group` (all legs priced first, then
+  `close_group`: sold legs first). Pricing shared with Exit now (`approval.exit_price`, a pure extraction). No flag,
+  kill switch, limit or approval-only check on either (ADR-0004). z10c: both routes classified as exits.
+- Frontend (ui_v2, PAPER account on): PositionsV2 basket groups show "Exit the whole group" and "Exit this leg" (in place
+  of Exit now on those legs); the confirm sheet `fno/GroupExitsV2.tsx`. Structures keep Exit now.
+- Tests: `tests/test_tt8_basket_group.py` (9), `src/fno/groupExits.test.tsx` (11), `e2e/tt8-basket-group-v2.e2e.ts`
+  (390 + 1440); four e2e flows moved to "Exit this leg"; six `fno4-positions-v2-*` baselines updated.
+- Not done: partial exit (TT-9). Open: TT8-1..4 in docs/OPEN_QUESTIONS.md.
+

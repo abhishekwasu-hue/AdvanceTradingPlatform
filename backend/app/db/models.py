@@ -888,7 +888,9 @@ class RiskSettingsRecord(Base):
     max_trades_per_day: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     max_open_positions: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     max_consecutive_losses: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
-    min_risk_reward: Mapped[float] = mapped_column(Float, nullable=False, default=1.2)
+    # TT12-4: 0 = not set (no minimum). A row from before then holding the old built-in 1.2 reads as not set
+    # (app/risk_engine/routes.py org_min_rr_read); no migration.
+    min_risk_reward: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     # Phase V1: Risk Guardian rules (see app/risk_engine/guardian.py).
     max_portfolio_risk_pct: Mapped[float] = mapped_column(Float, nullable=False, default=6.0, server_default="6.0")
     stop_cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30, server_default="30")
@@ -2557,7 +2559,8 @@ class PaperAccountRecord(Base):
     paused_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     paused_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Z5 / P1-d: the user's own risk-by-default settings (risk per trade, daily loss limit, trades per day, minimum
-    # reward:risk) as JSON; NULL = the platform defaults (app/risk_engine/by_default.py).
+    # reward:risk) as JSON, with `_set` listing the keys he set himself; NULL or a key not set = off (TT-12,
+    # app/risk_engine/by_default.py).
     risk_settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Z5 / P1-d: the entries-per-day slots taken on `entries_day` (IST), updated atomically per entry (by_default.reserve_entry).
     entries_day: Mapped[date | None] = mapped_column(Date, nullable=True)

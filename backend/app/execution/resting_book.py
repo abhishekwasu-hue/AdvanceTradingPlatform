@@ -245,7 +245,7 @@ async def cancel(session: AsyncSession, user: User, row_id: int, now: Optional[d
         PaperRestingOrderRecord.id == row.id, PaperRestingOrderRecord.status == RESTING).values(
         status=CANCELLED, status_note="Cancelled by you", updated_at=now).execution_options(synchronize_session=False))
     await session.refresh(row)
-    if done.rowcount == 1:
+    if getattr(done, "rowcount", 0) == 1:
         add_trail(row, CANCELLED, "Cancelled by you", now)
     await session.commit()
     return row

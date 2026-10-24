@@ -159,7 +159,7 @@ async def _claim(session: AsyncSession, row: PaperRestingOrderRecord, now: datet
     claimed = await session.execute(update(PaperRestingOrderRecord).where(
         PaperRestingOrderRecord.id == row.id, PaperRestingOrderRecord.status == book.RESTING).values(
         status=book.FIRING, fired_at=now, updated_at=now).execution_options(synchronize_session=False))
-    if claimed.rowcount != 1:
+    if getattr(claimed, "rowcount", 0) != 1:
         await session.rollback()
         return False
     await session.commit()

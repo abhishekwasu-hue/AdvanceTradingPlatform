@@ -100,13 +100,16 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 ## Status table (the session keeps this current; one line per item)
 | ID | Status | Next action | PR |
 |---|---|---|---|
+| BUG-C1 | waiting for owner | plan sent; Charts: never a blank canvas when closed (history or a plain empty state) | - |
+| BUG-A1 | waiting for owner | plan sent; Analyze a chart: no admin wording for users; engine installed by the deploy + health | - |
+| BUG-M1 | waiting for owner | plan sent; phone timeframe row + header | - |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |
-| P1-2 | in review | add the one-time "limits now not set" notice (TT12-1); merge after CI; deploy | #494 |
-| P1-2b | in progress | org-level min R:R 1.2 OFF, own PR, backtest parity | - |
+| P1-2 | in review | notice (TT12-1) added; owner: "Merge" after green CI, then deploy (no migration) | #494 |
+| P1-2b | in review | org min R:R OFF (0 = not set; an old stored 1.2 = not set), parity tests live / paper / both backtests; owner: "Merge" after green CI, then deploy (no migration) | #497 |
 | P1-3 | waiting for owner | deploy, universe sync ON, "Enable trader features"; then day-one test on production | #470 |
 | P1-4 | in progress | verify which chart pages still bypass the core; gestures; phone recording | row 18 |
 | P1-5 | waiting for owner | `data_hub` ON via "Enable trader features" after the deploy; API-call numbers before / after | - |
-| P1-6 | in progress | T1 waits for ✅; TM-2 in review (resting book + trigger engine; migration after 15:30 IST); T2 then needs TT-1, TT-8 | #493, #492, #496 |
+| P1-6 | in progress | T1 waits for ✅; TT-2 (#492) and TT-8 (#501) merged; TM-2 in review (#496, migration); T2 then needs TT-1; partial exit = TT-9 | #493, #496 |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | P2-1 | not started | next free P1 slot: one flag-audit table with a recommendation per flag | - |
 | P2-2 | not started | Copilot jobs 1-8 + own key + tools end to end (parts built, flags) | - |

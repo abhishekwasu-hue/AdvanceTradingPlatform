@@ -114,15 +114,20 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
           fix=("stop_loss_atr_mult", MIN_STOP_ATR_MULT, f"stop_loss_atr_mult {config.stop_loss_atr_mult:g} -> {MIN_STOP_ATR_MULT:g} (M2)"))
     t1, t2 = float(config.target_rr[0]), float(config.target_rr[1])
     lo, hi = sorted((t1, t2))
-    first_ok = lo >= config.min_rr
+    floor = config.min_rr or 0.0                      # P1-2b: None = no minimum R:R set (no filter)
+    first_ok = lo >= floor
     ordered_ok = t1 <= t2
-    fixed_targets = (max(lo, config.min_rr), max(hi, config.min_rr))
+    fixed_targets = (max(lo, floor), max(hi, floor))
+    against = f" and at or above the minimum R:R {floor:g}" if config.min_rr is not None else ""
     check("M1", first_ok and ordered_ok,
-          f"targets {t1:g}R / {t2:g}R are ordered and at or above the minimum R:R {config.min_rr:g}"
-          if first_ok and ordered_ok else f"targets {t1:g}R / {t2:g}R must be ordered and at or above the minimum R:R {config.min_rr:g}",
+          f"targets {t1:g}R / {t2:g}R are ordered{against}"
+          if first_ok and ordered_ok else f"targets {t1:g}R / {t2:g}R must be ordered{against}",
           fix=("target_rr", fixed_targets, f"target_rr ({t1:g}, {t2:g}) -> ({fixed_targets[0]:g}, {fixed_targets[1]:g}) (M1)"))
-    check("RR", config.min_rr >= 1.0, f"minimum R:R {config.min_rr:g}" + ("" if config.min_rr >= 1.0 else " is below 1:1 - the strategy accepts trades that risk more than they target"),
-          warn_only=True)
+    if config.min_rr is None:
+        check("RR", True, "no minimum R:R set: none is applied", warn_only=True)
+    else:
+        check("RR", floor >= 1.0, f"minimum R:R {floor:g}" + ("" if floor >= 1.0 else " is below 1:1 - the strategy accepts trades that risk more than they target"),
+              warn_only=True)
     check("M3", True, "entries are all-or-nothing at the sized quantity; there is no add-to-position path, so nothing is ever added to a loser (also R6)")
 
     # --- rules the engine enforces on every entry -------------------------------------------

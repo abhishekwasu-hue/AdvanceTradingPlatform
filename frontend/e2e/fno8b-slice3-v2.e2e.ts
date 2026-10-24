@@ -343,6 +343,6 @@ test.describe("8b slice 3 flows", () => {
     const sent = seen.writes.filter((w) => !/\/auth\/refresh$|\/paper\/fno\/contracts$|\/market-data\/(quotes|candles)$/.test(w.url));
     expect(sent.map((w) => `${w.method} ${w.url}`).sort()).toEqual(["PATCH /trades/211/journal", "PATCH /trades/212/journal"]);
     expect(sent.every((w) => JSON.stringify(w.body) === JSON.stringify({ notes: "Waited for the area to hold." }))).toBe(true);
-    await expect(page.locator("[data-position='301']").getByTestId("exit-now")).toBeEnabled();
+    await expect(page.locator("[data-position='301']").getByTestId("exit-leg")).toBeEnabled();     // TT-8: a basket leg
   });
 });

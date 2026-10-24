@@ -14,7 +14,8 @@ import { CONNECT_BROKER_PATH } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
 import { formatNumber, formatTimeIST } from "../ui/format";
 import {
-  RISK_DEFAULTS, RISK_LABELS, SUGGESTIONS, paperDeployment, perTradeText, riskErrors, riskNumbers, riskSentence, testSummary,
+  LIMIT_FIELDS, LIMIT_KEYS, RISK_DEFAULTS, RISK_HELP, RISK_LABELS, SUGGESTIONS, limitsBody, paperDeployment, perTradeText, riskErrors, riskNumbers,
+  riskSentence, testSummary,
   type RiskField, type RiskForm, type StrategySuggestion,
 } from "./model";
 
@@ -87,45 +88,53 @@ export function BrokerStepV2({ done, onSkip }: StepProps & { onSkip: () => void 
 
 // --- Step 2 -----------------------------------------------------------------------------------------------------------
 
-function NumberField({ field, value, error, prefix, suffix, onChange, onBlur }: {
-  field: RiskField; value: string; error?: string; prefix?: string; suffix?: string; onChange: (v: string) => void; onBlur: () => void;
+function NumberField({ field, value, error, prefix, suffix, help, placeholder, onChange, onBlur }: {
+  field: RiskField; value: string; error?: string; prefix?: string; suffix?: string; help?: string; placeholder?: string;
+  onChange: (v: string) => void; onBlur: () => void;
 }) {
   const id = useId();
+  const described = [error ? `${id}-error` : "", help ? `${id}-help` : ""].filter(Boolean).join(" ") || undefined;
   return (
     <div className="space-y-space-1">
       <label htmlFor={id} className="block text-t13 font-medium text-fg">{RISK_LABELS[field]}</label>
       <div className={`flex h-11 items-center rounded-control border bg-surface-1 px-space-3 focus-within:border-brand md:h-9 ${error ? "border-warn" : "border-border"}`}>
         {prefix && <span className="pr-space-1 text-t14 text-fg-muted" aria-hidden>{prefix}</span>}
-        <input id={id} inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlur}
-          aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined} data-field={field}
-          className="h-full min-w-0 flex-1 bg-transparent text-t15 tabular-nums text-fg outline-none" />
+        <input id={id} inputMode="decimal" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} onBlur={onBlur}
+          aria-invalid={error ? true : undefined} aria-describedby={described} data-field={field}
+          className="h-full min-w-0 flex-1 bg-transparent text-t15 tabular-nums text-fg outline-none placeholder:text-fg-muted" />
         {suffix && <span className="pl-space-1 text-t14 text-fg-muted" aria-hidden>{suffix}</span>}
       </div>
       {error && <p id={`${id}-error`} className="text-t13 text-warn">{error}</p>}
+      {help && !error && <p id={`${id}-help`} className="text-t12 text-fg-muted">{help}</p>}
     </div>
   );
 }
 
-const asText = (n: number) => String(n);
+const SUFFIX: Partial<Record<RiskField, string>> = { riskPerTradePct: "%", dailyLossPct: "%", minRr: ": 1" };
 
-/** The form's starting values: the trader's saved limits when the step is done, else the spec's defaults (§11); the
- * starting capital from the paper account (`GET /paper/account`), or ₹1,00,000 when it is not known. */
-export function riskStart(status: PaperRiskStatus | null, done: boolean, startingCapital: number | null): RiskForm {
+/** The form's starting values (TT-12): each limit the trader set himself, every other one empty ("Not set" - no number
+ * is filled in for him); the starting capital from the paper account (`GET /paper/account`), or ₹1,00,000 when it is
+ * not known. */
+export function riskStart(status: PaperRiskStatus | null, startingCapital: number | null): RiskForm {
   const capital = startingCapital !== null && startingCapital > 0 ? startingCapital : RISK_DEFAULTS.capital;
-  const saved = done ? status?.settings : undefined;
+  const own = (f: (typeof LIMIT_FIELDS)[number]): string => {
+    const key = LIMIT_KEYS[f];
+    const value = status?.settings?.[key];
+    return status?.set?.includes(key) && typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+  };
   return {
     capital: formatNumber(Math.round(capital)),             // "1,00,000"; the commas are read back (riskNumbers)
-    riskPerTradePct: asText(saved?.risk_per_trade_pct ?? RISK_DEFAULTS.riskPerTradePct),
-    dailyLossPct: asText(saved?.daily_loss_pct ?? RISK_DEFAULTS.dailyLossPct),
-    maxTradesPerDay: asText(status?.settings?.max_trades_per_day ?? RISK_DEFAULTS.maxTradesPerDay),
+    riskPerTradePct: own("riskPerTradePct"), dailyLossPct: own("dailyLossPct"), maxTradesPerDay: own("maxTradesPerDay"), minRr: own("minRr"),
   };
 }
 
 const notFound = (e: unknown) => e instanceof ApiError && e.status === 404;
 
-/** Step 2: three fields with defaults, the "most you can lose today" sentence, max trades under Advanced. The limits
- * are saved through the existing `PUT /paper/risk`, then a changed starting capital through `PUT /paper/account`. With
- * the paper account off (404) the capital field is not shown and nothing is sent for it. */
+/** Step 2 (TT-12): the trader fills in his own limits - risk per trade, daily loss limit, trades a day, lowest reward to
+ * risk - in empty boxes; an empty box is "Not set" (no limit). The "most you can lose today" sentence follows what he
+ * types. The limits are saved through the existing `PUT /paper/risk` (an emptied one is sent as null), then a changed
+ * starting capital through `PUT /paper/account`. With the paper account off (404) the capital field is not shown and
+ * nothing is sent for it. */
 export function RiskStepV2({ done, onChanged }: StepProps) {
   const [status, setStatus] = useState<PaperRiskStatus | null | "off">(null);
   /** The paper account's starting capital, or "off" (no paper account) / null (not read): then no field. */
@@ -143,7 +152,7 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
       if (!alive) return;
       setStatus(r);
       setAccount(c);
-      setForm(riskStart(r && r !== "off" ? r : null, done, typeof c === "number" ? c : null));
+      setForm(riskStart(r && r !== "off" ? r : null, typeof c === "number" ? c : null));
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -171,25 +180,28 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
   const blur = (f: RiskField) => () => setTouched((t) => ({ ...t, [f]: true }));
 
   async function save() {
-    setTouched({ capital: true, riskPerTradePct: true, dailyLossPct: true, maxTradesPerDay: true });
+    setTouched({ capital: true, riskPerTradePct: true, dailyLossPct: true, maxTradesPerDay: true, minRr: true });
     if (Object.keys(errors).length) return;
     setBusy(true); setNote(null);
     let text: string;
     try {
       // The answer also says what waits: a loosening applies from the next day (backend paper/ticket.py save_settings).
-      const saved = await api.setPaperRisk({ risk_per_trade_pct: n.riskPerTradePct, daily_loss_pct: n.dailyLossPct, max_trades_per_day: n.maxTradesPerDay }) as
-        PaperRiskStatus & { change?: { deferred?: Record<string, number>; from?: string | null } };
+      const saved = await api.setPaperRisk(limitsBody(n)) as
+        PaperRiskStatus & { change?: { deferred?: Record<string, number | null>; from?: string | null } };
       setStatus(saved);
       const from = saved.change?.from;
+      const none = LIMIT_FIELDS.every((f) => n[f] === null);
       text = from && Object.keys(saved.change?.deferred ?? {}).length > 0
-        ? `Limits saved. Lower limits apply now; higher ones start on ${from}.` : "Limits saved. They apply to your paper trades from now on.";
+        ? `Limits saved. Stricter limits apply now; a looser or cleared limit starts on ${from}.`
+        : none ? "Saved. You have no limits: nothing stops a new paper trade. Add one here at any time."
+          : "Limits saved. They apply to your new paper trades from now on.";
       onChanged();
     } catch (e) {
       setNote({ tone: "problem", text: e instanceof ApiError && e.status === 422 && e.detail ? `Not saved: ${e.detail}` : problemText(e, "Your limits could not be saved. Try again in a moment.") });
       setBusy(false);
       return;
     }
-    if (typeof account === "number" && Math.round(account) !== n.capital) {
+    if (typeof account === "number" && n.capital !== null && Math.round(account) !== n.capital) {
       try {
         const a = await api.setPaperCapital(n.capital);
         setAccount(a.starting_capital);
@@ -206,11 +218,21 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
   }
 
   return (
-    <form className="space-y-space-4" noValidate onSubmit={(e) => { e.preventDefault(); void save(); }}>
-      <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-3">
-        {withCapital && <NumberField field="capital" prefix="₹" value={form.capital} error={shown("capital")} onChange={set("capital")} onBlur={blur("capital")} />}
-        <NumberField field="riskPerTradePct" suffix="%" value={form.riskPerTradePct} error={shown("riskPerTradePct")} onChange={set("riskPerTradePct")} onBlur={blur("riskPerTradePct")} />
-        <NumberField field="dailyLossPct" suffix="%" value={form.dailyLossPct} error={shown("dailyLossPct")} onChange={set("dailyLossPct")} onBlur={blur("dailyLossPct")} />
+    <form className="space-y-space-4" noValidate onSubmit={(e) => { e.preventDefault(); void save(); }} data-own-limits>
+      <div className="space-y-space-1">
+        <p className="text-t14 text-fg">Fill in your own limits. No number is filled in: leave a box empty for no limit.</p>
+        <p className={P}>Your limits only stop new paper trades. Closing a trade always works.</p>
+      </div>
+      {withCapital && (
+        <div className="max-w-xs">
+          <NumberField field="capital" prefix="₹" value={form.capital} error={shown("capital")} onChange={set("capital")} onBlur={blur("capital")} />
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-2">
+        {LIMIT_FIELDS.map((f) => (
+          <NumberField key={f} field={f} suffix={SUFFIX[f]} value={form[f]} error={shown(f)} help={RISK_HELP[f]} placeholder="Not set"
+            onChange={set(f)} onBlur={blur(f)} />
+        ))}
       </div>
       {(sentence || perTrade) && (
         <div className="rounded-control bg-surface-2 px-space-3 py-space-2" data-risk-sentence>
@@ -218,13 +240,6 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
           {perTrade && <p className="text-t13 text-fg-muted">{perTrade}</p>}
         </div>
       )}
-      <details className="group">
-        <summary className="flex min-h-11 cursor-pointer items-center text-t14 font-medium text-brand md:min-h-0">Advanced</summary>
-        <div className="mt-space-2 max-w-[200px]">
-          <NumberField field="maxTradesPerDay" value={form.maxTradesPerDay} error={shown("maxTradesPerDay")} onChange={set("maxTradesPerDay")} onBlur={blur("maxTradesPerDay")} />
-          <p className="mt-space-1 text-t12 text-fg-muted">New paper trades a day. 0 means no limit.</p>
-        </div>
-      </details>
       <div className="flex flex-col gap-space-2 sm:flex-row sm:items-center">
         <ActionV2 primary type="submit" busy={busy}>{done ? "Save changes" : "Save limits"}</ActionV2>
         {note && <Note tone={note.tone}>{note.text}</Note>}

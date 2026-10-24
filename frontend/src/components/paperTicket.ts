@@ -88,7 +88,8 @@ export function placedMessage(plan: Pick<TradePlanView, "status" | "trade_id" | 
 /** "Takes effect on 13 Oct: daily loss 5%" for a loosening that waits for the next IST day, or null. */
 export function pendingLine(status: Pick<PaperRiskStatus, "pending" | "labels">): string | null {
   if (!status.pending) return null;
-  const parts = Object.entries(status.pending.values).map(([k, v]) => `${status.labels[k as keyof typeof status.labels] ?? k} ${v}`);
+  // TT-12: a value null is a limit he cleared (back to "Not set").
+  const parts = Object.entries(status.pending.values).map(([k, v]) => `${status.labels[k as keyof typeof status.labels] ?? k} ${v === null ? "not set" : v}`);
   const day = new Date(`${status.pending.from}T00:00:00+05:30`).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
   return `Looser limits take effect on ${day} (not during the day they protect): ${parts.join(", ")}`;
 }

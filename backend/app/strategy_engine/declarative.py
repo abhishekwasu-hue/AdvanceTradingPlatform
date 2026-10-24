@@ -11,11 +11,12 @@ higher-timeframe filter on any operand (`timeframe`, e.g. "EMA(50) on 15min"). A
 value is the last *completed* higher-timeframe bar at the close of the base bar, resampled from the
 base candles, so live trading and backtests see exactly the same thing and never the future.
 """
+import math
 import re
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.enums import SignalDirection, StrategyCategory
 from app.core.models import Signal
@@ -249,6 +250,26 @@ class Condition(BaseModel):
         return l_last <= r_last, True
 
 
+# P1-2b (TT12-4, "no hidden filter anywhere"): a custom strategy has no built-in minimum reward:risk - None = not set, no
+# filter. Configs saved before then held the old default 1.2 in every config nobody changed (the Builder never showed it),
+# so the TT12-1 rule applies: a stored 1.2 reads as not set, any other stored value is kept. A user who states exactly 1.2
+# himself (his words, the Copilot builder) is stored one float step above it (`own_min_rr`), which applies as 1.2.
+LEGACY_MIN_RR = 1.2
+OWN_LEGACY_MIN_RR = math.nextafter(LEGACY_MIN_RR, math.inf)
+
+
+def own_min_rr(value: Optional[float]) -> Optional[float]:
+    """A minimum the user stated himself, in the form stored in a config (see LEGACY_MIN_RR)."""
+    return OWN_LEGACY_MIN_RR if value is not None and float(value) == LEGACY_MIN_RR else value
+
+
+def min_rr_in_force(value: Optional[float]) -> Optional[float]:
+    """The minimum a config applies: None = no filter; the stored form of a stated 1.2 applies as 1.2."""
+    if value is None:
+        return None
+    return LEGACY_MIN_RR if value == OWN_LEGACY_MIN_RR else float(value)
+
+
 class CustomStrategyConfig(BaseModel):
     name: str
     timeframe: str = "5min"
@@ -257,11 +278,33 @@ class CustomStrategyConfig(BaseModel):
     stop_loss_atr_mult: float = Field(default=1.0, gt=0)
     atr_period: int = Field(default=14, gt=0, le=500)
     target_rr: Tuple[float, float] = (1.5, 2.0)
-    min_rr: float = Field(default=1.2, gt=0)
+    min_rr: Optional[float] = Field(default=None, gt=0)
+
+    @field_validator("min_rr", mode="before")
+    @classmethod
+    def _legacy_default_is_unset(cls, value: Any) -> Any:
+        """TT12-1 rule: the old built-in 1.2 (stored or sent) counts as not set."""
+        try:
+            return None if value is not None and not isinstance(value, bool) and float(value) == LEGACY_MIN_RR else value
+        except (TypeError, ValueError):
+            return value
 
     def model_post_init(self, __context: Any) -> None:
         if not self.long_conditions and not self.short_conditions:
             raise ValueError("A custom strategy needs at least one long or short condition")
+
+
+class OwnCustomStrategyConfig(CustomStrategyConfig):
+    """A config the user saves himself (Strategy Builder create / edit): a minimum he typed, even exactly 1.2, is his own
+    (stored as `own_min_rr`); empty = not set."""
+
+    @field_validator("min_rr", mode="before")
+    @classmethod
+    def _legacy_default_is_unset(cls, value: Any) -> Any:
+        try:
+            return own_min_rr(float(value)) if value is not None and not isinstance(value, bool) else value
+        except (TypeError, ValueError):
+            return value
 
 
 class DeclarativeStrategy(BaseStrategy):
@@ -275,7 +318,7 @@ class DeclarativeStrategy(BaseStrategy):
         self.description = "User-defined strategy built with the no-code Strategy Builder."
         self.timeframes = [config.timeframe]
         self.config = config
-        super().__init__(min_rr=config.min_rr)
+        super().__init__(min_rr=min_rr_in_force(config.min_rr))         # None = no reward:risk filter (P1-2b)
 
     def min_history(self) -> Dict[str, int]:
         tf = self.config.timeframe

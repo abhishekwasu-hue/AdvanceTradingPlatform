@@ -152,7 +152,7 @@ def config_for(t: Template, params: dict, base: str, htf: str, side: str, name: 
     long_c, short_c = t.build(params, base, htf, side)
     rr = tuple(params["rr"])
     return CustomStrategyConfig(name=name or f"{t.en} ({side})", timeframe=base, long_conditions=long_c, short_conditions=short_c,
-                                stop_loss_atr_mult=float(params["stop"]), atr_period=14, target_rr=rr, min_rr=min(1.2, rr[0]))
+                                stop_loss_atr_mult=float(params["stop"]), atr_period=14, target_rr=rr, min_rr=None)   # P1-2b: no minimum R:R nobody stated
 
 
 # --- the simulator --------------------------------------------------------------------------------------

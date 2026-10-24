@@ -117,9 +117,9 @@ async def _notes(tenant_id):
 def test_a_change_notifies_once_and_a_repeat_of_the_slot_does_not():
     headers, me = _owner("o4-change@example.com")
     _enable(headers, types=["DIRECTION_CHANGE"])
-    _run(_collect(_chain(), T0))
+    _run(_collect(_chain(), T0, tenant_id=me["tenant_id"]))
     assert _run(_evaluate(me["tenant_id"], T0 + timedelta(seconds=30))) == []              # first slot: state stored only
-    _run(_collect(_chain(put=2200.0, put_ltp=9.5), T0 + timedelta(minutes=5)))             # put writing -> BULLISH
+    _run(_collect(_chain(put=2200.0, put_ltp=9.5), T0 + timedelta(minutes=5), tenant_id=me["tenant_id"]))             # put writing -> BULLISH
     assert _run(_evaluate(me["tenant_id"], T0 + timedelta(minutes=5, seconds=30))) == ["SENT"]
     assert _run(_evaluate(me["tenant_id"], T0 + timedelta(minutes=6))) == []                # same slot again
     notes = _run(_notes(me["tenant_id"]))
@@ -139,7 +139,7 @@ def test_cooldown_snooze_and_closed_market_hold_alerts_back():
     call_ltp = [10.0, 10.0, 9.4, 10.0]
     results = []
     for i in range(4):
-        _run(_collect(_chain(put=puts[i], put_ltp=put_ltp[i], call=calls[i], call_ltp=call_ltp[i]), T0 + timedelta(minutes=5 * i)))
+        _run(_collect(_chain(put=puts[i], put_ltp=put_ltp[i], call=calls[i], call_ltp=call_ltp[i]), T0 + timedelta(minutes=5 * i), tenant_id=me["tenant_id"]))
         results.append(_run(_evaluate(me["tenant_id"], T0 + timedelta(minutes=5 * i, seconds=30))))
     assert results[1] == ["SENT"] and "COOLDOWN" in results[2] + results[3]
     assert len(_run(_notes(me["tenant_id"]))) == 1
@@ -171,9 +171,9 @@ def test_snoozed_alerts_are_logged_not_sent():
             row.snoozed_until = until
             await session.commit()
     _run(snooze_at(T0 + timedelta(hours=1)))                                                   # snoozed relative to the test clock
-    _run(_collect(_chain(), T0))
+    _run(_collect(_chain(), T0, tenant_id=me["tenant_id"]))
     _run(_evaluate(me["tenant_id"], T0 + timedelta(seconds=30)))
-    _run(_collect(_chain(put=2200.0, put_ltp=9.5), T0 + timedelta(minutes=5)))
+    _run(_collect(_chain(put=2200.0, put_ltp=9.5), T0 + timedelta(minutes=5), tenant_id=me["tenant_id"]))
     assert _run(_evaluate(me["tenant_id"], T0 + timedelta(minutes=5, seconds=30))) == ["SNOOZED"]
     assert _run(_notes(me["tenant_id"])) == []
 
@@ -181,7 +181,7 @@ def test_snoozed_alerts_are_logged_not_sent():
 def test_a_stale_collector_raises_one_ops_alert_per_day():
     headers, me = _owner("o4-stale@example.com")
     _enable(headers, types=["COLLECTOR_STALE"])
-    _run(_collect(_chain(), T0))
+    _run(_collect(_chain(), T0, tenant_id=me["tenant_id"]))
     later = T0 + timedelta(minutes=40)
     assert _run(_evaluate(me["tenant_id"], later)) == ["SENT"]
     assert _run(_evaluate(me["tenant_id"], later + timedelta(minutes=10))) == ["DUPLICATE"]

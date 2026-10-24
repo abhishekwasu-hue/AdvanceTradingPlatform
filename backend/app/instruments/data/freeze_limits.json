@@ -1,0 +1,12 @@
+{
+  "source": "NSE circular NSE/FAOP/76693 of 01 Oct 2026 (quantity freeze limits for index derivatives), effective 05 Oct 2026; the values were verified against NSE's published limits by the owner on 23 Oct 2026 (SE-4). Single stock derivatives and BSE indices (SENSEX, BANKEX: from the BSE file) are not in this table: load the exchange's file (FREEZE_LIMITS_FILE) for them; a symbol missing from both is never sliced and keeps the ticket's own cap.",
+  "as_of": "2026-10-05",
+  "exchange": "NFO",
+  "limits": {
+    "NIFTY": 3510,
+    "BANKNIFTY": 1440,
+    "FINNIFTY": 3240,
+    "MIDCPNIFTY": 5760,
+    "NIFTYNXT50": 1125
+  }
+}

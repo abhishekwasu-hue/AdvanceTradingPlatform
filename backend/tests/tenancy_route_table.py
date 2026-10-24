@@ -56,6 +56,8 @@ M_OWN_TAX = ("member: the caller's own closed trades only (tenant and user) - a 
 S_END_VIEW = ("self: ends the read-only support view behind the caller's own token (the one write a view token may make); a "
               "normal sign-in has no view to end")
 M_OWN_SUPPORT_ACCESS = "member: the caller's own record of when ATP support viewed their account (their own rows only)"
+M_OWN_CHAIN_HISTORY = ("member: TM 9.4 - the organisation's own recorded option chains only (tenant-private store, TM-7) and, within it, "
+                       "only the rows read through the caller's own broker session (BT1b); another organisation reads nothing")
 S_OWN_LEGAL = "self: records the caller's own acceptance of the legal documents' current versions"
 S_SUPPORT = "self: the support bot answers how-to questions from the docs; no tools, reads no positions or orders (rate limited)"
 S_OWN_ACCOUNT = "self: the caller's own account, sessions and two-factor settings"
@@ -159,6 +161,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/admin/history-backfill/progress"): "admin",
     ("POST", "/api/admin/history-backfill/upload"): "admin",
     ("GET", "/api/admin/history-intraday/progress"): "admin",
+    ("GET", "/api/admin/chain-history/status"): "admin",
     ("GET", "/api/admin/history-import/progress"): "admin",
     ("GET", "/api/admin/incidents"): "admin",
     ("POST", "/api/admin/incidents"): "admin",
@@ -330,8 +333,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/backtest/bars"): S_BACKTEST_BARS,
     ("POST", "/api/backtest/monte-carlo"): S_BACKTEST,
     ("POST", "/api/backtest/optimize"): S_BACKTEST,
-    ("GET", "/api/backtest/option-chain/coverage"): "member",
-    ("GET", "/api/backtest/option-chain/snapshots"): "member",
+    ("GET", "/api/chain-history/coverage"): M_OWN_CHAIN_HISTORY,
+    ("GET", "/api/chain-history/day"): M_OWN_CHAIN_HISTORY,
+    ("GET", "/api/chain-history/range"): M_OWN_CHAIN_HISTORY,
+    ("GET", "/api/backtest/option-chain/coverage"): "member",      # TM94-3: the organisation's own recorded rows and uploads only
+    ("GET", "/api/backtest/option-chain/snapshots"): "member",     # TM94-3: the organisation's own recorded rows and uploads only
     ("POST", "/api/backtest/option-chain/snapshots"): "trader",
     ("POST", "/api/backtest/walk-forward"): S_BACKTEST,
     ("GET", "/api/backtests"): "member",
@@ -633,6 +639,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/basket/preview"): "trader",
     ("POST", "/api/paper/fno/basket/execute"): "trader",       # FNO-2: every leg one PAPER order, hedge legs first
     ("POST", "/api/paper/fno/basket/broker-link"): S_COMPUTE,  # the legs pre-filled for the user's broker app; sends nothing
+    ("POST", "/api/paper/fno/basket/close-filled"): "trader",  # TM Part 7: the caller's own legs (404 other tenant, 403 another member's), shorts first
+    ("GET", "/api/paper/fno/settlement"): "member: the caller's own open stock F&O positions only (delivery warning)",
     ("GET", "/api/paper/fno/risk-budget"): "member: the caller's own effective risk settings only (8b-d, the risk line)",
     ("GET", "/api/paper/fno/setup-strikes"): "member: the caller's own signal and own deployments only (8b-a)",
     ("GET", "/api/paper/fno/event-risk"): "member: the shared events calendar plus the caller's own organisation's entries only (8b-d)",

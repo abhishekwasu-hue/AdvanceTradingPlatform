@@ -139,6 +139,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     # browser on the existing live stream, a plain "reconnecting" state and ONE renew prompt when the broker ends the
     # login. `byob_data_tier` still decides whose session a user may read. OFF: everything exactly as before.
     "data_hub": "Data hub: one live price stream per broker connection for every page, live ticks in the browser, a reconnecting state and one renew prompt",
+    "smart_execution": "Smart execution for multi-leg orders: hedge legs first (shorts closed first on exit), the incomplete-order state with Complete the rest / Close the filled legs, freeze-limit slicing, the margin with the hedge benefit and the free balance after, the physical-settlement warning for stock F&O",
     # Master Order 4 slice 3 (app/growth; needs `ui_v2`): the plan page with a usage meter (what the user's plan includes
     # and how much of it he used, from the existing limits and counters), the "my discipline this week" share card (his
     # own discipline facts only: no security names, no prices, no call words) and the admin Business view's activation
@@ -188,6 +189,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # through the OWNER's own broker session (read-only candle endpoints) into the owner's private store only, sharing
     # the worker's rate budget with a reserve kept for exits. OFF: the job, the CLI and the worker hook do nothing.
     "history_intraday": "Owner intraday history: 1-minute bars from the owner's own broker session into the owner's private store (read-only, places no orders)",
+    # TM 9.4 (docs/design/CHAIN_HISTORY.md, TM-7): option-chain snapshots (every strike: LTP, OI, IV, Greeks; spot; time)
+    # recorded at a fixed interval in market hours through the OWNER's own broker session into the owner's private store,
+    # on the worker's rate budget with a reserve kept for exits. OFF: nothing is recorded and the read API answers 404.
+    "chain_history": "Owner chain history: option-chain snapshots from the owner's own broker session into the owner's private store (read-only, places no orders)",
     # Z3 / BT2 (beta spec, Phase 0): every automatic entry (deployments, TradingView webhooks, public API signals) becomes
     # an ENTRY proposal (Approve / Reject / Snooze); Approve places a PAPER order at a re-quoted price. Target exits ask
     # "Exit now?"; protective exits (stop, time stop, square-off, kill switch) stay automatic (ADR-0004). OFF: unchanged.

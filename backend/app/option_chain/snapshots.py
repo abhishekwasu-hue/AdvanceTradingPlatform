@@ -8,7 +8,14 @@ Collection (the worker, every slot while the venue is open, for the underlyings 
 
 Reading: a day's slots are rebuilt into chains and replayed through `oi_regime.evaluate_snapshot` with the reader's
 settings, so every number (diff, signal, classes, PCR, max pain) comes from stored data and the reader's thresholds,
-never from a stored verdict. The data is platform-wide reference data (a chain is the same fact for every tenant).
+never from a stored verdict.
+
+TM-7 (owner, 23 Oct; RDY-6 data terms - never the platform's or another user's feed): every slot is read through ONE
+organisation's own broker session and stored under that organisation (`tenant_id`); every reader here takes the
+reader's tenant id and returns only that organisation's slots. Slots stored before the fix carry no tenant and are read
+only by the owner's organisation (`legacy_owner`: HISTORY_OWNER_TENANT_ID confirmed by HISTORY_OWNER_TENANT_NAME, HB0's
+rule); with no confirmed owner nobody reads them. Earlier the rows were platform-wide, read through the first
+organisation with a broker session.
 """
 from __future__ import annotations
 
@@ -19,13 +26,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.models import OptionChain, OptionChainRow
 from app.core import config
-from app.db.models import OIBannerSettingRecord, OIDayBaselineRecord, OISnapshotRecord, StrikeOISnapshotRecord
+from app.db.models import OIBannerSettingRecord, OIDayBaselineRecord, OISnapshotRecord, StrikeOISnapshotRecord, Tenant
 from app.option_chain import oi_regime
 from app.option_chain.oi_regime import BannerState, OIRegimeSettings, SnapshotPoint
 
@@ -88,6 +95,44 @@ async def enabled_underlyings(session: AsyncSession) -> List[Tuple[int, str, str
     return [(r.tenant_id, r.underlying, r.exchange) for r in rows]
 
 
+# ---------------------------------------------------------------- whose rows (TM-7)
+
+def _require_tenant(tenant_id: Optional[int]) -> int:
+    if tenant_id is None or int(tenant_id) <= 0:
+        raise PermissionError("OI snapshots are read per organisation; a tenant id is required")
+    return int(tenant_id)
+
+
+async def legacy_owner(session: AsyncSession) -> Optional[int]:
+    """The organisation that reads the slots stored before TM-7 (no tenant on the row): the owner's, when
+    HISTORY_OWNER_TENANT_ID names a tenant whose name equals HISTORY_OWNER_TENANT_NAME; else None (nobody reads them)."""
+    tenant_id = config.HISTORY_OWNER_TENANT_ID
+    expected = (config.HISTORY_OWNER_TENANT_NAME or "").strip()
+    if tenant_id is None or not expected:
+        return None
+    tenant = await session.get(Tenant, tenant_id)
+    return int(tenant_id) if tenant is not None and (tenant.name or "").strip() == expected else None
+
+
+async def tenant_scope(session: AsyncSession, column, tenant_id: Optional[int]):
+    """The WHERE clause of one organisation's OI rows (`column` = the model's tenant_id): its own, plus the pre-TM-7
+    rows when it is the confirmed owner."""
+    tenant = _require_tenant(tenant_id)
+    if await legacy_owner(session) == tenant:
+        return or_(column == tenant, column.is_(None))
+    return column == tenant
+
+
+def _one_per_slot(snaps: Sequence[OISnapshotRecord]) -> List[OISnapshotRecord]:
+    """The owner may hold a pre-TM-7 slot and its own slot for the same time: its own wins."""
+    best: Dict[datetime, OISnapshotRecord] = {}
+    for snap in snaps:
+        key = _utc(snap.slot_start)
+        if key not in best or (best[key].tenant_id is None and snap.tenant_id is not None):
+            best[key] = snap
+    return [best[k] for k in sorted(best)]
+
+
 # ---------------------------------------------------------------- collection
 
 @dataclass
@@ -107,16 +152,19 @@ def _window(chain: OptionChain, span: int) -> List[OptionChainRow]:
     return rows[max(0, centre - span): centre + span + 1]
 
 
-async def collect(session: AsyncSession, underlying: str, chain: OptionChain, now: datetime, *, source: str = "worker",
+async def collect(session: AsyncSession, underlying: str, chain: OptionChain, now: datetime, *, tenant_id: int, source: str = "worker",
                   span: Optional[int] = None, slot_minutes: Optional[int] = None, future_price: Optional[float] = None,
                   future_oi: Optional[float] = None) -> CollectResult:
-    """Stores one slot of `chain`. Idempotent per (underlying, slot); does not commit. `future_price` / `future_oi`: the
-    near-month future's quote read in the same slot (OC5), None when the broker's quote did not carry them."""
+    """Stores one slot of `chain`, read through `tenant_id`'s own broker session, as that organisation's (TM-7).
+    Idempotent per (tenant, underlying, slot); does not commit. `future_price` / `future_oi`: the near-month future's
+    quote read in the same slot (OC5), None when the broker's quote did not carry them."""
+    tenant = _require_tenant(tenant_id)
     underlying = normalise_underlying(underlying)
     now = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
     ist = now.astimezone(IST)
     slot = oi_regime.slot_start(ist, slot_minutes or config.OI_BANNER_SLOT_MINUTES).astimezone(timezone.utc)
-    if await session.scalar(select(OISnapshotRecord.id).where(OISnapshotRecord.underlying == underlying, OISnapshotRecord.slot_start == slot)):
+    if await session.scalar(select(OISnapshotRecord.id).where(OISnapshotRecord.tenant_id == tenant, OISnapshotRecord.underlying == underlying,
+                                                              OISnapshotRecord.slot_start == slot)):
         return CollectResult("ALREADY_EXISTS", slot)
     rows = _window(chain, span or config.OI_BANNER_COLLECT_SPAN)
     if not rows:
@@ -124,7 +172,7 @@ async def collect(session: AsyncSession, underlying: str, chain: OptionChain, no
     expiry, _ = oi_regime.compute_dte(chain.expiry, ist.date())
     try:
         async with session.begin_nested():
-            snap = OISnapshotRecord(underlying=underlying, trade_date=ist.date(), slot_start=slot, captured_at=now, expiry=expiry,
+            snap = OISnapshotRecord(tenant_id=tenant, underlying=underlying, trade_date=ist.date(), slot_start=slot, captured_at=now, expiry=expiry,
                                     underlying_price=chain.underlying_ltp, strikes=len(rows), source=source[:30],
                                     future_price=_positive(future_price), future_oi=_non_negative(future_oi))
             session.add(snap)
@@ -133,10 +181,11 @@ async def collect(session: AsyncSession, underlying: str, chain: OptionChain, no
                 session.add(StrikeOISnapshotRecord(snapshot_id=snap.id, strike=float(r.strike), call_oi=r.call_oi, put_oi=r.put_oi,
                                                    call_ltp=r.call_ltp, put_ltp=r.put_ltp, call_iv=r.call_iv, put_iv=r.put_iv))
             known = set(await session.scalars(select(OIDayBaselineRecord.strike).where(
-                OIDayBaselineRecord.underlying == underlying, OIDayBaselineRecord.trade_date == ist.date())))
+                OIDayBaselineRecord.tenant_id == tenant, OIDayBaselineRecord.underlying == underlying,
+                OIDayBaselineRecord.trade_date == ist.date())))
             new = [r for r in rows if float(r.strike) not in known]
             for r in new:
-                session.add(OIDayBaselineRecord(underlying=underlying, trade_date=ist.date(), strike=float(r.strike),
+                session.add(OIDayBaselineRecord(tenant_id=tenant, underlying=underlying, trade_date=ist.date(), strike=float(r.strike),
                                                 call_oi=r.call_oi, put_oi=r.put_oi, first_seen_at=now))
             await session.flush()
     except IntegrityError:                        # another writer took the slot between the check and the insert
@@ -163,9 +212,11 @@ class SlotChain:
     future_oi: Optional[float] = None
 
 
-async def day_chains(session: AsyncSession, underlying: str, day: date) -> List[SlotChain]:
-    snaps = list(await session.scalars(select(OISnapshotRecord).where(OISnapshotRecord.underlying == underlying, OISnapshotRecord.trade_date == day)
-                                       .order_by(OISnapshotRecord.slot_start)))
+async def day_chains(session: AsyncSession, underlying: str, day: date, *, tenant_id: int) -> List[SlotChain]:
+    """One organisation's stored slots of `day`, oldest first (TM-7: its own rows only)."""
+    scope = await tenant_scope(session, OISnapshotRecord.tenant_id, tenant_id)
+    snaps = _one_per_slot(list(await session.scalars(select(OISnapshotRecord).where(
+        scope, OISnapshotRecord.underlying == underlying, OISnapshotRecord.trade_date == day).order_by(OISnapshotRecord.slot_start))))
     if not snaps:
         return []
     by_snap: Dict[int, List[OptionChainRow]] = {s.id: [] for s in snaps}
@@ -188,17 +239,19 @@ class SessionClose:
     last: SlotChain
 
 
-async def recent_session_closes(session: AsyncSession, underlying: str, before: date, sessions: int) -> List[SessionClose]:
-    """The last `sessions` trading days before `before` that hold stored slots, oldest first. Only each day's last
-    slot's strikes are read."""
-    days = sorted(await session.scalars(select(OISnapshotRecord.trade_date).where(OISnapshotRecord.underlying == underlying,
+async def recent_session_closes(session: AsyncSession, underlying: str, before: date, sessions: int, *,
+                                tenant_id: int) -> List[SessionClose]:
+    """The last `sessions` trading days before `before` that hold stored slots of this organisation, oldest first. Only
+    each day's last slot's strikes are read."""
+    scope = await tenant_scope(session, OISnapshotRecord.tenant_id, tenant_id)
+    days = sorted(await session.scalars(select(OISnapshotRecord.trade_date).where(scope, OISnapshotRecord.underlying == underlying,
                                                                                    OISnapshotRecord.trade_date < before)
                                         .group_by(OISnapshotRecord.trade_date).order_by(OISnapshotRecord.trade_date.desc()).limit(sessions)))
     if not days:
         return []
-    snaps = list(await session.scalars(select(OISnapshotRecord).where(OISnapshotRecord.underlying == underlying,
-                                                                       OISnapshotRecord.trade_date.in_(days))
-                                       .order_by(OISnapshotRecord.trade_date, OISnapshotRecord.slot_start)))
+    snaps = _one_per_slot(list(await session.scalars(select(OISnapshotRecord).where(scope, OISnapshotRecord.underlying == underlying,
+                                                                                     OISnapshotRecord.trade_date.in_(days))
+                                                     .order_by(OISnapshotRecord.trade_date, OISnapshotRecord.slot_start))))
     by_day: Dict[date, List[OISnapshotRecord]] = {}
     for snap in snaps:
         by_day.setdefault(snap.trade_date, []).append(snap)
@@ -271,8 +324,9 @@ def staleness(latest_capture: Optional[datetime], now: datetime, settings: OIReg
             "stale_after_minutes": settings.stale_after_minutes}
 
 
-async def latest_capture(session: AsyncSession, underlying: str) -> Optional[datetime]:
-    value = await session.scalar(select(OISnapshotRecord.captured_at).where(OISnapshotRecord.underlying == underlying)
+async def latest_capture(session: AsyncSession, underlying: str, *, tenant_id: int) -> Optional[datetime]:
+    scope = await tenant_scope(session, OISnapshotRecord.tenant_id, tenant_id)
+    value = await session.scalar(select(OISnapshotRecord.captured_at).where(scope, OISnapshotRecord.underlying == underlying)
                                  .order_by(OISnapshotRecord.slot_start.desc()).limit(1))
     return _utc(value) if value else None
 
@@ -295,10 +349,16 @@ def strike_series(slots: Sequence[SlotChain], settings: OIRegimeSettings) -> Lis
     return [{"strike": k, "points": v} for k, v in series.items()]
 
 
-async def baselines(session: AsyncSession, underlying: str, day: date) -> Dict[float, Tuple[Optional[float], Optional[float]]]:
-    rows = await session.scalars(select(OIDayBaselineRecord).where(OIDayBaselineRecord.underlying == underlying, OIDayBaselineRecord.trade_date == day))
-    return {r.strike: (r.call_oi, r.put_oi) for r in rows}
+async def baselines(session: AsyncSession, underlying: str, day: date, *, tenant_id: int) -> Dict[float, Tuple[Optional[float], Optional[float]]]:
+    scope = await tenant_scope(session, OIDayBaselineRecord.tenant_id, tenant_id)
+    rows = await session.scalars(select(OIDayBaselineRecord).where(scope, OIDayBaselineRecord.underlying == underlying,
+                                                                   OIDayBaselineRecord.trade_date == day))
+    out: Dict[float, Tuple[Optional[float], Optional[float]]] = {}
+    for r in sorted(rows, key=lambda r: r.tenant_id is not None):      # the organisation's own baseline wins over a pre-TM-7 one
+        out[r.strike] = (r.call_oi, r.put_oi)
+    return out
 
 
 __all__ = ["collect", "CollectResult", "day_chains", "replay", "entry_json", "staleness", "latest_capture", "strike_series",
-           "baselines", "recent_session_closes", "SessionClose", "settings_for", "enabled_underlyings", "normalise_underlying", "platform_layer", "IST", "DEFAULT_KEY"]
+           "baselines", "recent_session_closes", "SessionClose", "settings_for", "enabled_underlyings", "normalise_underlying", "platform_layer", "IST", "DEFAULT_KEY",
+           "legacy_owner", "tenant_scope"]

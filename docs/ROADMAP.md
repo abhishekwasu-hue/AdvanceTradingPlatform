@@ -100,9 +100,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 ## Status table (the session keeps this current; one line per item)
 | ID | Status | Next action | PR |
 |---|---|---|---|
-| BUG-C1 | waiting for owner | plan sent; Charts: never a blank canvas when closed (history or a plain empty state) | - |
-| BUG-A1 | waiting for owner | plan sent; Analyze a chart: no admin wording for users; engine installed by the deploy + health | - |
-| BUG-M1 | waiting for owner | plan sent; phone timeframe row + header | - |
+| UI-H | in progress | Part 1 audit (no code): every page 390 / 1440, light / dark, scored H1-H10 -> docs/ui/UI_AUDIT.md; then the owner's approval -> shared components -> waves. Holds C1, A1, M1, B1-B4, max pain | - |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |
 | P1-2 | in review | notice (TT12-1) added; owner: "Merge" after green CI, then deploy (no migration) | #494 |
 | P1-2b | in progress | org-level min R:R 1.2 OFF, own PR, backtest parity | - |

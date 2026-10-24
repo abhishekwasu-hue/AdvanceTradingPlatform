@@ -184,8 +184,11 @@ async def read(session: AsyncSession, user: User, underlying: str, expiry: Optio
     base.spot = _finite(chain.underlying_ltp)
     base.rows = flat_rows(view_rows_for(chain))
     base.source = {"broker": str(record.broker_name), "account_label": str(record.account_label)}
-    if byob:
-        base.history_note = NO_HISTORY_BYOB
+    if byob:                                    # B1: his own earlier reads are his session; this read is stored as his
+        from app.option_chain import own_snapshots
+        stored = await own_snapshots.day(session, user, underlying, now.astimezone(IST).date())
+        base.history = history_points(own_snapshots.as_slots(stored), base.expiry, now)
+        await own_snapshots.record(session, user, record, underlying, chain, now)
     else:
         slots = await snapshots.day_chains(session, underlying, now.astimezone(IST).date(), tenant_id=user.tenant_id)
         base.history = history_points(slots, base.expiry, now)

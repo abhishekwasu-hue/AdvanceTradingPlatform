@@ -332,4 +332,16 @@ async def live(underlying: str, expiry: Optional[date] = Query(default=None), us
     oi = await chain_view.oi_change_state(chain, tenant_id=user.tenant_id, underlying=name, now=now, market_open=status.is_open)
     view = chain_view.build_view(chain, spot=spot, future=future, expiry=expiry or chain_view.parse_expiry(chain.expiry), now=now, oi=oi)
     view["market_open"] = status.is_open
+    if await _byob(session, user):              # B1: his own read becomes his session snapshot (same 5-minute slots)
+        await _store_own_read(session, user, name, chain, source, now)
     return view
+
+
+async def _store_own_read(session: AsyncSession, user: User, name: str, chain: OptionChain, source: Dict[str, Any], now: datetime) -> None:
+    """Stores the live view's chain as the user's own session snapshot - only when the session that served it is his own
+    credential (same broker and account label)."""
+    from app.market_data import live_access
+    record = await live_access.own_session_record(session, user, now)
+    if record is None or record.broker_name != source.get("broker") or record.account_label != source.get("account_label"):
+        return
+    await own_snapshots.record(session, user, record, snapshots.normalise_underlying(name), chain, now)

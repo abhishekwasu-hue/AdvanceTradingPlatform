@@ -19,6 +19,7 @@ from app.option_chain.snapshots import IST
 from tests.test_amw2_watchlists import _set_flag
 from tests.test_auth_api import _session_factory, client
 from tests.test_oc2_option_chain_analyses import CURRENT, EXPIRY, REFERENCE, URL, _ChainBroker, _install, _name, _v2_owner
+from tests.test_oc1_option_chain_view import memory_cache  # noqa: F401 - the fixture
 from tests.test_phase_aa_market_data_api import _store_credentials
 
 UTC = timezone.utc
@@ -198,3 +199,66 @@ def test_a_storage_failure_never_fails_the_read(monkeypatch, byob_owner):
     assert body["state"] == "ok" and body["source"]["broker"] == "upstox"
     assert client.get("/api/option-chain/charts", headers=headers, params={"symbol": name}).json()["state"] == "ok"
     assert _rows(me["tenant_id"], name) == []
+
+
+# ---------------------------------------------------------------- the live chain view and Ask AI (B1-2: no split by data source)
+
+@pytest.mark.usefixtures("memory_cache")
+def test_the_live_chain_view_read_is_stored_as_his_snapshot(monkeypatch, byob_owner):
+    from tests.test_oc1_option_chain_view import _chain, _setup_routes
+    headers, me = byob_owner
+    _setup_routes(monkeypatch, _chain(change=True))
+    res = client.get("/api/option-chain/NIFTY/live?expiry=2026-10-27", headers=headers)
+    assert res.status_code == 200, res.text
+    rows = _rows(me["tenant_id"], "NIFTY")
+    assert len(rows) == 1 and rows[0].source == f"broker:upstox:u{me['id']}" and rows[0].expiry.isoformat() == "2026-10-27"
+    assert client.get("/api/option-chain/NIFTY/live?expiry=2026-10-27", headers=headers).status_code == 200
+    assert len(_rows(me["tenant_id"], "NIFTY")) == 1                         # the same 5-minute slot: stored once
+
+
+@pytest.mark.usefixtures("memory_cache")
+def test_the_live_chain_view_stores_nothing_without_the_tier(monkeypatch):
+    from tests.test_oc1_option_chain_view import _chain, _setup_routes
+    headers, me = _v2_owner("b1-live-off")
+    _store_credentials(me)
+    _setup_routes(monkeypatch, _chain(change=True))
+    assert client.get("/api/option-chain/NIFTY/live?expiry=2026-10-27", headers=headers).status_code == 200
+    assert _rows(me["tenant_id"], "NIFTY") == []
+
+
+def _ask_read(user_id: int, name: str):
+    from app.db.models import User
+    from app.option_chain import ask_adapter
+
+    async def go():
+        async with _session_factory() as session:
+            user = await session.get(User, user_id)
+            return await ask_adapter.read(session, user, name, None, datetime.now(UTC))
+    return run(go())
+
+
+def test_ask_ai_uses_his_own_snapshots_for_the_session_path(monkeypatch, byob_owner):
+    from app.option_chain import ask_adapter
+    headers, me = byob_owner
+    name = _name()
+    _install(monkeypatch, _ChainBroker({name: _live(name)}))
+    first = _ask_read(me["id"], name)                                        # none yet: an empty path, no refusal note
+    assert first.state == "ok" and first.history == [] and first.history_note != ask_adapter.NO_HISTORY_BYOB
+    assert len(_rows(me["tenant_id"], name)) == 1                            # his Ask read is his snapshot too
+    _seed_own(me["tenant_id"], me["id"], name, _earlier(name), _ten_minutes_ago())
+    again = _ask_read(me["id"], name)
+    assert again.state == "ok" and len(again.history) == 2                   # the seeded read and his first Ask read
+    assert again.history[0].rows[120.0]["ce_oi"] == 40                       # oldest first: his earlier read (REFERENCE)
+
+
+def test_ask_ai_never_reads_another_members_snapshots(monkeypatch, byob_owner):
+    from tests.test_trading_worker import _upgrade_plan
+    from tests.test_z3_members import member
+    headers, me = byob_owner
+    name = _name()
+    _install(monkeypatch, _ChainBroker({name: _live(name)}))
+    _seed_own(me["tenant_id"], me["id"], name, _earlier(name), _ten_minutes_ago())
+    _upgrade_plan(me["tenant_id"])
+    mate = member({"headers": headers})
+    _store_credentials({"tenant_id": mate["tenant_id"], "id": mate["user_id"]}, label="mate")
+    assert _ask_read(mate["user_id"], name).history == []

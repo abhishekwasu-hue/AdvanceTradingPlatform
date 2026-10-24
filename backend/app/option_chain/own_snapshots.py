@@ -40,26 +40,35 @@ async def record(session: AsyncSession, user: User, credential: BrokerCredential
     """Stores `chain` of `underlying`, just read through `credential`, as `user`'s session snapshot and commits. Only a credential the
     user linked himself is stored (his own token); anything else, or a chain without an expiry or strikes, is skipped.
     Returns the write status (OK / ALREADY_EXISTS / EMPTY / SKIPPED). A storage failure never fails the caller's read;
-    callers call this LAST (a rollback expires the session's loaded rows)."""
+    callers call it once their answer is built (a failed commit's rollback expires the session's loaded rows)."""
     expiry = _expiry(chain)
     tenant_id = user.tenant_id                    # read before any rollback (it expires the loaded rows)
     if credential.user_id != user.id or credential.tenant_id != user.tenant_id or expiry is None or not chain.rows:
         return "SKIPPED"
-    try:
-        result = await chain_store.write(session, user.tenant_id, underlying, expiry, chain, now,
+    try:                                          # a failure inside the write's savepoint leaves the session usable
+        result = await chain_store.write(session, tenant_id, underlying, expiry, chain, now,
                                          slot_minutes=config.OI_BANNER_SLOT_MINUTES,
                                          source=intraday_history.holder_source(credential.broker_name, user.id))
-        await session.commit()
-        return result.status
     except Exception as exc:  # noqa: BLE001 - the page's answer does not depend on the snapshot being stored
+        logger.info("Own chain snapshot not stored for tenant %s: %s", tenant_id, type(exc).__name__)
+        return "SKIPPED"
+    try:
+        await session.commit()
+    except Exception as exc:  # noqa: BLE001 - only a failed commit needs the rollback (it expires the loaded rows)
         await session.rollback()
         logger.info("Own chain snapshot not stored for tenant %s: %s", tenant_id, type(exc).__name__)
         return "SKIPPED"
+    return result.status
 
 
 async def day(session: AsyncSession, user: User, underlying: str, on: date) -> List[chain_store.StoredChain]:
     """The user's own stored chains of `underlying` on `on` (every expiry), oldest first."""
     return await chain_store.holder_day(session, user.tenant_id, user.id, underlying, on)
+
+
+def as_slots(stored: List[chain_store.StoredChain]) -> List[SlotChain]:
+    """The user's own stored chains as SlotChains (every expiry), oldest first."""
+    return [SlotChain(s.slot_start, s.captured_at, s.chain()) for s in stored]
 
 
 def one_expiry(stored: List[chain_store.StoredChain], on: date) -> List[SlotChain]:
@@ -90,4 +99,4 @@ def today(now: datetime) -> date:
     return now.astimezone(IST).date()
 
 
-__all__ = ["record", "day", "one_expiry", "baselines", "today"]
+__all__ = ["record", "day", "as_slots", "one_expiry", "baselines", "today"]

@@ -102,7 +102,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 |---|---|---|---|
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |
 | P1-2 | in review | add the one-time "limits now not set" notice (TT12-1); merge after CI; deploy | #494 |
-| P1-2b | in progress | org-level min R:R 1.2 OFF, own PR, backtest parity | - |
+| P1-2b | in review | org min R:R OFF (0 = not set; an old stored 1.2 = not set), parity tests live / paper / both backtests; owner: "Merge" after green CI, then deploy (no migration) | P1-2b PR |
 | P1-3 | waiting for owner | deploy, universe sync ON, "Enable trader features"; then day-one test on production | #470 |
 | P1-4 | in progress | verify which chart pages still bypass the core; gestures; phone recording | row 18 |
 | P1-5 | waiting for owner | `data_hub` ON via "Enable trader features" after the deploy; API-call numbers before / after | - |

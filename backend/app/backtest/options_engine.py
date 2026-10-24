@@ -59,7 +59,7 @@ from app.trading.position_monitor import structure_exit_reason, underlying_exit_
 
 logger = logging.getLogger(__name__)
 
-ENGINE_VERSION = "8-options"   # CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (7: realism 1: closed HTF bars only (6: NIFTY expiries from NSE data too; 5: BANKNIFTY from NSE data; 4: P0.6 dated lots)
+ENGINE_VERSION = "9-options"   # P1-2b: a single contract keeps the signal's reward:risk, so an organisation's own minimum filters it as live does (8: CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (7: realism 1: closed HTF bars only (6: NIFTY expiries from NSE data too; 5: BANKNIFTY from NSE data; 4: P0.6 dated lots))
 NO_NEW_ENTRIES_AFTER = time(15, 0)    # the worker's cut-off for intraday deployments
 SQUARE_OFF_AT = time(15, 15)
 SETTLEMENT_FROM = time(15, 15)        # a bar at/after this on expiry day settles the structure
@@ -554,12 +554,16 @@ def _breach_level(meta: dict, level: float) -> float:
 
 
 def _size_lots(risk_manager: RiskManager, state: TradingDayState, signal: Signal, *, basis: float, risk_per_unit: float, lot: int,
-               underlying_symbol: str, max_lots: Optional[int], direction: SignalDirection = SignalDirection.SHORT) -> int:
+               underlying_symbol: str, max_lots: Optional[int], direction: SignalDirection = SignalDirection.SHORT,
+               keep_rr: bool = False) -> int:
+    """P1-2b (TT12-4) parity: a single contract keeps the strategy's reward:risk, as the live / paper contract order does
+    (app/execution/contract_execution.py copies the signal), so an organisation's own minimum filters both alike; a
+    multi-leg structure has none, as live (app/execution/multileg.py). With no minimum set nothing is filtered."""
     spec = ContractSpec(symbol=underlying_symbol, exchange="NFO", asset_class=AssetClass.INDEX_OPTION, description="option backtest",
                         lot_size=float(lot), tick_size=0.05)
     sizing = signal.model_copy(update={"symbol": underlying_symbol, "direction": direction, "entry": basis,
                                        "stop_loss": round(basis + risk_per_unit, 2) if direction == SignalDirection.SHORT else round(basis - risk_per_unit, 2),
-                                       "target1": None, "target2": None, "risk_reward": None})
+                                       "target1": None, "target2": None, "risk_reward": signal.risk_reward if keep_rr else None})
     decision = risk_manager.validate_and_size(sizing, state, contract_spec=spec)
     if not decision.approved:
         raise _Skip("; ".join(decision.reasons) or "risk engine refused")
@@ -625,7 +629,7 @@ def _open_single(signal: Signal, rules: ContractRules, config: OptionBacktestCon
     level = round(fill * (1 - pct), 2) if bought else round(fill * (1 + pct), 2)
     max_lots = config.max_lots if config.max_lots else (None if bought else DEFAULT_WRITE_MAX_LOTS)
     lots = _size_lots(risk_manager, state, signal, basis=fill, risk_per_unit=round(fill * pct, 2), lot=lot,
-                      underlying_symbol=underlying, max_lots=max_lots, direction=trade_direction)
+                      underlying_symbol=underlying, max_lots=max_lots, direction=trade_direction, keep_rr=True)
     quantity = lots * lot
     leg = _Leg(right, "LONG" if bought else "SHORT", float(strike), expiry, 1, fill, quantity)
     meta = {"stop_value": level, "premium_stop_pct": rules.premium_stop_pct, "net_credit": fill if not bought else -fill}

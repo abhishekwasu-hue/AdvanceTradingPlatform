@@ -61,6 +61,8 @@ def _bars(seed, total=900, scale=1.0):
 
 def _hash(result) -> str:
     data = result.model_dump(mode="json", exclude={"reproducibility", "run_id"})
+    if isinstance(data.get("options"), dict) and data["options"].get("engine_version") == "9-options":
+        data["options"]["engine_version"] = "8-options"      # P1-2b bumped the label; the pins were recorded under 8
     return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
@@ -85,7 +87,8 @@ BASE_PINS = {
     "D5:9:single": "ff17ea9d05ee5c5b", "D5:9:spread": "c354f54ab0c73e14", "D5:9:underlying": "2a25ffe3c1d4d26d",
     "E3:7:single": "4de168a943f8d179", "E3:7:spread": "afa8859718b00294", "E3:7:underlying": "9633ed416e99a8e9",
 }
-PIN_RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5)
+# P1-2b: the pins were recorded with the then built-in minimum reward:risk 1.2; it is stated here so they stay comparable.
+PIN_RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5, min_risk_reward=1.2)
 
 
 def _run_pins(choice=None):

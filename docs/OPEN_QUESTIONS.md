@@ -138,3 +138,13 @@ closed rows: docs/archive/OPEN_QUESTIONS_CLOSED.md. Both are moved, never delete
 | # | Question | Provisional decision + reason | Applies to | Status |
 |---|---|---|---|---|
 | TT2-1 | TT-2 names the ticket, the basket and the Terminal. The older plan-before-trade PAPER ticket (`paper/ticket.py`, Z5 / P1-d) is also the user's own order, but under approval-only mode it still raises an entry proposal he then approves himself. | Unchanged for now: only the F&O ticket and basket routes (and later the Terminal) set the origin "manual", as the decision lists. If Abhi wants the plan ticket to count as his approval too, it is a one-line route change plus a test. Checked against CLAUDE.md §3-4, DECISIONS (TT-2) and ATP_SESSION_TRADING_TERMINAL.md. | `paper/ticket.py:288`, `paper/fno_routes.py` | open (provisional default in use) |
+
+## P1-2b: the organisation's min reward:risk OFF (24 Oct, `claude/p1-2b-org-min-rr-off`)
+
+Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT12-4, TT12-1) and ADR-0004.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| P12B-1 | `risk_settings.min_risk_reward` is NOT NULL and held the built-in 1.2 in every row nobody changed; the row cannot tell "set" from "inherited". | TT12-1 rule, no migration: a stored 1.2 reads as not set (0). An organisation that now sets exactly 1.2 itself is stored one float step above 1.2 (`math.nextafter`), which reads back as 1.2 and applies. Any other stored value is kept. | `risk_engine/routes.py` `org_min_rr_read` | open (provisional default in use) |
+| P12B-2 | The options backtest dropped the signal's reward:risk for a single contract, while the live / paper contract order keeps it: with a minimum set, the two disagreed. | The options backtest keeps it for a single contract (as live) and not for a multi-leg structure (as live, `execution/multileg.py`); engine label 9-options. No effect while no minimum is set. | `backtest/options_engine.py` `_size_lots` | open (provisional default in use) |
+| P12B-3 | Other R:R minimums remain: the strategy templates' own `min_rr` parameters (white box, part of each strategy) and the strategy interview, which proposes a minimum (1.5 / 2.0) the user then saves. | Not changed here: they are visible strategy parameters or a proposal the user accepts, not a hidden organisation default. If Abhi wants them empty too, a separate item. | `strategy_engine/*`, `ai/interview.py:464` | open (owner) |

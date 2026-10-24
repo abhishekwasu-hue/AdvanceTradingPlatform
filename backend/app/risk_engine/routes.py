@@ -1,3 +1,5 @@
+import math
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +15,26 @@ from app.risk_engine import loss_streak
 router = APIRouter(prefix="/api/risk-settings", tags=["risk"])
 
 
+# TT12-4 (owner, DECISIONS 24 Oct): the organisation's minimum reward:risk has no built-in value any more (0 = not set).
+# Before then every saved row held the built-in 1.2 unless someone changed it, and the row cannot tell the two apart, so
+# the TT12-1 rule applies: a stored value equal to the old built-in reads as not set. An organisation that now sets exactly
+# 1.2 itself is stored one float step above it (`math.nextafter`), which reads back as 1.2 - set. No migration.
+LEGACY_ORG_MIN_RR = 1.2
+_OWN_LEGACY_ORG_MIN_RR = math.nextafter(LEGACY_ORG_MIN_RR, math.inf)
+
+
+def org_min_rr_read(stored: float | None) -> float:
+    """The organisation's minimum reward:risk in force (0 = not set) from the stored column value."""
+    if stored is None or not math.isfinite(stored) or stored <= 0 or stored == LEGACY_ORG_MIN_RR:
+        return 0.0
+    return LEGACY_ORG_MIN_RR if stored == _OWN_LEGACY_ORG_MIN_RR else float(stored)
+
+
+def org_min_rr_to_store(value: float) -> float:
+    """The column value for a minimum the organisation sets itself (see LEGACY_ORG_MIN_RR)."""
+    return _OWN_LEGACY_ORG_MIN_RR if value == LEGACY_ORG_MIN_RR else value
+
+
 def _record_to_config(record: RiskSettingsRecord) -> RiskConfig:
     return RiskConfig(
         capital=record.capital,
@@ -21,7 +43,7 @@ def _record_to_config(record: RiskSettingsRecord) -> RiskConfig:
         max_trades_per_day=record.max_trades_per_day,
         max_open_positions=record.max_open_positions,
         max_consecutive_losses=record.max_consecutive_losses,
-        min_risk_reward=record.min_risk_reward,
+        min_risk_reward=org_min_rr_read(record.min_risk_reward),
         lot_size=record.lot_size,
         max_portfolio_risk_pct=record.max_portfolio_risk_pct if record.max_portfolio_risk_pct is not None else 6.0,
         stop_cooldown_minutes=record.stop_cooldown_minutes if record.stop_cooldown_minutes is not None else 30,
@@ -64,6 +86,8 @@ async def update_risk_settings(
     violations = controls.ceiling_violations(config, await controls.risk_ceilings(session))
     if violations:
         raise HTTPException(status_code=400, detail="; ".join(violations))
+    if not math.isfinite(config.min_risk_reward) or not 0 <= config.min_risk_reward <= 10:
+        raise HTTPException(status_code=400, detail="min_risk_reward must be between 0 (not set) and 10")
     if config.dd_level_1_pct > config.dd_level_2_pct > 0:
         raise HTTPException(status_code=400, detail="dd_level_1_pct must not exceed dd_level_2_pct")
     record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
@@ -79,7 +103,7 @@ async def update_risk_settings(
     record.max_trades_per_day = config.max_trades_per_day
     record.max_open_positions = config.max_open_positions
     record.max_consecutive_losses = config.max_consecutive_losses
-    record.min_risk_reward = config.min_risk_reward
+    record.min_risk_reward = org_min_rr_to_store(config.min_risk_reward)
     record.lot_size = config.lot_size
     record.max_portfolio_risk_pct = config.max_portfolio_risk_pct
     record.stop_cooldown_minutes = config.stop_cooldown_minutes

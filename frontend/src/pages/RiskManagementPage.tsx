@@ -13,7 +13,7 @@ const FIELDS: { key: keyof RiskConfig; label: string; step?: string; ceiling?: s
   { key: "max_trades_per_day", label: "Max trades / day" },
   { key: "max_open_positions", label: "Max open positions" },
   { key: "max_consecutive_losses", label: "Max consecutive losses" },
-  { key: "min_risk_reward", label: "Min risk/reward", step: "0.1" },
+  { key: "min_risk_reward", label: "Min risk/reward (0 = not set)", step: "0.1" },
   { key: "lot_size", label: "Lot size" },
 ];
 

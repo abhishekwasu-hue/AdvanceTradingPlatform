@@ -252,3 +252,68 @@ def test_the_built_in_strategies_keep_their_own_stated_minimum():
     from app.strategy_engine.registry import registry
     for s in registry.list_all():
         assert s.params.get("min_rr") is not None and float(s.params["min_rr"]) <= float(s.params["target_rr"][0]), s.id
+
+
+# --- custom (no-code) strategies: no built-in minimum, a stored 1.2 = not set (TT12-1 rule), his own value kept -------------------
+
+from app.strategy_engine import declarative as D  # noqa: E402
+from app.strategy_engine.nlu_parser import parse_strategy_description  # noqa: E402
+
+
+def _custom(min_rr=None, own=False) -> D.DeclarativeStrategy:
+    raw = {"name": "always long", "timeframe": "1min", "atr_period": 5, "stop_loss_atr_mult": 1.0, "target_rr": [1.0, 2.0],
+           "long_conditions": [{"left": {"type": "indicator", "indicator": "CLOSE"}, "operator": "GT", "right": {"type": "value", "value": 1}}]}
+    if min_rr is not None:
+        raw["min_rr"] = min_rr
+    model = D.OwnCustomStrategyConfig if own else D.CustomStrategyConfig
+    return D.DeclarativeStrategy("custom:p12b", D.CustomStrategyConfig.model_validate_json(model.model_validate(raw).model_dump_json()))
+
+
+def _custom_paths(factory, cfg: RiskConfig) -> Dict[str, bool]:
+    """Whether each path enters at all: the scanner's signal and the live / paper risk check on the last bar, and both
+    backtest engines over the same bars."""
+    sig = factory().analyze({"1min": _frame()}, "NIFTY 50")
+    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=cfg)
+    ocfg = options_engine.OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY,
+                                               implied_volatility=0.14, max_lots=1)
+    return {"scanner": sig.is_tradeable,
+            "live": sig.is_tradeable and router.risk_manager.validate_and_size(sig, TradingDayState()).approved,
+            "backtest": underlying_engine.run_backtest(factory(), _frame(), "NIFTY 50", "1min", cfg).total_trades > 0,
+            "options": len(options_engine.run_option_backtest(factory(), _frame(), "NIFTY 50", "1min", cfg, ocfg).trades) > 0}
+
+
+def test_custom_config_has_no_built_in_minimum_and_reads_a_stored_1_2_as_unset():
+    assert D.CustomStrategyConfig.model_fields["min_rr"].default is None
+    assert _custom().config.min_rr is None
+    assert _custom(1.2).config.min_rr is None                               # a config saved with the old default
+    assert _custom(1.5).config.min_rr == 1.5 and _custom(0.8).config.min_rr == 0.8      # his own value kept
+    own = _custom(1.2, own=True)                                             # he typed exactly 1.2 himself
+    assert own.config.min_rr == D.OWN_LEGACY_MIN_RR and own.params["min_rr"] == 1.2
+
+
+def test_regression_no_custom_strategy_filters_by_reward_risk_when_nothing_is_set():
+    for factory in (_custom, lambda: _custom(1.2)):
+        assert _custom_paths(factory, _risk()) == {"scanner": True, "live": True, "backtest": True, "options": True}
+
+
+@pytest.mark.parametrize("min_rr, own, expected", [(1.5, False, False), (1.2, True, False), (0.8, False, True)])
+def test_a_custom_strategys_own_minimum_applies_the_same_on_every_path(min_rr, own, expected):
+    got = _custom_paths(lambda: _custom(min_rr, own=own), _risk())
+    assert got == {k: expected for k in got}, got
+
+
+def test_the_text_parser_sets_a_minimum_only_when_the_words_state_one():
+    assert parse_strategy_description("buy when rsi below 30").config.min_rr is None
+    stated = parse_strategy_description("buy when rsi below 30. minimum rr 1.2").config.min_rr
+    assert stated is None or D.min_rr_in_force(stated) == 1.2
+
+
+def test_the_builder_api_keeps_an_own_1_2_and_a_blank_is_not_set():
+    me = _org()
+    body = {"name": "p12b builder", "timeframe": "5min", "target_rr": [1.5, 2.0],
+            "long_conditions": [{"left": {"type": "indicator", "indicator": "RSI", "period": 14}, "operator": "LT", "right": {"type": "value", "value": 30}}]}
+    blank = client.post("/api/custom-strategies", headers=me["headers"], json=body)
+    assert blank.status_code == 201, blank.text
+    assert blank.json()["config"]["min_rr"] is None
+    own = client.put(f"/api/custom-strategies/{blank.json()['id']}", headers=me["headers"], json={**body, "min_rr": 1.2}).json()
+    assert D.min_rr_in_force(own["config"]["min_rr"]) == 1.2

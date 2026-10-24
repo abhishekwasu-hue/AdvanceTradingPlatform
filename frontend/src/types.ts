@@ -688,7 +688,8 @@ export interface CustomStrategyConfig {
   stop_loss_atr_mult: number;
   atr_period: number;
   target_rr: [number, number];
-  min_rr: number;
+  /** P1-2b: null = not set (no minimum reward:risk); only a value the user types filters. */
+  min_rr: number | null;
 }
 
 export interface CustomStrategyResponse {
@@ -716,7 +717,7 @@ export function defaultCustomStrategyConfig(): CustomStrategyConfig {
     stop_loss_atr_mult: 1.0,
     atr_period: 14,
     target_rr: [1.5, 2.0],
-    min_rr: 1.2,
+    min_rr: null,
   };
 }
 

@@ -59,3 +59,13 @@ export function typedSettings(template: Pick<StrategyTemplate, "params">, raw: R
   }
   return out;
 }
+
+/** Day-one fix 6: a template's settings as label / value words (choice labels, "Yes" / "No"; unknown keys left out). */
+export function settingRows(template: Pick<StrategyTemplate, "params">, params: Record<string, number | string | boolean>): { key: string; label: string; value: string }[] {
+  return template.params.filter((p) => p.key in params).map((p) => {
+    const v = params[p.key];
+    const choice = p.choices?.find((c) => c.value === String(v));
+    const value = choice ? choice.label : typeof v === "boolean" ? (v ? "Yes" : "No") : String(v);
+    return { key: p.key, label: p.label, value };
+  });
+}

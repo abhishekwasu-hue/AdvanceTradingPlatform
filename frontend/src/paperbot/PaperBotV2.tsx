@@ -16,11 +16,11 @@ import { useFeatures } from "../ui/useFeatures";
 import { draftFromState, formSymbol } from "../copilot/strategyDraft";
 import CopilotDraftV2 from "./CopilotDraftV2";
 import {
-  READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, paperBotRequestWithDefaults, sortBots,
+  IDEA_SYMBOL, READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, paperBotRequestWithDefaults, sortBots,
   startSummary, strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
 import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
-import { templateLinkFromSearch, testPathFor, typedSettings, type TemplateLink } from "../strategyTemplates/link";
+import { settingRows, templateLinkFromSearch, testPathFor, typedSettings, type TemplateLink } from "../strategyTemplates/link";
 import {
   EMPTY_PICK, effectivePick, exitClass, exitNotes, exitProblem, stopOptions, targetOptions, templateExitsBody, type ExitPick, type StopSource,
   type TargetRule,
@@ -326,6 +326,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     if (urlTemplateApplied.current || !initialTemplate || !t) return;
     urlTemplateApplied.current = true;
     setStrategyId(PICK + t.id);
+    // Day-one fix 6: an idea's link (it carries the idea's settings) starts on a stock, never a quiet index option.
+    if (Object.keys(initialTemplate.params).length > 0) setSymbolChoice((cur) => (cur === "NIFTY 50" ? IDEA_SYMBOL : cur));
     if (initialTemplate.timeframe && t.timeframes.some((x) => x.value === initialTemplate.timeframe)) setTemplateTimeframe(initialTemplate.timeframe);
   }, [templates, initialTemplate]);
 
@@ -461,6 +463,20 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
                 : adoption ? `${fromLink ? "Starts with the settings from the idea." : "Starts with the template's usual settings."} ${adoption.notes.join(" ")}`
                 : "Getting the template ready…"}
             </p>
+            {/* Day-one fix 6: the settings this bot starts with, in words (from the idea, or the template's usual ones). */}
+            {adoption && settingRows(picked, adoption.settings.params).length > 0 && (
+              <div className="mt-space-2 rounded-control border border-subtle p-space-3" data-template-settings>
+                <p className="text-t13 font-medium text-fg">{fromLink ? "The idea's settings" : "Its settings"}</p>
+                <dl className="mt-space-1 grid grid-cols-1 gap-x-space-4 gap-y-space-1 text-t13 sm:grid-cols-2">
+                  {settingRows(picked, adoption.settings.params).map((r) => (
+                    <div key={r.key} className="flex justify-between gap-space-2 sm:block">
+                      <dt className="text-fg-muted">{r.label}</dt>
+                      <dd className="text-fg">{r.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
             {/* Day-one fix 1: test this template with these settings on past prices first (nothing starts). */}
             <Link to={testPathFor({ template: picked.id, timeframe: templateTimeframe || null, params: linkSettings })}
               className="mt-space-1 inline-flex min-h-11 items-center text-t14 font-medium text-brand hover:underline md:min-h-0" data-template-test>

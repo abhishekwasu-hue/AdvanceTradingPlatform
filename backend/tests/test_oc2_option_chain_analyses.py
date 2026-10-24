@@ -496,6 +496,9 @@ def test_an_adapter_that_cannot_be_built_is_a_plain_state(monkeypatch):
 
 
 def test_a_spot_of_zero_from_the_broker_is_a_200_with_the_spot_missing(monkeypatch):
+    from app.option_chain import as_of
+    # B2: while the market is open (closed: our own last close fills a missing spot - tests/test_b2_as_of_spot.py).
+    monkeypatch.setattr(as_of, "as_of_for", lambda now, holidays, exchange: as_of.AsOf(now, False))
     name = _name()
     rows = [r.model_copy(update={"call_ltp": 7.0, "put_ltp": 4.0}) for r in FIVE.rows]
     _install(monkeypatch, _ChainBroker({name: OptionChain(underlying=name, expiry=EXPIRY, underlying_ltp=0.0, rows=rows)}))

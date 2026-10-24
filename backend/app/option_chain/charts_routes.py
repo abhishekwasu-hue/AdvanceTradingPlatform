@@ -25,7 +25,7 @@ from app.core import config
 from app.db.models import User
 from app.db.session import get_session
 from app.market_data import candles_routes
-from app.option_chain import analyses, charts, snapshots
+from app.option_chain import analyses, as_of, charts, snapshots
 from app.option_chain.analyses_routes import NO_BROKER, NO_CHAIN, UNAVAILABLE, _read_chain, _record, _require_flag
 from app.option_chain.snapshots import IST
 
@@ -89,7 +89,11 @@ async def option_chain_charts(symbol: str = Query(..., min_length=1, max_length=
     body = charts.compute(chain, readings, now, each_side=strikes, interval=interval, baselines=baselines, earlier=earlier,
                           settings=settings, collect_span=config.OI_BANNER_COLLECT_SPAN, history_off=byob)
     spot = analyses.clean_spot(chain).underlying_ltp
-    return {**base, "state": "ok", "message": None, "spot": spot, "data_as_of": now.isoformat(),
+    # B2a: the chain's capture time, or the last session close while the market is closed (never the request time).
+    when = await as_of.chain_as_of(session, underlying, now)
+    spot, spot_source = await as_of.resolve_spot(user, session, underlying, chain, spot, when, record.broker_name, record.account_label)
+    return {**base, "state": "ok", "message": None, "spot": spot, "spot_source": spot_source, "data_as_of": when.at.isoformat(),
+            "market_closed": when.closed,
             "source": {"broker": record.broker_name, "account_label": record.account_label}, **body}
 
 

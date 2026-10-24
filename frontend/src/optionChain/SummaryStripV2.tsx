@@ -24,7 +24,8 @@ interface Card { key: string; label: string; term?: GlossaryKey; value: string; 
 export function summaryCards(s: ChainSummary | null, expiry: string | null): Card[] {
   const future = s?.futures ?? null;
   return [
-    { key: "spot", label: "Spot", value: formatPrice(s?.spot) },
+    // B2b: a closed market's spot from our own last index close says so.
+    { key: "spot", label: s?.spot_source === "last_close" ? "Spot: last close" : "Spot", value: formatPrice(s?.spot) },
     { key: "futures", label: "Futures", value: formatPrice(future?.ltp),
       caption: future ? `Expires ${formatDateIST(future.expiry).replace(/ \d{4}$/, "")}` : undefined },
     { key: "atm", label: "ATM strike", term: "atm", value: formatStrike(s?.atm_strike) },

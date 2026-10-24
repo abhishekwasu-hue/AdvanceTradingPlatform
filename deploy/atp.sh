@@ -38,6 +38,9 @@
 #                                                  only) + the system-watchlists refresh NOW, each group's lists with
 #                                                  their row counts and unmapped symbols; then the API and the worker
 #                                                  pick up the settings. --check: only the file status lines
+#   /opt/atp/deploy/atp.sh probe-chain UNDERLYING  B2b, read-only: one option chain (nearest expiry) through the owner's
+#                                                  own broker session - the broker's raw underlying spot beside the ATM
+#                                                  strike and our own last index close. No token, nothing written
 #   /opt/atp/deploy/atp.sh schedule | releases | help
 #
 #   --dry-run (anywhere, or ATP_DRY_RUN=1): prints every step it would take; changes nothing on the host.
@@ -2504,6 +2507,25 @@ print("\n".join("%s %d" % (r["stamp"], r["tenant_id"]) for r in json.load(sys.st
   printf '\nloadtest-cleanup: done\n'
 }
 
+# B2b (owner, 24 Oct): the broker's own spot in an option chain answer (backend app/option_chain/probe.py, the same
+# handler as the admin-only GET /api/admin/option-chain/probe-chain), run in the backend container as the platform
+# owner's account through his own stored broker session. Read-only: no container is started or changed, nothing is
+# written, no token is printed.
+cmd_probe_chain() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  [ $# -eq 1 ] || die "usage: atp.sh probe-chain UNDERLYING   (for example NIFTY, BANKNIFTY, SENSEX)" 2
+  [[ "$1" =~ ^[A-Za-z0-9\ \&_-]{1,30}$ ]] || die "the underlying may hold only letters, digits, spaces and & _ - (1 to 30 characters)" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would read one option chain for %s (numbers only; nothing written)\n' "$1"; return 0; fi
+  check_tools
+  local rc=0
+  dc exec -T backend python -m app.option_chain.probe "$1" || rc=$?
+  case "$rc" in
+    0) ;;
+    2|3) exit "$rc" ;;      # the probe printed why (a bad name; no usable broker session)
+    *) die "the probe did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
 usage() { sed -n '2,/--dry-run (anywhere/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # Handover 8d: the owner sets a user's password on the server (backend/scripts/reset_password.py). The password is
@@ -2670,6 +2692,7 @@ main() {
     base-backup)    cmd_base_backup "$@" ;;
     restore-offsite) cmd_restore_offsite ;;
     releases)       cmd_releases ;;
+    probe-chain)    cmd_probe_chain "$@" ;;
     loadtest)       cmd_loadtest "$@" ;;
     loadtest-cleanup) cmd_loadtest_cleanup "$@" ;;
     reset-password) cmd_reset_password "$@" ;;

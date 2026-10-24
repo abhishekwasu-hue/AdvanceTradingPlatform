@@ -262,3 +262,93 @@ html { font-size: calc(100% * var(--text-scale)); }
   --glass: 17 25 45;
   --range-track: 51 65 96;
 }
+
+/* Colour v2 (owner, 23 Oct: the first comparison was "almost identical"; docs/design/CHART_COLOUR_REVIEW.md "Colour
+   v2"): visible, purposeful colour, still by meaning. New tokens only - no existing value changes in any theme. The
+   pages use them only while the `colour_v2` flag is on (src/ui/colourV2.tsx); with it off nothing reads them.
+   - brand-tint: the ATM row of the option chain, the active bottom-bar pill (under brand icons, fg text);
+   - up-tint / down-tint: a P&L figure's soft background by its sign, the Long / Short chips (under up / down text);
+   - teal-accent: a category colour (Appearance, an alert), the same hue as `signal`; never profit, loss or a warning;
+   - soft-*: the soft circles behind a Settings or Needs-attention icon (phone-settings look), one per meaning, under
+     that meaning's own colour (3 : 1 for the icon);
+   - oi-call / oi-put: the option chain's OI bars, red for calls and green for puts (3 : 1 on a card, on the neutral
+     in-the-money step `surface-2` and on the ATM row). The chain's sides take no tint (CV-3, owner 24 Oct);
+   - nav-insights: the muted group colour of the Insights pages in the navigation (Markets use info, Trading teal).
+   Colour-blind (red-green): everything that is red / green follows up / down to blue / orange; teal-accent follows signal. */
+:root {
+  --brand-tint: 20 36 74;
+  --up-tint: 12 44 30;
+  --down-tint: 46 16 22;
+  --teal-accent: 45 212 191;
+  --soft-brand: 30 52 105;
+  --soft-ai: 50 38 100;
+  --soft-warn: 66 46 12;
+  --soft-down: 75 28 36;
+  --soft-up: 16 64 42;
+  --soft-teal: 12 66 66;
+  --soft-info: 14 58 86;
+  --oi-call: 239 68 68;
+  --oi-put: 34 197 94;
+  --nav-insights: 224 140 236;
+}
+
+:root[data-theme="light"] {
+  --brand-tint: 229 239 255;
+  --up-tint: 236 253 243;
+  --down-tint: 254 242 242;
+  --teal-accent: 15 118 110;
+  --soft-brand: 219 234 254;
+  --soft-ai: 237 233 254;
+  --soft-warn: 254 243 199;
+  --soft-down: 254 226 226;
+  --soft-up: 220 252 231;
+  --soft-teal: 204 251 241;
+  --soft-info: 224 242 254;
+  --oi-call: 220 38 38;
+  --oi-put: 21 140 65;
+  --nav-insights: 162 28 175;
+}
+
+:root[data-cvd="on"] {
+  --up-tint: 12 34 54;
+  --down-tint: 52 30 12;
+  --teal-accent: 204 121 167;
+  --soft-ai: 54 44 104;
+  --soft-warn: 60 52 10;
+  --soft-down: 72 40 12;
+  --soft-up: 18 50 80;
+  --soft-teal: 64 34 56;
+  --soft-info: 40 48 62;
+  --oi-call: 249 115 22;
+  --oi-put: 86 180 233;
+}
+
+:root[data-theme="light"][data-cvd="on"] {
+  --up-tint: 235 245 255;
+  --down-tint: 255 244 232;
+  --teal-accent: 136 46 114;
+  --soft-ai: 237 233 254;
+  --soft-warn: 250 245 200;
+  --soft-down: 255 237 213;
+  --soft-up: 219 236 250;
+  --soft-teal: 247 228 240;
+  --soft-info: 236 240 245;
+  --oi-call: 214 76 10;
+  --oi-put: 2 132 199;
+}
+
+/* Colour v2, dark theme: clearer surface layers, so cards do not melt into the page - a deeper navy page, lighter
+   cards with a visible outline and a firmer shadow. Set on <html> as `data-colour="v2"` by the v2 shell only while the
+   `colour_v2` flag is on (portalled dialogs and sheets take it too). The chart background (--chart-bg) does not move. */
+:root[data-colour="v2"]:not([data-theme="light"]) {
+  --surface: 7 11 22;
+  --surface-1: 18 27 48;
+  --surface-2: 28 39 68;
+  --surface-3: 39 52 88;
+  --surface-inset: 4 7 15;
+  --border: 56 72 112;
+  --border-subtle: 38 50 84;
+  --glass: 18 27 48;
+  --range-track: 51 65 96;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.03);
+}

@@ -4054,6 +4054,27 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   the positions / orders reads are organisation-wide (TT-13..15).
 - Questions TT-1..TT-30 in `docs/OPEN_QUESTIONS.md` (status open); README row 21 status updated.
 
+## 24 Oct - TT-2: a manual order the user confirms is his approval (answers FNO-1-4)
+
+- Branch `claude/tt2-manual-approval` (from main at `1b13f776`). **No migration**, no new flag.
+- Owner decision (DECISIONS 24 Oct, TT-2): with `approval_only_entries` on, an order the user places and confirms himself
+  on the F&O ticket or the basket (later the Terminal) passes; bot and signal entries keep needing an approved proposal.
+- `execution/approval.py`: new origin `ORIGIN_MANUAL`; `gate_refusal` lets it through only without a deployment and
+  without a proposal id. `execution/signal_execution.py`: "manual" counts only with the journal source MANUAL and no
+  deployment, otherwise it is treated as automatic. `paper/fno_ticket.py` / `paper/fno_basket.py`: an `origin` keyword
+  (default automatic). `paper/fno_routes.py`: the four routes (ticket preview + place, basket preview + execute) pass
+  "manual"; the request bodies forbid extra fields, so the browser cannot set it.
+- Unchanged: risk, kill switch, the Phase 0 PAPER lock (asserted at the chokepoint), idempotency, the F&O ban,
+  experience gates; exits (ADR-0004); the AI never places orders (ADR-0006); z10c guard green.
+- Plain refusal text (only reached now by a non-route caller): "Your organisation approves every automatic entry first
+  (approval-only mode). Place this order yourself from the order ticket or the basket." No frontend change was needed:
+  the ticket only shows the server's refusals, so the old refusal is simply gone.
+- Tests: `tests/test_tt2_manual_approval.py` (8): ticket and basket pass, risk and kill switch still refuse, a deployment
+  entry is still proposed (and a deployment entry calling itself "manual" is refused), a forged "origin" is refused (422)
+  on the ticket and ignored on the console path, the PAPER lock holds, only `fno_routes.py` sets the manual origin.
+  `tests/test_z3_approval_entries.py` comments updated.
+- Provisional: TT2-1 (the plan-before-trade PAPER ticket keeps raising a proposal) in `docs/OPEN_QUESTIONS.md`.
+
 ## 24 Oct 2026 - day-one trader test rerun (README row 19 done)
 - The eight-step day-one test updated to the fixed pages and rerun on main at 390 / 1440, light / dark: 4 / 4 pass.
 - docs/design/DAY_ONE_TRADER_TEST.md: a rerun section with each finding's status and the follow-ups.

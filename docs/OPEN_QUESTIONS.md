@@ -132,3 +132,9 @@ closed rows: docs/archive/OPEN_QUESTIONS_CLOSED.md. Both are moved, never delete
 | GW-10 | Which Groww plan is the user on (brokerage)? | One plan, `standard`, from Groww's help page; PAPER uses it only when the caller names it (`venue_plan`); otherwise the user's own brokerage setting. | `broker_charges.py` | open |
 | GW-11 | Holdings carry no price in Groww's answer (reference). | Holdings show quantity and average only; the mark comes from ATP's own data source. | `groww.get_holdings` | open (verify) |
 | GW-12 | Every response field name is from extracts of Groww's API reference (the SDK passes answers through). | Read defensively; confirm on the first real answers (the fixture is hand-made). | `groww.py` | open (verify) |
+
+## TT-2 follow-up (24 Oct)
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|---|---|---|---|
+| TT2-1 | TT-2 names the ticket, the basket and the Terminal. The older plan-before-trade PAPER ticket (`paper/ticket.py`, Z5 / P1-d) is also the user's own order, but under approval-only mode it still raises an entry proposal he then approves himself. | Unchanged for now: only the F&O ticket and basket routes (and later the Terminal) set the origin "manual", as the decision lists. If Abhi wants the plan ticket to count as his approval too, it is a one-line route change plus a test. Checked against CLAUDE.md §3-4, DECISIONS (TT-2) and ATP_SESSION_TRADING_TERMINAL.md. | `paper/ticket.py:288`, `paper/fno_routes.py` | open (provisional default in use) |

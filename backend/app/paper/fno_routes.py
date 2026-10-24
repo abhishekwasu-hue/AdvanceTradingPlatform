@@ -37,12 +37,17 @@ from app.auth.dependencies import get_current_user, require_trader
 from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
+from app.execution.approval import ORIGIN_MANUAL
 from app.paper import fno_basket, fno_contracts, fno_ticket
 
 router = APIRouter(prefix="/api/paper/fno", tags=["paper"])
 UI_V2_FLAG = "ui_v2"
 MAX_PRICE = 1e7
 SYMBOL = r"^[A-Za-z0-9&_\- ]{1,30}$"
+# TT-2 (owner, 24 Oct; answers FNO-1-4): an order the user places and confirms himself on the ticket or the basket is his
+# approval under approval-only mode. The origin is decided here, by the route - the request bodies forbid extra fields,
+# so the browser cannot set it - and only these four routes (preview + place, basket preview + execute) pass it.
+MANUAL = ORIGIN_MANUAL
 place_rate_limit = user_rate_limit("paper_fno_order", limit=30, window_seconds=60)
 basket_rate_limit = user_rate_limit("paper_fno_basket", limit=10, window_seconds=60)
 evaluate_rate_limit = user_rate_limit("paper_fno_basket_eval", limit=120, window_seconds=60)
@@ -123,7 +128,7 @@ async def preview(body: OrderBody, user: User = Depends(require_trader), session
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)            # the caller's own entitlement (BT1), never a teammate's
-    view = await fno_ticket.assess(session, user, body.ask(), price_lookup=lookup)
+    view = await fno_ticket.assess(session, user, body.ask(), price_lookup=lookup, origin=MANUAL)
     await session.commit()
     return view
 
@@ -134,7 +139,7 @@ async def place(body: OrderBody, user: User = Depends(require_trader), session: 
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
-    return await fno_ticket.place(session, user, body.ask(), price_lookup=lookup)
+    return await fno_ticket.place(session, user, body.ask(), price_lookup=lookup, origin=MANUAL)
 
 
 # --- FNO-2: the basket ------------------------------------------------------------------------------------------------
@@ -202,7 +207,7 @@ async def basket_preview(body: BasketBody, user: User = Depends(require_trader),
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
-    view = await fno_basket.preview(session, user, body.asks(), product=body.product, spot=body.spot, price_lookup=lookup)
+    view = await fno_basket.preview(session, user, body.asks(), product=body.product, spot=body.spot, price_lookup=lookup, origin=MANUAL)
     await session.commit()
     return view
 
@@ -213,7 +218,8 @@ async def basket_execute(body: ExecuteBody, user: User = Depends(require_trader)
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
-    return await fno_basket.execute(session, user, body.asks(), product=body.product, basket_ref=body.basket_ref, price_lookup=lookup)
+    return await fno_basket.execute(session, user, body.asks(), product=body.product, basket_ref=body.basket_ref, price_lookup=lookup,
+                                    origin=MANUAL)
 
 
 class CloseFilledBody(BaseModel):

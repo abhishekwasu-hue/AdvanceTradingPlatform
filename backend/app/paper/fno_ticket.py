@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import AssetClass, SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal
 from app.db.models import InstrumentRecord, Tenant, TradeRecord, User
+from app.execution.approval import ORIGIN_AUTOMATIC
 from app.instruments import master
 from app.instruments.models import ContractSpec
 from app.market_data.calendar import to_ist
@@ -271,8 +272,8 @@ PLAIN = (
     (re.compile(r"^Daily loss limit breached"), "Today's loss limit is reached: no new entries today. Exits still work."),
     (re.compile(r"^Computed position size is below one lot"), "One lot risks more than your risk per trade allows. Set a closer "
                                                                "stop-loss or a smaller position."),
-    (re.compile(r"^Approval-only mode"), "Your organisation approves every entry first (approval-only mode). Orders from the chain "
-                                         "cannot be sent for approval yet."),
+    (re.compile(r"^Approval-only mode"), "Your organisation approves every automatic entry first (approval-only mode). "
+                                         "Place this order yourself from the order ticket or the basket."),
 )
 
 
@@ -347,8 +348,12 @@ async def _price(lookup: Optional[PriceLookup], contract: Contract) -> Tuple[Opt
 
 
 async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_lookup: Optional[PriceLookup],
-                 live_only: bool = False, now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Everything the confirm step shows, checked. Reads only (no entry slot is taken, nothing is stored)."""
+                 live_only: bool = False, now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC) -> Dict[str, Any]:
+    """Everything the confirm step shows, checked. Reads only (no entry slot is taken, nothing is stored).
+
+    TT-2: `origin` is set by the server from the route - "manual" only on the ticket / basket routes, where the user
+    confirms the order himself (his approval under approval-only mode). Any other caller stays "automatic" and needs an
+    approved proposal, as before."""
     from app.execution import approval
     from app.execution.signal_execution import entry_refusals
     from app.paper import experience
@@ -398,7 +403,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
 
     tenant = await session.get(Tenant, user.tenant_id)
     refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, MODE, STRATEGY_ID, user=user, reserve=False))
-    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=approval.ORIGIN_AUTOMATIC, approval_action_id=None)
+    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=None)
     if gate:
         refusals.append(plain(gate))
     direction = SignalDirection.LONG if side == "BUY" else SignalDirection.SHORT
@@ -462,13 +467,13 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
 
 
 async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_lookup: Optional[PriceLookup],
-                now: Optional[datetime] = None) -> Dict[str, Any]:
+                now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC) -> Dict[str, Any]:
     """Checks the ticket again at the live price and places ONE PAPER order through the ordinary pipeline, or says why
     not. Never a broker order: the mode is PAPER, asserted at the chokepoint under the Phase 0 lock."""
     from app.execution.signal_execution import execute_signal_for_user
     from app.platform import phase0_lock
     now = now or datetime.now(timezone.utc)
-    view = await assess(session, user, ask, price_lookup=price_lookup, live_only=True, now=now)
+    view = await assess(session, user, ask, price_lookup=price_lookup, live_only=True, now=now, origin=origin)
     if not view["can_place"]:
         await session.commit()
         return {**view, "status": "REFUSED", "reasons": view["errors"] + view["refusals"], "order_id": None, "trade_id": None, "filled": None}
@@ -489,7 +494,7 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
             session, user, mode=mode, strategy_id=STRATEGY_ID, signal=_signal(contract, ask.side, fill, stop, now, view["fill_note"] or ""),
             idempotency_key=key, holding="SWING" if ask.product == "NRML" else "INTRADAY", max_quantity=float(view["units"]),
             journal_source="MANUAL", manual_contract_spec=_spec(contract), manual_contract_meta=_meta(contract, ask.side),
-            paper_execution=PAPER_EXECUTION, freeze_quantity=freeze, market_protection_pct=band)
+            paper_execution=PAPER_EXECUTION, freeze_quantity=freeze, market_protection_pct=band, origin=origin)
     except Exception as exc:  # noqa: BLE001 - shown to the person; the order trail holds what the pipeline recorded
         logger.exception("FNO ticket order failed for user %s", user.id)
         await session.rollback()

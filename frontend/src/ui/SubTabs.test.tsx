@@ -2,7 +2,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import css from "../styles/tokens.css?raw";
-import { SUBTAB_ACTIVE, SUBTAB_IDLE, SUBTAB_TRACK, SubTabs, nextKey } from "./SubTabs";
+import { PageTabs } from "./PageTabs";
+import { PAGETAB_ACTIVE, PAGETAB_IDLE, SUBTAB_ACTIVE, SUBTAB_IDLE, SUBTAB_TRACK, SubTabs, fadeSides, nextKey, rowMode } from "./SubTabs";
+import { TimeframeTabs, splitTimeframes } from "./TimeframeTabs";
 
 const ITEMS = [
   { key: "a", label: "Max pain", short: "Pain" },
@@ -32,14 +34,38 @@ describe("UI-H H2: SubTabs, the one tab / sub-tab control", () => {
     expect(SUBTAB_IDLE).not.toContain("bg-brand");
   });
 
-  it("phones: the row wraps by default (nothing off-screen); scroll layout keeps one line with a visible scroller", () => {
-    const wrap = renderToStaticMarkup(<SubTabs items={ITEMS} value="a" label="X" />);
-    expect(wrap).toContain("flex-wrap");
-    expect(wrap).not.toContain("overflow-x-auto");
-    const scroll = renderToStaticMarkup(<SubTabs items={ITEMS} value="a" label="X" layout="scroll" />);
-    expect(scroll).toContain("overflow-x-auto");
-    expect(scroll).toContain("subtabs-scroll");
+  it("W0-1: never a wrapped row - up to 5 options equal widths, more than 5 one scrolling row", () => {
+    expect(rowMode(5)).toBe("segments");
+    expect(rowMode(6)).toBe("scroll");
+    expect(rowMode(2, "scroll")).toBe("scroll");
+    const five = renderToStaticMarkup(<SubTabs items={ITEMS} value="a" label="X" />);
+    expect(five).not.toContain("flex-wrap");
+    expect(five).toContain('data-mode="segments"');
+    expect(five).toMatch(/data-subtab="a"[^>]*class="[^"]*flex-1 basis-0/);
+    const six = renderToStaticMarkup(<SubTabs label="X" value="f" items={["a", "b", "c", "d", "e", "f"].map((k) => ({ key: k, label: k }))} />);
+    expect(six).not.toContain("flex-wrap");
+    expect(six).toContain('data-mode="scroll"');
+    expect(six).toContain("overflow-x-auto");
+    expect(six).toMatch(/data-subtab="f"[^>]*class="[^"]*shrink-0/);
     expect(SUBTAB_TRACK).toContain("bg-surface-2");
+  });
+
+  it("the edge fade shows on the side(s) that hide more tabs", () => {
+    expect(fadeSides(0, 300, 300)).toEqual({ left: false, right: false });
+    expect(fadeSides(0, 300, 500)).toEqual({ left: false, right: true });
+    expect(fadeSides(100, 300, 500)).toEqual({ left: true, right: true });
+    expect(fadeSides(200, 300, 500)).toEqual({ left: true, right: false });
+  });
+
+  it("W0-2: PageTabs (primary) is an underline bar, clearly different from the filled SubTabs", () => {
+    const html = renderToStaticMarkup(<PageTabs kind="toggle" items={ITEMS} value="a" label="Show" />);
+    expect(html).toContain('data-level="primary"');
+    expect(html).toMatch(/aria-pressed="true"[^>]*class="[^"]*border-b-2[^"]*border-brand/);
+    expect(html).not.toContain("bg-brand");
+    expect(html).not.toContain("bg-surface-2");
+    expect(PAGETAB_ACTIVE).toContain("border-brand");
+    expect(PAGETAB_IDLE).toContain("text-fg-muted");
+    expect(renderToStaticMarkup(<SubTabs items={ITEMS} value="a" label="X" />)).toContain('data-level="secondary"');
   });
 
   it("short labels on phones, full labels from md", () => {
@@ -90,6 +116,25 @@ const lum = ([r, g, b]: number[]) => {
   return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
 };
 const ratio = (a: number[], b: number[]) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+
+describe("UI-H W0-1: the timeframe row", () => {
+  const ALL = ["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"].map((k) => ({ key: k, label: k.toUpperCase() }));
+  it("the most-used five in the row, the rest under More", () => {
+    const { row, more } = splitTimeframes(ALL);
+    expect(row.map((o) => o.key)).toEqual(["1min", "5min", "15min", "60min", "day"]);
+    expect(more.map((o) => o.key)).toEqual(["3min", "30min", "week", "month"]);
+    expect(splitTimeframes(ALL.slice(0, 7)).more.map((o) => o.key)).toEqual(["3min", "30min"]);
+  });
+  it("a timeframe picked from More is shown on the More button, filled and pressed", () => {
+    const html = renderToStaticMarkup(<TimeframeTabs options={ALL} value="week" onChange={() => undefined} />);
+    expect(html).toMatch(/role="group" aria-label="Timeframe"/);
+    expect(html).toMatch(/aria-haspopup="menu"[^>]*aria-pressed="true"[^>]*aria-label="WEEK"[^>]*class="[^"]*bg-brand/);
+    expect(html).not.toContain(">More<");
+    const plain = renderToStaticMarkup(<TimeframeTabs options={ALL} value="5min" onChange={() => undefined} />);
+    expect(plain).toContain('aria-label="More timeframes"');
+    expect(plain).toMatch(/aria-pressed="true"[^>]*data-subtab="5min"/);
+  });
+});
 
 describe("UI-H H2: the active sub-tab contrast tokens", () => {
   const dark = block(":root");

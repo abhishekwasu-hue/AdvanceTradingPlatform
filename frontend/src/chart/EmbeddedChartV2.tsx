@@ -8,12 +8,12 @@ import { ChartSettingsPopover } from "./ChartSettingsPopover";
 import ChartV2 from "./ChartV2";
 import type { LevelLine } from "./chartCore";
 import { chartTabPath, marketChip, offeredTimeframes } from "./chartsPage";
-import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, type TimeframeId } from "./timeframes";
+import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, timeframeShort, type TimeframeId } from "./timeframes";
 import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs } from "./useChartPrefs";
 import { useMarketStatus } from "./useMarketStatus";
 import { usePageVisible } from "../utils/usePageVisible";
-import { SubTabs } from "../ui/SubTabs";
+import { TimeframeTabs } from "../ui/TimeframeTabs";
 
 /**
  * UI2-4e (Charts page plan §3, CHP-10): the v2 chart inside another v2 page (the Signals detail today), the same
@@ -68,8 +68,8 @@ export default function EmbeddedChartV2({
     <section aria-label={`Chart of ${sym}`} data-embedded-chart={sym} className="overflow-hidden rounded-panel border border-subtle bg-surface-1">
       <div role="toolbar" aria-label={`Chart controls for ${sym}`} className="flex items-center gap-space-1 border-b border-subtle p-space-1">
         <div className="min-w-0 flex-1">
-          <SubTabs kind="toggle" label="Timeframe" size="sm" layout="scroll" value={timeframe} onChange={setTimeframe}
-            items={TIMEFRAMES.map((tf) => ({ key: tf, label: timeframeLabel(tf) }))} />
+          <TimeframeTabs value={timeframe} onChange={setTimeframe}
+            options={TIMEFRAMES.map((tf) => ({ key: tf, label: timeframeLabel(tf), short: timeframeShort(tf) }))} />
         </div>
         <ChartSettingsPopover prefs={prefs.prefs} onChange={prefs.update} error={prefs.error} />
         {openLink && (

@@ -18,6 +18,7 @@ import { pathFor, type PageProps } from "../routes";
 import { chartsPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
 import { SubTabs } from "../ui/SubTabs";
+import { TimeframeTabs } from "../ui/TimeframeTabs";
 import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import { useFeatures } from "../ui/useFeatures";
 import PageDishV2 from "../growth/PageDishV2";
@@ -35,7 +36,7 @@ import { IndicatorsMenu } from "./IndicatorsMenu";
 import { toggle as toggleIndicator } from "./indicatorsModel";
 import { CandlePool, START_PARAMS, startChartFrom } from "./multiChart";
 import MultiChartV2 from "./MultiChartV2";
-import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, type TimeframeId } from "./timeframes";
+import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, timeframeShort, type TimeframeId } from "./timeframes";
 import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs } from "./useChartPrefs";
 import { useFullscreen } from "./useFullscreen";
@@ -249,9 +250,9 @@ export default function ChartsPageV2(_props: PageProps) {
                   {chip.text}
                 </span>
               )}
-              <div className="order-6 w-full md:order-none md:w-auto">
-                <SubTabs kind="toggle" label="Timeframe" size="sm" value={timeframe} onChange={(tf) => setView({ timeframe: tf })}
-                  data={{ tour: "charts-timeframes" }} items={offered.map((tf) => ({ key: tf, label: timeframeLabel(tf) }))} />
+              <div className="order-6 w-full md:order-none md:w-auto" data-tour="charts-timeframes">
+<TimeframeTabs value={timeframe} onChange={(tf) => setView({ timeframe: tf })}
+                  options={offered.map((tf) => ({ key: tf, label: timeframeLabel(tf), short: timeframeShort(tf) }))} />
               </div>
               <label className="sr-only" htmlFor="charts-type">Chart type</label>
               <select id="charts-type" value={view.type} onChange={(e) => setView({ type: e.target.value as ChartTypeV2 })}

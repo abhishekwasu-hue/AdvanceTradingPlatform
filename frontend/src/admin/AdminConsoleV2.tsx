@@ -6,7 +6,7 @@ import { Sheet } from "../components/primitives";
 import AdminPage from "../pages/AdminPage";
 import type { PageProps } from "../routes";
 import { NotFound } from "../shell/common";
-import { SubTabs } from "../ui/SubTabs";
+import { PageTabs } from "../ui/PageTabs";
 import { useFeatures } from "../ui/useFeatures";
 import AlertsPanelV2 from "./AlertsPanelV2";
 import GrowthSettingsPanelV2 from "./GrowthSettingsPanelV2";
@@ -53,7 +53,7 @@ export default function AdminConsoleV2(_props: PageProps) {
         </button>
       </header>
 
-      <SubTabs kind="links" label="Admin sections" value={section} onChange={pick}
+      <PageTabs kind="links" label="Admin sections" value={section} onChange={pick}
         items={ADMIN_SECTIONS.map((s) => ({ key: s.id, label: s.label, to: s.id === "system" ? "/admin" : `/admin?section=${s.id}` }))} />
 
       {section === "system" && <><AlertsPanelV2 /><SystemPanels /><ChainHistoryCard /></>}

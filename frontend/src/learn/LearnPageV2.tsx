@@ -8,7 +8,7 @@ import { PageTitleV2 } from "../trading/PartsV2";
 import { ComingSoon } from "../ui/ComingSoon";
 import { learnApi, type LearnLibrary, type Lesson } from "./api";
 import { ALL, LEARN_FLAG, isAppPath, learnGlossary, lessonsIn, safeVideoUrl, searchLessons } from "./model";
-import { SubTabs } from "../ui/SubTabs";
+import { PageTabs } from "../ui/PageTabs";
 
 /** The lessons a newcomer reads first, in this order (each only when the library has it). */
 const START_HERE = ["atp-how", "paper-why", "risk-before"] as const;
@@ -97,7 +97,7 @@ export function LearnView({ library, initialTab = "lessons", initialOpen = [] }:
       )}
 
       <div className="flex flex-col gap-space-3 md:flex-row md:items-center md:justify-between">
-        <SubTabs label="Learn" value={tab} onChange={setTab}
+        <PageTabs label="Learn" value={tab} onChange={setTab}
           items={[{ key: "lessons", label: "Lessons" }, { key: "glossary", label: "Words explained" }] as const} />
         <label htmlFor={searchId} className="relative block w-full md:w-72">
           <span className="sr-only">{tab === "lessons" ? "Search the lessons" : "Search the words"}</span>

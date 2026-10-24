@@ -35,6 +35,10 @@ export function isTimeframe(value: unknown): value is TimeframeId {
 }
 
 export const timeframeLabel = (tf: TimeframeId): string => SPEC[tf].label;
+
+/** UI-H W0-1: the short names a phone's timeframe row shows ("1m 5m 15m 1H D"); the full label stays the accessible name. */
+const SHORT: Record<TimeframeId, string> = { "1min": "1m", "3min": "3m", "5min": "5m", "15min": "15m", "30min": "30m", "60min": "1H", day: "D", week: "W", month: "M" };
+export const timeframeShort = (tf: TimeframeId): string => SHORT[tf];
 /** Seconds per bar (a month counts as 30 days: only used to tell a closed bar from a forming one). */
 export const timeframeSeconds = (tf: TimeframeId): number => SPEC[tf].seconds;
 export const historyDaysFor = (tf: TimeframeId): number => SPEC[tf].historyDays;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { HUB_LABELS, hubApi, hubHref, hubTabs, isHubInfo, type HubApi, type HubCarry, type HubInfo, type HubTab } from "./hubModel";
-import { SubTabs } from "../ui/SubTabs";
+import { PageTabs } from "../ui/PageTabs";
 
 /**
  * FNO-3 (owner order section 1): the symbol hub's tab row - "Chart | Option chain | Futures | Overview" at the top of the
@@ -49,7 +49,7 @@ export function HubTabsView({ info, current, carry }: { info: HubInfo | null; cu
   const tabs = hubTabs(info);
   if (!info || tabs.length === 0) return null;
   return (
-    <SubTabs kind="links" label={`${info.underlying} pages`} value={current} data={{ "hub-tabs": "" }}
+    <PageTabs kind="links" label={`${info.underlying} pages`} value={current} data={{ "hub-tabs": "" }}
       items={tabs.map((t) => ({ key: t, label: HUB_LABELS[t], to: hubHref(t, info, carry), data: { "hub-tab": t } }))} />
   );
 }

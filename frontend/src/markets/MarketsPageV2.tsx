@@ -6,6 +6,7 @@ import { cx } from "../components/primitives/cx";
 import type { PageProps } from "../routes";
 import { chartTabPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
+import { PageTabs } from "../ui/PageTabs";
 import { SubTabs } from "../ui/SubTabs";
 import {
   PERIODS, UNKNOWN, advanceShare, asOfText, breadthText, closeText, dishLines, fetchList, fetchOverview, heatClass, isPeriod,
@@ -43,7 +44,7 @@ function useLoad<T>(load: () => Promise<T>, key: string): [Load<T>, () => void] 
   return [state, useCallback(() => setNonce((n) => n + 1), [])];
 }
 
-/** UI-H Wave 0 (H2): the shared SubTabs (a toggle group: both rows pick a view of the same list). */
+/** UI-H Wave 0 (H2, W0-2): the shared SubTabs, a toggle group - a choice inside the content (Day / Week / Month). */
 function Segmented<T extends string>({ label, items, value, onChange }: {
   label: string; items: readonly { key: T; label: string }[]; value: T; onChange: (v: T) => void;
 }) {
@@ -368,14 +369,14 @@ export default function MarketsPageV2(_props: PageProps) {
 
   return (
     <div className="space-y-space-4" data-page="markets-v2">
+      {/* W0-2: Sectors / Indices is page-level navigation (PageTabs, under the top bar); Day / Week / Month is a choice
+          inside the content (SubTabs). */}
+      {!listKey && <PageTabs kind="toggle" label="Show" items={VIEWS} value={view} onChange={(v) => set({ view: v })} />}
       <PageIntro id="markets" lines={["How each sector and index moved. Tap one to see its stocks, then a stock to open its chart."]} />
       <header className="flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between">
         <h1 id={headingId} className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Sectors &amp; indices</h1>
         {!listKey && (
-          <div className="flex flex-wrap items-center gap-space-2">
-            <Segmented label="Show" items={VIEWS} value={view} onChange={(v) => set({ view: v })} />
-            <Segmented label="Period" items={PERIODS} value={period} onChange={(p) => set({ period: p })} />
-          </div>
+          <Segmented label="Period" items={PERIODS} value={period} onChange={(p) => set({ period: p })} />
         )}
         {listKey && <Segmented label="Period" items={PERIODS} value={period} onChange={(p) => set({ period: p })} />}
       </header>

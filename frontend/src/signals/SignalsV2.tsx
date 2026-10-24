@@ -15,7 +15,7 @@ import DayOneV2 from "./DayOneV2";
 import { Direction, SignalDetail, StatusChip, signalDay, signalTime } from "./SignalPartsV2";
 import { setupWords } from "./signalText";
 import { useSignalFeed } from "./useSignalFeed";
-import { SubTabs } from "../ui/SubTabs";
+import { PageTabs } from "../ui/PageTabs";
 
 /** Desktop gets the list and the detail side by side from this width (UI v2 §8: "detail panels 430 px"). The seven
  * columns need about 660 px beside the 430 px panel, which a 1440 px window has and 1280-1439 does not; below it the
@@ -114,7 +114,7 @@ export default function SignalsV2() {
       {dishOn && <PageDishV2 page="signals" />}
       {dayOneOn && <DayOneV2 onAdopted={setWatching} />}
 
-      <SubTabs label="Signals" value={tab} data={{ tour: "signals-tabs" }}
+      <PageTabs label="Signals" value={tab} data={{ tour: "signals-tabs" }}
         onChange={(t) => { setTab(t); setPicked(null); setMessage(null); }}
         items={TABS.map((t) => {
           const n = count(t.id);

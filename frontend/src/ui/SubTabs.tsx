@@ -1,18 +1,21 @@
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { cx } from "../components/primitives/cx";
 
 /**
- * UI-H Wave 0 (H2; owner decision 3, 24 Oct): the ONE segmented control for every tab / sub-tab row in the app. Chips
- * stay only where they filter a list; a row that switches what the page shows is a SubTabs.
+ * UI-H Wave 0 (H2; owner decisions 24 Oct: one navigation style, then W0-1 and W0-2): the tab rows of the app come in
+ * TWO levels that look clearly different, both built here so they behave the same:
+ * - PageTabs (src/ui/PageTabs.tsx, `level="primary"`): page-level navigation directly under the top bar (My trades /
+ *   Strategies / Performance, Admin sections, Sectors / Indices) - an underline tab bar;
+ * - SubTabs (`level="secondary"`, the default): a choice inside the content (Day / Week / Month, the Analyses sections) -
+ *   the filled segmented control: a recessed track (surface-2), the active tab filled with the accent (`bg-brand` =
+ *   the brand fill token, `text-on-brand`, bold - WCAG AA in both themes, see SubTabs.test.tsx), inactive tabs muted.
  *
- * Look (colour_v2 tokens only): a recessed track (surface-2); the active tab is filled with the accent (`bg-brand` =
- * the brand fill token, `text-on-brand`, bold - WCAG AA in both themes, see SubTabs.test.tsx); inactive tabs are
- * muted (`text-fg-muted`, AA on surface-2) and brighten on hover. Every target is 44 px tall on a phone.
- *
- * Phones: every tab stays reachable. `layout="wrap"` (the default) wraps the row, so nothing is ever off-screen;
- * `layout="scroll"` keeps one line (a long row such as timeframes) with a visible scroll bar and scrolls the active
- * tab into view whenever it changes.
+ * W0-1, never a wrapped row:
+ * - up to 5 options: equal widths across the row;
+ * - more than 5 (or labels too long for the screen): ONE row that scrolls sideways, the active tab scrolled into view
+ *   and a fade on the side(s) where more tabs sit.
+ * Every target is 44 px tall on a phone.
  *
  * Semantics (`kind`):
  * - "tabs" (default): role="tablist" / role="tab" + aria-selected, roving focus (only the active tab is in the Tab
@@ -26,7 +29,7 @@ import { cx } from "../components/primitives/cx";
 export interface SubTabItem<K extends string = string> {
   key: K;
   label: ReactNode;
-  /** A shorter label for phones (below md). The full label is still the accessible name via `ariaLabel` if set. */
+  /** A shorter label for phones (below md). */
   short?: ReactNode;
   /** The accessible name when the label is not plain text (or differs on a phone). */
   ariaLabel?: string;
@@ -44,22 +47,32 @@ export interface SubTabsProps<K extends string = string> {
   /** The accessible name of the row ("Analyses", "Timeframe"). */
   label: string;
   kind?: "tabs" | "links" | "toggle";
-  layout?: "wrap" | "scroll";
+  /** "auto" (default): equal widths up to 5 options, a scrolling row above. "scroll": always the scrolling row. */
+  layout?: "auto" | "scroll";
   /** "md" (default): 44 px on a phone, 36 px from md. "sm": a toolbar row (same phone size, 32 px from md). */
   size?: "md" | "sm";
   /** "tabs": ids `<prefix>-tab-<key>` and aria-controls `<prefix>-panel-<key>`. */
   idPrefix?: string;
-  /** Stretch the tabs to the full width (equal shares) on every screen. */
+  /** Kept for callers from the first cut: equal widths are now the default up to 5 options. */
   full?: boolean;
   className?: string;
   /** Extra data-* attributes for the row. */
   data?: Record<string, string>;
+  /** Extra content at the end of the row, inside the group (the timeframes' More menu). */
+  trailing?: ReactNode;
 }
 
-/** The classes of one tab (exported for the guard and contrast tests). */
+/** The most options shown as equal-width segments; more become one scrolling row (W0-1). */
+export const MAX_SEGMENTS = 5;
+
+/** Secondary (SubTabs) classes, exported for the contrast and guard tests. */
 export const SUBTAB_ACTIVE = "bg-brand font-semibold text-on-brand shadow-card";
 export const SUBTAB_IDLE = "font-medium text-fg-muted hover:bg-surface-1 hover:text-fg";
 export const SUBTAB_TRACK = "rounded-panel bg-surface-2 p-space-1";
+/** Primary (PageTabs) classes: an underline bar. */
+export const PAGETAB_ACTIVE = "border-brand font-semibold text-fg";
+export const PAGETAB_IDLE = "border-transparent font-medium text-fg-muted hover:text-fg";
+export const PAGETAB_TRACK = "border-b border-subtle";
 
 function dataAttrs(data?: Record<string, string>): Record<string, string> {
   if (!data) return {};
@@ -83,22 +96,58 @@ export function nextKey<K extends string>(keys: readonly K[], current: K | null,
   }
 }
 
-export function SubTabs<K extends string>({
-  items, value, onChange, label, kind = "tabs", layout = "wrap", size = "md", idPrefix, full = false, className, data,
-}: SubTabsProps<K>) {
-  const rowRef = useRef<HTMLDivElement>(null);
+/** "segments" (equal widths) up to MAX_SEGMENTS options, else "scroll" (exported for tests). */
+export function rowMode(count: number, layout: "auto" | "scroll" = "auto"): "segments" | "scroll" {
+  return layout === "scroll" || count > MAX_SEGMENTS ? "scroll" : "segments";
+}
 
-  // Scroll layout: the active tab is always in view (a phone opening on "Monthly" sees it, not "1 min").
-  useEffect(() => {
-    if (layout !== "scroll" || value === null) return;
+/** Which sides of a sideways-scrolling row hide more tabs. */
+export function fadeSides(scrollLeft: number, clientWidth: number, scrollWidth: number): { left: boolean; right: boolean } {
+  return { left: scrollLeft > 2, right: scrollLeft + clientWidth < scrollWidth - 2 };
+}
+
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+/** The row's fades and keeping the active tab in view (both levels). */
+function useScrollRow(value: string | null) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [fade, setFade] = useState({ left: false, right: false });
+  const measure = useCallback(() => {
     const row = rowRef.current;
-    const el = row ? tabEl(row, value) : null;
-    if (!row || !el) return;
-    const left = el.offsetLeft - row.offsetLeft;
-    const right = left + el.offsetWidth;
-    if (left < row.scrollLeft) row.scrollLeft = left - 8;
-    else if (right > row.scrollLeft + row.clientWidth) row.scrollLeft = right - row.clientWidth + 8;
-  }, [layout, value]);
+    if (!row) return;
+    const next = fadeSides(row.scrollLeft, row.clientWidth, row.scrollWidth);
+    setFade((f) => (f.left === next.left && f.right === next.right ? f : next));
+  }, []);
+  useIsoLayoutEffect(() => {
+    const row = rowRef.current;
+    if (row && value !== null) {
+      const el = tabEl(row, value);
+      if (el) {
+        const left = el.offsetLeft - row.offsetLeft;
+        const right = left + el.offsetWidth;
+        if (left < row.scrollLeft) row.scrollLeft = Math.max(0, left - 24);
+        else if (right > row.scrollLeft + row.clientWidth) row.scrollLeft = right - row.clientWidth + 24;
+      }
+    }
+    measure();
+  }, [value, measure]);
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [measure]);
+  return { rowRef, fade, measure };
+}
+
+export function TabRow<K extends string>({
+  items, value, onChange, label, kind = "tabs", layout = "auto", size = "md", idPrefix, className, data, trailing,
+  level = "secondary",
+}: SubTabsProps<K> & { level?: "primary" | "secondary" }) {
+  const { rowRef, fade, measure } = useScrollRow(value);
+  const primary = level === "primary";
+  const mode = rowMode(items.length + (trailing ? 1 : 0), layout);
 
   const keys = items.map((i) => i.key);
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -110,13 +159,13 @@ export function SubTabs<K extends string>({
   };
 
   const tabClass = (on: boolean) => cx(
-    // `full` shares the width equally, so a tab keeps a little less side padding (four tabs fit a 360 px phone).
-    "inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-control text-t14 transition-colors duration-fast",
-    full ? "px-space-2" : "px-space-3",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1",
-    size === "sm" ? "md:min-h-8 md:px-space-2" : "md:min-h-9",
-    full ? "min-w-0 flex-1" : layout === "scroll" ? "shrink-0" : "flex-auto md:flex-none",
-    on ? SUBTAB_ACTIVE : SUBTAB_IDLE,
+    "inline-flex min-h-11 items-center justify-center whitespace-nowrap text-t14 transition-colors duration-fast",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
+    mode === "segments" ? "flex-1 basis-0" : "shrink-0",
+    primary
+      ? cx("-mb-px border-b-2 px-space-3", mode === "segments" && "md:flex-none md:basis-auto", on ? PAGETAB_ACTIVE : PAGETAB_IDLE)
+      : cx("rounded-control px-space-3 focus-visible:ring-offset-1", size === "sm" ? "md:min-h-8 md:px-space-2" : "md:min-h-9",
+        on ? SUBTAB_ACTIVE : SUBTAB_IDLE),
   );
 
   const body = (it: SubTabItem<K>) => it.short === undefined ? it.label : (
@@ -127,16 +176,23 @@ export function SubTabs<K extends string>({
   );
 
   const track = cx(
-    "flex gap-space-1", SUBTAB_TRACK,
-    layout === "scroll" ? "subtabs-scroll max-w-full overflow-x-auto" : "flex-wrap",
-    full ? "w-full" : "w-full md:w-fit",
-    className,
+    "subtabs-scroll flex max-w-full overflow-x-auto",
+    primary ? cx(PAGETAB_TRACK, "gap-space-1 md:gap-space-4") : cx(SUBTAB_TRACK, "gap-space-1"),
   );
+  // The fade takes the colour of what is under the row: the track for SubTabs, the page for PageTabs.
+  const fadeFrom = primary ? "from-surface" : "from-surface-2";
+  const fades = (
+    <>
+      {fade.left && <span aria-hidden data-fade="left" className={cx("pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r to-transparent", fadeFrom, !primary && "rounded-l-panel")} />}
+      {fade.right && <span aria-hidden data-fade="right" className={cx("pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l to-transparent", fadeFrom, !primary && "rounded-r-panel")} />}
+    </>
+  );
+  const wrap = cx("relative min-w-0", primary ? "w-full" : mode === "segments" ? "w-full md:w-fit" : "w-full", className);
 
   if (kind === "links") {
     return (
-      <nav aria-label={label} data-subtabs="links" {...dataAttrs(data)}>
-        <div ref={rowRef} className={track} onKeyDown={onKeyDown}>
+      <nav aria-label={label} data-subtabs="links" data-level={level} data-mode={mode} className={wrap} {...dataAttrs(data)}>
+        <div ref={rowRef} className={track} onKeyDown={onKeyDown} onScroll={measure}>
           {items.map((it) => {
             const on = it.key === value;
             return (
@@ -148,32 +204,54 @@ export function SubTabs<K extends string>({
               </Link>
             );
           })}
+          {trailing}
         </div>
+        {fades}
       </nav>
     );
   }
 
   const tabs = kind === "tabs";
   return (
-    <div ref={rowRef} role={tabs ? "tablist" : "group"} aria-label={label} data-subtabs={kind} {...dataAttrs(data)}
-      className={track} onKeyDown={tabs ? onKeyDown : undefined}>
-      {items.map((it) => {
-        const on = it.key === value;
-        const roving = tabs ? { tabIndex: on || (value === null && it.key === keys[0]) ? 0 : -1 } : {};
-        return (
-          <button key={it.key} type="button" title={it.title} aria-label={it.ariaLabel}
-            {...(tabs
-              ? { role: "tab", "aria-selected": on, id: idPrefix ? `${idPrefix}-tab-${it.key}` : undefined,
-                  "aria-controls": idPrefix ? `${idPrefix}-panel-${it.key}` : undefined }
-              : { "aria-pressed": on })}
-            {...roving}
-            data-subtab={it.key} data-active={on ? "true" : undefined} {...dataAttrs(it.data)}
-            onClick={() => onChange?.(it.key)}
-            className={tabClass(on)}>
-            {body(it)}
-          </button>
-        );
-      })}
+    <div className={wrap}>
+      <div ref={rowRef} role={tabs ? "tablist" : "group"} aria-label={label} data-subtabs={kind} data-level={level} data-mode={mode}
+        {...dataAttrs(data)} className={track} onKeyDown={tabs ? onKeyDown : undefined} onScroll={measure}>
+        {items.map((it) => {
+          const on = it.key === value;
+          const roving = tabs ? { tabIndex: on || (value === null && it.key === keys[0]) ? 0 : -1 } : {};
+          return (
+            <button key={it.key} type="button" title={it.title} aria-label={it.ariaLabel}
+              {...(tabs
+                ? { role: "tab", "aria-selected": on, id: idPrefix ? `${idPrefix}-tab-${it.key}` : undefined,
+                    "aria-controls": idPrefix ? `${idPrefix}-panel-${it.key}` : undefined }
+                : { "aria-pressed": on })}
+              {...roving}
+              data-subtab={it.key} data-active={on ? "true" : undefined} {...dataAttrs(it.data)}
+              onClick={() => onChange?.(it.key)}
+              className={tabClass(on)}>
+              {body(it)}
+            </button>
+          );
+        })}
+        {trailing}
+      </div>
+      {fades}
     </div>
+  );
+}
+
+/** The secondary row: a choice inside the content (the filled segmented control, or the scrolling row). */
+export function SubTabs<K extends string>(props: SubTabsProps<K>) {
+  return <TabRow {...props} level="secondary" />;
+}
+
+/** The class of one secondary tab, for a control that sits in a SubTabs row (the timeframes' More button). */
+export function subTabClass(on: boolean, mode: "segments" | "scroll", size: "md" | "sm" = "md"): string {
+  return cx(
+    "inline-flex min-h-11 items-center justify-center gap-space-1 whitespace-nowrap rounded-control px-space-3 text-t14 transition-colors duration-fast",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1",
+    mode === "segments" ? "flex-1 basis-0" : "shrink-0",
+    size === "sm" ? "md:min-h-8 md:px-space-2" : "md:min-h-9",
+    on ? SUBTAB_ACTIVE : SUBTAB_IDLE,
   );
 }

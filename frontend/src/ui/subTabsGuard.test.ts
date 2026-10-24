@@ -9,7 +9,9 @@ import { describe, expect, it } from "vitest";
  * excluded):
  * - `role="tablist"` / `role="tab"` (a hand-built tab row), or the Radix tabs package;
  * - an underline tab row: a link or button with `aria-current` and a `border-b-2` underline in the same file.
- * Use <SubTabs> (kind "tabs", "links" or "toggle") instead. Chips stay for filters only.
+ * Two components are allowed (owner W0-2): <PageTabs> (primary, page-level, underline) and <SubTabs> (secondary,
+ * inside the content, filled) - both drawn by src/ui/SubTabs.tsx; timeframes use <TimeframeTabs>, built on SubTabs.
+ * Chips stay for filters only.
  *
  * LEGACY lists the rows not yet moved, each with its reason; the page waves empty it. A file that no longer needs its
  * entry fails too, so the list only shrinks.
@@ -19,6 +21,9 @@ const LEGACY: Record<string, string> = {
   "src/copilot/components/CopilotTabBar.tsx": "Copilot's own tab bar with icons and badges; moves with Wave 4 (Copilot)",
   "src/site/SitePage.tsx": "the public About pages (outside the app); moves with the public-site pass",
 };
+
+/** The only files that may draw a tab row. */
+const ALLOWED = ["src/ui/SubTabs.tsx", "src/ui/PageTabs.tsx"];
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SRC = join(ROOT, "src");
@@ -46,12 +51,12 @@ describe("UI-H H2 guard: every tab / sub-tab row is a SubTabs", () => {
   const found = new Map<string, string[]>();
   for (const f of files(SRC)) {
     const rel = relative(ROOT, f).split("\\").join("/");
-    if (rel === "src/ui/SubTabs.tsx") continue;
+    if (ALLOWED.includes(rel)) continue;
     const marks = tabRowMarks(readFileSync(f, "utf8"));
     if (marks.length) found.set(rel, marks);
   }
 
-  it("no hand-made tab row outside SubTabs (use <SubTabs> from src/ui/SubTabs.tsx)", () => {
+  it("no hand-made tab row outside PageTabs / SubTabs (src/ui/PageTabs.tsx, src/ui/SubTabs.tsx)", () => {
     const fresh = [...found].filter(([f]) => !(f in LEGACY)).map(([f, m]) => `${f}: ${m.join(", ")}`);
     expect(fresh).toEqual([]);
   });

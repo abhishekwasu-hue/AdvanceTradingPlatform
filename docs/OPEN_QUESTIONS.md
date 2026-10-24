@@ -173,3 +173,14 @@ Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-8) and docs/d
 | TT8-3 | Partial exit of a leg (N of M lots). | Not in this PR: it needs the trade-row split (TT-9 / TM-17 method) for P&L, journal and orders - its own PR. | - | open (TT-9) |
 | TT8-4 | "Exit this leg" on a leg of a strategy structure (deployment). | Not offered: the structure keeps "Exit now", which closes it whole (its group stop stays valid); the API answers 409 with that sentence. | `fno_groups._check` | open |
 
+
+## UI-H Wave 0: the shared components (24 Oct, `claude/ui-h-wave0`)
+
+Checked against CLAUDE.md (sections 2, 3, 7, 8), DECISIONS 24 Oct (UI-H H1-H10 and the approval with changes, item 3:
+one navigation style) and docs/ui/UI_AUDIT.md (Wave 0 list).
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| UH0-1 | Compact money: the 23 Oct money rule says "no lakh shorthand" (₹1,23,456, Cr only from one crore); H4 asks for Cr / L / K. | Counts (OI, volume, OI change) get Cr / L / K with the full value on tap / hover; money keeps the 23 Oct rule (whole rupees, "₹2.4 Cr" from one crore) until the owner says otherwise. | `src/ui/format.ts` `formatCompactIN`, `IndianNumber` | open |
+| UH0-2 | Settings has no tab / sub-tab navigation row (the index is a list). The Appearance "Text size" / "Theme" buttons are choices in a form, not navigation. | Left as they are in Wave 0 (no restyle outside tab rows); the Settings wave (4) decides their look. | `components/AppearanceCard.tsx` | open |
+| UH0-3 | Phone tab rows: wrap or one scrolling line? | Wrap by default (every tab always visible); one line with a visible scroll bar and the active tab scrolled into view only for long rows of names (My analyses, the small chart's timeframes). | `src/ui/SubTabs.tsx` | closed: owner W0-1 (24 Oct) - no wrapping; ≤ 5 equal widths, > 5 one scrolling row with edge fades; timeframes = main five + More |

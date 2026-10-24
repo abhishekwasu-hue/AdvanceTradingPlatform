@@ -304,7 +304,7 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(page.locator("[data-levels-chart]")).toHaveCount(0);                      // the chart marks the levels now
     expect(charts!.candles.filter((c) => !c.before).map((c) => `${c.symbol} ${c.timeframe}`)).toEqual(["NIFTY 50 5min"]);
     const tfs = chart.getByRole("group", { name: "Timeframe" });
-    await expect(tfs.getByRole("button")).toHaveText(["1 min", "3 min", "5 min", "15 min", "30 min", "1 hour", "Daily"]);
+    await expect(tfs.getByRole("button")).toHaveText(["1 min", "5 min", "15 min", "1 hour", "Daily", "More"]);   // UI-H W0-1: the rest under More
     await expect(chart.getByRole("button", { name: "Chart settings" })).toBeVisible();
     await tfs.getByRole("button", { name: "15 min", exact: true }).click();
     await expect.poll(() => charts!.candles.some((c) => c.symbol === "NIFTY 50" && c.timeframe === "15min")).toBe(true);

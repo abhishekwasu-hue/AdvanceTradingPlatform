@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/primitives/Button";
-import { cx } from "../components/primitives/cx";
+import { SubTabs } from "../ui/SubTabs";
 import { AnalysisResultView } from "./AskResultV2";
 import {
   OC_ANALYSES_EVENT, cleanName, errorSentence, evaluateSpec, loadSaved, saveSaved, shownResult, withDeleted, withRenamed,
@@ -110,10 +110,6 @@ export function MyAnalysesView({ saved, current, onPick, response, error, note, 
   const [draft, setDraft] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
   const ids = saved ? Object.keys(saved.items) : [];
-  const onKey = (e: KeyboardEvent<HTMLButtonElement>) => {
-    const next = current ? nextId(ids, current, e.key) : null;
-    if (next) { e.preventDefault(); onPick(next); }
-  };
   const shown = shownResult(response);
   return (
     <section className="space-y-space-3 rounded-panel border border-subtle bg-surface-1 p-space-3 md:p-space-4" aria-label="My analyses"
@@ -126,19 +122,8 @@ export function MyAnalysesView({ saved, current, onPick, response, error, note, 
       )}
       {saved && current && (
         <>
-          <div role="tablist" aria-label="My analyses" className="flex gap-space-1 overflow-x-auto rounded-panel bg-surface-2 p-space-1">
-            {ids.map((id) => {
-              const on = id === current;
-              return (
-                <button key={id} type="button" role="tab" id={`oc-my-tab-${id}`} aria-selected={on} aria-controls={`oc-my-panel-${id}`}
-                  tabIndex={on ? 0 : -1} onClick={() => onPick(id)} onKeyDown={onKey}
-                  className={cx("min-h-11 shrink-0 rounded-control px-space-3 text-t14 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
-                    on ? "bg-surface-1 font-semibold text-fg shadow-card" : "text-fg-muted hover:text-fg")}>
-                  {saved.items[id].name}
-                </button>
-              );
-            })}
-          </div>
+          <SubTabs label="My analyses" idPrefix="oc-my" value={current} onChange={onPick} layout="scroll"
+            items={ids.map((id) => ({ key: id, label: saved.items[id].name }))} />
           <div role="tabpanel" id={`oc-my-panel-${current}`} aria-labelledby={`oc-my-tab-${current}`} tabIndex={0} className="space-y-space-3">
             <div className="flex flex-wrap items-center gap-space-2">
               {renaming === current ? (

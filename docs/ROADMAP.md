@@ -100,7 +100,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 ## Status table (the session keeps this current; one line per item)
 | ID | Status | Next action | PR |
 |---|---|---|---|
-| UI-H | in progress | audit approved (#503); Wave 0 shared components next (one SubTabs style; mocks per wave), then Wave 1 | #503 |
+| UI-H | in progress | audit approved (#503); Wave 0 in review: shared components in src/ui (PageHeader, StatusBadge, SummaryCard, SubTabs, HelpPopover, IndianNumber, ResponsiveTable, ChartFrame, Disclaimer, UnavailableState) and every in-app tab row on PageTabs (primary, underline) or SubTabs (secondary, filled), no wrapping, timeframes + More (owner fixes W0-1 / W0-2; 3 legacy rows listed in the guard); next Wave 1 | #503, Wave 0 PR |
 | UI-H-BUG | in progress | bug lane: C1, B2a/B2b, B3+B4+Orders time, A1, B1 - small PRs, each with proof | - |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |
 | P1-2 | in review | notice (TT12-1) added; owner: "Merge" after green CI, then deploy (no migration) | #494 |

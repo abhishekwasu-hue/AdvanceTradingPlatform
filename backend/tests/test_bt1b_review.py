@@ -263,10 +263,11 @@ def test_oi_banner_shared_intraday_lake_and_recorded_chains_are_off_with_the_fla
     t = me["tenant_id"]
     assert client.get("/api/option-chain/banners", headers=headers).status_code == 200
     _byob(t)
-    for path in ("/api/option-chain/banners", "/api/option-chain/NIFTY/banner", "/api/option-chain/NIFTY/history",
-                 "/api/option-chain/NIFTY/strikes"):
+    # B1: the OI reads are no longer refused - they are built from the user's own session snapshots only (none yet here)
+    assert client.get("/api/option-chain/banners", headers=headers).json()["banners"] == []
+    for path in ("/api/option-chain/NIFTY/banner", "/api/option-chain/NIFTY/history", "/api/option-chain/NIFTY/strikes"):
         res = client.get(path, headers=headers)
-        assert res.status_code == 409 and res.headers["X-Data-Tier"] == "C", path
+        assert res.status_code == 200, path
     start, end = "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z"
     res = client.get(f"/api/market-data/history?instrument_key=NSE:TCS&timeframe=1m&start={start}&end={end}", headers=headers)
     assert res.status_code == 409 and res.headers["X-Data-Tier"] == "C"

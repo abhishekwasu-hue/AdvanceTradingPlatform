@@ -593,11 +593,13 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/notifications/{notification_id}/read"): S_READ_MARKS,
     ("POST", "/api/option-chain/analyze"): S_COMPUTE,
     ("GET", "/api/option-chain/analyses"): ("member: the six option chain analyses from the organisation's broker session (or, with "
-                                            "the own-broker tier on, the caller's own) plus shared collector snapshots; stores only the "
-                                            "usage count (OC2, flag ui_v2)"),
+                                            "the own-broker tier on, the caller's own) plus the organisation's collector snapshots (or, with that "
+                                            "tier, the caller's own earlier reads only); stores the usage count and, with that tier, "
+                                            "the caller's own read under his tenant and user (OC2 / B1, flag ui_v2)"),
     ("GET", "/api/option-chain/charts"): ("member: the Option chain chart series from the organisation's broker session (or, with the "
-                                          "own-broker tier on, the caller's own) plus shared collector snapshots; stores only the usage "
-                                          "count (OC5, flag ui_v2)"),
+                                          "own-broker tier on, the caller's own) plus the organisation's collector snapshots (or, with that "
+                                          "tier, the caller's own earlier reads only); stores the usage count and, with that tier, the "
+                                          "caller's own read under his tenant and user (OC5 / B1, flag ui_v2)"),
     # OC3 (flag ui_v2): the caller's question -> an analysis spec evaluated on the option chain read through a broker session
     ("POST", "/api/option-chain/ask"): ("self: an Ask AI read for the caller - the AI writes an analysis spec, the server evaluates it on "
                                         "the option chain; stores only the metered AI call and an audit row; no order (rate limited)"),

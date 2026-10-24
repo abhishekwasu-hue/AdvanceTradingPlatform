@@ -499,7 +499,8 @@ def test_own_broker_tier_reads_no_shared_rows(monkeypatch):
                datetime.now(UTC) - timedelta(minutes=6), (120.0, 900.0), tenant_id=me["tenant_id"])
         body = client.get(URL, headers=headers, params={"symbol": name}).json()
         assert body["state"] == "ok" and used == [me["tenant_id"]]
-        assert body["session"]["note"] == C.HISTORY_OFF and by_key(body)["futures"]["message"] == C.HISTORY_OFF
+        # B1: no refusal; the collector's slot is not read, and with none of his own reads yet the charts build
+        assert body["session"]["note"] != C.HISTORY_OFF and by_key(body)["futures"]["message"] != C.HISTORY_OFF
         assert by_key(body)["oi_change_by_strike"]["state"] == "building"          # the shared baselines are not read either
     finally:
         _set_flag("byob_data_tier", me["tenant_id"], on=False)

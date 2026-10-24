@@ -17,6 +17,8 @@
   behind the `ui_v2` flag (404 while it is off), like the other v2-only reads (app/signals_feed/routes.py).
 
 Every reading is recomputed from the stored strikes with the caller's tenant settings (app/option_chain/snapshots.py).
+B1: with the own-broker data tier on, the banner / history / strikes reads use the caller's OWN session snapshots
+(app/option_chain/own_snapshots.py; stored by the Option chain analyses read) - empty until his first read.
 Nothing here places, changes or suggests an order (ADR-0006).
 """
 import json
@@ -36,7 +38,8 @@ from app.brokers.models import OptionChain
 from app.market_data.calendar import family_holidays, market_session_status
 from app.market_data.candles_routes import chains_rate_limit, ltp_rate_limit
 from app.platform.controls import flag_enabled
-from app.option_chain import as_of, chain_view, oi_regime, snapshots
+from app.market_lake import chain_store
+from app.option_chain import as_of, chain_view, oi_regime, own_snapshots, snapshots
 from app.option_chain.snapshots import IST
 
 router = APIRouter(prefix="/api/option-chain", tags=["option-chain"])
@@ -54,19 +57,32 @@ async def _exchange(session: AsyncSession, tenant_id: int, underlying: str) -> s
     return own.exchange if own is not None else "NSE"
 
 
+async def _byob(session: AsyncSession, user: User) -> bool:
+    from app.market_data import live_access
+    return await live_access.byob_on(session, user.tenant_id)
+
+
 async def _day_view(session: AsyncSession, user: User, underlying: str, day: Optional[date]):
+    """(settings, day, slots, flags). With the own-broker tier on (B1) the slots are the user's OWN stored chain reads
+    (app/option_chain/own_snapshots.py), never the organisation's collector slots."""
     now = datetime.now(timezone.utc)
     settings = await snapshots.settings_for(session, user.tenant_id, underlying)
     day = day or now.astimezone(IST).date()
-    slots = await snapshots.day_chains(session, underlying, day, tenant_id=user.tenant_id)
+    if await _byob(session, user):
+        slots = own_snapshots.one_expiry(await own_snapshots.day(session, user, underlying, day), day)
+        latest = slots[-1].captured_at if slots else None
+    else:
+        slots = await snapshots.day_chains(session, underlying, day, tenant_id=user.tenant_id)
+        latest = await snapshots.latest_capture(session, underlying, tenant_id=user.tenant_id)
     status = await market_session_status(session, now, await _exchange(session, user.tenant_id, underlying))
-    flags = snapshots.staleness(await snapshots.latest_capture(session, underlying, tenant_id=user.tenant_id), now, settings, status.is_open and day == now.astimezone(IST).date())
+    flags = snapshots.staleness(latest, now, settings, status.is_open and day == now.astimezone(IST).date())
     return settings, day, slots, flags
 
 
 async def _no_byob(session: AsyncSession, user: User) -> None:
-    """BT1b: the OI banner is built from platform-wide option-chain reads made through other organisations' broker
-    sessions, so with `byob_data_tier` on it is off (409, Tier C) until it runs on the user's own session."""
+    """BT1b: the OI collector's settings and alerts follow the organisation's collector, which skips an organisation with
+    `byob_data_tier` on, so they are off (409, Tier C) there. The banner, history and strike reads are not refused: with
+    the tier on they are built from the user's own session snapshots (B1, `_day_view`)."""
     from app.market_data import live_access
     if await live_access.byob_on(session, user.tenant_id):
         raise live_access.LiveDataRefused("The OI banner is read from a shared option-chain collector, not from your own broker session, "
@@ -84,14 +100,15 @@ async def _banner(session: AsyncSession, user: User, underlying: str) -> Dict[st
 
 @router.get("/banners")
 async def banners(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    await _no_byob(session, user)
-    names = sorted(u for t, u, _ in await snapshots.enabled_underlyings(session) if t == user.tenant_id)
+    if await _byob(session, user):              # B1: the underlyings of the user's own chain reads today
+        names = await chain_store.holder_underlyings(session, user.tenant_id, user.id, own_snapshots.today(datetime.now(timezone.utc)))
+    else:
+        names = sorted(u for t, u, _ in await snapshots.enabled_underlyings(session) if t == user.tenant_id)
     return {"banners": [await _banner(session, user, u) for u in names]}
 
 
 @router.get("/{underlying}/banner")
 async def banner(underlying: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    await _no_byob(session, user)
     return await _banner(session, user, _underlying(underlying))
 
 
@@ -100,7 +117,6 @@ async def history(underlying: str, day: Optional[date] = Query(default=None, ali
                   user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     if interval not in (5, 10, 15):
         raise HTTPException(status_code=422, detail="interval must be 5, 10 or 15")
-    await _no_byob(session, user)
     underlying = _underlying(underlying)
     settings, day, slots, flags = await _day_view(session, user, underlying, day)
     timeline = snapshots.replay(underlying, slots, settings, day)
@@ -111,10 +127,12 @@ async def history(underlying: str, day: Optional[date] = Query(default=None, ali
 @router.get("/{underlying}/strikes")
 async def strikes(underlying: str, day: Optional[date] = Query(default=None, alias="date"),
                   user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    await _no_byob(session, user)
     underlying = _underlying(underlying)
     settings, day, slots, flags = await _day_view(session, user, underlying, day)
-    base = await snapshots.baselines(session, underlying, day, tenant_id=user.tenant_id)
+    if await _byob(session, user):              # B1: the first OI of the user's own reads today
+        base = own_snapshots.baselines(slots)
+    else:
+        base = await snapshots.baselines(session, underlying, day, tenant_id=user.tenant_id)
     series = snapshots.strike_series(slots, settings)
     for s in series:
         call0, put0 = base.get(s["strike"], (None, None))
@@ -323,4 +341,16 @@ async def live(underlying: str, expiry: Optional[date] = Query(default=None), us
     view["market_open"] = status.is_open
     view["summary"]["spot_source"] = spot_source
     view["data_as_of"] = when.at.isoformat()
+    if await _byob(session, user):              # B1: his own read becomes his session snapshot (same 5-minute slots)
+        await _store_own_read(session, user, name, chain, source, now)
     return view
+
+
+async def _store_own_read(session: AsyncSession, user: User, name: str, chain: OptionChain, source: Dict[str, Any], now: datetime) -> None:
+    """Stores the live view's chain as the user's own session snapshot - only when the session that served it is his own
+    credential (same broker and account label)."""
+    from app.market_data import live_access
+    record = await live_access.own_session_record(session, user, now)
+    if record is None or record.broker_name != source.get("broker") or record.account_label != source.get("account_label"):
+        return
+    await own_snapshots.record(session, user, record, snapshots.normalise_underlying(name), chain, now)

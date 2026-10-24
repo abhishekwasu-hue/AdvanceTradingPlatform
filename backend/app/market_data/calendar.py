@@ -109,6 +109,16 @@ def next_trading_day(day: date, holidays: Iterable[date] = ()) -> date:
     return candidate
 
 
+def trading_days_until(start: date, end: date, holidays: Iterable[date] = ()) -> int:
+    """B3 (UI-H bug lane): the trading days after `start` up to and including `end` - weekends and exchange holidays do
+    not count. Saturday -> Tuesday = 2 (Monday, Tuesday); the expiry day itself = 0; a day already past is negative
+    (calendar days, as before, so "passed" stays visible). Bounded by the calendar distance, never a loop on holidays."""
+    if end <= start:
+        return (end - start).days
+    holiday_set = set(holidays)
+    return sum(1 for k in range(1, (end - start).days + 1) if is_trading_day(start + timedelta(days=k), holiday_set))
+
+
 def session_status(now: Optional[datetime] = None, holidays: Iterable[date] = (), exchange: str = "NSE") -> SessionStatus:
     """Pure decision: given the instant and the holiday set, is the regular session of this
     exchange family open? Defaults to NSE, the clock every earlier caller meant."""

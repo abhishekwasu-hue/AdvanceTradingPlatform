@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Card, DirectionBadge } from "../components/ui";
 import type { TradeRecord } from "../types";
 import { Badge, EmptyState, PageHeader, Table } from "../components/primitives";
+import { formatDateTimeIST } from "../ui/format";
 
 interface OrderRow {
   key: string;
@@ -76,7 +77,7 @@ export default function OrdersPage() {
           rowKey={(o) => o.key}
           empty={<EmptyState title="No orders yet" body="Execute a signal from the Signals page; its entry and exit fills appear here." />}
           columns={[
-            { key: "time", header: "Time", cell: (o) => <span className="text-fg-muted">{new Date(o.time).toLocaleString()}</span> },
+            { key: "time", header: "Time", cell: (o) => <span className="text-fg-muted">{formatDateTimeIST(o.time)}</span> },
             { key: "action", header: "Action", cell: (o) => <Badge tone={o.action === "ENTRY" ? "brand" : "neutral"}>{o.action}</Badge> },
             { key: "symbol", header: "Symbol", cell: (o) => <span className="font-medium">{o.symbol}</span> },
             { key: "direction", header: "Direction", cell: (o) => <DirectionBadge direction={o.direction as "LONG" | "SHORT"} /> },

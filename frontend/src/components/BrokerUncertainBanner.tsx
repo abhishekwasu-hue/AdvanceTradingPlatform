@@ -2,6 +2,7 @@ import { AlertOctagon, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { BrokerTokenInfo, ReconciliationReport, ReconciliationStatus } from "../types";
+import { formatDateTimeIST } from "../ui/format";
 
 /**
  * Phase G1 (safety rule 8): after a LIVE order FAILED - the broker call raised or timed out, so
@@ -54,7 +55,7 @@ export default function BrokerUncertainBanner() {
             <div className="font-bold text-down">LIVE entries blocked - broker state uncertain</div>
             <div className="text-fg-muted">
               {status.broker_uncertain_reason}
-              {status.broker_uncertain_since && ` (since ${new Date(status.broker_uncertain_since).toLocaleString()})`}.
+              {status.broker_uncertain_since && ` (since ${formatDateTimeIST(status.broker_uncertain_since)})`}.
               Exits keep running. The worker reconciles against the broker every cycle and lifts the block
               the moment the books agree; if a position at the broker is not on the platform (or vice versa),
               close or record it, then run reconciliation.

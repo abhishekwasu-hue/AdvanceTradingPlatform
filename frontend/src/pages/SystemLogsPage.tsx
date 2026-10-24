@@ -5,6 +5,7 @@ import ExportCard from "../components/ExportCard";
 import { Card } from "../components/ui";
 import type { AuditLogEntry, LoginEvent } from "../types";
 import { PageHeader } from "../components/primitives";
+import { formatDateTimeIST } from "../ui/format";
 
 export default function SystemLogsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -56,7 +57,7 @@ export default function SystemLogsPage() {
               <tbody>
                 {logins.map((l) => (
                   <tr key={l.id} className="border-t border-border">
-                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</td>
+                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{formatDateTimeIST(l.created_at)}</td>
                     <td className={`py-1 pr-3 font-semibold ${l.success ? "text-up" : "text-down"}`}>{l.success ? `ok (${l.reason})` : `failed: ${l.reason}`}</td>
                     <td className="py-1 pr-3 text-fg-muted">{l.ip_address ?? "-"}</td>
                     <td className="py-1 pr-3 text-fg-muted truncate max-w-[20rem]" title={l.user_agent ?? ""}>{l.user_agent ?? "-"}</td>
@@ -84,7 +85,7 @@ export default function SystemLogsPage() {
               <tbody>
                 {logs.map((log) => (
                   <tr key={log.id} className="border-t border-border">
-                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{new Date(log.created_at).toLocaleString()}</td>
+                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{formatDateTimeIST(log.created_at)}</td>
                     <td className="py-1 pr-3 font-medium text-fg">{log.event}</td>
                     <td className="py-1 pr-3 text-fg-muted">{log.detail || "-"}</td>
                   </tr>

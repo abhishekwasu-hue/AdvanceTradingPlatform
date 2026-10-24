@@ -312,6 +312,8 @@ async def live(underlying: str, expiry: Optional[date] = Query(default=None), us
                   "ltp": await _last_price(contract.symbol, contract.exchange, source, user, session)}
     status = await market_session_status(session, now, spot_exchange)
     oi = await chain_view.oi_change_state(chain, tenant_id=user.tenant_id, underlying=name, now=now, market_open=status.is_open)
-    view = chain_view.build_view(chain, spot=spot, future=future, expiry=expiry or chain_view.parse_expiry(chain.expiry), now=now, oi=oi)
+    closed = await family_holidays(session, _holiday_family(name))          # B3: days to expiry in trading days
+    view = chain_view.build_view(chain, spot=spot, future=future, expiry=expiry or chain_view.parse_expiry(chain.expiry), now=now, oi=oi,
+                                 holidays=closed)
     view["market_open"] = status.is_open
     return view

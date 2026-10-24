@@ -17,6 +17,7 @@ import PlanUsageV2 from "../growth/PlanUsageV2";
 import InviteFriendV2 from "../growth/InviteFriendV2";
 import { useFeatures } from "../ui/useFeatures";
 import { supportAccess, type SupportAccess } from "../api/viewAs";
+import { formatDateTimeIST } from "../ui/format";
 
 /** The signed-in trader's account: e-mail, two-factor, password, sessions. Signed out, App.tsx shows the sign-in screen
  * before any page; this page shows the same screen should it ever render without a user (UX1). */
@@ -171,7 +172,7 @@ export default function AccountPage() {
                 <tr key={s.id} className="border-t border-border align-top">
                   <td className="py-1.5 pr-3">
                     <div className="text-fg" title={s.user_agent ?? ""}>{deviceLabel(s.user_agent)}{s.current && <span className="ml-1.5 rounded bg-brand/15 px-1.5 py-0.5 text-xs font-medium text-brand">This device</span>}</div>
-                    <div className="text-fg-muted">{s.ip_address ? `${s.ip_address} · ` : ""}active {new Date(s.last_used_at).toLocaleString()}</div>
+                    <div className="text-fg-muted">{s.ip_address ? `${s.ip_address} · ` : ""}active {formatDateTimeIST(s.last_used_at)}</div>
                   </td>
                   <td className="py-1.5 text-right">{!s.current && <button onClick={() => revoke(s.id)} className="text-down hover:underline">Sign out</button>}</td>
                 </tr>

@@ -173,3 +173,13 @@ Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-8) and docs/d
 | TT8-3 | Partial exit of a leg (N of M lots). | Not in this PR: it needs the trade-row split (TT-9 / TM-17 method) for P&L, journal and orders - its own PR. | - | open (TT-9) |
 | TT8-4 | "Exit this leg" on a leg of a strategy structure (deployment). | Not offered: the structure keeps "Exit now", which closes it whole (its group stop stays valid); the API answers 409 with that sentence. | `fno_groups._check` | open |
 
+
+## UI-H-BUG: A1 (#505) and B3 + B4 + Orders time (24 Oct, `claude/bug-a1-engine-install`, `claude/bug-b3-b4-time`)
+
+Checked against CLAUDE.md (sections 2, 3, 4, 8), DECISIONS 24 Oct (UI-H Part 1 audit approved) and PRIVATE_PACKAGE.md §6.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| BUG-1 | A1: the private repository's address. | `git@github.com:<ATP's owner>/atp-private.git`; `ATP_PRIVATE_REPO` in `.env` overrides. | `deploy/atp.sh` | open |
+| BUG-2 | B4: where the PCR zone edges are set. | Settings › My trading defaults › "Option chain settings" (per user, prefs `option_chain`); the Option chain page itself has only the Columns menu. | `settings/chainSettings.tsx` | open |
+| BUG-3 | B3: the futures rows (`futures_chain.py`) still count calendar days to expiry. | Left as is (not in the audit's B3); the same helper `trading_days_until` fits when wanted. | `option_chain/futures_chain.py` | open |

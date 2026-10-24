@@ -7,6 +7,7 @@ import WhatsAppSection from "../alerts/WhatsAppSection";
 import { Card } from "../components/ui";
 import type { AlertChannel, AlertChannelType, AlertDelivery, NotificationSeverity, TelegramInboundStatus } from "../types";
 import { useFeatures } from "../ui/useFeatures";
+import { formatDateTimeIST } from "../ui/format";
 
 const OWN_BOT_PATH = "/settings/advanced#own-bot";
 const SEVERITIES: NotificationSeverity[] = ["INFO", "WARNING", "CRITICAL"];
@@ -160,7 +161,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
     return (
       <span className={c.last_error ? "text-down" : c.enabled ? "text-up" : "text-fg-muted"}>
         {c.enabled ? "enabled" : "disabled"} · floor {c.min_severity}
-        {c.last_delivered_at && ` · last sent ${new Date(c.last_delivered_at).toLocaleString()}`}
+        {c.last_delivered_at && ` · last sent ${formatDateTimeIST(c.last_delivered_at)}`}
         {c.last_error && ` · ${c.last_error}`}
       </span>
     );
@@ -394,7 +395,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
             <tbody>
               {deliveries.slice(0, 10).map((d) => (
                 <tr key={d.id} className="border-t border-border">
-                  <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{new Date(d.created_at).toLocaleString()}</td>
+                  <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{formatDateTimeIST(d.created_at)}</td>
                   <td className="py-1 pr-3 capitalize text-fg-muted">{d.channel_type.toLowerCase()}</td>
                   <td className="py-1 pr-3 text-fg">[{d.severity}] {d.title}</td>
                   <td className={`py-1 pr-3 font-semibold ${d.status === "SENT" ? "text-up" : d.status === "FAILED" || d.status === "DEAD" ? "text-down" : d.status === "SUPPRESSED" ? "text-fg-muted" : "text-warn"}`}>{d.status}{d.attempts > 1 ? ` (${d.attempts})` : ""}</td>

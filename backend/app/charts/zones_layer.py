@@ -7,6 +7,8 @@ GET /api/charts/layers/market-zones?instrument=NSE:BANKNIFTY&at=<ISO time>&price
     never another organisation's. A time in the future reads as now.
   * an organisation whose own zone settings have no snapshot yet gets the platform's (default settings), with
     `fallback: true` and `settings_note` - the chart says so on every band. ScreenQL never falls back.
+  * DATA-H: a member whose own index history the zones job read (holder scope `own:<tenant>:u<user>`) gets that
+    snapshot when it is at least as new as the other one (`scope: "own"`); nobody else ever reads it.
   * `price` (default: the snapshot's own last close): the price roles and distances are measured from - a chart passes
     its last close so "demand" / "supply" follow the price on screen.
   * The response carries every number the chart draws (bounds, label prices, touches, strength, distances) and the
@@ -66,13 +68,17 @@ async def market_zones_layer(instrument: str = Query(..., min_length=1, max_leng
     if price is not None and not math.isfinite(price):
         raise HTTPException(status_code=422, detail="price must be a finite number")
     snap = await read.read_as_of(session, key, when, user.tenant_id, allow_platform_fallback=True)
+    own = await read.read_holder(session, key, when, user.tenant_id, user.id)
+    if own is not None and (snap is None or own.as_of >= snap.as_of):
+        snap = own                                    # DATA-H: zones from the reader's own history, only for him
     if snap is None:
         return {"instrument": key, "at": _iso(when), "as_of": None, "scope": None, "fallback": False, "settings_note": None, "price": price,
                 "price_source": None, "bands": [], "zones": [], "live_count": 0, "max_bands": max_bands, "reason": NO_ZONES, "note": NOTE}
     ref, source = (price, "request") if price is not None else (snap.price, "snapshot")
     cands = chart.candidates(snap.rows, family)
     bands = chart.select_bands(cands, ref, max_bands=max_bands) if ref is not None else []
-    scope = "platform" if snap.scope == "platform" else ("organisation" if snap.scope else None)
+    scope = "platform" if snap.scope == "platform" else ("own" if str(snap.scope or "").startswith("own:") else
+                                                         "organisation" if snap.scope else None)
     return {"instrument": key, "at": _iso(when), "as_of": _iso(snap.as_of), "scope": scope, "fallback": snap.fallback,
             "settings_note": FALLBACK_NOTE if snap.fallback else None, "price": ref, "price_source": source,
             "price_text": None if ref is None else chart.price_text(ref), "bands": bands, "zones": cands, "live_count": len(cands),

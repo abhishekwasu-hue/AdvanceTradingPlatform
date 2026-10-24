@@ -164,6 +164,7 @@ class CycleReport:
     market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
     breakout_fitness_started: bool = False   # U6 BK5: the nightly breakout-fitness task was started this cycle
     intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
+    lake_backfill_started: bool = False      # DATA-H: the owner's index-history pass was started this cycle
     chain_history_started: bool = False      # TM 9.4: an owner chain-history slot was started this cycle
 
 
@@ -283,6 +284,9 @@ class TradingWorker:
         self._last_intraday_day: Optional[date] = None
         self._intraday_task: Optional["asyncio.Task[None]"] = None
         self._intraday_retry_at = 0.0
+        self._last_lake_backfill_day: Optional[date] = None
+        self._lake_backfill_task: Optional["asyncio.Task[None]"] = None
+        self._lake_backfill_retry_at = 0.0
         self._intraday_adapters: Dict[Any, Any] = {}   # one owner adapter per IST day, reused by that evening's passes
         # TM 9.4: the owner's chain history - the last slot started, its task, the adapter of the day, the last report.
         self._last_chain_slot: Optional[datetime] = None
@@ -327,6 +331,8 @@ class TradingWorker:
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
         if self._market_zones_task is not None and not self._market_zones_task.done():
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
+        if self._lake_backfill_task is not None and not self._lake_backfill_task.done():
+            self._lake_backfill_task.cancel()        # DATA-H: resumable - a window is written and recorded in one transaction
         if self._intraday_task is not None and not self._intraday_task.done():
             self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
         if self._chain_task is not None and not self._chain_task.done():
@@ -800,6 +806,15 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
                         logger.exception("Intraday history pass not started")
                         report.errors.append(f"intraday history: {exc}")
+                        await session.rollback()
+                # DATA-H DH2: the owner's index history (Daily + 1-minute of LAKE_BACKFILL_INDICES) - once per IST day from
+                # LAKE_BACKFILL_HOUR_IST, NSE closed, through the owner's own session into his private store; its own task.
+                if not nse.is_open:
+                    try:
+                        report.lake_backfill_started = await self._maybe_start_lake_backfill(session, now)
+                    except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                        logger.exception("Index history pass not started")
+                        report.errors.append(f"index history: {exc}")
                         await session.rollback()
                 # TM 9.4: the owner's chain history (flag `chain_history`, off by default) - one slot per
                 # CHAIN_HISTORY_SLOT_MINUTES while a venue is open, through the owner's own broker session, drawing from that
@@ -1502,6 +1517,35 @@ class TradingWorker:
                 logger.exception("Intraday history pass failed")
 
         self._intraday_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_lake_backfill(self, session: AsyncSession, now: datetime) -> bool:
+        """DATA-H DH2: starts the owner's index-history pass (app/market_lake/index_history.py) once per IST day from
+        LAKE_BACKFILL_HOUR_IST (NSE closed): it appends the closed session and fills anything still missing. Off with
+        LAKE_BACKFILL_AFTER_CLOSE=false or without a configured owner; an unfinished pass is retried at most every 30
+        minutes. Its requests take the credential's shared API budget (app/market_data/api_budget.py)."""
+        from app.market_lake import index_history, own_bars
+
+        if not app_config.LAKE_BACKFILL_AFTER_CLOSE:
+            return False
+        day = index_history.nightly_due(now, self._last_lake_backfill_day)
+        if day is None or (self._lake_backfill_task is not None and not self._lake_backfill_task.done()):
+            return False
+        if time.monotonic() < self._lake_backfill_retry_at:
+            return False
+        if await own_bars.history_owner(session) is None:
+            return False
+        self._lake_backfill_retry_at = time.monotonic() + 30 * 60
+
+        async def run() -> None:
+            try:
+                result = await index_history.run_pass(self.session_factory)
+                if result.complete or result.status in ("not_configured",):
+                    self._last_lake_backfill_day = day
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("Index history pass failed")
+
+        self._lake_backfill_task = asyncio.get_running_loop().create_task(run())
         return True
 
     async def _maybe_start_chain_history(self, session: AsyncSession, now: datetime) -> bool:

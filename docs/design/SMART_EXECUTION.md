@@ -14,7 +14,7 @@ are unchanged.
 
 | Interface method | PAPER behaviour |
 |---|---|
-| `place_order` | Fills only what the price reaches now (`fno_ticket.paper_fill`): MARKET at the price, a marketable LIMIT, a triggered SL / SL-M. Fill = `PaperBroker._slip(price)` (the same slippage model); a limit never fills past its price. An order that would rest is REJECTED in plain words (no resting book yet: TM-2 is a later part). No price = REJECTED, never a made-up price. A repeated `client_ref` returns the first order (idempotent). |
+| `place_order` | Fills only what the price reaches now (`fno_ticket.paper_fill`): MARKET at the price, a marketable LIMIT, a triggered SL / SL-M. Fill = `PaperBroker._slip(price)` (the same slippage model); a limit never fills past its price. An order that would rest is REJECTED in plain words unless the caller keeps it waiting (TM-2: `keep_resting`, the resting book and the trigger engine). No price = REJECTED, never a made-up price. A repeated `client_ref` returns the first order (idempotent). |
 | partial fills | Optional `liquidity(order)` hook; the remainder stays OPEN until `cancel_order`, as at a broker. |
 | `modify_order` / `cancel_order` | On a working order; a terminal order answers its status. |
 | `get_order_book` / `get_trade_book` / `get_positions` | In-memory for the adapter's life (one order flow); net positions with average price. |

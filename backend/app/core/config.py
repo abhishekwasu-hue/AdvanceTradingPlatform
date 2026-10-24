@@ -368,6 +368,10 @@ BROKER_CIRCUIT_OPEN_SECONDS = float(os.environ.get("BROKER_CIRCUIT_OPEN_SECONDS"
 # Autonomous trading worker (app/workers/trading_worker.py) cadence in seconds. 60 matches the
 # 1-minute base candle; anything shorter mostly re-reads the same cached candles.
 WORKER_CYCLE_SECONDS = int(os.environ.get("WORKER_CYCLE_SECONDS", "60"))
+# TM2-4 (owner, 24 Oct): a waiting order the trigger engine sent and that is still "Sending" (FIRING) after this many
+# seconds is looked up at its broker by its own client id / tag and settled from what is there (found: its state; not
+# found: sent once with the same id). On worker start every FIRING order is settled this way before any new work.
+TRIGGER_ACK_TIMEOUT_SECONDS = float(os.environ.get("TRIGGER_ACK_TIMEOUT_SECONDS", "5"))
 
 # The risk-free rate used to discount option payoffs in the Black-Scholes Greeks engine
 # (app/option_chain/greeks.py) - approximates the short-term Indian G-Sec/repo yield. Configurable

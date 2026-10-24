@@ -348,6 +348,16 @@ class TradingWorker:
             await self.reconcile_on_start()
         except Exception:  # noqa: BLE001 - never prevents the worker from starting
             logger.exception("Start-up reconciliation failed")
+        # TM2-4: every order the engine left "Sending" (FIRING) when the worker stopped is looked up at its broker by its
+        # client id and settled - exits first - before the first cycle and the tick loop (never a second order).
+        from app.execution import trigger_engine
+        try:
+            async with self.session_factory() as session:
+                await trigger_engine.reconcile_on_start(session)
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting; each pass settles them after the ack timeout
+            logger.exception("Trigger engine start-up reconciliation failed")
+        # TM-2 / TT-6: the trigger engine on live ticks between cycles (the cycle runs it too, as the fallback).
+        tick_task = asyncio.create_task(trigger_engine.tick_loop(self.session_factory, self._stop))
         while not self._stop.is_set():
             started = time.monotonic()
             try:
@@ -365,6 +375,7 @@ class TradingWorker:
                 await asyncio.wait_for(self._stop.wait(), timeout=max(1.0, self.cycle_seconds - elapsed))
             except asyncio.TimeoutError:
                 pass
+        tick_task.cancel()
         await self.streams.stop_all()
         await self.byob.close_all()
         await self.hub.stop_all()
@@ -441,6 +452,14 @@ class TradingWorker:
                     self._stale_skips = 0
                     await self._process_tenants(session, now, report, open_tenants=set(open_by_tenant))
                     report.stale_skips = self._stale_skips
+                    # TM-2 / TT-26: waiting orders not watched (the engine did not run) -> their owners are told.
+                    try:
+                        from app.execution import trigger_engine
+                        await trigger_engine.check_stall(session, now, market_open=True)
+                    except Exception as exc:  # noqa: BLE001 - an alert never breaks trading
+                        logger.exception("Trigger engine stall check failed")
+                        report.errors.append(f"trigger engine stall check: {exc}")
+                        await session.rollback()
                     # P0.1 / S2: a long evaluation phase must not let the lock lapse under the housekeeping below.
                     if report.lock_aborted or not await self._keep_lock(session, report, "after the tenants"):
                         return report   # H-1: another replica holds the lock - its cycle runs the housekeeping
@@ -1087,6 +1106,10 @@ class TradingWorker:
             open_tenants = set(await session.scalars(select(TradeRecord.tenant_id).where(TradeRecord.exit_time.is_(None)).distinct()))
         for tenant_id in open_tenants:
             by_tenant.setdefault(tenant_id, [])
+        # TM-2: an organisation whose only business is a waiting order still gets its trigger-engine pass.
+        from app.execution import trigger_engine
+        for tenant_id in await trigger_engine.tenants_with_resting(session):
+            by_tenant.setdefault(tenant_id, [])
         by_tenant = dict(sorted(by_tenant.items()))
 
         for tenant_id, tenant_deployments in by_tenant.items():
@@ -1260,6 +1283,16 @@ class TradingWorker:
         except Exception as exc:  # noqa: BLE001 - one bad group never ends the exits; retried next cycle
             logger.error("Tenant %s: incomplete multi-leg orders failed: %s", tenant_id, exc)
             await session.rollback()
+        # TM-2 / TT-6: the one trigger engine - armed exits (stops first) on this cycle's prices and his candles, before
+        # every entry gate below and never blocked (ADR-0004); a LIVE position's exit goes out through its own session.
+        try:
+            from app.execution import trigger_engine
+            engine_exits = await trigger_engine.run_exits(session, tenant_id, market_data.get_ltp, broker=exit_broker,
+                                                          candles=lambda s, e: market_data.get_today_minutes(s, e, now), now=now)
+            report.positions_closed += engine_exits.filled
+        except Exception as exc:  # noqa: BLE001 - retried next cycle (and on the next tick)
+            logger.error("Tenant %s: trigger engine exits failed: %s", tenant_id, exc)
+            await session.rollback()
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
         # Phase T: checked per account, against that account's own order book.
         if tenant_row is not None:
@@ -1295,6 +1328,15 @@ class TradingWorker:
             await self._complete_rests(session, tenant_id, market_data, adapters, now)
         except Exception as exc:  # noqa: BLE001 - never stops the cycle
             logger.error("Tenant %s: completing incomplete multi-leg orders failed: %s", tenant_id, exc)
+            await session.rollback()
+        # TM-2 / TM-23: waiting entries the price reached - each through the order ticket's own pipeline, every entry
+        # check (kill switch, the PAPER chokepoint, risk) again now. PAPER only; nothing reaches a broker here.
+        try:
+            from app.execution import trigger_engine
+            await trigger_engine.run_entries(session, tenant_id, market_data.get_ltp,
+                                             candles=lambda s, e: market_data.get_today_minutes(s, e, now), now=now)
+        except Exception as exc:  # noqa: BLE001 - never stops the cycle
+            logger.error("Tenant %s: trigger engine entries failed: %s", tenant_id, exc)
             await session.rollback()
         active = [d for d in deployments if d.status == DeploymentStatus.ACTIVE.value]
         # Round-robin start so a tenant whose turn ran out of time last cycle resumes where it

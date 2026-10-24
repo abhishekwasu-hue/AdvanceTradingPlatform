@@ -639,6 +639,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/paper/fno/contract"): "member",           # FNO-1: the instrument master's contract (platform-wide data)
     ("GET", "/api/paper/fno/held"): "member: the caller's own open PAPER option positions only (tenant and user)",
     ("POST", "/api/paper/fno/order"): "trader",              # FNO-1: one PAPER order from the chain's ticket
+    ("GET", "/api/paper/fno/resting"): "member: the caller's own waiting orders and armed exits only (tenant and user, TM-2)",
+    ("POST", "/api/paper/fno/resting/exit"): "trader",       # TM-2: a stop / target on the caller's own position (404 other tenant, 403 another member's)
+    ("POST", "/api/paper/fno/resting/{order_id}/cancel"): "trader",   # TM-2: the caller's own waiting order (404 otherwise)
     ("POST", "/api/paper/fno/order/preview"): "trader",
     ("POST", "/api/paper/fno/basket/evaluate"): S_COMPUTE,     # FNO-2: the basket's numbers (instrument master + the body)
     ("GET", "/api/paper/fno/basket/settings"): "member: the caller's own options settings (their deployments) only",

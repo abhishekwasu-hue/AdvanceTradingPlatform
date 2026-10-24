@@ -139,6 +139,15 @@ closed rows: docs/archive/OPEN_QUESTIONS_CLOSED.md. Both are moved, never delete
 |---|---|---|---|---|
 | TT2-1 | TT-2 names the ticket, the basket and the Terminal. The older plan-before-trade PAPER ticket (`paper/ticket.py`, Z5 / P1-d) is also the user's own order, but under approval-only mode it still raises an entry proposal he then approves himself. | Unchanged for now: only the F&O ticket and basket routes (and later the Terminal) set the origin "manual", as the decision lists. If Abhi wants the plan ticket to count as his approval too, it is a one-line route change plus a test. Checked against CLAUDE.md §3-4, DECISIONS (TT-2) and ATP_SESSION_TRADING_TERMINAL.md. | `paper/ticket.py:288`, `paper/fno_routes.py` | open (provisional default in use) |
 
+## TM-2 resting book (24 Oct)
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|---|---|---|---|
+| TM2-1 | A waiting entry on the underlying's level (spot trigger), and LIVE waiting entries. | Entries wait on their own price only; a spot trigger is for exits (T-D2 is about exits). A LIVE waiting entry is kept but never fired until the LIVE manual path (TT-1) and Abhi's LIVE switches allow it (same object, same path). Checked against CLAUDE.md §3-4, DECISIONS (TM-2, TM-23, TT-1) and the Terminal review. | `execution/resting_book.py`, `trigger_engine._evaluate_entry` | open (provisional default in use) |
+| TM2-2 | How long does a waiting entry live, and does a fired SL whose limit is passed wait? | A DAY order (until 15:30 IST of the day it was placed), as at the exchange; a triggered SL past its limit keeps waiting at its limit. Armed exits live until the position closes; when one fills, the others are cancelled. | `resting_book.day_end`, `trigger_engine._keep_as_limit` | open (provisional default in use) |
+| TM2-3 | The tick pass runs inside the worker on the organisation's hub stream (flag `data_hub`); a user's own BYOB stream is not read there yet. | Touch triggers of PAPER orders on hub ticks every second (`TRIGGER_TICK_SECONDS`); everything else, and every organisation without a hub stream, once per worker cycle. A stall (no run for 3 cycles in market hours) tells the owners in the app and on Telegram. | `trigger_engine.tick_pass`, `check_stall` | open (provisional default in use) |
+| TM2-4 | An order a stopped worker left half-way ("Sending", FIRING) - when is it settled? | Superseded: the owner decided (DECISIONS 24 Oct, "TM-2 (#496) approved after TM2-4"). On worker start every FIRING order is looked up at its broker by its own client id / tag, exits first (found: its state; not found: sent once with the same id); while running, after `TRIGGER_ACK_TIMEOUT_SECONDS` (default 5). The earlier 60 s stale rule is removed. | backend/app/execution/trigger_engine.py `reconcile_on_start`, `_resolve_firing` | Answered (owner, DECISIONS) |
+
 ## P1-2b: the organisation's min reward:risk OFF (24 Oct, `claude/p1-2b-org-min-rr-off`)
 
 Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT12-4, TT12-1) and ADR-0004.

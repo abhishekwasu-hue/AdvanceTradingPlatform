@@ -3729,6 +3729,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
 - Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
 
+## 23 Oct - Day-one fix 1: the idea's strategy can be backtested (README row 19, DAY_ONE_TRADER_TEST finding 1)
+
+- Branch `claude/d1-fix-template-backtest` (from main). Frontend only, **no migration**, no new flag: behind `ui_v2` +
+  `strategy_templates` (the stored-history part also `backtest_stored_history`, as before).
+- Strategies › Test lists the adoptable strategy templates ("Strategy templates" group) and opens one from
+  `?template=<id>&timeframe=..&set.<key>=..`; a run asks the server's adopt pre-fill for the strategy id (nothing is
+  created) and backtests it with the existing `/api/backtest` (template ids were already accepted there).
+- The timeframe in plain words (`src/backtest/templateTest.ts`): without broker prices an intraday idea runs on Daily
+  stored history and the page says so; an intraday pick says it needs the broker's prices.
+- "Test it on past prices" on an adoptable idea card, "Test it first on past prices" on the Paper bot form's template.
+- Tests: `src/backtest/templateTest.test.tsx` (6), e2e `e2e/d1-template-backtest-v2.e2e.ts` (390 / 1440, light / dark,
+  no baseline); updated baselines `idea-library-adopt-v2-*`, `strategy-templates-v2-*`, `strategy-templates-exits-v2-*`.
 ## 23 Oct - TM94-3: the Phase W option-chain recorder per organisation
 
 - Branch `claude/phase-w-recorder-per-tenant` (from main). **Migration `3c5e7a9b1d24`** (after `e8a0c2d4f6b9`; additive:

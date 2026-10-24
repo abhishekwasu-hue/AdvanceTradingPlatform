@@ -21,6 +21,11 @@ export function paperBotPathFor(link: TemplateLink): string {
   return `/deployments?${q.toString()}`;
 }
 
+/** Day-one fix 1: where "Test it first" goes - Strategies › Test with the same template and settings (nothing starts). */
+export function testPathFor(link: TemplateLink): string {
+  return paperBotPathFor(link).replace(/^\/deployments\?/, "/strategies/test?");
+}
+
 /** The template an address asks the Paper bot form to pick, or null. Unknown shapes are dropped, never guessed. */
 export function templateLinkFromSearch(search: string): TemplateLink | null {
   const q = new URLSearchParams(search);

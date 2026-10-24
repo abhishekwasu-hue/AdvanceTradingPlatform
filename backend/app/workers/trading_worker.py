@@ -241,7 +241,7 @@ class TradingWorker:
         # IST calendar date of the last retention run (Phase D3) - once a day is plenty.
         self._last_retention_day = None
         # Phase W: last option-chain capture per underlying (UTC), so a chain is fetched once per interval.
-        self._last_chain_capture: Dict[str, datetime] = {}
+        self._last_chain_capture: Dict[Tuple[int, str], datetime] = {}   # TM94-3: (tenant, underlying) -> last attempt
         self._cycle_chains: Dict[str, object] = {}   # chains fetched this tenant cycle, by underlying symbol
         # IST calendar date of the last billing lifecycle sweep (Phase K1): trials, dues, grace.
         self._last_billing_day = None
@@ -1251,6 +1251,15 @@ class TradingWorker:
             outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user_id, families=monitored,
                                                     exit_approval=exit_approval, now=now)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
+        # SE-7 (flag smart_execution): incomplete multi-leg orders - his "if I do not answer" rule at the deadline, and the
+        # filled legs he (or his rule) chose to close. An exit: before every entry gate below, never blocked (ADR-0004).
+        try:
+            from app.execution import incomplete_structures
+            report.positions_closed += await incomplete_structures.run_exits(session, tenant_id, market_data.get_ltp, broker=exit_broker,
+                                                                             user_id=user_id, now=now)
+        except Exception as exc:  # noqa: BLE001 - one bad group never ends the exits; retried next cycle
+            logger.error("Tenant %s: incomplete multi-leg orders failed: %s", tenant_id, exc)
+            await session.rollback()
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
         # Phase T: checked per account, against that account's own order book.
         if tenant_row is not None:
@@ -1280,6 +1289,13 @@ class TradingWorker:
                 dep.last_error = WAITING_FOR_CONFIRMED_DATA
             await session.commit()
             return
+        # SE-7: "Complete the rest" he tapped on an incomplete multi-leg order - an entry, so after the entry gates above
+        # and through every entry refusal again; only the worker sends an entry order (Phase 0 freeze).
+        try:
+            await self._complete_rests(session, tenant_id, market_data, adapters, now)
+        except Exception as exc:  # noqa: BLE001 - never stops the cycle
+            logger.error("Tenant %s: completing incomplete multi-leg orders failed: %s", tenant_id, exc)
+            await session.rollback()
         active = [d for d in deployments if d.status == DeploymentStatus.ACTIVE.value]
         # Round-robin start so a tenant whose turn ran out of time last cycle resumes where it
         # stopped rather than re-evaluating the same first few deployments forever.
@@ -1357,11 +1373,13 @@ class TradingWorker:
         self._tenant_cursor[tenant_id] = (start + evaluated) % max(1, len(active))
 
         # Phase W: sample the option chains of this tenant's ACTIVE option deployments for later
-        # backtests - one fetch per underlying per interval, platform-wide, never on a closed venue.
+        # backtests - one fetch per underlying per interval through THIS organisation's own data session, stored as its
+        # own rows (TM94-3), never on a closed venue.
         try:
             async with guarded(session):
-                if not byob:   # BT1b: platform-wide reference rows are not recorded from a per-user (BYOB) broker session
-                    report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
+                if not byob:   # BT1b: not recorded from a per-user (BYOB) broker session (unchanged by TM94-3)
+                    report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families,
+                                                                            tenant_id=tenant_id)
         except Exception as exc:  # noqa: BLE001 - reference data; never stops the cycle
             logger.warning("Tenant %s: option-chain recording failed: %s", tenant_id, exc)
 
@@ -1785,6 +1803,26 @@ class TradingWorker:
         logger.info("Deployment %s %s -> executed=%s", dep.id, structure_kind.value, result.executed)
         return result.executed
 
+    async def _complete_rests(self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,
+                              adapters: Dict[str, BrokerInterface], now: datetime) -> None:
+        """SE-7: each incomplete order whose holder tapped "Complete the rest": his own user, the broker of the order's
+        deployment (LIVE; the same checks as a new entry), the engine again (app/execution/incomplete_structures.py)."""
+        from app.execution import incomplete_structures
+        for group_id, legs in (await incomplete_structures.pending_completions(session, tenant_id)).items():
+            block = incomplete_structures.block_of(legs[0]) or {}
+            holder = await session.get(User, block.get("user_id")) if block.get("user_id") else None
+            if holder is None or holder.tenant_id != tenant_id or not holder.is_active:
+                continue
+            broker, refusal = None, None
+            if block.get("mode") == ExecutionMode.LIVE.value:
+                dep = await session.get(StrategyDeploymentRecord, block.get("deployment_id")) if block.get("deployment_id") else None
+                if dep is None or dep.tenant_id != tenant_id:
+                    refusal = "the deployment that placed it is gone"
+                else:
+                    broker, _, refusal = await self._live_broker_for(session, dep, adapters)
+            await incomplete_structures.complete_rest(session, holder, legs, broker=broker, price_lookup=market_data.get_ltp, now=now,
+                                                      refusal=refusal)
+
     async def _live_broker_for(self, session: AsyncSession, dep: StrategyDeploymentRecord, adapters: Dict[str, BrokerInterface]):
         """(broker adapter, account id, skip reason) for a deployment's entry. PAPER: no broker.
         LIVE: the adapter of the routed account, refused when the account is DISABLED, the
@@ -2129,28 +2167,31 @@ class TradingWorker:
             await sync_account(session, account, adapter)
 
     async def _record_chains(self, session: AsyncSession, deployments: List[StrategyDeploymentRecord], market_data: MarketDataService,
-                             now: datetime, open_families) -> int:
-        """Phase W: record the chains of the underlyings this tenant trades as options."""
+                             now: datetime, open_families, *, tenant_id: int) -> int:
+        """Phase W: record the chains of the underlyings this tenant trades as options. TM94-3: `market_data` is this
+        organisation's own data session; only its own deployments are looked at and the rows are stored as its own."""
         if not chain_recorder.recording_enabled():
             return 0
         interval = timedelta(minutes=chain_recorder.CHAIN_SNAPSHOT_INTERVAL_MINUTES)
         wanted: Dict[str, str] = {}
         for dep in deployments:
+            if dep.tenant_id != tenant_id:
+                continue       # never record one organisation's underlyings through another's session
             if (dep.instrument_kind or "UNDERLYING") != InstrumentKind.OPTION.value or session_family(dep.exchange) not in open_families:
                 continue
             underlying = master.underlying_of(dep.symbol)
             wanted[underlying] = master.INDEX_SYMBOLS.get(underlying, dep.symbol.upper().strip())
         written = 0
         for underlying, chain_symbol in wanted.items():
-            last = self._last_chain_capture.get(underlying)
+            last = self._last_chain_capture.get((tenant_id, underlying))
             if last is not None and now - last < interval:
                 continue
-            self._last_chain_capture[underlying] = now   # once per interval whether or not the fetch works
+            self._last_chain_capture[(tenant_id, underlying)] = now   # once per interval whether or not the fetch works
             chain = self._cycle_chains.get(chain_symbol)   # already fetched for a strike filter this cycle
             if chain is None:
                 expiries = await master.expiries(session, underlying, on_or_after=now.astimezone(IST).date())
                 chain = await market_data.broker.get_option_chain(chain_symbol, expiries[0] if expiries else None)
-            written += await chain_recorder.record_chain(session, underlying, chain, now)
+            written += await chain_recorder.record_chain(session, underlying, chain, now, tenant_id=tenant_id)
         return written
 
     async def _decision_symbols(self, session: AsyncSession, tenant_id: int, deployments: List[StrategyDeploymentRecord]) -> set:

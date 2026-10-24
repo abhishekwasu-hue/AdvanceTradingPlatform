@@ -1093,6 +1093,12 @@ async def _monitor_group(
             underlying_price = await price_lookup(legs[0].underlying_symbol, underlying_exchange(legs[0].underlying_symbol))
         except Exception as exc:  # noqa: BLE001
             logger.warning("No underlying price for group %s: %s - value checks only", legs[0].leg_group_id, exc)
+    from app.execution.incomplete_structures import rules_paused
+    if rules_paused(legs):
+        # SE-7: an INCOMPLETE structure is not whole - its exit rules (written for every leg) would read a false target or
+        # stop on a part of it. They wait for his answer or his rule; every leg stays closable at once (Exit now, the
+        # emergency exit, the square-off, "Close the filled legs") - ADR-0004.
+        return []
     reason = group_exit(legs, prices, underlying_price)
     if reason is None:
         return []

@@ -33,7 +33,7 @@ const JOBS = STARTERS.map((starter, i) => ({
 const HOME: ChatHome = {
   top_line: "Ask me anything about the market or your trades.",
   ai: { ready: false, title: "Add a free AI key to start", line: "Until then I answer from ATP's own data in short, fixed sentences.", settings: "/settings/ai", reason: null },
-  market_line: { line: "NIFTY 50 last closed at 24,850.5 (2026-10-20); Dow structure daily uptrend, weekly range.", reason: null, as_of: "2026-10-21T03:30:00+00:00" },
+  market_line: { line: "NIFTY 50 last closed at 24,850.5 (20 Oct 2026); by its swing highs and lows the daily trend is up, the weekly sideways.", reason: null, as_of: "2026-10-21T03:30:00+00:00" },
   disclaimer: "Information and education only, not advice. Every trading decision is yours.", jobs: JOBS, starters: STARTERS,
 };
 const ANSWER: ChatAnswer = {

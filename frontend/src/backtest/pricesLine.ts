@@ -4,6 +4,18 @@ import type { OHLCVBar } from "../types";
 
 export const STORED_HISTORY_NOTE = "No broker connected: Daily backtests use ATP's stored end-of-day history. Intraday backtests need your broker.";
 
+/** Day-one fix 3: the broker is connected but not logged in today - say that, not "No broker connected". */
+export function storedHistoryLoginNote(broker: string): string {
+  return `Not logged in to ${broker} today: Daily backtests use ATP's stored end-of-day history. Intraday backtests need today's login.`;
+}
+
+/** Day-one fix 3: the stored history a Daily backtest reads (the server reads at least about a year of Daily bars). */
+export const STORED_HISTORY_CHOICES: readonly { days: number; label: string }[] = [
+  { days: 400, label: "About 1 year" },
+  { days: 730, label: "2 years" },
+];
+export const STORED_HISTORY_DEFAULT_DAYS = 400;
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** A bar's day in India time ("2 Jan 2026"), the same words the server uses. */

@@ -3050,6 +3050,51 @@ class HistoryIntradayDayRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 
+class LakeBackfillWindowRecord(Base):
+    """DATA-H DH1: one request window of the index-history backfill (app/market_lake/index_history.py) - the resume
+    point. Fixed windows (Daily: a calendar year; 1-minute: a run of calendar days), per (tenant, session holder,
+    instrument, timeframe). Status: done (complete and stored; never asked again) | open (the window still grows: asked
+    again on the next pass, identical bars skipped) | no_data (the broker had nothing: before the index existed or beyond
+    its depth) | failed (retried). The bars live in the tenant-private `md_tenant_candles`."""
+
+    __tablename__ = "lake_backfill_windows"
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "instrument_key", "timeframe", "window_start", name="uq_lake_backfill_window"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    window_start: Mapped[date] = mapped_column(Date, nullable=False)
+    window_end: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="open")
+    bars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class MdBarFlagRecord(Base):
+    """DATA-H DH3: a bar no structure or zone may be built from, or the official close of a session that ended in a
+    closing auction. Kinds: post_close (an intraday bar after continuous trading ended: dropped by the readers),
+    auction_high / auction_low (a Daily extreme set only after continuous trading: `value` is the continuous-session
+    extreme the readers use instead), official_close (`value` is the session's official close; `detail` the last
+    continuous price). `tenant_id` set = about that tenant's private store (only it reads the flag, like the bars)."""
+
+    __tablename__ = "md_bar_flags"
+    __table_args__ = (Index("ix_md_bar_flags_lookup", "tenant_id", "instrument_key", "timeframe", "ts"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    ts: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)                 # the bar END, UTC
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 # --- Screener addendum U1: NSE universe reference data (as-of)------------------------------------------------------------
 class SecurityRecord(Base):
     """U1-a: one listed security, keyed by ISIN (stable across renames). The broker `instruments` master stays the

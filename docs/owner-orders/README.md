@@ -32,5 +32,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Roadmap (one plan, rules R1-R6) | ROADMAP.md (docs/ROADMAP.md) | all | binding since 24 Oct |
 | - | Copilot chart reading (CP-V, CV1-CV13) | ATP_ORDER_CP_V.md | CP-V | review first |
 | - | Token budget rules TB-1..TB-9 | INBOX 2026-10-24 | all | binding since 24 Oct |
+| - | Combined exit (CX1-CX7) + strategy exits at entry (SX1-SX8) | ATP_ORDER_CX_SX.md | P1-6c, P1-6d | review first |
+| - | Trader protection F1-F8 | ATP_ORDER_TRADER_PROTECTION.md | TP-1..TP-8 | after Phase 1 |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

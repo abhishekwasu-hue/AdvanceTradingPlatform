@@ -47,6 +47,10 @@
 #   /opt/atp/deploy/atp.sh probe-chain UNDERLYING  B2b, read-only: one option chain (nearest expiry) through the owner's
 #                                                  own broker session - the broker's raw underlying spot beside the ATM
 #                                                  strike and our own last index close. No token, nothing written
+#   /opt/atp/deploy/atp.sh lake-backfill [--check] DATA-H: Daily (several years) and 1-minute (the reader's lookback)
+#                                                  index history through the owner's own broker session into his
+#                                                  private store, resumable; then the bars per index per timeframe.
+#                                                  --check: what is missing + the stored vs the broker's last close
 #   /opt/atp/deploy/atp.sh schedule | releases | help
 #
 #   --dry-run (anywhere, or ATP_DRY_RUN=1): prints every step it would take; changes nothing on the host.
@@ -779,6 +783,8 @@ health_checks() {
   report_flags
   step "chart analysis engine"
   engine_report
+  step "market history (bars, first / last date per index per timeframe)"
+  lake_report
   step "backups"
   backup_report
 
@@ -1044,6 +1050,21 @@ print(("OK " + clean(d.get("name")) + " " + clean(d.get("version"))) if d.get("i
   esac
 }
 
+# DATA-H DH4: the index history the chart reader and the Copilot read (backend app/market_lake/index_history.py, run in
+# the backend container): bars and first / last date per index per timeframe. MISSING / SHORT only WARN - the pages say
+# so themselves, and `lake-backfill` fills it.
+lake_report() {
+  local out line n=0
+  out="$(dc exec -T backend sh -c 'test -f app/market_lake/index_history.py && python -m app.market_lake.index_history health' 2>/dev/null | tr -d '\r' || true)"
+  if [ -z "$out" ]; then info "market history: not reported by this release"; return 0; fi
+  while IFS= read -r line; do
+    n=$((n + 1))
+    if [ "$n" = "1" ]; then
+      case "$line" in *"MISSING / SHORT"*) warn "$line - fill it: $ATP_DIR/deploy/atp.sh lake-backfill" ;; *) ok "$line" ;; esac
+    else info "$line"; fi
+  done <<< "$out"
+}
+
 # --- commands ----------------------------------------------------------------------------------------------------
 cmd_health() {
   [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
@@ -1225,6 +1246,9 @@ cmd_deploy() {
   else
     info "would run every health check and compare the feature flags before/after"
   fi
+
+  step "market history (DATA-H: fills only what is missing; skipped when nothing is)"
+  if [ "$DRY_RUN" != "1" ]; then lake_fill_if_missing; else info "would run: lake-backfill --if-missing (at most 120 s)"; fi
 
   cmd_schedule quiet
   prune_images
@@ -2766,6 +2790,46 @@ cmd_probe_candles() {
   esac
 }
 
+# DATA-H (owner, 24 Oct): the index history the chart reader and the Copilot read - Daily (Weekly built from it) for
+# several years and 1-minute bars (1H / 15M built from them) for the reader's lookback, of NIFTY, BANKNIFTY, SENSEX and
+# FINNIFTY (backend app/market_lake/index_history.py), run in the backend container (its own network and settings, so
+# nothing depends on the host's Python or network). Read through the OWNER's own broker session only (HB2's owner:
+# HISTORY_OWNER_TENANT_ID + HISTORY_OWNER_TENANT_NAME) into his organisation's PRIVATE store; never the shared lake.
+# Resumable and idempotent: a re-run asks only for what is missing. --check: what would be asked, whose session, and the
+# stored official last close beside the broker's own (DH6) - nothing written. No token is printed.
+cmd_lake_backfill() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local check=0 rc=0
+  case "${1:-}" in "") ;; --check) check=1 ;; *) die "usage: atp.sh lake-backfill [--check]" 2 ;; esac
+  [ $# -le 1 ] || die "usage: atp.sh lake-backfill [--check]" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would run the index-history %s in the backend container\n' "$([ "$check" = 1 ] && echo check || echo backfill)"; return 0; fi
+  check_tools
+  if [ "$check" = "1" ]; then
+    dc exec -T backend python -m app.market_lake.index_history check || rc=$?
+  else
+    dc exec -T backend python -m app.market_lake.index_history run --budget-seconds 1800 || rc=$?
+  fi
+  case "$rc" in
+    0) ;;
+    2|3) exit "$rc" ;;      # it printed why (the owner is not configured; no usable broker session of his own)
+    *) die "the backfill did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
+# DATA-H DH2: during a deploy, the backfill runs only when a window is missing (a new host, a new index, a stopped
+# run) and for at most 120 s; nothing missing -> it exits at once. Never fails the deploy (the worker's daily pass and
+# `lake-backfill` finish the rest).
+lake_fill_if_missing() {
+  local out
+  out="$(dc exec -T backend sh -c 'test -f app/market_lake/index_history.py && python -m app.market_lake.index_history run --if-missing --budget-seconds 120' 2>/dev/null | tr -d '\r' | head -n 3 || true)"
+  if [ -z "$out" ]; then info "market history: not run by this release"; return 0; fi
+  case "$out" in
+    *"nothing_missing"*) ok "market history: nothing missing" ;;
+    *"not_configured"*|*"no_session"*) info "market history: not filled - $(printf '%s' "$out" | sed -n 2p | sed 's/^ *note: //' | cut -c1-160)" ;;
+    *) info "$(printf '%s' "$out" | head -n 2 | tr '\n' ' ')" ;;
+  esac
+}
+
 main() {
   local args=() a
   for a in "$@"; do
@@ -2797,6 +2861,7 @@ main() {
     env-set)        cmd_env_set "$@" ;;
     lists-sync)     cmd_lists_sync "$@" ;;
     probe-candles)  cmd_probe_candles "$@" ;;
+    lake-backfill)  cmd_lake_backfill "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac

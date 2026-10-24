@@ -5,73 +5,19 @@ decision taken so work continues. When answered: mark it, then move the row to d
 Older open rows whose provisional default is already in effect: docs/archive/OPEN_QUESTIONS_PROVISIONAL.md. Answered /
 closed rows: docs/archive/OPEN_QUESTIONS_CLOSED.md. Both are moved, never deleted - grep them by ID.
 
-## Terminal master Part 9.4: chain history and the OI collector fix (TM94, 23 Oct)
-
-| # | Question | Provisional default | Where | Status |
-|---|---|---|---|---|
-| TM94-1 | Who is "the owner" for the recorder: the SUPER_ADMIN's organisation or a configured tenant? | The configured one, HB0 / HB2's rule: `HISTORY_OWNER_TENANT_ID` confirmed by `HISTORY_OWNER_TENANT_NAME`, the session of `HISTORY_OWNER_USER_ID` (else the lowest-id active OWNER). A role edit can never move the recording; one owner rule for every owner-only data path. | `market_lake/chain_recorder.py` | open (default applied) |
-| TM94-2 | OI rows stored before the fix carry no organisation. | Read only by the confirmed owner (they were read through the first organisation with a session - in production the owner's); nobody when no owner is confirmed. Deleted by the 400-day retention as before. | `option_chain/snapshots.py` | open (default applied) |
-| TM94-4 | SENSEX chain on Upstox (TM-32). | The adapter now looks SENSEX / BANKEX up in the BSE master; verify on the owner's token on the first day (the admin card shows a gap with the reason if the read fails). | `brokers/upstox.py` | open (verify on the host) |
-| TM94-5 | With `byob_data_tier` on, the OI collector still skips that organisation, although its slots are now its own. | Unchanged (no widening in this PR); can be allowed later through the member's own session. | `workers/trading_worker.py` | open |
-| TM94-6 | Greeks the broker does not send (only Upstox sends them). | Stored as missing; a later reader computes them on read and labels them as computed. Nothing is stored that the broker did not send. | `market_lake/chain_store.py` | open |
-| TM94-7 | The OI collector now reads once per organisation (was once for all). | Each read is on that organisation's own rate budget (one chain call per enabled underlying per 5 minutes); fine for the beta cohort; revisit with the Part 1 data hub. | `workers/trading_worker.py` | open |
-
-## Terminal master Part 1: the data hub (TMH, 23 Oct)
-
-| # | Question | Provisional default | Where | Status |
-|---|---|---|---|---|
-| TMH-1 | "ONE renew prompt": a hub notification as well as the worker's existing "session expired" notification would make two notices for one ended login. | The hub sends no notification of its own. The prompt is the app's one notice (above every page, one "Log in again" button, hidden while the page's own broker card asks) plus the worker's existing single notification. | `market_data/hub.py`, `frontend/src/live/LivePricesBanner.tsx` | open |
-| TMH-2 | byob off: the organisation's connection. The worker streams its first usable adapter; the API's `/ltp` picks its first usable row - with two brokers linked they can differ. | One connection per organisation (`org.t<tenant>`); its ticks answer for the organisation whichever of its own rows the API picked (same organisation, never another's). | `hub.org_feed` | open |
-| TMH-3 | The symbol cap per connection: `BYOB_SESSION_SYMBOL_CAP` 50 (an ATP figure, not the broker's). Upstox and Kite allow far more per socket. | Keep 50 (positions first); the rest stays on one batch call. Raise by environment after the owner's host run shows the CPU and memory. | `core/config.py` | open |
-| TMH-4 | Per-tick Redis writes do not scale (25,000 a second at 500 x 50). | Hub streams publish one snapshot per connection per second; the API reads at most a second behind the stream (the worker's decisions read the tick in its own process, at once). | `HubTickCache` | open |
-| TMH-5 | The option chain itself has no stream, and the chain page's spot still comes with the chain (15 s). | Shared chain snapshots (5 s) now; the chain on a stream and ticks on the chain page with Part 4 / 9.3. | `hub.shared_chain` | open |
-| TMH-6 | A hub stream stops on a refused token (401 / 403); a stream outside the hub keeps retrying as before. | Only hub streams stop (opt-in flag on the stream); network failures are retried on the same backoff everywhere. | `market_data/stream.py` | open |
-| TMH-8 | Found in passing: the Phase S org stream (`_stream_quotes`, env `STREAMING_QUOTES_ENABLED`, off in production) hands the worker's rate-budget wrapper to the stream, which has no `_request` / instrument lookup - an Upstox stream there would fail on connect. | Not changed here (that path stays as it is). Hub streams get the broker adapter under the wrappers (`hub.stream_adapter`); the old path is fixed only if the owner wants the env switch used. | `workers/trading_worker.py` | open |
-| TMH-7 | Trader pack: `data_hub` should join the "Enable trader features" list. | Added to `trader_pack.PACK` (after `ui_v2`; #455 merged before this PR): "Enable trader features" turns it on, "Undo" turns it off again. | `platform/trader_pack.py` | open |
+Older rows: docs/archive/OPEN_QUESTIONS_CLOSED.md and OPEN_QUESTIONS_PROVISIONAL.md
 
 ## Signals day one (SIG1, 23 Oct)
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
 | SIG1-1 | What does "adopt as a PAPER strategy in approval-only mode" create? | His own watch (one internal `user_prefs` row: the template's strategy id with its default settings, the list, `PAPER`, entries `APPROVAL` - server constants). No deployment rows: a deployment is one symbol and needs a broker session a new user may not have, and 50 bots would hit the plan limits and the broker budget. The watch only describes; "Start a paper bot with it" opens the existing form with the template picked (approval-only entries there under `approval_only_entries`). | app/signals_feed/day_one.py | open (owner may choose "create the bots") |
-| SIG1-2 | Which ready strategies does the card offer? | A5 Structure flip retest, B1 Range breakout, D3 Moving-average pullback in trend, on the Daily chart, with their own defaults; only those switched on for the organisation (A5 / B1 need the breakout screen flags, D3 none). | `OFFERS` | open |
-| SIG1-3 | Which lists? | The NIFTY 50 system list first (default), the other index-stock, sector and F&O lists, and his own lists with `watchlists` on. The Indices list is not offered (not a list of shares). At most 60 symbols are read; a longer list says so. | `list_choices`, `MAX_WATCH` | open |
-| SIG1-4 | Data for the first run. | The shared daily lake only (NSE bhavcopy / vendor / import, closed bars, split-adjusted), read in one batch (`load_daily`, the one seam a shared history resolver replaces). No broker call; no history = "No Daily history for this symbol yet", never sample data. | `load_daily` | open |
-| SIG1-5 | "Formed recently". | A display window of 5 Daily bars (not a reading rule; the logic is the template's own). | `RECENT_BARS` | open |
-| SIG1-6 | When is the watch read again? | On adopting; on opening Signals when the last read is older than 4 hours; on "Refresh" (at most once a minute). No worker job, no notification. | `STALE_SECONDS`, `MIN_REFRESH_SECONDS` | open |
 
 ## Copilot on the user's own key, tools wired (OKT, 23 Oct)
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
-| OKT-1 | The order's screens and multi-view in the chat: new jobs or inside the eight? | Two new jobs after the handover's eight: 9 "Find setups" (screens) and 10 "Full view of a symbol". Jobs 1 and 4 also read the news feed and market memory. | `app/ai/copilot_chat.py` JOBS | open |
-| OKT-2 | Which flag lets the chat read news and market memory? | `ai_agent` (its description already names them); screens `screener_copilot` (+ `screener_v2`); the full view `ai_multiview`. Off: "I don't know yet - ... is not set up"; the flag name only in the SUPER_ADMIN's diagnostics. | `CHAT_TOOL_FLAGS`, `JOB_FLAGS` | open |
-| OKT-3 | The universe of a chat screen. | The user's own first watchlist (his order, NSE symbols, at most 50), else the "NIFTY 50 stocks" system list; the answer names the list. | `tools/screener.get_screen_universe` | open |
-| OKT-4 | May the chat's rules propose an alert? | Yes, only when the trader's own words ask ("alert me when ..."), on one named symbol, through the agent's own guard (his words, one per question, not from third-party text); it is only PROPOSED and he approves it under AI Copilot (ADR-0006). | `chat_routes._runner` | open |
-| OKT-5 | News headline text in a chat answer. | Not shown: a count and the high-severity count, with a pointer to the News page (third-party text may carry trade words). | `copilot_chat._news_line` | open |
-| OKT-6 | The full view's technical part. | ATP's structure reader per timeframe, not the indicator regime (handover 5 C: the regime is an admin diagnostic only). | `copilot_chat.full_view` | open |
-| OKT-7 | "Why did these pass" in the chat. | Each stage's pass / not passed only; the screen engine's own numbers stay on the Screener page (no single prices in the chat). | `copilot_chat.screen` | open |
-| OKT-8 | The user's own key at its own limit, on the Copilot page. | The page still opens and answers from ATP's rules with the plain limit line; never the organisation's key (SR-4). | `chat_routes._provider` | open |
 | OKT-9 | `ai_one_key` catalog status. | `ready` (one key works end to end on any plan, the Free plan included). Switching it ON in production is the owner's step (Admin → Feature flags; it needs `ui_v2`, which is ON). | `platform/flag_catalog.py` | open (owner) |
-| OKT-10 | The scan read ("read this scan") was still on the organisation's key only. | Moved to the user's own key first (user-started, SR-6). The research loop stays on the organisation's key (it queues a background job). | `app/scanner/ai.py` | open |
-
-## The scan universe is never empty (SU, owner order 23 Oct)
-
-| # | Question | Provisional default | Where | Status |
-|---|---|---|---|---|
-| SU-1 | NIFTY 50 when the server has no NIFTY 50 list (the system lists not built yet, or the call failed). | First the system list `index-nifty50`; else the current NIFTY 50 membership the universe sync stores (`index_membership` + `securities`); only when neither exists, a static names-only list in the page (`NIFTY50_FALLBACK`, 50 NSE symbols, no prices or weights; may lag a reconstitution until the system list exists - a stale name just reads "no bars"). | `universe.ts`, `universes.py` | open |
-| SU-2 | A universe over 50 symbols: raise the run cap or batch? | Batch; the run cap stays 50. Each batch is a `/run` with `batch: true`, one in flight at a time; every broker call of a batch takes a token from the credential's shared API budget (`api_budget.BudgetedAdapter`, the budget charts use: half of `rate_budget.py`'s conservative limits), so a batch can never spend past it - a symbol without a token reads "waited for the broker's limit" and the page offers to run again. Batch size = what the per-second share fetches in about 10 s (Upstox 40, Zerodha / others 10); the page waits after each batch for the calls it made at the per-minute share (cached bars cost nothing, so a warm NIFTY 500 runs at once). Raising the cap would make one request hold up to 500 broker calls (minutes on Zerodha) and could not report partial results. Ordinary runs of 50 or fewer are unchanged (no token taken). | `universes.py`, `routes.py` (`fetch_frames budget_out`), `runInBatches` | open |
-| SU-3 | Upstox's 30-minute window: the API budget allows 500 calls per 30 minutes per credential; a cold NIFTY 500 scan on an intraday timeframe (bars + daily context) can use it, and charts then read "budget used" until it frees. | Kept: the budget refuses past the window (never over the broker's allowance), the default stays NIFTY 50, and daily bars are cached and shared. If it bites, cap a batch run's share of the 30-minute window (e.g. half). | `api_budget.py` | open |
-| SU-4 | Scan alerts on a list over 50 stocks. | An alert saved from a run keeps the chosen universe, up to the alert engine's 50 symbols (the first 50 of the list, said in the dialog). Raising the alert cap adds bar-close fetches to the trading worker's budget (which its exits share), so it waits for the owner. | `ScanAlertPanel.tsx`, `alerts/rules_routes.py` | open |
-| SU-5 | A long list's answer (over 50 rows). | Matches first: the matches (and any stock the broker's limit held back) are listed, the others are counted ("425 stocks did not match"), with "Show all". | `ScreenerPage.tsx` | open |
-
-## Backtests without a daily broker login (BSH, 23 Oct)
-
-| # | Question | Provisional default | Where | Status |
-|---|---|---|---|---|
-| BSH-4 | Prices and window of stored history. | Split / bonus adjusted (as a broker's chart history; dividends only with `LAKE_ADJUST_DIVIDENDS`); the broker path's Daily window exactly: at least 400 calendar days, up to yesterday (today's bar is never read); each bar stamped like a broker's Daily candle, so equal bars give an identical result (parity test). Weekly is built from Daily by the India calendar week. | `bar_source.window`, `to_frame`, `weekly` | open |
-| BSH-5 | Which entry points use it. | Every server-side backtest read: the Copilot `run_backtest` / `backtest_draft` tools, the AI draft backtest route, the interview plan (intraday: the plain refusal), the research study job, and the new `POST /api/backtest/bars` that the Backtesting page and the setup "Test it" call when no broker is usable. With a usable broker each path reads exactly what it read before. Unchanged: the screener backtest / history (already lake-only), the strategy chart-run (the chart's own candles), the template adopt route (runs no backtest), Monte Carlo / walk-forward / optimise (they re-use the bars the run was given). | see the list | open |
-| BSH-6 | The v2 broker gate on the Backtesting page. | With the flag on, `/strategies/test` and `/backtest` show their own broker state (the data bar's sentence and "Open Broker") instead of the gate; every other data page keeps the gate. | `ui/dataPages.STORED_HISTORY_PATHS`, `AppShellV2` | open |
 
 ## Trader pack: "Enable trader features" (TP, 23 Oct)
 
@@ -146,7 +92,6 @@ closed rows: docs/archive/OPEN_QUESTIONS_CLOSED.md. Both are moved, never delete
 | TM2-1 | A waiting entry on the underlying's level (spot trigger), and LIVE waiting entries. | Entries wait on their own price only; a spot trigger is for exits (T-D2 is about exits). A LIVE waiting entry is kept but never fired until the LIVE manual path (TT-1) and Abhi's LIVE switches allow it (same object, same path). Checked against CLAUDE.md §3-4, DECISIONS (TM-2, TM-23, TT-1) and the Terminal review. | `execution/resting_book.py`, `trigger_engine._evaluate_entry` | open (provisional default in use) |
 | TM2-2 | How long does a waiting entry live, and does a fired SL whose limit is passed wait? | A DAY order (until 15:30 IST of the day it was placed), as at the exchange; a triggered SL past its limit keeps waiting at its limit. Armed exits live until the position closes; when one fills, the others are cancelled. | `resting_book.day_end`, `trigger_engine._keep_as_limit` | open (provisional default in use) |
 | TM2-3 | The tick pass runs inside the worker on the organisation's hub stream (flag `data_hub`); a user's own BYOB stream is not read there yet. | Touch triggers of PAPER orders on hub ticks every second (`TRIGGER_TICK_SECONDS`); everything else, and every organisation without a hub stream, once per worker cycle. A stall (no run for 3 cycles in market hours) tells the owners in the app and on Telegram. | `trigger_engine.tick_pass`, `check_stall` | open (provisional default in use) |
-| TM2-4 | An order a stopped worker left half-way ("Sending", FIRING) - when is it settled? | Superseded: the owner decided (DECISIONS 24 Oct, "TM-2 (#496) approved after TM2-4"). On worker start every FIRING order is looked up at its broker by its own client id / tag, exits first (found: its state; not found: sent once with the same id); while running, after `TRIGGER_ACK_TIMEOUT_SECONDS` (default 5). The earlier 60 s stale rule is removed. | backend/app/execution/trigger_engine.py `reconcile_on_start`, `_resolve_firing` | Answered (owner, DECISIONS) |
 
 ## P1-2b: the organisation's min reward:risk OFF (24 Oct, `claude/p1-2b-org-min-rr-off`)
 
@@ -210,7 +155,6 @@ the owner says otherwise.
 | T1-14 | Found, not changed here: a position row shows its strategy id in words ("Manual fno") on My trades and in the Terminal's positions panel. | A small wording fix on the shared row (its own PR). | `src/trading/model.ts` | open |
 | P12B-1 | `risk_settings.min_risk_reward` is NOT NULL and held the built-in 1.2 in every row nobody changed; the row cannot tell "set" from "inherited". | TT12-1 rule, no migration: a stored 1.2 reads as not set (0). An organisation that now sets exactly 1.2 itself is stored one float step above 1.2 (`math.nextafter`), which reads back as 1.2 and applies. Any other stored value is kept. | `risk_engine/routes.py` `org_min_rr_read` | open (provisional default in use) |
 | P12B-2 | The options backtest dropped the signal's reward:risk for a single contract, while the live / paper contract order keeps it: with a minimum set, the two disagreed. | The options backtest keeps it for a single contract (as live) and not for a multi-leg structure (as live, `execution/multileg.py`); engine label 9-options. No effect while no minimum is set. | `backtest/options_engine.py` `_size_lots` | open (provisional default in use) |
-| P12B-3 | Custom (no-code) strategies had a built-in min R:R 1.2 (`CustomStrategyConfig`, the text parser, the Builder form pre-filled 1.2). | Done in #497 (owner: no hidden filter anywhere): not set by default; a stored 1.2 = not set (TT12-1 rule); any other stored value kept; a 1.2 the user types in the Builder is kept (stored one float step above, applies as 1.2). The interview's 1.5 / 2.0 and the AI drafts' stated minimum stay visible proposals. | `strategy_engine/declarative.py`, `nlu_parser.py`, `StrategyBuilderPage.tsx` | answered 24 Oct (DECISIONS) |
 | P12B-4 | The level gate (`price_action/level_gate/settings.py`) default `min_rr` 3.0 is Trade's own value (golden parity with the Trade repo) and is shown as a visible pre-filled setting ("Default: 3") in the Scan Then drawer (flag `scan_then`, off). | Not changed in #497. Proposal: keep 3.0 as the visible default for Abhi's own method (it is his stated rule, golden-pinned); for other users' Scan Then templates show the field empty ("not set" = no R:R filter) once `scan_then` opens to users. | `level_gate/settings.py:15`, `screener/then/ThenPanel.tsx` | open (owner) |
 ## TT-12: platform-default limits start off (24 Oct, `claude/tt12-limits-off`, #494)
 
@@ -218,11 +162,9 @@ Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-12, TT12-1, T
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
-| TT12-1 | A settings row saved before TT-12 cannot tell "the user set this" from "the platform default he inherited". | No migration. New saves list the user's own keys under `_set`; an old row counts a value only when it differs from the old default (equal = unset). A one-time notice tells the affected users: "Your risk limits are now not set — set your own in Settings › Risk". | `risk_engine/by_default.py`, `me/notices.py` | answered 24 Oct: accepted + notice (DECISIONS) |
 | TT12-1a | Who gets the notice: a user whose old row mixes old-default values with values of his own? | Only users with NO value of their own (every stored limit equal to the old default, at least one of them on), behind `ui_v2` and `risk_by_default`. A mixed user keeps his own values and sees no notice (the text "your risk limits are now not set" would be half wrong). Seen = dismissed or any limit saved; the mark lives in prefs `notices`. | `by_default.reset_by_tt12` | open (provisional default in use) |
 | TT12-2 | Should "loosen only from tomorrow" also apply when a limit goes from off to a value, or when he clears one? | Off -> any value is a tightening: at once. Clearing (null) a limit he set is a loosening: from the next IST day; clearing an unset key is at once. | `by_default.plan_change` | open |
 | TT12-3 | With no risk per trade of his own, what sizes the equity plan ticket and the F&O ticket? | The organisation's own risk per trade (RiskConfig, after the platform ceilings), exactly as with the flag off. No platform number is added. | `paper/ticket.py` assess | open |
-| TT12-4 | The organisation-level min reward:risk 1.2 (RiskConfig). | Decided 24 Oct: OFF too, own PR with backtest parity (roadmap P1-2b). | `risk_engine/risk_manager.py` | answered 24 Oct (DECISIONS) |
 | TT12-5 | Where does the user see / change his limits? | Setup step 2 (empty boxes, "Not set") and the "Your paper limits" card on the v2 Risk page. | `setup/StepsV2.tsx`, `trading/RiskV2.tsx` | open |
 
 ## TT-8: a basket's legs as one group (24 Oct, `claude/tt8-basket-group`, #501)
@@ -235,7 +177,6 @@ Checked against CLAUDE.md (sections 3, 4, 8), DECISIONS 24 Oct (TT-8) and docs/d
 | TT8-2 | LIVE: today's "Exit now" refuses LIVE ("close it in the broker app"). The new exits are built LIVE-ready: a LIVE leg goes out through its own broker session (`broker_for_trade`), as the monitor's and the kill switch's LIVE exits do. | Kept so (owner principle 23 Oct: one code path). Manual baskets are PAPER only today, so no LIVE group exists until TT-1; the Phase 0 lock still applies. | `fno_groups.exit_leg / exit_group` | open |
 | TT8-3 | Partial exit of a leg (N of M lots). | Not in this PR: it needs the trade-row split (TT-9 / TM-17 method) for P&L, journal and orders - its own PR. | - | open (TT-9) |
 | TT8-4 | "Exit this leg" on a leg of a strategy structure (deployment). | Not offered: the structure keeps "Exit now", which closes it whole (its group stop stays valid); the API answers 409 with that sentence. | `fno_groups._check` | open |
-
 
 ## C1: chart history ends at the last session close (24 Oct, `claude/bug-c1-closed-history`)
 
@@ -254,7 +195,6 @@ person's own-session read, readable only by him, is the TM-7 rule; no source for
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
 | B1-1 | `md_tenant_chain_snapshots` is unique per (tenant, underlying, expiry, slot), not per member: when two members of one organisation read the same chain in the same 5-minute slot, only the first read is stored (the second member gets a gap for that slot, never the first one's data). | No migration now (retail organisations are one person). If wanted: widen the key with `source` in its own PR (a constraint change, migration after 15:30 IST). | `own_snapshots.record` | open |
-| B1-2 | Which reads are stored: every own-session chain read with the own-broker tier on - Option chain Analyses, Charts, the live chain view and Ask AI; Ask AI's path through the session uses his own snapshots too. | Owner rule "no feature split by data source" (coordinator, 24 Oct): all four. | `analyses_routes`, `charts_routes`, `routes.live`, `ask_adapter` | done in #509 |
 | B1-3 | Retention: the chain history's own setting (`RETENTION_CHAIN_HISTORY_DAYS`, 0 = kept, TM-8). | Kept until the owner sets a limit. | `retention/service.py` | open |
 
 ## UI-H-BUG: A1 (#505) and B3 + B4 + Orders time (24 Oct, `claude/bug-a1-engine-install`, `claude/bug-b3-b4-time`)
@@ -276,6 +216,13 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | B2-2 | `data_as_of` while open. | The read time: the chain is read now (or the data hub's copy of the last few seconds). The OptionChain answer has no capture time of its own. | `as_of.as_of_for` | open |
 | B2-3 | How does `atp.sh probe-chain` act "with the owner's own session"? | The same read-only handler as the admin-only `GET /api/admin/option-chain/probe-chain`, run in the backend container as the platform owner's account (the first `SUPER_ADMIN_EMAILS` user) through his own stored broker session; no login token is minted or printed. | `app/option_chain/probe.py` | open |
 
+## DATA-H (index history for the chart reader; checked against CLAUDE.md, DECISIONS 23-24 Oct (TM-7, BSH-1, DATA-H) and docs/DATA_SOURCES.md)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| DH-1 | Where do the broker-read index bars go? | HB2 / TM-7's rule: read only through the owner's own Upstox session (HISTORY_OWNER_TENANT_ID + NAME, HISTORY_OWNER_USER_ID) into his organisation's PRIVATE store (`md_tenant_candles`, source `broker:upstox:u<id>`); only he reads them and the zones built from them. The shared lake is never written, so other users still see only NSE's files until a licensed shared source exists (RDY-6). | `app/market_lake/index_history.py`, `own_bars.py` | open |
+| DH-2 | The Trade reader's closing-auction rule is not in this public repository. | Generic flags only: a 1-minute bar starting at or after 15:30 IST is dropped; a Daily high / low beyond the continuous session's extremes is read at the continuous extreme (open and close held inside); the stored Daily close stays the official close shown to the user. Replace with the Trade rule when it is ported (P5-1). | `index_history.auction_flags`, `own_bars.apply_flags` | open |
+| DH-3 | How much history? | Daily 10 years (Weekly built from it), 1-minute 200 days (1H / 15M built from it; the reader's 1H lookback is 180 days); `LAKE_BACKFILL_DAILY_YEARS`, `LAKE_BACKFILL_INTRADAY_DAYS`. | `app/core/config.py` | open |
 ## CP-V review (24 Oct 2026, docs/design/CP_V_REVIEW.md)
 
 | # | Question | Provisional default | Where | Status |
@@ -307,3 +254,4 @@ one navigation style) and docs/ui/UI_AUDIT.md (Wave 0 list).
 | T1F-1 | T1-5: what the ticket / basket start with when he saved no product in My trading defaults. | MIS (intraday), with the line "No product saved in My trading defaults: MIS (intraday) for now. Set yours in Settings." under the choice; his saved product always wins. | `src/fno/ticketModel.ts` FALLBACK_PRODUCT | open |
 | T1F-2 | T1-6 "Exit all": a new server route or the existing exits? | The existing exits, one after another, from the page: each basket group through "Exit the whole group" (sold legs first), then the single sold positions, then the bought ones (Exit now). No new route; never disabled; a leg that does not close is named. The kill-switch emergency exit is not used (it also stops new orders). | `src/terminal/PanelsV2.tsx` exitAllPlan | open |
 | T1F-3 | T1-4 wording: the buttons now say "Complete the leg(s)" / "Exit the filled leg(s)"; the server's own message line of an incomplete order is unchanged. | Buttons in the owner's words everywhere (Terminal, Positions, the basket); the server message stays as written. | `src/fno/incompleteApi.ts` | open |
+| CXQ-1..CXQ-10 | 2026-10-24 | CX / SX open questions with defaults (leg stop vs strategy exit, combined MTM definition, added lots, frozen "all positions", sold-leg stop optional only with a strategy SL, protected limit never MARKET, approval mode, one summary notification, MTM before charges, stuck short). Full text: docs/design/CX_SX_REVIEW.md section 5. | defaults in the review; owner answers awaited for CXQ-5 / CXQ-6 |

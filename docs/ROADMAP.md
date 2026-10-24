@@ -100,7 +100,8 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 ## Status table (the session keeps this current; one line per item)
 | ID | Status | Next action | PR |
 |---|---|---|---|
-| UI-H | in progress | Part 1 audit (no code): every page 390 / 1440, light / dark, scored H1-H10 -> docs/ui/UI_AUDIT.md; then the owner's approval -> shared components -> waves. Holds C1, A1, M1, B1-B4, max pain | - |
+| UI-H | in progress | audit approved (#503); Wave 0 shared components next (one SubTabs style; mocks per wave), then Wave 1 | #503 |
+| UI-H-BUG | in progress | bug lane: C1, B2a/B2b, B3+B4+Orders time, A1, B1 - small PRs, each with proof | - |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |
 | P1-2 | in review | notice (TT12-1) added; owner: "Merge" after green CI, then deploy (no migration) | #494 |
 | P1-2b | in review | org min R:R OFF (0 = not set; an old stored 1.2 = not set), parity tests live / paper / both backtests; owner: "Merge" after green CI, then deploy (no migration) | #497 |

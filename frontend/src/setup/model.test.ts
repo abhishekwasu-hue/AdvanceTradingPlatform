@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { flagOffFallback, shellKeyFromPath, shellTitle } from "../shell/shellRoutes";
 import {
   RISK_DEFAULTS, SETUP_PATH, SUGGESTIONS, cleanStored, cleanView, dismissChip, isComplete, markOpened, nextStep, openingStep, paperDeployment,
-  perTradeText, riskErrors, riskSentence, setupChip, skipStep, stepAfter, testSummary, withStored,
+  limitText, limitsBody, perTradeText, riskErrors, riskNumbers, riskSentence, setupChip, skipStep, stepAfter, testSummary, withStored,
   type SetupStepKey, type SetupView,
 } from "./model";
 
@@ -89,25 +89,42 @@ describe("UI2-7 the Setup chip", () => {
   });
 });
 
-describe("UI2-7 risk limits", () => {
-  it("the spec's defaults and the 'most you can lose today' sentence", () => {
-    expect(RISK_DEFAULTS).toMatchObject({ capital: 100000, riskPerTradePct: 1, dailyLossPct: 3 });
-    expect(riskSentence(RISK_DEFAULTS.capital, RISK_DEFAULTS.dailyLossPct)).toBe("With these limits the most you can lose today is ₹3,000.");
+describe("UI2-7 risk limits (TT-12: nothing filled in for him)", () => {
+  it("no limit has a default; the 'most you can lose today' sentence follows his own numbers", () => {
+    expect(RISK_DEFAULTS).toEqual({ capital: 100000 });
+    expect(riskSentence(100000, 3)).toBe("With these limits the most you can lose today is ₹3,000.");
     expect(riskSentence(1000000, 2.5)).toBe("With these limits the most you can lose today is ₹25,000.");
     expect(perTradeText(100000, 1)).toBe("At most ₹1,000 on one trade.");
     expect(riskSentence(Number.NaN, 3)).toBeNull();
     expect(riskSentence(100000, 0)).toBeNull();
+    expect(riskSentence(100000, null)).toBeNull();                   // not set: no sentence
+    expect(perTradeText(100000, null)).toBeNull();
   });
 
-  it("checks each field against the server's bounds, in plain words", () => {
-    const ok = { capital: "1,00,000", riskPerTradePct: "1", dailyLossPct: "3", maxTradesPerDay: "10" };
+  it("checks each field against the server's bounds, in plain words; an empty limit is fine (not set)", () => {
+    const ok = { capital: "1,00,000", riskPerTradePct: "1", dailyLossPct: "3", maxTradesPerDay: "10", minRr: "1.5" };
     expect(riskErrors(ok)).toEqual({});
-    const bad = riskErrors({ capital: "5000", riskPerTradePct: "9", dailyLossPct: "", maxTradesPerDay: "2.5" });
+    expect(riskErrors({ capital: "1,00,000", riskPerTradePct: "", dailyLossPct: "", maxTradesPerDay: "", minRr: "" })).toEqual({});
+    const bad = riskErrors({ capital: "5000", riskPerTradePct: "9", dailyLossPct: "x", maxTradesPerDay: "2.5", minRr: "11" });
     expect(bad.capital).toBe("Starting capital must be between ₹10,000 and ₹1,00,00,00,000.");
     expect(riskErrors({ ...ok, capital: "" }, { capital: false })).toEqual({});                // no field, nothing to check
+    expect(riskErrors({ ...ok, capital: "" }).capital).toBe("Enter a number for starting capital.");
     expect(bad.riskPerTradePct).toBe("Risk per trade must be between 0.05 and 5.");
     expect(bad.dailyLossPct).toBe("Enter a number for daily loss limit.");
-    expect(bad.maxTradesPerDay).toBe("Enter a whole number for max trades per day.");
+    expect(bad.maxTradesPerDay).toBe("Enter a whole number for trades a day.");
+    expect(bad.minRr).toBe("Lowest reward to risk must be between 0 and 10.");
+  });
+
+  it("an empty box is sent as null (not set); Settings says 'Not set' unless he set it", () => {
+    const n = riskNumbers({ capital: "1,00,000", riskPerTradePct: "", dailyLossPct: "2", maxTradesPerDay: "", minRr: "" });
+    expect(n).toEqual({ capital: 100000, riskPerTradePct: null, dailyLossPct: 2, maxTradesPerDay: null, minRr: null });
+    expect(limitsBody(n)).toEqual({ risk_per_trade_pct: null, daily_loss_pct: 2, max_trades_per_day: null, min_rr: null });
+    expect(limitText("minRr", [], 0)).toBe("Not set");
+    expect(limitText("minRr", undefined, 1.5)).toBe("Not set");               // an older server: nothing is known to be his
+    expect(limitText("minRr", ["min_rr"], 1.5)).toBe("1.5 : 1");
+    expect(limitText("dailyLossPct", ["daily_loss_pct"], 2)).toBe("2% of capital");
+    expect(limitText("maxTradesPerDay", ["max_trades_per_day"], 0)).toBe("No limit");
+    expect(limitText("maxTradesPerDay", ["max_trades_per_day"], 5)).toBe("5 a day");
   });
 });
 

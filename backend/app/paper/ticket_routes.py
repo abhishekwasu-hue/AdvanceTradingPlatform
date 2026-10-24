@@ -74,7 +74,8 @@ async def risk(user: User = Depends(get_current_user), session: AsyncSession = D
 @router.put("/risk", dependencies=[Depends(require_scope("risk:write"))])
 async def set_risk(body: RiskSettingsBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     await _enabled(session, user)
-    values = {k: v for k, v in body.model_dump().items() if v is not None}
+    # TT-12: a key sent as null clears it (back to "Not set" = off); a key not sent is left as it is.
+    values = body.model_dump(exclude_unset=True)
     try:
         change = await ticket.save_settings(session, user, values)
     except ValueError as exc:

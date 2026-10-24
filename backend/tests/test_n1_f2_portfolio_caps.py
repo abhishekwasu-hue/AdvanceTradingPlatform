@@ -94,7 +94,9 @@ def test_settings_keys_bounds_and_loosening_waits_a_day():
     _, applied, deferred, start = by_default.plan_change(text, {"max_open_positions": 0}, today)    # back to no limit: tomorrow
     assert deferred == {"max_open_positions": 0} and not applied and start == "2026-10-13"
     eff, _ = by_default.effective_settings(s, {"risk_per_trade_pct": 0.1})
-    assert eff.max_open_positions == 3 and eff.risk_per_trade_pct == 0.1
+    assert eff.max_open_positions == 3 and eff.risk_per_trade_pct == 0.0                  # TT-12: not set = off, nothing to clamp
+    eff, _ = by_default.effective_settings(by_default.RiskSettings(1.0, 0.0, 0.0, 0, 0.0), {"risk_per_trade_pct": 0.1})
+    assert eff.risk_per_trade_pct == 0.1
 
 
 # --- before a proposal and at Approve -------------------------------------------------------------------------------------
@@ -285,7 +287,7 @@ def test_the_largest_size_uses_the_organisation_s_risk_per_trade_when_it_is_larg
             cfg = await get_tenant_risk_config(t["tenant_id"], session)
             return user_cap, await C.largest_risk_amount(session, user, capital, settings), cfg
     user_cap, largest, cfg = _run(go(1.5))
-    assert user_cap == 10_000.0 and largest == 30_000.0                  # the organisation's 1.5% of 20 lakh sizes above the user's 1%
+    assert user_cap is None and largest == 30_000.0                     # TT-12: no cap of his own; the organisation's 1.5% of 20 lakh
     user_cap, largest, _ = _run(go(5.0))                      # above the platform ceiling (2%): clamped
     assert largest == 40_000.0                                           # 5% clamped to the 2% ceiling
 

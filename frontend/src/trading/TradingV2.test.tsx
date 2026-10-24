@@ -139,3 +139,13 @@ describe("CP6-15 Risk limits: when the losses-in-a-row pause ends", () => {
     expect(riskSource).toContain("Exits are never paused.");
   });
 });
+
+describe("TT-12 Risk limits: his own paper limits, 'Not set' until he sets them", () => {
+  it("lists the four limits through limitText (Not set unless his own), never a platform number, and links to Setup", () => {
+    expect(riskSource).toContain("Your paper limits");
+    expect(code(riskSource)).toMatch(/limitText\(f, paper\.set, values\[f\]\)/);
+    expect(code(riskSource)).toContain("to={SETUP_PATH}");
+    expect(riskSource).toContain("Closing a trade always works.");
+    expect(riskSource).not.toMatch(/\b1\.5\b.*min_rr|min_rr.*\b1\.5\b/);
+  });
+});

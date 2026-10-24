@@ -4041,3 +4041,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   not groups (TT-8); `risk_by_default` limits are platform defaults, PAPER only (TT-12); Exit all, the kill switch and
   the positions / orders reads are organisation-wide (TT-13..15).
 - Questions TT-1..TT-30 in `docs/OPEN_QUESTIONS.md` (status open); README row 21 status updated.
+
+## TT-12: every platform-default limit starts off (24 Oct)
+
+- Branch `claude/tt12-limits-off` (from main). Owner decision TT-12 (DECISIONS 24 Oct; approved behaviour change, CLAUDE.md section 8).
+- Before: with `risk_by_default` on, every user's PAPER entries got 1 % risk per trade, a 2 % daily loss lockout, 10
+  entries a day and a minimum reward:risk 1.5 that nobody stated (Setup pre-filled 1 % / 3 % / 10).
+- After: nothing set = all four off (no cap of his own, no lockout, no entries cap, no reward:risk filter). His own
+  values are marked under `_set` in the same JSON (no migration); an older row keeps only values that differ from the
+  old defaults (TT12-1). "Loosen only from tomorrow" holds for values he set; setting one that was off applies at once;
+  `PUT /api/paper/risk` with null clears a key. `GET` adds `set`.
+- Setup step 2 shows empty boxes ("Not set") for risk per trade, daily loss, trades a day and lowest reward to risk; the
+  v2 Risk page gets "Your paper limits" with "Not set". The plan ticket strip says "Not set" instead of a cap.
+- Exits untouched (ADR-0004): tests prove Exit now, a stop and Exit all close with the strictest limits and a lockout.
+- Parity: neither backtest engine reads risk by default (AST test); with nothing set the PAPER pipeline sizes exactly as
+  the backtest RiskManager does; ticket preview, pipeline and proposal refusals agree.
+- Tests: `tests/test_tt12_limits_off.py` (16); existing risk tests set the old numbers as the user's own. Questions TT12-1..5.

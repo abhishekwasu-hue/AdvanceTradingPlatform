@@ -61,8 +61,11 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
     <Card title="Plan before trade (PAPER)" className="space-y-3">
       <div data-testid="paper-ticket" className="space-y-3">
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted" data-testid="risk-strip">
-          <span>Cap per trade <span className="text-fg">{money(status.risk_cap.amount)}</span> ({status.effective.risk_per_trade_pct}% of {money(status.capital_basis)})</span>
-          <span>Today <span className={signClass(status.today.pnl)}>{money(status.today.pnl)}</span> of limit −{money(status.today.limit)}</span>
+          {/* TT-12: a limit he did not set is off - "Not set", never a platform number. */}
+          {status.risk_cap.amount !== null
+            ? <span>Cap per trade <span className="text-fg">{money(status.risk_cap.amount)}</span>{status.risk_cap.binding === "pct" ? ` (${status.effective.risk_per_trade_pct}% of ${money(status.capital_basis)})` : ""}</span>
+            : <span>Cap per trade <span className="text-fg">Not set</span></span>}
+          <span>Today <span className={signClass(status.today.pnl)}>{money(status.today.pnl)}</span>{status.today.limit > 0 ? ` of limit −${money(status.today.limit)}` : " · daily loss limit not set"}</span>
           <span>Entries {status.today.entries}{status.today.max_entries ? ` / ${status.today.max_entries}` : ""}</span>
           <span>Overrides today {status.overrides.today} · total {status.overrides.total}</span>
           {vix.enabled && <span data-testid="vix-gate">India VIX gate: {vix.bullish_paused ? (vix.state === "no_reading" ? "no India VIX reading - bullish index entries paused" : "bullish index entries paused today") : vix.state === "high" ? "high VIX, size cut" : vix.state === "waiting" || vix.state === "before_check" ? "check from 09:20 IST" : "normal"}</span>}
@@ -140,7 +143,7 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
               )}
               <div className="text-xs text-fg-muted">
                 <div>Quantity <span className="text-fg">{view.sizing.quantity}</span> (cap allows {view.sizing.suggested_quantity}) · risk at stop <span className="text-fg">{money(view.sizing.risk_amount)}</span> of cap {money(view.sizing.cap)} ({view.sizing.binding})</div>
-                <div>Reward:risk {view.reward_risk ?? "-"} (minimum {view.min_reward_risk}){view.costs?.net_reward_risk != null ? ` · after costs ${view.costs.net_reward_risk}` : ""}</div>
+                <div>Reward:risk {view.reward_risk ?? "-"}{view.min_reward_risk !== null ? ` (minimum ${view.min_reward_risk})` : ""}{view.costs?.net_reward_risk != null ? ` · after costs ${view.costs.net_reward_risk}` : ""}</div>
                 {view.sizing.size_multiplier < 1 && <div>Size cut to {Math.round(view.sizing.size_multiplier * 100)}% by the guardian</div>}
               </div>
             </div>

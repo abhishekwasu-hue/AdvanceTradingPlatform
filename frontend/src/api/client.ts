@@ -612,7 +612,7 @@ export const api = {
 
   /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
   paperRisk: () => request<PaperRiskStatus>("/paper/risk"),
-  setPaperRisk: (values: Partial<RiskByDefaultSettings>) => request<PaperRiskStatus>("/paper/risk", { method: "PUT", body: JSON.stringify(values) }),
+  setPaperRisk: (values: Partial<Record<keyof RiskByDefaultSettings, number | null>>) => request<PaperRiskStatus>("/paper/risk", { method: "PUT", body: JSON.stringify(values) }),
   previewTicket: (plan: TicketPlan) => request<TicketView>("/paper/ticket/preview", { method: "POST", body: JSON.stringify(plan) }),
   placeTicket: (plan: TicketPlan) => request<TradePlanView>("/paper/ticket", { method: "POST", body: JSON.stringify(plan) }),
   paperPlans: () => request<TradePlanView[]>("/paper/plans"),

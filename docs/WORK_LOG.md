@@ -3810,6 +3810,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `admin-trader-pack-v2-{1440,390}-{light,dark}.png`; `admin-controls-v2-*` updated (the new card).
 - Runbook section 4b; questions TP-1..TP-6.
 
+
+## 23 Oct - The day-one trader test (owner order 23 Oct, README row 19)
+
+- Branch `claude/day-one-trader-test` (from main). Test and docs only: no product code, **no migration**.
+- `frontend/e2e/day-one-trader-v2.e2e.ts`: one new PAPER user, Today → Charts watchlist (system groups) → Find setups
+  (NIFTY 50, a gallery scan in one tap) → Copilot (tools used) → Ideas (Try as a scan / Adopt) → Test a strategy on
+  stored Daily history (no broker login) → Paper bot, approval-only → Signals day-one watch; 390 / 1440, light / dark.
+  The trader pack flags are read from `trader_pack.py`; `backtest_stored_history` (an owner decision flag) is on only in
+  the mocked features. No baselines committed; `D1T_SHOTS=<folder>` saves the screenshots.
+- Findings, ranked: `docs/design/DAY_ONE_TRADER_TEST.md` (top: the idea's strategy cannot be backtested - templates
+  are not on Strategies › Test; before the day's login every data page is a gate; the stored-history bar says "No
+  broker connected" and breaks at 390).
 ## 23 Oct - Terminal master Part 7 / 8, PR A: PAPER is a broker adapter (TM-1, README row 20)
 
 - `backend/app/execution/paper_adapter.py`: `PaperExecutionAdapter(BrokerInterface)` over the PaperBroker fill and cost
@@ -4062,3 +4074,7 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   on the ticket and ignored on the console path, the PAPER lock holds, only `fno_routes.py` sets the manual origin.
   `tests/test_z3_approval_entries.py` comments updated.
 - Provisional: TT2-1 (the plan-before-trade PAPER ticket keeps raising a proposal) in `docs/OPEN_QUESTIONS.md`.
+
+## 24 Oct 2026 - day-one trader test rerun (README row 19 done)
+- The eight-step day-one test updated to the fixed pages and rerun on main at 390 / 1440, light / dark: 4 / 4 pass.
+- docs/design/DAY_ONE_TRADER_TEST.md: a rerun section with each finding's status and the follow-ups.

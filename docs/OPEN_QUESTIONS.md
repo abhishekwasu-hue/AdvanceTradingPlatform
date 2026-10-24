@@ -1634,69 +1634,23 @@ collide on numbers.
 | UFP-7 | The paper-phase word for paper counts | "practice" ("2 practice positions"), matching the ticket's "Practice mode" frame. | `openCaption` | open |
 | UFP-8 | Case of built-in strategy names | As the backend registry names them ("Opening Range Breakout"); custom names exactly as the user typed them. | `src/ui/strategyName.ts` | open |
 | UFP-9 | Analyze a chart without the engine: hide for the platform operator too? | Yes in the user view (nav, Coming soon); the admin flag list shows the flag's stored state and the reason (`unavailable_reason`). | `app/platform/controls.py` | open |
+Only the OPEN items that are current (token budget, owner 24 Oct: this file stays under 30 KB). Each row has a provisional
+decision taken so work continues. When answered: mark it, then move the row to docs/archive/OPEN_QUESTIONS_CLOSED.md.
+Older open rows whose provisional default is already in effect: docs/archive/OPEN_QUESTIONS_PROVISIONAL.md. Answered /
+closed rows: docs/archive/OPEN_QUESTIONS_CLOSED.md. Both are moved, never deleted - grep them by ID.
 
 ## Terminal master Part 9.4: chain history and the OI collector fix (TM94, 23 Oct)
-
-The chain history PR (branch `claude/terminal-chain-history`). Design: `docs/design/CHAIN_HISTORY.md`. Checked against
-CLAUDE.md (signals not advice, PAPER only, public repo), DECISIONS (TM-7, TM-8, RDY-6) and the Terminal master order.
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
 | TM94-1 | Who is "the owner" for the recorder: the SUPER_ADMIN's organisation or a configured tenant? | The configured one, HB0 / HB2's rule: `HISTORY_OWNER_TENANT_ID` confirmed by `HISTORY_OWNER_TENANT_NAME`, the session of `HISTORY_OWNER_USER_ID` (else the lowest-id active OWNER). A role edit can never move the recording; one owner rule for every owner-only data path. | `market_lake/chain_recorder.py` | open (default applied) |
 | TM94-2 | OI rows stored before the fix carry no organisation. | Read only by the confirmed owner (they were read through the first organisation with a session - in production the owner's); nobody when no owner is confirmed. Deleted by the 400-day retention as before. | `option_chain/snapshots.py` | open (default applied) |
-| TM94-3 | The Phase W recorder (`backtest/chain_recorder.py`, `option_chain_snapshots`) also stores platform-wide quotes from deployments' chains. | Same data-terms issue; not changed here (this PR fixes the OI collector as ordered). Next: the same per-tenant rule in its own small PR. | `backtest/chain_recorder.py` | decided 23 Oct: approved - the same per-tenant rule for the Phase W recorder, in its own PR (DECISIONS) |
 | TM94-4 | SENSEX chain on Upstox (TM-32). | The adapter now looks SENSEX / BANKEX up in the BSE master; verify on the owner's token on the first day (the admin card shows a gap with the reason if the read fails). | `brokers/upstox.py` | open (verify on the host) |
 | TM94-5 | With `byob_data_tier` on, the OI collector still skips that organisation, although its slots are now its own. | Unchanged (no widening in this PR); can be allowed later through the member's own session. | `workers/trading_worker.py` | open |
 | TM94-6 | Greeks the broker does not send (only Upstox sends them). | Stored as missing; a later reader computes them on read and labels them as computed. Nothing is stored that the broker did not send. | `market_lake/chain_store.py` | open |
 | TM94-7 | The OI collector now reads once per organisation (was once for all). | Each read is on that organisation's own rate budget (one chain call per enabled underlying per 5 minutes); fine for the beta cohort; revisit with the Part 1 data hub. | `workers/trading_worker.py` | open |
 
-
-## Terminal master order: the independent review (TM, 23 Oct)
-
-The review PR (branch `claude/terminal-master-review`, docs only). Review: `docs/design/TERMINAL_MASTER_REVIEW.md`;
-order: `docs/owner-orders/ATP_SESSION_TERMINAL_MASTER.md` (README row 20). Checked against CLAUDE.md, DECISIONS (incl.
-the owner principle of 23 Oct), ADR-0004 / 0006, `docs/BROKER_DATA_TERMS.md`, RDY-6, FNO-1-2, FNO-1-3, FNO-2-1, FNO-4-10.
-
-| # | Question | Provisional default | Where | Status |
-|---|---|---|---|---|
-| TM-1 | PAPER is a branch in the router (`execution/router.py:149`, `multileg.py:253`) and a separate ticket path, not a broker adapter (owner principle, Part 8). | A `PaperExecutionAdapter(BrokerInterface)` over the existing PaperBroker fill and cost model; new order types use it; existing paths move onto it one at a time with parity tests. Order-path change: owner approval (CLAUDE.md section 8) before the Part 7 PR. | `execution/` | decided 23 Oct: approved (TM-1) (DECISIONS) |
-| TM-2 | PAPER keeps no resting order (FNO-1-3); GTT / OCO / ATO / SIP / iceberg / terminal limits need one. | A resting PAPER order book + one trigger engine; additive migration after 15:30 IST. | `execution/`, `paper/` | decided 23 Oct: approved (TM-2) (DECISIONS) |
-| TM-3 | Kotak Neo says market orders are not allowed for retail API orders; LIVE legs, unwind and exits use MARKET (`multileg.py:409,442`). | Adapter capability `market_orders_allowed`; where false, a marketable limit with a protection band from the user's settings, repriced until filled; exits keep priority and are never blocked (ADR-0004). | `brokers/`, `execution/` | decided 23 Oct: proposal accepted (DECISIONS); the facts are verified when that part is built |
-| TM-4 | SEBI OPS threshold, client-algo registration and the exchange algo id for bots, SIP, GTT engine and the terminal. | Per-user OPS under the broker's threshold (`ops_throttle.py`), algo id via `tagging.py`; on the lawyer's list before LIVE. | `execution/` | decided 23 Oct: default accepted (DECISIONS); on the lawyer's / broker-letter list |
-| TM-5 | Many unrelated users' orders from one ATP server IP (static-IP rule at Kotak Neo and Groww; Kotak: 10 family members per IP, session from the same IP). | PAPER and account reads work; LIVE orders through these two brokers are not offered until the lawyer and the brokers confirm (A6). | `docs/COMPLIANCE_IN.md` | decided 23 Oct: proposal accepted (DECISIONS); on the lawyer's / broker-letter list |
-| TM-6 | Kotak Neo and Groww data terms are "pending" (`broker_data_terms.json:29-31`). | Build the adapters on recorded fixtures; their prices are not shown until the row is "confirmed" with the broker's written confirmation. | `market_data/` | decided 23 Oct: proposal accepted (DECISIONS); on the lawyer's / broker-letter list |
-| TM-7 | 9.4 chain history: whose token? A platform-wide store from one user's token is cross-user sharing (RDY-6, BT1b). The existing OI collector already stores platform-wide rows through the first tenant's session. | Record only through the owner's own Upstox session into a tenant-private store readable by his tenant; other users only from a licensed source or written terms. The existing collector is left unchanged and listed for the owner / lawyer. | `market_lake/`, worker | decided 23 Oct: proposal accepted (DECISIONS) |
-| TM-8 | Retention deletes OI snapshots after 400 days (`retention/policy.py:52`). | The chain-history store is exempt (no deletion) until the owner sets a limit; Parquet roll-up to R2 later. | `retention/` | decided 23 Oct: default accepted (DECISIONS) |
-| TM-9 | Freeze quantity is not in the master (FNO-1-2). | Additive `freeze_qty` column from NSE's published file; until present, refuse above the ticket cap; never a guessed limit. | instrument master | decided 23 Oct: default accepted (DECISIONS) |
-| TM-10 | Margin with hedge benefit: the order says the broker's API; FNO-2-1 says no broker margin API. | The broker's basket margin API through the user's own session where the adapter has one (Upstox `/charges/margin`), shown in PAPER too; else the labelled estimate. Supersedes FNO-2-1 only on the owner's word. | `paper/fno_basket.py`, adapters | decided 23 Oct: approved (TM-10) (DECISIONS) |
-| TM-11 | A failed later leg: LIVE auto-unwinds, the PAPER basket never undoes a fill. | One state machine for both: no short before its hedge is confirmed; otherwise "Incomplete" with "Complete the rest" / "Close the filled legs" (the user's tap). | `execution/multileg.py`, `paper/fno_basket.py` | decided 23 Oct: proposal accepted (DECISIONS) |
-| TM-12 | The order says "the existing websocket"; the browser has one SSE stream carrying reload signals only (`live/routes.py`). | A `ticks` topic on the SSE stream: only the symbols the page registered, at most 1 update per symbol per second; no new websocket. | `live/`, `frontend/src/live/` | decided 23 Oct: default accepted (DECISIONS) |
-| TM-13 | The hub's two halves sit behind `STREAMING_QUOTES_ENABLED` (env, false) and `byob_data_tier` (flag, off). | One hub keyed by the credential row; `byob_data_tier` keeps deciding who may read; the hub never relaxes the data terms. | `market_data/` | decided 23 Oct: default accepted (DECISIONS) |
-| TM-14 | The per-session cap (50) vs a Nifty 500 live heatmap. | Batched quotes for the open index only, on the budget; EOD labelled with its time otherwise. | `markets/` | decided 23 Oct: default accepted (DECISIONS) |
-| TM-15 | Heatmap size by weight: the lists rarely carry weights. | Size by weight only where the constituent file has it; else equal tiles; never guessed. | `universe/indices.py` | decided 23 Oct: default accepted (DECISIONS) |
-| TM-16 | Exit reasons are free text (`exit_reason` String(100)). | A pure mapper to the order's categories plus "Other", with tests; no migration. | `trading/` | decided 23 Oct: default accepted (DECISIONS) |
-| TM-17 | The profit ladder needs rule-driven partial exits; the monitor and both backtest engines close whole trades. | `ExitRules.profit_ladder` (JSON, no migration for the setting); a tier closes N lots by splitting the trade row; parity monitor = both backtests. Owner approval (order path). | `trading/exit_rules.py`, `backtest/` | decided 23 Oct: approved (TM-17) (DECISIONS) |
-| TM-18 | "Force start" on the control bar. | Start / resume evaluation now; never an entry without a signal (CLAUDE.md section 3); "Freeze" = PAUSED. | `deployments/` | decided 23 Oct: default accepted (DECISIONS) |
-| TM-19 | Privacy mask scope. | App screens only, remembered per device; exports and Telegram unchanged and say so. | frontend | decided 23 Oct: default accepted (DECISIONS) |
-| TM-20 | The MTM-vs-spot and premium charts: no marks history is stored. | Rebuilt on read from the legs' contract candles through the user's own session; "builds through the session" when missing; no migration. | `trading/`, frontend | decided 23 Oct: default accepted (DECISIONS) |
-| TM-21 | IV Rank / Percentile need a year of IV. | Daily ATM IV from the stored F&O bhavcopy (CH4-4 Black-76), shared licensed EOD; intraday IV from the owner's own recording only. | `option_chain/` | decided 23 Oct: default accepted (DECISIONS) |
-| TM-22 | Paper orders inside a replay. | A replay sandbox: never the real PAPER book or the journal. | `charting/` | decided 23 Oct: default accepted (DECISIONS) |
-| TM-23 | A native broker GTT / SIP fires at the broker where ATP's kill switch and phase0 lock cannot stop it. | The platform's own trigger engine by default (passes the chokepoint and kill switch at fire time); native only as a per-user opt-in, cancelled first when any kill switch engages. | `execution/`, `kill_switch/` | decided 23 Oct: approved (DECISIONS) |
-| TM-24 | Physical-settlement "near ITM" band. | A user setting (no fixed number in code); Telegram + Positions notice with the delivery value. | `execution/`, notifications | decided 23 Oct: default accepted (DECISIONS) |
-| TM-25 | Participant-wise OI: the NSE file is not ingested (CH4-4). | A daily EOD ingest next to the bhavcopy; source checked in `docs/DATA_SOURCES.md`; one morning-prep line in structure words. | `market_lake/` | decided 23 Oct: default accepted (DECISIONS) |
-| TM-26 | The order's Kotak facts: the current SDK (3.0.9) has no CO / BO; brokerage "Rs 0 at present" unverified. | No CO / BO product; brokerage becomes a per-broker plan setting; ATP shows only what the broker states, with the date read. | `brokers/`, `india_costs.py` | decided 23 Oct: default accepted (DECISIONS); the facts are verified when that part is built |
-| TM-27 | Groww's daily caps (orders 3,000, live data 5,000, non-trading 3,000 per day, from a search extract of the official table). | The Groww adapter streams prices (no REST polling); `rate_budget` gains a per-day bucket. | `brokers/rate_budget.py` | decided 23 Oct: default accepted (DECISIONS); the facts are verified when that part is built |
-| TM-28 | Groww's paid API subscription (Rs 499 / month quoted, unverified) and data use. | Treat as the user's own data subscription (`requires_user_data_subscription` true once confirmed); price never shown as ATP's. | `broker_data_terms.json` | decided 23 Oct: default accepted (DECISIONS); the facts are verified when that part is built |
-| TM-29 | "A pro tool; beginners keep the simple ticket" vs exactly two groups. | The Trade terminal is a Trade-menu page for every USER with a page tour; no tier. | frontend | decided 23 Oct: proposal accepted (DECISIONS) |
-| TM-30 | `charting/ReplayBar.tsx` uses `text-xs` (below 14 px). | Fixed in the Part 10 PR. | frontend | decided 23 Oct: default accepted (DECISIONS) |
-| TM-31 | "Lost after the stop was moved closer": `moved_stop_against` detects the other direction. | A new detector `moved_stop_closer` (observation only) in the Part 12 PR. | `journal/detectors.py` | decided 23 Oct: default accepted (DECISIONS) |
-| TM-32 | SENSEX options chain through the owner's Upstox token (BSE). | Verify on the owner's token in the 9.4 PR; if refused, record NIFTY / BANKNIFTY and say so. | 9.4 recorder | decided 23 Oct: default accepted (DECISIONS); the facts are verified when that part is built |
-
 ## Terminal master Part 1: the data hub (TMH, 23 Oct)
-
-Branch `claude/terminal-data-hub`. Design: `docs/design/DATA_HUB.md`. Checked against CLAUDE.md (sections 3, 4, 8),
-DECISIONS 23 Oct (the owner principle; TM-12, TM-13, TM-14 defaults accepted), `docs/BROKER_DATA_TERMS.md` (BT1 / BT1b),
-RDY-6 and LD-10. Every row is a provisional default; the code follows it until the owner says otherwise.
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
@@ -1711,11 +1665,6 @@ RDY-6 and LD-10. Every row is a provisional default; the code follows it until t
 
 ## Signals day one (SIG1, 23 Oct)
 
-Owner order 23 Oct ("Signals not empty on day one", README row 19). Branch `claude/signals-day-one`. Design:
-`docs/design/SIGNALS_DAY_ONE.md`. Checked against CLAUDE.md sections 2-5, DECISIONS (23 Oct trader review: gaps first;
-the watchlists sync ON) and the strategy templates order (section 8 parity, section 10 PAPER only): no rule is added,
-nothing is placed, no LIVE path, no migration.
-
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
 | SIG1-1 | What does "adopt as a PAPER strategy in approval-only mode" create? | His own watch (one internal `user_prefs` row: the template's strategy id with its default settings, the list, `PAPER`, entries `APPROVAL` - server constants). No deployment rows: a deployment is one symbol and needs a broker session a new user may not have, and 50 bots would hit the plan limits and the broker budget. The watch only describes; "Start a paper bot with it" opens the existing form with the template picked (approval-only entries there under `approval_only_entries`). | app/signals_feed/day_one.py | open (owner may choose "create the bots") |
@@ -1726,10 +1675,6 @@ nothing is placed, no LIVE path, no migration.
 | SIG1-6 | When is the watch read again? | On adopting; on opening Signals when the last read is older than 4 hours; on "Refresh" (at most once a minute). No worker job, no notification. | `STALE_SECONDS`, `MIN_REFRESH_SECONDS` | open |
 
 ## Copilot on the user's own key, tools wired (OKT, 23 Oct)
-
-Owner order 23 Oct ("the Copilot uses the user's own AI key and its tools are wired"), branch
-`claude/copilot-own-key-tools`. Checked against CLAUDE.md (signals not advice, ADR-0006, PAPER only, flags OFF by
-default), DECISIONS.md and the SR / MO2A rows above (SR-2, SR-3, SR-4, SR-6 are kept as they are).
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
@@ -1746,10 +1691,6 @@ default), DECISIONS.md and the SR / MO2A rows above (SR-2, SR-3, SR-4, SR-6 are 
 
 ## The scan universe is never empty (SU, owner order 23 Oct)
 
-Branch `claude/scan-universe` (behind `ui_v2` + `screener_v2`). Code: `backend/app/screener/universes.py`,
-`frontend/src/screener/universe.ts`, `UniversePicker.tsx`, `ScreenerPage.tsx`. Checked against CLAUDE.md (signals not
-advice: a list of names, no prices; PAPER; no migration; exits untouched), DECISIONS.md and the trader-review order.
-
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
 | SU-1 | NIFTY 50 when the server has no NIFTY 50 list (the system lists not built yet, or the call failed). | First the system list `index-nifty50`; else the current NIFTY 50 membership the universe sync stores (`index_membership` + `securities`); only when neither exists, a static names-only list in the page (`NIFTY50_FALLBACK`, 50 NSE symbols, no prices or weights; may lag a reconstitution until the system list exists - a stale name just reads "no bars"). | `universe.ts`, `universes.py` | open |
@@ -1760,25 +1701,13 @@ advice: a list of names, no prices; PAPER; no migration; exits untouched), DECIS
 
 ## Backtests without a daily broker login (BSH, 23 Oct)
 
-Owner order 23 Oct ("backtests without a daily broker login (stored licensed history)"), branch
-`claude/backtest-stored-history`. Code: `backend/app/backtest/bar_source.py`. Checked against CLAUDE.md §3-4 (signals
-only, PAPER, no secrets, public repo), DECISIONS (RDY-6 "licensed EOD only, never the platform's or another user's
-Upstox feed"; RDY-4 legal pages OFF until the lawyer) and the HB0 licence rule (the owner's 1-minute store is his only).
-
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
-| BSH-1 | The licence position of the NSE daily files (bhavcopy) for backtests shown to users: may ATP run a user's backtest on them and show the result, the chart of those bars and the date range? **For the lawyer's list (A6.3).** | Yes, behind the flag `backtest_stored_history` (OFF until the owner confirms the NSE terms, as for `history_backfill`): only the user's own run (statistics, the chart of the bars it ran on, "Prices from ATP's stored end-of-day history (NSE's daily files), <from> to <to>"); no bulk download or export of the bars; no performance claims. | `app/backtest/bar_source.py`, `docs/DATA_SOURCES.md` | decided 23 Oct: ON for the owner's tenant only; others OFF until the lawyer confirms (DECISIONS) |
-| BSH-2 | The R2 daily import (`r2:*`, collected through the owner's Upstox session) for other users' backtests? | Not read by default: RDY-6 says never the platform's or another user's broker feed. `BACKTEST_STORED_SOURCES=nse_bhav:` (env); the operator adds `r2:` only once its licence allows it. A setting can never add a source outside `nse_bhav:` / `r2:`. | `app/core/config.py`, `.env.example` | decided 23 Oct: default accepted (DECISIONS) |
-| BSH-3 | Intraday backtests without a broker. | Refused with one sentence: "Intraday backtests need a connected broker. Connect it on the Broker page, or test the strategy on the Daily chart." Never the owner's private 1-minute store (licensed to him only), never the shared lake's intraday bars (recorded from other organisations' feeds), never sample data. Revisit with a licensed intraday vendor (B7). | `bar_source.INTRADAY_NEEDS_BROKER` | decided 23 Oct: default accepted (DECISIONS) |
 | BSH-4 | Prices and window of stored history. | Split / bonus adjusted (as a broker's chart history; dividends only with `LAKE_ADJUST_DIVIDENDS`); the broker path's Daily window exactly: at least 400 calendar days, up to yesterday (today's bar is never read); each bar stamped like a broker's Daily candle, so equal bars give an identical result (parity test). Weekly is built from Daily by the India calendar week. | `bar_source.window`, `to_frame`, `weekly` | open |
 | BSH-5 | Which entry points use it. | Every server-side backtest read: the Copilot `run_backtest` / `backtest_draft` tools, the AI draft backtest route, the interview plan (intraday: the plain refusal), the research study job, and the new `POST /api/backtest/bars` that the Backtesting page and the setup "Test it" call when no broker is usable. With a usable broker each path reads exactly what it read before. Unchanged: the screener backtest / history (already lake-only), the strategy chart-run (the chart's own candles), the template adopt route (runs no backtest), Monte Carlo / walk-forward / optimise (they re-use the bars the run was given). | see the list | open |
 | BSH-6 | The v2 broker gate on the Backtesting page. | With the flag on, `/strategies/test` and `/backtest` show their own broker state (the data bar's sentence and "Open Broker") instead of the gate; every other data page keeps the gate. | `ui/dataPages.STORED_HISTORY_PATHS`, `AppShellV2` | open |
 
-
 ## Trader pack: "Enable trader features" (TP, 23 Oct)
-
-Branch `claude/trader-pack`. Code: `backend/app/platform/trader_pack.py`, routes in `app/platform/routes.py`, card
-`frontend/src/admin/TraderPackCard.tsx` (admin console v2, Controls). No migration (controls key `trader_pack`).
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
@@ -1791,49 +1720,11 @@ Branch `claude/trader-pack`. Code: `backend/app/platform/trader_pack.py`, routes
 
 ## Smart execution and the PAPER adapter (SE, 23 Oct)
 
-Branches `claude/terminal-paper-adapter` (PR A, TM-1) and `claude/terminal-smart-execution` (PR B). Design:
-`docs/design/SMART_EXECUTION.md`. No migration.
-
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
-| SE-1 | The PAPER adapter's books (order / trade / positions) live in memory for one order flow; the database order trail stays the pipeline's. | One adapter per flow (router call, basket); the persisted trail and positions are unchanged. A persisted paper book comes with the resting order book (TM-2). | `execution/paper_adapter.py` | decided 23 Oct: default accepted (DECISIONS) |
-| SE-2 | Slippage on a PAPER limit order could fill past the limit. | Capped at the limit price (a limit is a limit). The moved ticket path sends MARKET at the checked price, so parity is unaffected. | `paper_adapter._fill_price` | decided 23 Oct: default accepted (DECISIONS) |
-| SE-3 | Which path moves first. | The F&O ticket's single-leg PAPER order (`fno_ticket.PAPER_EXECUTION = "adapter"`), unconditionally, with the parity test; every other caller keeps `direct` until its own parity PR. | `paper/fno_ticket.py`, `execution/router.py` | decided 23 Oct: default accepted (DECISIONS) |
-| SE-4 | Freeze limit source and rule. TM-9's default was a `freeze_qty` column in the master; the task said no migration, so the limit comes from a maintained table and the exchange's own sheet instead (a column can come later with TM-2's migration). Is an order of exactly the freeze quantity frozen? The index values are from public coverage of NSE circular NSE/FAOP/76693 (the exchange site was unreachable from the build machine). | Slices are whole lots STRICTLY below the limit (safe: costs one lot per slice at most). The owner / operator checks the values against the circular, and loads the exchange's sheet (`FREEZE_LIMITS_FILE`) for stock F&O; a symbol not in either is never sliced. | `instruments/freeze_limits.py`, `data/freeze_limits.json` | decided 23 Oct: verified by the owner (NSE limits effective 05 Oct 2026; SENSEX / BANKEX from the BSE file; slicing strictly below the limit) (DECISIONS) |
-| SE-5 | Starting values of the user settings: delivery warning from 4 days before expiry, "near the money" 2% of the strike, Telegram on; protection band 0.5% (the router's existing default). | As listed. These are the settings' starting values, each the user's own to change (prefs `smart_execution`); no number is fixed in a rule. | `me/prefs.py` | decided 23 Oct: default accepted (DECISIONS) |
-| SE-6 | The first failure stops the run, even when later legs could be placed safely (e.g. a second short after the first short failed). | Stop: one clear state, and the user chooses. "Complete the rest" reuses the remaining-legs flow (a fresh check at the live price, hedges first again). | `smart_execution.run` | decided 23 Oct: default accepted (DECISIONS) |
-| SE-7 | The LIVE multi-leg executor (`execution/multileg.py`, wings first, auto-unwind) is not on the engine yet. | It moves in its own PR with a parity test (TM-1 rule: one path at a time). Under TM-11 its auto-unwind becomes "Close the filled legs" on the user's tap, which is a behaviour change, so that PR needs Abhi's word. | `execution/multileg.py` | decided 23 Oct: approved - the LIVE executor moves onto this engine in its own PR, with the user's "no answer in N minutes" setting (DECISIONS) |
-| SE-8 | Free balance in PAPER. | The practice balance (starting capital + net closed P&L), labelled "practice balance". Margin already blocked by open positions is not counted, and the page says so. With LIVE, the broker's `get_margins` through his own session. | `fno_basket.practice_balance` | decided 23 Oct: default accepted (DECISIONS) |
-| SE7-1 | Starting value of "minutes to answer" for an incomplete multi-leg order (the owner set the choice's default, not N). | 5 minutes, bounds 1-120 (prefs `smart_execution.answer_minutes`); the choice defaults to close the filled legs. The deadline and the choice are taken from his settings when the order stops (shown on the card). | `app/me/prefs.py` | provisional |
-| SE7-2 | While a structure is INCOMPLETE (or KEPT), its group exit rules are written for the whole structure and would read a false target / stop on a part of it. | They wait (`incomplete_structures.rules_paused`); every leg stays closable at once: Exit now, the emergency exit, the intraday square-off, "Close the filled legs" and his rule. | `trading/position_monitor.py` | provisional |
-| SE7-3 | Where "Complete the rest" runs. | In the trading worker (next cycle), never from the route: in Phase 0 no API route may reach an entry order (z10c rule 2). It passes every entry refusal again (kill switches, the Phase 0 lock, broker-uncertain, plans; not the approval gate - his tap is the approval). | `incomplete_structures.complete_rest` | provisional |
-| SE7-4 | "Close the filled legs" on LIVE legs from the page. | Recorded by the route and closed by the worker (the LIVE exit path in Phase 0, as for Exit now); PAPER legs close at once. | `incomplete_structures.answer` | provisional |
-| SE7-5 | Broker-uncertain on a stopped structure. | Only when something is really unknown (the broker did not answer a placement, or a cancel is not confirmed in the book); a clean REJECTED leaves LIVE entries open. The old path flagged every failure. | `multileg_smart.place_legs` | provisional |
 | SE7-6 | Not in this PR: freeze slicing of structure legs, the timer for the F&O basket's PAPER incomplete card, a stuck COMPLETING_SENT after a worker crash mid-send (the legs stay closable; reconciliation flags the books). | Next, one at a time. | - | open |
 
-
-## Day-one fix 8 (README row 19)
-
-| # | Question | Provisional default |
-|---|---|---|
-| D1-3 | Which list does Charts show on a new trader's first open? | The NIFTY 50 stocks (a list of stocks to look through; Find setups and Signals open on the same list), then Indices when that list is missing. A remembered or own list still wins. Checked against DECISIONS 2026-10-21 (the three groups, no first-open list named) and CLAUDE.md §2. |
-
-## Day-one fixes (README row 19, docs/design/DAY_ONE_TRADER_TEST.md)
-
-Checked against CLAUDE.md sections 2, 3 and 8, DECISIONS (23 Oct trader review) and the order files
-(ATP_SESSION_IDEA_LIBRARY.md: "T5. Breakout and retest (structure flip)"; ATP_SESSION_STRATEGY_TEMPLATES.md: A5
-"Structure flip retest").
-
-| # | Question | Provisional default |
-|---|---|---|
-| D1-1 | One name per idea: the idea T5 and the template A5 had two names. Which one stays? | "Breakout and retest" (the idea library's own name, which already says "structure flip" in its heading) as A5's display name; the id, version and params hash are unchanged, so adopted bots keep their behaviour. A2 was already "Range edges" like T2. Abhi may prefer the other name. |
-| D1-2 | Which symbol does the Paper bot form pick when an idea is adopted? | RELIANCE (the first stock in the form's list), only for an idea's link (it carries the idea's settings); a plain template link keeps NIFTY 50 as before. The trader changes it in one tap. |
-
 ## TM94-3: the Phase W recorder per organisation (23 Oct)
-
-Branch `claude/phase-w-recorder-per-tenant`. Owner decision TM94-3 (DECISIONS, 23 Oct): the same per-tenant rule as the
-OI collector (#465, TM-7). Checked against CLAUDE.md (data only through the user's own session, public repo, keep what is
-built), DECISIONS (TM-7, TM94-3, RDY-6) and the #465 design (`docs/design/CHAIN_HISTORY.md` on that branch).
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
@@ -1843,12 +1734,7 @@ built), DECISIONS (TM-7, TM94-3, RDY-6) and the #465 design (`docs/design/CHAIN_
 | TM943-4 | A backtest without an organisation (no login) used to price from the platform-wide rows. | It gets no recorded rows (the synthetic fallback or uploaded rows still work). | `chain_recorder.load_rows` | open |
 | TM943-5 | Migration chain: `3c5e7a9b1d24` and #465's `250d796123b7` both follow `e8a0c2d4f6b9`. | Whichever PR merges second re-chains its `down_revision` onto the other (one head; `alembic heads` must print one line). | `alembic/versions` | open |
 
-
 ## Kotak Neo adapter (KN, 23 Oct)
-
-Branch `claude/broker-kotak-neo` (terminal master Part 1B). Design: `docs/design/BROKER_KOTAK_NEO.md`. No migration.
-Checked against CLAUDE.md (PAPER only, exits never blocked, AI places nothing, no secrets, public repo), DECISIONS (23 Oct:
-TM-3 / TM-5 / TM-6 accepted, TM-26 / TM-27 defaults) and the master order Part 1B.
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
@@ -1865,11 +1751,6 @@ TM-3 / TM-5 / TM-6 accepted, TM-26 / TM-27 defaults) and the master order Part 1
 | KN-11 | Scrip master lot / tick columns (`lLotSize`, `dTickSize`) and units. | Read defensively (tick in paise when >= 1, else as is; 0.05 when odd). Confirm on the first real file. | `kotak_neo.instrument_from_row` | open (verify) |
 
 ## Groww adapter (GW, 23 Oct)
-
-Branch `claude/broker-groww` (terminal master Part 1B), stacked on `claude/broker-kotak-neo` (#473). Design:
-`docs/design/BROKER_GROWW.md`. No migration. Checked against CLAUDE.md (PAPER only, exits never blocked, AI places
-nothing, no secrets, public repo), DECISIONS (23 Oct: TM-3 / TM-5 / TM-6 accepted, TM-23 approved, TM-27 default) and
-the master order Part 1B.
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|

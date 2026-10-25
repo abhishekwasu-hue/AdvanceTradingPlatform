@@ -44,7 +44,8 @@ const THEMES: Record<string, { t: Record<string, number[]>; dark: boolean }> = {
   "colour-blind light": { t: { ...v2Light, ...cvd, ...cvdLight }, dark: false },
   "colour-blind high contrast dark": { t: { ...hcDark, ...cvd }, dark: true },
 };
-const TINTS = ["markets", "trading", "insights", "account", "admin", "broker", "copilot"];
+const TINTS = ["markets", "trading", "insights", "account", "admin", "broker", "copilot",
+  "today", "charts", "signals", "trades", "more"];   // CA6-1: the five bottom-bar hues
 
 /** The measured numbers, for the comparison page and the PR (`DM_RATIOS=1 npx vitest run src/ui/darkContrast.test.ts`). */
 export function ratios(t: Record<string, number[]>): Record<string, number> {

@@ -17,8 +17,8 @@ import { navChipClass, navWordClass, sectionTintOf, type SectionTint } from "../
  * styles/index.css). Hidden from md up, where the sidebar is always shown. While the sheet is open the bar stays on top
  * of it, so More closes it again and the four pages stay one tap away.
  * Colour v2 (flag `colour_v2`) + UI-H CA6 (owner, 25 Oct; supersedes CV-1's neutral grey tabs): every tab's icon sits
- * on its section's soft round chip (the same section -> tint map as the sidebar, src/ui/accents.ts; More takes the
- * Account tint); the tab on screen takes the strong tint - the solid section colour - and its word in that colour,
+ * on its own soft round chip (the same tint map as the sidebar, src/ui/accents.ts; CA6-1: five clearly different hues -
+ * Today blue, Charts violet, Signals amber, My trades pink, More teal); the tab on screen takes the strong tint - the solid section colour - and its word in that colour,
  * bold, so it never reads as one of the soft ones. The other words stay muted. Each word keeps to one line, bold
  * included, down to 360 px (CV-2).
  * With the flag off the bar is exactly as before.
@@ -62,9 +62,9 @@ export default function BottomNavV2({ current, moreOpen, onMore, onPick, dot = n
         );
       })}
       <button type="button" onClick={onMore} aria-label={attention ? "More pages, broker needs attention" : "More pages"} aria-expanded={moreOpen} aria-controls={MORE_SHEET_ID} aria-haspopup="dialog"
-        className={`${item} ${word(moreOpen, "account", moreOpen ? "text-brand" : "text-fg-muted")}`}>
+        className={`${item} ${word(moreOpen, "more", moreOpen ? "text-brand" : "text-fg-muted")}`}>
         <span className="relative">
-          {colour ? glyph(Menu, moreOpen, "account") : <Menu size={22} aria-hidden />}
+          {colour ? glyph(Menu, moreOpen, "more") : <Menu size={22} aria-hidden />}
           {attention && <StatusDot dot={attention} className="absolute -right-1 -top-0.5 ring-2 ring-surface-1" />}
         </span>
         {colour ? <span data-nav-label className="whitespace-nowrap">More</span> : "More"}

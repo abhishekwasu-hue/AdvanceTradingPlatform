@@ -347,7 +347,9 @@ html { font-size: calc(100% * var(--text-scale)); }
      violet, so white text on any point of it is AA. Used only on the page's single primary action, the "New" badge,
      the Today hero card and the area-of-interest highlight - never on text, tables, the option chain, forms or charts;
    - sec-<section> / sec-<section>-soft (CA3): the identity tint of each main navigation section (user and admin), the
-     icon on its round soft chip in the nav and in the PageHeader (4.5 : 1 on the chip, both themes);
+     icon on its round soft chip in the nav and in the PageHeader (4.5 : 1 on the chip, both themes). CA6-1 (owner,
+     25 Oct): the five bottom-bar destinations take five clearly different hues - Today blue, Charts violet, Signals
+     amber, My trades pink, More teal (sec-today / -charts / -signals / -trades / -more; CIEDE2000 >= 20 apart);
    - tone-profit / tone-loss / tone-risk / tone-info (CA4): the soft background of a SummaryCard or a Today card by its
      tone - always with a sign, an icon or a word as well (src/ui/tone.ts). Profit / loss follow the colour-blind swap. */
 :root {
@@ -371,6 +373,16 @@ html { font-size: calc(100% * var(--text-scale)); }
   --sec-broker-soft: 30 58 120;
   --sec-copilot: 196 181 253;
   --sec-copilot-soft: 62 44 120;
+  --sec-today: 186 230 253;
+  --sec-today-soft: 20 64 96;
+  --sec-charts: 216 180 254;
+  --sec-charts-soft: 62 44 120;
+  --sec-signals: 252 211 77;
+  --sec-signals-soft: 69 46 8;
+  --sec-trades: 253 164 175;
+  --sec-trades-soft: 96 24 44;
+  --sec-more: 44 234 204;
+  --sec-more-soft: 14 70 72;
   --tone-profit: 12 44 30;
   --tone-loss: 46 16 22;
   --tone-risk: 41 30 10;
@@ -397,6 +409,16 @@ html { font-size: calc(100% * var(--text-scale)); }
   --sec-broker-soft: 219 234 254;
   --sec-copilot: 91 33 182;
   --sec-copilot-soft: 237 233 254;
+  --sec-today: 7 89 133;
+  --sec-today-soft: 224 242 254;
+  --sec-charts: 109 40 217;
+  --sec-charts-soft: 237 233 254;
+  --sec-signals: 146 64 14;
+  --sec-signals-soft: 254 243 199;
+  --sec-trades: 157 23 77;
+  --sec-trades-soft: 252 231 243;
+  --sec-more: 17 94 89;
+  --sec-more-soft: 204 251 241;
   --tone-profit: 236 253 243;
   --tone-loss: 254 242 242;
   --tone-risk: 255 251 235;

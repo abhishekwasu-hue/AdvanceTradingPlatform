@@ -254,9 +254,9 @@ describe("colour v2 on the pages (off = as before)", () => {
     expect(barOn.match(/data-nav-pill="true"/g)).toHaveLength(1);
     // UI-H CA6 (owner, 25 Oct; supersedes CV-1's neutral grey tabs): every tab on its section's soft round chip, the tab
     // on screen on the strong tint (the solid section colour) with its word in that colour, bold.
-    expect(barOn).toMatch(/data-nav-pill="true" data-nav-tint="trading" class="[^"]*bg-sec-trading text-surface-1/);
+    expect(barOn).toMatch(/data-nav-pill="true" data-nav-tint="signals" class="[^"]*bg-sec-signals text-surface-1/);   // CA6-1: its own hue
     expect(barOn.match(/data-nav-tint="[a-z]+" class="[^"]*bg-sec-[a-z]+-soft text-sec-[a-z]+/g)).toHaveLength(4);
-    expect(barOn).toMatch(/class="[^"]*text-sec-trading font-semibold"[^>]*>.*Signals/);
+    expect(barOn).toMatch(/class="[^"]*text-sec-signals font-semibold"[^>]*>.*Signals/);
     expect(barOn).not.toContain("bg-brand-tint");
     for (const current of ["dashboard", "charts", "positions", null] as const) {
       const bar = render(<BottomNavV2 current={current} moreOpen={false} onMore={noop} />, true);

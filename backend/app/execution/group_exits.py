@@ -193,13 +193,35 @@ def describe(row: GroupExitRecord) -> str:
     return f"If {' or '.join(parts)}{when}, these {legs} exit{order}."
 
 
+def distance(row: GroupExitRecord, value: Optional[float] = None) -> Dict[str, Optional[float]]:
+    """How far the group's measure still has to move to reach each level, from `value` (default: the last reading);
+    never negative (0 = reached). For ₹ MTM in rupees; for a level in its own unit (points of premium or spot)."""
+    now_v = _float(value if value is not None else row.last_value)
+    out: Dict[str, Optional[float]] = {"sl": None, "target": None}
+    if now_v is None:
+        return out
+    if row.measure == MTM_INR:
+        if row.sl_value is not None:
+            out["sl"] = round(max(0.0, now_v + abs(float(row.sl_value))), 2)
+        if row.target_value is not None:
+            out["target"] = round(max(0.0, abs(float(row.target_value)) - now_v), 2)
+        return out
+    sl = row.current_sl if row.current_sl is not None else row.sl_value
+    for key, level, side in (("sl", sl, row.sl_side), ("target", row.target_value, row.target_side)):
+        if level is not None and side:
+            gap = float(level) - now_v if side == ABOVE else now_v - float(level)
+            out[key] = round(max(0.0, gap), 2)
+    return out
+
+
 def view(row: GroupExitRecord) -> Dict[str, Any]:
     return {"id": row.id, "client_ref": row.client_ref, "mode": row.mode, "origin": row.origin, "scope": row.scope,
             "measure": row.measure, "sl_value": _float(row.sl_value), "target_value": _float(row.target_value),
             "sl_side": row.sl_side, "target_side": row.target_side, "spot_symbol": row.spot_symbol,
             "check_mode": row.check_mode, "timeframe_minutes": row.timeframe_minutes, "status": row.status,
-            "fired_kind": row.fired_kind, "last_value": _float(row.last_value), "version": row.version,
-            "legs": legs_of(row), "words": describe(row), "note": row.status_note, "trail": trail(row)}
+            "fired_kind": row.fired_kind, "last_value": _float(row.last_value), "distance": distance(row),
+            "version": row.version, "legs": legs_of(row), "words": describe(row), "note": row.status_note,
+            "trail": trail(row)}
 
 
 def ask_errors(ask: GroupExitAsk, trades: Sequence[TradeRecord]) -> List[str]:
@@ -287,6 +309,88 @@ async def create(session: AsyncSession, user: User, ask: GroupExitAsk, *, now_va
     return row
 
 
+async def all_open_ids(session: AsyncSession, user: User) -> List[int]:
+    """CX1 "all open positions": the user's own open PAPER positions now (frozen into the exit when it is set; a position
+    opened later is not covered until the exit is set again - CXQ-4)."""
+    rows = await session.scalars(select(TradeRecord.id).where(
+        TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.exit_time.is_(None),
+        TradeRecord.mode == "PAPER"))
+    return sorted(int(i) for i in rows)
+
+
+async def current_value(session: AsyncSession, measure: str, trades: Sequence[TradeRecord], lookup: Any, *,
+                        spot_symbol: Optional[str] = None, spot_exchange: Optional[str] = None) -> Optional[float]:
+    """The group's measure now, read the way "Exit now" prices a leg (`lookup`: the person's own live price, from the
+    route's `price_lookup_for_user`; else the recent last price; never a typed one) - for the preview, the level's side
+    and the distance. None when any leg has no price."""
+    from app.execution.approval import exit_price
+    if measure == SPOT:
+        if lookup is None or not spot_symbol or not spot_exchange:
+            return None
+        try:
+            return float(await lookup(spot_symbol, spot_exchange))
+        except Exception:  # noqa: BLE001 - no spot price now: no preview value
+            return None
+    prices: Dict[int, float] = {}
+    for trade in trades:
+        try:
+            prices[trade.id], _ = await exit_price(session, trade, lookup)
+        except ValueError:
+            return None
+    legs = [leg_view(t) for t in trades]
+    return mtm(legs, prices) if measure == MTM_INR else net_premium(legs, prices)
+
+
+async def edit(session: AsyncSession, user: User, row_id: int, *, version: int, sl_value: Optional[float],
+               target_value: Optional[float], check_mode: Optional[str] = None, timeframe_minutes: Optional[int] = None,
+               now_value: Optional[float] = None, now: Optional[datetime] = None) -> GroupExitRecord:
+    """The user changes his own armed exit's levels (CX5 / SX6): only while ARMED and only on the version he saw (an edit
+    from another device in between is refused with plain words). The legs stay as set; to change them, remove the exit
+    and set a new one. A level's side is read again from the value now."""
+    row = await session.get(GroupExitRecord, row_id)
+    if row is None or row.tenant_id != user.tenant_id or row.user_id != user.id:
+        raise GroupExitError("Combined exit not found")
+    if row.status == FIRING:
+        raise GroupExitError("Already exiting - the legs are being closed")
+    if row.status != ARMED:
+        raise GroupExitError("This combined exit has ended - set a new one")
+    if int(row.version) != int(version):
+        raise GroupExitError("Changed on another screen - reload and try again")
+    mode = check_mode or row.check_mode
+    tf = timeframe_minutes if timeframe_minutes is not None else row.timeframe_minutes
+    probe = GroupExitAsk(client_ref=row.client_ref, trade_ids=trade_ids(row), measure=row.measure, sl_value=sl_value,
+                         target_value=target_value, spot_symbol=row.spot_symbol, spot_exchange=row.spot_exchange,
+                         check_mode=mode, timeframe_minutes=tf, scope=row.scope)
+    errors = [e for e in ask_errors(probe, await own_open_trades(session, user, trade_ids(row)))
+              if not e.startswith(("Some of the ticked", "A ticked position is already closed"))]
+    if row.measure != MTM_INR:
+        if now_value is None:
+            errors.append("No live price for the group right now - try again in a moment")
+        else:
+            for name, level in (("stop-loss", sl_value), ("target", target_value)):
+                if level is not None and float(level) == float(now_value):
+                    errors.append(f"The {name} equals the value now - it would fire at once")
+    if errors:
+        raise GroupExitError("; ".join(errors))
+    at = _now(now)
+    values: Dict[str, Any] = {"sl_value": sl_value, "target_value": target_value, "check_mode": mode,
+                              "timeframe_minutes": tf if mode == CLOSE else None, "current_sl": None,
+                              "version": int(row.version) + 1, "updated_at": at}
+    if row.measure != MTM_INR and now_value is not None:
+        values["sl_side"] = side_for(float(sl_value), now_value) if sl_value is not None else None
+        values["target_side"] = side_for(float(target_value), now_value) if target_value is not None else None
+    done = await session.execute(update(GroupExitRecord).where(
+        GroupExitRecord.id == row.id, GroupExitRecord.status == ARMED, GroupExitRecord.version == row.version).values(
+        **values).execution_options(synchronize_session=False))
+    if getattr(done, "rowcount", 0) != 1:
+        await session.rollback()
+        raise GroupExitError("Changed or fired meanwhile - reload and try again")
+    await session.refresh(row)
+    add_log(row, ARMED, f"Changed by you: {describe(row)}", at)
+    await session.commit()
+    return row
+
+
 async def list_for_user(session: AsyncSession, user: User, *, include_final: bool = False) -> List[GroupExitRecord]:
     query = select(GroupExitRecord).where(GroupExitRecord.tenant_id == user.tenant_id, GroupExitRecord.user_id == user.id)
     if not include_final:
@@ -320,4 +424,5 @@ async def cancel(session: AsyncSession, user: User, row_id: int, now: Optional[d
 __all__ = ["ARMED", "FIRING", "DONE", "CANCELLED", "MTM_INR", "NET_PREMIUM", "SPOT", "TOUCH", "CLOSE", "ABOVE", "BELOW",
            "SL", "TARGET", "GroupExitAsk", "GroupExitError", "is_short", "leg_view", "legs_of", "trade_ids", "mtm",
            "net_premium", "side_for", "reached", "decide", "describe", "view", "ask_errors", "create", "cancel",
-           "list_for_user", "by_ref", "add_log", "trail", "STUCK_ALERT_PASSES"]
+           "list_for_user", "by_ref", "add_log", "trail", "STUCK_ALERT_PASSES", "distance", "all_open_ids",
+           "current_value", "edit"]

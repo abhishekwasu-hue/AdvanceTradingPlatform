@@ -632,3 +632,22 @@ def test_a_stream_gets_the_broker_adapter_under_the_workers_wrappers():
     renewed.access_token = "renewed"
     assert data_hub.adapter_fingerprint(Wrapped(inner)) == data_hub.adapter_fingerprint(inner) != data_hub.adapter_fingerprint(renewed)
     assert "tok" not in data_hub.adapter_fingerprint(inner)          # hashed, never the token
+
+
+def test_streamed_page_symbols_never_take_a_chart_or_chain_slot(monkeypatch):
+    # Owner 25 Oct (production): 50 streamed watchlist / strip symbols held every slot at CHART priority and the option
+    # chain's own read of NIFTY was refused ("outside your Upstox session budget"). They now register at WATCHLIST.
+    monkeypatch.setattr(fanin.config, "BYOB_SESSION_SYMBOL_CAP", 3)
+    now = datetime.now(UTC)
+
+    async def go():
+        ns = data_hub.org_namespace(78)
+        conn = data_hub.UserConnection(namespace=ns, broker="upstox", account_label="primary", byob=False, renew=False, record=None)
+        streamed = await data_hub.admit_for_user(None, None, conn, [("S1", "NSE"), ("S2", "NSE"), ("S3", "NSE")])
+        chain = await data_hub.register_symbols(ns, "upstox", [("NIFTY", "NFO")], Priority.CHART, now=now + timedelta(seconds=5))
+        plan = await fanin.session_symbols.plan(ns, 3, now + timedelta(seconds=6))
+        return streamed, chain, plan
+    streamed, chain, plan = run(go())
+    assert streamed == [("S1", "NSE"), ("S2", "NSE"), ("S3", "NSE")]        # alone, the page's symbols all stream
+    assert chain == [("NIFTY", "NFO")]                                        # the later chain read still gets a slot
+    assert ("NIFTY", "NFO") in plan.kept and len(plan.kept) == 3

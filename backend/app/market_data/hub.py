@@ -587,11 +587,15 @@ async def admit_for_user(session: Any, user: Any, conn: UserConnection, pairs: S
     the session's budget), else on the organisation's connection inside its cap. Returns the ones the hub streams."""
     if conn.renew or not pairs:
         return []
+    # Owner 25 Oct (production): a page's streamed symbols (watchlist panel, Today strip, sectors) were registered at
+    # CHART priority, so once 50 of them held the session's slots an explicit chart or option-chain read (also CHART,
+    # newer) was refused ("NIFTY is outside your Upstox session budget"). Streamed display symbols take WATCHLIST
+    # priority: a chart, a chain or a position always wins a slot over them; a symbol a chart also reads keeps CHART.
     if conn.byob:
         from app.market_data import entitlement
-        ents = await entitlement.resolve_many(session, user, list(pairs), priority=Priority.CHART, register=True)
+        ents = await entitlement.resolve_many(session, user, list(pairs), priority=Priority.WATCHLIST, register=True)
         return [pair for pair, ent in ents.items() if ent.live and ent.session is not None and ent.session.namespace == conn.namespace]
-    return await register_symbols(conn.namespace, conn.broker, pairs)
+    return await register_symbols(conn.namespace, conn.broker, pairs, Priority.WATCHLIST)
 
 
 class BrowserFeed:

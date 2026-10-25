@@ -152,5 +152,6 @@ def test_the_corrected_wl1_5_file_names():
     urls = {i["index_code"]: i["constituents_url"] for i in indices.catalogue()}
     assert urls["NIFTY50VALUE20"].endswith("/ind_Nifty50_Value20.csv")
     assert urls["NIFTYCHEMICALS"].endswith("/ind_niftyChemicals_list.csv")
-    assert all(u.startswith("https://niftyindices.com/IndexConstituent/ind_") and u.endswith(".csv") for u in urls.values())
+    # Owner 25 Oct: niftyindices.com answered 302 -> 404 / 502 from the server; the same files are on the NSE archives host.
+    assert all(u.startswith("https://nsearchives.nseindia.com/content/indices/ind_") and u.endswith(".csv") for u in urls.values())
     assert len(set(urls.values())) == len(urls)

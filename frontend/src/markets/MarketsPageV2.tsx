@@ -6,6 +6,8 @@ import { cx } from "../components/primitives/cx";
 import type { PageProps } from "../routes";
 import { chartTabPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
+import { PageTabs } from "../ui/PageTabs";
+import { SubTabs } from "../ui/SubTabs";
 import {
   PERIODS, UNKNOWN, advanceShare, asOfText, breadthText, closeText, dishLines, fetchList, fetchOverview, heatClass, isPeriod,
   leadersAndLaggards, moveText, rankGroups, relativeText, toneText, type ListMember, type MarketGroup, type MarketList,
@@ -42,20 +44,11 @@ function useLoad<T>(load: () => Promise<T>, key: string): [Load<T>, () => void] 
   return [state, useCallback(() => setNonce((n) => n + 1), [])];
 }
 
+/** UI-H Wave 0 (H2, W0-2): the shared SubTabs, a toggle group - a choice inside the content (Day / Week / Month). */
 function Segmented<T extends string>({ label, items, value, onChange }: {
   label: string; items: readonly { key: T; label: string }[]; value: T; onChange: (v: T) => void;
 }) {
-  return (
-    <div role="group" aria-label={label} className="inline-flex items-center gap-space-1 rounded-panel bg-surface-2 p-space-1">
-      {items.map((it) => (
-        <button key={it.key} type="button" aria-pressed={value === it.key} onClick={() => onChange(it.key)}
-          className={cx("inline-flex h-11 items-center rounded-control px-space-3 text-t13 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-7",
-            value === it.key ? "bg-surface-1 font-semibold text-fg shadow-card" : "text-fg-muted hover:text-fg")}>
-          {it.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <SubTabs kind="toggle" label={label} items={items} value={value} onChange={onChange} size="sm" />;
 }
 
 function Move({ value, className = "" }: { value: number | null; className?: string }) {
@@ -376,14 +369,14 @@ export default function MarketsPageV2(_props: PageProps) {
 
   return (
     <div className="space-y-space-4" data-page="markets-v2">
+      {/* W0-2: Sectors / Indices is page-level navigation (PageTabs, under the top bar); Day / Week / Month is a choice
+          inside the content (SubTabs). */}
+      {!listKey && <PageTabs kind="toggle" label="Show" items={VIEWS} value={view} onChange={(v) => set({ view: v })} />}
       <PageIntro id="markets" lines={["How each sector and index moved. Tap one to see its stocks, then a stock to open its chart."]} />
       <header className="flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between">
         <h1 id={headingId} className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Sectors &amp; indices</h1>
         {!listKey && (
-          <div className="flex flex-wrap items-center gap-space-2">
-            <Segmented label="Show" items={VIEWS} value={view} onChange={(v) => set({ view: v })} />
-            <Segmented label="Period" items={PERIODS} value={period} onChange={(p) => set({ period: p })} />
-          </div>
+          <Segmented label="Period" items={PERIODS} value={period} onChange={(p) => set({ period: p })} />
         )}
         {listKey && <Segmented label="Period" items={PERIODS} value={period} onChange={(p) => set({ period: p })} />}
       </header>

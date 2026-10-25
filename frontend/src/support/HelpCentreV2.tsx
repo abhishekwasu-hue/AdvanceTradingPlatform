@@ -2,6 +2,7 @@ import { ChevronRight, Mail, MessageCircle, Search, TriangleAlert } from "lucide
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { CARD } from "../dashboard/CardV2";
+import { useFeatures } from "../ui/useFeatures";
 import { PAGE_TOURS, WELCOME } from "../tours/content";
 import { deskApi, safeEmail, safeWhatsapp, type SupportContact } from "./desk";
 import { KIND_LABEL, glossaryArticles, howToArticles, searchHelp, tourArticles, type HelpArticle, type HelpKind, type ServerHelpArticle } from "./helpCentre";
@@ -100,7 +101,10 @@ export default function HelpCentreV2() {
   }, []);
   useEffect(() => { if (location.hash === "#report") { setReportLoaded(true); setReportOpen(true); } }, [location.hash, location.key]);
 
-  const all = useMemo(() => [...howToArticles(server), ...tourArticles(PAGE_TOURS, WELCOME), ...glossaryArticles()], [server]);
+  const features = useFeatures();
+  const terminalOn = features.on("terminal");
+  const all = useMemo(() => [...howToArticles(server), ...tourArticles(PAGE_TOURS, WELCOME, (f) => f !== "terminal" || terminalOn), ...glossaryArticles()],
+    [server, terminalOn]);
   const found = useMemo(() => searchHelp(all, query).filter((a) => kind === "all" || a.kind === kind), [all, query, kind]);
   const shown = more ? found : found.slice(0, SHOWN);
 

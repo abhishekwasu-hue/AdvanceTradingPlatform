@@ -10,6 +10,7 @@ import { POSITIONS_TOUR } from "./positions";
 import { RISK_TOUR } from "./risk";
 import { SETTINGS_TOUR } from "./settings";
 import { SIGNALS_TOUR } from "./signals";
+import { TERMINAL_TOUR } from "./terminal";
 
 export { WELCOME, WELCOME_CTA } from "./welcome";
 
@@ -25,4 +26,5 @@ export const PAGE_TOURS: Record<TourId, PageTour> = {
   risk: RISK_TOUR,
   settings: SETTINGS_TOUR,
   copilot: COPILOT_TOUR,
+  terminal: TERMINAL_TOUR,
 };

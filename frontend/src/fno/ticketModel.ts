@@ -34,6 +34,11 @@ export interface Draft {
 export const ORDER_TYPES: { value: OrderType; label: string }[] = [
   { value: "MARKET", label: "Market" }, { value: "LIMIT", label: "Limit" }, { value: "SL", label: "SL" }, { value: "SL-M", label: "SL-M" },
 ];
+/** T1-5: the product a ticket or basket starts with ONLY while the user saved none in My trading defaults; the ticket
+ *  and the basket then say so (PRODUCT_UNSET_TEXT) - never a silent fixed choice. */
+export const FALLBACK_PRODUCT: Product = "MIS";
+export const PRODUCT_UNSET_TEXT = "No product saved in My trading defaults: MIS (intraday) for now. Set yours in Settings.";
+
 export const PRODUCTS: { value: Product; label: string; hint: string }[] = [
   { value: "MIS", label: "MIS", hint: "Intraday" }, { value: "NRML", label: "NRML", hint: "Carry forward" },
 ];
@@ -47,7 +52,7 @@ export interface DraftDefaults { lots?: number; product?: Product; orderType?: O
 /** A fresh ticket. With the user's defaults (src/settings/tradingDefaults.ts ticketPrefill) those values start it - the side
  * never comes from a default - and nothing else changes: no defaults gives today's draft exactly. */
 export function newDraft(side: Side, defaults?: DraftDefaults): Draft {
-  const draft: Draft = { side, lots: 1, orderType: "MARKET", product: "MIS", price: "", trigger: "", stopLoss: "" };
+  const draft: Draft = { side, lots: 1, orderType: "MARKET", product: FALLBACK_PRODUCT, price: "", trigger: "", stopLoss: "" };
   if (!defaults) return draft;
   if (defaults.lots !== undefined) draft.lots = clampLots(defaults.lots);
   if (defaults.orderType !== undefined) draft.orderType = defaults.orderType;

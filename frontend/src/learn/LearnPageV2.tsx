@@ -8,6 +8,7 @@ import { PageTitleV2 } from "../trading/PartsV2";
 import { ComingSoon } from "../ui/ComingSoon";
 import { learnApi, type LearnLibrary, type Lesson } from "./api";
 import { ALL, LEARN_FLAG, isAppPath, learnGlossary, lessonsIn, safeVideoUrl, searchLessons } from "./model";
+import { PageTabs } from "../ui/PageTabs";
 
 /** The lessons a newcomer reads first, in this order (each only when the library has it). */
 const START_HERE = ["atp-how", "paper-why", "risk-before"] as const;
@@ -96,14 +97,8 @@ export function LearnView({ library, initialTab = "lessons", initialOpen = [] }:
       )}
 
       <div className="flex flex-col gap-space-3 md:flex-row md:items-center md:justify-between">
-        <div role="tablist" aria-label="Learn" className="inline-flex w-full rounded-control border border-border bg-surface-1 p-0.5 md:w-auto">
-          {(["lessons", "glossary"] as const).map((t) => (
-            <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
-              className={`min-h-11 flex-1 rounded-control px-space-4 text-t14 font-medium md:min-h-9 md:flex-none ${tab === t ? "bg-brand/10 text-brand" : "text-fg-muted hover:text-fg"} ${FOCUS}`}>
-              {t === "lessons" ? "Lessons" : "Words explained"}
-            </button>
-          ))}
-        </div>
+        <PageTabs label="Learn" value={tab} onChange={setTab}
+          items={[{ key: "lessons", label: "Lessons" }, { key: "glossary", label: "Words explained" }] as const} />
         <label htmlFor={searchId} className="relative block w-full md:w-72">
           <span className="sr-only">{tab === "lessons" ? "Search the lessons" : "Search the words"}</span>
           <Search size={16} aria-hidden className="pointer-events-none absolute left-space-3 top-1/2 -translate-y-1/2 text-fg-muted" />

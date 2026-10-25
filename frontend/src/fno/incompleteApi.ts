@@ -24,3 +24,8 @@ export const incompleteApi = {
     request<IncompleteAnswer>(`/trading/incomplete/${encodeURIComponent(groupId)}/answer`, post({ action })),
 };
 export type IncompleteApi = typeof incompleteApi;
+
+/** Owner fix T1-4 (24 Oct): the two choices in his words - "Complete the leg" / "Exit the filled leg" (plural with more
+ *  than one). A short is never left uncovered without this alert. */
+export function completeLabel(pending: number): string { return pending === 1 ? "Complete the leg" : "Complete the legs"; }
+export function exitFilledLabel(filled: number): string { return filled === 1 ? "Exit the filled leg" : "Exit the filled legs"; }

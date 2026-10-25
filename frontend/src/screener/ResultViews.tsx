@@ -7,17 +7,18 @@
  * tabpanel; every tile and mini chart names its symbol, the change and whether it matched. The context covers the first
  * CONTEXT_MAX symbols in one call; the heatmap lays out only those and says "first N of M shown".
  */
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import { cx } from "../components/primitives";
 import type { RunResult } from "./api";
 import {
-  BOARD_VIEWS, CONTEXT_MAX, boardApi, gridSymbols, heatmapLayout, heatmapResults, nextTab, sparkPath, tileFill, type BoardContext, type BoardView,
+  BOARD_VIEWS, CONTEXT_MAX, boardApi, gridSymbols, heatmapLayout, heatmapResults, sparkPath, tileFill, type BoardContext, type BoardView,
   type ContextRow,
 } from "./boardViews";
 import { EvidenceChart } from "./EvidenceChart";
 import { evidenceApi, visibleDrawables, type EvidencePack } from "./evidence";
 import { ResultBoard, type ResultBoardProps } from "./ResultBoard";
+import { SubTabs } from "../ui/SubTabs";
 
 const pct = (v: number | null) => (v == null ? "n/a" : `${v >= 0 ? "+" : ""}${v.toFixed(2)} %`);
 
@@ -95,7 +96,6 @@ export function ResultViews(props: ResultBoardProps) {
   const [reload, setReload] = useState(0);
   const [available, setAvailable] = useState(false);
   const [packs, setPacks] = useState<Record<number, EvidencePack>>({});
-  const tabs = useRef<Partial<Record<BoardView, HTMLButtonElement | null>>>({});
   const uid = useId();
   const tabId = (v: BoardView) => `${uid}-tab-${v}`;
   const panelId = (v: BoardView) => `${uid}-panel-${v}`;
@@ -127,25 +127,11 @@ export function ResultViews(props: ResultBoardProps) {
   }, [view, results]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!available || !results) return <ResultBoard {...props} />;
-  const onKey = (e: KeyboardEvent<HTMLButtonElement>) => {
-    const next = nextTab(BOARD_VIEWS.map((v) => v.id), view, e.key);
-    if (next == null) return;
-    e.preventDefault();
-    setView(next);
-    tabs.current[next]?.focus();
-  };
   const label = BOARD_VIEWS.find((v) => v.id === view)?.label;
   return (
     <div className="flex min-h-0 flex-col gap-2">
-      <div role="tablist" aria-label="Result view" className="flex gap-1">
-        {BOARD_VIEWS.map((v) => (
-          <button key={v.id} ref={(el) => { tabs.current[v.id] = el; }} type="button" role="tab" id={tabId(v.id)} aria-controls={panelId(v.id)}
-                  aria-selected={view === v.id} tabIndex={view === v.id ? 0 : -1} onClick={() => setView(v.id)} onKeyDown={onKey}
-                  className={cx("rounded-control px-2 py-1 text-t12", view === v.id ? "bg-surface-2 font-medium text-fg" : "text-fg-muted hover:text-fg")}>
-            {v.label}
-          </button>
-        ))}
-      </div>
+      <SubTabs label="Result view" idPrefix={uid} value={view} onChange={setView} size="sm"
+        items={BOARD_VIEWS.map((v) => ({ key: v.id, label: v.label }))} />
       {view === "table" && <div role="tabpanel" id={panelId("table")} aria-labelledby={tabId("table")} className="flex min-h-0 flex-col"><ResultBoard {...props} /></div>}
       {view !== "table" && (
         <section role="tabpanel" id={panelId(view)} aria-labelledby={tabId(view)}

@@ -1,7 +1,10 @@
-# Handover now (24 Oct 2026, night)
-Merged today: #515 DATA-H (migration d4a6c8e0b2f1), #516 probe tenant-key fix + CI Postgres 17, #525 date test fix,
-docs #514 #517-#523. Owner deploys e4aa102ab4ad (CI + staging passed; load-500 is the known red LD-9), then
-probe-chain / probe-candles / lake-backfill --check (screenshot), then lake-backfill.
-Waiting on the owner: #510 Wave 0 page ✅ (green), then #493 T1 + fixes page ✅ (green; merges after #510),
-#524 CX PR 1 OK (order path + F1 PAPER hedge hold; migration b3f5d7e9a1c2; green), CXQ-1/5/6.
-Next: CX PR 2 (routes) after #524; WL-1 phone Watchlist entry; TP-1 only after Phase 1.
+# Handover now (25 Oct 2026, noon IST)
+Deploy given: eb11fb0a (CI + staging green; migrations b3f5d7e9a1c2, c7e9a1b3d5f2). Merged since: #539 (cf87ccb).
+Owner to send: deploy log, releases.log, health, Charts + Terminal screenshots (desktop + phone).
+Open: #532 + this PR (docs; merge on green); #536 DM1-DM5 (green, waits owner ✅); #540 TF-1 ✅ with 2 fixes,
+then merge: (1) picker button = current interval if not starred, else timeframe icon + "▾", never "More";
+(2) phone list = bottom sheet, scrolls inside, above the bottom nav. Then one deploy block (DEP-1).
+Rule now: no new jobs until the limit resets; finish, merge, deploy only.
+Known: staging rollback --restore-db step fails intermittently (not tied to a PR) - root-cause next.
+Traders first (DECISIONS 25 Oct PR-1..4): UI polish frozen after TF-1. Next: data (DATA-H backfill, data_hub,
+universe sync) -> day-one test J1/J3 -> T2/T3 + CX PR 3 + SX -> FN2-FN4 -> FN5 + CP-V -> alerts. FN0_JOURNEYS.md.

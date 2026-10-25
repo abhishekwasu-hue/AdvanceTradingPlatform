@@ -698,6 +698,65 @@ class PaperRestingOrderRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 
+class GroupExitRecord(Base):
+    """CX / SX (owner, 24 Oct): one combined exit over a set of the user's own open positions - a combined stop-loss
+    and / or target on the group's ₹ MTM, its net premium, or the underlying spot level. Fired by the one trigger engine
+    (app/execution/trigger_engine.py) and closed as one group through position_monitor.close_group: short legs first,
+    then the hedges. Never blocked (ADR-0004); AI never sets or changes it (ADR-0006).
+
+    * `legs_json` the trade ids it covers with each leg's side, quantity and entry price, frozen at `version`;
+    * `measure` MTM_INR (`sl_value` = the ₹ loss, `target_value` = the ₹ profit) | NET_PREMIUM | SPOT (`sl_value` /
+      `target_value` = levels; `sl_side` / `target_side` ABOVE / BELOW: which way the value must go, set from the value
+      when the exit was set); `check_mode` TOUCH (every reading) or CLOSE (a closed candle of `timeframe_minutes`);
+    * `status` ARMED -> FIRING -> DONE, or CANCELLED; while FIRING every pass closes the legs still open (an exit is
+      never given up); `fired_kind` SL / TARGET;
+    * trailing (`trail_kind`, `trail_json`, `best_value`, `current_sl`, `locked_at`) is stored here for SX2.
+    `mode` is the legs' mode (PAPER today; LIVE only behind the owner's switches)."""
+
+    __tablename__ = "group_exits"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", "client_ref", name="uq_group_exit_client_ref"),
+        Index("ix_group_exits_tenant_status", "tenant_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_ref: Mapped[str] = mapped_column(String(80), nullable=False)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="PAPER")
+    origin: Mapped[str] = mapped_column(String(4), nullable=False, default="CX")            # CX | SX
+    scope: Mapped[str] = mapped_column(String(10), nullable=False, default="SELECTED")     # SELECTED | ALL_OPEN | GROUP
+    basket_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    legs_json: Mapped[str] = mapped_column(Text, nullable=False)
+    measure: Mapped[str] = mapped_column(String(12), nullable=False)                        # MTM_INR | NET_PREMIUM | SPOT
+    spot_symbol: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    spot_exchange: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    sl_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    sl_side: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    target_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    target_side: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    basis_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    check_mode: Mapped[str] = mapped_column(String(6), nullable=False, default="TOUCH")     # TOUCH | CLOSE
+    timeframe_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trail_kind: Mapped[str] = mapped_column(String(12), nullable=False, default="NONE")
+    trail_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    best_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    current_sl: Mapped[float | None] = mapped_column(Price, nullable=True)
+    locked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="ARMED")
+    status_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fired_kind: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    fired_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    fired_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    last_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    passes_firing: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    trail_log: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
 class MarketHolidayRecord(Base):
     """Exchange trading holidays (app/market_data/calendar.py consults these plus the fixed
     09:15-15:30 IST Mon-Fri session to decide whether the worker should evaluate at all). Shared

@@ -117,3 +117,4 @@
 | 2026-10-25 | Work order after CA6-1: DM1-DM5 (#536) first, then the open P1 items, then P2-F (FN0 audit first, #538 docs-only). P2-8 Journal v2 after these. |
 | 2026-10-25 | TF-1: one timeframe control everywhere (Charts, Multi-chart, Terminal, option-chain charts): grouped dropdown (minutes / hours / days / weeks / months) + "Add custom interval", star per interval, starred favourites as one-click buttons (default 5m, 15m, 1H, D; per user, prefs), phone = dropdown + up to 3 favourites; replaces the 9-button row and the TimeframeTabs "More" variant (supersedes T1-7's row). DEP-1: deploy the newest main commit whose checks pass, now (Sunday, no time limit). |
 | 2026-10-25 | Until the limit resets: no new jobs; only finish, merge, deploy and migrate what is in flight. |
+| 2026-10-25 | TF-1 approved to finish and merge after green CI (owner's words; screenshots page still sent for the record). |

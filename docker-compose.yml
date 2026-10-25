@@ -126,6 +126,13 @@ services:
       # U1 / WL1: shown on the admin's system-watchlists view (the worker runs the sync itself).
       UNIVERSE_SYNC_ENABLED: ${UNIVERSE_SYNC_ENABLED:-false}
       UNIVERSE_SYNC_HOUR_IST: ${UNIVERSE_SYNC_HOUR_IST:-18}
+      # DATA-H fix (25 Oct): the owner's history settings (HB0 / HB2, app/core/config.py) reach the containers; before,
+      # .env had them but compose passed only its own list, so lake-backfill said "HISTORY_OWNER_TENANT_ID is not set".
+      HISTORY_OWNER_TENANT_ID: ${HISTORY_OWNER_TENANT_ID:-}
+      HISTORY_OWNER_TENANT_NAME: ${HISTORY_OWNER_TENANT_NAME:-}
+      HISTORY_OWNER_USER_ID: ${HISTORY_OWNER_USER_ID:-}
+      HISTORY_INTRADAY_SYMBOLS: ${HISTORY_INTRADAY_SYMBOLS:-}
+      HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS: ${HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS:-true}
     # Analyze a chart: users' chart images, private to the backend and the worker (never served by Caddy, never in git;
     # retention and delete are the app's - docs/design/CHART_ANALYZE.md section 3).
     volumes:
@@ -168,6 +175,13 @@ services:
       UNIVERSE_SYNC_ENABLED: ${UNIVERSE_SYNC_ENABLED:-false}
       UNIVERSE_SYNC_HOUR_IST: ${UNIVERSE_SYNC_HOUR_IST:-18}
       UNIVERSE_FILE_URLS: ${UNIVERSE_FILE_URLS:-}
+      # DATA-H fix (25 Oct): the owner's history settings (HB0 / HB2, app/core/config.py) reach the containers; before,
+      # .env had them but compose passed only its own list, so lake-backfill said "HISTORY_OWNER_TENANT_ID is not set".
+      HISTORY_OWNER_TENANT_ID: ${HISTORY_OWNER_TENANT_ID:-}
+      HISTORY_OWNER_TENANT_NAME: ${HISTORY_OWNER_TENANT_NAME:-}
+      HISTORY_OWNER_USER_ID: ${HISTORY_OWNER_USER_ID:-}
+      HISTORY_INTRADAY_SYMBOLS: ${HISTORY_INTRADAY_SYMBOLS:-}
+      HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS: ${HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS:-true}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@example.com}
       # B8: phone notifications (FCM) for the Android app; all empty = off

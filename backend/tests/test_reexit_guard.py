@@ -739,9 +739,10 @@ def test_the_emergency_exit_never_sells_the_wings_of_a_short_that_did_not_close(
     assert _get(TradeRecord, wing).exit_time is None and _get(TradeRecord, short).exit_time is None
 
 
-def test_the_emergency_exit_still_closes_a_paper_structure_as_before():
-    """PAPER is unchanged: the hold is for LIVE shorts only (a PAPER short without a supplied price leaves its wing to
-    close as it always did)."""
+def test_the_emergency_exit_holds_the_wing_of_a_paper_short_that_did_not_close_as_live_does():
+    """CX review F1 (owner principle 23 Oct: PAPER and LIVE behave the same): a PAPER short without a supplied price keeps
+    its wing open too - never a naked short in paper; both are tried again, the short first. (Before: the hold was for
+    LIVE shorts only and the PAPER wing closed.)"""
     t = _tenant(f"rxg-kill-paper-{uuid.uuid4().hex[:6]}@example.com")
     group = f"g-{uuid.uuid4().hex[:8]}"
 
@@ -756,7 +757,8 @@ def test_the_emergency_exit_still_closes_a_paper_structure_as_before():
     _run(seed())
     body = client.post("/api/kill-switch/emergency-exit", headers=t["headers"],
                        json={"reason": "test", "prices": {"RXPWING": 4.0}}).json()
-    assert len(body["closed_trade_ids"]) == 1 and body["skipped_symbols"] == ["RXPSHORT"]
+    assert body["closed_trade_ids"] == [] and body["skipped_symbols"][0] == "RXPSHORT"
+    assert body["skipped_symbols"][1].startswith("RXPWING (Held: short leg") and "naked short" in body["skipped_symbols"][1]
 
 
 def test_an_exit_the_broker_took_and_then_rejected_is_never_booked_as_closed():

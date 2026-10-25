@@ -14,6 +14,13 @@ ordinary pipeline (app/paper/fno_ticket.py); there is no mode in the body and no
 - `GET  /api/paper/fno/resting`        TM-2: the caller's own waiting orders and armed exits.
 - `POST /api/paper/fno/resting/exit`   TM-2: arm a stop / target on the caller's own position (nothing is sent now).
 - `POST /api/paper/fno/resting/{id}/cancel`  TM-2: cancel the caller's own waiting order.
+CX (owner, 24 Oct), combined exits over the caller's own open positions (app/execution/group_exits.py; the trigger engine
+fires them and closes the legs as one group, sold legs first - never blocked):
+- `GET  /api/paper/fno/group-exits`               the caller's armed / exiting combined exits with the distance to trigger.
+- `POST /api/paper/fno/group-exits/preview`       the plain sentence, the value now and the distance; nothing is stored.
+- `POST /api/paper/fno/group-exits`               set one (idempotent on its reference).
+- `POST /api/paper/fno/group-exits/{id}/edit`     change its levels (armed only, on the version shown).
+- `POST /api/paper/fno/group-exits/{id}/cancel`   remove it (armed only; one already exiting finishes).
 
 FNO-2, the basket (app/paper/fno_basket.py), same flags, same PAPER-only path - each leg is one ticket order:
 - `POST /api/paper/fno/basket/evaluate`     the basket's payoff, max profit / loss, breakevens, PoP, Greeks, margin with
@@ -34,6 +41,7 @@ TT-8, a basket's legs as one group (app/paper/fno_groups.py) - exits, so no flag
 - `POST /api/paper/fno/positions/{id}/exit-leg`    this leg only; a hedge before its sold leg: a warning until confirm.
 - `POST /api/paper/fno/positions/{id}/exit-group`  every open leg of the basket, the sold legs first.
 """
+import json
 from datetime import date
 from typing import Any, Dict, List, Literal, Optional
 
@@ -217,6 +225,147 @@ async def cancel_resting(order_id: int, user: User = Depends(require_trader), se
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="Not found") from exc
     return resting_book.view(row)
+
+
+# --- CX: combined exits ------------------------------------------------------------------------------------------------
+
+class GroupExitBody(BaseModel):
+    """One combined stop-loss / target (CX1-CX3): the user's own numbers; the server reads the value now itself."""
+    model_config = ConfigDict(extra="forbid")
+    scope: Literal["SELECTED", "ALL_OPEN", "GROUP"] = "SELECTED"
+    trade_ids: List[int] = Field(default_factory=list, max_length=50)
+    measure: Literal["MTM_INR", "NET_PREMIUM", "SPOT"]
+    sl_value: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    target_value: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    spot_symbol: Optional[str] = Field(default=None, pattern=SYMBOL)
+    spot_exchange: Optional[Literal["NSE", "BSE"]] = None
+    check_mode: Literal["TOUCH", "CLOSE"] = "TOUCH"
+    timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+    basket_ref: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9:_-]{1,64}$")
+    client_ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
+
+
+class GroupExitEditBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(ge=1)
+    sl_value: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    target_value: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    check_mode: Optional[Literal["TOUCH", "CLOSE"]] = None
+    timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+
+
+async def _group_ask(session: AsyncSession, user: User, body: GroupExitBody) -> Any:
+    from app.execution import group_exits
+    ids = await group_exits.all_open_ids(session, user) if body.scope == "ALL_OPEN" else list(body.trade_ids)
+    return group_exits.GroupExitAsk(client_ref=f"cx:{body.client_ref}", trade_ids=ids, measure=body.measure,
+                                    sl_value=body.sl_value, target_value=body.target_value, spot_symbol=body.spot_symbol,
+                                    spot_exchange=body.spot_exchange, check_mode=body.check_mode,
+                                    timeframe_minutes=body.timeframe_minutes, scope=body.scope, origin="CX",
+                                    basket_ref=body.basket_ref)
+
+
+async def _lookup(session: AsyncSession, user: User) -> Any:
+    """The person's own live price (what "Exit now" reads)."""
+    from app.ai.worker_bridge import price_lookup_for_user
+    return await price_lookup_for_user(session, user)
+
+
+async def _value_now(session: AsyncSession, user: User, ask: Any) -> Optional[float]:
+    from app.execution import group_exits
+    trades = await group_exits.own_open_trades(session, user, ask.trade_ids)
+    return await group_exits.current_value(session, ask.measure, trades, await _lookup(session, user),
+                                           spot_symbol=ask.spot_symbol, spot_exchange=ask.spot_exchange)
+
+
+@router.get("/group-exits")
+async def group_exits_list(include_done: bool = Query(default=False), user: User = Depends(get_current_user),
+                           session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
+    """The caller's own combined exits (armed / exiting; with `include_done`, the finished ones too)."""
+    await _enabled(session, user)
+    from app.execution import group_exits
+    return [group_exits.view(r) for r in await group_exits.list_for_user(session, user, include_final=include_done)]
+
+
+@router.post("/group-exits/preview", dependencies=[Depends(resting_rate_limit)])
+async def group_exit_preview(body: GroupExitBody, user: User = Depends(require_trader),
+                             session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """CX6: what would be set, in plain words, with the value now and the distance to each level. Nothing is stored."""
+    await _enabled(session, user)
+    from app.db.models import GroupExitRecord
+    from app.execution import group_exits
+    ask = await _group_ask(session, user, body)
+    trades = await group_exits.own_open_trades(session, user, ask.trade_ids)
+    errors = group_exits.ask_errors(ask, trades)
+    value = None if errors else await _value_now(session, user, ask)
+    draft = GroupExitRecord(measure=ask.measure, sl_value=ask.sl_value, target_value=ask.target_value,
+                            spot_symbol=ask.spot_symbol, check_mode=ask.check_mode,
+                            legs_json=json.dumps([group_exits.leg_view(t) for t in trades]))
+    if value is not None and ask.measure != group_exits.MTM_INR:
+        draft.sl_side = group_exits.side_for(ask.sl_value, value) if ask.sl_value is not None else None
+        draft.target_side = group_exits.side_for(ask.target_value, value) if ask.target_value is not None else None
+    if value is None and not errors and ask.measure != group_exits.MTM_INR:
+        errors.append("No live price for the group right now - try again in a moment")
+    return {"ok": not errors, "reasons": errors, "words": group_exits.describe(draft), "value_now": value,
+            "distance": group_exits.distance(draft, value), "legs": group_exits.legs_of(draft)}
+
+
+@router.post("/group-exits", dependencies=[Depends(resting_rate_limit)])
+async def group_exit_create(body: GroupExitBody, user: User = Depends(require_trader),
+                            session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Sets one combined exit on the caller's own open positions. Nothing is sent now: the trigger engine closes the legs
+    as one group when it is reached (never blocked, ADR-0004)."""
+    await _enabled(session, user)
+    from app.execution import group_exits
+    ask = await _group_ask(session, user, body)
+    value = await _value_now(session, user, ask)
+    try:
+        row = await group_exits.create(session, user, ask, now_value=value)
+    except group_exits.GroupExitError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    row.last_value = value if value is not None else row.last_value
+    return group_exits.view(row)
+
+
+@router.post("/group-exits/{exit_id}/edit", dependencies=[Depends(resting_rate_limit)])
+async def group_exit_edit(exit_id: int, body: GroupExitEditBody, user: User = Depends(require_trader),
+                          session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Changes the levels of the caller's own armed combined exit (CX5 / SX6)."""
+    await _enabled(session, user)
+    from app.db.models import GroupExitRecord
+    from app.execution import group_exits
+    row = await session.get(GroupExitRecord, exit_id)
+    if row is None or row.tenant_id != user.tenant_id or row.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Not found")
+    value = None
+    if row.measure != group_exits.MTM_INR:
+        trades = await group_exits.own_open_trades(session, user, group_exits.trade_ids(row))
+        value = await group_exits.current_value(session, row.measure, [t for t in trades if t.exit_time is None],
+                                                await _lookup(session, user), spot_symbol=row.spot_symbol,
+                                                spot_exchange=row.spot_exchange)
+    try:
+        row = await group_exits.edit(session, user, exit_id, version=body.version, sl_value=body.sl_value,
+                                     target_value=body.target_value, check_mode=body.check_mode,
+                                     timeframe_minutes=body.timeframe_minutes, now_value=value)
+    except group_exits.GroupExitError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=409 if "another screen" in str(exc) or "meanwhile" in str(exc) else 422,
+                            detail=str(exc)) from exc
+    return group_exits.view(row)
+
+
+@router.post("/group-exits/{exit_id}/cancel", dependencies=[Depends(resting_rate_limit)])
+async def group_exit_cancel(exit_id: int, user: User = Depends(require_trader),
+                            session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Removes the caller's own armed combined exit (one already closing its legs finishes)."""
+    await _enabled(session, user)
+    from app.execution import group_exits
+    try:
+        row = await group_exits.cancel(session, user, exit_id)
+    except group_exits.GroupExitError as exc:
+        status = 404 if "not found" in str(exc) else 409
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    return group_exits.view(row)
 
 
 # --- FNO-2: the basket ------------------------------------------------------------------------------------------------

@@ -103,6 +103,9 @@ REAL_ID_PARAMS = ("member_id", "invite_id", "target_id")
 A_CONTROL_EXCEPTIONS: Dict[Tuple[str, str], str] = {
     ("POST", "/api/news-feed/items/{item_id}/feedback"):
         "item_id names a shared news-feed item (platform data, not a tenant row) - each member's verdict is its own row",
+    ("POST", "/api/paper/fno/group-exits/{exit_id}/edit"):
+        "the planted row is not an ARMED combined exit, and only an armed one can be edited (422 'has ended', by design); "
+        "the other organisation still gets 404 and changes nothing (CX; tests/test_cx_api.py edits a real one)",
 }
 
 # Id routes where the other organisation may get a status other than 403/404, and why nothing of tenant A's is exposed.

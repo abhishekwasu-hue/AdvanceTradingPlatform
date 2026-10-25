@@ -94,7 +94,9 @@ def test_daily_candles_fetch_a_year_and_skip_the_forming_day(monkeypatch):
     monkeypatch.setattr(md_service, "cache_get", no_cache)
     monkeypatch.setattr(md_service, "cache_set", no_cache)
     asyncio.run(md_service.MarketDataService(Broker()).get_candles("TCS", "NSE", "day"))
-    assert calls["span"] >= md_service.DAILY_MIN_LOOKBACK_DAYS - 2 and "intraday" not in calls
+    # The window ends at the last session close, not now: on a Sunday that is Friday's close, and after a holiday one
+    # day more (25 Oct 2026, a Sunday, gave 397 of 400) - "about a year" allows the weekend plus one holiday.
+    assert calls["span"] >= md_service.DAILY_MIN_LOOKBACK_DAYS - 4 and "intraday" not in calls
     assert timeframe_seconds("day") == 86400
     friday_bar = datetime(2026, 9, 25, 18, 30, tzinfo=UTC)
     assert candle_staleness(friday_bar, "day", datetime(2026, 9, 30, 6, 0, tzinfo=UTC)) is None   # long weekend + holiday

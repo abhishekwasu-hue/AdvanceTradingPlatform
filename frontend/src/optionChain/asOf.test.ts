@@ -41,3 +41,19 @@ describe("B2b: the spot's label", () => {
     expect(summaryCards(SUMMARY, null)[0].label).toBe("Spot");
   });
 });
+
+describe("T1-3 on the Option chain page (owner 25 Oct): the spot card is the chart's spot", () => {
+  it("shows the live tick / LTP value and its time, never the chain's own snapshot spot", () => {
+    const tick = { ltp: 24533.4, at: "2026-10-27T04:05:00Z", source: "tick" as const };
+    const card = summaryCards({ ...SUMMARY, spot_source: "last_close" }, null, tick)[0];
+    expect(card.label).toBe("Spot");
+    expect(card.value).toBe(summaryCards({ ...SUMMARY, spot: 24533.4 }, null)[0].value);
+    expect(card.caption).toBe("as of 09:35 IST");
+  });
+
+  it("falls back to the chain's own spot when there is no live price", () => {
+    const fromChain = { ltp: 24180.25, at: FRI_CLOSE, source: "chain" as const };
+    expect(summaryCards({ ...SUMMARY, spot_source: "last_close" }, null, fromChain)[0].label).toBe("Spot: last close");
+    expect(summaryCards(SUMMARY, null, null)[0].caption).toBeUndefined();
+  });
+});

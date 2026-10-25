@@ -11,6 +11,7 @@ import SymbolHubTabsV2 from "../fno/SymbolHubTabsV2";
 import type { PageProps } from "../routes";
 import { cx } from "../components/primitives/cx";
 import { formatDateIST, formatTimeIST } from "../ui/format";
+import { useTerminalSpot } from "../terminal/spot";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
 import AnalysisSlotV2 from "./AnalysisSlotV2";
@@ -143,6 +144,8 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   const expiryId = useId();
 
   const live = chain.live;
+  // T1-3 on this page (owner 25 Oct): the spot card reads the same feed and time as the chart (src/terminal/spot.ts).
+  const spot = useTerminalSpot({ symbol, hub: useFeatures().on("data_hub"), enabled: true, chain: live ?? null });
   const notes = chainNotes(live, marketOpen, (iso) => formatTimeIST(iso));
   const extraSymbol = useMemo(() => (new Set<string>([...INDEX_SYMBOLS, ...STOCK_SYMBOLS]).has(symbol) ? null : symbol), [symbol]);
   const expiryOptions = chain.expiries?.expiries.length
@@ -210,7 +213,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       <SetupPanelV2 state={setupState} symbol={symbol} expiry={live?.expiry ?? chain.expiry} onExpiry={(e) => { setPicked(null); chain.setExpiry(e); }}
         onClear={() => onClearSignal?.()} tradeOf={tradeOf} onTrade={tradeSetup} />
 
-      <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} />
+      <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} spot={spot} />
 
       {view === "charts" && (
         <section aria-label="Charts" data-block="charts" className="space-y-space-3">

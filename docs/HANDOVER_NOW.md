@@ -1,5 +1,7 @@
-# Handover now (24 Oct 2026)
-In flight: P1-2 #494 (TT-12; add the TT12-1 notice), P1-6 #492 (TT-2) and #493 (T1, waits for the owner's ✅),
-P1-2b (org min R:R 1.2 OFF with parity) next. P1-3 / P1-5 / P1-7 wait for the owner's deploy + "Enable trader features".
-Next: P2-1 flag audit at the next free P1 slot; then TM-2, TT-8, TT-1 for T2 (P1-6).
-Open PRs: #492, #493, #494. Deploy: one command after the merges; migration only #471's (already merged).
+# Handover now (24 Oct 2026, night)
+Merged today: #515 DATA-H (migration d4a6c8e0b2f1), #516 probe tenant-key fix + CI Postgres 17, #525 date test fix,
+docs #514 #517-#523. Owner deploys e4aa102ab4ad (CI + staging passed; load-500 is the known red LD-9), then
+probe-chain / probe-candles / lake-backfill --check (screenshot), then lake-backfill.
+Waiting on the owner: #510 Wave 0 page ✅ (green), then #493 T1 + fixes page ✅ (green; merges after #510),
+#524 CX PR 1 OK (order path + F1 PAPER hedge hold; migration b3f5d7e9a1c2; green), CXQ-1/5/6.
+Next: CX PR 2 (routes) after #524; WL-1 phone Watchlist entry; TP-1 only after Phase 1.

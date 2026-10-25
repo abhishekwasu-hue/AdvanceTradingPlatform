@@ -11,7 +11,10 @@ What it decides (TT-7, the shared rules of app/trading/trigger_rules.py):
   look-ahead, never a candle that closed before the order was armed);
 * stops first: in one pass the reached STOPs are acted on before TARGETs, TARGETs before waiting entries; when an exit
   closes a position its other armed exits are cancelled;
-* the source (T-D2): the option's own price (PREMIUM) or the underlying (SPOT) - the order's own setting.
+* the source (T-D2): the option's own price (PREMIUM) or the underlying (SPOT) - the order's own setting;
+* combined exits (CX / SX, app/execution/group_exits.py) are judged FIRST in every exit pass, on the same one reading per
+  symbol: the group's ₹ MTM, its net premium or the spot level; a reached one closes all its legs as one group (sold
+  legs first, then the hedges) through `position_monitor.close_group`, and every later pass closes what is still open.
 
 What it does at fire time (TM-23):
 * an ENTRY is placed through the order ticket's own `place` (app/paper/fno_ticket.py) - the ordinary pipeline, so the
@@ -46,7 +49,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.base import BrokerInterface
 from app.core.config import TRIGGER_ACK_TIMEOUT_SECONDS, WORKER_CYCLE_SECONDS
-from app.db.models import PaperRestingOrderRecord, TradeRecord, User, WorkerHeartbeatRecord
+from app.db.models import GroupExitRecord, PaperRestingOrderRecord, TradeRecord, User, WorkerHeartbeatRecord
+from app.execution import group_exits as gx
 from app.execution import resting_book as book
 from app.trading import trigger_rules
 from app.trading.trigger_rules import CLOSE
@@ -98,10 +102,13 @@ def _rank(row: PaperRestingOrderRecord) -> Tuple[int, int, int]:
 
 
 async def tenants_with_resting(session: AsyncSession, *, paper_only: bool = False) -> Set[int]:
+    """Organisations with a waiting order or an armed / exiting combined exit."""
     query = select(PaperRestingOrderRecord.tenant_id).where(PaperRestingOrderRecord.status.in_((book.RESTING, book.FIRING)))
+    groups = select(GroupExitRecord.tenant_id).where(GroupExitRecord.status.in_(gx.LIVE_STATUSES))
     if paper_only:
         query = query.where(PaperRestingOrderRecord.mode == "PAPER")
-    return set(await session.scalars(query.distinct()))
+        groups = groups.where(GroupExitRecord.mode == "PAPER")
+    return set(await session.scalars(query.distinct())) | set(await session.scalars(groups.distinct()))
 
 
 async def _resting(session: AsyncSession, tenant_id: int, purpose: str, paper_only: bool) -> List[PaperRestingOrderRecord]:
@@ -220,6 +227,8 @@ async def run_exits(session: AsyncSession, tenant_id: int, prices: PriceFn, *, b
     now = now or datetime.now(timezone.utc)
     report = EngineReport()
     reader = _Prices(prices)
+    await run_group_exits(session, tenant_id, reader, candles=candles, broker=broker, now=now, report=report,
+                          paper_only=paper_only)
     await _resolve_firing(session, tenant_id, book.EXIT, reader, broker, now, report, paper_only)
     for row in await _resting(session, tenant_id, book.EXIT, paper_only):
         report.checked += 1
@@ -592,6 +601,154 @@ async def reconcile_on_start(session: AsyncSession, now: Optional[datetime] = No
     await _resolve_firing(session, None, None, None, None, now, report, False, timeout=0.0)
     return report
 
+# --- combined exits (CX / SX, app/execution/group_exits.py) -------------------------------------------------------------
+
+async def _group_reading(row: GroupExitRecord, legs: List[Dict[str, Any]], reader: _Prices, candles: Optional[CandleFn],
+                         now: datetime, exits: Optional[Dict[int, float]] = None) -> Optional[str]:
+    """SL / TARGET when the group's measure reached it on this reading; None: not reached or no reading this pass (any
+    leg without a price -> no decision on part of a group, never a made-up value)."""
+    if row.check_mode == gx.CLOSE:
+        if candles is None or not row.timeframe_minutes or not row.spot_symbol or not row.spot_exchange:
+            return None
+        try:
+            bars = await candles(row.spot_symbol, row.spot_exchange)
+        except Exception as exc:  # noqa: BLE001 - no candles, no decision this pass
+            logger.info("Trigger engine: no candles for %s (%s)", row.spot_symbol, type(exc).__name__)
+            return None
+        tf = int(row.timeframe_minutes)
+        closed = trigger_rules.closed_candles(bars, tf, now)
+        if closed:
+            row.last_value, row.last_checked_at = closed[-1].close, now
+        sl = row.current_sl if row.current_sl is not None else row.sl_value
+        for kind, level, side in ((gx.SL, sl, row.sl_side), (gx.TARGET, row.target_value, row.target_side)):
+            if level is not None and side and trigger_rules.close_trigger(float(level), side, bars, tf, now,
+                                                                          armed_at=row.created_at) is not None:
+                return kind
+        return None
+    if row.measure == gx.SPOT:
+        if not row.spot_symbol or not row.spot_exchange:
+            return None
+        value = await reader.get(row.spot_symbol, row.spot_exchange)
+    else:
+        booked = {int(k): float(v) for k, v in (exits or {}).items()}
+        open_legs = [leg for leg in legs if int(leg["trade_id"]) not in booked]
+        prices = {int(leg["trade_id"]): p for leg in open_legs
+                  if (p := await reader.get(str(leg["symbol"]), str(leg["exchange"]))) is not None}
+        if row.measure == gx.MTM_INR:                  # a leg closed by hand counts at its booked exit price (CXQ-2)
+            value = gx.mtm(legs, {**prices, **booked})
+        else:
+            value = gx.net_premium(open_legs, prices)
+    if value is None:
+        return None
+    row.last_value, row.last_checked_at = value, now
+    return gx.decide(row, value)
+
+
+async def _claim_group(session: AsyncSession, row: GroupExitRecord, kind: str, now: datetime) -> bool:
+    """ARMED -> FIRING exactly once (the tick pass and the cycle never fire the same combined exit twice)."""
+    claimed = await session.execute(update(GroupExitRecord).where(
+        GroupExitRecord.id == row.id, GroupExitRecord.status == gx.ARMED, GroupExitRecord.version == row.version).values(
+        status=gx.FIRING, fired_kind=kind, fired_at=now, fired_value=row.last_value, passes_firing=0,
+        updated_at=now).execution_options(synchronize_session=False))
+    if getattr(claimed, "rowcount", 0) != 1:
+        await session.rollback()
+        return False
+    await session.commit()
+    await session.refresh(row)
+    gx.add_log(row, gx.FIRING, f"{'Stop-loss' if kind == gx.SL else 'Target'} reached at {row.last_value} - closing the legs", now)
+    await session.commit()
+    return True
+
+
+async def _group_notify(session: AsyncSession, row: GroupExitRecord, title: str, message: str, *, critical: bool = False) -> None:
+    from app.core.enums import NotificationSeverity, NotificationType
+    from app.notifications.service import notify
+    try:
+        await notify(session, row.tenant_id, NotificationType.SYSTEM_FAILURE if critical else NotificationType.EXIT,
+                     title=title, message=message, user_id=row.user_id,
+                     severity=NotificationSeverity.CRITICAL if critical else NotificationSeverity.INFO,
+                     metadata_json=json.dumps({"group_exit": row.id}))
+    except Exception:  # noqa: BLE001 - a notification never undoes the exit
+        logger.exception("Trigger engine: notification for combined exit %s failed", row.id)
+        await session.rollback()
+
+
+async def _close_group_legs(session: AsyncSession, row: GroupExitRecord, reader: _Prices, broker: Optional[BrokerInterface],
+                            now: datetime, report: EngineReport) -> None:
+    """Close every leg of a FIRING combined exit that is still open - sold legs first, then the hedges (a short that does
+    not close keeps its hedges open; close_group alerts). Legs closed already (this pass, an earlier pass, or before a
+    restart) are skipped; each leg's own close claims it once, so nothing is closed twice."""
+    from app.trading.position_monitor import close_group, venue_for
+    trades = [t for t in [await session.get(TradeRecord, i) for i in gx.trade_ids(row)] if t is not None]
+    still_open = [t for t in trades if t.exit_time is None]
+    if still_open:
+        if row.passes_firing == 0:                        # first pass: the legs' own waiting exits make way (SX4)
+            for t in still_open:
+                await book.cancel_for_trade(session, t.id, "Cancelled: your combined exit is closing this position", now)
+            await session.commit()
+        prices = {t.id: p for t in still_open if (p := await reader.get(t.symbol, await venue_for(session, t))) is not None}
+        spot: Optional[float] = None
+        if row.spot_symbol and row.spot_exchange:
+            spot = await reader.get(row.spot_symbol, row.spot_exchange)
+        reason = "Combined stop-loss" if row.fired_kind == gx.SL else "Combined target"
+        outcomes = await close_group(session, still_open, prices, reason, broker=broker, user_id=row.user_id,
+                                     underlying_price=spot)
+        report.filled += sum(1 for o in outcomes if o.closed)
+        for t in still_open:
+            await session.refresh(t)
+        still_open = [t for t in still_open if t.exit_time is None]
+    if not still_open:
+        row.status = gx.DONE
+        gx.add_log(row, gx.DONE, f"All {len(trades)} legs closed", now)
+        await session.commit()
+        what = "Combined stop-loss" if row.fired_kind == gx.SL else "Combined target"
+        await _group_notify(session, row, f"{what}: {len(trades)} legs closed",
+                            f"{gx.describe(row)} It fired at {row.fired_value}; every leg is now closed.")
+        return
+    row.passes_firing = int(row.passes_firing or 0) + 1
+    names = ", ".join(t.symbol for t in still_open)
+    gx.add_log(row, gx.FIRING, f"Still open: {names} - tried again next pass", now)
+    await session.commit()
+    if row.passes_firing == gx.STUCK_ALERT_PASSES:
+        await _group_notify(session, row, "Combined exit: legs still open",
+                            f"Your combined exit fired, but these legs are still open after {row.passes_firing} tries: {names}. "
+                            "They are tried again on every pass (sold legs first). Check the position at the broker.",
+                            critical=True)
+
+
+async def run_group_exits(session: AsyncSession, tenant_id: int, reader: _Prices, *, candles: Optional[CandleFn] = None,
+                          broker: Optional[BrokerInterface] = None, now: Optional[datetime] = None,
+                          report: Optional[EngineReport] = None, paper_only: bool = False) -> EngineReport:
+    """Every combined exit of the organisation: the exiting ones first (their open legs closed again), then every armed
+    one judged on this pass's reading. Never blocked (ADR-0004): no kill switch, limit, approval mode or PAPER lock is
+    read here or on the close path."""
+    now = now or datetime.now(timezone.utc)
+    report = report if report is not None else EngineReport()
+    query = select(GroupExitRecord).where(GroupExitRecord.tenant_id == tenant_id, GroupExitRecord.status.in_(gx.LIVE_STATUSES))
+    if paper_only:
+        query = query.where(GroupExitRecord.mode == "PAPER")
+    rows = sorted(await session.scalars(query), key=lambda r: (0 if r.status == gx.FIRING else 1, r.id))
+    for row in rows:
+        report.checked += 1
+        try:
+            if row.status == gx.ARMED:
+                trades = [t for t in [await session.get(TradeRecord, i) for i in gx.trade_ids(row)] if t is not None]
+                if not any(t.exit_time is None for t in trades):
+                    row.status = gx.DONE                   # every leg was closed some other way: nothing left to watch
+                    gx.add_log(row, gx.DONE, "Every leg is already closed - nothing left to watch", now)
+                    await session.commit()
+                    continue
+                exits = {t.id: float(t.exit_price) for t in trades if t.exit_time is not None and t.exit_price is not None}
+                kind = await _group_reading(row, gx.legs_of(row), reader, candles, now, exits)
+                await session.commit()                     # the reading the exit was judged on
+                if kind is None or not await _claim_group(session, row, kind, now):
+                    continue
+            await _close_group_legs(session, row, reader, broker, now, report)
+        except Exception as exc:  # noqa: BLE001 - one exit never stops the others; a FIRING one is tried again next pass
+            logger.exception("Trigger engine: combined exit %s failed", row.id)
+            report.errors.append(f"group {row.id}: {type(exc).__name__}")
+            await session.rollback()
+    return report
 
 # --- heartbeat and stall alert (TT-6 / TT-26) ----------------------------------------------------------------------------
 

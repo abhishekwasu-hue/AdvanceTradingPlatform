@@ -79,3 +79,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-25 | (Marathi, translated, with a Today screenshot) "Look at the screenshot properly; there is too much theory and it is hard to understand; use multicolour, but logically." | TD-1 Today page: fewer words, visual cards, logical colour; reports shorter |
 | 2026-10-25 | OWNER ORDER UX-2 (modern trading-app look, UX-1..UX-10) - full text verbatim in ATP_ORDER_UX2.md | roadmap UX-2 rows; UX-1 audit today |
 | 2026-10-25 | UX-3 (replaces the earlier UX-3): the watchlist is a Terminal panel, docked left, ON in every default layout - verbatim in ATP_ORDER_UX2.md "UX-3 replaced" | earlier UX-3 (desktop rail on every page) superseded |
+| 2026-10-25 | Terminal addendum TA-1..TA-4 to M39 (UX-2), verbatim in ATP_ORDER_UX2.md "Terminal addendum" | with TL-1..TL-4 in P1-6 |

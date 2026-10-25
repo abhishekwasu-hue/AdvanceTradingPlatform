@@ -25,3 +25,7 @@ SX5 Review screen shows the exits in plain words ("Exit all 2 legs if loss reach
 SX6 After entry the exits appear on the position group (chip + distance to trigger) and can be edited or removed; same safety as CX5 (never blocked, AI never touches, survives restart, PAPER = LIVE behaviour).
 SX7 No automatic re-entry (not part of the owner's method).
 SX8 Proof: tests (trail moves only in favour; lock fires once; OCO cancels the other; shorts-first exit; restart no double exit) + screenshots of the ticket and the position chip.
+
+## Follow-ups (owner, 25 Oct, with the #524 OK)
+
+#524 OK, with one follow-up in #527 or PR 3 (not blocking this merge): CX-F1 A combined ₹/premium stop must not wait silently when one leg has no fresh price: use that leg's last traded price marked "stale" (shown on the chip), and raise a notice after the stale-price setting (seconds). Spot-level triggers never need leg prices. Test: a hedge with no quote does not delay a stop that the other legs already breach. CX-F2 The CRITICAL "short still open" notice also goes to Telegram and shows a one-tap "Exit short now" (with confirm). Merge #524, then #527; send the deploy block (Sunday: no time limit) and the `atp.sh health` output.

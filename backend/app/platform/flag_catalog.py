@@ -124,7 +124,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "screener_waves": FlagInfo("Wave count in screens (running wave, type, alternate, clarity, wave levels and lines)", "screens", "builder functions", ("screener_v2",), "", "unfinished"),
     "terminal": FlagInfo("The Terminal: chart, option chain, order panel, positions and orders on one screen, with saved layouts and a status bar",
                          "trading", "a Terminal entry under Trading", ("ui_v2",),
-                         "the data hub for live prices; smart execution for multi-leg orders", "unfinished"),
+                         "the data hub for live prices; smart execution for multi-leg orders", "ready"),
     "strategy_templates": FlagInfo("Ready strategy templates adopted as paper strategies", "trading", "templates in the paper bot form", ("ui_v2",), "", "unfinished"),
     "screener_rankings": FlagInfo("Rank a universe 0-100", "screens", "rankings", ("screener_v2",), "", "ready"),
     "screener_backtest": FlagInfo("Back-test a screen over time", "screens", "screen backtest", ("screener_v2",), "", "ready"),

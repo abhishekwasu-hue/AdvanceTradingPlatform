@@ -490,6 +490,8 @@ DEFAULT_ON_FLAGS: frozenset[str] = frozenset({
     "options_builder",     # P1-c1 research-only payoff tool, places no orders; saving is options_builder_saved (OFF)
     "public_api",          # Phase N kill switch for public API keys and /api/public/v1
     "self_signup",         # Phase N kill switch for public registration (OFF = invite-only); beta_cohort_gate is separate
+    "terminal",            # owner ✅ 25 Oct (DECISIONS, T-D1): the Terminal ON for all users; needs ui_v2; orders go
+                           # through the existing ticket (PAPER in Phase 0)
 })
 # Phase BB/BE: every other registered flag starts OFF until the operator turns it on. Computed, so a new flag is OFF by
 # default as soon as it is registered in FEATURE_FLAGS - there is no second list to edit.

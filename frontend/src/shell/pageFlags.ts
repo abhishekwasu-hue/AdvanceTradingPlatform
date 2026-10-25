@@ -21,7 +21,7 @@ export const PAGE_FLAGS: Readonly<Partial<Record<Page | "ideas" | "markets" | "l
   "chart-analyze": "chart_analyze",
   // Readiness C13: the v2-only Learn page (/learn) while `learn` is off.
   learn: "learn",
-  // Trading Terminal T1: the v2-only Terminal (/terminal) while `terminal` is off (OFF until the owner's approval).
+  // Trading Terminal T1: the v2-only Terminal (/terminal) while `terminal` is off (ON by default since the owner's ✅ 25 Oct).
   terminal: "terminal",
 };
 

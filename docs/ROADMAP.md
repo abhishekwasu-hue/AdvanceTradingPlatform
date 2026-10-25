@@ -81,6 +81,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P2-5 | Analyze a chart ON (beta) | row 10 | works with a vision key; strikes from his own settings only |
 | P2-6 | Help centre + page tours complete | rows 6, 8 | J7 checked |
 | P2-7 | Positions for options sellers + Performance page | row 20 Parts 2, 4 | J3 end (Performance) checked |
+| P2-8 | Journal v2 (J1-J6): broker sync, chart image, spread view, plan vs actual; 20-second check-in; daily / weekly / monthly reviews; My proof; if-then plans + process goals; Telegram / e-mail; page tabs (extends app/journal + discipline_engine) | ATP_SESSION_JOURNAL.md | 3 PRs with tests + screenshots; owner ✅ on each; billing in P5-2 |
 
 ### Phase 3 — Production readiness (J8) — starts in PARALLEL with Phase 2
 | ID | Item | Source | Done when |
@@ -150,6 +151,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P2-5 | not started | Analyze a chart ON (beta) | - |
 | P2-6 | not started | help centre + page tours complete | - |
 | P2-7 | not started | positions for options sellers + Performance page | - |
+| P2-8 | not started | Journal v2 J1 -> J2+J3 -> J4+J5+J6 (3 draft PRs); starts when the max-3 rule allows | - |
 | P3-1 | waiting for owner | the R2 bucket + key escrow, then the restore drill | - |
 | P3-2 | not started (parallel) | monitoring + alerts (parts built, row 17) | - |
 | P3-3 | not started (parallel) | rollback test of `atp.sh` | - |

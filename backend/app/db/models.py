@@ -753,6 +753,7 @@ class GroupExitRecord(Base):
     passes_firing: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     trail_log: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stale_json: Mapped[str | None] = mapped_column(Text, nullable=True)     # CX-F1: legs read at their last traded price
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 

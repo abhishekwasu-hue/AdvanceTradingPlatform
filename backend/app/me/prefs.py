@@ -89,6 +89,18 @@ class ChartIndicators(_Prefs):
     rsi: bool = True
 
 
+# TF-1 (owner 25 Oct): the timeframes a chart can show (the candle route's ids, frontend src/chart/timeframes.ts) and
+# the starred favourites shown as one-click buttons beside the timeframe dropdown (default 5m, 15m, 1H, D).
+ChartTimeframe = Literal["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"]
+DEFAULT_TIMEFRAME_FAVOURITES: Tuple[str, ...] = ("5min", "15min", "60min", "day")
+
+
+def _unique_favourites(value: List[str]) -> List[str]:
+    if len(set(value)) != len(value):
+        raise ValueError("a timeframe is starred only once")
+    return value
+
+
 class ChartPrefs(_Prefs):
     """`chart`: one setting place for every chart (both chart tabs, Signals, Positions, the Option chain)."""
     theme: Literal["app", "light", "dark"] = Field(default="app", description="app = follow the app theme (which follows the device)")
@@ -96,6 +108,9 @@ class ChartPrefs(_Prefs):
     candle_colors: Optional[CandleColors] = None
     indicators: ChartIndicators = Field(default_factory=ChartIndicators)
     reader_overlay: bool = Field(default=False, description="the 'Reader zones & lines' overlay")
+    timeframe_favourites: Annotated[List[ChartTimeframe], AfterValidator(_unique_favourites)] = Field(
+        default_factory=lambda: list(DEFAULT_TIMEFRAME_FAVOURITES), max_length=9,
+        description="TF-1: the starred timeframes, shown as one-click buttons beside the dropdown (in this order)")
 
 
 EARLIEST_MARK = datetime(2020, 1, 1, tzinfo=timezone.utc)

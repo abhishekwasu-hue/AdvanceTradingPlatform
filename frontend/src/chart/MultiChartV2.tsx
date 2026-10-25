@@ -21,7 +21,8 @@ import {
 } from "./multiChart";
 import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, type TimeframeId } from "./timeframes";
 import { useChartCandles } from "./useChartCandles";
-import type { ChartPrefs } from "./useChartPrefs";
+import { useChartPrefs, type ChartPrefs } from "./useChartPrefs";
+import { TimeframePicker } from "../ui/TimeframePicker";
 
 /**
  * UI2-4d (Charts page plan §3, CH5): the Multi-chart tab of the v2 Charts page, shown while `chart_workspace` is on.
@@ -301,6 +302,8 @@ function Cell({
   const onEngine = useCallback((engine: LightweightEngine | null) => link.register(index, engine), [link, index]);
   useEffect(() => () => link.register(index, null), [link, index]);
   const n = index + 1;
+  // TF-1: the same starred timeframes as every other chart (the one `chart` prefs store of this user).
+  const tfPrefs = useChartPrefs(userId);
   const waiting = tf === null || data.loading || (!running && data.candles.length === 0);
   const emptyText = waiting ? "Loading prices…" : data.error ? "" : data.empty ?? `No prices for ${c.symbol} on this timeframe yet.`;
 
@@ -316,10 +319,8 @@ function Cell({
         </button>
         <SymbolPicker value={c.symbol} exchange={c.exchange} onPick={(p) => onSymbol(p.symbol, p.exchange)} storageKey={recentKeyFor(userId)}
           label={`Symbol of chart ${n}`} className="min-w-[7.5rem] flex-1" />
-        <label className="sr-only" htmlFor={`multi-tf-${index}`}>Timeframe of chart {n}</label>
-        <select id={`multi-tf-${index}`} value={shownTf} onChange={(e) => onTimeframe(e.target.value as TimeframeId)} className={field}>
-          {offered.map((t) => <option key={t} value={t}>{timeframeLabel(t)}</option>)}
-        </select>
+        <TimeframePicker offered={offered} value={shownTf} onChange={onTimeframe} compact maxFavourites={phone ? 0 : undefined} label={`Timeframe of chart ${n}`}
+          favourites={tfPrefs.prefs.timeframe_favourites} onFavourites={(next) => tfPrefs.update({ timeframe_favourites: next })} />
         <label className="sr-only" htmlFor={`multi-type-${index}`}>Chart type of chart {n}</label>
         <select id={`multi-type-${index}`} value={cellChartType(c.chart_type)} onChange={(e) => onType(e.target.value as CellV1["chart_type"])} className={field}>
           {CHART_TYPES_V2.map((t) => <option key={t} value={t}>{CHART_TYPE_LABELS_V2[t]}</option>)}

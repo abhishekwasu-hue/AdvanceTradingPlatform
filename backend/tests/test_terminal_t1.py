@@ -80,12 +80,12 @@ def _order(who: dict, **over) -> int:
 
 # --- the flag ------------------------------------------------------------------------------------------------------------
 
-def test_flag_is_registered_off_by_default_unfinished_and_out_of_the_trader_pack():
+def test_flag_is_registered_on_by_default_ready_and_out_of_the_trader_pack():
     assert "terminal" in controls.FEATURE_FLAGS
-    assert "terminal" in controls.DEFAULT_OFF_FLAGS
+    assert "terminal" in controls.DEFAULT_ON_FLAGS                       # owner ✅ 25 Oct (T-D1): ON for all users
     info = FLAG_INFO["terminal"]
-    assert info.status == "unfinished" and info.depends_on == ("ui_v2",) and info.area == "trading"
-    assert "terminal" not in trader_pack.PACK                              # TT-25: never in the pack before the owner's approval
+    assert info.status == "ready" and info.depends_on == ("ui_v2",) and info.area == "trading"
+    assert "terminal" not in trader_pack.PACK                              # ON by default, so the pack never needs it
     assert "terminal" in trader_pack.excluded() and "owner" in trader_pack.excluded()["terminal"]
 
 
@@ -182,6 +182,7 @@ def test_status_needs_both_flags_and_a_login():
     plain = _who("off", flags=())
     got = client.get("/api/terminal/status", headers=plain["headers"])
     assert got.status_code == 404 and got.headers.get("X-Feature-Disabled") == "ui_v2"
+    _set_flag("terminal", None, on=False)                                   # the operator can still switch it off
     v2_only = _who("v2only", flags=("ui_v2",))
     got = client.get("/api/terminal/status", headers=v2_only["headers"])
     assert got.status_code == 404 and got.headers.get("X-Feature-Disabled") == "terminal"

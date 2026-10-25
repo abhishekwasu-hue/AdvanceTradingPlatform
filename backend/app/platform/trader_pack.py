@@ -97,7 +97,7 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "chart_analyze_share": "Unfinished (needs Analyze a chart)",
     "chart_contracts": "Unfinished: needs the nightly download to have run; turn on later",
     "chart_futures_basis": "Unfinished: needs the nightly download to have run; turn on later",
-    "terminal": "Unfinished: stays off until the owner approves the Terminal screenshots (TT-25)",
+    "terminal": "ON by default for everyone (owner ✅ 25 Oct, T-D1), so the pack does not need it",
 }
 
 

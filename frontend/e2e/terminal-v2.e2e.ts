@@ -345,7 +345,7 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
       test(`tabs one at a time, the short status bar (${theme})`, async ({ page }) => {
         await open(page, theme);
         await expect(page.locator("[data-terminal-grid]")).toHaveCount(0);
-        await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Chart$/, /^Chain$/, /^Order$/, /^Positions\s*2$/, /^Orders$/, /^Bots$/]);
+        await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Chart$/, /^Chain$/, /^Order$/, /^Positions\s*2$/, /^Orders$/]);
         await expect(page.locator("[data-block='terminal-status'][data-compact]")).toBeVisible();
         await expect(page.locator("[data-status='margin']")).toHaveCount(0);
         await shot(page, `terminal-${size.width}-${theme}`);
@@ -360,7 +360,7 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
 
     test("no sideways scroll and 44 px targets on every tab; a chain price opens the Order tab", async ({ page }) => {
       await open(page, "light");
-      for (const tab of ["chart", "chain", "order", "positions", "orders", "bots"]) {
+      for (const tab of ["chart", "chain", "order", "positions", "orders"]) {      // "bots" hidden until T2/T3 (R6)
         await page.locator(`[data-tab='${tab}']`).tap();
         await expect(page.locator(`[data-phone-panel='${tab}']`)).toBeVisible();
         await settle(page);

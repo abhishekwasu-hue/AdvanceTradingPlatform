@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { orderGroup, statusWords, terminalApi, type TerminalStatus } from "./api";
 import {
-  COLUMNS, DEFAULT_PRESET, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PANEL_IDS, PHONE_TABS, PRESETS, PRESET_IDS, activeKey, changed, closePanel,
+  CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_PRESET, EMPTY_PREFS, MAX_LAYOUTS, HIDDEN_PANELS, PANELS, PANEL_IDS, PHONE_TABS, PRESETS, PRESET_IDS, activeKey, changed, closePanel,
   firstFree, forSave, layoutFor, layoutProblem, movePanel, nameProblem, openPanel, presetLayout, readPrefs, readingOrder, remove, rename,
   resetToPreset, resizePanel, saveAs, saveOver, switchTo, type Layout, type TerminalPrefs,
 } from "./layoutModel";
@@ -85,9 +85,10 @@ describe("layout model: move, resize, open, close", () => {
   });
 
   it("opening a closed panel finds a free place; closing keeps its place; the last open panel stays", () => {
-    const opened = openPanel(seller(), "bots");
+    // A closed panel reopens at its last place ("bots" / "payoff" are hidden until T2/T3, so "basket" closed first).
+    const opened = openPanel(closePanel(seller(), "basket"), "basket");
     expect(layoutProblem(opened)).toBeNull();
-    expect(opened.find((p) => p.id === "bots")?.open).toBe(true);
+    expect(opened.find((p) => p.id === "basket")).toMatchObject({ open: true, x: 5, y: 11 });
     const chart2 = openPanel(seller(), "chart-2");                                // never in the preset: added at a free place
     expect(chart2.find((p) => p.id === "chart-2")).toMatchObject({ open: true });
     expect(layoutProblem(chart2)).toBeNull();
@@ -263,9 +264,9 @@ describe("status bar", () => {
 
 describe("phone tabs", () => {
   it("T1-1: the shared PageTabs - one scrolling row, one selected, 44 px targets, the tab ids the panel names", () => {
-    expect(PHONE_TABS.map((t) => t.label)).toEqual(["Chart", "Chain", "Order", "Positions", "Orders", "Bots"]);
+    expect(PHONE_TABS.map((t) => t.label)).toEqual(["Chart", "Chain", "Order", "Positions", "Orders"]);
     const html = renderToStaticMarkup(<PhoneTabsV2 tab="order" onTab={() => undefined} counts={{ positions: 3 }} />);
-    expect(html.match(/role="tab"/g)).toHaveLength(6);
+    expect(html.match(/role="tab"/g)).toHaveLength(5);
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
     expect(html).toContain('data-level="primary"');                     // PageTabs, not the old 2 x 3 grid
     expect(html).toContain('data-mode="scroll"');                       // one row, never wrapped (W0-1)
@@ -469,5 +470,24 @@ describe("owner fixes T1-2 .. T1-7", () => {
   it("T1-7: the terminal chart's timeframe row is the shared TimeframeTabs", () => {
     expect(embeddedSource).toContain("<TimeframeTabs");
     expect(panelsSource).toContain("<EmbeddedChartV2");
+  });
+});
+
+describe("unbuilt panels stay hidden (R6, FN0 25 Oct)", () => {
+  it("Bots & signals and Payoff are never in the Panels menu, never on the phone, never opened, and a stored open one reads closed", () => {
+    expect([...HIDDEN_PANELS].sort()).toEqual(["bots", "payoff"]);
+    expect(CHOOSER_PANEL_IDS).not.toContain("bots");
+    expect(CHOOSER_PANEL_IDS).not.toContain("payoff");
+    expect(CHOOSER_PANEL_IDS.length).toBe(PANEL_IDS.length - 2);
+    expect(PHONE_TABS.map((t) => t.key)).not.toContain("bots");
+    const base = PRESETS.option_seller.panels;
+    expect(openPanel(base, "bots")).toEqual([...base]);
+    expect(openPanel(base, "payoff")).toEqual([...base]);
+    const stored = { layouts: { mine: { name: "Mine", underlying: null, panels: [
+      { id: "chart-1", x: 0, y: 0, w: 6, h: 8, open: true }, { id: "bots", x: 6, y: 0, w: 6, h: 6, open: true },
+      { id: "payoff", x: 0, y: 8, w: 6, h: 6, open: true }] } }, active: "mine" };
+    const read = readPrefs(stored);
+    const panels = read.layouts.mine.panels;
+    expect(panels.filter((x) => x.open).map((x) => x.id)).toEqual(["chart-1"]);
   });
 });

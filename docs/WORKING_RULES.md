@@ -125,7 +125,8 @@ again AFTER every compaction, before acting. Begin each report to Abhi with: "Ru
 - No secrets in git / logs / chat. This repo is PUBLIC: no strategy-sensitive content (KB, Method Pack, golden fixtures,
   charts, journal), no server addresses or credentials; the private method lives in atp-private.
 - Never run anything on the server yourself. Abhi runs ONE consolidated command. Say whether a migration is needed
-  (if yes: after 15:30 IST, unless Abhi says otherwise).
+  (if yes: any time while nobody practises on ATP yet; from the day Abhi says practice started, after 15:30 IST
+  on trading days - DECISIONS 25 Oct).
 - ATP uses its OWN Upstox app / API key, never the Trade bot's (a new login there kills the bot's token). Default data
   connection: the Upstox Analytics Token.
 
@@ -153,7 +154,7 @@ again AFTER every compaction, before acting. Begin each report to Abhi with: "Ru
   su - atp -c "/opt/atp/deploy/atp.sh deploy && /opt/atp/deploy/atp.sh health"
   ```
 
-  A migration: Abhi runs it after 15:30 IST (`MIGRATION_FORCE=1` only when he says so).
+  A migration: any time until practice starts (DECISIONS 25 Oct); then after 15:30 IST (`MIGRATION_FORCE=1` only when he says so).
 - Production: https://aialgodesk.tech (Hostinger KVM 2, `/opt/atp`, user `atp`; the www redirect is live). R2 off-site
   backup is not set up yet (owner).
 - Flags turned OFF by Abhi on 21 Oct: `self_signup`, `scan_auto_paper`, `marketplace`, `public_api`. `ui_v2` is ON. New

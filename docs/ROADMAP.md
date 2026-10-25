@@ -58,6 +58,19 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-7 | Smart execution ON | row 20 Part 7 (#474 merged) | flag ON; basket confirm step checked on production |
 | P1-8 | WL1 Watchlists (J2): ready-made system lists (Indices, Index stocks, Sectors, F&O) + own lists, live prices, phone layout | handover item 4; INBOX 24 Oct | `watchlists` ON in production, the lists filled by the universe sync, a Watchlist entry on the phone bar, live prices checked on production; owner ✅ on screenshots |
 
+### Phase P2-F — Every feature 100% functional on production with real broker data (owner 25 Oct; before Phase 2 items)
+Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress; one PR per item. Source: ATP_ORDER_P2F_FUNCTIONAL.md.
+| ID | Item | Source | Done when |
+|---|---|---|---|
+| FN0 | Functional audit: every user-facing feature + flag -> works / partial / broken / hidden-unfinished, evidence, fix item (merged with the P2-1 flag audit) | ATP_ORDER_P2F_FUNCTIONAL.md | one table for the owner; nothing half-built visible (R6) |
+| FN1 | Definition of done for every feature (e2e main journey, production with own broker data phone + desktop, (?) help, flag ON or removed, logs + alerts, no sev-1/2, plain errors) | same | written into WORKING_RULES + a per-feature checklist used by FN7 |
+| FN2 | Indicator screener (Chartink-class: indicators, F&O OI/PCR, 1m-monthly, operators, crosses, n bars ago, AND/OR, multi-TF, math, universes, schedule, results actions, library, alerts, scan history) | same | FN1 checklist ticked on production |
+| FN3 | Custom indicators: formula builder, validation, chart preview, personal library, usable in screeners + strategies, safe sandbox with limits | same | FN1 checklist ticked on production |
+| FN4 | Indicator-based algo strategies: builder, options strikes + spreads, size from settings, SX exits, time windows as settings, ONE engine backtest = paper = live (parity), costs, metrics, forward test, logs, parallel, kill switches; LIVE behind owner's switch | same | FN1 checklist + parity test on production |
+| FN5 | AI connectivity + AI-assisted decisions: own key + test connection, Copilot jobs end to end, plain words -> builder (review + save, never auto-run), signal explanation, AI call log + limits, clear errors; AI never touches orders | same | FN1 checklist ticked on production |
+| FN6 | Live-automation compliance note (SEBI retail algo framework): what ATP does / misses / owner's steps (owner + lawyer before LIVE) | same | note delivered to the owner |
+| FN7 | Proof per item: production screenshots phone + desktop with real data, short recording, e2e test name, FN1 checklist; chart reader hidden with an honest status until P5-1 | same | one proof page per item, owner ✅ |
+
 ### Phase 2 — Turn ON and prove what is already built (J3, J5, J7)
 | ID | Item | Source | Done when |
 |---|---|---|---|
@@ -68,6 +81,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P2-5 | Analyze a chart ON (beta) | row 10 | works with a vision key; strikes from his own settings only |
 | P2-6 | Help centre + page tours complete | rows 6, 8 | J7 checked |
 | P2-7 | Positions for options sellers + Performance page | row 20 Parts 2, 4 | J3 end (Performance) checked |
+| P2-8 | Journal v2 (J1-J6): broker sync, chart image, spread view, plan vs actual; 20-second check-in; daily / weekly / monthly reviews; My proof; if-then plans + process goals; Telegram / e-mail; page tabs (extends app/journal + discipline_engine) | ATP_SESSION_JOURNAL.md | 3 PRs with tests + screenshots; owner ✅ on each; billing in P5-2 |
 
 ### Phase 3 — Production readiness (J8) — starts in PARALLEL with Phase 2
 | ID | Item | Source | Done when |
@@ -111,9 +125,11 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 ## Status table (the session keeps this current; one line per item)
 | ID | Status | Next action | PR |
 |---|---|---|---|
-| UI-H | in progress | audit approved (#503); Wave 0 in review: shared components in src/ui (PageHeader, StatusBadge, SummaryCard, SubTabs, HelpPopover, IndianNumber, ResponsiveTable, ChartFrame, Disclaimer, UnavailableState) and every in-app tab row on PageTabs (primary, underline) or SubTabs (secondary, filled), no wrapping, timeframes + More (owner fixes W0-1 / W0-2; 3 legacy rows listed in the guard); next Wave 1 | #503, #510 |
+| UI-H | in progress | Wave 0 fixes ✅ (25 Oct), #510 merging; page waves carry H9 (phone titles never truncated, e.g. "Sectors & ind…") and W0-4 (ISO dates -> "27 Oct 2026"); then Wave 1 | #503, #510 |
 | UI-H-BUG | in progress | bug lane: C1 (merged #506: history ends at the last session close, empty state with its reason, `atp.sh probe-candles`), B2a/B2b (merged #507: "as of" the last session close, "Spot: last close", `atp.sh probe-chain`), B3+B4+Orders time (merged #508), A1 (merged #505), B1 (#509: own-broker chain reads = the user's session snapshots; Analyses / Charts / OI reads no longer refused) - small PRs, each with proof | C1: #506; B2: #507; B3/B4: #508; A1: #505; B1: #509 |
-| UI-H-CA | in progress | CA1-CA4 project-wide in the shared colour_v2 tokens + UI-H components (user + admin), no page-local colours (test guard); section tints adopted per page in Waves 1-5; proof page Today / Charts / Option chain / Terminal with a colour-blind check | - |
+| UI-H-CA | in progress | CA1-CA8 ✅ (25 Oct); fix CA6-1 distinct bottom-nav hues (Today blue, Charts violet, Signals amber, My trades pink, More teal; AA + colour-blind check), Option chain spot = chart feed check; then merge #534 | #534 |
+| UI-H-DM | in progress | dark-mode contrast DM1-DM5 in colour_v2 dark tokens (surfaces, borders >= 3:1, icons/labels >= 4.5:1, primary + active >= 7:1, Appearance "High contrast", ratio test); stacked on #534; phone comparison page (dark, normal + high contrast) | - |
+| UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
 | CP-V | in progress | independent review of ATP_ORDER_CP_V.md against the code first; build after DATA-H (CV1 lake fallback) | - |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |
@@ -122,11 +138,13 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-3 | waiting for owner | deploy, universe sync ON, "Enable trader features"; then day-one test on production | #470 |
 | P1-4 | in progress | verify which chart pages still bypass the core; gestures; phone recording | row 18 |
 | P1-5 | waiting for owner | `data_hub` ON via "Enable trader features" after the deploy; API-call numbers before / after | - |
-| P1-6 | in progress | T1 approved with fixes T1-1..T1-7 (24 Oct); `terminal` ON after their comparison page. T2 target 29 Oct: TT-1 LIVE sender (own PR; LIVE switch stays the owner's), TT-9 partial exit + reverse, TT-10 modify / cancel (PAPER). T3 target 2 Nov: spot / premium exit triggers, group exits, trailing (on the TM-2 engine) | #493 |
-| P1-6c | in progress | PR 1 #524 approved (25 Oct) and merged; PR 2 #527 merged; CX-F1 + CX-F2 server side in review; next (stale leg price, never a silent wait) + CX-F2 (CRITICAL notice on Telegram with "Exit short now"), then PR 3 sheet + chip | #524, #527 |
+| P1-6 | in progress | T1 + fixes ✅ (25 Oct): #510 + #493 merged; `terminal` ON by default merged (#533, T-D1), live after the deploy; the two unbuilt panels hidden (#539). T2 target 29 Oct: TT-1 LIVE sender (own PR; LIVE switch stays the owner's), TT-9 partial exit + reverse, TT-10 modify / cancel (PAPER). T3 target 2 Nov | #493 |
+| P1-6c | in progress | PR 1 #524 + PR 2 #527 merged; CX-F1 (stale leg price, never a silent wait) + CX-F2 (CRITICAL notice with "Exit short now") merged (#529, migration c7e9a1b3d5f2); next PR 3 sheet + chip + the confirm button | #524, #527, #529 |
 | P1-6d | review | same review as P1-6c; build with / right after CX (same engine) | - |
 | P1-8 | in progress | on main: server lists + Charts watchlist panel (chooser, search, sort, copy to my list, live ticks with `data_hub`). Missing: `watchlists` flag OFF in production; lists empty until the universe sync runs (P1-3); no Watchlist entry of its own on the phone bar (only inside Charts). Plan: (1) owner turns on via "Enable trader features" + System tab refresh; (2) W-PR: Watchlist page / phone bar entry using the same panel, behind ui_v2; (3) screenshots for ✅ | - |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
+| FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
+| FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |
 | P2-1 | not started | next free P1 slot: one flag-audit table with a recommendation per flag | - |
 | P2-2 | not started | Copilot jobs 1-8 + own key + tools end to end (parts built, flags) | - |
 | P2-3 | not started | templates / ideas / wave templates from the Paper bot (parts built) | - |
@@ -134,6 +152,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P2-5 | not started | Analyze a chart ON (beta) | - |
 | P2-6 | not started | help centre + page tours complete | - |
 | P2-7 | not started | positions for options sellers + Performance page | - |
+| P2-8 | not started | Journal v2 J1 -> J2+J3 -> J4+J5+J6 (3 draft PRs); starts when the max-3 rule allows | - |
 | P3-1 | waiting for owner | the R2 bucket + key escrow, then the restore drill | - |
 | P3-2 | not started (parallel) | monitoring + alerts (parts built, row 17) | - |
 | P3-3 | not started (parallel) | rollback test of `atp.sh` | - |

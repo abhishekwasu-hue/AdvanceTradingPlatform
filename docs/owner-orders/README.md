@@ -34,6 +34,9 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Token budget rules TB-1..TB-9 | INBOX 2026-10-24 | all | binding since 24 Oct |
 | - | Combined exit (CX1-CX7) + strategy exits at entry (SX1-SX8) | ATP_ORDER_CX_SX.md | P1-6c, P1-6d | review first |
 | - | Trader protection F1-F8 | ATP_ORDER_TRADER_PROTECTION.md | TP-1..TP-8 | after Phase 1 |
-| - | Colour accents CA1-CA5 | ATP_ORDER_UI_H_CA.md | UI-H-CA | after #510 |
+| - | Colour accents CA1-CA5 (✅ desktop) + phone CA6-CA8 | ATP_ORDER_UI_H_CA.md | UI-H-CA | #534 |
+| - | Dark mode contrast DM1-DM5 | ATP_ORDER_UI_H_DM.md | UI-H-DM | after #534 |
+| - | P2-F every feature 100% functional on production (FN0-FN7) | ATP_ORDER_P2F_FUNCTIONAL.md | FN0-FN7 | FN0 first |
+| - | Journal v2 J1-J6 | ATP_SESSION_JOURNAL.md | P2-8 | waiting for a free slot |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

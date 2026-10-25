@@ -106,7 +106,10 @@ REQUIRED_KEYS=(POSTGRES_PASSWORD JWT_SECRET_KEY SECRETS_ENCRYPTION_KEY METRICS_T
 LIVE_SWITCHES=(LIVE_MARKET_PROTECTION LIVE_UPSTOX_OPTION_STOP_LIMIT LIVE_EXIT_IF_NO_STOP LIVE_STRICT_WING_FILL STATIC_IP_REQUIRED_FOR_LIVE)
 APP_IMAGES=(atp-backend atp-worker atp-frontend atp-research-worker atp-backup)
 # WL1-4: the only keys `env-set` may write - plain switches, never a secret or a LIVE switch.
-ENV_SET_KEYS=(UNIVERSE_SYNC_ENABLED UNIVERSE_SYNC_HOUR_IST INSTRUMENT_SYNC_EXCHANGES INSTRUMENT_SYNC_HOUR_IST)
+# Owner 25 Oct: also the history owner's organisation (HB0) - the id and its name, e.g. the placeholder "My Organisation"
+# the owner gives his organisation until he picks a name (never hard-coded; the name may hold spaces, @ and +).
+ENV_SET_KEYS=(UNIVERSE_SYNC_ENABLED UNIVERSE_SYNC_HOUR_IST INSTRUMENT_SYNC_EXCHANGES INSTRUMENT_SYNC_HOUR_IST
+              HISTORY_OWNER_TENANT_ID HISTORY_OWNER_TENANT_NAME)
 ENV_BACKUPS_KEEP=10
 
 RELEASE=""          # image tag compose uses (ATP_RELEASE)
@@ -2669,7 +2672,14 @@ cmd_env_set() {
     allowed=0
     for k in "${ENV_SET_KEYS[@]}"; do if [ "$k" = "$key" ]; then allowed=1; fi; done
     [ "$allowed" = "1" ] || die "$key is not a setting env-set may change (only: ${ENV_SET_KEYS[*]}). Secrets and LIVE switches are edited by hand in $ENV_FILE." 2
-    [[ "$val" =~ ^[A-Za-z0-9_.,:-]{1,64}$ ]] || die "the value for $key may hold only letters, digits and _ . , : - (1 to 64 characters)" 2
+    if [ "$key" = "HISTORY_OWNER_TENANT_ID" ]; then
+      [[ "$val" =~ ^[1-9][0-9]{0,9}$ ]] || die "the value for $key is the organisation's number (digits only)" 2
+    elif [ "$key" = "HISTORY_OWNER_TENANT_NAME" ]; then
+      [[ "$val" =~ ^[A-Za-z0-9_.,:@+-]([A-Za-z0-9_.,:@+\ -]{0,62}[A-Za-z0-9_.,:@+-])?$ ]] \
+        || die "the value for $key is the organisation's name exactly as the Team page shows it: letters, digits, spaces and _ . , : @ + - (1 to 64 characters, no space at either end)" 2
+    else
+      [[ "$val" =~ ^[A-Za-z0-9_.,:-]{1,64}$ ]] || die "the value for $key may hold only letters, digits and _ . , : - (1 to 64 characters)" 2
+    fi
   done
   lock 0
   check_env

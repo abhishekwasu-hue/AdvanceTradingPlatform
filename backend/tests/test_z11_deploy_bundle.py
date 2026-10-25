@@ -1785,6 +1785,20 @@ def test_env_set_refuses_secrets_live_switches_and_odd_values_without_writing(ho
     assert dry.returncode == 0 and "would be written" in dry.stdout and host.env_digest() == digest
 
 
+
+def test_env_set_writes_the_history_owner_and_its_placeholder_name(host):
+    # Owner 25 Oct: the organisation name is the placeholder "My Organisation" from config, never hard-coded.
+    res = host.run("env-set", "HISTORY_OWNER_TENANT_ID=1", "HISTORY_OWNER_TENANT_NAME=My Organisation")
+    assert res.returncode == 0, res.all
+    after = _env_text(host)
+    assert "HISTORY_OWNER_TENANT_ID=1\n" in after and after.endswith("HISTORY_OWNER_TENANT_NAME=My Organisation\n")
+    digest = host.env_digest()
+    for args in (("HISTORY_OWNER_TENANT_ID=abc",), ("HISTORY_OWNER_TENANT_ID=0",), ("HISTORY_OWNER_TENANT_NAME= My Organisation",),
+                 ("HISTORY_OWNER_TENANT_NAME=My Org; rm -rf /",), ("HISTORY_OWNER_TENANT_NAME=",)):
+        bad = host.run("env-set", *args)
+        assert bad.returncode == 2, (args, bad.all)
+    assert host.env_digest() == digest
+
 def test_lists_sync_refuses_until_the_owner_switched_the_sync_on(host):
     assert host.run("deploy").returncode == 0
     since = len(host.state["calls"])

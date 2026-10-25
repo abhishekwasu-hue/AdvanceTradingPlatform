@@ -604,9 +604,14 @@ async def reconcile_on_start(session: AsyncSession, now: Optional[datetime] = No
 # --- combined exits (CX / SX, app/execution/group_exits.py) -------------------------------------------------------------
 
 async def _group_reading(row: GroupExitRecord, legs: List[Dict[str, Any]], reader: _Prices, candles: Optional[CandleFn],
-                         now: datetime, exits: Optional[Dict[int, float]] = None) -> Optional[str]:
-    """SL / TARGET when the group's measure reached it on this reading; None: not reached or no reading this pass (any
-    leg without a price -> no decision on part of a group, never a made-up value)."""
+                         now: datetime, exits: Optional[Dict[int, float]] = None,
+                         last_traded: Optional[Dict[int, Tuple[float, Optional[datetime]]]] = None) -> Optional[str]:
+    """SL / TARGET when the group's measure reached it on this reading; None: not reached or no reading this pass.
+
+    CX-F1 (owner, 25 Oct): a ₹ / premium stop never waits silently on one leg without a fresh price - that leg counts at
+    its last traded price (`last_traded`: the monitor's last price, else its entry), marked stale on the exit
+    (`stale_json`, shown on the chip); a notice goes out once the leg stays stale for QUOTE_MAX_STALE_SECONDS. A spot
+    level never needs leg prices."""
     if row.check_mode == gx.CLOSE:
         if candles is None or not row.timeframe_minutes or not row.spot_symbol or not row.spot_exchange:
             return None
@@ -634,6 +639,15 @@ async def _group_reading(row: GroupExitRecord, legs: List[Dict[str, Any]], reade
         open_legs = [leg for leg in legs if int(leg["trade_id"]) not in booked]
         prices = {int(leg["trade_id"]): p for leg in open_legs
                   if (p := await reader.get(str(leg["symbol"]), str(leg["exchange"]))) is not None}
+        stale: List[Dict[str, Any]] = []
+        for leg in open_legs:
+            tid = int(leg["trade_id"])
+            if tid not in prices and last_traded and tid in last_traded:
+                price, seen = last_traded[tid]
+                prices[tid] = price
+                stale.append({"trade_id": tid, "symbol": leg["symbol"], "price": price,
+                              "seen_at": seen.isoformat() if seen else None})
+        gx.mark_stale(row, stale, now)
         if row.measure == gx.MTM_INR:                  # a leg closed by hand counts at its booked exit price (CXQ-2)
             value = gx.mtm(legs, {**prices, **booked})
         else:
@@ -660,14 +674,19 @@ async def _claim_group(session: AsyncSession, row: GroupExitRecord, kind: str, n
     return True
 
 
-async def _group_notify(session: AsyncSession, row: GroupExitRecord, title: str, message: str, *, critical: bool = False) -> None:
+async def _group_notify(session: AsyncSession, row: GroupExitRecord, title: str, message: str, *, critical: bool = False,
+                        warning: bool = False, action: Optional[Dict[str, Any]] = None) -> None:
     from app.core.enums import NotificationSeverity, NotificationType
     from app.notifications.service import notify
     try:
-        await notify(session, row.tenant_id, NotificationType.SYSTEM_FAILURE if critical else NotificationType.EXIT,
-                     title=title, message=message, user_id=row.user_id,
-                     severity=NotificationSeverity.CRITICAL if critical else NotificationSeverity.INFO,
-                     metadata_json=json.dumps({"group_exit": row.id}))
+        severity = (NotificationSeverity.CRITICAL if critical else
+                    NotificationSeverity.WARNING if warning else NotificationSeverity.INFO)
+        meta: Dict[str, Any] = {"group_exit": row.id}
+        if action:
+            meta["action"] = action
+        await notify(session, row.tenant_id, NotificationType.SYSTEM_FAILURE if (critical or warning) else NotificationType.EXIT,
+                     title=title, message=message, user_id=row.user_id, severity=severity,
+                     related_trade_id=(action or {}).get("trade_id"), metadata_json=json.dumps(meta))
     except Exception:  # noqa: BLE001 - a notification never undoes the exit
         logger.exception("Trigger engine: notification for combined exit %s failed", row.id)
         await session.rollback()
@@ -687,6 +706,9 @@ async def _close_group_legs(session: AsyncSession, row: GroupExitRecord, reader:
                 await book.cancel_for_trade(session, t.id, "Cancelled: your combined exit is closing this position", now)
             await session.commit()
         prices = {t.id: p for t in still_open if (p := await reader.get(t.symbol, await venue_for(session, t))) is not None}
+        for t in still_open:                           # CX-F1: no fresh quote -> the leg's real last traded price (never its entry)
+            if t.id not in prices and t.mark_price is not None:
+                prices[t.id] = float(t.mark_price)
         spot: Optional[float] = None
         if row.spot_symbol and row.spot_exchange:
             spot = await reader.get(row.spot_symbol, row.spot_exchange)
@@ -710,10 +732,13 @@ async def _close_group_legs(session: AsyncSession, row: GroupExitRecord, reader:
     gx.add_log(row, gx.FIRING, f"Still open: {names} - tried again next pass", now)
     await session.commit()
     if row.passes_firing == gx.STUCK_ALERT_PASSES:
+        short = next((t for t in still_open if gx.is_short(t)), None)
+        action = gx.exit_short_action(short) if short is not None else None
+        link = f" Exit the short now: {action['url']}" if action else ""
         await _group_notify(session, row, "Combined exit: legs still open",
                             f"Your combined exit fired, but these legs are still open after {row.passes_firing} tries: {names}. "
-                            "They are tried again on every pass (sold legs first). Check the position at the broker.",
-                            critical=True)
+                            f"They are tried again on every pass (sold legs first). Check the position at the broker.{link}",
+                            critical=True, action=action)
 
 
 async def run_group_exits(session: AsyncSession, tenant_id: int, reader: _Prices, *, candles: Optional[CandleFn] = None,
@@ -739,7 +764,12 @@ async def run_group_exits(session: AsyncSession, tenant_id: int, reader: _Prices
                     await session.commit()
                     continue
                 exits = {t.id: float(t.exit_price) for t in trades if t.exit_time is not None and t.exit_price is not None}
-                kind = await _group_reading(row, gx.legs_of(row), reader, candles, now, exits)
+                last_traded = {t.id: gx.last_traded(t) for t in trades if t.exit_time is None}
+                kind = await _group_reading(row, gx.legs_of(row), reader, candles, now, exits, last_traded)
+                if gx.stale_notice_due(row, now):
+                    await _group_notify(session, row, "Combined exit: a leg has no fresh price",
+                                        gx.stale_words(row) + " Your combined exit keeps watching on its last traded price.",
+                                        warning=True)
                 await session.commit()                     # the reading the exit was judged on
                 if kind is None or not await _claim_group(session, row, kind, now):
                     continue

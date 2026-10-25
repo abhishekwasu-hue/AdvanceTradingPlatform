@@ -20,7 +20,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -171,6 +171,62 @@ def trail(row: GroupExitRecord) -> List[Dict[str, Any]]:
     return log if isinstance(log, list) else []
 
 
+def last_traded(trade: TradeRecord) -> Tuple[float, Optional[datetime]]:
+    """CX-F1: a leg's last traded price when no fresh quote came this pass - the monitor's last price (`mark_price`),
+    else its entry price - with when it was seen (None for the entry)."""
+    if trade.mark_price is not None:
+        return float(trade.mark_price), trade.mark_time
+    return float(trade.entry_price), None
+
+
+def stale_state(row: GroupExitRecord) -> Dict[str, Any]:
+    try:
+        state = json.loads(row.stale_json or "{}")
+    except ValueError:
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def mark_stale(row: GroupExitRecord, legs: List[Dict[str, Any]], now: datetime) -> None:
+    """Record which legs were read at their last traded price this pass (cleared when every leg is fresh again)."""
+    if not legs:
+        row.stale_json = None
+        return
+    state = stale_state(row)
+    since = state.get("since") or _now(now).isoformat()
+    row.stale_json = json.dumps({"since": since, "legs": legs, "notified": bool(state.get("notified"))})
+
+
+def stale_notice_due(row: GroupExitRecord, now: datetime) -> bool:
+    """True once per stale spell: a leg has stayed on its last traded price for QUOTE_MAX_STALE_SECONDS (marks it told)."""
+    from app.core.config import QUOTE_MAX_STALE_SECONDS
+    state = stale_state(row)
+    if not state.get("legs") or state.get("notified"):
+        return False
+    since = datetime.fromisoformat(str(state["since"]))
+    since = since if since.tzinfo else since.replace(tzinfo=timezone.utc)
+    if (_now(now) - since).total_seconds() < QUOTE_MAX_STALE_SECONDS:
+        return False
+    state["notified"] = True
+    row.stale_json = json.dumps(state)
+    return True
+
+
+def stale_words(row: GroupExitRecord) -> str:
+    legs = stale_state(row).get("legs") or []
+    parts = [f"{leg['symbol']} (last traded {float(leg['price']):,.2f})" for leg in legs]
+    return ("No fresh price for " + ", ".join(parts) + ".") if parts else ""
+
+
+def exit_short_action(trade: TradeRecord) -> Dict[str, Any]:
+    """CX-F2: the one-tap "Exit short now" the CRITICAL notice carries - it opens the position's own exit with its
+    confirm step in the app (`POST /api/paper/fno/positions/{id}/exit-leg`, never blocked); the link is for Telegram."""
+    from app.core.config import FRONTEND_URL
+    base = FRONTEND_URL.rstrip("/") if FRONTEND_URL.startswith("http") else ""
+    return {"kind": "exit_short", "label": "Exit short now", "trade_id": trade.id, "symbol": trade.symbol,
+            "confirm": True, "path": f"/positions?exit={trade.id}", "url": f"{base}/positions?exit={trade.id}"}
+
+
 def describe(row: GroupExitRecord) -> str:
     """The exit in plain words (CX6 / SX5): numbers are the user's own."""
     n = len(legs_of(row))
@@ -221,7 +277,7 @@ def view(row: GroupExitRecord) -> Dict[str, Any]:
             "check_mode": row.check_mode, "timeframe_minutes": row.timeframe_minutes, "status": row.status,
             "fired_kind": row.fired_kind, "last_value": _float(row.last_value), "distance": distance(row),
             "version": row.version, "legs": legs_of(row), "words": describe(row), "note": row.status_note,
-            "trail": trail(row)}
+            "stale": stale_state(row).get("legs") or [], "trail": trail(row)}
 
 
 def ask_errors(ask: GroupExitAsk, trades: Sequence[TradeRecord]) -> List[str]:
@@ -425,4 +481,5 @@ __all__ = ["ARMED", "FIRING", "DONE", "CANCELLED", "MTM_INR", "NET_PREMIUM", "SP
            "SL", "TARGET", "GroupExitAsk", "GroupExitError", "is_short", "leg_view", "legs_of", "trade_ids", "mtm",
            "net_premium", "side_for", "reached", "decide", "describe", "view", "ask_errors", "create", "cancel",
            "list_for_user", "by_ref", "add_log", "trail", "STUCK_ALERT_PASSES", "distance", "all_open_ids",
-           "current_value", "edit"]
+           "current_value", "edit", "last_traded", "mark_stale", "stale_notice_due", "stale_words",
+           "exit_short_action", "stale_state"]

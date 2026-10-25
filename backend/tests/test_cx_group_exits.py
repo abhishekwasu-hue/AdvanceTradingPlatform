@@ -193,12 +193,71 @@ def test_two_passes_on_one_reading_fire_the_combined_exit_once(closes):
     assert _get(GroupExitRecord, row.id).status == gx.DONE and _get(GroupExitRecord, row.id).fired_kind == gx.TARGET
 
 
-def test_a_missing_price_on_any_leg_means_no_decision_this_pass(closes):
+def _mark(trade_id, price, at):
+    async def go():
+        async with _session_factory() as session:
+            trade = await session.get(TradeRecord, trade_id)
+            trade.mark_price, trade.mark_time = price, at
+            await session.commit()
+    _run(go())
+
+
+def _notices(t, title):
+    async def go():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(NotificationRecord).where(
+                NotificationRecord.tenant_id == t["tenant_id"], NotificationRecord.title == title)))
+    return _run(go())
+
+
+def test_a_hedge_with_no_quote_does_not_delay_a_stop_the_other_legs_already_breach(closes):
+    """CX-F1 (owner, 25 Oct): the hedge has no quote this pass; it counts at its last traded price, marked stale."""
     t = _org()
     short, hedge = _spread(t, "CXC")
-    row = _arm(t, [short, hedge], measure=gx.MTM_INR, sl_value=100.0)
-    _pass(t, {"CXCSHORT": 500.0})                                                # the hedge has no price
-    assert closes == [] and _get(GroupExitRecord, row.id).status == gx.ARMED
+    _mark(hedge, 45.0, NOW - timedelta(minutes=2))
+    row = _arm(t, [short, hedge], measure=gx.MTM_INR, sl_value=1000.0)
+    _pass(t, {"CXCSHORT": 130.0})                       # short -1500 + hedge (last traded 45) +250 = -1250
+    fired = _get(GroupExitRecord, row.id)
+    assert fired.fired_kind == gx.SL and fired.fired_value == -1250.0
+    assert closes == [short, hedge] and _get(TradeRecord, hedge).exit_price == 45.0      # closed at its real last price
+    assert [leg["trade_id"] for leg in gx.view(fired)["stale"]] == [hedge]
+
+
+def test_a_leg_without_any_traded_price_counts_at_its_entry_and_the_stop_still_fires(closes):
+    t = _org()
+    short, hedge = _spread(t, "CXC2")
+    row = _arm(t, [short, hedge], measure=gx.MTM_INR, sl_value=1000.0)
+    _pass(t, {"CXC2SHORT": 125.0})                      # short -1250, hedge at its entry 40 -> 0
+    assert _get(GroupExitRecord, row.id).fired_kind == gx.SL and closes[0] == short
+    assert _get(TradeRecord, hedge).exit_time is None    # never closed at a made-up price; tried again with a real one
+
+
+def test_a_stale_leg_is_told_once_after_the_stale_price_setting_and_cleared_when_fresh(closes, monkeypatch):
+    from app.core import config
+    monkeypatch.setattr(config, "QUOTE_MAX_STALE_SECONDS", 120)
+    t = _org()
+    short, hedge = _spread(t, "CXS")
+    _mark(hedge, 41.0, NOW)
+    row = _arm(t, [short, hedge], measure=gx.MTM_INR, sl_value=5000.0)
+    title = "Combined exit: a leg has no fresh price"
+    _pass(t, {"CXSSHORT": 101.0}, now=NOW)
+    assert _notices(t, title) == [] and gx.view(_get(GroupExitRecord, row.id))["stale"][0]["symbol"] == "CXSHEDGE"
+    _pass(t, {"CXSSHORT": 101.0}, now=NOW + timedelta(seconds=121))
+    _pass(t, {"CXSSHORT": 101.0}, now=NOW + timedelta(seconds=200))
+    told = _notices(t, title)
+    assert len(told) == 1 and told[0].severity == "WARNING" and "CXSHEDGE (last traded 41.00)" in told[0].message
+    _pass(t, {"CXSSHORT": 101.0, "CXSHEDGE": 41.5}, now=NOW + timedelta(seconds=210))
+    assert gx.view(_get(GroupExitRecord, row.id))["stale"] == [] and closes == []
+
+
+def test_a_spot_level_needs_no_leg_price(closes):
+    t = _org()
+    short, hedge = _spread(t, "CXV")
+    row = _arm(t, [short, hedge], now_value=23800.0, measure=gx.SPOT, sl_value=24000.0, spot_symbol="NIFTY 50",
+               spot_exchange="NSE")
+    _pass(t, {"NIFTY 50": 24010.0})                     # no leg quotes at all
+    fired = _get(GroupExitRecord, row.id)
+    assert fired.fired_kind == gx.SL and gx.view(fired)["stale"] == []
 
 
 def test_a_leg_closed_by_hand_counts_at_its_booked_price_and_the_rest_still_exit(closes):
@@ -320,6 +379,10 @@ def test_a_short_still_open_after_several_tries_raises_one_critical_notice_and_k
                 NotificationRecord.tenant_id == t["tenant_id"], NotificationRecord.title == "Combined exit: legs still open")))
     found = _run(notices())
     assert len(found) == 1 and found[0].severity == "CRITICAL" and "CXGSHORT" in found[0].message
+    action = json.loads(found[0].metadata_json)["action"]                  # CX-F2: one tap, with its confirm step
+    assert action["kind"] == "exit_short" and action["label"] == "Exit short now" and action["confirm"] is True
+    assert action["trade_id"] == short and action["path"] == f"/positions?exit={short}" and action["url"] in found[0].message
+    assert found[0].related_trade_id == short
     assert _get(GroupExitRecord, row.id).status == gx.FIRING                     # an exit is never given up
 
 
@@ -522,3 +585,27 @@ def test_migration_b3f5d7e9a1c2_is_additive_and_round_trips(tmp_path):
             with Operations.context(ctx):
                 module.downgrade()
             assert "group_exits" not in sa.inspect(conn).get_table_names()
+
+
+def test_migration_c7e9a1b3d5f2_adds_one_nullable_column_and_round_trips(tmp_path):
+    import sqlalchemy as sa
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    path = BACKEND / "alembic" / "versions" / "c7e9a1b3d5f2_cx_f1_group_exits_stale.py"
+    spec = importlib.util.spec_from_file_location("cx_f1_migration_run", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.down_revision == "b3f5d7e9a1c2" and module.ROLLBACK_SAFE is True
+    eng = sa.create_engine(f"sqlite:///{tmp_path / 'm.db'}")
+    with eng.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE group_exits (id INTEGER PRIMARY KEY, note VARCHAR(10))"))
+        conn.execute(sa.text("INSERT INTO group_exits (id, note) VALUES (1, 'kept')"))
+        ctx = MigrationContext.configure(conn)
+        for _ in range(2):
+            with Operations.context(ctx):
+                module.upgrade()
+            cols = {c["name"]: c for c in sa.inspect(conn).get_columns("group_exits")}
+            assert cols["stale_json"]["nullable"] and conn.execute(sa.text("SELECT note FROM group_exits")).scalar() == "kept"
+            with Operations.context(ctx):
+                module.downgrade()
+            assert "stale_json" not in {c["name"] for c in sa.inspect(conn).get_columns("group_exits")}

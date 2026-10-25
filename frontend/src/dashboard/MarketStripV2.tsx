@@ -6,6 +6,7 @@ import { TermHint } from "../ui/TermHint";
 import { useColourV2 } from "../ui/colourV2";
 import { Sparkline } from "../ui/Sparkline";
 import { CARD, toneClass } from "./CardV2";
+import { HERO_CARD } from "../ui/accents";
 import { indexCaption, signTone, vixNote, type TodayPnl } from "./model";
 import type { Loadable } from "./useDashboardData";
 import type { MarketStrip, StripIndex } from "./types";
@@ -85,8 +86,9 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
   // CV-4 (owner, 24 Oct): on a phone the P&L comes first in the strip, above the indices and their sparklines, so it is
   // on screen when Today opens (390 x 844); from md up the order is as before.
   const pnlFirst = colour ? " max-md:order-first" : "";
+  // UI-H CA2: the Today hero card - the strip - wears the blue -> violet gradient outline (src/ui/accents.ts).
   return (
-    <section aria-label="Market" data-block="strip" data-tour="dashboard-strip" className={`${CARD} grid gap-space-4 p-space-4 md:p-space-5 ${L("xl:grid-cols-[repeat(3,minmax(0,1fr))_auto_auto] xl:gap-0 xl:p-0")}`}>
+    <section aria-label="Market" data-block="strip" data-tour="dashboard-strip" className={`${colour ? HERO_CARD : CARD} grid gap-space-4 p-space-4 md:p-space-5 ${L("xl:grid-cols-[repeat(3,minmax(0,1fr))_auto_auto] xl:gap-0 xl:p-0")}`}>
       {/* Item 1: on the narrowest phones (under 380 px; any phone at the larger text sizes) the two indices share a row
           and VIX takes the next one, so the prices stay large without spilling out of their cells. */}
       <div className={`grid grid-cols-2 gap-space-3 ${big ? "sm:grid-cols-3" : "min-[380px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.8fr)] xl:contents"}`}>

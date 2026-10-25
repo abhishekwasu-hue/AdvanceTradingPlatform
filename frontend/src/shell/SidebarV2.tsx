@@ -10,6 +10,8 @@ import StatusLink from "../status/StatusLink";
 import type { BrokerDot } from "../broker/brokerState";
 import { NAV_PINNED_V2, navDotFor, navEntryFor, type NavItemV2, type NavSectionV2, type ShellKey } from "./navModel";
 import { navIconClass } from "./navTone";
+import { SectionChip } from "../ui/SectionChip";
+import { sectionTintOf } from "../ui/accents";
 import { useColourV2 } from "../ui/colourV2";
 
 /**
@@ -80,7 +82,8 @@ function NavLink({ item, current, dot }: { item: NavItemV2; current: ShellKey | 
       className={`flex h-9 items-center gap-space-3 rounded-control [@media(pointer:coarse)]:h-11 px-space-2 text-t14 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
         active ? "bg-brand/10 font-semibold text-fg" : "font-medium text-fg-muted hover:bg-surface-2 hover:text-fg"
       }`}>
-      <Icon size={16} aria-hidden className={active ? "text-brand" : navIconClass(item.key, colour)} />
+      {/* UI-H CA3: with colour v2 the icon sits in its section's round tint chip (the row's own fill marks the page on screen). */}
+      {colour && sectionTintOf(item.key) ? <SectionChip navKey={item.key} icon={Icon} /> : <Icon size={16} aria-hidden className={active ? "text-brand" : navIconClass(item.key, colour)} />}
       <span className="truncate">{item.label}</span>
       {dot && <StatusDot dot={dot} announce className="ml-auto" />}
     </Link>

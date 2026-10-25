@@ -337,6 +337,102 @@ html { font-size: calc(100% * var(--text-scale)); }
   --oi-put: 2 132 199;
 }
 
+/* UI-H colour accents (owner order CA1-CA5, docs/owner-orders/ATP_ORDER_UI_H_CA.md; behind ui_v2 + colour_v2). Project
+   wide: only the shared UI-H components (src/ui/accents.ts, PageHeader, SummaryCard, Button, NewBadge, the nav) read
+   these; a page never picks a gradient, a section tint or a tone colour itself (src/ui/accentScope.test.ts). The base
+   and surfaces do not move (60 / 30 / 10): brand stays ATP blue, the accents are the 10 %.
+   - accent-2 / soft-accent-2 (CA1): the ONE secondary accent, a violet (text / icon 4.5 : 1 on cards, accents.test.ts).
+     Not the AI violet (--ai): that one stays for AI surfaces only;
+   - grad-from / grad-to / --accent-gradient (CA1, CA2): the ONE blue -> violet gradient, from the brand fill to a deep
+     violet, so white text on any point of it is AA. Used only on the page's single primary action, the "New" badge,
+     the Today hero card and the area-of-interest highlight - never on text, tables, the option chain, forms or charts;
+   - sec-<section> / sec-<section>-soft (CA3): the identity tint of each main navigation section (user and admin), the
+     icon on its round soft chip in the nav and in the PageHeader (4.5 : 1 on the chip, both themes). CA6-1 (owner,
+     25 Oct): the five bottom-bar destinations take five clearly different hues - Today blue, Charts violet, Signals
+     amber, My trades pink, More teal (sec-today / -charts / -signals / -trades / -more; CIEDE2000 >= 20 apart);
+   - tone-profit / tone-loss / tone-risk / tone-info (CA4): the soft background of a SummaryCard or a Today card by its
+     tone - always with a sign, an icon or a word as well (src/ui/tone.ts). Profit / loss follow the colour-blind swap. */
+:root {
+  --accent-2: 150 120 255;
+  --soft-accent-2: 34 24 76;
+  --grad-from: 29 78 216;
+  --grad-to: 109 40 217;
+  --accent-gradient: linear-gradient(120deg, rgb(var(--grad-from)), rgb(var(--grad-to)));
+  --sec-markets: 56 189 248;
+  --sec-markets-soft: 14 58 86;
+  --sec-trading: 45 212 191;
+  --sec-trading-soft: 12 66 66;
+  --sec-insights: 224 140 236;
+  --sec-insights-soft: 66 30 78;
+  --sec-account: 194 202 216;
+  --sec-account-soft: 40 50 74;
+  --sec-admin: 165 180 252;
+  --sec-admin-soft: 38 42 100;
+  --sec-broker: 96 165 250;
+  --sec-broker-soft: 30 52 105;
+  --sec-copilot: 167 139 250;
+  --sec-copilot-soft: 50 38 100;
+  --sec-today: 186 230 253;
+  --sec-today-soft: 20 64 96;
+  --sec-charts: 216 180 254;
+  --sec-charts-soft: 62 44 120;
+  --sec-signals: 252 211 77;
+  --sec-signals-soft: 69 46 8;
+  --sec-trades: 253 164 175;
+  --sec-trades-soft: 96 24 44;
+  --sec-more: 44 234 204;
+  --sec-more-soft: 14 70 72;
+  --tone-profit: 12 44 30;
+  --tone-loss: 46 16 22;
+  --tone-risk: 41 30 10;
+  --tone-info: 8 37 54;
+}
+
+:root[data-theme="light"] {
+  --accent-2: 124 58 237;
+  --soft-accent-2: 237 233 254;
+  --grad-from: 37 99 235;
+  --grad-to: 124 58 237;
+  --sec-markets: 3 105 161;
+  --sec-markets-soft: 224 242 254;
+  --sec-trading: 15 118 110;
+  --sec-trading-soft: 204 251 241;
+  --sec-insights: 162 28 175;
+  --sec-insights-soft: 250 232 255;
+  --sec-account: 71 85 105;
+  --sec-account-soft: 226 232 240;
+  --sec-admin: 67 56 202;
+  --sec-admin-soft: 224 231 255;
+  --sec-broker: 29 78 216;
+  --sec-broker-soft: 219 234 254;
+  --sec-copilot: 109 40 217;
+  --sec-copilot-soft: 237 233 254;
+  --sec-today: 7 89 133;
+  --sec-today-soft: 224 242 254;
+  --sec-charts: 109 40 217;
+  --sec-charts-soft: 237 233 254;
+  --sec-signals: 146 64 14;
+  --sec-signals-soft: 254 243 199;
+  --sec-trades: 157 23 77;
+  --sec-trades-soft: 252 231 243;
+  --sec-more: 17 94 89;
+  --sec-more-soft: 204 251 241;
+  --tone-profit: 236 253 243;
+  --tone-loss: 254 242 242;
+  --tone-risk: 255 251 235;
+  --tone-info: 240 249 255;
+}
+
+:root[data-cvd="on"] {
+  --tone-profit: 12 34 54;
+  --tone-loss: 52 30 12;
+}
+
+:root[data-theme="light"][data-cvd="on"] {
+  --tone-profit: 235 245 255;
+  --tone-loss: 255 244 232;
+}
+
 /* Colour v2, dark theme: clearer surface layers, so cards do not melt into the page - a deeper navy page, lighter
    cards with a visible outline and a firmer shadow. Set on <html> as `data-colour="v2"` by the v2 shell only while the
    `colour_v2` flag is on (portalled dialogs and sheets take it too). The chart background (--chart-bg) does not move. */

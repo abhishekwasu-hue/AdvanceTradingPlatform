@@ -245,19 +245,23 @@ describe("colour v2 on the pages (off = as before)", () => {
   it("Navigation: group-coloured icons and the active bottom-bar tab on a brand pill; off as before", () => {
     const sections = visibleSections({ on: () => false, role: "OWNER" });
     const sideOn = render(<SidebarV2View sections={sections} current="dashboard" user={null} accountPath="/login" />, true);
-    expect(sideOn).toContain("text-teal-accent");
-    expect(sideOn).toContain("text-nav-insights");
+    // UI-H CA3: the group colour now sits in each section's round tint chip (src/ui/accents.ts).
+    expect(sideOn).toContain("bg-sec-trading-soft text-sec-trading");
+    expect(sideOn).toContain("bg-sec-insights-soft text-sec-insights");
     const sideOff = render(<SidebarV2View sections={sections} current="dashboard" user={null} accountPath="/login" />, false);
-    expect(sideOff).not.toMatch(/text-(?:teal-accent|nav-insights|info)\b/);
+    expect(sideOff).not.toMatch(/text-(?:teal-accent|nav-insights|info)\b|data-section-chip/);
     const barOn = render(<BottomNavV2 current="signals" moreOpen={false} onMore={noop} />, true);
     expect(barOn.match(/data-nav-pill="true"/g)).toHaveLength(1);
-    expect(barOn).toMatch(/data-nav-pill="true" class="[^"]*bg-brand-tint text-brand/);
-    // CV-1: the bar's other tabs are neutral grey - no group colour in the bar (it stays in the sidebar and the sheet).
-    expect(barOn).not.toMatch(/text-(?:teal-accent|nav-insights|info|ai)\b/);
-    expect(barOn.match(/<span class="flex h-8 w-14[^"]*text-fg-muted"/g)).toHaveLength(4);
+    // UI-H CA6 (owner, 25 Oct; supersedes CV-1's neutral grey tabs): every tab on its section's soft round chip, the tab
+    // on screen on the strong tint (the solid section colour) with its word in that colour, bold.
+    expect(barOn).toMatch(/data-nav-pill="true" data-nav-tint="signals" class="[^"]*bg-sec-signals text-surface-1/);   // CA6-1: its own hue
+    expect(barOn.match(/data-nav-tint="[a-z]+" class="[^"]*bg-sec-[a-z]+-soft text-sec-[a-z]+/g)).toHaveLength(4);
+    expect(barOn).toMatch(/class="[^"]*text-sec-signals font-semibold"[^>]*>.*Signals/);
+    expect(barOn).not.toContain("bg-brand-tint");
     for (const current of ["dashboard", "charts", "positions", null] as const) {
       const bar = render(<BottomNavV2 current={current} moreOpen={false} onMore={noop} />, true);
-      expect(bar.match(/text-brand/g) ?? [], String(current)).toHaveLength(current ? 2 : 0);
+      expect(bar.match(/font-semibold/g) ?? [], String(current)).toHaveLength(current ? 1 : 0);
+      expect(bar.match(/data-nav-pill="true"/g) ?? [], String(current)).toHaveLength(current ? 1 : 0);
     }
     // CV-2: every word on one line (the bold active one included).
     expect(barOn.match(/<span data-nav-label="true" class="whitespace-nowrap">/g)).toHaveLength(5);

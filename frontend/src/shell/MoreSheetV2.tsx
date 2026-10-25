@@ -11,6 +11,8 @@ import type { BrokerDot } from "../broker/brokerState";
 import { moreSheetPinned, moreSheetSections, navDotFor, navEntryFor, searchPages, sectionTitle, type NavContext, type NavItemV2, type NavSectionV2, type SectionId, type ShellKey } from "./navModel";
 import StatusLink from "../status/StatusLink";
 import { navIconClass } from "./navTone";
+import { SectionChip } from "../ui/SectionChip";
+import { sectionTintOf } from "../ui/accents";
 import { useColourV2 } from "../ui/colourV2";
 
 /**
@@ -49,7 +51,7 @@ function Tile({ item, current, onPick, caption, dot = null }: { item: NavItemV2;
       className={`flex min-h-11 items-center gap-space-2 rounded-control px-space-3 py-space-2 text-t14 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
         active ? "bg-brand/10 text-fg" : "bg-surface-2 text-fg hover:bg-surface-3"
       }`}>
-      <Icon size={18} aria-hidden className={`shrink-0 ${active ? "text-brand" : navIconClass(item.key, colour)}`} />
+      {colour && sectionTintOf(item.key) ? <SectionChip navKey={item.key} icon={Icon} iconSize={18} /> : <Icon size={18} aria-hidden className={`shrink-0 ${active ? "text-brand" : navIconClass(item.key, colour)}`} />}
       <span className="min-w-0">
         <span className="block truncate">{item.label}</span>
         {caption && <span className="block truncate text-t12 font-normal text-fg-muted">{caption}</span>}

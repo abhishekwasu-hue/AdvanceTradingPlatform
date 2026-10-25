@@ -1,4 +1,5 @@
-import { sectionOf, type ShellKey } from "./navModel";
+import { sectionTintOf, type SectionTint } from "../ui/accents";
+import type { ShellKey } from "./navModel";
 
 /**
  * Colour v2 (owner, 23 Oct: "group icons tinted per group, muted"): the colour of a navigation icon while it is not
@@ -18,14 +19,15 @@ const ICON: Record<NavTone, string> = {
   neutral: "text-fg-muted",
 };
 
+/** UI-H CA3: read from THE section -> tint map (src/ui/accents.ts), so the plain icons and the chips agree. */
+const FROM_TINT: Record<SectionTint, NavTone> = {
+  markets: "info", trading: "teal", insights: "insights", account: "neutral", admin: "neutral", broker: "brand", copilot: "ai",
+  today: "info", charts: "info", signals: "teal", trades: "teal", more: "neutral",   // their groups (chips show the hue)
+};
+
 export function navTone(key: ShellKey | null): NavTone {
-  if (key === "broker") return "brand";
-  if (key === "copilot") return "ai";
-  const section = sectionOf(key);
-  if (section === "markets") return "info";
-  if (section === "trading") return "teal";
-  if (section === "insights") return "insights";
-  return "neutral";
+  const tint = sectionTintOf(key);
+  return tint ? FROM_TINT[tint] : "neutral";
 }
 
 /** The icon's class: its group colour with colour v2 on, the neutral muted colour (as before) with it off. */

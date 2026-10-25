@@ -58,6 +58,19 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-7 | Smart execution ON | row 20 Part 7 (#474 merged) | flag ON; basket confirm step checked on production |
 | P1-8 | WL1 Watchlists (J2): ready-made system lists (Indices, Index stocks, Sectors, F&O) + own lists, live prices, phone layout | handover item 4; INBOX 24 Oct | `watchlists` ON in production, the lists filled by the universe sync, a Watchlist entry on the phone bar, live prices checked on production; owner ✅ on screenshots |
 
+### Phase P2-F — Every feature 100% functional on production with real broker data (owner 25 Oct; before Phase 2 items)
+Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress; one PR per item. Source: ATP_ORDER_P2F_FUNCTIONAL.md.
+| ID | Item | Source | Done when |
+|---|---|---|---|
+| FN0 | Functional audit: every user-facing feature + flag -> works / partial / broken / hidden-unfinished, evidence, fix item (merged with the P2-1 flag audit) | ATP_ORDER_P2F_FUNCTIONAL.md | one table for the owner; nothing half-built visible (R6) |
+| FN1 | Definition of done for every feature (e2e main journey, production with own broker data phone + desktop, (?) help, flag ON or removed, logs + alerts, no sev-1/2, plain errors) | same | written into WORKING_RULES + a per-feature checklist used by FN7 |
+| FN2 | Indicator screener (Chartink-class: indicators, F&O OI/PCR, 1m-monthly, operators, crosses, n bars ago, AND/OR, multi-TF, math, universes, schedule, results actions, library, alerts, scan history) | same | FN1 checklist ticked on production |
+| FN3 | Custom indicators: formula builder, validation, chart preview, personal library, usable in screeners + strategies, safe sandbox with limits | same | FN1 checklist ticked on production |
+| FN4 | Indicator-based algo strategies: builder, options strikes + spreads, size from settings, SX exits, time windows as settings, ONE engine backtest = paper = live (parity), costs, metrics, forward test, logs, parallel, kill switches; LIVE behind owner's switch | same | FN1 checklist + parity test on production |
+| FN5 | AI connectivity + AI-assisted decisions: own key + test connection, Copilot jobs end to end, plain words -> builder (review + save, never auto-run), signal explanation, AI call log + limits, clear errors; AI never touches orders | same | FN1 checklist ticked on production |
+| FN6 | Live-automation compliance note (SEBI retail algo framework): what ATP does / misses / owner's steps (owner + lawyer before LIVE) | same | note delivered to the owner |
+| FN7 | Proof per item: production screenshots phone + desktop with real data, short recording, e2e test name, FN1 checklist; chart reader hidden with an honest status until P5-1 | same | one proof page per item, owner ✅ |
+
 ### Phase 2 — Turn ON and prove what is already built (J3, J5, J7)
 | ID | Item | Source | Done when |
 |---|---|---|---|
@@ -128,6 +141,8 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-6d | review | same review as P1-6c; build with / right after CX (same engine) | - |
 | P1-8 | in progress | on main: server lists + Charts watchlist panel (chooser, search, sort, copy to my list, live ticks with `data_hub`). Missing: `watchlists` flag OFF in production; lists empty until the universe sync runs (P1-3); no Watchlist entry of its own on the phone bar (only inside Charts). Plan: (1) owner turns on via "Enable trader features" + System tab refresh; (2) W-PR: Watchlist page / phone bar entry using the same panel, behind ui_v2; (3) screenshots for ✅ | - |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
+| FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
+| FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |
 | P2-1 | not started | next free P1 slot: one flag-audit table with a recommendation per flag | - |
 | P2-2 | not started | Copilot jobs 1-8 + own key + tools end to end (parts built, flags) | - |
 | P2-3 | not started | templates / ideas / wave templates from the Paper bot (parts built) | - |

@@ -146,7 +146,9 @@ describe("UI2-4e the v2 chart on other pages", () => {
     expect(html).toContain('aria-label="Chart settings"');
     expect(html).toMatch(/aria-label="Open in Chart tab"[^>]*href="\/charts\/NIFTY%2050\?tf=5min"/);
     const tfs = [...html.matchAll(/aria-pressed="(?:true|false)"[^>]*>([^<]+)</g)].map((m) => m[1]);
-    expect(tfs).toEqual(["1 min", "3 min", "5 min", "15 min", "30 min", "1 hour", "Daily"]);
+    // UI-H W0-1: the most-used timeframes in the row, the rest (3 min, 30 min) under More.
+    expect(tfs).toEqual(["1 min", "5 min", "15 min", "1 hour", "Daily"]);
+    expect(html).toContain('aria-label="More timeframes"');
     expect(html).not.toMatch(/candles via|refreshes every|as of|source/i);
   });
 

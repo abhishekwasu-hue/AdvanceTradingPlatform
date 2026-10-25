@@ -13,6 +13,7 @@ import { CandleSnapshotV2 } from "./CandleSnapshotV2";
 import CockpitV2, { type CockpitApi } from "./CockpitV2";
 import type { CockpitUnit } from "./cockpit";
 import { DESK_NOTE, PANELS, basketOn, chainAround, deskUnderlyings, heldOn, type DeskPanel } from "./desk";
+import { SubTabs } from "../ui/SubTabs";
 
 /**
  * F&O workspace 8b-i, slice 4: the F&O cockpit as a desk on My positions (pure parts in desk.ts). On a desktop the
@@ -69,14 +70,9 @@ export default function CockpitDeskV2({ units, alertsOn, deskApi = defaultApi, c
   const show = (p: DeskPanel) => cx(panel === p ? "block" : "hidden", "lg:block");
   return (
     <section aria-label="Your F&O desk" data-block="fno-desk" className="space-y-space-3">
-      <div className="grid grid-cols-4 gap-space-1 lg:hidden" role="tablist" aria-label="Show" data-desk="switch">
-        {PANELS.map((p) => (
-          <button key={p.key} type="button" role="tab" aria-selected={panel === p.key} onClick={() => setPanel(p.key)} data-desk-tab={p.key}
-            className={cx("inline-flex h-11 min-w-0 items-center justify-center rounded-control border px-space-1 text-t13 font-semibold",
-              panel === p.key ? "border-brand bg-brand text-on-brand" : "border-border bg-surface-1 text-fg")}>
-            {p.label}
-          </button>
-        ))}
+      <div className="lg:hidden">
+        <SubTabs label="Show" value={panel} onChange={setPanel} full data={{ desk: "switch" }}
+          items={PANELS.map((p) => ({ key: p.key, label: p.label, data: { "desk-tab": p.key } }))} />
       </div>
       {underlyings.length > 1 && (
         <div className="flex flex-wrap items-center gap-space-2 text-t13" data-desk="underlyings">

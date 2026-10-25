@@ -40,6 +40,15 @@ table {
   background: rgb(var(--border));
 }
 
+/* UI-H Wave 0 (H2, W0-1): a PageTabs / SubTabs row that scrolls sideways shows no scroll bar - the edge fades (drawn by
+   the component) say that more tabs sit to the side, and the active one is scrolled into view. */
+.subtabs-scroll {
+  scrollbar-width: none;
+}
+.subtabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 /* Placeholder text in inputs: the browser default grey was hard to read on the dark inputs. */
 input::placeholder,
 textarea::placeholder {

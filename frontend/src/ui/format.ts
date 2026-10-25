@@ -203,3 +203,44 @@ export function formatDateTimeIST(v: When, opts: { seconds?: boolean } = {}): st
   if (!Number.isFinite(ms)) return EMPTY;
   return `${formatDateIST(ms)}, ${formatTimeIST(ms, opts)}`;
 }
+
+// --- Compact Indian units (UI-H Wave 0, H4) -------------------------------------------------------------------------
+
+/**
+ * A count in compact Indian units, for OI, volume and other non-money figures: 1,52,00,000 -> "1.52 Cr",
+ * 6,00,000 -> "6 L", 59,000 -> "59 K", 950 -> "950". Below 1,000 the number is shown whole (or with `decimals` if
+ * asked by `small`). `decimals` (default 2) fixes the places of the scaled figure; trailing zeros are dropped unless
+ * `fixed` is set (a table column that must line up). Negatives use "−". Pair it with the full value on tap / hover
+ * (IndianNumber does this), since a compact figure hides the last digits.
+ */
+export function formatCompactIN(v: Num, opts: { decimals?: number; fixed?: boolean; small?: number } = {}): string {
+  if (!finite(v)) return EMPTY;
+  const decimals = opts.decimals ?? 2;
+  const abs = Math.abs(v);
+  const scale = (n: number, unit: string) => {
+    const text = magnitude(abs / n, decimals);
+    return `${opts.fixed ? text : trimZeros(text)} ${unit}`;
+  };
+  let body: string;
+  // The unit follows the ROUNDED figure, so 99,999.6 is "1 L", never "100 K".
+  if (Number((abs / 1e7).toFixed(decimals)) >= 1) body = scale(1e7, "Cr");
+  else if (Number((abs / 1e5).toFixed(decimals)) >= 1) body = scale(1e5, "L");
+  else if (Number((abs / 1e3).toFixed(decimals)) >= 1) body = scale(1e3, "K");
+  else body = magnitude(abs, opts.small ?? 0);
+  const zero = !/[1-9]/.test(body);
+  return `${v < 0 && !zero ? MINUS : ""}${body}`;
+}
+
+/** Signed compact count, for a change in OI: "+15 K" / "−15 K" (zero unsigned). */
+export function formatSignedCompactIN(v: Num, opts: { decimals?: number; fixed?: boolean } = {}): string {
+  if (!finite(v)) return EMPTY;
+  const plain = formatCompactIN(v, opts);
+  return v > 0 && /[1-9]/.test(plain) ? `+${plain}` : plain;
+}
+
+/** The meaning of a signed figure, for its colour: up (above zero), down (below), flat (zero or missing). */
+export type Meaning = "up" | "down" | "flat";
+export function meaningOf(v: Num, decimals = 2): Meaning {
+  if (!finite(v) || roundsToZero(v, decimals)) return "flat";
+  return v > 0 ? "up" : "down";
+}

@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { TAB_LABELS, KIND_ORDER, RHYTHM_REFRESH_MS, cleanBrief } from "./model";
 import type { RhythmBrief, RhythmKind, RhythmSection, RhythmToday } from "./types";
+import { SubTabs } from "../ui/SubTabs";
 
 /**
  * MO4 (Master Order 4 part 1, the daily rhythm; behind `ui_v2` + `daily_rhythm`): the Dashboard's brief card - the
@@ -51,16 +52,11 @@ export function RhythmBriefV2({ brief, phase, kind, onKind }: {
   return (
     <div>
       <p className="text-t13 text-fg-muted">{shown.subtitle}</p>
-      <div role="tablist" aria-label="Daily briefs" className="mt-space-3 grid grid-cols-4 gap-px rounded-control border border-subtle bg-surface-2 p-px">
-        {KIND_ORDER.map((k) => (
-          <button key={k} type="button" role="tab" aria-selected={k === kind} data-rhythm-tab={k} onClick={() => onKind(k)}
-            className={`relative inline-flex h-11 min-w-0 items-center justify-center rounded-control px-space-1 text-t13 font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-9 ${
-              k === kind ? "bg-surface-1 text-fg shadow-card" : "text-fg-muted hover:text-fg"}`}>
-            <span className="truncate">{TAB_LABELS[k]}</span>
-            {k === phase && <span aria-label="now" className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-pill bg-brand" />}
-          </button>
-        ))}
-      </div>
+      <SubTabs label="Daily briefs" value={kind} onChange={onKind} full className="mt-space-3"
+        items={KIND_ORDER.map((k) => ({
+          key: k, data: { "rhythm-tab": k },
+          label: <>{TAB_LABELS[k]}{k === phase && <span aria-label="now" role="img" className="ml-space-1 inline-block h-1.5 w-1.5 rounded-pill bg-current" />}</>,
+        }))} />
       <div className="mt-space-4 divide-y divide-subtle">
         {shown.sections.map((s) => <RhythmSectionV2 key={s.id} section={s} />)}
       </div>

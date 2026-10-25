@@ -272,7 +272,7 @@ describe("Part 3 colour tokens", () => {
 describe("Colour v2 tokens", () => {
   const CV2_SCOPE = ':root[data-colour="v2"]:not([data-theme="light"])';
   const cv2Dark = { ...dark, ...block(CV2_SCOPE) };
-  const cv2DarkCvd = { ...cvdDark, ...block(CV2_SCOPE) };
+  const cv2DarkCvd = { ...cvdDark, ...block(CV2_SCOPE), ...block(':root[data-colour="v2"][data-cvd="on"]:not([data-theme="light"])') };
   const ALL = { ...THEMES, cv2Dark, cv2DarkCvd };
   const NEW = ["brand-tint", "up-tint", "down-tint", "teal-accent", "soft-brand", "soft-ai", "soft-warn", "soft-down", "soft-up",
     "soft-teal", "soft-info", "oi-call", "oi-put", "nav-insights"];
@@ -335,13 +335,19 @@ describe("Colour v2 tokens", () => {
     expect(contrast(cv2Dark["border-subtle"], cv2Dark.surface)).toBeGreaterThan(contrast(dark["border-subtle"], dark.surface));
   });
 
-  it("colour v2 is dark-only for the surfaces, moves no brand, meaning or chart colour, and is new tokens elsewhere", () => {
+  it("colour v2 moves only the surfaces, outlines and the contrast fixes (UI-H-DM), no chart colour, and is new tokens elsewhere", () => {
+    // UI-H-DM (owner, 25 Oct): the dark surfaces and borders, plus the link / primary blue, the loss red and the
+    // secondary violet one step lighter so they stay AA on the lighter cards (src/ui/darkContrast.test.ts).
     expect(Object.keys(block(CV2_SCOPE)).sort()).toEqual(
-      ["border", "border-subtle", "glass", "range-track", "surface", "surface-1", "surface-2", "surface-3", "surface-inset"]);
-    expect(css).not.toMatch(/:root\[data-colour="v2"\]\[data-theme="light"\]/);
-    for (const k of ["brand", "brand-fill", "up", "down", "warn", "info", "ai", "chart-bg", "chart-up", "chart-down"]) {
+      ["accent-2", "border", "border-subtle", "brand", "brand-fill", "brand-fill-strong", "down", "glass", "range-track", "surface",
+       "surface-1", "surface-2", "surface-3", "surface-inset"]);
+    // Light under colour v2 (it failed the same checks): the page, the borders and the blues only.
+    expect(Object.keys(block(':root[data-colour="v2"][data-theme="light"]')).sort()).toEqual(
+      ["border", "border-subtle", "brand", "brand-fill", "brand-fill-strong", "surface", "surface-inset"]);
+    for (const k of ["up", "warn", "info", "ai", "chart-bg", "chart-up", "chart-down"]) {
       expect(cv2Dark[k], k).toEqual(dark[k]);
     }
+    expect(cv2DarkCvd.down, "the colour-blind loss stays orange").toEqual(cvdDark.down);
     const before = css.split("/* Colour v2 (owner, 23 Oct")[0];
     const old = { dark: block(":root", before), light: block(':root[data-theme="light"]', before),
       cvdDark: block(':root[data-cvd="on"]', before), cvdLight: block(':root[data-theme="light"][data-cvd="on"]', before) };

@@ -356,20 +356,21 @@ html { font-size: calc(100% * var(--text-scale)); }
   --grad-from: 29 78 216;
   --grad-to: 109 40 217;
   --accent-gradient: linear-gradient(120deg, rgb(var(--grad-from)), rgb(var(--grad-to)));
-  --sec-markets: 56 189 248;
-  --sec-markets-soft: 14 58 86;
-  --sec-trading: 45 212 191;
-  --sec-trading-soft: 12 66 66;
-  --sec-insights: 224 140 236;
-  --sec-insights-soft: 66 30 78;
-  --sec-account: 194 202 216;
-  --sec-account-soft: 40 50 74;
-  --sec-admin: 165 180 252;
-  --sec-admin-soft: 38 42 100;
-  --sec-broker: 96 165 250;
-  --sec-broker-soft: 30 52 105;
-  --sec-copilot: 167 139 250;
-  --sec-copilot-soft: 50 38 100;
+  /* UI-H-DM DM3: one step brighter, so the bottom bar's word of the tab on screen is >= 7 : 1 on the lighter card. */
+  --sec-markets: 125 211 252;
+  --sec-markets-soft: 20 64 96;
+  --sec-trading: 94 234 212;
+  --sec-trading-soft: 14 70 72;
+  --sec-insights: 240 171 252;
+  --sec-insights-soft: 80 36 96;
+  --sec-account: 203 213 225;
+  --sec-account-soft: 52 64 94;
+  --sec-admin: 199 210 254;
+  --sec-admin-soft: 44 50 112;
+  --sec-broker: 147 197 253;
+  --sec-broker-soft: 30 58 120;
+  --sec-copilot: 196 181 253;
+  --sec-copilot-soft: 62 44 120;
   --tone-profit: 12 44 30;
   --tone-loss: 46 16 22;
   --tone-risk: 41 30 10;
@@ -381,19 +382,20 @@ html { font-size: calc(100% * var(--text-scale)); }
   --soft-accent-2: 237 233 254;
   --grad-from: 37 99 235;
   --grad-to: 124 58 237;
-  --sec-markets: 3 105 161;
+  /* UI-H-DM DM3 (the same checks in light): one step deeper, >= 7 : 1 on a white card. */
+  --sec-markets: 7 89 133;
   --sec-markets-soft: 224 242 254;
-  --sec-trading: 15 118 110;
+  --sec-trading: 17 94 89;
   --sec-trading-soft: 204 251 241;
-  --sec-insights: 162 28 175;
+  --sec-insights: 134 25 143;
   --sec-insights-soft: 250 232 255;
-  --sec-account: 71 85 105;
+  --sec-account: 51 65 85;
   --sec-account-soft: 226 232 240;
-  --sec-admin: 67 56 202;
+  --sec-admin: 55 48 163;
   --sec-admin-soft: 224 231 255;
-  --sec-broker: 29 78 216;
+  --sec-broker: 30 64 175;
   --sec-broker-soft: 219 234 254;
-  --sec-copilot: 109 40 217;
+  --sec-copilot: 91 33 182;
   --sec-copilot-soft: 237 233 254;
   --tone-profit: 236 253 243;
   --tone-loss: 254 242 242;
@@ -411,18 +413,73 @@ html { font-size: calc(100% * var(--text-scale)); }
   --tone-loss: 255 244 232;
 }
 
-/* Colour v2, dark theme: clearer surface layers, so cards do not melt into the page - a deeper navy page, lighter
-   cards with a visible outline and a firmer shadow. Set on <html> as `data-colour="v2"` by the v2 shell only while the
-   `colour_v2` flag is on (portalled dialogs and sheets take it too). The chart background (--chart-bg) does not move. */
+/* Colour v2, dark theme: clearer surface layers, so cards do not melt into the page. Set on <html> as
+   `data-colour="v2"` by the v2 shell only while the `colour_v2` flag is on (portalled dialogs and sheets take it too).
+   The chart background (--chart-bg) does not move.
+   UI-H-DM (owner, 25 Oct; docs/owner-orders/ATP_ORDER_UI_H_DM.md) - the phone looked dim (card vs page 1.15 : 1,
+   borders 1.9-2.2 : 1). The numbers, computed from this file by src/ui/darkContrast.test.ts:
+   - DM1: the page one step lighter (toward Material's ~#121212 depth, the navy hue kept); cards lighter again,
+     card vs page >= 1.3 : 1; raised (inputs, chips) one more step, >= 1.15 : 1 over a card;
+   - DM2: every border >= 3 : 1 against the surface it sits on - `border` (inputs, chips, the chart frame) on the page,
+     a card and a raised surface; `border-subtle` (card outlines, dividers, the tab row line) on the page and a card;
+   - DM3: icons, inactive tabs and nav labels (fg-muted, the section tints) >= 4.5 : 1; the primary button and the
+     active tab (white on brand-fill, the bottom bar's section word) >= 7 : 1 (outdoor phone use). */
 :root[data-colour="v2"]:not([data-theme="light"]) {
-  --surface: 7 11 22;
-  --surface-1: 18 27 48;
-  --surface-2: 28 39 68;
-  --surface-3: 39 52 88;
-  --surface-inset: 4 7 15;
-  --border: 56 72 112;
-  --border-subtle: 38 50 84;
-  --glass: 18 27 48;
-  --range-track: 51 65 96;
+  --surface: 13 18 32;
+  --surface-1: 32 43 70;
+  --surface-2: 44 57 90;
+  --surface-3: 58 73 112;
+  --surface-inset: 8 12 22;
+  --border: 128 144 182;
+  --border-subtle: 114 130 168;
+  --glass: 32 43 70;
+  --range-track: 68 84 124;
+  --brand: 106 170 251;
+  --brand-fill: 30 64 175;
+  --brand-fill-strong: 27 52 150;
+  /* The loss red and the secondary violet one step lighter, so they stay AA (4.5 : 1) as text on the lighter cards. */
+  --down: 248 113 113;
+  --accent-2: 170 145 255;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+/* The colour-blind loss stays orange on the colour v2 dark surfaces (the block above would otherwise win). */
+:root[data-colour="v2"][data-cvd="on"]:not([data-theme="light"]) { --down: 249 115 22; }
+
+/* UI-H-DM, the light theme under colour v2: it failed the same checks (card vs page 1.08 : 1, borders 1.3-1.4 : 1, white
+   on the primary button 5.2 : 1), so it meets the same numbers - a slightly greyer page under white cards, firmer
+   borders and a deeper primary blue. With colour v2 off nothing here applies. */
+:root[data-colour="v2"][data-theme="light"] {
+  --surface: 220 226 234;
+  --surface-inset: 210 217 227;
+  --border: 118 128 146;
+  --border-subtle: 118 128 146;
+  --brand: 29 78 216;
+  --brand-fill: 30 64 175;
+  --brand-fill-strong: 30 58 138;
+}
+
+/* UI-H-DM DM4: Appearance -> "High contrast" (per user, saved on the server with the text size; `data-contrast="high"`
+   on <html>, src/theme.ts). Stronger borders and brighter text and icons in both themes, over whichever surfaces are in
+   force; the meanings (profit, loss, warning) keep their colours. */
+:root[data-contrast="high"]:not([data-theme="light"]) {
+  --fg: 255 255 255;
+  --fg-muted: 226 232 240;
+  --border: 176 190 220;
+  --border-subtle: 176 190 220;
+  --brand: 147 197 253;
+  --chart-text: 226 232 240;
+  --brand-fill: 30 64 175;
+  --brand-fill-strong: 27 52 150;
+}
+
+:root[data-contrast="high"][data-theme="light"] {
+  --fg: 2 6 23;
+  --fg-muted: 30 41 59;
+  --border: 71 85 105;
+  --border-subtle: 71 85 105;
+  --brand: 30 64 175;
+  --chart-text: 30 41 59;
+  --brand-fill: 30 64 175;
+  --brand-fill-strong: 30 58 138;
 }

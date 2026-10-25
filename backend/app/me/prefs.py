@@ -208,8 +208,10 @@ class FnoBasketsPrefs(_Prefs):
 
 class AppearancePrefs(_Prefs):
     """`appearance` (handover item 1): the text size every page uses, so phone and desktop agree. One root scale on the
-    page (frontend `src/theme.ts`): normal = 100 %, large = 112.5 %, xlarge = 125 %."""
+    page (frontend `src/theme.ts`): normal = 100 %, large = 112.5 %, xlarge = 125 %. UI-H-DM DM4 (owner, 25 Oct): the
+    "High contrast" option - stronger borders and brighter text and icons, in both themes; off by default."""
     text_size: Literal["normal", "large", "xlarge"] = "normal"
+    high_contrast: bool = False
 
 
 # MO2 part C: the pages that have a page tour (frontend src/tours/pages.ts TOUR_IDS, kept equal by a test). An allow-list,

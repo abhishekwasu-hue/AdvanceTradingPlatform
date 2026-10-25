@@ -11,9 +11,13 @@ import { useEffect } from "react";
 import { request } from "./api/client";
 import { isTextSize, loadAppearance, saveAppearance, type TextSize } from "./theme";
 
-interface PrefsRead { prefs: { appearance?: { text_size?: unknown } }; versions: { appearance?: number } }
+interface PrefsRead { prefs: { appearance?: { text_size?: unknown; high_contrast?: unknown } }; versions: { appearance?: number } }
 
-/** Reads the signed-in user's text size and applies it. Returns the size in force afterwards. */
+/** What the server stores for the appearance namespace (it is written whole, so both fields go in every save). */
+interface StoredAppearance { text_size: TextSize; high_contrast: boolean }
+
+/** Reads the signed-in user's text size and High contrast choice (UI-H-DM DM4) and applies them. Returns the size in
+ * force afterwards. */
 export async function pullTextSize(fetcher: typeof request = request): Promise<TextSize> {
   const local = loadAppearance();
   let read: PrefsRead;
@@ -22,30 +26,47 @@ export async function pullTextSize(fetcher: typeof request = request): Promise<T
   } catch {
     return local.textSize;                                   // offline: the device's copy stays
   }
-  const stored = read.prefs?.appearance?.text_size;
+  const stored = read.prefs?.appearance;
   if ((read.versions?.appearance ?? 0) === 0) {
-    if (local.textSize !== "normal") await pushTextSize(local.textSize, fetcher);
+    if (local.textSize !== "normal" || local.highContrast) await pushAppearance(toStored(local), fetcher);
     return local.textSize;
   }
-  const size = isTextSize(stored) ? stored : "normal";
-  if (size !== local.textSize) saveAppearance({ ...local, textSize: size });
+  const size = isTextSize(stored?.text_size) ? stored.text_size : "normal";
+  const high = stored?.high_contrast === true;
+  if (size !== local.textSize || high !== local.highContrast) saveAppearance({ ...local, textSize: size, highContrast: high });
   return size;
 }
 
-/** Saves the text size for the signed-in user. False when the server could not be reached. */
-export async function pushTextSize(size: TextSize, fetcher: typeof request = request): Promise<boolean> {
+function toStored(a: { textSize: TextSize; highContrast: boolean }): StoredAppearance {
+  return { text_size: a.textSize, high_contrast: a.highContrast };
+}
+
+async function pushAppearance(value: StoredAppearance, fetcher: typeof request): Promise<boolean> {
   try {
-    await fetcher("/me/prefs/appearance", { method: "PUT", body: JSON.stringify({ text_size: size }) });
+    await fetcher("/me/prefs/appearance", { method: "PUT", body: JSON.stringify(value) });
     return true;
   } catch {
     return false;
   }
 }
 
+/** Saves the text size (with this device's High contrast choice) for the signed-in user. False when the server could
+ * not be reached. */
+export async function pushTextSize(size: TextSize, fetcher: typeof request = request): Promise<boolean> {
+  return pushAppearance({ text_size: size, high_contrast: loadAppearance().highContrast }, fetcher);
+}
+
 /** Applies the text size now and saves it for the user (signed out: this device only). */
 export async function setTextSize(size: TextSize, signedIn: boolean, fetcher: typeof request = request): Promise<boolean> {
   saveAppearance({ ...loadAppearance(), textSize: size });
   return signedIn ? pushTextSize(size, fetcher) : true;
+}
+
+/** UI-H-DM DM4: turns High contrast on or off now and saves it for the user (signed out: this device only). */
+export async function setHighContrast(on: boolean, signedIn: boolean, fetcher: typeof request = request): Promise<boolean> {
+  const next = { ...loadAppearance(), highContrast: on };
+  saveAppearance(next);
+  return signedIn ? pushAppearance(toStored(next), fetcher) : true;
 }
 
 /** Mounted once in the shell: reads the user's text size when someone signs in. */

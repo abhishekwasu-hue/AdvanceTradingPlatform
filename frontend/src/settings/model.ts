@@ -162,9 +162,9 @@ export function planChip(o: Pick<BillingOverview, "subscription"> | null): Chip 
 
 const THEME_TEXT = { dark: "Dark", light: "Light", system: "Follows the device" } as const;
 
-export function appearanceChip(a: Pick<Appearance, "theme" | "textSize">): Chip {
+export function appearanceChip(a: Pick<Appearance, "theme" | "textSize"> & { highContrast?: boolean }): Chip {
   const size = TEXT_SIZES.find((t) => t.value === a.textSize)?.label ?? "Normal";
-  return { text: `${THEME_TEXT[a.theme]} · ${size} text`, tone: "off" };
+  return { text: `${THEME_TEXT[a.theme]} · ${size} text${a.highContrast ? " · High contrast" : ""}`, tone: "off" };
 }
 
 /** Help & tips: the tips' marks; null while not known. */

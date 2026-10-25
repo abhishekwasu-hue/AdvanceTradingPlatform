@@ -5,7 +5,7 @@
    "index_code": "NIFTY50",
    "name": "NIFTY 50",
    "family": "BROAD",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_nifty50list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv",
    "has_derivatives": true,
    "broker_symbols": {
     "upstox": "NSE_INDEX|Nifty 50"
@@ -16,7 +16,7 @@
    "index_code": "NIFTYNEXT50",
    "name": "NIFTY NEXT 50",
    "family": "BROAD",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftynext50list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftynext50list.csv",
    "has_derivatives": true,
    "broker_symbols": {
     "upstox": "NSE_INDEX|Nifty Next 50"
@@ -27,7 +27,7 @@
    "index_code": "NIFTY100",
    "name": "NIFTY 100",
    "family": "BROAD",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_nifty100list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_nifty100list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -36,7 +36,7 @@
    "index_code": "NIFTY200",
    "name": "NIFTY 200",
    "family": "BROAD",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_nifty200list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_nifty200list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -45,7 +45,7 @@
    "index_code": "NIFTY500",
    "name": "NIFTY 500",
    "family": "BROAD",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_nifty500list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -54,7 +54,7 @@
    "index_code": "NIFTYMIDCAP150",
    "name": "NIFTY MIDCAP 150",
    "family": "BROAD",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftymidcap150list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftymidcap150list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -63,7 +63,7 @@
    "index_code": "NIFTYSMALLCAP250",
    "name": "NIFTY SMALLCAP 250",
    "family": "BROAD",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftysmallcap250list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftysmallcap250list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -75,7 +75,7 @@
    "index_code": "NIFTYMICROCAP250",
    "name": "NIFTY MICROCAP 250",
    "family": "BROAD",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftymicrocap250_list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftymicrocap250_list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -87,7 +87,7 @@
    "index_code": "NIFTYTOTALMARKET",
    "name": "NIFTY TOTAL MARKET",
    "family": "BROAD",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftytotalmarket_list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftytotalmarket_list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -99,7 +99,7 @@
    "index_code": "NIFTYMIDSELECT",
    "name": "NIFTY MIDCAP SELECT",
    "family": "BROAD",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftymidcapselect_list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftymidcapselect_list.csv",
    "has_derivatives": true,
    "broker_symbols": {
     "upstox": "NSE_INDEX|NIFTY MID SELECT"
@@ -113,7 +113,7 @@
    "index_code": "NIFTYBANK",
    "name": "NIFTY BANK",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftybanklist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftybanklist.csv",
    "has_derivatives": true,
    "broker_symbols": {
     "upstox": "NSE_INDEX|Nifty Bank"
@@ -124,7 +124,7 @@
    "index_code": "NIFTYFINSERVICE",
    "name": "NIFTY FINANCIAL SERVICES",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyfinancelist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyfinancelist.csv",
    "has_derivatives": true,
    "broker_symbols": {
     "upstox": "NSE_INDEX|Nifty Fin Service"
@@ -138,7 +138,7 @@
    "index_code": "NIFTYIT",
    "name": "NIFTY IT",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyitlist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyitlist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -147,7 +147,7 @@
    "index_code": "NIFTYAUTO",
    "name": "NIFTY AUTO",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyautolist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyautolist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -156,7 +156,7 @@
    "index_code": "NIFTYFMCG",
    "name": "NIFTY FMCG",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyfmcglist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyfmcglist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -165,7 +165,7 @@
    "index_code": "NIFTYPHARMA",
    "name": "NIFTY PHARMA",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftypharmalist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftypharmalist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -174,7 +174,7 @@
    "index_code": "NIFTYMETAL",
    "name": "NIFTY METAL",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftymetallist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftymetallist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -183,7 +183,7 @@
    "index_code": "NIFTYREALTY",
    "name": "NIFTY REALTY",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyrealtylist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyrealtylist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -192,7 +192,7 @@
    "index_code": "NIFTYMEDIA",
    "name": "NIFTY MEDIA",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftymedialist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftymedialist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -201,7 +201,7 @@
    "index_code": "NIFTYPSUBANK",
    "name": "NIFTY PSU BANK",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftypsubanklist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftypsubanklist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -210,7 +210,7 @@
    "index_code": "NIFTYPVTBANK",
    "name": "NIFTY PRIVATE BANK",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_nifty_privatebanklist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_nifty_privatebanklist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -222,7 +222,7 @@
    "index_code": "NIFTYOILGAS",
    "name": "NIFTY OIL & GAS",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyoilgaslist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyoilgaslist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -234,7 +234,7 @@
    "index_code": "NIFTYHEALTHCARE",
    "name": "NIFTY HEALTHCARE INDEX",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyhealthcarelist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyhealthcarelist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -246,7 +246,7 @@
    "index_code": "NIFTYCONSRDURBL",
    "name": "NIFTY CONSUMER DURABLES",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyconsumerdurableslist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyconsumerdurableslist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -258,7 +258,7 @@
    "index_code": "NIFTYCHEMICALS",
    "name": "NIFTY CHEMICALS",
    "family": "SECTORAL",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyChemicals_list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyChemicals_list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -267,7 +267,7 @@
    "index_code": "NIFTYCPSE",
    "name": "NIFTY CPSE",
    "family": "THEMATIC",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftycpselist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftycpselist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -276,7 +276,7 @@
    "index_code": "NIFTYPSE",
    "name": "NIFTY PSE",
    "family": "THEMATIC",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftypselist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftypselist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -285,7 +285,7 @@
    "index_code": "NIFTYINFRA",
    "name": "NIFTY INFRASTRUCTURE",
    "family": "THEMATIC",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyinfralist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyinfralist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -297,7 +297,7 @@
    "index_code": "NIFTYENERGY",
    "name": "NIFTY ENERGY",
    "family": "THEMATIC",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyenergylist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyenergylist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -306,7 +306,7 @@
    "index_code": "NIFTYCOMMODITIES",
    "name": "NIFTY COMMODITIES",
    "family": "THEMATIC",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftycommoditieslist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftycommoditieslist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -315,7 +315,7 @@
    "index_code": "NIFTYCONSUMPTION",
    "name": "NIFTY INDIA CONSUMPTION",
    "family": "THEMATIC",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyconsumptionlist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyconsumptionlist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -327,7 +327,7 @@
    "index_code": "NIFTYMNC",
    "name": "NIFTY MNC",
    "family": "THEMATIC",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftymnclist.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftymnclist.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -336,7 +336,7 @@
    "index_code": "NIFTYINDDEFENCE",
    "name": "NIFTY INDIA DEFENCE",
    "family": "THEMATIC",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_niftyindiadefence_list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_niftyindiadefence_list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -348,7 +348,7 @@
    "index_code": "NIFTY100QLTY30",
    "name": "NIFTY100 QUALITY 30",
    "family": "STRATEGY",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_nifty100Quality30list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_nifty100Quality30list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -360,7 +360,7 @@
    "index_code": "NIFTY50VALUE20",
    "name": "NIFTY50 VALUE 20",
    "family": "STRATEGY",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_Nifty50_Value20.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_Nifty50_Value20.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null
@@ -369,7 +369,7 @@
    "index_code": "NIFTY100LOWVOL30",
    "name": "NIFTY100 LOW VOLATILITY 30",
    "family": "STRATEGY",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_Nifty100LowVolatility30list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_Nifty100LowVolatility30list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,
@@ -381,7 +381,7 @@
    "index_code": "NIFTY200MOMNTM30",
    "name": "NIFTY200 MOMENTUM 30",
    "family": "STRATEGY",
-   "constituents_url": "https://niftyindices.com/IndexConstituent/ind_nifty200Momentum30_list.csv",
+   "constituents_url": "https://nsearchives.nseindia.com/content/indices/ind_nifty200Momentum30_list.csv",
    "has_derivatives": false,
    "broker_symbols": {},
    "candle_symbol": null,

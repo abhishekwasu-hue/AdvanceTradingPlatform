@@ -29,6 +29,12 @@ const semantic = {
   "soft-brand": v("soft-brand"), "soft-ai": v("soft-ai"), "soft-warn": v("soft-warn"), "soft-down": v("soft-down"),
   "soft-up": v("soft-up"), "soft-teal": v("soft-teal"), "soft-info": v("soft-info"),
   "oi-call": v("oi-call"), "oi-put": v("oi-put"), "nav-insights": v("nav-insights"),
+  // UI-H colour accents CA1-CA4 (src/ui/accents.ts only): the secondary violet, the section identity tints and the
+  // soft tone backgrounds. `text-accent-2`, `bg-sec-markets-soft text-sec-markets`, `bg-tone-profit`.
+  "accent-2": v("accent-2"), "soft-accent-2": v("soft-accent-2"),
+  ...Object.fromEntries(["markets", "trading", "insights", "account", "admin", "broker", "copilot"].flatMap((s) =>
+    [[`sec-${s}`, v(`sec-${s}`)], [`sec-${s}-soft`, v(`sec-${s}-soft`)]])),
+  "tone-profit": v("tone-profit"), "tone-loss": v("tone-loss"), "tone-risk": v("tone-risk"), "tone-info": v("tone-info"),
   // aliases kept for pages not yet migrated
   bg: v("surface"), panel: v("surface-1"), panel2: v("surface-2"), panel3: v("surface-3"),
   "brand-dim": v("brand-strong"), accent: v("up"), danger: v("down"), muted: v("fg-muted"),
@@ -75,6 +81,8 @@ export default {
       transitionTimingFunction: { standard: "var(--ease)" },
       height: { row: "var(--row-h)", stage: "var(--stage-h)" },
       minHeight: { row: "var(--row-h)", stage: "var(--stage-h)" },
+      // UI-H CA1 / CA2: the one blue -> violet gradient (`bg-accent-gradient`), for src/ui/accents.ts only.
+      backgroundImage: { "accent-gradient": "var(--accent-gradient)" },
       boxShadow: {
         card: "var(--shadow)",
         raised: "var(--shadow-raised)",   // UI2-0: menus, drawers, sheets, dialogs

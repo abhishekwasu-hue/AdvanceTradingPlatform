@@ -1,9 +1,10 @@
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { EMPTY, formatINR, formatPct, formatPrice, formatSignedINR } from "../ui/format";
 import { TermHint } from "../ui/TermHint";
 import { useColourV2 } from "../ui/colourV2";
 import { DirectionChip } from "../ui/DirectionChip";
+import { checkTone, toneProblem, toneSurfaceClass, type Toned } from "../ui/tone";
 import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2, toneClass } from "./CardV2";
 import { WIN_RATE_DAYS, signTone, type PositionRow, type SignalRow, type TodayTiles } from "./model";
 
@@ -91,13 +92,30 @@ export function ActiveSignalsV2({ data, readyWatch = false }: { data: Rows<Signa
   );
 }
 
+/**
+ * UI-H CA4: a Today card's soft tone background (colour v2) comes from the shared tone (src/ui/tone.ts) and always with
+ * its cue: Booked today carries its + / − sign, Risk in use a warning icon.
+ */
+function cueOf(tone: "neutral" | "up" | "down" | "warn", value: string): Toned {
+  // A figure that rounds to ₹0 shows no sign, so it takes no tint either.
+  if ((tone === "up" || tone === "down") && toneProblem("profit", { sign: true }, value)) return {};
+  if (tone === "up") return { tone: "profit", cue: { sign: true } };
+  if (tone === "down") return { tone: "loss", cue: { sign: true } };
+  if (tone === "warn") return { tone: "risk", cue: { icon: TriangleAlert } };
+  return {};
+}
+
 function Tile({ label, hint, value, tone = "neutral", sub, children }: {
   label: string; hint?: "win-rate" | "risk-in-use"; value: string; tone?: "neutral" | "up" | "down" | "warn"; sub?: string; children?: ReactNode;
 }) {
+  const colour = useColourV2();
+  const toned = colour ? cueOf(tone, value) : {};
+  const tinted = checkTone(toned.tone, toned.cue, value);
+  const Icon = toned.cue && "icon" in toned.cue ? toned.cue.icon : null;
   return (
-    <div className="min-w-0 bg-surface-1 p-space-3 md:p-space-4">
+    <div className={`min-w-0 ${tinted && toned.tone ? toneSurfaceClass(toned.tone) : "bg-surface-1"} p-space-3 md:p-space-4`} data-tone={toned.tone}>
       <div className="flex items-center gap-space-1 text-t13 text-fg-muted">{label}{hint && <TermHint term={hint} />}</div>
-      <div className={`mt-space-1 font-tabular text-t20 font-semibold ${toneClass(tone)}`}>{value}</div>
+      <div className={`mt-space-1 flex items-center gap-space-1 font-tabular text-t20 font-semibold ${toneClass(tone)}`}>{Icon && <Icon size={18} aria-hidden className="shrink-0" />}{value}</div>
       {sub && <div className="mt-px text-t12 text-fg-muted">{sub}</div>}
       {children}
     </div>

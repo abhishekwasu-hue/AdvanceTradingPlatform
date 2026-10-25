@@ -245,10 +245,11 @@ describe("colour v2 on the pages (off = as before)", () => {
   it("Navigation: group-coloured icons and the active bottom-bar tab on a brand pill; off as before", () => {
     const sections = visibleSections({ on: () => false, role: "OWNER" });
     const sideOn = render(<SidebarV2View sections={sections} current="dashboard" user={null} accountPath="/login" />, true);
-    expect(sideOn).toContain("text-teal-accent");
-    expect(sideOn).toContain("text-nav-insights");
+    // UI-H CA3: the group colour now sits in each section's round tint chip (src/ui/accents.ts).
+    expect(sideOn).toContain("bg-sec-trading-soft text-sec-trading");
+    expect(sideOn).toContain("bg-sec-insights-soft text-sec-insights");
     const sideOff = render(<SidebarV2View sections={sections} current="dashboard" user={null} accountPath="/login" />, false);
-    expect(sideOff).not.toMatch(/text-(?:teal-accent|nav-insights|info)\b/);
+    expect(sideOff).not.toMatch(/text-(?:teal-accent|nav-insights|info)\b|data-section-chip/);
     const barOn = render(<BottomNavV2 current="signals" moreOpen={false} onMore={noop} />, true);
     expect(barOn.match(/data-nav-pill="true"/g)).toHaveLength(1);
     expect(barOn).toMatch(/data-nav-pill="true" class="[^"]*bg-brand-tint text-brand/);

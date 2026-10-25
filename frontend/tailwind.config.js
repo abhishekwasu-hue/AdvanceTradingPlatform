@@ -32,7 +32,8 @@ const semantic = {
   // UI-H colour accents CA1-CA4 (src/ui/accents.ts only): the secondary violet, the section identity tints and the
   // soft tone backgrounds. `text-accent-2`, `bg-sec-markets-soft text-sec-markets`, `bg-tone-profit`.
   "accent-2": v("accent-2"), "soft-accent-2": v("soft-accent-2"),
-  ...Object.fromEntries(["markets", "trading", "insights", "account", "admin", "broker", "copilot"].flatMap((s) =>
+  ...Object.fromEntries(["markets", "trading", "insights", "account", "admin", "broker", "copilot",
+    "today", "charts", "signals", "trades", "more"].flatMap((s) =>
     [[`sec-${s}`, v(`sec-${s}`)], [`sec-${s}-soft`, v(`sec-${s}-soft`)]])),
   "tone-profit": v("tone-profit"), "tone-loss": v("tone-loss"), "tone-risk": v("tone-risk"), "tone-info": v("tone-info"),
   // aliases kept for pages not yet migrated

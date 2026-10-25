@@ -22,6 +22,7 @@ const ICON: Record<NavTone, string> = {
 /** UI-H CA3: read from THE section -> tint map (src/ui/accents.ts), so the plain icons and the chips agree. */
 const FROM_TINT: Record<SectionTint, NavTone> = {
   markets: "info", trading: "teal", insights: "insights", account: "neutral", admin: "neutral", broker: "brand", copilot: "ai",
+  today: "info", charts: "info", signals: "teal", trades: "teal", more: "neutral",   // their groups (chips show the hue)
 };
 
 export function navTone(key: ShellKey | null): NavTone {

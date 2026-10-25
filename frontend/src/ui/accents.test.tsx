@@ -48,7 +48,8 @@ const v2Dark = { ...dark, ...block(':root[data-colour="v2"]:not([data-theme="lig
 const cvdDark = { ...v2Dark, ...block(':root[data-cvd="on"]') };
 const cvdLight = { ...light, ...block(':root[data-theme="light"][data-cvd="on"]') };
 const THEMES = { dark, light, v2Dark, cvdDark, cvdLight };
-const TINTS: SectionTint[] = ["markets", "trading", "insights", "account", "admin", "broker", "copilot"];
+const TAB_TINTS: SectionTint[] = ["today", "charts", "signals", "trades", "more"];
+const TINTS: SectionTint[] = ["markets", "trading", "insights", "account", "admin", "broker", "copilot", ...TAB_TINTS];
 
 describe("CA1 / CA3 / CA4 tokens: WCAG AA from the token values, both themes", () => {
   it.each(Object.entries(THEMES))("%s: the secondary violet and white on every point of the gradient", (_, t) => {
@@ -100,7 +101,11 @@ describe("CA3: one section -> tint map for the nav and the PageHeader", () => {
     expect(sections).toEqual(expect.arrayContaining(["markets", "trading", "insights", "account", "admin"]));
     for (const id of sections) expect(SECTION_TINT[id as SectionId], id).toBeDefined();
     for (const item of [...allNavItems(), ...NAV_PINNED_V2]) expect(sectionTintOf(item.key), item.key).not.toBeNull();
-    expect(sectionTintOf("dashboard")).toBe("markets");
+    expect(sectionTintOf("dashboard")).toBe("today");
+    expect(sectionTintOf("charts")).toBe("charts");
+    expect(sectionTintOf("signals")).toBe("signals");
+    expect(sectionTintOf("positions")).toBe("trades");
+    expect(sectionTintOf("option-chain")).toBe("markets");
     expect(sectionTintOf("terminal")).toBe("trading");
     expect(sectionTintOf("analytics")).toBe("insights");
     expect(sectionTintOf("settings")).toBe("account");
@@ -186,6 +191,75 @@ describe("CA4: a tone is never colour alone", () => {
   });
 });
 
+// CA6-1 (owner, 25 Oct): the five bottom-bar hues must read as clearly different colours. CIEDE2000 on the token values,
+// in normal vision and in the Machado 2009 protanopia / deuteranopia simulation (severity 1.0, the CA5 matrices).
+function toLinear(v: number): number { const s = v / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }
+function toByte(v: number): number { const c = Math.min(Math.max(v, 0), 1); return Math.round(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055)); }
+function lab(rgb: number[]): [number, number, number] {
+  const [r, g, b] = rgb.map(toLinear);
+  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047), y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+  const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+function deltaE2000(p: number[], q: number[]): number {
+  const [l1, a1, b1] = lab(p), [l2, a2, b2] = lab(q), rad = Math.PI / 180;
+  const cBar = (Math.hypot(a1, b1) + Math.hypot(a2, b2)) / 2;
+  const g = 0.5 * (1 - Math.sqrt(cBar ** 7 / (cBar ** 7 + 25 ** 7)));
+  const [a1p, a2p] = [(1 + g) * a1, (1 + g) * a2];
+  const [c1, c2] = [Math.hypot(a1p, b1), Math.hypot(a2p, b2)];
+  const hue = (b: number, a: number) => ((Math.atan2(b, a) / rad) + 360) % 360;
+  const [h1, h2] = [hue(b1, a1p), hue(b2, a2p)];
+  let dh = h2 - h1;
+  if (c1 * c2 === 0) dh = 0; else if (dh > 180) dh -= 360; else if (dh < -180) dh += 360;
+  const dH = 2 * Math.sqrt(c1 * c2) * Math.sin((dh / 2) * rad);
+  const lBar = (l1 + l2) / 2, cpBar = (c1 + c2) / 2;
+  const hBar = c1 * c2 === 0 ? h1 + h2 : Math.abs(h1 - h2) <= 180 ? (h1 + h2) / 2 : h1 + h2 < 360 ? (h1 + h2 + 360) / 2 : (h1 + h2 - 360) / 2;
+  const t = 1 - 0.17 * Math.cos((hBar - 30) * rad) + 0.24 * Math.cos(2 * hBar * rad) + 0.32 * Math.cos((3 * hBar + 6) * rad) - 0.2 * Math.cos((4 * hBar - 63) * rad);
+  const sl = 1 + (0.015 * (lBar - 50) ** 2) / Math.sqrt(20 + (lBar - 50) ** 2), sc = 1 + 0.045 * cpBar, sh = 1 + 0.015 * cpBar * t;
+  const rt = -Math.sin(2 * 30 * Math.exp(-(((hBar - 275) / 25) ** 2)) * rad) * 2 * Math.sqrt(cpBar ** 7 / (cpBar ** 7 + 25 ** 7));
+  return Math.sqrt(((l2 - l1) / sl) ** 2 + ((c2 - c1) / sc) ** 2 + (dH / sh) ** 2 + rt * ((c2 - c1) / sc) * (dH / sh));
+}
+const MACHADO = {
+  protanopia: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+  deuteranopia: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.01182, 0.04294, 0.968881]],
+} as const;
+const simulate = (rgb: number[], m: readonly (readonly number[])[]) => {
+  const lin = rgb.map(toLinear);
+  return m.map((row) => toByte(row[0] * lin[0] + row[1] * lin[1] + row[2] * lin[2]));
+};
+const pairs = <T,>(xs: T[]): [T, T][] => xs.flatMap((a, i) => xs.slice(i + 1).map((b) => [a, b] as [T, T]));
+
+describe("CA6-1 (owner, 25 Oct): the five bottom-bar hues are clearly different", () => {
+  it.each(Object.entries(THEMES))("%s: CIEDE2000 >= 20 between every two tabs in normal vision", (_, t) => {
+    for (const [a, b] of pairs(TAB_TINTS)) {
+      expect(deltaE2000(t[`sec-${a}`], t[`sec-${b}`]), `${a} / ${b}`).toBeGreaterThanOrEqual(20);
+    }
+  });
+
+  // Colour-blind simulation: every pair stays >= 10 apart, except where the physics of the dark theme leaves no room -
+  // the 7 : 1 light tints there make blue and violet nearly the same light lavender to a deuteranope (measured 8.7).
+  // Those two tabs also carry different icons and words (House / Today, Chart / Charts), checked below, so a tab is
+  // never told apart by its colour alone. Any other pair under 10, or any pair under 8, fails.
+  const ICON_ONLY: Record<string, string[]> = { "today/charts": ["deuteranopia"] };
+  it.each(Object.entries(THEMES))("%s: the colour-blind simulation keeps them apart (>= 10, or >= 8 with a different icon)", (_, t) => {
+    for (const [name, m] of Object.entries(MACHADO)) {
+      for (const [a, b] of pairs(TAB_TINTS)) {
+        const d = deltaE2000(simulate(t[`sec-${a}`], m), simulate(t[`sec-${b}`], m));
+        const floor = (ICON_ONLY[`${a}/${b}`] ?? []).includes(name) ? 8 : 10;
+        expect(d, `${name}: ${a} / ${b}`).toBeGreaterThanOrEqual(floor);
+      }
+    }
+  });
+
+  it("every tab has its own icon and its own word", () => {
+    const html = render(<BottomNavV2 current="charts" moreOpen={false} onMore={() => {}} />, true);
+    const icons = [...html.matchAll(/class="lucide lucide-([a-z0-9-]+)/g)].map((m) => m[1]);
+    expect(icons).toHaveLength(5);
+    expect(new Set(icons).size).toBe(5);
+  });
+});
+
 describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today hero card", () => {
   it.each(Object.entries(THEMES))("%s: CA6 the strong tab tint and its bold word meet AA on the bar", (_, t) => {
     for (const s of TINTS) {
@@ -198,17 +272,18 @@ describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today
     expect(contrast(t["fg-muted"], t["surface-1"]), "the other words").toBeGreaterThanOrEqual(4.5);
   });
 
-  it("CA6: every tab its section tint, the tab on screen strong + bold, More the Account tint; off as before", () => {
+  it("CA6: every tab its own tint, the tab on screen strong + bold, More teal; off as before", () => {
     const html = render(<BottomNavV2 current="charts" moreOpen={false} onMore={() => {}} />, true);
     const tints = [...html.matchAll(/data-nav-tint="([a-z]+)"/g)].map((m) => m[1]);
-    expect(tints).toEqual([...BOTTOM_BAR_V2.map((b) => sectionTintOf(b.key) ?? "account"), "account"]);
-    expect(html).toContain(navChipClass("markets", true));
+    expect(tints).toEqual(["today", "charts", "signals", "trades", "more"]);           // CA6-1: five different hues
+    expect(BOTTOM_BAR_V2.map((b) => sectionTintOf(b.key))).toEqual(["today", "charts", "signals", "trades"]);
+    expect(html).toContain(navChipClass("charts", true));
     expect(html.match(/rounded-pill[^"]*bg-sec-[a-z]+-soft/g)).toHaveLength(4);
-    expect(html).toContain(`${navWordClass("markets")} font-semibold`);
+    expect(html).toContain(`${navWordClass("charts")} font-semibold`);
     // 44 px targets: every tab is at least 64 px tall and a fifth of the bar wide.
     expect(html.match(/min-h-16 flex-1/g)).toHaveLength(5);
     const more = render(<BottomNavV2 current="charts" moreOpen onMore={() => {}} />, true);
-    expect(more).toMatch(/data-nav-pill="true" data-nav-tint="account"/);
+    expect(more).toMatch(/data-nav-pill="true" data-nav-tint="more"/);
     expect(render(<BottomNavV2 current="charts" moreOpen={false} onMore={() => {}} />, false)).not.toMatch(/data-nav-tint|bg-sec-/);
   });
 

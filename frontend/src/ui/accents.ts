@@ -21,7 +21,9 @@ export const HERO_CARD = "rounded-panel shadow-card accent-gradient-border";
 export const AOI_HIGHLIGHT = "aoi-highlight rounded-control";
 
 /** CA3: one identity tint per main navigation section (user and admin), plus Broker (pinned) and AI Copilot. */
-export type SectionTint = "markets" | "trading" | "insights" | "account" | "admin" | "broker" | "copilot";
+export type SectionTint = "markets" | "trading" | "insights" | "account" | "admin" | "broker" | "copilot"
+  // CA6-1 (owner, 25 Oct): the five bottom-bar destinations, five clearly different hues.
+  | "today" | "charts" | "signals" | "trades" | "more";
 
 /** CA3: THE section -> tint map. The nav chips and the PageHeader chip both read it, so they can never disagree. */
 export const SECTION_TINT: Record<SectionId, SectionTint> = {
@@ -30,12 +32,19 @@ export const SECTION_TINT: Record<SectionId, SectionTint> = {
   trading: "trading",
   insights: "insights",
   account: "account",
-  more: "account",
+  more: "more",
   admin: "admin",
 };
 
-/** Two entries keep their own colour whatever their section: Broker (ATP blue) and AI Copilot (the AI violet). */
-const OWN_TINT: Partial<Record<ShellKey, SectionTint>> = { broker: "broker", copilot: "copilot" };
+/**
+ * Entries that keep their own colour whatever their section: Broker (ATP blue) and AI Copilot (the AI violet), and -
+ * CA6-1 (owner, 25 Oct) - the four bottom-bar pages, so the bar shows four different hues (Today blue, Charts violet,
+ * Signals amber, My trades pink; More is teal through its section). The sidebar, the More sheet and the PageHeader
+ * read the same map, so a page has one colour everywhere.
+ */
+const OWN_TINT: Partial<Record<ShellKey, SectionTint>> = {
+  broker: "broker", copilot: "copilot", dashboard: "today", charts: "charts", signals: "signals", positions: "trades",
+};
 
 export function sectionTintOf(key: ShellKey | null): SectionTint | null {
   if (key === null) return null;
@@ -54,6 +63,11 @@ const CHIP: Record<SectionTint, string> = {
   admin: "bg-sec-admin-soft text-sec-admin",
   broker: "bg-sec-broker-soft text-sec-broker",
   copilot: "bg-sec-copilot-soft text-sec-copilot",
+  today: "bg-sec-today-soft text-sec-today",
+  charts: "bg-sec-charts-soft text-sec-charts",
+  signals: "bg-sec-signals-soft text-sec-signals",
+  trades: "bg-sec-trades-soft text-sec-trades",
+  more: "bg-sec-more-soft text-sec-more",
 };
 
 const CHIP_SIZE = { sm: "h-7 w-7", md: "h-9 w-9", lg: "h-10 w-10" } as const;
@@ -74,6 +88,11 @@ const NAV_CHIP_ACTIVE: Record<SectionTint, string> = {
   admin: "bg-sec-admin text-surface-1",
   broker: "bg-sec-broker text-surface-1",
   copilot: "bg-sec-copilot text-surface-1",
+  today: "bg-sec-today text-surface-1",
+  charts: "bg-sec-charts text-surface-1",
+  signals: "bg-sec-signals text-surface-1",
+  trades: "bg-sec-trades text-surface-1",
+  more: "bg-sec-more text-surface-1",
 };
 const NAV_WORD: Record<SectionTint, string> = {
   markets: "text-sec-markets",
@@ -83,6 +102,11 @@ const NAV_WORD: Record<SectionTint, string> = {
   admin: "text-sec-admin",
   broker: "text-sec-broker",
   copilot: "text-sec-copilot",
+  today: "text-sec-today",
+  charts: "text-sec-charts",
+  signals: "text-sec-signals",
+  trades: "text-sec-trades",
+  more: "text-sec-more",
 };
 
 /** CA6: the bottom-bar tab's round chip - soft while another page is on screen, the strong tint while its own is. */

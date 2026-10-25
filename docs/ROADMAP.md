@@ -113,6 +113,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 |---|---|---|---|
 | UI-H | in progress | audit approved (#503); Wave 0 shared components next (one SubTabs style; mocks per wave), then Wave 1 | #503 |
 | UI-H-BUG | in progress | bug lane: C1 (merged #506: history ends at the last session close, empty state with its reason, `atp.sh probe-candles`), B2a/B2b (merged #507: "as of" the last session close, "Spot: last close", `atp.sh probe-chain`), B3+B4+Orders time (merged #508), A1 (merged #505), B1 (#509: own-broker chain reads = the user's session snapshots; Analyses / Charts / OI reads no longer refused) - small PRs, each with proof | C1: #506; B2: #507; B3/B4: #508; A1: #505; B1: #509 |
+| UI-H-CA | not started | colour accents CA1-CA5 on the Wave 0 components (after #510); proof page Today / Charts / Option chain / Terminal, phone + desktop, light + dark, colour-blind check | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
 | CP-V | in progress | independent review of ATP_ORDER_CP_V.md against the code first; build after DATA-H (CV1 lake fallback) | - |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |

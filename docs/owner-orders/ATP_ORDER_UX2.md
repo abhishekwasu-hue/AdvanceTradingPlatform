@@ -12,3 +12,7 @@ UX-8 Density setting (Settings → Appearance): Comfortable / Compact (tighter r
 UX-9 Order ticket: default = side, qty/lots, price type, Review; advanced (SL-M, product, validity, exits) collapsed; review shows price, charges estimate, margin, max loss; phone LIVE confirm = press-and-hold (PAPER: tap).
 UX-10 Resume UI-H page waves (H1 order: header → badge → cards → visual → details) page by page: Today, Charts, Option chain, Terminal, My trades first.
 Proof: the UX-1 table today; then each step's comparison page.
+
+## UX-3 replaced (owner, 25 Oct, verbatim)
+
+UX-3 (replaces the earlier UX-3): the watchlist is a Terminal panel, docked on the left and ON in every default layout (collapsible, resizable, saved with "Save as mine"): the user's lists + system lists, live LTP and change with arrows; clicking a symbol switches the Terminal's underlying/chart/chain (linked panels); hover → Buy / Sell / Chart; add/remove/reorder; a "+ add symbol" box using the symbol-first search. Other pages do not get a permanent rail (phone keeps a watchlist strip on Today).

@@ -146,6 +146,14 @@ FEATURE_FLAGS: Dict[str, str] = {
     # login. `byob_data_tier` still decides whose session a user may read. OFF: everything exactly as before.
     "data_hub": "Data hub: one live price stream per broker connection for every page, live ticks in the browser, a reconnecting state and one renew prompt",
     "smart_execution": "Smart execution for multi-leg orders: hedge legs first (shorts closed first on exit), the incomplete-order state with Complete the rest / Close the filled legs, freeze-limit slicing, the margin with the hedge benefit and the free balance after, the physical-settlement warning for stock F&O",
+    # Trading Terminal T1 (docs/owner-orders/ATP_SESSION_TRADING_TERMINAL.md, review TT-16..TT-19, TT-25; needs `ui_v2`):
+    # the Terminal page at /terminal - the chart, the option chain, the order panel, positions, orders and the basket on one
+    # screen as panels the user moves, resizes, opens and closes (presets and up to 10 own layouts in the prefs namespace
+    # `terminal`), with a status bar (MTM, funds, the labelled margin estimate, the price feed, the mode and the kill switch
+    # state; GET /api/terminal/status, the caller's own rows only). Every order goes through the existing ticket and basket
+    # (one order path; PAPER in Phase 0). OFF (the default, until the owner's approval of the screenshots): no navigation
+    # entry, the address says "Coming soon" and /api/terminal/* answers 404. Kept out of the trader pack (TT-25).
+    "terminal": "Trading Terminal: chart, option chain, order panel, positions, orders and basket on one screen with saved layouts and a status bar (orders through the existing ticket; PAPER in Phase 0)",
     # Master Order 4 slice 3 (app/growth; needs `ui_v2`): the plan page with a usage meter (what the user's plan includes
     # and how much of it he used, from the existing limits and counters), the "my discipline this week" share card (his
     # own discipline facts only: no security names, no prices, no call words) and the admin Business view's activation

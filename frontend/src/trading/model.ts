@@ -52,24 +52,38 @@ function sideWord(direction: string | null | undefined): string {
 }
 
 /** The stop and target of a position, as the screen shows them (stop red, target green - §8). */
+/** Owner fix T1-6: a position without a stop of its own reads "no stop" - never "–" or the one-tick stop a bought option
+ *  without one is stored with (backend paper/fno_ticket.py position_stop: the whole premium at risk). */
+export const NO_STOP = "no stop";
+const PLACEHOLDER_STOP_MAX = 0.1;
+export function stopText(v: number | null | undefined, placeholder = false): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return NO_STOP;
+  if (placeholder && v <= PLACEHOLDER_STOP_MAX) return NO_STOP;
+  return formatPrice(v);
+}
+/** A bought option's stored stop of one tick is the "no stop of his own" placeholder. */
+function premiumPlaceholder(p: TradeRecord): boolean {
+  return p.instrument_kind === "OPTION" && p.option_position !== "WRITE";
+}
+
 export function positionLevels(p: TradeRecord): { on: string | null; levels: Level[] } {
   if (isDerivative(p)) {
     const side = sideWord(p.underlying_direction);
     const levels: Level[] = [
-      { label: "Stop", value: formatPrice(p.underlying_stop_loss), tone: "down" },
+      { label: "Stop", value: stopText(p.underlying_stop_loss), tone: "down" },
       { label: "Target", value: formatPrice(p.underlying_target1), tone: "up" },
     ];
     if (p.instrument_kind === "OPTION") {
-      levels.push({ label: p.option_position === "WRITE" ? "Premium ceiling" : "Premium floor", value: formatPrice(p.stop_loss), tone: "neutral" });
+      levels.push({ label: p.option_position === "WRITE" ? "Premium ceiling" : "Premium floor", value: stopText(p.stop_loss, premiumPlaceholder(p)), tone: "neutral" });
     } else {
-      levels.push({ label: "Contract stop", value: formatPrice(p.stop_loss), tone: "neutral" });
+      levels.push({ label: "Contract stop", value: stopText(p.stop_loss), tone: "neutral" });
     }
     return { on: `On ${p.underlying_symbol}${side ? ` (${side})` : ""}:`, levels };
   }
   return {
     on: null,
     levels: [
-      { label: "Stop", value: formatPrice(p.stop_loss), tone: "down" },
+      { label: "Stop", value: stopText(p.stop_loss, premiumPlaceholder(p)), tone: "down" },
       { label: "Target", value: formatPrice(p.target1), tone: "up" },
     ],
   };

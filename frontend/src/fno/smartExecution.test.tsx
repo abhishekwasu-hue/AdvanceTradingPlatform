@@ -74,11 +74,11 @@ const INCOMPLETE: BasketResult = {
 };
 
 describe("the incomplete state", () => {
-  it("offers Complete the rest and Close the filled legs, only on the user's tap", () => {
+  it("offers Complete the leg(s) and Exit the filled leg(s) (owner's words, T1-4), only on the user's tap", () => {
     const html = renderToStaticMarkup(<IncompleteV2 message={INCOMPLETE.message!} filledTradeIds={[11, 12, 13]} onCompleteRest={() => undefined} />);
     const t = text(html);
-    expect(t).toContain("Complete the rest");
-    expect(t).toContain("Close the filled legs");
+    expect(t).toMatch(/Complete the legs?/);
+    expect(t).toMatch(/Exit the filled legs?/);
     expect(t).toContain("Nothing happens until you choose");
     expect(t).toContain("sold legs first, then the hedges");
   });

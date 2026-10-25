@@ -416,6 +416,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/context/panel"): "member",
     ("GET", "/api/markets/overview"): "member: shared index and sector moves from the system lists and the shared end-of-day history; no tenant rows",
     ("GET", "/api/markets/lists/{key}"): "member: one shared system list's stocks with their end-of-day moves; no tenant rows",
+    ("GET", "/api/terminal/status"): ("member: the Terminal status bar - the caller's own PAPER trades, own price connection and the "
+                                      "organisation's kill switch state (tenant and user, TT-15)"),
     # MO4 slice 3: the caller's own plan page + usage meter and his own discipline share card (flags ui_v2 + growth_v2)
     ("GET", "/api/growth/plan"): "member: the caller's own plan and usage (his own watchlists, scans, AI requests and analyses; the organisation's paper bots and backtests)",
     ("GET", "/api/growth/share/discipline-week"): "member: the caller's own discipline facts from his own PAPER trades; no names, no prices",

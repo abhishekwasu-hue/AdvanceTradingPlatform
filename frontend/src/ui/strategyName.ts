@@ -25,6 +25,9 @@ export const BUILT_IN_STRATEGY_NAMES: Readonly<Record<string, string>> = {
   ema_rsi_scalper_1m: "EMA + RSI Scalper",
   supertrend_adx_scalper_1m: "Supertrend + ADX Scalper",
   rsi_adx_momentum_5m: "RSI + ADX Momentum Scalper",
+  // Owner fix T1-6: orders a person placed himself, in plain words (never "Manual fno").
+  manual: "Manual trade",
+  manual_fno: "Manual trade",
 };
 
 /** Short forms inside an id, written out. */

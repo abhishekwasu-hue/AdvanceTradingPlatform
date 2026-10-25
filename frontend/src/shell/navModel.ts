@@ -1,6 +1,6 @@
 import {
   BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Filter, GraduationCap, History, Layers,
-  LayoutDashboard, LayoutGrid, Lightbulb, Link2, ListChecks, ListTodo, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
+  LayoutDashboard, LayoutGrid, Lightbulb, Link2, ListChecks, ListTodo, MonitorDot, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
   ScanSearch, Sigma, SlidersHorizontal, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, Palette, LifeBuoy, Wrench, type LucideIcon,
 } from "lucide-react";
 import { needsAttention, type BrokerDot } from "../broker/brokerState";
@@ -10,6 +10,7 @@ import { PAGE_FLAGS } from "./pageFlags";
 import { SETTINGS_PATH, type SettingsSectionKey } from "../settings/paths";
 import { IDEAS_ADDRESS, IDEA_FLAG } from "../ideas/model";
 import { LEARN_ADDRESS } from "../learn/model";
+import { TERMINAL_ADDRESS } from "./aliases";
 
 /**
  * UI2-1 (UI v2 proposal §2 navigation map, §4 bottom bar): the one navigation model the v2 shell reads - the sidebar,
@@ -22,7 +23,7 @@ import { LEARN_ADDRESS } from "../learn/model";
 
 /** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
  * Settings → Setup (`/settings/setup`, UI2-7), My trading defaults (`/settings/trading-defaults`, part C) and the Settings section pages (`/settings/ai` ..., Settings redesign B). */
-export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | "learn" | SettingsSectionKey;
+export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | "learn" | "terminal" | SettingsSectionKey;
 
 export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more" | "admin";
 
@@ -75,6 +76,9 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
   },
   {
     id: "trading", title: "Trading", items: [
+      // Trading Terminal T1 (TT-18): first in the Trading group, only while `terminal` is on (13 entries off, 14 on).
+      item("terminal", "Terminal", "Terminal", TERMINAL_ADDRESS, MonitorDot,
+        { flag: PAGE_FLAGS.terminal, keywords: ["trading terminal", "trade screen", "workspace", "order panel", "scalper", "option seller"] }),
       item("signals", "Signals", "Signals", "/signals", Zap, { keywords: ["approvals", "alerts", "ideas"] }),
       item("deployments", "Paper bot", "Paper bot", "/deployments", Bot, { keywords: ["autopilot", "deployments", "deploy", "running", "bots"] }),
       item("positions", "My trades", "My trades", "/positions", ListChecks, { keywords: ["my positions", "positions", "holdings", "open trades", "closed trades"] }),

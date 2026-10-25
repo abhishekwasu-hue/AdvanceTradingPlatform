@@ -4054,6 +4054,29 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   the positions / orders reads are organisation-wide (TT-13..15).
 - Questions TT-1..TT-30 in `docs/OPEN_QUESTIONS.md` (status open); README row 21 status updated.
 
+## 24 Oct - Trading Terminal T1: the workspace (README row 21)
+
+- Branch `claude/terminal-t1-workspace` (from main at `3138274d`). **No migration** (layouts in the prefs namespace
+  `terminal`). New flag `terminal`, OFF by default, catalog status "unfinished" (depends on `ui_v2`), kept out of the
+  trader pack (TT-25, test).
+- Backend: `app/terminal/status.py` + `routes.py` - `GET /api/terminal/status` (ui_v2 + terminal, 404 naming the flag
+  that is off): today's MTM, open MTM, funds, ATP's labelled margin estimate, the mode (shown, never changed), the
+  price feed and the kill switch state, the caller's own rows only (tenant AND user, TT-15); in the tenancy route table.
+  `app/me/prefs.py`: namespace `terminal` (at most 10 layouts; panels inside the 12 columns, no overlap, unique panels
+  and names; the size test proves 10 layouts at their largest fit inside 16 KB) and the tour id `terminal`.
+  `app/trading/routes.py`: optional `?mine=true` on `/api/positions` and `/api/orders` (default unchanged). No order
+  path: `tests/test_z10c_order_paths.py` passes unchanged.
+- Frontend `src/terminal/`: the page (`TerminalPageV2`, its own lazy chunk), ATP's own 12-column grid (`TerminalGridV2`:
+  drag to move, corner to resize, arrow keys / Shift+arrows), the layout model (presets Option seller - the default,
+  T-D1 -, Quick trade and Multi-chart; save / save as / rename / delete / switch / reset; the 10 limit), the panels
+  (EmbeddedChartV2; a chain ladder on `useChainTrading`; the order panel on the ONE ticket's `TicketBody` through the new
+  `useOrderTicket` hook, which the modal ticket now uses too; PositionsV2's rows with their own Exit now; a read-only
+  Orders panel with the order trail; the basket's legs with the existing basket panel; Bots & signals and Payoff as
+  plain-word placeholders), the status bar with the per-device privacy mask, the phone tabs, the page tour.
+  Navigation: "Terminal" first in the Trading group with the flag on (13 entries off, 14 on), "Coming soon" with it off.
+- Tests: `tests/test_terminal_t1.py` (19), `src/terminal/terminal.test.tsx` (24), `e2e/terminal-v2.e2e.ts` (1440 /
+  390 / 360, light / dark, flag off; no baselines yet, T1-13). T8 measured in headless Chromium (see the PR).
+- Questions T1-1..T1-14 in `docs/OPEN_QUESTIONS.md`.
 ## TT-12: every platform-default limit starts off (24 Oct)
 
 - Branch `claude/tt12-limits-off` (from main). Owner decision TT-12 (DECISIONS 24 Oct; approved behaviour change, CLAUDE.md section 8).

@@ -642,6 +642,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/paper/fno/resting"): "member: the caller's own waiting orders and armed exits only (tenant and user, TM-2)",
     ("POST", "/api/paper/fno/resting/exit"): "trader",       # TM-2: a stop / target on the caller's own position (404 other tenant, 403 another member's)
     ("POST", "/api/paper/fno/resting/{order_id}/cancel"): "trader",   # TM-2: the caller's own waiting order (404 otherwise)
+    ("GET", "/api/paper/fno/group-exits"): "member: the caller's own combined exits only (tenant and user, CX)",
+    ("POST", "/api/paper/fno/group-exits/preview"): "trader",        # CX: a preview over the caller's own open positions; stores nothing
+    ("POST", "/api/paper/fno/group-exits"): "trader",                # CX: a combined exit on the caller's own open positions only
+    ("POST", "/api/paper/fno/group-exits/{exit_id}/edit"): "trader", # CX: the caller's own armed combined exit (404 otherwise)
+    ("POST", "/api/paper/fno/group-exits/{exit_id}/cancel"): "trader",   # CX: the caller's own armed combined exit (404 otherwise)
     ("POST", "/api/paper/fno/order/preview"): "trader",
     ("POST", "/api/paper/fno/basket/evaluate"): S_COMPUTE,     # FNO-2: the basket's numbers (instrument master + the body)
     ("GET", "/api/paper/fno/basket/settings"): "member: the caller's own options settings (their deployments) only",

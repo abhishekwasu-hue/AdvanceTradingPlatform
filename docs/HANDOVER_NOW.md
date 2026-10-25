@@ -6,4 +6,5 @@ then merge: (1) picker button = current interval if not starred, else timeframe 
 (2) phone list = bottom sheet, scrolls inside, above the bottom nav. Then one deploy block (DEP-1).
 Rule now: no new jobs until the limit resets; finish, merge, deploy only.
 Known: staging rollback --restore-db step fails intermittently (not tied to a PR) - root-cause next.
-Next (order): TF-1 fixes -> DM ✅ -> P1 items -> P2-F FN1.. (FN0 audit merged #538) -> P2-8 Journal v2.
+Traders first (DECISIONS 25 Oct PR-1..4): UI polish frozen after TF-1. Next: data (DATA-H backfill, data_hub,
+universe sync) -> day-one test J1/J3 -> T2/T3 + CX PR 3 + SX -> FN2-FN4 -> FN5 + CP-V -> alerts. FN0_JOURNEYS.md.

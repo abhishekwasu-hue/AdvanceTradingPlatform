@@ -5,6 +5,9 @@ import { ThemeToggle } from "../components/AppearanceCard";
 import type { SystemStatus, UserResponse } from "../types";
 import { currentPlatform, shortcutLabel } from "./CommandBarV2";
 import { initialsOf } from "./SidebarV2";
+import { navItemFor, type ShellKey } from "./navModel";
+import { sectionChipClass, sectionTintOf } from "../ui/accents";
+import { useColourV2 } from "../ui/colourV2";
 
 /**
  * UI2-1 (UI v2 proposal §9 rule 3, mockups dashboard-desktop-1440 / nav-bottom-mobile): the v2 top bar.
@@ -14,6 +17,10 @@ import { initialsOf } from "./SidebarV2";
  *   and the theme move to the More sheet.
  * MO2 part C: a "?" right after the page title replays that page's tips (`onTour`: only on a page that has tips, once
  * the tips' state is known).
+ * UI-H CA7 (owner, 25 Oct): on a phone, with colour v2 on, the page's section chip (CA3: its nav icon on its section's
+ * round tint, the same map as the sidebar) sits right before the title, as the sidebar shows it on desktop. The title
+ * is never cut on a phone (H9): it wraps to a second line and the bar grows; from md up it keeps to one line (with
+ * colour v2 off the bar is exactly as before).
  * Notices sit in one row under the bar, in plain words (§3 R18): maintenance and LIVE paused are warnings (amber,
  * with an icon). P3: on the front page in PAPER (`paperOnly`) the LIVE-paused notice is left out; the shell also passes
  * `paperOnly` on every page while `phase0_paper_only` is on (user-friendly pass item 2: no LIVE wording in the paper
@@ -38,6 +45,8 @@ export interface TopBarV2Props {
   paperOnly?: boolean;
   /** MO2 part C: replays this page's tips (present only on a page that has them). */
   onTour?: () => void;
+  /** UI-H CA7: the page's navigation key - its section chip beside the title on a phone (colour v2). */
+  section?: ShellKey | null;
 }
 
 /** The notices under the top bar, in plain words. `paperOnly` leaves out the LIVE ones. Never an e-mail chip (item 1). */
@@ -51,7 +60,10 @@ export function topBarNotices(status: SystemStatus | null, _user: UserResponse |
   return out;
 }
 
-export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour }: TopBarV2Props) {
+export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour, section = null }: TopBarV2Props) {
+  const colour = useColourV2();
+  const tint = colour ? sectionTintOf(section) : null;
+  const SectionIcon = tint ? navItemFor(section)?.icon : undefined;
   // UI2-4e: the one shared status read (the Charts page and the charts on other pages read the same).
   const { status } = useMarketStatus();
   const notices = topBarNotices(status, user, paperOnly);
@@ -59,12 +71,16 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
 
   return (
     <header className="shrink-0 border-b border-subtle bg-surface-1 pt-[env(safe-area-inset-top)]">
-      <div className="flex h-14 items-center gap-space-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] md:px-space-8">
+      <div className={`flex ${colour ? "min-h-14" : "h-14"} items-center gap-space-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] md:px-space-8`}>
         <Link to="/" aria-label="AiAlgoDesk - Dashboard" className="shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:hidden">
           {/* A text monogram, not the logo SVG: the sidebar's (hidden on phones) owns the logo's gradient id. */}
           <span aria-hidden className="flex h-7 w-7 items-center justify-center rounded-control bg-fg text-t12 font-bold text-surface">AT</span>
         </Link>
-        <span className="min-w-0 shrink truncate text-t18 font-semibold text-fg md:text-t15">{title}</span>
+        {tint && SectionIcon && (
+          <span aria-hidden data-section-chip={tint} data-topbar-chip className={`${sectionChipClass(tint, "sm")} md:hidden`}><SectionIcon size={16} /></span>
+        )}
+        {/* With colour v2 (CA7) the title wraps on a phone instead of being cut (H9); with it off the bar is as before. */}
+        <span data-topbar-title className={`min-w-0 shrink text-t18 font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:anywhere] md:truncate md:py-0" : "truncate"}`}>{title}</span>
         {onTour && (
           <button type="button" onClick={onTour} title="Tips for this page" aria-label="Show the tips for this page" data-tour="tour-replay"
             className={`${iconButton} -ml-space-2 shrink-0`}>

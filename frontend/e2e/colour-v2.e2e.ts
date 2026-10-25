@@ -4,8 +4,9 @@ import { mockApi } from "./mockApi";
 
 /**
  * Colour v2 (flag `colour_v2`, behind `ui_v2`): the owner's review points of 24 Oct on a phone, with the flag on.
- * - CV-1: the bottom bar's inactive tabs are neutral grey; only the tab on screen is brand (and no tab at all on a page
- *   that is not in the bar, such as Option chain).
+ * - CA6 (owner, 25 Oct; supersedes CV-1's neutral grey tabs): every bottom-bar tab's icon in its section colour on a
+ *   soft round chip; only the tab on screen is on the strong tint with its word in the section colour (none at all on a
+ *   page that is not in the bar, such as Option chain); the other words stay grey.
  * - CV-2: every bottom-bar label stays on one line, the bold active one included, at 360 and 390 px.
  * - CV-4: Today's P&L is fully on screen when Today opens at 390 x 844 (above the bottom bar), with the sparklines on.
  * The candles behind the sparklines are made-up 5-minute bars (no real prices). With the flag off nothing here applies;
@@ -90,28 +91,41 @@ test.describe("colour v2 phone 390 x 844", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
   for (const [page_, path, active] of [["Signals", "/signals", "Signals"], ["Option chain", "/option-chain", null]] as const) {
-    test(`CV-1: on ${page_} only the tab on screen is brand; the others are neutral grey`, async ({ page }) => {
+    test(`CA6: on ${page_} every tab shows its section colour; only the tab on screen is on the strong tint`, async ({ page }) => {
       await open(page, path);
-      const colours = await page.locator("[data-bottom-nav-v2] > a, [data-bottom-nav-v2] > button").evaluateAll((tabs) => {
-        const probe = (cls: string) => {
+      const tabs = await page.locator("[data-bottom-nav-v2] > a, [data-bottom-nav-v2] > button").evaluateAll((els) => {
+        const probe = (cls: string, prop: "color" | "backgroundColor") => {
           const s = document.createElement("span");
           s.className = cls;
           document.body.append(s);
-          const c = getComputedStyle(s).color;
+          const c = getComputedStyle(s)[prop];
           s.remove();
           return c;
         };
-        const grey = probe("text-fg-muted");
-        const brand = probe("text-brand");
-        return tabs.map((t) => {
-          const icon = t.querySelector("svg")!;
-          return { text: (t.textContent ?? "").trim(), icon: getComputedStyle(icon).color, word: getComputedStyle(t).color, grey, brand };
+        return els.map((t) => {
+          const chip = t.querySelector<HTMLElement>("[data-nav-tint]")!;
+          const tint = chip.dataset.navTint!;
+          return {
+            text: (t.textContent ?? "").trim(), strong: chip.dataset.navPill === "true",
+            icon: getComputedStyle(t.querySelector("svg")!).color, chip: getComputedStyle(chip).backgroundColor, word: getComputedStyle(t).color,
+            weight: Number(getComputedStyle(t).fontWeight),
+            want: { sec: probe(`text-sec-${tint}`, "color"), soft: probe(`bg-sec-${tint}-soft`, "backgroundColor"),
+              solid: probe(`bg-sec-${tint}`, "backgroundColor"), card: probe("text-surface-1", "color"), grey: probe("text-fg-muted", "color") },
+          };
         });
       });
-      for (const c of colours) {
-        const want = c.text === active ? c.brand : c.grey;
-        expect(c.icon, `${c.text} icon`).toBe(want);
-        expect(c.word, `${c.text} word`).toBe(want);
+      expect(tabs.filter((t) => t.strong).map((t) => t.text)).toEqual(active ? [active] : []);
+      for (const t of tabs) {
+        if (t.strong) {
+          expect(t.chip, `${t.text} chip`).toBe(t.want.solid);
+          expect(t.icon, `${t.text} icon`).toBe(t.want.card);
+          expect(t.word, `${t.text} word`).toBe(t.want.sec);
+          expect(t.weight, `${t.text} bold`).toBeGreaterThanOrEqual(600);
+        } else {
+          expect(t.chip, `${t.text} chip`).toBe(t.want.soft);
+          expect(t.icon, `${t.text} icon`).toBe(t.want.sec);
+          expect(t.word, `${t.text} word`).toBe(t.want.grey);
+        }
       }
     });
   }

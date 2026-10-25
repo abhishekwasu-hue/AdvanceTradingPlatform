@@ -98,6 +98,14 @@ textarea::placeholder {
   border-top-width: 3px;
   background: linear-gradient(rgb(var(--surface-1)), rgb(var(--surface-1))) padding-box, var(--accent-gradient) border-box;
 }
+/* UI-H CA8 (owner, 25 Oct): on a phone a 1 px side of the outline all but disappears at 390 px, so the hero card read
+   as unchanged; there the outline is 2 px with a 4 px top band - the same gradient, as clearly seen as on desktop. */
+@media (max-width: 767.98px) {
+  .accent-gradient-border {
+    border-width: 2px;
+    border-top-width: 4px;
+  }
+}
 .aoi-highlight {
   border: 1px solid transparent;
   border-left-width: 3px;

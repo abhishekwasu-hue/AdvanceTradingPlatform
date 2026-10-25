@@ -207,7 +207,7 @@ export default function AppShellV2() {
         </a>
         <SidebarV2 sections={sections} pinned={pinned} dot={dot} current={key} user={user} accountPath={accountPath} />
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopBarV2 title={title} user={user} accountPath={accountPath}
+          <TopBarV2 title={title} section={key} user={user} accountPath={accountPath}
             notificationsActive={key === "notifications"} accountActive={key === "account"}
             onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined}
             paperOnly={frontPaperOnly || liveHidden} onTour={replayTour} />

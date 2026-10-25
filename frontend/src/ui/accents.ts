@@ -62,3 +62,35 @@ const CHIP_SIZE = { sm: "h-7 w-7", md: "h-9 w-9", lg: "h-10 w-10" } as const;
 export function sectionChipClass(tint: SectionTint, size: keyof typeof CHIP_SIZE = "sm"): string {
   return `flex shrink-0 items-center justify-center rounded-pill ${CHIP_SIZE[size]} ${CHIP[tint]}`;
 }
+
+// UI-H CA6 (owner, 25 Oct): the phone bottom bar. Every tab's icon sits on its section's soft round chip; the tab on
+// screen takes the stronger tint - the solid section colour under the card colour - and its word in the section
+// colour, bold. Written out in full so Tailwind sees every class (AA from the tokens, accents.test.tsx "CA6").
+const NAV_CHIP_ACTIVE: Record<SectionTint, string> = {
+  markets: "bg-sec-markets text-surface-1",
+  trading: "bg-sec-trading text-surface-1",
+  insights: "bg-sec-insights text-surface-1",
+  account: "bg-sec-account text-surface-1",
+  admin: "bg-sec-admin text-surface-1",
+  broker: "bg-sec-broker text-surface-1",
+  copilot: "bg-sec-copilot text-surface-1",
+};
+const NAV_WORD: Record<SectionTint, string> = {
+  markets: "text-sec-markets",
+  trading: "text-sec-trading",
+  insights: "text-sec-insights",
+  account: "text-sec-account",
+  admin: "text-sec-admin",
+  broker: "text-sec-broker",
+  copilot: "text-sec-copilot",
+};
+
+/** CA6: the bottom-bar tab's round chip - soft while another page is on screen, the strong tint while its own is. */
+export function navChipClass(tint: SectionTint, active: boolean): string {
+  return `flex h-9 w-9 items-center justify-center rounded-pill transition-colors duration-fast ${active ? NAV_CHIP_ACTIVE[tint] : CHIP[tint]}`;
+}
+
+/** CA6: the word of the bottom-bar tab on screen - its section colour (the caller adds the bold weight). */
+export function navWordClass(tint: SectionTint): string {
+  return NAV_WORD[tint];
+}

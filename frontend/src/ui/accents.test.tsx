@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
@@ -9,7 +10,10 @@ import { Button, buttonClass } from "../components/primitives/Button";
 import { TodaySummaryV2 } from "../dashboard/BlocksV2";
 import { NAV_PINNED_V2, NAV_SECTIONS_V2, allNavItems, type SectionId } from "../shell/navModel";
 import { navTone } from "../shell/navTone";
-import { SECTION_TINT, sectionTintOf, type SectionTint } from "./accents";
+import { SECTION_TINT, navChipClass, navWordClass, sectionTintOf, type SectionTint } from "./accents";
+import BottomNavV2 from "../shell/BottomNavV2";
+import TopBarV2 from "../shell/TopBarV2";
+import { BOTTOM_BAR_V2 } from "../shell/navModel";
 import { ColourV2Provider } from "./colourV2";
 import { NewBadge } from "./NewBadge";
 import { PageHeader } from "./PageHeader";
@@ -179,5 +183,56 @@ describe("CA4: a tone is never colour alone", () => {
         if ("sign" in cue) expect(html).toContain("+₹2,450");
       }
     }
+  });
+});
+
+describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today hero card", () => {
+  it.each(Object.entries(THEMES))("%s: CA6 the strong tab tint and its bold word meet AA on the bar", (_, t) => {
+    for (const s of TINTS) {
+      // The tab on screen: the card colour icon on the solid section colour, and the word in that colour on the bar.
+      expect(contrast(t["surface-1"], t[`sec-${s}`]), `icon on the strong ${s} chip`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(t[`sec-${s}`], t["surface-1"]), `${s} word on the bar`).toBeGreaterThanOrEqual(4.5);
+      // The soft chip of every other tab: the icon on it (4.5 : 1), and the strong chip stands apart from the soft one.
+      expect(contrast(t[`sec-${s}`], t[`sec-${s}-soft`]), `${s} icon on its soft chip`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrast(t["fg-muted"], t["surface-1"]), "the other words").toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("CA6: every tab its section tint, the tab on screen strong + bold, More the Account tint; off as before", () => {
+    const html = render(<BottomNavV2 current="charts" moreOpen={false} onMore={() => {}} />, true);
+    const tints = [...html.matchAll(/data-nav-tint="([a-z]+)"/g)].map((m) => m[1]);
+    expect(tints).toEqual([...BOTTOM_BAR_V2.map((b) => sectionTintOf(b.key) ?? "account"), "account"]);
+    expect(html).toContain(navChipClass("markets", true));
+    expect(html.match(/rounded-pill[^"]*bg-sec-[a-z]+-soft/g)).toHaveLength(4);
+    expect(html).toContain(`${navWordClass("markets")} font-semibold`);
+    // 44 px targets: every tab is at least 64 px tall and a fifth of the bar wide.
+    expect(html.match(/min-h-16 flex-1/g)).toHaveLength(5);
+    const more = render(<BottomNavV2 current="charts" moreOpen onMore={() => {}} />, true);
+    expect(more).toMatch(/data-nav-pill="true" data-nav-tint="account"/);
+    expect(render(<BottomNavV2 current="charts" moreOpen={false} onMore={() => {}} />, false)).not.toMatch(/data-nav-tint|bg-sec-/);
+  });
+
+  const bar = (on: boolean, section: Parameters<typeof TopBarV2>[0]["section"], title = "Option chain") => render(
+    <TopBarV2 title={title} section={section} user={null} notificationsActive={false} accountActive={false} accountPath="/login" onSearch={() => {}} />, on);
+
+  it("CA7: the phone top bar shows the page's section chip before the title; the title is never cut on a phone", () => {
+    const on = bar(true, "option-chain");
+    expect(on).toMatch(/data-section-chip="markets" data-topbar-chip="true" class="[^"]*bg-sec-markets-soft text-sec-markets[^"]*md:hidden/);
+    expect(on.indexOf("data-topbar-chip")).toBeLessThan(on.indexOf("data-topbar-title"));
+    expect(bar(true, "terminal")).toContain('data-section-chip="trading"');
+    expect(bar(false, "option-chain")).not.toContain("data-topbar-chip");
+    expect(bar(true, null)).not.toContain("data-topbar-chip");
+    // H9: no truncation on a phone (wraps instead; the bar grows), one line from md up.
+    const title = /data-topbar-title="true" class="([^"]*)"/.exec(bar(true, "markets", "Sectors & indices"))![1].split(" ");
+    expect(title).not.toContain("truncate");
+    expect(title).toContain("md:truncate");
+    expect(bar(true, "markets")).toContain("min-h-14");
+  });
+
+  const indexCss = readFileSync("src/styles/index.css", "utf8");
+
+  it("CA8: the Today hero card's gradient outline is drawn thicker on a phone, the same gradient", () => {
+    expect(indexCss).toMatch(/@media \(max-width: 767\.98px\) \{\s*\.accent-gradient-border \{\s*border-width: 2px;\s*border-top-width: 4px;/);
+    expect(indexCss).toMatch(/\.accent-gradient-border \{[^}]*var\(--accent-gradient\) border-box/);
   });
 });

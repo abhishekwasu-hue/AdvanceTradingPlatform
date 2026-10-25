@@ -15,3 +15,7 @@ CA4 Summary cards: soft tinted backgrounds by meaning (profit / loss / risk / ne
 CA5 Check colour-blind simulation (protanopia / deuteranopia) on the comparison page.
 
 Proof: one before/after comparison page (Today, Charts, Option chain, Terminal; phone + desktop; light + dark).
+
+## Scope (owner, 25 Oct)
+
+Scope: project-wide and permanent — CA1–CA4 live in the shared colour_v2 tokens and UI-H components, so every page (user and admin) uses them; section tints are applied page by page in UI-H Waves 1–5. The four pages above are only the proof sample. No page-local colours.

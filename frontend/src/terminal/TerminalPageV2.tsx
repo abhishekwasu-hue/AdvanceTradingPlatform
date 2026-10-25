@@ -18,7 +18,7 @@ import { useFeatures } from "../ui/useFeatures";
 import { useMediaQuery } from "../utils/useMediaQuery";
 import { defaultTerminalApi, type TerminalApi } from "./api";
 import {
-  DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PANEL_IDS, PRESETS, PRESET_IDS, UNDERLYINGS, activeKey, changed, closePanel,
+  CHOOSER_PANEL_IDS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, UNDERLYINGS, activeKey, changed, closePanel,
   isPreset, layoutFor, nameProblem, openPanel, remove, rename, resetToPreset, saveAs, saveOver, switchTo,
   type Layout, type PanelId, type PanelPlace, type PhoneTab, type TerminalPrefs,
 } from "./layoutModel";
@@ -329,7 +329,7 @@ function PanelsMenu({ panels, onToggle }: { panels: readonly PanelPlace[]; onTog
       <summary className={cx(BUTTON, "cursor-pointer list-none")}><LayoutPanelTop size={16} aria-hidden />Panels</summary>
       <fieldset className="absolute left-0 z-20 mt-space-1 w-60 space-y-px rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
         <legend className="sr-only">Show panels</legend>
-        {PANEL_IDS.map((id) => (
+        {CHOOSER_PANEL_IDS.map((id) => (
           <label key={id} className="flex min-h-9 cursor-pointer items-center gap-space-2 rounded-control px-space-2 text-t14 text-fg hover:bg-surface-2">
             <input type="checkbox" checked={open.has(id)} onChange={(e) => onToggle(id, e.target.checked)} data-panel-toggle={id}
               disabled={open.has(id) && open.size <= 1} className="h-4 w-4 accent-brand" />

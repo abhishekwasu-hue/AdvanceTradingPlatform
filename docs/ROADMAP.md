@@ -111,7 +111,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 ## Status table (the session keeps this current; one line per item)
 | ID | Status | Next action | PR |
 |---|---|---|---|
-| UI-H | in progress | audit approved (#503); Wave 0 shared components next (one SubTabs style; mocks per wave), then Wave 1 | #503 |
+| UI-H | in progress | Wave 0 fixes ✅ (25 Oct), #510 merging; page waves carry H9 (phone titles never truncated, e.g. "Sectors & ind…") and W0-4 (ISO dates -> "27 Oct 2026"); then Wave 1 | #503, #510 |
 | UI-H-BUG | in progress | bug lane: C1 (merged #506: history ends at the last session close, empty state with its reason, `atp.sh probe-candles`), B2a/B2b (merged #507: "as of" the last session close, "Spot: last close", `atp.sh probe-chain`), B3+B4+Orders time (merged #508), A1 (merged #505), B1 (#509: own-broker chain reads = the user's session snapshots; Analyses / Charts / OI reads no longer refused) - small PRs, each with proof | C1: #506; B2: #507; B3/B4: #508; A1: #505; B1: #509 |
 | UI-H-CA | in progress | CA1-CA4 project-wide in the shared colour_v2 tokens + UI-H components (user + admin), no page-local colours (test guard); section tints adopted per page in Waves 1-5; proof page Today / Charts / Option chain / Terminal with a colour-blind check | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
@@ -122,7 +122,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-3 | waiting for owner | deploy, universe sync ON, "Enable trader features"; then day-one test on production | #470 |
 | P1-4 | in progress | verify which chart pages still bypass the core; gestures; phone recording | row 18 |
 | P1-5 | waiting for owner | `data_hub` ON via "Enable trader features" after the deploy; API-call numbers before / after | - |
-| P1-6 | in progress | T1 approved with fixes T1-1..T1-7 (24 Oct); `terminal` ON after their comparison page. T2 target 29 Oct: TT-1 LIVE sender (own PR; LIVE switch stays the owner's), TT-9 partial exit + reverse, TT-10 modify / cancel (PAPER). T3 target 2 Nov: spot / premium exit triggers, group exits, trailing (on the TM-2 engine) | #493 |
+| P1-6 | in progress | T1 + fixes ✅ (25 Oct): #493 merges after #510; `terminal` ON for all users after the deploy (T-D1). T2 target 29 Oct: TT-1 LIVE sender (own PR; LIVE switch stays the owner's), TT-9 partial exit + reverse, TT-10 modify / cancel (PAPER). T3 target 2 Nov | #493 |
 | P1-6c | in progress | PR 1 #524 approved (25 Oct) and merged; PR 2 #527 routes; next CX-F1 (stale leg price, never a silent wait) + CX-F2 (CRITICAL notice on Telegram with "Exit short now"), then PR 3 sheet + chip | #524, #527 |
 | P1-6d | review | same review as P1-6c; build with / right after CX (same engine) | - |
 | P1-8 | in progress | on main: server lists + Charts watchlist panel (chooser, search, sort, copy to my list, live ticks with `data_hub`). Missing: `watchlists` flag OFF in production; lists empty until the universe sync runs (P1-3); no Watchlist entry of its own on the phone bar (only inside Charts). Plan: (1) owner turns on via "Enable trader features" + System tab refresh; (2) W-PR: Watchlist page / phone bar entry using the same panel, behind ui_v2; (3) screenshots for ✅ | - |

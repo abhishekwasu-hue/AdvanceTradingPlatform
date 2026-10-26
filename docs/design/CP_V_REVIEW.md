@@ -5,6 +5,8 @@ branch `claude/owner-orders-data-h`) against the code on `origin/main` (24 Oct 2
 open questions are CPV-1 .. CPV-14 in `docs/OPEN_QUESTIONS.md`. Checked against CLAUDE.md, DECISIONS.md (the DATA-H
 and CP-V rows) and ADR-0006.
 
+**26 Oct: re-checked against main 232bf03 - see `CP_V_SPEC.md` (gap 9 outdated by DATA-H own bars; new findings F1-F9; fixed spec).**
+
 ## (a) What exists to reuse
 
 | Need (CV) | Exists on main | Where |

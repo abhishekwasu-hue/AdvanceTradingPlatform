@@ -132,7 +132,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | SB-1 | not started | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
-| CP-V | in progress | independent review of ATP_ORDER_CP_V.md against the code first; build after DATA-H (CV1 lake fallback) | - |
+| CP-V | in progress | review done twice (CP_V_REVIEW.md 24 Oct, CP_V_SPEC.md 26 Oct); fixed spec waits owner ✅ (CPV-15..17); build after DATA-H | CP-V spec PR |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |
 | P1-2 | in review | notice (TT12-1) added; owner: "Merge" after green CI, then deploy (no migration) | #494 |
 | P1-2b | in review | org min R:R OFF (0 = not set; an old stored 1.2 = not set), parity tests live / paper / both backtests; owner: "Merge" after green CI, then deploy (no migration) | #497 |

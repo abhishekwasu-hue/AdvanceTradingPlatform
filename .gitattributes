@@ -8,3 +8,6 @@
 # Tables in OPEN_QUESTIONS.md are one row per line, so a union keeps every row.
 docs/WORK_LOG.md merge=union
 docs/OPEN_QUESTIONS.md merge=union
+# Owner 26 Oct ("Union kra"): INBOX / DECISIONS are append-only tables written by parallel sessions; union keeps every row.
+docs/owner-orders/INBOX.md merge=union
+docs/owner-orders/DECISIONS.md merge=union

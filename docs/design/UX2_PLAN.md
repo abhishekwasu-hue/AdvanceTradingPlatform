@@ -24,7 +24,7 @@ Each PR: vitest next to the component + guards (userFriendlyPass, colour, nav), 
 regenerate only baselines that fail because of the redesign (each image looked at). One comparison page per milestone
 (390 + 1440, light + dark): M1 = PRs 1-2, M2 = 3-4, M3 = 5-7, M4 = 8, M5 = 9-11. Owner ✅ before each merge.
 
-## Owner decisions (defaults used if no answer)
+## Owner decisions — approved 26 Oct with these defaults
 1. Terminal overlap with Session A (T2/T3 also edit `terminal/`): **default** PR 8 starts only after A's T2/T3 PR merges; B does PRs 1-7 first.
 2. UX-9 phone LIVE "press-and-hold" changes a LIVE confirm rule: **default** not built here; ticket LOOK only, current confirm stays.
 3. Font: **default** Inter (already the product font, now self-hosted); option IBM Plex Sans.

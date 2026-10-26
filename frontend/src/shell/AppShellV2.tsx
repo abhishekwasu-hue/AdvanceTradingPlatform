@@ -239,7 +239,7 @@ export default function AppShellV2() {
         {user && features.on("referrals") && <ReferralClaimHost />}
         {user && <ConnectAiHostV2 />}
         {user && <TourHost userKey={user.id} role={user.role ?? null} tourId={tourId} />}
-        <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} />
+        <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} userId={user?.id ?? null} />
         {supportOn && supportLoaded && (
           <Suspense fallback={null}>
             <SupportDialog open={supportOpen} onOpenChange={setSupportOpen}

@@ -72,7 +72,9 @@ describe("UI2-1 command bar", () => {
     expect(html).toContain('role="listbox"');
     expect(html).toMatch(/id="o0" role="option" aria-selected="true"[^>]*>.*Orders/);
     const none = renderToStaticMarkup(<CommandList query="zz" results={[]} active={-1} listId="l" optionId={String} onPick={noop} onHover={noop} />);
-    expect(none).toContain("No page matches &quot;zz&quot;.");
+    expect(none).toContain("No symbol or page matches &quot;zz&quot;.");
+    const busy = renderToStaticMarkup(<CommandList query="zz" results={[]} searching active={-1} listId="l" optionId={String} onPick={noop} onHover={noop} />);
+    expect(busy).toContain("Searching…");
   });
 });
 
@@ -296,7 +298,8 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
     const html = render("/settings");
     expect(html).toContain('data-shell="v2"');
     expect(html).toContain('aria-label="Quick navigation"');
-    expect(html).toContain("Search pages");
+    expect(html).toContain("Search, e.g. reliance or nifty 22700 ce");   // UX-2: symbols first
+    expect(html).not.toMatch(/aria-label="[^"]*[Ss]ymbol[^"]*"/);       // the Symbol fields keep their name to themselves
     expect(html).toContain("Skip to content");
     expect(html).toMatch(/>Today<.*>Charts<.*>Signals<.*>My trades<.*>More</s);
   });

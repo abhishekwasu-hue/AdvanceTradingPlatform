@@ -752,3 +752,21 @@ def test_blackout_dates_are_parsed_and_a_typo_refuses_the_job(monkeypatch):
     with pytest.raises(hb2.IntradayConfigError, match="2026-13-01"):
         owner.run(broker, symbols=["NSE:HBIY1"], start=FRI)
     assert broker.calls == []
+
+
+def test_owner_session_loads_the_tenant_data_key_for_the_cli(monkeypatch):
+    # Owner 25 Oct (production): `atp.sh lake-backfill --check` failed with "Data key for tenant 1 is not loaded" - the
+    # CLI runs outside the web process that loads the key at sign-in. The owner's session now loads it (as #516 did for
+    # the probes).
+    owner = Owner("hb2-key-owner@example.com")
+    loaded: List[int] = []
+
+    async def fake_key(session, tenant_id):
+        loaded.append(tenant_id)
+    monkeypatch.setattr("app.secrets_store.envelope.ensure_tenant_key", fake_key)
+
+    async def go():
+        async with _session_factory() as session:
+            return await hb2.owner_session(session, owner.tenant_id, EVENING)
+    found = _run(go())
+    assert found is not None and found[0].id == owner.user.id and loaded == [owner.tenant_id]

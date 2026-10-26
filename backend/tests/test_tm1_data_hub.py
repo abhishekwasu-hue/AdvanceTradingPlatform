@@ -632,3 +632,49 @@ def test_a_stream_gets_the_broker_adapter_under_the_workers_wrappers():
     renewed.access_token = "renewed"
     assert data_hub.adapter_fingerprint(Wrapped(inner)) == data_hub.adapter_fingerprint(inner) != data_hub.adapter_fingerprint(renewed)
     assert "tok" not in data_hub.adapter_fingerprint(inner)          # hashed, never the token
+
+
+def test_streamed_page_symbols_never_take_a_chart_or_chain_slot(monkeypatch):
+    # Owner 25 Oct (production): 50 streamed watchlist / strip symbols held every slot at CHART priority and the option
+    # chain's own read of NIFTY was refused ("outside your Upstox session budget"). They now register at WATCHLIST.
+    monkeypatch.setattr(fanin.config, "BYOB_SESSION_SYMBOL_CAP", 3)
+    now = datetime.now(UTC)
+
+    async def go():
+        ns = data_hub.org_namespace(78)
+        conn = data_hub.UserConnection(namespace=ns, broker="upstox", account_label="primary", byob=False, renew=False, record=None)
+        streamed = await data_hub.admit_for_user(None, None, conn, [("S1", "NSE"), ("S2", "NSE"), ("S3", "NSE")])
+        chain = await data_hub.register_symbols(ns, "upstox", [("NIFTY", "NFO")], Priority.CHART, now=now + timedelta(seconds=5))
+        plan = await fanin.session_symbols.plan(ns, 3, now + timedelta(seconds=6))
+        return streamed, chain, plan
+    streamed, chain, plan = run(go())
+    assert streamed == [("S1", "NSE"), ("S2", "NSE"), ("S3", "NSE")]        # alone, the page's symbols all stream
+    assert chain == [("NIFTY", "NFO")]                                        # the later chain read still gets a slot
+    assert ("NIFTY", "NFO") in plan.kept and len(plan.kept) == 3
+
+
+def test_an_old_chart_demand_lapses_even_while_a_watchlist_keeps_streaming_the_symbol(monkeypatch):
+    # Owner 25 Oct (production, after #545): symbols registered at CHART before the deploy stayed CHART forever because
+    # the watchlist stream kept re-asserting them (the old `min` kept CHART and refreshed it). A chart demand now lapses
+    # after its own idle time (600 s) and the symbol drops to WATCHLIST, so a new chart or chain wins the slot.
+    monkeypatch.setattr(fanin.config, "BYOB_SESSION_SYMBOL_CAP", 2)
+    t0 = datetime.now(UTC)
+
+    async def go():
+        ns = data_hub.org_namespace(79)
+        old = [("OLD1", "NSE"), ("OLD2", "NSE")]
+        await data_hub.register_symbols(ns, "upstox", old, Priority.CHART, now=t0)              # before the fix
+        for minute in range(1, 15):                                                              # the stream re-asserts
+            await data_hub.register_symbols(ns, "upstox", old, Priority.WATCHLIST, now=t0 + timedelta(minutes=minute))
+        at = t0 + timedelta(minutes=15)
+        chart = await data_hub.register_symbols(ns, "upstox", [("AFFLE", "NSE")], Priority.CHART, now=at)
+        return chart
+    chart = run(go())
+    assert chart == [("AFFLE", "NSE")]                         # 15 min after the last chart demand: the chart wins
+
+    async def held():
+        ns = data_hub.org_namespace(80)
+        await data_hub.register_symbols(ns, "upstox", [("A", "NSE"), ("B", "NSE")], Priority.CHART, now=t0)
+        await data_hub.register_symbols(ns, "upstox", [("A", "NSE"), ("B", "NSE")], Priority.WATCHLIST, now=t0 + timedelta(minutes=2))
+        return await data_hub.register_symbols(ns, "upstox", [("C", "NSE")], Priority.CHART, now=t0 + timedelta(minutes=3))
+    assert run(held()) == []                                   # a chart demand 3 minutes old still holds its slot

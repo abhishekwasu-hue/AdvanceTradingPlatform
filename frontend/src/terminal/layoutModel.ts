@@ -51,6 +51,10 @@ export interface TerminalPrefs {
 export interface PanelInfo { label: string; minW: number; minH: number; w: number; h: number }
 
 export const PANEL_IDS: readonly PanelId[] = ["chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"];
+/** T2/T3 build them; until then hidden (R6, FN0 25 Oct): never in the Panels menu, never opened, a stored open one reads closed. */
+export const HIDDEN_PANELS: ReadonlySet<PanelId> = new Set<PanelId>(["bots", "payoff"]);
+/** The panels the "Panels" menu offers. */
+export const CHOOSER_PANEL_IDS: readonly PanelId[] = PANEL_IDS.filter((id) => !HIDDEN_PANELS.has(id));
 
 export const PANELS: Record<PanelId, PanelInfo> = {
   "chart-1": { label: "Chart", minW: 3, minH: 6, w: 6, h: 10 },
@@ -166,6 +170,7 @@ export function firstFree(panels: readonly PanelPlace[], w: number, h: number, e
 
 /** Open a panel: at its last place when that is free, else the first free place at its usual size (then its minimum). */
 export function openPanel(panels: readonly PanelPlace[], id: PanelId): PanelPlace[] {
+  if (HIDDEN_PANELS.has(id)) return [...panels];
   const info = PANELS[id];
   const known = panels.find((x) => x.id === id);
   if (known?.open) return [...panels];
@@ -290,7 +295,8 @@ function readPanel(raw: unknown): PanelPlace | null {
   if (!(PANEL_IDS as readonly unknown[]).includes(r.id)) return null;
   const x = int(r.x, 0, COLUMNS - 1), y = int(r.y, 0, ROWS - 1), w = int(r.w, 1, COLUMNS), h = int(r.h, 1, MAX_HEIGHT);
   if (x === null || y === null || w === null || h === null) return null;
-  return { id: r.id as PanelId, x, y, w, h, open: r.open !== false, symbol: typeof r.symbol === "string" ? r.symbol : null };
+  const id = r.id as PanelId;
+  return { id, x, y, w, h, open: r.open !== false && !HIDDEN_PANELS.has(id), symbol: typeof r.symbol === "string" ? r.symbol : null };
 }
 
 /** The namespace as the server sent it, read defensively (anything that does not read is left out). */
@@ -323,9 +329,9 @@ export function forSave(prefs: TerminalPrefs): TerminalPrefs {
 
 // --- the phone ---------------------------------------------------------------------------------------------------------
 
-/** Phone (360 / 390): the panels as tabs, one at a time (T1). */
+/** Phone (360 / 390): the panels as tabs, one at a time (T1). "bots" stays a type but no tab until T2/T3 (HIDDEN_PANELS). */
 export type PhoneTab = "chart" | "chain" | "order" | "positions" | "orders" | "bots";
 export const PHONE_TABS: readonly { key: PhoneTab; label: string }[] = [
   { key: "chart", label: "Chart" }, { key: "chain", label: "Chain" }, { key: "order", label: "Order" },
-  { key: "positions", label: "Positions" }, { key: "orders", label: "Orders" }, { key: "bots", label: "Bots" },
+  { key: "positions", label: "Positions" }, { key: "orders", label: "Orders" },
 ];

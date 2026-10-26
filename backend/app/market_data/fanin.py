@@ -124,11 +124,16 @@ class Plan:
                 "poll_seconds": self.poll_seconds}
 
 
-Entries = Dict[str, List[float]]   # "EXCH:SYMBOL" -> [priority, last_seen, first_seen] (epoch seconds)
+# "EXCH:SYMBOL" -> [priority, last_seen, first_seen, held_seen] (epoch seconds). held_seen is the last time a demand AT
+# that priority was made: a weaker demand (a watchlist stream re-asserting the symbol) refreshes last_seen but not
+# held_seen, so an old chart / chain demand lapses after its own idle time and the symbol drops to the weaker priority
+# (owner 25 Oct: watchlist symbols registered at CHART before #545 kept their chart slots forever). Older rows without
+# held_seen read it as last_seen.
+Entries = Dict[str, List[float]]
 
 
 def _rank(item: Tuple[str, List[float]]) -> Tuple[int, float, str]:
-    key, (priority, last_seen, first_seen) = item[0], item[1]
+    key, (priority, last_seen, first_seen) = item[0], item[1][:3]
     if int(priority) == int(Priority.SCREENER):
         return int(priority), -float(last_seen), key   # a new scan replaces the previous scan's symbols
     return int(priority), float(first_seen), key       # a held position / chart / watchlist symbol keeps its slot
@@ -149,10 +154,11 @@ def _prune(entries: Entries, now: datetime) -> Entries:
     out: Entries = {}
     for key, value in entries.items():
         priority, seen, first = int(value[0]), float(value[1]), float(value[2])
+        held = float(value[3]) if len(value) > 3 else seen
         idle = IDLE_SECONDS.get(priority)
         if idle is not None and ts - seen > idle:
             continue
-        out[key] = [priority, seen, first]
+        out[key] = [priority, seen, first, held]
     return out
 
 
@@ -160,9 +166,17 @@ def _upsert(entries: Entries, key: str, priority: int, now: datetime) -> None:
     ts = now.timestamp()
     current = entries.get(key)
     if current is None:
-        entries[key] = [priority, ts, ts]
-    else:
-        entries[key] = [min(priority, int(current[0])), ts, float(current[2])]
+        entries[key] = [priority, ts, ts, ts]
+        return
+    held_priority, first = int(current[0]), float(current[2])
+    held = float(current[3]) if len(current) > 3 else float(current[1])
+    idle = IDLE_SECONDS.get(held_priority)
+    if priority <= held_priority:                                   # the same or a stronger demand: (re)asserts it
+        entries[key] = [priority, ts, first, ts]
+    elif idle is not None and ts - held > idle:                     # the stronger demand lapsed: the weaker one stands
+        entries[key] = [priority, ts, first, ts]
+    else:                                                           # the stronger demand still holds
+        entries[key] = [held_priority, ts, first, held]
 
 
 class SessionSymbols:
@@ -180,7 +194,8 @@ class SessionSymbols:
         if raw:
             try:
                 data = json.loads(raw)
-                entries = {str(k): [int(v[0]), float(v[1]), float(v[2] if len(v) > 2 else v[1])] for k, v in data.items()}
+                entries = {str(k): [int(v[0]), float(v[1]), float(v[2] if len(v) > 2 else v[1]),
+                                    float(v[3] if len(v) > 3 else v[1])] for k, v in data.items()}
                 self._local[namespace] = entries
                 return dict(entries)
             except (ValueError, TypeError, IndexError, AttributeError):
@@ -227,7 +242,7 @@ class SessionSymbols:
         for symbol, exchange in symbols:
             key = _key(symbol, exchange)
             if key in previous and key not in entries:
-                entries[key] = [int(priority), now.timestamp(), float(previous[key][2])]   # keeps its place in the queue
+                entries[key] = [int(priority), now.timestamp(), float(previous[key][2]), now.timestamp()]   # keeps its place
             else:
                 _upsert(entries, key, int(priority), now)
         await self._save(namespace, entries)

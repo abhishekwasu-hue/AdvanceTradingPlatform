@@ -35,8 +35,8 @@ docs/WORKING_RULES.md. Begin each report with "Rules re-read: CLAUDE.md, roadmap
   are his alone.
 - Exits are never blocked (ADR-0004). AI never places, blocks or changes orders (ADR-0006).
 - Public repo: no secrets, server addresses, credentials or strategy-sensitive content (that lives in atp-private).
-- Never run anything on the server; Abhi runs ONE command. Say whether a migration is needed (after 15:30 IST unless he
-  says otherwise). ATP uses its OWN Upstox app, never the Trade bot's.
+- Never run anything on the server; Abhi runs ONE command. Say whether a migration is needed (any time until practice starts; then after
+  15:30 IST - DECISIONS 25 Oct). ATP uses its OWN Upstox app, never the Trade bot's.
 
 ## 5. Trading logic (Trade reader port)
 - Price action by structure, one continuous unit; no day / session / clock framing; numbers only in settings; RSI

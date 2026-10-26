@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronUp, Info } from "lucide-react";
 import { useCallback, useId, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
+import { useHasPageHelpSlot, useRegisterPageHelp } from "../shell/pageHelp";
 import { useTours } from "../tours/state";
 
 /**
@@ -111,18 +112,21 @@ export function PageIntroView({ lines, showMe, collapsed = false, onDismiss, onE
   );
 }
 
-/** The intro for page `id`: open until the signed-in user hides it, then collapsed to "About this page" (remembered
- * per page). "Skip all tips" leaves it out altogether; a signed-out visitor never sees it. */
+/** The intro for page `id`. Inside the v2 shell (UX-6) it draws nothing in the page: its line goes behind the (?) beside
+ * the page title in the header. Elsewhere: open until the signed-in user hides it, then collapsed to "About this page"
+ * (remembered per page). "Skip all tips" leaves the card out altogether; a signed-out visitor never sees it. */
 export function PageIntro({ id, store = LOCAL_INTRO_STORE, ...view }: Omit<PageIntroViewProps, "onDismiss" | "onExpand" | "collapsed"> & { id: string; store?: IntroStore }) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
+  const inShell = useHasPageHelpSlot();
+  useRegisterPageHelp(inShell ? { id, lines: view.lines, showMe: view.showMe } : null);
   const tips = useTours(userId);
   const [closedNow, setClosedNow] = useState<string | null>(null);
   const [openedNow, setOpenedNow] = useState<string | null>(null);
   const key = `${userId}:${id}`;
   const dismiss = useCallback(() => { dismissIntro(store, userId, id); setClosedNow(`${userId}:${id}`); setOpenedNow(null); }, [store, userId, id]);
   const expand = useCallback(() => setOpenedNow(`${userId}:${id}`), [userId, id]);
-  if (userId === null || tips.marks.skip_all_at) return null;
+  if (inShell || userId === null || tips.marks.skip_all_at) return null;
   const collapsed = openedNow !== key && (closedNow === key || isIntroDismissed(store, userId, id));
   return <PageIntroView {...view} collapsed={collapsed} onDismiss={dismiss} onExpand={expand} />;
 }

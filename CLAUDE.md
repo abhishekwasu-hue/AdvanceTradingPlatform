@@ -9,7 +9,7 @@ docs/WORKING_RULES.md. Begin each report with "Rules re-read: CLAUDE.md, roadmap
   instruction, verbatim), DECISIONS.md (every decision). INBOX / DECISIONS are append-only: grep by ID or date.
 - A new instruction: FIRST append it to INBOX verbatim, in the same turn; then DECISIONS, the roadmap item (new or
   changed) and the README line; commit in a small docs PR. Never delete or rewrite an owner order; mark superseded.
-- Roadmap rules R1-R6 (docs/ROADMAP.md): every task has a roadmap ID; max 3 build items in progress; "done" = merged +
+- Roadmap rules R1-R6 (docs/ROADMAP.md): every task has a roadmap ID; max 5 build items in progress (all sessions); "done" = merged +
   flag decided + deployed + checked on the real site + owner's ✅; phases in order; status lives only in the roadmap table.
 - Own provisional decisions: docs/OPEN_QUESTIONS.md (current open items only, ≤ 30 KB), each with a default; check them
   against DECISIONS first. Nothing from Abhi lives only in the scratchpad or chat.

@@ -3,6 +3,7 @@ import { api, mockCharts, type ChartsCalls, type ChartsMocks } from "./chartsMoc
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 import { warnOnManySolidBrand } from "./solidBrand";
+import { comboOptions, expectComboValue, pickOption } from "./combobox";
 
 // Chart + colour order Part 3 (CC-8): a warning annotation, never a failure, when a screen shows more than one solid
 // brand button (the one main action per screen).
@@ -802,10 +803,10 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     const calls = await open(page, "light", { path: "/charts?tab=multi", storage: { atp_workspace_last: "7" },
       layouts: [{ id: 7, name: "Morning", layout: layoutOf([["NIFTY 50", "5min", "A"], ["NIFTY 50", "60min", "A"], ["NIFTY BANK", "day", null], ["NIFTY BANK", "week", null]], { A: { symbol: true, interval: false, crosshair: true } }) }] });
     await cellsReady(page, 4);
-    await expect(page.getByLabel("Saved layouts")).toHaveValue("7");
+    await expectComboValue(page.getByLabel("Saved layouts"), "7");
     expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5 min", "Chart 2: NIFTY 50 1 hour", "Chart 3: NIFTY BANK Daily", "Chart 4: NIFTY BANK Weekly"]);
     await page.getByRole("group", { name: "Charts on screen" }).getByRole("button", { name: "2 charts" }).click();
-    await page.getByLabel("Chart type of chart 2").selectOption("bars");
+    await pickOption(page, page.getByLabel("Chart type of chart 2"), "bars");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText('Saved "Morning".')).toBeVisible();
     expect(calls.layoutWrites).toHaveLength(1);
@@ -815,8 +816,8 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     await page.evaluate((k) => localStorage.removeItem(k), DRAFT);
     await page.reload();
     await cellsReady(page, 2);
-    await expect(page.getByLabel("Saved layouts")).toHaveValue("7");
-    await expect(page.getByLabel("Chart type of chart 2")).toHaveValue("bars");
+    await expectComboValue(page.getByLabel("Saved layouts"), "7");
+    await expectComboValue(page.getByLabel("Chart type of chart 2"), "bars");
   });
 
   test("Save as names a new layout (POST); Delete asks first", async ({ page }) => {
@@ -909,8 +910,9 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     await page.goto("/?workspace=1&chart=NIFTY%20BANK&tf=15min");
     await expect(page).toHaveURL(/\/charts\?tab=multi$/);
     await cellsReady(page, 2);
-    await expect(page.getByLabel("Saved layouts")).toHaveValue("");
-    await expect(page.getByLabel("Saved layouts").locator("option")).toHaveText(["Unsaved layout", "Morning"]);
+    await expectComboValue(page.getByLabel("Saved layouts"), "");
+    await expect(await comboOptions(page, page.getByLabel("Saved layouts"))).toHaveText(["Unsaved layout", "Morning"]);
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByLabel("Name of the layout").fill("Banks");
     await page.getByRole("button", { name: "Save layout" }).click();

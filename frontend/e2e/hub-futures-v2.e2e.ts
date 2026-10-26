@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { api, mockCharts } from "./chartsMocks";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
+import { expectComboValue, pickOption } from "./combobox";
 
 /**
  * FNO-3: the symbol hub (owner order section 1) and the futures chain (section 4), v2 only, with every reply made up
@@ -156,7 +157,7 @@ test.describe("Symbol hub v2 flows", () => {
     await page.locator("[data-hub-tab='option-chain']").click();
     await expect(page.locator("tr[data-atm]")).toBeVisible();
     await expect(page.locator("[data-hub-tab='option-chain']")).toHaveAttribute("aria-current", "page");
-    await page.getByLabel("Expiry", { exact: true }).selectOption("2026-11-10");
+    await pickOption(page, page.getByLabel("Expiry", { exact: true }), "2026-11-10");
     await expect(page).toHaveURL(/\/option-chain\?underlying=NIFTY&tf=15min&expiry=2026-11-10$/);
     await expect(page.locator("[data-hub-tab='futures']")).toHaveAttribute("href", "/charts/NIFTY%2050?hub=futures&expiry=2026-11-10&tf=15min");
     await page.locator("[data-hub-tab='futures']").click();
@@ -164,7 +165,7 @@ test.describe("Symbol hub v2 flows", () => {
     expect(seen.futures).toBeGreaterThan(0);
     // Back to the option chain from Futures: the same expiry is selected.
     await page.locator("[data-hub-tab='option-chain']").click();
-    await expect(page.getByLabel("Expiry", { exact: true })).toHaveValue("2026-11-10");
+    await expectComboValue(page.getByLabel("Expiry", { exact: true }), "2026-11-10");
     // And to the chart: the timeframe is still 15 minutes.
     await page.locator("[data-hub-tab='chart']").click();
     await expect(page.locator("[data-page='charts-v2']").getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15 min", exact: true }))

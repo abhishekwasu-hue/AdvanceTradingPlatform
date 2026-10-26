@@ -30,7 +30,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Google sign-in | ATP_HANDOVER_PACK.md | P5-3 | waiting for the owner (OAuth credentials) |
 | - | Login under load (LD-9) | CI | P3-2 | open |
 | - | Roadmap (one plan, rules R1-R6) | ROADMAP.md (docs/ROADMAP.md) | all | binding since 24 Oct |
-| - | Copilot chart reading (CP-V, CV1-CV13) | ATP_ORDER_CP_V.md | CP-V | fixed spec (CP_V_SPEC.md) waits ✅ |
+| - | Copilot chart reading (CP-V, CV1-CV13) | ATP_ORDER_CP_V.md | CP-V | fixed spec ✅ (CP_V_SPEC.md); build after DATA-H |
 | - | Token budget rules TB-1..TB-9 | INBOX 2026-10-24 | all | binding since 24 Oct |
 | - | Combined exit (CX1-CX7) + strategy exits at entry (SX1-SX8) | ATP_ORDER_CX_SX.md | P1-6c, P1-6d | review first |
 | - | Trader protection F1-F8 | ATP_ORDER_TRADER_PROTECTION.md | TP-1..TP-8 | after Phase 1 |

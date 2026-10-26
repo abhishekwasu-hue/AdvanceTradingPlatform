@@ -40,7 +40,8 @@ export async function expectPhoneLayout(page: Page): Promise<void> {
   });
   expect(report.scrollWidth, `page wider than the screen: ${report.overflow.join(", ")}`).toBeLessThanOrEqual(report.width);
   expect(report.small, "touch targets under 44 px").toEqual([]);
-  expect(report.navItems).toHaveLength(5);
+  // Today, Charts, Signals, My trades and More; P1-8 (2): Watchlist too while `watchlists` is on.
+  expect([5, 6]).toContain(report.navItems.length);
   for (const [w, h] of report.navItems) { expect(w).toBeGreaterThanOrEqual(44); expect(h).toBeGreaterThanOrEqual(44); }
 
   // The end of the page scrolls clear of the fixed bottom bar.

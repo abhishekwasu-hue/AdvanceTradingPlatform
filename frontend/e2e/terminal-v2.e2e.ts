@@ -165,6 +165,8 @@ async function open(page: Page, theme: "light" | "dark", opts: { features?: Reco
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname.endsWith("/positions/groups")) return route.fulfill({ json: { groups: [{ key: "basket:b1", kind: "basket", name: "Bear call spread", trade_ids: [41, 42], hedge_ids: [42] }] } });
+    // CX6: no combined exit set here (its own spec: e2e/combined-exit-v2.e2e.ts).
+    if (url.pathname.endsWith("/group-exits")) return route.fulfill({ json: [] });
     if (url.pathname.endsWith("/contracts")) return route.fulfill({ json: { items: [] } });
     if (url.pathname.endsWith("/basket/settings")) return route.fulfill({ json: { source: null, width_steps: 2, lots: 1, stop_pct: 100, note: "" } });
     if (url.pathname.endsWith("/basket/evaluate")) return route.fulfill({ json: EVALUATION });

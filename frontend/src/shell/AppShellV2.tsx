@@ -25,7 +25,7 @@ import MoreSheetV2 from "./MoreSheetV2";
 import { navEntryFor, visiblePinned, visibleSections, type NavContext } from "./navModel";
 import PageTabsV2 from "./PageTabsV2";
 import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
-import { MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS } from "./aliases";
+import { MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS, WATCHLIST_ADDRESS } from "./aliases";
 import { IDEAS_ADDRESS } from "../ideas/model";
 import { LEARN_ADDRESS } from "../learn/model";
 import { SETTINGS_SECTIONS } from "../settings/paths";
@@ -146,6 +146,8 @@ export default function AppShellV2() {
   const LearnPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.learn ?? NotFound;
   // Trading Terminal T1: the Terminal (v2 only), the same way.
   const TerminalPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.terminal ?? NotFound;
+  // P1-8 (2): the Watchlist page (v2 only), the same way.
+  const WatchlistPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.watchlist ?? NotFound;
   const routes = (
     <ErrorBoundary key={key ?? "not-found"} title={key ? title : undefined}>
       <Suspense fallback={<PageLoading />}>
@@ -165,6 +167,7 @@ export default function AppShellV2() {
           <Route path={MARKETS_ADDRESS} caseSensitive element={<MarketsPage onNavigate={go} />} />
           <Route path={LEARN_ADDRESS} caseSensitive element={<LearnPage onNavigate={go} />} />
           <Route path={TERMINAL_ADDRESS} caseSensitive element={<TerminalPage onNavigate={go} />} />
+          <Route path={WATCHLIST_ADDRESS} caseSensitive element={<WatchlistPage onNavigate={go} />} />
           {SETTINGS_SECTIONS.map(({ key: k, path: p }) => {
             const SectionPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2[k] ?? NotFound;
             return <Route key={p} path={p} caseSensitive element={<SectionPage onNavigate={go} />} />;
@@ -228,7 +231,7 @@ export default function AppShellV2() {
             {content}
           </main>
         </div>
-        <BottomNavV2 current={navEntryFor(key)} dot={dot} moreOpen={moreOpen} onMore={() => setMoreOpen((o) => !o)} onPick={() => setMoreOpen(false)} />
+        <BottomNavV2 current={navEntryFor(key)} ctx={ctx} dot={dot} moreOpen={moreOpen} onMore={() => setMoreOpen((o) => !o)} onPick={() => setMoreOpen(false)} />
         <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key} dot={dot}
           onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
         <BrokerPromptHost />

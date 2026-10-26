@@ -1,4 +1,5 @@
 import { Bell, CircleHelp, LifeBuoy, MessageSquarePlus, Search, TriangleAlert } from "lucide-react";
+import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Link } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { ThemeToggle } from "../components/AppearanceCard";
@@ -62,6 +63,36 @@ export function topBarNotices(status: SystemStatus | null, _user: UserResponse |
   return out;
 }
 
+/**
+ * H9: a title word is never cut, so on a narrow phone a long one-word title ("Strategies" at 360 px) can push the bar
+ * past the screen edge. Then the title steps down one text size (t18 -> t15); it steps back up when there is room.
+ * Measured, not guessed from the number of letters; only on a phone with colour v2 (the row's own overflow).
+ */
+export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean): boolean {
+  const [small, setSmall] = useState(false);
+  useLayoutEffect(() => {
+    if (!enabled) { setSmall(false); return; }
+    const check = () => {
+      const el = row.current;
+      if (!el) return;
+      const phone = window.matchMedia?.("(max-width: 767.98px)").matches ?? false;
+      if (!phone) { setSmall(false); return; }
+      // Measure at the normal size first, so a wider screen (rotation) gets the larger title back.
+      el.dataset.titleFit = "measure";
+      const overflows = el.scrollWidth > el.clientWidth;
+      delete el.dataset.titleFit;
+      setSmall(overflows);
+    };
+    check();
+    // The web font arrives after the first paint and changes the title's width: measure again then.
+    let live = true;
+    void document.fonts?.ready.then(() => { if (live) check(); });
+    window.addEventListener("resize", check);
+    return () => { live = false; window.removeEventListener("resize", check); };
+  }, [row, title, enabled]);
+  return small;
+}
+
 export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour, section = null }: TopBarV2Props) {
   const colour = useColourV2();
   const tint = colour ? sectionTintOf(section) : null;
@@ -70,11 +101,13 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
   const { status } = useMarketStatus();
   const notices = topBarNotices(status, user, paperOnly);
   const shortcut = shortcutLabel(currentPlatform());
+  const row = useRef<HTMLDivElement>(null);
+  const small = useTitleFits(row, title, colour);
   const help = usePageHelp();
 
   return (
     <header className="shrink-0 border-b border-subtle bg-surface-1 pt-[env(safe-area-inset-top)]">
-      <div className={`flex ${colour ? "min-h-14" : "h-14"} items-center gap-space-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] md:px-space-8`}>
+      <div ref={row} className={`group/bar flex ${colour ? "min-h-14" : "h-14"} items-center gap-space-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] md:px-space-8`}>
         <Link to="/" aria-label="AiAlgoDesk - Dashboard" className="shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:hidden">
           {/* A text monogram, not the logo SVG: the sidebar's (hidden on phones) owns the logo's gradient id. */}
           <span aria-hidden className="flex h-7 w-7 items-center justify-center rounded-control bg-fg text-t12 font-bold text-surface">AT</span>
@@ -82,8 +115,10 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
         {tint && SectionIcon && (
           <span aria-hidden data-section-chip={tint} data-topbar-chip className={`${sectionChipClass(tint, "sm")} md:hidden`}><SectionIcon size={16} /></span>
         )}
-        {/* With colour v2 (CA7) the title wraps on a phone instead of being cut (H9); with it off the bar is as before. */}
-        <span data-topbar-title className={`min-w-0 shrink text-t18 font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:anywhere] md:truncate md:py-0" : "truncate"}`}>{title}</span>
+        {/* With colour v2 (CA7) the title wraps on a phone instead of being cut (H9): only between words, never inside one
+            (no min-w-0 there, so the longest word sets its width); with it off the bar is as before. */}
+        <span data-topbar-title data-title-size={small ? "small" : undefined}
+          className={`shrink ${small ? "text-t15 group-data-[title-fit=measure]/bar:text-t18" : "text-t18"} font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:normal] [word-break:normal] md:min-w-0 md:truncate md:py-0" : "min-w-0 truncate"}`}>{title}</span>
         {/* UX-6: the page's help line (and its tips) behind one (?) beside the title - never a paragraph above the data. */}
         {help && (
           <HelpPopover title={title} className="-ml-space-1 shrink-0">

@@ -30,7 +30,8 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("UI2-4b1 chart prefs", () => {
   it("defaults: the app theme (which follows the app), no grid, the theme's candle colours, volume and RSI on", () => {
-    expect(DEFAULT_CHART_PREFS).toEqual({ theme: "app", grid: false, candle_colors: null, indicators: { volume: true, rsi: true }, reader_overlay: false });
+    expect(DEFAULT_CHART_PREFS).toEqual({ theme: "app", grid: false, candle_colors: null, indicators: { volume: true, rsi: true }, reader_overlay: false,
+      timeframe_favourites: ["5min", "15min", "60min", "day"] });
     expect(resolveChartTheme(DEFAULT_CHART_PREFS.theme, "light")).toBe("light");
     expect(resolveChartTheme(DEFAULT_CHART_PREFS.theme, "dark")).toBe("dark");
   });

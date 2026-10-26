@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  * - `role="tablist"` / `role="tab"` (a hand-built tab row), or the Radix tabs package;
  * - an underline tab row: a link or button with `aria-current` and a `border-b-2` underline in the same file.
  * Two components are allowed (owner W0-2): <PageTabs> (primary, page-level, underline) and <SubTabs> (secondary,
- * inside the content, filled) - both drawn by src/ui/SubTabs.tsx; timeframes use <TimeframeTabs>, built on SubTabs.
+ * inside the content, filled) - both drawn by src/ui/SubTabs.tsx; timeframes use <TimeframePicker> (TF-1), built on SubTabs.
  * Chips stay for filters only.
  *
  * LEGACY lists the rows not yet moved, each with its reason; the page waves empty it. A file that no longer needs its

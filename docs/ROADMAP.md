@@ -129,6 +129,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UI-H-BUG | in progress | bug lane: C1 (merged #506: history ends at the last session close, empty state with its reason, `atp.sh probe-candles`), B2a/B2b (merged #507: "as of" the last session close, "Spot: last close", `atp.sh probe-chain`), B3+B4+Orders time (merged #508), A1 (merged #505), B1 (#509: own-broker chain reads = the user's session snapshots; Analyses / Charts / OI reads no longer refused) - small PRs, each with proof | C1: #506; B2: #507; B3/B4: #508; A1: #505; B1: #509 |
 | UI-H-CA | in progress | CA1-CA8 ✅ (25 Oct); fix CA6-1 distinct bottom-nav hues (Today blue, Charts violet, Signals amber, My trades pink, More teal; AA + colour-blind check), Option chain spot = chart feed check; then merge #534 | #534 |
 | UI-H-DM | in progress | dark-mode contrast DM1-DM5 in colour_v2 dark tokens (surfaces, borders >= 3:1, icons/labels >= 4.5:1, primary + active >= 7:1, Appearance "High contrast", ratio test); stacked on #534; phone comparison page (dark, normal + high contrast) | - |
+| UX-2 | in progress | modern look (ATP_ORDER_UX2.md): UX-1 audit today; then symbol-first search, watchlist rail, typography, comboboxes, no 'About this page', live feel, density, compact ticket, page waves (TD-1 folded in) | - |
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | SB-1 | not started | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
@@ -146,7 +147,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
 | FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |
-| P2-1 | not started | next free P1 slot: one flag-audit table with a recommendation per flag | - |
+| P2-1 | in progress | table sent (docs/design/P2_1_FLAG_AUDIT.md: 26 unfinished flags, finish 10 / keep OFF 15 / remove 1); owner ✅ 26 Oct (FA-1..3 defaults); next: apply in the catalog / admin list (build PR) | #556 |
 | P2-2 | not started | Copilot jobs 1-8 + own key + tools end to end (parts built, flags) | - |
 | P2-3 | not started | templates / ideas / wave templates from the Paper bot (parts built) | - |
 | P2-4 | not started | daily rhythm ON (built, flag) | - |
@@ -154,6 +155,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P2-6 | not started | help centre + page tours complete | - |
 | P2-7 | not started | positions for options sellers + Performance page | - |
 | P2-8 | not started | Journal v2 J1 -> J2+J3 -> J4+J5+J6 (3 draft PRs); starts when the max-3 rule allows | - |
+| M45 | not started | multi-broker accounts MB-0..MB-9: review vs code + design note first (order path, owner ✅), then accounts registry -> sizing -> routing matrix -> exits follow positions -> failures / checks -> views, behind `multi_account` (OFF) | - |
 | P3-1 | waiting for owner | the R2 bucket + key escrow, then the restore drill | - |
 | P3-2 | not started (parallel) | monitoring + alerts (parts built, row 17) | - |
 | P3-3 | not started (parallel) | rollback test of `atp.sh` | - |

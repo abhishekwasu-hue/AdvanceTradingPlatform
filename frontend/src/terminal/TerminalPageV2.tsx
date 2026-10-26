@@ -34,6 +34,7 @@ import { StatusBarV2 } from "./StatusBarV2";
 import { useCombinedExits } from "../fno/CombinedExitV2";
 import { TerminalGridV2 } from "./TerminalGridV2";
 import { readMask, writeMask } from "./statusModel";
+import { Combobox } from "../ui/Combobox";
 
 /**
  * Trading Terminal T1 (docs/owner-orders/ATP_SESSION_TRADING_TERMINAL.md T1; review TT-15..TT-19): the chart, the option
@@ -55,7 +56,6 @@ const CHAIN_MS = 15_000;
 const NARROW = "(max-width: 1023px)";
 const COLUMNS_OFF: ColumnPrefs = { greeks: false, quotes: false, more: false };
 const BUTTON = "inline-flex min-h-11 shrink-0 items-center justify-center gap-space-1 rounded-control border border-border bg-surface-1 px-space-3 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50 md:min-h-9";
-const SELECT = "h-11 min-w-0 rounded-control border border-border bg-surface-2 px-space-2 text-t14 text-fg focus:border-brand focus:outline-none md:h-9";
 
 const asRead = <T,>(l: Loadable<T>): Read<T> => (l.status === "ok" ? { status: "ok", value: l.data } : l.status === "error" ? { status: "error" } : { status: "loading" });
 
@@ -236,27 +236,18 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
     <div className="mx-auto w-full space-y-space-3" data-page="terminal-v2" data-layout={key}>
       <PageIntro id="terminal" lines={["The chart, the option chain and your order on one screen. Every order is checked and shown to you before it is placed."]} />
       <div className="flex flex-wrap items-center gap-space-2" role="toolbar" aria-label="Terminal" data-block="terminal-toolbar">
-        <label className="flex items-center gap-space-2 text-t13 text-fg-muted">
-          <span>Underlying</span>
-          <select value={underlying} onChange={(e) => setWorking((w) => ({ ...w, underlying: e.target.value === DEFAULT_UNDERLYING ? null : e.target.value }))}
-            className={SELECT} data-terminal="underlying">
-            {UNDERLYINGS.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
-        </label>
+        <div className="flex items-center gap-space-2 text-t13 text-fg-muted">
+          <span aria-hidden>Underlying</span>
+          <Combobox label="Underlying" value={underlying} onChange={(v) => setWorking((w) => ({ ...w, underlying: v === DEFAULT_UNDERLYING ? null : v }))}
+            options={UNDERLYINGS.map((u) => ({ value: u, label: u }))} searchable={UNDERLYINGS.length > 8} dataAttrs={{ "data-terminal": "underlying" }} />
+        </div>
         <div className="hidden flex-wrap items-center gap-space-2 md:flex" data-tour="terminal-layouts">
-          <label className="flex items-center gap-space-2 text-t13 text-fg-muted">
-            <span>Layout</span>
-            <select value={key} onChange={(e) => pickLayout(e.target.value)} className={SELECT} data-terminal="layout" disabled={L.busy}>
-              <optgroup label="Ready layouts">
-                {PRESET_IDS.map((id) => <option key={id} value={id}>{PRESETS[id].name}</option>)}
-              </optgroup>
-              {count > 0 && (
-                <optgroup label="Your layouts">
-                  {Object.entries(prefs.layouts).map(([id, l]) => <option key={id} value={id}>{l.name}</option>)}
-                </optgroup>
-              )}
-            </select>
-          </label>
+          <div className="flex items-center gap-space-2 text-t13 text-fg-muted">
+            <span aria-hidden>Layout</span>
+            <Combobox label="Layout" value={key} onChange={pickLayout} disabled={L.busy} dataAttrs={{ "data-terminal": "layout" }}
+              options={[...PRESET_IDS.map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
+                ...(count > 0 ? Object.entries(prefs.layouts).map(([id, l]) => ({ value: id, label: l.name, group: "Your layouts" })) : [])]} />
+          </div>
           {!narrow && <PanelsMenu panels={working.panels} onToggle={(id, on) => setPanels(on ? openPanel(working.panels, id) : closePanel(working.panels, id))} />}
           <button type="button" className={BUTTON} onClick={save} disabled={L.busy || (!!own && !dirty)} data-terminal="save">
             <Save size={16} aria-hidden />{own ? "Save" : "Save as mine"}

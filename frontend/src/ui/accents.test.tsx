@@ -313,6 +313,10 @@ describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today
     const title = /data-topbar-title="true" class="([^"]*)"/.exec(bar(true, "markets", "Sectors & indices"))![1].split(" ");
     expect(title).not.toContain("truncate");
     expect(title).toContain("md:truncate");
+    // H9 (26 Oct): wrap only between words - never "Watchlis / t" - so no break-anywhere and no phone min-w-0.
+    expect(title).not.toContain("[overflow-wrap:anywhere]");
+    expect(title).toContain("[overflow-wrap:normal]");
+    expect(title).not.toContain("min-w-0");
     expect(bar(true, "markets")).toContain("min-h-14");
   });
 

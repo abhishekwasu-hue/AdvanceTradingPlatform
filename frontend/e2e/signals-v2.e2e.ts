@@ -388,9 +388,11 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(page.getByRole("table", { name: "Signals list" }).locator("tbody tr")).toHaveCount(9);
   });
 
-  test("the page intro shows on a first visit: one line, no box title (item 5)", async ({ page }) => {
+  test("the page help is one line behind the header (?), never a card above the signals (item 5, UX-6)", async ({ page }) => {
     await open(page, "/signals", "light", V2, { intro: true });
-    await expect(page.locator("[data-page-intro='open']")).toBeVisible();
+    await expect(page.locator("[data-page-intro]")).toHaveCount(0);
+    await page.locator("header [data-help-button]").click();
+    await expect(page.locator("[data-page-help='signals']")).toBeVisible();
     await expect(page.getByRole("heading", { name: "What is this page?" })).toHaveCount(0);
   });
 

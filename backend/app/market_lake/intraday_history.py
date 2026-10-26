@@ -252,6 +252,10 @@ async def owner_session(session: AsyncSession, tenant_id: int, now: datetime,
     records = [r for r in await own_records(session, user) if r.broker_name in SUPPORTED_BROKERS]
     record = pick_session(records, now)
     if record is not None and record.tenant_id == tenant_id and record.user_id == user.id:
+        # Owner 25 Oct (production): `atp.sh lake-backfill` runs outside the web process, which loads the data key at
+        # sign-in; without it decrypting the broker credential failed ("Data key for tenant 1 is not loaded").
+        from app.secrets_store.envelope import ensure_tenant_key
+        await ensure_tenant_key(session, tenant_id)
         return user, record
     return None
 

@@ -12,7 +12,8 @@
 import asyncio
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -25,6 +26,8 @@ from app.terminal import status as S
 from tests.test_amw2_watchlists import _set_flag
 from tests.test_auth_api import _session_factory, client
 from tests.test_phase_l_ai import _owner
+
+IST = ZoneInfo("Asia/Kolkata")
 
 
 def _run(coro):
@@ -192,12 +195,15 @@ def test_status_reads_only_the_callers_own_trades():
     owner = _who("own")
     member = _member(owner)
     now = datetime.now(timezone.utc)
+    # "Closed today" is the IST day: a close a few minutes back fell on yesterday when the test ran just after 00:00 IST.
+    ist_day_start = datetime.combine(now.astimezone(IST).date(), time.min, tzinfo=IST).astimezone(timezone.utc)
+    closed = max(now - timedelta(minutes=5), ist_day_start + timedelta(seconds=1))
     # The owner: one open position marked +50, one closed today +200 (after charges).
     _trade(owner, mark_price=105.0, mark_time=now - timedelta(minutes=1))
-    _trade(owner, exit_time=now - timedelta(minutes=5), exit_price=120.0, pnl=200.0)
+    _trade(owner, exit_time=closed, exit_price=120.0, pnl=200.0)
     # The teammate: a big open loss and a big booked win - never in the owner's figures.
     _trade(member, entry_price=1000.0, mark_price=500.0, quantity=100.0, mark_time=now)
-    _trade(member, exit_time=now - timedelta(minutes=2), exit_price=2000.0, pnl=99_999.0)
+    _trade(member, exit_time=closed, exit_price=2000.0, pnl=99_999.0)
     got = client.get("/api/terminal/status", headers=owner["headers"])
     assert got.status_code == 200, got.text
     body = got.json()

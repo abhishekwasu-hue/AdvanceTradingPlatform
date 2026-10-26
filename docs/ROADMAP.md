@@ -155,7 +155,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P2-6 | not started | help centre + page tours complete | - |
 | P2-7 | not started | positions for options sellers + Performance page | - |
 | P2-8 | not started | Journal v2 J1 -> J2+J3 -> J4+J5+J6 (3 draft PRs); starts when the max-3 rule allows | - |
-| M45 | not started | multi-broker accounts MB-0..MB-9: review vs code + design note first (order path, owner ✅), then accounts registry -> sizing -> routing matrix -> exits follow positions -> failures / checks -> views, behind `multi_account` (OFF) | - |
+| M45 | in progress | design note ✅ 26 Oct (M45-1..3 defaults); next MA-1 data + registry (migration) behind `multi_account` (OFF), PAPER first | #557 |
 | P3-1 | waiting for owner | the R2 bucket + key escrow, then the restore drill | - |
 | P3-2 | not started (parallel) | monitoring + alerts (parts built, row 17) | - |
 | P3-3 | not started (parallel) | rollback test of `atp.sh` | - |

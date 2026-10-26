@@ -31,6 +31,7 @@ import { SpreadBuilderV2 } from "./SpreadBuilderV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
 import { ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { StatusBarV2 } from "./StatusBarV2";
+import { useCombinedExits } from "../fno/CombinedExitV2";
 import { TerminalGridV2 } from "./TerminalGridV2";
 import { readMask, writeMask } from "./statusModel";
 
@@ -136,6 +137,8 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
   const [statusL] = usePolled(terminal.status, () => STATUS_MS, signedIn);
   const [positionsL, reloadPositions] = usePolled(terminal.positions, () => LIST_MS, signedIn);
   const [ordersL, reloadOrders] = usePolled(terminal.orders, () => LIST_MS, signedIn);
+  // CX6: his combined exits, for the positions panel's chips and the status bar (PAPER account on; 404 otherwise).
+  const combined = useCombinedExits(canTrade && features.on("paper_account"));
   // T1-6: P&L on every position card - the same live-price read as My trades (portfolio exposure).
   const positionsShown = wants("positions", "positions");
   const loadExposure = useCallback(() => api.portfolioExposure(true), []);
@@ -182,7 +185,7 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
       case "chain": return <ChainPanelV2 underlying={underlying} read={asRead(chainL)} trading={trading} rows={narrow ? 5 : 6} spot={spot} compact={narrow} />;
       case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} />;
       case "positions": return <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}
-        fnoOn={features.on("paper_account")} onChanged={afterOrder} />;
+        fnoOn={features.on("paper_account")} combined={combined} onChanged={afterOrder} />;
       case "orders": return <OrdersPanelV2 read={asRead(ordersL)} terminal={terminal} />;
       case "basket": return <SpreadBuilderV2 underlying={underlying} legs={legs} spot={spot?.ltp ?? null} product={savedProduct} onOpen={trading.openBasket} />;
       case "bots": return <PlaceholderPanelV2 kind="bots" />;
@@ -314,7 +317,7 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
       )}
 
       <div data-tour="terminal-status">
-        <StatusBarV2 status={status} failed={statusL.status === "error"} masked={masked} onMask={toggleMask} compact={narrow} />
+        <StatusBarV2 status={status} failed={statusL.status === "error"} masked={masked} onMask={toggleMask} compact={narrow} combined={combined.list} />
       </div>
       {trading.layer}
     </div>

@@ -6,6 +6,7 @@ import type { AnalyticsSummary, DegradationReport, GroupStats, TaxReport } from 
 import { getToken } from "../api/client";
 import { apiErrorFrom, friendlyError } from "../api/errors";
 import { PageHeader } from "../components/primitives";
+import { SelectOrCombobox } from "../ui/Combobox";
 
 function TaxReportCard() {
   const [years, setYears] = useState<string[]>([]);
@@ -28,8 +29,10 @@ function TaxReportCard() {
   return (
     <Card title="Tax report (financial year)">
       <div className="flex flex-wrap items-center gap-2 text-xs mb-3">
-        <label className="text-fg-muted">FY <select className="rounded bg-surface-2 border border-border px-1 py-0.5 ml-1" value={fy} onChange={(e) => setFy(e.target.value)}>{years.map((y) => <option key={y}>{y}</option>)}</select></label>
-        <label className="text-fg-muted">Trades <select className="rounded bg-surface-2 border border-border px-1 py-0.5 ml-1" value={mode} onChange={(e) => setMode(e.target.value)}>{["LIVE", "PAPER", "ALL"].map((m) => <option key={m}>{m}</option>)}</select></label>
+        <span className="inline-flex items-center gap-1 text-fg-muted"><span aria-hidden>FY</span> <SelectOrCombobox label="Financial year" value={fy} onChange={setFy}
+          options={years.map((y) => ({ value: y, label: y }))} nativeClassName="rounded bg-surface-2 border border-border px-1 py-0.5 ml-1" /></span>
+        <span className="inline-flex items-center gap-1 text-fg-muted"><span aria-hidden>Trades</span> <SelectOrCombobox label="Trades" value={mode} onChange={setMode}
+          options={["LIVE", "PAPER", "ALL"].map((m) => ({ value: m, label: m }))} nativeClassName="rounded bg-surface-2 border border-border px-1 py-0.5 ml-1" /></span>
         <button onClick={download} disabled={!report} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 disabled:opacity-50">Download CSV</button>
         {report && <span className="text-fg-muted">{report.trades} closed trades · net {money(report.net_pnl)}</span>}
         {report && <span className="text-fg-muted" title={report.turnover_method_label}>F&amp;O turnover: {report.turnover_method === "ABS_PNL" ? "absolute P&L" : "absolute P&L + option premium sold"}</span>}

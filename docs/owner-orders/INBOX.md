@@ -81,3 +81,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-26 | "Run multiple agent multiple PR" | 2 agents (TB / §6 cap): CX PR 3 (P1-6c), P1-8 Watchlist page |
 | 2026-10-26 | "Aur we should open another session which can complete remaining job suggest" | answered: new session after Step 0 + HANDOVER_NOW |
 | 2026-10-26 | "I think whole work of UI redesign should start from other code session" | UX-2 (UX-1..UX-10) + UI-H page waves move to a separate Claude Code session |
+| 2026-10-26 | "Backfill a already completed" | DATA-H: lake-backfill done on production; Step 1 keeps only the read-only `lake-backfill --check` |

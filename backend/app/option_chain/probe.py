@@ -82,7 +82,7 @@ async def run_chain_probe(session: AsyncSession, user: User, underlying: str, no
     """One chain read (nearest expiry) and one candle read through the caller's own broker session and API budget."""
     from app.brokers.base import BrokerInterface
     from app.brokers.token_lifecycle import build_adapter
-    from app.market_data import api_budget
+    from app.market_data import api_budget, lake_fill
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
     now = now or datetime.now(timezone.utc)
@@ -98,7 +98,9 @@ async def run_chain_probe(session: AsyncSession, user: User, underlying: str, no
         error = scrub(f"{type(exc).__name__}: {exc}")
     own = None
     try:
-        bars = await MarketDataService(cast(BrokerInterface, adapter), lookback_days=5).get_candles(spot_symbol, spot_exchange, "1min")
+        service = MarketDataService(cast(BrokerInterface, adapter), lookback_days=5)
+        service.lake_fill = lake_fill.for_reader(session, user)          # DH6: the last session from the own lake
+        bars = await service.get_candles(spot_symbol, spot_exchange, "1min")
         if bars:
             own = (float(bars[-1].close), bars[-1].timestamp)
     except Exception:  # noqa: BLE001 - no own close: shown as "-"

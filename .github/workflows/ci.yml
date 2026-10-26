@@ -245,7 +245,7 @@ jobs:
   frontend:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 40  # the build + unit + e2e run reached the old 25-minute limit (cancelled runs on #438 and #450)
+    timeout-minutes: 60  # build + unit + e2e: Playwright alone took 37 min on 26 Oct (#558 cancelled at the old 40-min cap with every step green); 25 min before that (#438, #450)
     defaults:
       run:
         working-directory: frontend

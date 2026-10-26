@@ -8,6 +8,9 @@ import { SubTabs, rowMode, subTabClass } from "./SubTabs";
  * rest. The picked timeframe is always visible: when it comes from More, the More button shows its name (filled, as the
  * active tab) instead of "More". On a phone the row uses the short names ("1m 5m 15m 1H D"); the full name stays the
  * accessible name. Built on SubTabs (toggle kind: a group of aria-pressed buttons named "Timeframe").
+ *
+ * TF-1 (owner, 25 Oct): replaced on every page by TimeframePicker (src/ui/TimeframePicker.tsx); kept, unused, per
+ * CLAUDE.md §8 (never delete files).
  */
 export interface TimeframeOption<K extends string> { key: K; label: string; short?: string }
 

@@ -146,7 +146,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
 | FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |
-| P2-1 | not started | next free P1 slot: one flag-audit table with a recommendation per flag | - |
+| P2-1 | in progress | table sent (docs/design/P2_1_FLAG_AUDIT.md: 26 unfinished flags, finish 10 / keep OFF 15 / remove 1); waits owner answers FA-1..3, then apply | P2-1 audit PR |
 | P2-2 | not started | Copilot jobs 1-8 + own key + tools end to end (parts built, flags) | - |
 | P2-3 | not started | templates / ideas / wave templates from the Paper bot (parts built) | - |
 | P2-4 | not started | daily rhythm ON (built, flag) | - |

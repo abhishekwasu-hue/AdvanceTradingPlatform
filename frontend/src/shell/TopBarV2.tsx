@@ -6,6 +6,8 @@ import type { SystemStatus, UserResponse } from "../types";
 import { currentPlatform, shortcutLabel } from "./CommandBarV2";
 import { initialsOf } from "./SidebarV2";
 import { navItemFor, type ShellKey } from "./navModel";
+import { usePageHelp } from "./pageHelp";
+import { HelpPopover } from "../ui/HelpPopover";
 import { sectionChipClass, sectionTintOf } from "../ui/accents";
 import { useColourV2 } from "../ui/colourV2";
 
@@ -68,6 +70,7 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
   const { status } = useMarketStatus();
   const notices = topBarNotices(status, user, paperOnly);
   const shortcut = shortcutLabel(currentPlatform());
+  const help = usePageHelp();
 
   return (
     <header className="shrink-0 border-b border-subtle bg-surface-1 pt-[env(safe-area-inset-top)]">
@@ -81,7 +84,20 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
         )}
         {/* With colour v2 (CA7) the title wraps on a phone instead of being cut (H9); with it off the bar is as before. */}
         <span data-topbar-title className={`min-w-0 shrink text-t18 font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:anywhere] md:truncate md:py-0" : "truncate"}`}>{title}</span>
-        {onTour && (
+        {/* UX-6: the page's help line (and its tips) behind one (?) beside the title - never a paragraph above the data. */}
+        {help && (
+          <HelpPopover title={title} className="-ml-space-1 shrink-0">
+            <p data-page-help={help.id}>{help.lines.join(" ")}</p>
+            {help.showMe && <a href={help.showMe.href} className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">{help.showMe.label ?? "Show me"}</a>}
+            {onTour && (
+              <button type="button" onClick={onTour} data-tour="tour-replay"
+                className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-0">
+                Show the tips for this page
+              </button>
+            )}
+          </HelpPopover>
+        )}
+        {!help && onTour && (
           <button type="button" onClick={onTour} title="Tips for this page" aria-label="Show the tips for this page" data-tour="tour-replay"
             className={`${iconButton} -ml-space-2 shrink-0`}>
             <CircleHelp size={18} aria-hidden />

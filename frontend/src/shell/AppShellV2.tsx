@@ -16,6 +16,7 @@ import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
 import { ColourV2Provider, colourV2On } from "../ui/colourV2";
+import { PageHelpProvider } from "./pageHelp";
 import { STORED_HISTORY_PATHS, storedDailyFor } from "../ui/dataPages";
 import BottomNavV2 from "./BottomNavV2";
 import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
@@ -200,6 +201,8 @@ export default function AppShellV2() {
   const colour = colourV2On(features.on);
   return (
     <ColourV2Provider on={colour}>
+      {/* UX-6: the page on screen hands its help line to the header's (?) (src/shell/pageHelp.tsx). */}
+      <PageHelpProvider>
       <div className="flex min-h-screen bg-surface" data-shell="v2">
         <a href="#main"
           className="sr-only focus:not-sr-only focus:fixed focus:left-space-2 focus:top-space-2 focus:z-[70] focus:rounded-control focus:bg-surface-1 focus:px-space-3 focus:py-space-2 focus:text-t14 focus:text-fg focus:shadow-raised">
@@ -246,6 +249,7 @@ export default function AppShellV2() {
           </Suspense>
         )}
       </div>
+      </PageHelpProvider>
     </ColourV2Provider>
   );
 }

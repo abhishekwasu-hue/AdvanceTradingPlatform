@@ -95,6 +95,9 @@ S_OWN_EVIDENCE_TELEGRAM = ("self: sends the caller's OWN evidence image (a pack 
 
 ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/accounts"): "member",
+    ("GET", "/api/accounts/mine"): "member",
+    ("POST", "/api/accounts/mine/{account_id}/group"): "trader",
+    ("POST", "/api/accounts/mine/{account_id}/role"): "trader",
     ("PATCH", "/api/accounts/{account_id}"): "trader",
     ("POST", "/api/accounts/{account_id}/default"): "trader",
     ("POST", "/api/accounts/{account_id}/disable"): "trader",

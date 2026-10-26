@@ -52,7 +52,7 @@ on production; until then the admin list shows "in the pack, finishing in <item>
 Counts: Finish 10 (6 already in the pack), Keep OFF 15, Remove from view 1. The 13 `decision` flags are not in P2-1
 (FN0 default: they stay OFF).
 
-## Owner decisions (defaults if no answer)
+## Owner decisions (✅ 26 Oct: defaults accepted, DECISIONS)
 
 | # | Question | Default |
 |---|---|---|

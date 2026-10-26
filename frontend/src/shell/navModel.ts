@@ -1,5 +1,5 @@
 import {
-  BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Filter, GraduationCap, History, Layers,
+  BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Eye, Filter, GraduationCap, History, Layers,
   LayoutDashboard, LayoutGrid, Lightbulb, Link2, ListChecks, ListTodo, MonitorDot, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
   ScanSearch, Sigma, SlidersHorizontal, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, Palette, LifeBuoy, Wrench, type LucideIcon,
 } from "lucide-react";
@@ -10,7 +10,7 @@ import { PAGE_FLAGS } from "./pageFlags";
 import { SETTINGS_PATH, type SettingsSectionKey } from "../settings/paths";
 import { IDEAS_ADDRESS, IDEA_FLAG } from "../ideas/model";
 import { LEARN_ADDRESS } from "../learn/model";
-import { TERMINAL_ADDRESS } from "./aliases";
+import { TERMINAL_ADDRESS, WATCHLIST_ADDRESS } from "./aliases";
 
 /**
  * UI2-1 (UI v2 proposal §2 navigation map, §4 bottom bar): the one navigation model the v2 shell reads - the sidebar,
@@ -23,7 +23,7 @@ import { TERMINAL_ADDRESS } from "./aliases";
 
 /** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
  * Settings → Setup (`/settings/setup`, UI2-7), My trading defaults (`/settings/trading-defaults`, part C) and the Settings section pages (`/settings/ai` ..., Settings redesign B). */
-export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | "learn" | "terminal" | SettingsSectionKey;
+export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | "learn" | "terminal" | "watchlist" | SettingsSectionKey;
 
 export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more" | "admin";
 
@@ -67,6 +67,9 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
     id: "markets", title: "Markets", items: [
       item("dashboard", "Today", "Today", "/", LayoutDashboard, { keywords: ["home", "overview", "dashboard"] }),
       item("charts", "Charts", "Charts", "/charts", ChartCandlestick, { keywords: ["chart", "candles", "price"] }),
+      // P1-8 (2): the Watchlist page (v2 only, flag `watchlists`) - the same panel as on Charts, on its own page.
+      item("watchlist", "Watchlist", "Watchlist", WATCHLIST_ADDRESS, Eye,
+        { flag: PAGE_FLAGS.watchlist, keywords: ["watchlists", "watch list", "my lists", "indices", "index stocks", "sectors", "f&o", "prices"] }),
       item("option-chain", "Option chain", "Option chain", "/option-chain", Link2, { keywords: ["options", "oi", "pcr", "max pain"] }),
       // MO4 slice 2: the Sector & index view (v2 only, flag `markets_view`).
       item("markets", "Sectors & indices", "Sectors & indices", "/markets", LayoutGrid,
@@ -199,13 +202,20 @@ export function navEntryFor(key: ShellKey | null): ShellKey | null {
   return NAV_HOME[key] ?? key;
 }
 
-/** UX audit section 5: the phone bottom bar - Today, Charts, Signals, My trades - and More, which opens the sheet. */
-export const BOTTOM_BAR_V2: readonly { key: ShellKey; label: string }[] = [
+/** UX audit section 5: the phone bottom bar - Today, Charts, Signals, My trades - and More, which opens the sheet.
+ * P1-8 (2): Watchlist after Charts while `watchlists` is on (an entry with `flag` shows only while that flag is on). */
+export const BOTTOM_BAR_V2: readonly { key: ShellKey; label: string; flag?: string }[] = [
   { key: "dashboard", label: "Today" },
   { key: "charts", label: "Charts" },
+  { key: "watchlist", label: "Watchlist", flag: PAGE_FLAGS.watchlist },
   { key: "signals", label: "Signals" },
   { key: "positions", label: "My trades" },
 ];
+
+/** The bottom bar's entries this trader may see (no context: the entries without a flag). */
+export function visibleBottomBar(ctx?: Pick<NavContext, "on">): { key: ShellKey; label: string }[] {
+  return BOTTOM_BAR_V2.filter((b) => !b.flag || !!ctx?.on(b.flag)).map(({ key, label }) => ({ key, label }));
+}
 
 /** Who is looking and which flags are on - all the navigation needs to decide what to list. */
 export interface NavContext {
@@ -247,13 +257,13 @@ export function sectionOf(key: ShellKey | null): SectionId | null {
 
 /** P2b: the More sheet's first tiles, above the sections: the pinned entries (Broker). */
 export function moreSheetPinned(ctx: NavContext): NavItemV2[] {
-  const inBar = new Set<ShellKey>(BOTTOM_BAR_V2.map((b) => b.key));
+  const inBar = new Set<ShellKey>(visibleBottomBar(ctx).map((b) => b.key));
   return visiblePinned(ctx).filter((i) => !inBar.has(i.key));
 }
 
 /** The More sheet (§4): every visible page that is not in the bottom bar, grouped by the same sections. */
 export function moreSheetSections(ctx: NavContext): NavSectionV2[] {
-  const inBar = new Set<ShellKey>(BOTTOM_BAR_V2.map((b) => b.key));
+  const inBar = new Set<ShellKey>(visibleBottomBar(ctx).map((b) => b.key));
   return visibleSections(ctx)
     .map((s) => ({ ...s, items: s.items.filter((i) => !inBar.has(i.key)) }))
     .filter((s) => s.items.length > 0);

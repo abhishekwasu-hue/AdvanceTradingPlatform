@@ -8,7 +8,7 @@ From Abhi — THE ATP ROADMAP: one common file for the whole project (English). 
 ## Rules (binding; add them to DECISIONS)
 - **R1. One plan.** Every task belongs to a roadmap item below (an ID such as P1-3). A new owner instruction is placed into this file (a new item or a change to one), in the same turn it is recorded in INBOX. Nothing is built outside the roadmap.
 - **R2. Finish before start.**
-  - At most 3 build items "in progress" at a time (plus fixes the owner asks for).
+  - At most 5 build items "in progress" at a time, over all sessions (owner 26 Oct; was 3) (plus fixes the owner asks for).
   - An item is "done" only when ALL of these hold:
     - it is merged;
     - its flag is ON in production (or the owner has decided it stays OFF);
@@ -133,17 +133,17 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | SB-1 | not started | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
-| CP-V | in progress | independent review of ATP_ORDER_CP_V.md against the code first; build after DATA-H (CV1 lake fallback) | - |
+| CP-V | in progress | review done twice (CP_V_REVIEW.md 24 Oct, CP_V_SPEC.md 26 Oct); fixed spec ✅ 26 Oct (CPV-15..17 defaults); build after DATA-H | #555 |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |
 | P1-2 | in review | notice (TT12-1) added; owner: "Merge" after green CI, then deploy (no migration) | #494 |
 | P1-2b | in review | org min R:R OFF (0 = not set; an old stored 1.2 = not set), parity tests live / paper / both backtests; owner: "Merge" after green CI, then deploy (no migration) | #497 |
 | P1-3 | waiting for owner | deploy, universe sync ON, "Enable trader features"; then day-one test on production | #470 |
 | P1-4 | in progress | verify which chart pages still bypass the core; gestures; phone recording | row 18 |
 | P1-5 | waiting for owner | `data_hub` ON via "Enable trader features" after the deploy; API-call numbers before / after | - |
-| P1-6 | in progress | T1 + fixes ✅ (25 Oct): #510 + #493 merged; `terminal` ON by default merged (#533, T-D1), live after the deploy; the two unbuilt panels hidden (#539). Owner TL-1..TL-4 (25 Oct: chart panel never navigates; 45/35/20 layout + gutters; compact chain + column picker; compact order panel) with T2. T2 target 29 Oct: TT-1 LIVE sender (own PR; LIVE switch stays the owner's), TT-9 partial exit + reverse, TT-10 modify / cancel (PAPER). T3 target 2 Nov | #493 |
-| P1-6c | in progress | PR 1 #524 + PR 2 #527 merged; CX-F1 (stale leg price, never a silent wait) + CX-F2 (CRITICAL notice with "Exit short now") merged (#529, migration c7e9a1b3d5f2); next PR 3 sheet + chip + the confirm button | #524, #527, #529 |
+| P1-6 | in progress | TF-1 one timeframe control #540 merged 26 Oct. T1 + fixes ✅ (25 Oct): #510 + #493 merged; `terminal` ON by default merged (#533, T-D1), live after the deploy; the two unbuilt panels hidden (#539). Owner TL-1..TL-4 (25 Oct: chart panel never navigates; 45/35/20 layout + gutters; compact chain + column picker; compact order panel) with T2. T2 target 29 Oct: TT-1 LIVE sender (own PR; LIVE switch stays the owner's), TT-9 partial exit + reverse, TT-10 modify / cancel (PAPER). T3 target 2 Nov | #493 |
+| P1-6c | in progress | PR 1 #524 + PR 2 #527 + CX-F1/F2 #529 merged; PR 3 #553 merged 26 Oct (owner ✅): sheet (PAPER + LIVE, never mixed) + chip with distance / stale mark + status bar + CX-F2 "Exit short now". Open: CX2 trailing (backend field), "Exit short now" inside the in-app notification list; then SX (P1-6d) | #524, #527, #529, #553 |
 | P1-6d | review | same review as P1-6c; build with / right after CX (same engine) | - |
-| P1-8 | in progress | on main: server lists + Charts watchlist panel (chooser, search, sort, copy to my list, live ticks with `data_hub`). Missing: `watchlists` flag OFF in production; lists empty until the universe sync runs (P1-3); no Watchlist entry of its own on the phone bar (only inside Charts). Plan: (1) owner turns on via "Enable trader features" + System tab refresh; (2) W-PR: Watchlist page / phone bar entry using the same panel, behind ui_v2; (3) screenshots for ✅ | - |
+| P1-8 | in progress | 26 Oct: W-PR #554 merged (owner ✅): Watchlist page + phone bar tab after Charts, behind `ui_v2` + `watchlists`. On main: server lists + Charts watchlist panel (chooser, search, sort, copy to my list, live ticks with `data_hub`). Missing: `watchlists` flag OFF in production; lists empty until the universe sync runs (P1-3); no Watchlist entry of its own on the phone bar (only inside Charts). Plan: (1) owner turns on via "Enable trader features" + System tab refresh; (2) W-PR: Watchlist page / phone bar entry using the same panel, behind ui_v2; (3) screenshots for ✅ | - |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
 | FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |
@@ -180,7 +180,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P4-9 | not started | position helpers + AI risk questions | - |
 | P5-1 .. P5-5 | not started | last phase (owner decisions) | - |
 
-Statuses: not started / in progress / in review / waiting for owner / done. Max 3 build items "in progress" (R2):
+Statuses: not started / in progress / in review / waiting for owner / done. Max 5 build items "in progress" (R2, owner 26 Oct; was 3):
 now P1-2b, P1-4, P1-6.
 
 ## Owner tasks (shown in every report until done)

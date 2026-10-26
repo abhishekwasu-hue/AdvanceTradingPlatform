@@ -1,6 +1,6 @@
 import { ArrowDownRight, ArrowUpRight, ChartCandlestick, Layers, Plus, SlidersHorizontal } from "lucide-react";
 import { Suspense, lazy, useEffect, useId, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ContractNoteCard from "../components/ContractNoteCard";
@@ -41,6 +41,8 @@ import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from ".
 import { PracticeFrame } from "../fno/OrderTicketV2";
 import { SettlementWarningsV2 } from "../fno/SmartExecutionV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
+import { CombinedExitBarV2, ExitShortSheetV2, useCombinedExits } from "../fno/CombinedExitV2";
+import { exitParam } from "../fno/combinedExit";
 import { GroupExitSheetV2 } from "../fno/GroupExitsV2";
 import type { GroupExitAsk } from "../fno/groupExits";
 
@@ -140,6 +142,25 @@ export default function PositionsV2(_props: PageProps = {}) {
     <GroupExitSheetV2 ask={groupExit} onClose={() => setGroupExit(null)}
       onDone={(text, ok) => { setGroupExit(null); setNotice({ kind: ok ? "done" : "warn", text }); reload(); }} />
   );
+  // CX6: "Set combined stop-loss" and the active combined exits as chips (PAPER account on; the routes answer 404 otherwise).
+  const combined = useCombinedExits(fnoOn && signedIn);
+  // CX-F2: the CRITICAL notice's "Exit short now" opens /positions?exit=<id>: one confirm, then that position's own exit
+  // (never blocked, ADR-0004). Shown in every broker state, like every exit on this page.
+  const location = useLocation();
+  const exitId = exitParam(location.search);
+  const [shortAsk, setShortAsk] = useState<TradeRecord | null>(null);
+  const [asked, setAsked] = useState<number | null>(null);
+  useEffect(() => {
+    if (exitId === null || asked === exitId || !canTrade || positions.status !== "ok") return;
+    setAsked(exitId);
+    const p = (list ?? []).find((x) => x.id === exitId);
+    if (p) setShortAsk(p);
+    else setNotice({ kind: "info", text: "That position is already closed." });
+  }, [exitId, asked, canTrade, positions.status, list]);
+  const shortSheet = (
+    <ExitShortSheetV2 trade={shortAsk} onClose={() => setShortAsk(null)}
+      onDone={(text, ok) => { setShortAsk(null); setNotice({ kind: ok ? "done" : "warn", text }); reload(); }} />
+  );
   const actions: RowActions = {
     exitNowOn, canTrade, onExit: exitNow, onCheck: checkPrice,
     group: fnoOn ? { onLeg: (p, hedge) => setGroupExit({ kind: "leg", tradeId: p.id, symbol: p.symbol, hedge, warning: null }),
@@ -177,6 +198,7 @@ export default function PositionsV2(_props: PageProps = {}) {
             <PaperAccountCard canTrade={canTrade} />
           </div>
         )}
+        {shortSheet}
       </div>
     );
   }
@@ -227,12 +249,19 @@ export default function PositionsV2(_props: PageProps = {}) {
           <EmptyStateV2 text="No open positions. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
         ) : (
           <>
+            {fnoOn && (
+              <div className="mb-space-3">
+                <CombinedExitBarV2 positions={list ?? []} facts={fno.facts} exits={combined.list}
+                  onChanged={() => { combined.reload(); reload(); }} onNote={(text, ok) => setNotice({ kind: ok ? "done" : "warn", text })} />
+              </div>
+            )}
             <PositionList rows={rows} byId={byId} actions={actions} groups={fno.groups} />
             {groupSheet}
           </>
         )}
       </CardV2>
 
+      {shortSheet}
       {ticket && (
         <Suspense fallback={null}>
           <OrderTicketV2 open target={ticket.target} side={ticket.side} onClose={() => setTicket(null)} onPlaced={() => reload()} />

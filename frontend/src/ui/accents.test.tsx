@@ -276,7 +276,7 @@ describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today
     const html = render(<BottomNavV2 current="charts" moreOpen={false} onMore={() => {}} />, true);
     const tints = [...html.matchAll(/data-nav-tint="([a-z]+)"/g)].map((m) => m[1]);
     expect(tints).toEqual(["today", "charts", "signals", "trades", "more"]);           // CA6-1: five different hues
-    expect(BOTTOM_BAR_V2.map((b) => sectionTintOf(b.key))).toEqual(["today", "charts", "signals", "trades"]);
+    expect(BOTTOM_BAR_V2.filter((b) => !b.flag).map((b) => sectionTintOf(b.key))).toEqual(["today", "charts", "signals", "trades"]);
     expect(html).toContain(navChipClass("charts", true));
     expect(html.match(/rounded-pill[^"]*bg-sec-[a-z]+-soft/g)).toHaveLength(4);
     expect(html).toContain(`${navWordClass("charts")} font-semibold`);
@@ -285,6 +285,18 @@ describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today
     const more = render(<BottomNavV2 current="charts" moreOpen onMore={() => {}} />, true);
     expect(more).toMatch(/data-nav-pill="true" data-nav-tint="more"/);
     expect(render(<BottomNavV2 current="charts" moreOpen={false} onMore={() => {}} />, false)).not.toMatch(/data-nav-tint|bg-sec-/);
+  });
+
+  it("P1-8 (2): with `watchlists` on, Watchlist sits after Charts in its section's tint (Markets), with its own icon and word", () => {
+    const watch = { on: (f: string) => f === "watchlists" };
+    const html = render(<BottomNavV2 current="watchlist" moreOpen={false} onMore={() => {}} ctx={watch} />, true);
+    expect([...html.matchAll(/data-nav-tint="([a-z]+)"/g)].map((m) => m[1])).toEqual(["today", "charts", "markets", "signals", "trades", "more"]);
+    expect(html).toContain(navChipClass("markets", true));
+    expect(html).toMatch(/aria-current="page"[^>]*href="\/watchlist"|href="\/watchlist"[^>]*aria-current="page"/);
+    const icons = [...html.matchAll(/class="lucide lucide-([a-z0-9-]+)/g)].map((m) => m[1]);
+    expect(new Set(icons).size).toBe(6);
+    expect(html.match(/min-h-16 flex-1/g)).toHaveLength(6);
+    expect([...html.matchAll(/data-nav-label[^>]*>([^<]+)</g)].map((m) => m[1])).toEqual(["Today", "Charts", "Watchlist", "Signals", "My trades", "More"]);
   });
 
   const bar = (on: boolean, section: Parameters<typeof TopBarV2>[0]["section"], title = "Option chain") => render(
@@ -301,6 +313,10 @@ describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today
     const title = /data-topbar-title="true" class="([^"]*)"/.exec(bar(true, "markets", "Sectors & indices"))![1].split(" ");
     expect(title).not.toContain("truncate");
     expect(title).toContain("md:truncate");
+    // H9 (26 Oct): wrap only between words - never "Watchlis / t" - so no break-anywhere and no phone min-w-0.
+    expect(title).not.toContain("[overflow-wrap:anywhere]");
+    expect(title).toContain("[overflow-wrap:normal]");
+    expect(title).not.toContain("min-w-0");
     expect(bar(true, "markets")).toContain("min-h-14");
   });
 

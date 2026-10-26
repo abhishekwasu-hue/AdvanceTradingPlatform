@@ -14,6 +14,8 @@ import { heldKey, type TicketTarget } from "../fno/ticketModel";
 import type { Side } from "../fno/api";
 import type { ChainLeg, LiveChain } from "../optionChain/types";
 import { chainAround } from "../fno/desk";
+import { CombinedExitBarV2 } from "../fno/CombinedExitV2";
+import type { CombinedExit } from "../fno/combinedExit";
 import { GroupExitSheetV2 } from "../fno/GroupExitsV2";
 import { groupRows, type PositionGroup } from "../fno/contracts";
 import { groupExitApi, type GroupExitAsk } from "../fno/groupExits";
@@ -271,10 +273,12 @@ export function exitAllConfirmText(count: number): string {
   return `Exit all ${count} open ${count === 1 ? "position" : "positions"} at the current price? Sold legs close first, then the legs that protect them.`;
 }
 
-export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, fnoOn = false, onChanged }: {
+export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, fnoOn = false, combined, onChanged }: {
   read: Read<TradeRecord[]>; exposure?: PortfolioExposure | null; canTrade: boolean; exitNowOn: boolean;
   /** The PAPER account on: basket legs grouped with "Exit the whole group" (TT-8), as on My trades. */
   fnoOn?: boolean;
+  /** CX6: his combined exits (the page reads them once for this panel and the status bar); absent: no button, no chip. */
+  combined?: { list: readonly CombinedExit[]; reload: () => void };
   onChanged: () => void;
 }) {
   const [note, setNote] = useState<{ kind: "done" | "info" | "warn"; text: string } | null>(null);
@@ -349,6 +353,10 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
             {exitingAll ? "Exiting…" : `Exit all (${rows.length})`}
           </button>
         </div>
+      )}
+      {combined && fnoOn && canTrade && (
+        <CombinedExitBarV2 positions={list} facts={fno.facts} exits={combined.list}
+          onChanged={() => { combined.reload(); onChanged(); }} onNote={(text, ok) => setNote({ kind: ok ? "done" : "warn", text })} />
       )}
       <PositionList rows={rows} byId={byId} actions={actions} prices groups={fno.groups} />
       <GroupExitSheetV2 ask={groupExit} onClose={() => setGroupExit(null)}

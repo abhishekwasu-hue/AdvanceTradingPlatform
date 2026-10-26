@@ -8,7 +8,7 @@ From Abhi — THE ATP ROADMAP: one common file for the whole project (English). 
 ## Rules (binding; add them to DECISIONS)
 - **R1. One plan.** Every task belongs to a roadmap item below (an ID such as P1-3). A new owner instruction is placed into this file (a new item or a change to one), in the same turn it is recorded in INBOX. Nothing is built outside the roadmap.
 - **R2. Finish before start.**
-  - At most 3 build items "in progress" at a time (plus fixes the owner asks for).
+  - At most 5 build items "in progress" at a time, over all sessions (owner 26 Oct; was 3) (plus fixes the owner asks for).
   - An item is "done" only when ALL of these hold:
     - it is merged;
     - its flag is ON in production (or the owner has decided it stays OFF);
@@ -178,7 +178,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P4-9 | not started | position helpers + AI risk questions | - |
 | P5-1 .. P5-5 | not started | last phase (owner decisions) | - |
 
-Statuses: not started / in progress / in review / waiting for owner / done. Max 3 build items "in progress" (R2):
+Statuses: not started / in progress / in review / waiting for owner / done. Max 5 build items "in progress" (R2, owner 26 Oct; was 3):
 now P1-2b, P1-4, P1-6.
 
 ## Owner tasks (shown in every report until done)

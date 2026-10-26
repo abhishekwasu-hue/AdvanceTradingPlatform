@@ -82,3 +82,5 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-26 | "Aur we should open another session which can complete remaining job suggest" | answered: new session after Step 0 + HANDOVER_NOW |
 | 2026-10-26 | "I think whole work of UI redesign should start from other code session" | UX-2 (UX-1..UX-10) + UI-H page waves move to a separate Claude Code session |
 | 2026-10-26 | "Backfill a already completed" | DATA-H: lake-backfill done on production; Step 1 keeps only the read-only `lake-backfill --check` |
+| 2026-10-26 | "Okay तर कोणते काम असे आहे त्याच्यासाठी आपण आताच नवीन सेशन स्टार्ट करू शकू कारण हा प्रोजेक्ट बराच मोठा आहे बराच वेळ जातो आहे मल्टिपल कोड सेशन स्टार्ट करून आपण वन बाय वन मॉडेल कम्प्लीट करत जाऊ" | answered: Session A traders, B UI redesign (after #548), C review/design |
+| 2026-10-26 | "R2 मर्यादा 5 करा, Session C आत्ता सुरू करतो" | ROADMAP R2 + CLAUDE.md §1: max 5 build items; Session C (CP-V review, M45 design, P2-1 flag audit) started |

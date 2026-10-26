@@ -154,7 +154,7 @@ export function TimeframePicker({
     <div ref={ref} className={cx("relative", className)} data-timeframe-picker>
       <SubTabs kind="toggle" label={label} size="sm" layout="scroll" value={shown.includes(value) ? value : null} onChange={pick} trailing={trailing}
         items={shown.map((tf) => ({ key: tf, label: timeframeShort(tf), ariaLabel: timeframeLabel(tf), data: { favourite: "true" } }))} />
-      {open && phone && <div aria-hidden data-timeframe-backdrop onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-black/30" />}
+      {open && phone && <div aria-hidden data-timeframe-backdrop onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-scrim/50" />}
       {open && (
         // TF-1 fix 2: on a phone the list is a bottom sheet above the bottom nav (4rem + the safe area) that scrolls inside.
         <div id={menuId} ref={menuRef} role="menu" aria-label="Timeframes" data-timeframe-menu data-sheet={phone || undefined} onKeyDown={onMenuKey}

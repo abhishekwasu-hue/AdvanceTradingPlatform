@@ -87,3 +87,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-26 | (Marathi, translated) "If you need any information from me, notify me." | sessions send a push notification whenever an owner answer / ✅ / server output is needed |
 | 2026-10-26 | "#554 ✅" | P1-8 Watchlist page screenshots approved; tab colour + bar order (Today · Charts · Watchlist · Signals · My trades · More) as default |
 | 2026-10-26 | "I agree with u" (reply to: #553 keeps LIVE positions in the combined stop-loss sheet, default yes) | CX PR 3 #553: LIVE positions stay in the sheet; screenshot ✅ still asked explicitly |
+| 2026-10-26 | "Default ho" (reply to: "#553 ✅?" with LIVE default yes) | taken as #553 ✅ (CX PR 3 sheet / chip / Exit short now screenshots), LIVE kept |

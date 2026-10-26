@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { ThemeToggle } from "../components/AppearanceCard";
 import type { SystemStatus, UserResponse } from "../types";
-import { currentPlatform, shortcutLabel } from "./CommandBarV2";
+import { COMMAND_HINT, COMMAND_LABEL, currentPlatform, shortcutLabel } from "./CommandBarV2";
 import { initialsOf } from "./SidebarV2";
 import { navItemFor, type ShellKey } from "./navModel";
 import { usePageHelp } from "./pageHelp";
@@ -138,14 +138,14 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
             <CircleHelp size={18} aria-hidden />
           </button>
         )}
-        <button type="button" onClick={onSearch} aria-label={`Search pages (${shortcut})`} aria-haspopup="dialog"
+        <button type="button" onClick={onSearch} aria-label={`${COMMAND_LABEL} (${shortcut})`} aria-haspopup="dialog"
           className="ml-space-4 hidden h-9 w-full max-w-[420px] items-center gap-space-2 rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg-muted transition-colors duration-fast hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:flex">
           <Search size={16} aria-hidden className="shrink-0" />
-          <span className="flex-1 truncate text-left">Search pages</span>
+          <span className="flex-1 truncate text-left">{COMMAND_HINT}</span>
           <kbd className="shrink-0 rounded-control border border-border bg-surface-1 px-space-1 text-t12 text-fg-muted">{shortcut}</kbd>
         </button>
         <div className="ml-auto flex shrink-0 items-center gap-space-1">
-          <button type="button" onClick={onSearch} aria-label="Search pages" aria-haspopup="dialog" className={`${iconButton} md:hidden`}>
+          <button type="button" onClick={onSearch} aria-label={COMMAND_LABEL} aria-haspopup="dialog" className={`${iconButton} md:hidden`}>
             <Search size={20} aria-hidden />
           </button>
           {onHelp && (

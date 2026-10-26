@@ -159,7 +159,12 @@ def test_analytics_token_expired_and_expiring_today(monkeypatch):
     assert _keys(_health(who))["analytics_token"]["state"] == "expired"
 
     setup_health.reset_cache()
-    views["a"] = {"analytics_token_set": True, "analytics_token_expired": False, "analytics_token_expires_at": (now + timedelta(minutes=5)).isoformat()}
+    # Later today in IST: five minutes on, or half-way to IST midnight when that is sooner (near 23:59 IST, five
+    # minutes on is already tomorrow and not "expiring today").
+    ist = timezone(timedelta(hours=5, minutes=30))
+    ist_midnight = datetime.combine(now.astimezone(ist).date() + timedelta(days=1), datetime.min.time(), tzinfo=ist)
+    soon = now + min(timedelta(minutes=5), (ist_midnight - now) / 2)
+    views["a"] = {"analytics_token_set": True, "analytics_token_expired": False, "analytics_token_expires_at": soon.isoformat()}
     assert _keys(_health(who))["analytics_token"]["state"] == "expiring"
 
     setup_health.reset_cache()

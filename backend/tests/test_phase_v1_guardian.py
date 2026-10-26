@@ -116,10 +116,12 @@ def test_event_blackout_blocks_and_size_cut_scales():
     result, _, trade = _execute(t, key="v1-ev-2")
     assert result.executed, result.reasons
     assert trade.quantity == 250 and any("risk per trade cut 50%" in r for r in result.reasons)
-    # A window that has passed does not apply; an INDEX-bucket event leaves an equity alone.
+    # A window that is not now does not apply (00:00-00:01 was "now" when the test ran just after midnight IST);
+    # an INDEX-bucket event leaves an equity alone.
     client.delete(f"/api/risk-guardian/events/{cut.json()['id']}", headers=t["headers"])
+    start, end = ("00:00", "00:01") if datetime.now(timezone(timedelta(hours=5, minutes=30))).hour >= 1 else ("23:58", "23:59")
     client.post("/api/risk-guardian/events", headers=t["headers"], json={
-        "event_date": _ist_today(), "start_time": "00:00", "end_time": "00:01", "kind": "BUDGET", "action": "BLOCK"})
+        "event_date": _ist_today(), "start_time": start, "end_time": end, "kind": "BUDGET", "action": "BLOCK"})
     client.post("/api/risk-guardian/events", headers=t["headers"], json={
         "event_date": _ist_today(), "underlying": "INDEX", "kind": "EXPIRY", "action": "BLOCK"})
     result, _, trade = _execute(t, key="v1-ev-3")

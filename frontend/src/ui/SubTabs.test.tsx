@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import css from "../styles/tokens.css?raw";
 import { PageTabs } from "./PageTabs";
 import { FADE_STOPS, fadeClass, PAGETAB_ACTIVE, PAGETAB_IDLE, SUBTAB_ACTIVE, SUBTAB_IDLE, SUBTAB_TRACK, SubTabs, fadeSides, nextKey, rowMode } from "./SubTabs";
-import { TimeframeTabs, splitTimeframes } from "./TimeframeTabs";
 
 const ITEMS = [
   { key: "a", label: "Max pain", short: "Pain" },
@@ -116,25 +115,6 @@ const lum = ([r, g, b]: number[]) => {
   return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
 };
 const ratio = (a: number[], b: number[]) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
-
-describe("UI-H W0-1: the timeframe row", () => {
-  const ALL = ["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"].map((k) => ({ key: k, label: k.toUpperCase() }));
-  it("the most-used five in the row, the rest under More", () => {
-    const { row, more } = splitTimeframes(ALL);
-    expect(row.map((o) => o.key)).toEqual(["1min", "5min", "15min", "60min", "day"]);
-    expect(more.map((o) => o.key)).toEqual(["3min", "30min", "week", "month"]);
-    expect(splitTimeframes(ALL.slice(0, 7)).more.map((o) => o.key)).toEqual(["3min", "30min"]);
-  });
-  it("a timeframe picked from More is shown on the More button, filled and pressed", () => {
-    const html = renderToStaticMarkup(<TimeframeTabs options={ALL} value="week" onChange={() => undefined} />);
-    expect(html).toMatch(/role="group" aria-label="Timeframe"/);
-    expect(html).toMatch(/aria-haspopup="menu"[^>]*aria-pressed="true"[^>]*aria-label="WEEK"[^>]*class="[^"]*bg-brand/);
-    expect(html).not.toContain(">More<");
-    const plain = renderToStaticMarkup(<TimeframeTabs options={ALL} value="5min" onChange={() => undefined} />);
-    expect(plain).toContain('aria-label="More timeframes"');
-    expect(plain).toMatch(/aria-pressed="true"[^>]*data-subtab="5min"/);
-  });
-});
 
 describe("UI-H H2: the active sub-tab contrast tokens", () => {
   const dark = block(":root");

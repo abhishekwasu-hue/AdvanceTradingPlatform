@@ -467,8 +467,8 @@ describe("owner fixes T1-2 .. T1-7", () => {
     expect(panelsSource).not.toMatch(/data-terminal="exit-all"[^>]*disabled/);   // never disabled (ADR-0004)
   });
 
-  it("T1-7: the terminal chart's timeframe row is the shared TimeframeTabs", () => {
-    expect(embeddedSource).toContain("<TimeframeTabs");
+  it("T1-7 / TF-1: the terminal chart's timeframe control is the shared TimeframePicker", () => {
+    expect(embeddedSource).toContain("<TimeframePicker");
     expect(panelsSource).toContain("<EmbeddedChartV2");
   });
 });

@@ -167,7 +167,8 @@ test.describe("Symbol hub v2 flows", () => {
     await expect(page.getByLabel("Expiry", { exact: true })).toHaveValue("2026-11-10");
     // And to the chart: the timeframe is still 15 minutes.
     await page.locator("[data-hub-tab='chart']").click();
-    await expect(page.locator("[data-page='charts-v2'] [aria-pressed='true']", { hasText: "15 min" }).first()).toBeVisible();
+    await expect(page.locator("[data-page='charts-v2']").getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15 min", exact: true }))
+      .toHaveAttribute("aria-pressed", "true");
     expect(seen.hub).toContain("NIFTY 50");
   });
 

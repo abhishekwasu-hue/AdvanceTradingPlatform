@@ -84,8 +84,8 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await settle(page);
         await expect(page.locator("[data-page='charts-v2'] .tv-lightweight-charts canvas").first()).toBeVisible();
         const tfs = page.getByRole("group", { name: "Timeframe" }).getByRole("button");
-        await expect(tfs.first()).toHaveAccessibleName("1 min");
-        await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "Daily", exact: true })).toBeVisible();
+        await expect(tfs.first()).toHaveAccessibleName("5 min");             // TF-1: the favourites first, in words for a reader
+        if (!size.phone) await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "Daily", exact: true })).toBeVisible();
         await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "1 hour", exact: true })).toBeVisible();
         await shot("01-charts");
         const panel = size.phone ? page.getByRole("dialog", { name: "Watchlist" }) : page.locator("main");

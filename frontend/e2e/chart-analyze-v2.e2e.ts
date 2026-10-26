@@ -146,7 +146,7 @@ for (const size of SIZES) {
         await mockChartAnalyze(page, "forming");
         await page.goto("/chart-analyze");
         await analyzeUpload(page);
-        await page.getByRole("button", { name: "Hide this tip" }).click().catch(() => undefined);
+        await expect(page.locator("[data-page-intro]")).toHaveCount(0);       // UX-6: the help line is behind the header (?)
         await settle(page);
         await expect(page.getByTestId("image-only-label")).toHaveText("Image-only analysis: prices and volume are read from the picture and may be approximate");
         await expect(page).toHaveScreenshot(`chart-analyze-${size.width}-${theme}.png`, { fullPage: true, animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 20_000 });

@@ -155,7 +155,8 @@ describe("UI2-1 sidebar", () => {
     const html = sidebar(all, "dashboard");
     const entries = hrefs(html).slice(1, -1);
     expect(entries).toEqual([
-      "/", "/charts", "/option-chain", "/markets", "/screener", "/terminal", "/signals", "/deployments", "/positions",   // Terminal T1 (flag `terminal`)
+      "/", "/charts", "/watchlist", "/option-chain", "/markets", "/screener",   // P1-8: Watchlist (flag `watchlists`)
+      "/terminal", "/signals", "/deployments", "/positions",   // Terminal T1 (flag `terminal`)
       "/analytics", "/strategies", "/copilot", "/news-events", "/learn", "/broker", "/settings", "/admin",   // C13: Learn (flag `learn`)
     ]);
     expect(html.indexOf("data-nav-admin")).toBeLessThan(html.indexOf('href="/admin"'));

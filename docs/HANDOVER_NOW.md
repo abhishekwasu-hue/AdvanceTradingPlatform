@@ -1,10 +1,11 @@
-# Handover now (25 Oct 2026, noon IST)
-Deploy given: eb11fb0a (CI + staging green; migrations b3f5d7e9a1c2, c7e9a1b3d5f2). Merged since: #539 (cf87ccb).
-Owner to send: deploy log, releases.log, health, Charts + Terminal screenshots (desktop + phone).
-Open: #532 + this PR (docs; merge on green); #536 DM1-DM5 (green, waits owner ✅); #540 TF-1 ✅ with 2 fixes,
-then merge: (1) picker button = current interval if not starred, else timeframe icon + "▾", never "More";
-(2) phone list = bottom sheet, scrolls inside, above the bottom nav. Then one deploy block (DEP-1).
-Rule now: no new jobs until the limit resets; finish, merge, deploy only.
-Known: staging rollback --restore-db step fails intermittently (not tied to a PR) - root-cause next.
-Traders first (DECISIONS 25 Oct PR-1..4): UI polish frozen after TF-1. Next: data (DATA-H backfill, data_hub,
-universe sync) -> day-one test J1/J3 -> T2/T3 + CX PR 3 + SX -> FN2-FN4 -> FN5 + CP-V -> alerts. FN0_JOURNEYS.md.
+# Handover now (26 Oct 2026)
+Plan (owner-approved, traders first): docs/ROADMAP.md + HANDOVER order PR-3. Rules: CLAUDE.md §6 + TB-10..TB-16.
+Step 0 open:
+- #540 TF-1: both owner fixes pushed (9c51f515; icon not "More", phone bottom sheet). Run CI; regenerate only the
+  picker baselines that fail; merge.
+- Merge on green: #551 (this), docs #548 #549 #550. Park #536 (DM), #438, #452.
+- Then ONE deploy block, no migration (ships #539, #543-#547 data fixes).
+Step 1 data: owner presses "Enable trader features", runs `atp.sh lake-backfill`, sends probe-candles / probe-chain;
+then DATA-H DH4/DH5/DH2 close-out, DH6 (22,600), sector/watchlist lists, P1-8 phone Watchlist entry.
+Then: day-one test (J1, J3) -> Terminal T2/T3 + CX PR 3 + SX -> FN2-FN4 -> FN5 + CP-V -> alerts.
+Parallel docs: M49 step 1 (audit + spec + mockups, owner approves first). M45 after step 2.

@@ -237,21 +237,51 @@ test.describe("v2 shell 1440 desktop", () => {
 
   test("Ctrl K opens the command bar; typing and Enter go to the page", async ({ page }) => {
     await open(page, "/", "light");
+    await page.route(/\/api(?:\/v1)?\/instrument-master\/search/, (r) => r.fulfill({ json: [] }));   // no symbol matches here
     await page.keyboard.press("Control+k");
     const bar = page.locator("[data-command-bar]");
     await expect(bar).toBeVisible();
-    await bar.getByRole("combobox", { name: "Search pages" }).fill("risk");
+    await bar.getByRole("combobox", { name: "Search" }).fill("risk");
+    await expect(bar.getByText("Searching…")).toHaveCount(0);
     await expect(bar.getByRole("option").first()).toHaveText(/Risk limits/);
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/risk-management$/);
     await expect(bar).toBeHidden();
     // The top bar's search box opens it too; a page whose feature is off is not offered.
-    await page.getByRole("button", { name: /^Search pages/ }).click();
+    await page.getByRole("button", { name: /^Search \(/ }).click();
     await bar.getByRole("combobox").fill("journal");
-    await expect(bar.getByText('No page matches "journal".')).toBeVisible();
+    await expect(bar.getByText('No symbol or page matches "journal".')).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(bar).toBeHidden();
-    await expect(page.getByRole("button", { name: /^Search pages/ })).toBeFocused();      // focus back on the opener (M2)
+    await expect(page.getByRole("button", { name: /^Search \(/ })).toBeFocused();      // focus back on the opener (M2)
+  });
+
+  test("UX-2: symbols first - a share opens its chart and becomes a recent symbol; 'nifty 22700 ce' finds the contract", async ({ page }) => {
+    await open(page, "/", "light");
+    await page.route(/\/api(?:\/v1)?\/instrument-master\/search/, (r) => {
+      const type = new URL(r.request().url()).searchParams.get("type");
+      return r.fulfill({ json: type === "EQ" ? [{ tradingsymbol: "RELIANCE", exchange: "NSE", name: "Made-up Reliance", instrument_type: "EQ" }] : [] });
+    });
+    await page.route(/\/api(?:\/v1)?\/charts\/contracts\/search/, (r) => {
+      const url = new URL(r.request().url());
+      expect(url.searchParams.get("underlying")).toBe("NIFTY");
+      expect(url.searchParams.get("kind")).toBe("CE");
+      expect(url.searchParams.get("near")).toBe("22700");
+      return r.fulfill({ json: { underlying: "NIFTY", total: 1, note: "", contracts: [
+        { key: "NFO:NIFTY:CE:2026-10-28:22700", tradingsymbol: "NIFTYMADEUPCE", underlying: "NIFTY", kind: "CE", expiry: "2026-10-28", strike: 22700, lot_size: 75 }] } });
+    });
+    const bar = page.locator("[data-command-bar]");
+    await page.keyboard.press("Control+k");
+    await bar.getByRole("combobox").fill("reli");
+    await expect(bar.getByRole("option").first()).toContainText("RELIANCE");
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/charts\/RELIANCE$/);
+    await page.keyboard.press("Control+k");
+    await expect(bar.locator("[data-command-group='symbols']")).toHaveText("Recent symbols");      // empty field: recent first
+    await expect(bar.getByRole("option").first()).toContainText("RELIANCE");
+    await bar.getByRole("combobox").fill("nifty 22700 ce");
+    await expect(bar.getByRole("option").first()).toContainText("NIFTY 28 Oct 22700 CE");
+    await page.keyboard.press("Escape");
   });
 
   test("Ctrl K is left alone while another dialog is open", async ({ page }) => {

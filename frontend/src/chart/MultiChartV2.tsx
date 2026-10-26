@@ -23,6 +23,7 @@ import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, type TimeframeId } 
 import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs, type ChartPrefs } from "./useChartPrefs";
 import { TimeframePicker } from "../ui/TimeframePicker";
+import { Combobox } from "../ui/Combobox";
 
 /**
  * UI2-4d (Charts page plan §3, CH5): the Multi-chart tab of the v2 Charts page, shown while `chart_workspace` is on.
@@ -222,11 +223,8 @@ export default function MultiChartV2({
           );
         })}
         <div className="flex w-full flex-wrap items-center gap-space-1 md:ml-auto md:w-auto">
-          <label className="sr-only" htmlFor="multi-layouts">Saved layouts</label>
-          <select id="multi-layouts" value={current ? String(current.id) : ""} onChange={(e) => load(e.target.value)} className={cx(field, "min-w-0 flex-1 md:w-44 md:flex-none")}>
-            <option value="">Unsaved layout</option>
-            {saved.map((r) => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
-          </select>
+          <Combobox id="multi-layouts" label="Saved layouts" value={current ? String(current.id) : ""} onChange={load} searchable={saved.length > 8}
+            options={[{ value: "", label: "Unsaved layout" }, ...saved.map((r) => ({ value: String(r.id), label: r.name }))]} className="min-w-0 flex-1 md:w-44 md:flex-none" />
           <button ref={saveButton} type="button" onClick={() => (current ? void save(null) : setNaming("My layout"))} className={cx(btn, "border border-border bg-surface-2 font-semibold text-fg hover:bg-surface-3")}>
             <Save size={14} aria-hidden /> Save
           </button>
@@ -321,10 +319,8 @@ function Cell({
           label={`Symbol of chart ${n}`} className="min-w-[7.5rem] flex-1" />
         <TimeframePicker offered={offered} value={shownTf} onChange={onTimeframe} compact maxFavourites={phone ? 0 : undefined} label={`Timeframe of chart ${n}`}
           favourites={tfPrefs.prefs.timeframe_favourites} onFavourites={(next) => tfPrefs.update({ timeframe_favourites: next })} />
-        <label className="sr-only" htmlFor={`multi-type-${index}`}>Chart type of chart {n}</label>
-        <select id={`multi-type-${index}`} value={cellChartType(c.chart_type)} onChange={(e) => onType(e.target.value as CellV1["chart_type"])} className={field}>
-          {CHART_TYPES_V2.map((t) => <option key={t} value={t}>{CHART_TYPE_LABELS_V2[t]}</option>)}
-        </select>
+        <Combobox id={`multi-type-${index}`} label={`Chart type of chart ${n}`} value={cellChartType(c.chart_type)} onChange={(v) => onType(v as CellV1["chart_type"])}
+          options={CHART_TYPES_V2.map((t) => ({ value: t, label: CHART_TYPE_LABELS_V2[t] }))} />
         <button type="button" aria-label={`Open chart ${n} in the Chart tab`} title="Open in the Chart tab" onClick={() => onOpen(shownTf)} className={iconBtn}>
           <ExternalLink size={16} aria-hidden />
         </button>

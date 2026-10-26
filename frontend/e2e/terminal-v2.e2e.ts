@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { mockCharts } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
+import { pickOption } from "./combobox";
 
 /**
  * Trading Terminal T1 (/terminal) with `ui_v2`, `terminal` and the practice account on, on made-up answers only (no real
@@ -228,17 +229,17 @@ test.describe("v2 terminal 1440", () => {
 
   test("switching layouts is remembered on the server; Save as mine; Reset", async ({ page }) => {
     const seen = await open(page, "light");
-    await page.locator("[data-terminal='layout']").selectOption("quick_trade");
+    await pickOption(page, page.locator("[data-terminal=\'layout\']"), "quick_trade");
     await expect(page.locator("[data-page='terminal-v2']")).toHaveAttribute("data-layout", "quick_trade");
     await expect(page.locator("[data-terminal-grid] [data-panel]")).toHaveCount(4);
     await expect(page.locator("[data-panel='chain']")).toHaveCount(0);
     expect(seen.puts.at(-1)?.body).toMatchObject({ active: "quick_trade" });
     await shot(page, "terminal-1440-light-quick-trade");
-    await page.locator("[data-terminal='layout']").selectOption("multi_chart");
+    await pickOption(page, page.locator("[data-terminal=\'layout\']"), "multi_chart");
     await expect(page.locator("[data-terminal-grid] [data-panel^='chart-']")).toHaveCount(4);
     await shot(page, "terminal-1440-light-multi-chart");
     // His own: back to Option seller, close the basket, save it under his name.
-    await page.locator("[data-terminal='layout']").selectOption("option_seller");
+    await pickOption(page, page.locator("[data-terminal=\'layout\']"), "option_seller");
     await page.locator("[data-panel-close='basket']").click();
     await expect(page.locator("[data-panel='basket']")).toHaveCount(0);
     await page.locator("[data-terminal='save']").click();

@@ -416,6 +416,35 @@ test.describe("TF-1: one timeframe control (favourites + grouped dropdown)", () 
     });
   }
 
+  test("the dropdown button never says More: a timeframe icon while the pick is a starred button (desktop)", async ({ page }) => {
+    await open(page, "light");
+    await chartReady(page);
+    const button = page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: /^Timeframe: / });
+    await expect(button.locator("[data-timeframe-icon]")).toBeVisible();
+    await expect(button).not.toContainText("More");
+  });
+
+  test("phone: the list is a bottom sheet above the bottom nav that scrolls inside to the last group", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open(page, "light");
+    await chartReady(page);
+    const button = page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: /^Timeframe: / });
+    await expect(button).not.toContainText("More");
+    await button.click();
+    const menu = page.getByRole("menu", { name: "Timeframes" });
+    await expect(menu).toHaveAttribute("data-sheet", "true");
+    const sheet = (await menu.boundingBox())!;
+    const nav = (await page.locator(".bottom-nav").boundingBox())!;
+    expect(sheet.x).toBe(0);
+    expect(sheet.width).toBe(390);
+    expect(sheet.y + sheet.height).toBeLessThanOrEqual(nav.y + 1);   // sits on top of the bottom nav, never under it
+    const last = menu.locator('[data-timeframe-group="Months"]');
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeInViewport();
+    await page.locator("[data-timeframe-backdrop]").click({ position: { x: 20, y: 20 } });
+    await expect(menu).toBeHidden();
+  });
+
   test("star a timeframe, add a custom interval, refuse one that cannot be shown, and open the box by typing a digit", async ({ page }) => {
     const calls = await open(page, "light");
     await chartReady(page);

@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Plus, Star } from "lucide-react";
+import { Check, ChevronDown, Clock, Plus, Star } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   INTERVAL_UNITS, groupTimeframes, parseCustomInterval, shownFavourites, timeframeLabel, timeframeShort, toggleFavourite,
@@ -143,7 +143,8 @@ export function TimeframePicker({
         className={cx("inline-flex min-h-11 items-center justify-center gap-space-1 whitespace-nowrap rounded-control px-space-3 text-t14 md:min-h-8 md:px-space-2",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
           shown.includes(value) ? "font-medium text-fg-muted hover:bg-surface-1 hover:text-fg" : "bg-brand font-semibold text-on-brand shadow-card")}>
-        {shown.includes(value) ? (few ? "" : "More") : (phone ? timeframeShort(value) : timeframeLabel(value))}
+        {/* TF-1 fix 1: the current interval when it is not a starred button, else a timeframe icon + "▾" - never "More". */}
+        {shown.includes(value) ? <Clock size={16} aria-hidden data-timeframe-icon /> : (phone ? timeframeShort(value) : timeframeLabel(value))}
         <ChevronDown size={14} aria-hidden />
       </button>
     </span>
@@ -153,9 +154,14 @@ export function TimeframePicker({
     <div ref={ref} className={cx("relative", className)} data-timeframe-picker>
       <SubTabs kind="toggle" label={label} size="sm" layout="scroll" value={shown.includes(value) ? value : null} onChange={pick} trailing={trailing}
         items={shown.map((tf) => ({ key: tf, label: timeframeShort(tf), ariaLabel: timeframeLabel(tf), data: { favourite: "true" } }))} />
+      {open && phone && <div aria-hidden data-timeframe-backdrop onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-black/30" />}
       {open && (
-        <div id={menuId} ref={menuRef} role="menu" aria-label="Timeframes" data-timeframe-menu onKeyDown={onMenuKey}
-          className="absolute right-0 top-full z-30 mt-space-1 max-h-[60vh] w-64 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-panel border border-subtle bg-surface-1 p-space-1 shadow-raised">
+        // TF-1 fix 2: on a phone the list is a bottom sheet above the bottom nav (4rem + the safe area) that scrolls inside.
+        <div id={menuId} ref={menuRef} role="menu" aria-label="Timeframes" data-timeframe-menu data-sheet={phone || undefined} onKeyDown={onMenuKey}
+          className={cx("overflow-y-auto overscroll-contain border-subtle bg-surface-1 p-space-1 shadow-raised",
+            phone
+              ? "fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 max-h-[60vh] rounded-t-panel border-t"
+              : "absolute right-0 top-full z-30 mt-space-1 max-h-[60vh] w-64 max-w-[calc(100vw-2rem)] rounded-panel border")}>
           {groups.map((g) => (
             <div key={g.label} role="group" aria-label={g.label} data-timeframe-group={g.label}>
               <div aria-hidden className="px-space-3 pb-space-1 pt-space-2 text-t12 font-semibold uppercase text-fg-muted">{g.label}</div>

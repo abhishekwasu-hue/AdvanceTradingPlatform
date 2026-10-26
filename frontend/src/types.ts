@@ -646,6 +646,20 @@ export interface BrokerAccount {
   created_at: string | null;
 }
 
+/** M45 MA-1: one of the user's own accounts in the multi-account registry (GET /api/accounts/mine). */
+export interface MultiAccountRow extends BrokerAccount {
+  role: "PRIMARY" | "SECONDARY" | null;
+  group_name: string | null;
+  enabled: boolean;
+  token_expires_at: string | null;
+}
+
+export interface MultiAccountRegistry {
+  accounts: MultiAccountRow[];
+  /** Open LIVE positions with no broker account recorded: no account takes a role until they are closed (M45-3). */
+  unaccounted_live_trades: { id: number; symbol: string }[];
+}
+
 export interface BrokerCredentialsInput {
   api_key?: string;
   api_secret?: string;

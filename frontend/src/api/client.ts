@@ -103,6 +103,8 @@ import type {
   WorkerStatus,
   BacktestRunSummary,
   BrokerAccount,
+  MultiAccountRegistry,
+  MultiAccountRow,
   ExitRules,
   MonteCarloResult,
   WalkForwardResult,
@@ -697,6 +699,12 @@ export const api = {
   syncAccount: (id: number) => request<BrokerAccount>(`/accounts/${id}/sync`, { method: "POST" }),
   setAccountStatus: (id: number, enabled: boolean) => request<BrokerAccount>(`/accounts/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" }),
   setDefaultAccount: (id: number) => request<BrokerAccount>(`/accounts/${id}/default`, { method: "POST" }),
+  // M45 MA-1 (`ui_v2` + `multi_account`): the user's own accounts as Primary / Secondary.
+  myAccounts: () => request<MultiAccountRegistry>("/accounts/mine"),
+  setMyAccountRole: (id: number, role: "PRIMARY" | "SECONDARY" | null, confirm = false) =>
+    request<MultiAccountRow>(`/accounts/mine/${id}/role`, { method: "POST", body: JSON.stringify({ role, confirm }) }),
+  setMyAccountGroup: (id: number, groupName: string | null) =>
+    request<MultiAccountRow>(`/accounts/mine/${id}/group`, { method: "POST", body: JSON.stringify({ group_name: groupName }) }),
 
   deleteBrokerCredentials: (name: string, accountLabel = "primary") =>
     request<void>(`/broker/${name}/credentials?account_label=${encodeURIComponent(accountLabel)}`, { method: "DELETE" }),

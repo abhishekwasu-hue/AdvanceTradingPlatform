@@ -61,7 +61,7 @@ PR plan (one `claude/` branch each, draft): **MA-1** data + registry page (migra
 token expiry, one account failing on exit) -> **MA-4** exits follow positions + G3 guard (tests across brokers) ->
 **MA-5** checks, alerts, retry, capability table -> **MA-6** views + ticket "Run on" list + screenshots.
 
-## 4. Owner decisions (defaults if no answer)
+## 4. Owner decisions (✅ 26 Oct: defaults accepted, DECISIONS)
 
 | # | Question | Default |
 |---|---|---|

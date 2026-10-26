@@ -39,6 +39,6 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | P2-F every feature 100% functional on production (FN0-FN7) | ATP_ORDER_P2F_FUNCTIONAL.md | FN0-FN7 | FN0 first |
 | - | Journal v2 J1-J6 | ATP_SESSION_JOURNAL.md | P2-8 | waiting for a free slot |
 | - | Modern trading-app look UX-1..UX-10 | ATP_ORDER_UX2.md | UX-2 | UX-1 first |
-| - | M45 Multi-broker accounts MB-0..MB-9 | ATP_ORDER_M45_MULTI_BROKER.md | M45 | design note (M45_MULTI_ACCOUNT.md) waits ✅ |
+| - | M45 Multi-broker accounts MB-0..MB-9 | ATP_ORDER_M45_MULTI_BROKER.md | M45 | design note ✅ (M45_MULTI_ACCOUNT.md); build MA-1..MA-6 next |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

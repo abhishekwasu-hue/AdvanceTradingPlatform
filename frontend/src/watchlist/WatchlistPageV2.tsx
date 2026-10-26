@@ -13,7 +13,7 @@ import { PageIntro } from "../ui/PageIntro";
 import { recentKeyFor } from "../ui/SymbolPicker";
 import { useFeatures } from "../ui/useFeatures";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
-import { INTRO_LINE, NOT_FILLED_NOTE, readyMadeState, type ReadyMade } from "./model";
+import { NOT_FILLED_NOTE, readyMadeState, type ReadyMade } from "./model";
 
 /**
  * P1-8 (2) W-PR: the Watchlist page at /watchlist - v2 only, behind the `watchlists` flag (the shell leaves it out of the
@@ -46,7 +46,7 @@ export default function WatchlistPageV2(_props: PageProps) {
 
   return (
     <div data-page="watchlist" className="mx-auto flex w-full max-w-[760px] flex-col gap-space-4">
-      <PageIntro id="watchlist" lines={[INTRO_LINE]} />
+      <PageIntro id="watchlist" lines={["Tap a symbol to open its chart. Ready-made lists are read-only; copy one to make a list of your own."]} />
       <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Watchlist</h1>
       {readyMade === "empty" && (
         <p role="status" data-ready-made="empty" className={cx(CARD, "p-space-4 text-t14 text-fg-muted")}>{NOT_FILLED_NOTE}</p>

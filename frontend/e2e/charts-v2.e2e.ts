@@ -158,7 +158,7 @@ test.describe("v2 Charts 1440 desktop", () => {
     await chartReady(page);
     const group = page.getByRole("group", { name: "Timeframe" });
     // TF-1: the starred favourites (default 5m, 15m, 1H, D) beside one dropdown that holds every timeframe.
-    await expect(group.getByRole("button")).toHaveText(["5m", "15m", "1H", "D", "More"]);
+    await expect(group.getByRole("button")).toHaveText(["5m", "15m", "1H", "D", ""]);
     await expect(group.getByRole("button", { name: "5 min", exact: true })).toHaveAttribute("aria-pressed", "true");
     const ids: Record<string, string> = { "1 min": "1min", "3 min": "3min", "5 min": "5min", "15 min": "15min", "30 min": "30min", "1 hour": "60min", Daily: "day", Weekly: "week",
       Monthly: "month" };
@@ -185,7 +185,7 @@ test.describe("v2 Charts 1440 desktop", () => {
   test("week and month are offered only when the server supports them", async ({ page }) => {
     await open(page, "light", { timeframes: ["1min", "3min", "5min", "15min", "30min", "60min", "day"] });
     await chartReady(page);
-    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button")).toHaveText(["5m", "15m", "1H", "D", "More"]);
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button")).toHaveText(["5m", "15m", "1H", "D", ""]);
     await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: /^Timeframe: / }).click();
     await expect(page.getByRole("menuitemradio")).toHaveText(["1 min", "3 min", "5 min", "15 min", "30 min", "1 hour", "Daily"]);
   });

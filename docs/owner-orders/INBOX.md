@@ -84,3 +84,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-26 | "Backfill a already completed" | DATA-H: lake-backfill done on production; Step 1 keeps only the read-only `lake-backfill --check` |
 | 2026-10-26 | (Marathi, translated) "Okay, so which work can we start a new session for right now? This project is quite big and a lot of time is going; by starting multiple code sessions we will complete the modules one by one." | answered: Session A traders, B UI redesign (after #548), C review/design |
 | 2026-10-26 | (Marathi, translated) "Make the R2 limit 5; I am starting Session C now." | ROADMAP R2 + CLAUDE.md §1: max 5 build items; Session C (CP-V review, M45 design, P2-1 flag audit) started |
+| 2026-10-26 | (Marathi, translated) "If you need any information from me, notify me." | sessions send a push notification whenever an owner answer / ✅ / server output is needed |

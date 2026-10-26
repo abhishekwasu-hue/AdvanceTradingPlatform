@@ -86,3 +86,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-26 | (Marathi, translated) "Make the R2 limit 5; I am starting Session C now." | ROADMAP R2 + CLAUDE.md §1: max 5 build items; Session C (CP-V review, M45 design, P2-1 flag audit) started |
 | 2026-10-26 | (Marathi, translated) "If you need any information from me, notify me." | sessions send a push notification whenever an owner answer / ✅ / server output is needed |
 | 2026-10-26 | "#554 ✅" | P1-8 Watchlist page screenshots approved; tab colour + bar order (Today · Charts · Watchlist · Signals · My trades · More) as default |
+| 2026-10-26 | "I agree with u" (reply to: #553 keeps LIVE positions in the combined stop-loss sheet, default yes) | CX PR 3 #553: LIVE positions stay in the sheet; screenshot ✅ still asked explicitly |

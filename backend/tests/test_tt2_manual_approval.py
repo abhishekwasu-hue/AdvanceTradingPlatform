@@ -177,8 +177,10 @@ def _manual_origin_sites() -> set:
 
 
 def test_only_the_ticket_and_basket_routes_set_the_manual_origin():
-    assert _manual_origin_sites() == {"app/paper/fno_routes.py"}
+    # M45 MA-3: the multi-account ticket order is the same person's own ticket, placed per practice account.
+    assert _manual_origin_sites() == {"app/paper/fno_routes.py", "app/accounts/routes.py"}
     routes = (BACKEND / "app" / "paper" / "fno_routes.py").read_text()
     assert routes.count("origin=MANUAL") == 4                 # ticket preview + place, basket preview + execute
+    assert (BACKEND / "app" / "accounts" / "routes.py").read_text().count("origin=MANUAL") == 1   # the multi-account ticket order
     for fn in (fno_ticket.assess, fno_ticket.place, fno_basket.preview, fno_basket.execute, fno_basket.execute_smart):
         assert fn.__kwdefaults__["origin"] == approval.ORIGIN_AUTOMATIC, fn.__name__     # any other caller is automatic

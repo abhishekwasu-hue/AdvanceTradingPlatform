@@ -754,6 +754,15 @@ health_checks() {
   if body="$(curl -sS -m 10 "$API/api/system/health/deep" 2>/dev/null)"; then
     read -r st db_s mig wk rd hb cyc < <(printf '%s' "$body" | deep_fields)
     info "deep: $st (database $db_s, migrations $mig, worker $wk, redis $rd)"
+    # P1 (27 Oct): the instrument master sync (informational - never fails the health check).
+    local im; im="$(printf '%s' "$body" | python3 -c 'import json, sys
+try:
+    c = (json.load(sys.stdin).get("checks") or {}).get("instrument_master") or {}
+except Exception:
+    c = {}
+s = c.get("status") or "-"
+print(s, "|", "last ok", c.get("last_ok_at") or "never", "|", c.get("rows") or 0, "rows", "|", "last error:", (c.get("last_error") or "none")[:120])' 2>/dev/null)"
+    case "$im" in ok*) ok "instrument master: $im" ;; -*|"") info "instrument master: not reported" ;; *) warn "instrument master: $im" ;; esac
     if [ "$st" = "ok" ]; then ok "deep health ok"
     elif deep_ok; then warn "deep health degraded only because the database is ahead of this code (after a checked code-only rollback) - deploy the newer release when fixed"
     else bad "deep health $st"; fi

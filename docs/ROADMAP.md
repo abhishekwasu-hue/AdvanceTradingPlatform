@@ -57,6 +57,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-6d | SX Strategy-level SL / target / trailing at entry (spread + basket tickets), same engine as CX | ATP_ORDER_CX_SX.md | SX1-SX8 tests pass; ticket + chip screenshots; owner ✅ |
 | P1-7 | Smart execution ON | row 20 Part 7 (#474 merged) | flag ON; basket confirm step checked on production |
 | P1-8 | WL1 Watchlists (J2): ready-made system lists (Indices, Index stocks, Sectors, F&O) + own lists, live prices, phone layout | handover item 4; INBOX 24 Oct | `watchlists` ON in production, the lists filled by the universe sync, a Watchlist entry on the phone bar, live prices checked on production; owner ✅ on screenshots |
+| P1-B1 | BUG: chain shows contracts the ticket / basket cannot trade ("not in the instrument list yet") - master sync retried with back-off + start-up catch-up, on-demand refresh, honest text, IST expiry dates, next-expiry default on expiry days (setting), exits never need the master | INBOX 27 Oct | the same ticket and basket place on production on an expiry day; before / after phone screenshots; owner ✅ |
 
 ### Phase P2-F — Every feature 100% functional on production with real broker data (owner 25 Oct; before Phase 2 items)
 Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress; one PR per item. Source: ATP_ORDER_P2F_FUNCTIONAL.md.
@@ -129,8 +130,9 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UI-H-BUG | in progress | bug lane: C1 (merged #506: history ends at the last session close, empty state with its reason, `atp.sh probe-candles`), B2a/B2b (merged #507: "as of" the last session close, "Spot: last close", `atp.sh probe-chain`), B3+B4+Orders time (merged #508), A1 (merged #505), B1 (#509: own-broker chain reads = the user's session snapshots; Analyses / Charts / OI reads no longer refused) - small PRs, each with proof | C1: #506; B2: #507; B3/B4: #508; A1: #505; B1: #509 |
 | UI-H-CA | in progress | CA1-CA8 ✅ (25 Oct); fix CA6-1 distinct bottom-nav hues (Today blue, Charts violet, Signals amber, My trades pink, More teal; AA + colour-blind check), Option chain spot = chart feed check; then merge #534 | #534 |
 | UI-H-DM | in progress | dark-mode contrast DM1-DM5 in colour_v2 dark tokens (surfaces, borders >= 3:1, icons/labels >= 4.5:1, primary + active >= 7:1, Appearance "High contrast", ratio test); stacked on #534; phone comparison page (dark, normal + high contrast) | - |
-| UX-2 | in progress | Session B, plan docs/design/UX2_PLAN.md (11 PRs): merged H9 #559, UX-6 #560 (M1 done), UX-5 combobox #564; open UX-2 search #563; next UX-7 / UX-4 / UX-8; handover docs/HANDOVER_UX2.md | #559, #560, #563, #564 |
-| UX-11 | in progress | Session B: "Numbers first, text on demand" U1-U6 (ATP_ORDER_UX11.md); PR 1 shared primitives (Details, Signed, KeyValueTable, ProgressStat, EmptyState) + guard + Storybook, then My trades, Today, Terminal, Charts, rest in UX-10 order | - |
+| UX-2 | in progress | Session B, plan docs/design/UX2_PLAN.md: merged H9 #559, UX-6 #560, UX-2 search #563, UX-5 #564, UX-7, UX-4, TD-1 #577, OC-1/2 #579, Orders #581, Charts H7 #582, UX-9 ticket #583; UX-8 density #578 on CI; next OC-4 / OC-5; PR 8 (Terminal watchlist) waits on Session A T2/T3; owner deploys + checks | #577-#583 |
+| UX-11 | in progress | Session B: "Numbers first" (ATP_ORDER_UX11.md): merged docs #584, primitives + guard #585; My trades #586, Today #587, Terminal #588, Charts #589 on CI; next Option chain, Signals, then Paper bot, Performance, Strategies, Settings, Markets, Learn | #584-#589 |
+| UX-12 | in progress | Session B: purple dot-grid backdrop behind the v2 page header band (owner screenshot, 27 Oct), Appearance toggle, default on | - |
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | SB-1 | not started | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
@@ -145,6 +147,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P1-6c | in progress | PR 1 #524 + PR 2 #527 + CX-F1/F2 #529 merged; PR 3 #553 merged 26 Oct (owner ✅): sheet (PAPER + LIVE, never mixed) + chip with distance / stale mark + status bar + CX-F2 "Exit short now". Open: CX2 trailing (backend field), "Exit short now" inside the in-app notification list; then SX (P1-6d) | #524, #527, #529, #553 |
 | P1-6d | review | same review as P1-6c; build with / right after CX (same engine) | - |
 | P1-8 | in progress | 26 Oct: W-PR #554 merged (owner ✅): Watchlist page + phone bar tab after Charts, behind `ui_v2` + `watchlists`. On main: server lists + Charts watchlist panel (chooser, search, sort, copy to my list, live ticks with `data_hub`). Missing: `watchlists` flag OFF in production; lists empty until the universe sync runs (P1-3); no Watchlist entry of its own on the phone bar (only inside Charts). Plan: (1) owner turns on via "Enable trader features" + System tab refresh; (2) W-PR: Watchlist page / phone bar entry using the same panel, behind ui_v2; (3) screenshots for ✅ | - |
+| P1-B1 | in progress | owner bug 27 Oct 09:17 IST (blocks J1/J3); fix PR open (master sync retry + on-demand refresh + IST expiry + expiry-day default) | - |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
 | FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |
@@ -156,7 +159,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P2-6 | not started | help centre + page tours complete | - |
 | P2-7 | not started | positions for options sellers + Performance page | - |
 | P2-8 | not started | Journal v2 J1 -> J2+J3 -> J4+J5+J6 (3 draft PRs); starts when the max-3 rule allows | - |
-| M45 | in progress | MA-1a merged (#568, migration e2a4c6e8f0b1, flag `multi_account` OFF); MA-1b page ✅ (#569); MA-2 resolver + sizing (pure, no orders) in review; next MA-3 fan-out on PAPER simulated accounts | MA-2 PR |
+| M45 | in progress | MA-1a #568, MA-1b #569, MA-2 #571 merged; MA-3/4/5 PAPER fan-out, one exit, checks + alerts + retry (migration f1b3d5e7a9c2) #576; MA-6 ticket "Run on" + practice accounts page in review; then flag decision + deploy (owner's one command); LIVE fan-out only on the owner's LIVE words | MA-6 PR |
 | P3-1 | waiting for owner | the R2 bucket + key escrow, then the restore drill | - |
 | P3-2 | not started (parallel) | monitoring + alerts (parts built, row 17) | - |
 | P3-3 | not started (parallel) | rollback test of `atp.sh` | - |

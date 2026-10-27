@@ -32,6 +32,18 @@ def _closed_circuit_breakers():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _no_instrument_master_download(monkeypatch):
+    """P1 (27 Oct): a ticket that misses a contract starts an on-demand master refresh (a real Upstox download). Tests never
+    download: the refresh answers as "refreshing"; tests/test_p1_master_sync.py calls the real function with a fake sync."""
+    from app.instruments import master_sync
+
+    async def _stub(session_factory, exchanges, now=None):
+        return master_sync.status_text({}, refreshing=True)
+    monkeypatch.setattr(master_sync, "refresh_on_demand", _stub)
+    yield
+
+
 @pytest.fixture(autouse=True, scope="module")
 def _platform_state_reset_per_module():
     yield

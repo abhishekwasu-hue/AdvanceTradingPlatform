@@ -138,3 +138,5 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | (Marathi, translated) "And which work of the other two sessions was merged" | list given (Session B UX-2 / UX-11, Session C M45 / P2-1) |
 | 2026-10-27 | (screenshots) deploy health OK; restart (security updates) done; instrument master ok 91,037 rows | P1-B1 live; owner check tomorrow 09:15 (PAPER ticket on a NIFTY contract) |
 | 2026-10-27 | (Marathi, translated) "Give the VPS command for the finished work" | deploy line 534a4f8 (F1 + MB-7, no migration) given; next deploy = T2 + SX/CX2 + load-500 + backup fix after main CI |
+| 2026-10-28 | Production Today screenshot: the dots now show (after a full reload) | noted; UX-12 live |
+| 2026-10-28 | OWNER ORDER UX-14 "Professional palette" - new token set behind flag colour_v3 (neutral surfaces, one accent ATP blue #2962FF, semantic up / down / warn / neutral, AI violet badge only, no dot backdrop under v3), CI contrast, ONE comparison page, default only after owner OK - full text verbatim in ATP_ORDER_UX14.md | roadmap UX-14; build colour_v3 + comparison page |

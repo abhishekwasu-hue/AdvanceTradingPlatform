@@ -120,6 +120,7 @@ for (const [width, height] of SIZES) {
         await callCell(page).click();
         await page.locator("[data-chain-actions] [data-action='buy']").click();
         const ticket = page.locator("[data-order-ticket]");
+        await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
         await ticket.locator("[data-ticket='review']").click();
         await expect(ticket.locator("[data-risk-line]")).toBeVisible();
         await expect(ticket).toHaveScreenshot(`fno8b-ticket-review-v2-${width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
@@ -164,6 +165,7 @@ test.describe("F&O 8b slice 1 flows", () => {
     const ticket = page.locator("[data-order-ticket]");
     await expect(ticket.locator("[data-practice-frame]")).toContainText("Practice mode (PAPER)");
     expect(seen.gets.filter((g) => g.endsWith("/risk-budget"))).toEqual([]);         // read only on the confirm step
+    await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();      // F1: no product saved - pick one before Review
     await ticket.locator("[data-ticket='review']").tap();
     await expect(ticket.locator("[data-ticket='plain-words']")).toContainText(
       "If NIFTY closes at or below 24,500 at expiry you lose the premium, at most about ₹11,300; above 24,650 you gain, more the higher it closes.");

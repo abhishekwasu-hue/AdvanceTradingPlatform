@@ -286,6 +286,7 @@ test.describe("8b slice 3 flows", () => {
     expect(legs.map((l) => [l.side, l.strike, l.right, l.lots, l.price, l.stop_loss ?? null])).toEqual([["SELL", 24400, "PE", 2, 136, 204], ["BUY", 24200, "PE", 2, 108, null]]);
     expect(orderCalls(seen)).toEqual([]);                                // opened, never placed
     expect(seen.posts.filter((p) => p.url.endsWith("/journal/link"))).toEqual([]);
+    await panel.locator("[data-basket='product'] [data-option='NRML']").tap();   // F1: no product saved - Execute stays disabled until one is picked
     await panel.locator("[data-basket='execute']").tap();
     await panel.locator("[data-basket='place']").tap();
     await expect(panel.locator("[data-basket='result']")).toBeVisible();
@@ -304,6 +305,7 @@ test.describe("8b slice 3 flows", () => {
     await expect(ticket.locator("[data-practice-frame]")).toContainText("Practice mode (PAPER)");
     await expect(ticket).toContainText("NIFTY 03 NOV 24500 CE");
     expect(orderCalls(seen)).toEqual([]);
+    await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1: no product saved - pick one before Review
     await ticket.locator("[data-ticket='review']").tap();
     await ticket.locator("[data-ticket='place']").tap();
     await expect(ticket.locator("[data-ticket='result']")).toContainText("Placed in practice mode");

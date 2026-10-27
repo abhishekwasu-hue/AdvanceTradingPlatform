@@ -318,3 +318,15 @@ describe("FNO-2 basket: save / load, broker app, Options Builder", () => {
     expect(builderHandoff([leg({ price: null })], [75], 24480, 100)).toBeNull();
   });
 });
+
+describe("owner F1: no product saved - the basket pre-selects none", () => {
+  it("Execute stays disabled with one line why until the user picks MIS or NRML", () => {
+    const none = body([leg()], { product: null });
+    expect(none.html).toContain('data-basket="product-unset"');
+    expect(none.html).toMatch(/disabled=""[^>]*data-basket="execute"|data-basket="execute"[^>]*disabled=""/);
+    expect(none.html).not.toMatch(/aria-checked="true"[^>]*data-option="(MIS|NRML)"/);
+    const picked = body([leg()], { product: "NRML" });
+    expect(picked.html).not.toContain('data-basket="product-unset"');
+    expect(picked.html).not.toMatch(/disabled=""[^>]*data-basket="execute"|data-basket="execute"[^>]*disabled=""/);
+  });
+});

@@ -270,6 +270,7 @@ for (const size of SIZES) {
         await openChain(page, theme, FROM_SIGNAL, { items: [SINGLE_ITEM] });
         await page.locator("[data-setup-item='8'] [data-setup='trade']").click();
         const ticket = page.locator("[data-order-ticket]");
+        await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
         await ticket.locator("[data-ticket='review']").click();
         const checks = ticket.locator("[data-risk-checks='ticket']");
         await expect(checks).toContainText("RBI policy on 30 Oct 2026");
@@ -314,6 +315,7 @@ test.describe("8b slice 4 flows", () => {
     const seen = await openChain(page, "light", FROM_SIGNAL, { items: [SINGLE_ITEM] });
     await page.locator("[data-setup-item='8'] [data-setup='trade']").tap();
     const ticket = page.locator("[data-order-ticket]");
+    await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1: no product saved - pick one before Review
     await ticket.locator("[data-ticket='review']").tap();
     const checks = ticket.locator("[data-risk-checks='ticket']");
     await expect(checks).toContainText("Liquidity: bid-ask gap");
@@ -329,6 +331,7 @@ test.describe("8b slice 4 flows", () => {
     const seen = await openChain(page, "light", FROM_SIGNAL, { items: [SINGLE_ITEM], fno: { liquidity: { on: true, max_spread_pct: 0.5, min_oi: 500000 } } });
     await page.locator("[data-setup-item='8'] [data-setup='trade']").tap();
     const ticket = page.locator("[data-order-ticket]");
+    await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1
     await ticket.locator("[data-ticket='review']").tap();
     const checks = ticket.locator("[data-risk-checks='ticket']");
     await expect(checks).toContainText("Liquidity: bid-ask gap");
@@ -345,6 +348,7 @@ test.describe("8b slice 4 flows", () => {
     await openChain(page, "light", FROM_SIGNAL, { items: [SINGLE_ITEM], fno: { liquidity: { on: true, max_spread_pct: 1, min_oi: 100000 } } });
     await page.locator("[data-setup-item='8'] [data-setup='trade']").tap();
     const ticket = page.locator("[data-order-ticket]");
+    await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1
     await ticket.locator("[data-ticket='review']").tap();
     await expect(ticket.locator("[data-risk-checks='ticket']")).toContainText("Inside your own limits (bid-ask gap up to 1%, open interest at least 1,00,000).");
   });
@@ -353,6 +357,7 @@ test.describe("8b slice 4 flows", () => {
     await openChain(page, "light", FROM_SIGNAL, { items: [SINGLE_ITEM] });
     await page.locator("[data-setup-item='8'] [data-setup='trade']").tap();
     const ticket = page.locator("[data-order-ticket]");
+    await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1
     await ticket.locator("[data-ticket='review']").tap();
     const checks = ticket.locator("[data-risk-checks='ticket']");
     await expect(checks).toContainText("Liquidity: bid-ask gap");

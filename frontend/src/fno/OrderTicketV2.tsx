@@ -59,7 +59,7 @@ const FIELD = "h-11 w-full rounded-control border border-border bg-surface-2 px-
 const SEG = "flex min-h-11 flex-1 items-center justify-center rounded-control px-space-2 text-t14 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
 function Segmented<T extends string>({ label, value, options, onChange, testId }: {
-  label: string; value: T; options: { value: T; label: string; hint?: string }[]; onChange: (v: T) => void; testId: string;
+  label: string; value: T | null; options: { value: T; label: string; hint?: string }[]; onChange: (v: T) => void; testId: string;
 }) {
   return (
     <div role="radiogroup" aria-label={label} data-ticket={testId} className="flex gap-space-1 rounded-control bg-surface-2 p-space-1">
@@ -247,7 +247,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
 /** UX-9: the "More options" summary line - the product and the position's stop-loss as they stand. */
 export function advancedSummary(draft: Pick<Draft, "product" | "stopLoss">): string {
   const stop = draft.stopLoss.trim();
-  return `${draft.product} · ${stop ? `stop-loss ${stop}` : "no stop-loss"}`;
+  return `${draft.product ?? "no product"} · ${stop ? `stop-loss ${stop}` : "no stop-loss"}`;
 }
 
 /** UX-9: the review asked for a stop-loss, so "More options" opens to show the field (the server's own words). */
@@ -318,7 +318,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
               <p className="mt-space-1 text-t13 text-fg font-tabular" data-ticket="units">{unitsText(draft.lots, target.lotSize)}</p>
             </div>
             <Segmented label="Order type" testId="order-type" value={draft.orderType} onChange={(v) => onDraft({ orderType: v })} options={ORDER_TYPES} />
-            {defaults?.product === undefined && <p className="text-t12 text-fg-muted" data-ticket="product-unset">{PRODUCT_UNSET_TEXT}</p>}
+            {draft.product === null && <p className="text-t12 text-fg-muted" data-ticket="product-unset">{PRODUCT_UNSET_TEXT}</p>}
             {(marks.orderType || marks.product) && (
               <p className="text-t12 text-fg-muted" data-from-defaults="type-product">
                 {sentence(fromDefaults.filter((w) => w !== "lots").join(" and "))} {FROM_DEFAULTS}. Tap to change.
@@ -351,7 +351,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             )}
             {/* UX-9 (ticket LOOK): side, lots, order type and its price stay in view; the product and the position's
                 stop-loss sit under "More options", their current values in its summary line. What is sent is unchanged. */}
-            <details className="group rounded-control border border-subtle" data-ticket="advanced" open={needsStop(problem) || undefined}>
+            <details className="group rounded-control border border-subtle" data-ticket="advanced" open={needsStop(problem) || draft.product === null || undefined}>
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-space-2 px-space-3 text-t13 font-medium text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand [&::-webkit-details-marker]:hidden">
                 <span className="inline-flex items-center gap-space-1">
                   <ChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />More options
@@ -404,7 +404,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             ? "fixed inset-x-0 bottom-[calc(4rem+1px+env(safe-area-inset-bottom))] z-10 bg-surface-1 shadow-raised md:sticky md:inset-x-auto md:bottom-0 md:shadow-none md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
             : "pb-[calc(0.75rem+env(safe-area-inset-bottom))]")}>
         {step.kind === "edit" && (
-          <button type="button" onClick={onReview} disabled={busy} data-ticket="review"
+          <button type="button" onClick={onReview} disabled={busy || draft.product === null} data-ticket="review"
             className={cx("min-h-11 flex-1 rounded-control px-space-4 text-t15 font-semibold disabled:opacity-60", sideTone)}>
             {busy ? "Checking…" : `Review ${sideWord(draft.side)} order`}
           </button>

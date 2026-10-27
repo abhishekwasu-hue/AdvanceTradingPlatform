@@ -193,10 +193,10 @@ describe("FNO-3 futures chain: each row's actions", () => {
     expect(h.onTrade.mock.calls.map(([r, s]) => [r.tradingsymbol, s])).toEqual([["NIFTY26OCTFUT", "BUY"], ["NIFTY26OCTFUT", "SELL"]]);
     const target = futureTarget(row());
     expect(target).toMatchObject({ right: "FUT", strike: null, lotSize: 75, label: "NIFTY 27 OCT FUT", ltp: 24612.5 });
-    const ask = askOf(target, { ...newDraft("BUY"), stopLoss: "24500" }, "ref-12345678");
+    const ask = askOf(target, { ...newDraft("BUY", { product: "NRML" }), stopLoss: "24500" }, "ref-12345678");
     expect(ask).toMatchObject({ underlying: "NIFTY", expiry: "2026-10-27", right: "FUT", strike: null, stop_loss: 24500 });
-    expect(draftProblems(newDraft("BUY"), "FUT")).toEqual(["A future needs a stop-loss"]);
-    expect(draftProblems(newDraft("BUY"))).toEqual([]);                       // a bought option still needs none
+    expect(draftProblems(newDraft("BUY", { product: "NRML" }), "FUT")).toEqual(["A future needs a stop-loss"]);
+    expect(draftProblems(newDraft("BUY", { product: "NRML" }))).toEqual([]);                       // a bought option still needs none
     expect(stopHint("BUY", "FUT")).toBe("(needed for a future)");
   });
 

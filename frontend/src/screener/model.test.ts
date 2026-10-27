@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   blockProblems, defaultParams, duplicateStage, isCategory, isLive, isFilter, LEVEL_FIELDS, namesWhere, newBlock, whyChips, indicatorNames, isIndicator, moveStage, newStage, paramKinds, parseSymbols, screenText,
-  runStamp, sameRun, stageAt, stageSpans, stageSummary, stageText, trail, type IndicatorStage, type Registry, type Stage,
+  runBlocker, runStamp, sameRun, stageAt, stageSpans, stageSummary, stageText, trail, type IndicatorStage, type Registry, type Stage,
 } from "./model";
 import contract from "./builderTexts.json";
 
@@ -215,7 +215,20 @@ describe("D2 block forms", () => {
     expect([a, empty, group].map(isLive)).toEqual([true, false, true]);
     expect(trail([a, empty], { universe: 3, with_data: 3, stages: [{ text: "RSI(14) > 60", survivors: 2 }] }, true)[1].survivors).toBeNull();
     expect(stageSummary(FULL, group)).toBe("any of: RSI(14) above 70; IsFnO()");
-    expect(stageSummary(FULL, { ...group, op: "NOT" } as Stage)).toBe("none of: RSI(14) above 70; IsFnO()");
+    // SCR-FIX D4: NOT compiles as NOT (a AND b), so its words say "not all of" (never "none of", which reads NOT (a OR b))
+    const not = { ...group, op: "NOT" } as Stage;
+    expect(stageText(FULL, not)).toBe("NOT (RSI(14) > 70 AND IsFnO())");
+    expect(stageSummary(FULL, not)).toBe("not all of: RSI(14) above 70; IsFnO()");
+  });
+
+  it("SCR-FIX D1: says why Run is off - no condition, no symbols, then the first stage with a problem", () => {
+    const base = { stages: [a, group], symbols: 3, text: "x", problems: {}, otherProblem: null };
+    expect(runBlocker(base)).toBeNull();
+    expect(runBlocker({ ...base, text: "" })).toBe("Add a condition");
+    expect(runBlocker({ ...base, symbols: 0 })).toBe("Add symbols");
+    expect(runBlocker({ ...base, problems: { i2: "Type the name" } })).toBe("Fix stage 2");     // a block inside the group
+    expect(runBlocker({ ...base, problems: { [a.id]: "bad" } })).toBe("Fix stage 1");
+    expect(runBlocker({ ...base, otherProblem: "Unexpected end" })).toBe("Fix the conditions");
   });
 
   it("lands a validation problem on the innermost block it points at", () => {

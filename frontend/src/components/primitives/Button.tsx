@@ -18,6 +18,12 @@ const VARIANT: Record<ButtonVariant, string> = {
   danger: "border border-down/50 bg-down/10 text-down hover:bg-down/20",
 };
 const SIZE: Record<ButtonSize, string> = { sm: "h-8 px-3 text-xs gap-1.5", md: "h-9 px-4 text-sm gap-2", v2: "h-11 text-t14 gap-space-2 md:h-9" };
+/**
+ * SCR-FIX D1: the primary fill alone can melt into a card or a bar (colour v2 dark: brand-fill on surface-1 is 1.6 : 1).
+ * `edge` draws its outline in the link blue (--brand), >= 3 : 1 against every surface token in every theme
+ * (src/ui/darkContrast.test.ts), so the button reads as a button on any surface, enabled or not.
+ */
+export const PRIMARY_EDGE = "border border-brand";
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
 
 /**
@@ -25,8 +31,10 @@ const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:rin
  * Primary = the screen's ONE main action (Place order, Start, Approve, Connect) as a solid brand button; every other
  * action is `outline` or `ghost`. The e2e helper `e2e/solidBrand.ts` warns when a screen shows more than one.
  */
-export function buttonClass({ variant = "secondary", size = "md", gradient = false, className }: {
+export function buttonClass({ variant = "secondary", size = "md", gradient = false, edge = false, className }: {
   variant?: ButtonVariant; size?: ButtonSize;
+  /** SCR-FIX D1: a primary button on a bar or card it would melt into gets the >= 3 : 1 outline (PRIMARY_EDGE). */
+  edge?: boolean;
   /** UI-H CA2: the page's single primary action on the blue -> violet gradient (primary only; the caller checks colour_v2). */
   gradient?: boolean; className?: string;
 } = {}): string {
@@ -34,7 +42,7 @@ export function buttonClass({ variant = "secondary", size = "md", gradient = fal
   const look = gradient && variant === "primary" ? `${GRADIENT_FILL} hover:brightness-110` : VARIANT[variant];
   return cx("inline-flex shrink-0 items-center justify-center", v2 ? "rounded-control" : "rounded-md", "font-semibold transition-colors",
     v2 && "duration-fast", FOCUS, "disabled:cursor-not-allowed disabled:opacity-50",
-    look, SIZE[size], v2 && (variant === "primary" ? "px-space-5" : "px-space-4"), className);
+    look, edge && variant === "primary" && PRIMARY_EDGE, SIZE[size], v2 && (variant === "primary" ? "px-space-5" : "px-space-4"), className);
 }
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -47,16 +55,18 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    * brand button otherwise). Primary only; never in a form, a table, the option chain or a chart (accentScope.test.ts).
    */
   gradient?: boolean;
+  /** SCR-FIX D1: the >= 3 : 1 outline for a primary button on a surface its fill melts into (primary only). */
+  edge?: boolean;
 }
 
 /** The one button. Primary = the page's main action (at most one per view); outline / secondary / ghost for the rest. */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "secondary", size = "md", icon, loading = false, gradient = false, disabled, className, children, type = "button", ...rest }, ref,
+  { variant = "secondary", size = "md", icon, loading = false, gradient = false, edge = false, disabled, className, children, type = "button", ...rest }, ref,
 ) {
   const colour = useColourV2();
   return (
     <button ref={ref} type={type} disabled={disabled || loading} aria-busy={loading || undefined}
-      className={buttonClass({ variant, size, gradient: gradient && colour, className })}
+      className={buttonClass({ variant, size, gradient: gradient && colour, edge, className })}
       {...rest}>
       {loading ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden /> : icon}
       {children}

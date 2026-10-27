@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
+import { closeScreenerMore, screenerTool } from "./screenerTools";
 
 /**
  * Day-one fix 4 (docs/design/DAY_ONE_TRADER_TEST.md finding 8): Find setups in a trader's words. On open the page offers
@@ -194,7 +195,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await settle(page);
 
         await expect(page.getByTestId("universe-select")).toHaveValue("sys:index-nifty50");
-        await expect(page.locator("#screener-tf option:checked")).toHaveText("Daily");
+        await expect(page.locator("#screener-tf")).toHaveText("Daily");                 // SCR-FIX D8: the shared picker
         await expect(page.getByLabel("Scan name")).toHaveAttribute("placeholder", "Untitled scan");
         const nameBox = await page.getByLabel("Scan name").boundingBox();
         expect(nameBox && nameBox.width > 250).toBeTruthy();
@@ -205,11 +206,12 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await expect(ready.getByTestId("ready-scan-run")).toHaveCount(3);
         await shot("01-find-setups-on-open");
 
-        await page.getByTestId("screener-advanced").click();
+        await screenerTool(page, "screener-advanced");
         await expect(page.getByTestId("pine-open")).toBeVisible();
         await expect(page.getByTestId("live-counts")).toBeVisible();
-        await page.getByTestId("screener-advanced").click();
+        await screenerTool(page, "screener-advanced");
         await expect(page.getByTestId("pine-open")).toHaveCount(0);
+        await closeScreenerMore(page);                                       // a phone: Advanced keeps the More sheet open
 
         await ready.getByTestId("ready-scan-run").first().click();
         await expect.poll(() => world.runs.length).toBe(1);

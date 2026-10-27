@@ -227,9 +227,10 @@ export default function AppShellV2() {
           <OneTimeNoticesV2 />
           {/* TM Part 1 (flag data_hub): the one notice while live prices reconnect or the broker login needs renewing. */}
           <LivePricesBanner enabled={!!user && features.on("data_hub")} />
-          {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip. */}
+          {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip, and
+              SCR-FIX D2: Find setups clips too, so nothing there can scroll the page sideways. */}
           <main id="main" ref={mainRef} tabIndex={-1}
-            className={`relative w-full flex-1 ${key === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${key === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>
+            className={`relative w-full flex-1 ${key === "copilot" || key === "screener" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${key === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>
             {/* UX3-9: a merged page's tabs (My trades, Strategies, Performance) above the tab on screen. */}
             {!legacy && !redirect && <PageTabsV2 current={key} ctx={ctx} />}
             {content}

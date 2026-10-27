@@ -13,9 +13,10 @@ import { ChevronLeft, ChevronRight, RotateCcw, Send } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import { Button, Dialog, cx } from "../components/primitives";
+import { Details } from "../ui/Details";
 import { EvidenceChart, EvidenceLegend } from "./EvidenceChart";
 import {
-  barTimeText, evidenceApi, replaySteps, stepReplay, trendTone, verifyRows, visibleDrawables, type EvidenceContext, type EvidencePack,
+  barTimeText, evidenceApi, plainCondition, replaySteps, stepReplay, trendTone, verifyRows, visibleDrawables, type EvidenceContext, type EvidencePack,
 } from "./evidence";
 
 export type SendState = { status: "idle" | "sending" | "sent" | "failed"; message?: string };
@@ -110,9 +111,9 @@ export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, on
           <span className="font-mono text-t13 font-semibold text-fg">{pack.symbol}</span> · {pack.base_tf} · {barTimeText(pack)}
           {pack.data.source && <> · data: {pack.data.source}</>}
         </span>
-        <span>{pack.screen.name ? <>Screen: <span className="text-fg">{pack.screen.name}</span></> : <span className="font-mono">{pack.screen.text}</span>}</span>
+        <span className="min-w-0 break-words">{pack.screen.name ? <>Screen: <span className="text-fg">{pack.screen.name}</span></> : plainCondition(pack.screen.text)}</span>
       </div>
-      {pack.context && pack.context.length > 0 && <ContextStrip context={pack.context} rowText={(id) => rowById.get(id)?.text ?? ""} />}
+      {pack.context && pack.context.length > 0 && <ContextStrip context={pack.context} rowText={(id) => plainCondition(rowById.get(id)?.text ?? "")} />}
       {replay && replay.steps > 1 && <ReplayBar replay={replay} pack={pack} />}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
         <div className="min-w-0 rounded-panel border border-border bg-surface-1 p-2">
@@ -133,7 +134,7 @@ export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, on
                          onChange={() => onToggleBlock?.(b.id)} aria-describedby={`ev-block-text-${b.id}`} />
                   <label htmlFor={`ev-block-${b.id}`} className="min-w-0 flex-1">
                     <span className="sr-only">{`Show block ${i + 1} on the chart: `}</span>
-                    <span id={`ev-block-text-${b.id}`} className="break-words font-mono text-fg">{b.text}</span>
+                    <span id={`ev-block-text-${b.id}`} className="break-words text-fg">{plainCondition(b.text)}</span>
                     {!drawnIds.length && <span className="block text-fg-muted">not drawn (shown in the strip)</span>}
                   </label>
                   <Mark passed={b.passed} />
@@ -148,30 +149,38 @@ export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, on
         </section>
       </div>
       <section aria-label="Verify" className="overflow-x-auto rounded-panel border border-border">
-        <table className="w-full border-collapse text-t12" data-testid="verify-strip">
+        {/* SCR-FIX D6: the result first (a phone sees it without scrolling), plain words that wrap, fixed columns */}
+        <table className="w-full table-fixed border-collapse text-t12" data-testid="verify-strip">
           <caption className="sr-only">Each condition with the engine's value at the matched bar and whether it passed</caption>
           <thead className="bg-surface-2 text-fg-muted">
             <tr>
+              <th scope="col" className="w-16 px-3 py-1.5 text-left font-medium">Result</th>
               <th scope="col" className="px-3 py-1.5 text-left font-medium">Condition</th>
               <th scope="col" className="px-3 py-1.5 text-left font-medium">Values at the matched bar</th>
-              <th scope="col" className="px-3 py-1.5 text-left font-medium">Result</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className={cx("border-t border-border/60", r.passed === false && "opacity-70")} data-row={r.id}>
-                <td className="px-3 py-1.5 font-mono text-fg">{r.text}</td>
-                <td className="px-3 py-1.5 font-tabular text-fg">
-                  {r.verify}
+              <tr key={r.id} className={cx("border-t border-border/60 align-top", r.passed === false && "opacity-70")} data-row={r.id}>
+                <td className="px-3 py-1.5"><Mark passed={r.passed} /></td>
+                <td className="break-words px-3 py-1.5 text-fg">{plainCondition(r.text)}</td>
+                <td className="break-words px-3 py-1.5 font-tabular text-fg">
+                  {plainCondition(r.verify)}
                   {r.note && <span className="block text-fg-muted">{r.note}</span>}
                 </td>
-                <td className="px-3 py-1.5"><Mark passed={r.passed} /></td>
               </tr>
             ))}
           </tbody>
         </table>
         {pack.summary.not_shown > 0 && <p className="border-t border-border px-3 py-1.5 text-t12 text-fg-muted">+{pack.summary.not_shown} more conditions not listed</p>}
       </section>
+      {/* SCR-FIX D7: the code behind the words, only when asked for */}
+      <Details id="screener.evidence.code" label="Advanced: the code" className="mt-0">
+        <code className="block break-all font-mono text-t12 text-fg" data-testid="evidence-code">{pack.screen.text}</code>
+        <ul className="space-y-space-1">
+          {rows.map((r) => <li key={r.id} className="break-all font-mono text-t12">{r.text}<span className="block text-fg-muted">{r.verify}</span></li>)}
+        </ul>
+      </Details>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-t12 text-fg-muted">{pack.disclaimer}</p>
         {pack.can_send && onSend && (

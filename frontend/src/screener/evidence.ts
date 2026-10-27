@@ -128,6 +128,31 @@ export function verifyRows(pack: EvidencePack, showFailed: boolean): EvidenceRow
   return pack.rows.filter((r) => showFailed || r.passed !== false);
 }
 
+/** The comparison and logic signs a condition is written with, and the words a trader reads (longest sign first). */
+const SIGN_WORDS: [RegExp, string][] = [
+  [/\s*>=\s*/g, " at or above "], [/\s*<=\s*/g, " at or below "], [/\s*==\s*/g, " is "], [/\s*!=\s*/g, " is not "],
+  [/\s*>\s*/g, " above "], [/\s*<\s*/g, " below "],
+  [/\bAND\b/g, "and"], [/\bOR\b/g, "or"], [/\bNOT\b/g, "not"],
+];
+
+/**
+ * SCR-FIX D6 / D7: a condition or a verify line in plain words for the default view - "RSI(14) 63.6 above 50", not
+ * "RSI(14) 63.6 > 50"; the quotes around a choice go ("NearZone(demand, 20)"); CrossAbove(a, b) reads "a crosses above b".
+ * The numbers and names are kept exactly as the engine wrote them. The code itself stays one tap away, under "Advanced".
+ */
+export function plainCondition(text: string): string {
+  let t = text.replace(/"([^"]*)"/g, "$1").trim();
+  const cross = /^Cross(Above|Below)\((.*)\)$/.exec(t);
+  if (cross) {
+    // split the two arguments at the comma outside any brackets: CrossAbove(EMA(close, 20), SMA(close, 50))
+    let depth = 0;
+    const at = [...cross[2]].findIndex((c) => { depth += c === "(" ? 1 : c === ")" ? -1 : 0; return c === "," && depth === 0; });
+    if (at > 0) t = `${cross[2].slice(0, at).trim()} crosses ${cross[1].toLowerCase()} ${cross[2].slice(at + 1).trim()}`;
+  }
+  for (const [sign, words] of SIGN_WORDS) t = t.replace(sign, words);
+  return t.replace(/\s+/g, " ").trim();
+}
+
 // --------------------------------------------------------------------------------------------------- geometry
 export interface Candle { x: number; w: number; open: number; close: number; high: number; low: number; rising: boolean; index: number }
 export interface Shape {

@@ -58,23 +58,27 @@ export function ResultBoard({ results, running = false, runKey, stale = false, w
         <p className="px-4 py-8 text-center text-t13 text-fg-muted">No symbols were read.</p>
       ) : (
         <div className={cx("min-h-0 overflow-auto transition-opacity", stale && "opacity-50")} key={runKey} aria-hidden={stale || undefined}>
-          <table className="w-full border-collapse text-t13">
+          {/* SCR-FIX D5: fixed columns - the Symbol stays on one line and in view (sticky), the Result wraps; on a phone the
+              stage dots stack under the result in the same row instead of a third column */}
+          <table className="w-full table-fixed border-collapse text-t13">
             <caption className="sr-only">{matched} of {results.length} symbols matched</caption>
-            <thead className="sticky top-0 bg-surface-1 text-t12 text-fg-muted">
+            <thead className="sticky top-0 z-10 bg-surface-1 text-t12 text-fg-muted">
               <tr className="h-row border-b border-border">
-                <SortHeader label="Symbol" active={sort.key === "symbol"} dir={sort.dir} onClick={() => toggle("symbol")} />
+                <SortHeader label="Symbol" active={sort.key === "symbol"} dir={sort.dir} onClick={() => toggle("symbol")} className="sticky left-0 w-32 bg-surface-1" />
                 <SortHeader label="Result" active={sort.key === "result"} dir={sort.dir} onClick={() => toggle("result")} />
-                {why && <th scope="col" className="px-4 text-left font-medium">Stages</th>}
+                {why && <th scope="col" className="hidden w-24 px-4 text-left font-medium sm:table-cell">Stages</th>}
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={r.symbol} className="board-settle h-row border-b border-border/60 last:border-b-0 hover:bg-surface-2"
+                <tr key={r.symbol} className="board-settle group/row h-row border-b border-border/60 last:border-b-0 hover:bg-surface-2"
                     style={{ ["--board-delay" as string]: `${Math.min(i, 12) * 15}ms` }}>
-                  <td className="px-4 font-mono font-tabular text-fg">{r.symbol}</td>
-                  <td className="px-4">
+                  <td className="sticky left-0 whitespace-nowrap bg-surface-1 px-4 py-1.5 align-top font-mono font-tabular text-fg group-hover/row:bg-surface-2">
+                    <span className="block truncate" title={r.symbol}>{r.symbol}</span>
+                  </td>
+                  <td className="break-words px-4 py-1.5 align-top">
                     {r.matched
-                      ? <span className="inline-flex items-center gap-3">
+                      ? <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
                           <span className="inline-flex items-center gap-1.5 text-signal"><span aria-hidden className="h-1.5 w-1.5 rounded-full bg-signal" />Matched</span>
                           {onShowEvidence && r.evidence_id != null && (
                             <button type="button" onClick={() => onShowEvidence(r)} aria-label={`Show ${r.symbol} on chart`} data-testid="show-on-chart"
@@ -86,8 +90,9 @@ export function ResultBoard({ results, running = false, runKey, stale = false, w
                       : r.reason
                         ? <span className="text-warn" title={r.reason}>Could not be read · <span className="text-fg-muted">{r.reason}</span></span>
                         : <span className="text-fg-muted">Did not match</span>}
+                    {why && <span className="mt-1 block sm:hidden"><WhyChips chips={why(r.symbol)} /></span>}
                   </td>
-                  {why && <td className="px-4"><WhyChips chips={why(r.symbol)} /></td>}
+                  {why && <td className="hidden px-4 py-1.5 align-top sm:table-cell"><WhyChips chips={why(r.symbol)} /></td>}
                 </tr>
               ))}
             </tbody>
@@ -98,9 +103,9 @@ export function ResultBoard({ results, running = false, runKey, stale = false, w
   );
 }
 
-function SortHeader({ label, active, dir, onClick }: { label: string; active: boolean; dir: "asc" | "desc"; onClick: () => void }) {
+function SortHeader({ label, active, dir, onClick, className }: { label: string; active: boolean; dir: "asc" | "desc"; onClick: () => void; className?: string }) {
   return (
-    <th scope="col" aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"} className="px-4 text-left font-medium">
+    <th scope="col" aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"} className={cx("px-4 text-left font-medium", className)}>
       <button type="button" onClick={onClick}
               className={cx("inline-flex items-center gap-1 rounded-control hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand", active && "text-fg")}>
         {label}
@@ -114,7 +119,7 @@ function SortHeader({ label, active, dir, onClick }: { label: string; active: bo
 export function WhyChips({ chips }: { chips: WhyChip[] }) {
   if (!chips.length) return <span className="text-t12 text-fg-muted"><span aria-hidden>–</span><span className="sr-only">not evaluated</span></span>;
   return (
-    <span className="inline-flex items-center gap-1" data-testid="why-chips">
+    <span className="inline-flex flex-wrap items-center gap-1" data-testid="why-chips">
       {chips.map((c, i) => (
         <span key={c.id} title={`Stage ${i + 1}: ${c.summary} - ${c.passed ? "passed" : "did not pass"}`}
               className={cx("h-2.5 w-2.5 rounded-full border", c.passed ? "border-signal bg-signal" : "border-fg-muted/60 bg-transparent")}>

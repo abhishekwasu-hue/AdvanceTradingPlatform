@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
+import { closeScreenerMore, screenerTool } from "./screenerTools";
 
 /**
  * LAB-18 (AMW-7, flag `screener_copilot`, behind `ui_v2`): the saved scan's versions live on the server.
@@ -101,7 +102,11 @@ async function saveScan(page: Page, calls: Calls) {
   await page.getByRole("button", { name: "Momentum" }).click();
   await page.getByLabel("Scan name").fill("My momentum scan");
   await save(page);
+  // SCR-FIX D9: on a phone the Versions button sits in the "More" sheet
+  const phone = await page.getByTestId("screener-more").isVisible();
+  if (phone) await page.getByTestId("screener-more").click();
   await expect(page.getByTestId("scan-versions-open")).toHaveText("Versions (3)");
+  if (phone) await closeScreenerMore(page);
 }
 
 test.describe("Scan versions on the server, 1440", () => {
@@ -124,7 +129,7 @@ test.describe("Scan versions on the server, 1440", () => {
     await saveScan(page, calls);
     expect(calls.saves).toHaveLength(1);
     expect(calls.saves[0].body.builder).toMatchObject({ texts: ["RSI(14) > 60", "close > EMA(close, 20)"], summaries: ["RSI(14) above 60", "close above EMA(close, 20)"] });
-    await page.getByTestId("scan-versions-open").click();
+    await screenerTool(page, "scan-versions-open");
     const dialog = page.getByRole("dialog", { name: "Versions of this scan" });
     await expect(dialog.getByTestId("scan-versions").locator("li[data-testid^='scan-version-']")).toHaveCount(3);
     await expect(dialog.getByTestId("scan-version-3")).toContainText("Version 3(latest)");
@@ -161,7 +166,7 @@ test.describe("Scan versions on the server, 1440", () => {
     test(`the Versions dialog looks the same (${theme})`, async ({ page }) => {
       const calls = await open(page, theme);
       await saveScan(page, calls);
-      await page.getByTestId("scan-versions-open").click();
+      await screenerTool(page, "scan-versions-open");
       await expect(page.getByRole("dialog", { name: "Versions of this scan" }).getByTestId("scan-version-1")).toBeVisible();
       await page.waitForLoadState("networkidle");
       await expect(page).toHaveScreenshot(`screener-versions-v2-1440-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
@@ -182,7 +187,7 @@ test.describe("Scan versions on the server, 390", () => {
     test(`the Versions dialog looks the same (${theme})`, async ({ page }) => {
       const calls = await open(page, theme);
       await saveScan(page, calls);
-      await page.getByTestId("scan-versions-open").click();
+      await screenerTool(page, "scan-versions-open");
       await expect(page.getByRole("dialog", { name: "Versions of this scan" }).getByTestId("scan-version-1")).toBeVisible();
       await page.waitForLoadState("networkidle");
       await expect(page).toHaveScreenshot(`screener-versions-v2-390-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });

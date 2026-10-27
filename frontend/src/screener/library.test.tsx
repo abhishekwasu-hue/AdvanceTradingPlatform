@@ -72,6 +72,8 @@ describe("LibraryTools (U9 TX2)", () => {
     expect(t).toContain(RESULT.note);
     const table = text(html.slice(html.indexOf("<table"), html.indexOf("</table>")));
     expect(table).not.toMatch(/\b(score|rank|buy|sell|recommended|best|target)\b/i);         // the rows: counts and evidence only
+    // SCR-FIX D9: the table scrolls inside its own box on a phone, never the page
+    expect(html).toMatch(/<div class="mt-2 overflow-x-auto" data-testid="confluence-scroll"><table/);
   });
 
   it("shows the triggered and ready lists with the transition to save for an alert", () => {
@@ -81,7 +83,11 @@ describe("LibraryTools (U9 TX2)", () => {
     expect(t).toContain("Ready (1)");
     expect(t).toContain(WATCH.transition_text.replace(/>/g, "&gt;"));
     expect(t).toContain("Save the trigger screen");
-    expect(t).toContain("RSI oversold, then back above 30");
+    // SCR-FIX D8: the list picker is the shared combobox on the first list (the other lists show when it opens)
+    expect(html).toContain(`data-combobox="${LISTS.lists[0].id}"`);
+    expect(t).toContain(LISTS.lists[0].name);
+    expect(html).not.toContain("<select");
+    expect(html.match(/data-testid="confluence-scroll"/g) ?? []).toHaveLength(0);              // the watch tab has no confluence table
     expect(html).not.toMatch(/[\u0900-\u097f]/);
   });
 

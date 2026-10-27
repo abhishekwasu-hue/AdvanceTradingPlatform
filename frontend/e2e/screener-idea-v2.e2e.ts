@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { mockApi, type MockOptions } from "./mockApi";
 import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
+import { screenerTool } from "./screenerTools";
 
 /**
  * Handover 11j "idea -> scan" (flag `screener_copilot`, behind `ui_v2`): "From an idea" on the Screener page. The trader
@@ -272,7 +273,7 @@ async function open(page: Page, theme: "dark" | "light", options: MockOptions = 
 }
 
 async function readIdea(page: Page) {
-  await page.getByTestId("idea-open-dialog").click();
+  await screenerTool(page, "idea-open-dialog");
   const dialog = page.getByRole("dialog", { name: "A scan from your idea" });
   await expect(dialog).toBeVisible();
   await dialog.getByTestId("idea-text").fill(IDEA);
@@ -328,14 +329,14 @@ test.describe("From an idea, 1440", () => {
     const dialog = await readIdea(page);
     await dialog.getByTestId("idea-open").click();
     await expect(page.getByTestId("scan-versions-open")).toHaveCount(0);
-    await page.getByTestId("scan-alert-open").click();
+    await screenerTool(page, "scan-alert-open");
     const alert = page.getByRole("dialog", { name: "Tell me when it matches" });
     // owner order 23 Oct: the universe is never empty - NIFTY 50 until the trader picks another list
     await expect(alert).toContainText("for “Scan from my idea” on NIFTY 50 (50 stocks), and tells you when one matches.");
     await page.keyboard.press("Escape");
     await page.getByTestId("universe-select").selectOption("custom");
     await page.getByLabel("Your symbols (up to 500)").fill("RELIANCE, TCS, INFY");
-    await page.getByTestId("scan-alert-open").click();
+    await screenerTool(page, "scan-alert-open");
     await expect(alert).toContainText("ATP checks each time a daily bar closes for “Scan from my idea” on your own symbols (3 stocks), and tells you when one matches.");
     await alert.getByTestId("scan-alert-create").click();
     await expect(alert.getByTestId("scan-alert-done")).toBeVisible();
@@ -344,7 +345,7 @@ test.describe("From an idea, 1440", () => {
       mode: "instant", priority: "normal" }]);
     await expect(alert.getByTestId("scan-alert-rules")).toContainText("On · checks each time a daily bar closes · 3 symbols");
     await page.keyboard.press("Escape");
-    await page.getByTestId("scan-versions-open").click();
+    await screenerTool(page, "scan-versions-open");
     const versions = page.getByRole("dialog", { name: "Versions of this scan" });
     await expect(versions).toContainText("Version 1");
     await expect(versions).toContainText("First saved version.");

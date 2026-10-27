@@ -23,6 +23,12 @@ export const NIFTY50_FALLBACK: readonly string[] = [
   "SUNPHARMA", "TATACONSUM", "TATASTEEL", "TCS", "TECHM", "TITAN", "TMPV", "TRENT", "ULTRACEMCO", "WIPRO",
 ];
 
+/** SCR-FIX D10: the day the names above were taken from the exchange's NIFTY 50 list. The index changes twice a year, so
+ * the page says this date whenever the built-in list stands in (NIFTY50_FALLBACK_NOTE); update both together. */
+export const NIFTY50_FALLBACK_AS_OF = "2026-10-23";
+/** The one line shown while the built-in list is used (the server's list is missing or could not be loaded). */
+export const NIFTY50_FALLBACK_NOTE = "The latest NIFTY 50 list could not be loaded, so the built-in list (as of 23 Oct 2026) is used.";
+
 export const DEFAULT_KEY = "index-nifty50";
 export const RUN_MAX = 50;                    // the run route's cap per call (app/screener/routes.py MAX_SYMBOLS)
 export const CUSTOM = "custom";

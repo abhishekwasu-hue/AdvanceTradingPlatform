@@ -128,3 +128,18 @@ test.describe("C12 outside market hours", () => {
     await expect(page.locator("[data-help-centre]")).toHaveCount(0);
   });
 });
+
+import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
+/** UX-11 (owner, 27 Oct): numbers first - every card passes the text budget; the visible-word count is printed. */
+for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test.describe(`support-desk text budget ${size.width}`, () => {
+    test.use({ viewport: size });
+    test("every card fits the text budget", async ({ page }) => {
+      await openSettings(page, "/settings/help", { theme: "light", features: ON, routes: (p) => desk(p, OPEN, []) });
+      await settle(page);
+      console.log(`[words] support-desk ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
+  });
+}

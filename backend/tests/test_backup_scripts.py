@@ -230,3 +230,18 @@ def test_restore_rehearsal_from_the_off_site_copy_alone_into_a_clean_database(tm
         assert chain.returncode == 0, chain.stdout + chain.stderr
     finally:
         _psql(f'DROP DATABASE IF EXISTS "{clean}"')
+
+
+def test_two_backups_started_together_both_succeed_with_their_own_sealed_dump(tmp_path):
+    """Rollback rehearsal 27 Oct: the scheduled loop's first run and a deploy's pre-migration backup started in the same
+    second, took the same name, and one run's cleanup removed the other's file. Now one runs at a time, each its own name."""
+    env = _env(tmp_path, BACKUP_ENCRYPTION_PASSPHRASE="unit-test-passphrase")
+    runs = [subprocess.Popen(["sh", str(SCRIPTS / "backup.sh")], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            for _ in range(2)]
+    outs = [r.communicate(timeout=300) for r in runs]
+    assert [r.returncode for r in runs] == [0, 0], outs
+    dumps = sorted(tmp_path.glob("atp_*.dump.enc"))
+    assert len(dumps) == 2
+    for dump in dumps:
+        assert len((tmp_path / (dump.name + ".hmac")).read_text().strip()) == 64
+    assert not list(tmp_path.glob("*.part"))

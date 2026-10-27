@@ -148,7 +148,8 @@ for (const [layout, viewport] of [["desktop", DESKTOP], ["phone", PHONE]] as [To
         await expect.poll(() => server.marks.seen[id] ?? null).not.toBeNull();
         // Seen: the next visit opens nothing by itself.
         await page.reload();
-        await expect(page.locator("main")).toBeVisible();
+        // The reload builds the whole page again: the same 15 s as the first open (a busy CI runner needs more than 5 s).
+        await expect(page.locator("main")).toBeVisible({ timeout: 15_000 });
         await page.waitForTimeout(1500);
         await expect(card(page)).toHaveCount(0);
       });

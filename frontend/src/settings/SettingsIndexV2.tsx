@@ -218,11 +218,11 @@ export default function SettingsIndexV2(_props: PageProps = {}) {
       <SearchBox query={query} onQuery={setQuery} onEnter={jump} />
       {query.trim() ? <Results hits={hits} /> : (
         <>
-          <ul className={`${CARD} overflow-hidden`} aria-label="Settings" data-settings-index>
+          <ul data-card="Settings" className={`${CARD} overflow-hidden`} aria-label="Settings" data-settings-index>
             {main.map((r) => <IndexRow key={r.id} row={r} chip={chips[r.id] ?? null} />)}
           </ul>
           {advanced && (
-            <ul className={`${CARD} overflow-hidden`} aria-label="Advanced settings">
+            <ul data-card="Advanced settings" className={`${CARD} overflow-hidden`} aria-label="Advanced settings">
               <IndexRow row={advanced} chip={null} />
             </ul>
           )}

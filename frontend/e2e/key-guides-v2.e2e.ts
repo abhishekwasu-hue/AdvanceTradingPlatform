@@ -143,3 +143,17 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     });
   }
 }
+
+import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
+/** UX-11 (owner, 27 Oct): numbers first - every card passes the text budget; the visible-word count is printed. */
+for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test.describe(`key-guides text budget ${size.width}`, () => {
+    test.use({ viewport: size });
+    test("every card fits the text budget", async ({ page }) => {
+      await open(page, { theme: "light" });
+      console.log(`[words] key-guides ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
+  });
+}

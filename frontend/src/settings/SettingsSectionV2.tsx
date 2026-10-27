@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, useLocation } from "react-router";
+import { Details } from "../ui/numbersFirst";
 import AlertChannelsCard from "../components/AlertChannelsCard";
 import AiProviderCard from "../components/AiProviderCard";
 import ApiKeysCard from "../components/ApiKeysCard";
@@ -131,7 +132,8 @@ export function HelpSection() {
             </div>
           )}
           <div id="tips" className="flex scroll-mt-20 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between" data-tips-row>
-            <p className="text-sm text-fg-muted">Tips explain each page on your first visit. See them all again, or turn them off.</p>
+            {/* UX-11 U1: the tips sentence on demand; the Get started line above stays the one visible line. */}
+            <Details id="help.tips" label="About tips"><p>Tips explain each page on your first visit. See them all again, or turn them off.</p></Details>
             <TipsButtonsV2 className="self-start sm:self-auto" />
           </div>
         </div>

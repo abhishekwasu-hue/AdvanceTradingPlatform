@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { mockCharts, type ChartsCalls } from "./chartsMocks";
 import { mockApi, type MockOptions } from "./mockApi";
+import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
 import { warnOnManySolidBrand } from "./solidBrand";
 
@@ -483,3 +484,17 @@ test.describe("Signals with the flag off", () => {
     await expect(page.getByTestId("watch-signals-link")).toHaveCount(0);
   });
 });
+
+/** UX-11 (owner, 27 Oct): numbers first - every Signals card passes the text budget (one short visible line, the rest
+ * in Details); the visible-word count is printed for the comparison page. */
+for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test.describe(`v2 signals text budget ${size.width}`, () => {
+    test.use({ viewport: size });
+    test("every card fits the text budget", async ({ page }) => {
+      await open(page, "/signals", "light");
+      console.log(`[words] Signals ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
+  });
+}

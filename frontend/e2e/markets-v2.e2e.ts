@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { DEMO_ANALYSES } from "../src/optionChain/analyses.fixture";
 import { DEMO_LIST, DEMO_OVERVIEW } from "../src/markets/markets.fixture";
 import { mockApi } from "./mockApi";
+import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
 
 /**
@@ -238,3 +239,16 @@ test.describe("v2 option chain summary: the flag and the shared read", () => {
     await expect(page.locator("[data-block='chain-dish']")).toHaveCount(0);
   });
 });
+
+/** UX-11 PR 5 (owner, 27 Oct): numbers first - every Markets card passes the text budget; the visible-word count is printed. */
+for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test.describe(`v2 Markets text budget ${size.width}`, () => {
+    test.use({ viewport: size });
+    test("every card fits the text budget", async ({ page }) => {
+      await openMarkets(page, "light");
+      console.log(`[words] Markets ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
+  });
+}

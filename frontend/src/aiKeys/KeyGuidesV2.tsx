@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import { formatDateIST } from "../ui/format";
+import { Details } from "../ui/numbersFirst";
 import type { ByokProviderName } from "../types";
 import { BYOK_CHANGED_EVENT, PROVIDER_NAMES, checkPastedKey } from "./detect";
 import { KEY_GUIDES, VISION_CARD_GUIDES, fixFor, guideFor, guideTags, type KeyGuide } from "./guides";
@@ -67,7 +68,8 @@ export default function KeyGuidesV2({ pasteHelper = true, startOpen = null }: Ke
         <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-brand/10 text-brand"><KeyRound size={20} /></span>
         <div className="min-w-0">
           <h2 id="key-guides-title" className="text-t15 font-semibold text-fg">Get an AI key</h2>
-          <p className="mt-space-1 text-t14 text-fg-muted" data-explainer>{EXPLAINER}</p>
+          {/* UX-11 U1: the explainer on demand, word for word. */}
+          <Details id="key-guides.explainer"><p data-explainer>{EXPLAINER}</p></Details>
         </div>
       </div>
 

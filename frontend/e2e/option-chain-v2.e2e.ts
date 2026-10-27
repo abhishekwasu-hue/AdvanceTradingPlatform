@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { DEMO_ANALYSES } from "../src/optionChain/analyses.fixture";
 import { mockApi, type MockOptions } from "./mockApi";
+import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
 import { warnOnManySolidBrand } from "./solidBrand";
 import { expectComboValue, pickOption } from "./combobox";
@@ -403,3 +404,17 @@ test.describe("Option chain v2 Charts at 390", () => {
     await expectPhoneLayout(page);
   });
 });
+
+/** UX-11 (owner, 27 Oct): numbers first - every Option chain card passes the text budget (one short visible line,
+ * the rest in Details); the visible-word count is printed for the comparison page. */
+for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test.describe(`v2 option chain text budget ${size.width}`, () => {
+    test.use({ viewport: size });
+    test("every card fits the text budget", async ({ page }) => {
+      await open(page, "light");
+      console.log(`[words] Option chain ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
+  });
+}

@@ -24,6 +24,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   positions: lazy(() => import("../trading/PositionsV2")),
   portfolio: lazy(() => import("../trading/PortfolioV2")),
   "risk-management": lazy(() => import("../trading/RiskV2")),
+  // UX-10 (My trades wave): My trades › Orders - the fills as a phone-width list, IST times.
+  orders: lazy(() => import("../trading/OrdersV2")),
   // UI2-7: Settings → Setup (§11, src/setup) at /settings/setup - the setup wizard, v2 only (P3: the go-live checklist is
   // under Settings → Advanced in both shells).
   setup: lazy(() => import("../setup/SetupPageV2")),

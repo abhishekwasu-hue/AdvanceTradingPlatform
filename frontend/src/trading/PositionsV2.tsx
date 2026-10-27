@@ -273,7 +273,7 @@ export default function PositionsV2(_props: PageProps = {}) {
         </Suspense>
       )}
 
-      {hasOptions && <GreeksCardV2 />}
+      {hasOptions && <GreeksCardV2 symbolOf={(id) => byId.get(id)?.symbol} />}
 
       <ClosedTradesV2 trades={trades} onSaved={reloadTrades} />
 
@@ -541,7 +541,8 @@ function CheckPriceV2({ position, onCheck }: { position: TradeRecord; onCheck: (
   );
 }
 
-function GreeksCardV2() {
+// UX-10 (UI audit H3): the method line lives in the (?) next to the title; a left-out position is named by its symbol.
+function GreeksCardV2({ symbolOf }: { symbolOf: (tradeId: number) => string | undefined }) {
   const [greeks, setGreeks] = useState<PositionGreeks | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -551,8 +552,7 @@ function GreeksCardV2() {
   }
   return (
     <CardV2 title={<>Option Greeks <TermHint term="greeks" /></>} testId="greeks">
-      <div className="flex flex-col gap-space-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-t13 text-fg-muted">Worked out from each option&apos;s last price and the index or stock price now.</p>
+      <div className="flex flex-col gap-space-3 sm:flex-row sm:items-center sm:justify-end">
         <button type="button" onClick={load} disabled={busy} className={BUTTON_SECONDARY}>{busy ? "Working out…" : greeks ? "Work out again" : "Work out the Greeks"}</button>
       </div>
       {error && <div className="mt-space-3"><NoteV2 kind="warn">{error}</NoteV2></div>}
@@ -575,7 +575,7 @@ function GreeksCardV2() {
             ))}
           </ul>
           <p className="text-t12 text-fg-muted">
-            As of {formatTimeIST(greeks.as_of)}.{greeks.skipped.length > 0 ? ` Left out: ${greeks.skipped.map((k) => `#${k.trade_id} (${k.reason})`).join("; ")}.` : ""}
+            As of {formatTimeIST(greeks.as_of)}.{greeks.skipped.length > 0 ? ` Left out: ${greeks.skipped.map((k) => `${symbolOf(k.trade_id) ?? "one position"} (${k.reason})`).join("; ")}.` : ""}
           </p>
         </div>
       )}

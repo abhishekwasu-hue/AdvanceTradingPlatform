@@ -71,6 +71,12 @@ export function marketChip(status: SystemStatus | null | undefined, exchange: st
   return { text: sameDay ? `Closed · opens ${time}` : `Closed · opens ${formatDateIST(next, { weekday: true }).split(" ")[0]} ${time}`, open: false };
 }
 
+/** UX-10 Charts wave (UI audit H7: one status mark): while the market is open and the chart already shows its own
+ * "Live" / "Price delayed" chip, the toolbar's "Market open" chip is left out; closed or without a live price it stays. */
+export function toolbarMarketChip<T extends { open: boolean }>(chip: T | null, hasLivePrice: boolean): T | null {
+  return chip && chip.open && hasLivePrice ? null : chip;
+}
+
 // --- The trader's view, per browser ------------------------------------------------------------------------------------
 
 /** What the trader last chose on this browser (per user). The panes (volume, RSI) and the theme are in the server prefs

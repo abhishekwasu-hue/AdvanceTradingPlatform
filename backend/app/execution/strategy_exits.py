@@ -118,7 +118,9 @@ async def arm(session: AsyncSession, user_id: int, basket_ref: str, trade_ids: S
         if note:
             gx.add_log(row, gx.ARMED, note.strip(), now)
             await session.commit()
-        return {"status": ARMED_STATUS, "id": row.id, "words": gx.describe(row) + note, "legs": len(ids)}
+        # F3: the stop in force and the target as numbers too (₹ MTM signed), for the shared signed value on the ticket.
+        return {"status": ARMED_STATUS, "id": row.id, "words": gx.describe(row) + note, "legs": len(ids),
+                "measure": row.measure, "stop_now": gx.stop_now(row), "target_value": None if row.target_value is None else float(row.target_value)}
     except gx.GroupExitError as exc:
         await session.rollback()
         reason = str(exc)

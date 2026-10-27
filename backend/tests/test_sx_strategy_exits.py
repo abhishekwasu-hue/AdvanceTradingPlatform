@@ -216,6 +216,7 @@ def test_an_entry_with_exits_creates_one_strategy_exit_on_the_filled_legs(condor
     out = _post(t, "execute", body)
     assert out["placed"] == 4 and out["exits"]["status"] == "ARMED" and out["exits"]["legs"] == 4
     assert "combined loss reaches ₹5,000 or combined profit reaches ₹3,000" in out["exits"]["words"]
+    assert (out["exits"]["measure"], out["exits"]["stop_now"], out["exits"]["target_value"]) == (gx.MTM_INR, -5000.0, 3000.0)
     assert _post(t, "execute", body)["exits"]["id"] == out["exits"]["id"]          # a repeated tap sets one
     [row] = _exits_of(t["tenant_id"])
     assert (row.origin, row.scope, row.basket_ref, row.measure, row.status) == ("SX", "GROUP", ref, gx.MTM_INR, gx.ARMED)

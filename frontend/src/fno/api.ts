@@ -279,7 +279,9 @@ export interface StrategyExitsAsk {
   trailing?: { kind: "LOCK" | "TRAIL" | "LOCK_TRAIL" | "BREAK_EVEN"; after?: number; lock?: number; step?: number; by?: number } | null;
 }
 export type StrategyExitResult =
-  | { status: "ARMED"; id: number; words: string; legs: number }
+  | { status: "ARMED"; id: number; words: string; legs: number;
+      /** F3: what it watches, the stop in force (₹ MTM signed: -X a loss of ₹X) and the target, as numbers. */
+      measure?: "MTM_INR" | "SPOT" | "NET_PREMIUM"; stop_now?: number | null; target_value?: number | null }
   | { status: "NOT_SET"; reason: string };
 
 export interface BrokerBasketOrder { tradingsymbol: string; exchange: string; transaction_type: Side; quantity: number }

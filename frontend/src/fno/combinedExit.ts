@@ -10,6 +10,7 @@
 import { friendlyError, request } from "../api/client";
 import type { TradeRecord } from "../types";
 import { formatINR, formatNumber } from "../ui/format";
+import { signedParts } from "../ui/Signed";
 import type { ContractFacts } from "./contracts";
 
 export type Measure = "MTM_INR" | "SPOT" | "NET_PREMIUM";
@@ -313,23 +314,29 @@ export function distanceText(x: Pick<CombinedExit, "measure">, gap: number | nul
   return `${formatNumber(gap, 2)} points to go`;
 }
 
-/** CX2: the stop in force now, in plain words (null: no trailing, or nothing to show yet). ₹ MTM: "keeps ₹500" for a
- * stop in profit, "loss ₹500" for one still in loss; a level: the level. Pure. */
+/** CX2 / F2: the stop in force now - the server's `stop_now` as it is, never worked out here (null: no trailing). Before
+ * the trailing starts it is the user's own stop; after, the trailed one. ₹ MTM as the shared signed value (F3: "+₹500" a
+ * stop in profit, "−₹2,500" one still in loss); a level: the level. Pure. */
 export function stopNowText(x: Pick<CombinedExit, "measure" | "trail_kind" | "stop_now" | "stop_moved">, masked = false): string | null {
+  const parts = stopNowParts(x, masked);
+  return parts && (parts.value !== undefined ? `${parts.lead}${signedParts({ value: parts.value }).text}` : parts.lead);
+}
+
+/** The same, split for rendering: `lead` words and the signed ₹ `value` (absent: the words say it all). Pure. */
+export function stopNowParts(x: Pick<CombinedExit, "measure" | "trail_kind" | "stop_now" | "stop_moved">, masked = false):
+  { lead: string; value?: number } | null {
   if (!x.trail_kind || x.trail_kind === "NONE") return null;
   const stop = x.stop_now ?? null;
-  if (stop === null) return "trailing waits for the gain";
+  if (stop === null) return { lead: "trailing waits for the gain" };
   const moved = x.stop_moved ? "stop moved to" : "stop at";
-  if (x.measure === "MTM_INR") {
-    if (masked) return `${moved} ₹ •••`;
-    return stop >= 0 ? `${moved} keep ${formatINR(stop)}` : `${moved} a loss of ${formatINR(Math.abs(stop))}`;
-  }
-  return `${moved} ${formatNumber(stop, 2)}`;
+  if (x.measure === "MTM_INR") return masked ? { lead: `${moved} ₹ •••` } : { lead: `${moved} `, value: stop };
+  return { lead: `${moved} ${formatNumber(stop, 2)}` };
 }
 
 /** The chip's words (CX6): what it is, how many legs, and the distance to the stop-loss (else the target); with a
  * trailing (CX2), the stop in force now. Pure. */
-export function chipText(x: CombinedExit, masked = false): { title: string; distance: string; closing: boolean; stop?: string } {
+export function chipText(x: CombinedExit, masked = false):
+  { title: string; distance: string; closing: boolean; stop?: string; stopLead?: string; stopValue?: number } {
   const n = x.legs.length;
   const hasStop = x.sl_value !== null || (x.stop_now ?? null) !== null;
   const trailing = !!x.trail_kind && x.trail_kind !== "NONE";
@@ -338,11 +345,14 @@ export function chipText(x: CombinedExit, masked = false): { title: string; dist
     : trailing ? "Combined trailing stop" : x.sl_value !== null ? "Combined stop-loss" : "Combined target";
   const title = `${kind} · ${n} ${n === 1 ? "leg" : "legs"}`;
   const stop = stopNowText(x, masked);
-  if (x.status === "FIRING") return { title, distance: "closing the legs now", closing: true, ...(stop ? { stop } : {}) };
+  const parts = stopNowParts(x, masked);
+  const shown = stop && parts ? { stop, ...(parts.value !== undefined ? { stopLead: parts.lead, stopValue: parts.value } : {}) } : {};
+  if (x.status === "FIRING") return { title, distance: "closing the legs now", closing: true, ...shown };
+  // F2: the distance is the server's, measured to the same `stop_now` the stop words show.
   const gap = hasStop ? x.distance.sl : x.distance.target;
   const head = distanceText(x, gap, masked);
   const both = hasStop && x.target_value !== null ? ` · target ${distanceText(x, x.distance.target, masked)}` : "";
-  return { title, distance: `${hasStop ? "stop " : ""}${head}${both}`, closing: false, ...(stop ? { stop } : {}) };
+  return { title, distance: `${hasStop ? "stop " : ""}${head}${both}`, closing: false, ...shown };
 }
 
 /** CX-F1: the "stale price" mark - which legs are read at their last traded price. Null when every leg is fresh. Pure. */

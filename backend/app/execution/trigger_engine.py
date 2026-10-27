@@ -698,12 +698,15 @@ async def _save_trail(session: AsyncSession, row: GroupExitRecord, before: Tuple
     for name, new in moved.items():
         col = col_rows[name]
         ahead = col < new if fav > 0 else col > new
+        # F2 (owner): only on the version this pass read - an edit in between (new kind, new numbers, the trailing
+        # started again) never gets a stop worked out from the old trailing.
         await session.execute(update(GroupExitRecord).where(
-            GroupExitRecord.id == row.id, GroupExitRecord.status == gx.ARMED, (col.is_(None)) | ahead).values(
+            GroupExitRecord.id == row.id, GroupExitRecord.status == gx.ARMED, GroupExitRecord.version == row.version,
+            (col.is_(None)) | ahead).values(
             **{name: new}).execution_options(synchronize_session=False))
     if locked is not None:
         await session.execute(update(GroupExitRecord).where(
-            GroupExitRecord.id == row.id, GroupExitRecord.locked_at.is_(None)).values(
+            GroupExitRecord.id == row.id, GroupExitRecord.version == row.version, GroupExitRecord.locked_at.is_(None)).values(
             locked_at=locked).execution_options(synchronize_session=False))
     for name, new in [*moved.items(), *([("locked_at", locked)] if locked is not None else [])]:
         set_committed_value(row, name, new)

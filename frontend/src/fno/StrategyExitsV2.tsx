@@ -1,9 +1,11 @@
 import { ShieldCheck, TriangleAlert } from "lucide-react";
-import { cx } from "../components/primitives/cx";
 import { FROM_DEFAULTS } from "../settings/tradingDefaults";
 import { FIELD, LABEL } from "../trading/PartsV2";
+import { Details } from "../ui/Details";
+import { OptionCards } from "../ui/OptionCards";
+import { Signed } from "../ui/Signed";
 import {
-  STRATEGY_MEASURES, STRATEGY_TRAILS, exitErrors, hasExits, trailFields, unitOf, type StrategyExitForm,
+  STRATEGY_MEASURES, STRATEGY_TRAILS, exitErrors, hasExits, trailFields, unitOf, type SentencePart, type StrategyExitForm,
 } from "./strategyExits";
 
 /**
@@ -31,26 +33,10 @@ export function StrategyExitsV2({ form, onChange, legCount, onSaveDefaults, save
         <h3 className="flex items-center gap-space-1 text-t14 font-semibold text-fg"><ShieldCheck size={16} aria-hidden />Exits for this strategy</h3>
         {form.fromDefaults && <span className="text-t12 text-fg-muted" data-exits-from-defaults>{FROM_DEFAULTS}</span>}
       </div>
-      <p className="text-t12 text-fg-muted">
-        Optional. When the legs fill, all {legCount > 0 ? legCount : ""} legs exit together, sold legs first. Leave empty to keep each leg&apos;s own stop only.
-      </p>
+      <p className="text-t12 text-fg-muted">Optional. All legs exit together, sold legs first.</p>
 
-      <fieldset className="space-y-space-1">
-        <legend className={LABEL}>What the exit watches</legend>
-        <div className="grid grid-cols-1 gap-space-1 sm:grid-cols-3">
-          {STRATEGY_MEASURES.map((m) => (
-            <label key={m.key} className={cx("flex min-h-11 cursor-pointer items-start gap-space-2 rounded-control border px-space-3 py-space-2",
-              form.measure === m.key ? "border-brand bg-surface-2" : "border-border")} data-exits-measure={m.key}>
-              <input type="radio" name="strategy-exit-measure" checked={form.measure === m.key} onChange={() => set({ measure: m.key })}
-                className="mt-px h-4 w-4 accent-brand" />
-              <span className="min-w-0">
-                <span className="block text-t13 font-semibold text-fg">{m.label}</span>
-                <span className="block text-t12 text-fg-muted">{m.hint}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <OptionCards name="strategy-exit-measure" legend="What the exit watches" options={STRATEGY_MEASURES} value={form.measure}
+        dataAttr="data-exits-measure" onChange={(measure) => set({ measure })} />
 
       <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-2">
         <label className="block">
@@ -63,13 +49,10 @@ export function StrategyExitsV2({ form, onChange, legCount, onSaveDefaults, save
         </label>
       </div>
 
-      <fieldset className="space-y-space-1">
-        <legend className={LABEL}>Trailing (optional)</legend>
-        <select className={FIELD} value={form.trailKind} data-exits-trail
-          onChange={(e) => set({ trailKind: e.target.value as StrategyExitForm["trailKind"], after: "", lock: "", step: "", by: "" })}>
-          {STRATEGY_TRAILS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-        </select>
-        <p className="text-t12 text-fg-muted">{STRATEGY_TRAILS.find((t) => t.key === form.trailKind)?.hint}</p>
+      {/* F4: the same option cards as the combined exit sheet (UX-5: no browser-default select). */}
+      <div className="space-y-space-1" data-exits-trail={form.trailKind}>
+        <OptionCards name="strategy-exit-trail" legend="Trailing (optional)" options={STRATEGY_TRAILS} value={form.trailKind}
+          dataAttr="data-exits-trail-kind" onChange={(trailKind) => set({ trailKind, after: "", lock: "", step: "", by: "" })} />
         {fields.length > 0 && (
           <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-2">
             {fields.map((f) => (
@@ -81,8 +64,7 @@ export function StrategyExitsV2({ form, onChange, legCount, onSaveDefaults, save
             ))}
           </div>
         )}
-        {fields.length > 0 && <p className="text-t12 text-fg-muted">The stop only moves your way, never back.</p>}
-      </fieldset>
+      </div>
 
       {hasExits(form) && errors.length > 0 && (
         <ul className="space-y-space-1 text-t13 text-fg" role="alert" data-exits-errors>
@@ -100,6 +82,24 @@ export function StrategyExitsV2({ form, onChange, legCount, onSaveDefaults, save
           {saveNote && <span className="text-t12 text-fg-muted" role="status">{saveNote}</span>}
         </div>
       )}
+
+      {/* F7 / UX-11 U1: the longer explanations, once for the section. */}
+      <Details id="fno.strategy-exits">
+        <p>When the legs fill, all {legCount > 0 ? `${legCount} ` : ""}legs exit together, sold legs first. Leave it empty to keep each leg&apos;s own stop only.</p>
+        <p>It is set only on the legs that fill. Change or remove it later on Positions.</p>
+        {form.trailKind !== "NONE" && <p>The stop only moves your way, never back.</p>}
+      </Details>
     </section>
+  );
+}
+
+/** F3: a sentence with signed profit / loss figures (the shared signed value: + ▲ / − ▼ / 0 grey). */
+export function ExitSentenceV2({ parts }: { parts: readonly SentencePart[] }) {
+  return (
+    <>
+      {parts.map((p, i) => (typeof p === "string"
+        ? <span key={i}>{p}</span>
+        : <Signed key={i} value={p.signed} kind={p.kind} decimals={p.kind === "pct" ? (p.signed % 1 ? 1 : 0) : undefined} />))}
+    </>
   );
 }

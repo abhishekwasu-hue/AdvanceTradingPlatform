@@ -409,7 +409,8 @@ async def execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, 
 def user_id_of(user: User) -> int:
     """The caller's id, read without a database round trip (a rollback inside the pipeline may expire the object)."""
     from sqlalchemy import inspect
-    return int(inspect(user).identity[0]) if inspect(user).identity else int(user.id)
+    identity = inspect(user).identity
+    return int(identity[0]) if identity else int(user.id)
 
 
 async def _execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str, basket_ref: str,

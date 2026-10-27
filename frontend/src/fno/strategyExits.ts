@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import { request } from "../api/client";
 import { formatINR, formatNumber } from "../ui/format";
+import { signedParts } from "../ui/Signed";
 import type { StrategyExitsAsk } from "./api";
 
 export type StrategyMeasure = "MTM_INR" | "PREMIUM_PCT" | "SPOT";
@@ -206,26 +207,49 @@ export function trailText(f: StrategyExitForm): string {
   return `once the gain reaches ${money(m, a)}, the stop moves to break-even`;
 }
 
-/** SX5: the Review screen's sentence ("Exit all 2 legs if loss reaches ₹X or profit ₹Y; trailing: …"). Pure. */
-export function exitWords(f: StrategyExitForm, legCount: number, underlying: string | null): string {
-  if (!hasExits(f)) return "No strategy exit: each leg keeps its own stop.";
+/** A sentence with signed values in it (F3 / UX-11 U2): plain words, and the profit / loss figures that render as the
+ * shared signed value (+ ▲ / − ▼). */
+export type SentencePart = string | { signed: number; kind: "money" | "pct" };
+
+const signedText = (v: number, kind: "money" | "pct") => signedParts({ value: v, kind, decimals: kind === "pct" ? (v % 1 ? 1 : 0) : undefined }).text;
+
+/** The sentence as plain text (the signed figures as their text). Pure. */
+export function sentenceText(parts: readonly SentencePart[]): string {
+  return parts.map((p) => (typeof p === "string" ? p : signedText(p.signed, p.kind))).join("");
+}
+
+/** SX5: the Review screen's sentence, in parts ("Exit all 2 legs if loss reaches −₹X or profit reaches +₹Y; trailing:
+ * …" - F3: the ₹ / % figures as the shared signed value). Pure. */
+export function exitSentence(f: StrategyExitForm, legCount: number, underlying: string | null): SentencePart[] {
+  if (!hasExits(f)) return ["No strategy exit: each leg keeps its own stop."];
   const sl = amount(f.sl);
   const target = amount(f.target);
-  const parts: string[] = [];
+  const legs = `${legCount} leg${legCount === 1 ? "" : "s"}`;
+  const out: SentencePart[] = [];
   if (f.measure === "SPOT") {
     const what = `${underlying ?? "the"} spot`;
+    const parts: string[] = [];
     if (sl !== null) parts.push(`${what} reaches ${formatNumber(sl, 2)} (stop-loss)`);
     if (target !== null) parts.push(`${what} reaches ${formatNumber(target, 2)} (target)`);
+    out.push(parts.length ? `Exit all ${legs} if ${parts.join(" or ")}` : `Exit all ${legs} when the trailing stop is reached`);
+  } else if (sl === null && target === null) {
+    out.push(`Exit all ${legs} when the trailing stop is reached`);
   } else {
+    const kind = f.measure === "PREMIUM_PCT" ? "pct" : "money";
     const of = f.measure === "PREMIUM_PCT" ? " of the net premium" : "";
-    if (sl !== null) parts.push(`loss reaches ${money(f.measure, sl)}${of}`);
-    if (target !== null) parts.push(`profit reaches ${money(f.measure, target)}${of}`);
+    out.push(`Exit all ${legs} if `);
+    if (sl !== null) out.push("loss reaches ", { signed: -sl, kind }, of);
+    if (sl !== null && target !== null) out.push(" or ");
+    if (target !== null) out.push("profit reaches ", { signed: target, kind }, of);
   }
   const trailing = trailText(f);
-  const legs = `${legCount} leg${legCount === 1 ? "" : "s"}`;
-  const head = parts.length ? `Exit all ${legs} if ${parts.join(" or ")}` : `Exit all ${legs} when the trailing stop is reached`;
-  const tail = trailing ? `; trailing: ${trailing}. The stop only moves your way` : "";
-  return `${head}${tail}. Sold legs exit first, then the hedges.`;
+  out.push(`${trailing ? `; trailing: ${trailing}. The stop only moves your way` : ""}. Sold legs exit first, then the hedges.`);
+  return out;
+}
+
+/** SX5: the Review screen's sentence as plain text. Pure. */
+export function exitWords(f: StrategyExitForm, legCount: number, underlying: string | null): string {
+  return sentenceText(exitSentence(f, legCount, underlying));
 }
 
 // ---------------------------------------------------------------- the user's own defaults (read once per tab)

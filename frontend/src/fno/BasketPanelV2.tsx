@@ -11,6 +11,7 @@ import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { useFeatures } from "../ui/useFeatures";
 import { formatNumber, formatPrice } from "../ui/format";
+import { Signed } from "../ui/Signed";
 import {
   basketApi, type BasketApi, type BasketNumbers, type BasketPreview, type BasketResult, type BasketSettings, type Product,
 } from "./api";
@@ -27,9 +28,9 @@ import { riskLine, structureOf, type RiskBudget, type RiskLine } from "./insight
 import { eventLine, legLiquidity, liquidityLine, marginLine } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
 import { IncompleteV2, SmartConfirmV2 } from "./SmartExecutionV2";
-import { StrategyExitsV2 } from "./StrategyExitsV2";
+import { ExitSentenceV2, StrategyExitsV2 } from "./StrategyExitsV2";
 import {
-  defaultsOfForm, exitErrors, exitWords, exitsAsk, prefillForm, saveExitDefaults, useExitDefaults, type StrategyExitForm,
+  defaultsOfForm, exitErrors, exitSentence, exitsAsk, prefillForm, saveExitDefaults, useExitDefaults, type StrategyExitForm,
 } from "./strategyExits";
 import { FALLBACK_PRODUCT, PRODUCT_UNSET_TEXT, moneyText, newClientRef, sideWord } from "./ticketModel";
 
@@ -343,7 +344,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           {step.kind === "confirm" && (
             <ConfirmView preview={step.preview} busy={busy} budget={budget} checks={checks} onBack={() => setStep({ kind: "edit" })} onPlace={() => { void execute(); }}
               exitWords={step.remaining ? "The exits for this strategy were set with the first legs; these legs keep their own stops."
-                : exitWords(exitForm, step.legs.length, step.legs[0]?.underlying ?? null)} />
+                : <ExitSentenceV2 parts={exitSentence(exitForm, step.legs.length, step.legs[0]?.underlying ?? null)} />} />
           )}
           {step.kind === "done" && (
             <ResultView result={step.result} onRemaining={() => { void confirm(remainingLegs(step.legs, step.result)); }} onEdit={() => setStep({ kind: "edit" })}
@@ -615,7 +616,7 @@ function LegRow({ leg: l, n, lotSize, idPrefix, on }: { leg: BasketLeg; n: numbe
 export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks, exitWords: exitLine }: {
   preview: BasketPreview | null; busy: boolean; onBack: () => void; onPlace: () => void;
   /** SX5: the exits for this strategy in plain words (absent: the line is left out). */
-  exitWords?: string;
+  exitWords?: ReactNode;
   /** 8b-d: the risk line beside the total max loss (information only: the button reads `can_execute` alone). */
   budget?: RiskBudget | null;
   /** 8b slice 4: the events and liquidity parts (the margin part is added from the totals). */
@@ -707,8 +708,7 @@ export function ResultView({ result: r, onRemaining, onEdit, onClear, onClose, a
         {r.exits && (
           <p className={cx("rounded-control px-space-3 py-space-2 text-t13", r.exits.status === "ARMED" ? "bg-surface-2 text-fg" : "bg-warn-tint text-warn")}
             data-basket="result-exits" data-exits-status={r.exits.status}>
-            {r.exits.status === "ARMED"
-              ? `Strategy exit set on the filled legs: ${r.exits.words} Change or remove it on Positions.`
+            {r.exits.status === "ARMED" ? <ExitResultV2 exits={r.exits} />
               : `Strategy exit not set: ${r.exits.reason}. The legs keep their own stops.`}
           </p>
         )}
@@ -749,5 +749,20 @@ export function ResultView({ result: r, onRemaining, onEdit, onClear, onClose, a
         <button type="button" onClick={onClose} data-basket="done" className="min-h-11 flex-1 rounded-control border border-border px-space-4 text-t14 font-semibold text-fg">Done</button>
       </div>
     </>
+  );
+}
+
+/** SX / F3: the strategy exit set on the filled legs - a ₹ stop and target as the shared signed value, else the words. */
+function ExitResultV2({ exits: x }: { exits: Extract<NonNullable<BasketResult["exits"]>, { status: "ARMED" }> }) {
+  if (x.measure !== "MTM_INR" || (x.stop_now == null && x.target_value == null)) {
+    return <>{`Strategy exit set on the filled legs: ${x.words} Change or remove it on Positions.`}</>;
+  }
+  return (
+    <span title={x.words}>
+      Strategy exit set on the filled legs
+      {x.stop_now != null && <>: stop at <Signed value={x.stop_now} /></>}
+      {x.target_value != null && <>{x.stop_now != null ? ", target " : ": target "}<Signed value={x.target_value} /></>}
+      . Change or remove it on Positions.
+    </span>
   );
 }

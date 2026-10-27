@@ -2,11 +2,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { BasketPreview, BasketResult } from "./api";
 import { ConfirmView, ResultView } from "./BasketPanelV2";
-import { StrategyExitsV2 } from "./StrategyExitsV2";
+import { ExitSentenceV2, StrategyExitsV2 } from "./StrategyExitsV2";
 import panelSource from "./BasketPanelV2.tsx?raw";
 import sectionSource from "./StrategyExitsV2.tsx?raw";
+import sheetSource from "./CombinedExitV2.tsx?raw";
 import {
-  defaultsOfForm, emptyForm, exitErrors, exitWords, exitsAsk, hasExits, isSpread, prefillForm, readExitDefaults, trailFields,
+  defaultsOfForm, emptyForm, exitErrors, exitSentence, exitWords, exitsAsk, hasExits, isSpread, prefillForm, readExitDefaults, trailFields,
   type ExitLeg, type StrategyExitForm,
 } from "./strategyExits";
 import { chipText, trailErrors, trailOf, trailWords, type CombinedExit, type CombinedForm } from "./combinedExit";
@@ -88,12 +89,20 @@ describe("SX2: the trailing kinds and their checks", () => {
 describe("SX5: the Review screen and the result say it in plain words", () => {
   it("words the exits as the owner wrote them", () => {
     expect(exitWords(form({ measure: "MTM_INR", sl: "5000", target: "3000" }), 2, "NIFTY"))
-      .toBe("Exit all 2 legs if loss reaches ₹5,000 or profit reaches ₹3,000. Sold legs exit first, then the hedges.");
+      .toBe("Exit all 2 legs if loss reaches −₹5,000 or profit reaches +₹3,000. Sold legs exit first, then the hedges.");
     expect(exitWords(form({ measure: "PREMIUM_PCT", sl: "100", trailKind: "BREAK_EVEN", after: "25" }), 4, "NIFTY"))
-      .toBe("Exit all 4 legs if loss reaches 100% of the net premium; trailing: once the gain reaches 25%, the stop moves to break-even. "
+      .toBe("Exit all 4 legs if loss reaches −100% of the net premium; trailing: once the gain reaches 25%, the stop moves to break-even. "
         + "The stop only moves your way. Sold legs exit first, then the hedges.");
     expect(exitWords(form({ sl: "24300", target: "23700" }), 2, "NIFTY")).toContain("NIFTY spot reaches 24,300.00 (stop-loss) or NIFTY spot reaches 23,700.00 (target)");
     expect(exitWords(form(), 2, "NIFTY")).toBe("No strategy exit: each leg keeps its own stop.");
+  });
+
+  it("F3: the review sentence shows the ₹ / % figures as the shared signed value (− ▼ a loss, + ▲ a profit)", () => {
+    const html = renderToStaticMarkup(<p><ExitSentenceV2 parts={exitSentence(form({ measure: "MTM_INR", sl: "5000", target: "3000" }), 2, "NIFTY")} /></p>);
+    expect(text(html)).toContain("Exit all 2 legs if loss reaches ▼ −₹5,000 or profit reaches ▲ +₹3,000 . Sold legs exit first");
+    expect(html).toContain('data-signed="down"');
+    expect(html).toContain('data-signed="up"');
+    expect(renderToStaticMarkup(<p><ExitSentenceV2 parts={exitSentence(form({ sl: "24300" }), 2, "NIFTY")} /></p>)).not.toContain("data-signed");
   });
 
   it("shows the sentence on Review and the outcome on the result", () => {
@@ -108,6 +117,34 @@ describe("SX5: the Review screen and the result say it in plain words", () => {
     const missed = text(renderToStaticMarkup(<ResultView result={{ ...base, exits: { status: "NOT_SET", reason: "No live price for the group right now" } }}
       onRemaining={noop} onEdit={noop} onClear={noop} onClose={noop} />));
     expect(missed).toContain("Strategy exit not set: No live price for the group right now. The legs keep their own stops.");
+    const money = renderToStaticMarkup(<ResultView result={{ ...base, exits: { status: "ARMED", id: 7, words: "If combined loss reaches ₹5,000, these 2 legs exit.", legs: 2,
+      measure: "MTM_INR", stop_now: -5000, target_value: 3000 } }} onRemaining={noop} onEdit={noop} onClear={noop} onClose={noop} />);
+    expect(text(money)).toContain("Strategy exit set on the filled legs: stop at ▼ −₹5,000 , target ▲ +₹3,000 . Change or remove it on Positions.");
     expect(text(renderToStaticMarkup(<ResultView result={base} onRemaining={noop} onEdit={noop} onClear={noop} onClose={noop} />))).not.toContain("Strategy exit");
+  });
+});
+
+describe("F4 / F7: one UI per concept, one short line and the rest in Details", () => {
+  it("the trailing choice is the same option cards as the exit sheet - no browser select", () => {
+    const html = renderToStaticMarkup(<StrategyExitsV2 form={form({ measure: "MTM_INR", trailKind: "LOCK_TRAIL" })} onChange={noop} legCount={2} />);
+    expect(html).not.toContain("<select");
+    expect(sectionSource).not.toContain("<select");
+    expect(html).toContain('data-option-cards="strategy-exit-trail"');
+    expect(html).toContain('data-option-cards="strategy-exit-measure"');
+    for (const k of ["NONE", "LOCK", "TRAIL", "LOCK_TRAIL", "BREAK_EVEN"]) expect(html).toContain(`data-exits-trail-kind="${k}"`);
+    expect(html).toMatch(/data-exits-trail-kind="LOCK_TRAIL"[^>]*data-checked="true"/);
+    expect(sheetSource).toContain("<OptionCards name=\"combined-trailing\"");
+  });
+
+  it("the section's body is one short line; the longer explanations sit once in Details", () => {
+    const html = renderToStaticMarkup(<StrategyExitsV2 form={form({ trailKind: "LOCK" })} onChange={noop} legCount={2} />);
+    expect(html.match(/data-details=/g)).toHaveLength(1);
+    const outside = text(html.replace(/<details[\s\S]*<\/details>/, ""));
+    expect(outside).toContain("Optional. All legs exit together, sold legs first.");
+    expect(outside).not.toContain("never back");
+    expect(outside).not.toContain("Leave it empty");
+    const inside = text(html.match(/<details[\s\S]*<\/details>/)?.[0] ?? "");
+    expect(inside).toContain("The stop only moves your way, never back.");
+    expect(inside).toContain("When the legs fill, all 2 legs exit together");
   });
 });

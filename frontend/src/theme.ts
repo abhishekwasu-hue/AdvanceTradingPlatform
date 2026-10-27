@@ -16,11 +16,17 @@ export const TEXT_SIZES: { value: TextSize; label: string; scale: number }[] = [
 export function isTextSize(v: unknown): v is TextSize { return v === "normal" || v === "large" || v === "xlarge"; }
 /** UI-H-DM DM4 (owner, 25 Oct): `highContrast` - stronger borders and brighter text and icons in both themes
  * (`data-contrast="high"` on <html>, tokens.css). Stored per user on the server with the text size. */
-export interface Appearance { theme: ThemeChoice; colorBlind: boolean; reduceMotion: boolean; textSize: TextSize; highContrast: boolean }
+/** UX-8 (owner order UX-2): Comfortable (today's spacing) or Compact (tighter rows and paddings, more on one screen;
+ * the 44 px touch targets stay). Kept on this device, like the theme; `data-density` on <html> (tokens.css). */
+export type Density = "comfortable" | "compact";
+export const DENSITIES: { value: Density; label: string }[] = [{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }];
+export function isDensity(v: unknown): v is Density { return v === "comfortable" || v === "compact"; }
+
+export interface Appearance { theme: ThemeChoice; colorBlind: boolean; reduceMotion: boolean; textSize: TextSize; highContrast: boolean; density: Density }
 
 const KEY = "atp_appearance";
 const EVENT = "atp-theme";
-const DEFAULTS: Appearance = { theme: "dark", colorBlind: false, reduceMotion: false, textSize: "normal", highContrast: false };
+const DEFAULTS: Appearance = { theme: "dark", colorBlind: false, reduceMotion: false, textSize: "normal", highContrast: false, density: "comfortable" };
 
 /** UI2-0 (UI v2 open question UI-1, owner default): while `ui_v2` is on, a trader who never chose a theme follows the
  * system, and light when the system says nothing; a theme the trader chose is kept. The shell sets this once it has
@@ -51,7 +57,8 @@ export function loadAppearance(): Appearance {
     const v = raw ? (JSON.parse(raw) as Partial<Appearance>) : {};
     const theme: ThemeChoice = v.theme === "light" || v.theme === "system" || v.theme === "dark" ? v.theme : fallback.theme;
     return { theme, colorBlind: v.colorBlind === true, reduceMotion: v.reduceMotion === true,
-             textSize: isTextSize(v.textSize) ? v.textSize : "normal", highContrast: v.highContrast === true };
+             textSize: isTextSize(v.textSize) ? v.textSize : "normal", highContrast: v.highContrast === true,
+             density: isDensity(v.density) ? v.density : "comfortable" };
   } catch {
     return fallback;
   }
@@ -75,6 +82,7 @@ export function applyAppearance(a: Appearance = loadAppearance()): void {
   root.dataset.motion = a.reduceMotion ? "reduce" : "full";
   root.dataset.textSize = a.textSize;
   root.dataset.contrast = a.highContrast ? "high" : "normal";
+  root.dataset.density = a.density;
   root.classList.toggle("dark", theme === "dark");
   window.dispatchEvent(new CustomEvent(EVENT));
 }

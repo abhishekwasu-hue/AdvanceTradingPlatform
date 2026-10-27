@@ -59,4 +59,18 @@ describe("UX1 admin Feature flags list", () => {
     expect(html.match(/data-flag-unavailable/g)?.length).toBe(1);
     expect(html).toContain("is not installed on this server");
   });
+  it("P2-1: shows each flag's fate and has no Turn on for a flag removed from view", () => {
+    const flags: FeatureFlags = {
+      ...FLAGS,
+      chart_contracts: { ...FLAGS.chart_contracts, fate: "removed_from_view", fate_note: "Removed from view: superseded" },
+      screener_gallery: { ...FLAGS.screener_gallery, fate: "finish", fate_note: "In the trader pack; finishing in P2-3" },
+    };
+    const html = renderToStaticMarkup(
+      <FeatureFlagsCard flags={flags} tenants={{}} onTenants={() => {}} busy={false} onSet={() => {}} onSaveList={() => {}} />);
+    expect(html).toContain("In the trader pack; finishing in P2-3");
+    expect(html).toContain("Removed from view: superseded");
+    const before = renderToStaticMarkup(
+      <FeatureFlagsCard flags={FLAGS} tenants={{}} onTenants={() => {}} busy={false} onSet={() => {}} onSaveList={() => {}} />);
+    expect(html.match(/>Turn on</g)?.length).toBe((before.match(/>Turn on</g)?.length ?? 0) - 1);
+  });
 });

@@ -44,3 +44,13 @@ describe("dates and times: one IST formatter", () => {
     }
   });
 });
+
+describe("P1 (27 Oct): the expiry-day default", () => {
+  it("is ON unless the stored value is exactly false", async () => {
+    const { readExpiryDayNext } = await import("./chainSettings");
+    expect(readExpiryDayNext(undefined)).toBe(true);
+    expect(readExpiryDayNext({ pcr_zones: {} })).toBe(true);
+    expect(readExpiryDayNext({ expiry_day_next: true })).toBe(true);
+    expect(readExpiryDayNext({ expiry_day_next: false })).toBe(false);
+  });
+});

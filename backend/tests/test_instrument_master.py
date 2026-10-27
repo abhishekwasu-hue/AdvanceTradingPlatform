@@ -166,6 +166,7 @@ def test_worker_syncs_master_once_per_day_from_sync_hour(monkeypatch):
         return {"NSE": 42}
     worker = _worker(monkeypatch, _FakeBroker())
     monkeypatch.setattr(tw, "sync_upstox", fake_sync)
+    _reset_sync_state()
 
     early = datetime(2026, 9, 28, 7, 30, tzinfo=IST)   # Monday 07:30 - before the sync hour
     assert _run(worker.run_cycle(now=early)).master_synced is None
@@ -188,8 +189,26 @@ def test_worker_master_sync_failure_is_reported_and_not_retried_every_minute(mon
         raise httpx.ConnectError("no network")
     worker = _worker(monkeypatch, _FakeBroker())
     monkeypatch.setattr(tw, "sync_upstox", failing)
+    _reset_sync_state()
     at = datetime(2026, 9, 28, 8, 30, tzinfo=IST)
     report = _run(worker.run_cycle(now=at))
     assert any("instrument master" in e for e in report.errors)
     _run(worker.run_cycle(now=at + timedelta(minutes=1)))
     assert len(attempts) == 1
+    # P1 (27 Oct): no longer "retry tomorrow" - the next attempt comes after the back-off, the same day.
+    _run(worker.run_cycle(now=at + timedelta(minutes=13)))
+    assert len(attempts) == 2
+
+
+def _reset_sync_state():
+    from app.db.models import PlatformControlRecord
+    from app.instruments.master_sync import STATE_KEY
+    from tests.test_auth_api import _session_factory
+
+    async def go():
+        async with _session_factory() as session:
+            row = await session.get(PlatformControlRecord, STATE_KEY)
+            if row is not None:
+                await session.delete(row)
+                await session.commit()
+    _run(go())

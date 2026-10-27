@@ -216,7 +216,7 @@ def test_modify_a_waiting_entry_then_it_fires_at_the_new_price(setup):
     out = _modify(t, row["id"], price=92.0, lots=2)
     assert out.status_code == 200, out.text
     body = out.json()
-    assert body["price"] == 92.0 and body["trigger"]["level"] == 92.0 and body["quantity"] == 2 * LOT
+    assert body["price"] == 92.0 and body["trigger"]["level"] == 92.0 and body["quantity"] == 2 * LOT and body["lots"] == 2
     assert body["trail"][-1]["note"].startswith("Changed by you: 2 lot(s)")
     assert _entries(t["tenant_id"], {symbol: 94.0}).filled == 0                    # the old price no longer fires it
     assert _entries(t["tenant_id"], {symbol: 91.5}).filled == 1

@@ -21,7 +21,7 @@ export interface ReverseResult {
 }
 export interface WaitingOrder {
   id: number; purpose: "ENTRY" | "EXIT"; kind: "LIMIT" | "STOP" | "TARGET"; trade_id: number | null; symbol: string; side: "BUY" | "SELL";
-  quantity: number; order_type: string; price: number | null; trigger_price: number | null;
+  quantity: number; lots?: number | null; order_type: string; price: number | null; trigger_price: number | null;
   trigger: { source: "PREMIUM" | "SPOT"; symbol: string; level: number; side: "ABOVE" | "BELOW"; mode: string; timeframe_minutes: number | null };
   status: string; status_words: string; note: string | null;
 }
@@ -74,36 +74,68 @@ export function reverseNeedsStop(p: Pick<TradeRecord, "direction" | "instrument_
   return p.instrument_kind === "FUTURE" || p.direction === "LONG";
 }
 
+/** The Reverse stop box states its unit and basis, as the ticket takes it (`stop_loss`: the contract's own price per
+ *  unit - an option's premium, a future's price; never spot, never a combined ₹ figure). Pure. */
+export function reverseStopLabel(p: Pick<TradeRecord, "instrument_kind">): { label: string; detail: string } {
+  const future = p.instrument_kind === "FUTURE";
+  return {
+    label: future ? "Stop-loss · future price, ₹ per unit" : "Stop-loss · premium, ₹ per unit",
+    detail: `The stop-loss of the new position is the ${future ? "future's own price" : "option's premium"} per unit (not the underlying, `
+      + "not a combined ₹ amount). It must be above the price for a sold side and below it for a bought side.",
+  };
+}
+
+/** Said once, inside Details, on every confirm of this sheet. */
+export const NO_PRICE_LINE = "If there is no price right now, nothing closes and you see why.";
+
 const lotWord = (n: number) => `${n} lot${n === 1 ? "" : "s"}`;
 
-/** The confirm step's words. Plain language, no internal terms. Pure. */
-export function exitPartCopy(symbol: string, lots: number, held: number): { title: string; body: string; confirm: string } {
+export interface SheetCopy { title: string; body: string; details: string[]; confirm: string }
+
+/** The confirm step's words: one short visible line (UX-11 U1); the rest goes into the sheet's one Details. Pure. */
+export function exitPartCopy(symbol: string, lots: number, held: number): SheetCopy {
   const rest = held - lots;
   return {
     title: "Exit part of this position?",
     body: rest > 0
-      ? `${lotWord(lots)} of ${symbol} ${lots === 1 ? "closes" : "close"} at the current price. ${lotWord(rest)} ${rest === 1 ? "stays" : "stay"} open with the same stop and target.`
-      : `All ${lotWord(lots)} of ${symbol} close at the current price.`,
+      ? `${lotWord(lots)} of ${symbol} ${lots === 1 ? "closes" : "close"} now; ${lotWord(rest)} ${rest === 1 ? "stays" : "stay"} open.`
+      : `All ${lotWord(lots)} of ${symbol} close now.`,
+    details: [
+      "The lots close at the current price, exactly as Exit now does.",
+      ...(rest > 0 ? ["The lots that stay open keep the same stop and target."] : []),
+      NO_PRICE_LINE,
+    ],
     confirm: `Exit ${lotWord(lots)}`,
   };
 }
 
-export function reverseCopy(symbol: string, held: number, long: boolean): { title: string; body: string; confirm: string } {
+export function reverseCopy(symbol: string, held: number, long: boolean): SheetCopy {
   return {
     title: "Reverse this position?",
-    body: `All ${lotWord(held)} of ${symbol} close at the current price, then a new ${long ? "short" : "long"} position of ${lotWord(held)} opens. `
-      + "The new position goes through the usual order checks; if it is not allowed, your position stays closed and you see why.",
+    body: `All ${lotWord(held)} of ${symbol} close, then a ${long ? "short" : "long"} of ${lotWord(held)} opens.`,
+    details: [
+      "The position closes at the current price, exactly as Exit now does.",
+      "The new position goes through the usual order checks; if it is not allowed, your position stays closed and you see why.",
+      NO_PRICE_LINE,
+    ],
     confirm: "Reverse",
   };
 }
 
-/** The line after "Exit part". Pure. */
-export function exitPartText(result: ExitPartResult): string {
+/** The line after "Exit part" in three pieces, so the page shows the profit / loss with the shared signed value
+ *  (UX-11 U2: + ▲ up / − ▼ down / 0 muted). Pure. */
+export function exitPartPieces(result: ExitPartResult): { before: string; pnl: number | null; after: string } {
   const c = result.closed;
-  if (!c) return "Nothing was closed.";
-  const money = c.pnl === null ? "" : `: ${formatSignedINR(Math.round(c.pnl * 100) / 100)}`;
+  if (!c) return { before: "Nothing was closed.", pnl: null, after: "" };
   const rest = result.remaining_lots > 0 ? ` ${lotWord(result.remaining_lots)} still open.` : "";
-  return `${lotWord(c.lots)} of ${c.symbol} closed${c.exit_price !== null ? ` at ${formatPrice(c.exit_price)}` : ""}${money}.${rest}`;
+  const before = `${lotWord(c.lots)} of ${c.symbol} closed${c.exit_price !== null ? ` at ${formatPrice(c.exit_price)}` : ""}`;
+  return c.pnl === null ? { before: `${before}.${rest}`, pnl: null, after: "" } : { before: `${before}: `, pnl: c.pnl, after: `.${rest}` };
+}
+
+/** The same line as plain text (signed: "+₹1,500", "−₹400"). Pure. */
+export function exitPartText(result: ExitPartResult): string {
+  const p = exitPartPieces(result);
+  return `${p.before}${p.pnl === null ? "" : formatSignedINR(Math.round(p.pnl * 100) / 100)}${p.after}`;
 }
 
 /** The line after "Reverse". Pure. */
@@ -112,7 +144,8 @@ export function reverseText(symbol: string, result: ReverseResult): string {
   return result.status === "REVERSED" ? `${symbol} closed and the opposite position is open.` : `${symbol} closed.`;
 }
 
-export type ActionStep = { kind: "warn"; warning: string } | { kind: "done"; text: string; ok: boolean };
+export type ActionStep = { kind: "warn"; warning: string }
+  | { kind: "done"; text: string; ok: boolean; pieces?: ReturnType<typeof exitPartPieces> };
 
 /** One tap on the confirm of "Exit part" / "Reverse": a server warning (a hedge before its sold leg) keeps the sheet open
  *  and the next tap confirms; a failure is a plain line, never a crash. */
@@ -124,7 +157,7 @@ export async function runAction(
     if (ask.kind === "part") {
       const r = await api.exitPart(ask.tradeId, ask.lots, ask.ref, warned);
       if (r.status === "CONFIRM") return { kind: "warn", warning: r.warning || "This leg protects a sold leg that is still open." };
-      return { kind: "done", text: exitPartText(r), ok: true };
+      return { kind: "done", text: exitPartText(r), ok: true, pieces: exitPartPieces(r) };
     }
     const r = await api.reverse(ask.tradeId, { client_ref: ask.ref, stop_loss: ask.stopLoss, confirm: warned });
     if (r.status === "CONFIRM") return { kind: "warn", warning: r.warning || "This leg protects a sold leg that is still open." };
@@ -135,14 +168,24 @@ export async function runAction(
   }
 }
 
-/** A waiting order in one line. Pure. */
+/** A waiting order in one line, in lots (never the quantity beside a lots box - that is in its Details). Pure. */
 export function waitingLine(o: WaitingOrder): string {
-  const qty = o.quantity % 1 ? o.quantity.toFixed(2) : String(o.quantity);
   if (o.purpose === "EXIT") {
     const what = o.trigger.source === "SPOT" ? `underlying ${o.trigger.side === "ABOVE" ? "at or above" : "at or below"}` : "at";
     return `${o.kind === "STOP" ? "Stop" : "Target"} on ${o.symbol} ${what} ${formatPrice(o.trigger.level)}`;
   }
-  return `${o.side === "BUY" ? "Buy" : "Sell"} ${qty} ${o.symbol} · waits for ${formatPrice(o.trigger.level)}`;
+  const verb = o.side === "BUY" ? "buy" : "sell";
+  const how = o.order_type === "LIMIT" && o.price !== null ? `${verb} at ${formatPrice(o.price)}`
+    : o.order_type === "SL" && o.price !== null && o.trigger_price !== null ? `${verb} at ${formatPrice(o.price)} once ${formatPrice(o.trigger_price)} trades`
+      : `${verb} once ${formatPrice(o.trigger_price ?? o.trigger.level)} trades`;
+  return `${o.lots ? `${lotWord(o.lots)} · ` : ""}${o.symbol} · ${how}`;
+}
+
+/** The quantity of a waiting order, for its Details. Pure. */
+export function waitingQuantity(o: WaitingOrder): string {
+  const qty = o.quantity % 1 ? o.quantity.toFixed(2) : String(o.quantity);
+  const per = o.lots ? o.quantity / o.lots : null;
+  return `Quantity: ${qty} units${per && o.lots ? ` (${lotWord(o.lots)} of ${per % 1 ? per.toFixed(2) : per})` : ""}.`;
 }
 
 /** What Modify asks for: an entry its price (and trigger for a stop order) and lots; an exit its level only. Pure. */
@@ -156,6 +199,37 @@ export function modifyFields(o: WaitingOrder): Array<"price" | "trigger_price" |
 export const FIELD_LABEL: Record<ReturnType<typeof modifyFields>[number], string> = {
   price: "Limit price", trigger_price: "Trigger price", lots: "Lots", level: "Price", spot_level: "Underlying level",
 };
+
+type ModifyField = ReturnType<typeof modifyFields>[number];
+
+/** Modify opens with the order's current values (F5): its limit / trigger price and lots, or an exit's level. Pure. */
+export function modifyStart(o: WaitingOrder): Partial<Record<ModifyField, string>> {
+  const current: Record<ModifyField, number | null | undefined> = {
+    price: o.price, trigger_price: o.trigger_price, lots: o.lots, level: o.trigger.level, spot_level: o.trigger.level,
+  };
+  const out: Partial<Record<ModifyField, string>> = {};
+  for (const f of modifyFields(o)) {
+    const v = current[f];
+    out[f] = typeof v === "number" && Number.isFinite(v) ? String(v) : "";
+  }
+  return out;
+}
+
+/** Only the values that differ from the order's current ones: "same" while nothing changed (Save stays off), null when a
+ *  changed value is not a number above zero. Pure. */
+export function modifyChanges(start: Partial<Record<ModifyField, string>>, values: Partial<Record<ModifyField, string>>): ModifyAsk | "same" | null {
+  const changed: Partial<Record<keyof ModifyAsk, string>> = {};
+  for (const [k, raw] of Object.entries(values) as Array<[ModifyField, string | undefined]>) {
+    if (raw === undefined) continue;
+    const was = (start[k] ?? "").trim();
+    const now = raw.trim();
+    if (now === was || (now !== "" && was !== "" && Number(now) === Number(was))) continue;
+    if (now === "") return null;
+    changed[k] = now;
+  }
+  if (Object.keys(changed).length === 0) return "same";
+  return modifyAsk(changed);
+}
 
 /** Only the fields he typed, as numbers; null when one is not a number. Pure. */
 export function modifyAsk(values: Partial<Record<keyof ModifyAsk, string>>): ModifyAsk | null {

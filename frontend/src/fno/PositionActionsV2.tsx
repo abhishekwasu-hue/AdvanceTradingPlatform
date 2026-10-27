@@ -1,11 +1,13 @@
 import { Minus, Plus, TriangleAlert } from "lucide-react";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { Dialog } from "../components/primitives/Dialog";
 import { friendlyError } from "../api/client";
 import type { TradeRecord } from "../types";
+import { Details } from "../ui/Details";
+import { Signed } from "../ui/Signed";
 import {
-  FIELD_LABEL, clampLots, exitPartCopy, modifyAsk, modifyFields, newRef, openLots, positionActionsApi, reverseCopy,
-  reverseNeedsStop, runAction, waitingLine, type ModifyAsk, type PositionActionsApi, type WaitingOrder,
+  FIELD_LABEL, clampLots, exitPartCopy, exitPartPieces, modifyChanges, modifyFields, modifyStart, newRef, openLots, positionActionsApi, reverseCopy,
+  reverseNeedsStop, reverseStopLabel, runAction, waitingLine, waitingQuantity, type ModifyAsk, type PositionActionsApi, type WaitingOrder,
 } from "./positionActions";
 
 const BUTTON = "inline-flex h-11 items-center justify-center rounded-control px-space-4 text-t14 font-semibold transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-50 md:h-9";
@@ -16,6 +18,11 @@ const INPUT = "h-11 w-28 rounded-control border border-border bg-surface-1 px-sp
 
 export type PositionActionAsk = { kind: "part" | "reverse"; position: TradeRecord };
 
+/** The line after "Exit part": the closed lots' profit / loss is the shared signed value (UX-11 U2: + ▲ / − ▼ / 0 muted). */
+export function ExitPartResultLine({ pieces }: { pieces: ReturnType<typeof exitPartPieces> }) {
+  return <span data-exit-part-result>{pieces.before}<Signed value={pieces.pnl} />{pieces.after}</span>;
+}
+
 /**
  * Terminal T2 (TT-9): the confirm sheet of "Exit part" (a lots stepper, 1 to the open lots) and "Reverse" (all lots close,
  * then the other side opens with the same lots; a sold side asks for his own stop-loss, nothing pre-filled). The
@@ -23,7 +30,7 @@ export type PositionActionAsk = { kind: "part" | "reverse"; position: TradeRecor
  * sold leg: the server's warning keeps the sheet open and the next tap confirms - a warning, never a block (ADR-0004).
  */
 export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActionsApi }: {
-  ask: PositionActionAsk | null; onClose: () => void; onDone: (text: string, ok: boolean) => void; api?: PositionActionsApi;
+  ask: PositionActionAsk | null; onClose: () => void; onDone: (text: ReactNode, ok: boolean) => void; api?: PositionActionsApi;
 }) {
   const [lots, setLots] = useState(1);
   const [stop, setStop] = useState("");
@@ -38,6 +45,7 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
   const held = openLots(position);
   const needsStop = ask.kind === "reverse" && reverseNeedsStop(position);
   const copy = ask.kind === "part" ? exitPartCopy(position.symbol, lots, held) : reverseCopy(position.symbol, held, position.direction === "LONG");
+  const stopLabel = reverseStopLabel(position);
   const close = () => { setWarning(null); setProblem(null); onClose(); };
 
   async function go() {
@@ -54,7 +62,8 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
     setBusy(false);
     if (step.kind === "warn") { setWarning(step.warning); return; }
     setWarning(null);
-    onDone(step.text, step.ok);
+    const p = step.pieces;
+    onDone(p && p.pnl !== null ? <ExitPartResultLine pieces={p} /> : step.text, step.ok);
   }
 
   return (
@@ -81,7 +90,7 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
         )}
         {needsStop && (
           <div className="flex flex-wrap items-center gap-space-2">
-            <label htmlFor={stopId} className="text-t14 text-fg">Stop-loss for the new position</label>
+            <label htmlFor={stopId} className="text-t14 text-fg" data-stop-unit>{stopLabel.label}</label>
             <input id={stopId} inputMode="decimal" value={stop} onChange={(e) => setStop(e.target.value)} className={INPUT} data-testid="reverse-stop" />
           </div>
         )}
@@ -91,9 +100,11 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
             <TriangleAlert size={16} aria-hidden className="mt-px shrink-0 text-fg-muted" />
             <span>{warning}</span>
           </p>
-        ) : (
-          <p className="text-t13 text-fg-muted">If there is no price right now, nothing closes and you see why.</p>
-        )}
+        ) : null}
+        <Details id={`terminal.${ask.kind === "part" ? "exit-part" : "reverse"}`} className="mt-space-1">
+          {needsStop && <p>{stopLabel.detail}</p>}
+          {copy.details.map((line) => <p key={line}>{line}</p>)}
+        </Details>
       </div>
     </Dialog>
   );
@@ -144,6 +155,12 @@ export function WaitingOrdersV2({ api = positionActionsApi, onChanged, refresh =
             {editing === o.id && (
               <ModifyFormV2 order={o} api={api} onDone={(text, ok) => { setEditing(null); setNote({ ok, text }); load(); onChanged?.(); }} />
             )}
+            <Details id="terminal.waiting-order" className="mt-space-1">
+              {o.purpose === "ENTRY" && <p>{waitingQuantity(o)}</p>}
+              <p>{o.purpose === "ENTRY"
+                ? "Modify changes its price, trigger or lots; every entry check runs again when it is placed."
+                : "A stop or target closes the whole position: Modify changes its level only. Use Exit part to close some lots now."}</p>
+            </Details>
           </li>
         ))}
       </ul>
@@ -151,15 +168,19 @@ export function WaitingOrdersV2({ api = positionActionsApi, onChanged, refresh =
   );
 }
 
-function ModifyFormV2({ order, api, onDone }: { order: WaitingOrder; api: PositionActionsApi; onDone: (text: string, ok: boolean) => void }) {
+export function ModifyFormV2({ order, api, onDone }: { order: WaitingOrder; api: PositionActionsApi; onDone: (text: string, ok: boolean) => void }) {
   const fields = modifyFields(order);
-  const [values, setValues] = useState<Partial<Record<keyof ModifyAsk, string>>>({});
+  // F5: the form opens with the order's current values; Save stays off until one of them differs.
+  const start = useMemo(() => modifyStart(order), [order]);
+  const [values, setValues] = useState<Partial<Record<keyof ModifyAsk, string>>>(start);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const base = useId();
+  const changes = modifyChanges(start, values);
   async function save() {
-    const ask = modifyAsk(values);
-    if (!ask) { setProblem("Enter at least one new value (numbers above zero)."); return; }
+    const ask = changes;
+    if (ask === "same") return;
+    if (!ask) { setProblem("Enter numbers above zero."); return; }
     if (!window.confirm(`Change this waiting order? ${waitingLine(order)}`)) return;
     setBusy(true);
     try {
@@ -179,7 +200,7 @@ function ModifyFormV2({ order, api, onDone }: { order: WaitingOrder; api: Positi
             onChange={(e) => setValues((v) => ({ ...v, [f]: e.target.value }))} data-field={f} />
         </label>
       ))}
-      <button type="button" onClick={() => void save()} disabled={busy} className={SMALL} data-testid="waiting-save">Save change</button>
+      <button type="button" onClick={() => void save()} disabled={busy || changes === "same"} className={SMALL} data-testid="waiting-save">Save change</button>
       {problem && <p className="w-full text-t13 text-warn" role="alert">{problem}</p>}
     </div>
   );

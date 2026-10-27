@@ -286,7 +286,7 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
   combined?: { list: readonly CombinedExit[]; reload: () => void };
   onChanged: () => void;
 }) {
-  const [note, setNote] = useState<{ kind: "done" | "info" | "warn"; text: string } | null>(null);
+  const [note, setNote] = useState<{ kind: "done" | "info" | "warn"; text: ReactNode } | null>(null);
   const [groupExit, setGroupExit] = useState<GroupExitAsk | null>(null);
   const [exitingAll, setExitingAll] = useState(false);
   const [partAsk, setPartAsk] = useState<PositionActionAsk | null>(null);   // T2 (TT-9): Exit part / Reverse

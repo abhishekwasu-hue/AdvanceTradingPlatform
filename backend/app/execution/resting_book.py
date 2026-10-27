@@ -103,11 +103,20 @@ def trail(row: PaperRestingOrderRecord) -> List[Dict[str, Any]]:
     return loaded if isinstance(loaded, list) else []
 
 
+def lots(row: PaperRestingOrderRecord) -> Optional[int]:
+    """The lots of a waiting F&O entry (its ticket ask), else None (an armed exit closes the whole position)."""
+    try:
+        ask = (json.loads(row.payload_json) if row.payload_json else {}).get("ask")
+        return int(ask["lots"]) if isinstance(ask, dict) and ask.get("lots") is not None else None
+    except (TypeError, ValueError, KeyError, AttributeError):
+        return None
+
+
 def view(row: PaperRestingOrderRecord) -> Dict[str, Any]:
     """What the user sees of his own resting order (no internal fields)."""
     return {
         "id": row.id, "client_ref": row.client_ref, "mode": row.mode, "purpose": row.purpose, "kind": row.kind,
-        "trade_id": row.trade_id, "symbol": row.symbol, "side": row.side, "quantity": row.quantity,
+        "trade_id": row.trade_id, "symbol": row.symbol, "side": row.side, "quantity": row.quantity, "lots": lots(row),
         "order_type": row.order_type, "price": row.price, "trigger_price": row.trigger_price,
         "trigger": {"source": row.trigger_source, "symbol": row.trigger_symbol, "level": row.trigger_level,
                     "side": row.trigger_side, "mode": row.trigger_mode, "timeframe_minutes": row.timeframe_minutes},

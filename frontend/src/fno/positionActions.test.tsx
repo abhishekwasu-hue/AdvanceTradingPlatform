@@ -7,9 +7,12 @@ import { heldRows } from "../trading/model";
 import { exposure, trade } from "../trading/trading.fixture";
 import sheetSource from "./PositionActionsV2.tsx?raw";
 import panelSource from "../terminal/PanelsV2.tsx?raw";
+import { CARD_LINE_WORDS, wordCount } from "../ui/textBudget";
+import { ExitPartResultLine, ModifyFormV2 } from "./PositionActionsV2";
 import {
-  canExitPart, canReverse, clampLots, exitPartCopy, exitPartText, modifyAsk, modifyFields, newRef, openLots, reverseCopy,
-  reverseNeedsStop, runAction, waitingLine, type ExitPartResult, type PositionActionsApi, type ReverseResult, type WaitingOrder,
+  NO_PRICE_LINE, canExitPart, canReverse, clampLots, exitPartCopy, exitPartPieces, exitPartText, modifyAsk, modifyChanges, modifyFields,
+  modifyStart, newRef, openLots, reverseCopy, reverseNeedsStop, reverseStopLabel, runAction, waitingLine, waitingQuantity,
+  type ExitPartResult, type PositionActionsApi, type ReverseResult, type WaitingOrder,
 } from "./positionActions";
 
 /** Terminal T2: TT-9 "Exit part" / "Reverse" and TT-10 Modify / Cancel of a waiting order. */
@@ -60,20 +63,34 @@ describe("TT-9 pure parts", () => {
     expect(reverseNeedsStop(option({ direction: "SHORT", instrument_kind: "FUTURE" }))).toBe(true);
   });
 
-  it("the confirm words are plain and say what stays open", () => {
+  it("the confirm words are one short line; the rest (the no-price line once) is in Details", () => {
     const part = exitPartCopy("NIFTY 25000 CE", 1, 3);
-    expect(part.body).toBe("1 lot of NIFTY 25000 CE closes at the current price. 2 lots stay open with the same stop and target.");
+    expect(part.body).toBe("1 lot of NIFTY 25000 CE closes now; 2 lots stay open.");
+    expect(part.details).toContain("The lots that stay open keep the same stop and target.");
     expect(part.confirm).toBe("Exit 1 lot");
-    expect(exitPartCopy("X", 3, 3).body).toBe("All 3 lots of X close at the current price.");
+    expect(exitPartCopy("X", 3, 3).body).toBe("All 3 lots of X close now.");
     const rev = reverseCopy("NIFTY 25000 CE", 3, true);
-    expect(rev.body).toContain("then a new short position of 3 lots opens");
-    expect(rev.body).toContain("your position stays closed and you see why");
+    expect(rev.body).toBe("All 3 lots of NIFTY 25000 CE close, then a short of 3 lots opens.");
+    expect(rev.details.join(" ")).toContain("your position stays closed and you see why");
+    for (const c of [part, rev, exitPartCopy("X", 3, 3)]) {
+      expect(wordCount(c.body)).toBeLessThanOrEqual(CARD_LINE_WORDS);
+      expect(c.body.split(". ")).toHaveLength(1);
+      expect(c.details.filter((l) => l === NO_PRICE_LINE)).toHaveLength(1);
+    }
     for (const words of [part.title, part.body, rev.title, rev.body]) expect(words).not.toMatch(/target price|stop-loss at|client_ref|idempotency/i);
+  });
+
+  it("the Reverse stop box states its unit and basis (the contract's own price per unit, as the ticket takes it)", () => {
+    expect(reverseStopLabel(option()).label).toBe("Stop-loss · premium, ₹ per unit");
+    expect(reverseStopLabel(option({ instrument_kind: "FUTURE" })).label).toBe("Stop-loss · future price, ₹ per unit");
+    expect(reverseStopLabel(option()).detail).toMatch(/not the underlying, not a combined ₹ amount/);
   });
 
   it("the result line names the lots, the price and what is left", () => {
     const r: ExitPartResult = { status: "CLOSED", closed: { trade_id: 2, symbol: "X", lots: 2, closed: true, exit_price: 120, pnl: 1500 }, remaining_lots: 1 };
-    expect(exitPartText(r)).toMatch(/^2 lots of X closed at .*120.*1 lot still open\.$/);
+    expect(exitPartText(r)).toMatch(/^2 lots of X closed at .*120.*: \+₹1,500\. 1 lot still open\.$/);
+    expect(exitPartText({ ...r, closed: { ...r.closed!, pnl: -400 } })).toContain(": −₹400.");
+    expect(exitPartPieces(r)).toEqual({ before: expect.stringMatching(/closed at .*: $/), pnl: 1500, after: ". 1 lot still open." });
   });
 
   it("a new reference each time", () => {
@@ -89,7 +106,7 @@ describe("TT-9 the confirm tap", () => {
     const step = await runAction(ask, false, api);
     await runAction(ask, false, api);
     expect(calls).toEqual([["part", 4, 2, "ref-1234567", false], ["part", 4, 2, "ref-1234567", false]]);
-    expect(step).toEqual({ kind: "done", ok: true, text: expect.stringContaining("2 lots of NIFTY 25000 CE closed") });
+    expect(step).toMatchObject({ kind: "done", ok: true, text: expect.stringContaining("2 lots of NIFTY 25000 CE closed") });
   });
 
   it("a hedge warning keeps the sheet open; the next tap confirms", async () => {
@@ -158,8 +175,12 @@ describe("TT-10 waiting orders", () => {
     status: "RESTING", status_words: "Waiting for your price", note: null, ...extra,
   });
 
-  it("one plain line per order", () => {
-    expect(waitingLine(order())).toMatch(/^Buy 75 NIFTY 25000 CE · waits for .*95/);
+  it("one plain line per order, in lots; the quantity is in Details", () => {
+    expect(waitingLine(order({ lots: 1, side: "SELL", price: 62 }))).toBe("1 lot · NIFTY 25000 CE · sell at 62.00");
+    expect(waitingLine(order({ lots: 2, quantity: 150 }))).toMatch(/^2 lots · NIFTY 25000 CE · buy at .*95/);
+    expect(waitingLine(order({ lots: 2 }))).not.toMatch(/\b75\b/);
+    expect(waitingLine(order({ order_type: "SL-M", price: null, trigger_price: 96 }))).toMatch(/· buy once .*96.* trades$/);
+    expect(waitingQuantity(order({ lots: 2, quantity: 150 }))).toBe("Quantity: 150 units (2 lots of 75).");
     expect(waitingLine(order({ purpose: "EXIT", kind: "STOP", order_type: "SL-M" }))).toMatch(/^Stop on NIFTY 25000 CE at .*95/);
     expect(waitingLine(order({ purpose: "EXIT", kind: "TARGET", trigger: { ...order().trigger, source: "SPOT", side: "ABOVE", level: 25100 } })))
       .toMatch(/^Target on NIFTY 25000 CE underlying at or above /);
@@ -173,10 +194,53 @@ describe("TT-10 waiting orders", () => {
     expect(modifyFields(order({ purpose: "EXIT", trigger: { ...order().trigger, source: "SPOT" } }))).toEqual(["spot_level"]);
   });
 
+  it("Modify opens with the current values; only a changed value is sent; nothing changed means Save stays off", () => {
+    const o = order({ lots: 1, order_type: "SL", trigger_price: 96 });
+    const start = modifyStart(o);
+    expect(start).toEqual({ price: "95", trigger_price: "96", lots: "1" });
+    expect(modifyChanges(start, start)).toBe("same");
+    expect(modifyChanges(start, { ...start, price: "95.00" })).toBe("same");
+    expect(modifyChanges(start, { ...start, lots: "2" })).toEqual({ lots: 2 });
+    expect(modifyChanges(start, { ...start, price: "" })).toBeNull();
+    expect(modifyStart(order({ purpose: "EXIT", kind: "STOP" }))).toEqual({ level: "95" });
+  });
+
+  it("the form shows the current values and Save is disabled until one changes", () => {
+    const api = fakeApi().api;
+    const html = renderToStaticMarkup(<ModifyFormV2 order={order({ lots: 1 })} api={api} onDone={noop} />);
+    expect(html).toContain(`data-field="price" value="95"`);
+    expect(html).toContain(`data-field="lots" value="1"`);
+    expect(html).toMatch(/disabled=""[^>]*data-testid="waiting-save"/);
+    expect(sheetSource).toContain('disabled={busy || changes === "same"}');
+  });
+
   it("only the typed values are sent, as numbers; a bad value sends nothing", () => {
     expect(modifyAsk({ price: "92", lots: "2" })).toEqual({ price: 92, lots: 2 });
     expect(modifyAsk({ price: "", lots: "" })).toBeNull();
     expect(modifyAsk({ price: "abc" })).toBeNull();
     expect(modifyAsk({ level: "-5" })).toBeNull();
+  });
+});
+
+describe("TT-9 the sheet (UX-11)", () => {
+  it("one visible line; the longer words in ONE Details per dialog; the stop box says its unit", () => {
+    expect(sheetSource).not.toContain(NO_PRICE_LINE);                          // said once, from the copy, inside Details
+    expect(sheetSource.match(/<Details id=\{`terminal\.\$\{ask\.kind/g)).toHaveLength(1);
+    expect(sheetSource).toContain("copy.details.map");
+    expect(sheetSource).toContain("{stopLabel.label}");
+    expect(sheetSource).toMatch(/<Details id="terminal\.waiting-order"/);
+  });
+
+  it("the closed lots' profit / loss is the shared signed value", async () => {
+    const { api } = fakeApi();
+    const step = await runAction({ kind: "part", tradeId: 4, symbol: "NIFTY 25000 CE", lots: 1, ref: "ref-1234567" }, false, api);
+    expect(step.kind === "done" && step.pieces).toBeTruthy();
+    if (step.kind !== "done" || !step.pieces) return;
+    const html = renderToStaticMarkup(<ExitPartResultLine pieces={step.pieces} />);
+    expect(html).toContain('data-signed="up"');
+    expect(text(html)).toMatch(/1 lot of NIFTY 25000 CE closed at .*: ▲ \+₹1,500 \. 2 lots still open\./);
+    const loss = renderToStaticMarkup(<ExitPartResultLine pieces={{ before: "X closed: ", pnl: -400, after: "." }} />);
+    expect(loss).toContain('data-signed="down"');
+    expect(text(loss)).toContain("▼ −₹400");
   });
 });

@@ -11,6 +11,8 @@ import { usePageHelp } from "./pageHelp";
 import { HelpPopover } from "../ui/HelpPopover";
 import { sectionChipClass, sectionTintOf } from "../ui/accents";
 import { useColourV2 } from "../ui/colourV2";
+import { useFeatures } from "../ui/useFeatures";
+import { FeedDot } from "./FeedDot";
 
 /**
  * UI2-1 (UI v2 proposal §9 rule 3, mockups dashboard-desktop-1440 / nav-bottom-mobile): the v2 top bar.
@@ -104,6 +106,8 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
   const row = useRef<HTMLDivElement>(null);
   const small = useTitleFits(row, title, colour);
   const help = usePageHelp();
+  // UX-7: the price-feed dot, only with live prices on (flag `data_hub`) for a signed-in user.
+  const liveOn = useFeatures().on("data_hub") && !!user;
 
   return (
     <header className="shrink-0 border-b border-subtle bg-surface-1 pt-[env(safe-area-inset-top)]">
@@ -158,6 +162,7 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
               <MessageSquarePlus size={18} aria-hidden />
             </button>
           )}
+          <FeedDot enabled={liveOn} status={status} />
           <span className="hidden md:contents"><ThemeToggle /></span>
           <Link to="/notifications" title="Notifications" aria-label="Notifications" aria-current={notificationsActive ? "page" : undefined}
             className={`${iconButton} ${notificationsActive ? "bg-surface-2 text-brand" : ""}`}>

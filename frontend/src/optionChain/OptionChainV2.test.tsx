@@ -280,12 +280,14 @@ describe("OC1 plain-word states", () => {
     expect(pageSource).toContain("<AnalysisSlotV2 symbol={symbol}");
   });
 
-  it("OC4: below the chain, the Analysis tabs, then Ask AI, then My analyses", () => {
+  it("OC4 / OC-2: below the chain, the Analysis tabs then My analyses; Ask AI is the header's primary action", () => {
     const html = view();
     const at = (label: string) => html.indexOf(`aria-label="${label}"`);
     expect(at("Option chain analyses")).toBeGreaterThan(html.indexOf('data-block="chain"'));
-    expect(at("Ask AI about this option chain")).toBeGreaterThan(at("Option chain analyses"));
-    expect(at("My analyses")).toBeGreaterThan(at("Ask AI about this option chain"));
+    expect(at("My analyses")).toBeGreaterThan(at("Option chain analyses"));
+    expect(html.indexOf("data-oc-ask-open")).toBeGreaterThan(-1);
+    expect(html.indexOf("data-oc-ask-open")).toBeLessThan(html.indexOf('data-block="chain-summary"'));   // in the header
+    expect(pageSource).toMatch(/<Sheet side=\{phone \? "bottom" : "right"\}[^>]*title="Ask AI about this chain">\s*<AskAi /);
     expect(text(html)).not.toMatch(/sample|lookback|manual ltp/i);
   });
 });

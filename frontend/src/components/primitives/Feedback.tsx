@@ -37,3 +37,17 @@ export function Signed({ value, format = (v) => v.toFixed(2), className }: { val
   const tone = sign > 0 ? "text-up" : sign < 0 ? "text-down" : "text-fg-muted";
   return <span className={cx("font-tabular", tone, className)}>{sign > 0 ? "+" : ""}{sign === 0 ? text.replace(/^-/, "") : text}</span>;
 }
+
+/** UX-7: a list's placeholder rows while it loads (a label and a value per row), instead of a "Loading…" line. */
+export function SkeletonRows({ rows = 5, label }: { rows?: number; label: string }) {
+  return (
+    <div role="status" aria-busy="true" aria-label={label} data-skeleton className="space-y-space-2 px-space-3 py-space-3">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center justify-between gap-space-3">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-16" />
+        </div>
+      ))}
+    </div>
+  );
+}

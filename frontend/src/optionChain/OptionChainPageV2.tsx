@@ -1,4 +1,4 @@
-import { CalendarDays, ChartColumn, Info, Table2, TriangleAlert } from "lucide-react";
+import { CalendarDays, ChartColumn, Info, Sparkles, Table2, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useColourV2 } from "../ui/colourV2";
@@ -27,6 +27,9 @@ import SummaryStripV2 from "./SummaryStripV2";
 import type { ChainRow } from "./types";
 import { useOptionChain, type OptionChainData } from "./useOptionChain";
 import { Combobox, type ComboOption } from "../ui/Combobox";
+import { Sheet } from "../components/primitives/Dialog";
+import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
+import { AskAi } from "./AskAiV2";
 
 /**
  * OC1 (owner: "After login everything should happen automatically"): the Option chain page in the v2 shell.
@@ -149,6 +152,8 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   autoTrade?: boolean;
 }) {
   const [picked, setPicked] = useState<number | null>(null);
+  const [askOpen, setAskOpen] = useState(false);
+  const phone = useMediaQuery(PHONE_QUERY);
   const [view, setView] = useState<ChainView>("chain");
   const colour = useColourV2();          // colour v2: the Calls / Puts headings in their side's colour
   const symbolId = useId();
@@ -199,6 +204,11 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
               options={expiryComboOptions(expiryOptions)} />
           </div>
           <ColumnsMenuV2 prefs={prefs} onChange={onPrefs} />
+          {/* OC-2: "Ask AI about this chain" is the header's primary action - a side panel (phone: a bottom sheet). */}
+          <button type="button" onClick={() => setAskOpen(true)} data-oc-ask-open
+            className="col-span-3 inline-flex min-h-11 items-center justify-center gap-space-2 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface md:col-span-1 md:min-h-9">
+            <Sparkles size={16} aria-hidden />Ask AI
+          </button>
         </div>
       </header>
 
@@ -208,12 +218,11 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         </div>
       )}
 
-      {dishOn && <ChainDishV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />}
+      {/* OC-1 (owner, 25 Oct): header -> status -> summary cards -> the chain -> the compact reading -> the tables. */}
+      <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} spot={spot} />
 
       <SetupPanelV2 state={setupState} symbol={symbol} expiry={live?.expiry ?? chain.expiry} onExpiry={(e) => { setPicked(null); chain.setExpiry(e); }}
         onClear={() => onClearSignal?.()} tradeOf={tradeOf} onTrade={tradeSetup} />
-
-      <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} spot={spot} />
 
       {view === "charts" && (
         <section aria-label="Charts" data-block="charts" className="space-y-space-3">
@@ -248,8 +257,14 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       </section>}
       {trading.layer}
 
+      {dishOn && <ChainDishV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />}
+
       {/* OC4: the Analysis tabs, Ask AI and My analyses for the chain on screen. */}
       <AnalysisSlotV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />
+
+      <Sheet side={phone ? "bottom" : "right"} open={askOpen} onOpenChange={setAskOpen} title="Ask AI about this chain">
+        <AskAi symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? undefined} />
+      </Sheet>
 
       <RowDetailsV2 row={pickedRow} atm={live?.summary.atm_strike ?? null} underlying={symbol} onClose={() => setPicked(null)} />
     </div>

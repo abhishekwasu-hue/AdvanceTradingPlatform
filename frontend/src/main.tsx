@@ -1,6 +1,9 @@
 import React, { type ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+// UX-4: the product fonts are served from this app (no request to a font CDN), Inter with fixed-width digits.
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
 import "./styles/index.css";
 import { initAppearance } from "./theme";
 import { startPwaEvents } from "./pwa/events";

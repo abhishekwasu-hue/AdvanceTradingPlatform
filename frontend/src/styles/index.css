@@ -6,7 +6,7 @@
 @tailwind utilities;
 
 body {
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   background: rgb(var(--surface));
@@ -18,6 +18,13 @@ body {
 .font-tabular {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1, "cv11" 1;   /* Inter: fixed-width digits, single-storey a */
+}
+
+/* UX-4 (owner order UX-2): in the v2 UI every number - price, quantity, P&L - uses fixed-width digits, so a ticking
+   price never jitters sideways and columns line up. Set on <html> by the v2 shell (useTabularRoot), portals included. */
+html[data-numerals="tabular"] body {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv11" 1;
 }
 
 /* Tables of numbers line up by default. */

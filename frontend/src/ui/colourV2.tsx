@@ -27,6 +27,17 @@ export function useColourV2(): boolean {
   return useContext(ColourV2Context);
 }
 
+/** UX-4: sets `data-numerals="tabular"` on <html> while the v2 shell is shown (fixed-width digits everywhere, the
+ * dialogs and sheets that render outside the shell included); removes it when unmounted. */
+export function useTabularRoot(on: boolean): void {
+  useEffect(() => {
+    if (!on || typeof document === "undefined") return undefined;
+    const root = document.documentElement;
+    root.dataset.numerals = "tabular";
+    return () => { delete root.dataset.numerals; };
+  }, [on]);
+}
+
 /** Sets `data-colour="v2"` on <html> while `on`; removes it when off or unmounted. */
 export function useColourV2Root(on: boolean): void {
   useEffect(() => {

@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { mockCharts } from "./chartsMocks";
 import { mockApi } from "./mockApi";
+import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
 import { pickOption } from "./combobox";
 
@@ -443,3 +444,18 @@ test.describe("T8 measurements", () => {
     expect(cls).toBeLessThan(0.1);
   });
 });
+
+/** UX-11 PR 4 (owner, 27 Oct): numbers first - every Terminal panel passes the text budget (one short visible line,
+ * the rest in Details); the visible-word count is printed for the comparison page. */
+for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test.describe(`v2 terminal text budget ${size.width}`, () => {
+    test.use({ viewport: size });
+    test("every panel fits the text budget", async ({ page }) => {
+      await open(page, "light");
+      await settle(page);
+      console.log(`[words] Terminal ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
+  });
+}

@@ -410,6 +410,9 @@ describe("owner fixes T1-2 .. T1-7", () => {
     const out = text(renderToStaticMarkup(<MemoryRouter><ChainPanelV2 underlying="NIFTY" read={{ status: "ok", value: CHAIN }} trading={TRADING} spot={spot} /></MemoryRouter>));
     expect(out).toContain(`spot ${formatPrice(24533.4)} (as of ${formatTimeIST(tick.ts)})`);
     expect(out.match(/as of/g)).toHaveLength(1);
+    // UX-11 U1: how to use the chain sits in the panel's Details (closed by default), word for word.
+    const html = renderToStaticMarkup(<MemoryRouter><ChainPanelV2 underlying="NIFTY" read={{ status: "ok", value: CHAIN }} trading={TRADING} spot={spot} /></MemoryRouter>);
+    expect(html).toMatch(/<details data-details="terminal.chain"[\s\S]*Tap a price to buy, sell or add it to your basket\.[\s\S]*<\/details>/);
     expect(pageSource).toMatch(/useTerminalSpot\(/);
     expect(pageSource).toMatch(/chartLiveOf\(spot\)/);
   });

@@ -5,7 +5,11 @@ What a combined exit is (`GroupExitRecord`):
 * the measure (CX2): the group's ₹ MTM (a loss and / or a profit in rupees), its net premium (sold premium minus bought
   premium, per unit of the smallest leg), or the underlying's spot level (T-D2, the default for spreads). A level's side
   (ABOVE / BELOW) is read from the value when the exit is set, so the user only types the number;
-* the check (CX3): TOUCH (every reading) or CLOSE (a closed candle of a chosen timeframe; the spot level today).
+* the check (CX3): TOUCH (every reading) or CLOSE (a closed candle of a chosen timeframe; the spot level today);
+* optional trailing (CX2 / SX2, owner): LOCK - once the gain reaches A, the stop moves to keep B; TRAIL - every X of
+  favourable move, the stop moves by Y; LOCK_TRAIL (SX2) - lock B at A, then every further X moves it by Y; BREAK_EVEN
+  (SX2) - once the gain reaches A, the stop moves to where the exit was set (₹ MTM: zero). Every number is the user's own (no default). The stop only ever moves in the
+  trade's favour; `best_value`, `current_sl` and `locked_at` are stored on the row, so a restart continues from them.
 
 Firing (app/execution/trigger_engine.py): ARMED -> FIRING exactly once, then every leg still open is closed through
 `position_monitor.close_group` - short legs first, then the hedges; a short that does not close keeps its hedges open
@@ -37,6 +41,10 @@ TOUCH, CLOSE = "TOUCH", "CLOSE"
 ABOVE, BELOW = "ABOVE", "BELOW"
 SL, TARGET = "SL", "TARGET"
 SCOPES = ("SELECTED", "ALL_OPEN", "GROUP")
+TRAIL_NONE, TRAIL, LOCK = "NONE", "TRAIL", "LOCK"
+LOCK_TRAIL, BREAK_EVEN = "LOCK_TRAIL", "BREAK_EVEN"          # SX2 (owner): lock and trail; trail to break-even
+TRAIL_KINDS = (TRAIL_NONE, TRAIL, LOCK, LOCK_TRAIL, BREAK_EVEN)
+LOCKING = (LOCK, LOCK_TRAIL, BREAK_EVEN)                     # a stop that appears once a gain is reached: no stop-loss needed
 STUCK_ALERT_PASSES = 5          # a short still open after this many passes while FIRING: one CRITICAL notice (it keeps trying)
 
 
@@ -59,6 +67,9 @@ class GroupExitAsk:
     scope: str = "SELECTED"
     origin: str = "CX"
     basket_ref: Optional[str] = None
+    trail_kind: str = TRAIL_NONE
+    trail: Optional[Dict[str, float]] = None     # LOCK {after, lock}; TRAIL {step, by}; LOCK_TRAIL {after, lock, step, by};
+    #                                               BREAK_EVEN {after} - the user's numbers
     errors: List[str] = field(default_factory=list)
 
 
@@ -139,13 +150,14 @@ def reached(level: Optional[float], side: Optional[str], value: float) -> bool:
 
 def decide(row: GroupExitRecord, value: float) -> Optional[str]:
     """SL / TARGET / None for one reading of the group's measure. The stop is judged before the target (TT-7)."""
+    stop = stop_now(row)
     if row.measure == MTM_INR:
-        if row.sl_value is not None and value <= -abs(float(row.sl_value)):
+        if stop is not None and value <= stop:
             return SL
         if row.target_value is not None and value >= abs(float(row.target_value)):
             return TARGET
         return None
-    if reached(_float(row.current_sl if row.current_sl is not None else row.sl_value), row.sl_side, value):
+    if reached(stop, stop_side(row) if stop is not None else None, value):
         return SL
     if reached(_float(row.target_value), row.target_side, value):
         return TARGET
@@ -154,6 +166,230 @@ def decide(row: GroupExitRecord, value: float) -> Optional[str]:
 
 def _float(value: Any) -> Optional[float]:
     return None if value is None else float(value)
+
+
+# --- trailing (CX2 / SX2): the stop only ever moves in the trade's favour ---------------------------------------------
+
+def trail_spec(row: GroupExitRecord) -> Dict[str, Any]:
+    """The user's trailing numbers (LOCK {after, lock}; TRAIL {step, by}) plus the candle-close bookmark `seen`."""
+    try:
+        spec = json.loads(row.trail_json or "{}")
+    except ValueError:
+        return {}
+    return spec if isinstance(spec, dict) else {}
+
+
+def trailing_on(row: GroupExitRecord) -> bool:
+    return (row.trail_kind or TRAIL_NONE) in TRAIL_KINDS[1:]
+
+
+def favour(row: GroupExitRecord) -> float:
+    """+1 when the trade gains as the measure rises, -1 when it gains as it falls. ₹ MTM: always +1. A level: away from
+    the stop (a stop BELOW: up), else towards the target."""
+    if row.measure == MTM_INR:
+        return 1.0
+    if row.sl_side:
+        return 1.0 if row.sl_side == BELOW else -1.0
+    return 1.0 if row.target_side == ABOVE else -1.0
+
+
+def stop_side(row: GroupExitRecord) -> Optional[str]:
+    """Which way a level measure must go to reach the stop (the side read when it was set; a lock-only exit: against
+    the trade)."""
+    if row.measure == MTM_INR:
+        return None
+    return row.sl_side or (BELOW if favour(row) > 0 else ABOVE)
+
+
+def first_stop(row: GroupExitRecord) -> Optional[float]:
+    """The stop as the user set it: ₹ MTM as a signed MTM (a loss of ₹X -> -X), a level as typed."""
+    if row.sl_value is None:
+        return None
+    return -abs(float(row.sl_value)) if row.measure == MTM_INR else float(row.sl_value)
+
+
+def stop_now(row: GroupExitRecord) -> Optional[float]:
+    """The stop in force: the trailed one once it moved, else the user's own (₹ MTM signed)."""
+    return _float(row.current_sl) if row.current_sl is not None else first_stop(row)
+
+
+def reference(row: GroupExitRecord) -> Optional[float]:
+    """Where the gain is counted from: ₹ MTM - zero (the combined profit itself); a level - its reading when set."""
+    return 0.0 if row.measure == MTM_INR else _float(row.basis_value)
+
+
+def better(a: Optional[float], b: Optional[float], fav: float) -> Optional[float]:
+    """The more favourable of two stops (None = no stop)."""
+    if a is None or b is None:
+        return b if a is None else a
+    return max(a, b) if fav > 0 else min(a, b)
+
+
+def trailed_stop(row: GroupExitRecord, best: float) -> Optional[float]:
+    """The stop the trailing asks for after the best reading `best` (None: not yet). Pure: LOCK - once the gain from the
+    reference reaches A, the stop keeps B; TRAIL - every full X of gain moves the user's own stop by Y."""
+    ref = reference(row)
+    spec = trail_spec(row)
+    if ref is None or not trailing_on(row):
+        return None
+    fav = favour(row)
+    gain = (best - ref) * fav
+    if row.trail_kind == BREAK_EVEN:
+        after = _float(spec.get("after"))
+        return None if after is None or gain < after else round(ref, 4)
+    if row.trail_kind in (LOCK, LOCK_TRAIL):
+        after, keep = _float(spec.get("after")), _float(spec.get("lock"))
+        if after is None or keep is None or gain < after:
+            return None
+        if row.trail_kind == LOCK_TRAIL:            # SX2: lock B at A, then every full X beyond A moves it by Y
+            step, by = _float(spec.get("step")), _float(spec.get("by"))
+            if step is not None and by is not None and step > 0:
+                keep += int((gain - after) // step) * by
+        return round(ref + fav * keep, 4)
+    step, by, start = _float(spec.get("step")), _float(spec.get("by")), first_stop(row)
+    if step is None or by is None or step <= 0 or start is None or gain < step:
+        return None
+    return round(start + fav * int(gain // step) * by, 4)
+
+
+def apply_trail(row: GroupExitRecord, value: float, now: Optional[datetime] = None) -> bool:
+    """One reading of the measure: keeps the best reading and moves the stop when the trailing asks - only ever in the
+    trade's favour (never back). A LOCK is logged once (`locked_at`). True when the stop moved."""
+    if not trailing_on(row):
+        return False
+    fav = favour(row)
+    best = better(_float(row.best_value), float(value), fav)
+    row.best_value = best
+    wanted = trailed_stop(row, float(best)) if best is not None else None
+    held = stop_now(row)
+    if wanted is None or (held is not None and better(held, wanted, fav) == held):
+        return False
+    row.current_sl = wanted
+    if row.trail_kind in LOCKING and row.locked_at is None:      # the lock fires once (logged once)
+        row.locked_at = _now(now)
+        where = "break-even" if row.trail_kind == BREAK_EVEN else _level_words(row, wanted)
+        add_log(row, ARMED, f"Gain reached - the stop moved to {where}", now)
+    elif row.trail_kind != LOCK:
+        add_log(row, ARMED, f"The stop moved to {_level_words(row, wanted)}", now)
+    return True
+
+
+def _level_words(row: GroupExitRecord, level: float) -> str:
+    if row.measure == MTM_INR:
+        return f"a combined profit of ₹{level:,.0f}" if level >= 0 else f"a combined loss of ₹{abs(level):,.0f}"
+    return f"{level:,.2f}"
+
+
+def trail_words(row: GroupExitRecord) -> str:
+    """The trailing in plain words (empty when there is none); the numbers are the user's own."""
+    if not trailing_on(row):
+        return ""
+    spec = trail_spec(row)
+    if row.trail_kind in (LOCK_TRAIL, BREAK_EVEN):
+        return _sx_trail_words(row, spec)
+    if row.measure == MTM_INR:
+        if row.trail_kind == LOCK:
+            return (f"Once the combined profit reaches ₹{float(spec.get('after', 0)):,.0f}, the stop moves to keep "
+                    f"₹{float(spec.get('lock', 0)):,.0f}.")
+        return (f"For every ₹{float(spec.get('step', 0)):,.0f} the combined profit rises, the stop moves up "
+                f"₹{float(spec.get('by', 0)):,.0f}.")
+    what = f"{row.spot_symbol} spot" if row.measure == SPOT else "net premium"
+    base = f" from {float(row.basis_value):,.2f}" if row.basis_value is not None else ""
+    if row.trail_kind == LOCK:
+        return (f"Once the {what} moves {float(spec.get('after', 0)):,.2f} points your way{base}, the stop moves to keep "
+                f"{float(spec.get('lock', 0)):,.2f} points.")
+    return (f"For every {float(spec.get('step', 0)):,.2f} points the {what} moves your way, the stop moves "
+            f"{float(spec.get('by', 0)):,.2f} points with it.")
+
+
+def _sx_trail_words(row: GroupExitRecord, spec: Dict[str, Any]) -> str:
+    """SX2 lock-and-trail / break-even in plain words (the user's own numbers)."""
+    def g(key: str) -> float:
+        return float(spec.get(key, 0))
+    if row.measure == MTM_INR:
+        if row.trail_kind == BREAK_EVEN:
+            return f"Once the combined profit reaches ₹{g('after'):,.0f}, the stop moves to break-even (no loss)."
+        return (f"Once the combined profit reaches ₹{g('after'):,.0f}, the stop moves to keep ₹{g('lock'):,.0f}; then for "
+                f"every further ₹{g('step'):,.0f}, it moves up ₹{g('by'):,.0f}.")
+    what = f"{row.spot_symbol} spot" if row.measure == SPOT else "net premium"
+    base = f" from {float(row.basis_value):,.2f}" if row.basis_value is not None else ""
+    if row.trail_kind == BREAK_EVEN:
+        return f"Once the {what} moves {g('after'):,.2f} points your way{base}, the stop moves to break-even."
+    return (f"Once the {what} moves {g('after'):,.2f} points your way{base}, the stop moves to keep {g('lock'):,.2f} "
+            f"points; then for every further {g('step'):,.2f} points, it moves {g('by'):,.2f} points with it.")
+
+
+def trail_errors(kind: str, spec: Optional[Dict[str, Any]], sl_value: Optional[float]) -> List[str]:
+    """Plain-word reasons the trailing cannot be set. Only the user's numbers; nothing is filled in for him."""
+    if kind == TRAIL_NONE:
+        return []
+    if kind not in TRAIL_KINDS:
+        return ["Choose how the stop trails: lock a gain, trail step by step, lock and trail, or move to break-even"]
+    spec = spec or {}
+    errors: List[str] = []
+    if kind == BREAK_EVEN:
+        after = _float(spec.get("after"))
+        if after is None or after <= 0:
+            errors.append("Enter the gain after which the stop moves to break-even (more than zero)")
+        return errors
+    if kind == LOCK_TRAIL:
+        errors.extend(trail_errors(LOCK, spec, sl_value))
+        step, by = _float(spec.get("step")), _float(spec.get("by"))
+        if step is None or step <= 0:
+            errors.append("Enter the further move that shifts the stop (more than zero)")
+        if by is None or by <= 0:
+            errors.append("Enter how far the stop shifts each time (more than zero)")
+        if step is not None and by is not None and step > 0 and by > step:
+            errors.append("The stop cannot shift further than the move itself")
+        return errors
+    if kind == LOCK:
+        after, keep = _float(spec.get("after")), _float(spec.get("lock"))
+        if after is None or after <= 0:
+            errors.append("Enter the gain after which the stop moves (more than zero)")
+        if keep is None or keep < 0:
+            errors.append("Enter how much of the gain to keep (zero or more)")
+        if after is not None and keep is not None and after > 0 and keep >= after:
+            errors.append("The gain kept must be less than the gain that moves the stop")
+        return errors
+    step, by = _float(spec.get("step")), _float(spec.get("by"))
+    if sl_value is None:
+        errors.append("A trailing stop needs a stop-loss to start from")
+    if step is None or step <= 0:
+        errors.append("Enter the move that shifts the stop (more than zero)")
+    if by is None or by <= 0:
+        errors.append("Enter how far the stop shifts each time (more than zero)")
+    if step is not None and by is not None and step > 0 and by > step:
+        errors.append("The stop cannot shift further than the move itself")
+    return errors
+
+
+def trail_json_of(kind: str, spec: Optional[Dict[str, Any]]) -> Optional[str]:
+    """The stored trailing numbers (only the keys of its kind)."""
+    spec = spec or {}
+    if kind == LOCK:
+        return json.dumps({"after": float(spec["after"]), "lock": float(spec["lock"])})
+    if kind == TRAIL:
+        return json.dumps({"step": float(spec["step"]), "by": float(spec["by"])})
+    if kind == LOCK_TRAIL:
+        return json.dumps({k: float(spec[k]) for k in ("after", "lock", "step", "by")})
+    if kind == BREAK_EVEN:
+        return json.dumps({"after": float(spec["after"])})
+    return None
+
+
+def trail_seen(row: GroupExitRecord) -> Optional[datetime]:
+    """CLOSE check: the end of the last closed candle the trailing has read (a restart never reads one twice)."""
+    raw = trail_spec(row).get("seen")
+    if not raw:
+        return None
+    at = datetime.fromisoformat(str(raw))
+    return at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+
+
+def mark_seen(row: GroupExitRecord, end: datetime) -> None:
+    spec = trail_spec(row)
+    spec["seen"] = _now(end).isoformat()
+    row.trail_json = json.dumps(spec)
 
 
 def add_log(row: GroupExitRecord, status: str, note: str, now: Optional[datetime] = None) -> None:
@@ -245,8 +481,12 @@ def describe(row: GroupExitRecord) -> str:
             parts.append(f"{what} {word.get(row.sl_side or '', 'reaches')} {float(row.sl_value):,.2f} (stop-loss)")
         if row.target_value is not None:
             parts.append(f"{what} {word.get(row.target_side or '', 'reaches')} {float(row.target_value):,.2f} (target)")
+    if not parts and trailing_on(row):
+        parts.append("the trailing stop is reached")
     when = " on a closed candle" if row.check_mode == CLOSE else ""
-    return f"If {' or '.join(parts)}{when}, these {legs} exit{order}."
+    extra = trail_words(row)
+    tail = f" {extra} The stop only moves your way." if extra else ""
+    return f"If {' or '.join(parts)}{when}, these {legs} exit{order}.{tail}"
 
 
 def distance(row: GroupExitRecord, value: Optional[float] = None) -> Dict[str, Optional[float]]:
@@ -257,13 +497,15 @@ def distance(row: GroupExitRecord, value: Optional[float] = None) -> Dict[str, O
     if now_v is None:
         return out
     if row.measure == MTM_INR:
-        if row.sl_value is not None:
-            out["sl"] = round(max(0.0, now_v + abs(float(row.sl_value))), 2)
+        stop = stop_now(row)
+        if stop is not None:
+            out["sl"] = round(max(0.0, now_v - stop), 2)
         if row.target_value is not None:
             out["target"] = round(max(0.0, abs(float(row.target_value)) - now_v), 2)
         return out
-    sl = row.current_sl if row.current_sl is not None else row.sl_value
-    for key, level, side in (("sl", sl, row.sl_side), ("target", row.target_value, row.target_side)):
+    sl = stop_now(row)
+    for key, level, side in (("sl", sl, stop_side(row) if sl is not None else None),
+                             ("target", row.target_value, row.target_side)):
         if level is not None and side:
             gap = float(level) - now_v if side == ABOVE else now_v - float(level)
             out[key] = round(max(0.0, gap), 2)
@@ -277,7 +519,11 @@ def view(row: GroupExitRecord) -> Dict[str, Any]:
             "check_mode": row.check_mode, "timeframe_minutes": row.timeframe_minutes, "status": row.status,
             "fired_kind": row.fired_kind, "last_value": _float(row.last_value), "distance": distance(row),
             "version": row.version, "legs": legs_of(row), "words": describe(row), "note": row.status_note,
-            "stale": stale_state(row).get("legs") or [], "trail": trail(row)}
+            "stale": stale_state(row).get("legs") or [], "trail": trail(row),
+            "trail_kind": row.trail_kind or TRAIL_NONE,
+            "trailing": {k: v for k, v in trail_spec(row).items() if k != "seen"} if trailing_on(row) else None,
+            "stop_now": stop_now(row), "stop_moved": row.current_sl is not None, "best_value": _float(row.best_value),
+            "locked": row.locked_at is not None}
 
 
 def ask_errors(ask: GroupExitAsk, trades: Sequence[TradeRecord]) -> List[str]:
@@ -285,8 +531,12 @@ def ask_errors(ask: GroupExitAsk, trades: Sequence[TradeRecord]) -> List[str]:
     errors: List[str] = []
     if ask.measure not in MEASURES:
         errors.append("Choose what the exit watches: combined ₹ profit / loss, net premium, or the spot level")
-    if ask.sl_value is None and ask.target_value is None:
+    if ask.sl_value is None and ask.target_value is None and ask.trail_kind not in LOCKING:
         errors.append("Enter a stop-loss, a target, or both")
+    if (ask.measure in (SPOT, NET_PREMIUM) and ask.sl_value is None and ask.target_value is None
+            and ask.trail_kind in LOCKING):
+        errors.append("A spot or premium lock needs a stop-loss or a target too, so the exit knows which way is yours")
+    errors.extend(trail_errors(ask.trail_kind, ask.trail, ask.sl_value))
     for name, value in (("stop-loss", ask.sl_value), ("target", ask.target_value)):
         if value is not None and float(value) <= 0:
             errors.append(f"The {name} must be more than zero")
@@ -354,7 +604,8 @@ async def create(session: AsyncSession, user: User, ask: GroupExitAsk, *, now_va
         measure=ask.measure, spot_symbol=(ask.spot_symbol or None), spot_exchange=(ask.spot_exchange or None),
         sl_value=ask.sl_value, target_value=ask.target_value, basis_value=now_value, check_mode=ask.check_mode,
         timeframe_minutes=ask.timeframe_minutes if ask.check_mode == CLOSE else None, status=ARMED, version=1,
-        passes_firing=0, trail_kind="NONE", created_at=at, updated_at=at)
+        passes_firing=0, trail_kind=ask.trail_kind, trail_json=trail_json_of(ask.trail_kind, ask.trail),
+        created_at=at, updated_at=at)
     if ask.measure != MTM_INR and now_value is not None:
         row.sl_side = side_for(float(ask.sl_value), now_value) if ask.sl_value is not None else None
         row.target_side = side_for(float(ask.target_value), now_value) if ask.target_value is not None else None
@@ -399,10 +650,12 @@ async def current_value(session: AsyncSession, measure: str, trades: Sequence[Tr
 
 async def edit(session: AsyncSession, user: User, row_id: int, *, version: int, sl_value: Optional[float],
                target_value: Optional[float], check_mode: Optional[str] = None, timeframe_minutes: Optional[int] = None,
-               now_value: Optional[float] = None, now: Optional[datetime] = None) -> GroupExitRecord:
+               now_value: Optional[float] = None, now: Optional[datetime] = None,
+               trailing: Optional[Tuple[str, Optional[Dict[str, Any]]]] = None) -> GroupExitRecord:
     """The user changes his own armed exit's levels (CX5 / SX6): only while ARMED and only on the version he saw (an edit
     from another device in between is refused with plain words). The legs stay as set; to change them, remove the exit
-    and set a new one. A level's side is read again from the value now."""
+    and set a new one. A level's side is read again from the value now. `trailing` (kind, numbers) replaces the trailing;
+    None keeps it. An edit starts the trailing again from the reading now (the user's own new levels)."""
     row = await session.get(GroupExitRecord, row_id)
     if row is None or row.tenant_id != user.tenant_id or row.user_id != user.id:
         raise GroupExitError("Combined exit not found")
@@ -414,9 +667,10 @@ async def edit(session: AsyncSession, user: User, row_id: int, *, version: int, 
         raise GroupExitError("Changed on another screen - reload and try again")
     mode = check_mode or row.check_mode
     tf = timeframe_minutes if timeframe_minutes is not None else row.timeframe_minutes
+    kind, spec = trailing if trailing is not None else (row.trail_kind or TRAIL_NONE, trail_spec(row))
     probe = GroupExitAsk(client_ref=row.client_ref, trade_ids=trade_ids(row), measure=row.measure, sl_value=sl_value,
                          target_value=target_value, spot_symbol=row.spot_symbol, spot_exchange=row.spot_exchange,
-                         check_mode=mode, timeframe_minutes=tf, scope=row.scope)
+                         check_mode=mode, timeframe_minutes=tf, scope=row.scope, trail_kind=kind, trail=spec)
     errors = [e for e in ask_errors(probe, await own_open_trades(session, user, trade_ids(row)))
               if not e.startswith(("Some of the ticked", "A ticked position is already closed"))]
     if row.measure != MTM_INR:
@@ -431,7 +685,10 @@ async def edit(session: AsyncSession, user: User, row_id: int, *, version: int, 
     at = _now(now)
     values: Dict[str, Any] = {"sl_value": sl_value, "target_value": target_value, "check_mode": mode,
                               "timeframe_minutes": tf if mode == CLOSE else None, "current_sl": None,
-                              "version": int(row.version) + 1, "updated_at": at}
+                              "best_value": None, "locked_at": None, "trail_kind": kind,
+                              "trail_json": trail_json_of(kind, spec), "version": int(row.version) + 1, "updated_at": at}
+    if row.measure != MTM_INR and now_value is not None:
+        values["basis_value"] = now_value
     if row.measure != MTM_INR and now_value is not None:
         values["sl_side"] = side_for(float(sl_value), now_value) if sl_value is not None else None
         values["target_side"] = side_for(float(target_value), now_value) if target_value is not None else None
@@ -482,4 +739,6 @@ __all__ = ["ARMED", "FIRING", "DONE", "CANCELLED", "MTM_INR", "NET_PREMIUM", "SP
            "net_premium", "side_for", "reached", "decide", "describe", "view", "ask_errors", "create", "cancel",
            "list_for_user", "by_ref", "add_log", "trail", "STUCK_ALERT_PASSES", "distance", "all_open_ids",
            "current_value", "edit", "last_traded", "mark_stale", "stale_notice_due", "stale_words",
-           "exit_short_action", "stale_state"]
+           "exit_short_action", "stale_state", "TRAIL_NONE", "TRAIL", "LOCK", "LOCK_TRAIL", "BREAK_EVEN", "LOCKING", "TRAIL_KINDS", "trail_spec", "trailing_on",
+           "favour", "stop_side", "first_stop", "stop_now", "trailed_stop", "apply_trail", "trail_words", "trail_errors",
+           "trail_json_of", "trail_seen", "mark_seen", "better"]

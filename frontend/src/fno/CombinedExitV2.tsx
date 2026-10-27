@@ -6,14 +6,18 @@ import { cx } from "../components/primitives/cx";
 import { dataOf, usePolled } from "../dashboard/useDashboardData";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL } from "../trading/PartsV2";
 import type { TradeRecord } from "../types";
-import { formatINR, formatNumber } from "../ui/format";
+import { Details } from "../ui/Details";
+import { formatNumber } from "../ui/format";
+import { OptionCards } from "../ui/OptionCards";
+import { Signed } from "../ui/Signed";
 import {
   MEASURES, TIMEFRAMES, active, amount, bodyOf, chipText, combinedApi, defaultMeasure, exitShortCopy, failText, formErrors,
-  newRef, previewWords, sheetLegs, staleText, type CombinedApi, type CombinedExit, type CombinedForm, type CombinedPreview,
-  type SheetLeg,
+  newRef, previewWords, sheetLegs, staleText, trailLabels, trailOf, type CombinedApi, type CombinedExit, type CombinedForm,
+  type CombinedPreview, type SheetLeg, type TrailKind,
 } from "./combinedExit";
 import type { ContractFacts } from "./contracts";
 import { groupExitApi, runExit, type GroupExitApi } from "./groupExits";
+import { STRATEGY_TRAILS } from "./strategyExits";
 
 /**
  * CX6 (owner, 24 Oct): "Set combined stop-loss" on the positions panel (Terminal and My trades), the sheet (tick boxes per
@@ -51,6 +55,11 @@ export function CombinedExitChipV2({ exit, masked = false, onEdit, onRemove }: {
       <ShieldCheck size={14} aria-hidden className="shrink-0 text-fg-muted" />
       <span className="font-semibold text-fg">{words.title}</span>
       <span className={cx("font-tabular", words.closing ? "text-warn" : "text-fg-muted")} data-distance>{words.distance}</span>
+      {words.stop && (
+        <span className="inline-flex items-baseline gap-space-1 font-tabular text-fg" data-stop-now aria-label={words.stop}>
+          {words.stopValue !== undefined ? <>{words.stopLead}<Signed value={words.stopValue} /></> : words.stop}
+        </span>
+      )}
       {stale && (
         <span className="inline-flex items-center gap-space-1 font-semibold text-warn" data-stale title={stale}>
           <Clock size={14} aria-hidden />Stale price
@@ -117,24 +126,10 @@ export function CombinedExitFormV2({ view, onChange }: { view: FormView; onChang
             </li>
           ))}
         </ul>
-        {editing && <p className="text-t12 text-fg-muted">To change the positions, remove this exit and set a new one.</p>}
       </fieldset>
 
-      <fieldset className="space-y-space-1" disabled={editing}>
-        <legend className={LABEL}>What the exit watches</legend>
-        <div className="grid grid-cols-1 gap-space-1 sm:grid-cols-3">
-          {MEASURES.map((m) => (
-            <label key={m.key} className={cx("flex min-h-11 cursor-pointer items-start gap-space-2 rounded-control border px-space-3 py-space-2",
-              form.measure === m.key ? "border-brand bg-surface-2" : "border-border")} data-measure={m.key}>
-              <input type="radio" name="combined-measure" checked={form.measure === m.key} onChange={() => set({ measure: m.key })} className="mt-px h-4 w-4 accent-brand" />
-              <span className="min-w-0">
-                <span className="block text-t13 font-semibold">{m.label}</span>
-                <span className="block text-t12 text-fg-muted">{m.hint}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <OptionCards name="combined-measure" legend="What the exit watches" options={MEASURES} value={form.measure} disabled={editing}
+        dataAttr="data-measure" onChange={(measure) => set({ measure })} />
 
       <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-2">
         <label className="block">
@@ -146,6 +141,8 @@ export function CombinedExitFormV2({ view, onChange }: { view: FormView; onChang
           <input className={FIELD} inputMode="decimal" value={form.target} onChange={(e) => set({ target: e.target.value })} data-testid="combined-target" autoComplete="off" />
         </label>
       </div>
+
+      <TrailingPartV2 form={form} set={set} />
 
       {form.measure === "SPOT" && (
         <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-2">
@@ -171,11 +168,10 @@ export function CombinedExitFormV2({ view, onChange }: { view: FormView; onChang
         <p className="font-semibold text-fg" data-preview-words>{words || "Tick the positions and enter a level to see what happens."}</p>
         {now !== null && (
           <p className="text-t13 text-fg-muted" data-preview-now>
-            {rupees ? `Combined profit / loss now: ${now < 0 ? "−" : ""}${formatINR(Math.abs(now))}` : `Now: ${formatNumber(now, 2)}`}
+            {rupees ? <>Combined profit / loss now: <Signed value={now} /></> : `Now: ${formatNumber(now, 2)}`}
           </p>
         )}
         {checking && <p className="text-t12 text-fg-muted">Checking…</p>}
-        <p className="text-t12 text-fg-muted">Nothing is sent now. When the level is reached, the ticked positions close together at the current price.</p>
       </div>
 
       {(reasons.length > 0 || (errors.length > 0 && (form.sl.trim() || form.target.trim()))) && (
@@ -184,6 +180,55 @@ export function CombinedExitFormV2({ view, onChange }: { view: FormView; onChang
             <li key={r} className="flex items-start gap-space-1"><TriangleAlert size={14} aria-hidden className="mt-px shrink-0 text-warn" />{r}</li>
           ))}
         </ul>
+      )}
+
+      {/* F7 / UX-11 U1: the longer explanations, once per dialog. */}
+      <Details id="fno.combined-exit">
+        <p>The ticked positions close as one group, sold legs first.</p>
+        <p>Nothing is sent now. When the level is reached, the ticked positions close together at the current price.</p>
+        {(form.trailKind ?? "NONE") !== "NONE" && <p>The stop only moves your way, never back.</p>}
+        {editing && <p>To change the positions, remove this exit and set a new one.</p>}
+      </Details>
+    </div>
+  );
+}
+
+/** One list of trailing choices for the exit sheet and the basket's "Exits for this strategy" (F4). */
+const TRAIL_CHOICES: readonly { key: TrailKind; label: string; hint: string }[] = STRATEGY_TRAILS;
+
+/** CX2: the optional "Trailing" part of the sheet. Empty boxes until the user types; nothing is suggested. */
+function TrailingPartV2({ form, set }: { form: CombinedForm; set: (patch: Partial<CombinedForm>) => void }) {
+  const kind = form.trailKind ?? "NONE";
+  const labels = kind === "NONE" ? null : trailLabels(kind, form.measure);
+  return (
+    <div className="space-y-space-1" data-trailing>
+      <OptionCards name="combined-trailing" legend="Trailing (optional)" options={TRAIL_CHOICES} value={kind} dataAttr="data-trail-kind"
+        onChange={(trailKind) => set({ trailKind, trailA: "", trailB: "", trailC: "", trailD: "" })} />
+      {labels && (
+        <div className="grid grid-cols-1 gap-space-3 pt-space-2 sm:grid-cols-2">
+          <label className="block">
+            <span className={LABEL}>{labels.a}</span>
+            <input className={FIELD} inputMode="decimal" value={form.trailA ?? ""} onChange={(e) => set({ trailA: e.target.value })} data-testid="combined-trail-a" autoComplete="off" />
+          </label>
+          {labels.b && (
+            <label className="block">
+              <span className={LABEL}>{labels.b}</span>
+              <input className={FIELD} inputMode="decimal" value={form.trailB ?? ""} onChange={(e) => set({ trailB: e.target.value })} data-testid="combined-trail-b" autoComplete="off" />
+            </label>
+          )}
+          {labels.c && (
+            <label className="block">
+              <span className={LABEL}>{labels.c}</span>
+              <input className={FIELD} inputMode="decimal" value={form.trailC ?? ""} onChange={(e) => set({ trailC: e.target.value })} data-testid="combined-trail-c" autoComplete="off" />
+            </label>
+          )}
+          {labels.d && (
+            <label className="block">
+              <span className={LABEL}>{labels.d}</span>
+              <input className={FIELD} inputMode="decimal" value={form.trailD ?? ""} onChange={(e) => set({ trailD: e.target.value })} data-testid="combined-trail-d" autoComplete="off" />
+            </label>
+          )}
+        </div>
       )}
     </div>
   );
@@ -202,12 +247,25 @@ export function startForm(legs: readonly SheetLeg[], editing: CombinedExit | nul
     return {
       ...EMPTY_FORM, ticked: editing.legs.map((l) => l.trade_id), measure: editing.measure,
       sl: editing.sl_value !== null ? String(editing.sl_value) : "", target: editing.target_value !== null ? String(editing.target_value) : "",
-      check: editing.check_mode, timeframe: editing.timeframe_minutes ?? 15,
+      check: editing.check_mode, timeframe: editing.timeframe_minutes ?? 15, ...editTrail(editing),
     };
   }
   // Every open position of one kind ticked (PAPER and LIVE never share one exit): the kind of the first one.
   const same = legs.filter((l) => (l.mode ?? "") === (legs[0]?.mode ?? ""));
   return { ...EMPTY_FORM, ticked: same.map((l) => l.id), measure: defaultMeasure(same) };
+}
+
+/** CX2: the trailing of an exit being edited, as the form holds it. Pure. */
+function editTrail(x: CombinedExit): Pick<CombinedForm, "trailKind" | "trailA" | "trailB" | "trailC" | "trailD"> {
+  const t = x.trailing ?? null;
+  if (x.trail_kind === "LOCK" && t) return { trailKind: "LOCK", trailA: String(t.after ?? ""), trailB: String(t.lock ?? "") };
+  if (x.trail_kind === "TRAIL" && t) return { trailKind: "TRAIL", trailA: String(t.step ?? ""), trailB: String(t.by ?? "") };
+  if (x.trail_kind === "BREAK_EVEN" && t) return { trailKind: "BREAK_EVEN", trailA: String(t.after ?? ""), trailB: "" };
+  if (x.trail_kind === "LOCK_TRAIL" && t) {
+    return { trailKind: "LOCK_TRAIL", trailA: String(t.after ?? ""), trailB: String(t.lock ?? ""), trailC: String(t.step ?? ""),
+      trailD: String(t.by ?? "") };
+  }
+  return { trailKind: "NONE", trailA: "", trailB: "" };
 }
 
 /** An exit being edited lists its own legs (some may have closed since), fixed. */
@@ -259,7 +317,7 @@ export function CombinedExitSheetV2({ open, legs, editing, onClose, onDone, api 
     setBusy(true); setError(null);
     try {
       const saved = editing
-        ? await api.edit(editing.id, { version: editing.version, sl_value: amount(form.sl), target_value: amount(form.target),
+        ? await api.edit(editing.id, { version: editing.version, sl_value: amount(form.sl), target_value: amount(form.target), trailing: trailOf(form),
           ...(editing.measure === "SPOT" ? { check_mode: form.check, timeframe_minutes: form.check === "CLOSE" ? form.timeframe : null } : {}) })
         : await api.create(bodyOf(form, shown, ref.current));
       onDone(`${editing ? "Combined exit changed" : "Combined exit set"}: ${saved.words}`, true);
@@ -272,7 +330,7 @@ export function CombinedExitSheetV2({ open, legs, editing, onClose, onDone, api 
 
   return (
     <Shell open onOpenChange={(o) => { if (!o) onClose(); }} title={editing ? "Change combined exit" : "Set combined stop-loss"}
-      description={<span className="text-t14 text-fg-muted">One stop-loss or target for several positions together. They close as one group, sold legs first.</span>}
+      description={<span className="text-t14 text-fg-muted">One stop-loss or target for several positions together.</span>}
       footer={(
         <>
           <button type="button" onClick={onClose} className={BUTTON_SECONDARY}>Cancel</button>

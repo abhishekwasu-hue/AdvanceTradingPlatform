@@ -54,21 +54,26 @@ def test_repeated_failures_slow_the_account_down_but_never_lock_the_owner_out():
     IP, and the wait grows; the owner with the right password gets in as soon as the wait has passed."""
     _register("lp-lock@example.com")
     c = _isolated("203.0.113.50")
-    for _ in range(lockout.LOGIN_DELAY_AFTER_FAILURES):
-        assert _login("lp-lock@example.com", "wrong-password-1", c=c).status_code == 401
-    delayed = _login("lp-lock@example.com", c=c)                                   # right password, too soon
-    assert delayed.status_code == 429 and "wait" in delayed.json()["detail"] and int(delayed.headers["retry-after"]) >= 1
-    assert _login("lp-lock@example.com", c=_isolated("203.0.113.51")).status_code == 429   # per email, not per IP
-    assert lockout.required_delay_seconds(2) == 0 and lockout.required_delay_seconds(3) == 1
-    assert lockout.required_delay_seconds(5) == 4 and lockout.required_delay_seconds(50) == lockout.LOGIN_DELAY_MAX_SECONDS
 
     async def age(seconds):
         async with _session_factory() as s:
             await s.execute(update(LoginEventRecord).where(LoginEventRecord.email == "lp-lock@example.com")
                             .values(created_at=datetime.now(timezone.utc) - timedelta(seconds=seconds)))
             await s.commit()
+    # The first wait is one second: a slow runner (bcrypt) can spend that between two requests, so each "too soon"
+    # attempt below re-stamps the failures as just now (refused attempts are checked before the password).
+    for _ in range(lockout.LOGIN_DELAY_AFTER_FAILURES):
+        assert _login("lp-lock@example.com", "wrong-password-1", c=c).status_code == 401
+    _run(age(0))
+    delayed = _login("lp-lock@example.com", c=c)                                   # right password, too soon
+    assert delayed.status_code == 429 and "wait" in delayed.json()["detail"] and int(delayed.headers["retry-after"]) >= 1
+    _run(age(0))
+    assert _login("lp-lock@example.com", c=_isolated("203.0.113.51")).status_code == 429   # per email, not per IP
+    assert lockout.required_delay_seconds(2) == 0 and lockout.required_delay_seconds(3) == 1
+    assert lockout.required_delay_seconds(5) == 4 and lockout.required_delay_seconds(50) == lockout.LOGIN_DELAY_MAX_SECONDS
     # Refused attempts are recorded but never counted: hammering the address does not extend the owner's wait.
     for _ in range(5):
+        _run(age(0))
         assert _login("lp-lock@example.com", "wrong-password-1", c=_isolated("203.0.113.52")).status_code == 429
     failures, _ = _run(_failures("lp-lock@example.com"))
     assert failures == lockout.LOGIN_DELAY_AFTER_FAILURES

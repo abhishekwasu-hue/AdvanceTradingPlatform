@@ -232,7 +232,11 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
         await block.scrollIntoViewIfNeeded();
         await expect(block.locator("[data-oc-analyses='ok']")).toBeVisible();
         await expect(block.getByRole("tab", { name: /Support/ })).toBeVisible();
-        await expect(block.getByRole("region", { name: "Ask AI about this option chain" })).toBeVisible();
+        await expect(block.getByRole("region", { name: "Ask AI about this option chain" })).toHaveCount(0);   // OC-2: in the header's panel
+        await page.locator("[data-oc-ask-open]").click();
+        await expect(page.getByRole("dialog").getByRole("region", { name: "Ask AI about this option chain" })).toBeVisible();
+        await expect(page.getByRole("dialog").getByRole("button", { name: /highest call OI/ })).toBeVisible();   // 3 suggested questions
+        await page.keyboard.press("Escape");
         await expect(block.getByText("No saved analyses yet.")).toBeVisible();
         await expect(block).not.toContainText(/sample|lookback|manual ltp/i);
         if (width === 390) await expectPhoneLayout(page);

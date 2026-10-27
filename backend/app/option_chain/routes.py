@@ -278,7 +278,8 @@ async def expiries(underlying: str, user: User = Depends(get_current_user), sess
     today = chain_view.today_ist()
     holidays = await family_holidays(session, _holiday_family(name))
     items, source = await chain_view.expiry_list(session, name, today, holidays)
-    default = chain_view.default_expiry([i.day for i in items], today)
+    default = chain_view.default_expiry([i.day for i in items], today,
+                                        next_on_expiry_day=await chain_view.next_on_expiry_day(session, user))
     return {"underlying": name, "today": today.isoformat(), "expiries": [i.as_json() for i in items],
             "default": default.isoformat() if default else None, "source": source}
 
@@ -314,7 +315,8 @@ async def live(underlying: str, expiry: Optional[date] = Query(default=None), us
     if expiry is None:
         holidays = await family_holidays(session, _holiday_family(name))
         items, _ = await chain_view.expiry_list(session, name, today, holidays)
-        expiry = chain_view.default_expiry([i.day for i in items], today)
+        expiry = chain_view.default_expiry([i.day for i in items], today,
+                                           next_on_expiry_day=await chain_view.next_on_expiry_day(session, user))
     fetched = await option_chains(ChainsBody(underlyings=[name], expiry=expiry), user=user, session=session)
     entry = fetched["symbols"].get(name) or {}
     if not entry.get("chain"):

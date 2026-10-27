@@ -222,11 +222,11 @@ for (const size of [{ width: 390, height: 844, mobile: true }, { width: 1440, he
 test.describe("v2 option chain summary: the flag and the shared read", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("on top of the page, above the summary cards; one analyses read serves it and the tabs", async ({ page }) => {
+  test("OC-1: below the summary cards and the chain; one analyses read serves it and the tabs", async ({ page }) => {
     const reads = await openChain(page, "light", ON);
     const dish = await page.locator("[data-block='chain-dish']").boundingBox();
     const strip = await page.locator("[data-block='chain-summary']").boundingBox();
-    expect(dish!.y).toBeLessThan(strip!.y);
+    expect(dish!.y).toBeGreaterThan(strip!.y);
     await expect(page.locator("[data-point='expected_move']")).toHaveAttribute("data-state", "unknown");
     // The summary and the tabs ask for the same symbol and expiry: never two reads of the same chain.
     expect(reads.length).toBeGreaterThan(0);

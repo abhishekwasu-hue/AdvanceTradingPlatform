@@ -103,3 +103,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-26 | Default yes <br> (owner's follow-up after the M45 ✅: the defaults M45-1..3 stand; already in DECISIONS) |
 | 2026-10-26 | (Marathi, translated) "Start the MA-1 build." |
 | 2026-10-27 | (Marathi, translated) "Default yes, start DH2 / DH6." (after the deploy of b15de0d, health OK) | DATA-H DH2 / DH6: last-session 1-minute fill from the own lake; VAPID default (owner keeps the key in atp-private) |
+| 2026-10-27 | All aprove, go ahead <br> (reply to: MA-1b #569 screenshots ✅ and start MA-2 sizing) |

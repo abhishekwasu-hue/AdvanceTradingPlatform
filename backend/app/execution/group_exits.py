@@ -7,7 +7,8 @@ What a combined exit is (`GroupExitRecord`):
   (ABOVE / BELOW) is read from the value when the exit is set, so the user only types the number;
 * the check (CX3): TOUCH (every reading) or CLOSE (a closed candle of a chosen timeframe; the spot level today);
 * optional trailing (CX2 / SX2, owner): LOCK - once the gain reaches A, the stop moves to keep B; TRAIL - every X of
-  favourable move, the stop moves by Y. Every number is the user's own (no default). The stop only ever moves in the
+  favourable move, the stop moves by Y; LOCK_TRAIL (SX2) - lock B at A, then every further X moves it by Y; BREAK_EVEN
+  (SX2) - once the gain reaches A, the stop moves to where the exit was set (₹ MTM: zero). Every number is the user's own (no default). The stop only ever moves in the
   trade's favour; `best_value`, `current_sl` and `locked_at` are stored on the row, so a restart continues from them.
 
 Firing (app/execution/trigger_engine.py): ARMED -> FIRING exactly once, then every leg still open is closed through
@@ -41,7 +42,9 @@ ABOVE, BELOW = "ABOVE", "BELOW"
 SL, TARGET = "SL", "TARGET"
 SCOPES = ("SELECTED", "ALL_OPEN", "GROUP")
 TRAIL_NONE, TRAIL, LOCK = "NONE", "TRAIL", "LOCK"
-TRAIL_KINDS = (TRAIL_NONE, TRAIL, LOCK)
+LOCK_TRAIL, BREAK_EVEN = "LOCK_TRAIL", "BREAK_EVEN"          # SX2 (owner): lock and trail; trail to break-even
+TRAIL_KINDS = (TRAIL_NONE, TRAIL, LOCK, LOCK_TRAIL, BREAK_EVEN)
+LOCKING = (LOCK, LOCK_TRAIL, BREAK_EVEN)                     # a stop that appears once a gain is reached: no stop-loss needed
 STUCK_ALERT_PASSES = 5          # a short still open after this many passes while FIRING: one CRITICAL notice (it keeps trying)
 
 
@@ -65,7 +68,8 @@ class GroupExitAsk:
     origin: str = "CX"
     basket_ref: Optional[str] = None
     trail_kind: str = TRAIL_NONE
-    trail: Optional[Dict[str, float]] = None     # LOCK {after: A, lock: B}; TRAIL {step: X, by: Y} - the user's numbers
+    trail: Optional[Dict[str, float]] = None     # LOCK {after, lock}; TRAIL {step, by}; LOCK_TRAIL {after, lock, step, by};
+    #                                               BREAK_EVEN {after} - the user's numbers
     errors: List[str] = field(default_factory=list)
 
 
@@ -176,7 +180,7 @@ def trail_spec(row: GroupExitRecord) -> Dict[str, Any]:
 
 
 def trailing_on(row: GroupExitRecord) -> bool:
-    return (row.trail_kind or TRAIL_NONE) in (TRAIL, LOCK)
+    return (row.trail_kind or TRAIL_NONE) in TRAIL_KINDS[1:]
 
 
 def favour(row: GroupExitRecord) -> float:
@@ -230,10 +234,17 @@ def trailed_stop(row: GroupExitRecord, best: float) -> Optional[float]:
         return None
     fav = favour(row)
     gain = (best - ref) * fav
-    if row.trail_kind == LOCK:
+    if row.trail_kind == BREAK_EVEN:
+        after = _float(spec.get("after"))
+        return None if after is None or gain < after else round(ref, 4)
+    if row.trail_kind in (LOCK, LOCK_TRAIL):
         after, keep = _float(spec.get("after")), _float(spec.get("lock"))
         if after is None or keep is None or gain < after:
             return None
+        if row.trail_kind == LOCK_TRAIL:            # SX2: lock B at A, then every full X beyond A moves it by Y
+            step, by = _float(spec.get("step")), _float(spec.get("by"))
+            if step is not None and by is not None and step > 0:
+                keep += int((gain - after) // step) * by
         return round(ref + fav * keep, 4)
     step, by, start = _float(spec.get("step")), _float(spec.get("by")), first_stop(row)
     if step is None or by is None or step <= 0 or start is None or gain < step:
@@ -254,11 +265,11 @@ def apply_trail(row: GroupExitRecord, value: float, now: Optional[datetime] = No
     if wanted is None or (held is not None and better(held, wanted, fav) == held):
         return False
     row.current_sl = wanted
-    if row.trail_kind == LOCK:
-        if row.locked_at is None:
-            row.locked_at = _now(now)
-            add_log(row, ARMED, f"Gain reached - the stop moved to {_level_words(row, wanted)}", now)
-    else:
+    if row.trail_kind in LOCKING and row.locked_at is None:      # the lock fires once (logged once)
+        row.locked_at = _now(now)
+        where = "break-even" if row.trail_kind == BREAK_EVEN else _level_words(row, wanted)
+        add_log(row, ARMED, f"Gain reached - the stop moved to {where}", now)
+    elif row.trail_kind != LOCK:
         add_log(row, ARMED, f"The stop moved to {_level_words(row, wanted)}", now)
     return True
 
@@ -274,6 +285,8 @@ def trail_words(row: GroupExitRecord) -> str:
     if not trailing_on(row):
         return ""
     spec = trail_spec(row)
+    if row.trail_kind in (LOCK_TRAIL, BREAK_EVEN):
+        return _sx_trail_words(row, spec)
     if row.measure == MTM_INR:
         if row.trail_kind == LOCK:
             return (f"Once the combined profit reaches ₹{float(spec.get('after', 0)):,.0f}, the stop moves to keep "
@@ -289,14 +302,46 @@ def trail_words(row: GroupExitRecord) -> str:
             f"{float(spec.get('by', 0)):,.2f} points with it.")
 
 
+def _sx_trail_words(row: GroupExitRecord, spec: Dict[str, Any]) -> str:
+    """SX2 lock-and-trail / break-even in plain words (the user's own numbers)."""
+    def g(key: str) -> float:
+        return float(spec.get(key, 0))
+    if row.measure == MTM_INR:
+        if row.trail_kind == BREAK_EVEN:
+            return f"Once the combined profit reaches ₹{g('after'):,.0f}, the stop moves to break-even (no loss)."
+        return (f"Once the combined profit reaches ₹{g('after'):,.0f}, the stop moves to keep ₹{g('lock'):,.0f}; then for "
+                f"every further ₹{g('step'):,.0f}, it moves up ₹{g('by'):,.0f}.")
+    what = f"{row.spot_symbol} spot" if row.measure == SPOT else "net premium"
+    base = f" from {float(row.basis_value):,.2f}" if row.basis_value is not None else ""
+    if row.trail_kind == BREAK_EVEN:
+        return f"Once the {what} moves {g('after'):,.2f} points your way{base}, the stop moves to break-even."
+    return (f"Once the {what} moves {g('after'):,.2f} points your way{base}, the stop moves to keep {g('lock'):,.2f} "
+            f"points; then for every further {g('step'):,.2f} points, it moves {g('by'):,.2f} points with it.")
+
+
 def trail_errors(kind: str, spec: Optional[Dict[str, Any]], sl_value: Optional[float]) -> List[str]:
     """Plain-word reasons the trailing cannot be set. Only the user's numbers; nothing is filled in for him."""
     if kind == TRAIL_NONE:
         return []
     if kind not in TRAIL_KINDS:
-        return ["Choose how the stop trails: lock a gain, or trail step by step"]
+        return ["Choose how the stop trails: lock a gain, trail step by step, lock and trail, or move to break-even"]
     spec = spec or {}
     errors: List[str] = []
+    if kind == BREAK_EVEN:
+        after = _float(spec.get("after"))
+        if after is None or after <= 0:
+            errors.append("Enter the gain after which the stop moves to break-even (more than zero)")
+        return errors
+    if kind == LOCK_TRAIL:
+        errors.extend(trail_errors(LOCK, spec, sl_value))
+        step, by = _float(spec.get("step")), _float(spec.get("by"))
+        if step is None or step <= 0:
+            errors.append("Enter the further move that shifts the stop (more than zero)")
+        if by is None or by <= 0:
+            errors.append("Enter how far the stop shifts each time (more than zero)")
+        if step is not None and by is not None and step > 0 and by > step:
+            errors.append("The stop cannot shift further than the move itself")
+        return errors
     if kind == LOCK:
         after, keep = _float(spec.get("after")), _float(spec.get("lock"))
         if after is None or after <= 0:
@@ -325,6 +370,10 @@ def trail_json_of(kind: str, spec: Optional[Dict[str, Any]]) -> Optional[str]:
         return json.dumps({"after": float(spec["after"]), "lock": float(spec["lock"])})
     if kind == TRAIL:
         return json.dumps({"step": float(spec["step"]), "by": float(spec["by"])})
+    if kind == LOCK_TRAIL:
+        return json.dumps({k: float(spec[k]) for k in ("after", "lock", "step", "by")})
+    if kind == BREAK_EVEN:
+        return json.dumps({"after": float(spec["after"])})
     return None
 
 
@@ -482,8 +531,11 @@ def ask_errors(ask: GroupExitAsk, trades: Sequence[TradeRecord]) -> List[str]:
     errors: List[str] = []
     if ask.measure not in MEASURES:
         errors.append("Choose what the exit watches: combined ₹ profit / loss, net premium, or the spot level")
-    if ask.sl_value is None and ask.target_value is None and ask.trail_kind != LOCK:
+    if ask.sl_value is None and ask.target_value is None and ask.trail_kind not in LOCKING:
         errors.append("Enter a stop-loss, a target, or both")
+    if (ask.measure in (SPOT, NET_PREMIUM) and ask.sl_value is None and ask.target_value is None
+            and ask.trail_kind in LOCKING):
+        errors.append("A spot or premium lock needs a stop-loss or a target too, so the exit knows which way is yours")
     errors.extend(trail_errors(ask.trail_kind, ask.trail, ask.sl_value))
     for name, value in (("stop-loss", ask.sl_value), ("target", ask.target_value)):
         if value is not None and float(value) <= 0:
@@ -687,6 +739,6 @@ __all__ = ["ARMED", "FIRING", "DONE", "CANCELLED", "MTM_INR", "NET_PREMIUM", "SP
            "net_premium", "side_for", "reached", "decide", "describe", "view", "ask_errors", "create", "cancel",
            "list_for_user", "by_ref", "add_log", "trail", "STUCK_ALERT_PASSES", "distance", "all_open_ids",
            "current_value", "edit", "last_traded", "mark_stale", "stale_notice_due", "stale_words",
-           "exit_short_action", "stale_state", "TRAIL_NONE", "TRAIL", "LOCK", "TRAIL_KINDS", "trail_spec", "trailing_on",
+           "exit_short_action", "stale_state", "TRAIL_NONE", "TRAIL", "LOCK", "LOCK_TRAIL", "BREAK_EVEN", "LOCKING", "TRAIL_KINDS", "trail_spec", "trailing_on",
            "favour", "stop_side", "first_stop", "stop_now", "trailed_stop", "apply_trail", "trail_words", "trail_errors",
            "trail_json_of", "trail_seen", "mark_seen", "better"]

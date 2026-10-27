@@ -21,6 +21,8 @@ fires them and closes the legs as one group, sold legs first - never blocked):
 - `POST /api/paper/fno/group-exits`               set one (idempotent on its reference).
 - `POST /api/paper/fno/group-exits/{id}/edit`     change its levels (armed only, on the version shown).
 - `POST /api/paper/fno/group-exits/{id}/cancel`   remove it (armed only; one already exiting finishes).
+SX (owner, 24 Oct): `POST /api/paper/fno/basket/execute` may carry `exits` ("Exits for this strategy"); once legs fill,
+they become one combined exit (origin SX) on the filled legs (app/execution/strategy_exits.py). No exits: none is set.
 
 FNO-2, the basket (app/paper/fno_basket.py), same flags, same PAPER-only path - each leg is one ticket order:
 - `POST /api/paper/fno/basket/evaluate`     the basket's payoff, max profit / loss, breakevens, PoP, Greeks, margin with
@@ -231,17 +233,20 @@ async def cancel_resting(order_id: int, user: User = Depends(require_trader), se
 
 class GroupTrailBody(BaseModel):
     """CX2 optional trailing, the user's own numbers (no default): LOCK - once the gain reaches `after`, the stop moves to
-    keep `lock`; TRAIL - every `step` of favourable move shifts the stop by `by`. ₹ for the combined MTM, points for a
-    spot / premium level. The stop only ever moves in the trade's favour (app/execution/group_exits.py)."""
+    keep `lock`; TRAIL - every `step` of favourable move shifts the stop by `by`; SX2 LOCK_TRAIL - lock at `after`, then
+    every further `step` shifts it by `by`; BREAK_EVEN - once the gain reaches `after`, the stop moves to break-even.
+    ₹ for the combined MTM, points for a spot / premium level (SX: % of the net premium on the ticket). The stop only
+    ever moves in the trade's favour (app/execution/group_exits.py)."""
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["LOCK", "TRAIL"]
+    kind: Literal["LOCK", "TRAIL", "LOCK_TRAIL", "BREAK_EVEN"]
     after: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     lock: Optional[float] = Field(default=None, ge=0, lt=MAX_PRICE, allow_inf_nan=False)
     step: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     by: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
 
     def as_tuple(self) -> Any:
-        keys = ("after", "lock") if self.kind == "LOCK" else ("step", "by")
+        keys = {"LOCK": ("after", "lock"), "TRAIL": ("step", "by"), "LOCK_TRAIL": ("after", "lock", "step", "by"),
+                "BREAK_EVEN": ("after",)}[self.kind]
         return self.kind, {k: getattr(self, k) for k in keys if getattr(self, k) is not None}
 
 
@@ -439,8 +444,19 @@ class BasketBody(BaseModel):
         return legs
 
 
+class StrategyExitsBody(BaseModel):
+    """SX1 "Exits for this strategy": the user's own overall stop-loss / target over the basket's filled legs - combined
+    ₹ MTM, % of the net premium, or the underlying's spot level - and an optional trailing. Nothing is filled in."""
+    model_config = ConfigDict(extra="forbid")
+    measure: Literal["MTM_INR", "PREMIUM_PCT", "SPOT"]
+    sl_value: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    target_value: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    trailing: Optional[GroupTrailBody] = None
+
+
 class ExecuteBody(BasketBody):
     basket_ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,48}$", description="the panel's own id: a second tap never places twice")
+    exits: Optional[StrategyExitsBody] = None
 
 
 @router.post("/basket/evaluate", dependencies=[Depends(evaluate_rate_limit)])
@@ -474,8 +490,14 @@ async def basket_execute(body: ExecuteBody, user: User = Depends(require_trader)
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
+    exits = None
+    if body.exits is not None:
+        from app.execution.strategy_exits import StrategyExitAsk
+        kind, spec = body.exits.trailing.as_tuple() if body.exits.trailing is not None else ("NONE", None)
+        exits = StrategyExitAsk(measure=body.exits.measure, sl_value=body.exits.sl_value,
+                                target_value=body.exits.target_value, trail_kind=kind, trail=spec)
     return await fno_basket.execute(session, user, body.asks(), product=body.product, basket_ref=body.basket_ref, price_lookup=lookup,
-                                    origin=MANUAL)
+                                    origin=MANUAL, exits=exits)
 
 
 class CloseFilledBody(BaseModel):

@@ -4,7 +4,7 @@ import appShellSource from "../shell/AppShellV2.tsx?raw";
 import type { CandlesResponse, SystemStatus } from "../types";
 import { enterChoice, listKeyFor, readRecent, recentKeyFor, rememberSymbol, withRecent } from "../ui/SymbolPicker";
 import pageSource from "./ChartsPageV2.tsx?raw";
-import { DEFAULT_VIEW, cleanView, drawingNote, marketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, sessionFamily, volumeLabelFor } from "./chartsPage";
+import { DEFAULT_VIEW, cleanView, drawingNote, marketChip, toolbarMarketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, sessionFamily, volumeLabelFor } from "./chartsPage";
 import { isOn, menuGroups, onCount, toggle, type IndicatorState } from "./indicatorsModel";
 import { CandleFeed, OLDER_RETRY_MS, OlderGuard, candleErrorText, refreshBars, refreshDaysFor, type FeedEvents } from "./useChartCandles";
 import { fullscreenKey, isTyping } from "./useFullscreen";
@@ -373,5 +373,18 @@ describe("UI2-4b2 review: per-user storage on this browser", () => {
 
   it("a held F key does not toggle again", () => {
     expect(fullscreenKey({ key: "f", repeat: true, target: el("DIV") }, { on: false, busy: false })).toBeNull();
+  });
+});
+
+describe("UX-10 Charts: one status mark (UI audit H7)", () => {
+  const open = { text: "Market open", open: true };
+  const closed = { text: "Closed · opens 09:15", open: false };
+  it("open with a live price: the chart's own Live chip is the one mark", () => {
+    expect(toolbarMarketChip(open, true)).toBeNull();
+  });
+  it("open without a live price, or closed: the toolbar chip stays", () => {
+    expect(toolbarMarketChip(open, false)).toBe(open);
+    expect(toolbarMarketChip(closed, true)).toBe(closed);
+    expect(toolbarMarketChip(null, true)).toBeNull();
   });
 });

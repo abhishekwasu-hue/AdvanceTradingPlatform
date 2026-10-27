@@ -29,7 +29,7 @@ import { CHART_TYPES_V2, CHART_TYPE_LABELS_V2, type ChartTypeV2 } from "./chartC
 import { DrawingMenu, DrawingRail } from "./DrawingRail";
 import { placeHint } from "./drawingRail";
 import {
-  addressTimeframe, chartsSymbol, drawingNote, marketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, volumeLabelFor,
+  addressTimeframe, chartsSymbol, drawingNote, marketChip, toolbarMarketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, volumeLabelFor,
   type ChartsView,
 } from "./chartsPage";
 import { IndicatorsMenu } from "./IndicatorsMenu";
@@ -138,6 +138,7 @@ export default function ChartsPageV2(_props: PageProps) {
   // month only while the server marks that bar as forming.
   const liveOn = DAILY_OR_LONGER.has(timeframe) ? !!last?.forming : chip?.open !== false;
   const live = useLiveLtp(liveOn && data.candles.length > 0 && tab === "chart" && !hubView, symbol, exchange);
+  const shownChip = toolbarMarketChip(chip, live.ltp !== null);
 
   const [engine, setEngine] = useState<LightweightEngine | null>(null);
   const [tools, setTools] = useState<Tools | null>(null);
@@ -245,10 +246,10 @@ export default function ChartsPageV2(_props: PageProps) {
               className="relative flex flex-wrap items-center gap-x-space-2 gap-y-space-1 border-b border-subtle p-space-2">
               {/* Phone: symbol and the icon buttons, then market state, type and Indicators, then the timeframes. */}
               <SymbolPicker value={symbol} exchange={exchange} onPick={pick} storageKey={recentKeyFor(userId)} className="order-1 min-w-[8.5rem] flex-1 md:order-none md:w-44 md:flex-none" />
-              {chip && (
-                <span data-market={chip.open ? "open" : "closed"} className="order-3 inline-flex items-center gap-space-1 whitespace-nowrap rounded-pill border border-subtle px-space-2 py-space-1 text-t12 text-fg-muted md:order-none">
-                  <span aria-hidden className={cx("h-2 w-2 rounded-pill", chip.open ? "bg-up" : "bg-fg-muted")} />
-                  {chip.text}
+              {shownChip && (
+                <span data-market={shownChip.open ? "open" : "closed"} className="order-3 inline-flex items-center gap-space-1 whitespace-nowrap rounded-pill border border-subtle px-space-2 py-space-1 text-t12 text-fg-muted md:order-none">
+                  <span aria-hidden className={cx("h-2 w-2 rounded-pill", shownChip.open ? "bg-up" : "bg-fg-muted")} />
+                  {shownChip.text}
                 </span>
               )}
               <div className="order-6 w-full md:order-none md:w-auto" data-tour="charts-timeframes">

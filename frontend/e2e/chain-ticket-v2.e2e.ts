@@ -282,3 +282,59 @@ test.describe("Chain ticket v2 keys", () => {
     await expect(side.getByRole("radio", { name: "Buy" })).toHaveAttribute("aria-checked", "true");
   });
 });
+
+/** M45 MA-6: "Run on" for the user's practice accounts (`ui_v2` + `multi_account`): one PAPER order per account, a row
+ * per account (placed / skipped with the reason), and one exit for every account. */
+test.describe("Chain ticket v2 multi-account (M45 MA-6)", () => {
+  test.use({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+
+  test("Run on Primary + Family places one order per account and one exit closes them all", async ({ page }) => {
+    const posts: { url: string; body: unknown }[] = [];
+    const practice = [
+      { id: 1, label: "Main", capital: 500000, role: "PRIMARY", group_name: null, enabled: true, sizing_mode: "MULTIPLIER", sizing_value: 1 },
+      { id: 2, label: "Family", capital: 200000, role: "SECONDARY", group_name: "Family", enabled: true, sizing_mode: "MULTIPLIER", sizing_value: 2 },
+      { id: 3, label: "Small", capital: 1000, role: "SECONDARY", group_name: "Family", enabled: true, sizing_mode: "MULTIPLIER", sizing_value: 1 },
+    ];
+    await open(page, "light", { options: { ...ON, features: { ...ON.features, multi_account: true } } });
+    // Registered after the page's own mocks so they answer first (the ticket reads them when it opens).
+    await page.route(/\/api(?:\/v1)?\/accounts\/mine\/paper$/, (r) => r.fulfill({ json: practice }));
+    await page.route(/\/api(?:\/v1)?\/accounts\/mine\/paper\/order$/, (r) => {
+      posts.push({ url: "order", body: r.request().postDataJSON() });
+      return r.fulfill({ json: { why: "override PRIMARY+Family", override: "PRIMARY+Family", results: [
+        { account_id: 3, label: "Small", status: "SKIPPED", lots: 0, trade_id: null, reasons: ["capital 1,000 is below the estimated margin 11,288 for 1 lot(s)"] },
+        { account_id: 1, label: "Main", status: "PLACED", lots: 1, trade_id: 41, reasons: [] },
+        { account_id: 2, label: "Family", status: "PLACED", lots: 2, trade_id: 42, reasons: [] },
+      ] } });
+    });
+    await page.route(/\/api(?:\/v1)?\/accounts\/mine\/paper\/exit$/, (r) => {
+      posts.push({ url: "exit", body: r.request().postDataJSON() });
+      return r.fulfill({ json: { ref: "x", results: [
+        { trade_id: 41, account_id: 1, label: "Main", status: "CLOSED", reasons: [] },
+        { trade_id: 42, account_id: 2, label: "Family", status: "CLOSED", reasons: [] },
+      ] } });
+    });
+    await callCell(page).click();
+    await page.locator("[data-chain-actions] [data-action='buy']").click();
+    const ticket = page.locator("[data-order-ticket]");
+    const runOn = ticket.locator("[data-ticket='run-on']");
+    await expect(runOn.locator("option")).toHaveText(["This order only", "Primary account", "Primary + Family", "All accounts"]);
+    await runOn.selectOption("PRIMARY+Family");
+    await ticket.locator("[data-ticket='review']").click();
+    await ticket.locator("[data-ticket='place']").click();
+    const result = ticket.locator("[data-ticket='multi-result']");
+    await expect(result).toContainText("Placed on 2 of 3 accounts");
+    await expect(result.locator("[data-multi-row='SKIPPED']")).toContainText("below the estimated margin");
+    expect(posts[0]).toMatchObject({ url: "order", body: { run_on: "PRIMARY+Family", order: { underlying: "NIFTY", strike: 24500, lots: 1 } } });
+    await ticket.locator("[data-ticket='exit-all']").click();
+    await expect(ticket.locator("[data-ticket='multi-exit']")).toHaveText("Exit sent: 2 closed.");
+    expect((posts[1].body as { ref: string }).ref).toBe((posts[0].body as { order: { client_ref: string } }).order.client_ref);
+  });
+
+  test("without multi_account the ticket has no Run on", async ({ page }) => {
+    await open(page, "light");
+    await callCell(page).click();
+    await page.locator("[data-chain-actions] [data-action='buy']").click();
+    await expect(page.locator("[data-order-ticket] [data-ticket='review']")).toBeVisible();
+    await expect(page.locator("[data-ticket='run-on']")).toHaveCount(0);
+  });
+});

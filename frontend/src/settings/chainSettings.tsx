@@ -24,6 +24,11 @@ const MAX_EDGE = 10;
 
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
+/** P1 (27 Oct): on an expiry day the chain and the spread builder open the next expiry (default ON). */
+export function readExpiryDayNext(raw: unknown): boolean {
+  return !(raw && typeof raw === "object" && (raw as { expiry_day_next?: unknown }).expiry_day_next === false);
+}
+
 export function readPcrZones(raw: unknown): PcrZones {
   const zones = raw && typeof raw === "object" ? (raw as { pcr_zones?: unknown }).pcr_zones : undefined;
   const r = (zones && typeof zones === "object" ? zones : {}) as Record<string, unknown>;
@@ -60,11 +65,13 @@ export default function ChainSettingsV2({ fetcher = request }: { fetcher?: typeo
   const [version, setVersion] = useState<number | null>(null);
   const [note, setNote] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [nextOnExpiry, setNextOnExpiry] = useState(true);
   useEffect(() => {
     let live = true;
     fetcher<PrefsRead>("/me/prefs").then((r) => {
       if (!live) return;
       setForm(pcrFormOf(readPcrZones(r.prefs?.[CHAIN_NAMESPACE])));
+      setNextOnExpiry(readExpiryDayNext(r.prefs?.[CHAIN_NAMESPACE]));
       setVersion(r.versions?.[CHAIN_NAMESPACE] ?? 0);
     }).catch(() => { if (live) setForm(pcrFormOf(PCR_DEFAULTS)); });
     return () => { live = false; };
@@ -77,8 +84,9 @@ export default function ChainSettingsV2({ fetcher = request }: { fetcher?: typeo
     setBusy(true);
     try {
       const q = version === null ? "" : `?version=${version}`;
-      const r = await fetcher<{ value: unknown; version: number }>(`/me/prefs/${CHAIN_NAMESPACE}${q}`, { method: "PUT", body: JSON.stringify({ pcr_zones: value }) });
+      const r = await fetcher<{ value: unknown; version: number }>(`/me/prefs/${CHAIN_NAMESPACE}${q}`, { method: "PUT", body: JSON.stringify({ pcr_zones: value, expiry_day_next: nextOnExpiry }) });
       setForm(pcrFormOf(readPcrZones(r.value)));
+      setNextOnExpiry(readExpiryDayNext(r.value));
       setVersion(r.version);
       setNote({ kind: "done", text: "Saved." });
     } catch (e) {
@@ -103,6 +111,11 @@ export default function ChainSettingsV2({ fetcher = request }: { fetcher?: typeo
             </label>
           ))}
         </div>
+        <label className="flex min-h-11 cursor-pointer items-start gap-space-2 text-t14 text-fg">
+          <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-brand" data-chain-field="expiry_day_next" checked={nextOnExpiry}
+            onChange={(e) => { setNextOnExpiry(e.target.checked); setNote(null); }} />
+          <span>On an expiry day, open the chain and the spread builder on the next expiry. Today&apos;s expiry stays one tap away.</span>
+        </label>
         {note && <NoteV2 kind={note.kind} testId="chain-settings">{note.text}</NoteV2>}
         <div className="flex flex-wrap gap-space-2">
           <button type="button" className={BUTTON_PRIMARY} disabled={busy} onClick={() => void save(form)} data-chain-field="save">

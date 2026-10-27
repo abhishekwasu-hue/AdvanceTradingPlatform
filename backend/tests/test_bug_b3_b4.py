@@ -57,7 +57,8 @@ def test_pcr_zone_defaults_equal_the_values_used_before():
     b = PcrBands()
     assert dish.DEFAULT_PCR_EDGES == (b.oversold_below, b.mild_bearish_below, b.sideways_max, b.mild_bullish_max) == (0.70, 0.90, 1.0, 1.3)
     assert "option_chain" in NAMESPACES
-    assert defaults("option_chain") == {"pcr_zones": {"very_low_below": 0.70, "low_below": 0.90, "balanced_max": 1.0, "high_max": 1.3}}
+    assert defaults("option_chain") == {"pcr_zones": {"very_low_below": 0.70, "low_below": 0.90, "balanced_max": 1.0, "high_max": 1.3},
+                                        "expiry_day_next": True}       # P1 27 Oct: the next expiry on an expiry day
     assert OptionChainPrefs().pcr_zones.edges() == dish.DEFAULT_PCR_EDGES
     assert [z[0] for z in dish.PCR_ZONES] == [0.70, 0.90, 1.0, 1.3, None]
 
@@ -94,6 +95,6 @@ def test_the_prefs_route_saves_and_reads_his_own_edges():
     body = {"pcr_zones": {"very_low_below": 0.5, "low_below": 0.8, "balanced_max": 1.2, "high_max": 1.5}}
     put = client.put("/api/me/prefs/option_chain", headers=headers, json=body)
     assert put.status_code == 200, put.text
-    assert client.get("/api/me/prefs", headers=headers).json()["prefs"]["option_chain"] == body
+    assert client.get("/api/me/prefs", headers=headers).json()["prefs"]["option_chain"] == {**body, "expiry_day_next": True}
     bad = {"pcr_zones": {"very_low_below": 1.5, "low_below": 0.8, "balanced_max": 1.2, "high_max": 1.5}}
     assert client.put("/api/me/prefs/option_chain", headers=headers, json=bad).status_code == 422

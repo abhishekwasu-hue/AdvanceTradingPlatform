@@ -9,6 +9,7 @@ import { loginErrorText } from "../ui/brokerSession";
 import { useFeatures, useUiV2 } from "../ui/useFeatures";
 import { ASK_OWNER } from "./brokerState";
 import MultiAccountCard from "./MultiAccountCard";
+import PracticeAccountsCard from "./PracticeAccountsCard";
 import { BTN_PRIMARY, BTN_SECONDARY } from "./parts";
 
 /**
@@ -156,6 +157,7 @@ export default function BrokerAdvanced({ entries = [], canChange = true, onConne
           <StaticIpCard />
           <BrokerAccountsCard />
           {multi && <MultiAccountCard />}
+          {multi && <PracticeAccountsCard />}
         </div>
       )}
     </details>

@@ -75,6 +75,10 @@ ROUTES_REACHING_BROKER_ORDERS: Dict[Tuple[str, str], str] = {
     ("POST", "/api/positions/{trade_id}/exit-now"):
         "\"Exit now\" on the caller's own position; LIVE is refused before any close (approval.exit_now), so only a PAPER "
         "close runs - the graph keeps the edge because close_group can look a broker up",
+    ("POST", "/api/accounts/mine/paper/exit"):
+        "M45 MA-4 \"Exit on every account\": every open child of the caller's own multi-account PAPER order (the query keeps "
+        "mode PAPER only) through approval.exit_now, where LIVE is refused before any close - an exit only (ADR-0004); the "
+        "graph keeps the edge because close_group can look a broker up",
     ("POST", "/api/paper/fno/positions/{trade_id}/exit-leg"):
         "TT-8 \"Exit this leg\": closes one leg of the caller's own basket (holder or owner only); a LIVE leg is squared off "
         "through its own broker session exactly as every LIVE exit (broker_for_trade) - an exit only (ADR-0004)",

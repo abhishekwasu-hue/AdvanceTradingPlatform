@@ -135,8 +135,7 @@ async def find_contract(session: AsyncSession, underlying: str, expiry: date, st
         from app.option_chain.futures_chain import find_future
         fut = await find_future(session, name, expiry)
         if fut is None:
-            raise ContractNotFound(f"{contract_label(name, expiry, None, FUTURE)} is not in the instrument list yet. It updates every "
-                                   "morning; try again later.")
+            raise ContractNotFound(await _missing(contract_label(name, expiry, None, FUTURE)))
         return Contract(underlying=name, tradingsymbol=fut.tradingsymbol, exchange=fut.exchange, instrument_key=fut.instrument_key,
                         expiry=fut.expiry, strike=None, right=FUTURE, lot_size=fut.lot_size, tick_size=fut.tick_size)
     if strike is None:
@@ -148,11 +147,24 @@ async def find_contract(session: AsyncSession, underlying: str, expiry: date, st
             func.abs(InstrumentRecord.strike - strike) < 1e-6,
         ).order_by(InstrumentRecord.broker).limit(1))
     if row is None or row.expiry is None:
-        raise ContractNotFound(f"{contract_label(name, expiry, strike, right)} is not in the instrument list yet. It updates every "
-                               "morning; try again later.")
+        raise ContractNotFound(await _missing(contract_label(name, expiry, strike, right)))
     return Contract(underlying=name, tradingsymbol=row.tradingsymbol, exchange=row.exchange or master.derivatives_exchange(name),
                     instrument_key=row.instrument_key, expiry=row.expiry, strike=float(row.strike or strike), right=right.upper(),
                     lot_size=int(row.lot_size or 1), tick_size=float(row.tick_size or 0.05))
+
+
+async def _missing(label: str) -> str:
+    """P1 (27 Oct): the contract is not in our master (the chain, live from the broker, may already show it). One refresh
+    of the master starts in the background (rate-limited across processes); the text says what is actually happening."""
+    from app.core.config import INSTRUMENT_SYNC_EXCHANGES
+    from app.db.session import _session_factory
+    from app.instruments import master_sync
+    try:
+        why = await master_sync.refresh_on_demand(_session_factory, INSTRUMENT_SYNC_EXCHANGES or ["NSE"])
+    except Exception:  # noqa: BLE001 - the refusal is still honest without the refresh
+        logger.exception("On-demand instrument master refresh not started")
+        why = "The contract list could not be refreshed just now."
+    return f"{label} is not in ATP's contract list yet. {why}"
 
 
 # --- pure parts (tested directly) ---------------------------------------------------------------------------------------

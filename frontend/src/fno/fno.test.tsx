@@ -226,13 +226,14 @@ describe("FNO-1 order ticket", () => {
     expect(!has(slm.els, "data-ticket", "price") && has(slm.els, "data-ticket", "trigger")).toBe(true);
     by(slm.els, "data-helper", "Ask").onClick!();
     expect(slm.on.onDraft).toHaveBeenCalledWith({ trigger: "250.50" });
-    expect(draftProblems({ ...newDraft("BUY"), orderType: "SL" })).toEqual(["Enter the limit price", "Enter the trigger price"]);
-    expect(draftProblems(newDraft("SELL"))).toEqual(["A sold option needs a stop-loss"]);
-    expect(draftProblems(newDraft("BUY"))).toEqual([]);
+    const mis = { product: "MIS" as const };                                   // owner F1: the user picked a product
+    expect(draftProblems({ ...newDraft("BUY", mis), orderType: "SL" })).toEqual(["Enter the limit price", "Enter the trigger price"]);
+    expect(draftProblems(newDraft("SELL", mis))).toEqual(["A sold option needs a stop-loss"]);
+    expect(draftProblems(newDraft("BUY", mis))).toEqual([]);
   });
 
   it("the request carries lots, the order type and the prices it needs - and no mode (PAPER only)", () => {
-    const ask = askOf(TT, { ...newDraft("SELL"), lots: 2, orderType: "LIMIT", price: "251", trigger: "249", stopLoss: "300" }, "ref-12345678");
+    const ask = askOf(TT, { ...newDraft("SELL", { product: "MIS" }), lots: 2, orderType: "LIMIT", price: "251", trigger: "249", stopLoss: "300" }, "ref-12345678");
     expect(ask).toEqual({ underlying: "NIFTY", expiry: "2026-11-03", strike: 24500, right: "CE", side: "SELL", lots: 2, order_type: "LIMIT",
       product: "MIS", price: 251, trigger_price: null, stop_loss: 300, chain_ltp: 250, client_ref: "ref-12345678" });
     expect(ask).not.toHaveProperty("mode");

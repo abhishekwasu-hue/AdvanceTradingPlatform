@@ -12,7 +12,7 @@ import { chartLiveOf, pickSpot } from "./spot";
 import { SpreadBuilderV2, placementOrder, unhedgedSells } from "./SpreadBuilderV2";
 import embeddedSource from "../chart/EmbeddedChartV2.tsx?raw";
 import { TicketBody } from "../fno/OrderTicketV2";
-import { FALLBACK_PRODUCT, PRODUCT_UNSET_TEXT, newDraft } from "../fno/ticketModel";
+import { PRODUCT_MISSING, PRODUCT_UNSET_TEXT, draftProblems, newDraft } from "../fno/ticketModel";
 import { completeLabel, exitFilledLabel } from "../fno/incompleteApi";
 import type { ChainTrading } from "../fno/ChainTradingV2";
 import type { BasketLeg } from "../fno/basket";
@@ -443,10 +443,12 @@ describe("owner fixes T1-2 .. T1-7", () => {
     expect(pageSource).toContain("<IncompleteOrdersV2 />");                    // above every panel and tab
   });
 
-  it("T1-5: the product starts from his trading defaults; MIS only when none is saved, and then said", () => {
+  it("T1-5 / owner F1: the product starts from his trading defaults; with none saved nothing is pre-selected and Review waits for his pick", () => {
     expect(newDraft("BUY", { product: "NRML" }).product).toBe("NRML");
-    expect(newDraft("BUY").product).toBe(FALLBACK_PRODUCT);
-    expect(PRODUCT_UNSET_TEXT).toMatch(/No product saved in My trading defaults/);
+    expect(newDraft("BUY").product).toBeNull();
+    expect(draftProblems(newDraft("BUY"))[0]).toBe(PRODUCT_MISSING);
+    expect(draftProblems(newDraft("BUY", { product: "MIS" }))).not.toContain(PRODUCT_MISSING);
+    expect(PRODUCT_UNSET_TEXT).toMatch(/^Pick MIS or NRML/);
     expect(pageSource).toMatch(/ticketPrefill\(useTradingDefaults/);
   });
 

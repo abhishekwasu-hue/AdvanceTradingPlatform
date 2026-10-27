@@ -118,8 +118,10 @@ export function legAsk(l: NewLeg): BasketLegAsk {
     iv: typeof l.iv === "number" && l.iv > 0 && l.iv < 500 ? l.iv / 100 : null };
 }
 
-export function basketAsk(legs: readonly NewLeg[], spot: number | null, product: Product): BasketAsk {
-  return { legs: legs.map(legAsk), spot: spot && spot > 0 ? spot : null, product };
+/** `product` null (owner F1: the user has not picked one yet) is left out: the numbers do not depend on it, and Execute
+ *  stays disabled until the user picks MIS or NRML. */
+export function basketAsk(legs: readonly NewLeg[], spot: number | null, product: Product | null): BasketAsk {
+  return { legs: legs.map(legAsk), spot: spot && spot > 0 ? spot : null, ...(product ? { product } : {}) };
 }
 
 /** What is missing before the basket can go to the confirm step (the server checks everything else). */
@@ -205,7 +207,7 @@ export function remainingLegs<T>(sent: readonly T[], r: BasketResult): T[] {
 
 /** `strike` is null for a future (FNO-3). */
 export interface SavedLeg { expiry: string; strike: number | null; right: ContractRight; side: Side; lots: number; price?: number | null; stop_loss?: number | null }
-export interface SavedBasket { name: string; underlying: string; product: Product; legs: SavedLeg[]; saved_at?: string | null }
+export interface SavedBasket { name: string; underlying: string; product: Product | null; legs: SavedLeg[]; saved_at?: string | null }
 export type SavedBaskets = Record<string, SavedBasket>;
 export interface SavedState { items: SavedBaskets; version: number }
 export const MAX_SAVED = 8;
@@ -215,7 +217,7 @@ export function nameProblem(name: string): string | null {
   return NAME.test(name.trim()) ? null : "Use up to 40 letters, digits, spaces or & ( ) + - / . , : for the name.";
 }
 
-export function savedOf(legs: readonly NewLeg[], name: string, product: Product, now = new Date()): SavedBasket {
+export function savedOf(legs: readonly NewLeg[], name: string, product: Product | null, now = new Date()): SavedBasket {
   return {
     name: name.trim(), underlying: legs[0]?.underlying ?? "", product, saved_at: now.toISOString(),
     legs: legs.map((l) => ({ expiry: l.expiry, strike: l.right === "FUT" ? null : l.strike, right: l.right, side: l.side, lots: l.lots,

@@ -91,7 +91,7 @@ describe("identity: empty defaults change nothing (byte-identical bodies)", () =
   it("the full form and the ticket", () => {
     expect(formPrefill(null, true)).toEqual({});
     expect(formPrefill(EMPTY_DEFAULTS, true)).toEqual({});
-    expect(newDraft("BUY", undefined)).toEqual({ side: "BUY", lots: 1, orderType: "MARKET", product: "MIS", price: "", trigger: "", stopLoss: "" });
+    expect(newDraft("BUY", undefined)).toEqual({ side: "BUY", lots: 1, orderType: "MARKET", product: null, price: "", trigger: "", stopLoss: "" });   // owner F1: no product pre-selected
     expect(JSON.stringify(newDraft("SELL", Object.keys(ticketPrefill(EMPTY_DEFAULTS)).length ? ticketPrefill(EMPTY_DEFAULTS) : undefined)))
       .toBe(JSON.stringify(newDraft("SELL")));
     expect(ticketPrefill(EMPTY_DEFAULTS)).toEqual({});

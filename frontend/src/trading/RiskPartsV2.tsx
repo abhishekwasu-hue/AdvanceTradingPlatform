@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import type { MarketEvent, RiskEvent, RiskLimit, RiskLimitType, RiskScope, UserResponse } from "../types";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { Details } from "../ui/numbersFirst";
 import { formatDateIST, formatDateTimeIST } from "../ui/format";
 import { strategyDisplayName } from "../ui/strategyName";
 import {
@@ -94,10 +95,12 @@ export function MarketEventsV2({ user, defaultCut, nonce, onChanged }: {
 
   return (
     <CardV2 title="Market events" count={events?.length} testId="events">
-      <p className="text-t13 text-fg-muted">
-        On a budget, policy, expiry or results day - and inside its hours, if you give them - an event either stops new entries
-        or cuts the size of each trade. Leave the symbol empty for every symbol, or write INDEX for NIFTY, BANK NIFTY and SENSEX together.
-      </p>
+      <Details id="risk.events" className="mb-space-3">
+        <p className="text-t13 text-fg-muted">
+          On a budget, policy, expiry or results day - and inside its hours, if you give them - an event either stops new entries
+          or cuts the size of each trade. Leave the symbol empty for every symbol, or write INDEX for NIFTY, BANK NIFTY and SENSEX together.
+        </p>
+      </Details>
       <form onSubmit={add} noValidate className="mt-space-4 grid grid-cols-1 gap-space-3 sm:grid-cols-2 lg:grid-cols-4" data-event-form>
         <Field label="Day">{(id) => <input id={id} type="date" value={date} onChange={(e) => setDate(e.target.value)} className={FIELD} />}</Field>
         <Field label="Symbol">{(id) => <input id={id} value={underlying} placeholder="All symbols" autoCapitalize="characters" onChange={(e) => setUnderlying(e.target.value)} className={FIELD} />}</Field>
@@ -216,11 +219,13 @@ export function OrgLimitsV2({ canEdit }: { canEdit: boolean }) {
 
   return (
     <CardV2 title="Organisation limits" count={limits?.length} testId="org-limits">
-      <p className="text-t13 text-fg-muted">
-        Every order is checked against each limit that applies to it - the organisation, a member, a broker account, a
-        strategy, a symbol - and the strictest of each kind counts. Reaching a loss limit also turns on the matching kill
-        switch, so the next signal is refused. A warning comes at 80% of a limit.
-      </p>
+      <Details id="risk.org-limits" className="mb-space-3">
+        <p className="text-t13 text-fg-muted">
+          Every order is checked against each limit that applies to it - the organisation, a member, a broker account, a
+          strategy, a symbol - and the strictest of each kind counts. Reaching a loss limit also turns on the matching kill
+          switch, so the next signal is refused. A warning comes at 80% of a limit.
+        </p>
+      </Details>
       {canEdit && (
         <form onSubmit={add} noValidate className="mt-space-4 grid grid-cols-1 gap-space-3 sm:grid-cols-2 lg:grid-cols-4" data-limit-form>
           <Field label="Applies to">{(id) => (

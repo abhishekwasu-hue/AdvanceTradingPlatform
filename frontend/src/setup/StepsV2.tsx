@@ -1,4 +1,5 @@
 import { ALERTS_PATH } from "./getStarted";
+import { Details } from "../ui/numbersFirst";
 import { BellRing, Mail, Send, Smartphone } from "lucide-react";
 import { useEffect, useId, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router";
@@ -65,11 +66,12 @@ const P = "text-t14 text-fg-muted";
  * Step 1, "Connect your broker". The v2 Connect flow (§10, UI2-6) is not built yet - it waits for PR #303 - so this step
  * links to today's broker settings, where a broker is connected, and offers paper trading first (the step's skip).
  */
-export function BrokerStepV2({ done, onSkip }: StepProps & { onSkip: () => void }) {
+export function BrokerStepV2({ done, onSkip, intro }: StepProps & { onSkip: () => void; intro?: ReactNode }) {
   if (done) {
     return (
       <div className="space-y-space-3">
         <p className="text-t14 text-fg">Your broker account is connected. Prices and your positions come from it.</p>
+        {intro && <Details id="setup.broker">{intro}</Details>}
         <Link to={CONNECT_BROKER_PATH} className={LINK_SECONDARY}>Open broker settings</Link>
       </div>
     );
@@ -77,7 +79,11 @@ export function BrokerStepV2({ done, onSkip }: StepProps & { onSkip: () => void 
   return (
     <div className="space-y-space-3">
       <p className="text-t14 text-fg">Connect the broker account you trade with. Prices and your positions then come from it.</p>
-      <p className={P}>Want to practise first? Trade on paper: no order reaches your broker. You can connect a broker at any time.</p>
+      {/* UX-11 U1: the wizard's intro and the paper-first note on demand, word for word. */}
+      <Details id="setup.broker">
+        {intro}
+        <p className={P}>Want to practise first? Trade on paper: no order reaches your broker. You can connect a broker at any time.</p>
+      </Details>
       <div className="flex flex-col gap-space-2 sm:flex-row">
         <Link to={CONNECT_BROKER_PATH} className={LINK_PRIMARY}>Connect your broker</Link>
         <ActionV2 onClick={onSkip}>I&apos;ll trade on paper first</ActionV2>

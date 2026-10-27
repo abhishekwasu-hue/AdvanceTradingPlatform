@@ -8,6 +8,7 @@ import type { GuardianStatus, LossStreakPause, LossStreakStatus, PaperRiskStatus
 import { formatINR, formatNumber } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { PageIntro } from "../ui/PageIntro";
+import { Details } from "../ui/numbersFirst";
 import { useLiveHidden } from "../settings/useLiveHidden";
 import { TermHint } from "../ui/TermHint";
 import {
@@ -207,11 +208,16 @@ export default function RiskV2(_props: PageProps = {}) {
                 })}
               </ul>
             )}
-            <p className="text-t13 text-fg-muted">
-              {guardian
-                ? `The size is halved at ${formatNumber(guardian.settings.dd_level_1_pct, 1)}% below your equity peak and new entries pause at ${formatNumber(guardian.settings.dd_level_2_pct, 1)}%. A winning streak never raises the size above normal. Exits are never blocked.`
-                : "Exits are never blocked by these limits."}
-            </p>
+            {/* UX-11 U1: the guardian's sentence on demand, word for word. */}
+            {guardian
+              ? (
+                <Details id="risk.today">
+                  <p className="text-t13 text-fg-muted">
+                    {`The size is halved at ${formatNumber(guardian.settings.dd_level_1_pct, 1)}% below your equity peak and new entries pause at ${formatNumber(guardian.settings.dd_level_2_pct, 1)}%. A winning streak never raises the size above normal. Exits are never blocked.`}
+                  </p>
+                </Details>
+              )
+              : <p className="text-t13 text-fg-muted">Exits are never blocked by these limits.</p>}
           </div>
         )}
       </CardV2>
@@ -273,8 +279,11 @@ function OwnPaperLimitsV2({ paper }: { paper: PaperRiskStatus }) {
           <Link to={SETUP_PATH} className={`${BUTTON_SECONDARY} w-full sm:w-auto`} data-testid="own-limits-change">
             {none ? "Set your limits" : "Change your limits"}
           </Link>
-          <p className="text-t13 text-fg-muted">They only stop new paper trades. Closing a trade always works.</p>
         </div>
+        {/* UX-11 U1: the second line on demand, word for word. */}
+        <Details id="risk.paper-limits">
+          <p className="text-t13 text-fg-muted">They only stop new paper trades. Closing a trade always works.</p>
+        </Details>
       </div>
     </CardV2>
   );

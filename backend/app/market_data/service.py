@@ -34,6 +34,7 @@ from app.core.resampling import resample_ohlc
 from app.market_data import periods, shared_candles
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, previous_session_close
 from app.market_data.freshness import StaleMarketDataError, quote_is_stale
+from app.market_data.lake_fill import LakeFill
 from app.observability.metrics import MARKET_DATA_STALE
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,9 @@ class MarketDataService:
         # C1: the exchange holidays the history window skips (set by callers holding a database session - the chart
         # route); empty = weekends only, as the market calendar does without its table.
         self.holidays: Set[date] = set()
+        # DH2 / DH6: the reader's own last-session 1-minute bars when the broker's history lags (lake_fill.for_reader);
+        # None = the broker's bars only (the worker, a reader without his own lake).
+        self.lake_fill: Optional[LakeFill] = None
 
     async def get_candles(
         self, symbol: str, exchange: str = "NSE", interval: str = "1min", now: Optional[datetime] = None, fresh: bool = False,
@@ -189,7 +193,23 @@ class MarketDataService:
                 ttl = 0
             if ttl >= 1:
                 await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), ttl)
-        return list(bars)
+        return await self._fill_last_session(symbol, exchange, interval, list(bars), now)
+
+    async def _fill_last_session(self, symbol: str, exchange: str, interval: str, bars: List[OHLCVBar],
+                                 now: Optional[datetime]) -> List[OHLCVBar]:
+        """DH2 / DH6: when the broker's 1-minute history stops before the last closed session (Upstox serves that session
+        late, and its intraday endpoint is empty before the next open), the reader's own lake bars fill the gap. Applied
+        after the cache (the cached copy stays the broker's, shareable); a filled list is never cached."""
+        if self.lake_fill is None or interval != "1min":
+            return bars
+        history_from, history_to = self.history_window(exchange, interval, now)
+        # The last closed session must have bars - also when today's bars already came (the gap is then mid-series).
+        if any(b.timestamp.astimezone(IST).date() == history_to.date() for b in bars):
+            return bars
+        before = [b.timestamp for b in bars if b.timestamp <= history_to]
+        start = max(before) if before else history_from
+        extra = await self.lake_fill(symbol, exchange, start.astimezone(timezone.utc), history_to.astimezone(timezone.utc))
+        return merge_bars(bars, extra) if extra else bars
 
     async def get_history(self, symbol: str, exchange: str, interval: str, before: date) -> List[OHLCVBar]:
         """Completed bars for the `lookback_days` calendar days ending the day before `before` (IST) -

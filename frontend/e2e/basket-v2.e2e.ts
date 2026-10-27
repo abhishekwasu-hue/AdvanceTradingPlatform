@@ -221,6 +221,7 @@ test.describe("Basket panel v2 flows", () => {
     await expect.poll(() => (seen.posts.filter((p) => p.url.endsWith("/basket/evaluate")).at(-1)?.body as { legs: Leg[] } | undefined)?.legs[0].lots).toBe(2);
     expect(seen.posts.filter((p) => /\/basket\/(preview|execute)$/.test(p.url))).toEqual([]);          // nothing checked or placed yet
 
+    await panel.locator("[data-basket='product'] [data-option='NRML']").tap();      // F1: no product saved - Execute stays disabled until one is picked
     await panel.locator("[data-basket='execute']").tap();
     const confirm = panel.locator("[data-basket='confirm']");
     await expect(confirm.locator("[data-figure='total-margin']")).toBeVisible();

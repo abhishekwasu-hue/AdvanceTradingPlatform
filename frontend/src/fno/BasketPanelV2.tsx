@@ -32,7 +32,7 @@ import { ExitSentenceV2, StrategyExitsV2 } from "./StrategyExitsV2";
 import {
   defaultsOfForm, exitErrors, exitSentence, exitsAsk, prefillForm, saveExitDefaults, useExitDefaults, type StrategyExitForm,
 } from "./strategyExits";
-import { FALLBACK_PRODUCT, PRODUCT_UNSET_TEXT, moneyText, newClientRef, sideWord } from "./ticketModel";
+import { PRODUCT_UNSET_TEXT, moneyText, newClientRef, sideWord } from "./ticketModel";
 
 /**
  * FNO-2 (owner order section 5, 8b-c): the basket panel, opened from the basket badge - a side drawer from md, a bottom
@@ -97,7 +97,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   // MIS only while he saved none (the line under the choice says so). His own pick in this basket stays.
   const features = useFeatures();
   const savedProduct = ticketPrefill(useTradingDefaults(open && features.on("ui_v2"), fetcher)).product ?? null;
-  const [product, setProductState] = useState<Product>(savedProduct ?? FALLBACK_PRODUCT);
+  const [product, setProductState] = useState<Product | null>(savedProduct);
   const picked = useRef(false);
   useEffect(() => { if (savedProduct && !picked.current) setProductState(savedProduct); }, [savedProduct]);
   const setProduct = (p: Product) => { picked.current = true; setProductState(p); };
@@ -212,7 +212,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   }
 
   async function execute() {
-    if (step.kind !== "confirm") return;
+    if (step.kind !== "confirm" || product === null) return;
     setBusy(true);
     try {
       // SX3: the strategy exit goes with the first run only (the remaining legs keep their own stops).
@@ -265,7 +265,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     if (!s) return;
     if (legs.length && !window.confirm(`Replace the ${legs.length} leg${legs.length === 1 ? "" : "s"} in your basket with "${s.name}"?`)) return;
     store.replace(legsOf(s));
-    setProduct(s.product);
+    if (s.product) setProduct(s.product);
     setTool(null);
     setNote({ tone: "done", text: `Loaded "${s.name}". Prices are the ones saved; the confirm step reads the live ones.` });
   }
@@ -331,7 +331,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           </div>
           {step.kind === "edit" && (
             <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} rows={rows} pick={pick} atm={atm} spot={spot}
-              product={product} productUnset={!savedProduct} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks}
+              product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks}
               exits={(
                 <StrategyExitsV2 form={exitForm} legCount={legs.length} saveNote={exitNote} onSaveDefaults={() => { void saveExits(); }}
                   onChange={(patch) => { setExitNote(null); setExitTyped({ ...exitForm, ...patch }); }} />
@@ -394,9 +394,9 @@ function Figure({ label, children, sub, testId }: { label: string; children: Rea
 }
 
 /** The panel's edit view: ready strategies, the legs, the numbers and the tools (no state, no hooks). */
-export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, productUnset = false, note, tool, saved, saveName, idPrefix, on, budget, compare, checks, exits }: {
+export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks, exits }: {
   legs: readonly BasketLeg[]; numbers: BasketNumbers | null; problems: string[]; settings: BasketSettings | null; rows: LiveChain["rows"];
-  pick: number | null; atm: number | null; spot: number | null; product: Product; productUnset?: boolean; note: Note; tool: Tool; saved: SavedState | null;
+  pick: number | null; atm: number | null; spot: number | null; product: Product | null; note: Note; tool: Tool; saved: SavedState | null;
   saveName: string; idPrefix: string; on: BodyHandlers;
   /** 8b-d: the user's own risk budget for the risk line (null: the line is left out). */
   budget?: RiskBudget | null;
@@ -549,7 +549,7 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
         </div>
       </div>
 
-      {productUnset && <p className="border-t border-subtle px-space-4 pt-space-2 text-t13 text-fg-muted" data-basket="product-unset">{PRODUCT_UNSET_TEXT}</p>}
+      {product === null && <p className="border-t border-subtle px-space-4 pt-space-2 text-t13 text-fg-muted" data-basket="product-unset">{PRODUCT_UNSET_TEXT}</p>}
       <div className="flex items-center gap-space-2 border-t border-subtle px-space-4 py-space-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div role="radiogroup" aria-label="Product" className="flex shrink-0 gap-space-1 rounded-control bg-surface-2 p-space-1" data-basket="product">
           {(["MIS", "NRML"] as const).map((p) => (
@@ -559,7 +559,7 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
             </button>
           ))}
         </div>
-        <button type="button" onClick={on.onReview} disabled={!legs.length} data-basket="execute"
+        <button type="button" onClick={on.onReview} disabled={!legs.length || product === null} data-basket="execute"
           className="min-h-11 flex-1 rounded-control bg-brand px-space-4 text-t15 font-semibold text-on-brand disabled:opacity-50">
           Execute basket
         </button>

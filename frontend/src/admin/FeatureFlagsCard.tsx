@@ -69,6 +69,7 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
                         {flag.turns_on && <span> · Turns on: {flag.turns_on}</span>}
                         {needs.length > 0 && <span> · Needs: {needs.join(", ")}</span>}
                       </div>
+                      {flag.fate_note && <div data-flag-fate={flag.fate} className="text-fg-muted">{flag.fate_note}</div>}
                       {flag.unavailable_reason && <div data-flag-unavailable className="font-medium text-warn">{flag.unavailable_reason}</div>}
                       {blocked && <div data-flag-blocked className="font-medium text-warn">Needs {blockedBy.join(", ")} first</div>}
                       <div className="text-fg-muted">{flag.description}</div>
@@ -83,7 +84,7 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
                       {flag.on ? (
                         <button type="button" disabled={busy} onClick={() => onSet(name, false)}
                           className="rounded border border-down/40 px-2 py-0.5 text-down hover:bg-down/10">Turn off</button>
-                      ) : (
+                      ) : flag.fate === "removed_from_view" ? null : (
                         <>
                           <button type="button" disabled={busy} onClick={() => onSaveList(name)}
                             className="rounded border border-border px-2 py-0.5 text-fg hover:bg-surface-2">Save list</button>

@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import verify_audit_chain
 from app.auth.dependencies import get_current_user, require_mfa_session, require_role, require_trader
 from app.option_chain.greeks import today_ist
-from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalHistoryRecord, TradeRecord, User
+from app.db.models import (
+    AuditLogRecord, OrderEventRecord, OrderRecord, PaperSubAccountRecord, SignalHistoryRecord, TradeRecord, User,
+)
 from app.db.session import get_session
 from app.trading.analytics import AnalyticsSummary, build_analytics_summary
 from app.trading.exit_logic import check_contract_exit
@@ -62,6 +64,9 @@ class TradeRecordResponse(BaseModel):
     regime_at_entry: Optional[str] = None
     notes: Optional[str] = None
     tags: List[str] = []
+    # M45 MB-7 (flags `ui_v2` + `multi_account`): the caller's own simulated PAPER account this position belongs to;
+    # null with either flag off, for a trade with no simulated account, or one that is not the caller's.
+    account_label: Optional[str] = None
 
     @classmethod
     def from_record(cls, record: TradeRecord) -> "TradeRecordResponse":
@@ -113,8 +118,34 @@ async def list_open_positions(
     query = select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.exit_time.is_(None))
     if mine:
         query = query.where(TradeRecord.user_id == user.id)
-    rows = await session.scalars(query.order_by(TradeRecord.entry_time.desc()))
-    return [TradeRecordResponse.from_record(r) for r in rows]
+    rows = list(await session.scalars(query.order_by(TradeRecord.entry_time.desc())))
+    out = [TradeRecordResponse.from_record(r) for r in rows]
+    labels = await _own_account_labels(session, user, rows)
+    for item, record in zip(out, rows):
+        if record.paper_sub_account_id is not None:
+            item.account_label = labels.get(record.paper_sub_account_id)
+    return out
+
+
+async def _own_account_labels(session: AsyncSession, user: User, rows: List[TradeRecord]) -> dict:
+    """M45 MB-7: {paper_sub_account_id: label} for the caller's OWN simulated PAPER accounts among these rows - empty
+    while `ui_v2` or `multi_account` is off. Another member's account never matches (tenant AND user), so its label
+    never leaks into an organisation-wide positions list."""
+    ids = {r.paper_sub_account_id for r in rows if r.paper_sub_account_id is not None}
+    if not ids:
+        return {}
+    from app.accounts import multi
+    from app.platform.controls import flag_enabled
+    for name in (multi.PAGE_FLAG, multi.FLAG):
+        if not await flag_enabled(session, name, user.tenant_id):
+            return {}
+    found = await session.execute(
+        select(PaperSubAccountRecord.id, PaperSubAccountRecord.label).where(
+            PaperSubAccountRecord.id.in_(ids), PaperSubAccountRecord.tenant_id == user.tenant_id,
+            PaperSubAccountRecord.user_id == user.id,
+        )
+    )
+    return {row_id: label for row_id, label in found.all()}
 
 
 class PositionGreeksResponse(BaseModel):

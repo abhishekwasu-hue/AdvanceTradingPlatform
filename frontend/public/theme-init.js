@@ -2,7 +2,7 @@
  * bundle loads. A classic same-origin script: the CSP (script-src 'self') forbids an inline one. It mirrors
  * loadAppearance / resolvedTheme in src/theme.ts, which re-applies (and owns) the setting once the app starts. */
 (function () {
-  var theme = "dark", cvd = false, v2 = false, size = "normal", high = false;
+  var theme = "dark", cvd = false, v2 = false, size = "normal", high = false, density = "comfortable";
   try {
     // UI2-0 (UI-1): with UI v2 on (the shell leaves this hint), no saved theme means "follow the system, light when unknown".
     v2 = localStorage.getItem("atp_ui_v2_theme") === "system";
@@ -12,6 +12,7 @@
     cvd = v.colorBlind === true;
     if (v.textSize === "large" || v.textSize === "xlarge") size = v.textSize;
     high = v.highContrast === true;
+    if (v.density === "compact") density = "compact";
   } catch (e) { /* storage unavailable: the dark default */ }
   if (theme === "system") {
     var mm = !!window.matchMedia;
@@ -23,5 +24,6 @@
   root.setAttribute("data-cvd", cvd ? "on" : "off");
   root.setAttribute("data-text-size", size);
   root.setAttribute("data-contrast", high ? "high" : "normal");
+  root.setAttribute("data-density", density);
   if (theme === "dark") root.classList.add("dark"); else root.classList.remove("dark");
 })();

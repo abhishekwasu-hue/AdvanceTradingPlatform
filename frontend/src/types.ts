@@ -50,6 +50,8 @@ export interface TradeRecord {
   regime_at_entry?: string | null;
   notes?: string | null;
   tags?: string[];
+  /** M45 MB-7 (flags `ui_v2` + `multi_account`): the caller's own simulated PAPER account of this position, else null. */
+  account_label?: string | null;
   mode: string;
   symbol: string;
   strategy_id: string;
@@ -2082,6 +2084,9 @@ export interface FeatureFlag {
   needs?: string;
   status?: FlagStatus;
   status_label?: string;
+  /** P2-1: finish | keep_off | removed_from_view, with a one-line note (admin only). */
+  fate?: "finish" | "keep_off" | "removed_from_view";
+  fate_note?: string;
   default_on?: boolean;
   /** User-friendly pass item 7: why users do not see this feature on this server (e.g. its engine is not installed). */
   unavailable_reason?: string;

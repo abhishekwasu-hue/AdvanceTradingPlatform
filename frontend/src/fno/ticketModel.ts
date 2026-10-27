@@ -25,7 +25,7 @@ export interface Draft {
   side: Side;
   lots: number;
   orderType: OrderType;
-  product: Product;
+  product: Product | null;      // null until the user picks one (owner F1 / TT-12: never a platform default)
   price: string;
   trigger: string;
   stopLoss: string;
@@ -34,10 +34,10 @@ export interface Draft {
 export const ORDER_TYPES: { value: OrderType; label: string }[] = [
   { value: "MARKET", label: "Market" }, { value: "LIMIT", label: "Limit" }, { value: "SL", label: "SL" }, { value: "SL-M", label: "SL-M" },
 ];
-/** T1-5: the product a ticket or basket starts with ONLY while the user saved none in My trading defaults; the ticket
- *  and the basket then say so (PRODUCT_UNSET_TEXT) - never a silent fixed choice. */
-export const FALLBACK_PRODUCT: Product = "MIS";
-export const PRODUCT_UNSET_TEXT = "No product saved in My trading defaults: MIS (intraday) for now. Set yours in Settings.";
+/** Owner F1 (27 Oct, TT-12): with no product saved in My trading defaults nothing is pre-selected - the user picks MIS
+ *  or NRML before Review / Execute (disabled until then, with this one line why). */
+export const PRODUCT_UNSET_TEXT = "Pick MIS or NRML to continue (none saved in your trading defaults).";
+export const PRODUCT_MISSING = "Pick a product: MIS or NRML";
 
 export const PRODUCTS: { value: Product; label: string; hint: string }[] = [
   { value: "MIS", label: "MIS", hint: "Intraday" }, { value: "NRML", label: "NRML", hint: "Carry forward" },
@@ -52,7 +52,7 @@ export interface DraftDefaults { lots?: number; product?: Product; orderType?: O
 /** A fresh ticket. With the user's defaults (src/settings/tradingDefaults.ts ticketPrefill) those values start it - the side
  * never comes from a default - and nothing else changes: no defaults gives today's draft exactly. */
 export function newDraft(side: Side, defaults?: DraftDefaults): Draft {
-  const draft: Draft = { side, lots: 1, orderType: "MARKET", product: FALLBACK_PRODUCT, price: "", trigger: "", stopLoss: "" };
+  const draft: Draft = { side, lots: 1, orderType: "MARKET", product: null, price: "", trigger: "", stopLoss: "" };
   if (!defaults) return draft;
   if (defaults.lots !== undefined) draft.lots = clampLots(defaults.lots);
   if (defaults.orderType !== undefined) draft.orderType = defaults.orderType;
@@ -104,6 +104,7 @@ export function stopHint(side: Side, right: ContractRight = "CE"): string {
 /** What is missing before the ticket can be reviewed (the server checks everything else). */
 export function draftProblems(d: Draft, right: ContractRight = "CE"): string[] {
   const out: string[] = [];
+  if (d.product === null) out.push(PRODUCT_MISSING);
   const n = needs(d.orderType);
   if (n.price && num(d.price) === null) out.push("Enter the limit price");
   if (n.trigger && num(d.trigger) === null) out.push("Enter the trigger price");
@@ -117,7 +118,7 @@ export function askOf(target: TicketTarget, d: Draft, clientRef: string): OrderA
   const n = needs(d.orderType);
   return {
     underlying: target.underlying, expiry: target.expiry, strike: target.right === "FUT" ? null : target.strike, right: target.right, side: d.side,
-    lots: clampLots(d.lots), order_type: d.orderType, product: d.product,
+    lots: clampLots(d.lots), order_type: d.orderType, product: d.product as Product,       // draftProblems refuses a missing product first
     price: n.price ? num(d.price) : null, trigger_price: n.trigger ? num(d.trigger) : null, stop_loss: num(d.stopLoss),
     chain_ltp: target.ltp && target.ltp > 0 ? target.ltp : null, client_ref: clientRef,
   };

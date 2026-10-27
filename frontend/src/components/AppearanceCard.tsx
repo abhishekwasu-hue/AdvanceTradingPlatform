@@ -2,7 +2,8 @@ import { Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import { useOptionalAuth } from "../auth/AuthContext";
 import { setHighContrast, setTextSize } from "../appearanceSync";
-import { TEXT_SIZES, useAppearance, type TextSize, type ThemeChoice } from "../theme";
+import { DENSITIES, TEXT_SIZES, useAppearance, type TextSize, type ThemeChoice } from "../theme";
+import { useUiV2 } from "../ui/useFeatures";
 import { Button } from "./primitives";
 import { Card } from "./ui";
 
@@ -18,6 +19,7 @@ export default function AppearanceCard() {
   const [a, save] = useAppearance();
   const user = useOptionalAuth()?.user ?? null;
   const [sizeNote, setSizeNote] = useState<string | null>(null);
+  const v2 = useUiV2();
   const pickSize = async (size: TextSize) => {
     setSizeNote(null);
     const saved = await setTextSize(size, user != null);
@@ -42,6 +44,19 @@ export default function AppearanceCard() {
           <p className="mt-1 text-xs text-fg-muted">Makes all text, numbers and charts bigger on every device you use.</p>
           {sizeNote && <p role="status" className="mt-1 text-xs text-warn">{sizeNote}</p>}
         </div>
+        {/* UX-8: the redesigned pages' spacing (the space tokens), so only with ui_v2. Saved on this device. */}
+        {v2 && (
+          <div role="group" aria-labelledby="appearance-density-label" data-appearance="density">
+            <div id="appearance-density-label" className="mb-2 text-xs font-medium text-fg-muted">Density</div>
+            <div className="flex flex-wrap gap-2">
+              {DENSITIES.map((d) => (
+                <Button key={d.value} size="sm" variant={a.density === d.value ? "primary" : "secondary"} aria-pressed={a.density === d.value}
+                  onClick={() => save({ ...a, density: d.value })}>{d.label}</Button>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-fg-muted">Compact shows more on one screen: tighter rows and spacing. Buttons stay easy to tap.</p>
+          </div>
+        )}
         <label className="flex items-start gap-3 text-sm text-fg">
           <input type="checkbox" data-testid="appearance-high-contrast" className="mt-0.5 h-4 w-4 accent-[rgb(var(--brand))]"
             checked={a.highContrast} onChange={(e) => void pickContrast(e.target.checked)} />

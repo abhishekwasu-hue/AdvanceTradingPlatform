@@ -369,7 +369,7 @@ export function basketColumn(choice: Choice, out: BasketEvaluation | null, busy:
 
 export function StrategyCompareV2({ underlying, legs, saved, rows, expiry, around, settings, spot, product, api = basketApi }: {
   underlying: string; legs: readonly NewLeg[]; saved: SavedState | null; rows: readonly ChainRow[]; expiry: string | null; around: number | null;
-  settings: BasketSettings | null; spot: number | null; product: Product; api?: Evaluate;
+  settings: BasketSettings | null; spot: number | null; product: Product | null; api?: Evaluate;
 }) {
   const choices = useMemo(() => compareChoices({ underlying, legs, saved, rows, expiry, around, settings }),
     [underlying, legs, saved, rows, expiry, around, settings]);

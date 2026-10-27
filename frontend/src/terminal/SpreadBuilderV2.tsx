@@ -5,7 +5,7 @@ import { basketApi, type BasketApi, type BasketNumbers, type Product } from "../
 import type { BasketLeg } from "../fno/basket";
 import { basketAsk } from "../fno/basketModel";
 import { basketOn } from "../fno/desk";
-import { FALLBACK_PRODUCT, moneyText } from "../fno/ticketModel";
+import { moneyText } from "../fno/ticketModel";
 import { EMPTY, formatNumber } from "../ui/format";
 
 /**
@@ -30,8 +30,8 @@ export function unhedgedSells(legs: readonly Pick<BasketLeg, "side" | "right" | 
   return legs.filter((l) => l.side === "SELL" && l.right !== "FUT" && !legs.some((h) => h.side === "BUY" && h.right === l.right)).map((l) => l.strike);
 }
 
-export function SpreadBuilderV2({ underlying, legs, spot, product = FALLBACK_PRODUCT, onOpen, api = basketApi }: {
-  underlying: string; legs: readonly BasketLeg[]; spot: number | null; product?: Product; onOpen?: () => void;
+export function SpreadBuilderV2({ underlying, legs, spot, product = null, onOpen, api = basketApi }: {
+  underlying: string; legs: readonly BasketLeg[]; spot: number | null; product?: Product | null; onOpen?: () => void;
   api?: Pick<BasketApi, "evaluate">;
 }) {
   const mine = useMemo(() => basketOn(legs, underlying), [legs, underlying]);

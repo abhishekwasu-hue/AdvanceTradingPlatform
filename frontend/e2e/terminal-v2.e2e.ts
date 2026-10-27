@@ -317,6 +317,7 @@ test.describe("v2 terminal 1440", () => {
     const order = page.locator("[data-panel='order']");
     await expect(order).toContainText("NIFTY 03 NOV 24500 CE");
     await expect(order.locator("[data-practice-frame]")).toBeVisible();
+    await order.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
     await order.locator("[data-ticket='review']").click();
     await expect(order.locator("[data-ticket='confirm']")).toBeVisible();
     await shot(page, "terminal-1440-dark-order-review");

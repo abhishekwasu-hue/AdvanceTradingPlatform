@@ -40,6 +40,7 @@ import {
 } from "./model";
 import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from "./PartsV2";
 import { PracticeFrame } from "../fno/OrderTicketV2";
+import { AccountFilterV2, accountLabels, inAccount } from "./accountViews";
 import { SettlementWarningsV2 } from "../fno/SmartExecutionV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
 import { CombinedExitBarV2, ExitShortSheetV2, useCombinedExits } from "../fno/CombinedExitV2";
@@ -99,6 +100,9 @@ export default function PositionsV2(_props: PageProps = {}) {
   const reload = () => { reloadPositions(); reloadTrades(); reloadExposure(); };
   const login = useBrokerLogin(() => { refreshBroker(); reload(); });
   const [notice, setNotice] = useState<Notice>(null);
+  // M45 MB-7 (flags `ui_v2` + `multi_account`): the simulated PAPER account of each row and a filter by account.
+  const accountsOn = features.on("multi_account");
+  const [account, setAccount] = useState<string | null>(null);
 
   const list = dataOf(positions);
   const rows = useMemo(() => heldRows(list ?? [], dataOf(exposure)), [list, exposure]);
@@ -130,6 +134,10 @@ export default function PositionsV2(_props: PageProps = {}) {
   }
 
   const byId = new Map((list ?? []).map((p) => [p.id, p]));
+  const labels = accountsOn ? accountLabels(list) : [];
+  const chosen = account !== null && labels.includes(account) ? account : null;
+  const shownRows = chosen === null ? rows : rows.filter((r) => inAccount(byId.get(r.id), chosen));
+  const accountFilter = <AccountFilterV2 labels={labels} value={chosen} onChange={setAccount} />;
   // FNO-4 (owner order section 8): Add / Adjust on F&O PAPER positions and the legs placed together, with the PAPER
   // account on (the ticket's own routes answer 404 without it). Exit stays the handler above, never blocked here.
   const fnoOn = features.on("paper_account") && canTrade;
@@ -163,7 +171,7 @@ export default function PositionsV2(_props: PageProps = {}) {
       onDone={(text, ok) => { setShortAsk(null); setNotice({ kind: ok ? "done" : "warn", text }); reload(); }} />
   );
   const actions: RowActions = {
-    exitNowOn, canTrade, onExit: exitNow, onCheck: checkPrice,
+    exitNowOn, canTrade, onExit: exitNow, onCheck: checkPrice, accounts: accountsOn,
     group: fnoOn ? { onLeg: (p, hedge) => setGroupExit({ kind: "leg", tradeId: p.id, symbol: p.symbol, hedge, warning: null }),
       onGroup: (tradeId, title, legs) => setGroupExit({ kind: "group", tradeId, title, legs }) } : undefined,
     fno: fnoOn ? { facts: fno.facts, onAdd: (target, side) => setTicket({ target, side }), alertsOn: features.on("screener_v2"), onCompare: setCompare } : undefined,
@@ -191,7 +199,8 @@ export default function PositionsV2(_props: PageProps = {}) {
                   <p className="mb-space-3 text-t13 text-fg-muted">
                     Live prices and profit or loss show once your broker is connected.{exitNowOn && canTrade ? " You can still exit a paper position here." : ""}
                   </p>
-                  <PositionList rows={rows} byId={byId} actions={actions} prices={false} groups={fno.groups} />
+                  {accountFilter}
+                  <PositionList rows={shownRows} byId={byId} actions={actions} prices={false} groups={fno.groups} />
                   {groupSheet}
                 </>
               )}
@@ -256,7 +265,8 @@ export default function PositionsV2(_props: PageProps = {}) {
                   onChanged={() => { combined.reload(); reload(); }} onNote={(text, ok) => setNotice({ kind: ok ? "done" : "warn", text })} />
               </div>
             )}
-            <PositionList rows={rows} byId={byId} actions={actions} groups={fno.groups} />
+            {accountFilter}
+            <PositionList rows={shownRows} byId={byId} actions={actions} groups={fno.groups} />
             {groupSheet}
           </>
         )}
@@ -305,6 +315,8 @@ export interface RowActions {
   canTrade: boolean;
   onExit: (p: TradeRecord) => void;
   onCheck: (p: TradeRecord, price: number) => void;
+  /** M45 MB-7 (`multi_account`): show the row's simulated PAPER account as a badge. Absent: the row is exactly as before. */
+  accounts?: boolean;
   /** TT-8: the legs of one basket - "Exit this leg" (`hedge`: it protects an open sold leg, so the sheet warns first) and
    * "Exit the whole group". Absent: grouped legs keep "Exit now" exactly as before. */
   group?: { onLeg: (p: TradeRecord, hedge: boolean) => void; onGroup: (tradeId: number, title: string, legs: number) => void };
@@ -465,6 +477,9 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
             )}
             <ChipV2 kind={row.mode === "Live" ? "solid" : "outline"}>{row.mode}</ChipV2>
             {row.structure && <ChipV2>{row.structure}</ChipV2>}
+            {actions.accounts && position.account_label && (
+              <span data-testid="account-badge" title="Practice account"><ChipV2 kind="brand">{position.account_label}</ChipV2></span>
+            )}
           </div>
           <p className="mt-px text-t13 text-fg-muted">{row.detail}</p>
           <p className="mt-px font-tabular text-t13 text-fg">

@@ -16,7 +16,7 @@ describe("UX-9 ticket look", () => {
   });
 
   it("product and stop-loss are inside the closed More options; side, lots and order type before it", () => {
-    const html = renderToStaticMarkup(<TicketBody target={target} draft={newDraft("BUY")} step={{ kind: "edit" }} busy={false} problem={null}
+    const html = renderToStaticMarkup(<TicketBody target={target} draft={newDraft("BUY", { product: "MIS" })} step={{ kind: "edit" }} busy={false} problem={null}
       idPrefix="x" onDraft={noop} onReview={noop} onPlace={noop} onBack={noop} onClose={noop} />);
     const adv = html.indexOf('data-ticket="advanced"');
     expect(adv).toBeGreaterThan(0);
@@ -24,8 +24,17 @@ describe("UX-9 ticket look", () => {
     for (const before of ['data-ticket="side"', 'data-ticket="lots"', 'data-ticket="order-type"']) expect(html.indexOf(before)).toBeLessThan(adv);
     for (const inside of ['data-ticket="product"', 'data-ticket="stop"']) expect(html.indexOf(inside)).toBeGreaterThan(adv);
     expect(html).toContain("MIS · no stop-loss");
-    // The "no product saved" note stays in view (outside the closed section).
-    expect(html.indexOf('data-ticket="product-unset"')).toBeLessThan(adv);
+    expect(html).not.toContain('data-ticket="product-unset"');
+  });
+
+  it("owner F1: no product saved - nothing pre-selected, More options open on the product, Review disabled with one line why", () => {
+    const html = renderToStaticMarkup(<TicketBody target={target} draft={newDraft("BUY")} step={{ kind: "edit" }} busy={false} problem={null}
+      idPrefix="x" onDraft={noop} onReview={noop} onPlace={noop} onBack={noop} onClose={noop} />);
+    expect(html).toMatch(/<details[^>]*\sopen/);
+    expect(html).not.toMatch(/data-option="(MIS|NRML)"[^>]*aria-checked="true"|aria-checked="true"[^>]*data-option="(MIS|NRML)"/);
+    expect(html).toContain("no product · no stop-loss");
+    expect(html).toMatch(/disabled=""[^>]*data-ticket="review"|data-ticket="review"[^>]*disabled=""/);
+    expect(html).toContain("Pick MIS or NRML to continue");
   });
 
   it("a review that asks for a stop-loss opens More options; other problems leave it closed", () => {

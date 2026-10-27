@@ -125,7 +125,7 @@ for (const size of SIZES) {
       await expect(page.getByRole("dialog")).toContainText("Change combined exit");
       await page.getByTestId("combined-sl").fill("3000");
       await page.getByTestId("combined-confirm").click();
-      await expect.poll(() => seen.posts.at(-1)).toEqual({ url: "/paper/fno/group-exits/7/edit", body: { version: 1, sl_value: 3000, target_value: null } });
+      await expect.poll(() => seen.posts.at(-1)).toEqual({ url: "/paper/fno/group-exits/7/edit", body: { version: 1, sl_value: 3000, target_value: null, trailing: null } });   // CX2: the sheet sends its trailing (none here)
       await expect(chip.locator("[data-distance]")).toHaveText("stop ₹2,600 to go");
       await expect(chip.locator("[data-stale]")).toHaveCount(0);
 

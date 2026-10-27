@@ -463,11 +463,26 @@ class OptionChainPrefs(_Prefs):
     expiry_day_next: bool = True
 
 
+class StrategyExitPrefs(_Prefs):
+    """`strategy_exits` (SX1, owner 24 Oct): the user's own starting values for "Exits for this strategy" on the basket
+    ticket / spread builder. Every field is empty by default: nothing is pre-filled until he saves his own. Read by the
+    frontend only, to pre-fill (marked "from your defaults"); the server never reads it to trade."""
+    measure: Optional[Literal["MTM_INR", "PREMIUM_PCT", "SPOT"]] = None
+    sl_value: Optional[float] = Field(default=None, gt=0, lt=1e7, allow_inf_nan=False)
+    target_value: Optional[float] = Field(default=None, gt=0, lt=1e7, allow_inf_nan=False)
+    trail_kind: Optional[Literal["LOCK", "TRAIL", "LOCK_TRAIL", "BREAK_EVEN"]] = None
+    trail_after: Optional[float] = Field(default=None, gt=0, lt=1e7, allow_inf_nan=False)
+    trail_lock: Optional[float] = Field(default=None, ge=0, lt=1e7, allow_inf_nan=False)
+    trail_step: Optional[float] = Field(default=None, gt=0, lt=1e7, allow_inf_nan=False)
+    trail_by: Optional[float] = Field(default=None, gt=0, lt=1e7, allow_inf_nan=False)
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
                                        "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs,
-                                       "option_chain": OptionChainPrefs, "terminal": TerminalPrefs}
+                                       "option_chain": OptionChainPrefs, "terminal": TerminalPrefs,
+                                       "strategy_exits": StrategyExitPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -600,4 +615,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

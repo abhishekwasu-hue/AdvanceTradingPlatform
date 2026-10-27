@@ -393,8 +393,29 @@ async def _group(session: AsyncSession, user: User, basket_ref: str, rows: Seque
 
 async def execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str, basket_ref: str,
                   price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None,
-                  origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
-    """Places every leg as PAPER, hedge legs first, or nothing when the check at the live price refuses anything."""
+                  origin: str = fno_ticket.ORIGIN_AUTOMATIC, exits: Optional[Any] = None) -> Dict[str, Any]:
+    """Places every leg as PAPER, hedge legs first, or nothing when the check at the live price refuses anything.
+    SX: `exits` (app/execution/strategy_exits.StrategyExitAsk, the user's own "Exits for this strategy") becomes one
+    combined exit over the legs that filled; without it none is set. The answer's `exits` says which."""
+    result = await _execute(session, user, legs, product=product, basket_ref=basket_ref, price_lookup=price_lookup, now=now,
+                            origin=origin)
+    if exits is not None and result.get("status") != "REFUSED":
+        from app.execution import strategy_exits
+        filled = [r["trade_id"] for r in result.get("legs", []) if r.get("status") == "PLACED" and r.get("trade_id")]
+        result["exits"] = await strategy_exits.arm(session, user_id_of(user), basket_ref, filled, exits, price_lookup, now)
+    return result
+
+
+def user_id_of(user: User) -> int:
+    """The caller's id, read without a database round trip (a rollback inside the pipeline may expire the object)."""
+    from sqlalchemy import inspect
+    identity = inspect(user).identity
+    return int(identity[0]) if identity else int(user.id)
+
+
+async def _execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str, basket_ref: str,
+                   price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None,
+                   origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
     now = now or datetime.now(timezone.utc)
     smart = await fno_ticket.smart_on(session, user.tenant_id)
     check = await preview(session, user, legs, product=product, spot=None, price_lookup=price_lookup, live_only=True, now=now,

@@ -11,6 +11,7 @@ import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { useFeatures } from "../ui/useFeatures";
 import { formatNumber, formatPrice } from "../ui/format";
+import { Signed } from "../ui/Signed";
 import {
   basketApi, type BasketApi, type BasketNumbers, type BasketPreview, type BasketResult, type BasketSettings, type Product,
 } from "./api";
@@ -27,6 +28,10 @@ import { riskLine, structureOf, type RiskBudget, type RiskLine } from "./insight
 import { eventLine, legLiquidity, liquidityLine, marginLine } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
 import { IncompleteV2, SmartConfirmV2 } from "./SmartExecutionV2";
+import { ExitSentenceV2, StrategyExitsV2 } from "./StrategyExitsV2";
+import {
+  defaultsOfForm, exitErrors, exitSentence, exitsAsk, prefillForm, saveExitDefaults, useExitDefaults, type StrategyExitForm,
+} from "./strategyExits";
 import { PRODUCT_UNSET_TEXT, moneyText, newClientRef, sideWord } from "./ticketModel";
 
 /**
@@ -60,7 +65,7 @@ export interface BasketChain {
 type Fetcher = <T>(path: string, init?: RequestInit) => Promise<T>;
 export type PanelStep =
   | { kind: "edit" }
-  | { kind: "confirm"; preview: BasketPreview | null; legs: NewLeg[] }
+  | { kind: "confirm"; preview: BasketPreview | null; legs: NewLeg[]; remaining?: boolean }
   | { kind: "done"; result: BasketResult; legs: NewLeg[] };
 type Tool = null | "save" | "load" | "compare";
 type Note = { tone: "done" | "warn"; text: string } | null;
@@ -108,6 +113,12 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   const [saveName, setSaveName] = useState("");
   const ref = useRef(newClientRef());
   const seq = useRef(0);
+  // SX1: "Exits for this strategy" - empty, or from his own saved defaults until he types (then his own values).
+  const exitDefaults = useExitDefaults(open && features.on("ui_v2"), fetcher);
+  const [exitTyped, setExitTyped] = useState<StrategyExitForm | null>(null);
+  const [exitVersion, setExitVersion] = useState<number | null>(null);
+  const [exitNote, setExitNote] = useState<string | null>(null);
+  const exitForm = exitTyped ?? prefillForm(exitDefaults?.value, legs);
   const idPrefix = useId();
   // 8b-d: the user's own risk budget for the risk line (information only: Execute reads only the server's checks).
   const budget = useRiskBudget(open && legs.length > 0);
@@ -183,14 +194,15 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
 
   async function confirm(subset?: NewLeg[]) {
     const sending = subset ?? legs.map(strip);
-    const missing = basketProblems(sending);
+    const remaining = subset !== undefined;
+    const missing = [...basketProblems(sending), ...(remaining ? [] : exitErrors(exitForm))];
     if (missing.length) { setNote({ tone: "warn", text: missing[0] }); return; }
     ref.current = newClientRef();
-    setStep({ kind: "confirm", preview: null, legs: sending });
+    setStep({ kind: "confirm", preview: null, legs: sending, remaining });
     setBusy(true);
     try {
       const preview = await api.preview(basketAsk(sending, sending.every((l) => l.underlying === chain.symbol) ? spot : null, product));
-      setStep({ kind: "confirm", preview, legs: sending });
+      setStep({ kind: "confirm", preview, legs: sending, remaining });
     } catch (e) {
       setStep({ kind: "edit" });
       setNote({ tone: "warn", text: e instanceof Error ? e.message : String(e) });
@@ -203,7 +215,9 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     if (step.kind !== "confirm" || product === null) return;
     setBusy(true);
     try {
-      const result = await api.execute({ ...basketAsk(step.legs, spot, product), basket_ref: ref.current });
+      // SX3: the strategy exit goes with the first run only (the remaining legs keep their own stops).
+      const exits = step.remaining ? null : exitsAsk(exitForm);
+      const result = await api.execute({ ...basketAsk(step.legs, spot, product), basket_ref: ref.current, ...(exits ? { exits } : {}) });
       setStep({ kind: "done", result, legs: step.legs });
       if (result.placed > 0) onPlaced?.(result);
     } catch (e) {
@@ -211,6 +225,17 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
       setStep({ kind: "edit" });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function saveExits() {
+    try {
+      const version = exitVersion ?? exitDefaults?.version ?? 0;
+      const out = await saveExitDefaults(defaultsOfForm(exitForm), version, fetcher);
+      setExitVersion(out.version);
+      setExitNote("Saved as your defaults.");
+    } catch (e) {
+      setExitNote(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -307,13 +332,19 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           {step.kind === "edit" && (
             <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} rows={rows} pick={pick} atm={atm} spot={spot}
               product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks}
+              exits={(
+                <StrategyExitsV2 form={exitForm} legCount={legs.length} saveNote={exitNote} onSaveDefaults={() => { void saveExits(); }}
+                  onChange={(patch) => { setExitNote(null); setExitTyped({ ...exitForm, ...patch }); }} />
+              )}
               compare={tool === "compare" ? (
                 <StrategyCompareV2 underlying={chain.symbol} legs={legs.map(strip)} saved={saved} rows={rows} expiry={live?.expiry ?? null} around={pick}
                   settings={settings} spot={spot} product={product} api={api} />
               ) : null} />
           )}
           {step.kind === "confirm" && (
-            <ConfirmView preview={step.preview} busy={busy} budget={budget} checks={checks} onBack={() => setStep({ kind: "edit" })} onPlace={() => { void execute(); }} />
+            <ConfirmView preview={step.preview} busy={busy} budget={budget} checks={checks} onBack={() => setStep({ kind: "edit" })} onPlace={() => { void execute(); }}
+              exitWords={step.remaining ? "The exits for this strategy were set with the first legs; these legs keep their own stops."
+                : <ExitSentenceV2 parts={exitSentence(exitForm, step.legs.length, step.legs[0]?.underlying ?? null)} />} />
           )}
           {step.kind === "done" && (
             <ResultView result={step.result} onRemaining={() => { void confirm(remainingLegs(step.legs, step.result)); }} onEdit={() => setStep({ kind: "edit" })}
@@ -363,7 +394,7 @@ function Figure({ label, children, sub, testId }: { label: string; children: Rea
 }
 
 /** The panel's edit view: ready strategies, the legs, the numbers and the tools (no state, no hooks). */
-export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks }: {
+export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks, exits }: {
   legs: readonly BasketLeg[]; numbers: BasketNumbers | null; problems: string[]; settings: BasketSettings | null; rows: LiveChain["rows"];
   pick: number | null; atm: number | null; spot: number | null; product: Product | null; note: Note; tool: Tool; saved: SavedState | null;
   saveName: string; idPrefix: string; on: BodyHandlers;
@@ -373,6 +404,8 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
   compare?: ReactNode;
   /** 8b slice 4: the events and liquidity parts of the risk line (the margin part is added here). */
   checks?: readonly (RiskLine | null)[];
+  /** SX1: "Exits for this strategy", shown before Review once there is a leg. */
+  exits?: ReactNode;
 }) {
   const step = strikeStep(rows);
   const ext = numbers?.extremes ?? null;
@@ -501,6 +534,8 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
           </section>
         )}
 
+        {legs.length > 0 && exits}
+
         {tool === "compare" && compare}
 
         <div className="flex flex-wrap gap-space-2" data-basket="tools">
@@ -578,8 +613,10 @@ function LegRow({ leg: l, n, lotSize, idPrefix, on }: { leg: BasketLeg; n: numbe
 }
 
 /** The confirm step: every leg as it would be placed (hedge legs first), the total margin and max loss (no state). */
-export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks }: {
+export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks, exitWords: exitLine }: {
   preview: BasketPreview | null; busy: boolean; onBack: () => void; onPlace: () => void;
+  /** SX5: the exits for this strategy in plain words (absent: the line is left out). */
+  exitWords?: ReactNode;
   /** 8b-d: the risk line beside the total max loss (information only: the button reads `can_execute` alone). */
   budget?: RiskBudget | null;
   /** 8b slice 4: the events and liquidity parts (the margin part is added from the totals). */
@@ -614,6 +651,12 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks 
                 );
               })}
             </ol>
+            {exitLine && (
+              <div className="rounded-control border border-subtle bg-surface-2 px-space-3 py-space-2" data-basket="confirm-exits">
+                <p className="text-t13 font-semibold text-fg">Exits for this strategy</p>
+                <p className="text-t13 text-fg">{exitLine}</p>
+              </div>
+            )}
             {p.smart && <SmartConfirmV2 smart={p.smart} />}
             <dl className="rounded-control border border-subtle px-space-3" data-basket="confirm-totals">
               {!p.smart && (
@@ -662,6 +705,13 @@ export function ResultView({ result: r, onRemaining, onEdit, onClear, onClose, a
           {resultHeadline(r)}
         </p>
         {r.reasons.length > 0 && <ul className="space-y-space-1 text-t13 text-warn">{r.reasons.map((x) => <li key={x}>{x}</li>)}</ul>}
+        {r.exits && (
+          <p className={cx("rounded-control px-space-3 py-space-2 text-t13", r.exits.status === "ARMED" ? "bg-surface-2 text-fg" : "bg-warn-tint text-warn")}
+            data-basket="result-exits" data-exits-status={r.exits.status}>
+            {r.exits.status === "ARMED" ? <ExitResultV2 exits={r.exits} />
+              : `Strategy exit not set: ${r.exits.reason}. The legs keep their own stops.`}
+          </p>
+        )}
         <ol className="space-y-space-2">
           {r.legs.map((l) => (
             <li key={l.seq} className="rounded-control border border-subtle px-space-3 py-space-2" data-result-leg={l.seq} data-leg-status={l.status}>
@@ -699,5 +749,20 @@ export function ResultView({ result: r, onRemaining, onEdit, onClear, onClose, a
         <button type="button" onClick={onClose} data-basket="done" className="min-h-11 flex-1 rounded-control border border-border px-space-4 text-t14 font-semibold text-fg">Done</button>
       </div>
     </>
+  );
+}
+
+/** SX / F3: the strategy exit set on the filled legs - a ₹ stop and target as the shared signed value, else the words. */
+function ExitResultV2({ exits: x }: { exits: Extract<NonNullable<BasketResult["exits"]>, { status: "ARMED" }> }) {
+  if (x.measure !== "MTM_INR" || (x.stop_now == null && x.target_value == null)) {
+    return <>{`Strategy exit set on the filled legs: ${x.words} Change or remove it on Positions.`}</>;
+  }
+  return (
+    <span title={x.words}>
+      Strategy exit set on the filled legs
+      {x.stop_now != null && <>: stop at <Signed value={x.stop_now} /></>}
+      {x.target_value != null && <>{x.stop_now != null ? ", target " : ": target "}<Signed value={x.target_value} /></>}
+      . Change or remove it on Positions.
+    </span>
   );
 }

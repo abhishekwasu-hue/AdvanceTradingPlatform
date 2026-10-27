@@ -1,6 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "../components/primitives/Dialog";
+import { Details } from "../ui/Details";
 import { confirmCopy, groupExitApi, runExit, type GroupExitApi, type GroupExitAsk } from "./groupExits";
 
 const BUTTON = "inline-flex h-11 items-center justify-center rounded-control px-space-4 text-t14 font-semibold transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-50 md:h-9";
@@ -51,9 +52,10 @@ export function GroupExitSheetV2({ ask, onClose, onDone, api = groupExitApi }: {
           <span>{copy.warning}</span>
         </p>
       ) : (
-        <p className="text-t13 text-fg-muted">
-          {current.kind === "leg" ? "The stop and target of the other legs keep working." : "If a leg has no price right now, nothing closes and you see why."}
-        </p>
+        // F7 / UX-11 U1: the body stays one line (the consequence); the explanation goes into Details, once per dialog.
+        <Details id="fno.group-exit" className="mt-0">
+          <p>{current.kind === "leg" ? "The stop and target of the other legs keep working." : "If a leg has no price right now, nothing closes and you see why."}</p>
+        </Details>
       )}
     </Dialog>
   );

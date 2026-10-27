@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The 500-user load test in one command, for the owner on the Hostinger host (docs/PERFORMANCE.md, runbook section 12):
 #
-#   /opt/atp/deploy/ci/loadtest_500.sh                 500 users, think 30 s, 5 minutes after a 150 s login ramp
+#   /opt/atp/deploy/ci/loadtest_500.sh                 500 users, think 30 s: a 150 s sign-in, a 150 s ramp, then 5
+#                                                      minutes with a probe login every 2 s (stack.sh cmd_load, as CI's primary)
 #   /opt/atp/deploy/ci/loadtest_500.sh --think 10      the busier profile CI also runs
 #
 # It brings up the CI staging stack (deploy/ci/stack.sh) as its own compose project `atp-ci` beside production: the

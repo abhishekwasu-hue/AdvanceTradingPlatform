@@ -12,7 +12,7 @@ function Shell({ side, open, onOpenChange, title, description, children, footer,
       ? "inset-x-0 bottom-0 max-h-[85vh] w-full rounded-t-xl border-t"
       : wide   // a workspace sheet (U9 gallery): most of the screen, scrolling inside
         ? "left-1/2 top-1/2 max-h-[90vh] w-[calc(100vw-2rem)] max-w-6xl -translate-x-1/2 -translate-y-1/2 rounded-xl border"
-        : "left-1/2 top-1/2 w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border";
+        : "left-1/2 top-1/2 max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border";   // a tall form scrolls inside; the footer stays on screen
   return (
     <RD.Root open={open} onOpenChange={onOpenChange}>
       <RD.Portal>

@@ -8,6 +8,7 @@ import { dataOf, usePolled } from "../dashboard/useDashboardData";
 import type { PageProps } from "../routes";
 import { formatINR, formatNumber, formatSignedINR } from "../ui/format";
 import { PageIntro } from "../ui/PageIntro";
+import { PageFootnote } from "../ui/numbersFirst";
 import { useLiveHidden } from "../settings/useLiveHidden";
 import { allocationRows, bookedCurve, longShortLine, portfolioTiles, type AllocationRow } from "./model";
 import { NoteV2, PageTitleV2, ShareBarV2, StateChipV2, TileV2, TilesV2 } from "./PartsV2";
@@ -101,6 +102,8 @@ export default function PortfolioV2(_props: PageProps = {}) {
         Limits on total exposure and on how much sits in one symbol are set on{" "}
         <Link to="/risk-management" className="font-medium text-brand hover:underline">Risk limits</Link>.
       </p>
+      {/* UX-11 U5: the page's one footer line. */}
+      <PageFootnote />
     </div>
   );
 }

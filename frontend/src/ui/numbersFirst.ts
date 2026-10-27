@@ -3,7 +3,7 @@
  * v2 card is built from. U1 Details, U2 Signed, U3 KeyValueTable / ProgressStat, U4 EmptyState, U5 PageFootnote; U6 the
  * text budget (textBudget.ts, checked in CI by e2e/text-budget-v2.e2e.ts).
  */
-export { Details } from "./Details";
+export { Details, TextOnDemand } from "./Details";
 export { Signed, signedParts, type SignedProps } from "./Signed";
 export { KeyValueTable, type KeyValueRow } from "./KeyValueTable";
 export { ProgressStat, progressPct } from "./ProgressStat";

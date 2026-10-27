@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { PaperRiskStatus, TicketSetup, TicketView, TradePlanView } from "../types";
 import { Card, signClass } from "./ui";
+import { Details, TextOnDemand } from "../ui/numbersFirst";
+import { useUiV2 } from "../ui/useFeatures";
 import { EMPTY_FORM, costRows, gauge, lockoutLine, money, pendingLine, placedMessage, planFromForm, type TicketForm } from "./paperTicket";
 
 /**
@@ -15,6 +17,7 @@ const TONE = { ok: "stroke-up", warn: "stroke-warn", over: "stroke-down" } as co
 const FIELD = "min-h-[44px] w-full rounded border border-border bg-surface-2 px-2 py-1 text-sm sm:min-h-0";
 
 export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: boolean; onPlaced?: () => void }) {
+  const v2 = useUiV2();                       // UX-11: the exits line and the cost basis under Details
   const [status, setStatus] = useState<PaperRiskStatus | null>(null);
   const [hidden, setHidden] = useState(false);
   const [form, setForm] = useState<TicketForm>(EMPTY_FORM);
@@ -76,7 +79,7 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
           </p>
         )}
         {pendingLine(status) && <p className="text-xs text-fg-muted" data-testid="risk-pending">{pendingLine(status)}</p>}
-        <p className="text-xs text-fg-muted">{status.exits}</p>
+        {!v2 && <p className="text-xs text-fg-muted">{status.exits}</p>}
 
         {canTrade && (
           <>
@@ -153,7 +156,7 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
                   {costRows(view.costs).map((r) => <span key={r.label}>{r.label} <span className="text-fg">{r.value}</span></span>)}
                 </div>
                 <div className="text-fg">Costs {money(view.costs.total)} (at the stop {money(view.costs.at_stop_total)}) · break-even move {view.costs.break_even_move ?? "-"} ({view.costs.break_even_pct ?? "-"}%)</div>
-                <p className="text-xs text-fg-muted">{view.costs.basis}</p>
+                <TextOnDemand id="mytrades.plan-costs" on={v2}><p className="text-xs text-fg-muted">{view.costs.basis}</p></TextOnDemand>
               </div>
             )}
             {[...view.errors, ...view.refusals].map((r) => <p key={r} className="text-xs text-down">{r}</p>)}
@@ -182,6 +185,7 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
           </details>
         )}
       </div>
+      {v2 && <Details id="mytrades.plan-before-trade"><p>{status.exits}</p></Details>}
     </Card>
   );
 }

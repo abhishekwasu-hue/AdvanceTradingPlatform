@@ -1,0 +1,489 @@
+{
+ "_note": "UX-11: hand-written, made-up replies for the My trades cards (no real account, price or id).",
+ "experience": {
+  "level": "BEGINNER",
+  "level_label": "Beginner",
+  "levels": [
+   {
+    "key": "BEGINNER",
+    "label": "Beginner",
+    "reached": true,
+    "opens": [
+     "Options buying"
+    ],
+    "criteria": []
+   },
+   {
+    "key": "INTERMEDIATE",
+    "label": "Intermediate",
+    "reached": false,
+    "opens": [
+     "Futures",
+     "Spreads"
+    ],
+    "criteria": [
+     {
+      "key": "closed_trades",
+      "label": "Closed PAPER trades",
+      "value": 12,
+      "target": 30,
+      "comparison": "at_least",
+      "met": false
+     },
+     {
+      "key": "sessions",
+      "label": "Sessions",
+      "value": 9,
+      "target": 20,
+      "comparison": "at_least",
+      "met": false
+     },
+     {
+      "key": "max_drawdown_pct",
+      "label": "Largest drawdown",
+      "value": 4.2,
+      "target": 10,
+      "comparison": "at_most",
+      "met": true
+     }
+    ]
+   },
+   {
+    "key": "ADVANCED",
+    "label": "Advanced",
+    "reached": false,
+    "opens": [
+     "Naked short options"
+    ],
+    "criteria": [
+     {
+      "key": "closed_trades",
+      "label": "Closed PAPER trades",
+      "value": 12,
+      "target": 100,
+      "comparison": "at_least",
+      "met": false
+     }
+    ]
+   }
+  ],
+  "record": {
+   "closed_trades": 12,
+   "sessions": 9,
+   "max_drawdown_pct": 4.2
+  },
+  "gates": [
+   {
+    "key": "futures",
+    "label": "Futures",
+    "opens_at": "INTERMEDIATE",
+    "opens_at_label": "Intermediate",
+    "allowed_by_level": false,
+    "opted_out_today": false,
+    "allowed": false
+   },
+   {
+    "key": "naked_short",
+    "label": "Naked short options",
+    "opens_at": "ADVANCED",
+    "opens_at_label": "Advanced",
+    "allowed_by_level": false,
+    "opted_out_today": false,
+    "allowed": false
+   },
+   {
+    "key": "options_buying",
+    "label": "Options buying",
+    "opens_at": "BEGINNER",
+    "opens_at_label": "Beginner",
+    "allowed_by_level": true,
+    "opted_out_today": false,
+    "allowed": true
+   }
+  ],
+  "opt_outs": {
+   "today": 0,
+   "last_7_days": 1,
+   "total": 2,
+   "recent": [
+    {
+     "gate": "futures",
+     "gate_label": "Futures",
+     "level": "BEGINNER",
+     "reason": "Made-up reason for a demo opt-out",
+     "day": "2026-10-21"
+    }
+   ]
+  },
+  "min_reason_chars": 20,
+  "day": "2026-10-27",
+  "exits": "Exits are never blocked.",
+  "as_of": "2026-10-27T09:30:00+05:30"
+ },
+ "portfolio_risk": {
+  "capital": 1000000,
+  "positions": 4,
+  "exposure": {
+   "gross": 412500,
+   "net": 187500,
+   "long": 300000,
+   "short": 112500,
+   "gross_pct": 41.25,
+   "net_pct": 18.75
+  },
+  "open_risk": {
+   "total": 14250,
+   "pct": 1.43
+  },
+  "buckets": [
+   {
+    "bucket": "Information Technology",
+    "positions": 2,
+    "gross_notional": 300000,
+    "net_notional": 300000,
+    "open_risk": 9000,
+    "symbols": [
+     "INFY",
+     "TCS"
+    ],
+    "gross_pct": 30,
+    "risk_pct": 0.9
+   },
+   {
+    "bucket": "INDEX",
+    "positions": 1,
+    "gross_notional": 112500,
+    "net_notional": -112500,
+    "open_risk": 5000,
+    "symbols": [
+     "NIFTY24OCTFUT"
+    ],
+    "gross_pct": 11.25,
+    "risk_pct": 0.5
+   },
+   {
+    "bucket": "UNCLASSIFIED:NEWCO",
+    "positions": 1,
+    "gross_notional": 0,
+    "net_notional": 0,
+    "open_risk": 250,
+    "symbols": [
+     "NEWCO"
+    ],
+    "gross_pct": 0,
+    "risk_pct": 0.03
+   }
+  ],
+  "beta": {
+   "net": 112850,
+   "gross": 338350,
+   "net_pct": 11.29,
+   "unknown": [
+    "NEWCO"
+   ],
+   "not_weighted": [],
+   "per_underlying": {
+    "INFY": {
+     "value": 0.762,
+     "sessions": 250,
+     "known": true,
+     "source": "lake (adjusted)"
+    },
+    "NEWCO": {
+     "value": 1,
+     "sessions": 40,
+     "known": false,
+     "source": "40 shared sessions (< 120)"
+    },
+    "NIFTY": {
+     "value": 1,
+     "sessions": 0,
+     "known": true,
+     "source": "definition"
+    },
+    "TCS": {
+     "value": 0.719,
+     "sessions": 250,
+     "known": true,
+     "source": "lake (adjusted)"
+    }
+   }
+  },
+  "direction": {
+   "bullish": 3,
+   "bearish": 1,
+   "neutral": 0,
+   "warning": null
+  },
+  "priced_at_entry": [
+   "NEWCO"
+  ],
+  "as_of": "2026-10-12",
+  "mode": "PAPER",
+  "capital_source": "PAPER account: starting capital + realised P&L before today",
+  "limits": {
+   "max_sector_pct": 35,
+   "max_correlated_risk_pct": 2,
+   "max_open_positions": 6
+  }
+ },
+ "decision_positions": {
+  "subjects": [
+   {
+    "underlying": "DEMO A",
+    "legs": [
+     {
+      "trade_id": 9001,
+      "symbol": "DEMOA24NOV1000CE",
+      "direction": "BUY",
+      "option_type": "CE",
+      "strike": 1000,
+      "expiry": "2026-11-27",
+      "lots": 1,
+      "premium": 42.5,
+      "iv": 0.24
+     }
+    ],
+    "skipped": [],
+    "modes": [
+     "PAPER"
+    ],
+    "has_options": true,
+    "expiries": [
+     "2026-11-27"
+    ]
+   }
+  ]
+ },
+ "decision_exposure": {
+  "underlyings": [
+   {
+    "underlying": "DEMO A",
+    "legs": 1,
+    "modes": [
+     "PAPER"
+    ],
+    "notional": 0,
+    "net_quantity": 0,
+    "option_premium": 2125,
+    "risk_at_stop": 1200,
+    "legs_without_stop": [],
+    "sector": "Demo sector",
+    "beta": 1.1,
+    "return_days": 70
+   },
+   {
+    "underlying": "DEMO B",
+    "legs": 2,
+    "modes": [
+     "PAPER"
+    ],
+    "notional": 1440,
+    "net_quantity": 6,
+    "option_premium": 0,
+    "risk_at_stop": 700,
+    "legs_without_stop": [
+     "DEMOB-LEG"
+    ],
+    "sector": "Other demo sector",
+    "beta": null,
+    "return_days": 70
+   }
+  ],
+  "sectors": [
+   {
+    "sector": "Demo sector",
+    "underlyings": 1,
+    "notional": 0,
+    "option_premium": 2125,
+    "risk_at_stop": 1200
+   },
+   {
+    "sector": "Other demo sector",
+    "underlyings": 1,
+    "notional": 1440,
+    "option_premium": 0,
+    "risk_at_stop": 700
+   }
+  ],
+  "pairs": [
+   {
+    "a": "DEMO A",
+    "b": "DEMO B",
+    "r": 0.78,
+    "days": 70
+   }
+  ],
+  "move_together": [
+   {
+    "a": "DEMO A",
+    "b": "DEMO B",
+    "r": 0.78,
+    "days": 70
+   }
+  ],
+  "move_together_threshold": 0.7,
+  "min_points": 20,
+  "lookback_days": 90,
+  "totals": {
+   "underlyings": 2,
+   "legs": 3,
+   "risk_at_stop": 1900,
+   "notional": 1440
+  },
+  "market": "NIFTY 50",
+  "market_days": 70,
+  "note": "Made-up demo figures."
+ },
+ "paper_risk": {
+  "mode": "PAPER",
+  "settings": {
+   "risk_per_trade_pct": 1,
+   "risk_per_trade_amount": 0,
+   "daily_loss_pct": 1.5,
+   "max_trades_per_day": 6,
+   "min_rr": 0
+  },
+  "effective": {
+   "risk_per_trade_pct": 1,
+   "risk_per_trade_amount": 0,
+   "daily_loss_pct": 1.5,
+   "max_trades_per_day": 6,
+   "min_rr": 0
+  },
+  "defaults": {
+   "risk_per_trade_pct": 1,
+   "risk_per_trade_amount": 0,
+   "daily_loss_pct": 2,
+   "max_trades_per_day": 5,
+   "min_rr": 1
+  },
+  "notes": [],
+  "set": [
+   "risk_per_trade_pct",
+   "daily_loss_pct",
+   "max_trades_per_day"
+  ],
+  "pending": null,
+  "bounds": {
+   "risk_per_trade_pct": [
+    0,
+    5
+   ],
+   "risk_per_trade_amount": [
+    0,
+    100000
+   ],
+   "daily_loss_pct": [
+    0,
+    10
+   ],
+   "max_trades_per_day": [
+    0,
+    50
+   ],
+   "min_rr": [
+    0,
+    10
+   ]
+  },
+  "labels": {
+   "risk_per_trade_pct": "Risk per trade (%)",
+   "risk_per_trade_amount": "Risk per trade (amount)",
+   "daily_loss_pct": "Daily loss limit (%)",
+   "max_trades_per_day": "Max entries per day",
+   "min_rr": "Minimum reward : risk"
+  },
+  "capital_basis": 1000000,
+  "risk_cap": {
+   "amount": 10000,
+   "binding": "pct",
+   "by_pct": 10000
+  },
+  "today": {
+   "realised": 660,
+   "open_marks": 3720,
+   "pnl": 4380,
+   "worst": -5770,
+   "limit": 15000,
+   "used": 0.385,
+   "entries": 3,
+   "max_entries": 6
+  },
+  "lockout": null,
+  "overrides": {
+   "today": 0,
+   "total": 1
+  },
+  "override_max_multiple": 2,
+  "override_min_reason_chars": 20,
+  "vix_gate": {
+   "enabled": false,
+   "state": "off",
+   "underlyings": [],
+   "latest": null,
+   "bullish_paused": false,
+   "size_multiplier": 1,
+   "messages": [],
+   "settings": {
+    "spike_pct": 10,
+    "high_level": 25,
+    "size_cut_pct": 50,
+    "max_age_minutes": 30
+   }
+  },
+  "setups": {
+   "PULLBACK_AT_LEVEL": "Pullback at a level",
+   "SR_FLIP": "Support/resistance flip",
+   "BREAKOUT_RETEST": "Breakout and retest",
+   "RANGE_EDGE": "Range edge",
+   "OI_IV": "OI / IV read",
+   "OTHER": "Other"
+  },
+  "checklist": {
+   "structure": "I read the structure on the chart",
+   "invalidation": "I know where the idea is wrong",
+   "size": "The size is inside my cap"
+  },
+  "exits": "Exits are never blocked.",
+  "as_of": "2026-10-27T09:30:00+05:30"
+ },
+ "paper_plans": [
+  {
+   "id": 501,
+   "status": "PLACED",
+   "symbol": "DEMO A",
+   "direction": "BUY",
+   "setup": "PULLBACK_AT_LEVEL",
+   "setup_label": "Pullback at a level",
+   "entry": 100,
+   "stop_loss": 95,
+   "target": 112,
+   "reward_risk": 2.4,
+   "time_stop": null,
+   "invalidation": "Close below the made-up level",
+   "checklist": {
+    "structure": true,
+    "invalidation": true,
+    "size": true
+   },
+   "checklist_complete": true,
+   "quantity": 100,
+   "risk_amount": 500,
+   "risk_cap": 10000,
+   "override": false,
+   "override_reason": null,
+   "costs": {},
+   "reasons": [],
+   "order_id": 7001,
+   "trade_id": 9001,
+   "filled": {
+    "quantity": 100,
+    "price": 100,
+    "risk_amount": 500
+   },
+   "created_at": "2026-10-26T10:05:00+05:30",
+   "proposal": null
+  }
+ ]
+}

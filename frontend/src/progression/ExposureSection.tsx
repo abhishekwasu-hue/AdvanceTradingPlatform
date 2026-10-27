@@ -3,6 +3,8 @@ import { api } from "../api/client";
 import type { ExposureView } from "../types";
 import { rupees0, strongestPairs } from "./exposure";
 import { useProgressionT } from "./i18n";
+import { TextOnDemand } from "../ui/numbersFirst";
+import { useUiV2 } from "../ui/useFeatures";
 
 /**
  * N2-4 (flag `decision_tools`): the caller's own open positions by underlying and sector, beta to the NIFTY 50 and the
@@ -10,6 +12,7 @@ import { useProgressionT } from "./i18n";
  */
 export default function ExposureSection() {
   const t = useProgressionT();
+  const v2 = useUiV2();                       // UX-11: the intro and the method note under Details
   const [view, setView] = useState<ExposureView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +24,7 @@ export default function ExposureSection() {
   return (
     <section className="space-y-2" aria-label={t("decision.exposure.title")}>
       <h3 className="font-semibold text-fg">{t("decision.exposure.title")}</h3>
-      <p className="text-fg-muted">{t("decision.exposure.intro")}</p>
+      <TextOnDemand id="mytrades.exposure" on={v2}><p className="text-fg-muted">{t("decision.exposure.intro")}</p></TextOnDemand>
       <button type="button" disabled={busy} onClick={() => void load()}
               className="min-h-[44px] rounded border border-border px-3 py-1 text-fg hover:bg-surface-2 disabled:opacity-50 sm:min-h-0">
         {t("decision.exposure.load")}
@@ -34,6 +37,7 @@ export default function ExposureSection() {
 
 export function ExposureViewPanel({ view }: { view: ExposureView }) {
   const t = useProgressionT();
+  const v2 = useUiV2();
   if (!view.underlyings.length) return <p className="text-fg-muted">{t("decision.exposure.none")}</p>;
   const pairs = strongestPairs(view);
   return (
@@ -84,7 +88,7 @@ export function ExposureViewPanel({ view }: { view: ExposureView }) {
       {!!view.not_computed?.length && (
         <p className="text-warn">{t("decision.exposure.notComputed", { max: view.max_computed ?? 0, list: view.not_computed.join(", ") })}</p>
       )}
-      <p className="text-xs text-fg-muted">{view.note}</p>
+      <TextOnDemand id="mytrades.exposure-note" on={v2}><p className="text-xs text-fg-muted">{view.note}</p></TextOnDemand>
     </div>
   );
 }

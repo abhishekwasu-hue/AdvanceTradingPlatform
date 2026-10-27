@@ -30,6 +30,7 @@ import { BrokerGateView, CONNECT_BROKER_PATH, SIGN_IN_PATH, useBrokerLogin } fro
 import { useBrokerSession } from "../ui/brokerSession";
 import { EMPTY, formatINR, formatNumber, formatPct, formatPrice, formatSignedINR, formatTimeIST } from "../ui/format";
 import { PageIntro } from "../ui/PageIntro";
+import { PageFootnote } from "../ui/numbersFirst";
 import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
 import { liveHiddenFrom } from "../settings/useLiveHidden";
@@ -292,6 +293,9 @@ export default function PositionsV2(_props: PageProps = {}) {
         <PaperTicketCard canTrade={canTrade} onPlaced={reload} />
         {canTrade && <ContractNoteCard onApplied={reload} />}
       </section>
+
+      {/* UX-11 U5: the page's one footer line (the cards no longer repeat it). */}
+      <PageFootnote>Phase 0 has PAPER only.</PageFootnote>
     </div>
   );
 }

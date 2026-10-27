@@ -6,6 +6,8 @@ import { chartGeometry, pnl, ruinBody, ruinPrefill, type RuinInputs } from "./de
 import ExposureSection from "./ExposureSection";
 import { pct, probability } from "./evidence";
 import { useProgressionT } from "./i18n";
+import { Details, TextOnDemand } from "../ui/numbersFirst";
+import { useUiV2 } from "../ui/useFeatures";
 
 /**
  * N2-3 (flag `decision_tools`): the risk-of-ruin / Kelly calculator, prefilled from the user's own figures (N2-1, when
@@ -14,6 +16,7 @@ import { useProgressionT } from "./i18n";
  */
 export default function DecisionToolsCard() {
   const t = useProgressionT();
+  const v2 = useUiV2();                       // UX-11: the intro and method notes under Details
   const [subjects, setSubjects] = useState<WhatIfSubject[] | null>(null);
   const [inputs, setInputs] = useState<RuinInputs | null>(null);
   const [prefilled, setPrefilled] = useState(false);
@@ -46,10 +49,10 @@ export default function DecisionToolsCard() {
   return (
     <Card title={t("decision.title")} className="space-y-4">
       <div className="space-y-4 text-xs" data-testid="decision-tools">
-        <p className="text-fg-muted">{t("decision.intro")}</p>
+        {!v2 && <p className="text-fg-muted">{t("decision.intro")}</p>}
         <section className="space-y-2" aria-label={t("decision.ruin.title")}>
           <h3 className="font-semibold text-fg">{t("decision.ruin.title")}</h3>
-          {prefilled && <p className="text-fg-muted">{t("decision.ruin.prefilled")}</p>}
+          {prefilled && !v2 && <p className="text-fg-muted">{t("decision.ruin.prefilled")}</p>}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {field("winRatePct", t("decision.ruin.winRate"))}
             {field("payoff", t("decision.ruin.payoff"))}
@@ -65,6 +68,13 @@ export default function DecisionToolsCard() {
         <WhatIfSection subjects={subjects} />
         <ExposureSection />
         {error && <p role="status" className="text-down">{error}</p>}
+        {/* UX-11 (v2 pages): what these tools are, under Details. */}
+        {v2 && (
+          <Details id="mytrades.decision-tools">
+            <p>{t("decision.intro")}</p>
+            {prefilled && <p>{t("decision.ruin.prefilled")}</p>}
+          </Details>
+        )}
       </div>
     </Card>
   );
@@ -72,6 +82,7 @@ export default function DecisionToolsCard() {
 
 export function RuinResultView({ calc }: { calc: RuinCalc }) {
   const t = useProgressionT();
+  const v2 = useUiV2();
   return (
     <div className="space-y-2" data-testid="ruin-result">
       <p className="text-fg">{t("decision.ruin.expectancy", { r: calc.expectancy_r.toFixed(2) })}</p>
@@ -96,7 +107,7 @@ export function RuinResultView({ calc }: { calc: RuinCalc }) {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-fg-muted">{calc.note}.</p>
+      <TextOnDemand id="mytrades.decision-ruin" on={v2}><p className="text-xs text-fg-muted">{calc.note}.</p></TextOnDemand>
     </div>
   );
 }
@@ -161,6 +172,7 @@ const STROKE = { now: "stroke-info", scenario: "stroke-signal", expiry: "stroke-
 
 export function WhatIfView({ result }: { result: WhatIfResult }) {
   const t = useProgressionT();
+  const v2 = useUiV2();
   const g = chartGeometry(result, W, H);
   const shift = `${result.iv_shift >= 0 ? "+" : ""}${(result.iv_shift * 100).toFixed(1)}`;
   const label = { now: t("decision.whatIf.now"), scenario: t("decision.whatIf.scenario", { days: result.days_forward, shift }),
@@ -186,7 +198,7 @@ export function WhatIfView({ result }: { result: WhatIfResult }) {
       <p className="text-fg-muted tabular-nums">{t("decision.whatIf.greeks", {
         delta: result.greeks.delta.toFixed(2), gamma: result.greeks.gamma.toFixed(4), theta: result.greeks.theta.toFixed(2), vega: result.greeks.vega.toFixed(2) })}</p>
       {result.skipped.map((x) => <p key={x.trade_id} className="text-warn">{t("decision.whatIf.skipped", { symbol: x.symbol, reason: x.reason })}</p>)}
-      <p className="text-xs text-fg-muted">{result.note}</p>
+      <TextOnDemand id="mytrades.decision-whatif" on={v2}><p className="text-xs text-fg-muted">{result.note}</p></TextOnDemand>
     </div>
   );
 }

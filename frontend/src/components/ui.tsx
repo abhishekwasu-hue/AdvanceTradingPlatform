@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 
 export function Card({ title, children, className = "" }: { title?: string; children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-xl border border-border bg-surface-1 shadow-card p-4 ${className}`}>
+    <div className={`rounded-xl border border-border bg-surface-1 shadow-card p-4 ${className}`} data-card={title || undefined}>
       {title && (
         <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-3">{title}</div>
       )}

@@ -27,6 +27,7 @@ import { EMPTY, formatCompactIN, formatDateIST, formatNumber, formatPrice, forma
 import { SubTabs } from "../ui/SubTabs";
 import type { ChartLive, TerminalSpot } from "./spot";
 import { orderGroup, statusWords, type OrderEvent, type OrderGroup, type OrderRow, type TerminalApi } from "./api";
+import { Details } from "../ui/numbersFirst";
 
 /**
  * Trading Terminal T1: the panels. Each one wraps an existing part of ATP - nothing is rewritten:
@@ -217,7 +218,10 @@ export function ChainPanelV2({ underlying, read, trading, rows = 6, spot, compac
           </tbody>
         </table>
       </div>
-      <p className={MUTED}>Tap a price to buy, sell or add it to your basket. P: a contract you hold. The ATM strike is in colour.{compact ? " Tap a strike for change in OI, IV and delta." : ""}</p>
+      {/* UX-11 U1: how to use the chain, on demand. */}
+      <Details id="terminal.chain" className="mt-space-2">
+        <p>Tap a price to buy, sell or add it to your basket. P: a contract you hold. The ATM strike is in colour.{compact ? " Tap a strike for change in OI, IV and delta." : ""}</p>
+      </Details>
     </div>
   );
 }

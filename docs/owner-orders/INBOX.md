@@ -133,3 +133,8 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | (Marathi, translated) "Yes, show the sample" | UX-13 sample (before / after) for the owner's OK, then the PR behind ui_v2 |
 | 2026-10-27 | "Finish your job , do fast, open multiple agent" | Session B: 2 helper agents (the CLAUDE.md cap, DECISIONS 107) on the remaining UX-11 guard pages; main session merges, docs, Paper bot template line |
 | 2026-10-27 | (Marathi, translated) "Send the sample" / then "C, dots yes" | UX-13 option C (section colour on the icon only, the round fill only on the tab on screen; lighter tile grid lines) + UX-12 dotted backdrop: build both behind ui_v2 |
+| 2026-10-27 | (Marathi, translated) "Why has nothing been deployed for so long? Three sessions together must have merged many PRs - when do we deploy?" | deploy line a5db3e1 (migration f1b3d5e7a9c2) given; owner deployed 21:00 IST, health OK |
+| 2026-10-27 | (Marathi, translated) "Since morning only this much work got done" | answered with the day's merged list and causes (CI queue, re-pushes); new rule: run the PR's e2e locally before push, one fixed deploy slot after 15:30 IST |
+| 2026-10-27 | (Marathi, translated) "And which work of the other two sessions was merged" | list given (Session B UX-2 / UX-11, Session C M45 / P2-1) |
+| 2026-10-27 | (screenshots) deploy health OK; restart (security updates) done; instrument master ok 91,037 rows | P1-B1 live; owner check tomorrow 09:15 (PAPER ticket on a NIFTY contract) |
+| 2026-10-27 | (Marathi, translated) "Give the VPS command for the finished work" | deploy line 534a4f8 (F1 + MB-7, no migration) given; next deploy = T2 + SX/CX2 + load-500 + backup fix after main CI |

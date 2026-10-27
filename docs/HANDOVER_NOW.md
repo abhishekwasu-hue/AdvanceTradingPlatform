@@ -1,9 +1,8 @@
-# Handover now (27 Oct 2026, morning)
-Rules: CLAUDE.md §6 + TB-10..TB-16; R2 = max 5 build items over all sessions. Sessions: A traders-first (this),
-B UI redesign UX-2, C review/design + M45 build. Notify the owner whenever his input is needed.
-Production: fa2dbb8f216a (27 Oct 09:40 IST), health OK; M45 migration e2a4c6e8f0b1 applied.
-Done 26-27 Oct: Step 0, #553 CX PR 3, #554 Watchlist page, #570 DH2/DH6 (last session from the own lake; 22,600 was a
-real stale close), #438, #452, #536, #569; IST-midnight test fixes #562/#565.
-Open: VPS restart (security updates) after 15:30 IST + after a deploy; VAPID keys (owner, atp-private); R2 off-site
-backup (P3-1, owner); `load-500` staging check red on most main commits (root cause next); next deploy: #571 + #572.
-Next (A): load-500 -> day-one test J1/J3 -> T2/T3 (+TL-1..4) + SX (P1-6d) + CX2 trailing. P2-8 after P1.
+# Handover now (27 Oct 2026, night)
+Rules: CLAUDE.md §6; R2 = max 5 build items (all sessions). Sessions: A traders-first (this), B UX-2/UX-11, C M45.
+Production: a5db3e1 (27 Oct ~21:00 IST, migration f1b3d5e7a9c2), health OK, VPS rebooted (updates); 534a4f8 line sent.
+Merged 27 Oct (A): P1-B1 #575 (live, master ok), F1 #605, T2 #602 (Exit part / Reverse / Modify), CX2 + SX #603,
+load-500 sign-in redesign #604, backup same-second race #607 (busybox flock -n), test flake #595.
+Next deploy: newest green main after a39719e (T2 + SX/CX2 + #604/#607), no migration.
+Open: owner checks P1-B1 / T2 / SX on the site; load-500 API p95 on 2 CPUs (chart, dashboard) - follow-up;
+VAPID + R2 (owner); SXQ-1..4 / T2 provisional choices. Next (A): J1/J3 day-one test, T3, TL-1..4.

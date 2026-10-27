@@ -115,3 +115,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | (Marathi, translated) "Restart the VPS now" / "Why restart - any reason?" | restart only applies Ubuntu security updates; default: after 15:30 IST, after a deploy |
 | 2026-10-27 | (Marathi, translated) "Default yes, carry on" | docs + handover; load-500 root cause next |
 | 2026-10-27 | OWNER ORDER UX-11 "Numbers first, text on demand" (U1-U6, PR 1 primitives + guard, then My trades, Today, Terminal, Charts, rest in UX-10 order) - full text verbatim in ATP_ORDER_UX11.md | roadmap UX-11; PR 1 next (Session B) |
+| 2026-10-27 | (Marathi, verbatim) "शिल्लक कामाची यादी" / "Default yes, सगळं पूर्ण कर" (reply to the remaining-work list: merges #578, #586-#589; UX-11 rest of the pages in UX-10 order; OC-4 / OC-5; Orders footer; docs; flaky tests; footer default) | Session B: all items, defaults accepted |

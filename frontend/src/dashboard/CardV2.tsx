@@ -45,12 +45,16 @@ export function CardV2({ title, count, more, children, className = "", testId, t
   );
 }
 
-/** A friendly empty state with at most one action (§5 "Empty states"). */
-export function EmptyStateV2({ text, action }: { text: string; action?: { label: string; to: string } }) {
+/** A friendly empty state with at most one action (§5 "Empty states"; UX-11 U4: one line + one action - a link or a
+ * button). Shared as `EmptyState` in src/ui/numbersFirst.ts. */
+export type EmptyAction = { label: string; to: string } | { label: string; onClick: () => void };
+export function EmptyStateV2({ text, action }: { text: string; action?: EmptyAction }) {
   return (
-    <div className="flex flex-col items-start gap-space-3 py-space-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col items-start gap-space-3 py-space-2 sm:flex-row sm:items-center sm:justify-between" data-empty>
       <p className="text-t14 text-fg-muted">{text}</p>
-      {action && <Link to={action.to} className={LINK_SECONDARY}>{action.label}</Link>}
+      {action && ("to" in action
+        ? <Link to={action.to} className={LINK_SECONDARY}>{action.label}</Link>
+        : <button type="button" onClick={action.onClick} className={LINK_SECONDARY}>{action.label}</button>)}
     </div>
   );
 }

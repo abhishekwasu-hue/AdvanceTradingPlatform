@@ -91,7 +91,7 @@ test.describe("colour v2 phone 390 x 844", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
   for (const [page_, path, active] of [["Signals", "/signals", "Signals"], ["Option chain", "/option-chain", null]] as const) {
-    test(`CA6: on ${page_} every tab shows its section colour; only the tab on screen is on the strong tint`, async ({ page }) => {
+    test(`CA6 + UX-13 C: on ${page_} every tab shows its section colour; only the tab on screen is on the strong tint`, async ({ page }) => {
       await open(page, path);
       const tabs = await page.locator("[data-bottom-nav-v2] > a, [data-bottom-nav-v2] > button").evaluateAll((els) => {
         const probe = (cls: string, prop: "color" | "backgroundColor") => {
@@ -122,7 +122,8 @@ test.describe("colour v2 phone 390 x 844", () => {
           expect(t.word, `${t.text} word`).toBe(t.want.sec);
           expect(t.weight, `${t.text} bold`).toBeGreaterThanOrEqual(600);
         } else {
-          expect(t.chip, `${t.text} chip`).toBe(t.want.soft);
+          // UX-13 option C (owner, 27 Oct): no soft round fill on the other tabs - the colour is on the icon only.
+          expect(t.chip, `${t.text} chip`).toBe("rgba(0, 0, 0, 0)");
           expect(t.icon, `${t.text} icon`).toBe(t.want.sec);
           expect(t.word, `${t.text} word`).toBe(t.want.grey);
         }

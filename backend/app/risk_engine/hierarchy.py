@@ -28,6 +28,7 @@ from app.core.enums import KillSwitchScope, NotificationSeverity, NotificationTy
 from app.db.models import RiskEventRecord, RiskLimitRecord, TradeRecord, User
 from app.kill_switch.checks import engage
 from app.notifications.service import notify
+from app.trading.trade_split import not_a_split
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,8 @@ async def _measure(session: AsyncSession, ctx: RiskContext, limit_type: RiskLimi
             query = query.where(TradeRecord.deployment_id == ctx.deployment_id)
         return float((await session.scalar(query)) or 0) + 1.0, "open positions after this order"
     if limit_type == RiskLimitType.MAX_TRADES_PER_DAY:
-        query = select(func.count()).select_from(TradeRecord).where(TradeRecord.tenant_id == ctx.tenant_id, TradeRecord.entry_time >= today_start)
+        query = select(func.count()).select_from(TradeRecord).where(TradeRecord.tenant_id == ctx.tenant_id, TradeRecord.entry_time >= today_start,
+                                                                         not_a_split())
         if rule.scope == RiskScope.STRATEGY.value:
             query = query.where(TradeRecord.strategy_id == ctx.strategy_id)
         elif rule.scope == RiskScope.USER.value:

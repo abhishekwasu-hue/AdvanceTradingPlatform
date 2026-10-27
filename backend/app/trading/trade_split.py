@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-from sqlalchemy import update
+from sqlalchemy import or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import PaperRestingOrderRecord, TradeRecord
@@ -22,6 +22,12 @@ from app.db.models import PaperRestingOrderRecord, TradeRecord
 _NOT_COPIED = {"id", "created_at", "exit_time", "exit_price", "exit_reason", "pnl", "charges", "exit_order_id", "exit_sent_at",
                "reconciled_open_at", "exit_filled_quantity", "exit_filled_price", "contract_note_id"}
 SPLIT_FROM = "split_from"
+
+
+def not_a_split():
+    """SQL filter: rows that are not the closed part of a partial exit (a split is not a new trade - trades-per-day
+    counts it once, on the original row)."""
+    return or_(TradeRecord.group_meta.is_(None), ~TradeRecord.group_meta.contains(f'"{SPLIT_FROM}"'))
 
 
 class SplitError(ValueError):

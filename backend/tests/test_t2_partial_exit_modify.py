@@ -254,3 +254,21 @@ def test_modify_and_cancel_are_the_callers_own(setup):
     assert client.post(f"/api/paper/fno/resting/{row['id']}/cancel", headers=t["headers"]).json()["status"] == resting_book.CANCELLED
     late = _modify(t, row["id"], price=90.0)
     assert late.status_code == 409 and "can no longer be changed" in late.json()["detail"]
+
+
+def test_a_part_exit_is_not_a_new_trade_for_the_trades_per_day_count(setup):
+    """The closed part of a split is the same trade: trades-per-day (day state + the risk hierarchy) counts it once."""
+    from datetime import datetime, timezone
+
+    from app.db.models import User
+    from app.trading.persistence import build_trading_day_state
+    t, expiry, strike, _ = setup
+    trade_id = _open(t, expiry, strike)
+
+    async def count():
+        async with _session_factory() as session:
+            user = await session.get(User, t["user_id"])
+            return (await build_trading_day_state(session, user, now=datetime.now(timezone.utc))).trades_today
+    before = _run(count())
+    assert _part(t, trade_id, 1).status_code == 200
+    assert _run(count()) == before

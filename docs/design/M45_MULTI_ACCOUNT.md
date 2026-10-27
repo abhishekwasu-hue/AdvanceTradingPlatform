@@ -56,7 +56,8 @@ Upstox before LIVE; the same for every broker (a lawyer + broker check, MB-0). P
 - **Audit**: one log row per routing decision (what, which accounts, why) and per result; no secrets.
 - Flag `multi_account` (OFF, behind `ui_v2`); PAPER first; LIVE only on the owner's words; AI never places orders.
 
-PR plan (one `claude/` branch each, draft): **MA-1** data + registry page (migration) -> **MA-2** sizing + resolver
+PR plan (one `claude/` branch each, draft): **MA-1** data + registry page (migration; split 26 Oct into MA-1a backend and
+MA-1b page; simulated paper accounts move to MA-3) -> **MA-2** sizing + resolver
 (pure, tests: matrix, rounding / skip) -> **MA-3** fan-out executor on PAPER simulated accounts (tests: partial failure,
 token expiry, one account failing on exit) -> **MA-4** exits follow positions + G3 guard (tests across brokers) ->
 **MA-5** checks, alerts, retry, capability table -> **MA-6** views + ticket "Run on" list + screenshots.

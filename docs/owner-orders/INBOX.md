@@ -102,4 +102,5 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-26 | Yes I agree <br> (reply to the M45 report: design note docs/design/M45_MULTI_ACCOUNT.md + defaults M45-1 one Primary per user across all brokers; M45-2 matrix replaces the Phase T policy for that deployment; M45-3 `multi_account` cannot be turned on while an open LIVE trade has no recorded account) |
 | 2026-10-26 | Default yes <br> (owner's follow-up after the M45 ✅: the defaults M45-1..3 stand; already in DECISIONS) |
 | 2026-10-26 | Ho <br> ((Marathi, translated) "Yes" - reply to: merge MA-1a #568 on green; MA-1b next) |
+| 2026-10-26 | (Marathi, translated) "Start the MA-1 build." |
 | 2026-10-27 | (Marathi, translated) "Default yes, start DH2 / DH6." (after the deploy of b15de0d, health OK) | DATA-H DH2 / DH6: last-session 1-minute fill from the own lake; VAPID default (owner keeps the key in atp-private) |

@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 from sqlalchemy.sql import false, true
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -641,6 +641,123 @@ class WorkerHeartbeatRecord(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class PaperRestingOrderRecord(Base):
+    """TM-2 (owner, 23 Oct): the resting order book - a limit / SL / SL-M entry or exit that waits for its price, and the
+    one trigger engine (app/execution/trigger_engine.py) that fires it. One row per order, owned by its tenant AND user.
+
+    * `purpose` ENTRY (opens a position: fires through the ordinary pipeline, every entry check again at fire time) or
+      EXIT (closes the user's own open `trade_id`: never blocked, ADR-0004);
+    * `kind` LIMIT / STOP / TARGET - the order's job; inside one bar or tick a STOP is judged before a TARGET (TT-7);
+    * the trigger (T-D2, the order's own settings): `trigger_source` PREMIUM (the contract's price) or SPOT (the
+      underlying `trigger_symbol`), `trigger_level` and `trigger_side` (ABOVE / BELOW: which way the price must go),
+      `trigger_mode` TOUCH (any print) or CLOSE (a closed candle of `timeframe_minutes`);
+    * `client_ref` the idempotency key (unique per tenant and user): a second tap never rests twice;
+    * `status` RESTING -> FIRING -> FILLED / REJECTED, or CANCELLED / EXPIRED; `trail_json` the order trail (JSON list
+      of {at, status, note}); `order_id` / `fill_price` / `fired_at` once it fired.
+    `mode` is the account's mode when it was placed (PAPER today; LIVE stays behind the owner's switches)."""
+
+    __tablename__ = "paper_resting_orders"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", "client_ref", name="uq_resting_order_client_ref"),
+        Index("ix_resting_orders_tenant_status", "tenant_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_ref: Mapped[str] = mapped_column(String(80), nullable=False)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="PAPER")
+    purpose: Mapped[str] = mapped_column(String(10), nullable=False)            # ENTRY | EXIT
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)               # LIMIT | STOP | TARGET
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="CASCADE"), nullable=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(16), nullable=False, default="NFO")
+    side: Mapped[str] = mapped_column(String(4), nullable=False)                # BUY | SELL
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    order_type: Mapped[str] = mapped_column(String(8), nullable=False)          # LIMIT | SL | SL-M | MARKET
+    price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    trigger_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    trigger_source: Mapped[str] = mapped_column(String(8), nullable=False, default="PREMIUM")   # PREMIUM | SPOT
+    trigger_symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    trigger_exchange: Mapped[str] = mapped_column(String(16), nullable=False)
+    trigger_level: Mapped[float] = mapped_column(Price, nullable=False)
+    trigger_side: Mapped[str] = mapped_column(String(6), nullable=False)        # ABOVE | BELOW
+    trigger_mode: Mapped[str] = mapped_column(String(6), nullable=False, default="TOUCH")      # TOUCH | CLOSE
+    timeframe_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)       # the ticket's own ask (an ENTRY)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="RESTING")
+    status_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trail_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    fired_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    fill_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class GroupExitRecord(Base):
+    """CX / SX (owner, 24 Oct): one combined exit over a set of the user's own open positions - a combined stop-loss
+    and / or target on the group's ₹ MTM, its net premium, or the underlying spot level. Fired by the one trigger engine
+    (app/execution/trigger_engine.py) and closed as one group through position_monitor.close_group: short legs first,
+    then the hedges. Never blocked (ADR-0004); AI never sets or changes it (ADR-0006).
+
+    * `legs_json` the trade ids it covers with each leg's side, quantity and entry price, frozen at `version`;
+    * `measure` MTM_INR (`sl_value` = the ₹ loss, `target_value` = the ₹ profit) | NET_PREMIUM | SPOT (`sl_value` /
+      `target_value` = levels; `sl_side` / `target_side` ABOVE / BELOW: which way the value must go, set from the value
+      when the exit was set); `check_mode` TOUCH (every reading) or CLOSE (a closed candle of `timeframe_minutes`);
+    * `status` ARMED -> FIRING -> DONE, or CANCELLED; while FIRING every pass closes the legs still open (an exit is
+      never given up); `fired_kind` SL / TARGET;
+    * trailing (`trail_kind`, `trail_json`, `best_value`, `current_sl`, `locked_at`) is stored here for SX2.
+    `mode` is the legs' mode (PAPER today; LIVE only behind the owner's switches)."""
+
+    __tablename__ = "group_exits"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", "client_ref", name="uq_group_exit_client_ref"),
+        Index("ix_group_exits_tenant_status", "tenant_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_ref: Mapped[str] = mapped_column(String(80), nullable=False)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="PAPER")
+    origin: Mapped[str] = mapped_column(String(4), nullable=False, default="CX")            # CX | SX
+    scope: Mapped[str] = mapped_column(String(10), nullable=False, default="SELECTED")     # SELECTED | ALL_OPEN | GROUP
+    basket_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    legs_json: Mapped[str] = mapped_column(Text, nullable=False)
+    measure: Mapped[str] = mapped_column(String(12), nullable=False)                        # MTM_INR | NET_PREMIUM | SPOT
+    spot_symbol: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    spot_exchange: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    sl_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    sl_side: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    target_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    target_side: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    basis_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    check_mode: Mapped[str] = mapped_column(String(6), nullable=False, default="TOUCH")     # TOUCH | CLOSE
+    timeframe_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trail_kind: Mapped[str] = mapped_column(String(12), nullable=False, default="NONE")
+    trail_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    best_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    current_sl: Mapped[float | None] = mapped_column(Price, nullable=True)
+    locked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="ARMED")
+    status_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fired_kind: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    fired_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    fired_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    last_value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    passes_firing: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    trail_log: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stale_json: Mapped[str | None] = mapped_column(Text, nullable=True)     # CX-F1: legs read at their last traded price
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
 class MarketHolidayRecord(Base):
     """Exchange trading holidays (app/market_data/calendar.py consults these plus the fixed
     09:15-15:30 IST Mon-Fri session to decide whether the worker should evaluate at all). Shared
@@ -831,7 +948,9 @@ class RiskSettingsRecord(Base):
     max_trades_per_day: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     max_open_positions: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     max_consecutive_losses: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
-    min_risk_reward: Mapped[float] = mapped_column(Float, nullable=False, default=1.2)
+    # TT12-4: 0 = not set (no minimum). A row from before then holding the old built-in 1.2 reads as not set
+    # (app/risk_engine/routes.py org_min_rr_read); no migration.
+    min_risk_reward: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     # Phase V1: Risk Guardian rules (see app/risk_engine/guardian.py).
     max_portfolio_risk_pct: Mapped[float] = mapped_column(Float, nullable=False, default=6.0, server_default="6.0")
     stop_cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30, server_default="30")
@@ -958,6 +1077,10 @@ class BrokerAccountRecord(Base):
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="ACTIVE")   # ACTIVE / DISABLED
     is_default: Mapped[bool] = mapped_column(nullable=False, default=False)
+    # M45 MA-1: the owner's role for multi-account routing - PRIMARY (exactly one per user, across brokers) / SECONDARY /
+    # NULL (not part of it); an optional user-named group for Secondaries. Routing / sizing read these in later steps.
+    role: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    group_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     available_balance: Mapped[float | None] = mapped_column(Money, nullable=True)
     used_margin: Mapped[float | None] = mapped_column(Money, nullable=True)
     realized_pnl: Mapped[float | None] = mapped_column(Money, nullable=True)
@@ -2019,16 +2142,20 @@ class InstrumentRecord(Base):
 class OptionChainSnapshotRecord(Base):
     """Phase W: one quoted option at one moment, sampled from the chains the worker already
     fetches for its option deployments (app/backtest/chain_recorder.py) so option backtests
-    can be priced from what the market actually quoted. Platform-wide reference data (a NIFTY
-    quote is the same fact for every tenant), sampled every few minutes for the strikes around
-    the money, trimmed by retention after a bounded number of days."""
+    can be priced from what the market actually quoted. Sampled every few minutes for the strikes
+    around the money, trimmed by retention after a bounded number of days. TM94-3: each row belongs
+    to the organisation whose own broker session read it (`tenant_id`); rows from before the fix
+    have no tenant and are read only by the confirmed owner (`chain_recorder.legacy_owner`)."""
 
     __tablename__ = "option_chain_snapshots"
     __table_args__ = (
         Index("ix_option_chain_snapshots_lookup", "underlying", "expiry", "captured_at"),
+        Index("ix_option_chain_snapshots_tenant_lookup", "tenant_id", "underlying", "captured_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # TM94-3: the organisation the row belongs to; NULL = recorded platform-wide before the fix (owner-only reads).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
     underlying: Mapped[str] = mapped_column(String(30), nullable=False)          # master name: NIFTY
     expiry: Mapped[date] = mapped_column(Date, nullable=False)
     captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, index=True)
@@ -2084,15 +2211,22 @@ class OISnapshotRecord(Base):
     """OI Banner O2: one collector slot of one underlying's option chain (platform-wide reference data, like
     `option_chain_snapshots`). The per-strike OI lives in `strike_oi_snapshots`; every banner reading is computed from
     those rows with the reader's own settings (app/option_chain/oi_regime.py), so nothing tenant-specific is stored
-    here. One row per (underlying, slot): the collector is idempotent per slot."""
+    here. One row per (tenant, underlying, slot): the collector is idempotent per slot.
+
+    TM-7 (owner, 23 Oct; RDY-6 data terms): a slot is read through ONE organisation's own broker session and belongs to
+    that organisation (`tenant_id`); only that organisation reads it (app/option_chain/snapshots.py). Rows stored before
+    the fix have no tenant (NULL) and are read only by the owner's organisation (HISTORY_OWNER_TENANT_ID, confirmed by
+    HISTORY_OWNER_TENANT_NAME)."""
 
     __tablename__ = "oi_snapshots"
     __table_args__ = (
-        UniqueConstraint("underlying", "slot_start", name="uq_oi_snapshot_slot"),
+        UniqueConstraint("tenant_id", "underlying", "slot_start", name="uq_oi_snapshot_tenant_slot"),
         Index("ix_oi_snapshots_day", "underlying", "trade_date"),
+        Index("ix_oi_snapshots_tenant_day", "tenant_id", "underlying", "trade_date"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
     underlying: Mapped[str] = mapped_column(String(30), nullable=False)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)                 # the exchange's (IST) trading day
     slot_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
@@ -2126,12 +2260,14 @@ class StrikeOISnapshotRecord(Base):
 
 class OIDayBaselineRecord(Base):
     """OI Banner O2: the first OI the collector saw for a strike on a trading day - the baseline of the OI-wall check
-    (change in OI since the day began). Written once per (underlying, day, strike), never updated."""
+    (change in OI since the day began). Written once per (tenant, underlying, day, strike), never updated. TM-7: the
+    organisation whose session read it (NULL = stored before the fix; see OISnapshotRecord)."""
 
     __tablename__ = "oi_day_baselines"
-    __table_args__ = (UniqueConstraint("underlying", "trade_date", "strike", name="uq_oi_day_baseline"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "underlying", "trade_date", "strike", name="uq_oi_day_baseline_tenant"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     underlying: Mapped[str] = mapped_column(String(30), nullable=False)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     strike: Mapped[float] = mapped_column(Float, nullable=False)
@@ -2487,7 +2623,8 @@ class PaperAccountRecord(Base):
     paused_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     paused_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Z5 / P1-d: the user's own risk-by-default settings (risk per trade, daily loss limit, trades per day, minimum
-    # reward:risk) as JSON; NULL = the platform defaults (app/risk_engine/by_default.py).
+    # reward:risk) as JSON, with `_set` listing the keys he set himself; NULL or a key not set = off (TT-12,
+    # app/risk_engine/by_default.py).
     risk_settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Z5 / P1-d: the entries-per-day slots taken on `entries_day` (IST), updated atomically per entry (by_default.reserve_entry).
     entries_day: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -2719,6 +2856,37 @@ class MdTenantCandleRecord(Base):
     ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+class MdTenantChainSnapshotRecord(Base):
+    """TM 9.4: one recorded option chain (one underlying, one expiry, one slot) in the tenant-PRIVATE chain history.
+
+    TM-7 (owner, 23 Oct): read only through the owner's own broker session and readable only by the owner's tenant - a
+    separate table that no shared read path touches; the only reader is `app.market_lake.chain_store`, which requires a
+    tenant id. `payload` is the whole chain, every strike (LTP, bid, ask, volume, OI, OI change, IV and the broker's
+    Greeks per side), as zlib-compressed JSON (`codec`). `source` names the session's holder (`broker:<name>:u<id>`,
+    HB2's rule): within the tenant only that user reads the rows (BT1b)."""
+
+    __tablename__ = "md_tenant_chain_snapshots"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "underlying", "expiry", "slot_start", name="uq_md_tenant_chain_slot"),
+        Index("ix_md_tenant_chain_day", "tenant_id", "underlying", "trade_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    expiry: Mapped[date] = mapped_column(Date, nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)                 # the exchange's (IST) trading day
+    slot_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)    # when the chain was read (data time)
+    spot: Mapped[float | None] = mapped_column(Float, nullable=True)
+    strikes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    codec: Mapped[str] = mapped_column(String(20), nullable=False)
+    raw_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)    # the JSON before compression
+    payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class HistoryImportFileRecord(Base):
     """HB0: one object of the R2 history store and what the importer did with it - the resume point (a file is skipped
     once `done` with the same sha256) and the progress source for the HB4 admin page (per dataset / symbol: done,
@@ -2944,6 +3112,51 @@ class HistoryIntradayDayRecord(Base):
     started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     done_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class LakeBackfillWindowRecord(Base):
+    """DATA-H DH1: one request window of the index-history backfill (app/market_lake/index_history.py) - the resume
+    point. Fixed windows (Daily: a calendar year; 1-minute: a run of calendar days), per (tenant, session holder,
+    instrument, timeframe). Status: done (complete and stored; never asked again) | open (the window still grows: asked
+    again on the next pass, identical bars skipped) | no_data (the broker had nothing: before the index existed or beyond
+    its depth) | failed (retried). The bars live in the tenant-private `md_tenant_candles`."""
+
+    __tablename__ = "lake_backfill_windows"
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "instrument_key", "timeframe", "window_start", name="uq_lake_backfill_window"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    window_start: Mapped[date] = mapped_column(Date, nullable=False)
+    window_end: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="open")
+    bars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class MdBarFlagRecord(Base):
+    """DATA-H DH3: a bar no structure or zone may be built from, or the official close of a session that ended in a
+    closing auction. Kinds: post_close (an intraday bar after continuous trading ended: dropped by the readers),
+    auction_high / auction_low (a Daily extreme set only after continuous trading: `value` is the continuous-session
+    extreme the readers use instead), official_close (`value` is the session's official close; `detail` the last
+    continuous price). `tenant_id` set = about that tenant's private store (only it reads the flag, like the bars)."""
+
+    __tablename__ = "md_bar_flags"
+    __table_args__ = (Index("ix_md_bar_flags_lookup", "tenant_id", "instrument_key", "timeframe", "ts"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    ts: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)                 # the bar END, UTC
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    value: Mapped[float | None] = mapped_column(Price, nullable=True)
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 # --- Screener addendum U1: NSE universe reference data (as-of)------------------------------------------------------------

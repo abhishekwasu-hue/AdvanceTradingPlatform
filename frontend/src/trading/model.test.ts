@@ -102,7 +102,7 @@ describe("My portfolio", () => {
     expect(portfolioTiles([trade()], closed, exposure())).toMatchObject({ invested: 300_000, investedPct: 30, openPnl: 1_500, booked: 600 });
     expect(portfolioTiles([trade()], null, null)).toMatchObject({ invested: 15_000, investedPct: null, openPnl: null, booked: null });
     expect(bookedCurve(closed)).toEqual([-400, 600]);
-    expect(longShortLine(exposure())).toBe("Long ₹2 L · Short ₹1 L · Net ₹1 L");
+    expect(longShortLine(exposure())).toBe("Long ₹2,00,000 · Short ₹1,00,000 · Net ₹1,00,000");
     expect(longShortLine(exposure({ open_positions: 0 }))).toBeNull();
   });
 });
@@ -121,7 +121,7 @@ describe("Risk limits", () => {
   it("the guardian's state in words; amber only when it is not normal", () => {
     const line = guardianLine("PAPER", guardianMode());
     expect(line).toMatchObject({ mode: "Paper", state: "Size cut to 50%", tone: "warn" });
-    expect(line.detail[0]).toBe("Drawdown 5.8% from the peak of ₹1.04 L, over 12 closed trades");
+    expect(line.detail[0]).toBe("Drawdown 5.8% from the peak of ₹1,04,000, over 12 closed trades");
     expect(line.detail).toContain("Waiting after a stop-out: DEMO A (12 min left)");
     expect(guardianLine("LIVE", guardianMode({ state: "paused" })).state).toBe("New entries paused");
     expect(guardianLine("LIVE", guardianMode({ state: "normal", size_multiplier: 1 }))).toMatchObject({ state: "Normal size", tone: "neutral" });
@@ -140,7 +140,7 @@ describe("Risk limits", () => {
   });
 
   it("organisation limits and checks in plain words", () => {
-    expect(limitValueText("MAX_DAILY_LOSS", 5_000)).toBe("₹5,000.00");
+    expect(limitValueText("MAX_DAILY_LOSS", 5_000)).toBe("₹5,000");
     expect(limitValueText("MAX_SYMBOL_CONCENTRATION_PCT", 25)).toBe("25%");
     expect(limitValueText("MAX_OPEN_POSITIONS", 4)).toBe("4");
     expect(limitScopeLabel("INSTRUMENT", "DEMO A")).toBe("One symbol: DEMO A");

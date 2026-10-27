@@ -11,6 +11,9 @@ order through a broker API).
   the call carries the id of an APPROVED entry proposal of the same organisation (and deployment), an approval-only
   entry is REJECTED on the order trail. There is no bypass: the console's paper-execute raises a proposal too (review
   M1). The default `origin` is "automatic", so a new caller that forgets to say what it is is refused.
+  TT-2 (owner, 24 Oct): the one exception is the user's own manual order - origin "manual", set by the server only on
+  the F&O ticket and basket routes (and later the Terminal) for an order he confirmed himself; that confirmation is his
+  approval. Risk, kill switches, the Phase 0 PAPER lock and idempotency still apply to it in full.
 * **Who decides (review L8).** A proposal has an owner (`owner_user_id`): the deployment's creator, the alert's owner,
   the person who sent a manual setup, the holder of the position. Only the owner or the organisation OWNER decides it,
   and an approved entry is placed for the owner (their PAPER account).
@@ -33,7 +36,7 @@ import json
 import logging
 import math
 from datetime import datetime, timedelta, timezone
-from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -56,6 +59,10 @@ ENTRY_MODES = ("AUTO", "APPROVAL")
 
 ORIGIN_AUTOMATIC = "automatic"     # the default: a deployment, a webhook, the public API - needs an approved proposal
 ORIGIN_APPROVAL = "approval"       # the execution of an APPROVED entry proposal (must carry its id)
+# TT-2 (owner, 24 Oct; answers FNO-1-4): the user's own order, placed and confirmed by his own tap on the F&O ticket, the
+# basket or (later) the Terminal. His confirmation IS the approval. Only those routes set it - never a request field - and
+# it never carries a deployment: a bot entry with this origin is still refused.
+ORIGIN_MANUAL = "manual"
 TARGET_RULES = ("TARGET_1_REACHED", "TARGET_2_REACHED")
 
 SOURCE_LABELS = {"deployment": "Deployment signal", "tradingview": "TradingView alert", "public_api": "API signal",
@@ -131,11 +138,15 @@ async def exit_now_enabled(session: AsyncSession, tenant_id: int) -> bool:
 async def gate_refusal(session: AsyncSession, tenant_id: int, *, deployment_id: Optional[int], origin: str,
                        approval_action_id: Optional[int]) -> Optional[str]:
     """Why this entry must be refused under approval-only mode, or None. Called by every order pipeline entry point.
-    No origin bypasses it: only an APPROVED entry proposal of this organisation (and deployment) lets an entry through."""
+    Only an APPROVED entry proposal of this organisation (and deployment) lets an automatic entry through. TT-2: a manual
+    order (origin "manual", set only by the F&O ticket / basket routes for the user's own confirmed tap) is his approval;
+    it never belongs to a deployment, so "manual" with a deployment id is treated as automatic and refused."""
     deployment = await session.get(StrategyDeploymentRecord, deployment_id) if deployment_id is not None else None
     if deployment is not None and deployment.tenant_id != tenant_id:
         deployment = None
     if not await required(session, tenant_id, deployment):
+        return None
+    if origin == ORIGIN_MANUAL and deployment_id is None and approval_action_id is None:
         return None
     if approval_action_id is None:
         return "Approval-only mode: an entry needs an approved proposal - this one came without one"
@@ -571,6 +582,23 @@ def recent_mark(trade: TradeRecord, now: Optional[datetime] = None) -> bool:
     return timedelta(0) <= now - seen <= timedelta(minutes=app_config.EXIT_NOW_MAX_MARK_AGE_MINUTES)
 
 
+async def exit_price(session: AsyncSession, leg: TradeRecord, lookup: Any) -> Tuple[float, str]:
+    """The price "Exit now" closes a leg at (and TT-8's leg / group exits): the live price of the person's own entitlement
+    (`lookup`, from `price_lookup_for_user`), else the monitor's last price while recent (review V2) - never a typed price
+    (review M2). Returns (price, "live price" | "last seen price"); raises ValueError when there is neither."""
+    from app.trading.position_monitor import venue_for
+    if lookup is not None:
+        try:
+            return float(await lookup(leg.symbol, await venue_for(session, leg))), "live price"
+        except Exception as exc:  # noqa: BLE001 - fall back below
+            logger.warning("Exit now: no live price for %s: %s", leg.symbol, type(exc).__name__)
+    if leg.mark_price and recent_mark(leg):
+        return float(leg.mark_price), "last seen price"
+    raise ValueError(f"No recent price for {leg.symbol}: no live quote, and the monitor's last price is missing or older than "
+                     f"{app_config.EXIT_NOW_MAX_MARK_AGE_MINUTES} min / not from today's session. Nothing was closed - the stop "
+                     "and target keep working; try again when a live price is available")
+
+
 async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via: str = "web"):
     """"Exit now": closes a PAPER position at once, whatever is pending or snoozed (ADR-0004). Priced at the live price of
     the person's own entitlement, else the last price the monitor saw for it if recent (review V2) - never a typed price
@@ -579,22 +607,13 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
     structure closes the whole structure. The close itself is claimed atomically in `close_position` (review M3).
     Returns the close outcomes; raises ValueError when there is no price at all, or for LIVE."""
     from app.ai.worker_bridge import price_lookup_for_user
-    from app.trading.position_monitor import close_group, close_position, venue_for
+    from app.trading.position_monitor import close_group, close_position
     if trade.mode != "PAPER":
         raise ValueError("LIVE positions are closed in the broker app - ATP places no broker order in Phase 0")
     lookup = await price_lookup_for_user(session, user)
 
     async def price_of(leg: TradeRecord) -> Tuple[float, str]:
-        if lookup is not None:
-            try:
-                return float(await lookup(leg.symbol, await venue_for(session, leg))), "live price"
-            except Exception as exc:  # noqa: BLE001 - fall back below
-                logger.warning("Exit now: no live price for %s: %s", leg.symbol, type(exc).__name__)
-        if leg.mark_price and recent_mark(leg):
-            return float(leg.mark_price), "last seen price"
-        raise ValueError(f"No recent price for {leg.symbol}: no live quote, and the monitor's last price is missing or older than "
-                         f"{app_config.EXIT_NOW_MAX_MARK_AGE_MINUTES} min / not from today's session. Nothing was closed - the stop "
-                         "and target keep working; try again when a live price is available")
+        return await exit_price(session, leg, lookup)
 
     legs = [trade]
     if trade.leg_group_id:

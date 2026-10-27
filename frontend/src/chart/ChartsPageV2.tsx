@@ -8,6 +8,7 @@ import type { useDrawingTools } from "../charting/DrawingToolbar";
 import type { LightweightEngine } from "../charting/lightweight";
 import type { DrawingController } from "../charting/tools";
 import { LtpHub } from "../charting/ltpHub";
+import { liveTicks } from "../live/liveTicks";
 import { useLiveLtp } from "../components/chartHelpers";
 import { Sheet } from "../components/primitives/Dialog";
 import { cx } from "../components/primitives/cx";
@@ -16,6 +17,8 @@ import { HubTabsView, useHubInfo } from "../fno/SymbolHubTabsV2";
 import { pathFor, type PageProps } from "../routes";
 import { chartsPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
+import { SubTabs } from "../ui/SubTabs";
+import { TimeframePicker } from "../ui/TimeframePicker";
 import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import { useFeatures } from "../ui/useFeatures";
 import PageDishV2 from "../growth/PageDishV2";
@@ -33,7 +36,7 @@ import { IndicatorsMenu } from "./IndicatorsMenu";
 import { toggle as toggleIndicator } from "./indicatorsModel";
 import { CandlePool, START_PARAMS, startChartFrom } from "./multiChart";
 import MultiChartV2 from "./MultiChartV2";
-import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, type TimeframeId } from "./timeframes";
+import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, type TimeframeId } from "./timeframes";
 import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs } from "./useChartPrefs";
 import { useFullscreen } from "./useFullscreen";
@@ -41,6 +44,7 @@ import { useMarketStatus } from "./useMarketStatus";
 import { useTradesLayer } from "./useTradesLayer";
 import { WatchlistPanel } from "./WatchlistPanel";
 import type { WatchItem } from "./watchlistsV2";
+import { Combobox } from "../ui/Combobox";
 
 /**
  * UI2-4b2 (UI v2 proposal §6, Charts page plan §3): the Charts page at `/charts` and `/charts/:symbol`, v2 only.
@@ -94,6 +98,7 @@ export default function ChartsPageV2(_props: PageProps) {
   const exchange = (params.get("exchange") ?? "NSE").trim().toUpperCase() || "NSE";
   const multi = features.on("chart_workspace");
   const watchOn = features.on("watchlists");
+  const hubOn = features.on("data_hub");
   const wide = useMediaQuery("(min-width: 1024px)");
   const phone = useMediaQuery(PHONE_QUERY);
   const [sheet, setSheet] = useState(false);
@@ -168,7 +173,7 @@ export default function ChartsPageV2(_props: PageProps) {
   const watchlist = (touch: boolean, onClose?: () => void) => (
     <WatchlistPanel symbol={symbol} exchange={exchange} onOpen={openItem} listId={view.watchlist_id} onListId={(id) => setView({ watchlist_id: id })}
       systemKey={view.watchlist_system} onSystemKey={(key) => setView({ watchlist_system: key })}
-      storageKey={recentKeyFor(userId)} onClose={onClose} touch={touch} className="h-full" />
+      storageKey={recentKeyFor(userId)} onClose={onClose} touch={touch} className="h-full" liveTicks={hubOn} />
   );
   const setTab = (t: "chart" | "multi") => setParams((prev) => {
     const next = new URLSearchParams(prev);
@@ -183,7 +188,7 @@ export default function ChartsPageV2(_props: PageProps) {
   };
 
   const drawingText = drawingNote(tools?.view?.message) ?? placeHint(tools?.view?.tool, phone);
-  const emptyText = data.loading || waiting ? "Loading prices…" : data.error ? "" : `No prices for ${symbol} on this timeframe yet.`;
+  const emptyText = data.loading || waiting ? "Loading prices…" : data.error ? "" : data.empty ?? `No prices for ${symbol} on this timeframe yet.`;
   // UI2-4d: a cell's "Open in Chart tab" - its symbol on the Chart tab, with its timeframe.
   const openChart = (sym: string, exch: string, tf: TimeframeId) => {
     setView({ timeframe: tf });
@@ -200,7 +205,9 @@ export default function ChartsPageV2(_props: PageProps) {
   useEffect(() => { if (stray) clearStart(); }, [stray, clearStart]);
   // The Multi-chart tab's shared reads, for the page's life; the tab itself stays mounted (hidden) after its first visit.
   const pool = useMemo(() => new CandlePool(api.marketDataCandles), [userId]);  // eslint-disable-line react-hooks/exhaustive-deps
-  const ltpHub = useMemo(() => new LtpHub((s, e) => api.marketDataLtp(s, e)), [userId]);  // eslint-disable-line react-hooks/exhaustive-deps
+  // TM Part 1 (flag data_hub): the charts' last price also moves with the live ticks of the user's own connection.
+  const ltpHub = useMemo(() => new LtpHub((s, e) => api.marketDataLtp(s, e), undefined, undefined, hubOn ? liveTicks() : undefined),
+    [userId, hubOn]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => ltpHub.dispose(), [ltpHub]);
   const [multiSeen, setMultiSeen] = useState(tab === "multi");
   if (tab === "multi" && !multiSeen) setMultiSeen(true);
@@ -208,10 +215,7 @@ export default function ChartsPageV2(_props: PageProps) {
   return (
     <div ref={root} data-page="charts-v2" data-fullscreen={fs.on ? "on" : "off"}
       className={cx("flex flex-col gap-space-3", fs.on && "h-full bg-surface p-space-2 md:p-space-3", fs.fallback && "fixed inset-0 z-[60] overflow-y-auto")}>
-      {!fs.on && <PageIntro id="charts" lines={[
-        "See what a symbol is doing: candles, volume and the live price from your broker.",
-        "Search a symbol at the top left. Scroll the chart left for older history; press F for full screen.",
-      ]} />}
+      {!fs.on && <PageIntro id="charts" lines={["Search a symbol at the top left. Scroll the chart left for older history; press F for full screen."]} />}
 
       {!fs.on && <HubTabsView info={hubInfo} current={hubView ?? "chart"} carry={{ expiry: readCarry(params).expiry, timeframe }} />}
 
@@ -224,15 +228,8 @@ export default function ChartsPageV2(_props: PageProps) {
       )}
 
       {multi && !fs.on && !hubView && (
-        <div role="tablist" aria-label="Charts" className="flex gap-space-1 rounded-panel bg-surface-2 p-space-1 sm:w-fit">
-          {(["chart", "multi"] as const).map((t) => (
-            <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
-              className={cx("min-h-11 flex-1 rounded-control px-space-4 text-t14 sm:flex-none md:min-h-9", focus,
-                tab === t ? "bg-surface-1 font-semibold text-fg shadow-card" : "text-fg-muted hover:text-fg")}>
-              {t === "chart" ? "Chart" : "Multi-chart"}
-            </button>
-          ))}
-        </div>
+        <SubTabs label="Charts" value={tab} onChange={setTab} className="sm:w-fit"
+          items={[{ key: "chart", label: "Chart" }, { key: "multi", label: "Multi-chart" }] as const} />
       )}
 
       {/* MO4 slice 4: what this chart shows, in structure words, and what is his on it (ui_v2 + growth_v2); folded at
@@ -254,20 +251,12 @@ export default function ChartsPageV2(_props: PageProps) {
                   {chip.text}
                 </span>
               )}
-              <div role="group" aria-label="Timeframe" data-tour="charts-timeframes" className="order-6 flex w-full gap-space-1 overflow-x-auto md:order-none md:w-auto">
-                {offered.map((tf) => (
-                  <button key={tf} type="button" aria-pressed={tf === timeframe} onClick={() => setView({ timeframe: tf })}
-                    className={cx("min-h-11 min-w-11 shrink-0 rounded-control px-space-2 text-t13 md:min-h-9 md:min-w-9", focus,
-                      tf === timeframe ? "bg-surface-3 font-semibold text-fg" : "text-fg-muted hover:bg-surface-2 hover:text-fg")}>
-                    {timeframeLabel(tf)}
-                  </button>
-                ))}
+              <div className="order-6 w-full md:order-none md:w-auto" data-tour="charts-timeframes">
+<TimeframePicker offered={offered} value={timeframe} onChange={(tf) => setView({ timeframe: tf })} typeToOpen
+                  favourites={prefs.prefs.timeframe_favourites} onFavourites={(next) => prefs.update({ timeframe_favourites: next })} />
               </div>
-              <label className="sr-only" htmlFor="charts-type">Chart type</label>
-              <select id="charts-type" value={view.type} onChange={(e) => setView({ type: e.target.value as ChartTypeV2 })}
-                className={cx("order-4 h-11 w-[6.5rem] rounded-control border border-border bg-surface-2 px-space-2 text-t13 text-fg md:order-none md:h-9 md:w-auto", focus)}>
-                {CHART_TYPES_V2.map((t) => <option key={t} value={t}>{CHART_TYPE_LABELS_V2[t]}</option>)}
-              </select>
+              <Combobox id="charts-type" label="Chart type" value={view.type} onChange={(v) => setView({ type: v as ChartTypeV2 })}
+                options={CHART_TYPES_V2.map((t) => ({ value: t, label: CHART_TYPE_LABELS_V2[t] }))} className="order-4 w-[7.5rem] md:order-none md:w-auto" />
               <div className="order-5 md:order-none" data-tour="charts-indicators"><IndicatorsMenu state={indicatorState} on={features.on} onToggle={onIndicator} /></div>
               <span className="order-2 ml-auto inline-flex items-center md:order-none">
                 <DrawingMenu tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />

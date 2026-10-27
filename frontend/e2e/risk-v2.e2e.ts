@@ -72,9 +72,9 @@ test.describe("v2 risk 1440 desktop", () => {
     await open(page, "light");
     await expect(page.locator("[data-shell='v2'] header").first()).toContainText("Risk limits");
     const today = page.locator("[data-block='today']");
-    await expect(today.locator("[data-tile='daily-limit']")).toContainText("₹15,000.00");
-    await expect(today.locator("[data-tile='daily-limit']")).toContainText("3.0% of ₹5 L capital");
-    await expect(today.locator("[data-tile='per-trade']")).toContainText("₹5,000.00");
+    await expect(today.locator("[data-tile='daily-limit']")).toContainText("₹15,000");
+    await expect(today.locator("[data-tile='daily-limit']")).toContainText("3.0% of ₹5,00,000 capital");
+    await expect(today.locator("[data-tile='per-trade']")).toContainText("₹5,000");
     await expect(today.locator("[data-tile='paper-used']")).toContainText("39%");
     await expect(today.locator("[data-tile='paper-used']")).toContainText("₹5,775 of ₹15,000 today");
     await expect(today.locator("[data-mode='PAPER']")).toContainText("Normal size");
@@ -85,7 +85,7 @@ test.describe("v2 risk 1440 desktop", () => {
 
   test("one primary action: 'Save limits' sends today's request with the changed value", async ({ page }) => {
     const writes = await open(page, "light");
-    const primaries = page.locator("main .bg-brand:is(a, button)");
+    const primaries = page.locator("main .bg-brand:is(a, button):not([data-subtab])");
     await expect(primaries).toHaveCount(1);
     await expect(primaries).toHaveText("Save limits");
     await page.getByLabel("Daily loss limit (% of capital)").fill("2.5");
@@ -152,7 +152,7 @@ test.describe("v2 risk 1440 desktop", () => {
   test("organisation limits and recent checks in plain words", async ({ page }) => {
     await open(page, "light");
     const limits = page.locator("[data-block='org-limits']");
-    await expect(limits.locator("[data-limit='41']")).toContainText("Daily loss₹15,000.00");
+    await expect(limits.locator("[data-limit='41']")).toContainText("Daily loss₹15,000");
     await expect(limits.locator("[data-limit='42']")).toContainText("One symbol: RELIANCE");
     await expect(limits.locator("[data-limit='43']")).toContainText("Platform");
     await expect(limits.locator("[data-limit='43']").getByRole("button", { name: "Remove" })).toHaveCount(0);
@@ -193,7 +193,7 @@ test.describe("v2 risk: the losses-in-a-row pause (CP6-15)", () => {
     await expect(note).toContainText("Last resumed 16 Oct 2026, 10:30");
     const resume = page.getByRole("button", { name: "Resume after losses in a row" });
     await expect(resume).not.toHaveClass(/(^|\s)(bg-brand|text-down|bg-down)(\s|$)/);
-    await expect(page.locator("main .bg-brand:is(a, button)")).toHaveCount(1);                // still one primary action
+    await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(1);                // still one primary action
     await resume.click();
     await expect(page.locator("[data-note='save']")).toHaveText("Resumed. New entries are allowed again; only losses from now on count towards your limit.");
     await expect(note).toHaveCount(0);

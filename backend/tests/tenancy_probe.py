@@ -32,12 +32,14 @@ NOT_PLANTED = frozenset({
 
 # Path parameters that are not row ids: the value the probe sends.
 PATH_VALUES: Dict[str, str] = {
+    "notice_id": "limits_not_set",
     "name": "upstox", "broker_name": "upstox", "broker": "upstox", "provider": "openai", "symbol": "RELIANCE", "underlying": "NIFTY",
     "channel_type": "telegram", "strategy_id": "ema_rsi_scalper_1m", "sector": "Energy", "token": "z10c-not-a-token",
     "webhook_token": "z10c-not-a-token", "action": "pause", "kind": "ema", "timeframe": "1day", "key": "z10c",
     "version_number": "1", "exchange": "NSE", "flag": "phase0_paper_only", "instrument_key": "NSE_EQ|RELIANCE",
     "day": "2026-09-25", "week": "2026-W39", "study_id": "z10c-study", "dataset": "trades", "concept_id": "z10c-concept", "source_id": "z10c-source", "slug": "privacy",
     "card_id": "legends.minervini_trend_template", "namespace": "chart", "template_id": "D2", "idea_id": "T1", "page": "positions",
+    "device_id": "0123456789abcdef01234567", "group_id": "z10c-group",
 }
 
 

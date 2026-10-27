@@ -48,6 +48,11 @@ class NotificationType(str, Enum):
     # the collector's own health (stale or failing). Read-only information - never an order (ADR-0006).
     OI_BANNER = "OI_BANNER"
     OI_COLLECTOR = "OI_COLLECTOR"
+    # Terminal master Part 7: a stock F&O position that may settle by delivery (in or near the money before expiry).
+    # Information only - nothing is closed (ADR-0006).
+    SETTLEMENT_WARNING = "SETTLEMENT_WARNING"
+    # SE-7: a multi-leg order stopped half way (INCOMPLETE), his answer, and his "if I do not answer" rule applied.
+    STRUCTURE_INCOMPLETE = "STRUCTURE_INCOMPLETE"
 
 
 class NotificationSeverity(str, Enum):
@@ -164,6 +169,7 @@ class AlertChannelType(str, Enum):
     PUSH = "PUSH"         # Phase O3: browser Web Push (VAPID + RFC 8291), one channel holding every device
     SMS = "SMS"           # Phase O3: any HTTP SMS gateway (MSG91, Twilio, Textlocal, ...) via a request template
     WHATSAPP = "WHATSAPP"  # S10 seam (flag alerts_whatsapp_dlt): a WhatsApp Business gateway, pre-approved template + opt-in only
+    FCM = "FCM"           # B8 (flag mobile_push): phone notifications to the Android app (Firebase Cloud Messaging HTTP v1)
 
 
 class AlertDeliveryStatus(str, Enum):

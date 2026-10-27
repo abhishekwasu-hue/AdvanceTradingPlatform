@@ -3,8 +3,8 @@
  * shape, not the money). Calendars and diagonals say "two expiries" instead of a misleading shape.
  */
 import { useState } from "react";
-import { cx } from "../components/primitives";
 import { thumbnailShape, type TemplateInfo } from "./model";
+import { SubTabs } from "../ui/SubTabs";
 
 function Thumb({ t }: { t: TemplateInfo }) {
   const ys = thumbnailShape(t);
@@ -29,14 +29,7 @@ export function TemplateGallery({ families, templates, onPick, disabled }: {
   const [family, setFamily] = useState(names[0] ?? "");
   return (
     <section aria-label="Templates" className="rounded-xl border border-border bg-surface-1 p-3">
-      <div role="tablist" aria-label="Families" className="flex flex-wrap gap-1">
-        {names.map((f) => (
-          <button key={f} role="tab" type="button" aria-selected={family === f} onClick={() => setFamily(f)}
-                  className={cx("rounded-md px-3 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand", family === f ? "bg-surface-3 text-fg" : "text-fg-muted hover:text-fg")}>
-            {f}
-          </button>
-        ))}
-      </div>
+      <SubTabs label="Families" value={family} onChange={setFamily} size="sm" items={names.map((f) => ({ key: f, label: f }))} />
       <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
         {(families[family] ?? []).map((n) => (
           <button key={n} type="button" disabled={disabled} onClick={() => onPick(n)} title={templates[n]?.what}

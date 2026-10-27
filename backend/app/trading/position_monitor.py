@@ -1093,6 +1093,12 @@ async def _monitor_group(
             underlying_price = await price_lookup(legs[0].underlying_symbol, underlying_exchange(legs[0].underlying_symbol))
         except Exception as exc:  # noqa: BLE001
             logger.warning("No underlying price for group %s: %s - value checks only", legs[0].leg_group_id, exc)
+    from app.execution.incomplete_structures import rules_paused
+    if rules_paused(legs):
+        # SE-7: an INCOMPLETE structure is not whole - its exit rules (written for every leg) would read a false target or
+        # stop on a part of it. They wait for his answer or his rule; every leg stays closable at once (Exit now, the
+        # emergency exit, the square-off, "Close the filled legs") - ADR-0004.
+        return []
     reason = group_exit(legs, prices, underlying_price)
     if reason is None:
         return []
@@ -1106,14 +1112,17 @@ async def close_group(
     """Shorts first (risk off), then the wings. Each leg books its own P&L. `underlying_price`: the quote the exit was
     judged on (journal IV at exit only). A leg missing from `prices` is not closed this time (no quote).
 
-    Naked-short guard (LIVE): when a LIVE SHORT leg did not close, the wings are NOT closed - selling the protection while
-    the short is still open would leave a naked short. The wings wait (recorded, CRITICAL notification - at most once per
-    ALERT_COOLDOWN_SECONDS per structure); the next pass tries the short first again, then the wings. Every path that
-    closes a structure (the monitor, the intraday square-off, the emergency exit) goes through here."""
+    Naked-short guard (PAPER and LIVE alike, CX review F1): when a SHORT leg did not close, the wings are NOT closed -
+    selling the protection while the short is still open would leave a naked short. The wings wait (recorded, CRITICAL
+    notification - at most once per ALERT_COOLDOWN_SECONDS per structure); the next pass tries the short first again, then
+    the wings. Every path that closes a structure (the monitor, the intraday square-off, the emergency exit, a combined
+    exit) goes through here. A leg without a structure role (a hand-picked position of a combined exit) is a short when
+    it was sold."""
+    from app.execution.group_exits import is_short
     outcomes: List[CloseOutcome] = []
     stuck_short: Optional[TradeRecord] = None
-    for leg in sorted(legs, key=lambda l: (0 if l.leg_role == "SHORT" else 1, l.id)):
-        if stuck_short is not None and leg.leg_role != "SHORT":
+    for leg in sorted(legs, key=lambda l: (0 if is_short(l) else 1, l.id)):
+        if stuck_short is not None and not is_short(leg):
             outcomes.append(CloseOutcome(trade_id=leg.id, closed=False, warnings=[
                 f"Held: short leg #{stuck_short.id} ({stuck_short.symbol}) did not close - closing this wing now would leave a "
                 "naked short; the short is tried first again next cycle"]))
@@ -1127,8 +1136,7 @@ async def close_group(
             outcome = await close_position(session, leg, prices[leg.id], reason, broker=leg_broker, user_id=user_id,
                                            underlying_price=underlying_price)
         outcomes.append(outcome)
-        if (leg.leg_role == "SHORT" and leg.mode == ExecutionMode.LIVE.value and not outcome.closed and leg.exit_time is None
-                and stuck_short is None):
+        if is_short(leg) and not outcome.closed and leg.exit_time is None and stuck_short is None:
             stuck_short = leg
     group_id = legs[0].leg_group_id if legs else None
     if stuck_short is None:

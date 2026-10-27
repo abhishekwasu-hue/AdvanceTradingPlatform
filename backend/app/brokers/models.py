@@ -22,6 +22,8 @@ class BrokerCredentials(BaseModel):
     pin: Optional[str] = None
     totp_secret: Optional[str] = None
     redirect_uri: Optional[str] = None
+    # Kotak Neo: the mobile number registered with the account (with the country code), sent with the TOTP login.
+    mobile_number: Optional[str] = None
     # Upstox only: the optional, data-only Analytics Token (one year, read-only, GET-only) and what ATP knows about it
     # (expiry, probe coverage) - both live inside the same encrypted payload; the token is never returned or logged.
     # `analytics_meta` is server-written only (app/brokers/upstox_analytics.py); a client-sent value is dropped.
@@ -90,6 +92,13 @@ class OptionChainRow(BaseModel):
     # strike-selection pipeline computes delta from IV / price itself.
     call_delta: Optional[float] = None
     put_delta: Optional[float] = None
+    # TM 9.4: the rest of the broker's Greeks where it sends them (Upstox does), kept by the chain history recorder.
+    call_gamma: Optional[float] = None
+    call_theta: Optional[float] = None
+    call_vega: Optional[float] = None
+    put_gamma: Optional[float] = None
+    put_theta: Optional[float] = None
+    put_vega: Optional[float] = None
 
 
 class OptionChain(BaseModel):
@@ -116,6 +125,23 @@ class BrokerOrderRequest(BaseModel):
     # Z10-c: what the platform built the order for - "ENTRY" for a new position (OrderRouter, the multi-leg executor);
     # None when not stated. Never sent to the broker; the Phase 0 PAPER-only lock refuses only an explicit ENTRY.
     intent: Optional[str] = None
+    # TM-1: the platform's own reference for this one order (an idempotency key): the PAPER adapter returns the first
+    # order for a repeated reference instead of placing twice. Never sent to a broker by the existing adapters.
+    client_ref: Optional[str] = None
+    # TM-3: the user's protection band (percent) for a MARKET order that the broker takes only as a marketable LIMIT
+    # (BrokerCapabilities.market_orders_allowed False). None = the deployment's / platform's stated default. Never sent
+    # to a broker.
+    protection_pct: Optional[float] = None
+    # An after-market order (Kotak Neo's `am` flag). Adapters that do not take one ignore it.
+    after_market: bool = False
+
+
+class BasketMargin(BaseModel):
+    """Part 7 / TM-10: the broker's own margin for a set of orders placed together. `required` is what the broker
+    would block for the whole basket WITH the hedge benefit; `without_hedge` the sum of each order alone, where the
+    broker says it (None otherwise)."""
+    required: float
+    without_hedge: Optional[float] = None
 
 
 class BrokerOrderResponse(BaseModel):

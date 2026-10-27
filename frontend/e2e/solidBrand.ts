@@ -5,6 +5,8 @@ import type { Page, TestInfo } from "@playwright/test";
  * heuristic. A screen is composed of many files, so it cannot be a static check; this counts, in the browser, the
  * visible buttons and links whose computed background is the brand fill (`--brand-fill`), and reports more than one as
  * a WARNING annotation on the test (and a console line). It never fails a test.
+ * UI-H Wave 0: the selected tab of a SubTabs row (`[data-subtab]`) is filled with the brand colour too (H2), but it marks
+ * where you are, not an action, so it is not counted.
  *
  * Use it after a screenshot is taken:  `await warnOnManySolidBrand(page, testInfo, "dashboard 1440 dark");`
  */
@@ -27,7 +29,8 @@ export function solidBrandLabels(candidates: Candidate[], brandFill: string | nu
 /** Collects the candidates in the page (runs in the browser; kept free of closures for `page.evaluate`). */
 function collect(): { brandFill: string; candidates: Candidate[] } {
   const brandFill = getComputedStyle(document.documentElement).getPropertyValue("--brand-fill");
-  const nodes = Array.from(document.querySelectorAll<HTMLElement>("button, a, [role='button'], input[type='submit']"));
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>("button, a, [role='button'], input[type='submit']"))
+    .filter((el) => !el.hasAttribute("data-subtab"));
   const candidates = nodes.map((el) => {
     const style = getComputedStyle(el);
     const rect = el.getBoundingClientRect();

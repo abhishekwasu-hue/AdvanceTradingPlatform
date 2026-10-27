@@ -319,3 +319,118 @@ describe("P2b review fixes: rows that need connecting again, permissions, anothe
     expect(canChangeBrokers(null)).toBe(false);
   });
 });
+
+/** Part 1B: Kotak Neo's catalog row as the server sends it with ui_v2 on (app/brokers/catalog.py). */
+const KOTAK: BrokerCatalogEntry = {
+  broker: "kotak_neo", name: "Kotak Neo", method: "totp_auto",
+  fields: [
+    { key: "api_key", label: "Consumer key", kind: "secret", placeholder: "From the NEO app: More, then Trade API" },
+    { key: "mobile_number", label: "Mobile number", kind: "text", placeholder: "The number on your Kotak account, with +91" },
+    { key: "client_id", label: "Client code (UCC)", kind: "text", placeholder: "Your Kotak Neo client code" },
+    { key: "pin", label: "MPIN", kind: "secret", placeholder: "The MPIN you use to log in to Kotak Neo" },
+    { key: "totp_secret", label: "TOTP secret", kind: "secret", placeholder: "The key shown when you registered TOTP" },
+  ],
+  how_to: [
+    "In the Kotak Neo app open More, then Trade API, and generate an application; copy its consumer key.",
+    "On the same Trade API page register TOTP and copy the secret key it shows (not the six-digit code).",
+    "Paste the key, your mobile number, client code, MPIN and TOTP secret here; each morning press Renew.",
+  ],
+  doc_url: "https://www.kotakneo.com/platform/kotak-neo-trade-api/", daily_renewal: true, available: true, renew_fields: [],
+  gates: { live_orders: "closed", live_prices: "closed", note: "Practice mode only for now. ATP can read your Kotak Neo positions, holdings and funds." },
+  requires_ui_v2: true,
+  guide: {
+    points: [
+      "Practice mode only for now: ATP reads your Kotak Neo positions, holdings and funds.",
+      "Real orders and live prices through Kotak Neo stay off until Kotak Neo confirms in writing that they may be used through ATP.",
+    ],
+    links: [
+      { label: "Kotak Neo Trade API", url: "https://www.kotakneo.com/platform/kotak-neo-trade-api/" },
+      { label: "Official API guide", url: "https://github.com/Kotak-Neo/kotak-neo-python" },
+    ],
+  },
+};
+
+describe("Part 1B Kotak Neo: practice only, with a plain-words connect guide", () => {
+  it("the tile says Practice only; other tiles do not", () => {
+    const tile = renderToStaticMarkup(<BrokerTile entry={KOTAK} onPick={noop} />);
+    expect(tile).toContain("Kotak Neo");
+    expect(tile).toContain("data-practice-only");
+    expect(tile).toContain("Practice only");
+    expect(renderToStaticMarkup(<BrokerTile entry={entryOf("upstox")} onPick={noop} />)).not.toContain("Practice only");
+  });
+
+  it("the connect panel shows the guide with the official links before its five fields", () => {
+    const html = panel(KOTAK);
+    expect(html).toContain('data-broker-guide="kotak_neo"');
+    for (const p of KOTAK.guide!.points) expect(html).toContain(p);
+    const links = [...html.matchAll(/<a[^>]*data-guide-link[^>]*href="([^"]+)"|<a[^>]*href="([^"]+)"[^>]*data-guide-link/g)].map((m) => m[1] ?? m[2]);
+    expect(links).toEqual(KOTAK.guide!.links.map((l) => l.url));
+    expect(html).toMatch(/target="_blank" rel="noopener noreferrer"/);
+    expect(inputs(html)).toEqual(["api_key", "mobile_number", "client_id", "pin", "totp_secret"]);
+    expect(html.indexOf("data-broker-guide")).toBeLessThan(html.indexOf("data-field"));
+    expect(ADVICE.test(html)).toBe(false);
+  });
+
+  it("the daily renew is one button with no guide; brokers without a guide show none", () => {
+    const renew = renderToStaticMarkup(
+      <ConnectPanelView entry={KOTAK} step={stepFor(KOTAK, "renew")} values={{}} onChange={noop} onSubmit={noop} busy={false} result={null} />,
+    );
+    expect(renew).not.toContain("data-broker-guide");
+    expect(inputs(renew)).toEqual([]);
+    for (const entry of CATALOG) expect(panel(entry)).not.toContain("data-broker-guide");
+  });
+});
+
+/** Part 1B: Groww's catalog row as the server sends it with ui_v2 on (app/brokers/catalog.py). */
+const GROWW: BrokerCatalogEntry = {
+  broker: "groww", name: "Groww", method: "totp_auto",
+  fields: [
+    { key: "api_key", label: "API key (TOTP)", kind: "secret", placeholder: "From Groww: Trade API, then API Keys" },
+    { key: "totp_secret", label: "TOTP secret", kind: "secret", placeholder: "The secret shown with the TOTP key" },
+  ],
+  how_to: [
+    "On Groww open Trade API, then API Keys, and generate a TOTP key; copy the key and the secret it shows.",
+    "Paste both here; ATP makes the six-digit code from the secret, so you never type it.",
+    "Each morning press Renew; Groww ends every session at 6 in the morning.",
+  ],
+  doc_url: "https://groww.in/trade-api/docs/python-sdk", daily_renewal: true, available: true, renew_fields: [],
+  gates: { live_orders: "closed", live_prices: "closed", note: "Practice mode only for now. ATP can read your Groww positions, holdings, funds and orders." },
+  requires_ui_v2: true,
+  guide: {
+    points: [
+      "Practice mode only for now: ATP reads your Groww positions, holdings, funds and orders.",
+      "Real orders and live prices through Groww stay off until Groww confirms in writing that they may be used through ATP.",
+      "Groww's Trade API is a paid Groww plan; Groww asks that orders from connected apps come from a registered fixed internet address.",
+    ],
+    links: [
+      { label: "Groww Trade API", url: "https://groww.in/trade-api" },
+      { label: "Official API guide", url: "https://groww.in/trade-api/docs/python-sdk" },
+      { label: "Static IP rules", url: "https://groww.in/blog/static-ip-api-trading-setup" },
+    ],
+  },
+};
+
+describe("Part 1B Groww: practice only, two fields, a plain-words connect guide", () => {
+  it("the tile says Practice only", () => {
+    const tile = renderToStaticMarkup(<BrokerTile entry={GROWW} onPick={noop} />);
+    expect(tile).toContain("Groww");
+    expect(tile).toContain("Practice only");
+  });
+
+  it("the connect panel shows the guide and its links before the two fields; no advice words", () => {
+    const html = panel(GROWW);
+    expect(html).toContain('data-broker-guide="groww"');
+    for (const p of GROWW.guide!.points) expect(html).toContain(p.replace(/'/g, "&#x27;"));
+    expect(inputs(html)).toEqual(["api_key", "totp_secret"]);
+    expect(html.indexOf("data-broker-guide")).toBeLessThan(html.indexOf("data-field"));
+    expect(ADVICE.test(html)).toBe(false);
+  });
+
+  it("the daily renew is one button with no guide", () => {
+    const renew = renderToStaticMarkup(
+      <ConnectPanelView entry={GROWW} step={stepFor(GROWW, "renew")} values={{}} onChange={noop} onSubmit={noop} busy={false} result={null} />,
+    );
+    expect(renew).not.toContain("data-broker-guide");
+    expect(inputs(renew)).toEqual([]);
+  });
+});

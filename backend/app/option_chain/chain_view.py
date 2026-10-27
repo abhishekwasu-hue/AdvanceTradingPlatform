@@ -37,6 +37,7 @@ from app.brokers.models import OptionChain, OptionChainRow
 from app.cache.client import cache_get, cache_set
 from app.core.config import RISK_FREE_RATE
 from app.instruments import expiry_calendar, expiry_data, master
+from app.market_data.calendar import trading_days_until
 from app.option_chain.analysis import compute_max_pain
 from app.option_chain.greeks import BSInputs, black_scholes, time_to_expiry_years
 from app.option_chain.models import OptionType
@@ -276,8 +277,9 @@ def _change(now_oi: Optional[float], then: Optional[float]) -> Optional[float]:
 
 
 def build_view(chain: OptionChain, *, spot: Optional[float], future: Optional[Dict[str, Any]], expiry: Optional[date],
-               now: datetime, oi: OiChange) -> Dict[str, Any]:
-    """The page's whole answer for one chain: summary, rows (both legs with IV and Greeks) and the OI-change state."""
+               now: datetime, oi: OiChange, holidays: Iterable[date] = ()) -> Dict[str, Any]:
+    """The page's whole answer for one chain: summary, rows (both legs with IV and Greeks) and the OI-change state.
+    B3: `days_to_expiry` counts TRADING days (app/market_data/calendar.py; `holidays` = the exchange's closed days)."""
     rows = sorted(chain.rows, key=lambda r: r.strike)
     today = today_ist(now)
     years = time_to_expiry_years(expiry, now) if expiry is not None else None
@@ -301,7 +303,7 @@ def build_view(chain: OptionChain, *, spot: Optional[float], future: Optional[Di
         "pcr_oi": pcr_oi(rows),
         "max_pain": compute_max_pain(rows),
         "atm_iv": sum(atm_ivs) / len(atm_ivs) if atm_ivs else None,
-        "days_to_expiry": (expiry - today).days if expiry is not None else None,
+        "days_to_expiry": trading_days_until(today, expiry, holidays) if expiry is not None else None,
         "max_call_oi_strike": highest_oi_strike(rows, "call"),
         "max_put_oi_strike": highest_oi_strike(rows, "put"),
         "total_call_oi": sum(r.call_oi or 0.0 for r in rows),

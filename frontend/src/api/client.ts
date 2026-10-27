@@ -21,6 +21,8 @@ import type {
   AdminTenantDetail,
   AdminTenantSummary,
   AlertChannel,
+  PhoneDevice,
+  PhoneDevices,
   AlertChannelUpsert,
   AlertDelivery,
   TelegramInboundStatus,
@@ -28,6 +30,7 @@ import type {
   ThesisHistory,
   AnalyticsSummary,
   AuditLogEntry,
+  BacktestBarsResponse,
   BacktestResult,
   BrokerCredentialsInput,
   BrokerTokenInfo,
@@ -179,6 +182,9 @@ import type { MarketStrip } from "../dashboard/types";
 import type { RhythmKind, RhythmPrefs, RhythmSettings, RhythmToday } from "../rhythm/types";
 import type { ChainExpiries, LiveChain } from "../optionChain/types";
 
+/** TT12-1: the window event the shell's one-time notices listen for (a saved risk limit makes one moot). */
+export const NOTICES_CHANGED = "atp:notices-changed";
+
 export { ApiError, friendlyError } from "./errors";
 
 /** P0.8-D: fired when an AI route answers 428 ai_acknowledgement_required. */
@@ -283,7 +289,28 @@ async function rawRequest(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
+/**
+ * A4: the step-up freshness window. A SUPER_ADMIN write whose two-factor check is older than the server's window answers
+ * 403 with `X-Step-Up: mfa`. While a handler is registered (StepUpHost, for platform administrators), `request` asks it
+ * for the authenticator code and repeats the request once; without one the caller gets the error as before.
+ */
+export type StepUpHandler = (reason: string) => Promise<boolean>;
+let stepUpHandler: StepUpHandler | null = null;
+
+export function setStepUpHandler(handler: StepUpHandler | null): void {
+  stepUpHandler = handler;
+}
+
+/** The refusal asks for a code (not "enable two-factor first", which a code cannot fix). */
+function asksForCode(response: Response, message: string): boolean {
+  return response.status === 403 && response.headers.get("x-step-up") === "mfa" && !message.toLowerCase().includes("enable it");
+}
+
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestOnce<T>(path, init, false);
+}
+
+async function requestOnce<T>(path: string, init: RequestInit | undefined, steppedUp: boolean): Promise<T> {
   let response = await rawRequest(path, init);
   if (response.status === 401 && currentView()) {
     // MO3-A1: the view ended on the server (expired, ended elsewhere): never retry as the admin under the person's page.
@@ -310,6 +337,10 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     // Settings redesign A1: an AI call that needs a key answers `ai_not_connected` - the shell opens the Connect AI panel.
     if (response.status === 409 && isNotConnected(error.body)) window.dispatchEvent(new Event(CONNECT_AI_EVENT));
+    const handler = stepUpHandler;
+    if (handler && !steppedUp && !path.startsWith("/auth/") && asksForCode(response, error.message) && (await handler(error.message))) {
+      return requestOnce<T>(path, init, true);
+    }
     throw error;
   }
   if (response.status === 204) return undefined as T;
@@ -403,6 +434,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null, options: options ?? null }),
     }),
+  /** Owner order 23 Oct: the bars a backtest runs on, chosen by the server - your broker when its session is usable, else
+   * ATP's stored Daily history (flag backtest_stored_history), else a 409 that says what is missing. */
+  backtestBars: (symbol: string, timeframe: string, lookbackDays: number, exchange = "NSE") =>
+    request<BacktestBarsResponse>("/backtest/bars", { method: "POST", body: JSON.stringify({ symbol, timeframe, lookback_days: lookbackDays, exchange }) }),
   listBacktests: () => request<BacktestRunSummary[]>("/backtests"),
   optionChainCoverage: () => request<OptionChainCoverage[]>("/backtest/option-chain/coverage"),
   uploadOptionChainSnapshots: (underlying: string, rows: OptionChainSnapshotRow[]) =>
@@ -522,6 +557,9 @@ export const api = {
 
   logoutEverywhere: () => request<void>("/auth/logout-all", { method: "POST" }),
 
+  /** A4: ends every other session of this account; this device stays signed in. */
+  logoutOtherDevices: () => request<{ signed_out: number }>("/auth/logout-others", { method: "POST" }),
+
   listSessions: () => request<SessionInfo[]>("/auth/sessions"),
 
   loginHistory: () => request<LoginEvent[]>("/auth/login-history"),
@@ -577,7 +615,15 @@ export const api = {
 
   /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
   paperRisk: () => request<PaperRiskStatus>("/paper/risk"),
-  setPaperRisk: (values: Partial<RiskByDefaultSettings>) => request<PaperRiskStatus>("/paper/risk", { method: "PUT", body: JSON.stringify(values) }),
+  setPaperRisk: async (values: Partial<Record<keyof RiskByDefaultSettings, number | null>>) => {
+    const out = await request<PaperRiskStatus>("/paper/risk", { method: "PUT", body: JSON.stringify(values) });
+    // TT12-1: setting a limit marks the one-time "limits now not set" notice seen on the server; the shell re-reads.
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(NOTICES_CHANGED));
+    return out;
+  },
+  // TT12-1: the signed-in user's one-time notices (src/notices/oneTimeNotices.ts; the server decides who gets one).
+  meNotices: () => request<{ notices: { id: string; text: string; link: string }[] }>("/me/notices"),
+  noticeSeen: (id: string) => request<{ notices: { id: string; text: string; link: string }[] }>(`/me/notices/${encodeURIComponent(id)}/seen`, { method: "POST" }),
   previewTicket: (plan: TicketPlan) => request<TicketView>("/paper/ticket/preview", { method: "POST", body: JSON.stringify(plan) }),
   placeTicket: (plan: TicketPlan) => request<TradePlanView>("/paper/ticket", { method: "POST", body: JSON.stringify(plan) }),
   paperPlans: () => request<TradePlanView[]>("/paper/plans"),
@@ -910,7 +956,7 @@ export const api = {
   aiDrafts: () => request<AiStrategyDraft[]>("/ai/drafts"),
   aiDraft: (id: number) => request<AiStrategyDraft>(`/ai/drafts/${id}`),
   aiBacktestDraft: (id: number, symbol: string, base_timeframe: string, candles: OHLCVBar[], data_source = "sample", signal?: AbortSignal) =>
-    request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult }>(`/ai/drafts/${id}/backtest`, {
+    request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult; prices?: { line: string } | null }>(`/ai/drafts/${id}/backtest`, {
       method: "POST", body: JSON.stringify({ symbol, base_timeframe, ...evidenceBody(candles, data_source) }), signal,
     }),
   aiApproveDraft: (id: number, name?: string, acceptRisk = false) =>
@@ -1025,7 +1071,17 @@ export const api = {
 
   deleteAlertChannel: (type: string) => request<void>(`/alert-channels/${type}`, { method: "DELETE" }),
 
-  pushPublicKey: () => request<{ public_key: string; configured: boolean }>("/alert-channels/push/public-key"),
+  // B8: `accepting` is false while the server runs on a throwaway VAPID key in production; `message` says so plainly.
+  pushPublicKey: () => request<{ public_key: string; configured: boolean; accepting?: boolean; message?: string | null }>("/alert-channels/push/public-key"),
+
+  // B8 (flag mobile_push): the caller's own phones for notifications from the Android app.
+  phoneDevices: () => request<PhoneDevices>("/mobile/devices"),
+  registerPhone: (body: { token: string; platform: "android" | "ios"; label: string; app_version: string; kinds?: string[] }) =>
+    request<PhoneDevice>("/mobile/devices", { method: "POST", body: JSON.stringify(body) }),
+  updatePhone: (id: string, body: { label?: string; kinds?: string[] }) =>
+    request<PhoneDevice>(`/mobile/devices/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
+  removePhone: (id: string) => request<void>(`/mobile/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  testPhone: (id: string) => request<{ ok: boolean; detail: string }>(`/mobile/devices/${encodeURIComponent(id)}/test`, { method: "POST" }),
 
   testAlertChannel: (type: string) =>
     request<{ ok: boolean; detail: string }>(`/alert-channels/${type}/test`, { method: "POST" }),

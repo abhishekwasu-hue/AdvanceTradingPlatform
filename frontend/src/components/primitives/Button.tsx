@@ -1,5 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cx } from "./cx";
+import { useColourV2 } from "../../ui/colourV2";
+import { GRADIENT_FILL } from "../../ui/accents";
 
 export type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "danger";
 /** sm / md: the P1.2 sizes. v2: 44 px on a phone (a finger), 36 px with a mouse (UI v2 §8). */
@@ -23,11 +25,16 @@ const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:rin
  * Primary = the screen's ONE main action (Place order, Start, Approve, Connect) as a solid brand button; every other
  * action is `outline` or `ghost`. The e2e helper `e2e/solidBrand.ts` warns when a screen shows more than one.
  */
-export function buttonClass({ variant = "secondary", size = "md", className }: { variant?: ButtonVariant; size?: ButtonSize; className?: string } = {}): string {
+export function buttonClass({ variant = "secondary", size = "md", gradient = false, className }: {
+  variant?: ButtonVariant; size?: ButtonSize;
+  /** UI-H CA2: the page's single primary action on the blue -> violet gradient (primary only; the caller checks colour_v2). */
+  gradient?: boolean; className?: string;
+} = {}): string {
   const v2 = size === "v2";
+  const look = gradient && variant === "primary" ? `${GRADIENT_FILL} hover:brightness-110` : VARIANT[variant];
   return cx("inline-flex shrink-0 items-center justify-center", v2 ? "rounded-control" : "rounded-md", "font-semibold transition-colors",
     v2 && "duration-fast", FOCUS, "disabled:cursor-not-allowed disabled:opacity-50",
-    VARIANT[variant], SIZE[size], v2 && (variant === "primary" ? "px-space-5" : "px-space-4"), className);
+    look, SIZE[size], v2 && (variant === "primary" ? "px-space-5" : "px-space-4"), className);
 }
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -35,15 +42,21 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: ButtonSize;
   icon?: ReactNode;
   loading?: boolean;
+  /**
+   * UI-H CA2 (opt-in): the page's ONE primary action on the blue -> violet gradient while colour_v2 is on (the solid
+   * brand button otherwise). Primary only; never in a form, a table, the option chain or a chart (accentScope.test.ts).
+   */
+  gradient?: boolean;
 }
 
 /** The one button. Primary = the page's main action (at most one per view); outline / secondary / ghost for the rest. */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "secondary", size = "md", icon, loading = false, disabled, className, children, type = "button", ...rest }, ref,
+  { variant = "secondary", size = "md", icon, loading = false, gradient = false, disabled, className, children, type = "button", ...rest }, ref,
 ) {
+  const colour = useColourV2();
   return (
     <button ref={ref} type={type} disabled={disabled || loading} aria-busy={loading || undefined}
-      className={buttonClass({ variant, size, className })}
+      className={buttonClass({ variant, size, gradient: gradient && colour, className })}
       {...rest}>
       {loading ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden /> : icon}
       {children}

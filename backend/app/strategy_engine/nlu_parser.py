@@ -76,7 +76,7 @@ class ParsedStrategyPreview(BaseModel):
     stop_loss_atr_mult: float = 1.0
     atr_period: int = 14
     target_rr: Tuple[float, float] = (1.5, 2.0)
-    min_rr: float = 1.2
+    min_rr: Optional[float] = None                  # P1-2b: not set unless the text states one (no hidden filter)
 
 
 class ParseResult(BaseModel):
@@ -194,7 +194,7 @@ def parse_strategy_description(text: str, name: str = "Parsed Strategy") -> Pars
         m = _MIN_RR.search(sentence)
         if m:
             value = float(m.group(1))
-            config.min_rr = value
+            config.min_rr = value                       # his own words (a preview; saving it keeps even an exact 1.2)
             interpreted.append(f"Minimum R:R to trade: {value:g}")
             matched_anything = True
 

@@ -8,7 +8,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import verify_audit_chain
-from app.auth.dependencies import get_current_user, require_role, require_trader
+from app.auth.dependencies import get_current_user, require_mfa_session, require_role, require_trader
 from app.option_chain.greeks import today_ist
 from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
@@ -101,17 +101,19 @@ async def list_trades(
 
 @router.get("/positions", response_model=List[TradeRecordResponse])
 async def list_open_positions(
-    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session), mine: bool = False,
 ) -> List[TradeRecordResponse]:
     """Trades with no exit yet. See POST /api/positions/{id}/mark-price for how a position
     actually gets closed - there's no live broker feed yet, so exit tracking is a manual/periodic
     price check rather than continuous monitoring.
+
+    Trading Terminal T1 (TT-15): `?mine=true` returns only the caller's own positions (tenant AND user); without it the
+    answer is exactly as before (the organisation's).
     """
-    rows = await session.scalars(
-        select(TradeRecord)
-        .where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.exit_time.is_(None))
-        .order_by(TradeRecord.entry_time.desc())
-    )
+    query = select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.exit_time.is_(None))
+    if mine:
+        query = query.where(TradeRecord.user_id == user.id)
+    rows = await session.scalars(query.order_by(TradeRecord.entry_time.desc()))
     return [TradeRecordResponse.from_record(r) for r in rows]
 
 
@@ -130,6 +132,7 @@ class PositionGreeksResponse(BaseModel):
 async def open_position_greeks(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> PositionGreeksResponse:
+    from app.brokers.gates import data_sources
     from app.brokers.token_lifecycle import build_adapter, token_is_usable
     from app.db.models import BrokerCredentialRecord
     from app.execution.contract_execution import ContractExecutionError
@@ -153,7 +156,7 @@ async def open_position_greeks(
         adapter = own.adapter() if own is not None else None
     else:
         stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
-        usable = [r for r in stored if token_is_usable(r)]
+        usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
         if rows and not usable:
             raise HTTPException(status_code=409, detail="Greeks need live premiums - no usable broker session (log in on the Broker page)")
         adapter = build_adapter(usable[0]) if usable else None
@@ -445,7 +448,7 @@ class AuditChainVerificationResponse(BaseModel):
     first_broken_row_id: Optional[int] = None
 
 
-@router.get("/audit-logs/verify", response_model=AuditChainVerificationResponse)
+@router.get("/audit-logs/verify", response_model=AuditChainVerificationResponse, dependencies=[Depends(require_mfa_session)])
 async def verify_audit_logs(
     user: User = Depends(require_role()),  # SUPER_ADMIN only - the chain spans every tenant
     session: AsyncSession = Depends(get_session),
@@ -501,17 +504,18 @@ class OrderEventResponse(BaseModel):
 
 @router.get("/orders", response_model=List[OrderResponse])
 async def list_orders(
-    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session), limit: int = 200,
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session), limit: int = 200, mine: bool = False,
 ) -> List[OrderResponse]:
     """This tenant's full order ledger - every paper/live execution attempt, rejected or filled,
     most recent first. Unlike GET /api/trades (only rows that actually filled), this is the
-    complete audit trail the formal order state machine produces."""
-    rows = await session.scalars(
-        select(OrderRecord)
-        .where(OrderRecord.tenant_id == user.tenant_id)
-        .order_by(OrderRecord.created_at.desc())
-        .limit(limit)
-    )
+    complete audit trail the formal order state machine produces.
+
+    Trading Terminal T1 (TT-15): `?mine=true` returns only the caller's own orders (tenant AND user); without it the
+    answer is exactly as before."""
+    query = select(OrderRecord).where(OrderRecord.tenant_id == user.tenant_id)
+    if mine:
+        query = query.where(OrderRecord.user_id == user.id)
+    rows = await session.scalars(query.order_by(OrderRecord.created_at.desc()).limit(limit))
     return [OrderResponse.from_record(r) for r in rows]
 
 

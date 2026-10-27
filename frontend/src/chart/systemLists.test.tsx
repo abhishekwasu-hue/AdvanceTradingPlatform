@@ -41,12 +41,13 @@ describe("WL1 list groups (pure)", () => {
     expect(browserGroups([], [])).toEqual([{ id: MY_LISTS, label: "My lists", entries: [] }]);     // My lists is always there
   });
 
-  it("the list shown: the remembered one if it still exists, else the trader's first own list, else Indices", () => {
+  it("the list shown: the remembered one if it still exists, else the trader's first own list, else the NIFTY 50 stocks", () => {
     expect(pickList("sector-it", 7, OWN, SYSTEM)).toEqual({ kind: "system", key: "sector-it" });
     expect(pickList("gone", 7, OWN, SYSTEM)).toEqual({ kind: "own", id: 7 });
     expect(pickList(null, 99, OWN, SYSTEM)).toEqual({ kind: "own", id: 7 });               // a deleted list: the first own one
-    expect(pickList(null, null, [], SYSTEM)).toEqual({ kind: "system", key: "indices" });    // first open: a ready list (UI4C-1)
-    expect(pickList(null, null, [], SYSTEM.slice(1))).toEqual({ kind: "system", key: "index-nifty50" });
+    // first open: a ready list of stocks (day-one fix 8), then Indices, then the first system list
+    expect(pickList(null, null, [], SYSTEM)).toEqual({ kind: "system", key: "index-nifty50" });
+    expect(pickList(null, null, [], SYSTEM.filter((g) => g.group !== "INDEX_STOCKS"))).toEqual({ kind: "system", key: "indices" });
     expect(pickList(null, null, [], [])).toBeNull();
     expect(groupOf({ kind: "system", key: "sector-it" }, SYSTEM)).toBe("SECTORS");
     expect(groupOf({ kind: "own", id: 7 }, SYSTEM)).toBe(MY_LISTS);

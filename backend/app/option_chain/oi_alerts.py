@@ -205,7 +205,7 @@ async def evaluate_tenant(session: AsyncSession, tenant_id: int, underlying: str
     snoozed = own.snoozed_until if own is not None else None
     day = now.astimezone(IST).date()
     decisions: List[str] = []
-    flags = snapshots.staleness(await snapshots.latest_capture(session, underlying), now, settings, market_open)
+    flags = snapshots.staleness(await snapshots.latest_capture(session, underlying, tenant_id=tenant_id), now, settings, market_open)
     if flags["stale"] and "COLLECTOR_STALE" in settings.alerts.types:
         stale_event = AlertEvent("COLLECTOR_STALE", None, f"stale {day.isoformat()}", NotificationSeverity.WARNING)
         age = flags["age_minutes"]
@@ -215,7 +215,7 @@ async def evaluate_tenant(session: AsyncSession, tenant_id: int, underlying: str
                                "the banner and OI gates show stale data until the collector recovers."}
         decisions.append(await _decide(session, tenant_id, underlying, stale_event, datetime.combine(day, time(), IST).astimezone(timezone.utc), now,
                                        settings.alerts, snoozed, rendered))
-    slots = await snapshots.day_chains(session, underlying, day)
+    slots = await snapshots.day_chains(session, underlying, day, tenant_id=tenant_id)
     timeline = snapshots.replay(underlying, slots, settings, day)
     if not timeline:
         return decisions
@@ -229,7 +229,7 @@ async def evaluate_tenant(session: AsyncSession, tenant_id: int, underlying: str
         .order_by(OIBannerStateRecord.slot_start.desc()).limit(1))
     state, step = latest.state, latest.totals.strike_step
     window_rows = slots[-1].chain.rows
-    wall = wall_state(window_rows, await snapshots.baselines(session, underlying, day), state, step, settings)
+    wall = wall_state(window_rows, await snapshots.baselines(session, underlying, day, tenant_id=tenant_id), state, step, settings)
     prev = view_of(prev_row) if prev_row is not None else None
     cur = StateView(state.direction.value, state.stable_signal.direction.value,
                     state.stable_signal.strength.value if state.stable_signal.strength else None,

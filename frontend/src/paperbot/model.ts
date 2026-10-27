@@ -1,5 +1,6 @@
 import { botWithDefaults, structureLabel, type TradingDefaults } from "../settings/tradingDefaults";
 import type { ContractRules, Deployment, DeploymentCreateRequest, StrategyInfo } from "../types";
+import { strategyDisplayName } from "../ui/strategyName";
 
 /**
  * UX2 fix 4 ("Paper bot in three taps", docs/design/UX_AUDIT_FULL.md problem 3 and P18): the rules of the v2 Paper bot
@@ -31,6 +32,9 @@ export const INDEX_SYMBOLS: ReadonlySet<string> = new Set([
 
 /** The symbols offered in the list; "Another symbol" lets the trader type one. */
 export const SYMBOLS: readonly string[] = ["NIFTY 50", "NIFTY BANK", "FINNIFTY", "RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "SBIN"];
+/** Day-one fix 6: an idea opened from the Ideas page starts on a stock, so the form never quietly picks an index option
+ * for a price-action idea (the trader changes it in one tap). */
+export const IDEA_SYMBOL = "RELIANCE";
 
 const SYMBOL = /^[A-Z0-9&][A-Z0-9&\- ]{0,29}$/;
 
@@ -98,7 +102,8 @@ export function startSummary(symbol: string, info: Pick<StrategyInfo, "timeframe
   const expiry = EXPIRY_WORDS[req?.expiry_rule ?? "NEAREST"] ?? "nearest";
   const size = `${lots} lot${lots === 1 ? "" : "s"}`;
   const structure = req?.option_strategy && req.option_strategy !== "SINGLE" ? req.option_strategy : null;
-  const what = !isIndex(s) ? `${s} itself`
+  // Day-one fix 6: a stock is traded as its shares (plain words; "RELIANCE itself" read oddly).
+  const what = !isIndex(s) ? `${s} shares`
     : req?.instrument_kind === "FUTURE" ? `a ${s} future at the ${expiry} expiry, ${size}`
     : structure ? `${s} options as a ${structureLabel(structure).toLowerCase()} at the ${expiry} expiry, ${size}`
     : `a ${s} option at the ${expiry} expiry, ${size}`;
@@ -141,12 +146,8 @@ export function templateOf(id: string): string | null {
 }
 
 export function botName(d: Pick<Deployment, "strategy_id">, names: ReadonlyMap<string, string>): string {
-  const name = names.get(d.strategy_id);
-  if (name) return name;
-  const template = templateOf(d.strategy_id);
-  if (template) return names.get(TEMPLATE_ID_PREFIX + template) ?? "Strategy template";   // never the id itself
-  const words = d.strategy_id.replace(/^custom[:_-]?/i, "").replace(/[_-]+/g, " ").trim();
-  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "My strategy";
+  // The one shared rule (src/ui/strategyName.ts): the Library name, a template's name, else words - never the id.
+  return strategyDisplayName(d.strategy_id, names) || "My strategy";
 }
 
 /** "Option of NIFTY 50" / "RELIANCE" and how long it holds. */

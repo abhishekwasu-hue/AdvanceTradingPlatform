@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.brokers.base import BrokerInterface
 from app.alerts.dispatcher import dispatch_pending
-from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
+from app.brokers.rate_budget import RateBudget, RateLimitedBroker, daily_budget_for, limits_for
 from app.platform import phase0_lock
 from app.execution.ops_throttle import OpsThrottle
 from app.compliance.static_ip import live_entry_problem
@@ -76,6 +76,7 @@ from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs
 from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
 from app.market_data.fanin import UserSessionFanIn
+from app.market_data.hub import DataHub
 from app.market_data.stream import StreamManager
 from app.market_lake.recorder import LakeRecorder
 from app.observability.metrics import MARKET_DATA_STALE
@@ -107,6 +108,8 @@ MAX_CONSECUTIVE_FAILURES = 5
 # How often a VALID token is re-proven against the broker.
 TOKEN_RECHECK_SECONDS = 300
 RHYTHM_EVERY_MINUTES = 5            # MO4: how often the worker looks for daily-rhythm digests due on Telegram
+SETTLEMENT_EVERY_MINUTES = 30       # TM Part 7: how often the worker looks for stock F&O positions that may settle by delivery
+ONBOARDING_EVERY_MINUTES = 15       # C13: how often the worker looks for first-week onboarding e-mails due
 # Fairness: no tenant may consume more than this share of a cycle evaluating entries. Deployments
 # that don't get their turn are picked up first next cycle (round-robin), so a tenant with many
 # deployments is slowed, never starved - and never starves the others.
@@ -161,6 +164,8 @@ class CycleReport:
     market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
     breakout_fitness_started: bool = False   # U6 BK5: the nightly breakout-fitness task was started this cycle
     intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
+    lake_backfill_started: bool = False      # DATA-H: the owner's index-history pass was started this cycle
+    chain_history_started: bool = False      # TM 9.4: an owner chain-history slot was started this cycle
 
 
 def _just_closed(now: datetime) -> bool:
@@ -237,7 +242,7 @@ class TradingWorker:
         # IST calendar date of the last retention run (Phase D3) - once a day is plenty.
         self._last_retention_day = None
         # Phase W: last option-chain capture per underlying (UTC), so a chain is fetched once per interval.
-        self._last_chain_capture: Dict[str, datetime] = {}
+        self._last_chain_capture: Dict[Tuple[int, str], datetime] = {}   # TM94-3: (tenant, underlying) -> last attempt
         self._cycle_chains: Dict[str, object] = {}   # chains fetched this tenant cycle, by underlying symbol
         # IST calendar date of the last billing lifecycle sweep (Phase K1): trials, dues, grace.
         self._last_billing_day = None
@@ -245,6 +250,8 @@ class TradingWorker:
         # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
         self._last_eod_summary_day = None
         self._last_rhythm_check: Optional[datetime] = None     # MO4: the daily rhythm's Telegram sends
+        self._last_settlement_check: Optional[datetime] = None  # TM Part 7: the physical-settlement warnings
+        self._last_onboarding_check: Optional[datetime] = None  # C13: the first-week onboarding e-mails
         self._last_thesis_report_day = None
         self._last_login_reminder_day = None   # D5: the pre-open daily-login reminder, once per IST day
         self._last_analytics_expiry_day = None  # Upstox analytics token: the 7-day / last-day expiry warning, once per IST day
@@ -277,7 +284,15 @@ class TradingWorker:
         self._last_intraday_day: Optional[date] = None
         self._intraday_task: Optional["asyncio.Task[None]"] = None
         self._intraday_retry_at = 0.0
+        self._last_lake_backfill_day: Optional[date] = None
+        self._lake_backfill_task: Optional["asyncio.Task[None]"] = None
+        self._lake_backfill_retry_at = 0.0
         self._intraday_adapters: Dict[Any, Any] = {}   # one owner adapter per IST day, reused by that evening's passes
+        # TM 9.4: the owner's chain history - the last slot started, its task, the adapter of the day, the last report.
+        self._last_chain_slot: Optional[datetime] = None
+        self._chain_task: Optional["asyncio.Task[None]"] = None
+        self._chain_adapters: Dict[Any, Any] = {}
+        self.last_chain_report: Optional[Dict[str, Any]] = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -288,8 +303,10 @@ class TradingWorker:
         # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
         # symbols the tenant's deployments and open positions need (STREAMING_QUOTES_ENABLED).
         self.streams = StreamManager()
+        # TM Part 1: the data hub (flag data_hub, off by default) - one stream per broker connection for every consumer.
+        self.hub = DataHub()
         # BT1: per-user broker sessions for the bring-your-own-broker data tier (flag byob_data_tier, off by default).
-        self.byob = UserSessionFanIn()
+        self.byob = UserSessionFanIn(hub=self.hub)
         self._last_vix: Dict[int, datetime] = {}    # Z5: when each organisation's India VIX reading was last taken
         # Part B2: ticks from those streams also become lake bars (LAKE_TICK_WRITER_ENABLED, off by default).
         self.lake = None
@@ -301,7 +318,7 @@ class TradingWorker:
         self._last_account_refresh: Dict[int, datetime] = {}
         # Phase AR: last market-memory capture per tenant (UTC).
         self._last_memory: Dict[int, datetime] = {}
-        self._last_oi_slot: Dict[str, datetime] = {}      # OI Banner O2: underlying -> last slot attempted
+        self._last_oi_slot: Dict[Tuple[int, str], datetime] = {}   # OI Banner O2 / TM-7: (tenant, underlying) -> last slot attempted
         self.max_seconds_per_tenant = (
             max_seconds_per_tenant if max_seconds_per_tenant is not None else cycle_seconds * MAX_TENANT_SHARE_OF_CYCLE
         )
@@ -314,8 +331,12 @@ class TradingWorker:
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
         if self._market_zones_task is not None and not self._market_zones_task.done():
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
+        if self._lake_backfill_task is not None and not self._lake_backfill_task.done():
+            self._lake_backfill_task.cancel()        # DATA-H: resumable - a window is written and recorded in one transaction
         if self._intraday_task is not None and not self._intraday_task.done():
             self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
+        if self._chain_task is not None and not self._chain_task.done():
+            self._chain_task.cancel()                # TM 9.4: one slot - a cancelled slot is a gap, the next one runs
         if self._then_warm_task is not None and not self._then_warm_task.done():
             self._then_warm_task.cancel()            # N1 X1: in memory only - the next worker warms again
         if self._vision_task is not None and not self._vision_task.done():
@@ -333,6 +354,16 @@ class TradingWorker:
             await self.reconcile_on_start()
         except Exception:  # noqa: BLE001 - never prevents the worker from starting
             logger.exception("Start-up reconciliation failed")
+        # TM2-4: every order the engine left "Sending" (FIRING) when the worker stopped is looked up at its broker by its
+        # client id and settled - exits first - before the first cycle and the tick loop (never a second order).
+        from app.execution import trigger_engine
+        try:
+            async with self.session_factory() as session:
+                await trigger_engine.reconcile_on_start(session)
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting; each pass settles them after the ack timeout
+            logger.exception("Trigger engine start-up reconciliation failed")
+        # TM-2 / TT-6: the trigger engine on live ticks between cycles (the cycle runs it too, as the fallback).
+        tick_task = asyncio.create_task(trigger_engine.tick_loop(self.session_factory, self._stop))
         while not self._stop.is_set():
             started = time.monotonic()
             try:
@@ -350,8 +381,10 @@ class TradingWorker:
                 await asyncio.wait_for(self._stop.wait(), timeout=max(1.0, self.cycle_seconds - elapsed))
             except asyncio.TimeoutError:
                 pass
+        tick_task.cancel()
         await self.streams.stop_all()
         await self.byob.close_all()
+        await self.hub.stop_all()
         logger.info("Trading worker %s stopped", self.holder_id)
 
     async def startup_check(self) -> Dict[str, object]:
@@ -425,6 +458,14 @@ class TradingWorker:
                     self._stale_skips = 0
                     await self._process_tenants(session, now, report, open_tenants=set(open_by_tenant))
                     report.stale_skips = self._stale_skips
+                    # TM-2 / TT-26: waiting orders not watched (the engine did not run) -> their owners are told.
+                    try:
+                        from app.execution import trigger_engine
+                        await trigger_engine.check_stall(session, now, market_open=True)
+                    except Exception as exc:  # noqa: BLE001 - an alert never breaks trading
+                        logger.exception("Trigger engine stall check failed")
+                        report.errors.append(f"trigger engine stall check: {exc}")
+                        await session.rollback()
                     # P0.1 / S2: a long evaluation phase must not let the lock lapse under the housekeeping below.
                     if report.lock_aborted or not await self._keep_lock(session, report, "after the tenants"):
                         return report   # H-1: another replica holds the lock - its cycle runs the housekeeping
@@ -588,6 +629,27 @@ class TradingWorker:
                             await rhythm_deliver.send_due(own, now)
                     except Exception as exc:  # noqa: BLE001 - a digest never blocks the cycle
                         logger.warning("Daily rhythm sends failed: %s", type(exc).__name__)
+                # TM Part 7 (app/paper/settlement_watch.py): stock F&O positions that may settle by delivery, once a day per
+                # position for users who keep the Telegram choice on. Flags ui_v2 + smart_execution. Information only.
+                if self._last_settlement_check is None or now - self._last_settlement_check >= timedelta(minutes=SETTLEMENT_EVERY_MINUTES):
+                    self._last_settlement_check = now
+                    try:
+                        from app.paper import settlement_watch
+                        async with self.session_factory() as own:
+                            await settlement_watch.send_due(own, now)
+                    except Exception as exc:  # noqa: BLE001 - a warning never blocks the cycle
+                        logger.warning("Settlement warnings failed: %s", type(exc).__name__)
+                # Readiness C13 (app/growth/onboarding.py): the first-week e-mails (connect your broker, first paper bot, first
+                # signal review), each once, per organisation behind `onboarding_emails`; nothing without the platform mailer
+                # and PUBLIC_BASE_URL. Its own session; read-only towards trading.
+                if self._last_onboarding_check is None or now - self._last_onboarding_check >= timedelta(minutes=ONBOARDING_EVERY_MINUTES):
+                    self._last_onboarding_check = now
+                    try:
+                        from app.growth import onboarding
+                        async with self.session_factory() as own:
+                            await onboarding.send_due(own, now)
+                    except Exception as exc:  # noqa: BLE001 - an e-mail never blocks the cycle
+                        logger.warning("Onboarding e-mails failed: %s", type(exc).__name__)
                 # Phase AX: the end-of-day summary - once per IST weekday from 15:35, one
                 # notification per organisation with a deployment or a trade today. Read-only.
                 ist_now = now.astimezone(IST)
@@ -745,6 +807,24 @@ class TradingWorker:
                         logger.exception("Intraday history pass not started")
                         report.errors.append(f"intraday history: {exc}")
                         await session.rollback()
+                # DATA-H DH2: the owner's index history (Daily + 1-minute of LAKE_BACKFILL_INDICES) - once per IST day from
+                # LAKE_BACKFILL_HOUR_IST, NSE closed, through the owner's own session into his private store; its own task.
+                if not nse.is_open:
+                    try:
+                        report.lake_backfill_started = await self._maybe_start_lake_backfill(session, now)
+                    except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                        logger.exception("Index history pass not started")
+                        report.errors.append(f"index history: {exc}")
+                        await session.rollback()
+                # TM 9.4: the owner's chain history (flag `chain_history`, off by default) - one slot per
+                # CHAIN_HISTORY_SLOT_MINUTES while a venue is open, through the owner's own broker session, drawing from that
+                # session's rate budget only while a reserve stays free for exits. Its own task and sessions; read-only.
+                try:
+                    report.chain_history_started = await self._maybe_start_chain_history(session, now)
+                except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                    logger.exception("Chain history slot not started")
+                    report.errors.append(f"chain history: {exc}")
+                    await session.rollback()
                 # MO3-A1: end (and audit) the read-only "View as user" sessions that expired with no later request -
                 # every few minutes, cheap (an indexed read of the open views).
                 if self._last_view_sweep is None or (now - self._last_view_sweep).total_seconds() >= VIEW_SWEEP_SECONDS:
@@ -808,8 +888,10 @@ class TradingWorker:
         user = await self._acting_user(session, tenant_id, [])
         if user is None:
             return None
+        from app.brokers.gates import market_data_open
         for account in await list_accounts(session, tenant_id):
-            if account.status == "ACTIVE":
+            # Part 1B: read-only use is a price read; a broker whose market-data gate is closed (Kotak Neo) is skipped.
+            if account.status == "ACTIVE" and market_data_open(account.broker_name):
                 broker = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
                 if broker is not None:
                     return broker
@@ -837,8 +919,10 @@ class TradingWorker:
 
     async def _oi_banner(self, session: AsyncSession, now: datetime) -> int:
         """OI Banner O2: for every underlying some tenant enabled, one option-chain read per collector slot while its
-        venue is open, through the first of those tenants with a usable broker session. The rows are platform-wide
-        reference data; a slot already stored (by another replica or cycle) is skipped. Never places an order."""
+        venue is open. TM-7 (owner, 23 Oct; RDY-6 data terms): each organisation's slot is read through ITS OWN first
+        usable broker session and stored as ITS rows - never through another organisation's session, never read by
+        another organisation (an organisation without a usable session simply has no slot). A slot already stored (by
+        another replica or cycle) is skipped. Never places an order."""
         from app.option_chain import oi_regime, snapshots as oi_snapshots
         wanted: Dict[str, List[Tuple[int, str]]] = {}
         for tenant_id, underlying, exchange in await oi_snapshots.enabled_underlyings(session):
@@ -852,28 +936,30 @@ class TradingWorker:
             family = session_family(tenants[0][1])
             if family not in open_by_family:
                 open_by_family[family] = (await market_session_status(session, now, tenants[0][1])).is_open
-            if not open_by_family[family] or self._last_oi_slot.get(underlying) == slot:
+            if not open_by_family[family]:
                 continue
-            self._last_oi_slot[underlying] = slot            # once per slot whether or not the read works
-            for tenant_id, _ in sorted(tenants):
+            due = [t for t in sorted({t for t, _ in tenants}) if self._last_oi_slot.get((t, underlying)) != slot]
+            if not due:
+                continue
+            for tenant_id in due:
+                self._last_oi_slot[(tenant_id, underlying)] = slot   # once per slot whether or not the read works
                 # Its own session: a failed read is rolled back without touching the cycle's session.
                 async with self.session_factory() as own:
                     with bind_log_context(tenant_id=tenant_id):
                         try:
                             if await self._byob_on(own, tenant_id):
-                                continue   # BT1b: platform-wide OI rows are never read through a per-user (BYOB) session
+                                continue   # BT1b: the banner is off for this organisation while its BYOB data tier is on
                             broker = await self._first_usable_broker(own, tenant_id, now)
                             if broker is None:
-                                continue
+                                continue   # TM-7: no slot for this organisation - never another organisation's session
                             expiries = await master.expiries(own, underlying, on_or_after=now.astimezone(IST).date())
                             chain = await broker.get_option_chain(master.INDEX_SYMBOLS.get(underlying, underlying), expiries[0] if expiries else None)
                             future_price, future_oi = await self._oi_future_quote(own, broker, underlying, now)
-                            result = await oi_snapshots.collect(own, underlying, chain, now, source=broker.name,
+                            result = await oi_snapshots.collect(own, underlying, chain, now, tenant_id=tenant_id, source=broker.name,
                                                                 future_price=future_price, future_oi=future_oi)
                             await own.commit()
                             stored += 1 if result.status == "OK" else 0
-                            break
-                        except Exception as exc:  # noqa: BLE001 - try the next tenant's session
+                        except Exception as exc:  # noqa: BLE001 - this organisation's slot is missed; the others go on
                             await own.rollback()
                             logger.warning("OI snapshot of %s through tenant %s failed: %s", underlying, tenant_id, exc)
             # O4: each following tenant's banner state and alerts for this slot (also when the read failed: a stale
@@ -1035,6 +1121,10 @@ class TradingWorker:
             open_tenants = set(await session.scalars(select(TradeRecord.tenant_id).where(TradeRecord.exit_time.is_(None)).distinct()))
         for tenant_id in open_tenants:
             by_tenant.setdefault(tenant_id, [])
+        # TM-2: an organisation whose only business is a waiting order still gets its trigger-engine pass.
+        from app.execution import trigger_engine
+        for tenant_id in await trigger_engine.tenants_with_resting(session):
+            by_tenant.setdefault(tenant_id, [])
         by_tenant = dict(sorted(by_tenant.items()))
 
         for tenant_id, tenant_deployments in by_tenant.items():
@@ -1088,6 +1178,17 @@ class TradingWorker:
             # below): a user's credential streams only through the per-user fan-in, never into md:tick:* or the lake.
             await self.streams.drop_prefix(f"{tenant_id}:")
         data_broker = next(iter(adapters.values()), None)
+        # TM Part 1 (flag data_hub): the organisation's own connection streams through the hub (its own keys) - only when
+        # its users do not each bring their own broker (byob: the fan-in owns those connections).
+        hub_org = not byob and await self._hub_on(session, tenant_id)
+        if not hub_org:
+            from app.market_data.hub import org_namespace
+            await self.hub.drop(org_namespace(tenant_id))        # the flag went off (or byob on): back to the old path
+        linked = sorted({a.broker_name for a in accounts if a.status == "ACTIVE"})
+        if data_broker is None and hub_org and linked:
+            # A linked broker whose login ended: the stream stops and the app shows ONE renew notice (never for "no broker
+            # linked"); the token check above already sent the one "session expired" notification.
+            await self.hub.org_without_session(tenant_id, linked)
         if data_broker is None:
             message = "No usable broker session (token expired or missing) - log in again on the Broker page"
             for dep in deployments:
@@ -1108,6 +1209,10 @@ class TradingWorker:
             # BT1b: this organisation's own cache keys - never the platform-wide md:candles / md:tick keys another
             # organisation reads (get_ltp then polls REST unless a tick arrives under these keys).
             market_data.cache_namespace = f"org.t{tenant_id}"
+        if hub_org and hasattr(market_data, "tick_namespace"):
+            # TM Part 1: prices for this organisation's decisions come from its own hub stream (fresh ticks), else REST.
+            from app.market_data.hub import org_namespace
+            market_data.tick_namespace = org_namespace(tenant_id)
         self._cycle_chains = {}
         # Phase T: balances first, so a capital policy decides on this cycle's numbers.
         await self._refresh_accounts(session, accounts, adapters, now)
@@ -1128,7 +1233,11 @@ class TradingWorker:
                                       if account is not None else "primary credential by EXPLICIT")
             routes[dep.id] = (account, label)
         self._routes = routes
-        if app_config.STREAMING_QUOTES_ENABLED and not byob:
+        if hub_org:
+            # TM Part 1: the hub owns this organisation's one stream (no second websocket on the same token).
+            await self.streams.drop_prefix(f"{tenant_id}:")
+            await self._hub_quotes(session, tenant_id, data_broker, deployments, now)
+        elif app_config.STREAMING_QUOTES_ENABLED and not byob:
             # BT1b: with byob_data_tier on, a user's credential is streamed only by the per-user fan-in (its own keys,
             # never the lake) - not also by this org-wide stream (no second websocket on the same token, no shared ticks).
             await self._stream_quotes(session, tenant_id, adapters, data_broker, deployments, report)
@@ -1180,6 +1289,25 @@ class TradingWorker:
             outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user_id, families=monitored,
                                                     exit_approval=exit_approval, now=now)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
+        # SE-7 (flag smart_execution): incomplete multi-leg orders - his "if I do not answer" rule at the deadline, and the
+        # filled legs he (or his rule) chose to close. An exit: before every entry gate below, never blocked (ADR-0004).
+        try:
+            from app.execution import incomplete_structures
+            report.positions_closed += await incomplete_structures.run_exits(session, tenant_id, market_data.get_ltp, broker=exit_broker,
+                                                                             user_id=user_id, now=now)
+        except Exception as exc:  # noqa: BLE001 - one bad group never ends the exits; retried next cycle
+            logger.error("Tenant %s: incomplete multi-leg orders failed: %s", tenant_id, exc)
+            await session.rollback()
+        # TM-2 / TT-6: the one trigger engine - armed exits (stops first) on this cycle's prices and his candles, before
+        # every entry gate below and never blocked (ADR-0004); a LIVE position's exit goes out through its own session.
+        try:
+            from app.execution import trigger_engine
+            engine_exits = await trigger_engine.run_exits(session, tenant_id, market_data.get_ltp, broker=exit_broker,
+                                                          candles=lambda s, e: market_data.get_today_minutes(s, e, now), now=now)
+            report.positions_closed += engine_exits.filled
+        except Exception as exc:  # noqa: BLE001 - retried next cycle (and on the next tick)
+            logger.error("Tenant %s: trigger engine exits failed: %s", tenant_id, exc)
+            await session.rollback()
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
         # Phase T: checked per account, against that account's own order book.
         if tenant_row is not None:
@@ -1209,6 +1337,22 @@ class TradingWorker:
                 dep.last_error = WAITING_FOR_CONFIRMED_DATA
             await session.commit()
             return
+        # SE-7: "Complete the rest" he tapped on an incomplete multi-leg order - an entry, so after the entry gates above
+        # and through every entry refusal again; only the worker sends an entry order (Phase 0 freeze).
+        try:
+            await self._complete_rests(session, tenant_id, market_data, adapters, now)
+        except Exception as exc:  # noqa: BLE001 - never stops the cycle
+            logger.error("Tenant %s: completing incomplete multi-leg orders failed: %s", tenant_id, exc)
+            await session.rollback()
+        # TM-2 / TM-23: waiting entries the price reached - each through the order ticket's own pipeline, every entry
+        # check (kill switch, the PAPER chokepoint, risk) again now. PAPER only; nothing reaches a broker here.
+        try:
+            from app.execution import trigger_engine
+            await trigger_engine.run_entries(session, tenant_id, market_data.get_ltp,
+                                             candles=lambda s, e: market_data.get_today_minutes(s, e, now), now=now)
+        except Exception as exc:  # noqa: BLE001 - never stops the cycle
+            logger.error("Tenant %s: trigger engine entries failed: %s", tenant_id, exc)
+            await session.rollback()
         active = [d for d in deployments if d.status == DeploymentStatus.ACTIVE.value]
         # Round-robin start so a tenant whose turn ran out of time last cycle resumes where it
         # stopped rather than re-evaluating the same first few deployments forever.
@@ -1286,11 +1430,13 @@ class TradingWorker:
         self._tenant_cursor[tenant_id] = (start + evaluated) % max(1, len(active))
 
         # Phase W: sample the option chains of this tenant's ACTIVE option deployments for later
-        # backtests - one fetch per underlying per interval, platform-wide, never on a closed venue.
+        # backtests - one fetch per underlying per interval through THIS organisation's own data session, stored as its
+        # own rows (TM94-3), never on a closed venue.
         try:
             async with guarded(session):
-                if not byob:   # BT1b: platform-wide reference rows are not recorded from a per-user (BYOB) broker session
-                    report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
+                if not byob:   # BT1b: not recorded from a per-user (BYOB) broker session (unchanged by TM94-3)
+                    report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families,
+                                                                            tenant_id=tenant_id)
         except Exception as exc:  # noqa: BLE001 - reference data; never stops the cycle
             logger.warning("Tenant %s: option-chain recording failed: %s", tenant_id, exc)
 
@@ -1371,6 +1517,61 @@ class TradingWorker:
                 logger.exception("Intraday history pass failed")
 
         self._intraday_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_lake_backfill(self, session: AsyncSession, now: datetime) -> bool:
+        """DATA-H DH2: starts the owner's index-history pass (app/market_lake/index_history.py) once per IST day from
+        LAKE_BACKFILL_HOUR_IST (NSE closed): it appends the closed session and fills anything still missing. Off with
+        LAKE_BACKFILL_AFTER_CLOSE=false or without a configured owner; an unfinished pass is retried at most every 30
+        minutes. Its requests take the credential's shared API budget (app/market_data/api_budget.py)."""
+        from app.market_lake import index_history, own_bars
+
+        if not app_config.LAKE_BACKFILL_AFTER_CLOSE:
+            return False
+        day = index_history.nightly_due(now, self._last_lake_backfill_day)
+        if day is None or (self._lake_backfill_task is not None and not self._lake_backfill_task.done()):
+            return False
+        if time.monotonic() < self._lake_backfill_retry_at:
+            return False
+        if await own_bars.history_owner(session) is None:
+            return False
+        self._lake_backfill_retry_at = time.monotonic() + 30 * 60
+
+        async def run() -> None:
+            try:
+                result = await index_history.run_pass(self.session_factory)
+                if result.complete or result.status in ("not_configured",):
+                    self._last_lake_backfill_day = day
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("Index history pass failed")
+
+        self._lake_backfill_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_chain_history(self, session: AsyncSession, now: datetime) -> bool:
+        """TM 9.4: starts one chain-history slot as a background task when a new slot is due, the flag is on for the
+        owner's tenant and the previous slot's task has finished (a slot still running makes this one a gap, never a
+        queue). The slot shares this worker's RateBudget for the owner's session (`acquire_spare`)."""
+        from app.market_lake import chain_recorder
+
+        slot = chain_recorder.due(now, self._last_chain_slot)
+        if slot is None or (self._chain_task is not None and not self._chain_task.done()):
+            return False
+        if not await chain_recorder.enabled(session):
+            return False
+        self._last_chain_slot = slot
+
+        async def run() -> None:
+            try:
+                result = await chain_recorder.record_slot(self.session_factory, now, budget_for=self._budget_for,
+                                                          adapter_cache=self._chain_adapters)
+                self.last_chain_report = result.as_dict()
+                if result.status not in ("ok", "closed"):
+                    logger.info("Chain history slot %s: %s %s", result.slot, result.status, "; ".join(result.notes[:3]))
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("Chain history slot failed")
+
+        self._chain_task = asyncio.get_running_loop().create_task(run())
         return True
 
     async def _maybe_start_market_zones(self, session: AsyncSession, now: datetime) -> bool:
@@ -1688,6 +1889,26 @@ class TradingWorker:
         logger.info("Deployment %s %s -> executed=%s", dep.id, structure_kind.value, result.executed)
         return result.executed
 
+    async def _complete_rests(self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,
+                              adapters: Dict[str, BrokerInterface], now: datetime) -> None:
+        """SE-7: each incomplete order whose holder tapped "Complete the rest": his own user, the broker of the order's
+        deployment (LIVE; the same checks as a new entry), the engine again (app/execution/incomplete_structures.py)."""
+        from app.execution import incomplete_structures
+        for group_id, legs in (await incomplete_structures.pending_completions(session, tenant_id)).items():
+            block = incomplete_structures.block_of(legs[0]) or {}
+            holder = await session.get(User, block.get("user_id")) if block.get("user_id") else None
+            if holder is None or holder.tenant_id != tenant_id or not holder.is_active:
+                continue
+            broker, refusal = None, None
+            if block.get("mode") == ExecutionMode.LIVE.value:
+                dep = await session.get(StrategyDeploymentRecord, block.get("deployment_id")) if block.get("deployment_id") else None
+                if dep is None or dep.tenant_id != tenant_id:
+                    refusal = "the deployment that placed it is gone"
+                else:
+                    broker, _, refusal = await self._live_broker_for(session, dep, adapters)
+            await incomplete_structures.complete_rest(session, holder, legs, broker=broker, price_lookup=market_data.get_ltp, now=now,
+                                                      refusal=refusal)
+
     async def _live_broker_for(self, session: AsyncSession, dep: StrategyDeploymentRecord, adapters: Dict[str, BrokerInterface]):
         """(broker adapter, account id, skip reason) for a deployment's entry. PAPER: no broker.
         LIVE: the adapter of the routed account, refused when the account is DISABLED, the
@@ -1827,7 +2048,9 @@ class TradingWorker:
         key = (tenant_id, budget_key)
         budget = self._budgets.get(key)
         if budget is None:
-            budget = self._budgets[key] = RateBudget(limits_for(budget_key.split("@")[0]))
+            broker = budget_key.split("@")[0]
+            # TM-27: a broker with per-day caps (Groww) also gets its per-day budget by call type.
+            budget = self._budgets[key] = RateBudget(limits_for(broker), daily=daily_budget_for(broker))
         return budget
 
     def _rate_limited(self, tenant_id: int, budget_key: str, adapter: BrokerInterface) -> BrokerInterface:
@@ -2032,29 +2255,61 @@ class TradingWorker:
             await sync_account(session, account, adapter)
 
     async def _record_chains(self, session: AsyncSession, deployments: List[StrategyDeploymentRecord], market_data: MarketDataService,
-                             now: datetime, open_families) -> int:
-        """Phase W: record the chains of the underlyings this tenant trades as options."""
+                             now: datetime, open_families, *, tenant_id: int) -> int:
+        """Phase W: record the chains of the underlyings this tenant trades as options. TM94-3: `market_data` is this
+        organisation's own data session; only its own deployments are looked at and the rows are stored as its own."""
         if not chain_recorder.recording_enabled():
             return 0
         interval = timedelta(minutes=chain_recorder.CHAIN_SNAPSHOT_INTERVAL_MINUTES)
         wanted: Dict[str, str] = {}
         for dep in deployments:
+            if dep.tenant_id != tenant_id:
+                continue       # never record one organisation's underlyings through another's session
             if (dep.instrument_kind or "UNDERLYING") != InstrumentKind.OPTION.value or session_family(dep.exchange) not in open_families:
                 continue
             underlying = master.underlying_of(dep.symbol)
             wanted[underlying] = master.INDEX_SYMBOLS.get(underlying, dep.symbol.upper().strip())
         written = 0
         for underlying, chain_symbol in wanted.items():
-            last = self._last_chain_capture.get(underlying)
+            last = self._last_chain_capture.get((tenant_id, underlying))
             if last is not None and now - last < interval:
                 continue
-            self._last_chain_capture[underlying] = now   # once per interval whether or not the fetch works
+            self._last_chain_capture[(tenant_id, underlying)] = now   # once per interval whether or not the fetch works
             chain = self._cycle_chains.get(chain_symbol)   # already fetched for a strike filter this cycle
             if chain is None:
                 expiries = await master.expiries(session, underlying, on_or_after=now.astimezone(IST).date())
                 chain = await market_data.broker.get_option_chain(chain_symbol, expiries[0] if expiries else None)
-            written += await chain_recorder.record_chain(session, underlying, chain, now)
+            written += await chain_recorder.record_chain(session, underlying, chain, now, tenant_id=tenant_id)
         return written
+
+    async def _decision_symbols(self, session: AsyncSession, tenant_id: int, deployments: List[StrategyDeploymentRecord]) -> set:
+        """Every symbol a decision this cycle could need: each deployment's symbol and every open position (contract and
+        its underlying)."""
+        wanted: set = {(d.symbol, d.exchange or "NSE") for d in deployments}
+        open_trades = list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))))
+        venues = await trade_venues(session, open_trades)
+        for trade in open_trades:
+            wanted.add((trade.symbol, venues[trade.id]))
+            if trade.underlying_symbol:
+                from app.trading.position_monitor import underlying_exchange
+                wanted.add((trade.underlying_symbol, underlying_exchange(trade.underlying_symbol)))
+        return wanted
+
+    async def _hub_on(self, session: AsyncSession, tenant_id: int) -> bool:
+        from app.market_data.hub import hub_on
+        try:
+            return await hub_on(session, tenant_id)
+        except Exception:  # noqa: BLE001 - a flag read never breaks trading; off = as before
+            return False
+
+    async def _hub_quotes(self, session: AsyncSession, tenant_id: int, data_broker: BrokerInterface,
+                          deployments: List[StrategyDeploymentRecord], now: datetime) -> None:
+        """TM Part 1: the organisation's one hub stream - decisions' symbols first, then what its pages registered. A
+        broker without a stream stays on REST (the hub says "polling"); streaming never blocks a decision or an exit."""
+        try:
+            await self.hub.ensure_org(tenant_id, data_broker, await self._decision_symbols(session, tenant_id, deployments), now)
+        except Exception as exc:  # noqa: BLE001 - streaming is an optimisation over REST, never a blocker
+            logger.warning("Tenant %s: data hub error: %s", tenant_id, exc)
 
     async def _stream_quotes(self, session: AsyncSession, tenant_id: int, adapters: Dict[str, BrokerInterface], data_broker: BrokerInterface,
                              deployments: List[StrategyDeploymentRecord], report: CycleReport) -> None:

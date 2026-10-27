@@ -1,8 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
-import { mockCharts, type ChartsCalls, type ChartsMocks } from "./chartsMocks";
+import { api, mockCharts, type ChartsCalls, type ChartsMocks } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 import { warnOnManySolidBrand } from "./solidBrand";
+import { comboOptions, expectComboValue, pickOption } from "./combobox";
 
 // Chart + colour order Part 3 (CC-8): a warning annotation, never a failure, when a screen shows more than one solid
 // brand button (the one main action per screen).
@@ -157,12 +158,21 @@ test.describe("v2 Charts 1440 desktop", () => {
     const calls = await open(page, "light");
     await chartReady(page);
     const group = page.getByRole("group", { name: "Timeframe" });
-    await expect(group.getByRole("button")).toHaveText(["1m", "3m", "5m", "15m", "30m", "1H", "D", "W", "M"]);
-    await expect(group.getByRole("button", { name: "5m", exact: true })).toHaveAttribute("aria-pressed", "true");
-    const ids: Record<string, string> = { "1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min", "30m": "30min", "1H": "60min", D: "day", W: "week", M: "month" };
+    // TF-1: the starred favourites (default 5m, 15m, 1H, D) beside one dropdown that holds every timeframe.
+    await expect(group.getByRole("button")).toHaveText(["5m", "15m", "1H", "D", ""]);
+    await expect(group.getByRole("button", { name: "5 min", exact: true })).toHaveAttribute("aria-pressed", "true");
+    const ids: Record<string, string> = { "1 min": "1min", "3 min": "3min", "5 min": "5min", "15 min": "15min", "30 min": "30min", "1 hour": "60min", Daily: "day", Weekly: "week",
+      Monthly: "month" };
     for (const [label, tf] of Object.entries(ids)) {
-      await group.getByRole("button", { name: label, exact: true }).click();
-      await expect(group.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
+      const inRow = group.getByRole("button", { name: label, exact: true });
+      const starred = (await inRow.count()) > 0;
+      if (starred) await inRow.click();
+      else {
+        await group.getByRole("button", { name: /^Timeframe: / }).click();
+        await page.getByRole("menu", { name: "Timeframes" }).getByRole("menuitemradio", { name: label, exact: true }).click();
+      }
+      if (starred) await expect(inRow).toHaveAttribute("aria-pressed", "true");
+      else await expect(group.getByRole("button", { name: `Timeframe: ${label}`, exact: true })).toBeVisible();
       await expect.poll(() => calls.candles.some((c) => c.timeframe === tf && !c.before)).toBe(true);
       await chartReady(page);
       const first = calls.candles.find((c) => c.timeframe === tf && !c.before)!;
@@ -176,7 +186,9 @@ test.describe("v2 Charts 1440 desktop", () => {
   test("week and month are offered only when the server supports them", async ({ page }) => {
     await open(page, "light", { timeframes: ["1min", "3min", "5min", "15min", "30min", "60min", "day"] });
     await chartReady(page);
-    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button")).toHaveText(["1m", "3m", "5m", "15m", "30m", "1H", "D"]);
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button")).toHaveText(["5m", "15m", "1H", "D", ""]);
+    await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: /^Timeframe: / }).click();
+    await expect(page.getByRole("menuitemradio")).toHaveText(["1 min", "3 min", "5 min", "15 min", "30 min", "1 hour", "Daily"]);
   });
 
   test("older history: scrolling back asks once, and not again after the broker had none", async ({ page }) => {
@@ -272,7 +284,7 @@ test.describe("v2 Charts 1440 desktop", () => {
     await page.getByRole("switch", { name: /EMA 9/ }).click();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("list", { name: "Price lines" })).toContainText("EMA 9");
-    await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true }).click();
+    await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15 min", exact: true }).click();
     await chartReady(page);
     expect(await built()).toBe(1);
     await expect(page.locator("[data-page='charts-v2'] .tv-lightweight-charts")).toHaveAttribute("data-probe", "same");
@@ -377,7 +389,7 @@ test.describe("v2 Charts 1440 desktop", () => {
     release();
     await chartReady(page);
     expect(calls.candles.filter((c) => !c.before).map((c) => c.timeframe)).toEqual(["week"]);
-    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "W", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "Timeframe: Weekly", exact: true })).toBeVisible();
   });
 
   test("the chart theme light on a dark app", async ({ page }) => {
@@ -386,6 +398,81 @@ test.describe("v2 Charts 1440 desktop", () => {
     await expect(page.locator("[data-chart-theme]")).toHaveAttribute("data-chart-theme", "light");
     await page.mouse.move(0, 0);
     await expect(page).toHaveScreenshot("charts-v2-chartlight-on-dark-1440.png", SHOT);
+  });
+});
+
+test.describe("TF-1: one timeframe control (favourites + grouped dropdown)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  // TF1_SHOTS=<dir>: the open dropdown for the owner's comparison page (desktop + phone, light + dark); no baselines kept.
+  for (const theme of THEMES) for (const [w, h] of [[1440, 900], [390, 844]] as const) {
+    test(`the open dropdown (${w}, ${theme})`, async ({ page }) => {
+      test.skip(!process.env.TF1_SHOTS, "TF1_SHOTS only");
+      await page.setViewportSize({ width: w, height: h });
+      await open(page, theme);
+      await chartReady(page);
+      await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: /^Timeframe: / }).click();
+      await expect(page.getByRole("menu", { name: "Timeframes" })).toBeVisible();
+      await page.screenshot({ path: `${process.env.TF1_SHOTS}/tf1-dropdown-${w}-${theme}.png`, animations: "disabled" });
+    });
+  }
+
+  test("the dropdown button never says More: a timeframe icon while the pick is a starred button (desktop)", async ({ page }) => {
+    await open(page, "light");
+    await chartReady(page);
+    const button = page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: /^Timeframe: / });
+    await expect(button.locator("[data-timeframe-icon]")).toBeVisible();
+    await expect(button).not.toContainText("More");
+  });
+
+  test("phone: the list is a bottom sheet above the bottom nav that scrolls inside to the last group", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open(page, "light");
+    await chartReady(page);
+    const button = page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: /^Timeframe: / });
+    await expect(button).not.toContainText("More");
+    await button.click();
+    const menu = page.getByRole("menu", { name: "Timeframes" });
+    await expect(menu).toHaveAttribute("data-sheet", "true");
+    const sheet = (await menu.boundingBox())!;
+    const nav = (await page.locator(".bottom-nav").boundingBox())!;
+    expect(sheet.x).toBe(0);
+    expect(sheet.width).toBe(390);
+    expect(sheet.y + sheet.height).toBeLessThanOrEqual(nav.y + 1);   // sits on top of the bottom nav, never under it
+    const last = menu.locator('[data-timeframe-group="Months"]');
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeInViewport();
+    await page.locator("[data-timeframe-backdrop]").click({ position: { x: 20, y: 20 } });
+    await expect(menu).toBeHidden();
+  });
+
+  test("star a timeframe, add a custom interval, refuse one that cannot be shown, and open the box by typing a digit", async ({ page }) => {
+    const calls = await open(page, "light");
+    await chartReady(page);
+    const group = page.getByRole("group", { name: "Timeframe" });
+    await group.getByRole("button", { name: /^Timeframe: / }).click();
+    const menu = page.getByRole("menu", { name: "Timeframes" });
+    await expect(menu.getByRole("group")).toHaveCount(5);
+    await expect(menu.getByRole("menuitemradio", { name: "5 min", exact: true })).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(menu.getByRole("menuitemradio", { name: "15 min", exact: true })).toBeFocused();
+    await menu.getByRole("button", { name: "Add 3 min to favourites" }).click();
+    await expect.poll(() => calls.prefsPuts.at(-1)?.body).toMatchObject({ timeframe_favourites: ["3min", "5min", "15min", "60min", "day"] });
+    await expect(group.getByRole("button", { name: "3 min", exact: true })).toBeVisible();
+    await menu.getByRole("menuitem", { name: "Add custom interval" }).click();
+    await page.getByLabel("Interval length").fill("2");
+    await page.getByLabel("Interval unit").selectOption("hours");
+    await menu.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(menu.getByRole("alert")).toHaveText(/A 2 hours chart is not available yet/);
+    await page.getByLabel("Interval unit").selectOption("minutes");
+    await page.getByLabel("Interval length").fill("30");
+    await menu.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(group.getByRole("button", { name: "30 min", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => calls.candles.some((c) => c.timeframe === "30min" && !c.before)).toBe(true);
+    await page.locator("[data-page='charts-v2'] .tv-lightweight-charts").first().click();
+    await page.keyboard.press("6");
+    await expect(page.getByLabel("Interval length")).toHaveValue("6");
   });
 });
 
@@ -407,7 +494,7 @@ test.describe("v2 Charts 1440: watchlist and drawing rail (UI2-4c)", () => {
   test("a watchlist row opens its symbol; the timeframe and a picked drawing tool stay (CHP-2)", async ({ page }) => {
     const calls = await open(page, "light", WATCH);
     await chartReady(page);
-    await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true }).click();
+    await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15 min", exact: true }).click();
     await chartReady(page);
     const hline = page.getByRole("group", { name: "Drawing tools" }).getByRole("button", { name: "Horizontal line" });
     await hline.click();
@@ -415,7 +502,7 @@ test.describe("v2 Charts 1440: watchlist and drawing rail (UI2-4c)", () => {
     await rows(page).filter({ hasText: "NIFTY BANK" }).getByRole("button", { name: /^NIFTY BANK/ }).click();
     await expect(page).toHaveURL(/\/charts\/NIFTY%20BANK$/);
     await chartReady(page);
-    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15 min", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(rows(page).filter({ hasText: "NIFTY BANK" }).getByRole("button", { name: /^NIFTY BANK/ })).toHaveAttribute("aria-current", "true");
     expect(calls.candles.at(-1)?.timeframe).toBe("15min");
     await expect(hline).toHaveAttribute("aria-pressed", "true");                   // still picked on the new symbol
@@ -510,7 +597,7 @@ test.describe("v2 Charts 1440: watchlist and drawing rail (UI2-4c)", () => {
     const rail = page.getByRole("group", { name: "Drawing tools" });
     expect(await rail.getByRole("button").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))).toEqual([
       "Trend line", "Horizontal line", "Ray", "Rectangle", "Text", "Measure", "More drawing tools", "Hide all drawings", "Delete all drawings"]);
-    await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true }).click();
+    await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15 min", exact: true }).click();
     await chartReady(page);
     await rail.getByRole("button", { name: "Horizontal line" }).click();
     await expect(rail.getByRole("button", { name: "Horizontal line" })).toHaveAttribute("aria-pressed", "true");
@@ -653,7 +740,7 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     test(`a new trader's two charts look the same (${theme})`, async ({ page }) => {
       await open(page, theme, { path: "/charts?tab=multi" });
       await cellsReady(page, 2);
-      expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5m", "Chart 2: NIFTY 50 5m"]);
+      expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5 min", "Chart 2: NIFTY 50 5 min"]);
       await expect(page.getByRole("tab", { name: "Multi-chart" })).toHaveAttribute("aria-selected", "true");
       // One chart theme for every cell (CHP-11).
       await expect(page.locator("[data-multi-chart] [data-chart-theme]")).toHaveCount(2);
@@ -703,11 +790,12 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     const box = page.getByRole("combobox", { name: "Symbol of chart 1" });
     await box.fill("NIFTY BANK");
     await box.press("Enter");
-    await expect.poll(() => cellNames(page)).toEqual(["Chart 1: NIFTY BANK 5m", "Chart 2: NIFTY BANK 5m", "Chart 3: NIFTY 50 5m", "Chart 4: NIFTY 50 15m"]);
+    await expect.poll(() => cellNames(page)).toEqual(["Chart 1: NIFTY BANK 5 min", "Chart 2: NIFTY BANK 5 min", "Chart 3: NIFTY 50 5 min", "Chart 4: NIFTY 50 15 min"]);
     // A linked timeframe: on for A, then chart 2 moves both of A's charts and no other.
     await page.getByRole("group", { name: "Link group A" }).getByRole("checkbox", { name: "Link timeframe" }).check();
-    await page.getByLabel("Timeframe of chart 2").selectOption("week");
-    await expect.poll(() => cellNames(page)).toEqual(["Chart 1: NIFTY BANK W", "Chart 2: NIFTY BANK W", "Chart 3: NIFTY 50 5m", "Chart 4: NIFTY 50 15m"]);
+    await page.getByRole("button", { name: /^Timeframe of chart 2: / }).click();
+    await page.getByRole("menu", { name: "Timeframes" }).getByRole("menuitemradio", { name: "Weekly", exact: true }).click();
+    await expect.poll(() => cellNames(page)).toEqual(["Chart 1: NIFTY BANK Weekly", "Chart 2: NIFTY BANK Weekly", "Chart 3: NIFTY 50 5 min", "Chart 4: NIFTY 50 15 min"]);
     await cellsReady(page, 4);
   });
 
@@ -715,10 +803,10 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     const calls = await open(page, "light", { path: "/charts?tab=multi", storage: { atp_workspace_last: "7" },
       layouts: [{ id: 7, name: "Morning", layout: layoutOf([["NIFTY 50", "5min", "A"], ["NIFTY 50", "60min", "A"], ["NIFTY BANK", "day", null], ["NIFTY BANK", "week", null]], { A: { symbol: true, interval: false, crosshair: true } }) }] });
     await cellsReady(page, 4);
-    await expect(page.getByLabel("Saved layouts")).toHaveValue("7");
-    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5m", "Chart 2: NIFTY 50 1H", "Chart 3: NIFTY BANK D", "Chart 4: NIFTY BANK W"]);
+    await expectComboValue(page.getByLabel("Saved layouts"), "7");
+    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5 min", "Chart 2: NIFTY 50 1 hour", "Chart 3: NIFTY BANK Daily", "Chart 4: NIFTY BANK Weekly"]);
     await page.getByRole("group", { name: "Charts on screen" }).getByRole("button", { name: "2 charts" }).click();
-    await page.getByLabel("Chart type of chart 2").selectOption("bars");
+    await pickOption(page, page.getByLabel("Chart type of chart 2"), "bars");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText('Saved "Morning".')).toBeVisible();
     expect(calls.layoutWrites).toHaveLength(1);
@@ -728,8 +816,8 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     await page.evaluate((k) => localStorage.removeItem(k), DRAFT);
     await page.reload();
     await cellsReady(page, 2);
-    await expect(page.getByLabel("Saved layouts")).toHaveValue("7");
-    await expect(page.getByLabel("Chart type of chart 2")).toHaveValue("bars");
+    await expectComboValue(page.getByLabel("Saved layouts"), "7");
+    await expectComboValue(page.getByLabel("Chart type of chart 2"), "bars");
   });
 
   test("Save as names a new layout (POST); Delete asks first", async ({ page }) => {
@@ -754,15 +842,16 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     await expect(page).toHaveURL(/\/charts\/NIFTY%20BANK$/);
     await expect(page.getByRole("tab", { name: "Chart", exact: true })).toHaveAttribute("aria-selected", "true");
     await chartReady(page);
-    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15 min", exact: true })).toHaveAttribute("aria-pressed", "true");
   });
 
   test("week and month in a cell only while the server lists them", async ({ page }) => {
     await open(page, "light", { path: "/charts?tab=multi", timeframes: ["1min", "3min", "5min", "15min", "30min", "60min", "day"],
                                 storage: { [DRAFT]: JSON.stringify(layoutOf([["NIFTY 50", "week", null], ["NIFTY 50", "day", null]])) } });
     await cellsReady(page, 2);
-    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5m", "Chart 2: NIFTY 50 D"]);
-    await expect(page.getByLabel("Timeframe of chart 1").locator("option")).toHaveText(["1m", "3m", "5m", "15m", "30m", "1H", "D"]);
+    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5 min", "Chart 2: NIFTY 50 Daily"]);
+    await page.getByRole("button", { name: /^Timeframe of chart 1: / }).click();
+    await expect(page.getByRole("menu", { name: "Timeframes" }).getByRole("menuitemradio")).toHaveText(["1 min", "3 min", "5 min", "15 min", "30 min", "1 hour", "Daily"]);
   });
 
   test("four charts on two symbols: one history read and one price poll per symbol", async ({ page }) => {
@@ -821,8 +910,9 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     await page.goto("/?workspace=1&chart=NIFTY%20BANK&tf=15min");
     await expect(page).toHaveURL(/\/charts\?tab=multi$/);
     await cellsReady(page, 2);
-    await expect(page.getByLabel("Saved layouts")).toHaveValue("");
-    await expect(page.getByLabel("Saved layouts").locator("option")).toHaveText(["Unsaved layout", "Morning"]);
+    await expectComboValue(page.getByLabel("Saved layouts"), "");
+    await expect(await comboOptions(page, page.getByLabel("Saved layouts"))).toHaveText(["Unsaved layout", "Morning"]);
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByLabel("Name of the layout").fill("Banks");
     await page.getByRole("button", { name: "Save layout" }).click();
@@ -845,7 +935,7 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     }, layoutOf([["NIFTY 50", "5min", null]]));
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText(/changed in another window/)).toBeVisible();
-    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5m", "Chart 2: NIFTY BANK 5m"]);   // the screen stays
+    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5 min", "Chart 2: NIFTY BANK 5 min"]);   // the screen stays
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText('Saved "Morning".')).toBeVisible();
     expect(calls.layoutWrites.map((w) => [w.method, w.body?.version])).toEqual([["PUT", 1], ["PUT", 1], ["PUT", 2]]);
@@ -860,7 +950,7 @@ test.describe("old workspace links (UI2-4d)", () => {
     await page.goto("/?workspace=1&chart=NIFTY%20BANK&tf=15min");
     await expect(page).toHaveURL(/\/charts\?tab=multi$/);
     await cellsReady(page, 2);
-    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY BANK 15m", "Chart 2: NIFTY BANK 15m"]);
+    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY BANK 15 min", "Chart 2: NIFTY BANK 15 min"]);
   });
 
   test("under ui_v2 with chart_workspace off: the link's symbol on the Chart tab, with its exchange", async ({ page }) => {
@@ -892,7 +982,7 @@ test.describe("UI2-4e: old chart window links and the live chip", () => {
     const calls = await open(page, "light", { path: "/?chart=NIFTY%2050&tf=15min" });
     await expect(page).toHaveURL(/\/charts\/NIFTY%2050$/);                               // the timeframe is taken, then leaves the address
     await chartReady(page);
-    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15 min", exact: true })).toHaveAttribute("aria-pressed", "true");
     expect(calls.candles.filter((c) => !c.before).map((c) => `${c.symbol} ${c.timeframe}`)).toEqual(["NIFTY 50 15min"]);
     await expect(page.getByText(/refreshes every minute|candles via/)).toHaveCount(0);
   });
@@ -901,7 +991,7 @@ test.describe("UI2-4e: old chart window links and the live chip", () => {
     const calls = await open(page, "light", { path: "/?chart=SBIN&tf=day&exchange=BSE&broker_name=upstox" });
     await expect(page).toHaveURL(/\/charts\/SBIN\?exchange=BSE$/);
     await chartReady(page);
-    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "D", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "Daily", exact: true })).toHaveAttribute("aria-pressed", "true");
     expect(calls.candles.at(-1)?.symbol).toBe("SBIN");
   });
 
@@ -966,6 +1056,29 @@ test.describe("v2 Charts 390 phone", () => {
       await expect(page).toHaveScreenshot(`charts-v2-390-${theme}.png`, SHOT);
     });
   }
+
+  test("C1: an empty broker answer shows the server's reason over the chart, never a blank canvas", async ({ page }) => {
+    const reason = "No candles yet for this contract. It may be a new contract, or your broker sent no data for this period up to the last session close (23 Oct, 15:30 IST).";
+    await open(page, "light", { market: "closed", before: (p) => p.route(api("/market-data/candles$"), (r) => {
+      const body = r.request().postDataJSON() as { symbols: string[]; timeframe: string; lookback_days: number };
+      return r.fulfill({ json: { source: { broker: "upstox", account_label: "primary" }, exchange: "NSE", timeframe: body.timeframe,
+        base_interval: "1min", lookback_days: body.lookback_days, before: null, fetched_at: "2026-10-24T06:30:00Z", warnings: [], note: "",
+        symbols: { [body.symbols[0]]: { bars: [], count: 0, first: null, last: null, error: null, volume_source: null, empty_reason: reason } } } });
+    }) });
+    await expect(page.getByText("Loading prices…")).toHaveCount(0);
+    if (process.env.C1_SHOT) await page.screenshot({ path: process.env.C1_SHOT, fullPage: true });
+    await expect(page.getByText(reason)).toBeVisible();
+    // Painted on top: the element at the text's centre is the empty state, not the chart's canvas over it.
+    const top = await page.locator("[data-chart-empty]").evaluate((el) => {
+      const range = document.createRange(); range.selectNodeContents(el); const t = range.getBoundingClientRect();
+      (el as HTMLElement).style.pointerEvents = "auto";          // elementFromPoint skips pointer-events: none
+      const hit = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2);
+      (el as HTMLElement).style.pointerEvents = "";
+      return hit === el || el.contains(hit) ? "empty-state" : hit?.tagName ?? "none";
+    });
+    expect(top).toBe("empty-state");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  });
 
   test("no sideways scroll, 44 px targets, nothing hidden behind the bottom bar", async ({ page }) => {
     await open(page, "dark", { intro: true });

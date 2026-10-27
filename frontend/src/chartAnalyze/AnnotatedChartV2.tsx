@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { HALO, HALO_ALPHA, legendFor, shapesFor, type Shape, type Token } from "./shapes";
 import type { Annotations } from "./types";
+import { SubTabs } from "../ui/SubTabs";
 
 /**
  * Analyze a chart, block 1: the annotated chart. Image only: the overlay is drawn on the user's own image (an SVG in
@@ -73,14 +74,11 @@ export function Legend({ annotations }: { annotations: Annotations }) {
 /** Original and annotated: side by side from md up, two tabs on a phone. */
 export default function AnnotatedChartV2({ src, width, height, annotations }: { src: string; width: number; height: number; annotations: Annotations }) {
   const [tab, setTab] = useState<"annotated" | "original">("annotated");
-  const tabClass = (on: boolean) =>
-    `h-11 flex-1 rounded-control px-space-3 text-t14 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
-      on ? "bg-surface-1 text-fg shadow-card" : "text-fg-muted hover:text-fg"}`;
   return (
     <div className="space-y-space-3">
-      <div role="tablist" aria-label="Chart view" className="flex gap-space-1 rounded-control bg-surface-2 p-space-1 md:hidden">
-        <button type="button" role="tab" aria-selected={tab === "annotated"} className={tabClass(tab === "annotated")} onClick={() => setTab("annotated")}>Annotated</button>
-        <button type="button" role="tab" aria-selected={tab === "original"} className={tabClass(tab === "original")} onClick={() => setTab("original")}>Original</button>
+      <div className="md:hidden">
+        <SubTabs label="Chart view" value={tab} onChange={setTab} full
+          items={[{ key: "annotated", label: "Annotated" }, { key: "original", label: "Original" }] as const} />
       </div>
       <div className="grid gap-space-4 md:grid-cols-2">
         <figure className={`${tab === "original" ? "block" : "hidden"} space-y-space-1 md:block`}>

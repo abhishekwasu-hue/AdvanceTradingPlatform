@@ -8,7 +8,10 @@ import { useSetup } from "../setup/useSetup";
 import { BrokerGateView, CONNECT_BROKER_PATH, SIGN_IN_PATH, useBrokerLogin } from "../ui/BrokerGate";
 import { useBrokerSession, type BrokerGateState } from "../ui/brokerSession";
 import { useFeatures } from "../ui/useFeatures";
+import { liveHiddenFrom } from "../settings/useLiveHidden";
 import { useBigText } from "../theme";
+import { useColourV2 } from "../ui/colourV2";
+import { useIndexSparks } from "./indexSparks";
 import DailyRhythmCardV2 from "../rhythm/DailyRhythmCardV2";
 import { ActiveSignalsV2, OpenPositionsV2, TodaySummaryV2, type Rows } from "./BlocksV2";
 import MarketStripV2 from "./MarketStripV2";
@@ -80,6 +83,9 @@ export default function DashboardV2(_props: PageProps = {}) {
   const deployments = dataOf(data.deployments);
   const exposure = dataOf(data.exposure);
   const strip = dataOf(data.strip);
+  // Colour v2: the strip's sparklines (real broker candles; nothing while the flag is off).
+  const colour = useColourV2();
+  const sparks = useIndexSparks(colour, strip);
   const signals = useMemo(() => signalsToday(actions, now), [actions, now]);
   const attentionKnown = data.pending.status !== "loading" && data.deployments.status !== "loading";
   const setup = useSetup(user?.id ?? null);
@@ -96,7 +102,7 @@ export default function DashboardV2(_props: PageProps = {}) {
   const health = serverHealth && user?.role === "VIEWER" ? serverHealth.filter((h) => h.key === "ai_key" || h.key === "data_feed") : serverHealth;
   const attention = attentionKnown ? attentionRows({
     nowMs: now, broker, brokerRows, pending: dataOf(data.pending), deployments, risk: dataOf(data.risk), exposure, unread: dataOf(data.unread),
-    status: dataOf(data.status), emailVerified: user?.email_verified, approvalsPath,
+    status: dataOf(data.status), emailVerified: user?.email_verified, liveHidden: liveHiddenFrom(features), approvalsPath,
     health, getStartedShowing: card !== null, dismissed: hidden.hidden,
   }) : null;
   const positions: Rows<PositionRow> = rowsOf(data.positions, (p) => ({ rows: positionRows(p, exposure), total: p.length }));
@@ -122,7 +128,7 @@ export default function DashboardV2(_props: PageProps = {}) {
         <>
           <GetStartedCardV2 primaryNext={false} />
           <MarketStripV2 strip={data.strip} oi={oiLines(dataOf(data.oi))} marketText={strip ? marketLabel(strip.market, now) : null}
-            broker={brokerChip(broker, brokerRows)} pnl={todayPnl(exposure)} nowMs={now} />
+            broker={brokerChip(broker, brokerRows)} pnl={todayPnl(exposure)} nowMs={now} sparks={sparks} />
           {/* Item 1: at the Large / Extra large text sizes the two columns start only on a wider screen (2xl). */}
           <div className={`grid grid-cols-1 gap-space-4 ${big ? "2xl:grid-cols-3 2xl:items-start 2xl:gap-space-6" : "lg:grid-cols-3 lg:items-start lg:gap-space-6"}`}>
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:col-span-2 2xl:space-y-space-6" : "lg:col-span-2 lg:space-y-space-6"}`}>
@@ -131,7 +137,7 @@ export default function DashboardV2(_props: PageProps = {}) {
               <OpenPositionsV2 data={positions} />
             </div>
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:space-y-space-6" : "lg:space-y-space-6"}`}>
-              <ActiveSignalsV2 data={signalRows} />
+              <ActiveSignalsV2 data={signalRows} readyWatch={features.on("strategy_templates")} />
               <TodaySummaryV2 tiles={todayTiles(exposure, dataOf(data.summary), dataOf(data.risk), signals)} loading={tilesLoading} />
             </div>
           </div>

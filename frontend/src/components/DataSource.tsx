@@ -7,6 +7,9 @@ import type { CandleSource, DataTierBadgeInfo, OHLCVBar, OptionChain } from "../
 import { DataTierBadge } from "./DataTierBadge";
 import { useFeatures } from "../ui/useFeatures";
 import { generateSampleCandles } from "../utils/sampleData";
+import { pricesLine, STORED_HISTORY_CHOICES, STORED_HISTORY_DEFAULT_DAYS, STORED_HISTORY_NOTE, storedHistoryLoginNote } from "../backtest/pricesLine";
+import { brokerDisplayName } from "../ui/brokerSession";
+import { StoredLoginAction } from "../ui/BrokerGate";
 
 /** Phase AA: one switch for every research page - deterministic sample candles, or the tenant's
  * own broker candles through the backend (`POST /api/market-data/candles`). The hook owns the
@@ -30,8 +33,10 @@ export function sampleHiddenFor(uiV2: boolean, role: string | null | undefined):
 export interface FetchedCandles {
   candles: Record<string, OHLCVBar[]>;
   warnings: string[];
-  /** "sample" or "broker:<name>" - the label recorded on backtest runs. */
+  /** "sample", "broker:<name>" or "lake:daily" - the label recorded on backtest runs. */
   label: string;
+  /** Owner order 23 Oct: where the prices came from and the range, in plain words (null for sample data). */
+  line: string | null;
 }
 
 export interface CandleSourceState {
@@ -50,6 +55,12 @@ export interface CandleSourceState {
   dataTier?: DataTierBadgeInfo;
   /** UX3 fix 7: no sample data for this user (sampleHiddenFor). */
   sampleHidden?: boolean;
+  /** Owner order 23 Oct (flag backtest_stored_history, ui_v2): no usable broker, so a backtest page runs on ATP's stored
+   * Daily history (the server picks the bars; intraday is refused with a plain sentence). */
+  stored?: boolean;
+  /** Day-one fix 3: the stored Daily history a run reads, in days (its own choice: the broker's lookback is not touched). */
+  storedDays?: number;
+  setStoredDays?: (d: number) => void;
   /** Phase AD: the broker's live option chains in broker mode; `sampleFor` builds the sample chain otherwise. */
   fetchChains: (underlyings: string[], sampleFor: (symbol: string) => OptionChain, expiry?: string) => Promise<{ chains: Record<string, OptionChain>; warnings: string[] }>;
 }
@@ -60,13 +71,15 @@ export function hashSymbol(symbol: string): number {
   return Math.abs(h) || 1;
 }
 
-export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
+export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?: boolean }): CandleSourceState {
   const { user } = useAuth();
   const features = useFeatures();
   const sampleHidden = sampleHiddenFor(features.on("ui_v2"), user?.role);
+  const storedOn = !!opts?.storedHistory && sampleHidden && features.on("backtest_stored_history");
   const [mode, setMode] = useState<CandleMode>("sample");
   const [broker, setBroker] = useState("");
   const [lookbackDays, setLookbackDays] = useState(defaultLookbackDays);
+  const [storedDays, setStoredDays] = useState(STORED_HISTORY_DEFAULT_DAYS);
   const [sources, setSources] = useState<CandleSource[]>([]);
   const [loading, setLoading] = useState(false);
   const [dataTier, setDataTier] = useState<DataTierBadgeInfo | undefined>(undefined);
@@ -90,10 +103,29 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
   const usable = sources.some((s) => s.usable);
   // UX3 fix 7: a user without sample data runs on the broker as soon as one is usable.
   useEffect(() => { if (sampleHidden && usable && mode === "sample") setMode("broker"); }, [sampleHidden, usable, mode]);
-  const label = mode === "broker" ? `broker:${broker || "auto"}` : "sample";
+  const stored = storedOn && !usable;
+  const label = mode === "broker" ? `broker:${broker || "auto"}` : stored ? "lake:daily" : "sample";
 
   async function fetch(symbols: string[], timeframe: string, sample?: { count?: number; startPriceFor?: (s: string) => number; seedFor?: (s: string) => number; daily?: boolean }): Promise<FetchedCandles> {
     const clean = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
+    if (mode === "sample" && stored) {
+      // Owner order 23 Oct: the server chooses the bars (stored Daily history here) and says where they came from.
+      setLoading(true);
+      try {
+        const candles: Record<string, OHLCVBar[]> = {};
+        let line: string | null = null;
+        let label = "lake:daily";
+        for (const s of clean) {
+          const res = await api.backtestBars(s, timeframe, storedDays);
+          candles[s] = res.candles;
+          line = line ?? res.line;
+          label = res.source;
+        }
+        return { candles, warnings: [], label, line };
+      } finally {
+        setLoading(false);
+      }
+    }
     if (mode === "sample" && sampleHidden) throw new Error(NEEDS_BROKER_FOR_DATA);
     if (mode === "sample") {
       const candles: Record<string, OHLCVBar[]> = {};
@@ -102,7 +134,7 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
         const start = sample?.startPriceFor ? sample.startPriceFor(s) : 100 + (hashSymbol(s) % 900);
         candles[s] = generateSampleCandles(sample?.count ?? 300, start, seed, { daily: sample?.daily });
       }
-      return { candles, warnings: [], label: "sample" };
+      return { candles, warnings: [], label: "sample", line: null };
     }
     setLoading(true);
     try {
@@ -115,7 +147,8 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
         else if (entry.bars.length) candles[symbol] = entry.bars;
       }
       if (Object.keys(candles).length === 0) throw new Error(`No candles from ${res.source.broker}: ${warnings.join("; ") || "empty response"}`);
-      return { candles, warnings, label: `broker:${res.source.broker}` };
+      const label = `broker:${res.source.broker}`;
+      return { candles, warnings, label, line: pricesLine(label, candles[clean[0]] ?? Object.values(candles)[0] ?? []) };
     } finally {
       setLoading(false);
     }
@@ -143,13 +176,46 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
     }
   }
 
-  return { mode, setMode, broker, setBroker, lookbackDays, setLookbackDays, sources, usable, loading, label, fetch, fetchChains, sampleHidden,
+  return { mode, setMode, broker, setBroker, lookbackDays, setLookbackDays, sources, usable, loading, label, fetch, fetchChains, sampleHidden, stored,
+           storedDays, setStoredDays,
            dataTier: mode === "broker" ? dataTier : undefined };
 }
 
 /** UX3 fix 7: the bar a user without sample data sees - where the prices come from, in plain words. */
 export function PlainDataSourceBar({ source }: { source: CandleSourceState }) {
   const usable = source.sources.filter((s) => s.usable);
+  if (!source.usable && source.stored) {
+    // Day-one fix 3: a stored broker that is only not logged in today is named as such; the sentence has its own line
+    // on the phone (it wrapped one word per line beside the controls); History is a plain choice of how far back.
+    const stored = source.sources[0];
+    const note = stored ? storedHistoryLoginNote(brokerDisplayName(stored.broker)) : STORED_HISTORY_NOTE;
+    return (
+      <div className="mb-4 flex flex-col gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg md:flex-row md:items-center md:gap-3" data-plain-data-source="stored">
+        <p className="flex min-w-0 items-start gap-2 md:flex-1">
+          <Database size={16} aria-hidden className="mt-0.5 shrink-0 text-fg-muted" />
+          <span>{note}</span>
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <div role="group" aria-label="History" className="flex items-center gap-2 text-fg-muted" data-stored-history>
+            <span aria-hidden>History</span>
+            <span className="inline-flex overflow-hidden rounded border border-border">
+              {STORED_HISTORY_CHOICES.map((c, i) => {
+                const on = (source.storedDays ?? STORED_HISTORY_DEFAULT_DAYS) === c.days;
+                return (
+                  <button key={c.days} type="button" aria-pressed={on} onClick={() => source.setStoredDays?.(c.days)}
+                    className={`min-h-11 px-3 md:min-h-0 md:py-0.5 ${i > 0 ? "border-l border-border" : ""} ${on ? "bg-surface-2 font-semibold text-fg" : "text-fg-muted"}`}>
+                    {c.label}
+                  </button>
+                );
+              })}
+            </span>
+          </div>
+          {source.loading && <span className="text-fg-muted">Loading prices…</span>}
+          <StoredLoginAction />
+        </div>
+      </div>
+    );
+  }
   if (!source.usable) {
     return (
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg" data-plain-data-source="no-broker">

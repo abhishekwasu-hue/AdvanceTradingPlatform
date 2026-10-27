@@ -4,6 +4,7 @@ import { DEMO_ANALYSES } from "../src/optionChain/analyses.fixture";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 import { warnOnManySolidBrand } from "./solidBrand";
+import { expectComboValue, pickOption } from "./combobox";
 
 // Chart + colour order Part 3 (CC-8): a warning annotation, never a failure, when a screen shows more than one solid
 // brand button (the one main action per screen).
@@ -118,8 +119,8 @@ test.describe("Option chain v2 at 1440", () => {
     await chainReady(page);
     expect(calls.expiries).toEqual(["NIFTY"]);
     expect(calls.live[0]).toBe("NIFTY@2026-11-03");
-    await expect(page.getByLabel("Symbol", { exact: true })).toHaveValue("NIFTY");
-    await expect(page.getByLabel("Expiry", { exact: true })).toHaveValue("2026-11-03");
+    await expectComboValue(page.getByLabel("Symbol", { exact: true }), "NIFTY");
+    await expectComboValue(page.getByLabel("Expiry", { exact: true }), "2026-11-03");
     await expectAtmCentred(page);
     // Desktop columns: OI, OI change, Volume, IV, LTP on each side, the strike in the centre; Greeks and bid / ask off.
     const heads = await page.locator("[data-chain-scroll] thead th").evaluateAll((els) => els.filter((e) => (e as HTMLElement).offsetParent !== null).map((e) => e.textContent));
@@ -143,11 +144,17 @@ test.describe("Option chain v2 at 1440", () => {
     await expect(page.locator("[data-chain-scroll] thead")).toContainText("Delta");
     await expect(page.locator("[data-chain-scroll] thead")).toContainText("Bid");
     await page.keyboard.press("Escape");
-    await page.getByLabel("Symbol", { exact: true }).selectOption("BANKNIFTY");
+    // UX-5: the keyboard works like a select - Down opens it on the current row, Down moves, Enter picks.
+    await page.getByLabel("Symbol", { exact: true }).focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("[data-combobox-list] [aria-selected='true']")).toHaveAttribute("data-value", "NIFTY");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expectComboValue(page.getByLabel("Symbol", { exact: true }), "BANKNIFTY");
     await expect.poll(() => calls.live[calls.live.length - 1]).toBe("BANKNIFTY@2026-11-03");
     expect(calls.expiries).toEqual(["NIFTY", "BANKNIFTY"]);
     await chainReady(page);
-    await page.getByLabel("Expiry", { exact: true }).selectOption("2026-11-10");
+    await pickOption(page, page.getByLabel("Expiry", { exact: true }), "2026-11-10");
     await expect.poll(() => calls.live[calls.live.length - 1]).toBe("BANKNIFTY@2026-11-10");
   });
 
@@ -249,6 +256,17 @@ test.describe("Option chain v2 states", () => {
     await expect(page.getByText("Market closed — showing the last session's chain")).toBeVisible();
   });
 
+  test("B2: a closed market is 'as of the last session close' and a spot from our own last close is labelled", async ({ page }) => {
+    await open(page, "light", { marketOpen: false, live: (b) => ({ ...b, data_as_of: "2026-10-23T15:30:00+05:30",
+      summary: { ...(b.summary as Record<string, unknown>), spot_source: "last_close" } }) });
+    await chainReady(page);
+    if (process.env.B2_SHOT) await page.screenshot({ path: process.env.B2_SHOT });
+    await expect(page.getByText("Market closed — as of the last session close, 23 Oct 2026, 15:30 IST")).toBeVisible();
+    await expect(page.getByText("Market closed — showing the last session's chain")).toHaveCount(0);
+    await expect(page.locator("[data-summary='spot']")).toContainText("Spot: last close");
+    await expectPhoneLayout(page);
+  });
+
   test("no broker: only the 'Connect your broker' card, never a chain or sample data", async ({ page }) => {
     const calls = await open(page, "light", { options: { features: { ui_v2: true }, brokers: [] } });
     await expect(page.locator("[data-broker-gate='no-broker']")).toBeVisible();
@@ -312,7 +330,7 @@ test.describe("Option chain v2 Charts at 1440", () => {
       await expect(card).toContainText(c.caption);
     }
     await expect(page.locator("[data-charts-facts]")).toContainText("7 days to expiry.");
-    await page.getByLabel("Strikes around ATM").selectOption("15");
+    await pickOption(page, page.getByLabel("Strikes around ATM"), "15");
     await expect.poll(() => asked[asked.length - 1].get("strikes")).toBe("15");
     await page.getByRole("button", { name: "10 min" }).click();
     await expect.poll(() => asked[asked.length - 1].get("interval")).toBe("10");

@@ -5,7 +5,7 @@
  *
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
-import { BellRing, Code2, History, Layers, LayoutGrid, Lightbulb, Play, Save } from "lucide-react";
+import { BellRing, ChevronDown, Code2, History, Layers, LayoutGrid, Lightbulb, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -15,8 +15,9 @@ import { useToast } from "../components/Toast";
 import type { PageProps } from "../routes";
 import { screenerApi, type IdeaResponse, type PreviewResponse, type RunResponse, type ServerVersion } from "../screener/api";
 import { FreshnessPill } from "../screener/FreshnessPill";
+import { PlainTimeframes } from "../screener/TimeframeChip";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
-import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
+import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, timeframeWords, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
 import { ResultViews } from "../screener/ResultViews";
 import { EtfPanel } from "../screener/EtfPanel";
@@ -36,6 +37,10 @@ import { COMING_SOON_MESSAGE } from "../api/errors";
 import { ideasApi } from "../ideas/api";
 import { ideaScanFromSearch, scanName } from "../ideas/model";
 import { builderOf, clearStore, readStore, readsOf, snapshot, syncDeviceHistory, writeStore } from "../screener/versions";
+import { UniversePicker } from "../screener/UniversePicker";
+import { CUSTOM, DEFAULT_CHOICE, DEFAULT_KEY, FALLBACK_PLAN, NIFTY50_FALLBACK, RUN_MAX, effectiveUniverse, heldBack, isUniverses, listLabel,
+  runInBatches, serverHasDefault, universesApi, type UniverseSymbols, type UniversesResponse } from "../screener/universe";
+import { isWatchlists, watchlistsApi, type Watchlist } from "../screener/watchlists";
 
 // Handover 11c-1 (flag `strategy_lab_pine`): the Pine Script panel loads only when it is opened.
 const PinePanel = lazy(() => import("../lab/pine/PinePanel"));
@@ -117,6 +122,22 @@ export default function ScreenerPage(_props: PageProps) {
   const [versionsMax, setVersionsMax] = useState(50);
   const [synced, setSynced] = useState(false);
   const [openingVersion, setOpeningVersion] = useState<number | null>(null);
+  // Owner order 23 Oct (ui_v2): the universe is a list picked from the system lists (NIFTY 50 on open), a watchlist or
+  // the trader's own symbols - never empty; a list longer than one run goes in batches paced by the broker's budget.
+  const universeV2 = features.on("ui_v2");
+  // Day-one fix 4 (ui_v2): Pine Script, Library tools, the formula block and "Live counts while editing" sit behind
+  // "Advanced"; the trader's page shows his list, the timeframe in words and the ready scans.
+  const [advancedOpen, setAdvanced] = useState(false);
+  const advanced = !universeV2 || advancedOpen;
+  const [universes, setUniverses] = useState<UniversesResponse | null>(null);
+  const [universesDone, setUniversesDone] = useState(false);
+  const [choice, setChoice] = useState(DEFAULT_CHOICE);
+  const [lists, setLists] = useState<Record<string, UniverseSymbols | "failed">>({});
+  const [myLists, setMyLists] = useState<Watchlist[] | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const stopRef = useRef(false);
+  const [pendingRun, setPendingRun] = useState(false);         // one tap: run as soon as the opened scan is checked
+  const [checkedText, setCheckedText] = useState("");          // the text the last finished check was for
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries))
@@ -126,6 +147,30 @@ export default function ScreenerPage(_props: PageProps) {
     screenerApi.libraryMirrors().then((m) => setMirrors(isMirrors(m) ? m : null)).catch(() => setMirrors(null));
     screenerApi.watchLists().then((w) => setWatchLists(isWatchLists(w) ? w : null)).catch(() => setWatchLists(null));
   }, []);
+
+  useEffect(() => {
+    if (!universeV2) return undefined;
+    let alive = true;
+    universesApi.list().then((u) => { if (alive) setUniverses(isUniverses(u) ? u : null); })
+      .catch(() => undefined).finally(() => { if (alive) setUniversesDone(true); });
+    return () => { alive = false; };
+  }, [universeV2]);
+  useEffect(() => {
+    if (!universeV2 || !watchlistsOn) return undefined;
+    let alive = true;
+    watchlistsApi.list().then((l) => { if (alive) setMyLists(isWatchlists(l) ? l : null); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [universeV2, watchlistsOn]);
+  const builtinDefault = universesDone && !serverHasDefault(universes);
+  const chosenKey = choice.startsWith("sys:") ? choice.slice(4) : null;
+  const needsList = !!chosenKey && !(chosenKey === DEFAULT_KEY && builtinDefault);
+  useEffect(() => {
+    if (!universeV2 || !universesDone || !needsList || !chosenKey || lists[chosenKey]) return undefined;
+    let alive = true;
+    universesApi.symbols(chosenKey).then((r) => { if (alive) setLists((all) => ({ ...all, [chosenKey]: r })); })
+      .catch(() => { if (alive) setLists((all) => ({ ...all, [chosenKey]: "failed" })); });
+    return () => { alive = false; };
+  }, [universeV2, universesDone, needsList, chosenKey, lists]);
 
   // LAB-18 first sync: what this device kept before the server kept versions goes up once per scan, then the device
   // copy is cleared (what the server did not take yet - it was off or unreachable - stays for the next load).
@@ -152,7 +197,9 @@ export default function ScreenerPage(_props: PageProps) {
   // breakout family joins with U6 BK1).
   const canOpen = useCallback((s: TaxScreen) => !!registry && ((s.source === "starter" && STARTERS.some((t) => t.id === s.id))
     || (builderU2 && (s.source === "legends" || s.source === "breakouts"))), [registry, builderU2]);
-  const openScreen = (s: TaxScreen) => {
+  // Day-one fix 4: the page opens on something to do - three ready scans from the library, one tap each.
+  const readyScans = useMemo(() => (taxonomy?.screens ?? []).filter((s) => s.source === "starter" && canOpen(s)).slice(0, 3), [taxonomy, canOpen]);
+  const openScreen = (s: TaxScreen, runNow = false) => {
     const starter = STARTERS.find((t) => t.id === s.id);
     if (!registry || !canOpen(s)) return;
     if (stages.length > 0 && !window.confirm(`Replace the current conditions with "${s.name}"?`)) return;
@@ -160,6 +207,7 @@ export default function ScreenerPage(_props: PageProps) {
       setStages(starter.build(registry));
       setName(s.name);
       setGalleryOpen(false);
+      if (runNow) setPendingRun(true);
       return;
     }
     // U2: a Legends or breakout screen - its conjuncts as blocks (a formula block where no other form writes the same text)
@@ -168,6 +216,7 @@ export default function ScreenerPage(_props: PageProps) {
       setScanTf(res.base_tf);
       setName(s.name);
       setGalleryOpen(false);
+      if (runNow) setPendingRun(true);
     }).catch((e: unknown) => setOtherProblem(errorText(e)));
   };
 
@@ -202,6 +251,7 @@ export default function ScreenerPage(_props: PageProps) {
         setScanTf(res.base_tf);
         setName(scanName(idea, scan));
         setSavedId(undefined);
+        if (universeV2) setPendingRun(true);           // one tap: "Try as a scan" runs it on the chosen universe
       } catch (e) {
         if (alive) toast.error(errorText(e));
       } finally {
@@ -209,9 +259,48 @@ export default function ScreenerPage(_props: PageProps) {
       }
     })();
     return () => { alive = false; };
-  }, [registry, ideaAsk, navigate, toast]);
+  }, [registry, ideaAsk, navigate, toast, universeV2]);
 
-  const symbols = useMemo(() => parseSymbols(symbolsText), [symbolsText]);
+  const plan = universes?.batch ?? FALLBACK_PLAN;
+  const universe = useMemo(() => {
+    const max = plan.max_symbols;
+    const nifty = lists[DEFAULT_KEY];
+    const nifty50 = nifty && nifty !== "failed" && nifty.symbols.length ? nifty.symbols : NIFTY50_FALLBACK;
+    let chosen: readonly string[] = [];
+    let label = "your own symbols";
+    let note: string | null = null;
+    let loading = false;
+    if (chosenKey) {
+      const got = lists[chosenKey];
+      if (chosenKey === DEFAULT_KEY && builtinDefault) {
+        chosen = NIFTY50_FALLBACK;
+        label = "NIFTY 50";
+      } else if (!universesDone || !got) {
+        loading = true;
+      } else if (got === "failed") {
+        note = "This list could not be loaded, so the scan runs on NIFTY 50.";
+      } else {
+        chosen = got.symbols.slice(0, max);
+        const group = universes?.groups.find((g) => g.lists.some((l) => l.key === chosenKey));
+        const entry = group?.lists.find((l) => l.key === chosenKey);
+        label = entry && group ? listLabel(entry, group.group) : got.name;
+        if (got.truncated) note = `This list has ${got.source_count} stocks; the first ${max} are scanned.`;
+      }
+    } else if (choice.startsWith("wl:")) {
+      const list = myLists?.find((w) => `wl:${w.id}` === choice);
+      chosen = (list?.symbols ?? []).slice(0, max);
+      label = list?.name ?? "My watchlist";
+      if (list && list.symbols.length > max) note = `"${list.name}" has ${list.symbols.length} symbols; the first ${max} are scanned.`;
+    } else {
+      chosen = parseSymbols(symbolsText, max);
+    }
+    if (loading) return { symbols: [] as string[], name: label, note: null, loading };
+    const eff = effectiveUniverse(chosen, nifty50);
+    if (eff.fellBack && !note) note = choice === CUSTOM ? "Type at least one symbol. Until then the scan runs on NIFTY 50." : "This list has no stocks yet, so the scan runs on NIFTY 50.";
+    return { symbols: eff.symbols, name: eff.fellBack ? "NIFTY 50" : label, note, loading };
+  }, [plan.max_symbols, lists, chosenKey, builtinDefault, universesDone, universes, choice, myLists, symbolsText]);
+  const legacySymbols = useMemo(() => parseSymbols(symbolsText), [symbolsText]);
+  const symbols = universeV2 ? universe.symbols : legacySymbols;
   const text = useMemo(() => (registry ? screenText(registry, stages) : ""), [registry, stages]);
   const stagesRef = useRef(stages);
   stagesRef.current = stages;
@@ -238,7 +327,7 @@ export default function ScreenerPage(_props: PageProps) {
         setProblems(byStage);
         setOtherProblem(other);
       }).catch(() => undefined)                        // a failed check is not a problem in the scan; Run reports errors
-        .finally(() => { if (seq === validateSeq.current) setValidating(false); });
+        .finally(() => { if (seq === validateSeq.current) { setValidating(false); setCheckedText(text); } });
     }, VALIDATE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [registry, text, scanTf]);                        // an edit that leaves the text alone (a disabled block) is not re-checked
@@ -253,7 +342,7 @@ export default function ScreenerPage(_props: PageProps) {
   // One at a time: while a preview is out, edits wait; when it lands it is kept with the scan it counted (`stamp`)
   // and shown only while that is still the scan (liveFresh), and the next preview goes for the scan as it is then.
   // Never during a Run.
-  const canPreview = live && !!registry && !!text && symbols.length > 0 && !validating && clean && !running && !fresh;
+  const canPreview = live && !!registry && !!text && symbols.length > 0 && symbols.length <= RUN_MAX && !validating && clean && !running && !fresh;
   useEffect(() => {
     if (!canPreview || previewBusy || !now || (preview && sameRun(preview.stamp, now))) return undefined;
     const stamp = now;
@@ -271,17 +360,55 @@ export default function ScreenerPage(_props: PageProps) {
     setRunning(true);
     const stamp = now;                                 // the scan as sent, not as it may be by the time the reply lands
     try {
-      const out = await screenerApi.run(text, scanTf, symbols);
-      setRun(out);
-      setRan(stamp);
-      setRanAt(new Date());
-      setRunKey((k) => k + 1);
+      if (universeV2 && symbols.length > RUN_MAX) {
+        // a long list: batch after batch, the results growing as each lands; paced by the broker calls each made
+        stopRef.current = false;
+        setProgress({ done: 0, total: symbols.length });
+        let first = true;
+        const out = await runInBatches(symbols, plan, {
+          run: (batch) => screenerApi.runBatch(text, scanTf, batch),
+          onProgress: (done, total, merged) => {
+            setRun(merged);
+            if (first) { setRan(stamp); setRanAt(new Date()); setRunKey((k) => k + 1); first = false; }
+            setProgress({ done, total });
+          },
+          stopped: () => stopRef.current,
+        });
+        if (out) { setRun(out); setRanAt(new Date()); }
+      } else {
+        const out = await screenerApi.run(text, scanTf, symbols);
+        setRun(out);
+        setRan(stamp);
+        setRanAt(new Date());
+        setRunKey((k) => k + 1);
+      }
     } catch (e) {
-      toast.error(errorText(e));
+      toast.error(errorText(e));                       // a batch that failed: the batches before it stay shown
     } finally {
       setRunning(false);
+      setProgress(null);
     }
-  }, [registry, canRun, now, text, scanTf, symbols, toast]);
+  }, [registry, canRun, now, text, scanTf, symbols, toast, universeV2, plan]);
+
+  // One tap: a screen opened with "Try as a scan" runs as soon as its text has been checked and the universe is ready;
+  // a problem in it stops the run (the trader sees it on its block), and the blocks stay editable either way.
+  useEffect(() => {
+    if (!pendingRun) return;
+    if (canRun && checkedText === text) { setPendingRun(false); void doRun(); return; }
+    if (registry && text && checkedText === text && !validating && !clean) setPendingRun(false);
+  }, [pendingRun, canRun, checkedText, text, validating, clean, registry, doRun]);
+  const held = useMemo(() => (universeV2 ? heldBack(fresh ? run : null) : []), [universeV2, fresh, run]);
+  // A long list's answer leads with what matters: the matches (and any stock the broker's limit held back); the rest
+  // are counted, and listed on request.
+  const [showAll, setShowAll] = useState(false);
+  // Day-one fix 4: on v2 every answer leads with its matches; the ones that did not match are counted, listed on request.
+  const longAnswer = universeV2 && (run?.results.length ?? 0) > 0;
+  const shownResults = useMemo(() => {
+    if (!run) return null;
+    if (!longAnswer || showAll) return run.results;
+    return run.results.filter((r) => r.matched || held.includes(r.symbol));
+  }, [run, longAnswer, showAll, held]);
+  const hiddenCount = run && shownResults ? run.results.length - shownResults.length : 0;
 
   const showStage = (id: string) => {
     const handle = document.querySelector<HTMLElement>(`[data-stage-id="${id}"] button`);
@@ -339,13 +466,14 @@ export default function ScreenerPage(_props: PageProps) {
   if (loadError) return <ErrorState message={loadError} />;
 
   return (
+    <PlainTimeframes.Provider value={universeV2}>
     <div className="screener-page pb-20 sm:pb-0">
       {dishOn && <PageDishV2 page="screener" className="mb-4" />}
       {/* Header strip: name (edit in place), freshness, Run (primary) / Save */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label className={cx("min-w-0 flex-1", ideaOn && "basis-full sm:basis-0")}>
+        <label className={cx("min-w-0 flex-1", universeV2 ? "basis-full" : ideaOn && "basis-full sm:basis-0")}>
           <span className="sr-only">Scan name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120}
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder={universeV2 ? "Untitled scan" : undefined}
                  className="w-full max-w-md rounded-control border border-transparent bg-transparent px-1 text-t24 font-semibold text-fg hover:border-border focus:border-border focus:outline-none focus:ring-2 focus:ring-brand" />
         </label>
         <FreshnessPill ranAt={ranAt} source={run?.data_source ?? null} scanTf={scanTf} />
@@ -354,14 +482,19 @@ export default function ScreenerPage(_props: PageProps) {
         {taxonomy && (
           <Button size="sm" onClick={() => setGalleryOpen(true)} data-testid="browse-screens"><LayoutGrid size={14} /> Browse screens</Button>
         )}
-        {taxonomy && mirrors && (
+        {advanced && taxonomy && mirrors && (
           <Button size="sm" onClick={() => setToolsOpen(true)} data-testid="library-tools-open"><Layers size={14} /> Library tools</Button>
         )}
         {etfOn && <Button size="sm" onClick={() => setEtfOpen(true)} data-testid="etf-open"><LayoutGrid size={14} /> ETFs</Button>}
         {ideaOn && <Button size="sm" onClick={() => setIdeaOpen(true)} data-testid="idea-open-dialog"><Lightbulb size={14} /> From an idea</Button>}
-        {pineOn && <Button size="sm" onClick={() => setPineOpen(true)} data-testid="pine-open"><Code2 size={14} /> Pine Script</Button>}
+        {advanced && pineOn && <Button size="sm" onClick={() => setPineOpen(true)} data-testid="pine-open"><Code2 size={14} /> Pine Script</Button>}
         {ideaOn && (
           <Button size="sm" onClick={() => setAlertOpen(true)} disabled={!text} data-testid="scan-alert-open"><BellRing size={14} /> Tell me when it matches</Button>
+        )}
+        {universeV2 && ((taxonomy && mirrors) || pineOn || builderU2) && (
+          <Button size="sm" variant="ghost" onClick={() => setAdvanced((v) => !v)} aria-expanded={advancedOpen} data-testid="screener-advanced">
+            Advanced <ChevronDown size={14} aria-hidden className={cx("transition-transform", advancedOpen && "rotate-180")} />
+          </Button>
         )}
         {ideaOn && scanVersions.length > 0 && (
           <Button size="sm" onClick={() => setVersionsOpen(true)} data-testid="scan-versions-open"><History size={14} /> Versions ({scanVersions.length})</Button>
@@ -379,6 +512,14 @@ export default function ScreenerPage(_props: PageProps) {
         <aside aria-label="Universe" className="screener-universe rounded-panel border border-border bg-surface-1 p-4">
           <h2 className="text-t15 font-semibold text-fg">Universe</h2>
           <div className="screener-universe-body">
+          {universeV2 ? (
+          <div>
+          <UniversePicker groups={universes?.groups ?? []} builtinDefault={builtinDefault} watchlists={myLists} choice={choice}
+                          onChoice={(c) => { if (c === CUSTOM && !symbolsText.trim()) setSymbolsText(symbols.join(", ")); setChoice(c); }}
+                          symbolsText={symbolsText} onSymbolsText={setSymbolsText}
+                          count={symbols.length} name={universe.name} loading={universe.loading} note={universe.note} maxSymbols={plan.max_symbols} />
+          </div>
+          ) : (
           <div>
           <label className="mt-3 block text-t12 text-fg-muted" htmlFor="screener-symbols">Symbols (up to 50)</label>
           <textarea id="screener-symbols" value={symbolsText} onChange={(e) => setSymbolsText(e.target.value)} rows={4}
@@ -387,17 +528,25 @@ export default function ScreenerPage(_props: PageProps) {
           <p className="mt-1 text-t12 text-fg-muted"><span className="font-mono font-tabular text-fg">{symbols.length}</span> symbols · separate with commas or new lines</p>
           {watchlistsOn && <WatchlistPicker symbols={symbols} max={50} onLoad={(list) => setSymbolsText(list.join(", "))} />}
           </div>
+          )}
           <div>
           <label className="mt-3 block text-t12 text-fg-muted" htmlFor="screener-tf">Scan timeframe</label>
           <select id="screener-tf" value={scanTf} onChange={(e) => setScanTf(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-control border border-border bg-surface-2 px-2 font-mono text-t13 text-fg focus:outline-none focus:ring-2 focus:ring-brand">
-            {TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{tf}</option>)}
+                  className={cx("mt-1 h-9 w-full rounded-control border border-border bg-surface-2 px-2 text-t13 text-fg focus:outline-none focus:ring-2 focus:ring-brand", !universeV2 && "font-mono")}>
+            {TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{timeframeWords(tf, universeV2)}</option>)}
           </select>
           </div>
+          {universeV2 && symbols.length > RUN_MAX && (
+            <p className="mt-3 text-t12 text-fg-muted" data-testid="universe-batches">
+              Live counts show for lists of up to {RUN_MAX} stocks. Run scans all {symbols.length}, {plan.size} at a time, within your broker&apos;s limits.
+            </p>
+          )}
+          {advanced && (
           <label className="mt-3 flex items-center gap-2 text-t12 text-fg-muted">
             <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} className="h-3.5 w-3.5 accent-[rgb(var(--signal))]" data-testid="live-counts" />
             Live counts while editing
           </label>
+          )}
           <p className="mt-4 text-t12 text-fg-muted">Closed bars only, read from your broker. A scan lists symbols that meet your own conditions; it is not advice.</p>
           </div>
         </aside>
@@ -406,7 +555,7 @@ export default function ScreenerPage(_props: PageProps) {
         <div className="screener-canvas">
           {registry ? (
             <FunnelCanvas stages={stages} registry={registry} scanTf={scanTf} universe={symbols.length} funnel={shown?.funnel ?? null}
-                          fresh={!!shown} live={liveFresh} matched={matchedNow} problems={allProblems} runKey={runKey} onChange={setStages} formula={builderU2} />
+                          fresh={!!shown} live={liveFresh} matched={matchedNow} problems={allProblems} runKey={runKey} onChange={setStages} formula={builderU2 && advanced} />
           ) : (
             <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-1" aria-label="Loading the conditions" />
           )}
@@ -424,7 +573,45 @@ export default function ScreenerPage(_props: PageProps) {
               </div>
             </div>
           )}
-          <ResultViews results={run?.results ?? null} running={running} runKey={runKey} stale={!!run && !fresh}
+          {progress && (
+            <div role="status" className="rounded-panel border border-border bg-surface-1 p-3 text-t13 text-fg" data-testid="scan-progress">
+              <div className="flex items-center justify-between gap-3">
+                <p>Scanning <span className="font-mono font-tabular">{progress.done}</span> of <span className="font-mono font-tabular">{progress.total}</span> stocks…</p>
+                <Button size="sm" onClick={() => { stopRef.current = true; }} data-testid="scan-stop">Stop</Button>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
+                <div className="h-full bg-signal transition-[width]" style={{ width: `${Math.round((progress.done / Math.max(1, progress.total)) * 100)}%` }} />
+              </div>
+            </div>
+          )}
+          {held.length > 0 && !running && (
+            <p role="status" className="rounded-panel border border-warn/50 bg-surface-1 p-3 text-t13 text-fg" data-testid="scan-held">
+              {held.length} {held.length === 1 ? "stock waited" : "stocks waited"} for your broker&apos;s limit. Run again in a minute to include {held.length === 1 ? "it" : "them"}.
+            </p>
+          )}
+          {longAnswer && (hiddenCount > 0 || showAll) && (
+            <p className="flex flex-wrap items-center justify-between gap-2 text-t13 text-fg-muted" data-testid="results-hidden">
+              <span>{showAll ? `Showing all ${run?.results.length ?? 0} stocks.` : `${hiddenCount} ${hiddenCount === 1 ? "stock did" : "stocks did"} not match; they are not listed.`}</span>
+              <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)}>{showAll ? "Matches only" : `Show the ${hiddenCount} that did not match`}</Button>
+            </p>
+          )}
+          {universeV2 && !run && !running && stages.length === 0 && readyScans.length > 0 && (
+            <section className="rounded-panel border border-border bg-surface-1 p-4" data-testid="ready-scans" aria-labelledby="ready-scans-title">
+              <h2 id="ready-scans-title" className="text-t15 font-semibold text-fg">Start with a ready scan</h2>
+              <p className="mt-1 text-t13 text-fg-muted">One tap runs it on {universe.name || "your list"}. You can change every condition afterwards.</p>
+              <ul className="mt-3 space-y-2">
+                {readyScans.map((s) => (
+                  <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-subtle px-3 py-2">
+                    <span className="min-w-0 flex-1 text-t14 font-medium text-fg">{s.name}</span>
+                    <Button size="sm" variant="primary" onClick={() => openScreen(s, true)} aria-label={`Run ${s.name}`} data-testid="ready-scan-run">
+                      <Play size={14} aria-hidden /> Run
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          <ResultViews results={shownResults} running={running} runKey={runKey} stale={!!run && !fresh}
                        why={fresh && registry ? (symbol) => whyChips(registry, stages, run?.funnel ?? null, symbol) : undefined}
                        onShowEvidence={(r) => { if (r.evidence_id != null) setEvidence({ id: r.evidence_id, symbol: r.symbol }); }} />
           <EvidencePanel evidenceId={evidence?.id ?? null} symbol={evidence?.symbol} onClose={() => setEvidence(null)} />
@@ -435,13 +622,14 @@ export default function ScreenerPage(_props: PageProps) {
       {taxonomy && (
         <Dialog wide open={galleryOpen} onOpenChange={setGalleryOpen} title="Screen library"
                 description="Pre-built screens filed by method (how a screen reasons) and setup type (what it looks for).">
-          <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={openScreen} legends={legends} mirrors={mirrorMap} />
+          <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={(s) => openScreen(s)} legends={legends} mirrors={mirrorMap}
+                         onTry={universeV2 ? (s) => openScreen(s, true) : undefined} />
         </Dialog>
       )}
       {taxonomy && mirrors && (
         <Dialog wide open={toolsOpen} onOpenChange={setToolsOpen} title="Library tools"
                 description="Run several screens together to see where they agree, or watch a list for a ready-then-triggered move.">
-          <LibraryTools taxonomy={taxonomy} mirrors={mirrors} watchLists={watchLists} symbolsText={symbolsText} />
+          <LibraryTools taxonomy={taxonomy} mirrors={mirrors} watchLists={watchLists} symbolsText={universeV2 ? symbols.slice(0, RUN_MAX).join(", ") : symbolsText} />
         </Dialog>
       )}
 
@@ -457,7 +645,7 @@ export default function ScreenerPage(_props: PageProps) {
                 description="Paste a TradingView Pine script: see what translates, read each condition in plain words and run it as a screen. The script is never run.">
           {pineOpen && (
             <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
-              <PinePanel symbols={symbols} baseTf={scanTf} />
+              <PinePanel symbols={symbols.slice(0, RUN_MAX)} baseTf={scanTf} />
             </Suspense>
           )}
         </Dialog>
@@ -479,8 +667,9 @@ export default function ScreenerPage(_props: PageProps) {
                 description="Get a message when a symbol from your list passes this scan.">
           {alertOpen && (
             <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
-              <ScanAlertPanel name={name} symbols={symbols} scanTf={scanTf} screenId={savedId} save={saveNow}
-                              intrabar={features.on("screener_intrabar")} />
+              <ScanAlertPanel name={name} symbols={symbols.slice(0, RUN_MAX)} scanTf={scanTf} screenId={savedId} save={saveNow}
+                              intrabar={features.on("screener_intrabar")}
+                              universeName={universeV2 ? universe.name : undefined} universeTotal={symbols.length} />
             </Suspense>
           )}
         </Dialog>
@@ -509,5 +698,6 @@ export default function ScreenerPage(_props: PageProps) {
         </div>
       </div>
     </div>
+    </PlainTimeframes.Provider>
   );
 }

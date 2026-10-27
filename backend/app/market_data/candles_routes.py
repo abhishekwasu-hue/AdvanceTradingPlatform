@@ -49,12 +49,15 @@ from app.auth.dependencies import get_current_user
 from app.core.rate_limit import user_rate_limit
 from app.billing.service import meter
 from app.brokers.base import BrokerInterface
+from app.brokers.catalog import display_name
+from app.brokers.gates import data_sources, market_data_open
 from app.brokers.token_lifecycle import build_adapter, data_is_usable, token_is_usable
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session, release_connection
-from app.market_data import api_budget, entitlement, index_volume, periods
-from app.market_data.calendar import EXCHANGE_SESSIONS, IST, family_holidays, load_holidays, session_family, session_status
+from app.market_data import api_budget, entitlement, index_volume, lake_fill, periods
+from app.market_data.calendar import (EXCHANGE_SESSIONS, IST, family_holidays, last_session_close, load_holidays, session_family,
+                                      session_status)
 from app.market_data.data_terms import terms_for
 from app.market_data.entitlement import DataTier, Entitlement
 from app.market_data.fanin import FLAG as BYOB_FLAG, Priority
@@ -123,6 +126,12 @@ def _source(record: BrokerCredentialRecord, byob: bool = False) -> dict:
     return out
 
 
+def own_ticks(namespace: str) -> TickCache:
+    """A user's own session's ticks (BT1): its per-symbol keys, or - TM Part 1, the data hub - its connection snapshot."""
+    from app.market_data.hub import tick_cache_for
+    return tick_cache_for(namespace)
+
+
 async def _byob(session: AsyncSession, user: User) -> bool:
     """BT1: the bring-your-own-broker data tier is on for this user's organisation (flag off = today's behaviour)."""
     return await flag_enabled(session, BYOB_FLAG, user.tenant_id)
@@ -149,10 +158,14 @@ async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[s
         wanted = [r for r in records if r.broker_name == broker.lower() and r.account_label == (account_label or "primary")]
         if not wanted:
             raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{broker}' ({account_label})")
+        if not market_data_open(wanted[0].broker_name):
+            raise HTTPException(status_code=409, detail=f"Live prices from {display_name(wanted[0].broker_name)} are not offered yet.")
         if not data_is_usable(wanted[0]):
             raise HTTPException(status_code=409, detail=f"Broker '{broker}' has no valid session token today. Log in to it on the Broker page.")
         return wanted[0]
     # A logged-in session first; else an Upstox row whose analytics token serves market data without the daily login.
+    # Part 1B: never a broker whose market-data gate is closed (Kotak Neo, TM-6).
+    records = data_sources(records)
     usable = [r for r in records if token_is_usable(r)] or [r for r in records if data_is_usable(r)]
     if not usable:
         raise HTTPException(status_code=409, detail="No broker session with a valid token. Add the broker's API key on the Broker page "
@@ -348,6 +361,24 @@ async def _future_bars(service: MarketDataService, fut: index_volume.NearFuture,
     return got.bars
 
 
+def _is_contract(symbol: str, exchange: str) -> bool:
+    s = symbol.upper()
+    return exchange.upper() in ("NFO", "BFO", "MCX", "CDS", "BCD", "NSE_FO", "BSE_FO", "MCX_FO") or (
+        s.endswith(("CE", "PE", "FUT")) and any(ch.isdigit() for ch in s))
+
+
+def empty_reason(symbol: str, exchange: str, holidays, now: datetime, before: Optional[date] = None) -> str:
+    """C1: the plain reason a chart shows when the broker sent no candles at all - never a silent empty canvas."""
+    what = "this contract" if _is_contract(symbol, exchange) else "this symbol"
+    if before is not None:
+        return f"No older candles for {what} from your broker."
+    close = last_session_close(now, holidays, exchange)
+    upto = f" up to the last session close ({close.strftime('%d %b, %H:%M')} IST)" if close is not None else ""
+    why = ("It may be a new contract, or your broker sent no data for this period" if what == "this contract"
+           else "Your broker sent no data for this period")
+    return f"No candles yet for {what}. {why}{upto}."
+
+
 @router.post("/candles", dependencies=[Depends(candles_rate_limit)])
 async def candles(body: CandlesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     started = time.monotonic()
@@ -393,6 +424,10 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     # every API worker); a cached answer costs none. A symbol that gets no token says so; the others still load.
     budgeted = api_budget.BudgetedAdapter(build_adapter(record), record.id, record.broker_name)
     service = MarketDataService(cast(BrokerInterface, budgeted), lookback_days=lookback, cache_namespace=namespace)
+    # C1: history ends at the last session close by the exchange's own calendar (holidays included).
+    service.holidays = await family_holidays(session, session_family(exchange))
+    # DH2 / DH6: the last closed session's 1-minute bars from the reader's own lake when the broker's history lags.
+    service.lake_fill = lake_fill.for_reader(session, user)
     now = datetime.now(timezone.utc)
     today = now.astimezone(IST).date()
     window = _period_window(period, body.before, lookback, today) if period is not None else None
@@ -490,6 +525,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
             fetched += 1
             if not bars:
                 warnings.append(f"{symbol}: the broker returned no candles")
+                out[symbol]["empty_reason"] = empty_reason(symbol, exchange, service.holidays, now, body.before)
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
             logger.info("Candle shaping failed for %s:%s: %s", exchange, symbol, exc)
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": f"{type(exc).__name__}: {exc}"[:300], "volume_source": None}
@@ -534,7 +570,7 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
         if not ent.live or ent.record is None or ent.session is None:
             raise _tier_c({(symbol, exchange): ent})
         # LD-10: the user's own session's tick first, then the shared live feed's for the same broker, then the broker.
-        body = await _ltp_body(ent.record, TickCache(namespace=ent.session.namespace), symbol, exchange, now, shared_feed=tick_cache)
+        body = await _ltp_body(ent.record, own_ticks(ent.session.namespace), symbol, exchange, now, shared_feed=tick_cache)
         # The tick's / quote's own time; a bare LTP has none, so its age is unknown and the badge says stale.
         as_of = datetime.fromisoformat(body["timestamp"]) if body["timestamp"] else None
         body["data_tier"] = ent.badge(as_of=as_of, now=now)
@@ -543,7 +579,10 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
             body["stale"], body["stale_reason"] = True, body["data_tier"]["stale_reason"]
         return body
     record = await _pick_record(session, user.tenant_id, broker, account_label)
-    return await _ltp_body(record, tick_cache, symbol, exchange, now)
+    # TM Part 1 (flag data_hub): the organisation's own hub stream (registered for this symbol), never the shared keys.
+    from app.market_data import hub as data_hub
+    own = await data_hub.org_feed(session, user.tenant_id, record.broker_name, [(symbol, exchange)])
+    return await _ltp_body(record, own if own is not None else tick_cache, symbol, exchange, now)
 
 
 async def _ltp_body(record: BrokerCredentialRecord, ticks: TickCache, symbol: str, exchange: str, now: datetime,
@@ -641,6 +680,8 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
     else:
         record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
     adapter = build_adapter(record)
+    from app.market_data import hub as data_hub
+    hub_chains = await data_hub.hub_on(session, user.tenant_id)
     now = datetime.now(timezone.utc)
     eod_date, holidays = await _eod_context(session, ents)
     out: Dict[str, dict] = {}
@@ -656,7 +697,12 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
                                "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None}
             continue
         try:
-            chain = await adapter.get_option_chain(underlying, body.expiry)
+            if hub_chains:
+                # TM Part 1: one chain fetch per connection every few seconds, whoever asks (page, chart, Copilot).
+                chain = await data_hub.shared_chain(record.id, underlying, body.expiry,
+                                                    lambda u=underlying: adapter.get_option_chain(u, body.expiry))
+            else:
+                chain = await adapter.get_option_chain(underlying, body.expiry)
             out[underlying] = {"chain": chain.model_dump(mode="json"), "rows": len(chain.rows), "error": None}
             fetched += 1
             if not chain.rows:
@@ -698,7 +744,7 @@ async def data_tier(symbol: Optional[str] = None, exchange: str = "NSE", user: U
         ent = await entitlement.resolve(session, user, sym, exch, now=now, register=False)
         as_of = None
         if ent.live and ent.session is not None:
-            tick = await TickCache(namespace=ent.session.namespace).get(ent.session.broker, exch, sym)
+            tick = await own_ticks(ent.session.namespace).get(ent.session.broker, exch, sym)
             as_of = tick.best_ts if tick is not None else None
         badge = ent.badge(as_of=as_of, eod_date=eod_date, now=now, holidays=holidays)
     return {"enabled": True, "badge": badge, "market_wide": market_wide, "eod_date": eod_date.isoformat() if eod_date else None,

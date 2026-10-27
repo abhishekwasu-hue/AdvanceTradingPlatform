@@ -65,16 +65,18 @@ export interface ChipProps {
   shape?: ChipShape;
   /** A small icon before the words (aria-hidden): the meaning never rests on colour alone. */
   icon?: ReactNode;
+  /** The icon's own colour, when it differs from the chip's words (colour v2: the green check of a neutral chip). */
+  iconClassName?: string;
   className?: string;
   children: ReactNode;
   /** Passed through as `data-chip`, for tests and the e2e checks. */
   name?: string;
 }
 
-export function Chip({ tone = "neutral", variant = "tint", shape = "pill", icon, className, children, name }: ChipProps) {
+export function Chip({ tone = "neutral", variant = "tint", shape = "pill", icon, iconClassName, className, children, name }: ChipProps) {
   return (
     <span data-chip={name} className={chipClass({ tone, variant, shape, icon: icon != null, className })}>
-      {icon != null && <span aria-hidden className="inline-flex shrink-0">{icon}</span>}
+      {icon != null && <span aria-hidden className={cx("inline-flex shrink-0", iconClassName)}>{icon}</span>}
       {children}
     </span>
   );

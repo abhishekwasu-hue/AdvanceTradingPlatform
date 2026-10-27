@@ -1,4 +1,5 @@
 import { ImagePlus, Link2, TriangleAlert, Upload } from "lucide-react";
+import { ComingSoon } from "../ui/ComingSoon";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent } from "react";
 import { useSearchParams } from "react-router";
 import { friendlyError } from "../api/errors";
@@ -25,6 +26,9 @@ import type { AnalysisItem, AnalyzeStatus } from "./types";
  */
 
 export const FLAG = "chart_analyze";
+/** Item 8: the drop zone's words, each a sentence of its own (capitalised). */
+export const DROP_TEXT_DESKTOP = "Drop it here, paste a screenshot, or choose a file.";
+export const DROP_TEXT_PHONE = "Paste a screenshot, or choose a file.";
 /** The "Option strikes · from your settings" block has its own flag on top (owner's tenant first). */
 export const STRIKES_FLAG = "chart_analyze_strikes";
 /** "Share with my organisation" (PR-A4): its own flag on top; a link opens `?shared=<link>` on this page. */
@@ -72,6 +76,32 @@ export function firstImage(files: FileList | File[] | null | undefined): File | 
   return null;
 }
 
+/** A1: the analysis engine is not installed on this server. Users see one plain line and no upload or link inputs; the
+ * admin (the server sends `reason` / `owner_steps` to SUPER_ADMIN only) also sees why and what the owner does. */
+export function EngineUnavailable({ engine }: { engine: AnalyzeStatus["engine"] }) {
+  return (
+    <div className="mx-auto max-w-[1240px] space-y-space-4" data-testid="chart-analyze-unavailable">
+      <h1 className="text-t20 font-semibold text-fg md:text-t24">Analyze a chart</h1>
+      <section className={card} role="status">
+        <div className="flex items-start gap-space-3">
+          <TriangleAlert size={20} aria-hidden className="mt-0.5 shrink-0 text-warn" />
+          <div>
+            <p className="text-t15 font-semibold text-fg">Chart analysis is not available right now</p>
+            <p className="mt-space-1 text-t14 text-fg-muted">Your saved analyses are kept. Please check again later.</p>
+          </div>
+        </div>
+        {engine.reason ? (
+          <div className="mt-space-4 rounded-control border border-subtle bg-surface-2 p-space-3" data-testid="engine-admin-detail">
+            <p className="text-t14 font-semibold text-fg">For admins: the analysis engine is missing</p>
+            <p className="mt-space-1 text-t14 text-fg-muted">Why: {engine.reason}.</p>
+            {engine.owner_steps ? <p className="mt-space-1 break-words text-t14 text-fg-muted">{engine.owner_steps}</p> : null}
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 export default function ChartAnalyzePageV2() {
   const features = useFeatures();
   const on = features.on(FLAG);
@@ -115,6 +145,15 @@ export default function ChartAnalyzePageV2() {
   }, []);
 
   useEffect(() => { if (on) void reload(); }, [on, reload]);
+  // A1: with the engine missing the server answers the flag as off for users (the nav hides the page). A direct visit
+  // asks the status once, so the page can say the feature is not available instead of "Page not found".
+  const [probed, setProbed] = useState(false);
+  useEffect(() => {
+    if (!features.loaded || on) return;
+    let live = true;
+    chartAnalyzeApi.status().then((s) => { if (live) setStatus(s); }, () => undefined).finally(() => { if (live) setProbed(true); });
+    return () => { live = false; };
+  }, [features.loaded, on]);
   useEffect(() => () => { if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current); }, []);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
@@ -290,8 +329,12 @@ export default function ChartAnalyzePageV2() {
     pick(firstImage(e.dataTransfer?.files));
   };
 
-  if (!features.loaded) return <div className="h-40 animate-pulse rounded-panel bg-surface-2" aria-busy="true" />;
-  if (!on || off) {
+  const engineMissing = status?.engine.installed === false;
+  if (!features.loaded || (!on && !probed)) return <div className="h-40 animate-pulse rounded-panel bg-surface-2" aria-busy="true" />;
+  // A1: the engine (private package) is not installed - a real "not available" state, never "Coming soon".
+  if (engineMissing && !off) return <EngineUnavailable engine={status.engine} />;
+  if (!on) return <ComingSoon flag={FLAG} />;                 // the flag is off: the shell's standard page (SELF_GATED)
+  if (off) {
     return (
       <div className={card}>
         <h1 className="text-t20 font-semibold text-fg">Page not found</h1>
@@ -304,25 +347,14 @@ export default function ChartAnalyzePageV2() {
     return <SharedAnalysisV2 token={sharedToken} onBack={() => { params.delete("shared"); setParams(params, { replace: true }); }} />;
   }
 
-  const engineMissing = status?.engine.installed === false;
   const limits = status?.limits;
   const working = phase !== "idle";
   const maxMb = status ? Math.round((status.upload.max_bytes / (1024 * 1024)) * 10) / 10 : null;
 
   return (
     <div className="mx-auto max-w-[1240px] space-y-space-4" data-testid="chart-analyze-page">
-      <PageIntro id="chart-analyze" lines={[
-        "Get an educational reading of a chart: the situation and the possibilities, as the method sees them.",
-        "Upload or paste a screenshot, or paste a TradingView snapshot link, then press Analyze.",
-      ]} />
+      <PageIntro id="chart-analyze" lines={["Upload or paste a chart screenshot, or a TradingView snapshot link, then press Analyze for an educational reading."]} />
       <h1 className="text-t20 font-semibold text-fg md:text-t24">Analyze a chart</h1>
-
-      {engineMissing && (
-        <div role="status" className="flex items-start gap-space-3 rounded-panel border border-subtle bg-warn-tint p-space-4 text-t14 text-fg">
-          <TriangleAlert size={18} aria-hidden className="mt-0.5 shrink-0 text-warn" />
-          <p><span className="font-semibold">Analysis engine not installed.</span> The administrator installs it on the server. Until then, charts cannot be analysed here.</p>
-        </div>
-      )}
 
       <section className={card} aria-labelledby="ca-add">
         <h2 id="ca-add" className="text-t15 font-semibold text-fg">Add a chart</h2>
@@ -335,7 +367,7 @@ export default function ChartAnalyzePageV2() {
             <ImagePlus size={28} aria-hidden className="text-fg-muted" />
           )}
           <p className="text-t14 text-fg-muted">
-            {file ? file.name : <>PNG or JPEG{maxMb ? `, up to ${maxMb} MB` : ""}. <span className="hidden md:inline">Drop it here, </span>paste a screenshot, or choose a file.</>}
+            {file ? file.name : <>PNG or JPEG{maxMb ? `, up to ${maxMb} MB` : ""}. <span className="hidden md:inline">{DROP_TEXT_DESKTOP}</span><span className="md:hidden">{DROP_TEXT_PHONE}</span></>}
           </p>
           <input ref={fileInput} type="file" accept={ACCEPT} className="sr-only" tabIndex={-1} aria-hidden
             onChange={(e) => { pick(firstImage(e.target.files)); e.target.value = ""; }} data-testid="file-input" />

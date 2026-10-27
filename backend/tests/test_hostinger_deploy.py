@@ -189,3 +189,17 @@ def test_every_compose_file_that_archives_wal_says_so_on_purpose():
     for name in ("docker-compose.prod.yml", "docker-compose.hostinger.yml"):
         offsite = (ROOT / name).read_text().split("\n  offsite:", 1)[1].split("\nvolumes:", 1)[0]   # to the top-level volumes
         assert "wal_archive" not in offsite.replace("# A1: no wal_archive mount", ""), name
+
+
+def test_the_history_owner_settings_reach_the_backend_and_the_worker():
+    # DATA-H fix (owner, 25 Oct): `atp.sh env-set HISTORY_OWNER_TENANT_ID=... HISTORY_OWNER_TENANT_NAME=...` writes .env,
+    # but compose passes each service only its own `environment:` list - without these keys lake-backfill kept saying
+    # "HISTORY_OWNER_TENANT_ID is not set" after the restart.
+    services = yaml.safe_load((ROOT / "docker-compose.yml").read_text())["services"]
+    keys = ("HISTORY_OWNER_TENANT_ID", "HISTORY_OWNER_TENANT_NAME", "HISTORY_OWNER_USER_ID", "HISTORY_INTRADAY_SYMBOLS",
+            "HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS")
+    for name in ("backend", "worker"):
+        env = services[name]["environment"]
+        for key in keys:
+            assert key in env, (name, key)
+        assert env["HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS"] == "${HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS:-true}"   # config default

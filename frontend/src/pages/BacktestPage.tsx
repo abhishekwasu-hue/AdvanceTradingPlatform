@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import ProChart, { directionMarker, type ChartMarker } from "../components/ProChart";
 import BacktestChartV2 from "../chart/BacktestChartV2";
-import { useUiV2 } from "../ui/useFeatures";
 import EquityCurveChart from "../components/EquityCurveChart";
 import { Card, StatTile, Disclaimer, signClass, signTone } from "../components/ui";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
@@ -13,6 +12,12 @@ import {
 } from "../types";
 import { useAuth } from "../auth/AuthContext";
 import { PageHeader } from "../components/primitives";
+import { useFeatures, useUiV2 } from "../ui/useFeatures";
+import { templatesApi, type StrategyTemplate } from "../strategyTemplates/api";
+import { templateLinkFromSearch, typedSettings, type TemplateLink } from "../strategyTemplates/link";
+import { TEMPLATE_PICK, templateTimeframeFor } from "../backtest/templateTest";
+import { Database } from "lucide-react";
+import { formatDateTimeIST } from "../ui/format";
 
 const INDEX_START_PRICES: Record<string, number> = { NIFTY: 24500, "NIFTY 50": 24500, BANKNIFTY: 52500, "NIFTY BANK": 52500, FINNIFTY: 23500, MIDCPNIFTY: 12500, SENSEX: 80500, BANKEX: 60500 };
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -44,7 +49,17 @@ export default function BacktestPage() {
   const [strategyId, setStrategyId] = useState("");
   const [symbol, setSymbol] = useState("NIFTY");
   const [bars, setBars] = useState(600);
-  const source = useCandleSource(30);          // Phase AA
+  const source = useCandleSource(30, { storedHistory: true });   // Phase AA; owner order 23 Oct: stored Daily history without a broker
+  const uiV2 = useUiV2();
+  const [pricesFrom, setPricesFrom] = useState<string | null>(null);
+  // Day-one fix 1 (ui_v2 + strategy_templates): a strategy template - the idea's own strategy - is tested as it is, with
+  // the idea's settings when the address carries them (`?template=A5&timeframe=15m&set.<key>=...`). Nothing starts.
+  const features = useFeatures();
+  const templatesOn = uiV2 && features.on("strategy_templates");
+  const [templates, setTemplates] = useState<StrategyTemplate[]>([]);
+  const [link] = useState<TemplateLink | null>(() => { try { return templateLinkFromSearch(window.location.search); } catch { return null; } });
+  const [tplTimeframe, setTplTimeframe] = useState("");
+  const [ranWith, setRanWith] = useState<{ id: string; timeframe: string } | null>(null);
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,8 +67,6 @@ export default function BacktestPage() {
   const [chartCandles, setChartCandles] = useState<OHLCVBar[]>([]);
   // Phase J: exit rules, robustness checks and run history.
   const { user } = useAuth();
-  // Chart review PR 3 (CC-5): under ui_v2 the trades show on the v2 chart; ProChart stays for the pages without it.
-  const v2 = useUiV2();
   const [trail, setTrail] = useState("");
   const [breakEven, setBreakEven] = useState("");
   const [timeExitMin, setTimeExitMin] = useState("");
@@ -157,13 +170,14 @@ export default function BacktestPage() {
   }
 
   async function runRobustness() {
-    if (!selected) return;
+    const target = ranWith ?? (selected ? { id: selected.id, timeframe: selected.timeframes[0] } : null);
+    if (!target) return;
     setRobustBusy(true); setError(null);
     try {
-      const primaryTf = selected.timeframes[0];
+      const primaryTf = target.timeframe;
       const [mc, wf] = await Promise.all([
-        api.backtestMonteCarlo(selected.id, symbol, primaryTf, chartCandles, exitRules(), 1000, optionConfig()),
-        api.backtestWalkForward(selected.id, symbol, primaryTf, chartCandles, exitRules(), 4, optionConfig()),
+        api.backtestMonteCarlo(target.id, symbol, primaryTf, chartCandles, exitRules(), 1000, optionConfig()),
+        api.backtestWalkForward(target.id, symbol, primaryTf, chartCandles, exitRules(), 4, optionConfig()),
       ]);
       setMonteCarlo(mc.monte_carlo);
       setWalkForward(wf);
@@ -177,9 +191,17 @@ export default function BacktestPage() {
   useEffect(() => {
     api.listStrategies().then((list) => {
       setStrategies(list);
-      if (list.length) setStrategyId(list[0].id);
+      if (list.length) setStrategyId((cur) => cur || list[0].id);
     });
   }, []);
+  useEffect(() => {
+    if (!user || !templatesOn) { setTemplates([]); return; }
+    templatesApi.list().then((r) => {
+      const ready = r.templates.filter((t) => t.available);
+      setTemplates(ready);
+      if (link && ready.some((t) => t.id === link.template)) setStrategyId(TEMPLATE_PICK + link.template);
+    }).catch(() => setTemplates([]));
+  }, [user, templatesOn, link]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(refreshRuns, [user]);
   useEffect(() => {
@@ -187,21 +209,39 @@ export default function BacktestPage() {
   }, [user, tradeAs]);
 
   const selected = useMemo(() => strategies.find((s) => s.id === strategyId), [strategies, strategyId]);
+  const picked = strategyId.startsWith(TEMPLATE_PICK) ? templates.find((t) => t.id === strategyId.slice(TEMPLATE_PICK.length)) ?? null : null;
+  const tpl = picked ? templateTimeframeFor(picked, { chosen: tplTimeframe, linked: link?.template === picked.id ? link.timeframe : null, storedOnly: !!source.stored }) : null;
+
+  /** The strategy id and timeframe a run uses: a built-in / own strategy as before, a template through the server's
+   * adopt pre-fill (it checks the settings and creates nothing). */
+  async function runTarget(): Promise<{ id: string; timeframe: string } | null> {
+    if (picked && tpl) {
+      if (!tpl.value) throw new Error(tpl.note ?? "This template cannot be tested here.");
+      const settings = link?.template === picked.id ? typedSettings(picked, link.params) : {};
+      const adoption = await templatesApi.adopt(picked.id, Object.keys(settings).length ? { timeframe: tpl.value, params: settings } : { timeframe: tpl.value });
+      return { id: adoption.strategy_id, timeframe: adoption.deployment.timeframe };
+    }
+    return selected ? { id: selected.id, timeframe: selected.timeframes[0] } : null;
+  }
 
   async function runBacktest() {
-    if (!selected) return;
+    if (!selected && !picked) return;
     setLoading(true);
     setError(null);
     try {
+      const target = await runTarget();
+      if (!target) return;
       // Option runs price off the underlying level, so the sample series starts near the index's.
       const startPrice = tradeAs === "OPTION" ? (INDEX_START_PRICES[symbol.trim().toUpperCase()] ?? 1000) : 100;
-      const primaryTf = selected.timeframes[0];
+      const primaryTf = target.timeframe;
       const fetched = await source.fetch([symbol], primaryTf, { count: bars, startPriceFor: () => startPrice, seedFor: () => 11 });
       setDataWarnings(fetched.warnings);
       const candles = fetched.candles[symbol.trim().toUpperCase()];
       if (!candles?.length) throw new Error(`No candles for ${symbol}`);
-      const res = await api.backtest(selected.id, symbol, primaryTf, candles, exitRules(), fetched.label, optionConfig());
+      const res = await api.backtest(target.id, symbol, primaryTf, candles, exitRules(), fetched.label, optionConfig());
       setResult(res);
+      setRanWith(target);
+      setPricesFrom(fetched.line);
       setChartCandles(candles);
       setMonteCarlo(null);
       setWalkForward(null);
@@ -255,8 +295,20 @@ export default function BacktestPage() {
                   {s.name}
                 </option>
               ))}
+              {templates.length > 0 && (
+                <optgroup label="Strategy templates">{templates.map((t) => <option key={t.id} value={TEMPLATE_PICK + t.id}>{t.name}</option>)}</optgroup>
+              )}
             </select>
           </div>
+          {picked && tpl && (
+            <div data-template-test={picked.id}>
+              <label htmlFor="bt-template-timeframe" className="block text-xs text-fg-muted mb-1">Chart timeframe</label>
+              <select id="bt-template-timeframe" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
+                value={tpl.value} onChange={(e) => { setTplTimeframe(e.target.value); setResult(null); }}>
+                {picked.timeframes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-xs text-fg-muted mb-1">Symbol</label>
             <input
@@ -279,12 +331,18 @@ export default function BacktestPage() {
           )}
           <button
             onClick={runBacktest}
-            disabled={!selected || loading}
+            disabled={(!selected && !picked) || loading}
             className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {loading ? "Running…" : "Run Backtest"}
           </button>
         </div>
+        {picked && tpl && (
+          <p className="mt-2 text-sm text-fg-muted" data-template-test-note>
+            {link?.template === picked.id ? "Tests the idea's own strategy with the settings from the idea." : "Tests the template with its usual settings."}
+            {tpl.note ? ` ${tpl.note}` : ""}
+          </p>
+        )}
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
           <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">Dynamic exits (same rules the live monitor applies)</div>
           <div className="grid sm:grid-cols-4 gap-3">
@@ -471,6 +529,11 @@ export default function BacktestPage() {
 
       {result && (
         <>
+          {uiV2 && pricesFrom && (
+            <p data-testid="prices-from" className="flex items-center gap-2 text-sm text-fg-muted">
+              <Database size={16} aria-hidden className="shrink-0" />{pricesFrom}
+            </p>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatTile label="Total Trades" value={result.total_trades} />
             <StatTile label="Win Rate" value={`${result.win_rate.toFixed(1)}%`} />
@@ -488,9 +551,10 @@ export default function BacktestPage() {
           )}
 
           <Card title="Price Chart — strategy indicators, trade entries &amp; exits">
-            {v2
-              ? <BacktestChartV2 candles={chartCandles} symbol={symbol} timeframe={selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />
-              : <ProChart candles={chartCandles} symbol={symbol} timeframe={selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />}
+            {/* Chart review PR 3 (CC-5): under ui_v2 the trades show on the v2 chart; ProChart stays without it. */}
+            {uiV2
+              ? <BacktestChartV2 candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />
+              : <ProChart candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />}
           </Card>
 
           <Card title="Equity Curve">
@@ -704,7 +768,7 @@ export default function BacktestPage() {
               <tbody>
                 {runs.map((r) => (
                   <tr key={r.id} className="border-t border-border">
-                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{r.created_at ? new Date(r.created_at).toLocaleString() : "-"}</td>
+                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{r.created_at ? formatDateTimeIST(r.created_at) : "-"}</td>
                     <td className="py-1 pr-3 text-fg">{r.strategy_id}</td>
                     <td className="py-1 pr-3">{r.symbol} · {r.base_timeframe}</td>
                     <td className="py-1 pr-3 text-fg-muted">{r.data_source} · {r.bars} bars · engine v{r.engine_version}</td>

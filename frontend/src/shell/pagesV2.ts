@@ -41,6 +41,12 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   admin: lazy(() => import("../admin/AdminConsoleV2")),
   // Idea library slice 1 (src/ideas) at /ideas - a v2-only page behind `idea_library`.
   ideas: lazy(() => import("../ideas/IdeaLibraryV2")),
+  // Readiness C13 (src/learn) at /learn - a v2-only page behind `learn`.
+  learn: lazy(() => import("../learn/LearnPageV2")),
+  // Trading Terminal T1 (src/terminal) at /terminal - a v2-only page behind `terminal`.
+  terminal: lazy(() => import("../terminal/TerminalPageV2")),
+  // P1-8 (2): the Watchlist page (src/watchlist) at /watchlist - a v2-only page behind `watchlists`, the Charts panel.
+  watchlist: lazy(() => import("../watchlist/WatchlistPageV2")),
   ...Object.fromEntries(SETTINGS_SECTIONS.map((s) => [s.key, SettingsSection])),
 };
 

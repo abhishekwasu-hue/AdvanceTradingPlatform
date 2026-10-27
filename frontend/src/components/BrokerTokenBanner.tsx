@@ -2,6 +2,7 @@ import { ExternalLink, KeyRound, LogIn, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { BrokerTokenInfo } from "../types";
+import { formatDateTimeIST } from "../ui/format";
 
 /**
  * "Is my broker session alive today?" - the one thing an operator must check every trading
@@ -75,7 +76,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
       const updated = await api.brokerLoginCode(t.broker_name, code, t.account_label ?? "primary");
       setTokens((rows) => rows.map((r) => (keyOf(r) === keyOf(t) ? { ...r, ...updated } : r)));
       setCodes((c) => ({ ...c, [keyOf(t)]: "" }));
-      setNotes((n) => ({ ...n, [keyOf(t)]: { ok: true, text: `Logged in - session token stored (encrypted) and valid until ${updated.token_expires_at ? new Date(updated.token_expires_at).toLocaleString() : "the broker's daily expiry"}.` } }));
+      setNotes((n) => ({ ...n, [keyOf(t)]: { ok: true, text: `Logged in - session token stored (encrypted) and valid until ${updated.token_expires_at ? formatDateTimeIST(updated.token_expires_at) : "the broker's daily expiry"}.` } }));
     } catch (e) {
       setNotes((n) => ({ ...n, [keyOf(t)]: { ok: false, text: String(e).replace(/^Error:\s*/, "") } }));
     } finally {
@@ -119,7 +120,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
               {!compact && (
                 <span className="text-fg-muted">
                   {ok && t.token_expires_at
-                    ? `session valid until ${new Date(t.token_expires_at).toLocaleString()}`
+                    ? `session valid until ${formatDateTimeIST(t.token_expires_at)}`
                     : t.token_status === "EXPIRED"
                       ? "session expired - LIVE deployments are on hold until you log in again"
                       : "session not yet verified - authenticate or log in to enable LIVE"}

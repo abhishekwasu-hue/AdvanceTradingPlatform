@@ -3436,6 +3436,46 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   ui_v2 off.
 - Tests: vitest `ChartV2.test.tsx` (markers), `backtestChart.test.ts`; e2e `chart-backtest-v2.e2e.ts` with baselines
   `chart-backtest-v2-{1440,390,360}-{light,dark}.png` (font override). Gesture recordings outside the repository.
+## 23 Oct - Production readiness A4: security
+
+- Branch `claude/readiness-a4-security`. **No migration** (the session cap reads `user_sessions.created_at`), no new
+  flag; one new route `POST /api/auth/logout-others` (own account, in the tenancy table).
+- MFA: `require_mfa_session` on the review's SUPER_ADMIN routes outside the admin routers (news-feed sources / refresh,
+  member verify-email, go-live list + evidence, market holidays add / remove, `/api/system/encryption`,
+  `/api/audit-logs/verify`); `ensure_admin_write_step_up` for GLOBAL risk limits, market events for every organisation
+  and shared company profiles; a sweep test fails on any SUPER_ADMIN-only route without two-factor.
+- `MFA_STEP_UP_MINUTES` (30): admin writes need a recent check, reads a checked session; engaging the global kill switch
+  needs a checked session only. Web: `StepUpHost` (admins) asks for the code once and `api/client.ts` repeats the change.
+- `SESSION_MAX_DAYS` (90): absolute cap from sign-in, on every request and refresh. "Log out other devices" in the
+  session list; devices in plain words (`auth/deviceLabel.ts`).
+- Rate limits: per account on forgot (silent), verify resend, the signed-in code checks and password change; plain 429
+  sentences with `Retry-After`; the AI limiter on `POST /api/news-feed/classify` and the journal's narrated review.
+- Headers: the API's own (`_SecurityHeaders` in `main.py`, HSTS over HTTPS only); `atp.sh health` checks `/` and the API,
+  plus Permissions-Policy and `frame-ancestors`. CI: `container-scan` without `needs`; backup + redis / caddy / rclone
+  images scanned report only. Runbook 6d: rotation of every server secret by name, linked to the 6a escrow.
+- Pen-test scope document handed to the owner outside the repository. Questions RDY-28..32; RDY-3 built as its default.
+- Tests: `test_a4_security.py` (28), `test_z11_deploy_bundle.py` header case; vitest `api/stepUp.test.ts`,
+  `auth/deviceLabel.test.ts`, `components/StepUpHost.test.tsx`.
+
+## 23 Oct - Production readiness C12: support
+
+- Branch `claude/readiness-c12-support`. **No migration** (ticket state and desk settings in `platform_controls` rows). New
+  flag `help_centre` (OFF, needs `ui_v2`). New routes in the tenancy table: `GET /api/support/help`, `GET /api/support/contact`,
+  `POST /api/support/report` (signed in, 404 while `ui_v2` or `help_centre` is off), `GET /api/admin/support/tickets`,
+  `PUT /api/admin/support/tickets/{ticket_id}`, `GET|PUT /api/admin/support/settings` (SUPER_ADMIN + two-factor, audited).
+- Help centre (`frontend/src/support/HelpCentreV2.tsx`, own chunk) in Settings › Help & tips: one search over the help pages
+  (`help.md`, the bot's corpus), the page tours / welcome cards and the glossary; filters How to / Page tips / Words; "Open the
+  page" links stay inside the app. The glossary's India VIX line no longer names an index (education surface rule).
+- Report a problem (`ReportProblemDialogV2.tsx`): page, time, app version and the last server error reference
+  (`support/lastError.ts`, recorded by `api/errors.ts` on every 5xx; path only), listed before sending; the server takes a
+  closed field list (extra = 422), scrubs the message (`backend/app/support/scrub.py`: tokens, JWT, labelled secrets, long
+  opaque strings, other people's e-mails, long numbers, PAN; also applied to "Send feedback") and looks the reference up in
+  `recent_errors` for the admin.
+- Admin › Support: "Support tickets" (status open / answered / closed, assignee = an active SUPER_ADMIN, first-answer / resolve
+  targets with lateness, the attached error) replaces the feedback list; "Support contact and targets" (empty by default).
+- Contact link: `desk.contact` = the owner's number / e-mail only while `market_session_status` is open.
+- Tests: `backend/tests/test_c12_support.py`; vitest `src/support/helpCentre.test.tsx`, `src/admin/supportDesk.test.tsx`; e2e
+  `e2e/support-desk-v2.e2e.ts` with baselines at 360 / 390 / 1440 light / dark; `admin-support-v2-*` refreshed. Questions SUP-1..4.
 ## 23 Oct - Production readiness A3: safe deploys
 
 - Branch `claude/readiness-a3-safe-deploys`. **No migration**, no flag, no route.
@@ -3485,6 +3525,96 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
 
 
+## 23 Oct - Colour v2: a visible proposal behind `colour_v2`, and a new comparison page
+
+- Branch `claude/colour-v2`, stacked on Part 3 PR 2 (#440). **No migration.** The owner did not approve the first
+  comparison ("the after is almost identical"); this is the redo with his six additions (DECISIONS 23 Oct).
+- Flag `colour_v2` (controls + flag_catalog, OFF, depends on ui_v2; `tests/test_colour_v2_flag.py`). Nothing changes
+  for users until the owner approves; with the flag off every page renders as before (e2e baselines unchanged).
+- `tokens.css`: brand-tint, up-tint, down-tint, teal-accent, soft-* (icon circles), chain-call / chain-put (+ -itm),
+  oi-call / oi-put, nav-insights, each with colour-blind values; the layered dark surfaces under `:root[data-colour="v2"]`.
+  `tokens.test.ts` "Colour v2 tokens": AA text / 3 : 1 UI pairs in six variants, the OI number over its bar, no existing
+  value changes, colour-blind coverage and no dark-to-light leak, ITM stronger than OTM.
+- Shared pieces: `ui/colourV2.tsx` (provider in AppShellV2, `data-colour` on <html>), `ui/IconBadge.tsx`,
+  `ui/DirectionChip.tsx`, `ui/Sparkline.tsx`, `shell/navTone.ts`, `dashboard/indexSparks.ts` (real broker candles only);
+  StatusChip's check is green (owner's order).
+- Pages (flag on only): Settings index, Today (P&L tint, Needs attention icons, sparklines, Active signals), Option chain,
+  Signals, My trades, sidebar / bottom bar / More sheet. vitest `ui/colourV2.test.tsx` (on and off for every page).
+- Comparison page (not in the repo): before = flag off, after = flag on, Today / Option chain / Signals / My trades /
+  Charts / Settings + the bottom bar, 390 / 1440, light / dark, plus colour-blind; e2e mocks only.
+- Up to date with main (merge, no history rewrite; owner order 23 Oct): the components that reached main in #440 keep
+  main's look with the flag off - StatusChip's green check now needs `colour_v2` (`useColourV2`); AppShellV2 keeps the
+  colour provider and main's live-prices banner and referral host; the Signals day-one rows (new on main) take the
+  shared DirectionChip with the flag on. Comparison v3 for the owner (same six pages, 390 / 1440, light / dark).
+## 24 Oct - Colour v2: the owner's review points CV-1..4 (#447)
+
+- Branch `claude/colour-v2`. Frontend only, **no migration**; everything behind `colour_v2` (with the flag off every
+  page renders as before; the flag-off baselines pass unchanged). INBOX / DECISIONS 24 Oct; OPEN_QUESTIONS CV-1..4.
+- CV-1 `shell/BottomNavV2.tsx`: inactive tabs and More neutral grey; only the tab on screen is brand (group colours stay
+  in the sidebar and the More sheet). CV-2: each tab word `whitespace-nowrap` (bold included), checked at 360 / 390.
+- CV-3 `optionChain/ChainTableV2.tsx`: no call / put side tints (tokens `chain-call` / `chain-put` (+ `-itm`) removed
+  from `tokens.css` / `tailwind.config.js`); ITM one neutral step (`surface-2`, as with the flag off); OI bars, Calls /
+  Puts headings and the ATM row kept. `tokens.test.ts`: the OI bars, the number over them and the up / down figures on
+  the neutral ITM step in all six variants.
+- CV-4 `dashboard/MarketStripV2.tsx`: below md the P&L row leads the strip (`max-md:order-first`); desktop unchanged.
+- Tests: `ui/colourV2.test.tsx` (CV-1..4 classes), `ui/tokens.test.ts`, new `e2e/colour-v2.e2e.ts` (flag on: every label
+  on one line for each active tab at 360 / 390, inactive tabs grey on Signals and Option chain, the P&L inside 390 x 844
+  above the bottom bar in light and dark). Comparison v5 (only the changed pictures) for the owner, not in the repo.
+
+## 23 Oct - Production readiness B8: phone notifications, deep links, store listing prep
+
+- Branch `claude/readiness-b8-mobile`. **No migration** (phones in the organisation's FCM alert channel, encrypted
+  config; `channel_type` is a plain string). New flag `mobile_push` (OFF, catalog entry); new routes
+  `/api/mobile/devices[/{device_id}[/test]]` (classified in the tenancy table).
+- Web Push: `webpush.accepting_subscriptions()` - production / staging refuse new subscriptions while
+  `VAPID_PRIVATE_KEY` is unset (409, plain sentence; `public-key` says `accepting: false`). `atp.sh health` lines for
+  the VAPID key and FCM; Admin → Readiness item `fcm`; runbook section 4 "Browser and phone notifications".
+- FCM: `app/alerts/fcm.py` (RS256 assertion, token cache, v1 send, gone tokens), `push_kinds.py` (signals, approvals,
+  exits, renew; screens; fixed text), dispatcher rows per phone (active members only, per-phone kinds, EMERGENCY always,
+  quiet hours without sound, SUPPRESSED reasons flag_off / not_configured / device_removed / device_gone). Browser push
+  of an entry signal now opens its Signals item.
+- Frontend: `native/deepLinks.ts` (+ test), `native/links.ts`, `native/push.ts` (plug-in through `registerPlugin`, not
+  in the web bundle), `alerts/PhonePushV2.tsx` in Settings → Alerts (app only, `mobile_push`), App Links intent filter.
+- Docs: `docs/design/MOBILE_PUSH.md`, `docs/store/android/LISTING.md`, README row 17, READINESS_STATUS B8, MA-2 steps
+  updated, MA-10..MA-13.
+- Tests: `backend/tests/test_b8_mobile_push.py` (fake FCM sender + mocked Google), the readiness test; vitest
+  `native/deepLinks.test.ts`, `alerts/phonePush.test.ts`.
+## 23 Oct - Chart + colour order, Part 3 PR 2: the colour components
+
+- Branch `claude/colour-components`, stacked on PR 1 (#436). Frontend only, **no migration**, no page adoption.
+- `components/primitives/Button.tsx`: `outline`, size `v2`, `buttonClass()`; `trading/PartsV2.tsx` uses it.
+- `ui/Chip.tsx` (+ `FilterChip`), `ui/StatusChip.tsx`, `ui/RangeBar.tsx`; `ChipV2` / `Badge` delegate (same markup).
+- `e2e/solidBrand.ts` (warning annotation, never a failure) in six screenshot specs; `test/solid-brand.test.ts`.
+- Storybook `Design system/Colour by meaning`; vitest `Button.test.tsx`, `Chip.test.tsx`, `StatusChip.test.tsx`,
+  `RangeBar.test.tsx`. e2e: the whole suite, baselines unchanged.
+
+## 23 Oct - Chart + colour order, Part 3 PR 1: the colour tokens
+
+- Branch `claude/colour-tokens` (from main). Frontend only, **no migration**, no flag (no page changes).
+- `frontend/src/styles/tokens.css`: `--range`, `--range-track`, `--info-tint`, `--ai-tint` (light, dark, colour-blind);
+  the v2-only navy dark surfaces under `:root[data-shell="v2"]` (inert until adoption); colour-blind warn / AI values.
+- `tailwind.config.js` names; the v2 colour check's hint text; the Tokens story lists the new meanings (CC-1 wording).
+- `src/ui/tokens.test.ts`: the new contrast pairs (text 4.5, UI parts 3), navy variants, the distinct-hue test.
+- e2e: the whole suite against the build; the existing baselines are unchanged. Question CC-20.
+
+
+## 23 Oct - Production readiness C13: learning and growth
+
+- Branch `claude/readiness-c13-learning` (from main). **No migration.** Four new flags, all OFF: `learn`, `marketing_site`,
+  `onboarding_emails`, `referrals` (catalogue entries added).
+- Learn (`/learn`, v2 only): `backend/app/learn/` (lessons.json, site.json, content guard reuse, `GET /api/learn`,
+  `GET /api/site/pages`, admin video links `GET` / `PUT /api/admin/learn/settings`); `frontend/src/learn/`.
+- Onboarding e-mails: `backend/app/growth/onboarding.py` (templates, once-only marks in `user_prefs`, signed unsubscribe
+  + List-Unsubscribe, `email_opt_outs` scope `onboarding`), worker hook every 15 min; `mailer.send` takes extra headers.
+- Marketing pages: public `/features`, `/how-it-works`, `/about` (`frontend/src/site/`), SEO tags in `index.html` and per
+  page, `public/robots.txt`, `public/sitemap.xml`, sign-in footer links.
+- Referral: `backend/app/growth/referral.py` (settings interface for C11), routes in `growth/routes.py`; "Invite a friend"
+  on Settings › Account & plan; the code kept from `?ref=` and claimed once after sign-in.
+- Funnel: `growth_funnel` + `active_week1` in the admin activation read; shown in Admin › Users & business.
+- Tests: `backend/tests/test_c13_learning.py` (fake mail server); vitest learn / site / referral / growthSettings; e2e
+  `learn-growth-v2.e2e.ts` with new baselines (360 / 390 / 1440, light / dark); `admin-users-v2-*` and
+  `growth-activation-v2-*` refreshed (new cards and the funnel). Questions RDY-C13-1..8.
+
 ## 23 Oct - Production readiness B9: the private reader port plan (plan only)
 
 - Branch `claude/readiness-b9-private-plan` (from main). **Docs only, no migration**, no code, no flag.
@@ -3499,3 +3629,517 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `docs/design/TRADE_TAKEOVER.md`: pointer in the status, the signal-language note in section 10, new section 13.
 - README row 17, `docs/READINESS_STATUS.md` B9 rows, questions PRV-1..6.
 - Interfaces only: no reading rule, no method, no KB content. Guards: `check_public_repo.py`, `check_english_only.py`.
+
+## 23 Oct - Terminal master Part 9.4: chain history, start recording now (+ TM-7 fix of the OI collector)
+
+- Branch `claude/terminal-chain-history` (from main). **Migration `250d796123b7`** (additive, rollback-safe; deploy after
+  15:30 IST). Flag `chain_history` (off by default) - the owner switches it on for his organisation.
+- `app/market_lake/chain_store.py` (tenant-private store, zlib JSON codec, reads that require the tenant, admin counts and
+  gaps), `chain_recorder.py` (one slot per `CHAIN_HISTORY_SLOT_MINUTES` through the owner's own session, the calendar,
+  `acquire_spare` on the worker's budget), `chain_history_routes.py` (`/api/chain-history/coverage|day|range`,
+  `/api/admin/chain-history/status`); worker hook `_maybe_start_chain_history`; retention `RETENTION_CHAIN_HISTORY_DAYS`
+  (0 = kept, TM-8); `OptionChainRow` gamma / theta / vega (Upstox sends them); Upstox reads the SENSEX / BANKEX chain
+  from the BSE master.
+- TM-7 OI collector: each organisation's slots through its own session, stored and read per tenant; pre-fix rows only
+  for the confirmed owner. Every OI reader takes the tenant.
+- Admin > System "Chain history" card; `admin-system-v2-*` baselines updated.
+- Docs: `docs/design/CHAIN_HISTORY.md`, DATA_SOURCES line, OPEN_QUESTIONS `TM94-1..7`.
+
+
+## 23 Oct - User-friendly pass item 1: "Verify your email" leaves the top bar
+
+- Branch `claude/ufp-verify-email` (from main), shipped first on the owner's word. Frontend only, **no migration**, no flag.
+- Both top bars (v2 `TopBarV2`, today's `App.tsx`) no longer show the chip on any page.
+- The v2 Dashboard's Needs attention list has one "Verify your email" row (also in PAPER, without LIVE wording), with a
+  "Resend link" button and "Hide for today"; Settings › Account keeps its Email verification card. Both send the link
+  through `src/ui/verifyEmail.ts` and say what happened in the same plain words (never a server text).
+- Tests: `src/ui/verifyEmail.test.tsx`, `dashboard/model.test.ts`, `shell/shellV2.test.tsx`, `setup/getStarted.test.tsx`;
+  e2e `front-page.e2e.ts` (no chip on any page). Baselines refreshed because the chip row is gone from every v2 page
+  (the e2e user has an unverified address): chart-analyze, charts, connect-ai, copilot-chat, fno-insights, fno-workspace,
+  markets, option-chain, settings-index, shell, signals and view-as `*-v2-*` images (103 files).
+
+## 23 Oct - User-friendly pass (items 2-8), branch `claude/user-friendly-pass-1`
+
+- Frontend behind `ui_v2` plus one server rule; **no migration**, no new flag. Item 1 shipped first in #450 (merged in
+  here). Status table: `docs/design/UX_AUDIT_FULL.md` "User-friendly pass"; questions UFP-1..9.
+- Item 2: `liveHiddenFrom` (phase0_paper_only) drives "2 practice positions", "every entry", "Booked so far", the top
+  bar's LIVE notice on every page and the LIVE rows of Needs attention; risk tour text says "Every entry".
+- Item 3: the sidebar's role label only when `GET /api/team/tenant` says more than one member (`showRoleFor`).
+- Item 4: `formatINR` / `formatSignedINR` whole rupees by default, `{ paise: true }` on the ticket figures, the compare
+  table, closed-trade P&L and charges, the "Closed at" message and F&O journal drafts; compact keeps only "Cr".
+- Item 5: `PageIntro` is one line with "Hide", collapsing to "About this page" (remembered per page; Skip all tips hides
+  it); every page's intro rewritten so it never repeats the subtitle.
+- Item 6: `src/ui/strategyName.ts` (Library names remembered by the shell, built-in names, words for anything else);
+  dashboard, positions, portfolio, risk checks, paper bot and the Copilot pulse use it.
+- Item 7: `/api/system/features` answers `chart_analyze*` off without `atp_private.chart_analyze`; the admin flag list
+  shows `unavailable_reason`; the page shows the standard Coming soon (`PAGE_FLAGS["chart-analyze"]`).
+- Item 8: the drop-zone sentences are capitalised.
+- Tests: `src/ux/userFriendlyPass.test.tsx` (guards for all items), `src/ui/strategyName.test.ts`, `format.test.ts`,
+  `PageIntro.test.tsx`, `flagList.test.tsx`, `backend/tests/test_ufp_engine_gate.py`; updated model and page tests.
+- e2e: text checks moved to whole rupees, the intro and Coming soon; baselines refreshed (107 files): chart-analyze,
+  charts-v2 (+ multi, watchlist, chartlight-on-dark), connect-ai-v2, copilot-chat-v2, fno4-positions / watchlist,
+  fno8b-setup-chain, fno8b3-cockpit, markets-v2 (+ indices, list), option-chain-v2 (+ charts), paper-bot-v2,
+  portfolio-v2, positions-v2, risk-v2, signals-v2, strategy-templates-v2 (+ exits). Causes: the role label, the
+  collapsed intro, whole rupees and strategy names.
+
+
+## 23 Oct - User-friendly pass item 1: "Verify your email" leaves the top bar
+
+- Branch `claude/ufp-verify-email` (from main), shipped first on the owner's word. Frontend only, **no migration**, no flag.
+- Both top bars (v2 `TopBarV2`, today's `App.tsx`) no longer show the chip on any page.
+- The v2 Dashboard's Needs attention list has one "Verify your email" row (also in PAPER, without LIVE wording), with a
+  "Resend link" button and "Hide for today"; Settings › Account keeps its Email verification card. Both send the link
+  through `src/ui/verifyEmail.ts` and say what happened in the same plain words (never a server text).
+- Tests: `src/ui/verifyEmail.test.tsx`, `dashboard/model.test.ts`, `shell/shellV2.test.tsx`, `setup/getStarted.test.tsx`;
+  e2e `front-page.e2e.ts` (no chip on any page). Baselines refreshed because the chip row is gone from every v2 page
+  (the e2e user has an unverified address): chart-analyze, charts, connect-ai, copilot-chat, fno-insights, fno-workspace,
+  markets, option-chain, settings-index, shell, signals and view-as `*-v2-*` images (103 files).
+- CI fix (e2e failed twice on 5 shots, ratio 0.03): 74 more baselines still showed the chip (the old-shell phone pages
+  of `mobile.e2e.ts` and `broker.e2e.ts`, plus some `*-v2-*` 1440/390 images). Playwright's anti-aliasing tolerance kept
+  them just under the 2% limit here (1.6-1.9%) and just over it on the CI runner (2.0-2.2%), so `--update-snapshots`
+  (changed only) never rewrote them. Found by a full `--update-snapshots=all` run plus a pixel check of the top bar /
+  notice row; only images whose old version shows the chip were replaced. Local diff against them is now 0 pixels
+  (also with the Inter font hidden). No threshold changed, no test skipped.
+
+
+## 23 Oct - Terminal master order: the independent review (docs only)
+
+- Branch `claude/terminal-master-review` (from main). **Docs only, no migration**, no code, no flag.
+- `docs/design/TERMINAL_MASTER_REVIEW.md`: per-part status with file:line evidence, findings F1-F28, broker facts
+  (Kotak Neo, Groww; most unverified - the official sites could not be opened from the build machine), SEBI points for
+  the lawyer, the 9.4 chain-history design (owner's own session, tenant-private), the data-hub gap and measurement, the
+  build plan. Questions TM-1..TM-32. README row 20 is on the PR #461 branch only: its status clause is in the PR body.
+
+## 23 Oct - Terminal master Part 1: the data hub
+
+- Branch `claude/terminal-data-hub` (from main). **No migration.** Flag `data_hub` (OFF by default, needs `ui_v2`).
+- Backend: `market_data/hub.py` (one stream per broker connection, per-connection tick snapshot, status, renew once and
+  resume, browser feed, shared chain snapshots); `stream.py` (state, stop on a refused token for hub streams only);
+  `fanin.py` (hub sessions: always streamed, renew and reopen, symbols kept); the worker streams the organisation's
+  connection through the hub; `/ltp`, `/quotes`, the option chains, their analyses and the Copilot's quote / chain tools
+  read through it; `live/routes.py`: `ticks` / `hub` events, `PUT /api/live/ticks`, `GET /api/live/hub`; metric
+  outcome `rate_limited` on broker 429s.
+- Frontend: `src/live/liveTicks.ts` (the tab's store), `LivePricesBanner.tsx` (reconnecting / log in again), the
+  watchlist and the charts' last price move with ticks.
+- Proof: `backend/scripts/hub_probe.py` (before / after numbers, reconnect, token expiry, fan-out load); tests
+  `test_tm1_data_hub.py`, `test_tm1_data_hub_load.py`, vitest `live/liveTicks.test.tsx`, e2e `live-prices-v2.e2e.ts`.
+- Questions TMH-1..8; `data_hub` joins the trader pack (#455). README row 20 is not on main yet: its status clause is in the PR body.
+
+## 23 Oct - Signals day one (README row 19, the trader review's gaps)
+
+- Branch `claude/signals-day-one` (from main). **No migration** (an internal `user_prefs` row). Behind `ui_v2` +
+  `strategy_templates`. PAPER only; nothing creates a deployment, a proposal or an order.
+- Backend: `app/signals_feed/day_one.py` + `day_one_routes.py` (`/api/signals/day-one`, adopt, refresh, stop);
+  `SignalSeries.armed_end` (additive) in `app/strategy_templates/engine.py`; tenancy table rows; the language guard
+  registers the new producer.
+- Frontend: `DayOneV2.tsx` / `dayOne.ts` on Signals; the empty inbox points at the watch.
+- Tests: `test_signals_day_one.py`, the guard, vitest `DayOneV2.test.tsx`, e2e `signals-day-one-v2.e2e.ts`.
+- Design `docs/design/SIGNALS_DAY_ONE.md`; questions SIG1-1..6.
+
+## 23 Oct - Copilot on the user's own key, its tools wired (owner order 23 Oct, README row 19)
+
+- Branch `claude/copilot-own-key-tools` (from main). **No migration.** New user-facing parts behind `ui_v2` plus their
+  flags (`ai_one_key`, `ai_agent`, `screener_copilot`, `ai_multiview`; all unchanged, OFF by default).
+- Verified the review: with `ai_one_key` off only the organisation's key counts (plan + consent + budget); with it on,
+  `resolve.provider_for_user` already put the user's own key first. Finished it: the scan read moved to the resolver;
+  the chat at the user's own limit still answers from the rules (never the organisation's key); `ai_one_key` is `ready`
+  in the flag catalog. A plain member and a Free-plan user connect and use their own key (tests).
+- Chat tools: job 1 adds market memory and the news feed, job 4 the news on the held symbols; new job 9 "Find setups"
+  (the deterministic idea reader -> `build_screen` -> `get_screen_universe` -> `run_screen` -> `explain_results` on
+  "why", or `propose_alert` through the agent's guard) and job 10 "Full view of a symbol" (structure, option chain,
+  news, market memory). A switched-off part reads "... is not set up yet"; the SUPER_ADMIN's diagnostics name the
+  flag. "How I worked this out" lists "Tools used" in plain names. New read tool `get_screen_universe`.
+- Evals: fixtures regenerated (additions only), 12 job cases and 5 safety cases added; both sets at 1.0.
+- Tests: `tests/test_copilot_own_key_tools.py`; updated job-count / tool-list assertions in the chat tests; vitest for
+  "Tools used" and the admin line; e2e `copilot-tools-v2.e2e.ts` (no baselines; `OKT_SHOTS` saves screenshots).
+- No new route (the tenancy table is unchanged). Questions OKT-1..10.
+
+## 23 Oct - The scan universe is never empty (owner order, trader review row 19)
+
+- Find setups (behind `ui_v2` + `screener_v2`): a universe picker - NIFTY 50 chosen on open (the system list, else the
+  stored NIFTY 50 membership, else a names-only fallback), NIFTY 100 / 500, any index's stocks, a sector, F&O stocks,
+  my watchlists, or my own symbols. A run is never sent empty: an empty choice runs on NIFTY 50 with a plain note.
+- One tap: a gallery card's "Try as a scan" and the Ideas page's "Try as a scan" open the screen and run it on the
+  chosen universe once its text is checked; the blocks stay editable.
+- Over 50 symbols: batches (run cap unchanged), each broker call on the credential's shared API budget, paced by the
+  calls each batch made at the per-minute share; progress, Stop, results growing as each batch lands, held-back
+  stocks named. A long answer lists the matches first. Alerts keep the chosen universe (first 50).
+- New routes `GET /api/screener/universes`, `/universes/{key}` (member, shared reference data; tenancy table).
+  `POST /api/screener/run` takes `batch` (default false = exactly as before). No migration.
+- Questions SU-1..SU-5. README row 19 lives in the open trader-review PR; its status clause is in this PR's body.
+
+## 23 Oct - Backtests without a daily broker login (stored licensed history)
+
+- Branch `claude/backtest-stored-history` (from main). **No migration.** New flag `backtest_stored_history` (OFF; needs
+  `ui_v2`), setting `BACKTEST_STORED_SOURCES` (default `nse_bhav:`).
+- `backend/app/backtest/bar_source.py`: one resolver - the organisation's broker session when usable (unchanged reads),
+  else the shared lake's licensed Daily bars (Weekly built from them), else a plain 409 ("Daily history for X is not
+  stored yet." / "Intraday backtests need a connected broker ..."). Never sample data, never the owner's private
+  1-minute store, never intraday or broker-written lake rows. Lake bars become the exact frame a broker's Daily candles
+  give (parity test: identical results); the window mirrors the broker's (>= 400 days, to yesterday).
+- Wired into the Copilot `run_backtest` / `backtest_draft` tools (the answer says where the prices came from), the AI
+  draft backtest route, the interview plan, the research study job, and new `POST /api/backtest/bars` (tenancy:
+  self). Frontend (ui_v2 + flag): the Backtesting page and setup "Test it" run on stored history without a broker and
+  show "Prices from ..., <from> to <to>." on the result; AI drafts test on the server; the backtest pages skip the
+  broker gate with the flag on. Admin: the daily backfill tool shows the days the lake holds per segment.
+- Tests: `tests/test_backtest_bar_source.py` (12, fake lake rows), `src/backtest/pricesLine.test.tsx` (6). Questions
+  BSH-1..6 (BSH-1 for the lawyer's list).
+
+
+## 23 Oct - Watchlists: the universe sync ON block (WL1-3 / WL1-4 / WL1-5, README row 19)
+
+- Branch `claude/universe-sync-now` (from main, with the owner-orders branch of #453 merged in for row 19). **No
+  migration**, no flag, no frontend change.
+- `deploy/atp.sh env-set KEY=VALUE ...`: the one `.env` write - only `UNIVERSE_SYNC_ENABLED`, `UNIVERSE_SYNC_HOUR_IST`,
+  `INSTRUMENT_SYNC_EXCHANGES`, `INSTRUMENT_SYNC_HOUR_IST`, plain values; a mode-600 backup in `.deploy/env-backups`
+  first (newest 10 kept), every other line byte for byte, an assigned key replaced on its line, a missing one appended,
+  atomic replace with mode 600 and the same owner; a re-run writes nothing. Secrets and LIVE switches are refused.
+- `deploy/atp.sh lists-sync [--check]` -> `python -m app.universe.run_now` in a one-off worker container: refuses
+  unless `UNIVERSE_SYNC_ENABLED`; one HTTP status line per published file (37 index files + the NSE lists + F&O lots /
+  ban; the all-indices closing file is not fetched - names only); each file downloaded once and fed to the existing
+  sync functions (same quality gates); the instrument master for `INSTRUMENT_SYNC_EXCHANGES`; the system lists rebuilt
+  (one retry if the worker's own refresh collides); per group every list with its rows and the unmapped symbols (50
+  per list printed, the rest on the Admin card). Then the API and the worker are recreated with the new settings, the
+  worker through the session gate.
+- WL1-5: niftyindices / nseindia unreachable from here and the web search thin, so the 37 names were compared with
+  six public projects that download these files: 2 fixed (NIFTY50 Value 20, NIFTY Chemicals), 32 confirmed by two or
+  more, 3 by one; the server's status lines are the final check.
+- Runbook section 4b with the one block; DATA_SOURCES "For the lawyer" (COMPLIANCE_IN.md is generated; the A6.3 list
+  does not exist yet); questions WL1-9 (the nightly job's closing-price file), WL1-10.
+- Screenshots: fixture renders only (mocked API, names only) of the four groups, phone 390 + desktop 1440, light +
+  dark; not production data, not committed.
+
+## 23 Oct - Trader pack: "Enable trader features" (owner decision 23 Oct, README row 19)
+
+- Branch `claude/trader-pack` (from main). **No migration**: the saved "before" state lives in the controls store
+  (key `trader_pack`). `DEFAULT_ON_FLAGS` untouched.
+- Backend `app/platform/trader_pack.py`: the pack (62 flags in dependency order), `FORBIDDEN`, the excluded flags with
+  reasons, `enable` (idempotent, audited per flag), `undo` (exact restore), `status` (ON / OFF, plain words, cheap
+  "working" checks: counts only). Routes GET / POST `/api/admin/controls/trader-pack`, POST `.../undo` (SUPER_ADMIN +
+  two-factor; classified in `tests/tenancy_route_table.py`). Tests `tests/test_trader_pack.py` (11).
+- Frontend: the "Trader features" card on the v2 admin console's Controls section (`src/admin/TraderPackCard.tsx`),
+  vitest `src/admin/traderPack.test.tsx`, e2e in `e2e/admin-console-v2.e2e.ts` with new baselines
+  `admin-trader-pack-v2-{1440,390}-{light,dark}.png`; `admin-controls-v2-*` updated (the new card).
+- Runbook section 4b; questions TP-1..TP-6.
+
+
+## 23 Oct - The day-one trader test (owner order 23 Oct, README row 19)
+
+- Branch `claude/day-one-trader-test` (from main). Test and docs only: no product code, **no migration**.
+- `frontend/e2e/day-one-trader-v2.e2e.ts`: one new PAPER user, Today → Charts watchlist (system groups) → Find setups
+  (NIFTY 50, a gallery scan in one tap) → Copilot (tools used) → Ideas (Try as a scan / Adopt) → Test a strategy on
+  stored Daily history (no broker login) → Paper bot, approval-only → Signals day-one watch; 390 / 1440, light / dark.
+  The trader pack flags are read from `trader_pack.py`; `backtest_stored_history` (an owner decision flag) is on only in
+  the mocked features. No baselines committed; `D1T_SHOTS=<folder>` saves the screenshots.
+- Findings, ranked: `docs/design/DAY_ONE_TRADER_TEST.md` (top: the idea's strategy cannot be backtested - templates
+  are not on Strategies › Test; before the day's login every data page is a gate; the stored-history bar says "No
+  broker connected" and breaks at 390).
+## 23 Oct - Terminal master Part 7 / 8, PR A: PAPER is a broker adapter (TM-1, README row 20)
+
+- `backend/app/execution/paper_adapter.py`: `PaperExecutionAdapter(BrokerInterface)` over the PaperBroker fill and cost
+  model (market / marketable limit / triggered stops, no resting order, partial fills, idempotent `client_ref`, books,
+  india_costs charges); registered as `EXECUTION_ADAPTERS["paper"]` in `app/brokers/registry.py` (not a broker account).
+- `OrderRouter(paper_execution="adapter")` + `execute_signal_for_user(paper_execution=...)`; the F&O ticket's single-leg
+  PAPER order is the first path moved (`fno_ticket.PAPER_EXECUTION`); every other path unchanged.
+- Parity: `tests/test_tm1_paper_adapter.py` (router 60 seeded signals; whole pipeline ticket -> trail -> position ->
+  exit, BUY and SELL; identical fills, charges, trail rows and P&L). No migration; no flag (not user-facing).
+- Questions SE-1..SE-3. Design `docs/design/SMART_EXECUTION.md`.
+
+
+## 23 Oct - Terminal master Part 1B: the Kotak Neo adapter (README row 20)
+
+- Branch `claude/broker-kotak-neo`. **No migration.** Design `docs/design/BROKER_KOTAK_NEO.md` (every broker fact with
+  its source, the date read and verified / unverified).
+- `backend/app/brokers/kotak_neo.py`: the TOTP login of the official SDK `kotakneoapi` 3.0.9 (consumer key + mobile +
+  UCC + TOTP, then MPIN), the session kept as one encrypted string, positions / holdings / limits / books / margin,
+  orders (CNC / MIS / NRML / MTF, DAY / IOC, AMO), quotes, history, option chain, scrip master and symbol mapping.
+- `backend/app/brokers/gates.py`: Kotak Neo's LIVE-order and market-data gates, closed in code (owner, 23 Oct:
+  TM-5 / TM-6); the adapter refuses before any request; organisation price picks skip a gated row.
+- TM-3 `backend/app/execution/marketable_limit.py` (+ `BrokerCapabilities.market_orders_allowed`), the same transform in
+  the PAPER adapter (`venue=`); the SEBI rule-set maps algo MARKET entries to a marketable limit for Kotak Neo
+  (`docs/COMPLIANCE_IN.md` regenerated).
+- Charges `backend/app/brokers/broker_charges.py` (only what the broker states, source + date); rate budget row; the
+  SFeed decoder `backend/app/market_data/kotak_feed.py` (OFF behind the gate).
+- Broker page (behind `ui_v2`): the Kotak Neo tile ("Practice only") and the Connect panel's guide with the official
+  links. Screenshots 390 / 1440, light / dark in the scratchpad (not committed).
+- Tests `backend/tests/test_part1b_kotak_neo.py` (recorded fixtures `tests/fixtures/kotak_neo/`), the connect flow in
+  `test_p2a_broker_connect.py`, frontend `src/broker/BrokerScreens.test.tsx`. Lawyer list: `docs/DATA_SOURCES.md`
+  item 3. Questions KN-1..KN-11.
+## 23 Oct - Day-one fix 4: Find setups in a trader's words (README row 19, DAY_ONE_TRADER_TEST finding 8)
+
+- Branch `claude/d1-fix-find-setups` (from main). Frontend only, **no migration**, no new flag: everything behind
+  `ui_v2` (the page's own flags as before).
+- Timeframes in words ("Daily", "15 min", never "1d"): the scan timeframe select and every stage chip
+  (`TIMEFRAME_WORDS`, the `PlainTimeframes` context; off v2 the codes stay).
+- "Advanced" (a ghost button) holds Pine Script, Library tools, the formula block and "Live counts while editing".
+- The scan's name has its own line with the placeholder "Untitled scan" (the empty name showed a lone "|"; "Momentum"
+  was cut to "Moment").
+- A ready dish on open: "Start with a ready scan" - three library scans, one tap runs one on the chosen list.
+- Every answer leads with its matches; "N stocks did not match" with "Show the N that did not match".
+- Tests: `src/screener/plainWords.test.tsx` (3), e2e `e2e/d1-find-setups-v2.e2e.ts` (no baseline); updated baselines
+  `scan-universe-v2-{1440-dark,390-dark,390-light}` (the page's new header and words).
+- Left for later: the gallery cards' own texts ("RSI(14) at or below 30", "Method × setup matrix") and the empty
+  "Stages" column.
+## 23 Oct - Day-one fix 3: the stored-history bar (README row 19, DAY_ONE_TRADER_TEST finding 3)
+
+- Branch `claude/d1-fix-stored-bar` (from main). Frontend only, **no migration**, no new flag (`ui_v2` +
+  `backtest_stored_history`, as the bar before).
+- Wording: a stored broker that is only not logged in today reads "Not logged in to <Broker> today: Daily backtests use
+  ATP's stored end-of-day history. Intraday backtests need today's login." (`storedHistoryLoginNote`); "No broker
+  connected: ..." stays for an account without a broker.
+- Phone: the sentence has its own line (it wrapped one word per line beside the controls).
+- History: "About 1 year" (400 days, the server's Daily minimum, default) / "2 years" as two buttons (the strategy
+  select stays the page's first combobox), its own `storedDays` in `useCandleSource` (the broker lookback is untouched).
+- One tap: `StoredLoginAction` ("Log in to <Broker>" through the existing login path; "Connect a broker" / "Open Broker"
+  otherwise).
+- Tests: `src/backtest/pricesLine.test.tsx` (+2), e2e `e2e/d1-stored-bar-v2.e2e.ts` (no baseline).
+## 23 Oct - Day-one fix 2: Find setups and Signals before the broker login (README row 19, DAY_ONE_TRADER_TEST finding 2)
+
+- Branch `claude/d1-fix-before-login` (from main). **No migration**, no new flag: behind `ui_v2` + the area flags +
+  `backtest_stored_history` (owner decision flag, OFF by default).
+- Backend `app/screener/stored_history.py`: when the broker path refuses a run for want of a session (409), a Daily /
+  Weekly / Monthly NSE screen reads the same licensed stored Daily bars and window as the stored-history backtest
+  (`bar_source.lake_frame`; today's bar never read), `data_source` `lake:daily`; a missing symbol says "Daily history
+  for X is not stored yet."; intraday screens, other exchanges and the flag off keep the 409 exactly. Hooked in
+  `load_universe`, so the run route and the Copilot's screener tools (its rule answers) share it. Tests
+  `tests/test_d1_screener_stored_history.py` (4).
+- Frontend: `BrokerGate storedDaily` + `StoredDailyNote` - on Find setups and Signals (`STORED_DAILY_PAGES`) the page
+  shows its content under one line with the one-tap "Log in to <Broker>" (or "Connect a broker") instead of the full
+  gate; Charts and the other data pages keep the gate. The Signals day-one watch already reads the shared Daily lake;
+  the Copilot page has no gate. Tests `src/ui/storedDaily.test.tsx` (4), e2e `e2e/d1-before-login-v2.e2e.ts` (no
+  baseline). Charts on stored Daily history is a later PR.
+## 23 Oct - Day-one fix 1: the idea's strategy can be backtested (README row 19, DAY_ONE_TRADER_TEST finding 1)
+
+- Branch `claude/d1-fix-template-backtest` (from main). Frontend only, **no migration**, no new flag: behind `ui_v2` +
+  `strategy_templates` (the stored-history part also `backtest_stored_history`, as before).
+- Strategies › Test lists the adoptable strategy templates ("Strategy templates" group) and opens one from
+  `?template=<id>&timeframe=..&set.<key>=..`; a run asks the server's adopt pre-fill for the strategy id (nothing is
+  created) and backtests it with the existing `/api/backtest` (template ids were already accepted there).
+- The timeframe in plain words (`src/backtest/templateTest.ts`): without broker prices an intraday idea runs on Daily
+  stored history and the page says so; an intraday pick says it needs the broker's prices.
+- "Test it on past prices" on an adoptable idea card, "Test it first on past prices" on the Paper bot form's template.
+- Tests: `src/backtest/templateTest.test.tsx` (6), e2e `e2e/d1-template-backtest-v2.e2e.ts` (390 / 1440, light / dark,
+  no baseline); updated baselines `idea-library-adopt-v2-*`, `strategy-templates-v2-*`, `strategy-templates-exits-v2-*`.
+## 23 Oct - TM94-3: the Phase W option-chain recorder per organisation
+
+- Branch `claude/phase-w-recorder-per-tenant` (from main). **Migration `3c5e7a9b1d24`** (after `e8a0c2d4f6b9`; additive:
+  a nullable `option_chain_snapshots.tenant_id` with its key and a lookup index; rollback-safe; deploy after 15:30 IST).
+  Re-chain with #465's `250d796123b7` at merge (TM943-5).
+- `app/backtest/chain_recorder.py`: `record_chain` / `rows_from_chain` / `last_capture` take the tenant; `scope` /
+  `legacy_owner` / `visible_to` give each reader its own rows and uploads (pre-fix rows only for the confirmed owner).
+  Worker `_record_chains(tenant_id=...)`: only the tenant's own deployments, its own data session, interval per
+  (tenant, underlying). BYOB unchanged.
+- Tests `backend/tests/test_tm94_3_phase_w_recorder_tenant.py` (7); `test_phase_w_option_backtest.py` and
+  `test_z10c_tenancy_fixes.py` now record per tenant. Questions TM943-1..5.
+
+
+## 23 Oct - Terminal master Part 1B: the Groww adapter (README row 20)
+
+- Branch `claude/broker-groww`, stacked on `claude/broker-kotak-neo` (#473, not merged when this started: `gates.py`,
+  `marketable_limit.py`, `broker_charges.py` shared). **No migration.** Design `docs/design/BROKER_GROWW.md` (every
+  fact with its source, the date read and verified / unverified / conflicting).
+- `backend/app/brokers/groww.py`: the TOTP and approval logins of the official SDK `growwapi` 1.5.0, the day's token,
+  positions / holdings / margins / order and trade books / order margin, orders (CNC / MIS / NRML / MTF, DAY / IOC),
+  quotes, LTP, history, option chain + Greeks, the instrument CSV and symbol mapping. No native GTT / OCO (TM-23).
+- Gates: Groww's LIVE-order and market-data gates closed in code (TM-5 / TM-6); TM-3 marketable limit and SL band; the
+  SEBI rule-set maps algo MARKET entries to a marketable limit for Groww (`docs/COMPLIANCE_IN.md` regenerated).
+- TM-27: `rate_budget.DailyBudget` (per-day caps by call type, exits never refused) wired into the worker's budgets;
+  the Groww row 3 / s, 80 / min.
+- Charges: percent / cap / minimum rows (`brokerage_for_order`), Groww's stated brokerage, the Rs 499 a month
+  subscription as a platform fee; the PAPER adapter uses them.
+- Feed `backend/app/market_data/groww_feed.py`: nkey + socket token + a minimal NATS client + the protobuf price reader
+  (OFF behind the gate).
+- Broker page (behind `ui_v2`): the Groww tile ("Practice only") and the connect guide. Screenshots 390 / 1440, light /
+  dark in the scratchpad (not committed). Also `tests/test_api.py` now lists the two new adapters (it was missed in #473).
+- Tests `backend/tests/test_part1b_groww.py` (fixtures `tests/fixtures/groww/`), the connect flow in
+  `test_p2a_broker_connect.py`, frontend `BrokerScreens.test.tsx`. Lawyer list: `docs/DATA_SOURCES.md` item 4.
+  Questions GW-1..GW-12.
+## 23 Oct - Terminal master Part 7, PR B: smart execution (TM-3 / TM-9 / TM-10 / TM-11, README row 20)
+
+- Branched from PR A (#467, not merged). Flag `smart_execution` (OFF, behind `ui_v2`; catalog "ready", in the trader pack).
+- `app/execution/smart_execution.py`: hedge-first entry and shorts-first exit, `run()` with INCOMPLETE + "Complete the
+  rest" / "Close the filled legs", freeze slicing, marketable limit where market orders are refused, margin view
+  (broker basket margin or the labelled estimate, free balance after), physical-settlement flags.
+- `app/instruments/freeze_limits.py` + `data/freeze_limits.json` (NSE circular, source and as-of in the file;
+  `FREEZE_LIMITS_FILE` loads the exchange's sheet). Router adapter path slices inside one order.
+- `BrokerInterface.get_basket_margin` (Upstox, Kite; wrappers forward); `BrokerCapabilities.market_orders_allowed`.
+- Basket: `smart_view` on preview, `execute_smart`, `POST /basket/close-filled`; `GET /api/paper/fno/settlement`;
+  `app/paper/settlement_watch.py` + worker step (once a day per position, `SETTLEMENT_WARNING`). Prefs `smart_execution`.
+- Frontend `src/fno/SmartExecutionV2.tsx` (confirm block, incomplete card, Delivery ahead on Positions), ticket slicing line.
+- Tests `tests/test_tm7_smart_execution.py`, `src/fno/smartExecution.test.tsx`. Screenshots (fixtures, not committed):
+  scratchpad `tm-part7/`. Questions SE-4..SE-8. No migration.
+
+## 23 Oct - Day-one fix 8: Charts in a trader's words (README row 19, DAY_ONE_TRADER_TEST finding 9)
+
+- Branch `claude/d1-fix-charts-words` (from main). Frontend only, **no migration**, no new flag (the v2 charts, `ui_v2`).
+- Timeframes in words on every v2 chart (`src/chart/timeframes.ts`): "1 min, 3 min, 5 min, 15 min, 30 min, 1 hour,
+  Daily, Weekly, Monthly" (were "1m ... 1H, D, W, M").
+- The volume pane: "Volume of the NIFTY October future" (was "Volume · NIFTY OCT FUT").
+- The first open (no own list, nothing remembered) shows the NIFTY 50 stocks, then Indices (`pickList`), the same list
+  Find setups and Signals open on. Question D1-3.
+- Tests: the chart unit tests updated; e2e `charts-v2` / `signals-v2` button names and baselines
+  `charts-v2-watchlist-1440-{light,dark}`, `charts-v2-watchlist-system-1440-light` updated; new e2e
+  `e2e/d1-charts-words-v2.e2e.ts` (no baseline).
+- Not changed: "Indicators · 2" and the RSI pane, the phone group "Indices" holding one list "Indices".
+
+## 23 Oct - SE-7: the multi-leg executor on the smart-execution engine + "if I do not answer" (README row 20)
+
+- Branched from PR B (`claude/terminal-smart-execution`, #468, not merged yet). Flag `smart_execution` (OFF, behind `ui_v2`).
+  With it off, `execution/multileg.py` runs exactly as before (the old LIVE path and its auto-unwind are untouched).
+- `app/execution/multileg_smart.py`: the structure's legs through `smart_execution.run` for LIVE (his broker, from the
+  worker) and PAPER (the PaperExecutionAdapter at the quoted premiums) - one code path. Hedges first; a sold leg only
+  after every hedge is confirmed filled in full; the first leg that does not fill stops the run; nothing is undone by
+  itself: the filled legs (a part fill too) are booked and the group is INCOMPLETE.
+- `app/execution/incomplete_structures.py`: the `incomplete` block on the legs' `group_meta` (no migration), his
+  answer (Complete the rest = recorded, sent by the worker through every entry refusal; Close the filled legs = an exit
+  through `close_group`, sold legs first; Keep them), his rule at the deadline (prefs `on_no_answer` close_filled /
+  keep, `answer_minutes` 1-120, default close after 5), audit rows and STRUCTURE_INCOMPLETE notifications. The
+  structure's exit rules wait while the group is not whole; every leg stays closable.
+- Routes `GET /api/trading/incomplete`, `POST /api/trading/incomplete/{group_id}/answer` (own orders; tenancy table,
+  order-path table: an exit only). Worker: `run_exits` in the exits part, `_complete_rests` after the entry gates.
+- Frontend: `src/fno/IncompleteOrdersV2.tsx` on Positions (filled / not placed, countdown, three taps), the two settings
+  on Settings › My trading defaults.
+- Tests `tests/test_se7_live_multileg.py` (parity old vs new LIVE + PAPER, failure-path change, timer, keep, kill switch
+  and Phase 0 lock, idempotency, tenancy, worker), `src/fno/incompleteOrders.test.tsx`. Screenshots (fixtures, not
+  committed): scratchpad `se7/`. Questions SE7-1..SE7-6. No migration.
+## 23 Oct - Day-one fix 9: Today's next step and the sidebar order (README row 19, DAY_ONE_TRADER_TEST finding 10)
+
+- Branch `claude/d1-fix-today-nav` (from main). Frontend only, **no migration**, no new flag (`ui_v2`; the Today link
+  also `strategy_templates`).
+- Today: with the ready strategies on, an empty "Active signals" block reads "No signals yet today. Pick a ready strategy
+  on Signals and it reads every NIFTY 50 stock for you in one tap." with "Watch a list on Signals" (was "Set up a scan",
+  the empty builder).
+- Sidebar: Today first; Broker (always shown, with its status dot) sits just above Settings. The phone's More sheet is
+  unchanged.
+- Tests: `src/shell/shellV2.test.tsx`, `src/dashboard/DashboardV2.test.tsx` updated; e2e `e2e/d1-today-v2.e2e.ts` (no
+  baseline); `e2e/broker.e2e.ts` and `e2e/shell-v2.e2e.ts` order assertions updated (the 1440 baselines stay within their tolerance).
+## 23 Oct - Day-one fix 7: Signals knows the bot he just started (README row 19, DAY_ONE_TRADER_TEST finding 6)
+
+- Branch `claude/d1-fix-signals-bot` (from main). Frontend only, **no migration**, no new flag (`ui_v2` +
+  `strategy_templates`, the day-one card's own gate).
+- `src/signals/DayOneV2.tsx`: with a PAPER bot running or paused and no list watch adopted yet, the card is "Your paper
+  bot is on" (`BotsView`): the bot's name (the template's name), its symbol, its state and "Just started: it reads its
+  chart on its next round" (`botCheckWords`), "Open Paper bot" and a quiet "Also watch a whole list" (the old setup card,
+  with "Keep my watch" back). No second adopt is asked.
+- Tests: `src/signals/dayOneBots.test.tsx` (3), e2e `e2e/d1-signals-bot-v2.e2e.ts` (no baseline); signals-v2 and
+  signals-day-one-v2 unchanged (they mock no bot).
+## 23 Oct - Day-one fix 6: adopting an idea (README row 19, DAY_ONE_TRADER_TEST findings 5 and 6)
+
+- Branch `claude/d1-fix-adopt-form` (from main). **No migration**, no new flag (`ui_v2` + `strategy_templates` +
+  `idea_library`, as the adopt path).
+- The Paper bot form lists the settings the bot starts with ("The idea's settings" / "Its settings", in words:
+  `settingRows` in `src/strategyTemplates/link.ts`).
+- An idea's link starts on a stock (RELIANCE, `IDEA_SYMBOL`) instead of NIFTY 50, so the summary no longer reads
+  "Trades a NIFTY 50 option..." for a price-action idea; a stock's summary reads "Trades RELIANCE shares" (was
+  "itself").
+- One name per idea: A5's display name is "Breakout and retest" like its idea T5 (id, version and params hash
+  unchanged). Questions D1-1, D1-2.
+- Tests: `tests/test_d1_one_name_per_idea.py` (2), `src/paperbot/adoptForm.test.tsx` (2), e2e
+  `e2e/d1-adopt-form-v2.e2e.ts` (no baseline).
+## 23 Oct - Day-one fix 5: the Copilot's answers in a beginner's words (README row 19, DAY_ONE_TRADER_TEST finding 7)
+
+- Branch `claude/d1-fix-copilot-words` (from main). **No migration**, no flag change (the Copilot's own flags).
+- `app/ai/copilot_chat.py`: a scan answer's "Each stage" / "Why <symbol>" lines use the idea reader's own plain words
+  (`stage_words`: "The market-structure trend is up: 3 left", never `Trend() == "UPTREND"`); "Open Find setups" and
+  "edit them in Find setups" (the v2 page name, not "the Screener"); the market line "by its swing highs and lows the
+  daily trend is up, the weekly sideways" with an India date ("20 Oct 2026") instead of "Dow structure daily uptrend"
+  and "(2026-10-20)"; structure lines and table name BOS / CHoCH in words ("break past the last swing (a break of
+  structure)", "first break against the trend (a change of character)"); the option chain section opens with what PCR
+  is (max pain is already explained in its own sentence).
+- `app/screener/idea.py`: "(the function's default)" -> "(the usual setting)".
+- Evals `copilot_jobs.jsonl` facts updated (3), e2e fixtures `copilot_tools_v2.json` / `copilot_chat_v2.json` patched to
+  the new words (pins updated in `scripts/check_public_repo.py`), `copilot-chat-v2-1440-light.png` re-baselined.
+- Tests `tests/test_d1_copilot_words.py` (4), e2e `e2e/d1-copilot-words-v2.e2e.ts` (no baseline).
+- Not changed: the "More Copilot tools" list (finding 7's last point).
+
+## 24 Oct - Trading Terminal order: the independent review against the code (README row 21)
+
+- Branch `claude/trading-terminal-review` (from main at `66cf80dc`). Docs only: **no migration**, no flag, no code.
+- `docs/design/TRADING_TERMINAL_REVIEW.md`: per-section status T1-T10 (what exists with file paths, the gaps), the
+  modules the order names verified one by one, the conflicts (ADR-0004, ADR-0006, CLAUDE.md section 3, the one order
+  path, idempotency, the z10c guard, tenancy, the owner principle, the Phase 0 lock), the parity table of the three
+  engines, the migrations, and the T1 PR plan.
+- Main findings: a LIVE manual entry has no lawful path under z10c rule 2 (TT-1); approval-only mode refuses manual F&O
+  orders and the trader pack turns it on (TT-2, FNO-1-4 still open); the browser tick path is up to about 2 s, not
+  300 ms (TT-3); TM-2's resting book and trigger engine are not built and gate T2 / T3 (TT-5, TT-6); manual baskets are
+  not groups (TT-8); `risk_by_default` limits are platform defaults, PAPER only (TT-12); Exit all, the kill switch and
+  the positions / orders reads are organisation-wide (TT-13..15).
+- Questions TT-1..TT-30 in `docs/OPEN_QUESTIONS.md` (status open); README row 21 status updated.
+
+## TT-12: every platform-default limit starts off (24 Oct)
+
+- Branch `claude/tt12-limits-off` (from main). Owner decision TT-12 (DECISIONS 24 Oct; approved behaviour change, CLAUDE.md section 8).
+- Before: with `risk_by_default` on, every user's PAPER entries got 1 % risk per trade, a 2 % daily loss lockout, 10
+  entries a day and a minimum reward:risk 1.5 that nobody stated (Setup pre-filled 1 % / 3 % / 10).
+- After: nothing set = all four off (no cap of his own, no lockout, no entries cap, no reward:risk filter). His own
+  values are marked under `_set` in the same JSON (no migration); an older row keeps only values that differ from the
+  old defaults (TT12-1). "Loosen only from tomorrow" holds for values he set; setting one that was off applies at once;
+  `PUT /api/paper/risk` with null clears a key. `GET` adds `set`.
+- Setup step 2 shows empty boxes ("Not set") for risk per trade, daily loss, trades a day and lowest reward to risk; the
+  v2 Risk page gets "Your paper limits" with "Not set". The plan ticket strip says "Not set" instead of a cap.
+- Exits untouched (ADR-0004): tests prove Exit now, a stop and Exit all close with the strictest limits and a lockout.
+- Parity: neither backtest engine reads risk by default (AST test); with nothing set the PAPER pipeline sizes exactly as
+  the backtest RiskManager does; ticket preview, pipeline and proposal refusals agree.
+- Tests: `tests/test_tt12_limits_off.py` (16); existing risk tests set the old numbers as the user's own. Questions TT12-1..5.
+## 24 Oct - TT-2: a manual order the user confirms is his approval (answers FNO-1-4)
+
+- Branch `claude/tt2-manual-approval` (from main at `1b13f776`). **No migration**, no new flag.
+- Owner decision (DECISIONS 24 Oct, TT-2): with `approval_only_entries` on, an order the user places and confirms himself
+  on the F&O ticket or the basket (later the Terminal) passes; bot and signal entries keep needing an approved proposal.
+- `execution/approval.py`: new origin `ORIGIN_MANUAL`; `gate_refusal` lets it through only without a deployment and
+  without a proposal id. `execution/signal_execution.py`: "manual" counts only with the journal source MANUAL and no
+  deployment, otherwise it is treated as automatic. `paper/fno_ticket.py` / `paper/fno_basket.py`: an `origin` keyword
+  (default automatic). `paper/fno_routes.py`: the four routes (ticket preview + place, basket preview + execute) pass
+  "manual"; the request bodies forbid extra fields, so the browser cannot set it.
+- Unchanged: risk, kill switch, the Phase 0 PAPER lock (asserted at the chokepoint), idempotency, the F&O ban,
+  experience gates; exits (ADR-0004); the AI never places orders (ADR-0006); z10c guard green.
+- Plain refusal text (only reached now by a non-route caller): "Your organisation approves every automatic entry first
+  (approval-only mode). Place this order yourself from the order ticket or the basket." No frontend change was needed:
+  the ticket only shows the server's refusals, so the old refusal is simply gone.
+- Tests: `tests/test_tt2_manual_approval.py` (8): ticket and basket pass, risk and kill switch still refuse, a deployment
+  entry is still proposed (and a deployment entry calling itself "manual" is refused), a forged "origin" is refused (422)
+  on the ticket and ignored on the console path, the PAPER lock holds, only `fno_routes.py` sets the manual origin.
+  `tests/test_z3_approval_entries.py` comments updated.
+- Provisional: TT2-1 (the plan-before-trade PAPER ticket keeps raising a proposal) in `docs/OPEN_QUESTIONS.md`.
+
+## 24 Oct 2026 - day-one trader test rerun (README row 19 done)
+- The eight-step day-one test updated to the fixed pages and rerun on main at 390 / 1440, light / dark: 4 / 4 pass.
+- docs/design/DAY_ONE_TRADER_TEST.md: a rerun section with each finding's status and the follow-ups.
+
+## 24 Oct 2026 - TM-2: the resting PAPER order book + the one trigger engine (P1-6)
+- Migration `7e2a4c6b8d10` (additive, `ROLLBACK_SAFE`): table `paper_resting_orders` (tenant + user, `client_ref` unique per
+  user, trigger source premium / spot, level, side, touch / close, timeframe, status, order trail).
+- `execution/resting_book.py`: keep / list / cancel waiting entries; arm a stop / target on the user's own position.
+- `execution/trigger_engine.py`: one engine in the worker - live hub ticks every second (touch, PAPER), else every
+  cycle (exits before the entry gates, entries after them); entries fire through the ticket's own `place` (kill switch,
+  PAPER chokepoint, risk again); exits through `close_position`, never blocked; heartbeat `trigger_engine` on
+  `GET /api/system/worker-status`; stall alert to the owners (in-app + Telegram).
+- `trading/trigger_rules.py` (TT-7): touch / close / stop-first / closed candles, used by `exit_logic` (monitor and
+  `backtest/engine.py`) and `backtest/options_engine.py`. `PaperExecutionAdapter(keep_resting=True)` + `on_price`.
+- Ticket: `rest_if_waiting` (+ touch / close and timeframe); routes `GET /api/paper/fno/resting`,
+  `POST /api/paper/fno/resting/exit`, `POST /api/paper/fno/resting/{id}/cancel` (tenancy table updated). No UI (T2).
+- Tests: `test_tm2_trigger_rules.py` (12), `test_tm2_trigger_engine.py` (12); z10c, tenancy sweep, TM-1 adapter, smart
+  execution, ticket / basket, backtest parity and worker suites green. Open questions TM2-1..3.
+
+## 24 Oct 2026 - UI-H Part 1: the UI/UX audit (no app code)
+- Branch `claude/ui-h-audit` (from main at `341de6f8`). **No migration**, no flag, no app code: docs only.
+- docs/ui/UI_AUDIT.md: every v2 user page / tab plus Settings and the admin console, 390 / 1440 px, light / dark, with
+  `ui_v2` + `colour_v2` (+ `terminal`, captured from the T1 branch), and a market-closed state; scored against H1-H10;
+  the 10 worst issues; the read-only root causes of C1, A1, B1-B4, max pain and the Puts column; the wave order
+  (shared components first).
+- Screenshots (238 captures + committed baselines for the pages the capture mocks cannot answer) and the HTML gallery
+  stay outside git; the capture spec was a local-only extension of `e2e/ux-audit-capture.e2e.ts` and is not committed.
+## 24 Oct 2026 - TT-8: a basket's legs as one group (P1-6)
+- Owner decision TT-8: legs of one manual basket are one group with "Exit this leg" / "Exit the whole group"; a hedge
+  exited before its short = a plain warning + confirm, never a block.
+- Backend `app/paper/fno_groups.py`: filled legs tagged on existing columns (`group_meta` basket_group, `leg_role`; no
+  migration, no `leg_group_id` so the monitor keeps each leg's own stop / target). `POST /api/paper/fno/positions/{id}/
+  exit-leg` (`confirm` flag; without it a hedge answers the warning) and `/exit-group` (all legs priced first, then
+  `close_group`: sold legs first). Pricing shared with Exit now (`approval.exit_price`, a pure extraction). No flag,
+  kill switch, limit or approval-only check on either (ADR-0004). z10c: both routes classified as exits.
+- Frontend (ui_v2, PAPER account on): PositionsV2 basket groups show "Exit the whole group" and "Exit this leg" (in place
+  of Exit now on those legs); the confirm sheet `fno/GroupExitsV2.tsx`. Structures keep Exit now.
+- Tests: `tests/test_tt8_basket_group.py` (9), `src/fno/groupExits.test.tsx` (11), `e2e/tt8-basket-group-v2.e2e.ts`
+  (390 + 1440); four e2e flows moved to "Exit this leg"; six `fno4-positions-v2-*` baselines updated.
+- Not done: partial exit (TT-9). Open: TT8-1..4 in docs/OPEN_QUESTIONS.md.
+

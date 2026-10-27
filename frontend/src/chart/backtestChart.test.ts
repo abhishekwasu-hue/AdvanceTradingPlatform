@@ -42,8 +42,8 @@ describe("Chart review PR 3 (CC-5): Test a strategy on the v2 chart", () => {
   });
 
   it("the page: the v2 chart under ui_v2, ProChart without it, both with the same trade markers", () => {
-    expect(backtestPageSource).toContain("const v2 = useUiV2();");
-    expect(backtestPageSource).toMatch(/v2\s*\?\s*<BacktestChartV2 [^>]*markers=\{tradeMarkers\}/);
+    expect(backtestPageSource).toContain("const uiV2 = useUiV2();");
+    expect(backtestPageSource).toMatch(/\{uiV2\s*\?\s*<BacktestChartV2 [^>]*markers=\{tradeMarkers\}/);
     expect(backtestPageSource).toMatch(/:\s*<ProChart [^>]*markers=\{tradeMarkers\}/);
   });
 });

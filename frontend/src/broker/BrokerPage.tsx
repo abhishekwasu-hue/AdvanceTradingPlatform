@@ -8,7 +8,7 @@ import { oauthErrorText } from "../utils/oauthErrors";
 import BrokerAdvanced from "./BrokerAdvanced";
 import { ASK_OWNER, KNOWN_BROKERS, canChangeBrokers, connectionTitle, needsReconnect, shownStatus, statusText } from "./brokerState";
 import { SIGN_IN_PAGE_PATH } from "./paths";
-import ConnectPanel, { failureText, type PanelMode } from "./ConnectPanel";
+import ConnectPanel, { failureText, isPracticeOnly, type PanelMode } from "./ConnectPanel";
 import { BTN_PRIMARY, BTN_SECONDARY, BrokerLogo, ResponsiveDialog, StatusDot } from "./parts";
 import { useBrokerCatalog } from "./useBrokerCatalog";
 import { useBrokerConnections } from "./useBrokerConnections";
@@ -75,6 +75,7 @@ export function BrokerTile({ entry, onPick, canChange = true }: { entry: BrokerC
       <BrokerLogo name={entry.name} size="lg" />
       <span className="text-center leading-tight">{entry.name}</span>
       {!entry.available && <span className="text-t12 font-normal text-fg-muted">Coming soon</span>}
+      {entry.available && isPracticeOnly(entry) && <span data-practice-only className="text-t12 font-normal text-fg-muted">Practice only</span>}
     </button>
   );
 }

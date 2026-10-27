@@ -21,6 +21,7 @@ from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_owner, require_trader
 from app.auth.scopes import require_scope
+from app.backtest import bar_source
 from app.backtest.engine import ENGINE_VERSION, run_backtest
 from app.backtest.routes import _run_summary
 from app.core.models import OHLCVBar, RiskConfig, bars_to_dataframe
@@ -233,11 +234,14 @@ async def backtest_draft(draft_id: int, body: DraftBacktestBody, user: User = De
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     strategy = DeclarativeStrategy(f"ai_draft_{draft.id}", config)
     risk = body.risk_config or await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+    prices = None
     if body.candles:
         df, source = bars_to_dataframe(body.candles), evidence.client_source(body.data_source)
     else:
-        df, source = await evidence.server_frame(session, user.tenant_id, body.symbol, body.exchange, body.base_timeframe,
-                                                 broker=body.broker, lookback_days=body.lookback_days, user=user)
+        # Owner order 23 Oct: the broker session when usable, else stored Daily history (flag backtest_stored_history).
+        bars = await bar_source.resolve(session, user.tenant_id, body.symbol, body.exchange, body.base_timeframe,
+                                        broker=body.broker, lookback_days=body.lookback_days, user=user)
+        df, source, prices = bars.frame, bars.source, bars.info()
     result = run_backtest(copy.copy(strategy), df, body.symbol.upper(), body.base_timeframe, risk)
     headline = {k: getattr(result, k, None) for k in ("total_trades", "win_rate", "net_pnl", "max_drawdown", "profit_factor", "expectancy", "gross_pnl", "total_charges")}
     headline["analytics"] = result.analytics
@@ -251,7 +255,7 @@ async def backtest_draft(draft_id: int, body: DraftBacktestBody, user: User = De
         await generator.attach_backtest(session, draft, run)
     except generator.GenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"draft": generator.as_dict(draft), "run": _run_summary(run), "result": result.model_dump()}
+    return {"draft": generator.as_dict(draft), "run": _run_summary(run), "result": result.model_dump(), "prices": prices}
 
 
 @router.post("/drafts/{draft_id}/approve", dependencies=[Depends(require_scope("ai:manage"))])
@@ -337,9 +341,9 @@ async def _df_for(session: AsyncSession, user: User, body: InterviewPlanBody):
     if body.candles:
         return interview.frame_from_candles(body.candles[-interview.MAX_BARS:]), evidence.client_source(body.data_source)
     symbol = body.symbol or body.answers.symbol
-    df, source = await evidence.server_frame(session, user.tenant_id, symbol, body.exchange, body.base_timeframe, broker=body.broker,
-                                             lookback_days=body.lookback_days or 30, user=user)
-    return df.tail(interview.MAX_BARS), source
+    bars = await bar_source.resolve(session, user.tenant_id, symbol, body.exchange, body.base_timeframe, broker=body.broker,
+                                    lookback_days=body.lookback_days or 30, user=user)     # owner order 23 Oct (intraday: broker)
+    return bars.frame.tail(interview.MAX_BARS), bars.source
 
 
 async def _options(session: AsyncSession, user: User, answers: interview.InterviewAnswers, prefs: advisor.Preferences,

@@ -6,13 +6,15 @@ analyses (app/option_chain/analyses.py) for the caller's own broker data, behind
   reads it (or, with the bring-your-own-broker data tier on, through the caller's own session inside its budget), and is
   counted in the same `market_data_chains` usage and per-user rate limit.
 * **Earlier snapshots of the session** are the OI collector's stored slots for today (`oi_snapshots`,
-  app/option_chain/snapshots.py), kept only when they hold the same expiry. With the bring-your-own-broker tier on they
-  are not used (the collector reads through a shared session; the OI banner routes refuse for the same reason), and
-  the analyses that need a path say so.
+  app/option_chain/snapshots.py), kept only when they hold the same expiry. With the bring-your-own-broker tier on
+  (B1) they are the user's OWN earlier reads instead: every chain read here through his own session is stored as his
+  session snapshot (app/option_chain/own_snapshots.py, tenant- and user-private) and read back by him only; until one
+  exists the path tabs say the path through the session starts now.
 * **Plain states, never sample data:** `no_broker` (no usable broker session), `unavailable` (the broker did not
   return a chain), `no_data` (an empty chain), `ok`. Only `ok` carries analyses.
 
-Read-only: it stores nothing but the usage count, and no order path is reached (ADR-0006).
+It stores the usage count and, with the own-broker tier on, the user's own chain read (B1); no order path is reached
+(ADR-0006).
 """
 import logging
 from datetime import date, datetime, timezone
@@ -28,7 +30,7 @@ from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.market_data import candles_routes, entitlement
 from app.market_data.fanin import Priority
-from app.option_chain import analyses, dish, snapshots
+from app.option_chain import analyses, as_of, dish, own_snapshots, snapshots
 from app.option_chain.snapshots import IST
 
 logger = logging.getLogger(__name__)
@@ -42,8 +44,6 @@ NO_BROKER = "Connect your broker and log in to it today to see these analyses. T
 UNAVAILABLE = "Your broker did not return the option chain just now. Try again in a moment."
 NOT_OFFERED = "Your broker's option chain is not available here."
 NO_CHAIN = "Your broker returned no strikes for this symbol and expiry."
-NO_HISTORY_BYOB = ("Earlier snapshots of the session are not used while your own-broker data setting is on, so the analyses "
-                   "show the latest reading only.")
 
 
 async def _record(session: AsyncSession, user: User, underlying: str) -> tuple:
@@ -60,10 +60,17 @@ async def _record(session: AsyncSession, user: User, underlying: str) -> tuple:
         return None, False, NO_BROKER
 
 
-async def _history(session: AsyncSession, underlying: str, now: datetime) -> List[analyses.Snapshot]:
-    """Today's stored collector slots for the underlying, read before `now` (the expiry is matched in analyses.py)."""
-    slots = await snapshots.day_chains(session, underlying, now.astimezone(IST).date())
+async def _history(session: AsyncSession, tenant_id: int, underlying: str, now: datetime) -> List[analyses.Snapshot]:
+    """Today's stored collector slots of this organisation for the underlying, read before `now` (the expiry is matched
+    in analyses.py)."""
+    slots = await snapshots.day_chains(session, underlying, now.astimezone(IST).date(), tenant_id=tenant_id)
     return [analyses.Snapshot(s.captured_at, s.chain) for s in slots if s.captured_at < now]
+
+
+async def _own_history(session: AsyncSession, user: User, underlying: str, now: datetime) -> List[analyses.Snapshot]:
+    """B1: the user's own stored reads of today (own-broker tier), read before `now` (every expiry; matched in analyses.py)."""
+    stored = await own_snapshots.day(session, user, underlying, now.astimezone(IST).date())
+    return [analyses.Snapshot(s.captured_at, s.chain()) for s in stored if s.captured_at < now]
 
 
 def _state(base: Dict[str, Any], state: str, message: str) -> Dict[str, Any]:
@@ -93,7 +100,8 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
     record, byob, refusal = await _record(session, user, underlying)
     if record is None:
         return _state(base, "no_broker", refusal or NO_BROKER)
-    chain, failure = await _read_chain(record, underlying, expiry)
+    from app.market_data import hub as data_hub
+    chain, failure = await _read_chain(record, underlying, expiry, shared=await data_hub.hub_on(session, user.tenant_id))
     if chain is None:
         return _state(base, "unavailable", failure or UNAVAILABLE)
     base["expiry"] = (chain.expiry or "")[:10] or base["expiry"]
@@ -103,27 +111,53 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
     if not chain.rows:
         return _state(base, "no_data", NO_CHAIN)
 
+    read = chain                                             # B1: stored as read (below), the spot as the broker sent it
+    if byob:                                                 # his own earlier reads are his session
+        history = await _own_history(session, user, underlying, now)
+    else:
+        history = await _history(session, user.tenant_id, underlying, now)
     chain = analyses.clean_spot(chain)                       # a spot of 0 (some brokers' "no price") is missing, not a number
-    history = [] if byob else await _history(session, underlying, now)
+    # B2: the chain's capture time, or the last session close while the market is closed (never the request time); a
+    # closed market's missing or strike-rounded spot is the index's last close from our own candles, labelled.
+    when = await as_of.chain_as_of(session, underlying, now)
+    spot, spot_source = await as_of.resolve_spot(user, session, underlying, chain, chain.underlying_ltp, when,
+                                                 record.broker_name, record.account_label)
+    if spot != chain.underlying_ltp:
+        chain = chain.model_copy(update={"underlying_ltp": spot})
     kept = analyses.session_history(chain, history)
-    results = analyses.compute_all(chain, history, now, history_off=byob)
-    out: Dict[str, Any] = {**base, "state": "ok", "message": None, "spot": chain.underlying_ltp, "data_as_of": now.isoformat(),
+    from app.market_data.calendar import family_holidays
+    from app.option_chain.chain_view import spot_instrument
+    closed = await family_holidays(session, spot_instrument(underlying)[1])   # B3: trading days to expiry (BSE for SENSEX)
+    results = analyses.compute_all(chain, history, now, holidays=closed)
+    out: Dict[str, Any] = {**base, "state": "ok", "message": None, "spot": chain.underlying_ltp, "spot_source": spot_source,
+                           "data_as_of": when.at.isoformat(), "market_closed": when.closed,
                            "source": {"broker": record.broker_name, "account_label": record.account_label},
-                           "session": {"snapshots": len(kept), "since": kept[0].at.isoformat() if kept else None,
-                                       "note": NO_HISTORY_BYOB if byob else None},
+                           "session": {"snapshots": len(kept), "since": kept[0].at.isoformat() if kept else None, "note": None},
                            "near_atm_strikes": analyses.NEAR_ATM_STRIKES,
                            "analyses": results}
     # MO4 slice 2: "What the chain shows" (app/option_chain/dish.py) from the same six analyses - with `markets_view` on only.
     from app.platform.controls import flag_enabled
     if await flag_enabled(session, DISH_FLAG, user.tenant_id):
-        out["dish"] = dish.build(results, chain, history, history_off=byob)
+        from app.me import prefs
+        own, _ = await prefs.read_one("option_chain", user, session)      # B4: his own PCR zone edges
+        zones = own.get("pcr_zones") or {}
+        raw = [zones.get(k) for k in ("very_low_below", "low_below", "balanced_max", "high_max")]
+        edges = [float(e) for e in raw if isinstance(e, (int, float))]
+        out["dish"] = dish.build(results, chain, history, pcr_edges=edges if len(edges) == 4 else None)
+    if byob:                                                 # B1: this read becomes his session snapshot (last: the answer is built)
+        await own_snapshots.record(session, user, record, underlying, read, now)
     return out
 
 
-async def _read_chain(record: BrokerCredentialRecord, underlying: str, expiry: Optional[date]) -> Tuple[Optional[OptionChain], Optional[str]]:
-    """(chain, None) or (None, the plain sentence). Building the adapter is inside the guard too (a bad stored credential)."""
+async def _read_chain(record: BrokerCredentialRecord, underlying: str, expiry: Optional[date], *,
+                      shared: bool = False) -> Tuple[Optional[OptionChain], Optional[str]]:
+    """(chain, None) or (None, the plain sentence). Building the adapter is inside the guard too (a bad stored credential).
+    `shared` (TM Part 1, flag data_hub): the connection's chain snapshot of the last few seconds when there is one."""
     try:
         adapter = candles_routes.build_adapter(record)
+        if shared:
+            from app.market_data import hub as data_hub
+            return await data_hub.shared_chain(record.id, underlying, expiry, lambda: adapter.get_option_chain(underlying, expiry)), None
         return await adapter.get_option_chain(underlying, expiry), None
     except NotImplementedError:
         return None, NOT_OFFERED

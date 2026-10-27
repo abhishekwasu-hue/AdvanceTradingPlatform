@@ -3,8 +3,9 @@ summary in plain words at the top of the Option chain page, built only from the 
 same chain (app/option_chain/analyses.py) and, for the IV change, the session's first stored snapshot of this expiry.
 
 Five lines, each on its own (one missing number makes that line "I don't know ...", never a guess):
-1. PCR zone - the overall PCR and the zone it sits in (the OI banner's default band edges, `oi_regime.PcrBands`:
-   0.70 / 0.90 / 1.00 / 1.30), in neutral words: which side holds more open interest;
+1. PCR zone - the overall PCR and the zone it sits in (the user's own edges, B4: prefs namespace `option_chain`; by
+   default the OI banner's band edges, `oi_regime.PcrBands`: 0.70 / 0.90 / 1.00 / 1.30), in neutral words: which side
+   holds more open interest;
 2. OI walls - the strikes with the largest put and call open interest and where the spot is against them;
 3. Max pain against the spot - points and %;
 4. IV change - the ATM IV now against the session's first stored snapshot (same expiry);
@@ -28,22 +29,36 @@ NOTE = "Information only: what the chain's numbers show right now. It never says
 
 # (upper edge, zone name, plain words); the last zone has no upper edge.
 _B = PcrBands()
-PCR_ZONES: Tuple[Tuple[Optional[float], str, str], ...] = (
-    (_B.oversold_below, "very low", "call open interest is far larger than put open interest"),
-    (_B.mild_bearish_below, "low", "call open interest is larger than put open interest"),
-    (_B.sideways_max, "balanced", "put and call open interest are close to each other"),
-    (_B.mild_bullish_max, "high", "put open interest is larger than call open interest"),
-    (None, "very high", "put open interest is far larger than call open interest"),
+# B4 (UI-H bug lane): the DEFAULT edges - each user's own edges live in his settings (prefs namespace `option_chain`,
+# app/me/prefs.py PcrZonesPrefs, the same values by default) and are passed in as `edges`.
+DEFAULT_PCR_EDGES: Tuple[float, float, float, float] = (_B.oversold_below, _B.mild_bearish_below, _B.sideways_max, _B.mild_bullish_max)
+_ZONE_WORDS: Tuple[Tuple[str, str], ...] = (
+    ("very low", "call open interest is far larger than put open interest"),
+    ("low", "call open interest is larger than put open interest"),
+    ("balanced", "put and call open interest are close to each other"),
+    ("high", "put open interest is larger than call open interest"),
+    ("very high", "put open interest is far larger than call open interest"),
 )
 
 
-def pcr_zone(pcr: Optional[float]) -> Optional[Tuple[str, str, str]]:
+def pcr_zones(edges: Optional[Sequence[float]] = None) -> Tuple[Tuple[Optional[float], str, str], ...]:
+    """The five zones for these four ascending edges (None: the defaults)."""
+    four: List[Optional[float]] = []
+    four.extend(float(e) for e in (edges if edges is not None else DEFAULT_PCR_EDGES))
+    four = four[:4] + [None]
+    return tuple((upper, name, words) for upper, (name, words) in zip(four, _ZONE_WORDS))
+
+
+PCR_ZONES: Tuple[Tuple[Optional[float], str, str], ...] = pcr_zones()
+
+
+def pcr_zone(pcr: Optional[float], edges: Optional[Sequence[float]] = None) -> Optional[Tuple[str, str, str]]:
     """(zone name, its range in words, plain words) for a PCR, or None. Edges as the OI banner's bands: below the first
-    edge, below the second, up to and including the third and fourth, above the fourth."""
+    edge, below the second, up to and including the third and fourth, above the fourth. `edges`: the user's own."""
     if pcr is None:
         return None
     lower: Optional[float] = None
-    for i, (upper, name, words) in enumerate(PCR_ZONES):
+    for i, (upper, name, words) in enumerate(pcr_zones(edges)):
         inclusive = i >= 2
         if upper is None or (pcr <= upper if inclusive else pcr < upper):
             if lower is None:
@@ -66,9 +81,9 @@ def _point(key: str, label: str, text: str, known: bool) -> Dict[str, Any]:
     return {"key": key, "label": label, "text": text, "state": "ok" if known else "unknown"}
 
 
-def _pcr_line(by: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+def _pcr_line(by: Dict[str, Dict[str, Any]], edges: Optional[Sequence[float]] = None) -> Dict[str, Any]:
     overall = _values(by, "pcr").get("overall")
-    zone = pcr_zone(overall)
+    zone = pcr_zone(overall, edges)
     if overall is None or zone is None:
         return _point("pcr_zone", "PCR zone", "I don't know the PCR yet: the chain has no call open interest.", False)
     name, span, words = zone
@@ -151,18 +166,20 @@ def _move_line(by: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     if pct is None or lower is None or upper is None:
         return _point("expected_move", "Expected move", "I don't know the expected move: the ATM call or put has no price.", False)
     dte = v.get("dte")
-    tail = f", with {dte} {'day' if dte == 1 else 'days'} to expiry" if isinstance(dte, int) and dte >= 0 else ""
+    tail = f", with {dte} trading {'day' if dte == 1 else 'days'} to expiry" if isinstance(dte, int) and dte >= 0 else ""  # B3
     return _point("expected_move", "Expected move",
                   f"The ATM straddle prices a move of about {pct:.2f}% either way by expiry: {A.fmt_number(lower, 2)} to {A.fmt_number(upper, 2)}{tail}.",
                   True)
 
 
-def build(results: Sequence[Dict[str, Any]], chain: OptionChain, history: Sequence[A.Snapshot], *, history_off: bool = False) -> Dict[str, Any]:
-    """The summary from the six analyses of `chain` (A.compute_all's list) and the session's earlier snapshots."""
+def build(results: Sequence[Dict[str, Any]], chain: OptionChain, history: Sequence[A.Snapshot], *, history_off: bool = False,
+          pcr_edges: Optional[Sequence[float]] = None) -> Dict[str, Any]:
+    """The summary from the six analyses of `chain` (A.compute_all's list) and the session's earlier snapshots.
+    `pcr_edges`: the user's own PCR zone edges (B4), None for the defaults."""
     by: Dict[str, Dict[str, Any]] = {str(r.get("key")): r for r in results if isinstance(r, dict)}
     chain = A.clean_spot(chain)
-    points = [_pcr_line(by), _walls_line(by), _max_pain_line(by), _iv_line(by, chain, history, history_off), _move_line(by)]
+    points = [_pcr_line(by, pcr_edges), _walls_line(by), _max_pain_line(by), _iv_line(by, chain, history, history_off), _move_line(by)]
     return {"title": TITLE, "points": points, "note": NOTE}
 
 
-__all__ = ["TITLE", "NOTE", "PCR_ZONES", "pcr_zone", "first_atm_iv", "build"]
+__all__ = ["TITLE", "NOTE", "PCR_ZONES", "DEFAULT_PCR_EDGES", "pcr_zones", "pcr_zone", "first_atm_iv", "build"]

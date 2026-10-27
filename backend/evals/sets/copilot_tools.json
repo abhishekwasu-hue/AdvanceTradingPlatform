@@ -174,6 +174,68 @@
    "ok": true,
    "source": "broker:paper"
   },
+  "build_screen": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "base_tf": "1d",
+    "ok": true,
+    "plan": {
+     "cost": 2.0,
+     "cross_sectional": false,
+     "lookback": 300
+    },
+    "problems": [],
+    "stages": [
+     "Trend() == \"UPTREND\"",
+     "NearZone(\"demand\")"
+    ],
+    "text": "Trend() == \"UPTREND\" AND NearZone(\"demand\")"
+   },
+   "ok": true,
+   "source": "screenql_validator"
+  },
+  "explain_results": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "data_source": "lake",
+    "note": "Each condition's numbers are the screen engine's own.",
+    "symbols": {
+     "ITC": {
+      "bar_close": "2026-10-20",
+      "conditions": [],
+      "matched": true,
+      "stages": [
+       {
+        "passed": true,
+        "text": "Trend() == \"UPTREND\""
+       },
+       {
+        "passed": true,
+        "text": "NearZone(\"demand\")"
+       }
+      ]
+     },
+     "SBIN": {
+      "bar_close": "2026-10-20",
+      "conditions": [],
+      "matched": true,
+      "stages": [
+       {
+        "passed": true,
+        "text": "Trend() == \"UPTREND\""
+       },
+       {
+        "passed": true,
+        "text": "NearZone(\"demand\")"
+       }
+      ]
+     }
+    },
+    "text": "Trend() == \"UPTREND\" AND NearZone(\"demand\")"
+   },
+   "ok": true,
+   "source": "screen_evidence"
+  },
   "get_chart_structure:BANKNIFTY": {
    "as_of": "2026-10-21T03:30:00+00:00",
    "data": {
@@ -405,6 +467,42 @@
    "ok": true,
    "source": "context_panel"
   },
+  "get_market_snapshot": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "cues": [
+     {
+      "bias": null,
+      "captured_at": "2026-10-21T03:30:00+00:00",
+      "change_pct": -3.1,
+      "last_price": 12.4,
+      "symbol": "INDIA VIX"
+     }
+    ],
+    "globals": [
+     {
+      "captured_at": "2026-10-21T03:30:00+00:00",
+      "change_pct": 0.42,
+      "symbol": "SP500"
+     },
+     {
+      "captured_at": "2026-10-21T03:30:00+00:00",
+      "change_pct": -0.3,
+      "symbol": "NIKKEI"
+     }
+    ],
+    "newest": "2026-10-21T03:30:00+00:00",
+    "sentiment": {
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "label": "RISK_ON",
+     "score": 0.3
+    },
+    "symbols": [],
+    "updated_at": "2026-10-21T03:30:00+00:00"
+   },
+   "ok": true,
+   "source": "market_memory"
+  },
   "get_market_zones:NIFTY": {
    "as_of": "2026-10-21T03:30:00+00:00",
    "data": {
@@ -546,6 +644,47 @@
    },
    "ok": true,
    "source": "trades"
+  },
+  "get_news": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": [
+    {
+     "headline": "Synthetic headline one about the index",
+     "id": 1,
+     "published_at": "2026-10-21T03:30:00+00:00",
+     "severity": 4,
+     "source": "eval",
+     "symbols": [
+      "NIFTY"
+     ],
+     "verified": false
+    },
+    {
+     "headline": "Synthetic headline two about a bank",
+     "id": 2,
+     "published_at": "2026-10-21T03:30:00+00:00",
+     "severity": 2,
+     "source": "eval",
+     "symbols": [
+      "BANKNIFTY",
+      "SBIN"
+     ],
+     "verified": false
+    },
+    {
+     "headline": "Synthetic headline three",
+     "id": 3,
+     "published_at": "2026-10-21T03:30:00+00:00",
+     "severity": 1,
+     "source": "eval",
+     "symbols": [
+      "NIFTY"
+     ],
+     "verified": true
+    }
+   ],
+   "ok": true,
+   "source": "news_feed"
   },
   "get_option_chain_analyses:NIFTY": {
    "as_of": "2026-10-21T03:30:00+00:00",
@@ -1451,6 +1590,23 @@
    "ok": true,
    "source": "risk_settings"
   },
+  "get_screen_universe": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "count": 4,
+    "left_out": 0,
+    "list": "My swing list",
+    "own": true,
+    "symbols": [
+     "SBIN",
+     "INFY",
+     "TCS",
+     "ITC"
+    ]
+   },
+   "ok": true,
+   "source": "watchlists"
+  },
   "get_weekly_review": {
    "as_of": "2026-10-21T03:30:00+00:00",
    "data": {
@@ -1610,11 +1766,55 @@
    },
    "ok": true,
    "source": "journal"
+  },
+  "propose_alert": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "action": "CREATE_ALERT",
+    "created": true,
+    "note": "The person who asked must approve or reject this under AI Copilot; no alert exists until then.",
+    "proposal_id": 11,
+    "status": "PROPOSED"
+   },
+   "ok": true,
+   "source": "ai_actions"
+  },
+  "run_screen": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "base_tf": "1d",
+    "data_source": "lake",
+    "disclaimer": "Matches are filters passed, not advice.",
+    "matched": [
+     "SBIN",
+     "ITC"
+    ],
+    "not_evaluated": {},
+    "run_id": 7,
+    "scanned": 4,
+    "stages": [
+     {
+      "survivors": 3,
+      "text": "Trend() == \"UPTREND\""
+     },
+     {
+      "survivors": 2,
+      "text": "NearZone(\"demand\")"
+     }
+    ],
+    "text": "Trend() == \"UPTREND\" AND NearZone(\"demand\")"
+   },
+   "ok": true,
+   "source": "screener_run"
   }
  },
  "no_data": {
   "backtest_draft:NIFTY": {
    "error": "No broker session with a valid token. Add the broker's API key on the Broker page (it is stored encrypted, never in the environment) and log in to it, then try again.",
+   "ok": false
+  },
+  "build_screen": {
+   "error": "build_screen is not enabled for this organisation (flag screener_copilot)",
    "ok": false
   },
   "get_chart_structure:BANKNIFTY": {
@@ -1627,6 +1827,10 @@
   },
   "get_market_context": {
    "error": "get_market_context is not enabled for this organisation (flag context_panel)",
+   "ok": false
+  },
+  "get_market_snapshot": {
+   "error": "get_market_snapshot is not enabled for this organisation (flag ai_agent)",
    "ok": false
   },
   "get_market_zones:NIFTY": {
@@ -1660,6 +1864,10 @@
    "ok": true,
    "source": "trades"
   },
+  "get_news": {
+   "error": "get_news is not enabled for this organisation (flag ai_agent)",
+   "ok": false
+  },
   "get_option_chain_analyses:NIFTY": {
    "error": "Connect your broker and log in to it today to see these analyses. They use your own broker's option chain.",
    "ok": false
@@ -1671,6 +1879,10 @@
    },
    "ok": true,
    "source": "risk_settings"
+  },
+  "get_screen_universe": {
+   "error": "you have no watchlist yet and the NIFTY 50 list is not loaded",
+   "ok": false
   },
   "get_weekly_review": {
    "error": "get_weekly_review is not enabled for this organisation (flag discipline_engine)",

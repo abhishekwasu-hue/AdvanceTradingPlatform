@@ -8,6 +8,7 @@ from typing import Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
 from app.brokers.models import (
+    BasketMargin,
     BrokerHolding,
     BrokerOrderRequest,
     BrokerOrderResponse,
@@ -31,6 +32,10 @@ class BrokerCapabilities:
     stop_limit: bool = True                  # SL (stop-loss limit) accepted
     modify_orders: bool = True               # modify_order implemented (else cancel + re-place)
     cancel_orders: bool = True
+    # TM-3: the broker takes a MARKET order from an API / algo client. False (Kotak Neo: "market orders are not allowed
+    # for retail algo trading") = a MARKET order goes as a marketable LIMIT a protection band past the reference price
+    # (app/execution/marketable_limit.py), the same transform in PAPER and LIVE; exits are never blocked (ADR-0004).
+    market_orders_allowed: bool = True
 
 
 # Platform tick for the limit leg of a stop-limit protective order (NSE equity / F&O tick).
@@ -170,6 +175,15 @@ class BrokerInterface(ABC):
     @abstractmethod
     async def get_order_book(self) -> List[BrokerOrderStatus]: ...
 
+    async def find_order_by_client_id(self, client_id: str) -> Optional[BrokerOrderStatus]:
+        """TM2-4: the order this platform placed with `client_id` as its tag, from the broker's own order book (the tag
+        the broker echoes back: Zerodha / Upstox `tag`, Fyers `orderTag`, Angel `ordertag`, Dhan `correlationId`, Kotak
+        `GuiOrdId`, Groww `order_reference_id`, Shoonya `remarks`, CoinDCX `client_order_id`), cut to this broker's tag
+        length. None: no such order in the book. An unreadable book raises - "unknown" is never "not there"."""
+        wanted = client_id[: self.max_tag_length] if self.max_tag_length else client_id
+        matches = [o for o in await self.get_order_book() if o.tag and o.tag == wanted]
+        return matches[-1] if matches else None
+
     @abstractmethod
     async def get_trade_book(self) -> List[BrokerTradeEntry]: ...
 
@@ -198,6 +212,11 @@ class BrokerInterface(ABC):
         """Margin the broker would block for `order` (Phase F3: sizing written options). None
         when the broker does not expose a margin calculator - the caller then refuses to write
         rather than guess."""
+        return None
+
+    async def get_basket_margin(self, orders: List[BrokerOrderRequest]) -> Optional[BasketMargin]:
+        """Part 7 / TM-10: the broker's margin for these orders placed together, with the hedge benefit. None when the
+        broker has no basket margin call - the caller then shows ATP's labelled estimate (never a made-up number)."""
         return None
 
     async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:

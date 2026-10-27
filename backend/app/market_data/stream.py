@@ -410,6 +410,25 @@ class TickStream:
         self.reconnects = 0
         self.last_tick_at: Optional[datetime] = None
         self.last_error: Optional[str] = None
+        # TM Part 1 (data hub, app/market_data/hub.py): the stream's state in plain terms - connecting, live, reconnecting
+        # or renew_needed - told to `on_state` on every change. With `stop_on_auth_error` (hub streams only) a token the
+        # broker refuses ends the loop instead of a retry every few seconds; the hub opens a new stream after the login
+        # is renewed. Without it (every stream outside the hub) the loop retries as before.
+        self.state = "connecting"
+        self.on_state: Optional[Callable[["TickStream"], Awaitable[None]]] = None
+        self.stop_on_auth_error = False
+        self.auth_failed = False
+        self.next_retry_seconds: Optional[int] = None
+
+    async def _set_state(self, state: str) -> None:
+        if state == self.state:
+            return
+        self.state = state
+        if self.on_state is not None:
+            try:
+                await self.on_state(self)
+            except Exception as exc:  # noqa: BLE001 - telling the hub never breaks the stream
+                logger.debug("%s stream: state hook failed (%s)", self.name, exc)
 
     # --- protocol hooks (subclass) --
     async def connect_url(self) -> str:
@@ -488,6 +507,8 @@ class TickStream:
                 self._pending = set(self._wanted)      # a fresh socket knows nothing: resend everything
                 self._pending_unsub.clear()
                 await self._flush()
+                self.next_retry_seconds = None
+                await self._set_state("live")
                 async for frame in self._connection:
                     if self._stop.is_set():
                         break
@@ -499,6 +520,8 @@ class TickStream:
             except Exception as exc:  # noqa: BLE001 - every failure is a reconnect
                 self.last_error = str(exc) or exc.__class__.__name__
                 logger.warning("%s stream error: %s", self.name, self.last_error)
+                if self.stop_on_auth_error and _refused_token(exc):
+                    self.auth_failed = True
             finally:
                 self.connected = False
                 if self._connection is not None:
@@ -509,10 +532,16 @@ class TickStream:
                     self._connection = None
             if self._stop.is_set():
                 break
+            if self.auth_failed:
+                self.next_retry_seconds = None
+                await self._set_state("renew_needed")
+                break
             self.reconnects += 1
             STREAM_RECONNECTS.labels(broker=self.name).inc()
             delay = BACKOFF_SECONDS[min(attempt, len(BACKOFF_SECONDS) - 1)]
             attempt += 1
+            self.next_retry_seconds = int(delay)
+            await self._set_state("reconnecting")
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=delay)
             except asyncio.TimeoutError:
@@ -542,6 +571,18 @@ class TickStream:
     def status(self) -> StreamStatus:
         return StreamStatus(broker=self.name, connected=self.connected, subscribed=self.subscribed, ticks=self.ticks,
                             reconnects=self.reconnects, last_tick_at=self.last_tick_at, last_error=self.last_error)
+
+
+def _refused_token(exc: BaseException) -> bool:
+    """The broker refused the session token (HTTP 401 / 403 or an authentication error), not a network failure."""
+    from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+    if isinstance(exc, BrokerAuthenticationError):
+        return True
+    if isinstance(exc, BrokerAPIError) and exc.status_code in (401, 403):
+        return True
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None) or getattr(response, "status", None)
+    return status in (401, 403)
 
 
 def _epoch_to_dt(value: Optional[int], *, millis: bool) -> Optional[datetime]:
@@ -648,6 +689,20 @@ def stream_for(adapter) -> Optional[TickStream]:
         return UpstoxTickStream(adapter)
     if name == "zerodha":
         return KiteTickStream(adapter)
+    if name == "kotak_neo":
+        # Part 1B / TM-6: built, and handed out only while the Kotak Neo market-data gate is open (closed today).
+        from app.brokers import gates
+        if not gates.market_data_open(name):
+            return None
+        from app.market_data.kotak_feed import KotakNeoTickStream
+        return KotakNeoTickStream(adapter)
+    if name == "groww":
+        # Part 1B / TM-6: built, and handed out only while the Groww market-data gate is open (closed today).
+        from app.brokers import gates as _gates
+        if not _gates.market_data_open(name):
+            return None
+        from app.market_data.groww_feed import GrowwTickStream
+        return GrowwTickStream(adapter)
     return None
 
 

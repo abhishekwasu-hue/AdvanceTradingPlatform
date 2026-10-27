@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,7 +84,7 @@ REVIEW_QUESTION = ("Explain this weekly trading review in plain language: what t
 
 
 @router.get("/review")
-async def weekly_review(week: Optional[str] = Query(default=None, pattern=WEEK_PATTERN), history: int = Query(default=4, ge=0, le=12),
+async def weekly_review(http_request: Request, week: Optional[str] = Query(default=None, pattern=WEEK_PATTERN), history: int = Query(default=4, ge=0, le=12),
                         narrate: bool = Query(default=False, description="ask the organisation's AI provider to explain the numbers (checked)"),
                         user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Z6-b: the weekly review - every number from the trader's own journal (totals, setups, behaviour costs, the
@@ -95,7 +95,15 @@ async def weekly_review(week: Optional[str] = Query(default=None, pattern=WEEK_P
     review = await service.weekly_review(session, user, _week_or_422(week), history_weeks=history)
     explanation: Dict[str, Any] = {"source": "rules", "text": "\n".join(review["lines"])}
     if narrate and review["totals"]["trades"]:
-        explanation.update(await _narrate(session, user, review["lines"]))
+        from app.ai.rate_limit import ai_rate_limit
+        try:
+            await ai_rate_limit(http_request, user, session)    # A4: an AI call counts toward the plan's AI limit
+        except HTTPException as exc:
+            if exc.status_code != 429:
+                raise
+            explanation["note"] = "AI explanation not used (the AI limit for this minute is used up); the numbers are explained from the rules"
+        else:
+            explanation.update(await _narrate(session, user, review["lines"]))
     review["explanation"] = explanation
     return review
 

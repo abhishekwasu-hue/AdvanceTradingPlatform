@@ -9,6 +9,7 @@ import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import type { EnrichedSignal, OHLCVBar, SRZone, SignalHistoryEntry, StrategyInfo } from "../types";
 import { buildTimeframeData } from "../utils/sampleData";
 import { Button, Input, PageHeader, Select } from "../components/primitives";
+import { formatDateTimeIST } from "../ui/format";
 
 export default function SignalsPage() {
   const { user } = useAuth();
@@ -196,7 +197,7 @@ export default function SignalsPage() {
               <tbody>
                 {history.slice(0, 20).map((h) => (
                   <tr key={h.id} className="border-t border-border">
-                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{new Date(h.created_at).toLocaleString()}</td>
+                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{formatDateTimeIST(h.created_at)}</td>
                     <td className="py-1 pr-3">{h.strategy_id}</td>
                     <td className="py-1 pr-3 font-medium text-fg">{h.symbol}</td>
                     <td className="py-1 pr-3">{h.direction}</td>

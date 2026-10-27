@@ -40,6 +40,15 @@ table {
   background: rgb(var(--border));
 }
 
+/* UI-H Wave 0 (H2, W0-1): a PageTabs / SubTabs row that scrolls sideways shows no scroll bar - the edge fades (drawn by
+   the component) say that more tabs sit to the side, and the active one is scrolled into view. */
+.subtabs-scroll {
+  scrollbar-width: none;
+}
+.subtabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 /* Placeholder text in inputs: the browser default grey was hard to read on the dark inputs. */
 input::placeholder,
 textarea::placeholder {
@@ -78,4 +87,27 @@ textarea::placeholder {
      land on what was under the finger, not on the navigation reappearing there. Hidden = no pointer events. */
   .bottom-nav { transition: visibility 0s linear 300ms; }
   body:has(input:focus, textarea:focus, select:focus) .bottom-nav { visibility: hidden; transition-delay: 0s; }
+}
+
+/* UI-H colour accents CA2 (owner order; read only through src/ui/accents.ts): the Today hero card's gradient outline -
+   the card keeps its own surface, the blue -> violet gradient shows as the border, a little heavier along the top. And
+   the area-of-interest highlight, token-ready: no screen draws one outside the chart yet (the chart's own zones are
+   canvas drawings and never take the gradient). */
+.accent-gradient-border {
+  border: 1px solid transparent;
+  border-top-width: 3px;
+  background: linear-gradient(rgb(var(--surface-1)), rgb(var(--surface-1))) padding-box, var(--accent-gradient) border-box;
+}
+/* UI-H CA8 (owner, 25 Oct): on a phone a 1 px side of the outline all but disappears at 390 px, so the hero card read
+   as unchanged; there the outline is 2 px with a 4 px top band - the same gradient, as clearly seen as on desktop. */
+@media (max-width: 767.98px) {
+  .accent-gradient-border {
+    border-width: 2px;
+    border-top-width: 4px;
+  }
+}
+.aoi-highlight {
+  border: 1px solid transparent;
+  border-left-width: 3px;
+  background: linear-gradient(rgb(var(--soft-accent-2)), rgb(var(--soft-accent-2))) padding-box, var(--accent-gradient) border-box;
 }

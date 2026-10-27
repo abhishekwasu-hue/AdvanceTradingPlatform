@@ -75,6 +75,10 @@ services:
       MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@example.com}
+      # B8: phone notifications (FCM) for the Android app; all empty = off
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FCM_SERVICE_ACCOUNT_JSON_BASE64: ${FCM_SERVICE_ACCOUNT_JSON_BASE64:-}
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
@@ -122,6 +126,13 @@ services:
       # U1 / WL1: shown on the admin's system-watchlists view (the worker runs the sync itself).
       UNIVERSE_SYNC_ENABLED: ${UNIVERSE_SYNC_ENABLED:-false}
       UNIVERSE_SYNC_HOUR_IST: ${UNIVERSE_SYNC_HOUR_IST:-18}
+      # DATA-H fix (25 Oct): the owner's history settings (HB0 / HB2, app/core/config.py) reach the containers; before,
+      # .env had them but compose passed only its own list, so lake-backfill said "HISTORY_OWNER_TENANT_ID is not set".
+      HISTORY_OWNER_TENANT_ID: ${HISTORY_OWNER_TENANT_ID:-}
+      HISTORY_OWNER_TENANT_NAME: ${HISTORY_OWNER_TENANT_NAME:-}
+      HISTORY_OWNER_USER_ID: ${HISTORY_OWNER_USER_ID:-}
+      HISTORY_INTRADAY_SYMBOLS: ${HISTORY_INTRADAY_SYMBOLS:-}
+      HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS: ${HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS:-true}
     # Analyze a chart: users' chart images, private to the backend and the worker (never served by Caddy, never in git;
     # retention and delete are the app's - docs/design/CHART_ANALYZE.md section 3).
     volumes:
@@ -164,8 +175,19 @@ services:
       UNIVERSE_SYNC_ENABLED: ${UNIVERSE_SYNC_ENABLED:-false}
       UNIVERSE_SYNC_HOUR_IST: ${UNIVERSE_SYNC_HOUR_IST:-18}
       UNIVERSE_FILE_URLS: ${UNIVERSE_FILE_URLS:-}
+      # DATA-H fix (25 Oct): the owner's history settings (HB0 / HB2, app/core/config.py) reach the containers; before,
+      # .env had them but compose passed only its own list, so lake-backfill said "HISTORY_OWNER_TENANT_ID is not set".
+      HISTORY_OWNER_TENANT_ID: ${HISTORY_OWNER_TENANT_ID:-}
+      HISTORY_OWNER_TENANT_NAME: ${HISTORY_OWNER_TENANT_NAME:-}
+      HISTORY_OWNER_USER_ID: ${HISTORY_OWNER_USER_ID:-}
+      HISTORY_INTRADAY_SYMBOLS: ${HISTORY_INTRADAY_SYMBOLS:-}
+      HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS: ${HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS:-true}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@example.com}
+      # B8: phone notifications (FCM) for the Android app; all empty = off
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FCM_SERVICE_ACCOUNT_JSON_BASE64: ${FCM_SERVICE_ACCOUNT_JSON_BASE64:-}
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
       # UX2 fix 5: the worker sends the alerts, so it reads the platform bot's token too.
       ATP_TELEGRAM_BOT_TOKEN: ${ATP_TELEGRAM_BOT_TOKEN:-}
       ERROR_TRACKER_DSN: ${ERROR_TRACKER_DSN:-}            # A2: empty = no error tracker

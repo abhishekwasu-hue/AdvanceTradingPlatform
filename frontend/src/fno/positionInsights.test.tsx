@@ -139,7 +139,7 @@ describe("8b-e: the premium kept so far", () => {
     const c = premiumCapture([shortLeg(72.5), longLeg(41)]);
     expect(c).toEqual({ received: 2625, closeNow: 2362.5, kept: 262.5, pct: 10 });
     expect(captureBar(c!)).toBe(10);
-    expect(captureText(c!)).toBe("You have kept ₹262.50 of the ₹2,625.00 premium received (10%). Closing now costs ₹2,362.50.");
+    expect(captureText(c!)).toBe("You have kept ₹263 of the ₹2,625 premium received (10%). Closing now costs ₹2,363.");
   });
 
   it("one sold option; the premium grown past what came in; prices still loading", () => {
@@ -147,7 +147,7 @@ describe("8b-e: the premium kept so far", () => {
     const grown = premiumCapture([shortLeg(120), longLeg(50)])!;
     expect(grown).toEqual({ received: 2625, closeNow: 5250, kept: -2625, pct: -100 });
     expect(captureBar(grown)).toBe(0);
-    expect(captureText(grown)).toBe("The premium has grown: closing now costs ₹5,250.00, ₹2,625.00 more than the ₹2,625.00 received.");
+    expect(captureText(grown)).toBe("The premium has grown: closing now costs ₹5,250, ₹2,625 more than the ₹2,625 received.");
     const waiting = premiumCapture([shortLeg(null)])!;
     expect(waiting).toEqual({ received: 6000, closeNow: null, kept: null, pct: null });
     expect(captureText(waiting)).toMatch(/shows once the live prices load/);

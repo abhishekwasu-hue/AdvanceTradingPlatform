@@ -201,6 +201,23 @@ export interface ChartRunResponse {
   last_signal: Signal | null;
 }
 
+/** Owner order 23 Oct: POST /api/backtest/bars - the bars and, in plain words, where they came from. */
+export interface BacktestBarsResponse {
+  symbol: string;
+  timeframe: string;
+  /** "broker:<name>" or "lake:daily" - the label recorded on the run. */
+  source: string;
+  kind: "broker" | "stored";
+  /** Read after "Prices from" (no dates). */
+  words: string;
+  from_day: string | null;
+  to_day: string | null;
+  bars: number;
+  /** "Prices from ..., 2 Jan 2025 to 22 Oct 2026." */
+  line: string;
+  candles: OHLCVBar[];
+}
+
 export interface BacktestResult {
   strategy_id: string;
   symbol: string;
@@ -671,7 +688,8 @@ export interface CustomStrategyConfig {
   stop_loss_atr_mult: number;
   atr_period: number;
   target_rr: [number, number];
-  min_rr: number;
+  /** P1-2b: null = not set (no minimum reward:risk); only a value the user types filters. */
+  min_rr: number | null;
 }
 
 export interface CustomStrategyResponse {
@@ -699,7 +717,7 @@ export function defaultCustomStrategyConfig(): CustomStrategyConfig {
     stop_loss_atr_mult: 1.0,
     atr_period: 14,
     target_rr: [1.5, 2.0],
-    min_rr: 1.2,
+    min_rr: null,
   };
 }
 
@@ -1234,6 +1252,24 @@ export interface BrokerCatalogEntry {
   /** What POST /renew takes each day: [] is one click (or no daily renewal); `request_token` is the address the
    * trader lands on after the broker's own login (method "login_code": Zerodha, Fyers). */
   renew_fields: BrokerCatalogField[];
+  /** Part 1B: whether real orders and live prices go through this broker ("closed" until the broker confirms in
+   * writing - Kotak Neo), with the plain sentence to show while one is closed. Older servers leave it out. */
+  gates?: BrokerGates;
+  /** Part 1B: new user-facing work; the server lists it only with ui_v2 on. */
+  requires_ui_v2?: boolean;
+  /** Part 1B: a short connect guide in plain words with the broker's official links, or null. */
+  guide?: BrokerGuide | null;
+}
+
+export interface BrokerGates {
+  live_orders: "open" | "closed";
+  live_prices: "open" | "closed";
+  note: string;
+}
+
+export interface BrokerGuide {
+  points: string[];
+  links: { label: string; url: string }[];
 }
 
 export type BrokerConnectionStatus = "connected" | "needs_login" | "not_working";
@@ -1326,7 +1362,24 @@ export const BASE_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min
 
 // --- Out-of-app alert delivery (Telegram / email) ---
 
-export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK" | "PUSH" | "SMS" | "WHATSAPP";
+export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK" | "PUSH" | "SMS" | "WHATSAPP" | "FCM";
+
+/** B8: one of the caller's own phones (GET /api/mobile/devices); the notification token is never returned. */
+export interface PhoneDevice {
+  id: string;
+  label: string;
+  platform: "android" | "ios";
+  kinds: string[];
+  app_version: string;
+  registered_at: string;
+  last_seen_at: string;
+}
+
+export interface PhoneDevices {
+  configured: boolean;
+  kinds: { id: string; label: string }[];
+  devices: PhoneDevice[];
+}
 
 export interface AlertChannel {
   channel_type: AlertChannelType;
@@ -2016,6 +2069,8 @@ export interface FeatureFlag {
   status?: FlagStatus;
   status_label?: string;
   default_on?: boolean;
+  /** User-friendly pass item 7: why users do not see this feature on this server (e.g. its engine is not installed). */
+  unavailable_reason?: string;
 }
 
 export type FeatureFlags = Record<string, FeatureFlag>;
@@ -2163,7 +2218,9 @@ export interface CandlesResponse {
   source: { broker: string; account_label: string }; exchange: string; timeframe: string; base_interval: string; lookback_days: number; before?: string | null; fetched_at: string;
   symbols: Record<string, { bars: (OHLCVBar & { forming?: boolean })[]; count: number; first: string | null; last: string | null; error: string | null; data_tier?: DataTierBadgeInfo | null;
     /** UI2-4a2: an index's volume from its near-month future (asked for with `volume_from_future`). */
-    volume_source?: CandleVolumeSource | null }>; warnings: string[]; note: string;
+    volume_source?: CandleVolumeSource | null;
+    /** C1: present when the broker sent no candles at all - the plain reason the chart shows. */
+    empty_reason?: string }>; warnings: string[]; note: string;
   data_tier?: DataTierBadgeInfo;
 }
 
@@ -2699,7 +2756,8 @@ export interface TicketPlan {
 export interface TicketView {
   symbol: string; direction: "LONG" | "SHORT"; setup: TicketSetup; setup_label: string | null; mode: "PAPER";
   entry: number; stop_loss: number; target: number; time_stop: string | null; invalidation: string | null;
-  reward_risk: number | null; min_reward_risk: number; sizing: TicketSizing;
+  /** null: no minimum (TT-12, only the trader's own minimum is checked). */
+  reward_risk: number | null; min_reward_risk: number | null; sizing: TicketSizing;
   checklist: { key: string; label: string; checked: boolean; auto: boolean }[]; checklist_complete: boolean;
   costs: TicketCostLine | null; errors: string[]; refusals: string[]; warnings: string[]; can_place: boolean;
   confirm_label: string | null; as_of: string;
@@ -2730,10 +2788,13 @@ export interface VixGateStatus {
 /** Z5 / P1-d: the caller's risk-by-default state (GET /api/paper/risk; 404 while the `risk_by_default` flag is off). */
 export interface PaperRiskStatus {
   mode: "PAPER"; settings: RiskByDefaultSettings; effective: RiskByDefaultSettings; defaults: RiskByDefaultSettings; notes: string[];
-  /** A loosening waits for the next IST day (a tightening applies at once). */
-  pending: { values: Partial<RiskByDefaultSettings>; from: string } | null;
+  /** TT-12: the keys the trader set himself; every other limit is off ("Not set"). Absent from an older server. */
+  set?: (keyof RiskByDefaultSettings)[];
+  /** A loosening of a limit he set waits for the next IST day (a tightening applies at once); null = cleared. */
+  pending: { values: Partial<Record<keyof RiskByDefaultSettings, number | null>>; from: string } | null;
   bounds: Record<keyof RiskByDefaultSettings, [number, number]>; labels: Record<keyof RiskByDefaultSettings, string>;
-  capital_basis: number; risk_cap: { amount: number; binding: string; by_pct: number };
+  /** amount null: no cap of his own (TT-12); the organisation's risk per trade still sizes the entry. */
+  capital_basis: number; risk_cap: { amount: number | null; binding: string | null; by_pct: number | null };
   today: { realised: number; open_marks: number; pnl: number; worst: number; limit: number; used: number | null; entries: number; max_entries: number };
   lockout: { kind: string; reason: string; pnl: number; limit: number; locked_at: string; until: string } | null;
   overrides: { today: number; total: number }; override_max_multiple: number; override_min_reason_chars: number;
@@ -2755,5 +2816,5 @@ export interface StrikeBreachBlock {
 /** Z5 / P1-d: the caller's risk by default applied to a waiting entry proposal (flag risk_by_default). */
 export interface ProposalRiskCheck {
   sizing: TicketSizing; costs: TicketCostLine | null; refusals: string[]; warnings: string[]; errors: string[];
-  reward_risk: number | null; min_reward_risk: number;
+  reward_risk: number | null; min_reward_risk: number | null;
 }

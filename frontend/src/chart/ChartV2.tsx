@@ -149,7 +149,8 @@ export default function ChartV2({
           onReset={() => core.resetView()} onLatest={() => core.scrollToLatest()} />
       )}
       {candles.length === 0 && (
-        <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-space-4 text-center text-t13" style={{ color: "rgb(var(--chart-text))" }}>
+        // C1: above the library's canvases (they stack over an unlayered sibling), so the empty state is never hidden.
+        <p data-chart-empty className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-space-4 text-center text-t13" style={{ color: "rgb(var(--chart-text))" }}>
           {emptyText}
         </p>
       )}

@@ -328,7 +328,7 @@ test.describe("8b slice 3 flows", () => {
   test("the cockpit is read only and his journal notes are the only write; Exit now stays enabled", async ({ page }) => {
     const seen = await openPositions(page, "light");
     const cockpit = page.locator("[data-block='fno-cockpit']");
-    await expect(cockpit.locator("[data-tile='cockpit-kept']")).toContainText("₹2,287.50");      // 262.50 + 2,025.00 kept
+    await expect(cockpit.locator("[data-tile='cockpit-kept']")).toContainText("₹2,288");      // 262.50 + 2,025.00 kept, in whole rupees
     await expect(cockpit.locator("[data-cockpit='expiries']")).toContainText("8 days left");
     await expect(cockpit.locator("[data-cockpit='alerts'] li")).toHaveCount(1);                   // his NIFTY one, not the BANKNIFTY one
     await expect(cockpit.locator("button, a")).toHaveCount(0);
@@ -343,6 +343,6 @@ test.describe("8b slice 3 flows", () => {
     const sent = seen.writes.filter((w) => !/\/auth\/refresh$|\/paper\/fno\/contracts$|\/market-data\/(quotes|candles)$/.test(w.url));
     expect(sent.map((w) => `${w.method} ${w.url}`).sort()).toEqual(["PATCH /trades/211/journal", "PATCH /trades/212/journal"]);
     expect(sent.every((w) => JSON.stringify(w.body) === JSON.stringify({ notes: "Waited for the area to hold." }))).toBe(true);
-    await expect(page.locator("[data-position='301']").getByTestId("exit-now")).toBeEnabled();
+    await expect(page.locator("[data-position='301']").getByTestId("exit-leg")).toBeEnabled();     // TT-8: a basket leg
   });
 });

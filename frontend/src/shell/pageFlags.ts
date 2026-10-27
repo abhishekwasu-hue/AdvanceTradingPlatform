@@ -6,7 +6,7 @@ import type { Page } from "../components/Sidebar";
  * and its address shows "Coming soon" - never the flag name to a trader (an administrator sees it in a small note).
  * A tiny module on purpose: today's shell (App.tsx) reads it too, so it must not pull the v2 navigation in.
  */
-export const PAGE_FLAGS: Readonly<Partial<Record<Page | "ideas" | "markets", string>>> = {
+export const PAGE_FLAGS: Readonly<Partial<Record<Page | "ideas" | "markets" | "learn" | "terminal" | "watchlist", string>>> = {
   copilot: "ai_copilot",
   journal: "discipline_engine",
   // MO4 slice 2: the Sector & index view (v2 only, /markets).
@@ -17,7 +17,23 @@ export const PAGE_FLAGS: Readonly<Partial<Record<Page | "ideas" | "markets", str
   screener: "screener_v2",
   // Idea library slice 1: the v2-only Ideas page (/ideas) while `idea_library` is off.
   ideas: "idea_library",
+  // User-friendly pass item 7: Analyze a chart (the server also answers it as off while its engine is not installed).
+  "chart-analyze": "chart_analyze",
+  // Readiness C13: the v2-only Learn page (/learn) while `learn` is off.
+  learn: "learn",
+  // Trading Terminal T1: the v2-only Terminal (/terminal) while `terminal` is off (ON by default since the owner's ✅ 25 Oct).
+  terminal: "terminal",
+  // P1-8 (2): the v2-only Watchlist page (/watchlist) while `watchlists` is off.
+  watchlist: "watchlists",
 };
+
+/**
+ * A1 (UI-H bug lane): pages that show their own closed state at their address, because the flag alone cannot say why.
+ * Analyze a chart is answered as off while its engine is not installed: the page then says "Chart analysis is not
+ * available right now" (never "Coming soon"), and shows the shell's standard "Coming soon" only when the flag is off.
+ * They still leave the navigation while their flag is off.
+ */
+export const SELF_GATED: ReadonlySet<string> = new Set(["chart-analyze"]);
 
 /** What the shell knows about the flags (useFeatures): `answered` is a real answer from the server. */
 export interface FlagsKnown {
@@ -32,7 +48,7 @@ export interface FlagsKnown {
  * server whatever the client shows.
  */
 export function closedFlag(page: Page | string | null, flags: FlagsKnown): string | null {
-  if (!page) return null;
+  if (!page || SELF_GATED.has(page)) return null;
   const flag = PAGE_FLAGS[page as keyof typeof PAGE_FLAGS];
   if (!flag || !flags.answered) return null;
   return flags.on(flag) ? null : flag;

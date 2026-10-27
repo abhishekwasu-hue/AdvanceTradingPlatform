@@ -11,9 +11,11 @@ import {
   SOURCES, TABS, canDecide, canTradeRole, countLabel, defaultTab, itemForProposal, missingProposalMessage, sourceCaption,
   type FeedSource, type FeedTab, type SignalFeedItem,
 } from "./feed";
+import DayOneV2 from "./DayOneV2";
 import { Direction, SignalDetail, StatusChip, signalDay, signalTime } from "./SignalPartsV2";
 import { setupWords } from "./signalText";
 import { useSignalFeed } from "./useSignalFeed";
+import { PageTabs } from "../ui/PageTabs";
 
 /** Desktop gets the list and the detail side by side from this width (UI v2 §8: "detail panels 430 px"). The seven
  * columns need about 660 px beside the 430 px panel, which a 1440 px window has and 1280-1439 does not; below it the
@@ -42,6 +44,9 @@ const EMPTY: Record<FeedTab, { title: string; body: string }> = {
   today: { title: "No signals yet today.", body: "Signals from your paper bots, scans and Copilot show here as they come." },
   history: { title: "No signals in the last 30 days.", body: "Signals you approve, skip or let expire are kept here for 30 days." },
 };
+
+/** With his day-one watch adopted, an empty list points at it. */
+const WATCHING_BODY = "Your watch above shows where each symbol on your list stands. Setups from your paper bots that wait for your approval land here.";
 
 /**
  * UI2-3 (UI v2 proposal §7, §3 M6 / M7; MOBILE_APP_PLAN §2.1): Signals - "What should I act on?". An inbox of the trades
@@ -72,6 +77,9 @@ export default function SignalsV2() {
   const feed = useSignalFeed(tab, source, symbol);
   // MO4 slice 4: the page's ready-made dish (ui_v2 + growth_v2).
   const dishOn = useFeatures().on("growth_v2");
+  // Signals day one (ui_v2 + strategy_templates): the "pick a ready strategy and a list" card, then his watch.
+  const dayOneOn = useFeatures().on("strategy_templates");
+  const [watching, setWatching] = useState(false);
   const { items } = feed;
 
   useEffect(() => {
@@ -97,33 +105,25 @@ export default function SignalsV2() {
 
   return (
     <div className="space-y-space-4" data-page="signals-v2">
-      <PageIntro id="signals" lines={[
-        "Trades your paper bots, scans and Copilot suggest, in one list. Nothing is placed until you approve it.",
-        "Open a signal to see its levels and why it was suggested, then approve or skip it.",
-      ]} />
+      <PageIntro id="signals" lines={["Open a signal to see its levels and why it was suggested, then approve or skip it."]} />
       <header>
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Signals</h1>
         <p className="hidden text-t14 text-fg-muted md:mt-space-1 md:block">Trades your paper bots, scans and Copilot suggest. Nothing is placed until you approve it.</p>
       </header>
 
       {dishOn && <PageDishV2 page="signals" />}
+      {dayOneOn && <DayOneV2 onAdopted={setWatching} />}
 
-      <div role="tablist" aria-label="Signals" data-tour="signals-tabs"
-        className="grid grid-cols-3 gap-space-1 rounded-panel bg-surface-2 p-space-1 md:flex md:gap-space-6 md:rounded-none md:border-b md:border-subtle md:bg-transparent md:p-0">
-        {TABS.map((t) => {
-          const on = t.id === tab;
+      <PageTabs label="Signals" value={tab} data={{ tour: "signals-tabs" }}
+        onChange={(t) => { setTab(t); setPicked(null); setMessage(null); }}
+        items={TABS.map((t) => {
           const n = count(t.id);
-          return (
-            <button key={t.id} type="button" role="tab" aria-selected={on} onClick={() => { setTab(t.id); setPicked(null); setMessage(null); }}
-              className={cx("min-h-11 rounded-control px-space-2 text-t14 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
-                "md:-mb-px md:rounded-none md:border-b-2 md:px-0",
-                on ? "bg-surface-1 font-semibold text-fg shadow-card md:border-brand md:bg-transparent md:shadow-none" : "text-fg-muted hover:text-fg md:border-transparent")}>
-              <span className="md:hidden">{t.short}{n !== undefined ? ` · ${n}` : ""}</span>
-              <span className="hidden md:inline">{t.label}{n !== undefined && <sup className="ml-space-1 text-t12 font-normal text-fg-muted">{n}</sup>}</span>
-            </button>
-          );
-        })}
-      </div>
+          return {
+            key: t.id,
+            short: `${t.short}${n !== undefined ? ` · ${n}` : ""}`,
+            label: <>{t.label}{n !== undefined && <sup className="ml-space-1 text-t12 font-normal">{n}</sup>}</>,
+          };
+        })} />
 
       <p className="text-t14 text-fg-muted md:hidden">Nothing is placed until you approve it.</p>
 
@@ -151,7 +151,7 @@ export default function SignalsV2() {
       ) : items.length === 0 ? (
         <div className="rounded-panel border border-subtle bg-surface-1 px-space-6 py-space-10 text-center shadow-card" data-empty data-tour="signals-list">
           <p className="text-t15 font-semibold text-fg">{filtered ? "No signals match these filters." : EMPTY[tab].title}</p>
-          <p className="mt-space-1 text-t14 text-fg-muted">{filtered ? "Show every source and symbol to see the rest." : EMPTY[tab].body}</p>
+          <p className="mt-space-1 text-t14 text-fg-muted">{filtered ? "Show every source and symbol to see the rest." : watching ? WATCHING_BODY : EMPTY[tab].body}</p>
           {filtered && (
             <button type="button" onClick={() => { setSource("all"); setSymbol(null); }}
               className="mt-space-4 inline-flex min-h-11 items-center rounded-control px-space-3 text-t14 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">

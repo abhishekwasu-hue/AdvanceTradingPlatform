@@ -24,7 +24,7 @@ from app.audit.log import write_audit_log
 from app.auth.sessions import revoke_all_sessions
 from app.db.models import (
     AiCandidateRecord, MarketSnapshotRecord, NewsEventRecord,
-    OIAlertLogRecord, OIBannerStateRecord, OIDayBaselineRecord, OISnapshotRecord, OptionChainSnapshotRecord, StrikeOISnapshotRecord,
+    MdTenantChainSnapshotRecord, OIAlertLogRecord, OIBannerStateRecord, OIDayBaselineRecord, OISnapshotRecord, OptionChainSnapshotRecord, StrikeOISnapshotRecord,
     AlertDeliveryRecord, FeedbackRecord, ScreenEvidenceRecord, LlmCallRecord, LoginEventRecord, MfaBackupCodeRecord, NotificationRecord, PasswordResetRecord,
     TenantInviteRecord, User, UserAiKeyRecord, UserSessionRecord, UserVisionPrefsRecord, VisionReportRecord,
 )
@@ -92,7 +92,11 @@ def _rules(now: datetime, policy: RetentionPolicy):
         # BYOK-V3 review LOW-1: skipped Vision rows (no call was made) - only those; audited reports are not touched here
         ("vision_reports_skipped", VisionReportRecord,
          (VisionReportRecord.status == "skipped") & (VisionReportRecord.created_at < _cutoff(now, policy.vision_skipped_days))),
-    ]
+    ] + ([
+        # TM 9.4 / TM-8: the owner's chain history only once the owner sets a limit (0 = kept)
+        ("md_tenant_chain_snapshots", MdTenantChainSnapshotRecord,
+         MdTenantChainSnapshotRecord.captured_at < _cutoff(now, policy.chain_history_days)),
+    ] if policy.chain_history_days > 0 else [])
 
 
 async def preview_retention(session: AsyncSession, now: Optional[datetime] = None, policy: Optional[RetentionPolicy] = None) -> RetentionReport:
@@ -199,6 +203,11 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
     from app.chart_analyze.service import erase_user as erase_chart_analyses
     await erase_chart_analyses(session, user)
     # PW6: the "Send feedback" messages they wrote (free text) go with the account too.
+    # C12: and the support-ticket state of those messages (platform_controls rows keyed by the message id).
+    from app.support.desk import forget as forget_tickets
+    feedback_ids = list(await session.scalars(select(FeedbackRecord.id).where(FeedbackRecord.user_id == user.id,
+                                                                              FeedbackRecord.tenant_id == user.tenant_id)))
+    await forget_tickets(session, feedback_ids)
     await session.execute(delete(FeedbackRecord).where(FeedbackRecord.user_id == user.id, FeedbackRecord.tenant_id == user.tenant_id))
     await write_audit_log(session, user.tenant_id, actor_id, "user_erased", f"user #{user.id}{(': ' + reason) if reason else ''}")
     return placeholder

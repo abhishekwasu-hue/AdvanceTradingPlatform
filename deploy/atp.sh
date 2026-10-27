@@ -4,7 +4,8 @@
 #
 #   /opt/atp/deploy/atp.sh install                 first time: bootstrap checks -> deploy -> health -> backup + verify
 #   /opt/atp/deploy/atp.sh deploy [REF]            every update: REF = origin/main (default), a tag or a commit
-#   /opt/atp/deploy/atp.sh health                  read-only: containers, API, deep health, TLS, key, flags, backups
+#   /opt/atp/deploy/atp.sh health                  read-only: containers, API, deep health, TLS, key, flags, chart
+#                                                  analysis engine (OK / MISSING), backups
 #   /opt/atp/deploy/atp.sh rollback [--to SHA] [--restore-db]
 #                                                  the previous release's images; --restore-db also puts the database
 #                                                  back to the backup taken just before that release migrated it
@@ -30,13 +31,34 @@
 #                                                  removes a load-test run's organisation / containers by hand
 #   /opt/atp/deploy/atp.sh reset-password EMAIL    sets a user's new password (asked twice, never shown or logged) and
 #                                                  signs out their sessions - until e-mail (SMTP) is configured
+#   /opt/atp/deploy/atp.sh env-set KEY=VALUE ...  WL1-4: sets NON-secret settings in .env from a short allowlist
+#                                                  (the universe / instrument sync switches), every other line kept,
+#                                                  a mode-600 backup in .deploy/env-backups first; a re-run changes nothing
+#   /opt/atp/deploy/atp.sh lists-sync [--check]    WL1-4: (needs UNIVERSE_SYNC_ENABLED=true) the HTTP status of every
+#                                                  published file, then the instrument master + universe sync (names
+#                                                  only) + the system-watchlists refresh NOW, each group's lists with
+#                                                  their row counts and unmapped symbols; then the API and the worker
+#                                                  pick up the settings. --check: only the file status lines
+#   /opt/atp/deploy/atp.sh probe-candles "SYMBOL" TIMEFRAME [EXCHANGE]
+#                                                  C1, read-only: the two broker calls of one chart (history + today's
+#                                                  intraday) through the owner's own broker session, as counts - the
+#                                                  window, bars per call, first / last bar time and close, the empty /
+#                                                  error reason. TIMEFRAME: 1m 5m 15m 30m 1H D. No token, nothing written
+#   /opt/atp/deploy/atp.sh probe-chain UNDERLYING  B2b, read-only: one option chain (nearest expiry) through the owner's
+#                                                  own broker session - the broker's raw underlying spot beside the ATM
+#                                                  strike and our own last index close. No token, nothing written
+#   /opt/atp/deploy/atp.sh lake-backfill [--check] DATA-H: Daily (several years) and 1-minute (the reader's lookback)
+#                                                  index history through the owner's own broker session into his
+#                                                  private store, resumable; then the bars per index per timeframe.
+#                                                  --check: what is missing + the stored vs the broker's last close
 #   /opt/atp/deploy/atp.sh schedule | releases | help
 #
 #   --dry-run (anywhere, or ATP_DRY_RUN=1): prints every step it would take; changes nothing on the host.
 #
 # Rules it keeps (tests/test_z11_deploy_bundle.py checks them):
 #   * secrets are read only from /opt/atp/.env, never created, edited or printed - only key NAMES appear in output, and
-#     no secret is ever put on a command line; .env must exist, be mode 600 and hold every required key;
+#     no secret is ever put on a command line; .env must exist, be mode 600 and hold every required key; the one
+#     write is `env-set`: only the non-secret keys of ENV_SET_KEYS, after a mode-600 backup, every other line kept;
 #     SECRETS_ENCRYPTION_KEY must be the one this host first deployed with (a salted scrypt fingerprint is kept in
 #     .deploy/) - it is never rotated here;
 #   * fails closed: any failed step stops the run with a non-zero exit before the next one changes anything, and the
@@ -83,6 +105,12 @@ COMPOSE_MIN="2.24"
 REQUIRED_KEYS=(POSTGRES_PASSWORD JWT_SECRET_KEY SECRETS_ENCRYPTION_KEY METRICS_TOKEN DOMAIN ACME_EMAIL BACKUP_ENCRYPTION_PASSPHRASE)
 LIVE_SWITCHES=(LIVE_MARKET_PROTECTION LIVE_UPSTOX_OPTION_STOP_LIMIT LIVE_EXIT_IF_NO_STOP LIVE_STRICT_WING_FILL STATIC_IP_REQUIRED_FOR_LIVE)
 APP_IMAGES=(atp-backend atp-worker atp-frontend atp-research-worker atp-backup)
+# WL1-4: the only keys `env-set` may write - plain switches, never a secret or a LIVE switch.
+# Owner 25 Oct: also the history owner's organisation (HB0) - the id and its name, e.g. the placeholder "My Organisation"
+# the owner gives his organisation until he picks a name (never hard-coded; the name may hold spaces, @ and +).
+ENV_SET_KEYS=(UNIVERSE_SYNC_ENABLED UNIVERSE_SYNC_HOUR_IST INSTRUMENT_SYNC_EXCHANGES INSTRUMENT_SYNC_HOUR_IST
+              HISTORY_OWNER_TENANT_ID HISTORY_OWNER_TENANT_NAME)
+ENV_BACKUPS_KEEP=10
 
 RELEASE=""          # image tag compose uses (ATP_RELEASE)
 DB_AHEAD=""         # MIGRATION_ALLOW_DB_AHEAD for compose: the exact database revision an older image may start on
@@ -200,6 +228,7 @@ dc() {
   local ahead="$DB_AHEAD"
   if [ -z "$ahead" ] && db_ahead_marker; then ahead="$(cat "$STATE_DIR/db_ahead")"; fi
   (cd "$ATP_DIR" && ATP_RELEASE="${RELEASE:-latest}" MIGRATION_ALLOW_DB_AHEAD="$ahead" ATP_DEPLOYMENT_PHASE="$(deployment_phase)" \
+    ATP_PRIVATE_VERSION="$(private_version)" \
     ${DC_WRAP[@]+"${DC_WRAP[@]}"} docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml \
     -f deploy/compose.release.yml -p "$PROJECT" "$@")
 }
@@ -610,6 +639,15 @@ report_settings() {
   for k in GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do if env_set "$k"; then n=$((n + 1)); fi; done
   case "$n" in 0) info "Google sign-in (GS-1): not set (optional; no Google button)";; 2) ok "Google sign-in (GS-1): both keys set (the button shows)";;
     *) warn "Google sign-in (GS-1): only one of GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET set - the button stays hidden";; esac
+  # B8: browser notifications need a stable VAPID key; without one the app refuses new browser subscriptions (runbook section 4).
+  if env_set VAPID_PRIVATE_KEY; then
+    ok "browser notifications (Web Push): VAPID_PRIVATE_KEY set - subscriptions survive restarts"
+    case "$(env_get VAPID_SUBJECT)" in ""|*@example.com) warn "browser notifications: VAPID_SUBJECT is not your own contact (mailto:you@yourdomain)";; esac
+  else
+    warn "browser notifications (Web Push): VAPID_PRIVATE_KEY is not set - the app refuses new browser subscriptions until it is (runbook section 4, 'Browser and phone notifications')"
+  fi
+  if env_set FCM_SERVICE_ACCOUNT_JSON_BASE64 || env_set FCM_SERVICE_ACCOUNT_FILE; then ok "phone notifications (Android app, FCM): key set - the mobile_push flag decides who gets them"
+  else info "phone notifications (Android app, FCM): not set (optional; FCM_SERVICE_ACCOUNT_JSON_BASE64) - nothing is sent to phones"; fi
 }
 
 lock() {
@@ -746,6 +784,10 @@ health_checks() {
   check_key_live
   step "flags and LIVE (read-only)"
   report_flags
+  step "chart analysis engine"
+  engine_report
+  step "market history (bars, first / last date per index per timeframe)"
+  lake_report
   step "backups"
   backup_report
 
@@ -766,16 +808,22 @@ health_checks() {
 public_domain_check() {
   local domain="$1" code hdrs h missing="" want got
   local here=(--resolve "$domain:443:127.0.0.1" --resolve "www.$domain:443:127.0.0.1")
-  hdrs="$(curl -sk -m 10 -D - -o /dev/null "${here[@]}" "https://$domain/" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
-  if ! printf '%s\n' "$hdrs" | grep -q '^http/'; then
-    bad "https://$domain/ through Caddy here gave no answer, so its security headers could not be checked"
-  else
-    for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy; do
+  # A4: the app page and the API both, and Permissions-Policy plus the CSP's frame-ancestors as well.
+  local page
+  for page in / /api/system/health; do
+    missing=""
+    hdrs="$(curl -sk -m 10 -D - -o /dev/null "${here[@]}" "https://$domain$page" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
+    if ! printf '%s\n' "$hdrs" | grep -q '^http/'; then
+      bad "https://$domain$page through Caddy here gave no answer, so its security headers could not be checked"
+      continue
+    fi
+    for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy permissions-policy; do
       printf '%s\n' "$hdrs" | grep -q "^$h:" || missing="$missing $h"
     done
-    if [ -z "$missing" ]; then ok "https://$domain/ sends HSTS, CSP, X-Frame-Options, X-Content-Type-Options and Referrer-Policy"
-    else bad "https://$domain/ is missing:$missing (deploy/Caddyfile)"; fi
-  fi
+    printf '%s\n' "$hdrs" | grep -q "^content-security-policy:.*frame-ancestors 'none'" || missing="$missing csp-frame-ancestors"
+    if [ -z "$missing" ]; then ok "https://$domain$page sends HSTS, CSP (frame-ancestors), X-Frame-Options, X-Content-Type-Options, Referrer-Policy and Permissions-Policy"
+    else bad "https://$domain$page is missing:$missing (deploy/Caddyfile)"; fi
+  done
   want="301 https://$domain/atp-health-probe?x=1"
   got="$(curl -sk -o /dev/null -m 10 -w '%{http_code} %{redirect_url}' "${here[@]}" "https://www.$domain/atp-health-probe?x=1" 2>/dev/null || true)"
   case "$got" in
@@ -939,6 +987,87 @@ gate_report() {
   esac
 }
 
+# --- A1 (UI-H bug lane): the chart analysis engine, the private package atp_private (docs/design/PRIVATE_PACKAGE.md §6) -
+# A read-only checkout at $ATP_DIR/private (git-ignored), fetched with the host's read-only deploy key
+# (~/.ssh/atp_private_ro, through GIT_SSH_COMMAND) at the tag ATP_PRIVATE_REF in .env; docker-compose.hostinger.yml
+# mounts it read-only into the backend and the worker and puts it on PYTHONPATH. Optional: without the key or the tag
+# the deploy goes on and says in one line what the owner adds. The key's path is printed, never its content; git's
+# own output is not printed (the private repository's address is not a secret, but nothing of its content is shown).
+PRIVATE_DIR="$ATP_DIR/private"
+private_key() { printf '%s' "${ATP_PRIVATE_KEY:-$HOME/.ssh/atp_private_ro}"; }
+private_repo() {
+  local r owner; r="$(env_get ATP_PRIVATE_REPO)"
+  if [ -z "$r" ]; then owner="$(gate_repo)"; owner="${owner%%/*}"; [ -z "$owner" ] || r="git@github.com:$owner/atp-private.git"; fi
+  printf '%s' "$r"
+}
+private_version() {   # its own .git only: $ATP_DIR/private sits inside ATP's checkout, whose HEAD must never be read here
+  local v=""
+  [ ! -d "$PRIVATE_DIR/.git" ] || v="$(git -C "$PRIVATE_DIR" rev-parse -q --verify HEAD 2>/dev/null || true)"
+  if [ -n "$v" ]; then printf '%s' "${v:0:12}"; else printf 'none'; fi
+}
+private_install() {
+  local ref key repo owner_line
+  ref="$(env_get ATP_PRIVATE_REF)"; key="$(private_key)"; repo="$(private_repo)"
+  owner_line="the owner adds the read-only deploy key ~/.ssh/atp_private_ro and ATP_PRIVATE_REF=<tag> in .env (runbook 'Chart analysis engine')"
+  step "chart analysis engine (private package atp_private)"
+  [ "$DRY_RUN" = "1" ] || mkdir -p "$PRIVATE_DIR"          # the mount source exists even before the first install
+  if [ -z "$ref" ] && [ ! -f "$key" ]; then warn "chart analysis engine not installed - $owner_line"; return 0; fi
+  if [ -z "$ref" ]; then warn "chart analysis engine not installed - the owner adds ATP_PRIVATE_REF=<tag of atp-private> in .env"; return 0; fi
+  if [ ! -f "$key" ]; then warn "chart analysis engine not installed - the owner adds the read-only deploy key ~/.ssh/atp_private_ro (runbook 'Chart analysis engine')"; return 0; fi
+  case "$ref" in -*|*..*|*[!A-Za-z0-9._/-]*) warn "chart analysis engine not installed - ATP_PRIVATE_REF in .env is not a tag name"; return 0 ;; esac
+  [ -n "$repo" ] || { warn "chart analysis engine not installed - the owner adds ATP_PRIVATE_REPO (the private repository's ssh address) in .env"; return 0; }
+  if [ "$DRY_RUN" = "1" ]; then info "would fetch tag $ref of the private package into $PRIVATE_DIR with the deploy key"; return 0; fi
+  local ssh_cmd="ssh -i $key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+  [ -d "$PRIVATE_DIR/.git" ] || git init -q "$PRIVATE_DIR" >/dev/null 2>&1 || { warn "chart analysis engine not installed - could not create $PRIVATE_DIR"; return 0; }
+  if ! GIT_SSH_COMMAND="$ssh_cmd" GIT_TERMINAL_PROMPT=0 git -C "$PRIVATE_DIR" fetch -q --depth 1 --no-tags "$repo" "+refs/tags/$ref:refs/tags/$ref" >/dev/null 2>&1; then
+    warn "chart analysis engine: could not fetch tag $ref from the private repository (is the deploy key added there, read-only, and does the tag exist?) - the checkout stays at $(private_version)"
+    return 0
+  fi
+  # the container's own user (not this one) imports it: the code is world-readable inside the checkout (umask 022,
+  # this script's 077 would hide it); .git stays private to the deploy user, and nothing here is a credential
+  if (umask 022 && git -C "$PRIVATE_DIR" -c advice.detachedHead=false checkout -q --force --detach "refs/tags/$ref" >/dev/null 2>&1 \
+      && git -C "$PRIVATE_DIR" clean -qfdx >/dev/null 2>&1 \
+      && find "$PRIVATE_DIR" -path "$PRIVATE_DIR/.git" -prune -o -exec chmod go+rX,go-w {} + 2>/dev/null) \
+      && chmod 755 "$PRIVATE_DIR"; then
+    ok "chart analysis engine source at tag $ref ($(private_version)), mounted read-only into the backend and the worker"
+  else warn "chart analysis engine: could not check out tag $ref in $PRIVATE_DIR"; fi
+}
+
+# `health`: the engine as the running backend's loader sees it (backend/scripts/engine_status.py). MISSING only WARNs:
+# Analyze a chart is optional and its page says it is not available.
+engine_report() {
+  local js line
+  js="$(dc exec -T backend sh -c 'test -f scripts/engine_status.py && python scripts/engine_status.py' 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
+  if [ -z "$js" ]; then info "chart analysis engine: not reported by this release"; return 0; fi
+  line="$(printf '%s' "$js" | python3 -c 'import json, sys
+clean = lambda v: "".join(ch for ch in str(v) if ch.isprintable())[:120]
+try:
+    d = json.load(sys.stdin)
+except ValueError:
+    print("? the answer could not be read"); sys.exit(0)
+print(("OK " + clean(d.get("name")) + " " + clean(d.get("version"))) if d.get("installed") else ("MISSING " + clean(d.get("reason") or "unknown")))')"
+  case "$line" in
+    "OK "*) ok "chart analysis engine: OK (${line#OK })" ;;
+    "MISSING "*) warn "chart analysis engine: MISSING (${line#MISSING })" ;;
+    *) warn "chart analysis engine: unknown (${line#? })" ;;
+  esac
+}
+
+# DATA-H DH4: the index history the chart reader and the Copilot read (backend app/market_lake/index_history.py, run in
+# the backend container): bars and first / last date per index per timeframe. MISSING / SHORT only WARN - the pages say
+# so themselves, and `lake-backfill` fills it.
+lake_report() {
+  local out line n=0
+  out="$(dc exec -T backend sh -c 'test -f app/market_lake/index_history.py && python -m app.market_lake.index_history health' 2>/dev/null | tr -d '\r' || true)"
+  if [ -z "$out" ]; then info "market history: not reported by this release"; return 0; fi
+  while IFS= read -r line; do
+    n=$((n + 1))
+    if [ "$n" = "1" ]; then
+      case "$line" in *"MISSING / SHORT"*) warn "$line - fill it: $ATP_DIR/deploy/atp.sh lake-backfill" ;; *) ok "$line" ;; esac
+    else info "$line"; fi
+  done <<< "$out"
+}
+
 # --- commands ----------------------------------------------------------------------------------------------------
 cmd_health() {
   [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
@@ -1002,6 +1131,7 @@ cmd_deploy() {
   if [ "$prev" = "$sha" ]; then info "same release as running - converging (idempotent re-run)"; fi
   RESTORE_CHECKOUT="${prev:-$head_before}"
   run git -C "$ATP_DIR" checkout -q --detach "$sha"
+  private_install
 
   step "images atp-*:$RELEASE (built from the commit, reused by a rollback; nothing running is touched)"
   if [ "$DRY_RUN" != "1" ] && images_exist "$RELEASE"; then ok "images for $RELEASE already built"
@@ -1119,6 +1249,9 @@ cmd_deploy() {
   else
     info "would run every health check and compare the feature flags before/after"
   fi
+
+  step "market history (DATA-H: fills only what is missing; skipped when nothing is)"
+  if [ "$DRY_RUN" != "1" ]; then lake_fill_if_missing; else info "would run: lake-backfill --if-missing (at most 120 s)"; fi
 
   cmd_schedule quiet
   prune_images
@@ -2477,6 +2610,25 @@ print("\n".join("%s %d" % (r["stamp"], r["tenant_id"]) for r in json.load(sys.st
   printf '\nloadtest-cleanup: done\n'
 }
 
+# B2b (owner, 24 Oct): the broker's own spot in an option chain answer (backend app/option_chain/probe.py, the same
+# handler as the admin-only GET /api/admin/option-chain/probe-chain), run in the backend container as the platform
+# owner's account through his own stored broker session. Read-only: no container is started or changed, nothing is
+# written, no token is printed.
+cmd_probe_chain() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  [ $# -eq 1 ] || die "usage: atp.sh probe-chain UNDERLYING   (for example NIFTY, BANKNIFTY, SENSEX)" 2
+  [[ "$1" =~ ^[A-Za-z0-9\ \&_-]{1,30}$ ]] || die "the underlying may hold only letters, digits, spaces and & _ - (1 to 30 characters)" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would read one option chain for %s (numbers only; nothing written)\n' "$1"; return 0; fi
+  check_tools
+  local rc=0
+  dc exec -T backend python -m app.option_chain.probe "$1" || rc=$?
+  case "$rc" in
+    0) ;;
+    2|3) exit "$rc" ;;      # the probe printed why (a bad name; no usable broker session)
+    *) die "the probe did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
 usage() { sed -n '2,/--dry-run (anywhere/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # Handover 8d: the owner sets a user's password on the server (backend/scripts/reset_password.py). The password is
@@ -2505,6 +2657,189 @@ cmd_reset_password() {
   esac
 }
 
+# WL1-4 (owner decision 23 Oct): the owner's settings for the universe sync, set without opening an editor. Only the
+# keys of ENV_SET_KEYS with a plain value; every other line of .env (comments, secrets, order) stays byte for byte. A
+# key already assigned has each of its lines replaced; a missing one is appended. Nothing changes -> nothing is
+# written. Before a write: a copy of .env in .deploy/env-backups (mode 600, the newest ENV_BACKUPS_KEEP kept); the new
+# file is written beside .env with mode 600 and moved over it in one step. Values of other keys are never printed.
+cmd_env_set() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  [ $# -gt 0 ] || die "usage: atp.sh env-set KEY=VALUE [KEY=VALUE ...]   (keys: ${ENV_SET_KEYS[*]})" 2
+  local pair key val k allowed
+  for pair in "$@"; do
+    key="${pair%%=*}"; val="${pair#*=}"
+    [ "$key" != "$pair" ] || die "not KEY=VALUE: $key" 2
+    allowed=0
+    for k in "${ENV_SET_KEYS[@]}"; do if [ "$k" = "$key" ]; then allowed=1; fi; done
+    [ "$allowed" = "1" ] || die "$key is not a setting env-set may change (only: ${ENV_SET_KEYS[*]}). Secrets and LIVE switches are edited by hand in $ENV_FILE." 2
+    if [ "$key" = "HISTORY_OWNER_TENANT_ID" ]; then
+      [[ "$val" =~ ^[1-9][0-9]{0,9}$ ]] || die "the value for $key is the organisation's number (digits only)" 2
+    elif [ "$key" = "HISTORY_OWNER_TENANT_NAME" ]; then
+      [[ "$val" =~ ^[A-Za-z0-9_.,:@+-]([A-Za-z0-9_.,:@+\ -]{0,62}[A-Za-z0-9_.,:@+-])?$ ]] \
+        || die "the value for $key is the organisation's name exactly as the Team page shows it: letters, digits, spaces and _ . , : @ + - (1 to 64 characters, no space at either end)" 2
+    else
+      [[ "$val" =~ ^[A-Za-z0-9_.,:-]{1,64}$ ]] || die "the value for $key may hold only letters, digits and _ . , : - (1 to 64 characters)" 2
+    fi
+  done
+  lock 0
+  check_env
+  step "settings in $ENV_FILE"
+  local stamp; stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  [ "$DRY_RUN" = "1" ] || mkdir -p "$STATE_DIR/env-backups"
+  python3 -c 'import os, re, sys
+path, backups, stamp, keep, dry = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5] == "1"
+pairs = [p.split("=", 1) for p in sys.argv[6:]]
+raw = open(path, "rb").read().decode("utf-8")
+lines = raw.splitlines(keepends=True)
+if lines and not lines[-1].endswith("\n"):
+    lines[-1] += "\n"
+def value(line):
+    v = line.split("=", 1)[1].strip()
+    return v[1:].split(v[0], 1)[0] if v[:1] in "\"\x27" and v else v.split(" #", 1)[0].strip()
+for key, new in pairs:
+    pat = re.compile(r"^\s*(export\s+)?" + re.escape(key) + r"\s*=")
+    hits = [i for i, line in enumerate(lines) if pat.match(line)]
+    if not hits:
+        lines.append(f"{key}={new}\n")
+        print(f"    added      {key}={new}")
+        continue
+    old = value(lines[hits[-1]])
+    for i in hits:
+        lines[i] = ("export " if pat.match(lines[i]).group(1) else "") + f"{key}={new}\n"
+    word = "unchanged" if old == new and len(hits) == 1 else "set"
+    print(f"    {word:10} {key}={new}" + (f" (was {old})" if old != new else ""))
+out = "".join(lines)
+if out == raw:
+    print("    .env unchanged - nothing written")
+    sys.exit(0)
+if dry:
+    print("    dry-run: .env would be written (after a backup); nothing changed")
+    sys.exit(0)
+backup = os.path.join(backups, f"env.{stamp}")
+fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, "wb") as fh:
+    fh.write(raw.encode("utf-8"))
+old_ones = sorted(f for f in os.listdir(backups) if f.startswith("env."))
+for f in old_ones[:-keep]:
+    os.remove(os.path.join(backups, f))
+tmp = path + ".env-set.tmp"
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "wb") as fh:
+    fh.write(out.encode("utf-8"))
+    fh.flush()
+    os.fsync(fh.fileno())
+try:
+    os.chown(tmp, os.stat(path).st_uid, os.stat(path).st_gid)          # the same owner as before
+except PermissionError:
+    pass
+os.replace(tmp, path)
+print(f"    .env written (mode 600); the previous copy: {backup}")' \
+    "$ENV_FILE" "$STATE_DIR/env-backups" "$stamp" "$ENV_BACKUPS_KEEP" "$DRY_RUN" "$@"
+  info "the API and the worker read these at their next start: $ATP_DIR/deploy/atp.sh lists-sync (or the next deploy)"
+}
+
+# WL1-3 / WL1-4: the universe sync and the system watchlists NOW (backend app/universe/run_now.py, in a one-off
+# container of the worker image, which reads .env as the worker does). The files are only names - no prices - and
+# every file's HTTP status is printed before anything is written. The worker is restarted afterwards (it then runs the
+# nightly sync itself) only through the session gate, so never under open positions in an open session.
+cmd_lists_sync() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local check=0 rc=0 cur
+  case "${1:-}" in "") ;; --check) check=1 ;; *) die "usage: atp.sh lists-sync [--check]" 2 ;; esac
+  [ $# -le 1 ] || die "usage: atp.sh lists-sync [--check]" 2
+  lock 0
+  check_tools
+  check_env
+  is_true "$(env_get UNIVERSE_SYNC_ENABLED)" || die "UNIVERSE_SYNC_ENABLED is not true in $ENV_FILE - nothing was downloaded or changed. Set it first:
+    $ATP_DIR/deploy/atp.sh env-set UNIVERSE_SYNC_ENABLED=true INSTRUMENT_SYNC_EXCHANGES=NSE,BSE" 2
+  cur="$(current_sha)"
+  [ -n "$cur" ] || die "no release recorded on this host - run $ATP_DIR/deploy/atp.sh deploy first" 1
+  RELEASE="$(release_of "$cur")"
+  info "release ${cur:0:12}; UNIVERSE_SYNC_ENABLED=$(env_get UNIVERSE_SYNC_ENABLED), INSTRUMENT_SYNC_EXCHANGES=$(env_get INSTRUMENT_SYNC_EXCHANGES)"
+  if [ "$check" = "1" ]; then
+    step "published files (HTTP status from this server; nothing is written)"
+    rdc run --rm --no-deps -T worker python -m app.universe.run_now --check || rc=$?
+    if [ "$rc" = "0" ]; then ok "every file answered 200"; else warn "some files were not fetched (lines above) - those lists are left as they are"; fi
+    return 0
+  fi
+  step "session gate"
+  session_gate "restart the worker" "$RELEASE"
+  step "universe sync + system watchlists (names only, from the published NSE / niftyindices files)"
+  rdc run --rm --no-deps -T worker python -m app.universe.run_now || rc=$?
+  case "$rc" in
+    0) ok "lists rebuilt (the counts above)" ;;
+    2) die "refused by the sync (lines above) - nothing was changed" 2 ;;
+    *) die "the sync did not finish (exit $rc) - the lists keep what they held; the lines above say where it stopped" 1 ;;
+  esac
+  step "API and worker read the new settings (recreated only when their settings changed)"
+  rdc up -d --no-deps --no-build backend
+  wait_api || die "the API did not pass deep health after picking up the settings - see: $ATP_DIR/deploy/atp.sh health" 1
+  start_workers
+  printf '\nlists-sync: done - the system watchlists are filled; the worker repeats the sync every evening (UNIVERSE_SYNC_HOUR_IST)\n'
+}
+
+# C1 (owner, 24 Oct): the broker's own answer for one chart, as counts (backend app/market_data/probe.py, the same
+# handler as the admin-only GET /api/admin/market-data/probe-candles), run in the backend container as the platform
+# owner's account through his own stored broker session. Read-only: no container is started or changed, nothing is
+# written, no token or other price is printed.
+cmd_probe_candles() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local usage='usage: atp.sh probe-candles "SYMBOL" TIMEFRAME [EXCHANGE]   (TIMEFRAME: 1m 3m 5m 15m 30m 1H D)'
+  if [ $# -lt 2 ] || [ $# -gt 3 ]; then die "$usage" 2; fi
+  [[ "$1" =~ ^[A-Za-z0-9\ \&._-]{1,60}$ ]] || die "the symbol may hold only letters, digits, spaces and & . _ - (1 to 60 characters)" 2
+  [[ "$2" =~ ^(1m|3m|5m|15m|30m|1H|1h|60m|D|d|1D|1min|3min|5min|15min|30min|60min|day)$ ]] || die "$usage" 2
+  [ $# -lt 3 ] || [[ "$3" =~ ^[A-Za-z_]{2,10}$ ]] || die "the exchange is a short name such as NSE, NFO, BFO or MCX" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would ask the broker for %s at %s (counts only; nothing written)\n' "$1" "$2"; return 0; fi
+  check_tools
+  local rc=0
+  dc exec -T backend python -m app.market_data.probe candles "$@" || rc=$?
+  case "$rc" in
+    0) ;;
+    2|3) exit "$rc" ;;      # the probe printed why (a bad input; no usable broker session)
+    *) die "the probe did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
+# DATA-H (owner, 24 Oct): the index history the chart reader and the Copilot read - Daily (Weekly built from it) for
+# several years and 1-minute bars (1H / 15M built from them) for the reader's lookback, of NIFTY, BANKNIFTY, SENSEX and
+# FINNIFTY (backend app/market_lake/index_history.py), run in the backend container (its own network and settings, so
+# nothing depends on the host's Python or network). Read through the OWNER's own broker session only (HB2's owner:
+# HISTORY_OWNER_TENANT_ID + HISTORY_OWNER_TENANT_NAME) into his organisation's PRIVATE store; never the shared lake.
+# Resumable and idempotent: a re-run asks only for what is missing. --check: what would be asked, whose session, and the
+# stored official last close beside the broker's own (DH6) - nothing written. No token is printed.
+cmd_lake_backfill() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local check=0 rc=0
+  case "${1:-}" in "") ;; --check) check=1 ;; *) die "usage: atp.sh lake-backfill [--check]" 2 ;; esac
+  [ $# -le 1 ] || die "usage: atp.sh lake-backfill [--check]" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would run the index-history %s in the backend container\n' "$([ "$check" = 1 ] && echo check || echo backfill)"; return 0; fi
+  check_tools
+  if [ "$check" = "1" ]; then
+    dc exec -T backend python -m app.market_lake.index_history check || rc=$?
+  else
+    dc exec -T backend python -m app.market_lake.index_history run --budget-seconds 1800 || rc=$?
+  fi
+  case "$rc" in
+    0) ;;
+    2|3) exit "$rc" ;;      # it printed why (the owner is not configured; no usable broker session of his own)
+    *) die "the backfill did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
+# DATA-H DH2: during a deploy, the backfill runs only when a window is missing (a new host, a new index, a stopped
+# run) and for at most 120 s; nothing missing -> it exits at once. Never fails the deploy (the worker's daily pass and
+# `lake-backfill` finish the rest).
+lake_fill_if_missing() {
+  local out
+  out="$(dc exec -T backend sh -c 'test -f app/market_lake/index_history.py && python -m app.market_lake.index_history run --if-missing --budget-seconds 120' 2>/dev/null | tr -d '\r' | head -n 3 || true)"
+  if [ -z "$out" ]; then info "market history: not run by this release"; return 0; fi
+  case "$out" in
+    *"nothing_missing"*) ok "market history: nothing missing" ;;
+    *"not_configured"*|*"no_session"*) info "market history: not filled - $(printf '%s' "$out" | sed -n 2p | sed 's/^ *note: //' | cut -c1-160)" ;;
+    *) info "$(printf '%s' "$out" | head -n 2 | tr '\n' ' ')" ;;
+  esac
+}
+
 main() {
   local args=() a
   for a in "$@"; do
@@ -2529,9 +2864,14 @@ main() {
     base-backup)    cmd_base_backup "$@" ;;
     restore-offsite) cmd_restore_offsite ;;
     releases)       cmd_releases ;;
+    probe-chain)    cmd_probe_chain "$@" ;;
     loadtest)       cmd_loadtest "$@" ;;
     loadtest-cleanup) cmd_loadtest_cleanup "$@" ;;
     reset-password) cmd_reset_password "$@" ;;
+    env-set)        cmd_env_set "$@" ;;
+    lists-sync)     cmd_lists_sync "$@" ;;
+    probe-candles)  cmd_probe_candles "$@" ;;
+    lake-backfill)  cmd_lake_backfill "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac

@@ -1,5 +1,5 @@
 import * as RD from "@radix-ui/react-dialog";
-import { Minus, Plus, ShieldCheck, X } from "lucide-react";
+import { ChevronRight, Minus, Plus, ShieldCheck, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
 import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
@@ -202,6 +202,17 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
 
 /** The "Practice mode (PAPER)" frame on every ticket (owner order 8b-l); 8b slice 1: also on the positions page while
  * every position shown is PAPER (`className` rounds it there). */
+/** UX-9: the "More options" summary line - the product and the position's stop-loss as they stand. */
+export function advancedSummary(draft: Pick<Draft, "product" | "stopLoss">): string {
+  const stop = draft.stopLoss.trim();
+  return `${draft.product} · ${stop ? `stop-loss ${stop}` : "no stop-loss"}`;
+}
+
+/** UX-9: the review asked for a stop-loss, so "More options" opens to show the field (the server's own words). */
+export function needsStop(problem: string | null | undefined): boolean {
+  return !!problem && /stop-loss/i.test(problem);
+}
+
 export function PracticeFrame({ className }: { className?: string } = {}) {
   return (
     <div className={cx("flex flex-wrap items-center gap-x-space-2 bg-warn-tint px-space-4 py-space-2 text-t13 font-semibold text-warn", className)} data-practice-frame>
@@ -263,7 +274,6 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
               <p className="mt-space-1 text-t13 text-fg font-tabular" data-ticket="units">{unitsText(draft.lots, target.lotSize)}</p>
             </div>
             <Segmented label="Order type" testId="order-type" value={draft.orderType} onChange={(v) => onDraft({ orderType: v })} options={ORDER_TYPES} />
-            <Segmented label="Product" testId="product" value={draft.product} onChange={(v) => onDraft({ product: v })} options={PRODUCTS} />
             {defaults?.product === undefined && <p className="text-t12 text-fg-muted" data-ticket="product-unset">{PRODUCT_UNSET_TEXT}</p>}
             {(marks.orderType || marks.product) && (
               <p className="text-t12 text-fg-muted" data-from-defaults="type-product">
@@ -295,12 +305,25 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                 </div>
               </div>
             )}
-            <div>
-              <label htmlFor={ids.stop} className="mb-space-1 block text-t12 font-medium text-fg-muted">
-                Stop-loss for the position {stopHint(draft.side, target.right)}
-              </label>
-              <input id={ids.stop} inputMode="decimal" value={draft.stopLoss} onChange={(e) => onDraft({ stopLoss: e.target.value })} className={FIELD} data-ticket="stop" />
-            </div>
+            {/* UX-9 (ticket LOOK): side, lots, order type and its price stay in view; the product and the position's
+                stop-loss sit under "More options", their current values in its summary line. What is sent is unchanged. */}
+            <details className="group rounded-control border border-subtle" data-ticket="advanced" open={needsStop(problem) || undefined}>
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-space-2 px-space-3 text-t13 font-medium text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand [&::-webkit-details-marker]:hidden">
+                <span className="inline-flex items-center gap-space-1">
+                  <ChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />More options
+                </span>
+                <span className="min-w-0 truncate font-tabular text-t12 font-normal text-fg-muted" data-ticket="advanced-summary">{advancedSummary(draft)}</span>
+              </summary>
+              <div className="space-y-space-3 border-t border-subtle px-space-3 py-space-3">
+                <Segmented label="Product" testId="product" value={draft.product} onChange={(v) => onDraft({ product: v })} options={PRODUCTS} />
+                <div>
+                  <label htmlFor={ids.stop} className="mb-space-1 block text-t12 font-medium text-fg-muted">
+                    Stop-loss for the position {stopHint(draft.side, target.right)}
+                  </label>
+                  <input id={ids.stop} inputMode="decimal" value={draft.stopLoss} onChange={(e) => onDraft({ stopLoss: e.target.value })} className={FIELD} data-ticket="stop" />
+                </div>
+              </div>
+            </details>
           </>
         )}
 

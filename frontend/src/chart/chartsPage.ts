@@ -40,11 +40,12 @@ export function offeredTimeframes(server: readonly string[] | null | undefined):
   return TIMEFRAMES.filter((tf) => (tf !== "week" && tf !== "month") || !!server?.includes(tf));
 }
 
-/** The volume pane's name: an index's volume comes from its near-month future, and says so ("Volume · NIFTY OCT FUT"). */
+/** The volume pane's name: an index's volume comes from its near-month future, and says so in words (day-one fix 8:
+ * "Volume of the NIFTY October future", never the contract code "NIFTY OCT FUT"). */
 export function volumeLabelFor(source: CandleVolumeSource | null | undefined): string {
   if (!source?.underlying || !/^\d{4}-\d{2}-\d{2}$/.test(source.expiry ?? "")) return "Volume";
-  const month = new Date(`${source.expiry}T00:00:00Z`).toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" });
-  return `Volume · ${source.underlying} ${month.toUpperCase()} FUT`;
+  const month = new Date(`${source.expiry}T00:00:00Z`).toLocaleDateString("en-IN", { month: "long", timeZone: "UTC" });
+  return `Volume of the ${source.underlying} ${month} future`;
 }
 
 // --- The market state chip -------------------------------------------------------------------------------------------

@@ -47,7 +47,7 @@ with open(STATE) as fh:
     st = json.load(fh)
 argv = sys.argv[1:]
 st["calls"].append({"argv": argv, "release": os.environ.get("ATP_RELEASE", ""), "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", ""),
-                   "phase": os.environ.get("ATP_DEPLOYMENT_PHASE", "")})
+                   "phase": os.environ.get("ATP_DEPLOYMENT_PHASE", ""), "private": os.environ.get("ATP_PRIVATE_VERSION", "")})
 rc = 0
 out = []
 APP = {"backend": "atp-backend", "worker": "atp-worker", "frontend": "atp-frontend", "research-worker": "atp-research-worker", "backup": "atp-backup"}
@@ -214,6 +214,9 @@ def run_sql(target, sqls):
 if sub == "exec":
     flags, pos = opts_and_services(args)
     svc, cmd = pos[0], pos[1:]
+    if svc == "backend" and cmd[:3] == ["python", "-m", "app.option_chain.probe"]:   # B2b: probe-chain (own tests: test_b2_as_of_spot)
+        st.setdefault("chain_probes", []).append(cmd[3:])
+        out.append(f"probe-chain {' '.join(cmd[3:])}"); finish()
     if svc == "postgres" and cmd[:2] == ["sh", "-c"] and "/wal_archive" in cmd[2]:   # health: files and MB in the archive
         out.append(f"{st.get('wal_files', 0)} {st.get('wal_files', 0) * 16}"); finish()
     if svc == "postgres" and cmd[:1] == ["pg_basebackup"]:
@@ -257,6 +260,9 @@ if sub == "exec":
     if svc == "backend":
         if cmd[:2] == ["test", "-f"]:
             finish()
+        if cmd[:3] == ["python", "-m", "app.market_data.probe"]:          # C1: probe-candles (read-only; own tests: test_c1_closed_history)
+            st.setdefault("probes", []).append(cmd[3:])
+            out.append(f"probe-{cmd[3]} {' '.join(cmd[4:])}"); finish()
         if cmd[:2] == ["python", "scripts/deploy_audit.py"]:              # A3: the untested deploy's audit row, reason on stdin
             st.setdefault("audit", []).append({"argv": cmd[2:], "reason": sys.stdin.readline().strip(), "release": rel})
             finish()
@@ -265,6 +271,12 @@ if sub == "exec":
         if cmd[:2] == ["python", "scripts/ops_check.py"]:                  # A2: the host facts arrive on stdin
             st["ops_check_input"] = json.loads(sys.stdin.read() or "{}")
             out.append("ops-check: disk=ok | 0 change(s) to report"); finish()
+        if cmd[:2] == ["sh", "-c"] and "engine_status.py" in cmd[2]:      # A1: the chart analysis engine's state
+            if st.get("engine") is None:
+                rc = 1
+            else:
+                out.append(json.dumps(st["engine"]))
+            finish()
         if cmd[:2] == ["sh", "-c"] and "flag_posture.py" in cmd[2]:
             if st["posture"] is None:
                 rc = 1
@@ -278,6 +290,10 @@ if sub == "run":
     svc, cmd = pos[0], pos[1:]
     entry = (flags.get("--entrypoint") or [""])[0]
     envs = dict(e.split("=", 1) if "=" in e else (e, os.environ.get(e, "")) for e in flags.get("-e", []))   # -e NAME: from the environment
+    if svc == "worker" and cmd[:3] == ["python", "-m", "app.universe.run_now"]:   # WL1-4: lists-sync (its own tests: test_wl1_run_now)
+        st.setdefault("lists_sync", []).append({"argv": cmd[3:], "release": rel})
+        out.append("Files (HTTP status as seen from this server)" if "--check" in cmd else "Indices - 1 list(s)")
+        rc = st.get("lists_sync_rc", 0); finish()
     if svc == "backend" and cmd[:4] == ["python", "-m", "alembic", "heads"]:
         out.append(f"{st['heads'][rel]} (head)"); finish()
     if svc == "backend" and cmd[:2] == ["python", "scripts/migrate_guard.py"]:
@@ -1712,3 +1728,133 @@ def test_the_rehearsals_and_the_deploy_line_keep_to_the_gate():
     for line in ("**Migration:**", "**Rollback-safe:**", '/opt/atp/deploy/atp.sh deploy && /opt/atp/deploy/atp.sh health',
                  "## Self-review notes", "## Screenshots"):
         assert line in template
+
+
+# --- B2b: probe-chain (the owner's read-only option chain spot probe, numbers only) -----------------------------------
+
+def test_probe_chain_is_read_only_and_checks_its_input(host):
+    assert host.run("deploy").returncode == 0
+    since = len(host.state["calls"])
+    res = host.run("probe-chain", "NIFTY")
+    assert res.returncode == 0, res.all
+    assert "probe-chain NIFTY" in res.stdout and host.state["chain_probes"] == [["NIFTY"]] and host.mutating(since) == []
+    for args in (("NIFTY; rm -rf /",), (), ("NIFTY", "BANKNIFTY"), ("N$FTY",)):
+        assert host.run("probe-chain", *args).returncode == 2, args
+    assert len(host.state["chain_probes"]) == 1
+
+
+# --- WL1-4: env-set (the allowlisted .env switches) and lists-sync (the universe sync + system lists NOW) ------------
+
+def _env_text(host):
+    return (host.dir / ".env").read_text()
+
+
+def test_env_set_keeps_every_other_line_backs_up_first_and_is_idempotent(host):
+    env = host.dir / ".env"
+    env.write_text(_env_text(host) + "# owner note: keep me\nexport UNIVERSE_SYNC_ENABLED=false   # off until the terms\n")
+    env.chmod(0o600)
+    if os.getuid() == 0:
+        os.chown(env, 1000, 1000)
+    before = _env_text(host)
+    res = host.run("env-set", "UNIVERSE_SYNC_ENABLED=true", "INSTRUMENT_SYNC_EXCHANGES=NSE,BSE")
+    assert res.returncode == 0, res.all
+    after = _env_text(host)
+    assert "set        UNIVERSE_SYNC_ENABLED=true (was false)" in res.stdout and "added      INSTRUMENT_SYNC_EXCHANGES=NSE,BSE" in res.stdout
+    kept = [ln for ln in before.splitlines() if "UNIVERSE_SYNC_ENABLED" not in ln]
+    assert [ln for ln in after.splitlines() if "UNIVERSE_SYNC_ENABLED" not in ln and "INSTRUMENT_SYNC_EXCHANGES" not in ln] == kept
+    assert "export UNIVERSE_SYNC_ENABLED=true\n" in after and after.endswith("INSTRUMENT_SYNC_EXCHANGES=NSE,BSE\n")
+    assert stat.S_IMODE(env.stat().st_mode) == 0o600
+    backups = sorted((host.dir / ".deploy" / "env-backups").iterdir())
+    assert len(backups) == 1 and backups[0].read_text() == before and stat.S_IMODE(backups[0].stat().st_mode) == 0o600
+    digest = host.env_digest()
+    again = host.run("env-set", "UNIVERSE_SYNC_ENABLED=true", "INSTRUMENT_SYNC_EXCHANGES=NSE,BSE")
+    assert again.returncode == 0 and ".env unchanged - nothing written" in again.stdout
+    assert host.env_digest() == digest and len(list((host.dir / ".deploy" / "env-backups").iterdir())) == 1
+    assert host.mutating() == []                                              # no container touched
+
+
+def test_env_set_refuses_secrets_live_switches_and_odd_values_without_writing(host):
+    digest = host.env_digest()
+    for args in (("JWT_SECRET_KEY=abc",), ("LIVE_EXIT_IF_NO_STOP=true",), ("UNIVERSE_SYNC_ENABLED=true; rm -rf /",),
+                 ("UNIVERSE_SYNC_ENABLED",), ()):
+        res = host.run("env-set", *args)
+        assert res.returncode == 2, (args, res.all)
+        assert "rm -rf" not in res.all
+    assert host.env_digest() == digest and not (host.dir / ".deploy" / "env-backups").exists()
+    dry = host.run("--dry-run", "env-set", "UNIVERSE_SYNC_ENABLED=true")
+    assert dry.returncode == 0 and "would be written" in dry.stdout and host.env_digest() == digest
+
+
+
+def test_env_set_writes_the_history_owner_and_its_placeholder_name(host):
+    # Owner 25 Oct: the organisation name is the placeholder "My Organisation" from config, never hard-coded.
+    res = host.run("env-set", "HISTORY_OWNER_TENANT_ID=1", "HISTORY_OWNER_TENANT_NAME=My Organisation")
+    assert res.returncode == 0, res.all
+    after = _env_text(host)
+    assert "HISTORY_OWNER_TENANT_ID=1\n" in after and after.endswith("HISTORY_OWNER_TENANT_NAME=My Organisation\n")
+    digest = host.env_digest()
+    for args in (("HISTORY_OWNER_TENANT_ID=abc",), ("HISTORY_OWNER_TENANT_ID=0",), ("HISTORY_OWNER_TENANT_NAME= My Organisation",),
+                 ("HISTORY_OWNER_TENANT_NAME=My Org; rm -rf /",), ("HISTORY_OWNER_TENANT_NAME=",)):
+        bad = host.run("env-set", *args)
+        assert bad.returncode == 2, (args, bad.all)
+    assert host.env_digest() == digest
+
+def test_lists_sync_refuses_until_the_owner_switched_the_sync_on(host):
+    assert host.run("deploy").returncode == 0
+    since = len(host.state["calls"])
+    res = host.run("lists-sync")
+    assert res.returncode == 2 and "UNIVERSE_SYNC_ENABLED is not true" in res.all and "env-set UNIVERSE_SYNC_ENABLED=true" in res.all
+    assert "lists_sync" not in host.state and host.mutating(since) == []
+
+
+def test_lists_sync_runs_the_sync_in_the_release_image_then_restarts_api_and_worker(host):
+    assert host.run("deploy").returncode == 0
+    host.write_env(extra={"UNIVERSE_SYNC_ENABLED": "true", "INSTRUMENT_SYNC_EXCHANGES": "NSE,BSE"})
+    since = len(host.state["calls"])
+    res = host.run("lists-sync")
+    assert res.returncode == 0, res.all
+    assert "Indices - 1 list(s)" in res.stdout and "lists-sync: done" in res.stdout
+    assert host.state["lists_sync"] == [{"argv": [], "release": host.sha_b[:12]}]
+    gate, sync = host.index("session_check.py", since), host.index("app.universe.run_now", since)
+    api, worker = host.index("up -d --no-deps --no-build backend", since), host.index("up -d --no-deps --no-build worker", since)
+    assert -1 < gate < sync < api < worker
+
+
+def test_lists_sync_check_only_reads_the_files_and_restarts_nothing(host):
+    assert host.run("deploy").returncode == 0
+    host.write_env(extra={"UNIVERSE_SYNC_ENABLED": "true"})
+    since = len(host.state["calls"])
+    host.state["lists_sync_rc"] = 1; host.save()                             # some file answered 404
+    res = host.run("lists-sync", "--check")
+    assert res.returncode == 0 and "some files were not fetched" in res.stdout
+    assert host.state["lists_sync"] == [{"argv": ["--check"], "release": host.sha_b[:12]}]
+    assert [c for c in host.mutating(since) if "run_now" not in c] == []
+
+
+def test_lists_sync_respects_the_session_gate_and_a_failed_sync_restarts_nothing(host):
+    assert host.run("deploy").returncode == 0
+    host.write_env(extra={"UNIVERSE_SYNC_ENABLED": "true"})
+    host.state["session"].update(open_sessions=["NSE"], open_positions=2); host.save()
+    since = len(host.state["calls"])
+    res = host.run("lists-sync")
+    assert res.returncode == 3 and "lists_sync" not in host.state and host.mutating(since) == []
+    host.state["session"].update(open_sessions=[], open_positions=0); host.state["lists_sync_rc"] = 1; host.save()
+    since = len(host.state["calls"])
+    res = host.run("lists-sync")
+    assert res.returncode == 1 and "the sync did not finish" in res.all
+    assert [c for c in host.mutating(since) if "run_now" not in c] == []
+
+
+# --- C1: probe-candles (the owner's read-only broker probe, counts only) ---------------------------------------------
+
+def test_probe_candles_is_read_only_and_checks_its_input(host):
+    assert host.run("deploy").returncode == 0
+    since = len(host.state["calls"])
+    res = host.run("probe-candles", "NIFTY2610325000CE", "30m")
+    assert res.returncode == 0, res.all
+    assert "probe-candles NIFTY2610325000CE 30m" in res.stdout
+    assert host.state["probes"] == [["candles", "NIFTY2610325000CE", "30m"]] and host.mutating(since) == []
+    for args in (("NIFTY; rm -rf /", "30m"), ("NIFTY", "2min"), ("NIFTY",), ("NIFTY", "D", "N$E")):
+        bad = host.run("probe-candles", *args)
+        assert bad.returncode == 2, (args, bad.all)
+    assert len(host.state["probes"]) == 1

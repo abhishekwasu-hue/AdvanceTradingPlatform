@@ -207,28 +207,28 @@ test.describe("setup wizard 390 x 844", () => {
     await expect(page.locator("[data-row='setup'] [data-chip]")).toHaveText("Setup 2 of 4");
   });
 
-  test("the risk step: the spec's defaults, the sentence, max trades under Advanced, saved through /paper/risk", async ({ page }) => {
+  test("the risk step (TT-12): empty boxes he fills in himself, the sentence follows his numbers, saved through /paper/risk", async ({ page }) => {
     const server = await open(page, { done: { broker: true } });
     const form = wizard(page);
     await expect(form.getByLabel("Starting capital")).toHaveValue("1,00,000");                // from GET /paper/account
     await expect(form.locator("[data-field='capital']")).toHaveValue("1,00,000");
-    await expect(form.locator("[data-field='riskPerTradePct']")).toHaveValue("1");
-    await expect(form.locator("[data-field='dailyLossPct']")).toHaveValue("3");
-    await expect(form.locator("[data-risk-sentence]")).toContainText("With these limits the most you can lose today is ₹3,000.");
-    await expect(form.locator("[data-field='maxTradesPerDay']")).toBeHidden();
-    await form.getByText("Advanced").click();
-    await expect(form.locator("[data-field='maxTradesPerDay']")).toHaveValue("10");
+    for (const field of ["riskPerTradePct", "dailyLossPct", "maxTradesPerDay", "minRr"]) {      // nothing is filled in for him
+      await expect(form.locator(`[data-field='${field}']`)).toHaveValue("");
+      await expect(form.locator(`[data-field='${field}']`)).toHaveAttribute("placeholder", "Not set");
+    }
+    await expect(form).toContainText("leave a box empty for no limit");
+    await expect(form.locator("[data-risk-sentence]")).toHaveCount(0);
     await form.locator("[data-field='dailyLossPct']").fill("40");
     await form.locator("[data-field='dailyLossPct']").blur();
     await expect(form).toContainText("Daily loss limit must be between 0.1 and 20.");
     await form.locator("[data-field='dailyLossPct']").fill("2");
-    await expect(form.locator("[data-risk-sentence]")).toContainText("is ₹2,000.");
+    await expect(form.locator("[data-risk-sentence]")).toContainText("With these limits the most you can lose today is ₹2,000.");
     // A focused field hides the bottom bar (PW2); leave the field first, as a finger closing the keyboard does.
     await form.locator("[data-field='dailyLossPct']").blur();
     await form.getByRole("button", { name: "Save limits" }).click();
     await expect(form).toContainText("Limits saved.");
     const put = server.sent.find((c) => c.method === "PUT" && c.url === "/paper/risk");
-    expect(put?.body).toEqual({ risk_per_trade_pct: 1, daily_loss_pct: 2, max_trades_per_day: 10 });
+    expect(put?.body).toEqual({ risk_per_trade_pct: null, daily_loss_pct: 2, max_trades_per_day: null, min_rr: null });
     expect(server.sent.some((c) => c.url === "/paper/account")).toBe(false);          // the capital did not change
     // a changed starting capital is saved after the limits
     await form.locator("[data-field='capital']").fill("2,00,000");
@@ -262,9 +262,11 @@ test.describe("setup wizard 390 x 844", () => {
   test("the risk step without a paper account: no capital field, nothing sent for it", async ({ page }) => {
     const server = await open(page, { done: { broker: true }, noPaperAccount: true });
     const form = wizard(page);
-    await expect(form.locator("[data-field='dailyLossPct']")).toHaveValue("3");
+    await expect(form.locator("[data-field='dailyLossPct']")).toHaveValue("");
     await expect(form.locator("[data-field='capital']")).toHaveCount(0);
+    await form.locator("[data-field='dailyLossPct']").fill("3");
     await expect(form.locator("[data-risk-sentence]")).toContainText("is ₹3,000.");            // of the server's capital basis
+    await form.locator("[data-field='dailyLossPct']").blur();
     await form.getByRole("button", { name: "Save limits" }).click();
     await expect(form).toContainText("Limits saved.");
     expect(server.sent.filter((c) => c.url === "/paper/account")).toEqual([]);

@@ -260,6 +260,10 @@ LAKE_LATE_SECONDS = float(os.environ.get("LAKE_LATE_SECONDS", "300"))
 LAKE_MISMATCH_PCT = float(os.environ.get("LAKE_MISMATCH_PCT", "0.5"))
 # Part B4: also adjust prices for dividends in the adjusted view (splits and bonuses always are).
 LAKE_ADJUST_DIVIDENDS = os.environ.get("LAKE_ADJUST_DIVIDENDS", "false").lower() in ("1", "true", "yes")
+# Owner order 23 Oct (app/backtest/bar_source.py): the shared lake's Daily sources a backtest without a broker may read,
+# as source prefixes. Default: the NSE daily files only (RDY-6: licensed EOD only, never the platform's or another user's
+# broker feed). "r2:" adds the R2 daily import once its licence position allows it (OPEN_QUESTIONS BSH-2).
+BACKTEST_STORED_SOURCES = tuple(p.strip() for p in os.environ.get("BACKTEST_STORED_SOURCES", "nse_bhav:").split(",") if p.strip())
 # Part B5: most bars one /api/market-data/history request returns (narrow the window for more).
 LAKE_HISTORY_MAX_BARS = int(os.environ.get("LAKE_HISTORY_MAX_BARS", "5000"))
 # HB0: most 1-minute rows one tenant-store request may READ before resampling (checked with a count first), so a
@@ -341,12 +345,28 @@ def _iso_dates(name: str) -> "tuple[frozenset, list]":
 
 
 HISTORY_INTRADAY_BLACKOUT_DATES, HISTORY_INTRADAY_BLACKOUT_ERRORS = _iso_dates("HISTORY_INTRADAY_BLACKOUT_DATES")
+# DATA-H (owner, 24 Oct; app/market_lake/index_history.py): the index history the chart reader and the Copilot read -
+# Daily (Weekly is built from it) for LAKE_BACKFILL_DAILY_YEARS and 1-minute bars (15M / 1H are built from them) for
+# LAKE_BACKFILL_INTRADAY_DAYS (at least the reader's longest intraday lookback, 1H = 180 days), read through HB2's
+# owner session (HISTORY_OWNER_TENANT_ID + NAME, HISTORY_OWNER_USER_ID) into the owner's PRIVATE store only. The worker
+# appends each closed session from LAKE_BACKFILL_HOUR_IST (off with LAKE_BACKFILL_AFTER_CLOSE=false).
+LAKE_BACKFILL_INDICES = [k.strip().upper() for k in os.environ.get("LAKE_BACKFILL_INDICES", "NIFTY,BANKNIFTY,SENSEX,FINNIFTY").split(",")
+                         if k.strip()]
+LAKE_BACKFILL_DAILY_YEARS = max(1, min(25, int(os.environ.get("LAKE_BACKFILL_DAILY_YEARS", "10") or 10)))
+LAKE_BACKFILL_INTRADAY_DAYS = max(45, min(730, int(os.environ.get("LAKE_BACKFILL_INTRADAY_DAYS", "200") or 200)))
+LAKE_BACKFILL_AFTER_CLOSE = os.environ.get("LAKE_BACKFILL_AFTER_CLOSE", "true").lower() in ("1", "true", "yes")
+LAKE_BACKFILL_HOUR_IST = max(16, min(23, int(os.environ.get("LAKE_BACKFILL_HOUR_IST", "16") or 16)))
+LAKE_BACKFILL_BUDGET_SECONDS = max(10, int(os.environ.get("LAKE_BACKFILL_BUDGET_SECONDS", "900") or 900))
+LAKE_BACKFILL_PAUSE_SECONDS = max(0.0, float(os.environ.get("LAKE_BACKFILL_PAUSE_SECONDS", "0.3") or 0.3))
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 # BT1 (beta spec §2/§4): bring-your-own-broker data tier, read only with the `byob_data_tier` flag on (off by default).
 # The ATP budget of symbols one user's broker session carries (positions > open charts > watchlist > screener universe);
 # the broker's own per-connection cap (app/market_data/broker_data_terms.json) applies on top when it is recorded.
 # 50 is the per-session figure of the beta capacity model (§4), not a broker limit.
 BYOB_SESSION_SYMBOL_CAP = max(1, int(os.environ.get("BYOB_SESSION_SYMBOL_CAP", "50")))
+# TM Part 1 (data hub, flag `data_hub`): an option-chain snapshot is shared within one broker connection for this many
+# seconds (the chain page, a chart and a Copilot question in the same moment make one broker call). 0 = no sharing.
+HUB_CHAIN_SNAPSHOT_SECONDS = max(0, int(os.environ.get("HUB_CHAIN_SNAPSHOT_SECONDS", "5")))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more
 # than BROKER_CIRCUIT_FAILURE_RATIO of the broker calls in the last BROKER_CIRCUIT_WINDOW_SECONDS
@@ -361,6 +381,10 @@ BROKER_CIRCUIT_OPEN_SECONDS = float(os.environ.get("BROKER_CIRCUIT_OPEN_SECONDS"
 # Autonomous trading worker (app/workers/trading_worker.py) cadence in seconds. 60 matches the
 # 1-minute base candle; anything shorter mostly re-reads the same cached candles.
 WORKER_CYCLE_SECONDS = int(os.environ.get("WORKER_CYCLE_SECONDS", "60"))
+# TM2-4 (owner, 24 Oct): a waiting order the trigger engine sent and that is still "Sending" (FIRING) after this many
+# seconds is looked up at its broker by its own client id / tag and settled from what is there (found: its state; not
+# found: sent once with the same id). On worker start every FIRING order is settled this way before any new work.
+TRIGGER_ACK_TIMEOUT_SECONDS = float(os.environ.get("TRIGGER_ACK_TIMEOUT_SECONDS", "5"))
 
 # The risk-free rate used to discount option payoffs in the Black-Scholes Greeks engine
 # (app/option_chain/greeks.py) - approximates the short-term Indian G-Sec/repo yield. Configurable
@@ -445,6 +469,14 @@ PLATFORM_SMTP_USERNAME = os.environ.get("PLATFORM_SMTP_USERNAME", "")
 PLATFORM_SMTP_PASSWORD = os.environ.get("PLATFORM_SMTP_PASSWORD", "")
 PLATFORM_SMTP_FROM = os.environ.get("PLATFORM_SMTP_FROM", "")
 PLATFORM_SMTP_STARTTLS = os.environ.get("PLATFORM_SMTP_STARTTLS", "true").strip().lower() not in {"0", "false", "no"}
+# Readiness C13: the first-week onboarding e-mails (flag `onboarding_emails`, OFF; nothing is sent without PLATFORM_SMTP_*
+# and PUBLIC_BASE_URL). Hours after sign-up for "connect your broker", "start your first paper bot" and "review your first
+# signal", in that order; each goes once, only inside the first week.
+ONBOARDING_EMAIL_AFTER_HOURS = os.environ.get("ONBOARDING_EMAIL_AFTER_HOURS", "2,48,120").strip()
+ONBOARDING_EMAIL_WINDOW_HOURS = int(os.environ.get("ONBOARDING_EMAIL_WINDOW_HOURS", "168"))
+# Readiness C13: a new account may name the invite code it arrived with for this many days after signing up (flag
+# `referrals`, OFF).
+REFERRAL_CLAIM_DAYS = int(os.environ.get("REFERRAL_CLAIM_DAYS", "7"))
 # When on, LIVE deployments and broker credential storage require a verified email address.
 EMAIL_VERIFICATION_REQUIRED = os.environ.get("EMAIL_VERIFICATION_REQUIRED", "false").strip().lower() in {"1", "true", "yes"}
 
@@ -657,6 +689,28 @@ OI_BANNER_SLOT_MINUTES = _bounded_int("OI_BANNER_SLOT_MINUTES", 5, 1, 60)
 OI_BANNER_COLLECT_SPAN = _bounded_int("OI_BANNER_COLLECT_SPAN", 15, 1, 60)
 OI_BANNER_DEFAULTS: dict = _json_object("OI_BANNER_DEFAULTS")
 
+# TM 9.4 chain history (docs/design/CHAIN_HISTORY.md): option-chain snapshots recorded through the OWNER's own broker
+# session (HB2's owner: HISTORY_OWNER_TENANT_ID confirmed by HISTORY_OWNER_TENANT_NAME, the session of
+# HISTORY_OWNER_USER_ID or the lowest-id active OWNER) into the owner's private store (md_tenant_chain_snapshots), only
+# while the `chain_history` flag is on for that tenant. One slot every CHAIN_HISTORY_SLOT_MINUTES while the venue is open
+# (the exchange calendar), for CHAIN_HISTORY_UNDERLYINGS and - when CHAIN_HISTORY_STOCKS_ENABLED - CHAIN_HISTORY_STOCKS,
+# the nearest CHAIN_HISTORY_EXPIRIES expiries each, at most CHAIN_HISTORY_MAX_READS_PER_SLOT chain reads per slot (the
+# indices first). Every read takes a token from the owner session's worker RateBudget through `acquire_spare`, leaving
+# CHAIN_HISTORY_RESERVE of it for the trading worker; a slot without a token is recorded as a gap, never queued.
+CHAIN_HISTORY_SLOT_MINUTES = _bounded_int("CHAIN_HISTORY_SLOT_MINUTES", 1, 1, 60)
+CHAIN_HISTORY_UNDERLYINGS = [k.strip().upper() for k in os.environ.get("CHAIN_HISTORY_UNDERLYINGS", "NIFTY,BANKNIFTY,SENSEX").split(",") if k.strip()]
+CHAIN_HISTORY_STOCKS_ENABLED = os.environ.get("CHAIN_HISTORY_STOCKS_ENABLED", "false").lower() in ("1", "true", "yes")
+CHAIN_HISTORY_STOCKS = [k.strip().upper() for k in os.environ.get("CHAIN_HISTORY_STOCKS", "").split(",") if k.strip()]
+CHAIN_HISTORY_EXPIRIES = _bounded_int("CHAIN_HISTORY_EXPIRIES", 2, 1, 6)
+CHAIN_HISTORY_MAX_READS_PER_SLOT = _bounded_int("CHAIN_HISTORY_MAX_READS_PER_SLOT", 12, 1, 200)
+CHAIN_HISTORY_RESERVE = min(0.95, max(0.0, float(os.environ.get("CHAIN_HISTORY_RESERVE", "0.5") or 0.5)))
+# Seconds one read may wait for a spare token before the slot's remaining reads are skipped (a gap, asked next slot).
+CHAIN_HISTORY_TOKEN_WAIT_SECONDS = _bounded_int("CHAIN_HISTORY_TOKEN_WAIT_SECONDS", 5, 0, 60)
+# Retention: RETENTION_CHAIN_HISTORY_DAYS (app/retention/policy.py; TM-8: 0 = kept until the owner sets a limit).
+# The read API: at most this many days per range request and this many stored chains per response.
+CHAIN_HISTORY_READ_MAX_DAYS = _bounded_int("CHAIN_HISTORY_READ_MAX_DAYS", 31, 1, 366)
+CHAIN_HISTORY_READ_MAX_CHAINS = _bounded_int("CHAIN_HISTORY_READ_MAX_CHAINS", 2000, 10, 50000)
+
 # Z7a-2 market zones: the operator's ZoneSettings fields over the platform's all-daily defaults (JSON object; see
 # app/price_action/zones/store.py PLATFORM_DEFAULTS), the lake instruments the nightly zone job always follows (comma list
 # of keys like "NSE:BANKNIFTY"; tenants add their own in market_zone_settings), the IST hour from which it runs once a day
@@ -780,8 +834,11 @@ def _choice(name: str, default: str, choices: tuple) -> str:
 TAX_FNO_TURNOVER_METHOD = _choice("TAX_FNO_TURNOVER_METHOD", "ABS_PNL", TAX_FNO_TURNOVER_METHODS)
 
 # Z5 / P1-d (P1 spec 1.1, 1.2, 2.2; Phase 0): risk by default and the plan-before-trade PAPER ticket (flag
-# `risk_by_default`, off by default). Every user starts with these defaults and may change their own within the bounds
-# (the platform's risk ceilings still clamp them, strictest wins - ADR-0003):
+# `risk_by_default`, off by default). TT-12 (owner decision, 24 Oct): every limit starts OFF for every user until he sets
+# his own value; the RISK_DEFAULT_* values below are no longer applied to anyone. They are kept only to read a settings
+# row saved before TT-12 (a save then wrote every key, so a stored value equal to one of these may not be the user's own
+# choice and counts as unset - app/risk_engine/by_default.py `explicit_keys`). A user's own values stay within the
+# bounds and the platform's risk ceilings (strictest wins - ADR-0003):
 # - RISK_DEFAULT_RISK_PER_TRADE_PCT: the most a PAPER entry may lose at its stop, % of the user's PAPER capital basis
 #   (starting capital + realised net P&L before today); RISK_DEFAULT_RISK_PER_TRADE_AMOUNT: the same cap in rupees
 #   (0 = no rupee cap). The stricter of the two is the cap; the ticket sizes the quantity from it and the stop distance.
@@ -790,7 +847,7 @@ TAX_FNO_TURNOVER_METHOD = _choice("TAX_FNO_TURNOVER_METHOD", "ABS_PNL", TAX_FNO_
 # - RISK_DEFAULT_DAILY_LOSS_PCT: today's PAPER net P&L (realised + today's open marks) at or below minus this % of the
 #   capital basis locks new PAPER entries for the rest of the IST day. Exits are never locked (ADR-0004).
 # - RISK_DEFAULT_MAX_TRADES_PER_DAY: new PAPER entries per IST day (0 = no limit).
-# - RISK_DEFAULT_MIN_RR: a plan's reward:risk (target vs stop, from the entry) must be at least this.
+# - RISK_DEFAULT_MIN_RR: a plan's reward:risk (target vs stop, from the entry) must be at least this (only when he set it).
 # - The cost line's brokerage per order and slippage estimate are the paper broker's own (`PaperBroker`), so the ticket
 #   shows what a PAPER fill is charged.
 RISK_DEFAULT_RISK_PER_TRADE_PCT = _bounded_float("RISK_DEFAULT_RISK_PER_TRADE_PCT", 1.0, 0.05, 5.0)

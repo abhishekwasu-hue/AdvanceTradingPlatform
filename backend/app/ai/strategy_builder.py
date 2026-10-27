@@ -727,7 +727,7 @@ def _operand(op: Dict[str, Any]) -> Dict[str, Any]:
 def config_of(d: Draft) -> Any:
     """The draft as a `CustomStrategyConfig`, or None while any value is still his to decide - the engine's own defaults
     (a stop, an objective, a reward to risk) are never used in place of a value he did not give."""
-    from app.strategy_engine.declarative import CustomStrategyConfig
+    from app.strategy_engine.declarative import CustomStrategyConfig, own_min_rr
     if not d.rules or d.asks() or d.timeframe is None or None in (d.stop_loss_atr_mult, d.atr_period, d.target_rr, d.min_rr):
         return None
     longs = [{"left": _operand(r.left), "operator": r.operator, "right": _operand(r.right)} for r in d.rules if r.side == "long"]
@@ -736,7 +736,7 @@ def config_of(d: Draft) -> Any:
         return None
     return CustomStrategyConfig.model_validate({
         "name": draft_name(d), "timeframe": d.timeframe, "long_conditions": longs, "short_conditions": shorts,
-        "stop_loss_atr_mult": d.stop_loss_atr_mult, "atr_period": d.atr_period, "target_rr": list(d.target_rr or ()), "min_rr": d.min_rr})
+        "stop_loss_atr_mult": d.stop_loss_atr_mult, "atr_period": d.atr_period, "target_rr": list(d.target_rr or ()), "min_rr": own_min_rr(d.min_rr)})
 
 
 # --- the answer's lines -------------------------------------------------------------------------------------------------

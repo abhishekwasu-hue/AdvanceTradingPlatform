@@ -8,6 +8,8 @@ import { PayoffCanvas } from "../optionsBuilder/PayoffCanvas";
 import type { Leg as BuilderLeg } from "../optionsBuilder/model";
 import { kiteFnoBasketLink, openBrokerAppLink } from "../proposals/brokerLinks";
 import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
+import { ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
+import { useFeatures } from "../ui/useFeatures";
 import { formatNumber, formatPrice } from "../ui/format";
 import {
   basketApi, type BasketApi, type BasketNumbers, type BasketPreview, type BasketResult, type BasketSettings, type Product,
@@ -24,7 +26,8 @@ import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
 import { riskLine, structureOf, type RiskBudget, type RiskLine } from "./insights";
 import { eventLine, legLiquidity, liquidityLine, marginLine } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
-import { moneyText, newClientRef, sideWord } from "./ticketModel";
+import { IncompleteV2, SmartConfirmV2 } from "./SmartExecutionV2";
+import { FALLBACK_PRODUCT, PRODUCT_UNSET_TEXT, moneyText, newClientRef, sideWord } from "./ticketModel";
 
 /**
  * FNO-2 (owner order section 5, 8b-c): the basket panel, opened from the basket badge - a side drawer from md, a bottom
@@ -85,7 +88,14 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   onPlaced?: (result: BasketResult) => void;
 }) {
   const legs = useBasket(store);
-  const [product, setProduct] = useState<Product>("MIS");
+  // Owner fix T1-5: the product starts from his own trading defaults (Settings -> My trading defaults), not a fixed MIS;
+  // MIS only while he saved none (the line under the choice says so). His own pick in this basket stays.
+  const features = useFeatures();
+  const savedProduct = ticketPrefill(useTradingDefaults(open && features.on("ui_v2"), fetcher)).product ?? null;
+  const [product, setProductState] = useState<Product>(savedProduct ?? FALLBACK_PRODUCT);
+  const picked = useRef(false);
+  useEffect(() => { if (savedProduct && !picked.current) setProductState(savedProduct); }, [savedProduct]);
+  const setProduct = (p: Product) => { picked.current = true; setProductState(p); };
   const [numbers, setNumbers] = useState<BasketNumbers | null>(null);
   const [problems, setProblems] = useState<string[]>([]);
   const [settings, setSettings] = useState<BasketSettings | null>(null);
@@ -296,7 +306,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           </div>
           {step.kind === "edit" && (
             <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} rows={rows} pick={pick} atm={atm} spot={spot}
-              product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks}
+              product={product} productUnset={!savedProduct} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks}
               compare={tool === "compare" ? (
                 <StrategyCompareV2 underlying={chain.symbol} legs={legs.map(strip)} saved={saved} rows={rows} expiry={live?.expiry ?? null} around={pick}
                   settings={settings} spot={spot} product={product} api={api} />
@@ -307,7 +317,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           )}
           {step.kind === "done" && (
             <ResultView result={step.result} onRemaining={() => { void confirm(remainingLegs(step.legs, step.result)); }} onEdit={() => setStep({ kind: "edit" })}
-              onClear={() => { store.clear(); onClose(); }} onClose={onClose} />
+              onClear={() => { store.clear(); onClose(); }} onClose={onClose} api={api} />
           )}
         </RD.Content>
       </RD.Portal>
@@ -353,9 +363,9 @@ function Figure({ label, children, sub, testId }: { label: string; children: Rea
 }
 
 /** The panel's edit view: ready strategies, the legs, the numbers and the tools (no state, no hooks). */
-export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks }: {
+export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, productUnset = false, note, tool, saved, saveName, idPrefix, on, budget, compare, checks }: {
   legs: readonly BasketLeg[]; numbers: BasketNumbers | null; problems: string[]; settings: BasketSettings | null; rows: LiveChain["rows"];
-  pick: number | null; atm: number | null; spot: number | null; product: Product; note: Note; tool: Tool; saved: SavedState | null;
+  pick: number | null; atm: number | null; spot: number | null; product: Product; productUnset?: boolean; note: Note; tool: Tool; saved: SavedState | null;
   saveName: string; idPrefix: string; on: BodyHandlers;
   /** 8b-d: the user's own risk budget for the risk line (null: the line is left out). */
   budget?: RiskBudget | null;
@@ -504,6 +514,7 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
         </div>
       </div>
 
+      {productUnset && <p className="border-t border-subtle px-space-4 pt-space-2 text-t13 text-fg-muted" data-basket="product-unset">{PRODUCT_UNSET_TEXT}</p>}
       <div className="flex items-center gap-space-2 border-t border-subtle px-space-4 py-space-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div role="radiogroup" aria-label="Product" className="flex shrink-0 gap-space-1 rounded-control bg-surface-2 p-space-1" data-basket="product">
           {(["MIS", "NRML"] as const).map((p) => (
@@ -603,10 +614,13 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks 
                 );
               })}
             </ol>
+            {p.smart && <SmartConfirmV2 smart={p.smart} />}
             <dl className="rounded-control border border-subtle px-space-3" data-basket="confirm-totals">
-              <Figure label="Total margin (estimate)" testId="total-margin" sub={hedge ? `${hedge.with_hedge.basis} ${hedge.note}` : undefined}>
-                {hedge && hedge.with_hedge.value !== null ? moneyText(hedge.with_hedge.value) : "From your broker"}
-              </Figure>
+              {!p.smart && (
+                <Figure label="Total margin (estimate)" testId="total-margin" sub={hedge ? `${hedge.with_hedge.basis} ${hedge.note}` : undefined}>
+                  {hedge && hedge.with_hedge.value !== null ? moneyText(hedge.with_hedge.value) : "From your broker"}
+                </Figure>
+              )}
               <Figure label="Max loss" testId="total-max-loss">{ext ? (ext.unbounded_loss ? "Unlimited" : moneyText(ext.max_loss)) : "See the chart"}</Figure>
               {p.totals && <Figure label="Charges to open (estimate)" testId="total-charges">{moneyText(p.totals.costs)}</Figure>}
             </dl>
@@ -633,10 +647,14 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks 
 }
 
 /** What happened to each leg, in plain words, and what the user can do (no state). */
-export function ResultView({ result: r, onRemaining, onEdit, onClear, onClose }: {
+export function ResultView({ result: r, onRemaining, onEdit, onClear, onClose, api = basketApi }: {
   result: BasketResult; onRemaining: () => void; onEdit: () => void; onClear: () => void; onClose: () => void;
+  /** TM Part 7: "Close the filled legs" of an incomplete basket. */
+  api?: Pick<BasketApi, "closeFilled">;
 }) {
   const left = r.legs.some((l) => l.status !== "PLACED");
+  // TM Part 7 (flag smart_execution): the incomplete state carries its own two choices.
+  const incomplete = r.state === "INCOMPLETE";
   return (
     <>
       <div className="min-h-0 flex-1 space-y-space-3 overflow-y-auto px-space-4 py-space-3" data-basket="result" data-status={r.status}>
@@ -658,10 +676,12 @@ export function ResultView({ result: r, onRemaining, onEdit, onClear, onClose }:
             </li>
           ))}
         </ol>
-        {r.next_steps.length > 0 && <ul className="space-y-space-1 text-t13 text-fg" data-basket="next-steps">{r.next_steps.map((x) => <li key={x}>{x}</li>)}</ul>}
+        {incomplete && <IncompleteV2 message={r.message ?? resultHeadline(r)} filledTradeIds={r.filled_trade_ids ?? []}
+          pendingCount={r.legs.filter((l) => l.status !== "PLACED").length} onCompleteRest={onRemaining} api={api} />}
+        {!incomplete && r.next_steps.length > 0 && <ul className="space-y-space-1 text-t13 text-fg" data-basket="next-steps">{r.next_steps.map((x) => <li key={x}>{x}</li>)}</ul>}
       </div>
       <div className="flex flex-wrap gap-space-2 border-t border-subtle px-space-4 py-space-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        {left && r.placed > 0 && (
+        {left && r.placed > 0 && !incomplete && (
           <button type="button" onClick={onRemaining} data-basket="remaining" className="min-h-11 flex-1 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand">
             Place the remaining legs
           </button>

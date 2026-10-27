@@ -23,7 +23,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, time as dtime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
@@ -32,8 +32,9 @@ from app.cache.client import cache_get, cache_set
 from app.core.models import OHLCVBar, bars_to_dataframe
 from app.core.resampling import resample_ohlc
 from app.market_data import periods, shared_candles
-from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN
+from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, previous_session_close
 from app.market_data.freshness import StaleMarketDataError, quote_is_stale
+from app.market_data.lake_fill import LakeFill
 from app.observability.metrics import MARKET_DATA_STALE
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,14 @@ class MarketDataService:
         self.lookback_days = lookback_days
         # BT1: set for a user's own broker session (bring your own broker); None keeps the shared worker cache.
         self.cache_namespace = cache_namespace or None
+        # TM Part 1 (data hub): the connection whose hub stream prices `get_ltp` (None: the cache namespace's ticks).
+        self.tick_namespace: Optional[str] = None
+        # C1: the exchange holidays the history window skips (set by callers holding a database session - the chart
+        # route); empty = weekends only, as the market calendar does without its table.
+        self.holidays: Set[date] = set()
+        # DH2 / DH6: the reader's own last-session 1-minute bars when the broker's history lags (lake_fill.for_reader);
+        # None = the broker's bars only (the worker, a reader without his own lake).
+        self.lake_fill: Optional[LakeFill] = None
 
     async def get_candles(
         self, symbol: str, exchange: str = "NSE", interval: str = "1min", now: Optional[datetime] = None, fresh: bool = False,
@@ -184,7 +193,23 @@ class MarketDataService:
                 ttl = 0
             if ttl >= 1:
                 await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), ttl)
-        return list(bars)
+        return await self._fill_last_session(symbol, exchange, interval, list(bars), now)
+
+    async def _fill_last_session(self, symbol: str, exchange: str, interval: str, bars: List[OHLCVBar],
+                                 now: Optional[datetime]) -> List[OHLCVBar]:
+        """DH2 / DH6: when the broker's 1-minute history stops before the last closed session (Upstox serves that session
+        late, and its intraday endpoint is empty before the next open), the reader's own lake bars fill the gap. Applied
+        after the cache (the cached copy stays the broker's, shareable); a filled list is never cached."""
+        if self.lake_fill is None or interval != "1min":
+            return bars
+        history_from, history_to = self.history_window(exchange, interval, now)
+        # The last closed session must have bars - also when today's bars already came (the gap is then mid-series).
+        if any(b.timestamp.astimezone(IST).date() == history_to.date() for b in bars):
+            return bars
+        before = [b.timestamp for b in bars if b.timestamp <= history_to]
+        start = max(before) if before else history_from
+        extra = await self.lake_fill(symbol, exchange, start.astimezone(timezone.utc), history_to.astimezone(timezone.utc))
+        return merge_bars(bars, extra) if extra else bars
 
     async def get_history(self, symbol: str, exchange: str, interval: str, before: date) -> List[OHLCVBar]:
         """Completed bars for the `lookback_days` calendar days ending the day before `before` (IST) -
@@ -292,11 +317,22 @@ class MarketDataService:
         """Phase AS: daily strategies need a year of bars (EMA 200, 52-week levels), not days."""
         return max(self.lookback_days, DAILY_MIN_LOOKBACK_DAYS) if interval == "day" else self.lookback_days
 
+    def history_window(self, exchange: str, interval: str, now: Optional[datetime] = None) -> Tuple[datetime, datetime]:
+        """C1: (from, to) of the completed-history call, IST. It ends at the close of the newest trading day before today
+        (the market calendar), not "now - 1 day": on a Saturday, a Sunday or a holiday the chart still ends at the last
+        session's close, and a minute-precision broker no longer loses that session's bars after the clock time of
+        "now". It starts `lookback` calendar days before now, and never after the start of that last session's day (a
+        short lookback across a weekend still holds the last session). A 24x7 venue keeps "now - 1 day"."""
+        now_ist = (now or datetime.now(timezone.utc)).astimezone(IST)
+        close = previous_session_close(now_ist, self.holidays, exchange)
+        history_to = close if close is not None else now_ist - timedelta(days=1)
+        history_from = now_ist - timedelta(days=self._lookback(interval))
+        last_day_start = datetime.combine(history_to.date(), dtime(0, 0), tzinfo=IST)
+        return min(history_from, last_day_start), history_to
+
     async def _fetch(self, symbol: str, exchange: str, interval: str, now: Optional[datetime], *, fresh: bool = False) -> List[OHLCVBar]:
         now_utc = now or datetime.now(timezone.utc)
-        now_ist = now_utc.astimezone(IST)
-        history_to = now_ist - timedelta(days=1)
-        history_from = now_ist - timedelta(days=self._lookback(interval))
+        history_from, history_to = self.history_window(exchange, interval, now_utc)
         # LD-10: each broker call through the shared copy (shared_candles) - the same request window, the same bars,
         # whoever asks; the fetch, when one is needed, goes through this service's own adapter (the user's budget).
         by_date = bool(getattr(self.broker, "history_by_date", False))
@@ -354,8 +390,15 @@ class MarketDataService:
         Phase S: when a streaming tick for the symbol is younger than TICK_MAX_AGE_SECONDS it is
         the price - it is the exchange's last trade, not a poll - and no REST call is made. An
         older or missing tick falls through to the REST quote exactly as before."""
-        from app.market_data.stream import TickCache, tick_cache
-        ticks = TickCache(self.cache_namespace) if self.cache_namespace else tick_cache
+        from app.market_data.stream import tick_cache
+        namespace = self.tick_namespace or self.cache_namespace
+        if namespace:
+            # BT1 / TM Part 1: the session's own ticks - the hub stream's instance in this process, else its keys and
+            # its hub snapshot.
+            from app.market_data.hub import tick_cache_for
+            ticks = tick_cache_for(namespace)
+        else:
+            ticks = tick_cache
         tick = await ticks.fresh(self.broker.name, exchange, symbol, now)
         if tick is not None:
             return float(tick.ltp)

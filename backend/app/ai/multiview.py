@@ -128,7 +128,8 @@ def macro_view(snapshot: ToolResult) -> View:
     if known:                                   # only the market memory's own global markets are named in a line
         lines.append("Global markets: " + ", ".join(f"{g['symbol']} {g['change_pct']}%" for g in known) + ".")
     if sent and str(sent.get("label")) in SENTIMENT_LABELS:
-        lines.append(f"Market sentiment read: {sent.get('label')}.")       # a closed vocabulary only (review of H-C4)
+        from app.ai.sentiment import LABEL_WORDS                           # plain words, never the internal label
+        lines.append(f"Market sentiment read: {LABEL_WORDS[str(sent.get('label'))]}.")   # a closed vocabulary only (review of H-C4)
     return View("macro", True, facts, d.get("updated_at"), [snapshot.source], untrusted=True,
                 lines=lines or ["Market cues are present without changes."])
 

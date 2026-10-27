@@ -1,6 +1,7 @@
 from typing import Optional, Tuple
 
 from app.db.models import TradeRecord
+from app.trading.trigger_rules import ABOVE, BELOW, touched
 
 
 def determine_exit_price(
@@ -33,20 +34,14 @@ def determine_exit_price(
             gapped = open_price >= level if stop else open_price <= level
         return open_price if gapped else level
 
-    if is_long:
-        if low <= stop_loss:
-            return "Stop Loss", fill(stop_loss, stop=True)
-        if target2 is not None and high >= target2:
-            return "Target 2", fill(target2, stop=False)
-        if target1 is not None and high >= target1:
-            return "Target 1", fill(target1, stop=False)
-    else:
-        if high >= stop_loss:
-            return "Stop Loss", fill(stop_loss, stop=True)
-        if target2 is not None and low <= target2:
-            return "Target 2", fill(target2, stop=False)
-        if target1 is not None and low <= target1:
-            return "Target 1", fill(target1, stop=False)
+    # TT-7: the touch rule is the shared one (app/trading/trigger_rules.py); the stop is judged first.
+    stop_side, target_side = (BELOW, ABOVE) if is_long else (ABOVE, BELOW)
+    if touched(stop_loss, stop_side, low, high):
+        return "Stop Loss", fill(stop_loss, stop=True)
+    if target2 is not None and touched(target2, target_side, low, high):
+        return "Target 2", fill(target2, stop=False)
+    if target1 is not None and touched(target1, target_side, low, high):
+        return "Target 1", fill(target1, stop=False)
 
     return None
 
@@ -65,12 +60,12 @@ def underlying_exit(direction: str, stop_loss: Optional[float], target1: Optiona
     priority as `determine_exit_price` (stop, then the more ambitious target, then target 1),
     tolerant of missing targets (an option deployment's strategy may only have a stop) and of a missing stop (strategy
     templates section 5: a single option whose stop is the premium stop only still exits at its underlying target)."""
-    is_long = direction == "LONG"
-    if stop_loss is not None and ((is_long and price <= stop_loss) or (not is_long and price >= stop_loss)):
+    stop_side, target_side = (BELOW, ABOVE) if direction == "LONG" else (ABOVE, BELOW)
+    if stop_loss is not None and touched(stop_loss, stop_side, price, price):
         return "Stop Loss"
-    if target2 is not None and ((is_long and price >= target2) or (not is_long and price <= target2)):
+    if target2 is not None and touched(target2, target_side, price, price):
         return "Target 2"
-    if target1 is not None and ((is_long and price >= target1) or (not is_long and price <= target1)):
+    if target1 is not None and touched(target1, target_side, price, price):
         return "Target 1"
     return None
 

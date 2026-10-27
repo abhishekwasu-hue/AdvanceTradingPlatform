@@ -4,6 +4,7 @@ import type {
   GuardianModeStatus, LossStreakPause, LossStreakStatus, MarketEvent, PaperRiskStatus, PortfolioExposure, RiskConfig, RiskLimitType, RiskScope,
   TradeRecord,
 } from "../types";
+import { strategyDisplayName } from "../ui/strategyName";
 import { formatDateIST, formatDateTimeIST, formatINR, formatLots, formatNumber, formatPrice, formatSignedINR } from "../ui/format";
 
 /**
@@ -51,24 +52,38 @@ function sideWord(direction: string | null | undefined): string {
 }
 
 /** The stop and target of a position, as the screen shows them (stop red, target green - §8). */
+/** Owner fix T1-6: a position without a stop of its own reads "no stop" - never "–" or the one-tick stop a bought option
+ *  without one is stored with (backend paper/fno_ticket.py position_stop: the whole premium at risk). */
+export const NO_STOP = "no stop";
+const PLACEHOLDER_STOP_MAX = 0.1;
+export function stopText(v: number | null | undefined, placeholder = false): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return NO_STOP;
+  if (placeholder && v <= PLACEHOLDER_STOP_MAX) return NO_STOP;
+  return formatPrice(v);
+}
+/** A bought option's stored stop of one tick is the "no stop of his own" placeholder. */
+function premiumPlaceholder(p: TradeRecord): boolean {
+  return p.instrument_kind === "OPTION" && p.option_position !== "WRITE";
+}
+
 export function positionLevels(p: TradeRecord): { on: string | null; levels: Level[] } {
   if (isDerivative(p)) {
     const side = sideWord(p.underlying_direction);
     const levels: Level[] = [
-      { label: "Stop", value: formatPrice(p.underlying_stop_loss), tone: "down" },
+      { label: "Stop", value: stopText(p.underlying_stop_loss), tone: "down" },
       { label: "Target", value: formatPrice(p.underlying_target1), tone: "up" },
     ];
     if (p.instrument_kind === "OPTION") {
-      levels.push({ label: p.option_position === "WRITE" ? "Premium ceiling" : "Premium floor", value: formatPrice(p.stop_loss), tone: "neutral" });
+      levels.push({ label: p.option_position === "WRITE" ? "Premium ceiling" : "Premium floor", value: stopText(p.stop_loss, premiumPlaceholder(p)), tone: "neutral" });
     } else {
-      levels.push({ label: "Contract stop", value: formatPrice(p.stop_loss), tone: "neutral" });
+      levels.push({ label: "Contract stop", value: stopText(p.stop_loss), tone: "neutral" });
     }
     return { on: `On ${p.underlying_symbol}${side ? ` (${side})` : ""}:`, levels };
   }
   return {
     on: null,
     levels: [
-      { label: "Stop", value: formatPrice(p.stop_loss), tone: "down" },
+      { label: "Stop", value: stopText(p.stop_loss, premiumPlaceholder(p)), tone: "down" },
       { label: "Target", value: formatPrice(p.target1), tone: "up" },
     ],
   };
@@ -99,7 +114,7 @@ export function heldRows(positions: TradeRecord[], exposure: PortfolioExposure |
     const s = structureLabel(p);
     return {
       id: p.id, symbol: p.symbol, mode: row.mode, paper: p.mode !== "LIVE", side: row.side, detail: row.detail,
-      levelsOn: on, levels, structure: s.label, structureNote: s.note, strategy: humanise(p.strategy_id ?? ""),
+      levelsOn: on, levels, structure: s.label, structureNote: s.note, strategy: strategyDisplayName(p.strategy_id),
       chartSymbol: isDerivative(p) ? (p.underlying_symbol as string) : p.symbol,
       ltp: row.ltp, pnl: row.pnl, pnlPct: row.pnlPct,
     };
@@ -130,10 +145,17 @@ export function holdingTiles(positions: TradeRecord[] | null, exposure: Portfoli
   };
 }
 
-/** "3 paper · 1 live", "2 paper", "No open positions". */
-export function openCaption(t: Pick<HoldingTiles, "open" | "paper" | "live">): string {
+/** "3 paper · 1 live", "2 paper", "No open positions". User-friendly pass item 2: while `phase0_paper_only` is on
+ * (`liveHidden`) no LIVE count and no LIVE word: "2 practice positions". */
+export function openCaption(t: Pick<HoldingTiles, "open" | "paper" | "live">, liveHidden = false): string {
   if (t.open === 0) return "No open positions";
+  if (liveHidden) return `${t.paper} practice ${t.paper === 1 ? "position" : "positions"}`;
   return [t.paper ? `${t.paper} paper` : "", t.live ? `${t.live} live` : ""].filter(Boolean).join(" · ");
+}
+
+/** User-friendly pass item 2: the words for "every entry" - "paper and live" only once LIVE is in play. */
+export function entriesWord(liveHidden: boolean): string {
+  return liveHidden ? "every entry" : "every paper and live entry";
 }
 
 /** The confirm text of "Exit now" - the page's existing wording, kept exactly (UI-11: panic exits keep their confirm). */
@@ -144,7 +166,7 @@ export function exitConfirmText(p: Pick<TradeRecord, "direction" | "symbol" | "q
 /** "Closed (target 1 hit) at 130.00: +₹1,230.00." after an exit, or a price check that reached a level. */
 export function closedText(price: number | null | undefined, pnl: number | null | undefined, reason?: string | null): string {
   const what = reason ? `Closed (${humanise(reason.toLowerCase())})` : "Closed";
-  return `${what} at ${formatPrice(price)}: ${formatSignedINR(pnl)}.`;
+  return `${what} at ${formatPrice(price)}: ${formatSignedINR(pnl, { paise: true })}.`;
 }
 
 /** A failed action, as "what happened" plus the reason in plain words (the API's own sentence, never raw text). */
@@ -184,9 +206,9 @@ export function closedRows(trades: TradeRecord[]): ClosedRow[] {
       when: formatDateIST(t.exit_time),
       reason: t.exit_reason ? humanise(t.exit_reason.toLowerCase()) : null,
       pnl: t.pnl,
-      charges: formatINR(t.charges),
+      charges: formatINR(t.charges, { paise: true }),
       chargesActual: t.charges_source === "CONTRACT_NOTE",
-      strategy: humanise(t.strategy_id ?? ""),
+      strategy: strategyDisplayName(t.strategy_id),
       notes: t.notes?.trim() ? t.notes.trim() : null,
       tags: t.tags ?? [],
     }));
@@ -220,7 +242,7 @@ export function allocationRows(positions: TradeRecord[] | null, exposure: Portfo
       .map((r) => ({
         symbol: r.symbol, positions: r.positions, amount: r.notional, pct: r.pct_of_capital, pctOf: "capital",
         unrealised: live && priced.has(r.symbol) ? r.unrealised_pnl : null,
-        risk: r.risk_at_stop, strategies: r.strategies.map((s) => humanise(s)).join(", "),
+        risk: r.risk_at_stop, strategies: r.strategies.map((s) => strategyDisplayName(s)).join(", "),
         concentrated: r.pct_of_capital > CONCENTRATED_PCT,
       }));
   }
@@ -229,7 +251,7 @@ export function allocationRows(positions: TradeRecord[] | null, exposure: Portfo
     const cur = by.get(p.symbol) ?? { amount: 0, positions: 0, strategies: new Set<string>() };
     cur.amount += Math.abs(p.entry_price * p.quantity);
     cur.positions += 1;
-    if (p.strategy_id) cur.strategies.add(humanise(p.strategy_id));
+    if (p.strategy_id) cur.strategies.add(strategyDisplayName(p.strategy_id));
     by.set(p.symbol, cur);
   }
   const total = [...by.values()].reduce((a, v) => a + v.amount, 0);

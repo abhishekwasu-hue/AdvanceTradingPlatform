@@ -264,14 +264,17 @@ def clean_oi():
     yield
 
 
+ORG = 1          # TM-7: the organisation whose own session read the stored slots (pure store tests)
+
+
 def test_collect_stores_the_future_and_reads_it_back(clean_oi):
     async def go():
         async with _session_factory() as session:
-            await snapshots.collect(session, "DEMO", STORED[0], SLOTS[0], future_price=120.5, future_oi=1000.0)
-            await snapshots.collect(session, "DEMO", STORED[1], SLOTS[1], future_price=0.0, future_oi=math.nan)    # not prices: None
-            await snapshots.collect(session, "DEMO", STORED[2], SLOTS[2])
+            await snapshots.collect(session, "DEMO", STORED[0], SLOTS[0], tenant_id=ORG, future_price=120.5, future_oi=1000.0)
+            await snapshots.collect(session, "DEMO", STORED[1], SLOTS[1], tenant_id=ORG, future_price=0.0, future_oi=math.nan)    # not prices: None
+            await snapshots.collect(session, "DEMO", STORED[2], SLOTS[2], tenant_id=ORG)
             await session.commit()
-            return await snapshots.day_chains(session, "DEMO", date(2026, 10, 21))
+            return await snapshots.day_chains(session, "DEMO", date(2026, 10, 21), tenant_id=ORG)
     slots = run(go())
     assert [(s.future_price, s.future_oi) for s in slots] == [(120.5, 1000.0), (None, None), (None, None)]
 
@@ -282,9 +285,9 @@ def test_recent_session_closes_read_each_days_last_chain_and_its_spot_path(clean
             for day, prices in ((15, (100.0, 104.0)), (16, (101.0, 99.0, 100.5)), (21, (118.0,))):
                 for i, price in enumerate(prices):
                     at = datetime(2026, 10, day, 4, 5 * i, tzinfo=UTC)
-                    await snapshots.collect(session, "DEMO", chain(STORED[i].rows, price), at)
+                    await snapshots.collect(session, "DEMO", chain(STORED[i].rows, price), at, tenant_id=ORG)
             await session.commit()
-            return await snapshots.recent_session_closes(session, "DEMO", date(2026, 10, 21), 5)
+            return await snapshots.recent_session_closes(session, "DEMO", date(2026, 10, 21), 5, tenant_id=ORG)
     closes = run(go())
     assert [c.day for c in closes] == [date(2026, 10, 15), date(2026, 10, 16)]     # before the day asked, oldest first
     assert closes[1].prices == (101.0, 99.0, 100.5) and closes[1].last.chain.underlying_ltp == 100.5
@@ -358,10 +361,11 @@ def _v2_owner(tag: str):
     return headers, me
 
 
-def _store(name: str, ch: OptionChain, at: datetime, future: Tuple[Optional[float], Optional[float]] = (None, None)) -> None:
+def _store(name: str, ch: OptionChain, at: datetime, future: Tuple[Optional[float], Optional[float]] = (None, None), *,
+           tenant_id: int) -> None:
     async def go():
         async with _session_factory() as session:
-            await snapshots.collect(session, name, ch, at, source="test", future_price=future[0], future_oi=future[1])
+            await snapshots.collect(session, name, ch, at, tenant_id=tenant_id, source="test", future_price=future[0], future_oi=future[1])
             await session.commit()
     run(go())
 
@@ -418,16 +422,30 @@ def test_an_empty_session_shows_the_chain_now_and_says_the_rest_builds(monkeypat
     assert broker.reads == [(name, date.fromisoformat(expiry))] and _usage(me["tenant_id"]) == 1
 
 
+def _pin_route_clock(monkeypatch, at: datetime) -> None:
+    """The route reads the session of the IST day of `datetime.now`; pin it so the test does not depend on the hour
+    it runs at (slots stored 16 minutes before 00:05 IST would fall on the previous IST day)."""
+    from app.option_chain import charts_routes
+
+    class _Pinned(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            return at.astimezone(tz) if tz else at.replace(tzinfo=None)
+
+    monkeypatch.setattr(charts_routes, "datetime", _Pinned)
+
+
 def test_the_session_comes_from_the_stored_readings_with_the_baselines_and_futures(monkeypatch):
     name = _name()
-    expiry = (_ist_today() + timedelta(days=6)).isoformat()
+    now = datetime.combine(_ist_today(), datetime.min.time().replace(hour=12), IST).astimezone(UTC)   # midday IST today
+    _pin_route_clock(monkeypatch, now)
+    expiry = (now.astimezone(IST).date() + timedelta(days=6)).isoformat()
     _install(monkeypatch, _ChainBroker({name: _live(name, expiry)}))
     headers, me = _v2_owner("session")
     _store_credentials(me)
-    now = datetime.now(UTC)
     for i, (ch, fut) in enumerate(zip(STORED[:3], FUTURES[:3])):          # three slots, 5 minutes apart, before now
         _store(name, OptionChain(underlying=name, expiry=expiry, underlying_ltp=ch.underlying_ltp, rows=ch.rows),
-               now - timedelta(minutes=16 - 5 * i), fut)
+               now - timedelta(minutes=16 - 5 * i), fut, tenant_id=me["tenant_id"])
     body = client.get(URL, headers=headers, params={"symbol": name, "strikes": 1}).json()
     assert body["state"] == "ok" and body["session"]["readings"] == 3 and body["session"]["note"] is None
     charts = by_key(body)
@@ -445,7 +463,7 @@ def test_baselines_of_another_expiry_are_never_used(monkeypatch):
     _install(monkeypatch, _ChainBroker({name: _live(name, expiry)}))
     headers, me = _v2_owner("other-expiry")
     _store_credentials(me)
-    _store(name, OptionChain(underlying=name, expiry=other, underlying_ltp=116.0, rows=STORED[0].rows), datetime.now(UTC) - timedelta(minutes=6))
+    _store(name, OptionChain(underlying=name, expiry=other, underlying_ltp=116.0, rows=STORED[0].rows), datetime.now(UTC) - timedelta(minutes=6), tenant_id=me["tenant_id"])
     body = client.get(URL, headers=headers, params={"symbol": name, "strikes": 1}).json()
     charts = by_key(body)
     assert body["session"]["readings"] == 0 and charts["oi_change_by_strike"]["state"] == "building"
@@ -478,10 +496,11 @@ def test_own_broker_tier_reads_no_shared_rows(monkeypatch):
         assert refused["state"] == "no_broker" and refused["charts"] == []
         _store_credentials(me)
         _store(name, OptionChain(underlying=name, expiry=EXPIRY, underlying_ltp=116.0, rows=STORED[0].rows),
-               datetime.now(UTC) - timedelta(minutes=6), (120.0, 900.0))
+               datetime.now(UTC) - timedelta(minutes=6), (120.0, 900.0), tenant_id=me["tenant_id"])
         body = client.get(URL, headers=headers, params={"symbol": name}).json()
         assert body["state"] == "ok" and used == [me["tenant_id"]]
-        assert body["session"]["note"] == C.HISTORY_OFF and by_key(body)["futures"]["message"] == C.HISTORY_OFF
+        # B1: no refusal; the collector's slot is not read, and with none of his own reads yet the charts build
+        assert body["session"]["note"] != C.HISTORY_OFF and by_key(body)["futures"]["message"] != C.HISTORY_OFF
         assert by_key(body)["oi_change_by_strike"]["state"] == "building"          # the shared baselines are not read either
     finally:
         _set_flag("byob_data_tier", me["tenant_id"], on=False)

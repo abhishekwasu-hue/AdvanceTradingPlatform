@@ -1,4 +1,5 @@
 import { LogOut, ShieldCheck } from "lucide-react";
+import { resendVerification } from "../ui/verifyEmail";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { api, setToken } from "../api/client";
@@ -13,8 +14,10 @@ import { isAdminViewer } from "../ui/ComingSoon";
 import { ErrorState } from "../ui/ErrorState";
 import BillingCard from "../components/BillingCard";
 import PlanUsageV2 from "../growth/PlanUsageV2";
+import InviteFriendV2 from "../growth/InviteFriendV2";
 import { useFeatures } from "../ui/useFeatures";
 import { supportAccess, type SupportAccess } from "../api/viewAs";
+import { formatDateTimeIST } from "../ui/format";
 
 /** The signed-in trader's account: e-mail, two-factor, password, sessions. Signed out, App.tsx shows the sign-in screen
  * before any page; this page shows the same screen should it ever render without a user (UX1). */
@@ -35,6 +38,7 @@ export default function AccountPage() {
   const v2 = features.on("ui_v2");
   // MO4 slice 3: the plan page's usage meter above the plans and billing (ui_v2 + growth_v2).
   const growth = v2 && features.on("growth_v2");
+  const referrals = v2 && features.on("referrals");     // Readiness C13: "Invite a friend"
 
   useEffect(() => {
     if (!user) return;
@@ -111,10 +115,10 @@ export default function AccountPage() {
           <div className="text-xs text-up flex items-center gap-2"><ShieldCheck size={14} /> {user.email} is verified.</div>
         ) : (
           <div className="space-y-2 text-xs">
-            <p className="text-fg-muted">Confirm that {user.email} is yours. Open the link we emailed you, or send a fresh one. LIVE trading and broker credentials may require it.</p>
+            <p className="text-fg-muted">Confirm that {user.email} is yours: open the link we emailed you, or send a fresh one.</p>
             <button
               className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5"
-              onClick={() => api.resendVerification().then((r) => setVerifyMessage(r.already_verified ? "Already verified." : r.sent ? "Verification email sent - check your inbox." : "We could not send the email right now. Ask support to verify your address.")).catch((e) => setVerifyMessage(friendlyError(e)))}
+              onClick={() => void resendVerification().then(setVerifyMessage)}
             >
               Resend verification email
             </button>
@@ -168,7 +172,7 @@ export default function AccountPage() {
                 <tr key={s.id} className="border-t border-border align-top">
                   <td className="py-1.5 pr-3">
                     <div className="text-fg" title={s.user_agent ?? ""}>{deviceLabel(s.user_agent)}{s.current && <span className="ml-1.5 rounded bg-brand/15 px-1.5 py-0.5 text-xs font-medium text-brand">This device</span>}</div>
-                    <div className="text-fg-muted">{s.ip_address ? `${s.ip_address} · ` : ""}active {new Date(s.last_used_at).toLocaleString()}</div>
+                    <div className="text-fg-muted">{s.ip_address ? `${s.ip_address} · ` : ""}active {formatDateTimeIST(s.last_used_at)}</div>
                   </td>
                   <td className="py-1.5 text-right">{!s.current && <button onClick={() => revoke(s.id)} className="text-down hover:underline">Sign out</button>}</td>
                 </tr>
@@ -195,7 +199,7 @@ export default function AccountPage() {
   return (
     <div className="space-y-4">
       {account}
-      <div id="plan" className="scroll-mt-20 space-y-4">{growth && <PlanUsageV2 />}<BillingCard /></div>
+      <div id="plan" className="scroll-mt-20 space-y-4">{growth && <PlanUsageV2 />}<BillingCard />{referrals && <InviteFriendV2 />}</div>
     </div>
   );
 }

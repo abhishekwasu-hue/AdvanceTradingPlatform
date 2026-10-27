@@ -1,14 +1,17 @@
 import { Stethoscope } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { Sheet } from "../components/primitives";
 import AdminPage from "../pages/AdminPage";
 import type { PageProps } from "../routes";
 import { NotFound } from "../shell/common";
+import { PageTabs } from "../ui/PageTabs";
 import { useFeatures } from "../ui/useFeatures";
 import AlertsPanelV2 from "./AlertsPanelV2";
-import { ActivationPanel, AiCostPanel, BUTTON, FOCUS, Phase0Notice, Pill, SupportPanel, SystemPanels, TestingToolsPanel, UsersPanel } from "./AdminSectionsV2";
+import GrowthSettingsPanelV2 from "./GrowthSettingsPanelV2";
+import ChainHistoryCard from "./ChainHistoryCard";
+import { ActivationPanel, AiCostPanel, BUTTON, Phase0Notice, Pill, SupportPanel, SystemPanels, TestingToolsPanel, UsersPanel } from "./AdminSectionsV2";
 import { SupportDeskSettingsPanel, SupportTicketsPanel } from "./SupportDeskV2";
 import { ADMIN_SECTIONS, ago, consoleApi, isAdminSection, type AdminSection, type ConsoleDiagnostics } from "./consoleApi";
 
@@ -50,23 +53,12 @@ export default function AdminConsoleV2(_props: PageProps) {
         </button>
       </header>
 
-      <nav aria-label="Admin sections" className="-mx-space-1 overflow-x-auto px-space-1">
-        <ul className="flex gap-space-1 border-b border-border">
-          {ADMIN_SECTIONS.map((s) => (
-            <li key={s.id}>
-              <Link to={s.id === "system" ? "/admin" : `/admin?section=${s.id}`} aria-current={s.id === section ? "page" : undefined}
-                onClick={(e) => { e.preventDefault(); pick(s.id); }}
-                className={`-mb-px flex h-11 items-center whitespace-nowrap border-b-2 px-space-3 text-t14 font-medium ${s.id === section ? "border-brand text-fg" : "border-transparent text-fg-muted hover:text-fg"} ${FOCUS}`}>
-                {s.label}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
+      <PageTabs kind="links" label="Admin sections" value={section} onChange={pick}
+        items={ADMIN_SECTIONS.map((s) => ({ key: s.id, label: s.label, to: s.id === "system" ? "/admin" : `/admin?section=${s.id}` }))} />
 
-      {section === "system" && <><AlertsPanelV2 /><SystemPanels /></>}
+      {section === "system" && <><AlertsPanelV2 /><SystemPanels /><ChainHistoryCard /></>}
       {section === "controls" && <Phase0Notice />}
-      {section === "users" && <><UsersPanel />{growth && <ActivationPanel />}<AiCostPanel /></>}
+      {section === "users" && <><UsersPanel />{growth && <ActivationPanel />}<GrowthSettingsPanelV2 /><AiCostPanel /></>}
       {section === "testing" && <TestingToolsPanel />}
       {section === "support" && (
         <>

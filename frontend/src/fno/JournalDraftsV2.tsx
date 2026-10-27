@@ -85,7 +85,7 @@ function DraftV2({ draft, onSave, candles }: { draft: JournalDraft; onSave: (d: 
         </div>
         <div className="text-right">
           <div className="text-t12 text-fg-muted">P&amp;L</div>
-          <div className={`font-tabular text-t15 font-semibold ${toneClass(signTone(draft.pnl))}`}>{formatSignedINR(draft.pnl)}</div>
+          <div className={`font-tabular text-t15 font-semibold ${toneClass(signTone(draft.pnl))}`}>{formatSignedINR(draft.pnl, { paise: true })}</div>
         </div>
       </div>
       <ul className="mt-space-2 space-y-px font-tabular text-t13 text-fg" data-draft-legs>

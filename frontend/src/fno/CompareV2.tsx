@@ -5,7 +5,7 @@ import { Link } from "react-router";
 import { watchlistsV2Api, type QuotesReply, type WatchItem } from "../chart/watchlistsV2";
 import { cx } from "../components/primitives/cx";
 import type { ChainRow } from "../optionChain/types";
-import { formatINR, formatNumber, formatPrice } from "../ui/format";
+import { formatNumber, formatPrice } from "../ui/format";
 import { basketApi, type BasketApi, type BasketAsk, type BasketEvaluation, type BasketSettings, type Product } from "./api";
 import { basket as defaultBasket, useBasket, type BasketStore, type NewLeg } from "./basket";
 import { STRATEGIES, basketAsk, legAsk, legLabel, payoffSentence, readyStrategy, type SavedState, type StrategyName } from "./basketModel";
@@ -58,7 +58,7 @@ const maxLossText = (legs: readonly PayoffLeg[], shift: number) => {
   if (!o) return "–";
   return o.unboundedLoss ? "Unlimited" : o.maxLoss !== null && o.maxLoss < 0 ? moneyText(Math.abs(o.maxLoss)) : "None";
 };
-const premiumText = (v: number) => (v > 0 ? `${formatINR(v)} received` : v < 0 ? `${formatINR(Math.abs(v))} paid` : "None");
+const premiumText = (v: number) => (v > 0 ? `${moneyText(v)} received` : v < 0 ? `${moneyText(Math.abs(v))} paid` : "None");
 
 /** The figures of every column, row by row (pure: tested in positionInsights.test.tsx). */
 export function figureRows(columns: readonly CompareColumn[]): FigureRow[] {
@@ -249,7 +249,7 @@ export function AdjustCompareV2({ open, onClose, title, legs, adjust, store = de
   const columns: CompareColumn[] = [
     { name: "Now", legs: heldPayoff(legs), shift: 0, margin: margin(nowEval, !!nowAsks?.length), pop: null },
     { name: "With your change", legs: change.legs, shift: change.booked ?? 0, margin: margin(changeEval, !!changeLegs?.length), pop: null,
-      extra: [{ label: "Booked now by closing", value: change.booked === null ? "–" : change.booked === 0 && closed.size === 0 ? "None" : formatINR(change.booked) }],
+      extra: [{ label: "Booked now by closing", value: change.booked === null ? "–" : change.booked === 0 && closed.size === 0 ? "None" : moneyText(change.booked) }],
       note: change.notes.join(" ") || null },
   ];
   const underlying = first?.underlying ?? "";

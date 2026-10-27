@@ -44,7 +44,11 @@ export const TOUR_PAGES: Record<TourId, { name: string; path: string }> = {
   risk: { name: "Risk limits", path: "/risk-management" },
   settings: { name: "Settings", path: "/settings" },
   copilot: { name: "AI Copilot", path: "/copilot" },
+  terminal: { name: "Terminal", path: "/terminal" },
 };
+
+/** Trading Terminal T1: page tips of a page behind a feature flag, listed only while that flag is on. */
+export const TOUR_FLAGS: Partial<Record<TourId, string>> = { terminal: "terminal" };
 
 const safePage = (page: string | undefined): string | undefined =>
   page && page.startsWith("/") && !page.startsWith("//") ? page : undefined;
@@ -57,9 +61,11 @@ export function glossaryArticles(): HelpArticle[] {
   return Object.entries(GLOSSARY).map(([key, entry]) => ({ id: `word:${key}`, kind: "word" as const, title: entry.term, text: entry.definition, keywords: key.replace(/-/g, " ") }));
 }
 
-export function tourArticles(tours: Readonly<Record<TourId, PageTour>>, welcome: readonly WelcomeCard[]): HelpArticle[] {
+export function tourArticles(tours: Readonly<Record<TourId, PageTour>>, welcome: readonly WelcomeCard[], on: (flag: string) => boolean = () => true): HelpArticle[] {
   const out: HelpArticle[] = [];
   for (const [id, tour] of Object.entries(tours) as [TourId, PageTour][]) {
+    const flag = TOUR_FLAGS[id];
+    if (flag && !on(flag)) continue;
     const where = TOUR_PAGES[id];
     const seen = new Set<string>();
     const lines: string[] = [];

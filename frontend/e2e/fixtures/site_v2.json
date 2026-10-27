@@ -1,0 +1,90 @@
+{
+  "pages": [
+    {
+      "slug": "features",
+      "title": "What AiAlgoDesk does",
+      "description": "Charts, an option chain, alerts and paper trading for Indian markets, explained in plain words.",
+      "intro": "One place to read the market, practise your own ideas on paper and keep a record of how you trade.",
+      "sections": [
+        {
+          "heading": "Read the market",
+          "lines": [
+            "Charts with price structure drawn for you: swings, trend and the areas where price turned before.",
+            "An option chain with open interest and the key numbers explained in plain words.",
+            "Sector and index views so you see the whole market at a glance."
+          ]
+        },
+        {
+          "heading": "Practise your own ideas",
+          "lines": [
+            "An idea library that explains each method in plain words, with a scan you can try.",
+            "Paper bots that follow the idea and settings you chose, at real prices with pretend money.",
+            "Signals described in structure words, never as advice."
+          ]
+        },
+        {
+          "heading": "Stay in control",
+          "lines": [
+            "Your own risk settings: the most one trade may lose and a daily loss limit.",
+            "A journal that records every paper trade so you can review it.",
+            "Alerts in the app and on your own Telegram."
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "how-it-works",
+      "title": "How it works",
+      "description": "Connect your broker for prices, pick an idea, set your own settings and practise on paper.",
+      "intro": "Four steps from your first visit to your first reviewed paper trade.",
+      "sections": [
+        {
+          "heading": "Connect your broker",
+          "lines": [
+            "ATP reads prices through your own broker account. Your broker login stays with your broker."
+          ]
+        },
+        {
+          "heading": "Pick an idea",
+          "lines": [
+            "Choose a method from the idea library, or describe your own, and set it up with your own settings."
+          ]
+        },
+        {
+          "heading": "Practise on paper",
+          "lines": [
+            "A paper bot watches the market for the structure you chose. No order reaches your broker."
+          ]
+        },
+        {
+          "heading": "Review and learn",
+          "lines": [
+            "Every paper trade lands in your journal. Review it, change one setting at a time and practise again."
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "about",
+      "title": "About AiAlgoDesk",
+      "description": "A trading workspace for retail traders in India: education, analysis and paper practice.",
+      "intro": "AiAlgoDesk is built for traders who want to learn to read the market by its structure and practise with discipline.",
+      "sections": [
+        {
+          "heading": "What we believe",
+          "lines": [
+            "Learning comes before real money. Every idea should be practised on paper first.",
+            "The decisions stay with you: the idea, the settings, the trade and the exit."
+          ]
+        },
+        {
+          "heading": "What we do not do",
+          "lines": [
+            "We do not tell anyone what to trade and we make no promise about results.",
+            "Most individual traders in futures and options lose money. Please read the risk disclosure before you trade."
+          ]
+        }
+      ]
+    }
+  ]
+}

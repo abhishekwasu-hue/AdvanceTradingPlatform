@@ -8,15 +8,15 @@ One failing tile never hides the others.
 
 | Tile | Data | Whose |
 |---|---|---|
-| regime | Dow structure (HH/HL, LH/LL from fractal swings) of the NIFTY 50 on daily and weekly bars | shared daily lake (NSE index closes) |
+| regime | Dow structure (HH/HL, LH/LL from fractal swings) of the NIFTY 50 on daily and weekly bars | shared daily lake (NSE index closes), or the viewer's own Daily history when it holds more (DATA-H) |
 | breadth | advances / declines / unchanged across NSE cash shares on the last two lake days | shared daily lake (NSE bhavcopy) |
 | vix | India VIX last close, change, and its rank and percentile over the last year; the gate's live reading when the viewer may see it | shared daily lake; the VIX gate's own BT1b rule for the live value |
 | fii_dii | FII / DII net flows | the existing seam (`ai.sentiment.fii_dii_provider`), off until a source with clear terms is configured |
 | global | overnight moves: US futures and indices, Asia, crude, gold, dollar, USD/INR, US 10-year | the shared free public cache (`ai.global_cues`), delayed |
 | events | market events today and the rest of this IST week | global events plus the caller's organisation's own |
 
-Nothing per user is read except what the user's own organisation keeps (events) and the VIX gate's viewer rule. No
-broker session of anyone is used. The panel describes; it never says what to do.
+Nothing per user is read except what the user's own organisation keeps (events), the VIX gate's viewer rule and the
+viewer's OWN private Daily bars (DATA-H, app/market_lake/own_bars.py). No broker session of anyone is used. The panel describes; it never says what to do.
 """
 from __future__ import annotations
 
@@ -138,14 +138,55 @@ async def _bars(session: AsyncSession, name: str, days: int, today: date) -> pd.
                         index=idx)
 
 
+REGIME_BARS = 30           # daily bars the regime read needs
+
+
+def short_history(have: int, need: int, what: str, key: str) -> str:
+    """DATA-H DH5: the plain sentence for a history too short to read - never "no structure" as if the market had none."""
+    from app.market_lake.index_history import is_target_key
+    loading = "history is loading" if is_target_key(key) else "more history is needed"
+    return f"only {have} of the {need} {what} needed are stored; {loading}"
+
+
+async def _own_daily(session: AsyncSession, user: Viewer, name: str, days: int, today: date) -> Optional[pd.DataFrame]:
+    """DATA-H: the viewer's own Daily bars of the index (his private store, closing-auction flags applied), or None."""
+    from app.market_lake import own_bars
+    key = index_key(name)
+    scope = await own_bars.scope_for(session, user, key)
+    if scope is None:
+        return None
+    lo = datetime.combine(today - timedelta(days=days), datetime.min.time(), tzinfo=IST).astimezone(timezone.utc)
+    hi = datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=IST).astimezone(timezone.utc)
+    rows = []
+    for label in ("1d", "day"):
+        rows = await own_bars.fetch_rows(session, scope, key, label, lo, hi)
+        if rows:
+            break
+    if not rows:
+        return None
+    idx = pd.DatetimeIndex([pd.Timestamp(datetime.combine(_day(r[0]), datetime.min.time())) for r in rows])
+    return pd.DataFrame({"high": [float(r[3]) for r in rows], "low": [float(r[4]) for r in rows], "close": [float(r[5]) for r in rows]},
+                        index=idx)
+
+
 async def regime_tile(session: AsyncSession, user: Viewer, today: date, holidays: Sequence[date]) -> Dict[str, Any]:
     source = "NSE index closes (daily lake)"
     bars = await _bars(session, MARKET, REGIME_DAYS, today)
-    if len(bars) < 30:
-        return na(f"{len(bars)} daily bars of the {MARKET} in the lake; 30 are needed", source)
+    own = await _own_daily(session, user, MARKET, REGIME_DAYS, today)
+    if own is not None and len(own) > len(bars):
+        bars, source = own, "your broker's Daily history (your own store)"
+    if len(bars) < REGIME_BARS:
+        return na(short_history(len(bars), REGIME_BARS, "daily bars", index_key(MARKET)), source)
     last = bars.index[-1].date()
+    close = round(float(bars["close"].iloc[-1]), 2)
+    if source.startswith("your broker"):
+        # DH3 / DH6: the structure reads the continuous session's range; the close shown is the session's official close
+        from app.market_lake import own_bars
+        official = await own_bars.official_close(session, index_key(MARKET), await own_bars.scope_for(session, user, index_key(MARKET)))
+        if official is not None and official["date"] == last.isoformat():
+            close = official["close"]
     return {"status": freshness(last, today, holidays), "source": source, "as_of": last.isoformat(), "market": MARKET,
-            "close": round(float(bars["close"].iloc[-1]), 2), "daily": dow_trend(bars), "weekly": dow_trend(weekly(bars), window=2),
+            "close": close, "daily": dow_trend(bars), "weekly": dow_trend(weekly(bars), window=2),
             "method": "Dow structure: the last swing high and swing low (fractal swings, 3 bars each side daily, 2 weekly)"}
 
 

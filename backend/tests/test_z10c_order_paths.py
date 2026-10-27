@@ -38,21 +38,31 @@ ORDER_CALL_SITES: Dict[Tuple[str, str], Tuple[str, str]] = {
         (ENTRY, "the legs of a LIVE option structure; reached only from the trading worker"),
     ("app.execution.multileg._unwind", "place_order"):
         (EXIT, "reverses the filled legs of a structure that failed half way"),
+    ("app.execution.multileg_smart.place_legs", "place_order"):
+        (ENTRY, "SE-7: the legs of a structure on the smart-execution engine (hedges first); from the trading worker only "
+                "(execute_structure, and \"Complete the rest\" which the route only records)"),
     ("app.trading.position_monitor._square_off_live", "place_order"):
         (EXIT, "closes an open LIVE position (stop, target, square-off, emergency exit, approved exit)"),
     ("app.trading.position_monitor._apply_trade_exit_rules", "modify_order"):
         (PROTECTIVE, "moves the broker-side stop of an open LIVE position (trailing / break-even)"),
     ("app.trading.stop_guard._guard_one", "place_stop_loss_order"):   # (per position, from verify_protective_stops)
         (PROTECTIVE, "re-arms a missing broker-side stop of an open LIVE position"),
+    # TM-3: re-prices a marketable LIMIT that is already working (entry or exit) through the adapter it is handed; places
+    # nothing new. Classed ENTRY - the strictest - so rule 2 proves no API route reaches it.
+    ("app.execution.marketable_limit.reprice_until_filled", "modify_order"):
+        (ENTRY, "re-prices an already-placed marketable limit at a broker without market orders (TM-3)"),
 }
 
 # Callables that place broker orders only through the broker argument they are given (qualname -> parameter).
 GATED: Dict[str, str] = {
     "app.execution.signal_execution.execute_signal_for_user": "broker",
     "app.execution.multileg.execute_structure": "broker",
+    "app.execution.multileg_smart.place_legs": "broker",
+    "app.execution.incomplete_structures.complete_rest": "broker",
     "app.execution.router.OrderRouter.__init__": "broker",
     "app.trading.position_monitor.close_position": "broker",
     "app.ai.monitor.execute": "broker",
+    "app.execution.marketable_limit.reprice_until_filled": "adapter",
 }
 # Where a broker adapter comes from: everything that builds one goes through these.
 ADAPTER_FACTORIES = frozenset({"app.brokers.registry.get_broker_adapter", "app.brokers.token_lifecycle.build_adapter"})
@@ -65,6 +75,18 @@ ROUTES_REACHING_BROKER_ORDERS: Dict[Tuple[str, str], str] = {
     ("POST", "/api/positions/{trade_id}/exit-now"):
         "\"Exit now\" on the caller's own position; LIVE is refused before any close (approval.exit_now), so only a PAPER "
         "close runs - the graph keeps the edge because close_group can look a broker up",
+    ("POST", "/api/paper/fno/positions/{trade_id}/exit-leg"):
+        "TT-8 \"Exit this leg\": closes one leg of the caller's own basket (holder or owner only); a LIVE leg is squared off "
+        "through its own broker session exactly as every LIVE exit (broker_for_trade) - an exit only (ADR-0004)",
+    ("POST", "/api/paper/fno/positions/{trade_id}/exit-group"):
+        "TT-8 \"Exit the whole group\": every open leg of the caller's own basket through close_group (sold legs first; a "
+        "LIVE short that does not close keeps its hedges) - an exit only (ADR-0004)",
+    ("POST", "/api/paper/fno/basket/close-filled"):
+        "TM Part 7 \"Close the filled legs\": the caller's own legs through approval.exit_now one by one (shorts first), "
+        "so LIVE is refused before any close exactly as for Exit now - an exit only (ADR-0004)",
+    ("POST", "/api/trading/incomplete/{group_id}/answer"):
+        "SE-7 \"Close the filled legs\" of an incomplete structure: an exit through close_group (sold legs first); the "
+        "route closes PAPER legs only and leaves LIVE legs to the worker; \"Complete the rest\" is only recorded here",
     ("POST", "/api/kill-switch/emergency-exit"):
         "the tenant's emergency stop: engages the kill switch, then closes its open positions (exit, ADR-0004)",
     ("POST", "/api/ai/actions/{action_id}/approve"):

@@ -124,11 +124,16 @@ class Plan:
                 "poll_seconds": self.poll_seconds}
 
 
-Entries = Dict[str, List[float]]   # "EXCH:SYMBOL" -> [priority, last_seen, first_seen] (epoch seconds)
+# "EXCH:SYMBOL" -> [priority, last_seen, first_seen, held_seen] (epoch seconds). held_seen is the last time a demand AT
+# that priority was made: a weaker demand (a watchlist stream re-asserting the symbol) refreshes last_seen but not
+# held_seen, so an old chart / chain demand lapses after its own idle time and the symbol drops to the weaker priority
+# (owner 25 Oct: watchlist symbols registered at CHART before #545 kept their chart slots forever). Older rows without
+# held_seen read it as last_seen.
+Entries = Dict[str, List[float]]
 
 
 def _rank(item: Tuple[str, List[float]]) -> Tuple[int, float, str]:
-    key, (priority, last_seen, first_seen) = item[0], item[1]
+    key, (priority, last_seen, first_seen) = item[0], item[1][:3]
     if int(priority) == int(Priority.SCREENER):
         return int(priority), -float(last_seen), key   # a new scan replaces the previous scan's symbols
     return int(priority), float(first_seen), key       # a held position / chart / watchlist symbol keeps its slot
@@ -149,10 +154,11 @@ def _prune(entries: Entries, now: datetime) -> Entries:
     out: Entries = {}
     for key, value in entries.items():
         priority, seen, first = int(value[0]), float(value[1]), float(value[2])
+        held = float(value[3]) if len(value) > 3 else seen
         idle = IDLE_SECONDS.get(priority)
         if idle is not None and ts - seen > idle:
             continue
-        out[key] = [priority, seen, first]
+        out[key] = [priority, seen, first, held]
     return out
 
 
@@ -160,9 +166,17 @@ def _upsert(entries: Entries, key: str, priority: int, now: datetime) -> None:
     ts = now.timestamp()
     current = entries.get(key)
     if current is None:
-        entries[key] = [priority, ts, ts]
-    else:
-        entries[key] = [min(priority, int(current[0])), ts, float(current[2])]
+        entries[key] = [priority, ts, ts, ts]
+        return
+    held_priority, first = int(current[0]), float(current[2])
+    held = float(current[3]) if len(current) > 3 else float(current[1])
+    idle = IDLE_SECONDS.get(held_priority)
+    if priority <= held_priority:                                   # the same or a stronger demand: (re)asserts it
+        entries[key] = [priority, ts, first, ts]
+    elif idle is not None and ts - held > idle:                     # the stronger demand lapsed: the weaker one stands
+        entries[key] = [priority, ts, first, ts]
+    else:                                                           # the stronger demand still holds
+        entries[key] = [held_priority, ts, first, held]
 
 
 class SessionSymbols:
@@ -180,7 +194,8 @@ class SessionSymbols:
         if raw:
             try:
                 data = json.loads(raw)
-                entries = {str(k): [int(v[0]), float(v[1]), float(v[2] if len(v) > 2 else v[1])] for k, v in data.items()}
+                entries = {str(k): [int(v[0]), float(v[1]), float(v[2] if len(v) > 2 else v[1]),
+                                    float(v[3] if len(v) > 3 else v[1])] for k, v in data.items()}
                 self._local[namespace] = entries
                 return dict(entries)
             except (ValueError, TypeError, IndexError, AttributeError):
@@ -227,7 +242,7 @@ class SessionSymbols:
         for symbol, exchange in symbols:
             key = _key(symbol, exchange)
             if key in previous and key not in entries:
-                entries[key] = [int(priority), now.timestamp(), float(previous[key][2])]   # keeps its place in the queue
+                entries[key] = [int(priority), now.timestamp(), float(previous[key][2]), now.timestamp()]   # keeps its place
             else:
                 _upsert(entries, key, int(priority), now)
         await self._save(namespace, entries)
@@ -254,6 +269,8 @@ class LiveSession:
     task: Optional["asyncio.Task[None]"] = None
     plan: Optional[Plan] = None
     last_error: Optional[str] = None
+    hub: bool = False            # TM Part 1: this session is a data-hub connection (flag `data_hub`)
+    fingerprint: str = ""        # the credential's login fingerprint when it was opened (hub: a renewed login reopens)
 
     def status(self) -> dict:
         out: Dict[str, Any] = {"user_id": self.ref.user_id, "broker": self.ref.broker, "account_label": self.ref.account_label,
@@ -302,12 +319,19 @@ class UserSessionFanIn:
     """The worker's per-user sessions (bring your own broker). `sync` is called once per worker cycle."""
 
     def __init__(self, *, symbols: Optional[SessionSymbols] = None, stream_factory: Callable[[Any], Optional[TickStream]] = stream_for,
-                 adapter_factory: Optional[Callable[[Any], Any]] = None, streaming: Optional[bool] = None) -> None:
+                 adapter_factory: Optional[Callable[[Any], Any]] = None, streaming: Optional[bool] = None, hub: Any = None) -> None:
         self.symbols = symbols or session_symbols
         self.stream_factory = stream_factory
         self.adapter_factory = adapter_factory
         self.streaming = config.STREAMING_QUOTES_ENABLED if streaming is None else streaming
         self._sessions: Dict[str, LiveSession] = {}
+        # TM Part 1: the data hub (app/market_data/hub.py) and the organisations its flag is on for (read once per sync).
+        self.hub = hub
+        self._hub_all = False
+        self._hub_tenants: set = set()
+
+    def _hub_for(self, tenant_id: int) -> bool:
+        return self.hub is not None and (self._hub_all or tenant_id in self._hub_tenants)
 
     @property
     def sessions(self) -> Dict[str, LiveSession]:
@@ -322,9 +346,23 @@ class UserSessionFanIn:
     async def open(self, record: Any, now: datetime) -> LiveSession:
         """A live session for this user credential (after their daily login). Replaces one already open."""
         ref = SessionRef.of(record)
-        await self.close(ref.namespace)
+        await self.close(ref.namespace, keep_symbols=self._hub_for(ref.tenant_id))
         live = LiveSession(ref=ref, cache=TickCache(namespace=ref.namespace), opened_day=now.astimezone(IST).date())
-        if self.streaming:
+        if self._hub_for(ref.tenant_id):
+            # TM Part 1: a hub connection always streams (where the broker has a stream) into its own keys, tells the hub
+            # its state, and stops retrying a token the broker refused.
+            from app.market_data import hub as data_hub
+            live.hub = True
+            live.fingerprint = data_hub.record_fingerprint(record)
+            stream = self.stream_factory(self._adapter(record))
+            if stream is not None:
+                live.cache = self.hub.attach(stream, ref.namespace, ref.broker, ref.account_label)
+                live.stream = stream
+                live.task = asyncio.create_task(stream.run(), name=f"hub-stream:{ref.namespace}")
+            else:
+                await data_hub.publish_status(data_hub.HubStatus(namespace=ref.namespace, broker=ref.broker, state=data_hub.HubState.POLLING.value,
+                                                                 since=now.isoformat(), account_label=ref.account_label))
+        elif self.streaming:
             stream = self.stream_factory(self._adapter(record))
             if stream is not None:
                 stream.cache = live.cache            # this session's own keys, never the shared worker cache
@@ -335,7 +373,9 @@ class UserSessionFanIn:
         logger.info("BYOB session opened for user %s (%s/%s, streaming=%s)", ref.user_id, ref.broker, ref.account_label, live.stream is not None)
         return live
 
-    async def close(self, namespace: str) -> bool:
+    async def close(self, namespace: str, *, keep_symbols: bool = False) -> bool:
+        """Close one session. `keep_symbols` (TM Part 1: a login to renew, a reopen) keeps the session's symbol set, so
+        the stream opened after the renewal subscribes every symbol again without each page asking anew."""
         live = self._sessions.pop(namespace, None)
         if live is None:
             return False
@@ -348,7 +388,8 @@ class UserSessionFanIn:
             except (asyncio.CancelledError, Exception):  # noqa: BLE001 - a stream's own error is not the teardown's
                 pass
         live.cache.clear()
-        await self.symbols.clear(namespace)
+        if not keep_symbols:
+            await self.symbols.clear(namespace)
         return True
 
     async def close_all(self) -> int:
@@ -363,9 +404,60 @@ class UserSessionFanIn:
         if live is None:
             return None
         live.plan = await self.symbols.plan(namespace, session_cap(live.ref.broker), now)
-        if live.stream is not None:
+        if live.stream is not None and not (live.hub and live.stream.auth_failed):
             await live.stream.set_symbols(live.plan.kept)
+        if live.hub:
+            await self._hub_status(live, now)
         return live.plan
+
+    async def _hub_status(self, live: LiveSession, now: datetime) -> None:
+        from app.market_data import hub as data_hub
+        if live.stream is None:
+            state, reconnects, subscribed, retry = data_hub.HubState.POLLING.value, 0, len(live.plan.kept) if live.plan else 0, None
+        else:
+            stream = live.stream
+            state, reconnects, subscribed, retry = stream.state, stream.reconnects, stream.subscribed, stream.next_retry_seconds
+            flush = getattr(live.cache, "flush", None)
+            if flush is not None:
+                await flush()
+        await data_hub.publish_status(data_hub.HubStatus(namespace=live.ref.namespace, broker=live.ref.broker, state=state, since=now.isoformat(),
+                                                         reconnects=reconnects, subscribed=subscribed, retry_seconds=retry,
+                                                         account_label=live.ref.account_label))
+
+    async def _hub_renewals(self, db: Any, wanted: Dict[str, Any], now: datetime) -> None:
+        """TM Part 1: a hub session whose login the broker ended. Its stream stops (no retry storm), the hub queues ONE
+        renew prompt, and its symbols are kept; when the login is renewed (a new fingerprint) the session is opened
+        again and every symbol is subscribed again."""
+        from sqlalchemy import select
+
+        from app.brokers.token_lifecycle import token_is_usable
+        from app.db.models import BrokerCredentialRecord
+        from app.market_data import hub as data_hub
+
+        hub_sessions = {ns: live for ns, live in self._sessions.items() if live.hub}
+        gone = [live for ns, live in hub_sessions.items() if ns not in wanted]
+        records: Dict[int, Any] = {}
+        if gone:
+            ids = sorted({live.ref.credential_id for live in gone})
+            records = {r.id: r for r in await db.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.id.in_(ids)))}
+        for live in gone:
+            record = records.get(live.ref.credential_id)
+            if record is not None and not token_is_usable(record, now):
+                ns = live.ref.namespace
+                self.hub.need_renew(ns, live.ref.tenant_id, live.ref.user_id, live.ref.broker, data_hub.record_fingerprint(record))
+                await self.close(ns, keep_symbols=True)
+                await data_hub.publish_status(data_hub.HubStatus(namespace=ns, broker=live.ref.broker, state=data_hub.HubState.RENEW_NEEDED.value,
+                                                                 since=now.isoformat(), account_label=live.ref.account_label))
+        for ns, live in hub_sessions.items():
+            record = wanted.get(ns)
+            if record is None or live.stream is None or not live.stream.auth_failed:
+                continue
+            fingerprint = data_hub.record_fingerprint(record)
+            if fingerprint != live.fingerprint:
+                self.hub.renewed(ns)
+                await self.close(ns, keep_symbols=True)      # reopened below with the renewed login
+            else:
+                self.hub.need_renew(ns, live.ref.tenant_id, live.ref.user_id, live.ref.broker, fingerprint)
 
     async def sync(self, db: Any, now: datetime, *, market_open: bool) -> FanInReport:
         """Open a session for every user credential at a confirmed broker with a usable token (tenants with the flag
@@ -376,7 +468,12 @@ class UserSessionFanIn:
         from app.trading.position_monitor import trade_venues, underlying_exchange
 
         report = FanInReport()
+        if self.hub is not None:
+            from app.market_data import hub as data_hub
+            self._hub_all, self._hub_tenants = await data_hub.hub_tenants(db)
         wanted = await eligible_sessions(db, now) if market_open else {}
+        if market_open and self.hub is not None and (self._hub_all or self._hub_tenants):
+            await self._hub_renewals(db, wanted, now)
         if not wanted:
             report.closed = await self.close_all()
             return report

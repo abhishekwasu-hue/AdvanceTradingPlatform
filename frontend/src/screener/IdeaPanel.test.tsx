@@ -21,7 +21,7 @@ const RESULT: IdeaResponse = {
     { rule: "fno", phrase: "F&O", condition: "IsFnO()", reads: "the symbol is in the F&O segment", assumptions: [], ok: true, problems: [] },
     { rule: "trend_up", phrase: "uptrend", condition: 'Trend() == "UPTREND"', reads: "the market-structure trend is up", assumptions: [], ok: true, problems: [] },
     { rule: "demand_zone", phrase: "demand zone", condition: 'NearZone("demand")', reads: "the close is at a buyer area (a demand zone)",
-      assumptions: ["at the area = within 0.5% of the nearest live zone (the function's default)"], ok: false,
+      assumptions: ["at the area = within 0.5% of the nearest live zone (the usual setting)"], ok: false,
       problems: [{ kind: "flag_off", message: "NearZone(): not enabled for this organisation", pos: null }] },
   ],
   not_supported: [{ phrase: "pulling back", why: "not supported yet" }],

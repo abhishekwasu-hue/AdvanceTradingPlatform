@@ -147,7 +147,14 @@
             "IOC"
           ]
         },
-        "brokers": {}
+        "brokers": {
+          "kotak_neo": {
+            "market_for_algo": "map_to_limit"
+          },
+          "groww": {
+            "market_for_algo": "map_to_limit"
+          }
+        }
       },
       "code": [
         "app/compliance/order_policy.py",

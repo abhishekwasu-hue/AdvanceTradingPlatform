@@ -80,6 +80,11 @@ export function candleErrorText(error: unknown, symbol: string): string {
   return "Prices could not be loaded from your broker. Check your connection, then try again.";
 }
 
+/** C1: the empty state's words - the server's reason when it sent one, else a plain fallback. */
+export function emptyCandlesText(reason: string | null | undefined, symbol: string): string {
+  return reason?.trim() || `No candles yet for ${symbol}. Your broker sent no data for this period.`;
+}
+
 type CandleEntry = CandlesResponse["symbols"][string];
 
 export interface FeedEvents {
@@ -89,6 +94,9 @@ export interface FeedEvents {
   /** A refresh: the newest bars, merged into what is shown. */
   merge: (bars: ChartBar[], volume: CandleVolumeSource | null) => void;
   error: (text: string | null) => void;
+  /** C1: the broker sent no candles at all on the first read - the server's plain reason (shown over the empty chart;
+   * the chart is never replaced with nothing). null once bars arrive. */
+  empty?: (text: string | null) => void;
 }
 
 /** UI2-4d: when a chart's reads may go out. Running, each refresh tick reads; paused (off screen, a hidden tab), nothing
@@ -138,9 +146,17 @@ export class CandleFeed {
       if (this.stopped) return;
       const entry: CandleEntry | undefined = r.symbols[this.symbol];
       if (!entry || entry.error) throw new Error(entry?.error === "budget used" ? "budget used" : "no bars");
+      if (first && entry.bars.length === 0) {
+        // C1: an empty answer is a state with its reason, never a silent empty chart; the next tick reads the whole
+        // history again (a new contract's first bars then load).
+        this.on.empty?.(emptyCandlesText(entry.empty_reason, this.symbol));
+        this.on.error(null);
+        return;
+      }
       if (first) this.on.replace(entry.bars, entry.volume_source ?? null);
       else this.on.merge(refreshBars(entry.bars, this.timeframe), entry.volume_source ?? null);
       this.loaded = true;
+      this.on.empty?.(null);
       this.on.error(null);
     } catch (e) {
       if (!this.stopped && first) this.on.error(candleErrorText(e, this.symbol));     // a failed refresh keeps the chart
@@ -157,6 +173,8 @@ export interface ChartCandles {
   candles: ChartBar[];
   loading: boolean;
   error: string | null;
+  /** C1: why the chart is empty (the broker sent no candles), or null. */
+  empty: string | null;
   loadingOlder: boolean;
   exhausted: boolean;
   volumeSource: CandleVolumeSource | null;
@@ -174,6 +192,7 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
   const [candles, setCandles] = useState<ChartBar[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [empty, setEmpty] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [exhausted, setExhausted] = useState(false);
   const [volumeSource, setVolumeSource] = useState<CandleVolumeSource | null>(null);
@@ -191,7 +210,7 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
 
   useEffect(() => {
     guard.current.reset();
-    setCandles([]); setError(null); setExhausted(false); setLoadingOlder(false); setVolumeSource(null);
+    setCandles([]); setError(null); setEmpty(null); setExhausted(false); setLoadingOlder(false); setVolumeSource(null);
     if (!enabled || !sym) return undefined;
     const v2 = { forming: DAILY_OR_LONGER.has(timeframe), volume_from_future: true };
     const stop = new AbortController();
@@ -201,6 +220,7 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
       replace: (bars, volume) => { setCandles(bars); setVolumeSource(volume); },
       merge: (bars, volume) => { setCandles((prev) => mergeBars(prev, bars)); setVolumeSource(volume); },
       error: setError,
+      empty: setEmpty,
     });
     const g = new FeedGate(() => void feed.tick(), pausedRef.current);
     gate.current = g;
@@ -229,5 +249,5 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
   }, [enabled, sym, timeframe, exchange]);
 
   const retry = useCallback(() => setNonce((n) => n + 1), []);
-  return { candles, loading, error, loadingOlder, exhausted, volumeSource, loadOlder, retry };
+  return { candles, loading, error, empty, loadingOlder, exhausted, volumeSource, loadOlder, retry };
 }

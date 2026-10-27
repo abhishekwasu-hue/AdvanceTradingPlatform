@@ -30,6 +30,7 @@ import type {
   ThesisHistory,
   AnalyticsSummary,
   AuditLogEntry,
+  BacktestBarsResponse,
   BacktestResult,
   BrokerCredentialsInput,
   BrokerTokenInfo,
@@ -180,6 +181,9 @@ import type { AiProviderName } from "../aiKeys/keyFormats";
 import type { MarketStrip } from "../dashboard/types";
 import type { RhythmKind, RhythmPrefs, RhythmSettings, RhythmToday } from "../rhythm/types";
 import type { ChainExpiries, LiveChain } from "../optionChain/types";
+
+/** TT12-1: the window event the shell's one-time notices listen for (a saved risk limit makes one moot). */
+export const NOTICES_CHANGED = "atp:notices-changed";
 
 export { ApiError, friendlyError } from "./errors";
 
@@ -430,6 +434,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null, options: options ?? null }),
     }),
+  /** Owner order 23 Oct: the bars a backtest runs on, chosen by the server - your broker when its session is usable, else
+   * ATP's stored Daily history (flag backtest_stored_history), else a 409 that says what is missing. */
+  backtestBars: (symbol: string, timeframe: string, lookbackDays: number, exchange = "NSE") =>
+    request<BacktestBarsResponse>("/backtest/bars", { method: "POST", body: JSON.stringify({ symbol, timeframe, lookback_days: lookbackDays, exchange }) }),
   listBacktests: () => request<BacktestRunSummary[]>("/backtests"),
   optionChainCoverage: () => request<OptionChainCoverage[]>("/backtest/option-chain/coverage"),
   uploadOptionChainSnapshots: (underlying: string, rows: OptionChainSnapshotRow[]) =>
@@ -607,7 +615,15 @@ export const api = {
 
   /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
   paperRisk: () => request<PaperRiskStatus>("/paper/risk"),
-  setPaperRisk: (values: Partial<RiskByDefaultSettings>) => request<PaperRiskStatus>("/paper/risk", { method: "PUT", body: JSON.stringify(values) }),
+  setPaperRisk: async (values: Partial<Record<keyof RiskByDefaultSettings, number | null>>) => {
+    const out = await request<PaperRiskStatus>("/paper/risk", { method: "PUT", body: JSON.stringify(values) });
+    // TT12-1: setting a limit marks the one-time "limits now not set" notice seen on the server; the shell re-reads.
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(NOTICES_CHANGED));
+    return out;
+  },
+  // TT12-1: the signed-in user's one-time notices (src/notices/oneTimeNotices.ts; the server decides who gets one).
+  meNotices: () => request<{ notices: { id: string; text: string; link: string }[] }>("/me/notices"),
+  noticeSeen: (id: string) => request<{ notices: { id: string; text: string; link: string }[] }>(`/me/notices/${encodeURIComponent(id)}/seen`, { method: "POST" }),
   previewTicket: (plan: TicketPlan) => request<TicketView>("/paper/ticket/preview", { method: "POST", body: JSON.stringify(plan) }),
   placeTicket: (plan: TicketPlan) => request<TradePlanView>("/paper/ticket", { method: "POST", body: JSON.stringify(plan) }),
   paperPlans: () => request<TradePlanView[]>("/paper/plans"),
@@ -940,7 +956,7 @@ export const api = {
   aiDrafts: () => request<AiStrategyDraft[]>("/ai/drafts"),
   aiDraft: (id: number) => request<AiStrategyDraft>(`/ai/drafts/${id}`),
   aiBacktestDraft: (id: number, symbol: string, base_timeframe: string, candles: OHLCVBar[], data_source = "sample", signal?: AbortSignal) =>
-    request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult }>(`/ai/drafts/${id}/backtest`, {
+    request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult; prices?: { line: string } | null }>(`/ai/drafts/${id}/backtest`, {
       method: "POST", body: JSON.stringify({ symbol, base_timeframe, ...evidenceBody(candles, data_source) }), signal,
     }),
   aiApproveDraft: (id: number, name?: string, acceptRisk = false) =>

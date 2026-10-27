@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
-import { cx } from "../components/primitives/cx";
 import { HUB_LABELS, hubApi, hubHref, hubTabs, isHubInfo, type HubApi, type HubCarry, type HubInfo, type HubTab } from "./hubModel";
+import { PageTabs } from "../ui/PageTabs";
 
 /**
  * FNO-3 (owner order section 1): the symbol hub's tab row - "Chart | Option chain | Futures | Overview" at the top of the
@@ -45,26 +44,13 @@ export function useHubInfo(symbol: string, api: Pick<HubApi, "info"> = hubApi): 
   return state.key === key ? state.info : (fresh ?? null);
 }
 
-const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
 export function HubTabsView({ info, current, carry }: { info: HubInfo | null; current: HubTab; carry: HubCarry }) {
   const tabs = hubTabs(info);
   if (!info || tabs.length === 0) return null;
   return (
-    <nav aria-label={`${info.underlying} pages`} data-hub-tabs
-      className="-mx-space-4 overflow-x-auto px-space-4 md:mx-0 md:px-0">
-      <ul className="flex w-max gap-space-1 border-b border-subtle">
-        {tabs.map((t) => (
-          <li key={t}>
-            <Link to={hubHref(t, info, carry)} aria-current={t === current ? "page" : undefined} data-hub-tab={t}
-              className={cx("-mb-px inline-flex min-h-11 items-center border-b-2 px-space-3 text-t14 md:min-h-9", focus,
-                t === current ? "border-brand font-semibold text-fg" : "border-transparent text-fg-muted hover:text-fg")}>
-              {HUB_LABELS[t]}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <PageTabs kind="links" label={`${info.underlying} pages`} value={current} data={{ "hub-tabs": "" }}
+      items={tabs.map((t) => ({ key: t, label: HUB_LABELS[t], to: hubHref(t, info, carry), data: { "hub-tab": t } }))} />
   );
 }
 

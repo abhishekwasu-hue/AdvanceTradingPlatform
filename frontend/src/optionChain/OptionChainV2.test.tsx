@@ -16,7 +16,7 @@ import {
   CALL_COLUMNS, DEFAULT_COLUMNS, POLL_CLOSED_MS, POLL_OPEN_MS, TEXT, atmIndex, barPercent, centreScrollTop, chainNotes, chooseExpiry,
   columnShown, daysText, formatCount, formatCountChange, formatStrike, initialSymbol, isItm, pollEvery, type ColumnPrefs,
 } from "./model";
-import { OptionChainView } from "./OptionChainPageV2";
+import { OptionChainView, expiryComboOptions, symbolOptions } from "./OptionChainPageV2";
 import pageSource from "./OptionChainPageV2.tsx?raw";
 import { RowDetailsBody } from "./RowDetailsV2";
 import detailsSource from "./RowDetailsV2.tsx?raw";
@@ -96,17 +96,19 @@ describe("OC1 automatic symbol and expiry", () => {
     expect(hookSource).toContain("}, [symbol, listRound]);");
     expect(pageSource).not.toMatch(/Analy[sz]e|Refresh|Load chain|Show chain/);
     const html = view();
-    expect(html).toMatch(/<option value="NIFTY" selected="">NIFTY<\/option>/);
-    expect(html).toMatch(/<option value="2026-11-03" selected="">3 Nov 2026<\/option>/);
-    expect(text(html)).toContain("27 Oct 2026 · Monthly");
+    // UX-5: the shared combobox shows the value on its button; its rows come from symbolOptions / expiryComboOptions.
+    expect(html).toMatch(/aria-label="Symbol"[^>]*data-combobox="NIFTY"/);
+    expect(html).toMatch(/aria-label="Expiry"[^>]*data-combobox="2026-11-03"[^>]*>.*?3 Nov 2026/s);
+    expect(expiryComboOptions([{ date: "2026-10-27", kind: "monthly" }])).toEqual([{ value: "2026-10-27", label: "27 Oct 2026", hint: "Monthly" }]);
     // The order of the symbols: NIFTY, BANKNIFTY, FINNIFTY, SENSEX, then the F&O stocks.
-    const order = [...html.matchAll(/<option value="([^"]+)"/g)].map((m) => m[1]);
+    const order = symbolOptions(null).map((o) => o.value);
     expect(order.slice(0, 4)).toEqual(["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"]);
     expect(order).toContain("RELIANCE");
   });
 
   it("a deep-linked symbol outside the list is still selected", () => {
-    expect(view({}, { symbol: "NEWLISTED" })).toMatch(/<option value="NEWLISTED" selected="">/);
+    expect(view({}, { symbol: "NEWLISTED" })).toMatch(/data-combobox="NEWLISTED"/);
+    expect(symbolOptions("NEWLISTED")[0]).toEqual({ value: "NEWLISTED", label: "NEWLISTED" });
   });
 
   describe("live updates", () => {

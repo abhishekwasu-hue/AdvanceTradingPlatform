@@ -92,7 +92,8 @@ export interface AnalysisItem {
 
 export interface AnalyzeStatus {
   enabled: boolean;
-  engine: { installed: boolean; message?: string; name?: string; version?: string };
+  /** A1: `reason` and `owner_steps` come only to SUPER_ADMIN, and only while the engine is not installed. */
+  engine: { installed: boolean; message?: string; name?: string; version?: string; reason?: string; owner_steps?: string };
   modes: { image_only: boolean; hybrid: boolean };
   hybrid_note: string;
   limits: { tier: string; daily_limit: number; monthly_limit: number; daily_used: number; monthly_used: number; cost_cap_usd: number; cost_used_usd: number; resets: string };

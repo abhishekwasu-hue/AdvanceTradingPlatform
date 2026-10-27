@@ -126,7 +126,7 @@ for (const size of SIZES) {
       test(`the premium kept and Tell me when look the same (${theme})`, async ({ page }) => {
         await openPositions(page, theme);
         const group = page.locator("[data-group='basket']");
-        await expect(group.locator("[data-capture='kept']")).toContainText("You have kept ₹262.50 of the ₹2,625.00 premium received (10%).");
+        await expect(group.locator("[data-capture='kept']")).toContainText("You have kept ₹263 of the ₹2,625 premium received (10%).");
         await group.locator("[data-group-insights]").getByTestId("fno-alert").click();
         await expect(group.locator("[data-alert-choice='be-0']")).toContainText("NIFTY 50 reaches 24,935 (your breakeven)");
         const insights = group.locator("[data-group-insights]");
@@ -168,7 +168,7 @@ test.describe("8b slice 2 flows, 1440", () => {
   test("Tell me when saves ONE alert rule on his own level - an instrument rule with no action; nothing else is sent", async ({ page }) => {
     const seen = await openPositions(page, "light");
     const single = page.locator("[data-position='303']");
-    await expect(single.locator("[data-capture='kept']")).toContainText("You have kept ₹2,025.00 of the ₹4,500.00 premium received (45%).");
+    await expect(single.locator("[data-capture='kept']")).toContainText("You have kept ₹2,025 of the ₹4,500 premium received (45%).");
     await single.getByTestId("fno-alert").click();
     // His own levels only: the breakeven and the strike on NIFTY 50, his exit level on the contract.
     await expect(single.locator("[data-alert-choice]")).toHaveText([
@@ -187,7 +187,7 @@ test.describe("8b slice 2 flows, 1440", () => {
     await expect(single.getByTestId("exit-now")).toBeEnabled();
   });
 
-  test("Compare a change sends nothing but the engine's numbers; Exit now still works after it", async ({ page }) => {
+  test("Compare a change sends nothing but the engine's numbers; an exit still works after it", async ({ page }) => {
     const seen = await openPositions(page, "light", { basket: BASKET });
     await page.locator("[data-group='basket']").getByTestId("fno-compare").click();
     const dialog = page.locator("[data-adjust-compare]");
@@ -201,9 +201,9 @@ test.describe("8b slice 2 flows, 1440", () => {
     await expect(dialog.getByRole("button", { name: /place|execute|exit/i })).toHaveCount(0);
     await page.keyboard.press("Escape");
     expect(actionsOf(seen)).toEqual([]);
-    page.once("dialog", (d) => void d.accept());
-    await page.locator("[data-position='301']").getByTestId("exit-now").click();
-    await expect.poll(() => seen.writes.map((c) => `${c.method} ${c.url}`)).toContain("POST /positions/301/exit-now");
+    await page.locator("[data-position='301']").getByTestId("exit-leg").click();       // TT-8: a basket leg exits on its own
+    await page.getByTestId("group-exit-confirm").click();
+    await expect.poll(() => seen.writes.map((c) => `${c.method} ${c.url}`)).toContain("POST /paper/fno/positions/301/exit-leg");
   });
 
   test("without the alert rules' flag: no Tell me when; the premium kept and Compare stay", async ({ page }) => {

@@ -184,7 +184,7 @@ test.describe("Signals v2 decisions at 360 px", () => {
     await expect(page.getByRole("tab", { name: "Today · 7" })).toBeVisible();
     const first = page.locator("[data-signal-card='action:901']");
     await expect(first.getByText("Waiting · 8 min")).toBeVisible();
-    await expect(first.getByText("Fits your risk limits · most you can lose ₹5,250.00")).toBeVisible();
+    await expect(first.getByText("Fits your risk limits · most you can lose ₹5,250")).toBeVisible();
     for (const name of ["Approve", "Skip", "Open chart for NIFTY 50", "More for NIFTY 50"]) await expect(first.getByRole(name.startsWith("Open") ? "link" : "button", { name })).toBeVisible();
     await expect(page.locator("[data-signal-card='action:902']").getByRole("button", { name: "Review" })).toBeVisible();
     await expect(page.locator("[data-signal-chart]")).toHaveCount(0);                      // UI2-4e: the chart is the desktop panel's
@@ -304,9 +304,9 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(page.locator("[data-levels-chart]")).toHaveCount(0);                      // the chart marks the levels now
     expect(charts!.candles.filter((c) => !c.before).map((c) => `${c.symbol} ${c.timeframe}`)).toEqual(["NIFTY 50 5min"]);
     const tfs = chart.getByRole("group", { name: "Timeframe" });
-    await expect(tfs.getByRole("button")).toHaveText(["1m", "3m", "5m", "15m", "30m", "1H", "D"]);
+    await expect(tfs.getByRole("button")).toHaveText(["5m", "15m", "1H", "D", ""]);   // TF-1: favourites + the dropdown (icon, never "More")
     await expect(chart.getByRole("button", { name: "Chart settings" })).toBeVisible();
-    await tfs.getByRole("button", { name: "15m", exact: true }).click();
+    await tfs.getByRole("button", { name: "15 min", exact: true }).click();
     await expect.poll(() => charts!.candles.some((c) => c.symbol === "NIFTY 50" && c.timeframe === "15min")).toBe(true);
     // One link to the Chart tab (the detail's "Open chart"), carrying the chart's timeframe.
     await expect(chart.getByRole("link", { name: "Open in Chart tab" })).toHaveCount(0);
@@ -315,7 +315,7 @@ test.describe("Signals v2 1440 desktop", () => {
     await openChart.click();
     await expect(page).toHaveURL(/\/charts\/NIFTY%2050$/);
     await expect(page.locator("[data-page='charts-v2']")).toBeVisible();
-    await expect(page.locator("[data-page='charts-v2']").getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true }))
+    await expect(page.locator("[data-page='charts-v2']").getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15 min", exact: true }))
       .toHaveAttribute("aria-pressed", "true");
   });
 
@@ -388,9 +388,12 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(page.getByRole("table", { name: "Signals list" }).locator("tbody tr")).toHaveCount(9);
   });
 
-  test("the What-is-this-page card shows on a first visit", async ({ page }) => {
+  test("the page help is one line behind the header (?), never a card above the signals (item 5, UX-6)", async ({ page }) => {
     await open(page, "/signals", "light", V2, { intro: true });
-    await expect(page.getByRole("heading", { name: "What is this page?" })).toBeVisible();
+    await expect(page.locator("[data-page-intro]")).toHaveCount(0);
+    await page.locator("header [data-help-button]").click();
+    await expect(page.locator("[data-page-help='signals']")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What is this page?" })).toHaveCount(0);
   });
 
   test("M6: the Library's strategy drawer has 'Try it on a symbol', sample data only under Advanced", async ({ page }) => {

@@ -17,8 +17,8 @@
   "backtest": { "strategy_id": "vwap_supertrend_5m", "symbol": "NIFTY 50", "total_trades": 12, "winning_trades": 7, "losing_trades": 5, "win_rate": 58.33,
                 "net_pnl": 4250, "gross_profit": 9100, "gross_loss": -4850, "profit_factor": 1.88, "max_drawdown": 2100, "avg_win": 1300, "avg_loss": -970,
                 "expectancy": 354, "trades": [] },
-  "paper_risk": { "mode": "PAPER", "settings": { "risk_per_trade_pct": 1, "risk_per_trade_amount": 0, "daily_loss_pct": 2, "max_trades_per_day": 10, "min_rr": 1.5 },
-                  "capital_basis": 100000, "today": { "realised": 0, "open_marks": 0, "pnl": 0, "worst": 0, "limit": 2000, "used": 0, "entries": 0, "max_entries": 10 },
+  "paper_risk": { "mode": "PAPER", "settings": { "risk_per_trade_pct": 0, "risk_per_trade_amount": 0, "daily_loss_pct": 0, "max_trades_per_day": 0, "min_rr": 0 }, "set": [],
+                  "capital_basis": 100000, "today": { "realised": 0, "open_marks": 0, "pnl": 0, "worst": 0, "limit": 0, "used": null, "entries": 0, "max_entries": 0 },
                   "lockout": null },
   "alert_channels": [
     { "channel_type": "TELEGRAM", "enabled": true, "min_severity": "WARNING", "config": { "chat_id": "masked" }, "last_delivered_at": null, "last_error": null,

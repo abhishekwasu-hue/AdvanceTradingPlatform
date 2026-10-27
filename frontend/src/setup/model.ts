@@ -1,5 +1,5 @@
 import { SETUP_ADDRESS } from "../shell/aliases";
-import { formatNumber } from "../ui/format";
+import { formatINR } from "../ui/format";
 import type { ContractRules, DeploymentCreateRequest } from "../types";
 
 /**
@@ -187,42 +187,61 @@ export const dismissChip = (stored: SetupStored, nowIso: string): SetupStored =>
 
 // --- Step 2: risk limits ------------------------------------------------------------------------------------------------
 
-/** The spec's defaults (§11): risk per trade 1%, daily loss limit 3% of capital; capital ₹1,00,000. */
-export const RISK_DEFAULTS = { capital: 100_000, riskPerTradePct: 1, dailyLossPct: 3, maxTradesPerDay: 10 } as const;
+/** TT-12 (owner decision, 24 Oct): no limit is filled in for the trader - every limit is off until he sets his own. Only
+ * the paper account's starting capital starts from a value (his account's, else ₹1,00,000). */
+export const RISK_DEFAULTS = { capital: 100_000 } as const;
 
 /** The server's bounds (backend `risk_engine/by_default.py` BOUNDS); the paper capital's own (PAPER_MIN / MAX_CAPITAL). */
 export const RISK_BOUNDS = {
-  capital: [10_000, 1_000_000_000], riskPerTradePct: [0.05, 5], dailyLossPct: [0.1, 20], maxTradesPerDay: [0, 500],
+  capital: [10_000, 1_000_000_000], riskPerTradePct: [0.05, 5], dailyLossPct: [0.1, 20], maxTradesPerDay: [0, 500], minRr: [0, 10],
 } as const;
 
-export type RiskField = keyof typeof RISK_DEFAULTS;
+export type RiskField = keyof typeof RISK_BOUNDS;
 export type RiskForm = Record<RiskField, string>;
+/** The four limits (every field but the capital); an empty one is "Not set" = no limit. */
+export const LIMIT_FIELDS = ["riskPerTradePct", "dailyLossPct", "maxTradesPerDay", "minRr"] as const satisfies readonly RiskField[];
+export type LimitField = (typeof LIMIT_FIELDS)[number];
+/** Each limit's key on the server (`PUT /paper/risk`). */
+export const LIMIT_KEYS = {
+  riskPerTradePct: "risk_per_trade_pct", dailyLossPct: "daily_loss_pct", maxTradesPerDay: "max_trades_per_day", minRr: "min_rr",
+} as const satisfies Record<LimitField, string>;
 
 export const RISK_LABELS: Record<RiskField, string> = {
-  capital: "Starting capital", riskPerTradePct: "Risk per trade", dailyLossPct: "Daily loss limit", maxTradesPerDay: "Max trades per day",
+  capital: "Starting capital", riskPerTradePct: "Risk per trade", dailyLossPct: "Daily loss limit", maxTradesPerDay: "Trades a day",
+  minRr: "Lowest reward to risk",
 };
 
-const rupees = (v: number) => `₹${formatNumber(Math.round(v))}`;
+/** What each limit does, in plain words (shown under its box). */
+export const RISK_HELP: Record<LimitField, string> = {
+  riskPerTradePct: "The most one trade may lose at its stop, as a % of your capital.",
+  dailyLossPct: "New trades stop for the day once your day's loss reaches this % of your capital.",
+  maxTradesPerDay: "New trades allowed in one day.",
+  minRr: "A trade whose target pays less than this for each rupee at risk is refused.",
+};
 
-/** "With these limits the most you can lose today is ₹3,000." - or null while a figure is not a valid number. */
-export function riskSentence(capital: number, dailyLossPct: number): string | null {
-  if (!Number.isFinite(capital) || !Number.isFinite(dailyLossPct) || capital <= 0 || dailyLossPct <= 0) return null;
+const rupees = (v: number) => formatINR(v);   // the money rule: whole rupees (src/ui/format.ts)
+
+/** "With these limits the most you can lose today is ₹3,000." - or null while a figure is not set or not a valid number. */
+export function riskSentence(capital: number | null, dailyLossPct: number | null): string | null {
+  if (capital === null || dailyLossPct === null || !Number.isFinite(capital) || !Number.isFinite(dailyLossPct) || capital <= 0 || dailyLossPct <= 0) return null;
   return `With these limits the most you can lose today is ${rupees((capital * dailyLossPct) / 100)}.`;
 }
 
-/** The most one trade may lose: "₹1,000 a trade". */
-export function perTradeText(capital: number, riskPct: number): string | null {
-  if (!Number.isFinite(capital) || !Number.isFinite(riskPct) || capital <= 0 || riskPct <= 0) return null;
+/** The most one trade may lose: "At most ₹1,000 on one trade." */
+export function perTradeText(capital: number | null, riskPct: number | null): string | null {
+  if (capital === null || riskPct === null || !Number.isFinite(capital) || !Number.isFinite(riskPct) || capital <= 0 || riskPct <= 0) return null;
   return `At most ${rupees((capital * riskPct) / 100)} on one trade.`;
 }
 
-/** What is wrong with each field, in plain words (empty = all good). `capital: false` = the field is not shown. */
+/** What is wrong with each field, in plain words (empty = all good). A limit may be left empty (not set = no limit); the
+ * capital may not. `capital: false` = the capital field is not shown. */
 export function riskErrors(form: RiskForm, opts: { capital?: boolean } = {}): Partial<Record<RiskField, string>> {
   const out: Partial<Record<RiskField, string>> = {};
   for (const field of Object.keys(RISK_BOUNDS) as RiskField[]) {
     if (field === "capital" && opts.capital === false) continue;
     const [low, high] = RISK_BOUNDS[field];
     const raw = form[field].trim().replace(/,/g, "");
+    if (!raw && field !== "capital") continue;
     const v = Number(raw);
     const whole = field === "maxTradesPerDay" || field === "capital";
     const show = (n: number) => (field === "capital" ? rupees(n) : String(n));
@@ -233,8 +252,27 @@ export function riskErrors(form: RiskForm, opts: { capital?: boolean } = {}): Pa
   return out;
 }
 
-export const riskNumbers = (form: RiskForm): Record<RiskField, number> =>
-  Object.fromEntries((Object.keys(form) as RiskField[]).map((k) => [k, Number(form[k].trim().replace(/,/g, ""))])) as Record<RiskField, number>;
+/** Each field as a number, or null when it is empty (a limit not set). */
+export const riskNumbers = (form: RiskForm): Record<RiskField, number | null> =>
+  Object.fromEntries((Object.keys(form) as RiskField[]).map((k) => {
+    const raw = form[k].trim().replace(/,/g, "");
+    return [k, raw ? Number(raw) : null];
+  })) as Record<RiskField, number | null>;
+
+/** The body of `PUT /paper/risk`: every limit, null for one left empty (not set = off; clearing one he set waits for
+ * the next day on the server). */
+export function limitsBody(n: Record<RiskField, number | null>): Record<(typeof LIMIT_KEYS)[LimitField], number | null> {
+  return Object.fromEntries(LIMIT_FIELDS.map((f) => [LIMIT_KEYS[f], n[f]])) as Record<(typeof LIMIT_KEYS)[LimitField], number | null>;
+}
+
+/** A limit as Settings shows it: "Not set" unless the trader set it himself (TT-12). */
+export function limitText(field: LimitField, set: readonly string[] | undefined, value: number | null | undefined): string {
+  if (!set?.includes(LIMIT_KEYS[field]) || value === null || value === undefined || !Number.isFinite(value)) return "Not set";
+  if (field === "maxTradesPerDay") return value === 0 ? "No limit" : `${value} a day`;
+  const shown = String(Math.round(value * 100) / 100);                 // "1.5", never "1.50"
+  if (field === "minRr") return value === 0 ? "No minimum" : `${shown} : 1`;
+  return `${shown}% of capital`;
+}
 
 // --- Step 3: three suggested Library strategies, PAPER only ------------------------------------------------------------
 

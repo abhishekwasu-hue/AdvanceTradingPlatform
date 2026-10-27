@@ -1,6 +1,7 @@
 import { CalendarDays, ChartColumn, Info, Table2, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
+import { useColourV2 } from "../ui/colourV2";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { useChainTrading } from "../fno/ChainTradingV2";
 import { readCarry } from "../fno/hubModel";
@@ -10,6 +11,7 @@ import SymbolHubTabsV2 from "../fno/SymbolHubTabsV2";
 import type { PageProps } from "../routes";
 import { cx } from "../components/primitives/cx";
 import { formatDateIST, formatTimeIST } from "../ui/format";
+import { useTerminalSpot } from "../terminal/spot";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
 import AnalysisSlotV2 from "./AnalysisSlotV2";
@@ -24,6 +26,7 @@ import RowDetailsV2 from "./RowDetailsV2";
 import SummaryStripV2 from "./SummaryStripV2";
 import type { ChainRow } from "./types";
 import { useOptionChain, type OptionChainData } from "./useOptionChain";
+import { Combobox, type ComboOption } from "../ui/Combobox";
 
 /**
  * OC1 (owner: "After login everything should happen automatically"): the Option chain page in the v2 shell.
@@ -50,7 +53,6 @@ import { useOptionChain, type OptionChainData } from "./useOptionChain";
  * - MO4 slice 2: with `markets_view` on, "What the chain shows" on top (ChainDishV2): five plain lines from the analyses.
  * Shown only while `ui_v2` is on (src/shell/pagesV2.ts).
  */
-const SELECT = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 font-semibold text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9";
 
 export type ChainView = "chain" | "charts";
 
@@ -121,6 +123,17 @@ export default function OptionChainPageV2(_props: PageProps) {
 }
 
 /** The page's look for given data (no reads of its own), so tests render every state directly. */
+/** UX-5: the Symbol picker's rows - a deep-linked symbol outside the list first, then the indices, then the F&O stocks. */
+export function symbolOptions(extra: string | null): ComboOption[] {
+  return [...(extra ? [{ value: extra, label: extra }] : []),
+    ...INDEX_SYMBOLS.map((s) => ({ value: s, label: s, group: "Indices" })), ...STOCK_SYMBOLS.map((s) => ({ value: s, label: s, group: "Stocks" }))];
+}
+
+/** UX-5: the Expiry picker's rows ("3 Nov 2026", the monthly one marked). */
+export function expiryComboOptions(list: readonly { date: string; kind?: string }[]): ComboOption[] {
+  return list.map((e) => ({ value: e.date, label: formatDateIST(e.date), hint: e.kind === "monthly" ? "Monthly" : undefined }));
+}
+
 export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal, autoTrade = false }: {
   symbol: string;
   onSymbol: (symbol: string) => void;
@@ -137,10 +150,13 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
 }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [view, setView] = useState<ChainView>("chain");
+  const colour = useColourV2();          // colour v2: the Calls / Puts headings in their side's colour
   const symbolId = useId();
   const expiryId = useId();
 
   const live = chain.live;
+  // T1-3 on this page (owner 25 Oct): the spot card reads the same feed and time as the chart (src/terminal/spot.ts).
+  const spot = useTerminalSpot({ symbol, hub: useFeatures().on("data_hub"), enabled: true, chain: live ?? null });
   const notes = chainNotes(live, marketOpen, (iso) => formatTimeIST(iso));
   const extraSymbol = useMemo(() => (new Set<string>([...INDEX_SYMBOLS, ...STOCK_SYMBOLS]).has(symbol) ? null : symbol), [symbol]);
   const expiryOptions = chain.expiries?.expiries.length
@@ -165,36 +181,22 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
 
   return (
     <div className="space-y-space-4" data-page="option-chain-v2">
-      <PageIntro id="option-chain" lines={[
-        "The option chain of the index or stock you pick, live from your broker.",
-        "The strike nearest the price is in the middle. Tap a row to see all its figures.",
-      ]} />
+      <PageIntro id="option-chain" lines={["Pick an index or stock: the strike nearest the price is in the middle. Tap a row to see all its figures."]} />
       <header className="flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between">
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Option chain</h1>
         <div data-tour="oc-pickers" className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2 md:flex md:gap-space-3">
           <div className="min-w-0 md:w-48">
             <label htmlFor={symbolId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
-            <select id={symbolId} value={symbol} onChange={(e) => { setPicked(null); onSymbol(e.target.value); }} className={SELECT}>
-              {extraSymbol && <option value={extraSymbol}>{extraSymbol}</option>}
-              <optgroup label="Indices">
-                {INDEX_SYMBOLS.map((s) => <option key={s} value={s}>{s}</option>)}
-              </optgroup>
-              <optgroup label="Stocks">
-                {STOCK_SYMBOLS.map((s) => <option key={s} value={s}>{s}</option>)}
-              </optgroup>
-            </select>
+            <Combobox id={symbolId} label="Symbol" value={symbol} onChange={(v) => { setPicked(null); onSymbol(v); }} searchable className="w-full"
+              options={symbolOptions(extraSymbol)} />
           </div>
           <div className="min-w-0 md:w-56">
             <label htmlFor={expiryId} className="mb-space-1 flex items-center gap-space-1 text-t12 font-medium text-fg-muted">
               <CalendarDays size={12} aria-hidden /> Expiry
             </label>
-            <select id={expiryId} value={chain.expiry ?? ""} disabled={expiryOptions.length === 0}
-              onChange={(e) => { setPicked(null); chain.setExpiry(e.target.value); }} className={SELECT}>
-              {expiryOptions.length === 0 && <option value="">{chain.loading ? "Loading…" : "Nearest"}</option>}
-              {expiryOptions.map((e) => (
-                <option key={e.date} value={e.date}>{formatDateIST(e.date)}{e.kind === "monthly" ? " · Monthly" : ""}</option>
-              ))}
-            </select>
+            <Combobox id={expiryId} label="Expiry" value={chain.expiry ?? ""} disabled={expiryOptions.length === 0} className="w-full"
+              placeholder={chain.loading ? "Loading…" : "Nearest"} onChange={(v) => { setPicked(null); chain.setExpiry(v); }}
+              options={expiryComboOptions(expiryOptions)} />
           </div>
           <ColumnsMenuV2 prefs={prefs} onChange={onPrefs} />
         </div>
@@ -211,7 +213,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       <SetupPanelV2 state={setupState} symbol={symbol} expiry={live?.expiry ?? chain.expiry} onExpiry={(e) => { setPicked(null); chain.setExpiry(e); }}
         onClear={() => onClearSignal?.()} tradeOf={tradeOf} onTrade={tradeSetup} />
 
-      <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} />
+      <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} spot={spot} />
 
       {view === "charts" && (
         <section aria-label="Charts" data-block="charts" className="space-y-space-3">
@@ -234,7 +236,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         {live && live.rows.length > 0 && (
           <>
             <div aria-hidden className="mb-space-2 flex justify-between text-t12 font-semibold uppercase text-fg-muted">
-              <span>Calls</span><span>Puts</span>
+              <span className={colour ? "text-down" : undefined}>Calls</span><span className={colour ? "text-up" : undefined}>Puts</span>
             </div>
             <ViewToggle view={view} onView={setView} className="absolute -top-space-5 left-1/2 z-10 -translate-x-1/2 md:-top-space-4" />
             <ChainTableV2 live={live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${trading.centreSuffix}`} onPick={(row) => setPicked(row.strike)}

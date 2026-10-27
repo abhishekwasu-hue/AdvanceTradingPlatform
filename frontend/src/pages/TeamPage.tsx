@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile } from "../components/ui";
 import { ROLE_LABELS, ROUTING_POLICIES, type MemberScopes, type ScopeCatalogueEntry, type TeamInvite, type TeamMember, type TenantInfo, type TenantRole } from "../types";
 import { PageHeader } from "../components/primitives";
+import { formatDateIST, formatDateTimeIST } from "../ui/format";
 
 const INVITABLE: TenantRole[] = ["USER", "STRATEGY_CREATOR", "VIEWER"];
 const ASSIGNABLE: TenantRole[] = ["OWNER", "USER", "STRATEGY_CREATOR", "VIEWER"];
@@ -166,7 +167,7 @@ export default function TeamPage() {
                   <tr key={i.id} className="border-t border-border">
                     <td className="py-1 pr-3 text-fg">{i.email}</td>
                     <td className="py-1 pr-3"><RoleBadge role={i.role} /></td>
-                    <td className="py-1 pr-3 text-fg-muted">{new Date(i.expires_at).toLocaleString()}</td>
+                    <td className="py-1 pr-3 text-fg-muted">{formatDateTimeIST(i.expires_at)}</td>
                     <td className="py-1 text-right"><button disabled={busy} onClick={() => act(`Invite for ${i.email} revoked.`, () => api.revokeInvite(i.id))} className="text-down hover:underline">Revoke</button></td>
                   </tr>
                 ))}
@@ -190,7 +191,7 @@ export default function TeamPage() {
                     </select>
                   ) : <RoleBadge role={m.role} />}
                 </td>
-                <td className="py-1.5 pr-3 text-fg-muted">{new Date(m.created_at).toLocaleDateString()}</td>
+                <td className="py-1.5 pr-3 text-fg-muted">{formatDateIST(m.created_at)}</td>
                 <td className={`py-1.5 pr-3 ${m.is_active ? "text-up" : "text-fg-muted"}`}>{m.is_active ? "active" : "removed"}{m.trading_disabled_reason && <div className="text-xs text-warn" title={m.trading_disabled_reason}>trading disabled</div>}</td>
                 {isOwner && (
                   <td className="py-1.5 text-right">

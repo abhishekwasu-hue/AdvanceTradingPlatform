@@ -89,6 +89,7 @@ async def execute_signal_for_user(
     origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: Optional[int] = None,
     max_quantity: Optional[float] = None, risk_cap_amount: Optional[float] = None, exchange: Optional[str] = None,
     manual_contract_spec: Optional[ContractSpec] = None, manual_contract_meta: Optional[dict] = None,
+    paper_execution: str = "direct", freeze_quantity: Optional[int] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -101,7 +102,9 @@ async def execute_signal_for_user(
 
     Z3 / BT2: `origin` says who asks - "approval" (an APPROVED entry proposal, whose id is `approval_action_id`) or
     "automatic" (the default: worker, webhook, public API, console). Under approval-only mode any entry without an
-    approved proposal is REJECTED here (app/execution/approval.py::gate_refusal) - there is no bypass.
+    approved proposal is REJECTED here (app/execution/approval.py::gate_refusal). TT-2: "manual" is the user's own order,
+    confirmed by him on the F&O ticket / basket routes (the only callers that pass it); his confirmation is the approval.
+    It never carries a deployment - a deployment entry stays refused without an approved proposal.
 
     Z5 / P1-d: `max_quantity` caps the size (a PAPER ticket's checked quantity); `risk_cap_amount` is the user's checked
     cap for this entry (a ticket's, an override included). With the `risk_by_default` flag on, a PAPER entry is sized
@@ -116,6 +119,9 @@ async def execute_signal_for_user(
     option chain's order ticket, app/paper/fno_ticket.py): the signal is already on the contract (its premium levels),
     the spec carries the instrument master's lot and tick size, and the meta is stored on the position (kind, exchange,
     expiry, lot size). No underlying levels are stored, so the position exits on its own premium stop or by hand.
+
+    TM-1: `paper_execution` "adapter" fills a PAPER entry through the PaperExecutionAdapter (a BrokerInterface over the
+    same fill and cost model) instead of PaperBroker directly; the default "direct" keeps every other path as it was.
     """
     ticket_quantity = max_quantity
     # Phase F3: when the deployment trades a derived contract, the order goes on the contract
@@ -165,7 +171,10 @@ async def execute_signal_for_user(
         tenant = await session.get(Tenant, user.tenant_id)
         kill_switch_reasons = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
                                                    broker_name=getattr(broker, "name", None) if broker is not None else None)
-        gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id, origin=origin,
+        # TT-2: "manual" counts only for a manual order (journal source MANUAL, no deployment); anything else is automatic.
+        manual = origin == approval_gate.ORIGIN_MANUAL and deployment_id is None and journal_source == "MANUAL"
+        gate_origin = origin if origin != approval_gate.ORIGIN_MANUAL or manual else approval_gate.ORIGIN_AUTOMATIC
+        gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id, origin=gate_origin,
                                                 approval_action_id=approval_action_id)
         if gate:
             kill_switch_reasons.insert(0, gate)
@@ -342,6 +351,7 @@ async def execute_signal_for_user(
             # for the instrument kind actually traded.
             order_style=order_style or "MARKET", market_protection_pct=market_protection_pct,
             is_option=(contract.kind.value == "OPTION") if contract is not None else None,
+            paper_execution=paper_execution, freeze_quantity=freeze_quantity,
         )
         async def hierarchy_check(quantity: float):
             # Phase I1: every applicable risk limit (GLOBAL -> TENANT -> USER -> ACCOUNT ->

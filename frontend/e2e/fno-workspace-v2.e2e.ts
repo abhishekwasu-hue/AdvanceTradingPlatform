@@ -213,7 +213,7 @@ for (const size of SIZES) {
         await openPositions(page, theme);
         const block = page.locator("[data-group='basket']");
         await expect(block).toContainText("Basket · 2 legs");
-        await expect(block.locator("[data-col='group-pnl']")).toContainText("262.50");   // (80 - 72.5) x 75 + (41 - 45) x 75
+        await expect(block.locator("[data-col='group-pnl']")).toContainText("₹263");   // whole rupees; (80 - 72.5) x 75 + (41 - 45) x 75
         await block.scrollIntoViewIfNeeded();
         await page.mouse.move(0, 0);
         await expect(page.locator("[data-block='positions']")).toHaveScreenshot(`fno4-positions-v2-${size.width}-${theme}.png`, SHOT);
@@ -242,14 +242,14 @@ test.describe("FNO-4 positions actions, 1440", () => {
     expect(writes.calls.filter((c) => /\/paper\/fno\/order/.test(c.url))).toEqual([]);
   });
 
-  test("Adjust opens the chain of that expiry; Exit now keeps today's confirm and endpoint on a grouped leg", async ({ page }) => {
+  test("Adjust opens the chain of that expiry; a basket leg exits on its own (TT-8: Exit this leg, confirmed)", async ({ page }) => {
     const { writes } = await openPositions(page, "light");
     const leg = page.locator("[data-position='302']");
     await expect(leg.getByTestId("fno-adjust")).toHaveAttribute("href", "/option-chain?underlying=NIFTY&expiry=2026-10-27");
-    await expect(leg.getByTestId("exit-now")).toBeEnabled();
-    page.once("dialog", (d) => void d.accept());
-    await leg.getByTestId("exit-now").click();
-    await expect.poll(() => writes.calls.map((c) => `${c.method} ${c.url}`)).toContain("POST /positions/302/exit-now");
+    await expect(leg.getByTestId("exit-leg")).toBeEnabled();
+    await leg.getByTestId("exit-leg").click();
+    await page.getByTestId("group-exit-confirm").click();
+    await expect.poll(() => writes.calls.map((c) => `${c.method} ${c.url}`)).toContain("POST /paper/fno/positions/302/exit-leg");
     // A stock position has no F&O actions; a LIVE one neither.
     await expect(page.locator("[data-position='202']").getByTestId("fno-add")).toHaveCount(0);
     await expect(page.locator("[data-position='203']").getByTestId("fno-add")).toHaveCount(0);

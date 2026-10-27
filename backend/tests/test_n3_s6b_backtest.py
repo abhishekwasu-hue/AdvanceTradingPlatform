@@ -151,7 +151,7 @@ def _org(tag, backtest=True):
 
 
 def _symbols(n):
-    stem = f"B{uuid.uuid4().hex[:4].upper()}"
+    stem = f"B{uuid.uuid4().hex[:10].upper()}"  # wide enough that two runs never share a symbol in the shared DB
     frames, days = _universe(n=n, bars=200, seed=21)
     renamed = {f"{stem}{i}": f for i, f in enumerate(frames.values())}
     for s, f in renamed.items():

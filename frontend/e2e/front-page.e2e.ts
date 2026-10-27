@@ -248,22 +248,22 @@ test.describe("top bar notices on the front page (P3 review)", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
   const header = (page: Page) => page.locator("header").first();
 
-  test("in PAPER: no 'Verify your email' and no 'LIVE paused' on the front page; other pages keep them", async ({ page }) => {
+  test("in PAPER: no 'LIVE paused' on the front page; other pages keep it; no 'Verify your email' chip anywhere (item 1)", async ({ page }) => {
     await open(page, { liveNotices: true });
     await expect(card(page)).toBeVisible();
     await expect(header(page)).not.toContainText("Verify your email");
     await expect(header(page)).not.toContainText("LIVE paused");
     await page.getByRole("link", { name: /My trades|Positions/ }).first().click();
     await expect(page).toHaveURL(/\/positions$/);
-    await expect(header(page)).toContainText("Verify your email");
+    await expect(header(page)).not.toContainText("Verify your email");
     await expect(header(page)).toContainText("LIVE paused on zerodha");
   });
 
-  test("with a LIVE deployment (even a stopped one), or when the deployments cannot be read, the front page keeps them", async ({ page }) => {
+  test("with a LIVE deployment (even a stopped one), or when the deployments cannot be read, the front page keeps LIVE paused", async ({ page }) => {
     for (const deployments of ["live", "fail"] as const) {
       const p = deployments === "live" ? page : await page.context().newPage();
       await open(p, { liveNotices: true, deployments });
-      await expect(header(p), deployments).toContainText("Verify your email");
+      await expect(header(p), deployments).not.toContainText("Verify your email");
       await expect(header(p), deployments).toContainText("LIVE paused on zerodha");
     }
   });

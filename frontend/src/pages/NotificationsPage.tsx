@@ -10,6 +10,7 @@ import { PageHeader, Tabs } from "../components/primitives";
 import { AlertRulesPanel } from "../components/AlertRulesPanel";
 import { useDeepLinkTarget } from "../utils/useDeepLinkTarget";
 import { useLiveEvents } from "../live/useLiveEvents";
+import { formatDateTimeIST } from "../ui/format";
 
 function severityClasses(severity: NotificationSeverity): string {
   switch (severity) {
@@ -97,7 +98,7 @@ export default function NotificationsPage() {
                     </span>
                     <span className="text-xs text-fg-muted uppercase tracking-wide">{n.event_type}</span>
                   </div>
-                  <span className="text-xs text-fg-muted whitespace-nowrap">{new Date(n.created_at).toLocaleString()}</span>
+                  <span className="text-xs text-fg-muted whitespace-nowrap">{formatDateTimeIST(n.created_at)}</span>
                 </div>
                 <div className="mt-1 text-sm font-medium text-fg">{n.title}</div>
                 {n.message && <div className="mt-0.5 text-xs text-fg-muted">{n.message}</div>}

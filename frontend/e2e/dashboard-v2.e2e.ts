@@ -145,8 +145,8 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await expect(strip.locator("[data-index='INDIA VIX']")).toContainText("Calm: 12 to 16");
     await expect(strip).toContainText("Market open · closes 15:30");
     await expect(strip).toContainText("Upstox connected");
-    await expect(strip).toContainText("+₹6,846.50");
-    await expect(strip).toContainText("+₹2,540.00 booked · +₹4,306.50 open");
+    await expect(strip).toContainText("+₹6,847");
+    await expect(strip).toContainText("+₹2,540 booked · +₹4,307 open");
 
     const attention = page.locator("[data-block='attention']");
     await expect(attention.locator("[data-attention]")).toHaveCount(3);
@@ -158,10 +158,10 @@ test.describe("v2 dashboard 1440 desktop", () => {
     const positions = page.locator("[data-block='positions']");
     await expect(positions.locator("li")).toHaveCount(3);
     await expect(positions.locator("li").nth(0)).toContainText("Buy · 2 lots (150) · avg 121.80");
-    await expect(positions.locator("li").nth(0)).toContainText("+₹3,120.00");
+    await expect(positions.locator("li").nth(0)).toContainText("+₹3,120");
     await expect(positions.locator("li").nth(1)).toContainText("Sell · 1 lot (35) · avg 54,000.00");
     await expect(positions.locator("li").nth(2)).toContainText("Live");
-    await expect(positions.locator("li").nth(2)).toContainText("−₹700.00");
+    await expect(positions.locator("li").nth(2)).toContainText("−₹700");
 
     const signals = page.locator("[data-block='signals']");
     await expect(signals.locator("li")).toHaveCount(3);
@@ -186,7 +186,7 @@ test.describe("v2 dashboard 1440 desktop", () => {
 
   test("one primary button: the first Needs attention action", async ({ page }) => {
     await open(page, "light");
-    const primaries = page.locator("main .bg-brand:is(a, button)");
+    const primaries = page.locator("main .bg-brand:is(a, button):not([data-subtab])");
     await expect(primaries).toHaveCount(1);
     await expect(primaries).toHaveText("Review 2 trades");
     await expect(page.locator("[data-attention='approvals']").getByRole("link", { name: "Review 2 trades" })).toHaveAttribute("href", "/copilot/watchtower");
@@ -264,7 +264,7 @@ test.describe("v2 dashboard 1440 desktop", () => {
     const signals = page.locator("[data-block='signals']");
     await expect(signals).toContainText("No signals yet today. Your scans and paper bots post them here.");
     await expect(signals.getByRole("link", { name: "Set up a scan" })).toHaveAttribute("href", "/screener/custom");
-    await expect(page.locator("main .bg-brand:is(a, button)")).toHaveCount(0);
+    await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(0);
   });
 
   test("market closed: the last close with when it opens", async ({ page }) => {

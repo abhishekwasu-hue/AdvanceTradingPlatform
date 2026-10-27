@@ -155,6 +155,9 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/src/signals/__fixtures__/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
     # Idea library slice 1: the server's own payload of the hand-written idea cards (no market data; synced by a backend test)
     "frontend/e2e/fixtures/ideas_v2.json": "8f4c4ab07f26c22ba1d2de5cbf056fe22d292aa310f01f659719fd206a13ad92",
+    # Readiness C13: the Learn page and the marketing pages, the server's own hand-written payloads (backend/tests/test_c13_learning.py).
+    "frontend/e2e/fixtures/learn_v2.json": "45ce93482f856a6cf9bc83c4a3d2cf750582c041b10bac3594c9782edaf99e3d",
+    "frontend/e2e/fixtures/site_v2.json": "c1539facb9bbb4df51d2aad62d3118da77a8ab654c756a972fa7e3a6c2c096e1",
     # made-up rows in NSE's file layouts (the universe importer's tests)
     "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
     "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",
@@ -179,9 +182,10 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
     "backend/evals/sets/qa.jsonl": "845e5902cbc904864ec1f24bbf589194428ec462e164e388ab04b9734469338e",
     "backend/evals/sets/tool_args.jsonl": "578efa3d69f7d860f221068273a074b018e7998b71bdf8c55d5bdbd66d7f862b",
-    "backend/evals/sets/copilot_jobs.jsonl": "f491d36a6dd3c36cb52be54b30dd507dacfce65c19122c316e6da2acda900228",
-    "backend/evals/sets/copilot_safety.jsonl": "faaeb912b7276423e0641bd9abc3d8c638ab8f5a02d6d4ffbce361e5faaeceb0",
-    "backend/evals/sets/copilot_tools.json": "ed4f370b06cb03a2556d04fb076a453624d161e4e39af0af3752864c4870b157",
+    "backend/evals/sets/copilot_jobs.jsonl": "f38a563b08c68a727e5eb4fb2fb13d254c8a136dc207ff93bda186ee4b24a416",
+    "backend/evals/sets/copilot_safety.jsonl": "6957614b58ca737a77f1445e2d3bd0a13fa5c3063c829e75506e6043a3a37287",
+    "backend/evals/sets/copilot_tools.json": "c7946be46843344a0095458d4faa555e8342138d968f3b2a04eacc25a355d8a6",
+    "frontend/e2e/fixtures/copilot_tools_v2.json": "37c00546e26cc0cab4b2af0c38ae6041a630d57790be87397fa186502f3e4502",
     # hand-written API replies for the Playwright tests
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",
     "frontend/e2e/fixtures/actions.json": "49e8cbfacbd96f95bc73a90691ae343bd487140c7ba30b5954031a1a2d96e547",
@@ -191,6 +195,10 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/copilot_reply.json": "9d0013cced7fe29e99d3c2c25e231d96bee15cbd4960f169194abc1247d77bcd",
     # UI2-2: hand-written, made-up dashboard replies for the v2 dashboard screenshots (frontend/e2e/dashboard-v2.e2e.ts)
     "frontend/e2e/fixtures/dashboard_v2.json": "6e9629add17dd3b9801e2db91a4aebc984b2a00055c5e7b137e93653782a110f",
+    # Part 1B: hand-made Kotak Neo API responses in the SDK's documented shapes (made-up ids and numbers; tokens empty).
+    "backend/tests/fixtures/kotak_neo/recorded.json": "378d6a817a689a938577f5114701c5e7448053a5f89fcc6be4f9e6df5cb91da3",
+    # Part 1B: hand-made Groww API responses in the shapes of Groww's API reference (made-up ids and numbers; tokens empty).
+    "backend/tests/fixtures/groww/recorded.json": "048c67ff5ce98dd7cb64dc0ca6fec75dbdfe6b355e4b596c6b456c96dca1040c",
     # P2b: P2a's broker catalog (static, public broker names and how-to steps; no account data).
     "frontend/e2e/fixtures/broker_catalog.json": "075bd516ec146878bbca8bbfcfe3db046527510c7a080f44f71e58eb387eeb20",
     "frontend/e2e/fixtures/drafts.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -205,7 +213,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/option_chain_charts.json": "26645da956042b696609fa5515bb62ca052a83ec4d6f6f41576790fedb1aaa25",
     "frontend/e2e/fixtures/options_builder.json": "bf6df3ea9f5caddb5e3acc1d2f8360875a3cd72550f194156b21266fd550e1f0",
     "frontend/e2e/fixtures/provider.json": "6aabdd6f537fd8ce0a735b8ec21ed11e8f590ea3718263cc470f0916e53c7b32",
-    "frontend/e2e/fixtures/setup_v2.json": "cff0561b071bfa9bfb79e7e4b85029ddc0cbb3f395a64cd7d0c209aebdd419e7",
+    "frontend/e2e/fixtures/setup_v2.json": "8cedb077243878f1e3ee50c22996a933359db0a0127084b2eb471c637a54261b",
     # P3: hand-written, made-up replies for the front page and the go-live checklist (no real account, broker or token)
     "frontend/e2e/fixtures/front_page.json": "a2a51de38eec31a2a2735557596a4599d3a1efd73c4bd39d929ca822447d850d",
     "frontend/e2e/fixtures/signals_v2.json": "8a8c59c855e923dd02db351c5f8753d26851310cd5af5e2f405b9c78339338a8",
@@ -213,8 +221,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/thesis.json": "fafc2234d7b94bb57a0a860e95d3d3cf8052796ef9d9011db2d12cf486b3bac7",
     "frontend/e2e/fixtures/thesis_history.json": "f3226989acc68ddf2bbfa69ff8a5353011a90a480befc57c0bfa0c988ccd5a6c",
     "frontend/e2e/fixtures/thesis_report.json": "e85180cb3f957bf048f9bffe63e3237bb760333376e255f1ae76f6d9df2e287d",
-    "frontend/e2e/fixtures/trading_v2.json": "46bc6543f0f50524ef77c82ee261b19afe100722ee8c49d5a6a3fb6cda207265",
-    "frontend/e2e/fixtures/copilot_chat_v2.json": "03597dbede1af524f8a58537fdb4216c6dd2bb895c68e2a33e23b884ce6957c5",
+    "frontend/e2e/fixtures/trading_v2.json": "c9fc66383c29a2a5dc38d9de57bff8d27b9ba75b74578fa839b2eb420a73afef",
+    "frontend/e2e/fixtures/copilot_chat_v2.json": "510074a7e7d49ba552bccccc17fae05ca6a5b05b110cd6d4e017420d5cebeb03",
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

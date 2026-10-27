@@ -29,7 +29,7 @@ from tests.test_trading_worker import _FakeBroker, _deploy, _get, _worker
 from tests.test_z3_approval_entries import _flag_for as _approval_flag
 from tests.test_z3_approval_entries import _price, _sig
 from tests.test_z3b_paper_account import _member, _paper_flag
-from tests.test_z5_p1d_risk_by_default import (VIX_NOW, _closed, _enter, _flag, _open, _org, _place, _plan, _preview, _run, _tenant_t, _vix,
+from tests.test_z5_p1d_risk_by_default import (OWN, VIX_NOW, _closed, _mine, _enter, _flag, _open, _org, _place, _plan, _preview, _run, _tenant_t, _vix,
                                                _vix_clock)
 
 UTC = timezone.utc
@@ -217,6 +217,7 @@ def test_time_exit_of_a_locked_user_still_runs(monkeypatch):
     t = _tenant_t("adv-time")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)                                                       # TT-12: the limits are his own
     _closed(t, -25_000.0)
     assert _preview(t)["can_place"] is False
     trade_id = _open(t, stop=50.0)
@@ -240,6 +241,7 @@ def test_console_paper_execute_for_a_locked_user_answers_with_the_reason(monkeyp
     t = _tenant_t("adv-console")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)                                                       # TT-12: the limits are his own
     _approval_flag(t["tenant_id"])
     _closed(t, -25_000.0)
     local = TestClient(app, raise_server_exceptions=False)
@@ -253,7 +255,7 @@ def test_console_paper_execute_for_a_locked_user_answers_with_the_reason(monkeyp
 
 def test_loosening_waits_for_the_next_day_and_tightening_applies_at_once():
     today = date(2026, 10, 9)
-    base = by_default.RiskSettings.defaults().to_json()
+    base = by_default.plan_change(None, OWN, today)[0]            # TT-12: his own values (the old defaults' numbers)
     text, applied, deferred, start = by_default.plan_change(base, {"daily_loss_pct": 5.0, "min_rr": 2.0}, today)
     assert applied == {"min_rr": 2.0} and deferred == {"daily_loss_pct": 5.0} and start == "2026-10-10"
     assert by_default.settings_on(text, today).daily_loss_pct == 2.0 and by_default.settings_on(text, today).min_rr == 2.0
@@ -271,6 +273,7 @@ def test_user_cannot_raise_the_daily_limit_or_clear_the_entries_limit_mid_day():
     t = _tenant_t("adv-loosen")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)                                                       # TT-12: the limits are his own
     _closed(t, -25_000.0)                                          # 2.5% of 10 lakh: past the 2% default
     out = client.put("/api/paper/risk", headers=t["headers"], json={"daily_loss_pct": 5.0})
     assert out.status_code == 200 and out.json()["change"]["deferred"] == {"daily_loss_pct": 5.0}
@@ -292,6 +295,7 @@ def test_recorded_lockout_survives_a_settings_change():
     t = _tenant_t("adv-keep")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)                                                       # TT-12: the limits are his own
     _closed(t, -25_000.0)
     assert client.get("/api/paper/risk", headers=t["headers"]).json()["lockout"] is not None
     client.put("/api/paper/risk", headers=t["headers"], json={"daily_loss_pct": 5.0})
@@ -303,6 +307,7 @@ def test_a_close_that_reaches_the_limit_records_the_lockout_without_any_read(mon
     t = _tenant_t("eager-close")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)                                                       # TT-12: the limits are his own
     _closed(t, -15_000.0)                                          # 1.5%: under the 2% limit
     trade_id = _open(t, entry=100.0, stop=50.0)
 
@@ -324,6 +329,7 @@ def test_the_worker_sweep_records_a_lockout_reached_through_open_marks():
     t = _tenant_t("eager-sweep")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)                                                       # TT-12: the limits are his own
     trade_id = _open(t, entry=100.0, stop=50.0)
 
     async def marked():
@@ -455,7 +461,7 @@ def test_entries_per_day_slot_is_atomic(slot_db_url):
 
 def test_an_entry_refused_later_gives_its_slot_back():
     u = _tenant_t("slots-release")
-    _org(u)
+    _org(u, min_rr=1.2)                                           # P1-2b: the organisation's own minimum (no built-in one)
     _flag(by_default.FLAG, u["tenant_id"])
     client.put("/api/paper/risk", headers=u["headers"], json={"max_trades_per_day": 1})
     async def refused_later():
@@ -501,6 +507,7 @@ def test_an_override_through_approval_is_placed_and_counted(monkeypatch):
     t = _tenant_t("adv-ovr")
     _org(t, risk_pct=2.0)
     _flag(by_default.FLAG, t["tenant_id"])
+    _mine(t)                                                       # TT-12: the limits are his own
     _approval_flag(t["tenant_id"])
     _price(monkeypatch, 100.0)
     out = _place(t, quantity=6000, override=True, override_reason="High conviction setup, documented")

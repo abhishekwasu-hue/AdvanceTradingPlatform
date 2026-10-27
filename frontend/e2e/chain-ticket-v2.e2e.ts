@@ -231,7 +231,7 @@ test.describe("Chain ticket v2 flows", () => {
     await callCell(page).tap();
     const held = page.locator("[data-chain-actions] [data-held]");
     await expect(held).toContainText("Bought 1 lot at 140.00");
-    await expect(held).toContainText("P&L +₹750.00");
+    await expect(held).toContainText("P&L +₹750");
     const exit = held.locator("[data-action='held-exit']");
     await expect(exit).toBeEnabled();
     page.once("dialog", (d) => d.accept());

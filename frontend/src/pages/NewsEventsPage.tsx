@@ -14,6 +14,8 @@ import {
   type NewsTrust,
   type NewsVerdict,
 } from "../types";
+import { formatDateTimeIST } from "../ui/format";
+import { SelectOrCombobox } from "../ui/Combobox";
 
 /** Phase BB: feed items are unverified - a severity chip and the badge say so on every row. */
 function severityClass(severity: number): string {
@@ -59,7 +61,7 @@ function FeedSourcesCard({ isAdmin }: { isAdmin: boolean }) {
         ))}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-fg-muted">
-        {status.last_run.at && <span>last fetch {new Date(status.last_run.at).toLocaleString()} · {status.last_run.new ?? 0} new · {status.last_run.alerts ?? 0} alerts · {(status.last_run.errors ?? []).length} errors</span>}
+        {status.last_run.at && <span>last fetch {formatDateTimeIST(status.last_run.at)} · {status.last_run.new ?? 0} new · {status.last_run.alerts ?? 0} alerts · {(status.last_run.errors ?? []).length} errors</span>}
         {isAdmin && status.enabled && <button disabled={busy} onClick={refresh} className="rounded border border-border px-2 py-0.5 text-fg hover:bg-surface-2 disabled:opacity-50">Fetch now</button>}
       </div>
     </CollapsibleCard>
@@ -154,28 +156,13 @@ export default function NewsEventsPage() {
         <div className="grid sm:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs text-fg-muted mb-1">Origin</label>
-            <select
-              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-              value={originFilter}
-              onChange={(e) => setOriginFilter(e.target.value as "" | "MANUAL" | "FEED")}
-            >
-              <option value="">All</option>
-              <option value="MANUAL">Cited by a person</option>
-              <option value="FEED">Unverified feed</option>
-            </select>
+            <SelectOrCombobox label="Origin" value={originFilter} onChange={(v) => setOriginFilter(v as "" | "MANUAL" | "FEED")} className="w-full" nativeClassName="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
+              options={[{ value: "", label: "All" }, { value: "MANUAL", label: "Cited by a person" }, { value: "FEED", label: "Unverified feed" }]} />
           </div>
           <div>
             <label className="block text-xs text-fg-muted mb-1">Category</label>
-            <select
-              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value as NewsEventCategory | "")}
-            >
-              <option value="">All categories</option>
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>{NEWS_EVENT_CATEGORY_LABELS[c]}</option>
-              ))}
-            </select>
+            <SelectOrCombobox label="Category" value={categoryFilter} onChange={(v) => setCategoryFilter(v as NewsEventCategory | "")} className="w-full" nativeClassName="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
+              options={[{ value: "", label: "All categories" }, ...CATEGORIES.map((c) => ({ value: c, label: NEWS_EVENT_CATEGORY_LABELS[c] }))]} />
           </div>
           <div>
             <label className="block text-xs text-fg-muted mb-1">Symbol</label>
@@ -268,15 +255,8 @@ export default function NewsEventsPage() {
             <div className="grid sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs text-fg-muted mb-1">Category</label>
-                <select
-                  className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value as NewsEventCategory })}
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{NEWS_EVENT_CATEGORY_LABELS[c]}</option>
-                  ))}
-                </select>
+                <SelectOrCombobox label="Category" value={form.category} onChange={(v) => setForm({ ...form, category: v as NewsEventCategory })} className="w-full" nativeClassName="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
+                  options={CATEGORIES.map((c) => ({ value: c, label: NEWS_EVENT_CATEGORY_LABELS[c] }))} />
               </div>
               <div>
                 <label className="block text-xs text-fg-muted mb-1">Event date</label>
@@ -289,15 +269,8 @@ export default function NewsEventsPage() {
               </div>
               <div>
                 <label className="block text-xs text-fg-muted mb-1">Sentiment</label>
-                <select
-                  className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-                  value={form.sentiment}
-                  onChange={(e) => setForm({ ...form, sentiment: e.target.value as NewsSentiment })}
-                >
-                  {SENTIMENTS.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+                <SelectOrCombobox label="Sentiment" value={form.sentiment} onChange={(v) => setForm({ ...form, sentiment: v as NewsSentiment })} className="w-full" nativeClassName="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
+                  options={SENTIMENTS.map((s) => ({ value: s, label: s }))} />
               </div>
             </div>
 

@@ -146,7 +146,9 @@ describe("UI2-4e the v2 chart on other pages", () => {
     expect(html).toContain('aria-label="Chart settings"');
     expect(html).toMatch(/aria-label="Open in Chart tab"[^>]*href="\/charts\/NIFTY%2050\?tf=5min"/);
     const tfs = [...html.matchAll(/aria-pressed="(?:true|false)"[^>]*>([^<]+)</g)].map((m) => m[1]);
-    expect(tfs).toEqual(["1m", "3m", "5m", "15m", "30m", "1H", "D"]);
+    // TF-1: the starred timeframes as one-click buttons (default 5m, 15m, 1H, D), every other one in the dropdown.
+    expect(tfs).toEqual(["5m", "15m", "1H", "D"]);
+    expect(html).toContain('aria-label="Timeframe: 5 min"');
     expect(html).not.toMatch(/candles via|refreshes every|as of|source/i);
   });
 

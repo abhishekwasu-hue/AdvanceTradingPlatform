@@ -65,7 +65,7 @@ describe("UX2 fix 4 wiring", () => {
 });
 
 describe("UX2 fix 4 model", () => {
-  it("an index trades its option at the nearest expiry, one lot; a stock trades itself", () => {
+  it("an index trades its option at the nearest expiry, one lot; a stock trades its shares", () => {
     expect(paperBotRequest("orb_15m_5m", " nifty 50 ", intraday)).toEqual({
       strategy_id: "orb_15m_5m", symbol: "NIFTY 50", exchange: "NSE", timeframe: "1min", mode: "PAPER", holding: "INTRADAY",
       instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1,
@@ -99,7 +99,7 @@ describe("UX2 fix 4 model", () => {
 
   it("the start summary says what is traded, how long it is held, and paper only", () => {
     expect(startSummary("NIFTY 50", intraday)).toBe("Trades a NIFTY 50 option at the nearest expiry, 1 lot, closed before the market closes. Paper money only; your risk limits apply.");
-    expect(startSummary("RELIANCE", daily)).toBe("Trades RELIANCE itself, held for days. Paper money only; your risk limits apply.");
+    expect(startSummary("RELIANCE", daily)).toBe("Trades RELIANCE shares, held for days. Paper money only; your risk limits apply.");
   });
 
   it("status in words: running, paused by you, a readable reason, never an internal code", () => {

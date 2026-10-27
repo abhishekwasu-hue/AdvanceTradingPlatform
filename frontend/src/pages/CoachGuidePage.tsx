@@ -6,11 +6,14 @@ import TradeCoach from "../components/TradeCoach";
 import AiAcknowledgementGate from "../components/AiAcknowledgementGate";
 import { Card } from "../components/ui";
 import { PageHeader } from "../components/primitives";
+import { SubTabs } from "../ui/SubTabs";
+import { useUiV2 } from "../ui/useFeatures";
 
 /** Phase AW: the trade coach and the concept guide, on their own page - the AI Copilot is the
  * live-market strategist; reviewing your trades and learning concepts live here. */
 export default function CoachGuidePage() {
   const { user } = useAuth();
+  const v2 = useUiV2();
   const [tab, setTab] = useState<"coach" | "guide">(() => {
     try { return localStorage.getItem("atp_coach_tab") === "guide" ? "guide" : "coach"; } catch { return "coach"; }
   });
@@ -19,6 +22,11 @@ export default function CoachGuidePage() {
   return (
     <div className="space-y-4">
       <PageHeader title={<span className="inline-flex items-center gap-2"><GraduationCap size={18} /> Coach & Guide</span>} description="The coach shows patterns in your own trades (rules followed or broken); the guide explains the concepts behind them. Decisions are yours." />
+      {/* UI-H Wave 0 (H2): the v2 shell draws this row with the shared SubTabs; the old shell keeps its underline row. */}
+      {v2 ? (
+        <SubTabs label="Coach" value={tab} onChange={choose}
+          items={[{ key: "coach", label: "Trade coach" }, { key: "guide", label: "Guide" }] as const} />
+      ) : (
       <div className="flex gap-1 border-b border-border">
         {([["coach", "Trade coach", GraduationCap], ["guide", "Guide", BookOpen]] as const).map(([id, label, Icon]) => (
           <button key={id} onClick={() => choose(id)}
@@ -27,6 +35,7 @@ export default function CoachGuidePage() {
           </button>
         ))}
       </div>
+      )}
       {/* P0.8-D: the same first-use acknowledgement as the AI Copilot page */}
       <AiAcknowledgementGate>{tab === "coach" ? <TradeCoach /> : <GuideChat plain />}</AiAcknowledgementGate>
     </div>

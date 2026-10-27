@@ -70,6 +70,7 @@ _FILLED_STATUSES = {"COMPLETE", "FILLED", "TRADED", "EXECUTED"}
 _REJECTED_STATUSES = {"REJECTED", "CANCELLED", "CANCELED", "EXPIRED", "LAPSED"}
 DEFAULT_MARKET_PROTECTION_PCT = 0.5
 ORDER_STYLES = ("MARKET", "PROTECTED_LIMIT")
+PAPER_EXECUTIONS = ("direct", "adapter")
 _TICK = 0.05
 
 
@@ -98,9 +99,18 @@ class OrderRouter:
         self, mode: ExecutionMode, risk_config: RiskConfig, broker: Optional[BrokerInterface] = None,
         exchange: str = "NSE", product: str = "MIS", place_protective_stop: bool = True,
         algo_id: Optional[str] = None, order_style: str = "MARKET", market_protection_pct: Optional[float] = None,
-        is_option: Optional[bool] = None,
+        is_option: Optional[bool] = None, paper_execution: str = "direct", freeze_quantity: Optional[int] = None,
     ) -> None:
         self.mode = mode
+        # TM-1: how a PAPER order fills - "direct" (PaperBroker.open_trade, every path not yet moved) or "adapter" (the
+        # PaperExecutionAdapter, a BrokerInterface over the same fill and cost model). Paths move one at a time, each with
+        # an old-vs-new parity test (tests/test_tm1_paper_adapter.py). LIVE ignores it.
+        if paper_execution not in PAPER_EXECUTIONS:
+            raise ValueError(f"paper_execution must be one of {PAPER_EXECUTIONS}")
+        self.paper_execution = paper_execution
+        # Part 7 smart execution (flag smart_execution): the exchange's freeze quantity for this contract; an adapter
+        # order above it goes as several orders of whole lots below it. None = not known / not asked: one order.
+        self.freeze_quantity = freeze_quantity
         self.algo_id = algo_id
         # P0.5 / T5: MARKET (default) or PROTECTED_LIMIT - a marketable limit `market_protection_pct` past the
         # signal price. P0.5 / T2: `is_option` tells the stop which order type the broker accepts (None = infer
@@ -146,6 +156,9 @@ class OrderRouter:
         entry_tag = build_order_tag(strategy_id=signal.strategy_id, leg=LEG_ENTRY, algo_id=self.algo_id, max_length=max_tag,
                                     broker=getattr(self.broker, "name", None))
 
+        if self.mode == ExecutionMode.PAPER and self.paper_execution == "adapter":
+            return await self._execute_paper_adapter(signal, state, decision.quantity, notes, entry_tag, started,
+                                                     lot_size=int(contract_spec.lot_size) if contract_spec is not None else 1)
         if self.mode == ExecutionMode.PAPER:
             trade = self.paper_broker.open_trade(signal, decision.quantity, datetime.now(timezone.utc))
             trade.expected_price = signal.entry
@@ -297,6 +310,62 @@ class OrderRouter:
             partial_fill=partial_fill, requested_quantity=requested_quantity, broker_uncertain=broker_uncertain,
             sl_rejected=sl_rejected,
         )
+
+    async def _execute_paper_adapter(self, signal: Signal, state: TradingDayState, quantity: float, notes: list[str],
+                                     entry_tag: Optional[str], started: float, *, lot_size: int = 1) -> ExecutionResult:
+        """TM-1: the PAPER entry through the PaperExecutionAdapter - one market order on the paper exchange at the price
+        the caller already checked (`signal.entry`), the fill read back from the adapter's book, a partial fill handled
+        as for LIVE (the position is the filled part, the remainder cancelled). Same fill price (the same PaperBroker
+        slippage), same reasons and same Trade as the direct path; no protective stop order (PAPER enforces stops in the
+        position monitor, as before)."""
+        from app.execution.paper_adapter import PaperExecutionAdapter
+        adapter = PaperExecutionAdapter(self.paper_broker)
+        adapter.mark(signal.symbol, signal.entry, self.exchange)
+        side = OrderSide.BUY if signal.direction == SignalDirection.LONG else OrderSide.SELL
+        parts: list[float] = [quantity]
+        if self.freeze_quantity:
+            from app.execution.smart_execution import slice_units
+            parts = [float(u) for u in slice_units(int(round(quantity)), lot_size, self.freeze_quantity)] or [quantity]
+        from app.execution.smart_execution import order_type_for
+        # TM-3: where the venue takes no market order, a marketable limit the protection band past the price.
+        order_type, limit = order_type_for(adapter.capabilities.market_orders_allowed, side.value, signal.entry, self.market_protection_pct)
+        filled, value, last_message, stopped = 0.0, 0.0, "", False
+        for n, part in enumerate(parts, start=1):
+            request = BrokerOrderRequest(symbol=signal.symbol, exchange=self.exchange, transaction_type=side, quantity=part,
+                                         order_type=order_type, price=limit, product=self.product, tag=entry_tag,
+                                         intent=ORDER_INTENT_ENTRY, client_ref=f"slice-{n}" if len(parts) > 1 else None)
+            response = await adapter.place_order(request)
+            book = adapter.order(response.order_id)
+            got = float(book.filled_quantity) if book is not None and book.average_price is not None else 0.0
+            if got > 0 and book is not None and book.average_price is not None:
+                filled += got
+                value += got * float(book.average_price)
+            if book is not None and book.status not in ("REJECTED", "CANCELLED", "COMPLETE"):
+                await adapter.cancel_order(response.order_id)          # never a remainder left working
+            last_message = response.message or response.status
+            if got + 1e-9 < part:
+                stopped = True                                          # no further slice after one that did not fill
+                break
+        if filled <= 0:
+            return ExecutionResult(executed=False, reasons=notes + [f"Paper order not filled: {last_message}"])
+        reasons = notes + ["Paper order filled"]
+        if len(parts) > 1:
+            reasons.append(f"Sent as {len(parts)} orders below the exchange's freeze limit ({self.freeze_quantity:g} qty)")
+        partial = False
+        if filled + 1e-9 < quantity:
+            reasons.append(f"Partial fill: {filled:g} of {quantity:g} - position and stop sized to the filled quantity")
+            reasons.append(f"Unfilled remainder {quantity - filled:g} cancelled" + (" (the later slices were not sent)" if stopped and len(parts) > 1 else ""))
+            partial = True
+        average = value / filled
+        trade = Trade(symbol=signal.symbol, strategy_id=signal.strategy_id, direction=signal.direction,
+                      entry_time=datetime.now(timezone.utc), entry_price=round(average, 2), quantity=filled,
+                      stop_loss=signal.stop_loss, target1=signal.target1, target2=signal.target2)
+        trade.expected_price = signal.entry
+        trade.entry_latency_ms = int((time.perf_counter() - started) * 1000)
+        state.trades_today += 1
+        state.open_positions += 1
+        return ExecutionResult(executed=True, reasons=reasons, trade=trade, algo_tag=entry_tag, partial_fill=partial,
+                               requested_quantity=quantity if partial else None)
 
     async def _resolve_fill_price(self, order_id: str, fallback: float) -> float:
         price, _ = await self._resolve_fill(order_id, fallback)

@@ -27,6 +27,7 @@ broker's order API, and nothing here ever stands in the way of an exit (ADR-0004
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 import logging
@@ -149,7 +150,8 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     refusals.extend(guard.reasons)
     warnings.extend(guard.notes)
     multiplier = max(0.0, float(guard.size_multiplier))
-    user_cap = float(cap_info["amount"])
+    # TT-12: no risk per trade of his own = no cap of his own; the organisation's risk per trade still sizes the entry.
+    user_cap = float(cap_info["amount"]) if cap_info["amount"] is not None else math.inf
     base_cap = min(user_cap, org_cap)
     binding = "your cap" if user_cap <= org_cap else "the organisation's risk per trade"
     cap = round(base_cap * multiplier, 2)
@@ -162,10 +164,11 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     per_unit = abs(float(plan.entry) - float(plan.stop_loss))
     risk_amount = round(quantity * per_unit, 2)
     rr = by_default.reward_risk(plan.entry, plan.stop_loss, plan.target)
-    rr_ok = rr is not None and rr >= settings.min_rr
+    min_rr = settings.min_rr if settings.min_rr > 0 else None          # TT-12: no minimum unless he set one
+    rr_ok = rr is not None and (min_rr is None or rr >= min_rr)
     within = risk_amount <= cap + 0.005
     if not errors:
-        if not rr_ok:
+        if not rr_ok and min_rr is not None:
             refusals.append(f"Reward:risk {rr if rr is not None else '-'} is below your minimum {settings.min_rr:g}")
         if plan.quantity is not None and (quantity <= 0 or abs(quantity / lot - round(quantity / lot)) > 1e-9):
             errors.append(f"Quantity must be a whole number of lots of {lot:g}")
@@ -179,8 +182,9 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
                                 f"Up to {suggested['quantity']:g} fits; going above needs an override with a reason")
             elif base_cap < user_cap or risk_amount > override_cap + 0.005:
                 refusals.append(f"Even with an override an entry may risk at most {override_cap:,.2f} "
-                                f"({app_config.RISK_OVERRIDE_MAX_MULTIPLE:g} x your cap, within the organisation's limit); "
-                                f"{quantity:g} risks {risk_amount:,.2f}")
+                                + (f"({app_config.RISK_OVERRIDE_MAX_MULTIPLE:g} x your cap, within the organisation's limit); "
+                                   if math.isfinite(user_cap) else "(the organisation's limit); ")
+                                + f"{quantity:g} risks {risk_amount:,.2f}")
             elif len(reason) < app_config.RISK_OVERRIDE_MIN_REASON_CHARS:
                 refusals.append(f"An override needs a reason of at least {app_config.RISK_OVERRIDE_MIN_REASON_CHARS} characters")
             else:
@@ -200,9 +204,9 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     return {
         "symbol": symbol, "direction": direction, "setup": plan.setup, "setup_label": SETUPS.get(plan.setup), "mode": by_default.MODE,
         "entry": plan.entry, "stop_loss": plan.stop_loss, "target": plan.target, "time_stop": plan.time_stop, "invalidation": plan.invalidation,
-        "reward_risk": rr, "min_reward_risk": settings.min_rr,
+        "reward_risk": rr, "min_reward_risk": min_rr,
         "sizing": {"capital_basis": basis, "risk_per_trade_pct": settings.risk_per_trade_pct, "risk_per_trade_amount": settings.risk_per_trade_amount,
-                   "user_cap": _round(user_cap), "org_cap": org_cap, "binding": binding, "size_multiplier": round(multiplier, 4), "cap": cap,
+                   "user_cap": _round(user_cap) if math.isfinite(user_cap) else None, "org_cap": org_cap, "binding": binding, "size_multiplier": round(multiplier, 4), "cap": cap,
                    "override_cap": override_cap, "lot_size": lot, "risk_per_unit": round(per_unit, 4),
                    "suggested_quantity": suggested["quantity"], "suggested_lots": suggested["lots"], "quantity": quantity,
                    "lots": round(quantity / lot, 4) if lot else None, "risk_amount": risk_amount,
@@ -270,7 +274,8 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
     s = view["sizing"]
     multiplier = s["size_multiplier"] or 1.0
     # The checked cap before the guardian's cut (the pipeline applies the cut again), with the override's room if used.
-    cap_amount = round(max(min(s["user_cap"], s["org_cap"]), s["risk_amount"] / multiplier if multiplier > 0 else 0.0), 2)
+    own_cap = s["user_cap"] if s["user_cap"] is not None else s["org_cap"]       # TT-12: none of his own - the organisation's
+    cap_amount = round(max(min(own_cap, s["org_cap"]), s["risk_amount"] / multiplier if multiplier > 0 else 0.0), 2)
     risk = abs(price - plan.stop_loss)
     signal = Signal(symbol=view["symbol"], strategy_id=f"plan_{plan.setup.lower()}", strategy_name=f"PAPER ticket: {SETUPS[plan.setup]}",
                     direction=SignalDirection(view["direction"]), timestamp=now, entry=price, stop_loss=plan.stop_loss, target1=plan.target,
@@ -393,6 +398,8 @@ async def risk_status(session: AsyncSession, user: User, now: Optional[datetime]
     await session.commit()
     return {
         "mode": by_default.MODE, "settings": stored.as_dict(), "effective": settings.as_dict(), "notes": notes, "pending": pending,
+        # TT-12: the keys he set himself; every other limit is off ("Not set"). `defaults` are all off.
+        "set": by_default.set_on(account_row.risk_settings_json if account_row is not None else None, to_ist(now).date()),
         "defaults": by_default.RiskSettings.defaults().as_dict(), "bounds": {k: list(v) for k, v in by_default.BOUNDS.items()},
         "labels": by_default.LABELS, "ceilings": {"risk_per_trade_pct": ceilings.get("risk_per_trade_pct"), "daily_loss_pct": ceilings.get("max_daily_loss_pct")},
         "capital_basis": basis, "risk_cap": by_default.risk_cap(basis, settings),
@@ -419,8 +426,10 @@ async def save_settings(session: AsyncSession, user: User, values: Dict[str, Any
     account = await get_account(session, user)
     text, applied, deferred, start = by_default.plan_change(account.risk_settings_json, values, to_ist(now).date())
     account.risk_settings_json = text
-    detail = (", ".join(f"{k} -> {v:g} now" for k, v in applied.items()) + ("; " if applied and deferred else "")
-              + ", ".join(f"{k} -> {v:g} from {start}" for k, v in deferred.items())) or "no change"
+    def said(v: Any) -> str:
+        return "not set" if v is None else f"{v:g}"
+    detail = (", ".join(f"{k} -> {said(v)} now" for k, v in applied.items()) + ("; " if applied and deferred else "")
+              + ", ".join(f"{k} -> {said(v)} from {start}" for k, v in deferred.items())) or "no change"
     await write_audit_log(session, user.tenant_id, user.id, "paper_risk_settings_set", detail[:500])
     await session.commit()
     return {"applied": applied, "deferred": deferred, "from": start if deferred else None}

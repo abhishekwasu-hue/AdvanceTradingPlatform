@@ -260,23 +260,24 @@ def _chain(spot=24512.0, expiry="2026-10-06"):
 
 def test_chain_recorder_samples_dedupes_and_loads():
     now = datetime(2026, 10, 5, 4, 0, tzinfo=timezone.utc)
+    tenant_id = client.get("/api/auth/me", headers=_auth("bt-recorder@example.com")).json()["tenant_id"]
 
     async def go():
         async with _session_factory() as session:
-            written = await chain_recorder.record_chain(session, "NIFTY", _chain(), now, interval_minutes=5, span=3)
-            again = await chain_recorder.record_chain(session, "NIFTY", _chain(), now + timedelta(minutes=2), interval_minutes=5, span=3)
-            later = await chain_recorder.record_chain(session, "NIFTY", _chain(spot=24560), now + timedelta(minutes=6), interval_minutes=5, span=3)
-            rows = await chain_recorder.load_rows(session, "NIFTY", now - timedelta(minutes=1), now + timedelta(minutes=10), tenant_id=None)
-            cov = await chain_recorder.coverage(session, "NIFTY")
+            written = await chain_recorder.record_chain(session, "NIFTY", _chain(), now, interval_minutes=5, span=3, tenant_id=tenant_id)
+            again = await chain_recorder.record_chain(session, "NIFTY", _chain(), now + timedelta(minutes=2), interval_minutes=5, span=3, tenant_id=tenant_id)
+            later = await chain_recorder.record_chain(session, "NIFTY", _chain(spot=24560), now + timedelta(minutes=6), interval_minutes=5, span=3, tenant_id=tenant_id)
+            rows = await chain_recorder.load_rows(session, "NIFTY", now - timedelta(minutes=1), now + timedelta(minutes=10), tenant_id=tenant_id)
+            cov = await chain_recorder.coverage(session, "NIFTY", tenant_id=tenant_id)
             uploaded = await chain_recorder.store_uploaded(session, "NIFTY", [
                 OptionChainSnapshotRow(timestamp=now, expiry=date(2026, 10, 6), strike=24500, right="PE", ltp=94.0),   # duplicate of a recorded row
                 OptionChainSnapshotRow(timestamp=now + timedelta(hours=1), expiry=date(2026, 10, 6), strike=24500, right="PE", ltp=90.0),
-            ], tenant_id=1)
+            ], tenant_id=tenant_id)
             return written, again, later, rows, cov, uploaded
     written, again, later, rows, cov, uploaded = _run(go())
     assert written == 14 and again == 0 and later == 14          # 7 strikes x CE/PE around the money
     assert len(rows) == 28 and {r.right for r in rows} == {"CE", "PE"} and rows[0].expiry == date(2026, 10, 6)
-    assert cov[0]["underlying"] == "NIFTY" and cov[0]["rows"] >= 28 and cov[0]["expiries"] >= 1   # other tests may have recorded NIFTY too
+    assert cov[0]["underlying"] == "NIFTY" and cov[0]["rows"] == 28 and cov[0]["expiries"] == 1   # TM94-3: this organisation's rows only
     assert uploaded == 1
     # The rows price a backtest: nearest-at-or-before within the age limit.
     pricer = SnapshotPricer(rows, max_age_minutes=5)
@@ -300,7 +301,7 @@ def test_backtest_endpoints_dispatch_option_runs_and_record_them():
     out = res.json()
     assert out["options"]["pricing_model"] == "synthetic" and out["options"]["structure"] == "BULL_PUT_SPREAD" and out["run_id"]
     run = client.get(f"/api/backtests/{out['run_id']}", headers=headers).json()
-    assert run["engine_version"] == ENGINE_VERSION == "8-options"
+    assert run["engine_version"] == ENGINE_VERSION == "9-options"
     assert run["params"]["_options"]["option_strategy"] == "BULL_PUT_SPREAD" and "structures" not in run["metrics"]["options"]
     # Snapshot pricing with nothing recorded and no fallback is a plain 400; with the fallback it runs.
     strict = {**body, "options": {**body["options"], "pricing": "snapshots", "allow_synthetic_fallback": False}}
@@ -355,18 +356,18 @@ def test_worker_records_chains_for_active_option_deployments_once_per_interval(m
 
     async def go():
         async with _session_factory() as session:
-            first = await worker._record_chains(session, [option_dep, cash_dep], MarketDataService(broker), now, {"NSE"})
-            second = await worker._record_chains(session, [option_dep], MarketDataService(broker), now + timedelta(minutes=1), {"NSE"})
-            closed = await worker._record_chains(session, [option_dep], MarketDataService(broker), now + timedelta(minutes=30), {"MCX"})
-            third = await worker._record_chains(session, [option_dep], MarketDataService(broker), now + timedelta(minutes=30), {"NSE"})
-            rows = await chain_recorder.load_rows(session, "NIFTY", now - timedelta(minutes=1), now + timedelta(hours=1), tenant_id=None)
+            first = await worker._record_chains(session, [option_dep, cash_dep], MarketDataService(broker), now, {"NSE"}, tenant_id=t["tenant_id"])
+            second = await worker._record_chains(session, [option_dep], MarketDataService(broker), now + timedelta(minutes=1), {"NSE"}, tenant_id=t["tenant_id"])
+            closed = await worker._record_chains(session, [option_dep], MarketDataService(broker), now + timedelta(minutes=30), {"MCX"}, tenant_id=t["tenant_id"])
+            third = await worker._record_chains(session, [option_dep], MarketDataService(broker), now + timedelta(minutes=30), {"NSE"}, tenant_id=t["tenant_id"])
+            rows = await chain_recorder.load_rows(session, "NIFTY", now - timedelta(minutes=1), now + timedelta(hours=1), tenant_id=t["tenant_id"])
             return first, second, closed, third, rows
     first, second, closed, third, rows = _run(go())
     assert first > 0 and second == 0 and closed == 0 and third > 0
     assert broker.chain_calls == ["NIFTY 50", "NIFTY 50"]          # the cash deployment never triggers a fetch
     assert len(rows) == first + third and all(r.expiry == date(2026, 10, 6) for r in rows)
     monkeypatch.setattr(chain_recorder, "CHAIN_SNAPSHOT_INTERVAL_MINUTES", 0)
-    assert _run(worker._record_chains(None, [option_dep], MarketDataService(broker), now + timedelta(hours=2), {"NSE"})) == 0
+    assert _run(worker._record_chains(None, [option_dep], MarketDataService(broker), now + timedelta(hours=2), {"NSE"}, tenant_id=t["tenant_id"])) == 0
 
 
 def test_bars_past_the_expiry_data_are_skipped_as_stale_and_counted():

@@ -100,6 +100,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     "news_feed": "Live news feed from public sources (unverified items, shared ingest, tenant-key classification)",
     "telegram_inbound": "Telegram commands and approve/reject buttons from whitelisted chats (PAPER + reduce/pause only)",
     "market_thesis": "Per-symbol market thesis with scenarios and a shadow-only size multiplier (never applied)",
+    # Colour order v2 (owner, 23 Oct; docs/design/CHART_COLOUR_REVIEW.md "Colour v2"): the visible, purposeful colour
+    # proposal on the v2 pages - tinted Settings icons, the option chain's call / put tints and OI bars, the P&L tint and
+    # index sparklines on Today, Long / Short chips, tinted navigation and the layered dark surfaces. Needs ui_v2. OFF
+    # (the default, until the owner approves the comparison page): every v2 page looks exactly as before. Layout only -
+    # places no orders and changes no trading behaviour.
+    "colour_v2": "Colour v2: purposeful colour on the v2 pages (tinted icons, option chain tints, P&L tint, sparklines, Long / Short chips; layout only)",
     # N2-5 (P1 spec 1.5, docs/design/N2_P1FGH.md): the market context panel - regime (Dow structure of the NIFTY 50 on
     # daily and weekly bars), breadth, India VIX with its 1-year rank, FII / DII (seam, off until a source is set),
     # global cues and this week's events, each tile with its source and as-of and NA on its own failure. Shared data
@@ -133,12 +139,40 @@ FEATURE_FLAGS: Dict[str, str] = {
     # turns it on (Settings > Alerts, OFF by default). Built from the user's own data and the market data ATP holds;
     # structure words only, no buy / sell / target / stop wording. OFF: /api/rhythm/* answers 404 and nothing is sent.
     "daily_rhythm": "Daily rhythm: the pre-market brief, mid-session pulse, closing wrap and weekly review on the Dashboard and, by choice, on Telegram",
+    # TM Part 1 (docs/design/DATA_HUB.md; app/market_data/hub.py): the data hub - one session and one market-data
+    # stream per broker connection, shared by every consumer of that connection (charts, chain, watchlists, alerts, the
+    # paper engine), kept to the connection's own keys (never another user's or organisation's), live ticks to the
+    # browser on the existing live stream, a plain "reconnecting" state and ONE renew prompt when the broker ends the
+    # login. `byob_data_tier` still decides whose session a user may read. OFF: everything exactly as before.
+    "data_hub": "Data hub: one live price stream per broker connection for every page, live ticks in the browser, a reconnecting state and one renew prompt",
+    "smart_execution": "Smart execution for multi-leg orders: hedge legs first (shorts closed first on exit), the incomplete-order state with Complete the rest / Close the filled legs, freeze-limit slicing, the margin with the hedge benefit and the free balance after, the physical-settlement warning for stock F&O",
+    # Trading Terminal T1 (docs/owner-orders/ATP_SESSION_TRADING_TERMINAL.md, review TT-16..TT-19, TT-25; needs `ui_v2`):
+    # the Terminal page at /terminal - the chart, the option chain, the order panel, positions, orders and the basket on one
+    # screen as panels the user moves, resizes, opens and closes (presets and up to 10 own layouts in the prefs namespace
+    # `terminal`), with a status bar (MTM, funds, the labelled margin estimate, the price feed, the mode and the kill switch
+    # state; GET /api/terminal/status, the caller's own rows only). Every order goes through the existing ticket and basket
+    # (one order path; PAPER in Phase 0). OFF (the default, until the owner's approval of the screenshots): no navigation
+    # entry, the address says "Coming soon" and /api/terminal/* answers 404. Kept out of the trader pack (TT-25).
+    "terminal": "Trading Terminal: chart, option chain, order panel, positions, orders and basket on one screen with saved layouts and a status bar (orders through the existing ticket; PAPER in Phase 0)",
     # Master Order 4 slice 3 (app/growth; needs `ui_v2`): the plan page with a usage meter (what the user's plan includes
     # and how much of it he used, from the existing limits and counters), the "my discipline this week" share card (his
     # own discipline facts only: no security names, no prices, no call words) and the admin Business view's activation
     # events (read-only). OFF: /api/growth/* and /api/admin/console/activation answer 404 and nothing new is shown. No
     # price, trial, reminder or referral is built; nothing places an order.
     "growth_v2": "Plans and growth: the plan page with a usage meter, the discipline share card and the admin activation events (read-only)",
+    # Readiness C13 (app/learn, app/growth): learning and growth, each OFF by default.
+    # `learn`: the Learn page (short lessons on structure reading, risk, paper practice and how ATP works; the glossary;
+    # the video links the operator sets). Education only, guarded content. OFF: GET /api/learn answers 404, no Learn entry.
+    "learn": "Learn: short lessons in plain English, the glossary and the operator's video links (education only)",
+    # `marketing_site`: the public Features / How it works / About pages for the front page (read globally - a visitor
+    # has no organisation). OFF: GET /api/site/pages answers 404 and the sign-in screen links none of them.
+    "marketing_site": "Public marketing pages: Features, How it works and About on the front page (no claims, no prices)",
+    # `onboarding_emails`: the first-week e-mails (connect your broker, start a paper bot, review your first signal),
+    # once each, with an unsubscribe link; nothing is sent without PLATFORM_SMTP_* and PUBLIC_BASE_URL. Places nothing.
+    "onboarding_emails": "First-week e-mails: connect your broker, start your first paper bot, review your first signal (each once, with unsubscribe)",
+    # `referrals`: each person's own invite link and the new account's one claim; the reward is only described (C11 owns
+    # granting it). Nothing touches the marketplace. OFF: /api/growth/referral* answer 404 and no invite card shows.
+    "referrals": "Invite a friend: your own invite link, and how many people joined through it (no reward is granted automatically)",
     # PW6 (beta spec 4a, Phase 0): the closed-beta gate. ON: sign-up needs a SUPER_ADMIN-issued invite code and stops at
     # BETA_COHORT_CAP accounts. OFF: registration is exactly as before (self_signup still decides). OFF by default.
     "beta_cohort_gate": "Closed beta: sign-up needs an invite code and stops at the cohort cap (BETA_COHORT_CAP, default 500)",
@@ -169,6 +203,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # through the OWNER's own broker session (read-only candle endpoints) into the owner's private store only, sharing
     # the worker's rate budget with a reserve kept for exits. OFF: the job, the CLI and the worker hook do nothing.
     "history_intraday": "Owner intraday history: 1-minute bars from the owner's own broker session into the owner's private store (read-only, places no orders)",
+    # TM 9.4 (docs/design/CHAIN_HISTORY.md, TM-7): option-chain snapshots (every strike: LTP, OI, IV, Greeks; spot; time)
+    # recorded at a fixed interval in market hours through the OWNER's own broker session into the owner's private store,
+    # on the worker's rate budget with a reserve kept for exits. OFF: nothing is recorded and the read API answers 404.
+    "chain_history": "Owner chain history: option-chain snapshots from the owner's own broker session into the owner's private store (read-only, places no orders)",
     # Z3 / BT2 (beta spec, Phase 0): every automatic entry (deployments, TradingView webhooks, public API signals) becomes
     # an ENTRY proposal (Approve / Reject / Snooze); Approve places a PAPER order at a re-quoted price. Target exits ask
     # "Exit now?"; protective exits (stop, time stop, square-off, kill switch) stay automatic (ADR-0004). OFF: unchanged.
@@ -274,6 +312,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # exits and renew reminders, each opening its screen. OFF: the device routes answer 404 (X-Feature-Disabled) and no
     # phone delivery is queued. Also needs the server's FCM key (FCM_SERVICE_ACCOUNT_JSON_BASE64). Places no orders.
     "mobile_push": "Phone notifications in the Android app (signals, approvals, exits, renew reminders), each opening its screen",
+    # M45 MA-1 (docs/design/M45_MULTI_ACCOUNT.md): the user's own broker accounts as Primary / Secondary (one Primary per
+    # user across brokers, optional Secondary groups) and simulated PAPER accounts. OFF: /api/accounts/mine answers 404
+    # (X-Feature-Disabled). MA-1 is the registry only: nothing here routes, sizes or places an order.
+    "multi_account": "Multi-account (M45): your own broker accounts as Primary / Secondary with groups, and simulated paper accounts (registry only; places no orders)",
     # U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards - publicly described methods with a screen
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
@@ -419,6 +461,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
     # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
     "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
+    # Owner order 23 Oct (app/backtest/bar_source.py): backtests without a daily broker login. With no usable broker
+    # session, a Daily / Weekly backtest runs on the shared lake's stored end-of-day history (NSE daily files, the R2 daily
+    # import - never the owner's private 1-minute store); intraday still needs a broker. OFF: every backtest path answers
+    # exactly as before (no broker session = 409). A simulation only: places no orders.
+    "backtest_stored_history": "Backtests on ATP's stored daily history when no broker is connected (Daily and Weekly; intraday needs a broker)",
     # S10 (SCREENER_SPEC §5 S10, Phase 0 slice): the ETF screen (J) - NSE ETFs from the shared end-of-day history with
     # traded value and the tracking difference against the index each tracks. OFF: GET /api/screener/etf answers 503 and
     # the Screener page shows no ETF button. Information only, no recommendation, places no orders.
@@ -434,17 +481,21 @@ FEATURE_FLAGS: Dict[str, str] = {
     # the same line. A registered flag is OFF by default automatically (DEFAULT_OFF_FLAGS below is computed).
 }
 # Flags that start ON (kill-flag semantics: a feature is on until the operator turns it off). This list is CLOSED: it
-# holds exactly the flags that were ON by default before DEFAULT_OFF_FLAGS was computed. Do not add to it - never turn a
-# flag on; tests/test_flags_default_off_computed.py pins both sets.
+# holds exactly the flags that were ON by default before DEFAULT_OFF_FLAGS was computed, plus the ones the owner himself
+# ordered ON by default (DECISIONS). Do not add to it otherwise - never turn a flag on; tests/test_flags_default_off_computed.py
+# pins both sets.
 DEFAULT_ON_FLAGS: frozenset[str] = frozenset({
     "ai_copilot",          # Phase N kill switch for AI strategy drafts; the AI never places orders (ADR-0006)
     "backtest_optimizer",  # Phase N kill switch for optimisation grid runs; a simulation, places no orders
+    "colour_v2",           # owner ✅ 24 Oct (DECISIONS): colour v2 ON by default; layout only, needs ui_v2, places no orders
     "live_trading",        # Phase N kill switch for new LIVE deployments only; LIVE itself is gated by the trading:live
                            # scope, the plan, step-up and the phase0_paper_only lock (Phase 0 mode seeds this OFF)
     "marketplace",         # Phase N kill switch for marketplace listings and subscriptions
     "options_builder",     # P1-c1 research-only payoff tool, places no orders; saving is options_builder_saved (OFF)
     "public_api",          # Phase N kill switch for public API keys and /api/public/v1
     "self_signup",         # Phase N kill switch for public registration (OFF = invite-only); beta_cohort_gate is separate
+    "terminal",            # owner ✅ 25 Oct (DECISIONS, T-D1): the Terminal ON for all users; needs ui_v2; orders go
+                           # through the existing ticket (PAPER in Phase 0)
 })
 # Phase BB/BE: every other registered flag starts OFF until the operator turns it on. Computed, so a new flag is OFF by
 # default as soon as it is registered in FEATURE_FLAGS - there is no second list to edit.
@@ -472,10 +523,28 @@ async def flag_listing(session: AsyncSession) -> Dict[str, Dict]:
     from app.platform.flag_catalog import info_for
 
     flags = await feature_flags(session)
+    missing = engine_missing_flags()
     for name, entry in flags.items():
         phase_default = deployment_phase.default_for(name)
         entry.update(info_for(name), default_on=(name not in DEFAULT_OFF_FLAGS) if phase_default is None else phase_default)
+        if name in missing:
+            entry["unavailable_reason"] = missing[name]          # the admin sees the real reason; users never do
     return flags
+
+
+# User-friendly pass item 7: a feature whose server-side engine is absent is unavailable to users, whatever its flag.
+# Analyze a chart needs the private analysis engine (app/chart_analyze/provider.py); without it the user nav hides the
+# page, a direct visit shows "Coming soon", and only the admin flag list says why.
+ENGINE_FLAGS = ("chart_analyze", "chart_analyze_strikes", "chart_analyze_share")
+ENGINE_MISSING_REASON = "The chart analysis engine (private package) is not installed on this server, so users do not see this feature."
+
+
+def engine_missing_flags() -> Dict[str, str]:
+    """{flag: reason} for each flag whose engine is not installed here (empty when it is)."""
+    from app.chart_analyze import provider as chart_engine
+    if chart_engine.load() is not None:
+        return {}
+    return {name: ENGINE_MISSING_REASON for name in ENGINE_FLAGS}
 
 
 def _entry_enabled(entry: Optional[Dict], tenant_id: Optional[int]) -> bool:
@@ -527,7 +596,11 @@ async def features_for_tenant(session: AsyncSession, tenant_id: Optional[int]) -
     # (same answer as flag_enabled per flag, which re-read and re-resolved all flags for each of them: N x N work on
     # every GET /api/system/features, which the UI v2 shell re-reads as the trader moves between pages).
     flags = await feature_flags(session)
-    return {name: _entry_enabled(flags.get(name), tenant_id) for name in FEATURE_FLAGS}
+    answer = {name: _entry_enabled(flags.get(name), tenant_id) for name in FEATURE_FLAGS}
+    for name in engine_missing_flags():                     # item 7: no engine, no feature for users
+        if name in answer:
+            answer[name] = False
+    return answer
 
 
 async def require_flag(session: AsyncSession, name: str, tenant_id: Optional[int]) -> None:

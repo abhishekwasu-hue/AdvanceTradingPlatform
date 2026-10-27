@@ -60,32 +60,39 @@ function trimZeros(s: string): string {
 }
 
 /**
- * Rupees: formatINR(124500) -> "₹1,24,500.00"; negatives "−₹700.00".
- * `compact` (tiles only): "₹1.25 L", "₹2.4 Cr"; below one lakh the whole rupees, "₹85,000".
+ * The money rule (owner's user-friendly pass, 23 Oct): one formatter, two precisions.
+ * - Summaries, cards, tiles and sentences show WHOLE rupees with Indian grouping: formatINR(123456.4) -> "₹1,23,456".
+ * - Paise only where they matter - order tickets, fills and the P&L detail of a closed trade - and only when the caller
+ *   asks for them: formatINR(123456.4, { paise: true }) -> "₹1,23,456.40".
+ * - `compact` (narrow tiles): whole rupees up to one crore, then "₹2.4 Cr" - the lakh shorthand is not used, so a
+ *   card reads "₹1,23,456" and never "₹1.23 L".
+ * Negatives use "−" ("−₹700"); a figure that rounds to zero is never signed.
  */
-export function formatINR(v: Num, opts: { compact?: boolean } = {}): string {
+export interface MoneyOptions {
+  /** Two decimals: order tickets, fills and P&L detail rows only. */
+  paise?: boolean;
+  /** Narrow tiles: "₹2.4 Cr" from one crore up. Ignored with `paise`. */
+  compact?: boolean;
+}
+
+export function formatINR(v: Num, opts: MoneyOptions = {}): string {
   if (!finite(v)) return EMPTY;
-  if (!opts.compact) {
-    const sign = v < 0 && !roundsToZero(v, 2) ? MINUS : "";
-    return `${sign}${RUPEE}${magnitude(v, 2)}`;
-  }
+  const decimals = opts.paise ? 2 : 0;
   const abs = Math.abs(v);
   let body: string;
-  const lakhs = Number((abs / 1e5).toFixed(2));
-  if (abs >= 1e7 || lakhs >= 100) body = `${trimZeros(magnitude(abs / 1e7, 2))} Cr`;     // 1,00,000 Cr and up stay grouped
-  else if (Math.round(abs) >= 1e5) body = `${trimZeros(lakhs.toFixed(2))} L`;
-  else body = magnitude(abs, 0);
-  const sign = v < 0 && body !== "0" ? MINUS : "";
+  if (opts.compact && !opts.paise && Math.round(abs) >= 1e7) body = `${trimZeros(magnitude(abs / 1e7, 2))} Cr`;   // 1,00,000 Cr and up stay grouped
+  else body = magnitude(abs, decimals);
+  const sign = v < 0 && !roundsToZero(v, decimals) ? MINUS : "";
   return `${sign}${RUPEE}${body}`;
 }
 
-/** Signed rupees, for P&L: "+₹3,120.00" / "−₹700.00". Zero (after rounding) is "₹0.00": neither profit nor loss. */
-export function formatSignedINR(v: Num, opts: { compact?: boolean } = {}): string {
+/** Signed rupees, for P&L: "+₹3,120" / "−₹700" ({ paise: true }: "+₹3,120.50"). Zero after rounding is "₹0": neither
+ * profit nor loss. */
+export function formatSignedINR(v: Num, opts: MoneyOptions = {}): string {
   if (!finite(v)) return EMPTY;
   const plain = formatINR(v, opts);
   if (plain.startsWith(MINUS)) return plain;
-  const zero = opts.compact ? plain === `${RUPEE}0` : roundsToZero(v, 2);
-  return zero ? plain : `+${plain}`;
+  return roundsToZero(v, opts.paise ? 2 : 0) ? plain : `+${plain}`;
 }
 
 /** The decimals a tick size implies: 0.05 -> 2, 0.0025 -> 4, 1 -> 0. A missing or odd tick means 2 (NSE equity). */
@@ -195,4 +202,45 @@ export function formatDateTimeIST(v: When, opts: { seconds?: boolean } = {}): st
   const ms = instant(v);
   if (!Number.isFinite(ms)) return EMPTY;
   return `${formatDateIST(ms)}, ${formatTimeIST(ms, opts)}`;
+}
+
+// --- Compact Indian units (UI-H Wave 0, H4) -------------------------------------------------------------------------
+
+/**
+ * A count in compact Indian units, for OI, volume and other non-money figures: 1,52,00,000 -> "1.52 Cr",
+ * 6,00,000 -> "6 L", 59,000 -> "59 K", 950 -> "950". Below 1,000 the number is shown whole (or with `decimals` if
+ * asked by `small`). `decimals` (default 2) fixes the places of the scaled figure; trailing zeros are dropped unless
+ * `fixed` is set (a table column that must line up). Negatives use "−". Pair it with the full value on tap / hover
+ * (IndianNumber does this), since a compact figure hides the last digits.
+ */
+export function formatCompactIN(v: Num, opts: { decimals?: number; fixed?: boolean; small?: number } = {}): string {
+  if (!finite(v)) return EMPTY;
+  const decimals = opts.decimals ?? 2;
+  const abs = Math.abs(v);
+  const scale = (n: number, unit: string) => {
+    const text = magnitude(abs / n, decimals);
+    return `${opts.fixed ? text : trimZeros(text)} ${unit}`;
+  };
+  let body: string;
+  // The unit follows the ROUNDED figure, so 99,999.6 is "1 L", never "100 K".
+  if (Number((abs / 1e7).toFixed(decimals)) >= 1) body = scale(1e7, "Cr");
+  else if (Number((abs / 1e5).toFixed(decimals)) >= 1) body = scale(1e5, "L");
+  else if (Number((abs / 1e3).toFixed(decimals)) >= 1) body = scale(1e3, "K");
+  else body = magnitude(abs, opts.small ?? 0);
+  const zero = !/[1-9]/.test(body);
+  return `${v < 0 && !zero ? MINUS : ""}${body}`;
+}
+
+/** Signed compact count, for a change in OI: "+15 K" / "−15 K" (zero unsigned). */
+export function formatSignedCompactIN(v: Num, opts: { decimals?: number; fixed?: boolean } = {}): string {
+  if (!finite(v)) return EMPTY;
+  const plain = formatCompactIN(v, opts);
+  return v > 0 && /[1-9]/.test(plain) ? `+${plain}` : plain;
+}
+
+/** The meaning of a signed figure, for its colour: up (above zero), down (below), flat (zero or missing). */
+export type Meaning = "up" | "down" | "flat";
+export function meaningOf(v: Num, decimals = 2): Meaning {
+  if (!finite(v) || roundsToZero(v, decimals)) return "flat";
+  return v > 0 ? "up" : "down";
 }

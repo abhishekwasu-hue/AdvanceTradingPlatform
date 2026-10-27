@@ -15,7 +15,7 @@ from tests.test_phase_l_ai import _owner
 
 BASE = "/api/me/prefs"
 CHART_DEFAULTS = {"theme": "app", "grid": False, "candle_colors": None, "indicators": {"volume": True, "rsi": True},
-                  "reader_overlay": False}
+                  "reader_overlay": False, "timeframe_favourites": ["5min", "15min", "60min", "day"]}
 
 
 def _run(coro):
@@ -49,7 +49,7 @@ def test_defaults_before_anything_is_saved():
     got = client.get(BASE, headers=who["headers"])
     assert got.status_code == 200, got.text
     assert got.json()["prefs"]["chart"] == CHART_DEFAULTS and got.json()["versions"]["chart"] == 0
-    assert set(got.json()["prefs"]) == set(got.json()["versions"]) == {"chart", "setup", "oc_analyses", "fno_baskets", "appearance", "tours", "trading_defaults", "daily_rhythm", "fno"}      # the allow-list, exactly (OC3 oc_analyses, FNO-2 fno_baskets, item 1 appearance, MO2 tours, part C trading_defaults, MO4 daily_rhythm, FNO-8B-28 fno)
+    assert set(got.json()["prefs"]) == set(got.json()["versions"]) == {"chart", "setup", "oc_analyses", "fno_baskets", "appearance", "tours", "trading_defaults", "daily_rhythm", "fno", "smart_execution", "notices", "option_chain", "terminal"}      # the allow-list, exactly (B4 option_chain, OC3 oc_analyses, FNO-2 fno_baskets, item 1 appearance, MO2 tours, part C trading_defaults, MO4 daily_rhythm, FNO-8B-28 fno, TM Part 7 smart_execution, TT12-1 notices)
     assert prefs.defaults("chart") == CHART_DEFAULTS                    # no grid by default; volume and RSI on
 
 
@@ -64,7 +64,7 @@ def test_round_trip_fills_defaults_and_bumps_the_version():
     got = client.get(BASE, headers=who["headers"]).json()
     assert got["versions"]["chart"] == 2
     # a PUT replaces the namespace: the colours left out are back to the theme's own
-    assert got["prefs"]["chart"] == {"theme": "light", "grid": True, "candle_colors": None,
+    assert got["prefs"]["chart"] == {**CHART_DEFAULTS, "theme": "light", "grid": True,
                                      "indicators": {"volume": True, "rsi": False}, "reader_overlay": True}
 
 
@@ -227,3 +227,15 @@ def test_first_save_race_with_a_version_is_a_409(monkeypatch):
     _hide_the_row_once(monkeypatch)
     assert _put(who, {"theme": "light"}, version=0).status_code == 409
     assert client.get(BASE, headers=who["headers"]).json()["prefs"]["chart"]["theme"] == "dark"
+
+
+def test_tf1_timeframe_favourites_round_trip_and_are_validated():
+    """TF-1: the starred timeframes are stored per user; only the chart's own timeframes, each once, at most nine."""
+    who = _who("tf1")
+    saved = _put(who, {"timeframe_favourites": ["day", "1min", "week"]})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["value"]["timeframe_favourites"] == ["day", "1min", "week"]
+    assert client.get(BASE, headers=who["headers"]).json()["prefs"]["chart"]["timeframe_favourites"] == ["day", "1min", "week"]
+    assert _put(who, {"timeframe_favourites": []}).json()["value"]["timeframe_favourites"] == []
+    for bad in (["2min"], ["5min", "5min"], "5min", ["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month", "day"]):
+        assert _put(who, {"timeframe_favourites": bad}).status_code == 422, bad

@@ -7,11 +7,14 @@ behind the Option chain "Charts" view (app/option_chain/charts.py), behind the `
   per-user rate limit (`chains_rate_limit`, shared with the chain and the analyses).
 * **The session** is the OI collector's stored slots of today (`oi_snapshots` / `strike_oi_snapshots`), today's
   first-seen OI per strike (`oi_day_baselines`, used only when today's first stored slot is this expiry) and the last
-  stored chain of earlier sessions (the IV change). With the own-broker tier on none of these shared rows are read.
+  stored chain of earlier sessions (the IV change). With the own-broker tier on none of these shared rows are read:
+  the session is the user's OWN earlier reads of today instead (B1, app/option_chain/own_snapshots.py), and this read
+  is stored as his session snapshot (the earlier sessions' IV change is not built from them).
 * **Plain states, never sample data:** `no_broker`, `unavailable`, `no_data`, `ok` (as the analyses). A chart without
   two readings yet says it builds through the session.
 
-Read-only: it stores nothing but the usage count, and no order path is reached (ADR-0006).
+It stores the usage count and, with the own-broker tier on, the user's own chain read (B1); no order path is reached
+(ADR-0006).
 """
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -25,7 +28,7 @@ from app.core import config
 from app.db.models import User
 from app.db.session import get_session
 from app.market_data import candles_routes
-from app.option_chain import analyses, charts, snapshots
+from app.option_chain import analyses, as_of, charts, own_snapshots, snapshots
 from app.option_chain.analyses_routes import NO_BROKER, NO_CHAIN, UNAVAILABLE, _read_chain, _record, _require_flag
 from app.option_chain.snapshots import IST
 
@@ -37,17 +40,26 @@ def _state(base: Dict[str, Any], state: str, message: str) -> Dict[str, Any]:
     return {**base, "state": state, "message": message, "charts": [], "facts": None}
 
 
-async def _session_data(session: AsyncSession, underlying: str, chain_expiry: str, now: datetime):
+async def _session_data(session: AsyncSession, tenant_id: int, underlying: str, chain_expiry: str, now: datetime):
     """(today's stored readings, the baselines when they belong to this expiry, the earlier sessions' closes)."""
     today = now.astimezone(IST).date()
-    slots = await snapshots.day_chains(session, underlying, today)
+    slots = await snapshots.day_chains(session, underlying, today, tenant_id=tenant_id)
     readings = [charts.Reading(s.captured_at, s.chain, s.future_price, s.future_oi) for s in slots]
     baselines: Dict[float, Any] = {}
     if slots and analyses._same_expiry(slots[0].chain.expiry, chain_expiry):
-        baselines = await snapshots.baselines(session, underlying, today)
-    closes = await snapshots.recent_session_closes(session, underlying, today, EARLIER_SESSIONS)
+        baselines = await snapshots.baselines(session, underlying, today, tenant_id=tenant_id)
+    closes = await snapshots.recent_session_closes(session, underlying, today, EARLIER_SESSIONS, tenant_id=tenant_id)
     earlier = [charts.EarlierSession(c.day, c.last.captured_at, analyses.clean_spot(c.last.chain), c.prices) for c in closes]
     return readings, baselines, earlier
+
+
+async def _own_session_data(session: AsyncSession, user: User, underlying: str, chain_expiry: str, now: datetime):
+    """B1 (own-broker tier): today's readings and baselines from the user's OWN stored reads only; no earlier sessions."""
+    stored = [s for s in await own_snapshots.day(session, user, underlying, now.astimezone(IST).date()) if s.captured_at < now]
+    readings = [charts.Reading(s.captured_at, s.chain()) for s in stored]
+    same = [own for own in own_snapshots.one_expiry(stored, now.astimezone(IST).date())
+            if analyses._same_expiry(own.chain.expiry, chain_expiry)]
+    return readings, own_snapshots.baselines(same), []
 
 
 @router.get("/charts", dependencies=[Depends(_require_flag), Depends(candles_routes.chains_rate_limit)])
@@ -83,14 +95,23 @@ async def option_chain_charts(symbol: str = Query(..., min_length=1, max_length=
     readings: List[charts.Reading] = []
     baselines: Dict[float, Any] = {}
     earlier: List[charts.EarlierSession] = []
-    if not byob:
-        readings, baselines, earlier = await _session_data(session, underlying, chain.expiry, now)
+    if byob:                                    # B1: his own reads are his session; this one is stored as read
+        readings, baselines, earlier = await _own_session_data(session, user, underlying, chain.expiry, now)
+    else:
+        readings, baselines, earlier = await _session_data(session, user.tenant_id, underlying, chain.expiry, now)
     settings = await snapshots.settings_for(session, user.tenant_id, underlying)
     body = charts.compute(chain, readings, now, each_side=strikes, interval=interval, baselines=baselines, earlier=earlier,
-                          settings=settings, collect_span=config.OI_BANNER_COLLECT_SPAN, history_off=byob)
+                          settings=settings, collect_span=config.OI_BANNER_COLLECT_SPAN)
     spot = analyses.clean_spot(chain).underlying_ltp
-    return {**base, "state": "ok", "message": None, "spot": spot, "data_as_of": now.isoformat(),
-            "source": {"broker": record.broker_name, "account_label": record.account_label}, **body}
+    # B2a: the chain's capture time, or the last session close while the market is closed (never the request time).
+    when = await as_of.chain_as_of(session, underlying, now)
+    spot, spot_source = await as_of.resolve_spot(user, session, underlying, chain, spot, when, record.broker_name, record.account_label)
+    out = {**base, "state": "ok", "message": None, "spot": spot, "spot_source": spot_source, "data_as_of": when.at.isoformat(),
+           "market_closed": when.closed,
+           "source": {"broker": record.broker_name, "account_label": record.account_label}, **body}
+    if byob:                                    # B1: this read becomes his session snapshot (last: the answer is built)
+        await own_snapshots.record(session, user, record, underlying, chain, now)
+    return out
 
 
 __all__ = ["router", "EARLIER_SESSIONS"]

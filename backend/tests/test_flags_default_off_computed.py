@@ -75,9 +75,13 @@ OLD_DEFAULT_ON = frozenset({
 })
 
 
+# Flags the owner himself ordered ON by default (DECISIONS): the only additions to the closed list.
+OWNER_DEFAULT_ON = frozenset({"colour_v2", "terminal"})   # 24 Oct: colour v2; 25 Oct: the Terminal (T-D1) - ON by default
+
+
 def test_default_on_is_exactly_the_old_set():
-    # Closed list: a new flag never lands here (never turn a flag on).
-    assert controls.DEFAULT_ON_FLAGS == OLD_DEFAULT_ON
+    # Closed list: a new flag never lands here (never turn a flag on) unless the owner orders it (OWNER_DEFAULT_ON).
+    assert controls.DEFAULT_ON_FLAGS == OLD_DEFAULT_ON | OWNER_DEFAULT_ON
     assert isinstance(controls.DEFAULT_ON_FLAGS, frozenset)
 
 
@@ -93,8 +97,8 @@ def test_computed_default_off_matches_the_old_literal():
     # Nothing that was OFF disappeared from the registry (DEFAULT_OFF had no entry outside FEATURE_FLAGS).
     assert OLD_DEFAULT_OFF <= controls.DEFAULT_OFF_FLAGS
     assert OLD_DEFAULT_OFF <= set(controls.FEATURE_FLAGS)
-    # Any flag registered after the snapshot is OFF by default.
-    newer = set(controls.FEATURE_FLAGS) - old_era
+    # Any flag registered after the snapshot is OFF by default, except the ones the owner ordered ON (OWNER_DEFAULT_ON).
+    newer = set(controls.FEATURE_FLAGS) - old_era - OWNER_DEFAULT_ON
     assert newer <= controls.DEFAULT_OFF_FLAGS
     assert controls.DEFAULT_OFF_FLAGS == frozenset(controls.FEATURE_FLAGS) - controls.DEFAULT_ON_FLAGS
     assert isinstance(controls.DEFAULT_OFF_FLAGS, frozenset)

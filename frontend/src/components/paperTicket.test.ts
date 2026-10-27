@@ -49,6 +49,8 @@ describe("plan-before-trade ticket helpers (Z5 / P1-d)", () => {
 
   it("says when a looser limit starts", () => {
     expect(pendingLine({ pending: null, labels: {} as never })).toBeNull();
+    expect(pendingLine({ pending: { values: { min_rr: null }, from: "2026-10-13" }, labels: { min_rr: "Minimum reward:risk" } as never }))
+      .toContain("Minimum reward:risk not set");                                      // TT-12: a cleared limit
     const line = pendingLine({ pending: { values: { daily_loss_pct: 5 }, from: "2026-10-13" }, labels: { daily_loss_pct: "Daily loss limit, % of capital" } as never });
     expect(line).toBe("Looser limits take effect on 13 Oct (not during the day they protect): Daily loss limit, % of capital 5");
   });

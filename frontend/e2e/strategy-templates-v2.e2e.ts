@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
+import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
 
 /**
@@ -237,3 +238,16 @@ test.describe("Strategy templates behaviour", () => {
     await expect(form(page).getByLabel("Chart timeframe")).toHaveCount(0);
   });
 });
+
+/** UX-11 PR 5 (owner, 27 Oct): numbers first - every Strategy templates card passes the text budget; the visible-word count is printed. */
+for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test.describe(`v2 Strategy templates text budget ${size.width}`, () => {
+    test.use({ viewport: size });
+    test("every card fits the text budget", async ({ page }) => {
+      await open(page, { theme: "light" });
+      console.log(`[words] Strategy templates ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
+  });
+}

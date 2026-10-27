@@ -11,13 +11,14 @@ import type { PageProps } from "../routes";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, StateChipV2 } from "../trading/PartsV2";
 import type { CustomStrategyResponse, Deployment, StrategyInfo } from "../types";
 import { DEFAULTS_PATH, appliedLine, useTradingDefaults, type TradingDefaults } from "../settings/tradingDefaults";
+import { Details } from "../ui/numbersFirst";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
 import { draftFromState, formSymbol } from "../copilot/strategyDraft";
 import CopilotDraftV2 from "./CopilotDraftV2";
 import {
   IDEA_SYMBOL, READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, paperBotRequestWithDefaults, sortBots,
-  startSummary, strategyLine, symbolProblem, withIdeaLots, type Preselect,
+  startSummaryParts, strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
 import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
 import { settingRows, templateLinkFromSearch, testPathFor, typedSettings, type TemplateLink } from "../strategyTemplates/link";
@@ -403,6 +404,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const exitIssue = exitChoices && exitsNow ? exitProblem(exitsNow, exitChoices) : null;
   const exitsBody = exitChoices && exitsNow ? templateExitsBody(exitsNow, exitChoices, cls) : null;
   const request = exitsBody ? { ...adopted, template_exits: exitsBody } : adopted;
+  const summary = startSummaryParts(symbol, info, request);
   const setExit = (patch: Partial<ExitPick>) => { setExitPick((p) => ({ ...(exitsNow ?? p), ...patch })); setResult(null); };
 
   async function start() {
@@ -446,7 +448,6 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
               <optgroup label="Strategy templates">{templates.map((t) => <option key={t.id} value={PICK + t.id}>{t.name}</option>)}</optgroup>
             )}
           </select>
-          {line && <p id={ids.line} className="mt-space-1 text-t14 text-fg-muted">{line}</p>}
         </div>
         {picked && (
           <div data-template={picked.id}>
@@ -548,7 +549,12 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
           </fieldset>
         )}
         <div className="space-y-space-2">
-          <p className="text-t14 text-fg-muted">{startSummary(symbol, info, request)}</p>
+          <p className="text-t14 text-fg-muted" data-start-summary>{summary.line}</p>
+          {/* UX-11 U1: the one visible line above; the strategy's own sentence and the rest of the summary on demand. */}
+          <Details id="paperbot.start" className="mt-0">
+            {line && <p id={ids.line}>{line}</p>}
+            <p>{summary.more}</p>
+          </Details>
           {withLots !== built && <p className="text-t13 text-fg-muted" data-idea-lots>The size comes from your idea.</p>}
           {offered.length > 0 && (
             <div className="space-y-space-1 rounded-control border border-subtle p-space-3" data-defaults>

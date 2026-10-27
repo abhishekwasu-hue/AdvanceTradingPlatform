@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { DEMO_ACTIVATION } from "../src/growth/growth.fixture";
 import { openAdmin, type Theme } from "./adminMocks";
 import { mockApi } from "./mockApi";
+import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
 
 /**
@@ -186,3 +187,16 @@ test.describe("C13 behaviour", () => {
     expect(await page.evaluate(() => localStorage.getItem("atp.referral.code"))).toBeNull();
   });
 });
+
+/** UX-11 PR 5 (owner, 27 Oct): numbers first - every Learn card passes the text budget; the visible-word count is printed. */
+for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test.describe(`v2 Learn text budget ${size.width}`, () => {
+    test.use({ viewport: size });
+    test("every card fits the text budget", async ({ page }) => {
+      await openLearn(page, "light");
+      console.log(`[words] Learn ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
+  });
+}

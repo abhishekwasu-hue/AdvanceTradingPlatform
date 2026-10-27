@@ -97,6 +97,22 @@ export function paperBotRequestWithDefaults(strategyId: string, symbol: string, 
  * what that request trades; without one (or with today's request) the words are today's. */
 export function startSummary(symbol: string, info: Pick<StrategyInfo, "timeframes"> | null | undefined,
   req?: Pick<DeploymentCreateRequest, "instrument_kind" | "expiry_rule" | "max_lots" | "option_strategy">): string {
+  const { what, when } = summaryWords(symbol, info, req);
+  return `Trades ${what}, ${when}. ${PAPER_NOTE}`;
+}
+
+/** UX-11 U1: the same words in two parts - the one visible line ("Trades a NIFTY 50 option at the nearest expiry, 1 lot.")
+ * and the rest, for the card's Details. Nothing is dropped. */
+export function startSummaryParts(symbol: string, info: Pick<StrategyInfo, "timeframes"> | null | undefined,
+  req?: Pick<DeploymentCreateRequest, "instrument_kind" | "expiry_rule" | "max_lots" | "option_strategy">): { line: string; more: string } {
+  const { what, when } = summaryWords(symbol, info, req);
+  return { line: `Trades ${what}.`, more: `${when.charAt(0).toUpperCase()}${when.slice(1)}. ${PAPER_NOTE}` };
+}
+
+const PAPER_NOTE = "Paper money only; your risk limits apply.";
+
+function summaryWords(symbol: string, info: Pick<StrategyInfo, "timeframes"> | null | undefined,
+  req?: Pick<DeploymentCreateRequest, "instrument_kind" | "expiry_rule" | "max_lots" | "option_strategy">): { what: string; when: string } {
   const s = cleanSymbol(symbol) || "the symbol";
   const lots = req?.max_lots ?? 1;
   const expiry = EXPIRY_WORDS[req?.expiry_rule ?? "NEAREST"] ?? "nearest";
@@ -108,7 +124,7 @@ export function startSummary(symbol: string, info: Pick<StrategyInfo, "timeframe
     : structure ? `${s} options as a ${structureLabel(structure).toLowerCase()} at the ${expiry} expiry, ${size}`
     : `a ${s} option at the ${expiry} expiry, ${size}`;
   const when = isSwing(info) ? "held for days" : "closed before the market closes";
-  return `Trades ${what}, ${when}. Paper money only; your risk limits apply.`;
+  return { what, when };
 }
 
 export type BotState = "running" | "paused" | "stopped";

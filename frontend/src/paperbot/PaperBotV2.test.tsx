@@ -11,7 +11,7 @@ import modelSource from "./model.ts?raw";
 import pageSource from "./PaperBotV2.tsx?raw";
 import { BotRow, StartBotV2 } from "./PaperBotV2";
 import {
-  READY, botName, botState, botStatusText, botWhat, cleanSymbol, isSwing, lastChecked, paperBotRequest, sortBots, startSummary, strategyLine,
+  READY, botName, botState, botStatusText, botWhat, cleanSymbol, isSwing, lastChecked, paperBotRequest, sortBots, startSummary, startSummaryParts, strategyLine,
   symbolProblem,
 } from "./model";
 
@@ -100,6 +100,10 @@ describe("UX2 fix 4 model", () => {
   it("the start summary says what is traded, how long it is held, and paper only", () => {
     expect(startSummary("NIFTY 50", intraday)).toBe("Trades a NIFTY 50 option at the nearest expiry, 1 lot, closed before the market closes. Paper money only; your risk limits apply.");
     expect(startSummary("RELIANCE", daily)).toBe("Trades RELIANCE shares, held for days. Paper money only; your risk limits apply.");
+    // UX-11 U1: one visible line, the rest on demand - the same words, none dropped.
+    expect(startSummaryParts("NIFTY 50", intraday)).toEqual({ line: "Trades a NIFTY 50 option at the nearest expiry, 1 lot.",
+      more: "Closed before the market closes. Paper money only; your risk limits apply." });
+    expect(startSummaryParts("RELIANCE", daily).line).toBe("Trades RELIANCE shares.");
   });
 
   it("status in words: running, paused by you, a readable reason, never an internal code", () => {

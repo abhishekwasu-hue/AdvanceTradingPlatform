@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectPhoneLayout } from "./phoneLayout";
+import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { AI_CLAUDE, AI_FAILED, AI_NONE, FEATURES, TELEGRAM_PLATFORM, UPSTOX, ZERODHA_LOGIN, openSettings, type Theme } from "./settingsMocks";
 import { warnOnManySolidBrand } from "./solidBrand";
 
@@ -244,3 +245,16 @@ test.describe("ui_v2 off", () => {
     await expect(page).toHaveURL(/\/settings#integrations$/);
   });
 });
+
+/** UX-11 PR 5 (owner, 27 Oct): numbers first - every Settings index card passes the text budget; the visible-word count is printed. */
+for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test.describe(`v2 Settings index text budget ${size.width}`, () => {
+    test.use({ viewport: size });
+    test("every card fits the text budget", async ({ page }) => {
+      await openSettings(page, "/settings", { theme: "light", ...FULL });
+      console.log(`[words] Settings index ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
+  });
+}

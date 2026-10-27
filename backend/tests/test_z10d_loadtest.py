@@ -80,7 +80,8 @@ def test_login_is_judged_apart_at_two_seconds_with_no_failed_login_and_the_api_a
         return s
     ok = loadtest.report(stats(1_900.0), 100, 10.0)
     assert ok["slo_pass"] and ok["api_pass"] and ok["login_pass"]
-    assert ok["login"] == {"n": 100, "p95_ms": 1900.0, "p95_limit_ms": 2000.0, "errors": 0, "error_limit": 0, "pass": True}
+    assert ok["login"] == {"n": 100, "p95_ms": 1900.0, "p95_limit_ms": 2000.0, "errors": 0, "error_limit": 0, "pass": True,
+                           "budget": ""}                                   # no bcrypt calibration given: the plain 2 s
     assert ok["scenarios"]["login"]["p95_limit_ms"] == 2000.0 and ok["scenarios"]["dashboard /api/auth/me"]["p95_limit_ms"] == 500.0
     slow = loadtest.report(stats(2_100.0), 100, 10.0)                     # login over 2 s: the API still passes
     assert not slow["slo_pass"] and slow["api_pass"] and not slow["login_pass"]

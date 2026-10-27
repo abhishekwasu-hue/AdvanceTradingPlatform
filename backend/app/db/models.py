@@ -349,6 +349,8 @@ class TradeRecord(Base):
     # console paper-execute priced from candles the browser sent. The PAPER account and the ladder leave such trades out.
     price_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     broker_account_id: Mapped[int | None] = mapped_column(ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    # M45 MA-3: the simulated PAPER account a multi-account child order was placed on (NULL = the user's one paper book).
+    paper_sub_account_id: Mapped[int | None] = mapped_column(ForeignKey("paper_sub_accounts.id", ondelete="SET NULL"), nullable=True)
     # Phase D4: the broker's id for the order that closed a LIVE position (the SL when the
     # exchange closed us at the stop, else the market exit), so contract-note legs can be
     # matched to both sides of the trade.
@@ -2605,6 +2607,28 @@ class ChartAnalysisRecord(Base):
     started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)       # when the running analysis was claimed
     analysed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class PaperSubAccountRecord(Base):
+    """M45 MA-3 (docs/design/M45_MULTI_ACCOUNT.md, MB-7): a simulated PAPER account of one user, so multi-account
+    routing behaves the same on PAPER as it will on LIVE. Kept apart from `broker_accounts` on purpose: a simulated row
+    must never become a candidate of LIVE routing (Phase T). Capital is the user's own setting; role / group / sizing
+    as on the registry (MB-1 / MB-2). Child PAPER trades carry `trades.paper_sub_account_id`."""
+
+    __tablename__ = "paper_sub_accounts"
+    __table_args__ = (UniqueConstraint("user_id", "label", name="uq_paper_sub_account_label"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    label: Mapped[str] = mapped_column(String(50), nullable=False)
+    capital: Mapped[float] = mapped_column(Money, nullable=False)
+    role: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    group_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    sizing_mode: Mapped[str] = mapped_column(String(12), nullable=False, default="MULTIPLIER", server_default="MULTIPLIER")
+    sizing_value: Mapped[float] = mapped_column(Float, nullable=False, default=1.0, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 class PaperAccountRecord(Base):

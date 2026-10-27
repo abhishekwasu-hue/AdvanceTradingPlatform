@@ -21,6 +21,7 @@ from app.auth.scopes import require_scope
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.db.models import BrokerAccountRecord, User
 from app.db.session import get_session
+from app.paper.fno_routes import OrderBody
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -158,3 +159,81 @@ async def set_my_group(account_id: int, body: GroupBody, user: User = Depends(re
     except multi.RegistryRefused as exc:
         raise _refused(exc) from None
     return await multi.describe(session, account)
+
+
+# --- M45 MA-3: simulated PAPER accounts and multi-account PAPER ticket orders (app/accounts/paper_fanout.py) ----------
+# Behind `ui_v2` + `multi_account` (OFF); the order also needs the paper ticket's own flags. PAPER only.
+
+async def _own_sub_account(session: AsyncSession, user: User, sub_id: int):
+    from app.db.models import PaperSubAccountRecord
+    row = await session.get(PaperSubAccountRecord, sub_id)
+    if row is None or row.user_id != user.id or row.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="No such simulated account")
+    return row
+
+
+@router.get("/mine/paper", dependencies=[Depends(_require_multi)])
+async def my_paper_accounts(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> List[dict]:
+    from app.accounts import paper_fanout
+    return [paper_fanout.describe(a) for a in await paper_fanout.sub_accounts(session, user)]
+
+
+class PaperAccountBody(BaseModel):
+    label: str = Field(min_length=1, max_length=50)
+    capital: float = Field(gt=0, lt=1e12)
+
+
+@router.post("/mine/paper", dependencies=[Depends(_require_multi)])
+async def add_paper_account(body: PaperAccountBody, user: User = Depends(require_trader),
+                            session: AsyncSession = Depends(get_session)) -> dict:
+    from app.accounts import paper_fanout
+    try:
+        return paper_fanout.describe(await paper_fanout.create(session, user, body.label, body.capital))
+    except paper_fanout.FanoutRefused as exc:
+        raise _refused(exc) from None
+
+
+class PaperAccountPatch(BaseModel):
+    role: Optional[str] = None
+    clear_role: bool = False
+    group_name: Optional[str] = Field(default=None, max_length=50)
+    enabled: Optional[bool] = None
+    sizing_mode: Optional[str] = None
+    sizing_value: Optional[float] = Field(default=None, gt=0, lt=1e6)
+    confirm: bool = False
+
+
+@router.patch("/mine/paper/{sub_id}", dependencies=[Depends(_require_multi)])
+async def change_paper_account(sub_id: int, body: PaperAccountPatch, user: User = Depends(require_trader),
+                               session: AsyncSession = Depends(get_session)) -> dict:
+    from app.accounts import paper_fanout
+    row = await _own_sub_account(session, user, sub_id)
+    try:
+        row = await paper_fanout.update(session, user, row, role=body.role, clear_role=body.clear_role, group_name=body.group_name,
+                                        enabled=body.enabled, sizing_mode=body.sizing_mode, sizing_value=body.sizing_value,
+                                        confirm=body.confirm)
+    except paper_fanout.FanoutRefused as exc:
+        raise _refused(exc) from None
+    return paper_fanout.describe(row)
+
+
+class PaperFanoutBody(BaseModel):
+    order: OrderBody
+    run_on: Optional[str] = Field(default=None, max_length=60, description="PRIMARY, PRIMARY+<group> or ALL")
+
+
+@router.post("/mine/paper/order", dependencies=[Depends(_require_multi)])
+async def place_paper_fanout(body: PaperFanoutBody, user: User = Depends(require_trader),
+                             session: AsyncSession = Depends(get_session)) -> dict:
+    """One ticket order on the caller's simulated PAPER accounts: a result row per account (MB-5). Never a broker order."""
+    from app.accounts import paper_fanout
+    from app.ai.worker_bridge import price_lookup_for_user
+    from app.paper.fno_routes import MANUAL, _enabled, place_rate_limit
+    await place_rate_limit(user)
+    await _enabled(session, user)
+    lookup = await price_lookup_for_user(session, user)
+    try:
+        return await paper_fanout.place(session, user, body.order.ask(), override=body.run_on,
+                                        price_lookup=lookup, origin=MANUAL)
+    except paper_fanout.FanoutRefused as exc:
+        raise _refused(exc) from None

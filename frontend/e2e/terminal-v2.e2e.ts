@@ -174,6 +174,7 @@ async function open(page: Page, theme: "light" | "dark", opts: { features?: Reco
     if (url.pathname.endsWith("/basket/evaluate")) return route.fulfill({ json: EVALUATION });
     if (url.pathname.endsWith("/contract")) return route.fulfill({ json: { ...CONTRACT, strike: Number(url.searchParams.get("strike")), right: url.searchParams.get("right") } });
     if (url.pathname.endsWith("/held")) return route.fulfill({ json: [] });
+    if (url.pathname.endsWith("/resting")) return route.fulfill({ json: [] });         // T2: no waiting orders here
     if (url.pathname.endsWith("/risk-budget") || url.pathname.endsWith("/event-risk")) return route.fulfill({ status: 404, json: { detail: "Not found" } });
     const body = request.postDataJSON() as Record<string, unknown>;
     if (url.pathname.endsWith("/order/preview")) return route.fulfill({ json: preview(body) });

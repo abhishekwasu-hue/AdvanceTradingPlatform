@@ -106,3 +106,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | (Marathi, translated) "Default yes, start DH2 / DH6." (after the deploy of b15de0d, health OK) | DATA-H DH2 / DH6: last-session 1-minute fill from the own lake; VAPID default (owner keeps the key in atp-private) |
 | 2026-10-27 | (Marathi, translated) "Start UX-7." | UX-2 plan PR 5 (UX-7 live feel) started in Session B |
 | 2026-10-27 | All aprove, go ahead <br> (reply to: MA-1b #569 screenshots ✅ and start MA-2 sizing) |
+| 2026-10-27 | "Default yes, do web research whenever necessary, don't ask me, and finish this project as early as possible, merge and deploy" | Session B: defaults stand, no questions, merge own PRs on green CI; deploys stay the owner's one command (rules §4), one deploy line after the merges |

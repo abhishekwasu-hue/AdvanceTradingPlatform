@@ -3,10 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/ui";
 import type { ContractNoteIngest, ContractNoteSummary } from "../types";
+import { Details } from "../ui/numbersFirst";
+import { useUiV2 } from "../ui/useFeatures";
 
 /** Phase D4: upload a broker contract note / tradebook CSV so trades carry the broker's actual
  *  charges instead of the platform's estimate. Preview first, then apply. */
 export default function ContractNoteCard({ onApplied }: { onApplied?: () => void }) {
+  const v2 = useUiV2();
   const fileRef = useRef<HTMLInputElement>(null);
   const [broker, setBroker] = useState("");
   const [notes, setNotes] = useState<ContractNoteSummary[]>([]);
@@ -44,13 +47,16 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
 
   return (
     <Card title="Contract notes (actual charges)">
-      <p className="text-xs text-fg-muted mb-3">
-        Charges and P&amp;L on a closed trade are the platform's estimate until you upload your broker's contract note or
-        tradebook CSV for that day. Legs are matched to trades by broker order id first, then by symbol, side, quantity
-        and date; matched trades get the broker's actual charges and a recomputed P&amp;L. Column names from Zerodha,
-        Upstox and most other exports are recognised (symbol, buy/sell, quantity, price, order id, brokerage, STT,
-        exchange charges, GST, SEBI fee, stamp duty or a total). Preview before applying.
-      </p>
+      {/* UX-11 (v2 pages): one short line; how matching works moves under Details. */}
+      {v2 ? <p className="mb-3 text-xs text-fg-muted">Upload your broker's contract note to replace estimated charges.</p> : (
+        <p className="text-xs text-fg-muted mb-3">
+          Charges and P&amp;L on a closed trade are the platform's estimate until you upload your broker's contract note or
+          tradebook CSV for that day. Legs are matched to trades by broker order id first, then by symbol, side, quantity
+          and date; matched trades get the broker's actual charges and a recomputed P&amp;L. Column names from Zerodha,
+          Upstox and most other exports are recognised (symbol, buy/sell, quantity, price, order id, brokerage, STT,
+          exchange charges, GST, SEBI fee, stamp duty or a total). Preview before applying.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <input ref={fileRef} type="file" accept=".csv,text/csv" className="text-xs text-fg-muted" disabled={busy} onChange={() => setPreview(null)} />
         <input className="rounded bg-surface-2 border border-border px-2 py-1 text-sm w-32" placeholder="Broker (optional)" value={broker} onChange={(e) => setBroker(e.target.value)} />
@@ -96,6 +102,11 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
           </ul>
         </div>
       )}
+      {v2 && <Details id="mytrades.contract-notes"><p>Charges and P&amp;L on a closed trade are the platform's estimate until you upload your broker's contract note or
+        tradebook CSV for that day. Legs are matched to trades by broker order id first, then by symbol, side, quantity
+        and date; matched trades get the broker's actual charges and a recomputed P&amp;L. Column names from Zerodha,
+        Upstox and most other exports are recognised (symbol, buy/sell, quantity, price, order id, brokerage, STT,
+        exchange charges, GST, SEBI fee, stamp duty or a total). Preview before applying.</p></Details>}
     </Card>
   );
 }

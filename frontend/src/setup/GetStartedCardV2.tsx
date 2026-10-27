@@ -6,6 +6,7 @@ import { toast } from "../components/Toast";
 import { CARD, LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import { getStartedCard, hideGetStarted, shouldHideForGood, type GetStartedCard } from "./getStarted";
 import { useSetup } from "./useSetup";
+import { ProgressStat } from "../ui/numbersFirst";
 
 /**
  * P3 (the owner's "simple front page"): the "Get started" card at the top of the Dashboard, in both shells - three
@@ -49,7 +50,9 @@ export function GetStartedViewV2({ card, primaryNext = true, onHide }: { card: G
       <div className="flex items-start justify-between gap-space-3">
         <div className="min-w-0">
           <h2 id={titleId} className="text-t15 font-semibold text-fg">Get started</h2>
-          <p className="mt-px text-t13 text-fg-muted">{card.complete ? "All set. Happy trading." : `${card.doneCount} of ${card.steps.length} done`}</p>
+          {/* UX-11 U3: progress as "1 of 3 done" with a thin bar. */}
+          {card.complete ? <p className="mt-px text-t13 text-fg-muted">All set. Happy trading.</p>
+            : <ProgressStat label="Steps" done={card.doneCount} of={card.steps.length} unit="done" className="mt-px w-40 max-w-full" />}
         </div>
         <button type="button" onClick={onHide} aria-label="Hide Get started"
           className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted transition-colors duration-fast hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">

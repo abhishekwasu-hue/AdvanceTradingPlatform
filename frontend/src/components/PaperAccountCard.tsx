@@ -4,6 +4,9 @@ import type { PaperAccount, PaperLadder } from "../types";
 import { Card, StatTile, signClass } from "./ui";
 import { criterionProgress, criterionText, signedMoney } from "./paperLadder";
 import LadderEvidence, { DisciplineWeeks } from "../progression/LadderEvidence";
+import { formatDateTimeIST } from "../ui/format";
+import { Details, KeyValueTable, Signed } from "../ui/numbersFirst";
+import { useUiV2 } from "../ui/useFeatures";
 
 /**
  * Z3-b (beta spec, Phase 0): the signed-in user's own PAPER account - balance, equity, P&L after charges, the
@@ -12,6 +15,8 @@ import LadderEvidence, { DisciplineWeeks } from "../progression/LadderEvidence";
  * N2-1 (flag `ladder_evidence`): the discipline criterion's weekly scores and the "Your figures" block, when sent.
  */
 export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
+  // UX-11 (v2 pages): numbers first - the breakdown as a key-value table and every note under one Details.
+  const v2 = useUiV2();
   const [account, setAccount] = useState<PaperAccount | null>(null);
   const [ladder, setLadder] = useState<PaperLadder | null>(null);
   const [hidden, setHidden] = useState(false);
@@ -42,9 +47,10 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatTile label="Balance" value={account.balance.toLocaleString("en-IN", { maximumFractionDigits: 2 })} />
           <StatTile label="Equity (with open marks)" value={account.equity.toLocaleString("en-IN", { maximumFractionDigits: 2 })} />
-          <StatTile label="Net P&L (after charges)" value={signedMoney(r.net)} tone={r.net > 0 ? "up" : r.net < 0 ? "down" : "default"} />
+          <StatTile label="Net P&L (after charges)" value={v2 ? <Signed value={r.net} kind="count" decimals={2} /> : signedMoney(r.net)} tone={v2 ? "default" : r.net > 0 ? "up" : r.net < 0 ? "down" : "default"} />
           <StatTile label="Closed / open" value={`${account.closed_trades} / ${account.open_positions}`} />
         </div>
+{!v2 && <>
         <p className="text-xs text-fg-muted">
           Start {account.starting_capital.toLocaleString("en-IN")} · gross <span className={signClass(r.gross)}>{signedMoney(r.gross)}</span> − charges {r.charges.toFixed(2)} = net{" "}
           <span className={signClass(r.net)}>{signedMoney(r.net)}</span> · open marks <span className={signClass(account.unrealised)}>{signedMoney(account.unrealised)}</span> ·
@@ -52,6 +58,7 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
           {" "}{account.not_taken.length} not taken (would-have records)
         </p>
         <p className="text-xs text-fg-muted">{account.note}{account.excluded_trades > 0 ? ` (${account.excluded_trades} left out.)` : ""}</p>
+        </>}
 
         {canTrade && (
           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -109,8 +116,24 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
               })}
             </ul>
             {ladder.evidence && <LadderEvidence evidence={ladder.evidence} />}
-            <p className="text-xs text-fg-muted">Figures from your own PAPER trades, as of {new Date(ladder.as_of).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST. Phase 0 has PAPER only.</p>
+            {!v2 && <p className="text-xs text-fg-muted">Figures from your own PAPER trades, as of {new Date(ladder.as_of).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST. Phase 0 has PAPER only.</p>}
           </div>
+        )}
+
+        {v2 && (
+          <Details id="mytrades.paper-account">
+            <KeyValueTable caption="How the net is worked out" rows={[
+              { label: "Starting capital", value: account.starting_capital.toLocaleString("en-IN") },
+              { label: "Gross P&L", value: <Signed value={r.gross} paise /> },
+              { label: "Charges", value: r.charges.toFixed(2) },
+              { label: "Net P&L", value: <Signed value={r.net} paise /> },
+              { label: "Open marks", value: <Signed value={account.unrealised} paise /> },
+              { label: "Proposals approved / rejected / waiting", value: `${account.proposals.approved_by_you} / ${account.proposals.rejected_by_you} / ${account.proposals.pending}` },
+              { label: "Not taken (would-have records)", value: account.not_taken.length },
+            ]} />
+            <p>{account.note}{account.excluded_trades > 0 ? ` (${account.excluded_trades} left out.)` : ""}</p>
+            {ladder && <p>Figures from your own PAPER trades, as of {formatDateTimeIST(ladder.as_of)}. Phase 0 has PAPER only.</p>}
+          </Details>
         )}
       </div>
     </Card>

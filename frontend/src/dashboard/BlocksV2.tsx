@@ -7,6 +7,7 @@ import { DirectionChip } from "../ui/DirectionChip";
 import { checkTone, toneProblem, toneSurfaceClass, type Toned } from "../ui/tone";
 import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2, toneClass } from "./CardV2";
 import { WIN_RATE_DAYS, signTone, type PositionRow, type SignalRow, type TodayTiles } from "./model";
+import { Signed } from "../ui/numbersFirst";
 
 /**
  * UI2-2 (UI v2 proposal §5 blocks 5-7): Open positions (up to five rows, "View all" to My positions), Active signals (up
@@ -40,8 +41,8 @@ export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
                   <div className="font-tabular text-t15 font-medium text-fg">{formatPrice(p.ltp)}</div>
                 </div>
                 <div className="w-28 shrink-0 text-right">
-                  <div className={`font-tabular text-t15 font-semibold ${tone}`}>{formatSignedINR(p.pnl)}</div>
-                  <div className={`font-tabular text-t13 ${tone}`}>{formatPct(p.pnlPct)}</div>
+                  <div className="font-tabular text-t15 font-semibold"><Signed value={p.pnl} /></div>
+                  <div className={`font-tabular text-t13 ${tone}`}><Signed value={p.pnlPct} kind="pct" arrow={false} /></div>
                 </div>
               </li>
             );

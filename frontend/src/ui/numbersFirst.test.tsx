@@ -41,6 +41,8 @@ describe("U2 Signed: one way for every value with a direction", () => {
 
   it("count and compact money keep the full figure as the hover", () => {
     expect(signedParts({ value: -1200, kind: "count" })).toMatchObject({ text: "−1,200", dir: "down" });
+    expect(signedParts({ value: 972.5, kind: "count", decimals: 2 })).toMatchObject({ text: "+972.50", dir: "up" });
+    expect(signedParts({ value: 187500, kind: "count" })).toMatchObject({ text: "+1,87,500", dir: "up" });
     const big = signedParts({ value: 24_000_000, compact: true });
     expect(big.text).toBe("+₹2.4 Cr");
     expect(html(<Signed value={24_000_000} compact />)).toContain(`title="${big.full}"`);
@@ -92,7 +94,9 @@ describe("U4 EmptyState and U5 PageFootnote", () => {
     expect(link).toContain('href="/signals"');
     const button = html(<EmptyState text="Nothing yet." action={{ label: "Try again", onClick: () => undefined }} />);
     expect(button).toContain("<button");
-    expect(html(<PageFootnote>Signals, not advice.</PageFootnote>)).toContain("data-page-footnote");
+    const foot = html(<PageFootnote>Phase 0 has PAPER only.</PageFootnote>);
+    expect(foot).toContain("data-page-footnote");
+    expect(foot).toContain("Information only — never says what to trade. Phase 0 has PAPER only.");
   });
 });
 

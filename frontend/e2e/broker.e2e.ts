@@ -344,3 +344,78 @@ test.describe("desktop 1440", () => {
     await expect(nav.locator("[data-broker-dot='needs_login']")).toBeVisible();
   });
 });
+
+/** M45 MA-1b: "Primary and secondary accounts" in the Broker page's Advanced section (`ui_v2` + `multi_account`). */
+const ACCOUNT = { broker_account_identifier: null, status: "ACTIVE", is_default: true, available_balance: null, used_margin: null,
+  realized_pnl: null, unrealized_pnl: null, last_sync_at: null, last_sync_error: null, created_at: null, enabled: true };
+const MINE = [
+  { ...ACCOUNT, id: 11, broker_name: "upstox", account_label: "primary", display_name: "Upstox main", role: "PRIMARY", group_name: null,
+    token_status: "VALID", token_expires_at: "2026-10-09T03:30:00+05:30" },
+  { ...ACCOUNT, id: 12, broker_name: "zerodha", account_label: "primary", display_name: "Zerodha family", role: "SECONDARY", group_name: "Family",
+    token_status: "EXPIRED", token_expires_at: null },
+  { ...ACCOUNT, id: 13, broker_name: "dhan", account_label: "second", display_name: "Dhan second", role: null, group_name: null,
+    token_status: "UNKNOWN", token_expires_at: null, enabled: false, status: "DISABLED" },
+];
+
+async function openMulti(page: Page, theme: "light" | "dark" = "light", posted: unknown[] = []) {
+  await open(page, "/broker", { theme, session: LATER, mocks: { features: { ui_v2: true, multi_account: true }, connections: [UPSTOX_DATA, ZERODHA_LOGIN] },
+    before: async (p) => {
+      await p.route(/\/api(?:\/v1)?\/accounts$/, (r) => r.fulfill({ json: [] }));
+      await p.route(/\/api(?:\/v1)?\/accounts\/mine$/, (r) => r.fulfill({ json: { accounts: MINE, unaccounted_live_trades: [] } }));
+      await p.route(/\/api(?:\/v1)?\/accounts\/mine\/\d+\/role$/, (r) => {
+        const body = r.request().postDataJSON() as { role: string; confirm: boolean };
+        posted.push(body);
+        if (body.role === "PRIMARY" && !body.confirm) {
+          return r.fulfill({ status: 409, json: { detail: { message: "You already have a Primary account.", code: "confirm_primary",
+            current_primary: { id: 11, name: "Upstox main" } } } });
+        }
+        return r.fulfill({ json: { ...MINE[2], role: body.role } });
+      });
+    } });
+  await page.locator("[data-broker-advanced] summary").click();
+  const card = page.getByTestId("multi-account-card");
+  await expect(card).toBeVisible();
+  await expect(card.getByTestId("multi-account-11")).toContainText("Primary");
+  return card;
+}
+
+test.describe("Primary and secondary accounts (M45 MA-1b)", () => {
+  for (const [label, size] of [["1440", DESKTOP], ["390", PHONE]] as const) {
+    test.describe(label, () => {
+      test.use(size === PHONE ? { viewport: size, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: size, deviceScaleFactor: 1 });
+      for (const theme of label === "1440" ? THEMES : (["light"] as const)) {
+        test(`looks the same (${theme})`, async ({ page }) => {
+          const card = await openMulti(page, theme);
+          await expect(card).toHaveScreenshot(`broker-multi-account-${label}-${theme}.png`, shot);
+        });
+      }
+    });
+  }
+
+  test.describe("behaviour", () => {
+    test.use({ viewport: DESKTOP, deviceScaleFactor: 1 });
+
+    test("moving the Primary asks first, then sends the confirmation", async ({ page }) => {
+      const posted: unknown[] = [];
+      const card = await openMulti(page, "light", posted);
+      const row = card.getByTestId("multi-account-13");
+      await expect(row).toContainText("Off - no new entries");
+      await row.getByRole("button", { name: "Make Primary" }).click();
+      await expect(row).toContainText("Upstox main becomes Secondary.");
+      await row.getByRole("button", { name: "Yes, make Primary" }).click();
+      await expect.poll(() => posted).toEqual([{ role: "PRIMARY", confirm: false }, { role: "PRIMARY", confirm: true }]);
+      // A Secondary shows its group and the form to change it; the expired login is said in plain words.
+      await expect(card.getByTestId("multi-account-12")).toContainText("Secondary · Family");
+      await expect(card.getByTestId("multi-account-12")).toContainText("Login expired - log in again");
+      await expect(card.getByLabel("Group")).toHaveValue("Family");
+    });
+
+    test("not shown while multi_account is off", async ({ page }) => {
+      await open(page, "/broker", { session: LATER, mocks: { features: { ui_v2: true }, connections: [UPSTOX_DATA] },
+        before: async (p) => { await p.route(/\/api(?:\/v1)?\/accounts$/, (r) => r.fulfill({ json: [] })); } });
+      await page.locator("[data-broker-advanced] summary").click();
+      await expect(page.getByText("Connect another account").first()).toBeVisible();
+      await expect(page.getByTestId("multi-account-card")).toHaveCount(0);
+    });
+  });
+});

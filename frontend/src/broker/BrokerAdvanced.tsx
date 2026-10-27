@@ -6,7 +6,9 @@ import StaticIpCard from "../components/StaticIpCard";
 import UpstoxRedirectUrl from "../components/UpstoxRedirectUrl";
 import type { BrokerCatalogEntry, BrokerTokenInfo } from "../types";
 import { loginErrorText } from "../ui/brokerSession";
+import { useFeatures, useUiV2 } from "../ui/useFeatures";
 import { ASK_OWNER } from "./brokerState";
+import MultiAccountCard from "./MultiAccountCard";
 import { BTN_PRIMARY, BTN_SECONDARY } from "./parts";
 
 /**
@@ -15,7 +17,8 @@ import { BTN_PRIMARY, BTN_SECONDARY } from "./parts";
  * - the Upstox OAuth app: "Log in with Upstox" for an Upstox connection that has the API key and secret (the existing
  *   OAuth start), and the exact redirect URL with a copy button (the setting on Upstox's developer site);
  * - the static IP registered with each broker (SEBI);
- * - the broker accounts (default account, enable / disable, balances, the read-only check).
+ * - the broker accounts (default account, enable / disable, balances, the read-only check);
+ * - M45 MA-1b (`ui_v2` + `multi_account`): Primary / Secondary roles and groups for the user's own accounts.
  * Nothing here loads until "Advanced" is opened.
  */
 
@@ -131,6 +134,10 @@ export default function BrokerAdvanced({ entries = [], canChange = true, onConne
   onConnectAccount?: (broker: string, label: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  // M45 MA-1b: Primary / Secondary roles for the user's own accounts, only with `ui_v2` + `multi_account`.
+  const features = useFeatures();
+  const v2 = useUiV2();
+  const multi = v2 && features.on("multi_account");
   return (
     <details data-broker-advanced data-tour="broker-advanced" className="rounded-panel border border-subtle bg-surface-1"
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
@@ -148,6 +155,7 @@ export default function BrokerAdvanced({ entries = [], canChange = true, onConne
           </Section>
           <StaticIpCard />
           <BrokerAccountsCard />
+          {multi && <MultiAccountCard />}
         </div>
       )}
     </details>

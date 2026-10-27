@@ -17,6 +17,7 @@ import { chainAround } from "../fno/desk";
 import { CombinedExitBarV2 } from "../fno/CombinedExitV2";
 import type { CombinedExit } from "../fno/combinedExit";
 import { GroupExitSheetV2 } from "../fno/GroupExitsV2";
+import { PositionActionSheetV2, WaitingOrdersV2, type PositionActionAsk } from "../fno/PositionActionsV2";
 import { groupRows, type PositionGroup } from "../fno/contracts";
 import { groupExitApi, type GroupExitAsk } from "../fno/groupExits";
 import { PositionList, useFnoPositions, type RowActions } from "../trading/PositionsV2";
@@ -285,15 +286,24 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
   combined?: { list: readonly CombinedExit[]; reload: () => void };
   onChanged: () => void;
 }) {
-  const [note, setNote] = useState<{ kind: "done" | "info" | "warn"; text: string } | null>(null);
+  const [note, setNote] = useState<{ kind: "done" | "info" | "warn"; text: ReactNode } | null>(null);
   const [groupExit, setGroupExit] = useState<GroupExitAsk | null>(null);
   const [exitingAll, setExitingAll] = useState(false);
+  const [partAsk, setPartAsk] = useState<PositionActionAsk | null>(null);   // T2 (TT-9): Exit part / Reverse
+  const [waitingTick, setWaitingTick] = useState(0);
   const list = useMemo(() => (read.status === "ok" ? read.value : []), [read]);
   const rows = useMemo(() => heldRows(list, exposure), [list, exposure]);
   const fno = useFnoPositions(list, fnoOn && canTrade);
   if (read.status === "loading") return <LoadingRowsV2 rows={3} />;
   if (read.status === "error") return <EmptyText testId="positions-error">We could not load your positions. We will try again in a moment.</EmptyText>;
-  if (!rows.length) return <EmptyText testId="positions-empty">No open positions. Your trades show here as soon as an order fills.</EmptyText>;
+  if (!rows.length) {
+    return (
+      <div className="space-y-space-2" data-panel-body="positions">
+        <EmptyText testId="positions-empty">No open positions. Your trades show here as soon as an order fills.</EmptyText>
+        {fnoOn && canTrade && <WaitingOrdersV2 />}
+      </div>
+    );
+  }
   // The My trades "Exit now", unchanged: its confirm, then the existing exit. Never disabled here (ADR-0004).
   async function exitNow(p: TradeRecord) {
     if (!window.confirm(exitConfirmText(p))) return;
@@ -344,6 +354,9 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
       onLeg: (p, hedge) => setGroupExit({ kind: "leg", tradeId: p.id, symbol: p.symbol, hedge, warning: null }),
       onGroup: (tradeId, title, legs) => setGroupExit({ kind: "group", tradeId, title, legs }),
     } : undefined,
+    part: fnoOn && canTrade ? {
+      onPart: (p) => setPartAsk({ kind: "part", position: p }), onReverse: (p) => setPartAsk({ kind: "reverse", position: p }),
+    } : undefined,
   };
   const priced = rows.some((r) => r.pnl !== null);
   return (
@@ -365,6 +378,9 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
       <PositionList rows={rows} byId={byId} actions={actions} prices groups={fno.groups} />
       <GroupExitSheetV2 ask={groupExit} onClose={() => setGroupExit(null)}
         onDone={(text, ok) => { setGroupExit(null); setNote({ kind: ok ? "done" : "warn", text }); onChanged(); }} />
+      <PositionActionSheetV2 ask={partAsk} onClose={() => setPartAsk(null)}
+        onDone={(text, ok) => { setPartAsk(null); setNote({ kind: ok ? "done" : "warn", text }); setWaitingTick((n) => n + 1); onChanged(); }} />
+      {fnoOn && canTrade && <WaitingOrdersV2 refresh={waitingTick} onChanged={onChanged} />}
       {!priced && <p className={MUTED}>Profit or loss shows once your broker gives live prices.</p>}
     </div>
   );

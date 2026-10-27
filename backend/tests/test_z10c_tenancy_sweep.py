@@ -92,6 +92,9 @@ BODY_OVERRIDES: Dict[Tuple[str, str], dict] = {
     ("PATCH", "/api/team/members/{member_id}"): {"role": "VIEWER"},
     ("PUT", "/api/screener/screens/{screen_id}"): {"name": "Z10c", "source": "close > SMA(close, 20)"},
     ("PUT", "/api/screener/rankings/{system_id}"): {"name": "Z10c", "tree": {"nodes": [{"name": "r", "factor": "PctChange(close, 20)", "weight": 100}]}},
+    # TT-9: the client's own reference has a shape the schema sample cannot guess.
+    ("POST", "/api/paper/fno/positions/{trade_id}/exit-part"): {"lots": 1, "client_ref": "z10c-sweep-part"},
+    ("POST", "/api/paper/fno/positions/{trade_id}/reverse"): {"client_ref": "z10c-sweep-reverse", "preview": True},
 }
 
 # Path parameters the planted rows cannot stand for: a real member, invite and login session of tenant A, made fresh

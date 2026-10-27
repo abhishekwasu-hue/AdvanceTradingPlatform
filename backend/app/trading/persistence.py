@@ -12,6 +12,7 @@ from app.market_data.calendar import trading_day_start
 from app.risk_engine import loss_streak
 from app.risk_engine.risk_manager import TradingDayState
 from app.signal_scoring.models import EnrichedSignal
+from app.trading.trade_split import not_a_split
 
 
 async def persist_signal_history(session: AsyncSession, user: User, enriched: EnrichedSignal) -> SignalHistoryRecord:
@@ -129,7 +130,8 @@ async def build_trading_day_state(session: AsyncSession, user: User, *, now: Opt
     unrealised = await open_unrealised_pnl(session, tenant_id)
     trades_today = await session.scalar(
         select(func.count()).select_from(TradeRecord)
-        .where(TradeRecord.tenant_id == tenant_id, TradeRecord.entry_time >= today_start)
+        .where(TradeRecord.tenant_id == tenant_id, TradeRecord.entry_time >= today_start,
+               not_a_split())
     )
     daily_pnl = await session.scalar(
         select(func.coalesce(func.sum(TradeRecord.pnl), 0.0))

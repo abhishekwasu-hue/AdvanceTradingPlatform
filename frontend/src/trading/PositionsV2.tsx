@@ -17,6 +17,7 @@ import {
 } from "../fno/contracts";
 import { CaptureLineV2, CompareButtonV2, StructureAlertV2 } from "../fno/PositionInsightsV2";
 import { posLeg, type PosLeg } from "../fno/positionInsights";
+import { canExitPart, canReverse } from "../fno/positionActions";
 import type { CockpitUnit } from "../fno/cockpit";
 import type { Side } from "../fno/api";
 import type { TicketTarget } from "../fno/ticketModel";
@@ -325,6 +326,9 @@ export interface RowActions {
   fno?: {
     facts: ReadonlyMap<string, ContractFacts>; onAdd: (target: TicketTarget, side: Side) => void; alertsOn?: boolean; onCompare?: (target: CompareTarget) => void;
   };
+  /** Terminal T2 (TT-9): "Exit part" (some of the lots) and "Reverse" on a PAPER position (absent: the row is as before).
+   *  Exit part is an exit: never disabled here (ADR-0004). */
+  part?: { onPart: (p: TradeRecord) => void; onReverse: (p: TradeRecord) => void };
 }
 
 export interface CompareTarget { title: string; legs: PosLeg[]; adjust: string | null }
@@ -517,6 +521,16 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
           // TT-8: this leg only; a hedge before its sold leg gets a plain warning in the sheet, never a block (ADR-0004).
           <button type="button" onClick={() => actions.group?.onLeg(position, groupLeg.hedge)} data-testid="exit-leg" className={BUTTON_SECONDARY}>
             Exit this leg
+          </button>
+        )}
+        {actions.part && actions.canTrade && canExitPart(position) && (
+          <button type="button" onClick={() => actions.part?.onPart(position)} data-testid="exit-part" className={BUTTON_SECONDARY}>
+            Exit part
+          </button>
+        )}
+        {actions.part && actions.canTrade && canReverse(position) && (
+          <button type="button" onClick={() => actions.part?.onReverse(position)} data-testid="reverse" className={BUTTON_SECONDARY}>
+            Reverse
           </button>
         )}
         {!actions.exitNowOn && !groupLeg && <CheckPriceV2 position={position} onCheck={actions.onCheck} />}

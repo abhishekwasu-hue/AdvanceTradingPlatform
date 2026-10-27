@@ -178,7 +178,9 @@ def _manual_origin_sites() -> set:
 
 def test_only_the_ticket_and_basket_routes_set_the_manual_origin():
     # M45 MA-3: the multi-account ticket order is the same person's own ticket, placed per practice account.
-    assert _manual_origin_sites() == {"app/paper/fno_routes.py", "app/accounts/routes.py"}
+    # T2 (TT-9): Reverse's new side is the same person's own tap on his position (preview + place, like the ticket).
+    assert _manual_origin_sites() == {"app/paper/fno_routes.py", "app/accounts/routes.py", "app/paper/fno_position_actions.py"}
+    assert (BACKEND / "app" / "paper" / "fno_position_actions.py").read_text().count("origin=ORIGIN_MANUAL") == 2
     routes = (BACKEND / "app" / "paper" / "fno_routes.py").read_text()
     assert routes.count("origin=MANUAL") == 4                 # ticket preview + place, basket preview + execute
     assert (BACKEND / "app" / "accounts" / "routes.py").read_text().count("origin=MANUAL") == 1   # the multi-account ticket order

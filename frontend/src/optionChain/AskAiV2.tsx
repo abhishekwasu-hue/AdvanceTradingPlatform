@@ -19,9 +19,11 @@ import {
  * Standalone: `<AskAi symbol="NIFTY" expiry={expiry} refreshKey={tick} />`. `ask`, `evaluate`, `loadSaved` and
  * `saveSaved` replace the server calls (tests, stories).
  */
-const EXAMPLES = [
+/** OC-2 (owner, 25 Oct): three suggested questions, each one tap. */
+export const EXAMPLES = [
   "Show the CE-PE OI difference for ATM +- 5 strikes as a table",
   "Strikes where OI rose more than 20% today",
+  "Which strikes have the highest call OI and put OI?",
 ];
 
 export interface AskAiProps {
@@ -179,6 +181,10 @@ export function PlainAnswer({ response }: { response: AskResponse }) {
   return (
     <div className="space-y-space-3" data-oc-ask-plain={response.state}>
       {response.message && <p className="text-t14 text-fg">{response.message}</p>}
+      {/* OC-3: with no AI connected, the one way to fix it, one tap away. */}
+      {response.state === "ai_off" && (
+        <a href="/settings/ai" data-oc-ask-add-key className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">Add your AI key</a>
+      )}
       {response.closest && (
         <div className="space-y-space-2 rounded-panel border border-subtle p-space-2">
           <p className="text-t13 text-fg-muted">{response.closest.note}</p>

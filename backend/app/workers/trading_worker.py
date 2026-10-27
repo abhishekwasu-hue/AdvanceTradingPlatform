@@ -712,18 +712,29 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - news must never break trading
                     logger.exception("News feed failed")
                     report.errors.append(f"news feed: {exc}")
-                # Instrument master (Phase F1): once per IST day from INSTRUMENT_SYNC_HOUR_IST on,
-                # so contracts/expiries/lot sizes are current before the 09:15 open.
-                if INSTRUMENT_SYNC_EXCHANGES and self._last_master_sync_day != ist_now.date() and ist_now.hour >= INSTRUMENT_SYNC_HOUR_IST:
+                # Instrument master (Phase F1; P1 27 Oct): due whenever today's successful sync is missing from
+                # INSTRUMENT_SYNC_HOUR_IST on - also right after a worker start - retried every RETRY_MINUTES until it
+                # succeeds (before and during market hours), never "retry tomorrow". The state (last success, rows, last
+                # error) is stored for the admin console and `atp.sh health` (app/instruments/master_sync.py).
+                if INSTRUMENT_SYNC_EXCHANGES and self._last_master_sync_day != ist_now.date():
                     try:
-                        async with guarded(session):
-                            report.master_synced = await sync_upstox(session, INSTRUMENT_SYNC_EXCHANGES)
+                        from app.instruments import master_sync
+                        state = await master_sync.read_state(session)
+                        if master_sync.synced_today(state, now):
                             self._last_master_sync_day = ist_now.date()
-                            logger.info("Instrument master synced: %s", report.master_synced)
+                        elif master_sync.due(state, now, hour=INSTRUMENT_SYNC_HOUR_IST):
+                            state = await master_sync.run(session, INSTRUMENT_SYNC_EXCHANGES, now, sync=sync_upstox)
+                            if state.get("last_error"):
+                                report.errors.append(f"instrument master: {state['last_error']} (retried in "
+                                                     f"{master_sync.RETRY_MINUTES} min)")
+                            else:
+                                report.master_synced = state.get("counts") or {}
+                                self._last_master_sync_day = ist_now.date()
+                                logger.info("Instrument master synced: %s rows", state.get("rows"))
                     except Exception as exc:  # noqa: BLE001 - a failed download must not stop trading
                         logger.exception("Instrument master sync failed")
                         report.errors.append(f"instrument master: {exc}")
-                        self._last_master_sync_day = ist_now.date()  # retry tomorrow, not every minute
+                        await session.rollback()
                 # Screener addendum U1-a: the NSE equity lists and symbol changes, once per IST day after
                 # UNIVERSE_SYNC_HOUR_IST, only when the operator has turned it on (files' terms recorded first).
                 if app_config.UNIVERSE_SYNC_ENABLED and not nse.is_open and self._last_universe_sync_day != ist_now.date() \

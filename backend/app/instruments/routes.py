@@ -24,7 +24,9 @@ router = APIRouter(prefix="/api/instrument-master", tags=["instruments"])
 
 @router.get("/status")
 async def status(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, object]:
-    return {"sources": await master.master_status(session), "sync_exchanges": config.INSTRUMENT_SYNC_EXCHANGES}
+    from app.instruments import master_sync
+    return {"sources": await master.master_status(session), "sync_exchanges": config.INSTRUMENT_SYNC_EXCHANGES,
+            "sync": await master_sync.read_state(session)}     # P1 27 Oct: last success / attempt / error / rows
 
 
 @router.get("/search")

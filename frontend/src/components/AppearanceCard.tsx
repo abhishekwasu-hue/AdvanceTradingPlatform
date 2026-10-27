@@ -57,6 +57,14 @@ export default function AppearanceCard() {
             <p className="mt-1 text-xs text-fg-muted">Compact shows more on one screen: tighter rows and spacing. Buttons stay easy to tap.</p>
           </div>
         )}
+        {/* UX-12: the soft dotted background at the top of the redesigned pages. Saved on this device. */}
+        {v2 && (
+          <label className="flex items-start gap-3 text-sm text-fg" data-appearance="dots">
+            <input type="checkbox" data-testid="appearance-dots" className="mt-0.5 h-4 w-4 accent-[rgb(var(--brand))]"
+              checked={a.dots} onChange={(e) => save({ ...a, dots: e.target.checked })} />
+            <span>Dotted background<span className="block text-xs text-fg-muted">A soft dot pattern at the top of each page.</span></span>
+          </label>
+        )}
         <label className="flex items-start gap-3 text-sm text-fg">
           <input type="checkbox" data-testid="appearance-high-contrast" className="mt-0.5 h-4 w-4 accent-[rgb(var(--brand))]"
             checked={a.highContrast} onChange={(e) => void pickContrast(e.target.checked)} />

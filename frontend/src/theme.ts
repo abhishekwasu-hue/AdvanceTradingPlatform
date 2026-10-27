@@ -14,11 +14,13 @@ export const TEXT_SIZES: { value: TextSize; label: string; scale: number }[] = [
   { value: "xlarge", label: "Extra large", scale: 1.25 },
 ];
 export function isTextSize(v: unknown): v is TextSize { return v === "normal" || v === "large" || v === "xlarge"; }
-export interface Appearance { theme: ThemeChoice; colorBlind: boolean; reduceMotion: boolean; textSize: TextSize }
+/** UI-H-DM DM4 (owner, 25 Oct): `highContrast` - stronger borders and brighter text and icons in both themes
+ * (`data-contrast="high"` on <html>, tokens.css). Stored per user on the server with the text size. */
+export interface Appearance { theme: ThemeChoice; colorBlind: boolean; reduceMotion: boolean; textSize: TextSize; highContrast: boolean }
 
 const KEY = "atp_appearance";
 const EVENT = "atp-theme";
-const DEFAULTS: Appearance = { theme: "dark", colorBlind: false, reduceMotion: false, textSize: "normal" };
+const DEFAULTS: Appearance = { theme: "dark", colorBlind: false, reduceMotion: false, textSize: "normal", highContrast: false };
 
 /** UI2-0 (UI v2 open question UI-1, owner default): while `ui_v2` is on, a trader who never chose a theme follows the
  * system, and light when the system says nothing; a theme the trader chose is kept. The shell sets this once it has
@@ -49,7 +51,7 @@ export function loadAppearance(): Appearance {
     const v = raw ? (JSON.parse(raw) as Partial<Appearance>) : {};
     const theme: ThemeChoice = v.theme === "light" || v.theme === "system" || v.theme === "dark" ? v.theme : fallback.theme;
     return { theme, colorBlind: v.colorBlind === true, reduceMotion: v.reduceMotion === true,
-             textSize: isTextSize(v.textSize) ? v.textSize : "normal" };
+             textSize: isTextSize(v.textSize) ? v.textSize : "normal", highContrast: v.highContrast === true };
   } catch {
     return fallback;
   }
@@ -72,6 +74,7 @@ export function applyAppearance(a: Appearance = loadAppearance()): void {
   root.dataset.cvd = a.colorBlind ? "on" : "off";
   root.dataset.motion = a.reduceMotion ? "reduce" : "full";
   root.dataset.textSize = a.textSize;
+  root.dataset.contrast = a.highContrast ? "high" : "normal";
   root.classList.toggle("dark", theme === "dark");
   window.dispatchEvent(new CustomEvent(EVENT));
 }

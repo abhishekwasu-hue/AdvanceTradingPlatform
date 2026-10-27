@@ -1,7 +1,7 @@
 import { Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import { useOptionalAuth } from "../auth/AuthContext";
-import { setTextSize } from "../appearanceSync";
+import { setHighContrast, setTextSize } from "../appearanceSync";
 import { TEXT_SIZES, useAppearance, type TextSize, type ThemeChoice } from "../theme";
 import { Button } from "./primitives";
 import { Card } from "./ui";
@@ -11,7 +11,8 @@ const THEMES: { value: ThemeChoice; label: string }[] = [
 ];
 
 /** P1.2: theme and the colour-blind option, saved in this browser. Copilot redesign: reduce motion. Item 1: the text
- * size, saved for the user on the server so every device shows the same size. ATP is English only:
+ * size, saved for the user on the server so every device shows the same size. UI-H-DM DM4: High contrast, saved the same
+ * way, beside the text size. ATP is English only:
  * the strategy interview's second-language line is switched on the interview screen, not here. */
 export default function AppearanceCard() {
   const [a, save] = useAppearance();
@@ -20,6 +21,11 @@ export default function AppearanceCard() {
   const pickSize = async (size: TextSize) => {
     setSizeNote(null);
     const saved = await setTextSize(size, user != null);
+    if (!saved) setSizeNote("Saved on this device only. Check your connection to keep it on your other devices.");
+  };
+  const pickContrast = async (on: boolean) => {
+    setSizeNote(null);
+    const saved = await setHighContrast(on, user != null);
     if (!saved) setSizeNote("Saved on this device only. Check your connection to keep it on your other devices.");
   };
   return (
@@ -36,6 +42,14 @@ export default function AppearanceCard() {
           <p className="mt-1 text-xs text-fg-muted">Makes all text, numbers and charts bigger on every device you use.</p>
           {sizeNote && <p role="status" className="mt-1 text-xs text-warn">{sizeNote}</p>}
         </div>
+        <label className="flex items-start gap-3 text-sm text-fg">
+          <input type="checkbox" data-testid="appearance-high-contrast" className="mt-0.5 h-4 w-4 accent-[rgb(var(--brand))]"
+            checked={a.highContrast} onChange={(e) => void pickContrast(e.target.checked)} />
+          <span>
+            High contrast
+            <span className="mt-0.5 block text-xs text-fg-muted">Stronger borders and brighter text and icons - easier to read outdoors. Kept on every device you use.</span>
+          </span>
+        </label>
         <div role="group" aria-labelledby="appearance-theme-label">
           <div id="appearance-theme-label" className="mb-2 text-xs font-medium text-fg-muted">Theme</div>
           <div className="flex flex-wrap gap-2">

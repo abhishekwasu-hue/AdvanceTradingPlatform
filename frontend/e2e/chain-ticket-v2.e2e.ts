@@ -177,6 +177,8 @@ test.describe("Chain ticket v2 flows", () => {
     await page.locator("[data-chain-actions] [data-action='buy']").tap();
     const ticket = page.locator("[data-order-ticket]");
     await expect(ticket.locator("[data-ticket='lots']")).toHaveValue("2");
+    await expect(ticket.locator("[data-ticket='advanced-summary']")).toHaveText("NRML · no stop-loss");     // UX-9
+    await ticket.locator("[data-ticket='advanced'] summary").tap();
     await expect(ticket.locator("[data-ticket='product'] [data-option='NRML']")).toHaveAttribute("aria-checked", "true");
     await expect(ticket.locator("[data-from-defaults='lots']")).toHaveText("from your defaults");
     await expect(ticket.locator("[data-from-defaults='type-product']")).toHaveText("Order type and product from your defaults. Tap to change.");
@@ -275,6 +277,7 @@ test.describe("Chain ticket v2 keys", () => {
     await page.keyboard.press("b");
     await expect(side.getByRole("radio", { name: "Buy" })).toHaveAttribute("aria-checked", "true");
     // Typing in a field never switches the side.
+    await page.locator("[data-ticket='advanced'] summary").click();
     await page.locator("[data-ticket='stop']").fill("s");
     await expect(side.getByRole("radio", { name: "Buy" })).toHaveAttribute("aria-checked", "true");
   });

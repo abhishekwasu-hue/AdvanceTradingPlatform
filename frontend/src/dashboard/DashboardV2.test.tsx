@@ -60,14 +60,15 @@ describe("UI2-2 Needs attention", () => {
 describe("UI2-2 blocks", () => {
   it("friendly empty states with one action each", () => {
     const pos = html(<OpenPositionsV2 data={{ status: "ok", rows: [], total: 0 }} />);
-    expect(pos).toContain("No open positions. Find a setup or let a paper bot trade for you.");
+    expect(pos).toContain("No open positions.");
     expect(pos).toContain('href="/screener"');
     const sig = html(<ActiveSignalsV2 data={{ status: "ok", rows: [], total: 0 }} />);
-    expect(sig).toContain("No signals yet today. Your scans and paper bots post them here.");
+    expect(sig).toContain("No signals yet today.");
     expect(sig).toContain('href="/screener/custom"');
     // Day-one fix 9: with the ready strategies on, the empty day points to the one-tap Signals watch
     const ready = html(<ActiveSignalsV2 data={{ status: "ok", rows: [], total: 0 }} readyWatch />);
-    expect(ready).toContain("Pick a ready strategy on Signals and it reads every NIFTY 50 stock for you in one tap.");
+    expect(ready).toContain("No signals yet today.");
+    expect(ready).toContain("Watch a list on Signals");                       // TD-1: one line + one button
     expect(ready).toContain('href="/signals"');
     expect(ready).toContain("Watch a list on Signals");
     expect(html(<OpenPositionsV2 data={{ status: "error" }} />)).toContain("We could not load your positions. We will try again in a moment.");
@@ -118,7 +119,7 @@ describe("UI2-2 blocks", () => {
 
 describe("UI2-2 router wiring (UI v2 §12: PageV2 ?? Page)", () => {
   it("the v2 shell has a v2 dashboard; today's router and App do not load it", () => {
-    expect(Object.keys(PAGE_COMPONENTS_V2)).toEqual(["dashboard", "signals", "charts", "option-chain", "positions", "portfolio", "risk-management", "setup", "trading-defaults", "deployments", "copilot",
+    expect(Object.keys(PAGE_COMPONENTS_V2)).toEqual(["dashboard", "signals", "charts", "option-chain", "positions", "portfolio", "risk-management", "orders", "setup", "trading-defaults", "deployments", "copilot",
       "settings", "markets", "admin", "ideas", "learn", "terminal", "watchlist", "settings-ai", "settings-alerts", "settings-appearance", "settings-help", "settings-advanced"]);
     expect(routesSource).not.toMatch(/DashboardV2|pagesV2/);
     expect(appSource).not.toMatch(/DashboardV2|pagesV2/);

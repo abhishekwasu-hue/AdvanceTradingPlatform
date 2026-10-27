@@ -20,7 +20,7 @@ export const GLOSSARY = {
   drawdown: { term: "Drawdown", definition: "How far your account fell from its highest point before it recovered." },
   ema: { term: "EMA", definition: "Exponential moving average: the average closing price of recent bars, with the newest bars counting most." },
   expiry: { term: "Expiry", definition: "The last day a futures or options contract trades. After it, the contract settles and closes." },
-  greeks: { term: "Greeks", definition: "Delta, gamma, theta and vega: how an option's price moves with the price of the index or stock, with time and with volatility." },
+  greeks: { term: "Greeks", definition: "Delta, gamma, theta and vega: how an option's price moves with the index or stock, time and volatility. Worked out from its last price." },
   "gross-exposure": { term: "Gross exposure", definition: "The value of everything you hold, with long and short positions added together." },
   "india-vix": { term: "India VIX", definition: "A measure of how much the market expects the main NSE index to move over the next 30 days. Higher means more nervous." },
   iv: { term: "IV", definition: "Implied volatility: how much movement option prices are expecting. Higher IV makes options more expensive." },

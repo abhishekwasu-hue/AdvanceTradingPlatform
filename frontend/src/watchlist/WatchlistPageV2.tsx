@@ -51,7 +51,7 @@ export default function WatchlistPageV2(_props: PageProps) {
       {readyMade === "empty" && (
         <p role="status" data-ready-made="empty" className={cx(CARD, "p-space-4 text-t14 text-fg-muted")}>{NOT_FILLED_NOTE}</p>
       )}
-      <div className={cx(CARD, "flex flex-col")}>
+      <div data-card="Watchlist" className={cx(CARD, "flex flex-col")}>
         <WatchlistPanel symbol="" exchange="" onOpen={open} listId={view.watchlist_id} onListId={(id) => keep({ watchlist_id: id })}
           systemKey={view.watchlist_system} onSystemKey={(key) => keep({ watchlist_system: key })}
           storageKey={recentKeyFor(userId)} touch={phone} className="flex-1" liveTicks={features.on("data_hub")} />

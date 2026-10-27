@@ -7,6 +7,8 @@ import { Card } from "./ui";
 import type { ByokAuditScope, ByokChannels, ByokPrefsInput, ByokProviderName, ByokProviderStatus, ByokStatus } from "../types";
 import { capUsage, formatUsd, keyShapeError, parseCap } from "./visionByok";
 import { formatDateTimeIST } from "../ui/format";
+import { TextOnDemand } from "../ui/numbersFirst";
+import { useUiV2 } from "../ui/useFeatures";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
 const button = "rounded border border-border px-2 py-1 text-xs hover:bg-surface-2 disabled:opacity-50";
@@ -29,6 +31,7 @@ function when(value: string | null): string {
 /** BYOK-V1: each user's own AI provider API key for Vision chart review (operator flag `vision_byok`). The key is typed
  * here, sent once, stored encrypted and never shown again - only its first and last four characters. */
 export default function VisionByokCard() {
+  const v2 = useUiV2();
   const [status, setStatus] = useState<ByokStatus | null>(null);
   const [off, setOff] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,21 +107,40 @@ export default function VisionByokCard() {
     return <Card title={TITLE}>{error ? <div className="text-sm text-down">{error}</div> : <p className="text-xs text-fg-muted">Loading...</p>}</Card>;
   }
 
+  const notes = (
+    <>
+      <p className="text-xs text-warn mb-1">{status.notes.subscription}</p>
+      <p className="text-xs text-fg-muted mb-3">{status.notes.privacy}</p>
+    </>
+  );
+  const scope = status.scope;
+  const scopeLine = scope && (
+    <p className="mt-1 text-xs text-fg-muted">
+                {scope.v3_enabled
+                  ? `Scan alerts: alerts of rules you created, at most ${scope.scan_audits_per_hour} per hour. Daily review: after ${scope.daily_review_at} IST on trading days, up to ${scope.daily_review_max_symbols} of your own symbols (your deployments, then your symbol alerts), ${scope.daily_review_timeframe} chart.`
+                  : "Scan-alert and daily-review audits are not enabled for your organisation yet."}
+              </p>
+  );
+
   const withKeys = status.providers.filter((p) => p.key_set);
   const today = capUsage(status.spend.today_usd, status.caps.daily_cap_usd);
   const month = capUsage(status.spend.month_usd, status.caps.monthly_cap_usd);
 
   return (
     <Card title={TITLE}>
+      {/* UX-11 U1: on the v2 pages the explanation, both notes and the audit scope sit in one closed Details. */}
+      <TextOnDemand id="vision-byok.about" on={v2}>
       <p className="text-xs text-fg-muted mb-2">
         Vision reviews charts and comments on them using your own AI provider API key. You pay the provider directly; the platform stores your
         key encrypted, never bills you for it and never uses it for anyone else. Vision only comments - it never places, blocks or changes an order.
       </p>
+      {v2 && notes}
+      {v2 && scopeLine}
+      </TextOnDemand>
       <div className={`mb-2 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-bold ${status.active ? "border-brand/40 bg-brand/10 text-brand" : "border-border bg-surface-2 text-fg-muted"}`}>
         <Eye size={12} /> {status.vision_line}
       </div>
-      <p className="text-xs text-warn mb-1">{status.notes.subscription}</p>
-      <p className="text-xs text-fg-muted mb-3">{status.notes.privacy}</p>
+      {!v2 && notes}
 
       <div className="space-y-3">
         {status.providers.map((p) => (
@@ -186,13 +208,7 @@ export default function VisionByokCard() {
                 );
               })}
             </div>
-            {status.scope && (
-              <p className="mt-1 text-xs text-fg-muted">
-                {status.scope.v3_enabled
-                  ? `Scan alerts: alerts of rules you created, at most ${status.scope.scan_audits_per_hour} per hour. Daily review: after ${status.scope.daily_review_at} IST on trading days, up to ${status.scope.daily_review_max_symbols} of your own symbols (your deployments, then your symbol alerts), ${status.scope.daily_review_timeframe} chart.`
-                  : "Scan-alert and daily-review audits are not enabled for your organisation yet."}
-              </p>
-            )}
+            {!v2 && scopeLine}
           </div>
           <div>
             <div className="text-fg-muted mb-1">Where reports go</div>

@@ -113,7 +113,46 @@ export const fnoApi = {
   held: (underlying: string, expiry: string) => request<HeldLeg[]>(`/paper/fno/held?${q({ underlying, expiry })}`),
   preview: (ask: OrderAsk) => request<OrderPreview>("/paper/fno/order/preview", { method: "POST", body: JSON.stringify(ask) }),
   place: (ask: OrderAsk) => request<OrderResult>("/paper/fno/order", { method: "POST", body: JSON.stringify(ask) }),
+  // M45 MA-6 (`ui_v2` + `multi_account`): the user's simulated PAPER accounts, one order on several of them, one exit.
+  practiceAccounts: () => request<PracticeAccount[]>("/accounts/mine/paper"),
+  placeMulti: (ask: OrderAsk, runOn: string) =>
+    request<MultiResult>("/accounts/mine/paper/order", { method: "POST", body: JSON.stringify({ order: ask, run_on: runOn }) }),
+  addPracticeAccount: (label: string, capital: number) =>
+    request<PracticeAccount>("/accounts/mine/paper", { method: "POST", body: JSON.stringify({ label, capital }) }),
+  changePracticeAccount: (id: number, patch: Partial<{ role: string; clear_role: boolean; group_name: string; enabled: boolean;
+    sizing_mode: string; sizing_value: number; capital: number; confirm: boolean }>) =>
+    request<PracticeAccount>(`/accounts/mine/paper/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  exitMulti: (ref: string) => request<MultiExitResult>("/accounts/mine/paper/exit", { method: "POST", body: JSON.stringify({ ref }) }),
 };
+
+/** M45: one simulated PAPER account of the user (GET /api/accounts/mine/paper). */
+export interface PracticeAccount {
+  id: number;
+  label: string;
+  capital: number;
+  role: "PRIMARY" | "SECONDARY" | null;
+  group_name: string | null;
+  enabled: boolean;
+  sizing_mode: "FIXED" | "MULTIPLIER" | "PCT_CAPITAL";
+  sizing_value: number;
+}
+
+export interface MultiRow { account_id: number; label: string; status: string; lots: number; trade_id: number | null; reasons: string[] }
+export interface MultiResult { why: string; override: string | null; results: MultiRow[] }
+export interface MultiExitResult { ref: string; results: { trade_id: number; account_id: number | null; label: string | null; status: string; reasons: string[] }[] }
+
+/** The "Run on" choices for the user's simulated accounts: one order as today, the Primary, the Primary with one
+ * group, or every account with a role (the server resolves and sizes; switched-off accounts are skipped with a reason). */
+export function runOnOptions(accounts: readonly PracticeAccount[]): { value: string; label: string }[] {
+  if (!accounts.some((a) => a.role === "PRIMARY")) return [];
+  const groups = [...new Set(accounts.filter((a) => a.role === "SECONDARY" && a.group_name).map((a) => a.group_name as string))].sort();
+  return [
+    { value: "ONE", label: "This order only" },
+    { value: "PRIMARY", label: "Primary account" },
+    ...groups.map((g) => ({ value: `PRIMARY+${g}`, label: `Primary + ${g}` })),
+    { value: "ALL", label: "All accounts" },
+  ];
+}
 export type FnoApi = typeof fnoApi;
 
 // --- FNO-2: the basket (backend app/paper/fno_basket.py). Each leg placed is one PAPER order through the same ticket. ---

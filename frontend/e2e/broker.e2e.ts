@@ -362,6 +362,7 @@ async function openMulti(page: Page, theme: "light" | "dark" = "light", posted: 
     before: async (p) => {
       await p.route(/\/api(?:\/v1)?\/accounts$/, (r) => r.fulfill({ json: [] }));
       await p.route(/\/api(?:\/v1)?\/accounts\/mine$/, (r) => r.fulfill({ json: { accounts: MINE, unaccounted_live_trades: [] } }));
+      await p.route(/\/api(?:\/v1)?\/accounts\/mine\/paper$/, (r) => r.fulfill({ json: [] }));
       await p.route(/\/api(?:\/v1)?\/accounts\/mine\/\d+\/role$/, (r) => {
         const body = r.request().postDataJSON() as { role: string; confirm: boolean };
         posted.push(body);
@@ -417,5 +418,35 @@ test.describe("Primary and secondary accounts (M45 MA-1b)", () => {
       await expect(page.getByText("Connect another account").first()).toBeVisible();
       await expect(page.getByTestId("multi-account-card")).toHaveCount(0);
     });
+  });
+});
+
+test.describe("Practice accounts (M45 MA-6)", () => {
+  test.use({ viewport: DESKTOP, deviceScaleFactor: 1 });
+
+  test("looks the same and adds an account", async ({ page }) => {
+    const added: unknown[] = [];
+    const rows = [
+      { id: 1, label: "Main", capital: 500000, role: "PRIMARY", group_name: null, enabled: true, sizing_mode: "MULTIPLIER", sizing_value: 1 },
+      { id: 2, label: "Family", capital: 200000, role: "SECONDARY", group_name: "Family", enabled: true, sizing_mode: "MULTIPLIER", sizing_value: 2 },
+    ];
+    await open(page, "/broker", { session: LATER, mocks: { features: { ui_v2: true, multi_account: true }, connections: [UPSTOX_DATA] },
+      before: async (p) => {
+        await p.route(/\/api(?:\/v1)?\/accounts$/, (r) => r.fulfill({ json: [] }));
+        await p.route(/\/api(?:\/v1)?\/accounts\/mine$/, (r) => r.fulfill({ json: { accounts: [], unaccounted_live_trades: [] } }));
+        await p.route(/\/api(?:\/v1)?\/accounts\/mine\/paper$/, (r) => {
+          if (r.request().method() === "POST") { added.push(r.request().postDataJSON()); return r.fulfill({ json: { ...rows[1], id: 3 } }); }
+          return r.fulfill({ json: rows });
+        });
+      } });
+    await page.locator("[data-broker-advanced] summary").click();
+    const card = page.getByTestId("practice-accounts");
+    await expect(card.getByTestId("practice-1")).toContainText("Primary");
+    await expect(card.getByTestId("practice-2")).toContainText("Secondary · Family");
+    await expect(card).toHaveScreenshot("broker-practice-accounts-1440-light.png", shot);
+    await card.getByLabel("Name").fill("HUF");
+    await card.getByLabel("Capital").fill("3,00,000");
+    await card.getByRole("button", { name: "Add practice account" }).click();
+    await expect.poll(() => added).toEqual([{ label: "HUF", capital: 300000 }]);
   });
 });

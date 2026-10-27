@@ -155,7 +155,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P2-6 | not started | help centre + page tours complete | - |
 | P2-7 | not started | positions for options sellers + Performance page | - |
 | P2-8 | not started | Journal v2 J1 -> J2+J3 -> J4+J5+J6 (3 draft PRs); starts when the max-3 rule allows | - |
-| M45 | in progress | MA-1a #568, MA-1b #569, MA-2 #571 merged; MA-3 PAPER fan-out via simulated accounts + MA-4 one exit for every child (migration f1b3d5e7a9c2) in review #576; next MA-5 checks / alerts, MA-6 views + ticket "Run on"; LIVE fan-out only on the owner's LIVE words | #576 |
+| M45 | in progress | MA-1a #568, MA-1b #569, MA-2 #571 merged; MA-3/4/5 PAPER fan-out, one exit, checks + alerts + retry (migration f1b3d5e7a9c2) #576; MA-6 ticket "Run on" + practice accounts page in review; then flag decision + deploy (owner's one command); LIVE fan-out only on the owner's LIVE words | MA-6 PR |
 | P3-1 | waiting for owner | the R2 bucket + key escrow, then the restore drill | - |
 | P3-2 | not started (parallel) | monitoring + alerts (parts built, row 17) | - |
 | P3-3 | not started (parallel) | rollback test of `atp.sh` | - |

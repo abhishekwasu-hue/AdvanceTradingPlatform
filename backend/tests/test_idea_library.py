@@ -151,11 +151,15 @@ def test_the_options_pack_is_t1_and_t2_reduced_to_direction():
 
 
 def test_ideas_without_the_building_blocks_say_coming_later_instead_of_inventing_rules():
-    t6 = LIB.idea("T6")                     # no registry function reads "price at a channel line" (IDEA-3, IDEA-12)
-    assert t6 is not None and t6.scans == () and t6.scan_gaps and "comes later" in t6.scan_gaps
-    t7 = LIB.idea("T7")                     # slice 3: the second top / bottom; head and shoulders still comes later
-    assert t7 is not None and [s.id for s in t7.scans] == ["top", "bottom"]
-    assert t7.scan_gaps and "head and shoulders" in t7.scan_gaps.lower() and "come later" in t7.scan_gaps
+    # slice 4: T6 reads the channel's trend-side line (ChannelLine, IDEA-12); what it still cannot read comes later
+    t6 = LIB.idea("T6")
+    assert t6 is not None and [s.id for s in t6.scans] == ["rising", "falling"]
+    assert t6.scan_gaps and "come later" in t6.scan_gaps and "higher timeframe" in t6.scan_gaps
+    # slice 3: the second top / bottom; slice 4: head and shoulders (PriorSwingHigh / PriorSwingLow, IDEA-14)
+    t7 = LIB.idea("T7")
+    assert t7 is not None and [s.id for s in t7.scans] == ["top", "bottom", "hs_top", "hs_bottom", "hs_top_retest", "hs_bottom_retest"]
+    assert t7.scan_gaps and "sloped neckline comes later" in t7.scan_gaps
+    assert all(i.scans for i in LIB.ideas)                               # every idea has a scan now
 
 
 def test_scan_flags_name_the_screener_and_each_functions_flag():
@@ -468,7 +472,7 @@ def test_t7_fires_on_the_second_top_or_bottom_after_a_rise_or_a_fall_only(seed):
 
     close = df["close"].to_numpy(dtype=float)
     trend_now = ev("DowTrend($swing_size)").to_numpy()
-    for scan, trend, edge, direction, sign in ((t7.scans[0], "UP", "SwingHigh", "bearish", -1),
+    for scan, trend, edge, direction, sign in ((t7.scans[0], "UP", "SwingHigh", "bearish", -1),  # the double top / bottom
                                                (t7.scans[1], "DOWN", "SwingLow", "bullish", 1)):
         fired = np.asarray(ev(_pattern_part(scan.text)).to_numpy(), dtype=bool)
         rejection = np.asarray(ev(f'ReversalAt({edge}($swing_size), "{direction}")').to_numpy(), dtype=bool)
@@ -487,7 +491,7 @@ def test_t7_has_no_look_ahead():
     t7 = LIB.idea("T7")
     assert t7 is not None
     df = synthetic_bars(600, tf="15m", seed=3)
-    for scan in t7.scans:
+    for scan in t7.scans[:2]:              # the double top / bottom (head and shoulders: test_idea_library_channel_swings.py)
         text = parse(_pattern_part(scan.text))
         full = np.asarray(evaluate(text, SymbolData("S", {"15m": df}), base_tf="15m", params={"swing_size": 0}).to_numpy(), dtype=bool)
         assert full.any()
@@ -500,7 +504,7 @@ def test_t7_has_no_look_ahead():
 def test_t7_scans_need_the_zones_and_breakout_flags_and_open_in_the_builder():
     t7 = LIB.idea("T7")
     assert t7 is not None
-    for scan in t7.scans:
+    for scan in t7.scans[:2]:              # the double top / bottom (head and shoulders: test_idea_library_channel_swings.py)
         assert c.scan_flags(scan) == ["screener_v2", "screener_builder_u2", "screener_breakouts", "market_zones"]
         payload = c.scan_payload(t7, scan, {"screener_v2", "screener_builder_u2", "screener_breakouts"})
         assert payload["available"] is False                                  # market zones off: not offered

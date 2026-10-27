@@ -418,6 +418,19 @@ upgrade, `alembic check`, downgrade, upgrade. Frontend: `src/strategyTemplates/e
 `strategy-templates-v2.e2e.ts` (new baselines `strategy-templates-exits-v2-{1440,390,360}-{light,dark}.png`; the
 existing ones unchanged).
 
+## Idea library slice 4: ChannelLine and PriorSwingHigh / PriorSwingLow (IDEA-12, IDEA-14)
+
+Branch `claude/idea-library-4`. No migration, no new flag, no new route. Two registry functions the idea library's T6 and
+T7 needed; no template reads them yet (A6 / A7 are not built, TPL-Q23), so every template output is unchanged.
+
+| Item | Where | Status |
+|---|---|---|
+| `ChannelLine(side, touches, edge_touches)`: the B5 channel's trend-side line on EVERY bar - up: the rising support of a rising channel, down: the falling resistance of a falling one (the up rule on mirrored prices, as B5). At bar t: the channel `Lines.select(t)` chooses from the bars before t (newest second anchor, touches, angle and age filters, no close through the line before t), projected to t; missing when there is none or a close beyond its far edge came before t (B5's breakout). `edge_touches` (0 = not checked, the B5 channel) also asks for that many swing highs on the far edge. Flags `screener_breakouts` + `screener_breakouts_bk4` (as TrendlineBreakout); `touches` takes `tl_min_touches`' default and bounds | `screener/breakouts/lines.py` (`channel_line`), `runtime.py`, `registry.py` | done |
+| ChannelLine is the line B5 itself reads: on every channel breakout bar it equals LineBreakoutRef's other side of the channel (up base_low, down base_high); exactly the line of a hand-built channel; ends at a break beyond the far edge or through the line until a new channel forms; truncation (no look-ahead) and the mirror (side swaps, a price) on reflected bars | `tests/test_idea_library_channel_swings.py`, `quality/causal_cases.py`, `screener/mirror.py` (`SIDED_LEVELS`), `tests/test_tx2_library.py` | done |
+| `PriorSwingHigh` / `PriorSwingLow(degree, back)`: the confirmed swing `back` ("one" / "two" / "three", words: a structure position, not a value) swings of its kind before the latest one, from the same causal swings as SwingHigh / SwingLow; equal to a brute-force reading of the swings confirmed by each bar. No flag (the same swings as SwingHigh, which has none: IDEA-15) | `screener/runtime.py` (`_prior_swing`), `registry.py`, `mirror.py` (LEVELS) | done |
+| T6 scans: `ReversalAt(ChannelLine("up" / "down", $line_touches, $edge_touches), "bullish" / "bearish")`; T7 head and shoulders: the right shoulder (latest swing a low, the head beyond the left shoulder, the bar below the head, a rejection at the left shoulder's height, at an area) and the neckline retest (head beyond both shoulders, then the B9 swing retest with `swing=` the same degree; the neckline is the swing that broke, as a level: IDEA-16) | `idea_library/ideas.json` | done |
+| Byte-identical: TrendlineBreakout, LineBreakoutRef, RetestEntry (channel, swing), SwingHigh / SwingLow and ReversalAt pinned against main on two data sets; the older scans' text pinned by hash | `tests/test_idea_library_channel_swings.py` | done |
+
 ## Not in this PR (next PRs)
 
 - Family A's area templates A1, A8, A3, A4 (an area companion + zone timelines in the template engine, TPL-Q23), A6 / A7

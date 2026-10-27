@@ -185,6 +185,12 @@ def test_price_action_series_s5a():
     zs = _ev('SwingZoneStrength("low")', data)                                  # S5-A4 (test_s5a4_zone_strength.py)
     assert zs.notna().any() and zs.dropna().between(0, 100).all()
     assert _ev('SwingZoneDistance("high")', data).notna().any()
+    # idea library IDEA-14 (deeper checks: tests/test_idea_library_channel_swings.py): the swing high / low before the
+    # latest one changes only when a new swing of its kind is confirmed, and is the latest one's predecessor
+    prior_hi, prior_lo = _ev("PriorSwingHigh()", data), _ev('PriorSwingLow(0, "two")', data)
+    assert prior_hi.notna().any() and prior_lo.notna().any()
+    changed = hi.ne(hi.shift()) & hi.notna() & hi.shift().notna()
+    assert (prior_hi[changed] == hi.shift()[changed]).all()
 
 
 def test_breakout_series_u6_bk1():
@@ -235,6 +241,11 @@ def test_trendline_pattern_gap_and_retest_series_u6_bk4():
                  'PatternBreakout("down", "flag", 0, 0)', 'GapBreakout("up", "prev_day", 15)', 'RetestEntry("up", "range", 10, FALSE)'):
         assert _ev(text, data).dtype == bool, text
     assert set(_ev('GapType("up", "prev_day", 15)', data).unique()) <= {"GAP_AND_GO", "GAP_HOLD", "GAP_FILL", ""}
+    # idea library IDEA-12 (deeper checks: tests/test_idea_library_channel_swings.py): the rising wave is a rising
+    # channel, so its lower line is there and under the lows' channel; no falling channel exists in it
+    lower = _ev('ChannelLine("up")', data)
+    assert lower.notna().sum() > 100 and (lower.dropna().diff().dropna() >= -1e-9).mean() > 0.9
+    assert _ev('ChannelLine("down", 2, 1)', data).isna().all()
 
 
 def test_market_zone_functions_z7a3():

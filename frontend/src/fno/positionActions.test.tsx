@@ -62,7 +62,7 @@ describe("TT-9 pure parts", () => {
 
   it("the confirm words are plain and say what stays open", () => {
     const part = exitPartCopy("NIFTY 25000 CE", 1, 3);
-    expect(part.body).toBe("1 lot of NIFTY 25000 CE close at the current price. 2 lots stay open with the same stop and target.");
+    expect(part.body).toBe("1 lot of NIFTY 25000 CE closes at the current price. 2 lots stay open with the same stop and target.");
     expect(part.confirm).toBe("Exit 1 lot");
     expect(exitPartCopy("X", 3, 3).body).toBe("All 3 lots of X close at the current price.");
     const rev = reverseCopy("NIFTY 25000 CE", 3, true);

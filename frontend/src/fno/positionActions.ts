@@ -82,7 +82,7 @@ export function exitPartCopy(symbol: string, lots: number, held: number): { titl
   return {
     title: "Exit part of this position?",
     body: rest > 0
-      ? `${lotWord(lots)} of ${symbol} close at the current price. ${lotWord(rest)} stay open with the same stop and target.`
+      ? `${lotWord(lots)} of ${symbol} ${lots === 1 ? "closes" : "close"} at the current price. ${lotWord(rest)} ${rest === 1 ? "stays" : "stay"} open with the same stop and target.`
       : `All ${lotWord(lots)} of ${symbol} close at the current price.`,
     confirm: `Exit ${lotWord(lots)}`,
   };

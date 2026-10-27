@@ -3,6 +3,7 @@ import type { TerminalSpot } from "../terminal/spot";
 import { formatDateIST, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
+import { flashClass, useTickFlash } from "../ui/useTickFlash";
 import { daysText, formatIv, formatStrike } from "./model";
 import type { ChainSummary } from "./types";
 
@@ -20,7 +21,7 @@ const DESKTOP_ORDER = ["md:order-1", "md:order-2", "md:order-3", "md:order-4", "
 /** The cards a phone shows before "More". */
 export const PHONE_FIRST: ReadonlySet<string> = new Set(["spot", "atm", "pcr", "max-pain"]);
 
-interface Card { key: string; label: string; term?: GlossaryKey; value: string; caption?: string }
+interface Card { key: string; label: string; term?: GlossaryKey; value: string; caption?: string; /** UX-7: the number behind `value`, for the tick flash. */ num?: number | null }
 
 /**
  * Owner 25 Oct (T1-3 on the Option chain page): with a live price (the tick of his own connection, else the chart's
@@ -33,8 +34,8 @@ export function summaryCards(s: ChainSummary | null, expiry: string | null, spot
   return [
     // B2b: a closed market's spot from our own last index close says so.
     live
-      ? { key: "spot", label: "Spot", value: formatPrice(live.ltp), caption: live.at ? `as of ${formatTimeIST(live.at)}` : undefined }
-      : { key: "spot", label: s?.spot_source === "last_close" ? "Spot: last close" : "Spot", value: formatPrice(s?.spot) },
+      ? { key: "spot", label: "Spot", value: formatPrice(live.ltp), num: live.ltp, caption: live.at ? `as of ${formatTimeIST(live.at)}` : undefined }
+      : { key: "spot", label: s?.spot_source === "last_close" ? "Spot: last close" : "Spot", value: formatPrice(s?.spot), num: s?.spot ?? null },
     { key: "futures", label: "Futures", value: formatPrice(future?.ltp),
       caption: future ? `Expires ${formatDateIST(future.expiry).replace(/ \d{4}$/, "")}` : undefined },
     { key: "atm", label: "ATM strike", term: "atm", value: formatStrike(s?.atm_strike) },
@@ -46,9 +47,11 @@ export function summaryCards(s: ChainSummary | null, expiry: string | null, spot
   ];
 }
 
-function Value({ loading, children }: { loading: boolean; children: ReactNode }) {
+function Value({ loading, num, children }: { loading: boolean; num?: number | null; children: ReactNode }) {
+  // UX-7: the spot card's number shows a short up / down tint when the price changes.
+  const flash = useTickFlash(loading ? null : num);
   if (loading) return <div className="mt-space-2 h-6 w-20 animate-pulse rounded-control bg-surface-2" />;
-  return <div className="mt-space-1 font-tabular text-t18 font-semibold text-fg md:text-t20">{children}</div>;
+  return <div data-flash={flash ?? undefined} className={`-mx-space-1 mt-space-1 rounded-control px-space-1 font-tabular text-t18 font-semibold text-fg transition-colors duration-base md:text-t20 ${flashClass(flash)}`}>{children}</div>;
 }
 
 export default function SummaryStripV2({ summary, expiry, loading, spot = null }: {
@@ -70,7 +73,7 @@ export default function SummaryStripV2({ summary, expiry, loading, spot = null }
             <span className="truncate">{c.label}</span>
             {c.term && <TermHint term={c.term} floating align={c.key === "dte" ? "end" : "start"} />}
           </div>
-          <Value loading={loading}>{c.value}</Value>
+          <Value loading={loading} num={c.num}>{c.value}</Value>
           {/* The caption line keeps its height when empty, so every card is the same size. */}
           <div className="mt-space-1 truncate text-t12 text-fg-muted">{!loading && c.caption ? c.caption : " "}</div>
         </div>

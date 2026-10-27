@@ -100,6 +100,14 @@ test.describe("live prices: states without a notice", () => {
     await open(page, "light", { state: "live" });
     await expect(rows(page).first()).toContainText("46,350.25");
     await expect(page.locator("[data-live-notice]")).toHaveCount(0);
+    // UX-7: the header's price-feed dot names the state in words (the tint on a changed price: useTickFlash.test.ts).
+    await expect(page.locator("header [data-feed]")).toHaveCount(1);
+    await expect(page.locator("header [data-feed]")).toHaveAttribute("aria-label", /^Prices: (Live|Market closed)$/);
+  });
+
+  test("UX-7: the header dot says when the broker login has ended", async ({ page }) => {
+    await open(page, "light", { state: "renew_needed" });
+    await expect(page.locator("header [data-feed='renew']")).toHaveAttribute("aria-label", "Prices: Broker login needed");
   });
 
   test("one renew prompt: the page's own broker card asks, the notice does not ask again", async ({ page }) => {
@@ -114,6 +122,7 @@ test.describe("live prices: states without a notice", () => {
     const { puts } = await open(page, "light", { state: "renew_needed", hub: false });
     await expect(rows(page)).toHaveCount(2);
     await expect(page.locator("[data-live-notice]")).toHaveCount(0);
+    await expect(page.locator("header [data-feed]")).toHaveCount(0);                 // UX-7: no dot without live prices
     expect(puts).toEqual([]);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/tm1-before-flag-off-1440-light.png` });
   });

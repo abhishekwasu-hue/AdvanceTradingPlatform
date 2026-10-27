@@ -43,6 +43,8 @@ DEFAULT_CANDLE_CACHE_TTL_SECONDS = 60
 HISTORY_CACHE_TTL_SECONDS = 3600   # older history pages (get_history): past bars do not change
 DEFAULT_LOOKBACK_DAYS = 5
 DAILY_MIN_LOOKBACK_DAYS = 400   # Phase AS: about 270 sessions - enough for a 200-day average
+INTRADAY_DAYS_PER_REQUEST = 30   # SCR-FIX A1: an intraday history window goes out in requests of at most this many days
+                                 # (Upstox v2 serves 1minute / 30minute history about six months back, a month or so per request)
 
 
 def _cache_key(broker_name: str, exchange: str, symbol: str, interval: str, namespace: Optional[str] = None) -> str:
@@ -330,6 +332,35 @@ class MarketDataService:
         last_day_start = datetime.combine(history_to.date(), dtime(0, 0), tzinfo=IST)
         return min(history_from, last_day_start), history_to
 
+    async def _history_chunks(self, symbol: str, exchange: str, interval: str, start: datetime, end: datetime) -> List[OHLCVBar]:
+        """SCR-FIX A1 / A3: one completed-history window as requests of at most INTRADAY_DAYS_PER_REQUEST days (intraday) or
+        the broker's `daily_days_per_request` (daily), newest first, merged. A short window is one request, as before. An
+        older chunk that comes back empty means the broker has nothing older (no further calls). A chunk that fails fails
+        the whole window - a part of it is never stored as the shared copy of all of it."""
+        by_date = bool(getattr(self.broker, "history_by_date", False))
+        if interval == "day":
+            if end - start <= timedelta(days=DAILY_MIN_LOOKBACK_DAYS + 1):
+                # the default daily window stays the one request it always was
+                return await self.broker.get_historical_data(symbol, exchange, interval, start, end)
+            per_request = int(getattr(self.broker, "daily_days_per_request", 365) or 365)
+        else:
+            per_request = INTRADAY_DAYS_PER_REQUEST
+        # A date-only broker reads both end dates whole: one day less keeps a chunk within `per_request` dates.
+        span = timedelta(days=max(0, per_request - 1)) if by_date else timedelta(days=per_request)
+        if end - start <= span:
+            return await self.broker.get_historical_data(symbol, exchange, interval, start, end)
+        parts: List[List[OHLCVBar]] = []
+        hi = end
+        while hi > start:
+            lo = max(start, hi - span)
+            got = await self.broker.get_historical_data(symbol, exchange, interval, lo, hi)
+            if not got and parts:
+                break
+            parts.append(list(got))
+            # The next chunk ends just before this one starts (a date-only broker reads whole IST days: no day twice).
+            hi = lo - (timedelta(days=1) if by_date else timedelta(minutes=1))
+        return merge_bars(*reversed(parts))
+
     async def _fetch(self, symbol: str, exchange: str, interval: str, now: Optional[datetime], *, fresh: bool = False) -> List[OHLCVBar]:
         now_utc = now or datetime.now(timezone.utc)
         history_from, history_to = self.history_window(exchange, interval, now_utc)
@@ -341,7 +372,7 @@ class MarketDataService:
         history_ttl = shared_candles.HISTORY_TTL_SECONDS if by_date else shared_candles.HISTORY_MINUTE_TTL_SECONDS
 
         async def history_call() -> List[OHLCVBar]:
-            return await self.broker.get_historical_data(symbol, exchange, interval, history_from, history_to)
+            return await self._history_chunks(symbol, exchange, interval, history_from, history_to)
         history_part = shared_candles.get_or_fetch_ttl(history_key, history_call, lambda bars: history_ttl)
         if interval == "day":
             history, left = await history_part

@@ -18,6 +18,8 @@ export interface RunResponse {
   results: RunResult[]; funnel: FunnelResult; disclaimer: string;
   /** BT1b (flag byob_data_tier): the data tier the run actually used, timed by its newest bars. */
   data_tier?: DataTierBadgeInfo;
+  /** SCR-FIX A6: symbols outside the live session budget that were still read from history (absent when none). */
+  session_held_back?: number;
 }
 /** A live preview: counts only (not stored, so no match list, removed symbols or per-symbol passes). */
 export interface PreviewResponse {

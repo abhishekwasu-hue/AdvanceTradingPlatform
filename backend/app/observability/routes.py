@@ -104,6 +104,7 @@ async def deep_health(response: Response, session: AsyncSession = Depends(get_se
         checks["migrations"] = await _check_migrations(session)
         checks["worker"] = await _check_worker(session, now)
         checks["live_paths"] = await _check_live_paths(session)
+        checks["instrument_master"] = await _check_instrument_master(session, now)    # P1 27 Oct: shown, never fails
     checks["redis"] = await _check_redis()
 
     if db["status"] != "ok":
@@ -162,3 +163,17 @@ async def metrics(authorization: Optional[str] = Header(None), session: AsyncSes
         pass
     body, content_type = render()
     return Response(content=body, media_type=content_type)
+
+
+async def _check_instrument_master(session: AsyncSession, now: datetime) -> Dict[str, object]:
+    """P1 (27 Oct): the instrument master sync - `ok` when today's (IST) sync succeeded, `failing` when the last attempt
+    failed, `missing` when it has not run today yet. Informational: never changes the overall status (a deploy is never
+    blocked by it); `atp.sh health` prints it."""
+    from app.instruments import master_sync
+    try:
+        state = await master_sync.read_state(session)
+    except Exception as exc:  # noqa: BLE001 - a health probe never raises
+        return {"status": "unknown", "error": type(exc).__name__}
+    status = "ok" if master_sync.synced_today(state, now) else ("failing" if state.get("last_error") else "missing")
+    return {"status": status, "last_ok_at": state.get("last_ok_at"), "last_attempt_at": state.get("last_attempt_at"),
+            "rows": state.get("rows"), "last_error": state.get("last_error")}

@@ -458,6 +458,9 @@ class OptionChainPrefs(_Prefs):
     """`option_chain` (B4): his own Option chain settings - today the PCR zone edges. Read by the analyses route to
     word the PCR zone line; no order path, worker or risk check imports it."""
     pcr_zones: PcrZonesPrefs = Field(default_factory=PcrZonesPrefs)
+    # P1 (27 Oct): on an expiry day the chain (and the Terminal's spread / basket builder, which builds from it) opens the
+    # NEXT expiry; today's stays selectable with its "expires today" notice. Read by the option-chain routes only.
+    expiry_day_next: bool = True
 
 
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,

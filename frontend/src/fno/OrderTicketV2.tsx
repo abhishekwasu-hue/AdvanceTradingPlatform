@@ -6,7 +6,7 @@ import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { formatPrice } from "../ui/format";
 import { useFeatures } from "../ui/useFeatures";
-import { fnoApi, type FnoApi, type OrderPreview, type OrderResult, type Side } from "./api";
+import { fnoApi, runOnOptions, type FnoApi, type MultiExitResult, type MultiResult, type OrderPreview, type OrderResult, type PracticeAccount, type Side } from "./api";
 import {
   MAX_LOTS, ORDER_TYPES, PRACTICE_TEXT, PRACTICE_TITLE, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
   draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
@@ -38,13 +38,22 @@ export interface OrderTicketProps {
   onClose: () => void;
   /** After a PLACED order (the chain re-reads its "P" markers). */
   onPlaced?: (result: OrderResult) => void;
-  api?: Pick<FnoApi, "preview" | "place">;
+  api?: Pick<FnoApi, "preview" | "place"> & Partial<Pick<FnoApi, "practiceAccounts" | "placeMulti" | "exitMulti">>;
   /** 8b slice 4: the chain rows on screen when the ticket opened from the chain (its liquidity line); absent elsewhere
    * (the line then says bid-ask and open interest are not known here). */
   chainRows?: readonly ChainRow[] | null;
 }
 
-export type Step = { kind: "edit" } | { kind: "review"; preview: OrderPreview } | { kind: "done"; result: OrderResult };
+export type Step = { kind: "edit" } | { kind: "review"; preview: OrderPreview } | { kind: "done"; result: OrderResult }
+  | { kind: "multi"; result: MultiResult; exit?: MultiExitResult };
+
+/** M45 MA-6: "Run on" for the user's simulated PAPER accounts (only with `ui_v2` + `multi_account` and a Primary). */
+export interface MultiTicket {
+  options: { value: string; label: string }[];
+  runOn: string;
+  setRunOn: (value: string) => void;
+  exitAll: () => Promise<void>;
+}
 
 const FIELD = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg font-tabular focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 const SEG = "flex min-h-11 flex-1 items-center justify-center rounded-control px-space-2 text-t14 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
@@ -83,6 +92,7 @@ export interface OrderTicketState {
   draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string; defaults?: DraftDefaults;
   budget: RiskBudget | null; events: EventRisk | "error" | null; liquidity: RiskLine | null;
   onDraft: (patch: Partial<Draft>) => void; review: () => Promise<void>; place: () => Promise<void>; back: () => void;
+  multi?: MultiTicket;
 }
 
 export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, chainRows, shortcuts = true }: Omit<OrderTicketProps, "onClose"> & {
@@ -101,6 +111,16 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
   const [problem, setProblem] = useState<string | null>(null);
   const ref = useRef<string>(newClientRef());
   const idPrefix = useId();
+  // M45 MA-6: the user's simulated PAPER accounts, read when the ticket opens with `ui_v2` + `multi_account`.
+  const multiOn = features.on("ui_v2") && features.on("multi_account") && typeof api.practiceAccounts === "function";
+  const [practice, setPractice] = useState<PracticeAccount[]>([]);
+  const [runOn, setRunOn] = useState("ONE");
+  useEffect(() => {
+    if (!open || !multiOn || !api.practiceAccounts) return;
+    let live = true;
+    api.practiceAccounts().then((a) => { if (live) setPractice(a); }).catch(() => { if (live) setPractice([]); });
+    return () => { live = false; };
+  }, [open, multiOn, api]);
 
   // A new target or side starts a fresh ticket (and a fresh id, so a second order is never mistaken for the first).
   useEffect(() => {
@@ -108,6 +128,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     setDraft(newDraft(side, defaults));
     setStep({ kind: "edit" });
     setProblem(null);
+    setRunOn("ONE");
     ref.current = newClientRef();
   }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults]);
 
@@ -151,6 +172,13 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     if (!target) return;
     setBusy(true);
     try {
+      if (runOn !== "ONE" && api.placeMulti) {
+        const multi = await api.placeMulti(askOf(target, draft, ref.current), runOn);
+        setStep({ kind: "multi", result: multi });
+        const first = multi.results.find((r) => r.status === "PLACED");
+        if (first) onPlaced?.({ status: "PLACED", trade_id: first.trade_id } as OrderResult);
+        return;
+      }
       const result = await api.place(askOf(target, draft, ref.current));
       setStep({ kind: "done", result });
       if (result.status === "PLACED") onPlaced?.(result);
@@ -161,8 +189,22 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     }
   }
 
+  async function exitAll() {
+    if (step.kind !== "multi" || !api.exitMulti) return;
+    setBusy(true);
+    try {
+      setStep({ ...step, exit: await api.exitMulti(ref.current) });
+    } catch (e) {
+      setProblem(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const options = multiOn ? runOnOptions(practice) : [];
   return {
     draft, step, busy, problem, idPrefix, defaults, budget, events, liquidity, review, place,
+    multi: options.length ? { options, runOn, setRunOn, exitAll } : undefined,
     onDraft: (patch) => { setDraft((d) => ({ ...d, ...patch })); setProblem(null); },
     back: () => setStep({ kind: "edit" }),
   };
@@ -193,7 +235,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
           </div>
           <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults}
             budget={t.budget} events={t.events} liquidity={t.liquidity}
-            onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onBack={t.back} onClose={onClose} />
+            onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onBack={t.back} onClose={onClose} multi={t.multi} />
         </RD.Content>
       </RD.Portal>
     </RD.Root>
@@ -226,7 +268,7 @@ export function PracticeFrame({ className }: { className?: string } = {}) {
 const sentence = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** The ticket's fields, the confirm step and the buttons (no state, no hooks). */
-export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false }: {
+export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi }: {
   target: TicketTarget; draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string;
   /** Settings part C: the user's own ticket defaults, to mark the fields that still show them. */
   defaults?: DraftDefaults;
@@ -241,6 +283,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
   /** Owner fix T1-2 (Terminal, phone): the main action (Review / Place) stays in view, just above the bottom navigation
    *  (4rem + its border + the home-indicator inset); from md it sits at the end of the panel as before. */
   stickyActions?: boolean;
+  /** M45 MA-6: "Run on" for the user's simulated accounts (absent: the ticket is exactly as before). */
+  multi?: MultiTicket;
 }) {
   const n = needs(draft.orderType);
   const ids = { lots: `${idPrefix}-lots`, price: `${idPrefix}-price`, trigger: `${idPrefix}-trigger`, stop: `${idPrefix}-stop` };
@@ -324,6 +368,17 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                 </div>
               </div>
             </details>
+            {multi && (
+              <div>
+                <label htmlFor={`${idPrefix}-run-on`} className="mb-space-1 block text-t12 font-medium text-fg-muted">Run on</label>
+                <select id={`${idPrefix}-run-on`} value={multi.runOn} onChange={(e) => multi.setRunOn(e.target.value)} className={FIELD} data-ticket="run-on">
+                  {multi.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                {multi.runOn !== "ONE" && (
+                  <p className="mt-space-1 text-t12 text-fg-muted">Your practice accounts each get their own order, sized by their own setting. The lots above are the Primary's.</p>
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -335,6 +390,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             {resultText(step.result)}
           </p>
         )}
+
+        {step.kind === "multi" && <MultiOutcome result={step.result} exit={step.exit} />}
 
         {problem && <p role="alert" className="rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-ticket="problem">{problem}</p>}
       </div>
@@ -363,7 +420,13 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             </button>
           </>
         )}
-        {step.kind === "done" && (
+        {step.kind === "multi" && !step.exit && multi && step.result.results.some((r) => r.status === "PLACED") && (
+          <button type="button" onClick={() => void multi.exitAll()} disabled={busy} data-ticket="exit-all"
+            className="min-h-11 rounded-control border border-border px-space-4 text-t14 font-semibold text-fg disabled:opacity-50">
+            {busy ? "Exiting…" : "Exit on every account"}
+          </button>
+        )}
+        {(step.kind === "done" || step.kind === "multi") && (
           <button type="button" onClick={onClose} data-ticket="done" className="min-h-11 flex-1 rounded-control border border-border px-space-4 text-t14 font-semibold text-fg">Done</button>
         )}
       </div>
@@ -423,6 +486,34 @@ export function Review({ preview: p, budget, events, liquidity }: {
       {c && (
         <ExplainV2 testId="ticket" underlying={c.underlying}
           structure={structureOf([{ side: p.side, right: c.right, strike: c.strike ?? 0, expiry: c.expiry }])} />
+      )}
+    </div>
+  );
+}
+
+
+/** M45 MA-6: one row per practice account - placed, refused or skipped, with the reason in plain words (MB-5). */
+function MultiOutcome({ result, exit }: { result: MultiResult; exit?: MultiExitResult }) {
+  const placed = result.results.filter((r) => r.status === "PLACED").length;
+  return (
+    <div role="status" className="space-y-space-2" data-ticket="multi-result">
+      <p className="text-t14 font-semibold text-fg">Placed on {placed} of {result.results.length} account{result.results.length === 1 ? "" : "s"}</p>
+      <ul className="space-y-space-1">
+        {result.results.map((r) => (
+          <li key={r.account_id} className="rounded-control bg-surface-2 px-space-3 py-space-2 text-t13" data-multi-row={r.status}>
+            <span className="font-semibold text-fg">{r.label}</span>
+            <span className={cx("ml-space-2", r.status === "PLACED" ? "text-up" : "text-warn")}>
+              {r.status === "PLACED" ? `${r.lots} lot${r.lots === 1 ? "" : "s"} placed` : r.status === "SKIPPED" ? "Skipped" : "Not placed"}
+            </span>
+            {r.reasons.length > 0 && <span className="block text-t12 text-fg-muted">{r.reasons.join("; ")}</span>}
+          </li>
+        ))}
+      </ul>
+      {exit && (
+        <p className="text-t13 text-fg" data-ticket="multi-exit">
+          Exit sent: {exit.results.filter((r) => r.status === "CLOSED").length} closed
+          {exit.results.some((r) => r.status !== "CLOSED") ? `, ${exit.results.filter((r) => r.status !== "CLOSED").length} not closed (see Positions)` : ""}.
+        </p>
       )}
     </div>
   );

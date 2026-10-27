@@ -96,7 +96,9 @@ def _columns(order_class: str, matrix: Mapping[str, object], override: Optional[
             return (PRIMARY,)
         if text.upper().startswith(PRIMARY + "+"):
             return (PRIMARY, text[len(PRIMARY) + 1:].strip())
-        raise ValueError("The override is PRIMARY, PRIMARY+<group> or ALL.")
+        if text.upper().startswith("ACCOUNT:") and text[8:].strip().isdigit():
+            return ("ID:" + text[8:].strip(),)      # MA-5: one account (a retry of a failed child)
+        raise ValueError("The override is PRIMARY, PRIMARY+<group>, ALL or ACCOUNT:<id>.")
     row = matrix.get(order_class, DEFAULT_MATRIX.get(order_class, (PRIMARY,)))
     return row
 
@@ -117,7 +119,7 @@ def resolve(order_class: str, accounts: Sequence[Account], *, matrix: Optional[M
         why = "follows the accounts that hold the position"
     else:
         wanted = {str(c) for c in columns} if isinstance(columns, (tuple, list, set, frozenset)) else {str(columns)}
-        chosen = [a for a in in_play if "ALL" in wanted or (a.role == PRIMARY and PRIMARY in wanted)
+        chosen = [a for a in in_play if "ALL" in wanted or f"ID:{a.id}" in wanted or (a.role == PRIMARY and PRIMARY in wanted)
                   or (a.role == SECONDARY and a.group is not None and a.group in wanted)]
         why = "override " + override if override else "routing matrix"
     route = Route(why=why)

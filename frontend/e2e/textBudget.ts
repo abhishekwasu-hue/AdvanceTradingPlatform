@@ -3,12 +3,12 @@ import { cardTextProblems, type CardText } from "../src/ui/textBudget";
 
 /**
  * UX-11 U6: what the text-budget guard reads on a real page. A card is a v2 card section (`section[aria-labelledby]`),
- * a Terminal panel (`[data-panel]`) or anything marked `[data-card]`. Its visible lines are the paragraphs that belong to it (not a nested card's) and are
+ * a page block (`section[data-block]`), a Terminal panel (`[data-panel]`) or anything marked `[data-card]`. Its visible lines are the paragraphs that belong to it (not a nested card's) and are
  * shown, outside Details, alerts / status lines, empty states and the page footnote.
  */
 export async function readCards(page: Page): Promise<CardText[]> {
   return page.evaluate(() => {
-    const CARD = "section[aria-labelledby], [data-card], [data-panel]";
+    const CARD = "section[aria-labelledby], section[data-block], [data-card], [data-panel]";
     const SKIP = "[data-details], [role='alert'], [role='status'], [role='note'], [data-empty], [data-page-footnote], li, button, a, label, dt, dd, th, td";
     const cards = Array.from(document.querySelectorAll<HTMLElement>(`main :is(${CARD})`));
     return cards.map((card) => {

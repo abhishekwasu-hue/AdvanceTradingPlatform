@@ -34,5 +34,5 @@ export const Empty: Story = {
 };
 
 export const Footnote: Story = {
-  render: () => <PageFootnote>Signals, not advice. Information only - nothing here places an order. Phase 0 has PAPER only.</PageFootnote>,
+  render: () => <PageFootnote>Phase 0 has PAPER only.</PageFootnote>,
 };

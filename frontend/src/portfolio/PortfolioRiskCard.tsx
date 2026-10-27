@@ -4,18 +4,21 @@
  * user's own limits on new entries (F2, when on). Numbers for the person's own decision - never advice, and nothing here
  * places or closes an order. Every string comes from the `portfolioRisk` i18n namespace.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { Card, StatTile } from "../components/ui";
 import { usePortfolioT } from "./i18n";
+import { Details, Signed } from "../ui/numbersFirst";
+import { useUiV2 } from "../ui/useFeatures";
 import { bucketLabel, isRiskView, limitLines, money, overLimit, pct, signed, type PortfolioRiskView } from "./model";
 
-function Sub({ main, sub }: { main: string; sub: string }) {
+function Sub({ main, sub }: { main: ReactNode; sub: string }) {
   return <><span>{main}</span><span className="block text-xs font-normal text-fg-muted">{sub}</span></>;
 }
 
 export function PortfolioRiskView({ view }: { view: PortfolioRiskView }) {
   const t = usePortfolioT();
+  const v2 = useUiV2();                       // UX-11: numbers first; the as-of line, notes and footer under Details
   const limits = limitLines(view.limits, t);
   const notes = [
     view.beta.unknown.length ? t("notes.betaUnknown", { names: view.beta.unknown.join(", ") }) : "",
@@ -24,14 +27,14 @@ export function PortfolioRiskView({ view }: { view: PortfolioRiskView }) {
   ].filter(Boolean);
   return (
     <div className="space-y-3" data-testid="portfolio-risk">
-      <p className="text-xs text-fg-muted">{t("asOf", { day: view.as_of, capital: money(view.capital), source: view.capital_source })}</p>
+      {!v2 && <p className="text-xs text-fg-muted">{t("asOf", { day: view.as_of, capital: money(view.capital), source: view.capital_source })}</p>}
       {view.positions === 0 ? <p className="text-sm text-fg-muted">{t("empty")}</p> : (
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <StatTile label={t("tiles.exposure")} value={<Sub main={money(view.exposure.gross)} sub={t("ofCapital", { pct: pct(view.exposure.gross_pct) })} />} />
-            <StatTile label={t("tiles.net")} value={<Sub main={signed(view.exposure.net)} sub={t("ofCapital", { pct: pct(view.exposure.net_pct) })} />} />
+            <StatTile label={t("tiles.net")} value={<Sub main={v2 ? <Signed value={view.exposure.net} kind="count" className="text-t20 sm:text-2xl" /> : signed(view.exposure.net)} sub={t("ofCapital", { pct: pct(view.exposure.net_pct) })} />} />
             <StatTile label={t("tiles.openRisk")} value={<Sub main={money(view.open_risk.total)} sub={t("ofCapital", { pct: pct(view.open_risk.pct) })} />} />
-            <StatTile label={t("tiles.beta")} value={<Sub main={signed(view.beta.net)} sub={t("ofCapital", { pct: pct(view.beta.net_pct) })} />} />
+            <StatTile label={t("tiles.beta")} value={<Sub main={v2 ? <Signed value={view.beta.net} kind="count" className="text-t20 sm:text-2xl" /> : signed(view.beta.net)} sub={t("ofCapital", { pct: pct(view.beta.net_pct) })} />} />
           </div>
           {view.direction.warning && (
             <p role="note" className="text-xs text-warn" data-testid="one-sided"><strong>{t("notes.oneSided")}:</strong> {view.direction.warning}</p>
@@ -68,8 +71,18 @@ export function PortfolioRiskView({ view }: { view: PortfolioRiskView }) {
           {limits.map((line) => <div key={line} className="text-fg-muted">{line}</div>)}
         </div>
       )}
-      {notes.map((n) => <p key={n} className="text-xs text-fg-muted">{n}</p>)}
-      <p className="text-xs text-fg-muted">{t("footer")}</p>
+      {v2 ? (
+        <Details id="mytrades.portfolio-risk">
+          <p>{t("asOf", { day: view.as_of, capital: money(view.capital), source: view.capital_source })}</p>
+          {notes.map((n) => <p key={n}>{n}</p>)}
+          <p>{t("footer")}</p>
+        </Details>
+      ) : (
+        <>
+          {notes.map((n) => <p key={n} className="text-xs text-fg-muted">{n}</p>)}
+          <p className="text-xs text-fg-muted">{t("footer")}</p>
+        </>
+      )}
     </div>
   );
 }

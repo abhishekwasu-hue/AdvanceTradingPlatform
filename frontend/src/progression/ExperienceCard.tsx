@@ -5,6 +5,8 @@ import { criterionText } from "../components/paperLadder";
 import type { ExperienceStatus } from "../types";
 import { gateLine, gateState, nextLevel, reasonOk } from "./experience";
 import { useProgressionT } from "./i18n";
+import { KeyValueTable, Signed, TextOnDemand } from "../ui/numbersFirst";
+import { useUiV2 } from "../ui/useFeatures";
 
 /**
  * N2-2 (flag `experience_levels`): the caller's experience level from their own PAPER record, the gates it opens
@@ -34,6 +36,7 @@ export function ExperiencePanel({ status, canTrade, onOptOut, error }: {
   status: ExperienceStatus; canTrade: boolean; onOptOut: (gate: string, reason: string) => Promise<boolean>; error?: string | null;
 }) {
   const t = useProgressionT();
+  const v2 = useUiV2();                       // UX-11: numbers first, the explanations under Details
   const [open, setOpen] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,7 +54,7 @@ export function ExperiencePanel({ status, canTrade, onOptOut, error }: {
   return (
     <Card title={t("experience.title")} className="space-y-3">
       <div data-testid="experience" className="space-y-3 text-xs">
-        <p className="text-fg-muted">{t("experience.intro")}</p>
+        {!v2 && <p className="text-fg-muted">{t("experience.intro")}</p>}
         <ol className="flex flex-wrap items-center gap-2" aria-label={t("experience.levelsLabel")}>
           {status.levels.map((l, i) => (
             <li key={l.key} className="flex items-center gap-2" aria-current={l.key === status.level ? "step" : undefined}>
@@ -62,7 +65,13 @@ export function ExperiencePanel({ status, canTrade, onOptOut, error }: {
             </li>
           ))}
         </ol>
-        <p className="text-fg">{t("experience.record", { trades: r.closed_trades, sessions: r.sessions, dd: r.max_drawdown_pct.toFixed(2) })}</p>
+        {v2 ? (
+          <KeyValueTable caption={t("experience.title")} rows={[
+            { label: "Closed PAPER trades", value: r.closed_trades, testId: "trades" },
+            { label: "Sessions", value: r.sessions, testId: "sessions" },
+            { label: "Largest drawdown", value: <Signed value={-Math.abs(r.max_drawdown_pct)} kind="pct" />, testId: "drawdown" },
+          ]} />
+        ) : <p className="text-fg">{t("experience.record", { trades: r.closed_trades, sessions: r.sessions, dd: r.max_drawdown_pct.toFixed(2) })}</p>}
         {next ? (
           <div data-testid="experience-next">
             <p className="text-fg-muted">{t("experience.next", { level: next.label, opens: next.opens.join(", ").toLowerCase() })}</p>
@@ -116,17 +125,21 @@ export function ExperiencePanel({ status, canTrade, onOptOut, error }: {
         </ul>
         {(done || error) && <p role="status" className={error ? "text-down" : "text-fg-muted"}>{error ?? done}</p>}
 
-        <p className="text-fg-muted" data-testid="experience-counts">
-          {t("experience.counts", { today: status.opt_outs.today, week: status.opt_outs.last_7_days, total: status.opt_outs.total })}
-        </p>
-        {status.opt_outs.recent.length > 0 && (
-          <ul className="space-y-0.5 text-xs text-fg-muted" aria-label={t("experience.recentLabel")}>
-            {status.opt_outs.recent.map((o, i) => (
-              <li key={`${o.day}-${o.gate}-${i}`}>{t("experience.recentRow", { day: o.day, gate: o.gate_label, level: o.level.toLowerCase(), reason: o.reason })}</li>
-            ))}
-          </ul>
-        )}
-        <p className="text-xs text-fg-muted">{status.exits}</p>
+        <TextOnDemand id="mytrades.experience" on={v2}>
+          {v2 && <p>{t("experience.intro")}</p>}
+          {v2 && <p>{t("experience.record", { trades: r.closed_trades, sessions: r.sessions, dd: r.max_drawdown_pct.toFixed(2) })}</p>}
+          <p className="text-fg-muted" data-testid="experience-counts">
+            {t("experience.counts", { today: status.opt_outs.today, week: status.opt_outs.last_7_days, total: status.opt_outs.total })}
+          </p>
+          {status.opt_outs.recent.length > 0 && (
+            <ul className="space-y-0.5 text-xs text-fg-muted" aria-label={t("experience.recentLabel")}>
+              {status.opt_outs.recent.map((o, i) => (
+                <li key={`${o.day}-${o.gate}-${i}`}>{t("experience.recentRow", { day: o.day, gate: o.gate_label, level: o.level.toLowerCase(), reason: o.reason })}</li>
+              ))}
+            </ul>
+          )}
+          <p className="text-xs text-fg-muted">{status.exits}</p>
+        </TextOnDemand>
       </div>
     </Card>
   );

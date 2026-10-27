@@ -222,6 +222,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/thesis_history.json": "f3226989acc68ddf2bbfa69ff8a5353011a90a480befc57c0bfa0c988ccd5a6c",
     "frontend/e2e/fixtures/thesis_report.json": "e85180cb3f957bf048f9bffe63e3237bb760333376e255f1ae76f6d9df2e287d",
     "frontend/e2e/fixtures/trading_v2.json": "c9fc66383c29a2a5dc38d9de57bff8d27b9ba75b74578fa839b2eb420a73afef",
+    "frontend/e2e/fixtures/mytrades_cards_v2.json": "4d0ba8e0bd9fcf0e3117746ad9169e832f209600858c79df807b8ff92a8fa82d",
     "frontend/e2e/fixtures/copilot_chat_v2.json": "510074a7e7d49ba552bccccc17fae05ca6a5b05b110cd6d4e017420d5cebeb03",
 }
 

@@ -25,7 +25,12 @@ export interface SignedProps {
 
 export function signedParts({ value, kind = "money", compact = false, paise, decimals, tick }: SignedProps):
   { text: string; full: string; dir: "up" | "down" | "flat" } {
-  const { shown, full } = indianNumberText({ value, kind, compact, paise, decimals, tick, signed: true });
+  let { shown, full } = indianNumberText({ value, kind, compact, paise, decimals, tick, signed: true });
+  // A count with fixed decimals (a figure shown without ₹, e.g. "+972.50"): indianNumberText leaves its sign out.
+  if (kind === "count" && !compact && decimals !== undefined && typeof value === "number" && value > 0 && /[1-9]/.test(shown) && !shown.startsWith("+")) {
+    shown = `+${shown}`;
+    full = shown;
+  }
   if (shown === EMPTY) return { text: EMPTY, full: EMPTY, dir: "flat" };
   // The direction follows what is shown: a value that rounds to zero is flat (no sign, no arrow).
   const places = kind === "money" ? (paise ? 2 : 0) : kind === "count" ? (decimals ?? 0) : (decimals ?? 2);

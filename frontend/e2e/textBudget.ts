@@ -9,10 +9,10 @@ import { cardTextProblems, type CardText } from "../src/ui/textBudget";
 export async function readCards(page: Page): Promise<CardText[]> {
   return page.evaluate(() => {
     const CARD = "section[aria-labelledby], [data-card]";
-    const SKIP = "[data-details], [role='alert'], [role='status'], [data-empty], [data-page-footnote], button, a, label, dt, dd, th, td";
+    const SKIP = "[data-details], [role='alert'], [role='status'], [role='note'], [data-empty], [data-page-footnote], li, button, a, label, dt, dd, th, td";
     const cards = Array.from(document.querySelectorAll<HTMLElement>(`main :is(${CARD})`));
     return cards.map((card) => {
-      const title = card.querySelector("h2, h3")?.textContent?.trim() || card.getAttribute("data-card") || "card";
+      const title = card.getAttribute("data-card") || card.querySelector("h2, h3")?.textContent?.trim() || "card";
       const lines = Array.from(card.querySelectorAll<HTMLElement>("p"))
         .filter((p) => p.closest(CARD) === card && !p.closest(SKIP) && p.offsetParent !== null)
         .map((p) => (p.innerText || "").replace(/\s+/g, " ").trim())

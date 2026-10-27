@@ -36,3 +36,9 @@ export function Details({ id, label = "Details", children, className }: {
     </details>
   );
 }
+
+/** UX-11 on a card shared with today's pages: with `on` (the v2 pages) its explanation goes into Details; without, it
+ * renders exactly as before. The text is moved, never removed. */
+export function TextOnDemand({ id, on, children }: { id: string; on: boolean; children: ReactNode }) {
+  return on ? <Details id={id}>{children}</Details> : <>{children}</>;
+}

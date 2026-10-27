@@ -1,6 +1,8 @@
 import type { LadderCriterion, LadderEvidence as Evidence } from "../types";
 import { disciplineWeeksNote, kellyLine, pct, ratio, rupees, ruinLine, shortWeek } from "./evidence";
 import { useProgressionT } from "./i18n";
+import { Details, KeyValueTable, ProgressStat } from "../ui/numbersFirst";
+import { useUiV2 } from "../ui/useFeatures";
 
 /**
  * N2-1 (flag `ladder_evidence`): the "Your figures" block of the progression ladder card. Every figure comes from the
@@ -10,6 +12,7 @@ import { useProgressionT } from "./i18n";
 export default function LadderEvidence({ evidence }: { evidence: Evidence }) {
   const t = useProgressionT();
   const ev = evidence;
+  if (useUiV2()) return <LadderEvidenceV2 evidence={ev} />;
   return (
     <section className="space-y-2 border-t border-border pt-2" data-testid="ladder-evidence" aria-label={t("evidence.title")}>
       <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
@@ -72,5 +75,42 @@ export function DisciplineWeeks({ criterion }: { criterion: LadderCriterion }) {
       )}
       {note && <span className="text-fg-muted">{note}</span>}
     </div>
+  );
+}
+
+/** UX-11 (v2 pages): "Your figures", numbers first - progress to the minimum as "12 of 20" with a bar, the figures and
+ * the Kelly / ruin lines as key-value rows; the caveats, the basis and the average win / loss under Details. */
+function LadderEvidenceV2({ evidence: ev }: { evidence: Evidence }) {
+  const t = useProgressionT();
+  return (
+    <section className="space-y-2 border-t border-border pt-2" data-testid="ladder-evidence" aria-label={t("evidence.title")}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+        <span className="font-semibold text-fg">{t("evidence.title")}</span>
+        <span className="text-fg-muted">{t("evidence.counts", { trades: ev.trades, wins: ev.wins, losses: ev.losses, flat: ev.flat })}</span>
+      </div>
+      {!ev.enough ? (
+        <div data-testid="evidence-too-few"><ProgressStat label={t("evidence.title")} done={ev.trades} of={ev.min_trades} unit="closed trades" /></div>
+      ) : (
+        <>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
+            <Figure label={t("evidence.winRate")} value={pct(ev.win_rate)} />
+            <Figure label={t("evidence.expectancy")} value={rupees(ev.expectancy, true)}
+                    tone={ev.expectancy == null ? undefined : ev.expectancy > 0 ? "up" : ev.expectancy < 0 ? "down" : undefined} />
+            <Figure label={t("evidence.profitFactor")} value={ev.profit_factor == null ? t("evidence.noLoss") : ratio(ev.profit_factor)} />
+            <Figure label={t("evidence.payoffRatio")} value={ratio(ev.payoff_ratio)}
+                    title={t("evidence.avgWinLoss", { win: rupees(ev.avg_win), loss: rupees(ev.avg_loss) })} />
+          </dl>
+          <div data-testid="evidence-kelly"><KeyValueTable caption={t("evidence.kelly.label")} rows={[{ label: t("evidence.kelly.label"), value: kellyLine(ev, t) }]} /></div>
+          <div data-testid="evidence-ruin"><KeyValueTable caption={t("evidence.ruin.label")} rows={[{ label: t("evidence.ruin.label"), value: ruinLine(ev, t) }]} /></div>
+        </>
+      )}
+      <Details id="mytrades.your-figures">
+        {!ev.enough && <p>{t("evidence.tooFew", { count: ev.trades, needed: ev.min_trades })}</p>}
+        {ev.enough && <p>{t("evidence.avgWinLoss", { win: rupees(ev.avg_win), loss: rupees(ev.avg_loss) })}</p>}
+        {ev.enough && <p>{t("evidence.kelly.caveat")}</p>}
+        {ev.enough && <p>{t("evidence.ruin.caveat")}</p>}
+        <p>{t("evidence.basis")}</p>
+      </Details>
+    </section>
   );
 }

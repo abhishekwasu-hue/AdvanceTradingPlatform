@@ -299,6 +299,69 @@ def test_shards_interleave_their_start_times_over_the_ramp():
     assert '--shard "$((in_step ? 0 : i))" --shards "$((in_step ? 1 : shards))" --start-at "$start_at"' in stack
 
 
+def test_login_probe_is_one_login_every_p_seconds_over_all_shards():
+    """load-500: the judged logins arrive at a fixed rate in the steady window - 25 shards x every 2 s over 300 s is 150
+    logins, one every 2 s between them, and one per client IP every 50 s (far under the 10-a-minute per-IP limit)."""
+    shards, every, window = 25, 2.0, 300.0
+    starts = sorted(t for k in range(shards) for t in loadtest.probe_offsets(window, every, k, shards))
+    assert len(starts) == 150 and starts[0] == 0.0 and starts[-1] < window
+    assert {b - a for a, b in zip(starts, starts[1:])} == {2.0}
+    assert loadtest.probe_offsets(window, every, 3, shards)[:2] == [6.0, 56.0]
+    assert loadtest.probe_offsets(window, 0.0) == [] and loadtest.probe_offsets(0.0, every) == []
+
+
+def _phased(tmp_path, probe_ms, sign_in_ms=9000.0, sign_in_outcome="ok", bcrypt_ms=None):
+    stats = loadtest.Stats()
+    for _ in range(20):
+        stats.add("dashboard /api/auth/me", 20.0, "ok")
+        stats.add(loadtest.LOGIN_SIGN_IN, sign_in_ms, "ok")
+        stats.add(loadtest.LOGIN, probe_ms, "ok")
+    stats.add(loadtest.LOGIN_SIGN_IN, 300.0, sign_in_outcome)
+    path = tmp_path / "shard-0.json"
+    path.write_text(json.dumps({"users": 21, "seconds": 450, **stats.raw()}))
+    return loadtest.merge([str(path)], bcrypt_ms=bcrypt_ms)
+
+
+def test_sign_in_logins_are_reported_not_judged_on_latency_but_every_one_must_succeed(tmp_path):
+    """load-500: the sessions' sign-in (before the ramp) is not the login SLO's latency - a 9 s sign-in p95 passes - and it
+    never counts as API traffic; a failed sign-in fails the login verdict all the same (LD-9: no failed login)."""
+    r = _phased(tmp_path, probe_ms=800.0)
+    assert r["slo_pass"] and r["api_pass"] and r["login_pass"] and r["sign_in"] == {"n": 21, "p95_ms": 9000.0, "errors": 0, "pass": True}
+    assert r["scenarios"][loadtest.LOGIN_SIGN_IN]["p95_limit_ms"] is None and r["requests"] == 61 and r["error_rate"] == 0.0
+    md = loadtest.markdown(r, "ci host")
+    assert "| login (sign-in) | 21 | 9000.0 | 9000.0 | 9000.0 | - | pass |" in md and "`login` = the steady window's probe" in md
+    r = _phased(tmp_path, probe_ms=800.0, sign_in_outcome="throttled")
+    assert r["api_pass"] and not r["login_pass"] and not r["slo_pass"] and "sign-in: 1 failed of 21" in loadtest._verdicts(r)
+    r = _phased(tmp_path, probe_ms=2100.0)                       # the probe is the judged login: over 2 s fails
+    assert not r["login_pass"] and not r["slo_pass"]
+
+
+def test_login_budget_scales_up_from_the_runners_bcrypt_check_never_down(tmp_path):
+    """The login's own work is one bcrypt cost-12 check: on a core whose check takes 303 ms instead of the reference 220 ms
+    the budget is 2,000 x 303/220; a faster core keeps 2,000 ms; an unknown check keeps 2,000 ms."""
+    import bcrypt_baseline
+    assert bcrypt_baseline.REFERENCE_MS == 220
+    assert loadtest.login_budget(1.0, 303)["limit_ms"] == pytest.approx(2754.5, abs=0.1)
+    assert loadtest.login_budget(1.0, 150)["limit_ms"] == 2000.0 and loadtest.login_budget(1.0, None)["limit_ms"] == 2000.0
+    assert loadtest.login_budget(2.0, 303)["limit_ms"] == 4000.0                  # the larger factor, never both multiplied
+    assert _phased(tmp_path, probe_ms=2500.0, bcrypt_ms=303)["login_pass"]
+    assert not _phased(tmp_path, probe_ms=2500.0, bcrypt_ms=220)["login_pass"]
+    r = _phased(tmp_path, probe_ms=2500.0, bcrypt_ms=303)
+    assert "2,000 ms x 1.38 (bcrypt-12 303 ms here / 220 ms reference)" in loadtest._verdicts(r)
+    assert loadtest._bcrypt_ms("unknown") is None and loadtest._bcrypt_ms("268") == 268
+
+
+def test_stack_load_signs_in_first_and_keeps_the_burst_profile_one_phase():
+    stack = (CI / "stack.sh").read_text()
+    assert '--sign-in "$sign_in" --login-probe-every "$probe_every"' in stack
+    assert '[ -n "$sign_in" ] || sign_in=$(( in_step ? 0 : ramp ))' in stack
+    assert '[ "$in_step" = "0" ] || [ "$sign_in" = "0" ] || die' in stack
+    assert '[ -n "$probe_every" ] || probe_every=$(( sign_in > 0 ? 2 : 0 ))' in stack
+    wf = (ROOT / ".github" / "workflows" / "staging-stack.yml").read_text()
+    primary = wf.split("id: primary", 1)[1].split("- name:", 1)[0]
+    assert "--sign-in 150 --login-probe-every 2" in primary
+
+
 @pytest.mark.parametrize("minutes", [1, 5, None])
 def test_fake_broker_bars_per_minute_cache_changes_nothing(minutes):
     """LD-7: the fake's bars are computed once per minute (it shares the runner's CPUs with the stack under test); a

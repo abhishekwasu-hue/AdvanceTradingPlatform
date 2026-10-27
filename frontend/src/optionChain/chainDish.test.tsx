@@ -45,9 +45,10 @@ describe("the summary", () => {
     expect(renderToStaticMarkup(<ChainDishView dish={null} loading />)).toContain('aria-busy="true"');
   });
 
-  it("is mounted only while `markets_view` is on, above the summary strip; the tabs share its read", () => {
+  it("is mounted only while `markets_view` is on, as the compact reading below the chain (OC-1); the tabs share its read", () => {
     expect(pageSource).toMatch(/const dishOn = useFeatures\(\)\.on\("markets_view"\)/);
-    expect(pageSource.indexOf("<ChainDishV2")).toBeLessThan(pageSource.indexOf("<SummaryStripV2"));
+    expect(pageSource.indexOf("<ChainDishV2")).toBeGreaterThan(pageSource.indexOf("<ChainTableV2"));
+    expect(pageSource.indexOf("<ChainDishV2")).toBeLessThan(pageSource.indexOf("<AnalysisSlotV2"));
     expect(slotSource).toContain("load={fetchAnalysesShared}");
   });
 });

@@ -108,6 +108,7 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | All aprove, go ahead <br> (reply to: MA-1b #569 screenshots ✅ and start MA-2 sizing) |
 | 2026-10-27 | Continue don't ask again <br> (reply to: start MA-3 multi-account fan-out, PAPER first) |
 | 2026-10-27 | Default yes, do web research whenever necessary, don't ask me, and finish this project as early as possible, merge and deploy |
+| 2026-10-27 | "Default yes, do web research whenever necessary, don't ask me, and finish this project as early as possible, merge and deploy" | Session B: defaults stand, no questions, merge own PRs on green CI; deploys stay the owner's one command (rules §4), one deploy line after the merges |
 | 2026-10-27 | "Don't stop, finish as soon as possible" | Session B continues the UX-2 plan without pausing between PRs (UX-8 -> TD-1 Today -> page waves); merges on green CI |
 | 2026-10-27 | (Marathi, translated) "Merge all" -> chose "#569 + the three parked" | #569, #536, #438, #452 brought up to date with main and merged after CI + owner ✅ |
 | 2026-10-27 | "#452 ✅ #438 ✅" | merged (#438 c6f9f6f, #452 75415c1) |

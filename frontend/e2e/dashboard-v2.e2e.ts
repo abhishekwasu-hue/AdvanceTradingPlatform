@@ -259,10 +259,10 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await open(page, "light", { state: "empty" });
     await expect(page.locator("[data-block='attention']")).toHaveText("All clear. Nothing needs you right now.");
     const positions = page.locator("[data-block='positions']");
-    await expect(positions).toContainText("No open positions. Find a setup or let a paper bot trade for you.");
+    await expect(positions).toContainText("No open positions.");
     await expect(positions.getByRole("link", { name: "Find setups" })).toHaveAttribute("href", "/screener");
     const signals = page.locator("[data-block='signals']");
-    await expect(signals).toContainText("No signals yet today. Your scans and paper bots post them here.");
+    await expect(signals).toContainText("No signals yet today.");
     await expect(signals.getByRole("link", { name: "Set up a scan" })).toHaveAttribute("href", "/screener/custom");
     await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(0);
   });

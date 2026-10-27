@@ -114,3 +114,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | (Marathi, translated) "Want to see it live - VPS command" / "Let's deploy now, the project must be completed quickly" / "Check whether the other sessions' work is done, then deploy" / "Default yes, deploy fa2dbb8" | deployed 34889c3 (M45 migration e2a4c6e8f0b1) then fa2dbb8f216a; health OK |
 | 2026-10-27 | (Marathi, translated) "Restart the VPS now" / "Why restart - any reason?" | restart only applies Ubuntu security updates; default: after 15:30 IST, after a deploy |
 | 2026-10-27 | (Marathi, translated) "Default yes, carry on" | docs + handover; load-500 root cause next |
+| 2026-10-27 | OWNER ORDER UX-11 "Numbers first, text on demand" (U1-U6, PR 1 primitives + guard, then My trades, Today, Terminal, Charts, rest in UX-10 order) - full text verbatim in ATP_ORDER_UX11.md | roadmap UX-11; PR 1 next (Session B) |

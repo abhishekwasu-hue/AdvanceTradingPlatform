@@ -130,6 +130,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UI-H-CA | in progress | CA1-CA8 ✅ (25 Oct); fix CA6-1 distinct bottom-nav hues (Today blue, Charts violet, Signals amber, My trades pink, More teal; AA + colour-blind check), Option chain spot = chart feed check; then merge #534 | #534 |
 | UI-H-DM | in progress | dark-mode contrast DM1-DM5 in colour_v2 dark tokens (surfaces, borders >= 3:1, icons/labels >= 4.5:1, primary + active >= 7:1, Appearance "High contrast", ratio test); stacked on #534; phone comparison page (dark, normal + high contrast) | - |
 | UX-2 | in progress | Session B, plan docs/design/UX2_PLAN.md (11 PRs): merged H9 #559, UX-6 #560 (M1 done), UX-5 combobox #564; open UX-2 search #563; next UX-7 / UX-4 / UX-8; handover docs/HANDOVER_UX2.md | #559, #560, #563, #564 |
+| UX-11 | in progress | Session B: "Numbers first, text on demand" U1-U6 (ATP_ORDER_UX11.md); PR 1 shared primitives (Details, Signed, KeyValueTable, ProgressStat, EmptyState) + guard + Storybook, then My trades, Today, Terminal, Charts, rest in UX-10 order | - |
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | SB-1 | not started | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |

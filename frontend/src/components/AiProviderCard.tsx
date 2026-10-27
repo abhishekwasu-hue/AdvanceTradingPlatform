@@ -120,11 +120,12 @@ export default function AiProviderCard() {
         </div>
       )}
       {isOwner && form.provider !== "rule_based" && config?.data_consent && (
-        <div className="mt-3 rounded border border-warn/40 bg-warn/10 p-3 text-xs">
+        <div role="note" className="mt-3 rounded border border-warn/40 bg-warn/10 p-3 text-xs">
+          {/* UX-11: the consent text the owner agrees to stays in full view (a notice, not an explanation). */}
           <div className="font-semibold text-warn mb-1">Data-sharing consent (DPDP) · version {config.data_consent.version}
             {config.data_consent.accepted && <span className="ml-2 text-up">accepted {config.data_consent.accepted_at ? formatDateIST(config.data_consent.accepted_at) : ""}</span>}
           </div>
-          <TextOnDemand id="ai-provider.consent" on={v2}><p className="text-fg">{config.data_consent.text.en}</p></TextOnDemand>
+          <p className="text-fg">{config.data_consent.text.en}</p>
           {!config.data_consent.accepted && <label className="mt-2 flex items-start gap-2 text-fg">
             <input type="checkbox" checked={form.data_consent} onChange={(e) => setForm({ ...form, data_consent: e.target.checked })} />
             <span>I am the owner of this organisation and consent to this data being sent to the selected provider for the stated purpose. I can opt out at any time by switching to the rule-based provider.</span>

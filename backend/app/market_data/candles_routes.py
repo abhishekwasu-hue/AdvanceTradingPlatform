@@ -55,7 +55,7 @@ from app.brokers.token_lifecycle import build_adapter, data_is_usable, token_is_
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session, release_connection
-from app.market_data import api_budget, entitlement, index_volume, periods
+from app.market_data import api_budget, entitlement, index_volume, lake_fill, periods
 from app.market_data.calendar import (EXCHANGE_SESSIONS, IST, family_holidays, last_session_close, load_holidays, session_family,
                                       session_status)
 from app.market_data.data_terms import terms_for
@@ -426,6 +426,8 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     service = MarketDataService(cast(BrokerInterface, budgeted), lookback_days=lookback, cache_namespace=namespace)
     # C1: history ends at the last session close by the exchange's own calendar (holidays included).
     service.holidays = await family_holidays(session, session_family(exchange))
+    # DH2 / DH6: the last closed session's 1-minute bars from the reader's own lake when the broker's history lags.
+    service.lake_fill = lake_fill.for_reader(session, user)
     now = datetime.now(timezone.utc)
     today = now.astimezone(IST).date()
     window = _period_window(period, body.before, lookback, today) if period is not None else None

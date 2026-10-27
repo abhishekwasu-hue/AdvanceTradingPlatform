@@ -17,8 +17,22 @@ need pg_dump
 pg_setup
 URL="$PG_URL"
 DB="$(db_name_of "$URL")"
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$BACKUP_DIR"
+# One run at a time, each with its own name: the scheduled loop's first run (30 s after its container starts, e.g. after a
+# rollback) and a deploy's pre-migration backup once started in the same second, took the same name, and one run's
+# cleanup removed the other's file ("mv: can't rename ...hmac.part"). The lock is released when this shell exits.
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$BACKUP_DIR/.backup.lock"
+  _waited=0   # busybox flock has no -w: try without blocking, once a second, up to the limit
+  until flock -n 9; do
+    [ "$_waited" -lt "${BACKUP_LOCK_WAIT_SECONDS:-900}" ] || die "another backup is still running after ${BACKUP_LOCK_WAIT_SECONDS:-900}s"
+    sleep 1; _waited=$((_waited + 1))
+  done
+fi
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+while [ -e "$BACKUP_DIR/atp_${DB}_${STAMP}.dump" ] || [ -e "$BACKUP_DIR/atp_${DB}_${STAMP}.dump.enc" ]; do
+  sleep 1; STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+done
 BASE="$BACKUP_DIR/atp_${DB}_${STAMP}.dump"
 TMP="$BASE.part"
 # Z11 / L7: a failed run leaves no half-written file behind.

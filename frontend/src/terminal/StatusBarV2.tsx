@@ -1,6 +1,7 @@
-import { Eye, EyeOff, ShieldAlert, ShieldCheck, Wifi, WifiOff } from "lucide-react";
+import { Clock, Eye, EyeOff, Layers, ShieldAlert, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { cx } from "../components/primitives/cx";
 import { toneClass } from "../dashboard/CardV2";
+import { statusSummary, type CombinedExit } from "../fno/combinedExit";
 import type { TerminalStatus } from "./api";
 import { feedChip, marginNote, modeChip, money, openCaption, signTone, type Tone } from "./statusModel";
 
@@ -9,16 +10,27 @@ import { feedChip, marginNote, modeChip, money, openCaption, signTone, type Tone
  * margin used (always labelled an estimate in practice mode, TT-19), the price feed, the mode chip (shown, never
  * changed), the kill switch's state and the privacy mask. Phone (`compact`): MTM, funds and the mode, with the mask
  * button. Stateless: the page reads the figures and keeps the mask (per device).
+ * CX6: the active combined exit (`combined`) as a chip with the distance to trigger, and the CX-F1 "stale price" mark.
  */
 const ITEM = "flex min-w-0 flex-col";
 const LABEL = "text-t12 text-fg-muted";
 const VALUE = "whitespace-nowrap font-tabular text-t15 font-semibold";
 const tone = (t: Tone) => (t === "neutral" ? "text-fg" : toneClass(t));
 
-export function StatusBarV2({ status, failed, masked, onMask, compact = false }: {
+export function StatusBarV2({ status, failed, masked, onMask, compact = false, combined = [] }: {
   status: TerminalStatus | null; failed: boolean; masked: boolean; onMask: () => void; compact?: boolean;
+  combined?: readonly CombinedExit[];
 }) {
   const mode = modeChip(status);
+  const cx6 = statusSummary(combined, masked);
+  const combinedChip = cx6 && (
+    <span data-status="combined-exit" data-stale={cx6.stale ? "" : undefined} title={cx6.title}
+      className={cx("inline-flex min-w-0 items-center gap-space-1 truncate text-t13 font-medium", cx6.stale ? "text-warn" : "text-fg",
+        compact && "order-last w-full")}>
+      {cx6.stale ? <Clock size={14} aria-hidden className="shrink-0" /> : <Layers size={14} aria-hidden className="shrink-0" />}
+      <span className="truncate">{cx6.text}{cx6.stale ? " · stale price" : ""}</span>
+    </span>
+  );
   const maskButton = (
     <button type="button" onClick={onMask} aria-pressed={masked} data-status="mask"
       aria-label={masked ? "Show amounts" : "Hide amounts"} title={masked ? "Show amounts" : "Hide amounts on this device"}
@@ -50,7 +62,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false }:
   const today = signTone(status.today.mtm);
   if (compact) {
     return (
-      <section aria-label="Status bar" data-block="terminal-status" data-compact="" className={shell}>
+      <section aria-label="Status bar" data-block="terminal-status" data-compact="" className={cx(shell, cx6 && "flex-wrap gap-y-space-1")}>
         <div className={ITEM} data-status="today" title={status.today.note}>
           <span className={LABEL}>Today</span>
           <span className={cx(VALUE, masked ? "text-fg" : tone(today))}>{money(status.today.mtm, masked, true)}</span>
@@ -59,6 +71,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false }:
           <span className={LABEL}>Funds</span>
           <span className={cx(VALUE, "text-fg")}>{money(status.funds.available, masked)}</span>
         </div>
+        {combinedChip}
         {modeChipEl}
         {maskButton}
       </section>
@@ -98,6 +111,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false }:
         {status.kill_switch.engaged ? <ShieldAlert size={14} aria-hidden /> : <ShieldCheck size={14} aria-hidden />}
         {status.kill_switch.engaged ? "New orders stopped" : "New orders allowed"}
       </span>
+      {combinedChip}
       {maskButton}
     </section>
   );

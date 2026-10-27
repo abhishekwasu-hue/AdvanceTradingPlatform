@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { formatDateIST, formatNumber, formatPrice } from "../ui/format";
+import type { TerminalSpot } from "../terminal/spot";
+import { formatDateIST, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import { daysText, formatIv, formatStrike } from "./model";
@@ -21,11 +22,19 @@ export const PHONE_FIRST: ReadonlySet<string> = new Set(["spot", "atm", "pcr", "
 
 interface Card { key: string; label: string; term?: GlossaryKey; value: string; caption?: string }
 
-export function summaryCards(s: ChainSummary | null, expiry: string | null): Card[] {
+/**
+ * Owner 25 Oct (T1-3 on the Option chain page): with a live price (the tick of his own connection, else the chart's
+ * LTP read - src/terminal/spot.ts) the spot card shows THAT value and its time, the same as the chart; only without one
+ * does the chain's own spot (or the last close) stand.
+ */
+export function summaryCards(s: ChainSummary | null, expiry: string | null, spot: TerminalSpot | null = null): Card[] {
   const future = s?.futures ?? null;
+  const live = spot && spot.source !== "chain" ? spot : null;
   return [
     // B2b: a closed market's spot from our own last index close says so.
-    { key: "spot", label: s?.spot_source === "last_close" ? "Spot: last close" : "Spot", value: formatPrice(s?.spot) },
+    live
+      ? { key: "spot", label: "Spot", value: formatPrice(live.ltp), caption: live.at ? `as of ${formatTimeIST(live.at)}` : undefined }
+      : { key: "spot", label: s?.spot_source === "last_close" ? "Spot: last close" : "Spot", value: formatPrice(s?.spot) },
     { key: "futures", label: "Futures", value: formatPrice(future?.ltp),
       caption: future ? `Expires ${formatDateIST(future.expiry).replace(/ \d{4}$/, "")}` : undefined },
     { key: "atm", label: "ATM strike", term: "atm", value: formatStrike(s?.atm_strike) },
@@ -42,8 +51,12 @@ function Value({ loading, children }: { loading: boolean; children: ReactNode })
   return <div className="mt-space-1 font-tabular text-t18 font-semibold text-fg md:text-t20">{children}</div>;
 }
 
-export default function SummaryStripV2({ summary, expiry, loading }: { summary: ChainSummary | null; expiry: string | null; loading: boolean }) {
-  const all = summaryCards(summary, expiry);
+export default function SummaryStripV2({ summary, expiry, loading, spot = null }: {
+  summary: ChainSummary | null; expiry: string | null; loading: boolean;
+  /** The page's one spot (the chart's too, T1-3); without it the chain's own. */
+  spot?: TerminalSpot | null;
+}) {
+  const all = summaryCards(summary, expiry, spot);
   const [more, setMore] = useState(false);
   // Phone order: the four first cards, then the rest; from md the server's order (one row).
   const cards = [...all.filter((c) => PHONE_FIRST.has(c.key)), ...all.filter((c) => !PHONE_FIRST.has(c.key))];

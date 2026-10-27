@@ -304,7 +304,7 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(page.locator("[data-levels-chart]")).toHaveCount(0);                      // the chart marks the levels now
     expect(charts!.candles.filter((c) => !c.before).map((c) => `${c.symbol} ${c.timeframe}`)).toEqual(["NIFTY 50 5min"]);
     const tfs = chart.getByRole("group", { name: "Timeframe" });
-    await expect(tfs.getByRole("button")).toHaveText(["1 min", "5 min", "15 min", "1 hour", "Daily", "More"]);   // UI-H W0-1: the rest under More
+    await expect(tfs.getByRole("button")).toHaveText(["5m", "15m", "1H", "D", ""]);   // TF-1: favourites + the dropdown (icon, never "More")
     await expect(chart.getByRole("button", { name: "Chart settings" })).toBeVisible();
     await tfs.getByRole("button", { name: "15 min", exact: true }).click();
     await expect.poll(() => charts!.candles.some((c) => c.symbol === "NIFTY 50" && c.timeframe === "15min")).toBe(true);
@@ -388,9 +388,11 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(page.getByRole("table", { name: "Signals list" }).locator("tbody tr")).toHaveCount(9);
   });
 
-  test("the page intro shows on a first visit: one line, no box title (item 5)", async ({ page }) => {
+  test("the page help is one line behind the header (?), never a card above the signals (item 5, UX-6)", async ({ page }) => {
     await open(page, "/signals", "light", V2, { intro: true });
-    await expect(page.locator("[data-page-intro='open']")).toBeVisible();
+    await expect(page.locator("[data-page-intro]")).toHaveCount(0);
+    await page.locator("header [data-help-button]").click();
+    await expect(page.locator("[data-page-help='signals']")).toBeVisible();
     await expect(page.getByRole("heading", { name: "What is this page?" })).toHaveCount(0);
   });
 

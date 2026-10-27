@@ -19,3 +19,11 @@ Proof: one before/after comparison page (Today, Charts, Option chain, Terminal; 
 ## Scope (owner, 25 Oct)
 
 Scope: project-wide and permanent — CA1–CA4 live in the shared colour_v2 tokens and UI-H components, so every page (user and admin) uses them; section tints are applied page by page in UI-H Waves 1–5. The four pages above are only the proof sample. No page-local colours.
+
+## Phone fixes CA6-CA8 (owner, 25 Oct)
+
+Colour accents CA1–CA5 = ✅ on desktop. Phone shows no change (before = after), and the phone is the owner's main screen. Fix in the shared components now (not in later waves):
+CA6 Bottom nav: each item gets its section tint — icon on a soft tinted round chip; the active item a stronger tint + bold label (AA contrast, light + dark).
+CA7 Phone top bar: the page's section chip (CA3) beside the title, as on desktop.
+CA8 Today on phone: the hero market strip shows the gradient outline and the tinted cards, same as desktop.
+One phone-only comparison page (Today, Charts, Option chain, Terminal; light + dark); then merge.

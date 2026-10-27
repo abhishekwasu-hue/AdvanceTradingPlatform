@@ -16,6 +16,7 @@ import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
 import { ColourV2Provider, colourV2On } from "../ui/colourV2";
+import { PageHelpProvider } from "./pageHelp";
 import { STORED_HISTORY_PATHS, storedDailyFor } from "../ui/dataPages";
 import BottomNavV2 from "./BottomNavV2";
 import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
@@ -24,7 +25,7 @@ import MoreSheetV2 from "./MoreSheetV2";
 import { navEntryFor, visiblePinned, visibleSections, type NavContext } from "./navModel";
 import PageTabsV2 from "./PageTabsV2";
 import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
-import { MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS } from "./aliases";
+import { MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS, WATCHLIST_ADDRESS } from "./aliases";
 import { IDEAS_ADDRESS } from "../ideas/model";
 import { LEARN_ADDRESS } from "../learn/model";
 import { SETTINGS_SECTIONS } from "../settings/paths";
@@ -145,6 +146,8 @@ export default function AppShellV2() {
   const LearnPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.learn ?? NotFound;
   // Trading Terminal T1: the Terminal (v2 only), the same way.
   const TerminalPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.terminal ?? NotFound;
+  // P1-8 (2): the Watchlist page (v2 only), the same way.
+  const WatchlistPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.watchlist ?? NotFound;
   const routes = (
     <ErrorBoundary key={key ?? "not-found"} title={key ? title : undefined}>
       <Suspense fallback={<PageLoading />}>
@@ -164,6 +167,7 @@ export default function AppShellV2() {
           <Route path={MARKETS_ADDRESS} caseSensitive element={<MarketsPage onNavigate={go} />} />
           <Route path={LEARN_ADDRESS} caseSensitive element={<LearnPage onNavigate={go} />} />
           <Route path={TERMINAL_ADDRESS} caseSensitive element={<TerminalPage onNavigate={go} />} />
+          <Route path={WATCHLIST_ADDRESS} caseSensitive element={<WatchlistPage onNavigate={go} />} />
           {SETTINGS_SECTIONS.map(({ key: k, path: p }) => {
             const SectionPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2[k] ?? NotFound;
             return <Route key={p} path={p} caseSensitive element={<SectionPage onNavigate={go} />} />;
@@ -200,6 +204,8 @@ export default function AppShellV2() {
   const colour = colourV2On(features.on);
   return (
     <ColourV2Provider on={colour}>
+      {/* UX-6: the page on screen hands its help line to the header's (?) (src/shell/pageHelp.tsx). */}
+      <PageHelpProvider>
       <div className="flex min-h-screen bg-surface" data-shell="v2">
         <a href="#main"
           className="sr-only focus:not-sr-only focus:fixed focus:left-space-2 focus:top-space-2 focus:z-[70] focus:rounded-control focus:bg-surface-1 focus:px-space-3 focus:py-space-2 focus:text-t14 focus:text-fg focus:shadow-raised">
@@ -225,7 +231,7 @@ export default function AppShellV2() {
             {content}
           </main>
         </div>
-        <BottomNavV2 current={navEntryFor(key)} dot={dot} moreOpen={moreOpen} onMore={() => setMoreOpen((o) => !o)} onPick={() => setMoreOpen(false)} />
+        <BottomNavV2 current={navEntryFor(key)} ctx={ctx} dot={dot} moreOpen={moreOpen} onMore={() => setMoreOpen((o) => !o)} onPick={() => setMoreOpen(false)} />
         <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key} dot={dot}
           onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
         <BrokerPromptHost />
@@ -233,7 +239,7 @@ export default function AppShellV2() {
         {user && features.on("referrals") && <ReferralClaimHost />}
         {user && <ConnectAiHostV2 />}
         {user && <TourHost userKey={user.id} role={user.role ?? null} tourId={tourId} />}
-        <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} />
+        <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} userId={user?.id ?? null} />
         {supportOn && supportLoaded && (
           <Suspense fallback={null}>
             <SupportDialog open={supportOpen} onOpenChange={setSupportOpen}
@@ -246,6 +252,7 @@ export default function AppShellV2() {
           </Suspense>
         )}
       </div>
+      </PageHelpProvider>
     </ColourV2Provider>
   );
 }

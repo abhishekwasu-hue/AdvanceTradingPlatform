@@ -101,6 +101,12 @@ async def probe_candles(service: Any, symbol: str, exchange: str, timeframe: str
         intraday, i_err = await _call(service.broker.get_intraday_candles(symbol, exchange, base))
         out["intraday"] = summarise(intraday, i_err)
     merged = sorted({b.timestamp: b for b in (history or []) + (intraday or [])}.values(), key=lambda b: b.timestamp)
+    # DH2 / DH6: what the chart adds from the reader's own lake when the broker's history lags (0 when it does not).
+    if getattr(service, "lake_fill", None) is not None:
+        filled = await service._fill_last_session(symbol, exchange, base, list(merged), now_utc)
+        added = [b for b in filled if b.timestamp not in {m.timestamp for m in merged}]
+        out["own_lake"] = summarise(added, None if added else "nothing needed or nothing stored")
+        merged = filled
     out["chart_bars"] = len(_shape(merged, timeframe)) if merged else 0
     return out
 
@@ -109,13 +115,14 @@ async def run_candles_probe(session: AsyncSession, user: User, symbol: str, exch
     """The probe through the caller's own broker session (the chart route's pick) and its API budget."""
     from app.brokers.base import BrokerInterface
     from app.brokers.token_lifecycle import build_adapter
-    from app.market_data import api_budget
+    from app.market_data import api_budget, lake_fill
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
     record = await _pick_record(session, user.tenant_id, None, "primary")
     budgeted = api_budget.BudgetedAdapter(build_adapter(record), record.id, record.broker_name)
     service = MarketDataService(cast(BrokerInterface, budgeted), lookback_days=5)
     service.holidays = await family_holidays(session, session_family(exchange))
+    service.lake_fill = lake_fill.for_reader(session, user)
     result = await probe_candles(service, symbol, exchange, timeframe)
     result["broker"] = record.broker_name
     return result
@@ -140,7 +147,9 @@ def format_candles(result: Dict[str, Any]) -> List[str]:
     lines = [f"probe-candles {result['symbol']} ({result['exchange']}) {result['timeframe']} via {result.get('broker', '?')}",
              f"  asked at {w['asked_at']}; last session close {w['last_session_close'] or '-'}",
              f"  history window {w['from']} -> {w['to']} ({result['base_interval']} bars)"]
-    for part in ("history", "intraday"):
+    for part in ("history", "intraday", "own_lake"):
+        if part not in result:
+            continue
         p = result[part]
         if p["bars"]:
             lines.append(f"  {part}: {p['bars']} bars, first {p['first']} (close {p['first_close']}), last {p['last']} (close {p['last_close']})")

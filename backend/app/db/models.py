@@ -753,6 +753,7 @@ class GroupExitRecord(Base):
     passes_firing: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     trail_log: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stale_json: Mapped[str | None] = mapped_column(Text, nullable=True)     # CX-F1: legs read at their last traded price
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
@@ -1076,6 +1077,10 @@ class BrokerAccountRecord(Base):
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="ACTIVE")   # ACTIVE / DISABLED
     is_default: Mapped[bool] = mapped_column(nullable=False, default=False)
+    # M45 MA-1: the owner's role for multi-account routing - PRIMARY (exactly one per user, across brokers) / SECONDARY /
+    # NULL (not part of it); an optional user-named group for Secondaries. Routing / sizing read these in later steps.
+    role: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    group_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     available_balance: Mapped[float | None] = mapped_column(Money, nullable=True)
     used_margin: Mapped[float | None] = mapped_column(Money, nullable=True)
     realized_pnl: Mapped[float | None] = mapped_column(Money, nullable=True)

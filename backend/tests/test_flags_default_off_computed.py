@@ -76,7 +76,7 @@ OLD_DEFAULT_ON = frozenset({
 
 
 # Flags the owner himself ordered ON by default (DECISIONS): the only additions to the closed list.
-OWNER_DEFAULT_ON = frozenset({"colour_v2"})   # 24 Oct: colour v2 approved, ON by default
+OWNER_DEFAULT_ON = frozenset({"colour_v2", "terminal"})   # 24 Oct: colour v2; 25 Oct: the Terminal (T-D1) - ON by default
 
 
 def test_default_on_is_exactly_the_old_set():

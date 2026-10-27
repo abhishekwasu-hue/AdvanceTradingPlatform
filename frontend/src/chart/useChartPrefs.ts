@@ -12,6 +12,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { ApiError, request } from "../api/client";
 import type { CandleColors, ChartThemeChoice } from "./chartTheme";
+import { DEFAULT_FAVOURITES, cleanFavourites, type TimeframeId } from "./timeframes";
 
 /** `chart-prefs/1` (backend `app/me/prefs.py` ChartPrefs). */
 export interface ChartPrefs {
@@ -20,11 +21,14 @@ export interface ChartPrefs {
   candle_colors: CandleColors | null;
   indicators: { volume: boolean; rsi: boolean };
   reader_overlay: boolean;
+  /** TF-1: the starred timeframes, shown as one-click buttons beside the timeframe dropdown. */
+  timeframe_favourites: TimeframeId[];
 }
 
 /** The server's defaults: the app theme, no grid, the theme's candle colours, volume and RSI on (CHP-13). */
 export const DEFAULT_CHART_PREFS: ChartPrefs = {
   theme: "app", grid: false, candle_colors: null, indicators: { volume: true, rsi: true }, reader_overlay: false,
+  timeframe_favourites: [...DEFAULT_FAVOURITES],
 };
 
 export type ChartPrefsPatch = Partial<Omit<ChartPrefs, "indicators">> & { indicators?: Partial<ChartPrefs["indicators"]> };
@@ -47,6 +51,7 @@ export function cleanPrefs(raw: unknown): ChartPrefs {
     candle_colors: colors,
     indicators: { volume: bool(ind.volume, d.indicators.volume), rsi: bool(ind.rsi, d.indicators.rsi) },
     reader_overlay: bool(v.reader_overlay, d.reader_overlay),
+    timeframe_favourites: cleanFavourites(v.timeframe_favourites),
   };
 }
 

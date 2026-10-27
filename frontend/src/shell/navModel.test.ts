@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PAGES } from "../routes";
 import {
   BOTTOM_BAR_V2, NAV_EXTRAS_V2, NAV_PINNED_V2, NAV_SECTIONS_V2, allNavItems, isItemVisible, moreButtonDot, moreSheetPinned,
-  moreSheetSections, navDotFor, navEntryFor, navItemFor, searchPages, sectionOf, visibleSections, visiblePinned, type NavContext,
+  moreSheetSections, navDotFor, navEntryFor, navItemFor, searchPages, sectionOf, visibleBottomBar, visibleSections, visiblePinned, type NavContext,
 } from "./navModel";
 import { brokerDot } from "../broker/brokerState";
 import type { BrokerConnection } from "../types";
@@ -119,8 +119,20 @@ describe("UI2-1 navigation model: what a trader may see", () => {
 
 describe("UX3-9 bottom bar and More sheet (UX audit section 5)", () => {
   it("the bar is Today, Charts, Signals, My trades (More is the fifth button)", () => {
-    expect(BOTTOM_BAR_V2.map((b) => b.label)).toEqual(["Today", "Charts", "Signals", "My trades"]);
-    expect(BOTTOM_BAR_V2.map((b) => navItemFor(b.key)?.path)).toEqual(["/", "/charts", "/signals", "/positions"]);
+    expect(visibleBottomBar(trader).map((b) => b.label)).toEqual(["Today", "Charts", "Signals", "My trades"]);
+    expect(visibleBottomBar().map((b) => b.label)).toEqual(["Today", "Charts", "Signals", "My trades"]);
+    expect(BOTTOM_BAR_V2.map((b) => navItemFor(b.key)?.path)).toEqual(["/", "/charts", "/watchlist", "/signals", "/positions"]);
+  });
+
+  it("P1-8 (2): Watchlist joins the bar after Charts only while `watchlists` is on, and is not repeated in the sheet", () => {
+    const watch = { on: flags("watchlists"), role: "OWNER" };
+    expect(visibleBottomBar(watch).map((b) => b.label)).toEqual(["Today", "Charts", "Watchlist", "Signals", "My trades"]);
+    expect(moreSheetSections(watch).flatMap((s) => s.items.map((i) => i.key))).not.toContain("watchlist");
+    expect(moreSheetSections(trader).flatMap((s) => s.items.map((i) => i.key))).not.toContain("watchlist");
+    expect(navItemFor("watchlist")).toMatchObject({ label: "Watchlist", path: "/watchlist", flag: "watchlists", section: "markets" });
+    expect(isItemVisible(navItemFor("watchlist")!, trader)).toBe(false);
+    expect(searchPages("watch", watch).map((i) => i.key)).toContain("watchlist");
+    expect(searchPages("watch", trader).map((i) => i.key)).not.toContain("watchlist");
   });
 
   it("the sheet lists every other sidebar entry, grouped, Markets first and Admin last", () => {

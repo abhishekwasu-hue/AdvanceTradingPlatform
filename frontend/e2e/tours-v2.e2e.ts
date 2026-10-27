@@ -200,6 +200,8 @@ test.describe("first-time guidance", () => {
     await open(page, "positions", { ...FIRST_VISIT, seen: { positions: WHEN } });
     await page.waitForTimeout(1500);
     await expect(card(page)).toHaveCount(0);
+    // UX-6: on a page with a help line the tips sit behind the same (?) beside the title.
+    await page.locator("header [data-help-button]").click();
     await page.getByRole("button", { name: "Show the tips for this page" }).click();
     await expect(card(page)).toContainText("Tip 1 of 3");
   });
@@ -209,6 +211,7 @@ test.describe("first-time guidance", () => {
     await page.waitForTimeout(1500);
     await expect(card(page)).toHaveCount(0);
     await expect(page.locator("[data-page-intro]")).toHaveCount(0);
+    await page.locator("header [data-help-button]").click();
     await page.getByRole("button", { name: "Show the tips for this page" }).click();
     await expect(card(page)).toBeVisible();
   });

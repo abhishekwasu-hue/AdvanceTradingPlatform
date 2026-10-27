@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { cx } from "../components/primitives/cx";
+import { Combobox } from "../ui/Combobox";
 import {
   DEFAULT_RANGE, INTERVALS, MAX_PICKED, RANGES, axisScale, axisTick, chartsProvenance, chartsStateMessage, fetchCharts, initialPicks, labelEvery,
   layout, markerAt, pickedSeries, pointNote, togglePick, toneClasses, xAt, xText, xValuesOf, yAt,
@@ -62,10 +63,8 @@ export function ChartsPanel({ data, error, loading, range, onRange, interval, on
     <div className="flex items-end gap-space-2 md:gap-space-3" data-charts-controls>
       <div>
         <label htmlFor={rangeId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Strikes around ATM</label>
-        <select id={rangeId} value={range} onChange={(e) => onRange(Number(e.target.value))}
-          className="h-11 rounded-control border border-border bg-surface-2 px-space-3 text-t14 font-semibold text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9">
-          {RANGES.map((n) => <option key={n} value={n}>ATM ± {n}</option>)}
-        </select>
+        <Combobox id={rangeId} label="Strikes around ATM" value={String(range)} onChange={(v) => onRange(Number(v))}
+          options={RANGES.map((n) => ({ value: String(n), label: `ATM ± ${n}` }))} />
       </div>
       <div role="group" aria-label="Reading every" className="flex items-center gap-space-1 rounded-panel bg-surface-2 p-0 md:p-space-1">
         {INTERVALS.map((n) => (

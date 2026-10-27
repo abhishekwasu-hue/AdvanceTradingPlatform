@@ -1,7 +1,9 @@
-# Handover now (24 Oct 2026, night)
-Merged today: #515 DATA-H (migration d4a6c8e0b2f1), #516 probe tenant-key fix + CI Postgres 17, #525 date test fix,
-docs #514 #517-#523. Owner deploys e4aa102ab4ad (CI + staging passed; load-500 is the known red LD-9), then
-probe-chain / probe-candles / lake-backfill --check (screenshot), then lake-backfill.
-Waiting on the owner: #510 Wave 0 page ✅ (green), then #493 T1 + fixes page ✅ (green; merges after #510),
-#524 CX PR 1 OK (order path + F1 PAPER hedge hold; migration b3f5d7e9a1c2; green), CXQ-1/5/6.
-Next: CX PR 2 (routes) after #524; WL-1 phone Watchlist entry; TP-1 only after Phase 1.
+# Handover now (26 Oct 2026, evening)
+Rules: CLAUDE.md §6 + TB-10..TB-16; R2 = max 5 build items over all sessions. Sessions: A traders-first (this),
+B UI redesign UX-2 (own session), C review/design docs only (CP-V, M45, P2-1). Notify the owner whenever his input is needed.
+Done 26 Oct: Step 0 merged (#540 #548 #549 #550 #551 #552) + #553 CX PR 3 + #554 Watchlist page (both owner ✅).
+Weekday test fix in test_ui2_4a_index_volume (failed every Mon/Tue). Owner: lake-backfill already completed.
+Waiting on the owner: ONE deploy block (no migration) incl. `lake-backfill --check`, `probe-candles "NIFTY 50" 1m/D NSE`,
+`probe-chain NIFTY` -> he sends `tail -n 80 /tmp/atp-deploy.log`.
+Next (A): Step 1 from that output: DATA-H DH4/DH5/DH2 close-out, DH6 (22,600), sector/watchlist lists, then day-one test
+J1/J3 -> T2/T3 (+TL-1..4) + SX (P1-6d) + CX2 trailing. P2-8 Journal v2 after P1. Parked: #536, #438, #452.

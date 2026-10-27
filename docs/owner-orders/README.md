@@ -30,10 +30,15 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Google sign-in | ATP_HANDOVER_PACK.md | P5-3 | waiting for the owner (OAuth credentials) |
 | - | Login under load (LD-9) | CI | P3-2 | open |
 | - | Roadmap (one plan, rules R1-R6) | ROADMAP.md (docs/ROADMAP.md) | all | binding since 24 Oct |
-| - | Copilot chart reading (CP-V, CV1-CV13) | ATP_ORDER_CP_V.md | CP-V | review first |
+| - | Copilot chart reading (CP-V, CV1-CV13) | ATP_ORDER_CP_V.md | CP-V | fixed spec ✅ (CP_V_SPEC.md); build after DATA-H |
 | - | Token budget rules TB-1..TB-9 | INBOX 2026-10-24 | all | binding since 24 Oct |
 | - | Combined exit (CX1-CX7) + strategy exits at entry (SX1-SX8) | ATP_ORDER_CX_SX.md | P1-6c, P1-6d | review first |
 | - | Trader protection F1-F8 | ATP_ORDER_TRADER_PROTECTION.md | TP-1..TP-8 | after Phase 1 |
-| - | Colour accents CA1-CA5 | ATP_ORDER_UI_H_CA.md | UI-H-CA | after #510 |
+| - | Colour accents CA1-CA5 (✅ desktop) + phone CA6-CA8 | ATP_ORDER_UI_H_CA.md | UI-H-CA | #534 |
+| - | Dark mode contrast DM1-DM5 | ATP_ORDER_UI_H_DM.md | UI-H-DM | after #534 |
+| - | P2-F every feature 100% functional on production (FN0-FN7) | ATP_ORDER_P2F_FUNCTIONAL.md | FN0-FN7 | FN0 first |
+| - | Journal v2 J1-J6 | ATP_SESSION_JOURNAL.md | P2-8 | waiting for a free slot |
+| - | Modern trading-app look UX-1..UX-10 | ATP_ORDER_UX2.md | UX-2 | UX-1 first |
+| - | M45 Multi-broker accounts MB-0..MB-9 | ATP_ORDER_M45_MULTI_BROKER.md | M45 | design note ✅ (M45_MULTI_ACCOUNT.md); build MA-1..MA-6 next |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

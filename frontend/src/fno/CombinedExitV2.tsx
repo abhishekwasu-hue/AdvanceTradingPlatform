@@ -196,6 +196,8 @@ const TRAIL_CHOICES: { key: TrailKind; label: string; hint: string }[] = [
   { key: "NONE", label: "No trailing", hint: "The stop stays where you set it" },
   { key: "LOCK", label: "Lock a gain", hint: "After a set gain, the stop moves to keep part of it" },
   { key: "TRAIL", label: "Trail step by step", hint: "Every set move your way shifts the stop" },
+  { key: "LOCK_TRAIL", label: "Lock and trail", hint: "Lock part of a gain, then trail step by step" },
+  { key: "BREAK_EVEN", label: "Trail to break-even", hint: "After a set gain, the stop moves to no loss" },
 ];
 
 /** CX2: the optional "Trailing" part of the sheet. Empty boxes until the user types; nothing is suggested. */
@@ -210,7 +212,7 @@ function TrailingPartV2({ form, set }: { form: CombinedForm; set: (patch: Partia
           <label key={c.key} className={cx("flex min-h-11 cursor-pointer items-start gap-space-2 rounded-control border px-space-3 py-space-2",
             kind === c.key ? "border-brand bg-surface-2" : "border-border")} data-trail-kind={c.key}>
             <input type="radio" name="combined-trailing" checked={kind === c.key} className="mt-px h-4 w-4 accent-brand"
-              onChange={() => set({ trailKind: c.key, trailA: "", trailB: "" })} />
+              onChange={() => set({ trailKind: c.key, trailA: "", trailB: "", trailC: "", trailD: "" })} />
             <span className="min-w-0">
               <span className="block text-t13 font-semibold">{c.label}</span>
               <span className="block text-t12 text-fg-muted">{c.hint}</span>
@@ -224,10 +226,24 @@ function TrailingPartV2({ form, set }: { form: CombinedForm; set: (patch: Partia
             <span className={LABEL}>{labels.a}</span>
             <input className={FIELD} inputMode="decimal" value={form.trailA ?? ""} onChange={(e) => set({ trailA: e.target.value })} data-testid="combined-trail-a" autoComplete="off" />
           </label>
-          <label className="block">
-            <span className={LABEL}>{labels.b}</span>
-            <input className={FIELD} inputMode="decimal" value={form.trailB ?? ""} onChange={(e) => set({ trailB: e.target.value })} data-testid="combined-trail-b" autoComplete="off" />
-          </label>
+          {labels.b && (
+            <label className="block">
+              <span className={LABEL}>{labels.b}</span>
+              <input className={FIELD} inputMode="decimal" value={form.trailB ?? ""} onChange={(e) => set({ trailB: e.target.value })} data-testid="combined-trail-b" autoComplete="off" />
+            </label>
+          )}
+          {labels.c && (
+            <label className="block">
+              <span className={LABEL}>{labels.c}</span>
+              <input className={FIELD} inputMode="decimal" value={form.trailC ?? ""} onChange={(e) => set({ trailC: e.target.value })} data-testid="combined-trail-c" autoComplete="off" />
+            </label>
+          )}
+          {labels.d && (
+            <label className="block">
+              <span className={LABEL}>{labels.d}</span>
+              <input className={FIELD} inputMode="decimal" value={form.trailD ?? ""} onChange={(e) => set({ trailD: e.target.value })} data-testid="combined-trail-d" autoComplete="off" />
+            </label>
+          )}
         </div>
       )}
       {labels && <p className="text-t12 text-fg-muted">The stop only moves your way, never back.</p>}
@@ -257,10 +273,15 @@ export function startForm(legs: readonly SheetLeg[], editing: CombinedExit | nul
 }
 
 /** CX2: the trailing of an exit being edited, as the form holds it. Pure. */
-function editTrail(x: CombinedExit): Pick<CombinedForm, "trailKind" | "trailA" | "trailB"> {
+function editTrail(x: CombinedExit): Pick<CombinedForm, "trailKind" | "trailA" | "trailB" | "trailC" | "trailD"> {
   const t = x.trailing ?? null;
   if (x.trail_kind === "LOCK" && t) return { trailKind: "LOCK", trailA: String(t.after ?? ""), trailB: String(t.lock ?? "") };
   if (x.trail_kind === "TRAIL" && t) return { trailKind: "TRAIL", trailA: String(t.step ?? ""), trailB: String(t.by ?? "") };
+  if (x.trail_kind === "BREAK_EVEN" && t) return { trailKind: "BREAK_EVEN", trailA: String(t.after ?? ""), trailB: "" };
+  if (x.trail_kind === "LOCK_TRAIL" && t) {
+    return { trailKind: "LOCK_TRAIL", trailA: String(t.after ?? ""), trailB: String(t.lock ?? ""), trailC: String(t.step ?? ""),
+      trailD: String(t.by ?? "") };
+  }
   return { trailKind: "NONE", trailA: "", trailB: "" };
 }
 

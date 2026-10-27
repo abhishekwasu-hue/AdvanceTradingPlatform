@@ -15,9 +15,12 @@ import type { ContractFacts } from "./contracts";
 export type Measure = "MTM_INR" | "SPOT" | "NET_PREMIUM";
 export type CheckMode = "TOUCH" | "CLOSE";
 /** CX2 optional trailing: LOCK - once the gain reaches A, the stop moves to keep B; TRAIL - every X of favourable move
- * shifts the stop by Y. The numbers are the user's own (no default). The stop only ever moves his way. */
-export type TrailKind = "NONE" | "LOCK" | "TRAIL";
-export interface TrailBody { kind: "LOCK" | "TRAIL"; after?: number; lock?: number; step?: number; by?: number }
+ * shifts the stop by Y; SX2 LOCK_TRAIL - lock B at A, then every further X shifts it by Y; BREAK_EVEN - once the gain
+ * reaches A, the stop moves to break-even. The numbers are the user's own (no default). The stop only ever moves his way. */
+export type TrailKind = "NONE" | "LOCK" | "TRAIL" | "LOCK_TRAIL" | "BREAK_EVEN";
+export interface TrailBody { kind: Exclude<TrailKind, "NONE">; after?: number; lock?: number; step?: number; by?: number }
+/** A stop that appears once a gain is reached (no stop-loss needed to start). */
+export const isLocking = (k: TrailKind | undefined) => k === "LOCK" || k === "LOCK_TRAIL" || k === "BREAK_EVEN";
 
 export interface CombinedLeg { trade_id: number; symbol: string; role: "SHORT" | "LONG"; direction?: string; quantity?: number }
 export interface StaleLeg { trade_id: number; symbol: string; price: number; seen_at: string | null }
@@ -137,6 +140,9 @@ export interface CombinedForm {
   trailKind?: TrailKind;
   trailA?: string;
   trailB?: string;
+  /** SX2 LOCK_TRAIL only: C = the further move, D = how far the stop shifts. */
+  trailC?: string;
+  trailD?: string;
 }
 
 /** A typed amount: a positive finite number, or null (empty / not a number). */
@@ -152,9 +158,14 @@ export function amountOrZero(text: string): number | null {
 }
 
 /** CX2: the trailing's two labels in the measure's own unit (₹ for the combined profit / loss, points for a level). */
-export function trailLabels(kind: TrailKind, measure: Measure): { a: string; b: string } {
+export function trailLabels(kind: TrailKind, measure: Measure): { a: string; b?: string; c?: string; d?: string } {
   const unit = measure === "MTM_INR" ? "₹" : "points";
   if (kind === "LOCK") return { a: `Once the gain reaches (${unit})`, b: `Move the stop to keep (${unit})` };
+  if (kind === "BREAK_EVEN") return { a: `Once the gain reaches (${unit})` };
+  if (kind === "LOCK_TRAIL") {
+    return { a: `Once the gain reaches (${unit})`, b: `Move the stop to keep (${unit})`, c: `Then for every further move of (${unit})`,
+      d: `Shift the stop by (${unit})` };
+  }
   return { a: `For every move your way of (${unit})`, b: `Shift the stop by (${unit})` };
 }
 
@@ -165,12 +176,22 @@ export function trailErrors(form: CombinedForm): string[] {
   const a = form.trailA ?? "";
   const b = form.trailB ?? "";
   const out: string[] = [];
-  if (kind === "LOCK") {
+  if (kind === "BREAK_EVEN") {
+    if (amount(a) === null) out.push("Enter the gain after which the stop moves to break-even (more than zero).");
+    return out;
+  }
+  if (kind === "LOCK" || kind === "LOCK_TRAIL") {
     const after = amount(a);
     const keep = amountOrZero(b);
     if (after === null) out.push("Enter the gain after which the stop moves (more than zero).");
     if (keep === null) out.push("Enter how much of the gain to keep (zero or more).");
     if (after !== null && keep !== null && keep >= after) out.push("The gain kept must be less than the gain that moves the stop.");
+    if (kind === "LOCK") return out;
+    const step = amount(form.trailC ?? "");
+    const by = amount(form.trailD ?? "");
+    if (step === null) out.push("Enter the further move that shifts the stop (more than zero).");
+    if (by === null) out.push("Enter how far the stop shifts each time (more than zero).");
+    if (step !== null && by !== null && by > step) out.push("The stop cannot shift further than the move itself.");
     return out;
   }
   const step = amount(a);
@@ -187,6 +208,11 @@ export function trailOf(form: CombinedForm): TrailBody | null {
   const kind = form.trailKind ?? "NONE";
   if (kind === "LOCK") return { kind, after: amount(form.trailA ?? "") ?? undefined, lock: amountOrZero(form.trailB ?? "") ?? undefined };
   if (kind === "TRAIL") return { kind, step: amount(form.trailA ?? "") ?? undefined, by: amount(form.trailB ?? "") ?? undefined };
+  if (kind === "BREAK_EVEN") return { kind, after: amount(form.trailA ?? "") ?? undefined };
+  if (kind === "LOCK_TRAIL") {
+    return { kind, after: amount(form.trailA ?? "") ?? undefined, lock: amountOrZero(form.trailB ?? "") ?? undefined,
+      step: amount(form.trailC ?? "") ?? undefined, by: amount(form.trailD ?? "") ?? undefined };
+  }
   return null;
 }
 
@@ -194,6 +220,7 @@ export function trailOf(form: CombinedForm): TrailBody | null {
 export function trailWords(form: CombinedForm, spotSymbol: string | null = null): string {
   const t = trailOf(form);
   if (!t || trailErrors({ ...form, sl: form.sl || "1" }).length) return "";
+  if (t.kind === "LOCK_TRAIL" || t.kind === "BREAK_EVEN") return sxTrailWords(t, form.measure, spotSymbol);
   if (form.measure === "MTM_INR") {
     return t.kind === "LOCK"
       ? `Once the combined profit reaches ${formatINR(t.after ?? 0)}, the stop moves to keep ${formatINR(t.lock ?? 0)}.`
@@ -205,6 +232,21 @@ export function trailWords(form: CombinedForm, spotSymbol: string | null = null)
     : `For every ${formatNumber(t.step ?? 0, 2)} points the ${what} moves your way, the stop moves ${formatNumber(t.by ?? 0, 2)} points with it.`;
 }
 
+/** SX2: lock-and-trail / break-even, the same words as group_exits._sx_trail_words. Pure. */
+function sxTrailWords(t: TrailBody, measure: Measure, spotSymbol: string | null): string {
+  if (measure === "MTM_INR") {
+    return t.kind === "BREAK_EVEN"
+      ? `Once the combined profit reaches ${formatINR(t.after ?? 0)}, the stop moves to break-even (no loss).`
+      : `Once the combined profit reaches ${formatINR(t.after ?? 0)}, the stop moves to keep ${formatINR(t.lock ?? 0)}; then for every further `
+        + `${formatINR(t.step ?? 0)}, it moves up ${formatINR(t.by ?? 0)}.`;
+  }
+  const what = measure === "SPOT" ? `${spotSymbol ?? "the"} spot` : "net premium";
+  return t.kind === "BREAK_EVEN"
+    ? `Once the ${what} moves ${formatNumber(t.after ?? 0, 2)} points your way, the stop moves to break-even.`
+    : `Once the ${what} moves ${formatNumber(t.after ?? 0, 2)} points your way, the stop moves to keep ${formatNumber(t.lock ?? 0, 2)} points; `
+      + `then for every further ${formatNumber(t.step ?? 0, 2)} points, it moves ${formatNumber(t.by ?? 0, 2)} points with it.`;
+}
+
 /** Plain-word reasons the form cannot be set yet (the server checks again). Pure. */
 export function formErrors(form: CombinedForm, legs: readonly SheetLeg[]): string[] {
   const out: string[] = [];
@@ -213,7 +255,10 @@ export function formErrors(form: CombinedForm, legs: readonly SheetLeg[]): strin
   if (new Set(picked.map((l) => l.mode ?? "")).size > 1) out.push("PAPER and LIVE positions cannot share one combined exit.");
   if (form.sl.trim() && amount(form.sl) === null) out.push("The stop-loss must be a number above zero.");
   if (form.target.trim() && amount(form.target) === null) out.push("The target must be a number above zero.");
-  if (amount(form.sl) === null && amount(form.target) === null && (form.trailKind ?? "NONE") !== "LOCK") out.push("Enter a stop-loss, a target, or both.");
+  if (amount(form.sl) === null && amount(form.target) === null && !isLocking(form.trailKind)) out.push("Enter a stop-loss, a target, or both.");
+  if (form.measure !== "MTM_INR" && amount(form.sl) === null && amount(form.target) === null && isLocking(form.trailKind)) {
+    out.push("A spot or premium lock needs a stop-loss or a target too, so the exit knows which way is yours.");
+  }
   out.push(...trailErrors(form));
   if (form.measure !== "MTM_INR" && new Set(picked.map((l) => l.spotSymbol ?? "")).size > 1) {
     out.push("A spot or net-premium exit needs positions on one underlying. Use the combined ₹ profit / loss for a mix.");
@@ -288,7 +333,9 @@ export function chipText(x: CombinedExit, masked = false): { title: string; dist
   const n = x.legs.length;
   const hasStop = x.sl_value !== null || (x.stop_now ?? null) !== null;
   const trailing = !!x.trail_kind && x.trail_kind !== "NONE";
-  const kind = trailing ? "Combined trailing stop" : x.sl_value !== null ? "Combined stop-loss" : "Combined target";
+  // SX6: an exit set with the strategy at entry is named as such (the same chip, Edit and Remove).
+  const kind = x.origin === "SX" ? "Strategy exit"
+    : trailing ? "Combined trailing stop" : x.sl_value !== null ? "Combined stop-loss" : "Combined target";
   const title = `${kind} · ${n} ${n === 1 ? "leg" : "legs"}`;
   const stop = stopNowText(x, masked);
   if (x.status === "FIRING") return { title, distance: "closing the legs now", closing: true, ...(stop ? { stop } : {}) };

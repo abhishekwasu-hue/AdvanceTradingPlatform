@@ -106,6 +106,9 @@ export function SpreadBuilderV2({ underlying, legs, spot, product = FALLBACK_PRO
         Placed one after another: the hedge (buy) first, then the sell. On exit the sold leg closes first, then the hedge.
         If a leg does not go through you are told at once, with "Complete the leg" or "Exit the filled leg".
       </p>
+      <p className="text-t13 text-fg-muted" data-spread="exits">
+        Next, under &quot;Exits for this strategy&quot;, you can set an overall stop-loss and target for the whole spread (the spot level by default).
+      </p>
       {onOpen && <OpenButton onOpen={onOpen} label="Review and place" />}
     </div>
   );

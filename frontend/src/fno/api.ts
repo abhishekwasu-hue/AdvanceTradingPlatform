@@ -267,7 +267,20 @@ export interface BasketResult {
   actions?: string[];
   message?: string;
   filled_trade_ids?: number[];
+  /** SX: the strategy exit set on the filled legs (absent: none was asked for). */
+  exits?: StrategyExitResult;
 }
+
+/** SX: "Exits for this strategy" as the execute request carries it (backend fno_routes.StrategyExitsBody). */
+export interface StrategyExitsAsk {
+  measure: "MTM_INR" | "PREMIUM_PCT" | "SPOT";
+  sl_value: number | null;
+  target_value: number | null;
+  trailing?: { kind: "LOCK" | "TRAIL" | "LOCK_TRAIL" | "BREAK_EVEN"; after?: number; lock?: number; step?: number; by?: number } | null;
+}
+export type StrategyExitResult =
+  | { status: "ARMED"; id: number; words: string; legs: number }
+  | { status: "NOT_SET"; reason: string };
 
 export interface BrokerBasketOrder { tradingsymbol: string; exchange: string; transaction_type: Side; quantity: number }
 export type BasketBrokerLink =
@@ -280,7 +293,7 @@ export const basketApi = {
   evaluate: (ask: BasketAsk) => request<BasketEvaluation>("/paper/fno/basket/evaluate", post(ask)),
   settings: (underlying: string) => request<BasketSettings>(`/paper/fno/basket/settings?${q({ underlying })}`),
   preview: (ask: BasketAsk) => request<BasketPreview>("/paper/fno/basket/preview", post(ask)),
-  execute: (ask: BasketAsk & { basket_ref: string }) => request<BasketResult>("/paper/fno/basket/execute", post(ask)),
+  execute: (ask: BasketAsk & { basket_ref: string; exits?: StrategyExitsAsk | null }) => request<BasketResult>("/paper/fno/basket/execute", post(ask)),
   brokerLink: (ask: BasketAsk) => request<BasketBrokerLink>("/paper/fno/basket/broker-link", post(ask)),
   closeFilled: (trade_ids: number[]) => request<CloseFilledResult>("/paper/fno/basket/close-filled", post({ trade_ids })),
   settlement: () => request<SettlementView>("/paper/fno/settlement"),

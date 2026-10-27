@@ -249,5 +249,10 @@ for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) 
       console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
       expect(await textBudgetProblems(page)).toEqual([]);
     });
+    test("with a template picked, every card still fits", async ({ page }) => {
+      await open(page, { theme: "light", path: "/deployments?template=D2" });
+      await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
   });
 }

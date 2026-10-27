@@ -195,7 +195,7 @@ test.describe("Option chain v2 at 390", () => {
     expect(strip.sw).toBeLessThanOrEqual(strip.cw);
     await expect(summary.locator("[data-summary]:visible")).toHaveCount(4);
     await summary.getByRole("button", { name: /More: futures/ }).tap();
-    await expect(summary.locator("[data-summary]:visible")).toHaveCount(7);
+    await expect(summary.locator("[data-summary]:visible")).toHaveCount(8);
     await summary.getByRole("button", { name: "Show less" }).tap();
     await page.locator("tr[data-strike='24500']").tap();
     const sheet = page.locator("[data-row-details]");

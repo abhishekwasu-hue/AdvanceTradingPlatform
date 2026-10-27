@@ -521,12 +521,16 @@ async def flag_listing(session: AsyncSession) -> Dict[str, Dict]:
     """UX1: the admin Feature flags list - `feature_flags` plus each flag's catalog entry (app/platform/flag_catalog.py)
     and its default (`default_on`: the value with nothing stored, the Phase 0 seed included)."""
     from app.platform.flag_catalog import info_for
+    from app.platform.trader_pack import PACK as pack
 
     flags = await feature_flags(session)
     missing = engine_missing_flags()
     for name, entry in flags.items():
         phase_default = deployment_phase.default_for(name)
         entry.update(info_for(name), default_on=(name not in DEFAULT_OFF_FLAGS) if phase_default is None else phase_default)
+        if entry.get("fate") == "finish" and name in pack:
+            # P2-1 FA-1: an unfinished flag the trader pack turns on is visible to users while it finishes - say so.
+            entry["fate_note"] = f"In the trader pack; {entry['fate_note'][0].lower()}{entry['fate_note'][1:]}"
         if name in missing:
             entry["unavailable_reason"] = missing[name]          # the admin sees the real reason; users never do
     return flags
@@ -571,6 +575,10 @@ async def set_flag(session: AsyncSession, user: User, name: str, *, on: bool, te
                    override_open_placeholders: bool = False) -> Dict[str, Dict]:
     if name not in FEATURE_FLAGS:
         raise ValueError(f"Unknown feature flag '{name}' - known: {sorted(FEATURE_FLAGS)}")
+    from app.platform.flag_catalog import REMOVED_FROM_VIEW
+    if name in REMOVED_FROM_VIEW and (on or tenants):
+        # P2-1 FA-2 (owner ✅ 26 Oct): removed from view - it stays off; turning it off is always allowed.
+        raise ValueError(f"'{name}' was removed from view (P2-1): {REMOVED_FROM_VIEW[name]}")
     if name == "live_trading":
         # Phase 0 deployment mode: no live_trading while phase0_paper_only is on (audited refusal, ValueError -> 400).
         await deployment_phase.refuse_live_trading_on(session, user.id, on=on, tenants=tenants)

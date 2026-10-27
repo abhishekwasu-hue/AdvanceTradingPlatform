@@ -2082,6 +2082,9 @@ export interface FeatureFlag {
   needs?: string;
   status?: FlagStatus;
   status_label?: string;
+  /** P2-1: finish | keep_off | removed_from_view, with a one-line note (admin only). */
+  fate?: "finish" | "keep_off" | "removed_from_view";
+  fate_note?: string;
   default_on?: boolean;
   /** User-friendly pass item 7: why users do not see this feature on this server (e.g. its engine is not installed). */
   unavailable_reason?: string;

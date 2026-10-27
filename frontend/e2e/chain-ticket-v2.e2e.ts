@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { mockApi, type MockCalls, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
@@ -43,6 +43,11 @@ function preview(body: Record<string, unknown>) {
 }
 
 interface Seen { posts: MockCalls["posts"]; held: number }
+
+/** F1: with no product saved in the user's trading defaults nothing is pre-selected; pick NRML so Review can be tapped. */
+async function pickProduct(ticket: Locator): Promise<void> {
+  await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();
+}
 
 async function open(page: Page, theme: "light" | "dark", opts: { options?: MockOptions; held?: unknown[]; tradingDefaults?: unknown } = {}): Promise<Seen> {
   await page.clock.install({ time: new Date("2026-10-27T10:30:00+05:30") });
@@ -156,6 +161,7 @@ test.describe("Chain ticket v2 flows", () => {
     await ticket.locator("[data-helper='Bid']").tap();
     await expect(ticket.locator("[data-ticket='price']")).toHaveValue("149.50");
     expect(seen.posts.filter((p) => p.url.includes("/paper/fno/order"))).toEqual([]);   // nothing sent before Review
+    await pickProduct(ticket);
     await ticket.locator("[data-ticket='review']").tap();
     const confirm = ticket.locator("[data-ticket='confirm']");
     await expect(confirm.locator("[data-line='margin']")).toContainText("₹22,575.00");
@@ -195,6 +201,7 @@ test.describe("Chain ticket v2 flows", () => {
     await callCell(page).tap();
     await page.locator("[data-chain-actions] [data-action='sell']").tap();
     const ticket = page.locator("[data-order-ticket]");
+    await pickProduct(ticket);
     await ticket.locator("[data-ticket='review']").tap();
     await expect(ticket.locator("[data-ticket='problem']")).toHaveText("A sold option needs a stop-loss");
     await ticket.locator("[data-ticket='stop']").fill("200");
@@ -277,7 +284,8 @@ test.describe("Chain ticket v2 keys", () => {
     await page.keyboard.press("b");
     await expect(side.getByRole("radio", { name: "Buy" })).toHaveAttribute("aria-checked", "true");
     // Typing in a field never switches the side.
-    await page.locator("[data-ticket='advanced'] summary").click();
+    // F1: with no product saved, More options already opens on the product; open it only when it is closed.
+    if (!(await page.locator("[data-ticket='stop']").isVisible())) await page.locator("[data-ticket='advanced'] summary").click();
     await page.locator("[data-ticket='stop']").fill("s");
     await expect(side.getByRole("radio", { name: "Buy" })).toHaveAttribute("aria-checked", "true");
   });
@@ -319,6 +327,7 @@ test.describe("Chain ticket v2 multi-account (M45 MA-6)", () => {
     const runOn = ticket.locator("[data-ticket='run-on']");
     await expect(runOn.locator("option")).toHaveText(["This order only", "Primary account", "Primary + Family", "All accounts"]);
     await runOn.selectOption("PRIMARY+Family");
+    await pickProduct(ticket);
     await ticket.locator("[data-ticket='review']").click();
     await ticket.locator("[data-ticket='place']").click();
     const result = ticket.locator("[data-ticket='multi-result']");

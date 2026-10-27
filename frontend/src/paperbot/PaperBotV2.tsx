@@ -456,11 +456,16 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
               onChange={(e) => { setTemplateTimeframe(e.target.value); setResult(null); }}>
               {picked.timeframes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
-            <p className="mt-space-1 text-t13 text-fg-muted" data-template-notes>
-              {adoptFailed ? "This template cannot be set up just now. Try again in a moment."
-                : adoption ? `${fromLink ? "Starts with the settings from the idea." : "Starts with the template's usual settings."} ${adoption.notes.join(" ")}`
-                : "Getting the template ready…"}
-            </p>
+            {/* UX-11 U1: where the settings come from and the template's own notes on demand, word for word; a failure or the wait stays visible. */}
+            <div data-template-notes>
+              {adoptFailed ? <p role="alert" className="mt-space-1 text-t13 text-fg-muted">This template cannot be set up just now. Try again in a moment.</p>
+                : !adoption ? <p role="status" className="mt-space-1 text-t13 text-fg-muted">Getting the template ready…</p>
+                : (
+                  <Details id="paperbot.template" label="About this template" className="mt-space-1">
+                    <p>{fromLink ? "Starts with the settings from the idea." : "Starts with the template's usual settings."}{adoption.notes.length > 0 && ` ${adoption.notes.join(" ")}`}</p>
+                  </Details>
+                )}
+            </div>
             {/* Day-one fix 6: the settings this bot starts with, in words (from the idea, or the template's usual ones). */}
             {adoption && settingRows(picked, adoption.settings.params).length > 0 && (
               <div className="mt-space-2 rounded-control border border-subtle p-space-3" data-template-settings>

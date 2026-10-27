@@ -106,6 +106,8 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | (Marathi, translated) "Default yes, start DH2 / DH6." (after the deploy of b15de0d, health OK) | DATA-H DH2 / DH6: last-session 1-minute fill from the own lake; VAPID default (owner keeps the key in atp-private) |
 | 2026-10-27 | (Marathi, translated) "Start UX-7." | UX-2 plan PR 5 (UX-7 live feel) started in Session B |
 | 2026-10-27 | All aprove, go ahead <br> (reply to: MA-1b #569 screenshots ✅ and start MA-2 sizing) |
+| 2026-10-27 | Continue don't ask again <br> (reply to: start MA-3 multi-account fan-out, PAPER first) |
+| 2026-10-27 | Default yes, do web research whenever necessary, don't ask me, and finish this project as early as possible, merge and deploy |
 | 2026-10-27 | "Default yes, do web research whenever necessary, don't ask me, and finish this project as early as possible, merge and deploy" | Session B: defaults stand, no questions, merge own PRs on green CI; deploys stay the owner's one command (rules §4), one deploy line after the merges |
 | 2026-10-27 | "Don't stop, finish as soon as possible" | Session B continues the UX-2 plan without pausing between PRs (UX-8 -> TD-1 Today -> page waves); merges on green CI |
 | 2026-10-27 | (Marathi, translated) "Merge all" -> chose "#569 + the three parked" | #569, #536, #438, #452 brought up to date with main and merged after CI + owner ✅ |

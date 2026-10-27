@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from datetime import timedelta
+from datetime import timedelta, timezone
 from types import SimpleNamespace
 
 from app.db.models import GroupExitRecord, TradeRecord
@@ -229,3 +229,28 @@ def test_the_api_takes_the_trailing_validates_it_and_shows_the_stop_now(prices):
     lock = client.post(f"{BASE}/{made['id']}/edit", headers=t["headers"],
                        json={"version": 3, "sl_value": None, "trailing": {"kind": "LOCK", "after": 2000, "lock": 500}}).json()
     assert lock["trail_kind"] == "LOCK" and lock["stop_now"] is None and "the trailing stop is reached" in lock["words"]
+
+
+def test_an_edit_starts_the_closed_candle_trailing_after_the_edit(prices):  # noqa: F811
+    """An edit restarts the trailing: no candle that closed before the edit is judged on the new stop (no look-back)."""
+    t = _org_tenant("cx2-edit-seen")
+    short, hedge = _api_spread(t, "CX2E")
+    prices.update({"CX2ESHORT": 110.0, "CX2EHEDGE": 42.0})
+    body = {"trade_ids": [short, hedge], "measure": "MTM_INR", "sl_value": 1000, "client_ref": uuid.uuid4().hex[:16],
+            "trailing": {"kind": "TRAIL", "step": 500, "by": 250}}
+    made = client.post(BASE, headers=t["headers"], json=body).json()
+    client.post(f"{BASE}/{made['id']}/edit", headers=t["headers"], json={"version": 1, "sl_value": 900})
+
+    async def seen():
+        async with _session_factory() as session:
+            return gx.trail_seen(await session.get(GroupExitRecord, made["id"]))
+    at = _run(seen())
+    assert at is not None
+    row_made = _run(_created(made["id"]))
+    assert at >= row_made
+
+
+async def _created(row_id):
+    async with _session_factory() as session:
+        created = (await session.get(GroupExitRecord, row_id)).created_at
+        return created if created.tzinfo else created.replace(tzinfo=timezone.utc)

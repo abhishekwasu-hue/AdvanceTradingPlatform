@@ -635,6 +635,8 @@ async def edit(session: AsyncSession, user: User, row_id: int, *, version: int, 
                               "timeframe_minutes": tf if mode == CLOSE else None, "current_sl": None,
                               "best_value": None, "locked_at": None, "trail_kind": kind,
                               "trail_json": trail_json_of(kind, spec), "version": int(row.version) + 1, "updated_at": at}
+    if kind in (TRAIL, LOCK):                          # the closed-candle check starts after the edit (no candle before it)
+        values["trail_json"] = json.dumps({**json.loads(values["trail_json"]), "seen": at.isoformat()})
     if row.measure != MTM_INR and now_value is not None:
         values["basis_value"] = now_value
     if row.measure != MTM_INR and now_value is not None:

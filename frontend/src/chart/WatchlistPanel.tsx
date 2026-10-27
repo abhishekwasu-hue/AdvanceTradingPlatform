@@ -4,6 +4,8 @@ import { cx } from "../components/primitives/cx";
 import { EMPTY, formatDateIST, formatPct, formatPrice } from "../ui/format";
 import { SymbolPicker } from "../ui/SymbolPicker";
 import { useLiveTicks } from "../live/liveTicks";
+import { SkeletonRows } from "../components/primitives/Feedback";
+import { flashClass, useTickFlash } from "../ui/useTickFlash";
 import {
   contractItems, contractSubline, contractsApi, contractsKey, holdsTarget, known, rollEdit, splitExpired, type ContractFacts, type KnownContract,
 } from "../fno/contracts";
@@ -200,9 +202,12 @@ export function ExpiredRows({ rows, facts, listName, inList, onRoll, onRemove, i
 }
 
 function Price({ q }: { q: QuoteRow | undefined }) {
+  // UX-7: a new price shows a short up / down tint.
+  const flash = useTickFlash(q && !q.missing ? q.ltp : null);
   return (
     <span className="text-right">
-      <span className="block tabular-nums" title={q?.missing ? q.error ?? undefined : undefined}>
+      <span data-flash={flash ?? undefined} className={cx("block rounded-control px-space-1 tabular-nums transition-colors duration-base", flashClass(flash))}
+        title={q?.missing ? q.error ?? undefined : undefined}>
         {q && !q.missing && q.ltp != null ? formatPrice(q.ltp) : EMPTY}
       </span>
       <Change row={q} />
@@ -411,7 +416,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
         </div>
       )}
 
-      {!state.loaded && <p className="px-space-3 py-space-4 text-t13 text-fg-muted">Loading your watchlists…</p>}
+      {!state.loaded && <SkeletonRows label="Loading your watchlists…" />}
 
       {state.off && <p role="status" className="px-space-3 py-space-4 text-t13 text-fg-muted">{SWITCHED_OFF}</p>}
 
@@ -527,7 +532,7 @@ export function SystemListView({ summary, list, rows, total, matching, query, on
           {ROW_SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
       </div>
-      {list === undefined && <p className="px-space-3 py-space-4 text-t13 text-fg-muted">Loading the list…</p>}
+      {list === undefined && <SkeletonRows label="Loading the list…" />}
       {list === "failed" && (
         <div role="status" className="space-y-space-1 px-space-3 py-space-4 text-t13">
           <p className="text-fg">This list could not be loaded. Check your connection, then try again.</p>

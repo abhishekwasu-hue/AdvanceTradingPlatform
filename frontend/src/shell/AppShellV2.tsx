@@ -214,7 +214,9 @@ export default function AppShellV2() {
           Skip to content
         </a>
         <SidebarV2 sections={sections} pinned={pinned} dot={dot} current={key} user={user} accountPath={accountPath} />
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          {/* UX-12: the dotted backdrop behind the top of the page (decoration; tokens.css .dot-backdrop). */}
+          <div aria-hidden className="dot-backdrop" data-dot-backdrop />
           <TopBarV2 title={title} section={key} user={user} accountPath={accountPath}
             notificationsActive={key === "notifications"} accountActive={key === "account"}
             onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined}
@@ -227,7 +229,7 @@ export default function AppShellV2() {
           <LivePricesBanner enabled={!!user && features.on("data_hub")} />
           {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip. */}
           <main id="main" ref={mainRef} tabIndex={-1}
-            className={`w-full flex-1 ${key === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${key === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>
+            className={`relative w-full flex-1 ${key === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${key === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>
             {/* UX3-9: a merged page's tabs (My trades, Strategies, Performance) above the tab on screen. */}
             {!legacy && !redirect && <PageTabsV2 current={key} ctx={ctx} />}
             {content}

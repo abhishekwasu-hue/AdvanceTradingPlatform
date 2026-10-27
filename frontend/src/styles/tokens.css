@@ -517,3 +517,20 @@ html { font-size: calc(100% * var(--text-scale)); }
   --brand-fill: 30 64 175;
   --brand-fill-strong: 30 58 138;
 }
+
+/* UX-12 (owner, 27 Oct, a Hostinger-like screenshot): a soft dot grid in the secondary violet (--accent-2) behind the
+   top band of every v2 page, fading out downwards. Decoration only: cards keep their own surface, so no number or
+   table ever sits on dots. Off with Appearance > "Dotted background" (data-dots="off") and with high contrast. */
+.dot-backdrop {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(3.5rem + env(safe-area-inset-top));   /* just below the top bar (h-14) */
+  height: 20rem;
+  pointer-events: none;
+  background-image: radial-gradient(rgb(var(--accent-2) / 0.55) 1.4px, transparent 1.6px);
+  background-size: 12px 12px;
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0) 0%, rgb(0 0 0) 35%, transparent 100%);
+  mask-image: linear-gradient(to bottom, rgb(0 0 0) 0%, rgb(0 0 0) 35%, transparent 100%);
+}
+:root[data-dots="off"] .dot-backdrop,
+:root[data-contrast="high"] .dot-backdrop { display: none; }

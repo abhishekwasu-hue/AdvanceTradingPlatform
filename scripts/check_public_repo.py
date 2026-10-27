@@ -114,20 +114,20 @@ PRIVATE_FIXTURES_RESOLVER = "backend/tests/private_fixtures.py"
 ALLOWED_TEST_DATA: Dict[str, str] = {
     # F&O 8b slice 3: UI screenshots of the auto journal card on made-up trades (e2e/fno8b-slice3-v2.e2e.ts); re-pin
     # after regenerating them
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-dark.png": "437f0c5ae9b63c892f4edd06b4f021cb920be61b6df474b3945bde5442e44350",
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-light.png": "df04028261528f4ca681d4862d41fe5116c017ca955d0b8266ad02f869eca022",
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-360-dark.png": "6e72441199dc5320742df71285620dcac4096b43c2bde77d93fbed82216ceda6",
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-360-light.png": "7ddd76579c050a848c1e0cfe02f72afb1f778a8b1d7cc894bfdaee604e781030",
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-390-dark.png": "4d6c5c2a39512cdf8a76db2545272d0eea14a64391c5d60678887b17413d9b28",
-    "frontend/e2e/__screenshots__/fno8b3-journal-v2-390-light.png": "6a436905f69a2840006d2b2b52eba9c9d7d7c8aa937bd674b33bc26f2b5a4225",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-dark.png": "445f6eaf5030c874e09efb555e77238bea985e6f0a840b55913d29383c6dd3fc",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-light.png": "ba6c88488a77bcdc2520ac1ca7721325f0368495043f064ca8088a6ed239cd12",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-360-dark.png": "fac00f0e47912749f1c483583ce757c07d42252f4e600f988124d1b11147763d",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-360-light.png": "da1abb6758f9b44aff1ffd876f6c064ef6e94d20f08072c062d56d8f1c889012",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-390-dark.png": "6193bc560462917918e4733588f743312ef2f75d553cbb1fd65abdf6a7853f5a",
+    "frontend/e2e/__screenshots__/fno8b3-journal-v2-390-light.png": "2b430ee531d3413f13a5859303c6989631aaf9bc1a6b4143b90d100f0301dc3e",
     # F&O 8b slice 4: the journal card with its chart snapshot drawn from a made-up price history (e2e/fno8b-slice4-v2.e2e.ts);
     # re-pin after regenerating them
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-1440-dark.png": "cb9e0f949b391f18801511871dff48018ef005fdedc8b7346c706c5cb3868029",
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-1440-light.png": "dd5bd8282aa286ceba0ebdf470f78bb83d1fbc55f34b1faaa39364a7c96f525c",
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-dark.png": "d2e7b9aae2f4d8d1a91b27fe8324b7b9f0fa92febefc4120bbef63e9029fe411",
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-light.png": "efd16a641eb3f9eae657b12c284489fff1eb71df5dcdbf41ee7beca1cffbe835",
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-dark.png": "43280ae7d608169fcf19669cbdb3dbee4ec089253d2893b8d32026f65a084455",
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-light.png": "3da1739c96839b754fc2956c5f32fb30985462020e10eef05737af08726bd767",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-1440-dark.png": "cbe507c78c808b148dbe627da1f538f6e959e0465c40a8e6c38d58281a95b34b",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-1440-light.png": "fcc80a143b2d2d3cde0644334545c8692404fe1aec83b763baccc0d5e77eb280",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-dark.png": "d566c5205c9346c547c3c227eec543fe69eb671c5c6f864edbe9d82a4c7424b0",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-light.png": "9bc53ae88b09e63466d330889325a72ac84760304e1e68cea75d66e3c72b34af",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-dark.png": "db77fcc3cec66d35b48d4315a7d5a8dbdcf6a23daf9a7303503f47177cd32216",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-light.png": "9f5aba5aa60a59310b5d1c248dc4ebe350ec90c73a793e9c957425861e416dcc",
     # ATP-generated goldens on synthetic, seeded inputs (each regeneration site names this list)
     "backend/tests/fixtures/charts/pa_layer_golden.json": "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
     "backend/tests/fixtures/charts/study_parity.json": "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",

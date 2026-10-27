@@ -278,7 +278,9 @@ describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today
     expect(tints).toEqual(["today", "charts", "signals", "trades", "more"]);           // CA6-1: five different hues
     expect(BOTTOM_BAR_V2.filter((b) => !b.flag).map((b) => sectionTintOf(b.key))).toEqual(["today", "charts", "signals", "trades"]);
     expect(html).toContain(navChipClass("charts", true));
-    expect(html.match(/rounded-pill[^"]*bg-sec-[a-z]+-soft/g)).toHaveLength(4);
+    // UX-13 option C (owner, 27 Oct): the other four tabs keep their colour on the icon, with no soft round fill.
+    expect(html.match(/rounded-pill[^"]*bg-sec-[a-z]+-soft/g)).toBeNull();
+    expect(html.match(/rounded-pill[^"]* text-sec-(today|signals|trades|more)"/g)).toHaveLength(4);
     expect(html).toContain(`${navWordClass("charts")} font-semibold`);
     // 44 px targets: every tab is at least 64 px tall and a fifth of the bar wide.
     expect(html.match(/min-h-16 flex-1/g)).toHaveLength(5);

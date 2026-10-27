@@ -492,3 +492,47 @@ export function drawdownOrderProblem(level1: string, level2: string): string | n
   if (level1.trim() === "" || level2.trim() === "" || !Number.isFinite(a) || !Number.isFinite(b) || !(a > b && b > 0)) return null;
   return `Halve the size at a drawdown no larger than the one that pauses new entries (${formatNumber(b, Number.isInteger(b) ? 0 : 2)}%).`;
 }
+
+// --- Orders (UX-10, My trades wave) -----------------------------------------------------------------------------------
+
+/** One fill on the Orders list: a trade's entry, and its exit once closed. Display only - built from /trades. */
+export interface OrderFillRow {
+  key: string;
+  at: string;
+  kind: "Entry" | "Exit";
+  symbol: string;
+  side: "Long" | "Short";
+  mode: "Paper" | "Live";
+  size: string;
+  price: string;
+  when: string;
+  /** Why it closed (exits only), in plain words. */
+  reason: string | null;
+  strategy: string;
+}
+
+/** Every entry and exit fill, newest first (UI audit H5 / H4: a list that fits a phone, times in IST). */
+export function orderFillRows(trades: readonly TradeRecord[]): OrderFillRow[] {
+  const rows: OrderFillRow[] = [];
+  for (const t of trades) {
+    const base = {
+      symbol: t.symbol, side: t.direction === "SHORT" ? "Short" as const : "Long" as const,
+      mode: t.mode === "LIVE" ? "Live" as const : "Paper" as const,
+      size: formatLots(t.quantity, t.lot_size), strategy: strategyDisplayName(t.strategy_id),
+    };
+    rows.push({ ...base, key: `${t.id}-entry`, at: t.entry_time, kind: "Entry", price: formatPrice(t.entry_price),
+      when: formatDateTimeIST(t.entry_time), reason: null });
+    if (t.exit_time && t.exit_price !== null) {
+      rows.push({ ...base, key: `${t.id}-exit`, at: t.exit_time, kind: "Exit", price: formatPrice(t.exit_price),
+        when: formatDateTimeIST(t.exit_time), reason: t.exit_reason ? humanise(t.exit_reason.toLowerCase()) : null });
+    }
+  }
+  return rows.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
+
+/** The Orders page's tiles: all fills, entries, exits and trades still open. */
+export function orderTiles(rows: readonly OrderFillRow[]): { fills: number; entries: number; exits: number; open: number } {
+  const entries = rows.filter((r) => r.kind === "Entry").length;
+  const exits = rows.length - entries;
+  return { fills: rows.length, entries, exits, open: entries - exits };
+}

@@ -134,19 +134,35 @@ cmd_seed() {
 # The load test, sharded: each shard is its own ci-runner container (its own IP on the stack network) running
 # backend/scripts/loadtest.py for its slice of users and accounts, through Caddy; the raw samples are merged after.
 #   --users 500 --seconds 300 --ramp 150 --think 30 [--shards N] [--name DIR] [--label TEXT] [--report FILE] [--in-step]
+#   [--sign-in S] [--login-probe-every P]
+# Three phases by default (loadtest.py's module docstring, "Sign-in first"): every user logs in during a sign-in phase
+# of S seconds (default: the ramp's length; reported, every login must succeed), opens the app on that session over the
+# ramp, and in the steady window one password login every P seconds (default 2, all shards together: 1.2 a minute per
+# client IP) is the judged `login` - at 500 sessions, not inside the ramp's bcrypt wave. --sign-in 0: the one-phase run
+# (the logins inside the ramp, judged), as --in-step (the login-burst profile) always is.
 cmd_load() {
   ensure_env
-  local users=500 seconds=450 ramp=150 think=10 shards=0 label="" name="load" report="" in_step=0
+  local users=500 seconds=450 ramp=150 think=10 shards=0 label="" name="load" report="" in_step=0 sign_in="" probe_every=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --users) users="$2"; shift 2 ;; --seconds) seconds="$2"; shift 2 ;; --ramp) ramp="$2"; shift 2 ;;
       --think) think="$2"; shift 2 ;; --shards) shards="$2"; shift 2 ;; --label) label="$2"; shift 2 ;;
       --report) report="$2"; shift 2 ;; --name) name="$2"; shift 2 ;; --in-step) in_step=1; shift ;;
+      --sign-in) sign_in="$2"; shift 2 ;; --login-probe-every) probe_every="$2"; shift 2 ;;
       *) die "unknown load option $1" 2 ;;
     esac
   done
-  # The login limit is 10 a minute per client IP. Spread the logins so each shard (IP) makes at most 8 a minute.
-  if [ "$shards" = "0" ]; then shards=$(( (users * 60 + ramp * 8 - 1) / (ramp * 8) )); [ "$shards" -ge 1 ] || shards=1; fi
+  # --in-step passes every shard as shard 0 of 1, so a probe would be in step too (one login per IP every P s, over the
+  # per-IP limit): the burst profile stays one-phase.
+  [ -n "$sign_in" ] || sign_in=$(( in_step ? 0 : ramp ))
+  case "$sign_in" in ""|*[!0-9]*) die "--sign-in takes whole seconds" 2 ;; esac
+  [ "$in_step" = "0" ] || [ "$sign_in" = "0" ] || die "--in-step runs one-phase: no --sign-in with it" 2
+  [ -n "$probe_every" ] || probe_every=$(( sign_in > 0 ? 2 : 0 ))
+  case "$probe_every" in ""|*[!0-9.]*) die "--login-probe-every takes seconds" 2 ;; esac
+  # The login limit is 10 a minute per client IP. Spread the logins so each shard (IP) makes at most 8 a minute over the
+  # window that carries them (the sign-in phase, or the ramp in a one-phase run).
+  local logins_over=$(( sign_in > 0 ? sign_in : ramp ))
+  if [ "$shards" = "0" ]; then shards=$(( (users * 60 + logins_over * 8 - 1) / (logins_over * 8) )); [ "$shards" -ge 1 ] || shards=1; fi
   [ -s "$STATE/load_accounts.csv" ] || cmd_seed "$users"
   local have; have="$(grep -vc '^#' "$STATE/load_accounts.csv" || true)"
   [ "$have" -ge "$users" ] || die "$STATE/load_accounts.csv has $have accounts, $users needed (deploy/ci/stack.sh seed $users)"
@@ -154,9 +170,10 @@ cmd_load() {
   rm -rf "${STATE:?}/$name"; mkdir -p "$STATE/$name"
   local per=$(( (users + shards - 1) / shards )) i offset n pids=()
   local client_cpus; client_cpus="$(env_value ATP_CI_CLIENT_CPUS)"     # `stack.sh pin`: the clients off the server's CPUs
-  step "load: $users users in $shards shards of up to $per (one client IP each), ramp ${ramp}s, then ${seconds}s, think ${think}s$([ "$in_step" = 1 ] && echo ', shards in step (login bursts)')"
-  # Informational, never a verdict: the runner's CPU and one bcrypt-12 check in the API's container with its own
-  # bcrypt, uncontended (before the load) - the login p95 follows the core's bcrypt speed. "unknown" when not measured.
+  step "load: $users users in $shards shards of up to $per (one client IP each), $([ "$sign_in" -gt 0 ] && echo "sign-in ${sign_in}s, ")ramp ${ramp}s, then ${seconds}s, think ${think}s$([ "$in_step" = 1 ] && echo ', shards in step (login bursts)')$([ "$probe_every" != 0 ] && echo ", a probe login every ${probe_every}s after the ramp")"
+  # The runner's CPU and one bcrypt-12 check in the API's container with its own bcrypt, uncontended (before the load) -
+  # the login p95 follows the core's bcrypt speed. Reported; the merge also derives the login budget from it
+  # (loadtest.login_budget: scaled up on a slower core than the reference, never down). "unknown" when not measured.
   local cpu_model bcrypt_ms
   cpu_model="$(awk -F': *' '/^model name/ {print $2; exit}' /proc/cpuinfo 2>/dev/null || true)"
   bcrypt_ms="$(dc exec -T backend python - < "$ROOT/backend/scripts/bcrypt_baseline.py" 2>/dev/null | tail -n 1 || true)"
@@ -177,6 +194,7 @@ cmd_load() {
     dc --profile tools run --rm -T ci-runner /ci-scripts/loadtest.py --base "https://$(env_value DOMAIN)" --cacert /state/caddy-root.crt \
       --accounts /state/load_accounts.csv --account-offset "$offset" --users "$n" --seconds "$seconds" --ramp "$ramp" \
       --think "$think" --seed "$((54 + i))" --shard "$((in_step ? 0 : i))" --shards "$((in_step ? 1 : shards))" --start-at "$start_at" \
+      --sign-in "$sign_in" --login-probe-every "$probe_every" \
       ${client_cpus:+--pin-cpus "$client_cpus"} --raw-out "/state/$name/shard-$i.json" > "$STATE/$name/shard-$i.log" 2>&1 &
     pids+=("$!")
   done

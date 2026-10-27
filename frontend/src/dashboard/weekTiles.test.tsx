@@ -32,8 +32,9 @@ describe("TD-1: Today's week tiles", () => {
   it("one number per tile with its sign; up / down by meaning; each tile opens the Week view", () => {
     const html = renderToStaticMarkup(<MemoryRouter><WeekTilesView tiles={[{ key: "nifty", label: "NIFTY 50", value: 1.234 }, { key: "worst", label: "Weakest sector", value: -2.4, caption: "Metal" }]} /></MemoryRouter>);
     expect(html).toContain("This week");
-    expect(html).toMatch(/text-up">\+1\.23%</);
-    expect(html).toMatch(/text-down">−2\.40%</);
+    // UX-11 U2: the shared Signed - colour, ▲ / ▼ and the sign.
+    expect(html).toMatch(/text-up"[^>]*data-signed="up"[^>]*><span aria-hidden="true"[^>]*>▲<\/span><span>\+1\.23%</);
+    expect(html).toMatch(/text-down"[^>]*data-signed="down"[^>]*><span aria-hidden="true"[^>]*>▼<\/span><span>−2\.40%</);
     expect(html).toContain('href="/markets?period=week"');
     expect(html).toContain(">Metal<");
   });

@@ -10,6 +10,7 @@ import { HERO_CARD } from "../ui/accents";
 import { indexCaption, signTone, vixNote, type TodayPnl } from "./model";
 import type { Loadable } from "./useDashboardData";
 import type { MarketStrip, StripIndex } from "./types";
+import { Signed } from "../ui/numbersFirst";
 
 /**
  * UI2-2 (UI v2 proposal §5 block 3): the market strip - NIFTY 50, BANK NIFTY and INDIA VIX (last price, change, %
@@ -37,8 +38,9 @@ function Change({ index }: { index: StripIndex }) {
   if (index.ltp === null) return <span className="text-t13 text-fg-muted">{EMPTY}</span>;
   return (
     <span className={`font-tabular text-t13 font-medium ${tone}`}>
-      {formatChange(index.change)}{" "}
-      <span className="block sm:inline">({formatPct(index.change_pct)})</span>
+      {/* UX-11 U2: the change with its sign and ▲ / ▼, the percent beside it. */}
+      {index.change === null ? formatChange(index.change) : <Signed value={index.change} kind="change" />}{" "}
+      <span className="block sm:inline">(<Signed value={index.change_pct} kind="pct" arrow={false} />)</span>
     </span>
   );
 }
@@ -120,11 +122,11 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
           Today&apos;s P&amp;L <TermHint term="todays-pnl" align="end" />
         </div>
         <div className="text-right">
-          <div className={`font-tabular text-t20 font-semibold md:text-t24 ${toneClass(signTone(total))}`}>{formatSignedINR(total)}</div>
+          <div className="font-tabular text-t20 font-semibold md:text-t24"><Signed value={total} /></div>
           {pnl.booked !== null && (
             <div className="text-t12 text-fg-muted">
-              <span className="whitespace-nowrap">{formatSignedINR(pnl.booked)} booked</span> ·{" "}
-              <span className="whitespace-nowrap">{pnl.open === null ? `open ${EMPTY}` : `${formatSignedINR(pnl.open)} open`}</span>
+              <span className="whitespace-nowrap"><Signed value={pnl.booked} arrow={false} /> booked</span> ·{" "}
+              <span className="whitespace-nowrap">{pnl.open === null ? `open ${EMPTY}` : <><Signed value={pnl.open} arrow={false} /> open</>}</span>
             </div>
           )}
         </div>

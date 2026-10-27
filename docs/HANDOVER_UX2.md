@@ -1,6 +1,7 @@
-# Handover - Session B, UX-2 + UX-11 (27 Oct)
-Plans: docs/design/UX2_PLAN.md, docs/owner-orders/ATP_ORDER_UX11.md. Self-merge on green CI (DECISIONS 26 Oct); owner 27 Oct "Default yes, finish everything".
-Merged: #559 #560 #563 #564 (UX-7, UX-4) #577 #579 #581 #582 #583 #584 #585. On CI: #578 (density), #586->#587->#588->#589 (UX-11 stack, merge in order).
-Next: UX-11 Option chain, Signals, then Paper bot, Performance, Strategies, Settings, Markets, Learn; OC-4/OC-5; flaky tests charts-v2:868, login_protection, fno-workspace:111.
-Guard: e2e/textBudget.ts (cards, [data-card], [data-panel]); each page spec calls textBudgetProblems.
-Local: own worktree + pwXXXX port config; never `git add -A` (node_modules link).
+# Handover - Session B, UX-2 + UX-11 (27 Oct, afternoon)
+Plans: docs/design/UX2_PLAN.md, docs/owner-orders/ATP_ORDER_UX11.md. Self-merge on green CI; owner 27 Oct "Default yes, finish everything" / "do fast".
+Merged 27 Oct: #577 #578 #579 #581-#587 #589 (incl. #588) #590 #593 #596. Last: #594 (UX-11 rest, contains #592; close #592 when it merges).
+UX-11 guard on 25 pages; follow-ups: Screener and /charts have no card markup (guard vacuous); Setup steps 2-4 unmeasured.
+Owner decisions open: UX-12 dots sample (no OK yet); UX-13 bottom-bar colours A/B/C (default A = CA6-1 stays).
+Flaky: charts-v2:868, connect-ai-v2:170 (redirect wait), login_protection. PR 8 waits on Session A T2/T3.
+Local: own worktree + pwXXXX port config; never `git add -A` (node_modules link). Deploy: no migration.

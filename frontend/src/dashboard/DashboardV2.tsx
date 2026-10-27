@@ -22,6 +22,8 @@ import {
 import { useHiddenToday } from "./dismissToday";
 import NeedsAttentionV2 from "./NeedsAttentionV2";
 import { dataOf, useDashboardData, type Loadable } from "./useDashboardData";
+import { WeekTilesV2 } from "./WeekTilesV2";
+import { PAGE_FLAGS } from "../shell/pageFlags";
 
 /**
  * UI2-2 (UI v2 proposal §5, §8, §9; MOBILE_APP_PLAN Phase A): the v2 dashboard, "Today" - "What needs me right now?".
@@ -139,6 +141,8 @@ export default function DashboardV2(_props: PageProps = {}) {
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:space-y-space-6" : "lg:space-y-space-6"}`}>
               <ActiveSignalsV2 data={signalRows} readyWatch={features.on("strategy_templates")} />
               <TodaySummaryV2 tiles={todayTiles(exposure, dataOf(data.summary), dataOf(data.risk), signals)} loading={tilesLoading} />
+              {/* TD-1: "Your week" as four small tiles (Sectors & indices data), not sentences. */}
+              <WeekTilesV2 enabled={features.on(PAGE_FLAGS.markets ?? "markets_view")} />
             </div>
           </div>
         </>

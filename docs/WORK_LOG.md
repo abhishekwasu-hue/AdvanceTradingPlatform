@@ -3424,6 +3424,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   baselines at 360 / 390 / 1440 light / dark; `admin-system-v2-*` baselines refreshed (the Alerts card is new).
 
 
+## 23 Oct - Chart order (row 18), PR 3: series markers in the v2 chart; "Test a strategy" on it (behind ui_v2)
+
+- Branch `claude/chart-core-markers-backtest` (review sequence item 3). No migration, no new flag (ui_v2 only).
+- `ChartCore.setMarkers` (the v5 markers plugin on the candle series, which always holds the bars, so markers show for
+  candles, bars, line and Heikin Ashi) and the pure `snapMarkers` (each marker to the bar at or before its time, as
+  ProChart does; meaning colours follow the palette and a theme change). `ChartV2` takes `markers`.
+- "Test a strategy" (`BacktestPage`) under ui_v2: `chart/BacktestChartV2.tsx` - the v2 chart with the trades, the
+  trader's chart settings and the lines the strategy reads (`chart/backtestChart.ts`, CC-5): a line at the v2 chart's
+  period is drawn; Bollinger Bands, Supertrend, ADX and other periods are named under the chart. ProChart stays for
+  ui_v2 off.
+- Tests: vitest `ChartV2.test.tsx` (markers), `backtestChart.test.ts`; e2e `chart-backtest-v2.e2e.ts` with baselines
+  `chart-backtest-v2-{1440,390,360}-{light,dark}.png` (font override). Gesture recordings outside the repository.
 ## 23 Oct - Production readiness A4: security
 
 - Branch `claude/readiness-a4-security`. **No migration** (the session cap reads `user_sessions.created_at`), no new

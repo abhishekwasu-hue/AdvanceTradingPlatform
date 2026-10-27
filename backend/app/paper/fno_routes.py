@@ -40,6 +40,14 @@ FNO-4, the watchlist's contract rows and the positions page (app/paper/fno_contr
 TT-8, a basket's legs as one group (app/paper/fno_groups.py) - exits, so no flag, kill switch or limit stops them:
 - `POST /api/paper/fno/positions/{id}/exit-leg`    this leg only; a hedge before its sold leg: a warning until confirm.
 - `POST /api/paper/fno/positions/{id}/exit-group`  every open leg of the basket, the sold legs first.
+
+Terminal T2 (app/paper/fno_position_actions.py):
+- `POST /api/paper/fno/positions/{id}/exit-part`   TT-9: N of the position's lots close now, the rest stays open (an exit:
+                                                   never stopped by a flag, the kill switch, a limit or approval-only).
+- `POST /api/paper/fno/positions/{id}/reverse`     TT-9: exit all, then the opposite side with the same lots through the
+                                                   ticket (the entry half runs every entry check; `preview` changes nothing).
+- `POST /api/paper/fno/resting/{id}/modify`        TT-10: the price / trigger / lots of the caller's own waiting order,
+                                                   or the level of his own armed stop / target.
 """
 import json
 from datetime import date
@@ -490,6 +498,68 @@ async def exit_group(trade_id: int, user: User = Depends(require_trader), sessio
     stopped by a flag, the kill switch, a limit or approval-only."""
     from app.paper import fno_groups
     return await fno_groups.exit_group(session, user, trade_id)
+
+
+# --- Terminal T2: Exit part, Reverse (TT-9) and Modify (TT-10) -----------------------------------------------------------
+
+REF = r"^[A-Za-z0-9-]{8,64}$"
+
+
+class ExitPartBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lots: int = Field(ge=1, le=fno_ticket.MAX_LOTS * 10)
+    client_ref: str = Field(pattern=REF)
+    confirm: bool = False
+
+
+class ReverseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    client_ref: str = Field(pattern=REF)
+    stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)   # the new side's own stop
+    preview: bool = False
+    confirm: bool = False
+
+
+class ModifyBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    trigger_price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    lots: Optional[int] = Field(default=None, ge=1, le=fno_ticket.MAX_LOTS)
+    level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    spot_level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+
+
+@router.post("/positions/{trade_id}/exit-part")
+async def exit_part(trade_id: int, body: ExitPartBody, user: User = Depends(require_trader),
+                    session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """TT-9 "Exit part": closes `lots` of this position now, priced as Exit now; the rest stays open. An exit (ADR-0004):
+    no flag, kill switch, limit or approval-only rule stops it. More lots than are open: 422 in plain words, nothing
+    closed. A hedge whose sold leg is open answers {"status": "CONFIRM"} until `confirm`. Same `client_ref`: the first result."""
+    from app.paper import fno_position_actions
+    return await fno_position_actions.exit_part(session, user, trade_id, lots=body.lots, client_ref=body.client_ref,
+                                                confirm=body.confirm)
+
+
+@router.post("/positions/{trade_id}/reverse", dependencies=[Depends(place_rate_limit)])
+async def reverse(trade_id: int, body: ReverseBody, user: User = Depends(require_trader),
+                  session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """TT-9 "Reverse": the whole position closes (never blocked), then the opposite side opens with the same lots through
+    the ticket (TT-2: his own confirmed order, origin manual; every entry check runs). `preview`: the new side's confirm
+    figures, nothing changes. A double tap with the same `client_ref` never exits or opens twice."""
+    await _enabled(session, user)
+    from app.paper import fno_position_actions
+    return await fno_position_actions.reverse(session, user, trade_id, client_ref=body.client_ref, stop_loss=body.stop_loss,
+                                              preview=body.preview, confirm=body.confirm)
+
+
+@router.post("/resting/{order_id}/modify", dependencies=[Depends(resting_rate_limit)])
+async def modify_resting(order_id: int, body: ModifyBody, user: User = Depends(require_trader),
+                         session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """TT-10: changes the caller's own waiting order (404 for anyone else's); one already sent or done answers 409."""
+    await _enabled(session, user)
+    from app.paper import fno_position_actions
+    return await fno_position_actions.modify_resting(session, user, order_id, price=body.price, trigger_price=body.trigger_price,
+                                                     lots=body.lots, level=body.level, spot_level=body.spot_level)
 
 
 @router.get("/settlement")

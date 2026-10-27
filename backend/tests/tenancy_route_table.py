@@ -666,6 +666,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/basket/close-filled"): "trader",  # TM Part 7: the caller's own legs (404 other tenant, 403 another member's), shorts first
     ("POST", "/api/paper/fno/positions/{trade_id}/exit-leg"): "trader",    # TT-8: the caller's own leg (404 other tenant, 403 another member's)
     ("POST", "/api/paper/fno/positions/{trade_id}/exit-group"): "trader",  # TT-8: the caller's own basket, sold legs first
+    ("POST", "/api/paper/fno/positions/{trade_id}/exit-part"): "trader",   # TT-9: the caller's own position (404 other tenant, 403 another member's)
+    ("POST", "/api/paper/fno/positions/{trade_id}/reverse"): "trader",     # TT-9: the holder's own position only (404 other tenant, 403 anyone else)
+    ("POST", "/api/paper/fno/resting/{order_id}/modify"): "trader",        # TT-10: the caller's own waiting order (404 otherwise)
     ("GET", "/api/paper/fno/settlement"): "member: the caller's own open stock F&O positions only (delivery warning)",
     ("GET", "/api/trading/incomplete"): "member: the caller's own incomplete multi-leg orders only (SE-7)",
     ("POST", "/api/trading/incomplete/{group_id}/answer"): "trader",   # SE-7: his own order (404 other tenant, 403 another member's)

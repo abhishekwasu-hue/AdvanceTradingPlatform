@@ -104,6 +104,13 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-26 | Ho <br> ((Marathi, translated) "Yes" - reply to: merge MA-1a #568 on green; MA-1b next) |
 | 2026-10-26 | (Marathi, translated) "Start the MA-1 build." |
 | 2026-10-27 | (Marathi, translated) "Default yes, start DH2 / DH6." (after the deploy of b15de0d, health OK) | DATA-H DH2 / DH6: last-session 1-minute fill from the own lake; VAPID default (owner keeps the key in atp-private) |
+| 2026-10-27 | (Marathi, translated) "Start UX-7." | UX-2 plan PR 5 (UX-7 live feel) started in Session B |
 | 2026-10-27 | All aprove, go ahead <br> (reply to: MA-1b #569 screenshots ✅ and start MA-2 sizing) |
 | 2026-10-27 | Continue don't ask again <br> (reply to: start MA-3 multi-account fan-out, PAPER first) |
 | 2026-10-27 | Default yes, do web research whenever necessary, don't ask me, and finish this project as early as possible, merge and deploy |
+| 2026-10-27 | (Marathi, translated) "Merge all" -> chose "#569 + the three parked" | #569, #536, #438, #452 brought up to date with main and merged after CI + owner ✅ |
+| 2026-10-27 | "#452 ✅ #438 ✅" | merged (#438 c6f9f6f, #452 75415c1) |
+| 2026-10-27 | (Marathi, translated) "Yes ok deploy" (reply to: "#536 ✅?") | #536 merged (fa2dbb8) |
+| 2026-10-27 | (Marathi, translated) "Want to see it live - VPS command" / "Let's deploy now, the project must be completed quickly" / "Check whether the other sessions' work is done, then deploy" / "Default yes, deploy fa2dbb8" | deployed 34889c3 (M45 migration e2a4c6e8f0b1) then fa2dbb8f216a; health OK |
+| 2026-10-27 | (Marathi, translated) "Restart the VPS now" / "Why restart - any reason?" | restart only applies Ubuntu security updates; default: after 15:30 IST, after a deploy |
+| 2026-10-27 | (Marathi, translated) "Default yes, carry on" | docs + handover; load-500 root cause next |

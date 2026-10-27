@@ -156,7 +156,7 @@ test.describe("Strategy templates behaviour", () => {
     expect(server.sent.filter((c) => c.url === "/deployments")).toHaveLength(0);
     expect(server.sent.at(-1)).toEqual({ method: "POST", url: "/strategy-templates/B1/adopt", body: { timeframe: "15m" } });
     await form(page).getByLabel("Chart timeframe").selectOption("1d");
-    await expect(form(page)).toContainText("held for days");
+    await expect(form(page)).toContainText("Held for days");
     await form(page).getByLabel("Pick a symbol").selectOption("RELIANCE");
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Started on paper: RELIANCE.");

@@ -624,6 +624,8 @@ async def _group_reading(row: GroupExitRecord, legs: List[Dict[str, Any]], reade
         closed = trigger_rules.closed_candles(bars, tf, now)
         if closed:
             row.last_value, row.last_checked_at = closed[-1].close, now
+        if gx.trailing_on(row):
+            return _trailed_close_reading(row, closed, now)
         sl = row.current_sl if row.current_sl is not None else row.sl_value
         for kind, level, side in ((gx.SL, sl, row.sl_side), (gx.TARGET, row.target_value, row.target_side)):
             if level is not None and side and trigger_rules.close_trigger(float(level), side, bars, tf, now,
@@ -655,7 +657,56 @@ async def _group_reading(row: GroupExitRecord, legs: List[Dict[str, Any]], reade
     if value is None:
         return None
     row.last_value, row.last_checked_at = value, now
+    gx.apply_trail(row, value, now)                    # CX2: the stop may move in the trade's favour, never back
     return gx.decide(row, value)
+
+
+def _trailed_close_reading(row: GroupExitRecord, closed: Sequence[trigger_rules.Candle], now: datetime) -> Optional[str]:
+    """CX2 on a closed-candle check: each candle closed since the exit was set (or since the last one read, `seen`) is
+    judged on the stop in force BEFORE it, then may move the stop - in order, so no candle is judged on a stop a later
+    candle moved (no look-ahead), and none is read twice after a restart."""
+    since = [at for at in (row.created_at, gx.trail_seen(row)) if at is not None]
+    start = max((at if at.tzinfo else at.replace(tzinfo=timezone.utc)) for at in since) if since else None
+    for candle in closed:
+        if start is not None and candle.end <= start:
+            continue
+        gx.mark_seen(row, candle.end)
+        stop, side = gx.stop_now(row), gx.stop_side(row)
+        if stop is not None and side and trigger_rules.closed_beyond(stop, side, candle.close):
+            return gx.SL
+        if row.target_value is not None and row.target_side and trigger_rules.closed_beyond(
+                float(row.target_value), row.target_side, candle.close):
+            return gx.TARGET
+        gx.apply_trail(row, candle.close, now)
+    return None
+
+
+async def _save_trail(session: AsyncSession, row: GroupExitRecord, before: Tuple[Any, Any, Any]) -> None:
+    """Stores what the trailing changed on this reading with conditional UPDATEs, so two passes (the tick pass and the
+    cycle) can never move the stored stop back: the best reading and the stop are written only when more favourable
+    than what is stored, `locked_at` only once, and only while the exit is still ARMED."""
+    from sqlalchemy.orm.attributes import set_committed_value
+    fav = gx.favour(row)
+    col_rows = GroupExitRecord.__table__.c
+    moved = {name: getattr(row, name) for name, old in zip(("best_value", "current_sl"), before)
+             if getattr(row, name) is not None and getattr(row, name) != old}
+    locked = row.locked_at if row.locked_at is not None and before[2] is None else None
+    # Nothing of these is written by the ORM's own flush (an autoflush would write a stale value unconditionally).
+    for name, old in zip(("best_value", "current_sl", "locked_at"), before):
+        if name in moved or (name == "locked_at" and locked is not None):
+            set_committed_value(row, name, old)
+    for name, new in moved.items():
+        col = col_rows[name]
+        ahead = col < new if fav > 0 else col > new
+        await session.execute(update(GroupExitRecord).where(
+            GroupExitRecord.id == row.id, GroupExitRecord.status == gx.ARMED, (col.is_(None)) | ahead).values(
+            **{name: new}).execution_options(synchronize_session=False))
+    if locked is not None:
+        await session.execute(update(GroupExitRecord).where(
+            GroupExitRecord.id == row.id, GroupExitRecord.locked_at.is_(None)).values(
+            locked_at=locked).execution_options(synchronize_session=False))
+    for name, new in [*moved.items(), *([("locked_at", locked)] if locked is not None else [])]:
+        set_committed_value(row, name, new)
 
 
 async def _claim_group(session: AsyncSession, row: GroupExitRecord, kind: str, now: datetime) -> bool:
@@ -765,7 +816,10 @@ async def run_group_exits(session: AsyncSession, tenant_id: int, reader: _Prices
                     continue
                 exits = {t.id: float(t.exit_price) for t in trades if t.exit_time is not None and t.exit_price is not None}
                 last_traded = {t.id: gx.last_traded(t) for t in trades if t.exit_time is None}
+                before = (row.best_value, row.current_sl, row.locked_at)
                 kind = await _group_reading(row, gx.legs_of(row), reader, candles, now, exits, last_traded)
+                if gx.trailing_on(row):
+                    await _save_trail(session, row, before)
                 if gx.stale_notice_due(row, now):
                     await _group_notify(session, row, "Combined exit: a leg has no fresh price",
                                         gx.stale_words(row) + " Your combined exit keeps watching on its last traded price.",

@@ -9,8 +9,8 @@ import type { TradeRecord } from "../types";
 import { formatINR, formatNumber } from "../ui/format";
 import {
   MEASURES, TIMEFRAMES, active, amount, bodyOf, chipText, combinedApi, defaultMeasure, exitShortCopy, failText, formErrors,
-  newRef, previewWords, sheetLegs, staleText, type CombinedApi, type CombinedExit, type CombinedForm, type CombinedPreview,
-  type SheetLeg,
+  newRef, previewWords, sheetLegs, staleText, trailLabels, trailOf, type CombinedApi, type CombinedExit, type CombinedForm,
+  type CombinedPreview, type SheetLeg, type TrailKind,
 } from "./combinedExit";
 import type { ContractFacts } from "./contracts";
 import { groupExitApi, runExit, type GroupExitApi } from "./groupExits";
@@ -51,6 +51,7 @@ export function CombinedExitChipV2({ exit, masked = false, onEdit, onRemove }: {
       <ShieldCheck size={14} aria-hidden className="shrink-0 text-fg-muted" />
       <span className="font-semibold text-fg">{words.title}</span>
       <span className={cx("font-tabular", words.closing ? "text-warn" : "text-fg-muted")} data-distance>{words.distance}</span>
+      {words.stop && <span className="font-tabular text-fg" data-stop-now>{words.stop}</span>}
       {stale && (
         <span className="inline-flex items-center gap-space-1 font-semibold text-warn" data-stale title={stale}>
           <Clock size={14} aria-hidden />Stale price
@@ -147,6 +148,8 @@ export function CombinedExitFormV2({ view, onChange }: { view: FormView; onChang
         </label>
       </div>
 
+      <TrailingPartV2 form={form} set={set} />
+
       {form.measure === "SPOT" && (
         <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-2">
           <label className="block">
@@ -189,6 +192,49 @@ export function CombinedExitFormV2({ view, onChange }: { view: FormView; onChang
   );
 }
 
+const TRAIL_CHOICES: { key: TrailKind; label: string; hint: string }[] = [
+  { key: "NONE", label: "No trailing", hint: "The stop stays where you set it" },
+  { key: "LOCK", label: "Lock a gain", hint: "After a set gain, the stop moves to keep part of it" },
+  { key: "TRAIL", label: "Trail step by step", hint: "Every set move your way shifts the stop" },
+];
+
+/** CX2: the optional "Trailing" part of the sheet. Empty boxes until the user types; nothing is suggested. */
+function TrailingPartV2({ form, set }: { form: CombinedForm; set: (patch: Partial<CombinedForm>) => void }) {
+  const kind = form.trailKind ?? "NONE";
+  const labels = kind === "NONE" ? null : trailLabels(kind, form.measure);
+  return (
+    <fieldset className="space-y-space-1" data-trailing>
+      <legend className={LABEL}>Trailing (optional)</legend>
+      <div className="grid grid-cols-1 gap-space-1 sm:grid-cols-3">
+        {TRAIL_CHOICES.map((c) => (
+          <label key={c.key} className={cx("flex min-h-11 cursor-pointer items-start gap-space-2 rounded-control border px-space-3 py-space-2",
+            kind === c.key ? "border-brand bg-surface-2" : "border-border")} data-trail-kind={c.key}>
+            <input type="radio" name="combined-trailing" checked={kind === c.key} className="mt-px h-4 w-4 accent-brand"
+              onChange={() => set({ trailKind: c.key, trailA: "", trailB: "" })} />
+            <span className="min-w-0">
+              <span className="block text-t13 font-semibold">{c.label}</span>
+              <span className="block text-t12 text-fg-muted">{c.hint}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      {labels && (
+        <div className="grid grid-cols-1 gap-space-3 pt-space-2 sm:grid-cols-2">
+          <label className="block">
+            <span className={LABEL}>{labels.a}</span>
+            <input className={FIELD} inputMode="decimal" value={form.trailA ?? ""} onChange={(e) => set({ trailA: e.target.value })} data-testid="combined-trail-a" autoComplete="off" />
+          </label>
+          <label className="block">
+            <span className={LABEL}>{labels.b}</span>
+            <input className={FIELD} inputMode="decimal" value={form.trailB ?? ""} onChange={(e) => set({ trailB: e.target.value })} data-testid="combined-trail-b" autoComplete="off" />
+          </label>
+        </div>
+      )}
+      {labels && <p className="text-t12 text-fg-muted">The stop only moves your way, never back.</p>}
+    </fieldset>
+  );
+}
+
 // --- The sheet -----------------------------------------------------------------------------------------------------------
 
 /** The sheet on a phone: from the bottom, at most 85% of the screen, scrolling inside. */
@@ -202,12 +248,20 @@ export function startForm(legs: readonly SheetLeg[], editing: CombinedExit | nul
     return {
       ...EMPTY_FORM, ticked: editing.legs.map((l) => l.trade_id), measure: editing.measure,
       sl: editing.sl_value !== null ? String(editing.sl_value) : "", target: editing.target_value !== null ? String(editing.target_value) : "",
-      check: editing.check_mode, timeframe: editing.timeframe_minutes ?? 15,
+      check: editing.check_mode, timeframe: editing.timeframe_minutes ?? 15, ...editTrail(editing),
     };
   }
   // Every open position of one kind ticked (PAPER and LIVE never share one exit): the kind of the first one.
   const same = legs.filter((l) => (l.mode ?? "") === (legs[0]?.mode ?? ""));
   return { ...EMPTY_FORM, ticked: same.map((l) => l.id), measure: defaultMeasure(same) };
+}
+
+/** CX2: the trailing of an exit being edited, as the form holds it. Pure. */
+function editTrail(x: CombinedExit): Pick<CombinedForm, "trailKind" | "trailA" | "trailB"> {
+  const t = x.trailing ?? null;
+  if (x.trail_kind === "LOCK" && t) return { trailKind: "LOCK", trailA: String(t.after ?? ""), trailB: String(t.lock ?? "") };
+  if (x.trail_kind === "TRAIL" && t) return { trailKind: "TRAIL", trailA: String(t.step ?? ""), trailB: String(t.by ?? "") };
+  return { trailKind: "NONE", trailA: "", trailB: "" };
 }
 
 /** An exit being edited lists its own legs (some may have closed since), fixed. */
@@ -259,7 +313,7 @@ export function CombinedExitSheetV2({ open, legs, editing, onClose, onDone, api 
     setBusy(true); setError(null);
     try {
       const saved = editing
-        ? await api.edit(editing.id, { version: editing.version, sl_value: amount(form.sl), target_value: amount(form.target),
+        ? await api.edit(editing.id, { version: editing.version, sl_value: amount(form.sl), target_value: amount(form.target), trailing: trailOf(form),
           ...(editing.measure === "SPOT" ? { check_mode: form.check, timeframe_minutes: form.check === "CLOSE" ? form.timeframe : null } : {}) })
         : await api.create(bodyOf(form, shown, ref.current));
       onDone(`${editing ? "Combined exit changed" : "Combined exit set"}: ${saved.words}`, true);

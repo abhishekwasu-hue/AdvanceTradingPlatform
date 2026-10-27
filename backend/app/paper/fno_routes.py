@@ -229,6 +229,22 @@ async def cancel_resting(order_id: int, user: User = Depends(require_trader), se
 
 # --- CX: combined exits ------------------------------------------------------------------------------------------------
 
+class GroupTrailBody(BaseModel):
+    """CX2 optional trailing, the user's own numbers (no default): LOCK - once the gain reaches `after`, the stop moves to
+    keep `lock`; TRAIL - every `step` of favourable move shifts the stop by `by`. ₹ for the combined MTM, points for a
+    spot / premium level. The stop only ever moves in the trade's favour (app/execution/group_exits.py)."""
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["LOCK", "TRAIL"]
+    after: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    lock: Optional[float] = Field(default=None, ge=0, lt=MAX_PRICE, allow_inf_nan=False)
+    step: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    by: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+
+    def as_tuple(self) -> Any:
+        keys = ("after", "lock") if self.kind == "LOCK" else ("step", "by")
+        return self.kind, {k: getattr(self, k) for k in keys if getattr(self, k) is not None}
+
+
 class GroupExitBody(BaseModel):
     """One combined stop-loss / target (CX1-CX3): the user's own numbers; the server reads the value now itself."""
     model_config = ConfigDict(extra="forbid")
@@ -243,6 +259,7 @@ class GroupExitBody(BaseModel):
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
     basket_ref: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9:_-]{1,64}$")
     client_ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
+    trailing: Optional[GroupTrailBody] = None
 
 
 class GroupExitEditBody(BaseModel):
@@ -252,16 +269,19 @@ class GroupExitEditBody(BaseModel):
     target_value: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     check_mode: Optional[Literal["TOUCH", "CLOSE"]] = None
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+    # Absent: the trailing stays as it is; null: removed; an object: replaced (CX2).
+    trailing: Optional[GroupTrailBody] = None
 
 
 async def _group_ask(session: AsyncSession, user: User, body: GroupExitBody) -> Any:
     from app.execution import group_exits
     ids = await group_exits.all_open_ids(session, user) if body.scope == "ALL_OPEN" else list(body.trade_ids)
+    kind, spec = body.trailing.as_tuple() if body.trailing is not None else (group_exits.TRAIL_NONE, None)
     return group_exits.GroupExitAsk(client_ref=f"cx:{body.client_ref}", trade_ids=ids, measure=body.measure,
                                     sl_value=body.sl_value, target_value=body.target_value, spot_symbol=body.spot_symbol,
                                     spot_exchange=body.spot_exchange, check_mode=body.check_mode,
                                     timeframe_minutes=body.timeframe_minutes, scope=body.scope, origin="CX",
-                                    basket_ref=body.basket_ref)
+                                    basket_ref=body.basket_ref, trail_kind=kind, trail=spec)
 
 
 async def _lookup(session: AsyncSession, user: User) -> Any:
@@ -298,7 +318,9 @@ async def group_exit_preview(body: GroupExitBody, user: User = Depends(require_t
     errors = group_exits.ask_errors(ask, trades)
     value = None if errors else await _value_now(session, user, ask)
     draft = GroupExitRecord(measure=ask.measure, sl_value=ask.sl_value, target_value=ask.target_value,
-                            spot_symbol=ask.spot_symbol, check_mode=ask.check_mode,
+                            spot_symbol=ask.spot_symbol, check_mode=ask.check_mode, basis_value=value,
+                            trail_kind=ask.trail_kind if not errors else group_exits.TRAIL_NONE,
+                            trail_json=None if errors else group_exits.trail_json_of(ask.trail_kind, ask.trail),
                             legs_json=json.dumps([group_exits.leg_view(t) for t in trades]))
     if value is not None and ask.measure != group_exits.MTM_INR:
         draft.sl_side = group_exits.side_for(ask.sl_value, value) if ask.sl_value is not None else None
@@ -346,12 +368,20 @@ async def group_exit_edit(exit_id: int, body: GroupExitEditBody, user: User = De
     try:
         row = await group_exits.edit(session, user, exit_id, version=body.version, sl_value=body.sl_value,
                                      target_value=body.target_value, check_mode=body.check_mode,
-                                     timeframe_minutes=body.timeframe_minutes, now_value=value)
+                                     timeframe_minutes=body.timeframe_minutes, now_value=value,
+                                     trailing=_edit_trailing(body))
     except group_exits.GroupExitError as exc:
         await session.rollback()
         raise HTTPException(status_code=409 if "another screen" in str(exc) or "meanwhile" in str(exc) else 422,
                             detail=str(exc)) from exc
     return group_exits.view(row)
+
+
+def _edit_trailing(body: GroupExitEditBody) -> Any:
+    """None keeps the trailing; ("NONE", None) removes it; else the new kind and numbers."""
+    if "trailing" not in body.model_fields_set:
+        return None
+    return body.trailing.as_tuple() if body.trailing is not None else ("NONE", None)
 
 
 @router.post("/group-exits/{exit_id}/cancel", dependencies=[Depends(resting_rate_limit)])

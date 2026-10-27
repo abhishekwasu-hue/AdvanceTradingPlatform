@@ -9,7 +9,7 @@ import sheetSource from "./CombinedExitV2.tsx?raw";
 import { CombinedExitChipV2, CombinedExitFormV2, startForm, type FormView } from "./CombinedExitV2";
 import {
   active, amount, bodyOf, chipText, defaultMeasure, distanceText, exitParam, exitShortCopy, formErrors, newRef, previewWords,
-  sheetLegs, staleText, statusSummary, type CombinedExit, type CombinedForm, type SheetLeg,
+  sheetLegs, staleText, statusSummary, stopNowText, trailErrors, type CombinedExit, type CombinedForm, type SheetLeg,
 } from "./combinedExit";
 import type { ContractFacts } from "./contracts";
 
@@ -231,5 +231,67 @@ describe("CX-F2 Exit short now", () => {
     expect(positionsSource).toContain("ExitShortSheetV2");
     expect(positionsSource).toContain("exitParam(location.search)");
     expect(panelsSource).toContain("<CombinedExitBarV2");
+  });
+});
+
+describe("CX2 trailing: the optional part of the sheet, the preview words and the chip's stop now", () => {
+  const view = (over: Partial<FormView> = {}): FormView => ({ legs: LEGS, form: form(), editing: false, preview: null, checking: false, ...over });
+
+  it("the part is optional and empty: three choices, no boxes until a kind is picked, no number suggested", () => {
+    const none = text(renderToStaticMarkup(<CombinedExitFormV2 view={view()} onChange={vi.fn()} />));
+    for (const c of ["Trailing (optional)", "No trailing", "Lock a gain", "Trail step by step"]) expect(none).toContain(c);
+    expect(renderToStaticMarkup(<CombinedExitFormV2 view={view()} onChange={vi.fn()} />)).not.toContain("combined-trail-a");
+    const lock = renderToStaticMarkup(<CombinedExitFormV2 view={view({ form: form({ trailKind: "LOCK" }) })} onChange={vi.fn()} />);
+    expect(text(lock)).toContain("Once the gain reaches (₹)");
+    expect(text(lock)).toContain("Move the stop to keep (₹)");
+    expect(text(lock)).toContain("The stop only moves your way, never back.");
+    expect(lock).toMatch(/data-testid="combined-trail-a"[^>]*value=""|value=""[^>]*data-testid="combined-trail-a"/);
+    expect(text(lock)).not.toMatch(/\b(buy|sell|recommended|suggested)\b/i);
+    const spot = text(renderToStaticMarkup(<CombinedExitFormV2 view={view({ form: form({ measure: "SPOT", trailKind: "TRAIL" }) })} onChange={vi.fn()} />));
+    expect(spot).toContain("For every move your way of (points)");
+    expect(spot).toContain("Shift the stop by (points)");
+  });
+
+  it("plain reasons, the same checks as the server", () => {
+    expect(trailErrors(form())).toEqual([]);
+    expect(trailErrors(form({ sl: "", trailKind: "TRAIL", trailA: "500", trailB: "250" }))).toEqual(["A trailing stop needs a stop-loss to start from."]);
+    expect(trailErrors(form({ trailKind: "TRAIL", trailA: "500", trailB: "800" }))).toContain("The stop cannot shift further than the move itself.");
+    expect(trailErrors(form({ trailKind: "LOCK", trailA: "2000", trailB: "2000" }))).toContain("The gain kept must be less than the gain that moves the stop.");
+    expect(trailErrors(form({ trailKind: "LOCK", trailA: "2000", trailB: "0" }))).toEqual([]);           // keep zero: his choice
+    expect(formErrors(form({ sl: "", trailKind: "LOCK", trailA: "2000", trailB: "500" }), LEGS)).toEqual([]);  // a lock alone is a stop
+  });
+
+  it("the body carries the user's own numbers only when a kind is picked", () => {
+    expect(bodyOf(form(), LEGS, "ref-12345678").trailing).toBeUndefined();
+    expect(bodyOf(form({ trailKind: "LOCK", trailA: "2000", trailB: "500" }), LEGS, "ref-12345678").trailing).toEqual({ kind: "LOCK", after: 2000, lock: 500 });
+    expect(bodyOf(form({ trailKind: "TRAIL", trailA: "1,000", trailB: "500" }), LEGS, "ref-12345678").trailing).toEqual({ kind: "TRAIL", step: 1000, by: 500 });
+  });
+
+  it("the preview sentence adds the trailing in the server's words", () => {
+    expect(previewWords(form({ trailKind: "TRAIL", trailA: "1000", trailB: "500" }), LEGS)).toBe(
+      "If combined loss reaches ₹2,500, these 3 legs exit - sold legs first. For every ₹1,000 the combined profit rises, the stop moves up ₹500. The stop only moves your way.");
+    expect(previewWords(form({ sl: "", trailKind: "LOCK", trailA: "2000", trailB: "500" }), LEGS)).toBe(
+      "If the trailing stop is reached, these 3 legs exit - sold legs first. Once the combined profit reaches ₹2,000, the stop moves to keep ₹500. The stop only moves your way.");
+    expect(previewWords(form({ measure: "SPOT", sl: "24000", trailKind: "TRAIL", trailA: "50", trailB: "40" }), LEGS)).toContain(
+      "For every 50.00 points the NIFTY 50 spot moves your way, the stop moves 40.00 points with it.");
+  });
+
+  it("the chip shows the stop in force now; masked rupees stay masked", () => {
+    const moved = exit({ trail_kind: "LOCK", trailing: { after: 2000, lock: 500 }, stop_now: 500, stop_moved: true, distance: { sl: 300, target: null } });
+    expect(chipText(moved)).toEqual({ title: "Combined trailing stop · 2 legs", distance: "stop ₹300 to go", closing: false, stop: "stop moved to keep ₹500" });
+    expect(stopNowText(moved, true)).toBe("stop moved to ₹ •••");
+    expect(stopNowText(exit({ trail_kind: "TRAIL", stop_now: -1000, stop_moved: false }))).toBe("stop at a loss of ₹1,000");
+    expect(stopNowText(exit({ trail_kind: "LOCK", stop_now: null, sl_value: null }))).toBe("trailing waits for the gain");
+    expect(stopNowText(exit({ measure: "SPOT", trail_kind: "TRAIL", stop_now: 23920, stop_moved: true }))).toBe("stop moved to 23,920.00");
+    expect(stopNowText(exit())).toBeNull();
+    const html = renderToStaticMarkup(<ul><CombinedExitChipV2 exit={moved} /></ul>);
+    expect(html).toContain("data-stop-now");
+    expect(text(html)).toContain("stop moved to keep ₹500");
+  });
+
+  it("editing keeps the trailing as set; the edit sends it (none = removed)", () => {
+    expect(startForm([], exit({ trail_kind: "TRAIL", trailing: { step: 1000, by: 500 } }))).toMatchObject({ trailKind: "TRAIL", trailA: "1000", trailB: "500" });
+    expect(startForm([], exit())).toMatchObject({ trailKind: "NONE" });
+    expect(sheetSource).toContain("trailing: trailOf(form)");
   });
 });

@@ -138,3 +138,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | (Marathi, translated) "And which work of the other two sessions was merged" | list given (Session B UX-2 / UX-11, Session C M45 / P2-1) |
 | 2026-10-27 | (screenshots) deploy health OK; restart (security updates) done; instrument master ok 91,037 rows | P1-B1 live; owner check tomorrow 09:15 (PAPER ticket on a NIFTY contract) |
 | 2026-10-27 | (Marathi, translated) "Give the VPS command for the finished work" | deploy line 534a4f8 (F1 + MB-7, no migration) given; next deploy = T2 + SX/CX2 + load-500 + backup fix after main CI |
+| 2026-10-28 | Server screenshots (deploy of 77a50057db57, health OK - 5 warnings) + production Today screenshot (option C bottom bar live); then "Yes" (OK on the live dots and bar) | UX-12 and UX-13 done |

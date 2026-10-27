@@ -123,5 +123,5 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | (Marathi, translated) "8 PRs to go live (no migration): which work is done by that" + server screenshot (deploy refused: CI for 69ef4af still running) | answered: 7 merged (count corrected), wait for CI then the same line, or deploy bd204778a661 |
 | 2026-10-27 | (Marathi, translated) "Can a background of purple dots like this be set?" / then "Show a sample first, on this screenshot" (Today page screenshot) + Hostinger panel screenshot (purple dot-grid behind the page header) | UX-12 dotted backdrop: build behind ui_v2, Appearance toggle, default on |
 | 2026-10-27 | "Default yes, do web research whenever necessary, don't ask me, and finish this project as early as possible, merge and deploy" | P1-B1 #575 merged; login-delay test flake fixed #595; deploy line sent when main is green |
-| 2026-10-27 | "VPS comand" / "Deploy करू" | deploy line given after main CI on the P1-B1 merge |
+| 2026-10-27 | "VPS comand" / (Marathi, translated) "Let us deploy" | deploy line given after main CI on the P1-B1 merge |
 | 2026-10-27 | "Finish your job , do fast, open multiple agent" | two agents: CX2 trailing (P1-6c) + T2 TT-9/TT-10 (P1-6); deploy after main CI |

@@ -155,6 +155,10 @@ function GroupFilter({ library, group, onChange }: { library: IdeaLibrary; group
   );
 }
 
+// A scan's label can be long ("Inverse head and shoulders: neckline retest"): on a phone it wraps inside the card
+// instead of pushing the card past the screen edge.
+const SCAN_LINK = `${LINK_SECONDARY.replace("h-11", "min-h-11").replace("md:h-9", "md:min-h-9")} max-w-full py-space-2 text-left md:py-0`;
+
 function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupName: string; adoptLater: string; adoptOn: boolean }) {
   const titleId = useId();
   const open = idea.scans.filter((s) => s.available);
@@ -162,7 +166,7 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
   const adoptNote = adoptPath && idea.adopt.available ? idea.adopt.note ?? null : null;
   const testPath = adoptPath ? testPathForIdea(idea) : null;
   return (
-    <article id={`idea-${idea.id}`} aria-labelledby={titleId} data-idea={idea.id} className={`${CARD} flex scroll-mt-space-6 flex-col p-space-4 md:p-space-5`}>
+    <article id={`idea-${idea.id}`} aria-labelledby={titleId} data-idea={idea.id} className={`${CARD} flex min-w-0 scroll-mt-space-6 flex-col p-space-4 md:p-space-5`}>
       <div className="flex flex-wrap items-center gap-space-2">
         <ChipV2>{groupName}</ChipV2>
         <ChipV2 kind={idea.difficulty === "Beginner" ? "brand" : "outline"}>{idea.difficulty}</ChipV2>
@@ -177,9 +181,9 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
             <p className="mb-space-2 text-t14 font-medium text-fg">Try as a scan</p>
             <div className="flex flex-wrap gap-space-2">
               {open.map((s) => (
-                <Link key={s.id} to={screenerPathFor(idea.id, s.id)} className={LINK_SECONDARY} data-scan={s.id}
+                <Link key={s.id} to={screenerPathFor(idea.id, s.id)} className={SCAN_LINK} data-scan={s.id}
                   aria-label={`Try as a scan: ${s.label}`}>
-                  <Search size={14} aria-hidden />{s.label}
+                  <Search size={14} aria-hidden className="shrink-0" />{s.label}
                 </Link>
               ))}
             </div>

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { fetchOverview, type MarketGroup, type MarketsOverview } from "../markets/model";
-import { formatPct } from "../ui/format";
-import { CardV2, toneClass } from "./CardV2";
+import { Signed } from "../ui/numbersFirst";
+import { CardV2 } from "./CardV2";
 
 /**
  * TD-1 (owner, 25 Oct; UX-10 wave 1, Today): "Your week" as small tiles instead of sentences - NIFTY 50 week %,
@@ -36,7 +36,6 @@ export function weekTiles(o: MarketsOverview | null): WeekTile[] {
   return tiles.some((t) => t.value != null) ? tiles : [];
 }
 
-const tone = (v: number | null) => (v == null || v === 0 ? "neutral" : v > 0 ? "up" : "down");
 
 export function WeekTilesView({ tiles }: { tiles: readonly WeekTile[] }) {
   if (tiles.length === 0) return null;
@@ -47,7 +46,7 @@ export function WeekTilesView({ tiles }: { tiles: readonly WeekTile[] }) {
           <Link key={t.key} to="/markets?period=week" data-week-tile={t.key}
             className="min-w-0 rounded-control bg-surface-2 p-space-3 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
             <p className="truncate text-t12 font-medium text-fg-muted">{t.label}</p>
-            <p className={`mt-px text-t18 font-semibold tabular-nums ${toneClass(tone(t.value))}`}>{formatPct(t.value)}</p>
+            <p className="mt-px text-t18 font-semibold tabular-nums"><Signed value={t.value} kind="pct" /></p>
             {t.caption && <p className="truncate text-t12 text-fg-muted">{t.caption}</p>}
           </Link>
         ))}

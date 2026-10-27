@@ -78,6 +78,12 @@ describe("P3 Get started: the three steps", () => {
     expect(connectBrokerPath()).toBe(pageFromPath(BROKER_PATH) === null ? BROKER_FALLBACK_PATH : BROKER_PATH);
   });
 
+  it("UX-11 U3: progress is '1 of 3 done' with a thin bar the screen reader can read", () => {
+    const out = html(<GetStartedViewV2 card={getStartedCard(view(["broker"]))!} />);
+    expect(out).toContain('role="progressbar"');
+    expect(out).toContain("1 of 3 done");
+  });
+
   it("the v2 dashboard's card has no primary button (its one primary is the first Needs attention action)", () => {
     const out = html(<GetStartedViewV2 card={getStartedCard(view(["broker"]))!} primaryNext={false} />);
     expect(out).not.toMatch(/bg-brand /);

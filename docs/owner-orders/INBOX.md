@@ -104,4 +104,5 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-26 | Ho <br> ((Marathi, translated) "Yes" - reply to: merge MA-1a #568 on green; MA-1b next) |
 | 2026-10-26 | (Marathi, translated) "Start the MA-1 build." |
 | 2026-10-27 | (Marathi, translated) "Default yes, start DH2 / DH6." (after the deploy of b15de0d, health OK) | DATA-H DH2 / DH6: last-session 1-minute fill from the own lake; VAPID default (owner keeps the key in atp-private) |
+| 2026-10-27 | (Marathi, translated) "Start UX-7." | UX-2 plan PR 5 (UX-7 live feel) started in Session B |
 | 2026-10-27 | All aprove, go ahead <br> (reply to: MA-1b #569 screenshots ✅ and start MA-2 sizing) |

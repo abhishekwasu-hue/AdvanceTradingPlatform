@@ -19,7 +19,7 @@ import gzip
 import json
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import httpx
@@ -69,7 +69,9 @@ def normalise_expiry(value: Any) -> Optional[date]:
         return None
     if isinstance(value, (int, float)):
         seconds = float(value) / (1000.0 if float(value) > 1e11 else 1.0)
-        return datetime.fromtimestamp(seconds, tz=timezone.utc).date()
+        # P1 (27 Oct): the exchange's own date (IST), not UTC - an epoch at 00:00 IST is 18:30 UTC the day before, and a
+        # UTC date stored every such contract one day early (the ticket's exact-expiry lookup then found nothing).
+        return datetime.fromtimestamp(seconds, tz=timezone(timedelta(hours=5, minutes=30))).date()
     text = str(value).strip()
     if text.isdigit():
         return normalise_expiry(int(text))

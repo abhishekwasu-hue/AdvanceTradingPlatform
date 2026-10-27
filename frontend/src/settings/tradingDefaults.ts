@@ -62,6 +62,8 @@ export interface TradingDefaults {
   entry_mode: EntryMode | null;
   exit_rules: ExitDefaults | null;
   ticket: TicketDefaults | null;
+  /** P1 (27 Oct): on an expiry day the chain and the builder open the next expiry. null = ON (the default); false = off. */
+  expiry_day_next: boolean | null;
 }
 
 export const EMPTY_EXITS: ExitDefaults = { trailing_stop_pct: null, break_even_at_r: null, time_exit_minutes: null, time_exit_at: null };
@@ -69,7 +71,7 @@ export const EMPTY_TICKET: TicketDefaults = { lots: null, product: null, order_t
 export const EMPTY_DEFAULTS: TradingDefaults = {
   instrument_kind: null, option_position: null, expiry_rule: null, strike_rule: null, strike_offset: null, premium_stop_pct: null,
   max_lots: null, option_strategy: null, spread_width: null, target_credit_pct: null, stop_credit_pct: null, entry_mode: null,
-  exit_rules: null, ticket: null,
+  exit_rules: null, ticket: null, expiry_day_next: null,
 };
 
 /** The structures, in the full form's order, with plain names. */
@@ -148,6 +150,7 @@ export function readDefaults(raw: unknown): TradingDefaults {
     entry_mode: oneOf(r.entry_mode, [{ value: "AUTO" }, { value: "APPROVAL" }] as const),
     exit_rules: exits && Object.values(exits).some((v) => v !== null) ? exits : null,
     ticket: ticket && Object.values(ticket).some((v) => v !== null) ? ticket : null,
+    expiry_day_next: r.expiry_day_next === false ? false : null,
   };
 }
 
@@ -164,7 +167,8 @@ const isStructure = (s: OptionStrategy | null | undefined): s is DefaultStructur
  * kind chosen, a single option's premium stop only without a structure, ...), so nothing hidden is ever stored.
  */
 export function cleanForSave(d: TradingDefaults): TradingDefaults {
-  const out: TradingDefaults = { ...EMPTY_DEFAULTS, entry_mode: d.entry_mode, max_lots: d.instrument_kind === "UNDERLYING" ? null : d.max_lots };
+  const out: TradingDefaults = { ...EMPTY_DEFAULTS, entry_mode: d.entry_mode, max_lots: d.instrument_kind === "UNDERLYING" ? null : d.max_lots,
+    expiry_day_next: d.expiry_day_next === false ? false : null };
   const kind = d.instrument_kind;
   out.instrument_kind = kind;
   if (kind !== "UNDERLYING") out.expiry_rule = d.expiry_rule;
@@ -433,6 +437,7 @@ export interface DefaultsForm {
   ticket_lots: string;
   ticket_product: TicketProduct | "";
   ticket_order_type: TicketOrderType | "";
+  expiry_day_next: boolean;
 }
 
 const txt = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(v));
@@ -446,6 +451,7 @@ export function formOf(d: TradingDefaults): DefaultsForm {
     trailing_stop_pct: txt(d.exit_rules?.trailing_stop_pct), break_even_at_r: txt(d.exit_rules?.break_even_at_r),
     time_exit_minutes: txt(d.exit_rules?.time_exit_minutes), time_exit_at: d.exit_rules?.time_exit_at ?? "",
     ticket_lots: txt(d.ticket?.lots), ticket_product: d.ticket?.product ?? "", ticket_order_type: d.ticket?.order_type ?? "",
+    expiry_day_next: d.expiry_day_next !== false,
   };
 }
 
@@ -494,6 +500,7 @@ export function defaultsOf(f: DefaultsForm): { value: TradingDefaults; problems:
       time_exit_minutes: n("time_exit_minutes", f.time_exit_minutes), time_exit_at: at && TIME.test(at) ? at : null,
     },
     ticket: { lots: n("ticket_lots", f.ticket_lots), product: f.ticket_product || null, order_type: f.ticket_order_type || null },
+    expiry_day_next: f.expiry_day_next ? null : false,
   };
   const structure = value.option_strategy;
   if (structure && DEBIT_STRUCTURES.includes(structure) && (value.stop_credit_pct ?? 0) > 100) {

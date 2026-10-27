@@ -109,9 +109,10 @@ const NAV_WORD: Record<SectionTint, string> = {
   more: "text-sec-more",
 };
 
-/** CA6: the bottom-bar tab's round chip - soft while another page is on screen, the strong tint while its own is. */
+/** CA6 + UX-13 option C (owner, 27 Oct): the bottom-bar tab's icon in its section colour; the round fill (the strong
+ * tint) only on the tab whose page is on screen - the other tabs carry no soft chip, so the bar reads calmer. */
 export function navChipClass(tint: SectionTint, active: boolean): string {
-  return `flex h-9 w-9 items-center justify-center rounded-pill transition-colors duration-fast ${active ? NAV_CHIP_ACTIVE[tint] : CHIP[tint]}`;
+  return `flex h-9 w-9 items-center justify-center rounded-pill transition-colors duration-fast ${active ? NAV_CHIP_ACTIVE[tint] : NAV_WORD[tint]}`;
 }
 
 /** CA6: the word of the bottom-bar tab on screen - its section colour (the caller adds the bold weight). */

@@ -130,7 +130,7 @@ export function TodaySummaryV2({ tiles, loading }: { tiles: TodayTiles; loading:
   return (
     <CardV2 title="Today" more={{ label: "Performance", to: "/analytics" }} testId="today">
       {loading ? <LoadingRowsV2 rows={2} /> : (
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-control border border-subtle bg-border-subtle">
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-control border border-subtle/60 bg-border-subtle/50">
           <Tile label="Booked today" value={tiles.booked === null ? EMPTY : formatSignedINR(tiles.booked, { compact: true })}
             tone={signTone(tiles.booked)} sub={tiles.booked === null ? undefined : "closed trades since the open"} />
           <Tile label="Win rate" hint="win-rate" value={tiles.winRate === null ? EMPTY : `${tiles.winRate.toFixed(0)}%`}

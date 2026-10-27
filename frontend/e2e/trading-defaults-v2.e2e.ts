@@ -129,7 +129,7 @@ test.describe("My trading defaults behaviour", () => {
     for (const word of [/\bLIVE\b/, /\bMode\b/, /Routing/, /deployment/i, /namespace/i]) await expect(main.getByText(word)).toHaveCount(0);
 
     await main.getByLabel("Trade as").selectOption("OPTION");
-    await main.getByLabel("Expiry").selectOption("NEXT");
+    await main.getByLabel("Expiry", { exact: true }).selectOption("NEXT");
     await main.getByLabel("Lots for a new bot").fill("0");
     await main.getByRole("button", { name: "Save my defaults" }).click();
     await expect(main.locator("[data-note='defaults-note']")).toHaveText("Lots for a new bot: a whole number from 1 to 500.");

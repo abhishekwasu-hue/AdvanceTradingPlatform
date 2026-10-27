@@ -109,7 +109,15 @@ async def tenant_checklist(session: AsyncSession, user: User, tenant: Tenant, ta
     # 2. Instrument master ------------------------------------------------------------------------
     master = await master_status(session)
     fresh = [m for m in master if (_age_days(m["synced_at"], now) or 99) <= MASTER_MAX_AGE_DAYS]
-    if fresh:
+    from app.instruments import master_sync
+    sync_state = await master_sync.read_state(session)
+    if master and sync_state.get("last_error") and not master_sync.synced_today(sync_state, now):
+        # P1 (27 Oct): today's sync failed - say so with the reason (it is retried every few minutes).
+        items.append(Item("instrument_master", "Instrument master synced", "warn",
+                          f"Today's sync failed: {sync_state['last_error']}",
+                          f"The worker retries every {master_sync.RETRY_MINUTES} minutes; a ticket that misses a contract "
+                          "also starts a refresh.", "instruments"))
+    elif fresh:
         items.append(Item("instrument_master", "Instrument master synced", "ok", "; ".join(f"{m['broker']}/{m['exchange']}: {m['rows']} rows" for m in fresh), link="instruments"))
     elif master:
         items.append(Item("instrument_master", "Instrument master synced", "warn", "Present but older than three days",

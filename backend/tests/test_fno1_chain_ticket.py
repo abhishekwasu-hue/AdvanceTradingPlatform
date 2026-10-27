@@ -119,7 +119,7 @@ def test_the_contract_comes_from_the_instrument_master(setup):
     assert body["label"].endswith(f" {int(strike)} CE") and body["freeze_quantity"] is None   # not in the master yet (FNO-1-2)
     missing = client.get("/api/paper/fno/contract", headers=t["headers"],
                          params={"underlying": "NIFTY", "expiry": expiry.isoformat(), "strike": strike + 25, "right": "CE"})
-    assert missing.status_code == 404 and "instrument list" in missing.json()["detail"]
+    assert missing.status_code == 404 and "contract list" in missing.json()["detail"] and "try again later" not in missing.json()["detail"].lower()
 
 
 def test_contract_label_is_written_as_traders_write_it():

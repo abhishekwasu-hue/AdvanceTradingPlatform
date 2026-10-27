@@ -279,9 +279,6 @@ class TradingDefaultsPrefs(_Prefs):
     instrument_kind: Optional[Literal["UNDERLYING", "OPTION", "FUTURE"]] = None
     option_position: Optional[Literal["BUY", "WRITE"]] = None
     expiry_rule: Optional[Literal["NEAREST", "NEXT", "MONTHLY"]] = None
-    # P1 (27 Oct): on an expiry day the chain and the spread / basket builder open the NEXT expiry (today's stays
-    # selectable with its "expires today" notice). None = ON (the owner's method); False = open today's expiry.
-    expiry_day_next: Optional[bool] = None
     strike_rule: Optional[Literal["ATM", "ITM", "OTM"]] = None
     strike_offset: Optional[int] = Field(default=None, ge=0, le=10)
     premium_stop_pct: Optional[float] = Field(default=None, ge=5, le=95, allow_inf_nan=False)
@@ -461,6 +458,9 @@ class OptionChainPrefs(_Prefs):
     """`option_chain` (B4): his own Option chain settings - today the PCR zone edges. Read by the analyses route to
     word the PCR zone line; no order path, worker or risk check imports it."""
     pcr_zones: PcrZonesPrefs = Field(default_factory=PcrZonesPrefs)
+    # P1 (27 Oct): on an expiry day the chain (and the Terminal's spread / basket builder, which builds from it) opens the
+    # NEXT expiry; today's stays selectable with its "expires today" notice. Read by the option-chain routes only.
+    expiry_day_next: bool = True
 
 
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,

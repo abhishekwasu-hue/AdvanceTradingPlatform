@@ -116,7 +116,7 @@ def test_expiry_day_opens_the_next_expiry_unless_turned_off():
     assert chain_view.default_expiry(listed, date(2026, 10, 28)) == date(2026, 11, 3)
 
 
-def test_the_setting_is_read_from_the_users_trading_defaults():
+def test_the_setting_is_read_from_the_users_option_chain_prefs():
     t = _org_tenant(f"p1exp-{uuid.uuid4().hex[:4]}")
     user = type("U", (), {"tenant_id": t["tenant_id"], "id": t["user_id"]})()
 
@@ -124,7 +124,7 @@ def test_the_setting_is_read_from_the_users_trading_defaults():
         async with _session_factory() as session:
             return await chain_view.next_on_expiry_day(session, user)
     assert run(read()) is True                                                          # default ON
-    saved = client.put("/api/me/prefs/trading_defaults", headers=t["headers"], json={"expiry_day_next": False})
+    saved = client.put("/api/me/prefs/option_chain", headers=t["headers"], json={"expiry_day_next": False})
     assert saved.status_code == 200, saved.text
     assert run(read()) is False
 

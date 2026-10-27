@@ -233,14 +233,6 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
         </CardV2>
       )}
 
-      <CardV2 title="Expiry day" testId="expiry-day">
-        <label className="flex min-h-11 cursor-pointer items-start gap-space-2 text-t14 text-fg">
-          <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-brand" data-expiry-day-next checked={form.expiry_day_next}
-            onChange={(e) => set("expiry_day_next", e.target.checked)} />
-          <span>On an expiry day, open the option chain and the spread builder on the next expiry. Today&apos;s expiry stays one tap away.</span>
-        </label>
-      </CardV2>
-
       <CardV2 title="Chain order ticket" testId="ticket">
         <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-3">
           <Field id={id("tlots")} label="Lots" hint="1 to 500.">

@@ -80,7 +80,7 @@ class ExpiryItem:
 
 def default_expiry(expiries: Sequence[date], today: date, *, next_on_expiry_day: bool = True) -> Optional[date]:
     """The nearest expiry on or after `today`; on an expiry day, the next one after it (when there is one) - unless the
-    user turned that off (`trading_defaults.expiry_day_next` False: today's expiry opens)."""
+    user turned that off (`option_chain.expiry_day_next` False: today's expiry opens)."""
     ahead = sorted(e for e in set(expiries) if e >= today)
     if not ahead:
         return None
@@ -322,10 +322,10 @@ def parse_expiry(text: Optional[str]) -> Optional[date]:
 
 
 async def next_on_expiry_day(session: AsyncSession, user: Any) -> bool:
-    """The user's `trading_defaults.expiry_day_next` (P1, 27 Oct): None / unset = ON."""
+    """The user's `option_chain.expiry_day_next` (P1, 27 Oct): default ON."""
     from app.me import prefs
     try:
-        stored, _ = await prefs.read_one("trading_defaults", user, session)
+        stored, _ = await prefs.read_one("option_chain", user, session)
     except Exception:  # noqa: BLE001 - an unreadable preference keeps the default
         return True
     return stored.get("expiry_day_next") is not False

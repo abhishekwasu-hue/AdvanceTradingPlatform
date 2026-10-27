@@ -49,6 +49,7 @@ LEVELS: Dict[str, Tuple[str, str]] = {
     "PDH": (REFL, "PDL"), "PDL": (REFL, "PDH"), "ORHigh": (REFL, "ORLow"), "ORLow": (REFL, "ORHigh"),
     "BBUpper": (REFL, "BBLower"), "BBLower": (REFL, "BBUpper"), "BBMid": (REFL, "BBMid"),
     "SwingHigh": (REFL, "SwingLow"), "SwingLow": (REFL, "SwingHigh"),
+    "PriorSwingHigh": (REFL, "PriorSwingLow"), "PriorSwingLow": (REFL, "PriorSwingHigh"),     # idea library IDEA-14
     "RSI": (COMP, "RSI"), "ATR": (INV, "ATR"), "ADX": (INV, "ADX"), "MedianRange": (INV, "MedianRange"),
     "PlusDI": (INV, "MinusDI"), "MinusDI": (INV, "PlusDI"), "RelVolume": (INV, "RelVolume"),
     "RelVolumeTOD": (INV, "RelVolumeTOD"),
@@ -71,6 +72,9 @@ CATEGORIES: Dict[str, Dict[str, str]] = {
     "Sector": {}, "Industry": {}, "McapBucket": {},
 }
 SIDED_CATEGORIES = {"SwingBreakType"}       # classifiers with a side argument (the first one)
+# Prices with a side argument (the first one): the side swaps, the value is a price (idea library IDEA-12: the trend-side
+# line of a rising channel is, on the reflected bars, the trend-side line of the falling one)
+SIDED_LEVELS = {"ChannelLine"}
 # Checked on synthetic bars and found NOT exactly symmetric - no mirror rule, with the reason (tests keep them out).
 NOT_SYMMETRIC: Dict[str, str] = {
     "ATRPercentile": "ATR as a percentage of the close depends on the price level",
@@ -204,6 +208,11 @@ def _call(node: n.Call) -> Rewritten:  # noqa: C901 - one switch over the rule t
         if not isinstance(arg, n.Str) or arg.value not in PATTERN_SWAP:
             raise NoMirror(_part(node), "this candlestick pattern has no mirrored twin (hammer and shooting star differ by context)")
         return INV, _same_call(node, name, [n.Str(PATTERN_SWAP[arg.value]), *_kept(list(node.args[1:]))])
+    if name in SIDED_LEVELS:
+        if not node.args:
+            raise NoMirror(_part(node), "no side")
+        side = _swap_str(node.args[0], SIDE_SWAP, node)
+        return REFL, _same_call(node, name, [side, *_kept(list(node.args[1:]))])
     if name in SIDED_CATEGORIES:
         if not node.args:
             raise NoMirror(_part(node), "no side")
@@ -362,4 +371,4 @@ def reflect_bars(frame, level: Optional[float] = None):  # type: ignore[no-untyp
 
 
 __all__ = ["SWING_WARMUP", "Mirror", "NoMirror", "mirror", "rewrite", "reflect_bars", "INV", "REFL", "NEG", "COMP", "CATEGORIES", "SIDED_CATEGORIES", "SIDED_FILTERS",
-           "NOT_SYMMETRIC", "FIELD_RULES", "LEVELS", "LINEAR", "EXTREMES", "PATTERN_SWAP"]
+           "NOT_SYMMETRIC", "FIELD_RULES", "LEVELS", "SIDED_LEVELS", "LINEAR", "EXTREMES", "PATTERN_SWAP"]

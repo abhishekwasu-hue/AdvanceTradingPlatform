@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import script from "../public/theme-init.js?raw";
 import config from "../tailwind.config.js";
-import { pullTextSize, setTextSize } from "./appearanceSync";
+import { pullTextSize, setHighContrast, setTextSize } from "./appearanceSync";
 import { chartFontSize, loadAppearance, textScale } from "./theme";
 
 // Handover item 1: readable text. The tests run without a DOM: stub what theme.ts and the sync read.
@@ -105,7 +105,7 @@ describe("the Text size is stored per user on the server", () => {
     const fetcher = vi.fn(async (path: string) => (path === "/me/prefs"
       ? { prefs: { appearance: { text_size: "normal" } }, versions: { appearance: 0 } } : { version: 1 }));
     expect(await pullTextSize(fetcher as never)).toBe("large");
-    expect(fetcher).toHaveBeenCalledWith("/me/prefs/appearance", { method: "PUT", body: JSON.stringify({ text_size: "large" }) });
+    expect(fetcher).toHaveBeenCalledWith("/me/prefs/appearance", { method: "PUT", body: JSON.stringify({ text_size: "large", high_contrast: false }) });
   });
 
   it("keeps the device's size when the server cannot be reached", async () => {
@@ -117,7 +117,7 @@ describe("the Text size is stored per user on the server", () => {
     stubBrowser(null);
     const ok = vi.fn(async () => ({ version: 2 }));
     expect(await setTextSize("large", true, ok as never)).toBe(true);
-    expect(ok).toHaveBeenCalledWith("/me/prefs/appearance", { method: "PUT", body: JSON.stringify({ text_size: "large" }) });
+    expect(ok).toHaveBeenCalledWith("/me/prefs/appearance", { method: "PUT", body: JSON.stringify({ text_size: "large", high_contrast: false }) });
     expect(await setTextSize("xlarge", true, (async () => { throw new Error("offline"); }) as never)).toBe(false);
     expect(loadAppearance().textSize).toBe("xlarge");
   });
@@ -127,5 +127,44 @@ describe("the Text size is stored per user on the server", () => {
     const fetcher = vi.fn();
     expect(await setTextSize("large", false, fetcher as never)).toBe(true);
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe("UI-H-DM DM4: High contrast follows the user like the text size", () => {
+  it("is off by default; on sets data-contrast=\"high\" on <html> and is saved with the text size", async () => {
+    const { root } = stubBrowser(null);
+    expect(loadAppearance().highContrast).toBe(false);
+    const ok = vi.fn(async () => ({ version: 2 }));
+    expect(await setHighContrast(true, true, ok as never)).toBe(true);
+    expect(root.dataset.contrast).toBe("high");
+    expect(ok).toHaveBeenCalledWith("/me/prefs/appearance", { method: "PUT", body: JSON.stringify({ text_size: "normal", high_contrast: true }) });
+    // A later text size change keeps High contrast on the server (the namespace is written whole).
+    await setTextSize("large", true, ok as never);
+    expect(ok).toHaveBeenLastCalledWith("/me/prefs/appearance", { method: "PUT", body: JSON.stringify({ text_size: "large", high_contrast: true }) });
+  });
+
+  it("applies the stored choice on sign-in, and a choice made before the server had one is sent up", async () => {
+    const { root } = stubBrowser(null);
+    const read = vi.fn(async () => ({ prefs: { appearance: { text_size: "normal", high_contrast: true } }, versions: { appearance: 4 } }));
+    await pullTextSize(read as never);
+    expect(root.dataset.contrast).toBe("high");
+    stubBrowser({ highContrast: true });
+    const first = vi.fn(async (path: string) => (path === "/me/prefs"
+      ? { prefs: { appearance: { text_size: "normal", high_contrast: false } }, versions: { appearance: 0 } } : { version: 1 }));
+    await pullTextSize(first as never);
+    expect(first).toHaveBeenCalledWith("/me/prefs/appearance", { method: "PUT", body: JSON.stringify({ text_size: "normal", high_contrast: true }) });
+  });
+
+  it("the first-paint script sets it before the app loads", () => {
+    const root = { attrs: {} as Record<string, string>, setAttribute(k: string, v: string) { this.attrs[k] = v; }, classList: { add() {}, remove() {} } };
+    const run = (saved: string | null) => {
+      vi.stubGlobal("localStorage", { getItem: (k: string) => (k === "atp_appearance" ? saved : null) });
+      vi.stubGlobal("document", { documentElement: root });
+      vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
+      new Function(script)();
+      return root.attrs["data-contrast"];
+    };
+    expect(run(JSON.stringify({ highContrast: true }))).toBe("high");
+    expect(run(null)).toBe("normal");
   });
 });

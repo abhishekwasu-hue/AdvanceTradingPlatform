@@ -392,6 +392,9 @@ class _Eval:
             "SwingHigh": lambda: _swings(f, int(num(0, 0)))[0],
             "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
             "SwingDirection": lambda: _swings(f, int(num(0, 0)))[2],
+            # idea library IDEA-14: the confirmed swing high / low `back` swings before the latest one (head and shoulders)
+            "PriorSwingHigh": lambda: _prior_swing(f, int(num(0, 0)), _text(1, "one"), "H"),
+            "PriorSwingLow": lambda: _prior_swing(f, int(num(0, 0)), _text(1, "one"), "L"),
             "MedianRange": lambda: _median_range(f, win(0, 20)),
             "SwingZoneStrength": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "strength"),
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
@@ -475,6 +478,8 @@ class _Eval:
             # U6 BK4: trendline / pattern / gap / retest breakouts (app/screener/breakouts/lines.py, gaps.py, retest.py)
             "TrendlineBreakout": lambda: _breakout(f, "B5", str(self.ev(args[0], tf)), {
                 "tl_mode": _text(1, _bkd("tl_mode")), "tl_min_touches": num(2, _bkd("tl_min_touches")), "min_break_atr": num(3, _bkd("min_break_atr"))}),
+            # idea library IDEA-12: the B5 channel's trend-side line on every bar (app/screener/breakouts/lines.channel_line)
+            "ChannelLine": lambda: _channel_line(f, str(self.ev(args[0], tf)), num(1, _bkd("tl_min_touches")), int(num(2, 0))),
             "PatternBreakout": lambda: _breakout(f, "B6", str(self.ev(args[0], tf)), {
                 "pattern": _text(1, _bkd("pattern")), "vol_mult": num(2, _bkd("vol_mult")), "min_break_atr": num(3, _bkd("min_break_atr"))}),
             "GapBreakout": lambda: _breakout(f, "B8", str(self.ev(args[0], tf)), {
@@ -811,6 +816,48 @@ def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Seri
     lo = pd.Series(low, index=f.index).ffill()
     d = pd.Series(direction, index=f.index).ffill()          # None before the first pivot: missing, never matches
     return hi, lo, d
+
+
+PRIOR_SWING_BACK: Dict[str, int] = {"one": 1, "two": 2, "three": 3}
+
+
+def _prior_swing(f: pd.DataFrame, degree: int, which: str, kind: str) -> pd.Series:
+    """Idea library IDEA-14: on every bar, the confirmed swing high (kind H) / low (L) `which` swings of its kind before the
+    latest one (one: the one before SwingHigh / SwingLow), from the same causal swings as `_swings` - each pivot counts
+    from the bar that confirmed it, so the value changes only when a new swing of that kind is confirmed. Missing until
+    back + 1 swings of the kind are confirmed."""
+    from app.price_action import causal_swings as cs
+    from app.price_action import pa_settings
+    s = pa_settings.settings()
+    if not 0 <= degree < len(s["swing_atr_mult"]):
+        raise ScreenRuntimeError(f"swing degree {degree} is not one of 0-{len(s['swing_atr_mult']) - 1}")
+    if which not in PRIOR_SWING_BACK:
+        raise ScreenRuntimeError(f"unknown swing position {which!r} (one, two or three swings back)")
+    back = PRIOR_SWING_BACK[which]
+    frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+    frame["timestamp"] = frame["bar_end"] = f.index
+    out = np.full(len(f), np.nan)
+    seen: List[float] = []
+    for p in cs.degree_pivots(frame, degree, s):                         # confirmation order, as _swings
+        if p.kind != kind:
+            continue
+        seen.append(float(p.price))
+        if len(seen) > back:
+            out[int(p.confirmed_idx)] = seen[-1 - back]                  # type: ignore[arg-type]
+    return pd.Series(out, index=f.index).ffill()
+
+
+def _channel_line(f: pd.DataFrame, side: str, touches: float, edge_touches: int) -> pd.Series:
+    """Idea library IDEA-12: ChannelLine - the trend-side line of the B5 channel on every bar, in real prices (up: the
+    lower line of a rising channel; down: the upper line of a falling one), with the B5 parameters' defaults otherwise."""
+    from app.screener.breakouts.lines import channel_line
+    from app.screener.breakouts.screens import Bars
+    if side not in ("up", "down"):
+        raise ScreenRuntimeError(f"unknown channel side {side!r}")
+    p = _breakout_params({"tl_mode": "channel", "tl_min_touches": touches})
+    b = Bars(f, p)
+    s = b.side(1 if side == "up" else -1)
+    return pd.Series(s.back(channel_line(b, s, p, edge_touches)), index=f.index, dtype=float)
 
 
 _ZONE_CACHE: Dict[int, Tuple[Any, Any, Dict[Tuple[str, int], Tuple[np.ndarray, ...]]]] = {}

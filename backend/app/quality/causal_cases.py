@@ -114,6 +114,9 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "SwingHigh": ["SwingHigh(0)", "SwingHigh(1)", "SwingHigh(2)", "SwingHigh(3)"],
     "SwingLow": ["SwingLow(0)", "SwingLow(1)"],
     "SwingDirection": ["SwingDirection(0)", "SwingDirection(1)@1h"],
+    # idea library IDEA-14: the swings before the latest one (head and shoulders)
+    "PriorSwingHigh": ['PriorSwingHigh(0)', 'PriorSwingHigh(0, "two")', 'PriorSwingHigh(1, "one")@1h'],
+    "PriorSwingLow": ['PriorSwingLow(0)', 'PriorSwingLow(1, "three")'],
     "SwingZoneStrength": ['SwingZoneStrength("low", 0)', 'SwingZoneStrength("high", 1)'],
     "SwingZoneDistance": ['SwingZoneDistance("low", 0)', 'SwingZoneDistance("high", 0)'],
     # wave templates companions (flag screener_waves): the far side of the smaller swing zone's area
@@ -207,6 +210,8 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     # U6 BK4: trendline / pattern / gap / retest breakouts; volume and distance conditions off so they fire
     "TrendlineBreakout": ['TrendlineBreakout("up", "line", 2, 0)', 'TrendlineBreakout("down", "channel", 2, 0)',
                           'TrendlineBreakout("up", "line", 2, 0)@1h'],
+    # idea library IDEA-12: the B5 channel's trend-side line on every bar
+    "ChannelLine": ['ChannelLine("up")', 'ChannelLine("down", 2, 2)', 'ChannelLine("down")@1h'],
     "PatternBreakout": ['PatternBreakout("up", "triangle", 0, 0)', 'PatternBreakout("down", "flag", 0, 0)', 'PatternBreakout("up", "triangle", 0, 0)@1h'],
     # the synthetic 5m sessions open where the previous one closed or with a gap: only some sessions gap (down here)
     "GapBreakout": ['GapBreakout("down", "prev_day", 15)', 'GapBreakout("down", "prev_day", 5)', 'GapBreakout("down", "prev_day", 60)@15m'],

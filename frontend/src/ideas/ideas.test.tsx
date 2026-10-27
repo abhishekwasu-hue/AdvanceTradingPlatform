@@ -82,19 +82,25 @@ describe("the cards", () => {
     expect(html).toContain("No results are claimed");
   });
 
-  it("an open scan is a link to the Screener; a closed one says so; an idea without the blocks says it comes later", () => {
+  it("an open scan is a link to the Screener; a closed one says so; what a scan cannot read yet comes later", () => {
     expect(html).toContain('href="/screener?idea=T5&amp;scan=above"');
     expect(html).toContain('href="/screener?idea=T2&amp;scan=upper"');
     expect(html).not.toContain("/screener?idea=T1&amp;");                       // market zones are off in the fixture
     const t1 = html.slice(html.indexOf('data-idea="T1"'), html.indexOf('data-idea="T2"'));
     expect(t1).toContain("not switched on for your account yet");
+    // slice 4: T6 reads the channel line (breakout functions only: open here); what it cannot read yet still comes later
     const t6 = html.slice(html.indexOf('data-idea="T6"'), html.indexOf('data-idea="T7"'));
-    expect(t6).toContain("comes later");
-    expect(t6).not.toContain("Try as a scan");
+    expect(t6).toContain('href="/screener?idea=T6&amp;scan=rising"');
+    expect(t6).toContain('href="/screener?idea=T6&amp;scan=falling"');
+    expect(t6).toContain("come later");
     const t7 = html.slice(html.indexOf('data-idea="T7"'), html.indexOf('data-idea="T8"'));   // slice 3: T7 has scans (zones off here)
-    expect(t7).toContain('data-state="scan-off"');
-    expect(t7).toContain("Double top at supply");
-    expect(t7).toContain("Head and shoulders and the neckline break with its retest come later");
+    // slice 4: head and shoulders - the neckline retests need no zones (open here); the double top / bottom and the right
+    // shoulders read zones (off here), so the card says the other scans are not switched on yet
+    expect(t7).toContain('data-state="scan-some-off"');
+    expect(t7).toContain('href="/screener?idea=T7&amp;scan=hs_top_retest"');
+    expect(t7).toContain('href="/screener?idea=T7&amp;scan=hs_bottom_retest"');
+    expect(t7).not.toContain('href="/screener?idea=T7&amp;scan=top"');
+    expect(t7).toContain("a sloped neckline comes later");
   });
 
   it("is a white box: the full logic, the settings with their starting values, the decisions and the scan formula", () => {

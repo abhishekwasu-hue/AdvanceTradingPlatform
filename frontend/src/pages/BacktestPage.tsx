@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import ProChart, { directionMarker, type ChartMarker } from "../components/ProChart";
+import BacktestChartV2 from "../chart/BacktestChartV2";
 import EquityCurveChart from "../components/EquityCurveChart";
 import { Card, StatTile, Disclaimer, signClass, signTone } from "../components/ui";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
@@ -550,7 +551,10 @@ export default function BacktestPage() {
           )}
 
           <Card title="Price Chart — strategy indicators, trade entries &amp; exits">
-            <ProChart candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />
+            {/* Chart review PR 3 (CC-5): under ui_v2 the trades show on the v2 chart; ProChart stays without it. */}
+            {uiV2
+              ? <BacktestChartV2 candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />
+              : <ProChart candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />}
           </Card>
 
           <Card title="Equity Curve">

@@ -155,7 +155,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P2-6 | not started | help centre + page tours complete | - |
 | P2-7 | not started | positions for options sellers + Performance page | - |
 | P2-8 | not started | Journal v2 J1 -> J2+J3 -> J4+J5+J6 (3 draft PRs); starts when the max-3 rule allows | - |
-| M45 | in progress | design ✅ 26 Oct; MA-1a backend registry (migration, `/api/accounts/mine`, flag `multi_account` OFF) in review; next MA-1b page, then MA-2 | MA-1a PR |
+| M45 | in progress | MA-1a merged (#568, migration e2a4c6e8f0b1, flag `multi_account` OFF); MA-1b page ✅ (#569); MA-2 resolver + sizing (pure, no orders) in review; next MA-3 fan-out on PAPER simulated accounts | MA-2 PR |
 | P3-1 | waiting for owner | the R2 bucket + key escrow, then the restore drill | - |
 | P3-2 | not started (parallel) | monitoring + alerts (parts built, row 17) | - |
 | P3-3 | not started (parallel) | rollback test of `atp.sh` | - |

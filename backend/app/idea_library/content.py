@@ -22,6 +22,13 @@ the card (OPEN_QUESTIONS IDEA-10, IDEA-13).
 
 Slice 3: T7 gets its scans (the second top / bottom at an area, from the existing swing, reversal and zone functions);
 T6 still has none - no registry function reads "price at a channel line" (IDEA-3, IDEA-12).
+
+Slice 4 (IDEA-12, IDEA-14): two causal registry functions close those gaps, and the scans are still built from the
+registry only. `ChannelLine(side, touches, edge_touches)` is the B5 channel's trend-side line on every bar (the channel
+B5 reads from the bars before the bar, projected to it), so T6 is a rejection at that line. `PriorSwingHigh` /
+`PriorSwingLow(degree, back)` are the confirmed swings before the latest one, so T7 reads a head and shoulders: the right
+shoulder rejected at the left shoulder's height below the head, and the retest of the broken neckline (the swing that
+broke, through the B9 swing retest). The re-check of the template matches (T1, T3, T4, T6, T7, T8) found none new.
 """
 from __future__ import annotations
 
@@ -358,6 +365,9 @@ def scan_payload(idea: Idea, scan: Scan, flags_on: Set[str]) -> Dict[str, Any]:
 
 
 # --------------------------------------------------------------------------------------- adopt as a paper strategy
+# Third round (slice 4, 23 Oct): the same library plus C4 (#416); still no template reads a market zone, a channel line
+# or a swing pattern, so T1, T3, T4, T6, T7 and T8 keep their reasons (tests/test_idea_library_channel_swings.py pins that no template
+# reads NearZone, ChannelLine or PriorSwingHigh / PriorSwingLow, so a new one triggers this review again).
 # IDEA-1 review, second round (slice 3, 22 Oct: the templates A2, A5, B1-B11, C1-C5, D1-D7, E1-E5, F1, F2, G1-G11 on
 # main). An idea is adoptable only through a template with the SAME structure (context, area, trigger, invalidation), never
 # one with a similar name; otherwise its reason is here. Mapped: T2 -> A2 and T5 -> A5 (their signals are the ideas' own
@@ -372,9 +382,11 @@ ADOPT_REVIEW: Dict[str, str] = {
     "T4": "A sweep beyond an obvious high / low and a close back inside an area; no template reads it. G7 is the sweep "
           "beyond the start of wave A inside a wave count, and B1's 'close back inside' is its exit, not a signal.",
     "T6": "A rejection at the channel line in the trend's favour; B3 signals the opposite (a close beyond the far edge) "
-          "and C3 the retest of that broken edge. A6 needs 'price at a channel line', which no function reads (IDEA-12).",
+          "and C3 the retest of that broken edge. The scan reads the line now (ChannelLine, IDEA-12), but no template does: "
+          "A6 is not built (TPL-Q23).",
     "T7": "Double top / bottom or head and shoulders at an area; no template reads swing patterns at an area (A7, TPL-Q23). "
-          "B6 is a flag / pennant / triangle breakout and G5 / G10 are wave-count lines.",
+          "B6 is a flag / pennant / triangle breakout and G5 / G10 are wave-count lines; the head and shoulders neckline "
+          "retest is not C2 (C2 retests any broken swing, with no pattern before it).",
     "T8": "T1 and T2 reduced to direction. F2's range edges source is T2's reading, but F1's sources (a Supertrend flip, "
           "a moving-average pullback) are not T1, and one card cannot adopt half of the pack; adoptable once A1 joins F1 "
           "(TPL-Q50).",

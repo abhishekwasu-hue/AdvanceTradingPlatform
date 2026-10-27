@@ -154,7 +154,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/tests/fixtures/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
     "frontend/src/signals/__fixtures__/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
     # Idea library slice 1: the server's own payload of the hand-written idea cards (no market data; synced by a backend test)
-    "frontend/e2e/fixtures/ideas_v2.json": "aea13574a934836de671313d324d15049c6867efa2eb4f42456549fbecb66845",
+    "frontend/e2e/fixtures/ideas_v2.json": "8f4c4ab07f26c22ba1d2de5cbf056fe22d292aa310f01f659719fd206a13ad92",
     # Readiness C13: the Learn page and the marketing pages, the server's own hand-written payloads (backend/tests/test_c13_learning.py).
     "frontend/e2e/fixtures/learn_v2.json": "45ce93482f856a6cf9bc83c4a3d2cf750582c041b10bac3594c9782edaf99e3d",
     "frontend/e2e/fixtures/site_v2.json": "c1539facb9bbb4df51d2aad62d3118da77a8ab654c756a972fa7e3a6c2c096e1",

@@ -146,3 +146,29 @@ def test_one_exit_closes_every_child_on_every_account_and_says_so_per_child(setu
     # Another member cannot close them by the reference.
     other = _member(t)
     assert client.post("/api/accounts/mine/paper/exit", headers=other["headers"], json={"ref": ref}).status_code in (404, 409)
+
+
+def test_capital_check_alert_and_retry_of_one_account(setup):  # noqa: F811 - the fixture
+    """MA-5: an account whose capital is below its lots' estimated margin is skipped with the figures (MB-6), the
+    not-placed accounts raise one critical alert (MB-5), and ACCOUNT:<id> retries that one account."""
+    from app.db.models import NotificationRecord
+    t, expiry, strike, _ = setup
+    p, small = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}), ("Small", 1_000, {"role": "SECONDARY", "group_name": "G"}))
+    out = _order(t, _body(expiry, strike, lots=1, stop_loss=90.0, client_ref=uuid.uuid4().hex), run_on="ALL")
+    rows = {r["account_id"]: r for r in out["results"]}
+    assert rows[p]["status"] == "PLACED"
+    assert rows[small]["status"] == "SKIPPED" and rows[small]["reasons"][0].startswith("capital 1,000 is below the estimated margin")
+
+    async def alerts():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(NotificationRecord).where(
+                NotificationRecord.tenant_id == t["tenant_id"], NotificationRecord.title.like("Multi-account order:%"))))
+    found = _run(alerts())
+    assert len(found) == 1 and found[0].severity == "CRITICAL" and "Small" in found[0].message
+
+    # The user raises the capital and retries that one account only.
+    raised = client.patch(f"/api/accounts/mine/paper/{small}", headers=t["headers"], json={"capital": 500_000})
+    assert raised.status_code == 200 and raised.json()["capital"] == 500_000
+    retry = _order(t, _body(expiry, strike, lots=1, stop_loss=90.0, client_ref=uuid.uuid4().hex), run_on=f"ACCOUNT:{small}")
+    assert [(r["account_id"], r["status"]) for r in retry["results"]] == [(small, "PLACED")]
+

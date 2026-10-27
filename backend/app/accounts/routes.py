@@ -200,6 +200,7 @@ class PaperAccountPatch(BaseModel):
     enabled: Optional[bool] = None
     sizing_mode: Optional[str] = None
     sizing_value: Optional[float] = Field(default=None, gt=0, lt=1e6)
+    capital: Optional[float] = Field(default=None, gt=0, lt=1e12)
     confirm: bool = False
 
 
@@ -211,7 +212,7 @@ async def change_paper_account(sub_id: int, body: PaperAccountPatch, user: User 
     try:
         row = await paper_fanout.update(session, user, row, role=body.role, clear_role=body.clear_role, group_name=body.group_name,
                                         enabled=body.enabled, sizing_mode=body.sizing_mode, sizing_value=body.sizing_value,
-                                        confirm=body.confirm)
+                                        confirm=body.confirm, capital=body.capital)
     except paper_fanout.FanoutRefused as exc:
         raise _refused(exc) from None
     return paper_fanout.describe(row)

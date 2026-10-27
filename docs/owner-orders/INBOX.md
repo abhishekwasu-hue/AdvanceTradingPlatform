@@ -106,3 +106,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | (Marathi, translated) "Default yes, start DH2 / DH6." (after the deploy of b15de0d, health OK) | DATA-H DH2 / DH6: last-session 1-minute fill from the own lake; VAPID default (owner keeps the key in atp-private) |
 | 2026-10-27 | All aprove, go ahead <br> (reply to: MA-1b #569 screenshots ✅ and start MA-2 sizing) |
 | 2026-10-27 | Continue don't ask again <br> (reply to: start MA-3 multi-account fan-out, PAPER first) |
+| 2026-10-27 | Default yes, do web research whenever necessary, don't ask me, and finish this project as early as possible, merge and deploy |

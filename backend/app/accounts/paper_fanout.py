@@ -65,7 +65,8 @@ async def create(session: AsyncSession, user: User, label: str, capital: float) 
 
 async def update(session: AsyncSession, user: User, row: PaperSubAccountRecord, *, role: Optional[str] = None,
                  clear_role: bool = False, group_name: Optional[str] = None, enabled: Optional[bool] = None,
-                 sizing_mode: Optional[str] = None, sizing_value: Optional[float] = None, confirm: bool = False) -> PaperSubAccountRecord:
+                 sizing_mode: Optional[str] = None, sizing_value: Optional[float] = None, confirm: bool = False,
+                 capital: Optional[float] = None) -> PaperSubAccountRecord:
     """Role (exactly one PRIMARY per user, moving it needs `confirm`), group (Secondaries only), switch and sizing."""
     from app.accounts.multi import clean_group
     changes: List[str] = []
@@ -96,6 +97,11 @@ async def update(session: AsyncSession, user: User, row: PaperSubAccountRecord, 
             raise FanoutRefused("Only a Secondary account belongs to a group.", "not_secondary")
         row.group_name = group
         changes.append(f"group {group or 'none'}")
+    if capital is not None:
+        if capital <= 0:
+            raise FanoutRefused("The capital is above zero.", "bad_capital")
+        row.capital = capital
+        changes.append(f"capital {capital:.2f}")
     if enabled is not None:
         row.enabled = enabled
         changes.append("on" if enabled else "off")
@@ -134,13 +140,24 @@ async def place(session: AsyncSession, user: User, ask: Any, *, override: Option
         raise FanoutRefused("No simulated account matches: give one account the Primary role first.", "no_accounts")
     sizing = {r.id: fp.Sizing(r.sizing_mode, r.sizing_value) for r in rows}
     margin_per_lot: Optional[float] = None
-    if any(sizing[a.id].mode == fp.PCT_CAPITAL for a in route.accounts):
-        # % of capital needs one lot's margin: the ticket's own estimate (none for a sold option or a future on PAPER,
-        # where the broker's SPAN is not known - those accounts are then skipped with the reason, never guessed).
+    if route.accounts:
+        # One lot's margin, the ticket's own estimate: % of capital sizing and the per-account capital check (MB-6) use
+        # it. None for a sold option or a future on PAPER (the broker's SPAN is not known): never guessed.
         one = await fno_ticket.assess(session, user, dataclasses.replace(ask, lots=1), price_lookup=price_lookup, origin=origin)
         value = (one.get("margin") or {}).get("value")
         margin_per_lot = float(value) if value else None
     plan = fp.size(route, sizing, primary_lots=int(ask.lots), lot_size=1, margin_per_lot=margin_per_lot)
+    # MB-6 pre-send check per account (PAPER): the account's own capital must cover the estimated margin of its lots.
+    if margin_per_lot:
+        kept = []
+        for leg in plan.legs:
+            need = margin_per_lot * leg.lots
+            if float(by_id[leg.account_id].capital) < need:
+                plan.skipped.append(fp.Skip(leg.account_id, f"capital {float(by_id[leg.account_id].capital):,.0f} is below the "
+                                                            f"estimated margin {need:,.0f} for {leg.lots} lot(s)"))
+            else:
+                kept.append(leg)
+        plan.legs = kept
     rows_out: List[Dict[str, Any]] = [{"account_id": s.account_id, "label": by_id[s.account_id].label, "status": "SKIPPED",
                                        "reasons": [s.reason], "trade_id": None, "lots": 0} for s in plan.skipped]
     # The Primary first (MB-5: Secondaries only after the Primary was accepted, for entries).
@@ -165,11 +182,29 @@ async def place(session: AsyncSession, user: User, ask: Any, *, override: Option
         rows_out.append({"account_id": row.id, "label": row.label, "status": result.get("status"), "lots": leg.lots,
                          "trade_id": result.get("trade_id"), "reasons": list(result.get("reasons") or [])})
     summary = {"why": route.why, "override": override, "results": rows_out}
+    await _alert_failures(session, user, ask.client_ref, rows_out)
     await write_audit_log(session, user.tenant_id, user.id, "paper_fanout_order",
                           json.dumps({"ref": ask.client_ref, "why": route.why,
                                       "results": [(r["account_id"], r["status"], r["lots"]) for r in rows_out]})[:2000])
     await session.commit()
     return summary
+
+
+async def _alert_failures(session: AsyncSession, user: User, ref: str, rows: List[Dict[str, Any]]) -> None:
+    """MB-5: an account whose child was not placed raises an alert (in-app, and Telegram / e-mail by the user's own
+    channel settings) with the reason and how to retry that one account. Switched-off accounts are the user's own
+    choice and raise none."""
+    from app.core.enums import NotificationSeverity, NotificationType
+    from app.notifications.service import notify
+    failed = [r for r in rows if r["status"] != "PLACED" and not any("switched off" in x for x in r["reasons"])]
+    if not failed:
+        return
+    lines = [f"{r['label']}: {r['status'].lower()} - {'; '.join(r['reasons']) or 'no reason given'}" for r in failed]
+    await notify(session, user.tenant_id, NotificationType.REJECTION,
+                 title=f"Multi-account order: {len(failed)} account(s) not placed",
+                 message="\n".join(lines) + "\nRetry one account from the order ticket (Run on: that account).",
+                 severity=NotificationSeverity.CRITICAL, user_id=user.id,
+                 metadata_json=json.dumps({"multi_account_ref": ref, "accounts": [r["account_id"] for r in failed]}))
 
 
 async def exit_all(session: AsyncSession, user: User, ref: str) -> Dict[str, Any]:

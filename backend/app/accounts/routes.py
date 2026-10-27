@@ -5,6 +5,8 @@
 * `POST  /api/accounts/{id}/enable|disable` - a DISABLED account refuses new LIVE entries
 * `POST  /api/accounts/{id}/default`    - the account a deployment on this broker uses when it names none
 * `PATCH /api/accounts/{id}`            - display name
+* M45 MA-1 (`ui_v2` + `multi_account`): `GET /api/accounts/mine`, `POST /api/accounts/mine/{id}/role`,
+  `POST /api/accounts/mine/{id}/group` - the caller's own accounts as Primary / Secondary (app/accounts/multi.py)
 """
 from typing import List, Optional
 
@@ -97,3 +99,62 @@ async def make_default(account_id: int, user: User = Depends(require_trader), se
     await write_audit_log(session, user.tenant_id, user.id, "broker_account_default", f"#{account.id} {account.broker_name}/{account.account_label}")
     await session.commit()
     return await _with_status(session, account)
+
+
+# --- M45 MA-1: the caller's own accounts as Primary / Secondary (docs/design/M45_MULTI_ACCOUNT.md) -------------------
+# Behind `ui_v2` + `multi_account` (OFF): 404 with X-Feature-Disabled while either is off. Registry only - no routing.
+
+async def _require_multi(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> None:
+    from app.accounts import multi
+    from app.platform.controls import flag_enabled
+    for name in (multi.PAGE_FLAG, multi.FLAG):
+        if not await flag_enabled(session, name, user.tenant_id):
+            raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": name})
+
+
+def _refused(exc: Exception) -> HTTPException:
+    return HTTPException(status_code=409, detail={"message": str(exc), "code": getattr(exc, "code", "refused"),
+                                                  **getattr(exc, "extra", {})})
+
+
+@router.get("/mine", dependencies=[Depends(_require_multi)])
+async def my_accounts(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """MB-1: the caller's own accounts with role, group, enabled and broker session state; the open LIVE trades that
+    hold back a role change (M45-3)."""
+    from app.accounts import multi
+    rows = [await multi.describe(session, a) for a in await multi.own_accounts(session, user)]
+    blocking = await multi.unaccounted_live_trades(session, user)
+    return {"accounts": rows, "unaccounted_live_trades": [{"id": t.id, "symbol": t.symbol} for t in blocking]}
+
+
+class RoleBody(BaseModel):
+    role: Optional[str] = Field(default=None, description="PRIMARY, SECONDARY or null to take the account out")
+    confirm: bool = False
+
+
+@router.post("/mine/{account_id}/role", dependencies=[Depends(_require_multi), Depends(require_scope("brokers:write"))])
+async def set_my_role(account_id: int, body: RoleBody, user: User = Depends(require_trader),
+                      session: AsyncSession = Depends(get_session)) -> dict:
+    from app.accounts import multi
+    account = await _owned(session, user, account_id)
+    try:
+        account = await multi.set_role(session, user, account, (body.role or "").upper() or None, confirm=body.confirm)
+    except multi.RegistryRefused as exc:
+        raise _refused(exc) from None
+    return await multi.describe(session, account)
+
+
+class GroupBody(BaseModel):
+    group_name: Optional[str] = Field(default=None, max_length=50)
+
+
+@router.post("/mine/{account_id}/group", dependencies=[Depends(_require_multi), Depends(require_scope("brokers:write"))])
+async def set_my_group(account_id: int, body: GroupBody, user: User = Depends(require_trader),
+                       session: AsyncSession = Depends(get_session)) -> dict:
+    from app.accounts import multi
+    account = await _owned(session, user, account_id)
+    try:
+        account = await multi.set_group(session, user, account, body.group_name)
+    except multi.RegistryRefused as exc:
+        raise _refused(exc) from None
+    return await multi.describe(session, account)

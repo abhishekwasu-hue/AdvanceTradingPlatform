@@ -312,6 +312,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # exits and renew reminders, each opening its screen. OFF: the device routes answer 404 (X-Feature-Disabled) and no
     # phone delivery is queued. Also needs the server's FCM key (FCM_SERVICE_ACCOUNT_JSON_BASE64). Places no orders.
     "mobile_push": "Phone notifications in the Android app (signals, approvals, exits, renew reminders), each opening its screen",
+    # M45 MA-1 (docs/design/M45_MULTI_ACCOUNT.md): the user's own broker accounts as Primary / Secondary (one Primary per
+    # user across brokers, optional Secondary groups) and simulated PAPER accounts. OFF: /api/accounts/mine answers 404
+    # (X-Feature-Disabled). MA-1 is the registry only: nothing here routes, sizes or places an order.
+    "multi_account": "Multi-account (M45): your own broker accounts as Primary / Secondary with groups, and simulated paper accounts (registry only; places no orders)",
     # U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards - publicly described methods with a screen
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.

@@ -23,10 +23,12 @@ interface Setup extends TradingMocks {
   broker?: "connected" | "login" | "none";
   /** /broker/token-status never answers (the broker check hangs). */
   hangBroker?: boolean;
+  /** M45 MB-7: `multi_account` on, and /positions labels two paper rows with the trader's own simulated accounts. */
+  accounts?: boolean;
 }
 
 async function open(page: Page, theme: "dark" | "light", setup: Setup = {}): Promise<Writes> {
-  const { flag = true, broker = "connected", hangBroker = false, ...mocks } = setup;
+  const { flag = true, broker = "connected", hangBroker = false, accounts = false, ...mocks } = setup;
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
   await page.addInitScript((t) => {
     try {
@@ -36,8 +38,13 @@ async function open(page: Page, theme: "dark" | "light", setup: Setup = {}): Pro
   }, theme);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   const brokers = broker === "none" ? [] : broker === "login" ? T.token_status_login : T.token_status;
-  await mockApi(page, { features: flag ? (T.features as Record<string, boolean>) : undefined, brokers: brokers as unknown[] });
+  const features = { ...(T.features as Record<string, boolean>), ...(accounts ? { multi_account: true } : {}) };
+  await mockApi(page, { features: flag ? features : undefined, brokers: brokers as unknown[] });
   const writes = await mockTrading(page, mocks);
+  if (accounts) {
+    const labelled = (T.positions as { id: number }[]).map((p) => ({ ...p, account_label: p.id === 201 ? "Family" : p.id === 202 ? "Main" : null }));
+    await page.route(/\/api(?:\/v1)?\/positions$/, (r) => (r.request().method() === "GET" ? r.fulfill({ json: labelled }) : r.fallback()));
+  }
   if (hangBroker) await page.route(/\/api(?:\/v1)?\/broker\/token-status$/, () => new Promise(() => undefined));
   await page.goto("/positions");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
@@ -235,6 +242,33 @@ test.describe("v2 positions 1440 desktop", () => {
     await expect(row.locator("[data-col='pnl']")).toContainText("–");
     await expect(row).not.toContainText("+₹3,120");
     await expect(page.locator("[data-tile='open-pnl']")).toContainText("–");
+  });
+});
+
+test.describe("M45 MB-7 accounts (multi_account on)", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+  test("each labelled row shows its account; the filter narrows the list and every Exit now stays", async ({ page }) => {
+    await open(page, "light", { accounts: true });
+    const rows = page.locator("[data-block='positions'] [data-position]");
+    await expect(rows).toHaveCount(3);
+    await expect(page.locator("[data-position='201'] [data-testid='account-badge']")).toHaveText("Family");
+    await expect(page.locator("[data-position='202'] [data-testid='account-badge']")).toHaveText("Main");
+    await expect(page.locator("[data-position='203'] [data-testid='account-badge']")).toHaveCount(0);
+    const filter = page.getByTestId("account-filter").getByLabel("Account", { exact: true });
+    await expect(filter).toHaveValue("");
+    expect((await filter.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await filter.selectOption("Main");
+    await expect(rows).toHaveCount(1);
+    await expect(page.locator("[data-position='202'] [data-testid='exit-now']")).toBeEnabled();
+    await filter.selectOption("");
+    await expect(rows).toHaveCount(3);
+  });
+
+  test("no labelled row (today's answer): no filter, no badge", async ({ page }) => {
+    await open(page, "light");
+    await expect(page.locator("[data-block='positions'] [data-position]")).toHaveCount(3);
+    await expect(page.getByTestId("account-filter")).toHaveCount(0);
+    await expect(page.getByTestId("account-badge")).toHaveCount(0);
   });
 });
 

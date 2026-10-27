@@ -57,8 +57,8 @@ export default {
       ringColor: { ...semantic, ...palette("tx") },
       placeholderColor: { ...semantic, ...palette("tx") },
       fontFamily: {
-        sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
-        mono: ['"JetBrains Mono"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        sans: ['"Inter Variable"', "Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
+        mono: ['"JetBrains Mono Variable"', '"JetBrains Mono"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       // U5: radii (controls 6, panels 10). UI2-0: `rounded-pill` for chips and badges.
       borderRadius: { control: "var(--radius-control)", panel: "var(--radius-panel)", pill: "var(--radius-pill)" },

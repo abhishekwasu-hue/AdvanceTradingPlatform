@@ -106,3 +106,5 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | (Marathi, translated) "Default yes, start DH2 / DH6." (after the deploy of b15de0d, health OK) | DATA-H DH2 / DH6: last-session 1-minute fill from the own lake; VAPID default (owner keeps the key in atp-private) |
 | 2026-10-27 | (Marathi, translated) "Start UX-7." | UX-2 plan PR 5 (UX-7 live feel) started in Session B |
 | 2026-10-27 | All aprove, go ahead <br> (reply to: MA-1b #569 screenshots ✅ and start MA-2 sizing) |
+| 2026-10-27 | (Marathi, translated) "Start UX-4." | UX-2 plan PR 6 (UX-4 self-hosted font + tabular digits), #574 |
+| 2026-10-27 | (Marathi, translated) "Start UX-8." | UX-2 plan PR 7 (UX-8 Comfortable / Compact density) started in Session B |

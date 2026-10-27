@@ -183,7 +183,7 @@ class PaperAccountBody(BaseModel):
     capital: float = Field(gt=0, lt=1e12)
 
 
-@router.post("/mine/paper", dependencies=[Depends(_require_multi)])
+@router.post("/mine/paper", dependencies=[Depends(_require_multi), Depends(require_scope("brokers:write"))])
 async def add_paper_account(body: PaperAccountBody, user: User = Depends(require_trader),
                             session: AsyncSession = Depends(get_session)) -> dict:
     from app.accounts import paper_fanout
@@ -203,7 +203,7 @@ class PaperAccountPatch(BaseModel):
     confirm: bool = False
 
 
-@router.patch("/mine/paper/{sub_id}", dependencies=[Depends(_require_multi)])
+@router.patch("/mine/paper/{sub_id}", dependencies=[Depends(_require_multi), Depends(require_scope("brokers:write"))])
 async def change_paper_account(sub_id: int, body: PaperAccountPatch, user: User = Depends(require_trader),
                                session: AsyncSession = Depends(get_session)) -> dict:
     from app.accounts import paper_fanout
@@ -222,7 +222,7 @@ class PaperFanoutBody(BaseModel):
     run_on: Optional[str] = Field(default=None, max_length=60, description="PRIMARY, PRIMARY+<group> or ALL")
 
 
-@router.post("/mine/paper/order", dependencies=[Depends(_require_multi)])
+@router.post("/mine/paper/order", dependencies=[Depends(_require_multi), Depends(require_scope("brokers:write"))])
 async def place_paper_fanout(body: PaperFanoutBody, user: User = Depends(require_trader),
                              session: AsyncSession = Depends(get_session)) -> dict:
     """One ticket order on the caller's simulated PAPER accounts: a result row per account (MB-5). Never a broker order."""

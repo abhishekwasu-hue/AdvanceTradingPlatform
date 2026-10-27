@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mockApi } from "./mockApi";
+import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
 import { T, mockTrading, type TradingMocks, type Writes } from "./tradingMocks";
 
@@ -218,3 +219,16 @@ test.describe("flag off", () => {
     await expect(page.getByRole("heading", { name: "Risk Management", exact: true })).toBeVisible();
   });
 });
+
+/** UX-11 (owner, 27 Oct): numbers first - every <Page> card passes the text budget; the visible-word count is printed. */
+for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test.describe(`risk text budget ${size.width}`, () => {
+    test.use({ viewport: size });
+    test("every card fits the text budget", async ({ page }) => {
+      await open(page, "light");
+      console.log(`[words] risk ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
+  });
+}

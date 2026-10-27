@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
+import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
 
 /**
@@ -192,3 +193,17 @@ test.describe("Idea library behaviour", () => {
     await expect(page.getByRole("list", { name: "Stages - every one must pass" }).locator("li")).not.toHaveCount(0);
   });
 });
+
+/** UX-11 (owner, 27 Oct): numbers first - every <Page> card passes the text budget; the visible-word count is printed. */
+for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+  test.describe(`idea-library text budget ${size.width}`, () => {
+    test.use({ viewport: size });
+    test("every card fits the text budget", async ({ page }) => {
+      await open(page, "/ideas", { theme: "light" });
+      await expect(page.locator("[data-idea]")).toHaveCount(8);
+      console.log(`[words] idea-library ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
+      expect(await textBudgetProblems(page)).toEqual([]);
+    });
+  });
+}

@@ -73,18 +73,19 @@ export default function SetupWizardV2() {
   };
   const forward = () => { if (step) setShown(stepAfter(view, step.key) ?? "finished"); };
   const props = { done: !!step?.done, onChanged: setup.reload };
+  const intro = <p className="text-t14 text-fg-muted">Four short steps to start trading on paper. Skip any of them and come back here later.</p>;
 
   return (
     <section className={`${CARD} space-y-space-4 p-space-4 md:p-space-5`} data-block="wizard" data-step={shown}>
-      <p className="text-t14 text-fg-muted">Four short steps to start trading on paper. Skip any of them and come back here later.</p>
+      {(shown === "finished" || step?.key !== "broker") && intro}
       <Stepper view={view} current={shown} onPick={setShown} />
       {step ? (
         <>
           <header>
-            <p className="text-t13 text-fg-muted">Step {at + 1} of {SETUP_STEPS.length}{step.done ? " · Done" : step.skipped ? " · Skipped for now" : ""}</p>
+            <span className="block text-t13 text-fg-muted">Step {at + 1} of {SETUP_STEPS.length}{step.done ? " · Done" : step.skipped ? " · Skipped for now" : ""}</span>
             <h2 className="mt-px text-t18 font-semibold text-fg">{STEP_TEXT[step.key].title}</h2>
           </header>
-          {step.key === "broker" && <BrokerStepV2 {...props} onSkip={() => skip("broker")} />}
+          {step.key === "broker" && <BrokerStepV2 {...props} onSkip={() => skip("broker")} intro={intro} />}
           {step.key === "risk" && <RiskStepV2 key="risk" {...props} />}
           {step.key === "strategy" && <StrategyStepV2 {...props} />}
           {step.key === "alerts" && <AlertsStepV2 {...props} />}

@@ -6,6 +6,7 @@ import { CARD, ChipV2, LINK_PRIMARY, LINK_SECONDARY, LoadFailedV2, LoadingRowsV2
 import type { PageProps } from "../routes";
 import { PageTitleV2 } from "../trading/PartsV2";
 import { ComingSoon } from "../ui/ComingSoon";
+import { Details } from "../ui/numbersFirst";
 import { useFeatures } from "../ui/useFeatures";
 import { paperBotPathFor, testPathFor } from "../strategyTemplates/link";
 import { ideasApi, type Idea, type IdeaLibrary } from "./api";
@@ -100,7 +101,7 @@ function Beginner({ library, initialAnswers }: { library: IdeaLibrary; initialAn
       <h2 id={titleId} className="flex items-center gap-space-2 text-t15 font-semibold text-fg">
         <Search size={16} aria-hidden className="text-brand" />{beginner.title}
       </h2>
-      <p className="mt-space-1 text-t14 text-fg-muted">{beginner.intro}</p>
+      <Details id="ideas.beginner" className="mt-space-1"><p className="text-t14 text-fg-muted">{beginner.intro}</p></Details>
       <div className="mt-space-3 grid grid-cols-1 gap-space-3 md:grid-cols-3">
         {beginner.questions.map((q) => (
           <fieldset key={q.id} className="min-w-0">

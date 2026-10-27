@@ -48,6 +48,10 @@ describe("Orders page wiring and wording", () => {
     expect(routesSource).toContain('orders: () => import("./pages/OrdersPage")');
   });
 
+  it("UX-11 U5: the page's one footer line, as on Positions", () => {
+    expect(ordersSource).toContain("<PageFootnote>Phase 0 has PAPER only.</PageFootnote>");
+  });
+
   it("read-only, no jargon, no table", () => {
     expect(ordersSource).toContain("api.listTrades");
     expect(ordersSource).not.toMatch(/api\.(place|cancel|modify|exit|close)/i);

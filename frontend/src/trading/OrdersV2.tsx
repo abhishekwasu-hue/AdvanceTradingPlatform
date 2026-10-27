@@ -7,6 +7,7 @@ import type { PageProps } from "../routes";
 import { useColourV2 } from "../ui/colourV2";
 import { DirectionChip } from "../ui/DirectionChip";
 import { EMPTY } from "../ui/format";
+import { PageFootnote } from "../ui/numbersFirst";
 import { orderFillRows, orderTiles, type OrderFillRow } from "./model";
 import { BUTTON_SECONDARY, PageTitleV2, TileV2, TilesV2 } from "./PartsV2";
 
@@ -78,6 +79,9 @@ export default function OrdersV2(_props: PageProps = {}) {
           </>
         )}
       </CardV2>
+
+      {/* UX-11 U5: the page's one footer line, as on Positions (owner default: the My trades pages). */}
+      <PageFootnote>Phase 0 has PAPER only.</PageFootnote>
     </div>
   );
 }

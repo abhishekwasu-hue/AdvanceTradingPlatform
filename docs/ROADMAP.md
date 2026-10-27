@@ -133,6 +133,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UX-2 | in progress | Session B, plan docs/design/UX2_PLAN.md: merged H9 #559, UX-6 #560, UX-2 search #563, UX-5 #564, UX-7, UX-4, TD-1 #577, OC-1/2 #579, Orders #581, Charts H7 #582, UX-9 ticket #583; UX-8 density #578 on CI; next OC-4 / OC-5; PR 8 (Terminal watchlist) waits on Session A T2/T3; owner deploys + checks | #577-#583 |
 | UX-11 | in progress | Session B: "Numbers first" (ATP_ORDER_UX11.md): merged docs #584, primitives + guard #585; My trades #586, Today #587, Terminal #588, Charts #589 on CI; next Option chain, Signals, then Paper bot, Performance, Strategies, Settings, Markets, Learn | #584-#589 |
 | UX-12 | in progress | Session B: purple dot-grid backdrop behind the v2 page header band (owner screenshot, 27 Oct), Appearance toggle, default on | - |
+| UX-13 | in progress | Session B: calm colours - one accent for the active bottom-bar tab, muted icons, lighter tile grid lines (owner, 27 Oct); sample first, then the PR behind ui_v2 | - |
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | SB-1 | not started | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |

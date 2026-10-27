@@ -132,6 +132,18 @@
 :root { --text-scale: 1; }
 :root[data-text-size="large"] { --text-scale: 1.125; }
 :root[data-text-size="xlarge"] { --text-scale: 1.25; }
+/* UX-8 (owner order UX-2): Compact density (Settings -> Appearance; `data-density` on <html>) - tighter paddings, gaps and
+   rows, so more fits on one screen. Comfortable keeps the values above. The 44 px touch targets (min-h-11) are not
+   space tokens, so they stay. */
+:root[data-density="compact"] {
+  --space-2: 0.375rem;
+  --space-3: 0.5rem;
+  --space-4: 0.75rem;
+  --space-5: 1rem;
+  --space-6: 1.125rem;
+  --space-8: 1.5rem;
+  --row-h: 2rem;
+}
 html { font-size: calc(100% * var(--text-scale)); }
 
 /* UI2-4b1 (Charts page plan, owner's chart theme switch): the chart tokens. A chart follows the app theme by default;

@@ -160,12 +160,54 @@ FLAG_INFO: Dict[str, FlagInfo] = {
 }
 
 
+# P2-1 (docs/design/P2_1_FLAG_AUDIT.md, owner ✅ 26 Oct, R6): the fate of every "unfinished" flag, shown in the admin
+# list. FINISH: the roadmap item that finishes it. KEEP_OFF: stays off and hidden, with the reason. REMOVED_FROM_VIEW:
+# stays off, its code kept, and leaves the admin "Turn on" list (FA-2) - the server refuses to turn it on.
+FINISH: Dict[str, str] = {
+    "data_hub": "P1-5", "markets_view": "FN7", "strategy_templates": "P2-3 / FN4", "idea_library": "P2-3 / FN4",
+    "strategy_lab_pine": "FN3", "daily_rhythm": "P2-4 / FN7", "chart_contracts": "DATA-H / FN7",
+    "chart_futures_basis": "DATA-H / FN7", "help_centre": "P2-6 (early, once the support contact is set)",
+    "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",
+}
+KEEP_OFF: Dict[str, str] = {
+    "chart_analyze_strikes": "strikes next to a setup read close to advice; after P2-5 is on",
+    "chart_analyze_share": "download only, no share link (CPV-6)",
+    "market_thesis": "needs market memory; per-symbol scenarios sit close to advice",
+    "ai_research": "AI cost per draft; after FN5",
+    "support_bot": "answers from help pages that are not complete; after P2-6",
+    "screener_fundamentals": "no licensed fundamentals source",
+    "screener_legends_lg3": "needs company fundamentals",
+    "screener_ownership": "no ownership data source",
+    "screener_waves": "wave reading is method content; after the wave templates / P5-1",
+    "mobile_push": "needs the FCM key and the app (P5-4)",
+    "alerts_whatsapp_dlt": "needs DLT registration (owner / legal)",
+    "growth_v2": "plans come with payments (P5-2)",
+    "learn": "education text needs the legal review (P3-5)",
+    "marketing_site": "public launch only (P5-3)",
+    "onboarding_emails": "only with self-signup (P5-3) and the platform mailer",
+}
+REMOVED_FROM_VIEW: Dict[str, str] = {
+    "vision_byok_v3": "superseded by the Copilot chart reading (CP-V); kept off, code kept",
+}
+
+
+def fate_for(name: str) -> Dict[str, str]:
+    """P2-1: {"fate": finish | keep_off | removed_from_view, "fate_note": ...} for a flag that has one, else {}."""
+    if name in REMOVED_FROM_VIEW:
+        return {"fate": "removed_from_view", "fate_note": f"Removed from view: {REMOVED_FROM_VIEW[name]}"}
+    if name in FINISH:
+        return {"fate": "finish", "fate_note": f"Finishing in {FINISH[name]}"}
+    if name in KEEP_OFF:
+        return {"fate": "keep_off", "fate_note": f"Kept off: {KEEP_OFF[name]}"}
+    return {}
+
+
 def info_for(name: str) -> Dict[str, object]:
     """The admin list's fields for one flag (a flag missing here reads as unfinished, in Accounts and platform)."""
     info = FLAG_INFO.get(name) or FlagInfo(name, "platform", "", (), "", "unfinished")
     return {"plain": info.plain, "area": info.area, "area_label": AREAS[info.area], "turns_on": info.turns_on,
             "depends_on": list(info.depends_on), "needs": info.needs, "status": info.status,
-            "status_label": STATUSES[info.status]}
+            "status_label": STATUSES[info.status], **fate_for(name)}
 
 
-__all__ = ["AREAS", "FLAG_INFO", "STATUSES", "FlagInfo", "info_for"]
+__all__ = ["AREAS", "FINISH", "FLAG_INFO", "KEEP_OFF", "REMOVED_FROM_VIEW", "STATUSES", "FlagInfo", "fate_for", "info_for"]

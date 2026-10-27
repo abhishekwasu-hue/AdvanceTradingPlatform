@@ -237,3 +237,18 @@ async def place_paper_fanout(body: PaperFanoutBody, user: User = Depends(require
                                         price_lookup=lookup, origin=MANUAL)
     except paper_fanout.FanoutRefused as exc:
         raise _refused(exc) from None
+
+
+class PaperFanoutExitBody(BaseModel):
+    ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
+
+
+@router.post("/mine/paper/exit", dependencies=[Depends(_require_multi), Depends(require_scope("brokers:write"))])
+async def exit_paper_fanout(body: PaperFanoutExitBody, user: User = Depends(require_trader),
+                            session: AsyncSession = Depends(get_session)) -> dict:
+    """MA-4: close every open child of one multi-account PAPER order (sold legs first; each child's own exit also works)."""
+    from app.accounts import paper_fanout
+    try:
+        return await paper_fanout.exit_all(session, user, body.ref)
+    except paper_fanout.FanoutRefused as exc:
+        raise _refused(exc) from None

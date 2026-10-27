@@ -100,6 +100,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/accounts/mine/paper"): "trader",
     ("PATCH", "/api/accounts/mine/paper/{sub_id}"): "trader",
     ("POST", "/api/accounts/mine/paper/order"): "trader",
+    ("POST", "/api/accounts/mine/paper/exit"): "trader",
     ("POST", "/api/accounts/mine/{account_id}/group"): "trader",
     ("POST", "/api/accounts/mine/{account_id}/role"): "trader",
     ("PATCH", "/api/accounts/{account_id}"): "trader",

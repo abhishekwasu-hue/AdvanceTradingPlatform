@@ -1,10 +1,10 @@
-"""M45 MA-3: paper_sub_accounts (simulated PAPER accounts per user) and trades.paper_sub_account_id
+"""M45 MA-3 / MA-4: paper_sub_accounts (simulated PAPER accounts per user), trades.paper_sub_account_id, trades.paper_fanout_ref
 
 Revision ID: f1b3d5e7a9c2
 Revises: e2a4c6e8f0b1 (M45 MA-1)
 Create Date: 2026-10-27 04:00:00
 
-One new table and one nullable column on trades; no backfill. The table is kept apart from broker_accounts so a
+One new table and two nullable columns on trades (one indexed); no backfill. The table is kept apart from broker_accounts so a
 simulated account can never become a LIVE routing candidate.
 """
 from typing import Sequence, Union
@@ -17,7 +17,7 @@ down_revision: Union[str, Sequence[str], None] = 'e2a4c6e8f0b1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 ROLLBACK_SAFE = True
-ROLLBACK_SAFE_REASON = ("a new table and one nullable column on trades: the previous release never names them, so it runs "
+ROLLBACK_SAFE_REASON = ("a new table and two nullable columns on trades: the previous release never names them, so it runs "
                         "unchanged on the upgraded schema; the downgrade drops them")
 
 
@@ -42,9 +42,13 @@ def upgrade() -> None:
     op.add_column('trades', sa.Column('paper_sub_account_id', sa.Integer(),
                                       sa.ForeignKey('paper_sub_accounts.id', name='fk_trades_paper_sub_account_id',
                                                     ondelete='SET NULL'), nullable=True))
+    op.add_column('trades', sa.Column('paper_fanout_ref', sa.String(64), nullable=True))
+    op.create_index('ix_trades_paper_fanout_ref', 'trades', ['paper_fanout_ref'])
 
 
 def downgrade() -> None:
+    op.drop_index('ix_trades_paper_fanout_ref', table_name='trades')
+    op.drop_column('trades', 'paper_fanout_ref')
     op.drop_column('trades', 'paper_sub_account_id')
     op.drop_index('ix_paper_sub_accounts_user_id', table_name='paper_sub_accounts')
     op.drop_index('ix_paper_sub_accounts_tenant_id', table_name='paper_sub_accounts')

@@ -44,7 +44,7 @@ def _trades(ids):
     return _run(go())
 
 
-def test_off_by_default_and_own_accounts_only(setup):
+def test_off_by_default_and_own_accounts_only(setup):  # noqa: F811 - the fixture
     t, *_ = setup
     assert client.get("/api/accounts/mine/paper", headers=t["headers"]).headers.get("X-Feature-Disabled") == "multi_account"
     (pid,) = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}))
@@ -55,7 +55,7 @@ def test_off_by_default_and_own_accounts_only(setup):
     assert dup.status_code == 409 and dup.json()["detail"]["code"] == "duplicate"
 
 
-def test_one_primary_with_confirmation_and_groups_for_secondaries(setup):
+def test_one_primary_with_confirmation_and_groups_for_secondaries(setup):  # noqa: F811 - the fixture
     t, *_ = setup
     a, b = _accounts(t, ("A", 100_000, {"role": "PRIMARY"}), ("B", 100_000, {"role": "SECONDARY", "group_name": "Family"}))
     refused = client.patch(f"/api/accounts/mine/paper/{b}", headers=t["headers"], json={"role": "PRIMARY"})
@@ -70,7 +70,7 @@ def test_one_primary_with_confirmation_and_groups_for_secondaries(setup):
     assert bad.json()["detail"]["code"] == "bad_sizing"
 
 
-def test_one_order_becomes_one_paper_child_per_account_with_reasons_for_the_skipped(setup):
+def test_one_order_becomes_one_paper_child_per_account_with_reasons_for_the_skipped(setup):  # noqa: F811 - the fixture
     t, expiry, strike, _ = setup
     p, fam, off, tiny = _accounts(
         t, ("Main", 500_000, {"role": "PRIMARY"}),
@@ -99,7 +99,7 @@ def test_one_order_becomes_one_paper_child_per_account_with_reasons_for_the_skip
     assert _trades([rows[fam]["trade_id"]])[rows[fam]["trade_id"]].exit_time is not None
 
 
-def test_a_refused_primary_leaves_the_secondaries_unplaced(setup):
+def test_a_refused_primary_leaves_the_secondaries_unplaced(setup):  # noqa: F811 - the fixture
     t, expiry, strike, _ = setup
     p, s = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}), ("Sec", 500_000, {"role": "SECONDARY", "group_name": "G"}))
     # A SELL without a stop is refused by the ticket's own checks.
@@ -115,7 +115,7 @@ def test_a_refused_primary_leaves_the_secondaries_unplaced(setup):
     assert _run(count()) == 2
 
 
-def test_resting_orders_and_a_missing_reference_are_refused(setup):
+def test_resting_orders_and_a_missing_reference_are_refused(setup):  # noqa: F811 - the fixture
     t, expiry, strike, _ = setup
     _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}))
     out = client.post("/api/accounts/mine/paper/order", headers=t["headers"],
@@ -125,3 +125,24 @@ def test_resting_orders_and_a_missing_reference_are_refused(setup):
                       json={"order": _body(expiry, strike, stop_loss=90.0, order_type="LIMIT", price=50.0, rest_if_waiting=True,
                                            client_ref=uuid.uuid4().hex)})
     assert out.status_code == 409 and out.json()["detail"]["code"] == "resting_not_supported"
+
+
+def test_one_exit_closes_every_child_on_every_account_and_says_so_per_child(setup):  # noqa: F811 - the fixture
+    """MA-4 / MB-4: the multi-account exit closes each account's own child through the ordinary exit path."""
+    t, expiry, strike, _ = setup
+    p, s = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}), ("Sec", 500_000, {"role": "SECONDARY", "group_name": "G"}))
+    ref = uuid.uuid4().hex
+    placed = _order(t, _body(expiry, strike, lots=1, stop_loss=90.0, client_ref=ref), run_on="ALL")
+    ids = [r["trade_id"] for r in placed["results"]]
+    assert all(r["status"] == "PLACED" for r in placed["results"]) and len(ids) == 2
+    # One child already closed by hand: the multi-account exit closes only what is still open.
+    assert client.post(f"/api/positions/{ids[0]}/exit-now", headers=t["headers"]).status_code == 200
+    out = client.post("/api/accounts/mine/paper/exit", headers=t["headers"], json={"ref": ref})
+    assert out.status_code == 200, out.text
+    assert [(r["trade_id"], r["status"], r["account_id"]) for r in out.json()["results"]] == [(ids[1], "CLOSED", s)]
+    assert all(tr.exit_time is not None for tr in _trades(ids).values())
+    again = client.post("/api/accounts/mine/paper/exit", headers=t["headers"], json={"ref": ref})
+    assert again.status_code == 409 and again.json()["detail"]["code"] == "nothing_open"
+    # Another member cannot close them by the reference.
+    other = _member(t)
+    assert client.post("/api/accounts/mine/paper/exit", headers=other["headers"], json={"ref": ref}).status_code in (404, 409)

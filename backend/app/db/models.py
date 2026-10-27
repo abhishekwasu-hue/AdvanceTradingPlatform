@@ -351,6 +351,8 @@ class TradeRecord(Base):
     broker_account_id: Mapped[int | None] = mapped_column(ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     # M45 MA-3: the simulated PAPER account a multi-account child order was placed on (NULL = the user's one paper book).
     paper_sub_account_id: Mapped[int | None] = mapped_column(ForeignKey("paper_sub_accounts.id", ondelete="SET NULL"), nullable=True)
+    # M45 MA-4: the ticket reference of the multi-account order this child belongs to (one exit closes every child).
+    paper_fanout_ref: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # Phase D4: the broker's id for the order that closed a LIVE position (the SL when the
     # exchange closed us at the stop, else the market exit), so contract-note legs can be
     # matched to both sides of the trade.

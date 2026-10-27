@@ -161,6 +161,7 @@ async def place(session: AsyncSession, user: User, ask: Any, *, override: Option
             trade = await session.get(TradeRecord, result["trade_id"])
             if trade is not None and trade.user_id == user.id:
                 trade.paper_sub_account_id = row.id
+                trade.paper_fanout_ref = ask.client_ref
         rows_out.append({"account_id": row.id, "label": row.label, "status": result.get("status"), "lots": leg.lots,
                          "trade_id": result.get("trade_id"), "reasons": list(result.get("reasons") or [])})
     summary = {"why": route.why, "override": override, "results": rows_out}
@@ -171,4 +172,34 @@ async def place(session: AsyncSession, user: User, ask: Any, *, override: Option
     return summary
 
 
-__all__ = ["FanoutRefused", "create", "describe", "place", "sub_accounts", "update"]
+async def exit_all(session: AsyncSession, user: User, ref: str) -> Dict[str, Any]:
+    """MA-4 / MB-4: close every open child of one multi-account order, on every account that holds it - sold legs first,
+    each through the ordinary "Exit now" path; one account's failure never stops the others (ADR-0004). A row per child."""
+    from app.execution import approval
+    trades = list(await session.scalars(select(TradeRecord).where(
+        TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.paper_fanout_ref == ref,
+        TradeRecord.mode == "PAPER", TradeRecord.exit_time.is_(None))))
+    if not trades:
+        raise FanoutRefused("No open position of this multi-account order.", "nothing_open")
+    trades.sort(key=lambda t: (t.option_position not in ("SELL", "WRITE"), t.id))
+    labels = {a.id: a.label for a in await sub_accounts(session, user)}
+    rows: List[Dict[str, Any]] = []
+    for trade in trades:
+        row: Dict[str, Any] = {"trade_id": trade.id, "account_id": trade.paper_sub_account_id,
+                               "label": labels.get(trade.paper_sub_account_id or 0), "status": "CLOSED", "reasons": []}
+        try:
+            outcomes = await approval.exit_now(session, trade, user, via="multi_account")
+            if not any(o.closed for o in outcomes):
+                row["status"] = "NOT_CLOSED"
+                row["reasons"] = [w for o in outcomes for w in o.warnings] or ["could not be closed"]
+        except Exception as exc:  # noqa: BLE001 - one account's failure never stops the others' exits
+            await session.rollback()
+            row["status"], row["reasons"] = "NOT_CLOSED", [str(exc) or type(exc).__name__]
+        rows.append(row)
+    await write_audit_log(session, user.tenant_id, user.id, "paper_fanout_exit",
+                          json.dumps({"ref": ref, "results": [(r["trade_id"], r["status"]) for r in rows]})[:2000])
+    await session.commit()
+    return {"ref": ref, "results": rows}
+
+
+__all__ = ["FanoutRefused", "create", "describe", "exit_all", "place", "sub_accounts", "update"]

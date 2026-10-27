@@ -23,7 +23,11 @@ mkdir -p "$BACKUP_DIR"
 # cleanup removed the other's file ("mv: can't rename ...hmac.part"). The lock is released when this shell exits.
 if command -v flock >/dev/null 2>&1; then
   exec 9>"$BACKUP_DIR/.backup.lock"
-  flock -w "${BACKUP_LOCK_WAIT_SECONDS:-900}" 9 || die "another backup is still running after ${BACKUP_LOCK_WAIT_SECONDS:-900}s"
+  _waited=0   # busybox flock has no -w: try without blocking, once a second, up to the limit
+  until flock -n 9; do
+    [ "$_waited" -lt "${BACKUP_LOCK_WAIT_SECONDS:-900}" ] || die "another backup is still running after ${BACKUP_LOCK_WAIT_SECONDS:-900}s"
+    sleep 1; _waited=$((_waited + 1))
+  done
 fi
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 while [ -e "$BACKUP_DIR/atp_${DB}_${STAMP}.dump" ] || [ -e "$BACKUP_DIR/atp_${DB}_${STAMP}.dump.enc" ]; do

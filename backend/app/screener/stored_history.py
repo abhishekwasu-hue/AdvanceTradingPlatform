@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.screener import nodes
+from app.screener import nodes, reasons
 from app.screener.runtime import SymbolData, resample
 
 DAILY_OR_COARSER = ("1d", "1w", "1M")
@@ -57,7 +57,7 @@ async def stored_universe(session: AsyncSession, tenant_id: int, exc: HTTPExcept
     for symbol in symbols:
         df = await bar_source.lake_frame(session, symbol, "day", days)
         if df.empty:
-            problems[symbol] = bar_source.not_stored(symbol)
+            problems[symbol] = reasons.Reason(bar_source.not_stored(symbol), reasons.NOT_STORED)   # SCR-FIX B1: log in to read it
             continue
         frame = df if base_tf == "1d" else resample(df, "1d", base_tf, keep_forming=False)
         universe.append(SymbolData(symbol, {base_tf: frame}, exchange=exchange))

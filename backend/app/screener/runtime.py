@@ -33,6 +33,7 @@ from app.indicators.trend import wma as _wma
 from app.indicators.volatility import atr as _atr
 from app.indicators.volatility import supertrend_dir as _supertrend_dir
 from app.screener import nodes as n
+from app.screener import reasons
 from app.screener.registry import FUNCTIONS, RETEST_WAVE_OF
 from app.screener.validator import Validated
 
@@ -1395,7 +1396,7 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
     out: List[Match] = []
     for d in universe:
         if d.frames.get(base_tf) is None or d.frames[base_tf].empty:
-            out.append(Match(d.symbol, False, f"no {base_tf} bars"))
+            out.append(Match(d.symbol, False, reasons.Reason(f"no {base_tf} bars", reasons.NO_BARS)))
             continue
         ev = _Eval(d, base_tf, params, constants[d.symbol], memo=memo.setdefault(id(d), {}) if memo is not None else None)
         # S5-A review: a higher timeframe built from the base bars is checked too (a 1d swing on a 5m screen needs 100
@@ -1403,19 +1404,27 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
         short = [tf for tf, bars in validated.lookback.items()
                  if (tf in d.frames or n.TF_MINUTES.get(tf, 0) > n.TF_MINUTES[base_tf]) and len(ev.frame(tf)) < bars] if check_history else []
         if short:
-            out.append(Match(d.symbol, False, f"not enough history on {', '.join(sorted(short))}"))
+            out.append(Match(d.symbol, False, reasons.short_history(short)))
             continue
         try:
             value = _last(ev.ev(ast, base_tf))
         except ScreenRuntimeError as exc:
-            out.append(Match(d.symbol, False, str(exc)))
+            out.append(Match(d.symbol, False, reasons.Reason(str(exc), reasons.NOT_CHECKED)))
             continue
         except Exception as exc:  # noqa: BLE001 - S5-A4 review: one symbol's bad data must not abort the whole universe
-            logger.exception("Screen evaluation failed for %s", d.symbol)
-            out.append(Match(d.symbol, False, f"could not be evaluated ({type(exc).__name__})"))
+            # SCR-FIX B3: the full text in the log, a plain sentence (never the exception's class name) for the user
+            out.append(Match(d.symbol, False, reasons.not_checked(exc, d.symbol)))
             continue
-        out.append(Match(d.symbol, bool(value) if not (isinstance(value, float) and np.isnan(value)) else False))
+        out.append(last_match(d.symbol, value))
     return out
+
+
+def last_match(symbol: str, value: Any) -> Match:
+    """SCR-FIX B1: the screen's value on the last bar -> a Match. No value (NaN: the indicators' warm-up is longer than
+    the bars) is "could not be checked" with its reason, never "did not match"."""
+    if isinstance(value, float) and np.isnan(value):
+        return Match(symbol, False, reasons.of(reasons.NO_VALUE))
+    return Match(symbol, bool(value))
 
 
 def evaluate(ast: Any, data: SymbolData, *, base_tf: str, params: Optional[Dict[str, Any]] = None) -> Any:
@@ -1423,4 +1432,4 @@ def evaluate(ast: Any, data: SymbolData, *, base_tf: str, params: Optional[Dict[
     return _Eval(data, base_tf, dict(params or {}), {}).ev(ast, base_tf)
 
 
-__all__ = ["SymbolData", "Match", "run_screen", "evaluate", "resample", "closed_only", "ScreenRuntimeError"]
+__all__ = ["SymbolData", "Match", "last_match", "run_screen", "evaluate", "resample", "closed_only", "ScreenRuntimeError"]

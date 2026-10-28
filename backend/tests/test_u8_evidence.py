@@ -75,7 +75,7 @@ def test_the_pack_draws_only_the_screens_own_conditions():
 
 def test_failed_conditions_are_drawn_only_in_debug():
     data = SymbolData("ABC", {"1d": _daily()})
-    src = "close > SMA(close, 20) AND (RSI(14) > 99 OR close > 0)"
+    src = "close > SMA(close, 20) AND (RSI(14) > 99 OR close < 0)"          # SCR-FIX B5: an OR whose branches both failed
     _a, _v, full = _pack(src, data, debug=True)
     failed = [r for r in full["rows"] if r["passed"] is False]
     assert failed and all(full["drawables"][int(r["drawable"][1:]) - 1]["failed"] for r in failed)
@@ -97,7 +97,13 @@ def test_verify_strip_numbers_are_the_engines(src):
         by_text.setdefault(n.to_text(node), node)
     for row in pack["rows"]:
         engine = _last(evaluate(by_text[row["text"]], data, base_tf="1d"))
-        assert row["passed"] == bool(engine if not (isinstance(engine, float) and np.isnan(engine)) else False), row["text"]
+        truth = bool(engine if not (isinstance(engine, float) and np.isnan(engine)) else False)
+        # SCR-FIX B5: `raw` is the engine's truth; the mark is whether the row did what the screen asks (no screen here
+        # negates a group, so every row is required true: met <=> true; an OR's untrue branch is "not needed" when
+        # another branch made the OR true)
+        assert row["raw"] == truth and row["required"] is True, row["text"]
+        assert (row["state"] == "met") == truth, row["text"]
+        assert row["passed"] == {"met": True, "failed": False}.get(row["state"]), row["text"]
         for term in row["terms"]:
             value = _last(evaluate(by_text[term["text"]], data, base_tf="1d"))
             if isinstance(term["value"], float):

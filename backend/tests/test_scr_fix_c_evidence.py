@@ -19,7 +19,7 @@ import pytest
 
 from app.core import config as app_config
 from app.core.models import OHLCVBar
-from app.market_data import candles_routes
+from app.market_data import candles_routes, intervals
 from app.screener import compile_screen
 from app.screener import evidence as ev
 from app.screener import evidence_png as epng
@@ -61,7 +61,8 @@ def _daily_bars(days: int = 90) -> List[OHLCVBar]:
 def test_c2_evidence_bars_equal_the_charts_bars(screen_tf, chart_tf, bars):
     now = bars[-1].timestamp + timedelta(days=1)               # every bar closed: the chart has no forming bar either
     interval = screener_routes._FETCH[screen_tf]
-    _df, frames, problem = screener_routes._symbol_frames(bars, interval, screen_tf, False, now)
+    fetched = bars if interval == "day" else intervals.reshape(bars, "1min", interval)  # SCR-FIX A1: the fetch step's bars
+    _df, frames, problem = screener_routes._symbol_frames(fetched, interval, screen_tf, False, now)
     assert problem == ""
     ast, validated = compile_screen("close > SMA(close, 20)", base_tf=screen_tf)
     pack = view(ev.build_pack(ast, validated, SymbolData("PAR", frames, exchange="NSE"), base_tf=screen_tf, window=60))

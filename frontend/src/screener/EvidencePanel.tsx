@@ -19,6 +19,7 @@ import {
   SendAfterLink, barTimeText, evidenceApi, replaySteps, sendRefusal, stepReplay, telegramAction, trendTone, verifyRows, visibleDrawables,
   type EvidenceContext, type EvidencePack, type TelegramReason,
 } from "./evidence";
+import { canReplay, type RowState } from "./evidence";
 
 /** SCR-FIX C4: `reason` is the server's code when a send was refused (the page offers the matching action). */
 export type SendState = { status: "idle" | "sending" | "sent" | "failed"; message?: string; reason?: TelegramReason | null };
@@ -121,7 +122,9 @@ export function ReplayBar({ replay, pack }: { replay: ReplayControls; pack: Evid
   );
 }
 
-function Mark({ passed }: { passed: boolean | null }) {
+function Mark({ passed, state }: { passed: boolean | null; state?: RowState }) {
+  // SCR-FIX B5: an OR branch that was not needed (another branch made the OR true) is grey, never ✅ or a plain "–"
+  if (state === "not_needed") return <span className="text-fg-muted" title="Another branch of the OR was true"><span aria-hidden>○</span><span className="sr-only">not needed</span></span>;
   if (passed == null) return <span className="text-fg-muted"><span aria-hidden>–</span><span className="sr-only">not evaluated</span></span>;
   return passed
     ? <span className="text-signal"><span aria-hidden>✅</span><span className="sr-only">passed</span></span>
@@ -198,7 +201,7 @@ export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, on
                   {r.verify}
                   {r.note && <span className="block text-fg-muted">{r.note}</span>}
                 </td>
-                <td className="px-3 py-1.5"><Mark passed={r.passed} /></td>
+                <td className="px-3 py-1.5"><Mark passed={r.passed} state={r.state} /></td>
               </tr>
             ))}
           </tbody>
@@ -224,6 +227,7 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
   const [replayed, setReplayed] = useState<EvidencePack | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
   const [replayError, setReplayError] = useState<string | null>(null);
+  const [refused, setRefused] = useState(false);                          // SCR-FIX B6: the server refused a replay
   const steps = useMemo(() => (pack?.context ? replaySteps(pack) : []), [pack]);
   const [reloads, setReloads] = useState(0);                               // SCR-FIX C4: read again after Telegram was linked
   const afterLink = useRef(new SendAfterLink());
@@ -241,7 +245,7 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
 
   useEffect(() => {
     setHidden(new Set()); setSend({ status: "idle" }); setPack(null); setShowFailed(false);
-    setStep(null); setReplayed(null); setReplayError(null); setReplayLoading(false);
+    setStep(null); setReplayed(null); setReplayError(null); setReplayLoading(false); setRefused(false);
     afterLink.current.disarm();
   }, [evidenceId]);
 
@@ -256,7 +260,10 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
       (e: unknown) => {
         if (!live) return;
         setReplayLoading(false);
-        setReplayError(e instanceof ApiError && e.status !== 404 ? e.message : "Replay is not available for this evidence.");
+        // SCR-FIX B6: a refusal (this evidence cannot be replayed) hides the controls and shows the stored pack again -
+        // never step buttons beside "Replay is not available"; anything else (a network problem) can be stepped again
+        if (e instanceof ApiError && (e.status === 404 || e.status === 422)) { setRefused(true); setStep(null); return; }
+        setReplayError(e instanceof ApiError ? e.message : "Replay could not be loaded. Try again.");
       },
     );
     return () => { live = false; };
@@ -287,7 +294,7 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
         : !pack ? <p className="text-fg-muted">Loading the evidence…</p>
           : <EvidenceView pack={replayed ?? pack} hiddenBlocks={hidden} showFailed={showFailed} onToggleBlock={toggle} onShowFailed={setShowFailed}
                           onSend={() => void doSend()} send={send} onLinked={onLinked}
-                          replay={steps.length > 1 ? {
+                          replay={canReplay(pack, steps.length, refused) ? {
                             steps: steps.length, index: step ?? steps.length - 1, loading: replayLoading, error: replayError,
                             onStep: (delta) => setStep((s) => stepReplay(s, delta, steps.length)),
                             onReset: () => setStep(null),

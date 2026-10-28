@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,8 +70,12 @@ async def run_evidence(run_id: int, user: User = Depends(get_current_user), sess
 async def get_evidence(evidence_id: int, debug: bool = False, user: User = Depends(get_current_user),
                        session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     row = await _row(session, user, evidence_id)
-    return {**evidence_store.view(evidence_store.load(row), debug=debug), "evidence_id": row.id, "pack_sha256": row.pack_sha256,
-            "can_send": row.user_id == user.id, **await evidence_store.telegram_state(session, row, user)}
+    pack = evidence_store.load(row)
+    # SCR-FIX B6: whether the replay controls show at all (the same checks the replay route refuses with)
+    replay_ok = bool(await evidence_store.context_enabled(session, user.tenant_id)) and replay_plan(pack)[0] is None
+    return {**evidence_store.view(pack, debug=debug), "evidence_id": row.id, "pack_sha256": row.pack_sha256,
+            "can_send": row.user_id == user.id, "replay_available": replay_ok,
+            **await evidence_store.telegram_state(session, row, user)}
 
 
 @router.get("/{evidence_id}/image.png", dependencies=[Depends(image_rate_limit)])
@@ -118,50 +122,86 @@ async def replay_evidence(evidence_id: int, at: datetime, debug: bool = False, u
     at = at.astimezone(timezone.utc)
     pack = evidence_store.load(row)
     base_tf = str(pack["base_tf"])
-    if base_tf not in REPLAY_TFS:
-        raise _refuse(f"replay reads {', '.join(REPLAY_TFS)} bars from the shared history; a {base_tf} screen is not replayed yet")
+    refusal, ast, validated, key = replay_plan(pack)
+    if refusal is not None or key is None:
+        raise _refuse(refusal or "this instrument has no shared history")
     times = [datetime.fromisoformat(t) for t in pack["bars"]["t"]]
     from app.screener.runtime import bar_close
     import pandas as pd
     closes = list(bar_close(pd.DatetimeIndex(times), base_tf))
     if not closes or at < closes[0].to_pydatetime() or at > datetime.fromisoformat(pack["as_of"]["bar_close"]):
         raise _refuse("`at` must be a bar of the pack's window (its first bar's close up to the pack's own bar)")
+    from app.charts import price_action_layer as PAL
+    start = replay_start(validated, base_tf, len(times), at, key)
+    try:
+        frame, source = await PAL.load_frame(session, key, base_tf, start, at)
+        daily = await replay_daily(session, validated, base_tf, at, key)
+    except PAL.WindowTooLarge as exc:
+        raise _refuse(str(exc)) from None
+    if not len(frame):
+        raise HTTPException(status_code=404, detail="no shared history for this instrument and bar")
+    replayed = await asyncio.to_thread(_replay_pack, frame, ast, validated, pack, base_tf, at, debug, source, daily)
+    return {**evidence_store.view(replayed, debug=debug), "evidence_id": row.id, "can_send": False,
+            "replay": {"at": at.isoformat(), "source": source, "note": REPLAY_NOTE, "stored_as_of": pack["as_of"]}}
+
+
+def replay_plan(pack: Dict[str, Any]) -> Tuple[Optional[str], Any, Any, Optional[str]]:
+    """(refusal, ast, validated, lake key): why this pack cannot be replayed (None when it can), from the pack alone, so
+    the evidence view says up front whether replay is available (SCR-FIX B6: no replay buttons beside "not available")."""
+    base_tf = str(pack["base_tf"])
+    if base_tf not in REPLAY_TFS:
+        return (f"replay reads {', '.join(REPLAY_TFS)} bars from the shared history; a {base_tf} screen is not replayed yet",
+                None, None, None)
     from app.screener import compile_screen, nodes
     from app.screener.evidence import ZONE_CALLS
     ast, validated = compile_screen(pack["screen"]["text"], base_tf=base_tf, params=pack["screen"].get("params") or {})
     if ast is None or not validated.ok:
-        raise _refuse("the stored screen no longer passes validation")
+        return "the stored screen no longer passes validation", None, None, None
     if validated.cross_sectional:
-        raise _refuse("a cross-sectional screen ranks a whole universe - its replay would not be the run's computation")
+        return "a cross-sectional screen ranks a whole universe - its replay would not be the run's computation", None, None, None
     if any(isinstance(node, nodes.Call) and node.name in ZONE_CALLS for node in nodes.walk(ast)):
-        raise _refuse("market-zone conditions are not replayed yet (the zone timeline is not attached to a replay)")
+        return "market-zone conditions are not replayed yet (the zone timeline is not attached to a replay)", None, None, None
     from app.screener import fundamentals as fundamentals_gate
     if fundamentals_gate.flagged_calls(ast):
         # U7 LG3: the point-in-time fundamentals are not attached to a replay either - refused, never replayed as NaN
-        raise _refuse("fundamentals conditions are not replayed yet (the point-in-time figures are not attached to a replay)")
+        return ("fundamentals conditions are not replayed yet (the point-in-time figures are not attached to a replay)",
+                None, None, None)
     from app.screener import ownership as ownership_gate
     if ownership_gate.flagged_calls(ast):
         # N3 S8a: nor are the shareholding patterns and events - refused with the reason, never replayed as NaN
-        raise _refuse("ownership and event conditions are not replayed yet (the shareholding patterns and events are not "
-                      "attached to a replay)")
-    from app.charts import price_action_layer as PAL
+        return ("ownership and event conditions are not replayed yet (the shareholding patterns and events are not "
+                "attached to a replay)", None, None, None)
     from app.price_action.zones.store import normalise_key
     try:
         key: Optional[str] = normalise_key(f"{pack.get('exchange') or 'NSE'}:{pack['symbol']}")
     except ValueError:
         key = None
     if key is None or key == "*":
-        raise _refuse("this instrument has no shared history")
-    start = replay_start(validated, base_tf, len(times), at, key)
-    try:
-        frame, source = await PAL.load_frame(session, key, base_tf, start, at)
-    except PAL.WindowTooLarge as exc:
-        raise _refuse(str(exc)) from None
-    if not len(frame):
-        raise HTTPException(status_code=404, detail="no shared history for this instrument and bar")
-    replayed = await asyncio.to_thread(_replay_pack, frame, ast, validated, pack, base_tf, at, debug, source)
-    return {**evidence_store.view(replayed, debug=debug), "evidence_id": row.id, "can_send": False,
-            "replay": {"at": at.isoformat(), "source": source, "note": REPLAY_NOTE, "stored_as_of": pack["as_of"]}}
+        return "this instrument has no shared history", None, None, None
+    return None, ast, validated, key
+
+
+def daily_need(validated: Any, base_tf: str) -> Dict[str, int]:
+    """The daily-or-coarser part of an intraday screen's lookback ({} for a daily screen, or one that reads no daily
+    context) - what the run attaches as its "1d" frame (`routes.fetch_frames`, `_attach_daily`)."""
+    from app.screener import nodes
+    daily = nodes.TF_MINUTES["1d"]
+    if nodes.TF_MINUTES.get(base_tf, daily) >= daily:
+        return {}
+    return {tf: int(b) for tf, b in validated.fetch_lookback.items() if nodes.TF_MINUTES.get(tf, 0) >= daily}
+
+
+async def replay_daily(session: AsyncSession, validated: Any, base_tf: str, at: datetime, key: str) -> Any:
+    """SCR-FIX B6: an intraday screen that reads @1d / @1w / @1M ran on the broker's daily history (its "1d" frame, sized
+    by the screen's daily lookback); the replay attaches the lake's daily bars the same way, closed by `at`, so the replay
+    equals the run instead of resampling 1d from the short intraday window. None when the screen needs none."""
+    need = daily_need(validated, base_tf)
+    if not need:
+        return None
+    from app.charts import price_action_layer as PAL
+    from app.screener.routes import daily_fetch_days
+    frame, _source = await PAL.load_frame(session, key, "1d", at - timedelta(days=daily_fetch_days(need, "1d") + 1), at)
+    return frame if len(frame) else None
 
 
 def replay_start(validated: Any, base_tf: str, window: int, at: datetime, key: str) -> datetime:
@@ -172,16 +212,24 @@ def replay_start(validated: Any, base_tf: str, window: int, at: datetime, key: s
     return at - timedelta(days=job.warmup_days(base_tf, need, job.exchange_session(key)) + 1)
 
 
-def _replay_pack(frame: Any, ast: Any, validated: Any, pack: Dict[str, Any], base_tf: str, at: datetime, debug: bool,
-                 source: Optional[str]) -> Dict[str, Any]:
+def _bars(frame: Any) -> Any:
+    """A lake frame (timestamp, bar_end and OHLCV columns) -> the screen's bars (OHLCV indexed by the bar start, UTC)."""
     import pandas as pd
-    from app.screener import evidence as ev
-    from app.screener.runtime import SymbolData
     df = frame.reset_index(drop=True)
     bars = pd.DataFrame({k: df[k].astype(float) for k in ("open", "high", "low", "close")})
     bars["volume"] = df["volume"].astype(float) if "volume" in df.columns else 0.0
     bars.index = pd.DatetimeIndex(pd.to_datetime(df["timestamp"], utc=True), name="timestamp")
-    data = SymbolData(str(pack["symbol"]), {base_tf: bars}, exchange=pack.get("exchange") or "NSE")
+    return bars
+
+
+def _replay_pack(frame: Any, ast: Any, validated: Any, pack: Dict[str, Any], base_tf: str, at: datetime, debug: bool,
+                 source: Optional[str], daily: Any = None) -> Dict[str, Any]:
+    from app.screener import evidence as ev
+    from app.screener.runtime import SymbolData
+    frames = {base_tf: _bars(frame)}
+    if daily is not None and len(daily):
+        frames["1d"] = _bars(daily)              # SCR-FIX B6: the daily context the run read, not 1d from the intraday window
+    data = SymbolData(str(pack["symbol"]), frames, exchange=pack.get("exchange") or "NSE")
     return ev.build_pack(ast, validated, data, base_tf=base_tf, params=pack["screen"].get("params") or {}, as_of=at,
                          window=len(pack["bars"]["t"]), debug=True, exchange=pack.get("exchange") or "NSE",
                          data_source=f"replay:{source}" if source else "replay", screen_name=pack["screen"].get("name"), context=True)

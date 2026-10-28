@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
+import { expectComboValue } from "./combobox";
 import { mockApi } from "./mockApi";
 import { closeScreenerMore, screenerTool } from "./screenerTools";
 
@@ -194,7 +195,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await page.goto("/screener");
         await settle(page);
 
-        await expect(page.getByTestId("universe-select")).toHaveValue("sys:index-nifty50");
+        await expectComboValue(page.getByTestId("universe-select"), "sys:index-nifty50");
         await expect(page.locator("#screener-tf")).toHaveText("Daily");                 // SCR-FIX D8: the shared picker
         await expect(page.getByLabel("Scan name")).toHaveAttribute("placeholder", "Untitled scan");
         const nameBox = await page.getByLabel("Scan name").boundingBox();

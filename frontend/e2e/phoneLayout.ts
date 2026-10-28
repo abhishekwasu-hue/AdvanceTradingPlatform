@@ -55,3 +55,55 @@ export async function expectPhoneLayout(page: Page): Promise<void> {
   });
   expect(clear, "the last control on the page sits under the bottom navigation").toBe(true);
 }
+
+/** SCR-FIX E2: what counts as a card - a page block, a v2 card, a panel, a dialog, the phone's fixed bottom bars. */
+export const CARD_SELECTOR = "main section, main aside, main [data-card], main .rounded-panel, [role='dialog'], [data-testid='screener-bottom-bar'], nav[aria-label='Quick navigation']";
+
+/**
+ * SCR-FIX E2: no element runs out of its card. For each visible card (CARD_SELECTOR, inside `scope`), every visible
+ * descendant's right edge stays at or left of the card's right edge. Left out: the content of a closed <details>, what
+ * sits inside a box that scrolls or clips sideways within the card (a wide table in its own scroller), screen-reader-only
+ * text (1 px boxes) and fixed / absolute pop-overs. Returns plain lines ("Conditions: TEXTAREA 'high - low' runs 38 px
+ * past"); empty when every card holds its content.
+ */
+export async function cardOverflows(page: Page, scope = "body"): Promise<string[]> {
+  return page.evaluate(([sel, scopeSel]) => {
+    const root = document.querySelector(scopeSel);
+    if (!root) return [`no ${scopeSel} on the page`];
+    const shown = (e: Element) => {
+      const b = e.getBoundingClientRect();
+      if (b.width <= 1 || b.height <= 1) return false;
+      const st = getComputedStyle(e);
+      return st.visibility !== "hidden" && st.display !== "none";
+    };
+    const folded = (e: Element) => { const d = e.closest("details:not([open])"); return !!d && !e.closest("summary"); };
+    const cards = [...root.querySelectorAll(sel)].filter(shown);
+    if (root.matches(sel) && shown(root)) cards.unshift(root);
+    const out: string[] = [];
+    for (const card of cards) {
+      const edge = card.getBoundingClientRect().right;
+      const name = card.getAttribute("aria-label") || card.getAttribute("data-testid") || card.querySelector("h2, h3")?.textContent?.trim() || card.tagName;
+      const clipped = (e: Element) => {
+        for (let a = e.parentElement; a && a !== card; a = a.parentElement) if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(a).overflowX)) return true;
+        return false;
+      };
+      const floating = (e: Element) => {
+        for (let a: Element | null = e; a && a !== card; a = a.parentElement) if (/(fixed|absolute)/.test(getComputedStyle(a).position)) return true;
+        return false;
+      };
+      for (const e of card.querySelectorAll("*")) {
+        if (!shown(e) || folded(e) || clipped(e) || floating(e)) continue;
+        const past = e.getBoundingClientRect().right - edge;
+        if (past > 1) out.push(`${name}: ${e.tagName} '${(e.textContent ?? "").trim().slice(0, 30)}' runs ${Math.round(past)} px past`);
+      }
+    }
+    return out;
+  }, [CARD_SELECTOR, scope] as const);
+}
+
+/** SCR-FIX E2: the page never scrolls sideways (document scrollWidth <= clientWidth) and nothing runs out of its card. */
+export async function expectNoSidewaysOverflow(page: Page, scope = "body"): Promise<void> {
+  const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+  expect(scroll, "document scrollWidth <= clientWidth").toBeLessThanOrEqual(client);
+  expect(await cardOverflows(page, scope), "elements past their card's right edge").toEqual([]);
+}

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { RunResponse } from "./api";
-import { UniversePicker } from "./UniversePicker";
+import { UniversePicker, universeOptions } from "./UniversePicker";
 import {
   CUSTOM, DEFAULT_CHOICE, DEFAULT_KEY, FALLBACK_PLAN, NIFTY50_FALLBACK, RUN_MAX, effectiveUniverse, heldBack, isUniverses, listLabel, mergeRuns,
   planBatches, runInBatches, serverHasDefault, waitAfter, type BatchBudget, type UniversesResponse,
@@ -31,18 +31,26 @@ describe("the scan universe (owner order 23 Oct)", () => {
     const html = renderToStaticMarkup(
       <UniversePicker groups={GROUPS} builtinDefault={false} watchlists={[{ id: 3, name: "Banks", symbols: ["SBIN"], count: 1, created_at: null, updated_at: null }]}
                       choice={DEFAULT_CHOICE} onChoice={vi.fn()} symbolsText="" onSymbolsText={vi.fn()} count={50} name="NIFTY 50" maxSymbols={500} />);
-    expect(html).toContain(`<option value="${DEFAULT_CHOICE}" selected="">NIFTY 50 (50)</option>`);
-    const words = text(html);
-    for (const want of ["NIFTY 500 (500)", "IT (20)", "F&O stocks (180)", "Banks (1)", "Type my own symbols", "50 stocks · NIFTY 50"]) {
-      expect(words).toContain(want);
-    }
+    // SCR-FIX E (carried from D8): the shared picker, not the browser's <select>; the closed button shows the choice
+    expect(html).not.toContain("<select");
+    expect(html).toContain(`data-combobox="${DEFAULT_CHOICE}"`);
+    expect(html).toContain('data-testid="universe-select"');
+    expect(text(html)).toContain("NIFTY 50 (50)");
+    expect(text(html)).toContain("50 stocks · NIFTY 50");
+    const rows = universeOptions(GROUPS, false, [{ id: 3, name: "Banks", symbols: ["SBIN"], count: 1, created_at: null, updated_at: null }]);
+    const labels = rows.map((o) => o.label);
+    for (const want of ["NIFTY 500 (500)", "IT (20)", "F&O stocks (180)", "Banks (1)", "Type my own symbols"]) expect(labels).toContain(want);
+    expect(rows.find((o) => o.label === "Banks (1)")).toMatchObject({ value: "wl:3", group: "My watchlists" });
+    expect(rows[rows.length - 1]).toEqual({ value: CUSTOM, label: "Type my own symbols", group: "Other" });
     expect(html).not.toContain("screener-symbols");                                   // the box shows for "my own symbols" only
   });
 
   it("without a server list, the built-in NIFTY 50 names are the first choice", () => {
     const html = renderToStaticMarkup(<UniversePicker groups={[]} builtinDefault watchlists={null} choice={DEFAULT_CHOICE} onChoice={vi.fn()}
                                                       symbolsText="" onSymbolsText={vi.fn()} count={50} name="NIFTY 50" maxSymbols={500} />);
-    expect(html).toContain(`<option value="${DEFAULT_CHOICE}" selected="">NIFTY 50</option>`);
+    expect(html).toContain(`data-combobox="${DEFAULT_CHOICE}"`);
+    expect(text(html)).toContain("NIFTY 50");
+    expect(universeOptions([], true, null)[0]).toEqual({ value: DEFAULT_CHOICE, label: "NIFTY 50", group: "Index stocks" });
     expect(NIFTY50_FALLBACK).toHaveLength(50);
     expect(new Set(NIFTY50_FALLBACK).size).toBe(50);
     expect(NIFTY50_FALLBACK.every((s) => /^[A-Z0-9&-]+$/.test(s))).toBe(true);          // names only: no prices, no weights

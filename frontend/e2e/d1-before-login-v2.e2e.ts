@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
+import { expectComboValue } from "./combobox";
 import { mockApi } from "./mockApi";
 import { screenerTool } from "./screenerTools";
 
@@ -200,7 +201,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await expect(note).toContainText("Daily scans run on the closed Daily bars in ATP's stored end-of-day history");
         await expect(note.getByRole("button", { name: "Log in to Upstox" })).toBeVisible();
         await expect(page.locator("[data-broker-gate]")).toHaveCount(0);
-        await expect(page.getByTestId("universe-select")).toHaveValue("sys:index-nifty50");
+        await expectComboValue(page.getByTestId("universe-select"), "sys:index-nifty50");
         await shot("01-find-setups-before-login");
         await screenerTool(page, "browse-screens");
         const library = page.getByRole("dialog", { name: "Screen library" });

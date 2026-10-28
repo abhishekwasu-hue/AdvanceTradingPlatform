@@ -155,8 +155,12 @@ def test_the_risk_per_trade_says_in_plain_words_how_many_lots_fit(setup):
 
 def test_a_sold_option_needs_a_stop_and_shows_no_made_up_margin(setup):
     t, expiry, strike, _ = setup
+    # DEF-0: no built-in "a sold option needs a stop" - only the user's own my_limits setting asks for it.
     view = _preview(t, _body(expiry, strike, side="SELL"))
-    assert any("needs a stop-loss" in e for e in view["errors"]) and not view["can_place"]
+    assert not any("stop-loss on a sold option" in e or "needs a stop-loss" in e for e in view["errors"]), view["errors"]
+    assert client.put("/api/me/prefs/my_limits", headers=t["headers"], json={"stop_required_on_sold": True}).status_code == 200
+    view = _preview(t, _body(expiry, strike, side="SELL"))
+    assert any("Your setting asks for a stop-loss on a sold option" in e for e in view["errors"]) and not view["can_place"]
     view = _preview(t, _body(expiry, strike, side="SELL", stop_loss=90.0))
     assert any("must be above the price" in e for e in view["errors"])
     view = _preview(t, _body(expiry, strike, side="SELL", stop_loss=120.0))

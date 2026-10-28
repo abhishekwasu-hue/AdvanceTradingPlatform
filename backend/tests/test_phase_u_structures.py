@@ -115,16 +115,22 @@ def test_custom_legs_resolve_validate_and_describe():
 
 def test_payoff_metrics_undefined_and_defined_risk():
     _load_master()
-    m = _metrics(_resolve(OptionStrategy.CALL_RATIO_SPREAD, SignalDirection.LONG))
+    # DEF-0: nothing set = no target / stop, and an undefined-risk structure then has no risk per unit to size off.
+    bare = _metrics(_resolve(OptionStrategy.CALL_RATIO_SPREAD, SignalDirection.LONG))
+    assert bare.pnl_stop is None and bare.pnl_target is None and bare.stop_value is None and bare.target_value is None
+    assert bare.risk_per_unit == 0
+    m = _metrics(_resolve(OptionStrategy.CALL_RATIO_SPREAD, SignalDirection.LONG), target=50, stop=100)   # the old built-in levels
     assert m.net_credit == 30.0 and m.max_loss is None and m.max_profit == 130.0 and m.defined_risk is False and m.debit is False
     assert m.breakevens == [24730.0] and m.underlying_exits == {"above": 24730.0} and m.short_strikes == {}
-    # Default: stop at a loss equal to the peak profit (100%), target at half of it.
+    # Stop at a loss equal to the peak profit (100%), target at half of it.
     assert m.pnl_stop == -130.0 and m.pnl_target == 65.0 and m.risk_per_unit == 130.0
     assert m.stop_value == 160.0 and m.target_value == -35.0
     tighter = _metrics(_resolve(OptionStrategy.CALL_RATIO_SPREAD, SignalDirection.LONG), stop=40, target=80)
     assert tighter.pnl_stop == -52.0 and tighter.pnl_target == 104.0 and tighter.risk_per_unit == 52.0
 
-    fly = _metrics(_resolve(OptionStrategy.LONG_BUTTERFLY, SignalDirection.LONG), broker=_WingBroker())
+    bare_fly = _metrics(_resolve(OptionStrategy.LONG_BUTTERFLY, SignalDirection.LONG), broker=_WingBroker())
+    assert bare_fly.pnl_stop is None and bare_fly.pnl_target is None and bare_fly.risk_per_unit == 40.0   # defined risk: the max loss
+    fly = _metrics(_resolve(OptionStrategy.LONG_BUTTERFLY, SignalDirection.LONG), broker=_WingBroker(), target=50, stop=50)
     assert fly.net_credit == -40.0 and fly.debit is True and fly.max_loss == 40.0 and fly.max_profit == 60.0 and fly.defined_risk
     assert fly.pnl_stop == -20.0 and fly.pnl_target == 30.0 and fly.risk_per_unit == 40.0 and fly.underlying_exits == {}
     assert fly.stop_value == 20.0 and fly.target_value == 70.0     # worth levels for a debit
@@ -132,7 +138,7 @@ def test_payoff_metrics_undefined_and_defined_risk():
     assert capped.pnl_stop == -40.0                                  # never more than the max loss
 
     custom = _metrics(_resolve_custom(parse_custom_legs([{"right": "PE", "role": "SHORT"}, {"right": "PE", "role": "LONG", "strike_rule": "OTM", "strike_offset": 2},
-                                                          {"right": "CE", "role": "SHORT", "strike_rule": "OTM", "strike_offset": 2}])))
+                                                          {"right": "CE", "role": "SHORT", "strike_rule": "OTM", "strike_offset": 2}])), stop=100)
     assert custom.net_credit == 110.0 and custom.max_loss is None and custom.breakevens == [24710.0] and custom.underlying_exits == {"above": 24710.0}
     assert custom.as_dict()["pnl_stop"] == -110.0
 
@@ -161,7 +167,7 @@ def test_group_exit_weights_ratio_legs_and_uses_pnl_levels():
 def test_paper_ratio_spread_books_per_leg_quantities():
     _load_master()
     t = _tenant("u-ratio-paper@example.com")
-    result = _execute(t, _resolve(OptionStrategy.CALL_RATIO_SPREAD, SignalDirection.LONG), key="u-ratio-1")   # 10,000 / (130 x 75) -> 1 lot
+    result = _execute(t, _resolve(OptionStrategy.CALL_RATIO_SPREAD, SignalDirection.LONG), key="u-ratio-1", target=50, stop=100)   # DEF-0: old levels set explicitly; 10,000 / (130 x 75) -> 1 lot
     assert result.executed, result.reasons
     trades = sorted(_trades(t["tenant_id"]), key=lambda tr: tr.id)
     assert [(tr.leg_role, tr.quantity, tr.option_position) for tr in trades] == [("LONG", NIFTY_LOT, "BUY"), ("SHORT", 2 * NIFTY_LOT, "WRITE")]
@@ -178,7 +184,8 @@ def test_live_ratio_spread_places_the_long_first_and_doubles_the_short(monkeypat
     _load_master()
     t = _tenant("u-ratio-live@example.com")
     broker = _OptionBroker(margin_per_lot=60_000.0, available=500_000.0)
-    result = _execute(t, _resolve(OptionStrategy.CALL_RATIO_SPREAD, SignalDirection.LONG), mode="LIVE", broker=broker, key="u-ratio-live-1")
+    result = _execute(t, _resolve(OptionStrategy.CALL_RATIO_SPREAD, SignalDirection.LONG), mode="LIVE", broker=broker, key="u-ratio-live-1",
+                      target=50, stop=100)   # DEF-0: the old built-in levels set explicitly
     assert result.executed, result.reasons
     assert [(o.transaction_type.value, o.quantity) for o in broker.placed] == [("BUY", NIFTY_LOT), ("SELL", 2 * NIFTY_LOT)]
 
@@ -187,7 +194,7 @@ def test_paper_long_butterfly_sized_off_its_debit():
     _load_master()
     t = _tenant("u-fly-paper@example.com")
     fly = _resolve(OptionStrategy.LONG_BUTTERFLY, SignalDirection.LONG)
-    result = _execute(t, fly, broker=_WingBroker(), key="u-fly-1")     # 10,000 / (40 x 75 = 3,000) -> 3 lots
+    result = _execute(t, fly, broker=_WingBroker(), key="u-fly-1", target=50, stop=50)     # DEF-0: old levels set explicitly; 10,000 / (40 x 75 = 3,000) -> 3 lots
     assert result.executed, result.reasons
     trades = sorted(_trades(t["tenant_id"]), key=lambda tr: tr.id)
     assert [(tr.leg_role, tr.quantity) for tr in trades] == [("LONG", 3 * NIFTY_LOT), ("SHORT", 6 * NIFTY_LOT), ("LONG", 3 * NIFTY_LOT)]
@@ -233,6 +240,7 @@ def test_deployment_api_custom_legs_and_preview(monkeypatch):
     monkeypatch.setattr("app.deployments.routes.build_adapter", lambda record, client=None: _WingBroker())
     preview = client.post("/api/deployments/preview-contract", headers=headers, json={
         "symbol": "NIFTY 50", "instrument_kind": "OPTION", "option_strategy": "CALL_RATIO_SPREAD", "spread_width": 2, "spot": SPOT,
+        "target_credit_pct": 50, "stop_credit_pct": 100,   # DEF-0: the old built-in levels, set by the trader
     }).json()
     long_side = preview["structures"]["LONG"]
     assert [l["ratio"] for l in long_side["legs"]] == [1, 2] and long_side["metrics"]["pnl_stop"] == -130.0 and long_side["metrics"]["max_loss"] is None

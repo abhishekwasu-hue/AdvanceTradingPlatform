@@ -25,7 +25,6 @@ from app.brokers.models import OptionChain
 from app.instruments import master
 from app.instruments.strike_selection import SelectionResult, StrikeFilters, StrikeSelectionError, select_strike_with_chain
 
-DEFAULT_PREMIUM_STOP_PCT = {OptionPosition.BUY: 30.0, OptionPosition.WRITE: 50.0}
 
 
 class ContractResolutionError(ValueError):
@@ -57,7 +56,7 @@ class ContractRules:
             expiry_rule=ExpiryRule(dep.expiry_rule) if dep.expiry_rule else ExpiryRule.NEAREST,
             strike_rule=StrikeRule(dep.strike_rule) if dep.strike_rule else StrikeRule.ATM,
             strike_offset=dep.strike_offset or 0,
-            premium_stop_pct=dep.premium_stop_pct if dep.premium_stop_pct is not None else (DEFAULT_PREMIUM_STOP_PCT.get(position) if position else None),
+            premium_stop_pct=dep.premium_stop_pct,              # DEF-0 D3: None = no premium stop (no built-in 30 / 50%)
             max_lots=dep.max_lots,
             strike_filters=StrikeFilters.from_json(getattr(dep, "strike_filters", None)),
             underlying_stop=getattr(dep, "stop_source", None) != "PREMIUM_PCT",

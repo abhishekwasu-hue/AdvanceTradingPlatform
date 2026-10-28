@@ -128,7 +128,7 @@ describe("FNO-2 basket: the legs", () => {
       { underlying: "NIFTY", expiry: EXPIRY, strike: 24500, right: "PE", side: "BUY", lots: 1, price: 200, stop_loss: null, iv: 0.13 },
       { underlying: "NIFTY", expiry: EXPIRY, strike: 24500, right: "PE", side: "SELL", lots: 1, price: 200, stop_loss: 300, iv: 0.13 }] });
     expect(JSON.stringify(ask)).not.toMatch(/mode|LIVE/);
-    expect(basketProblems([leg({ stopLoss: null })])).toEqual(["NIFTY 03 NOV 24500 PE: a sold leg needs a stop-loss."]);
+    expect(basketProblems([leg({ stopLoss: null })])).toEqual([]);          // DEF-0 D7: a stop is his choice
     expect(basketProblems([leg(), leg({ underlying: "BANKNIFTY" })])[0]).toContain("one underlying");
     expect(basketProblems([])).toEqual(["Add a leg first."]);
     expect(contractLabel("NIFTY", "2026-10-28", 22800, "CE")).toBe("NIFTY 28 OCT 22800 CE");

@@ -95,21 +95,19 @@ const num = (text: string): number | null => {
   return text.trim() !== "" && Number.isFinite(v) && v > 0 ? v : null;
 };
 
-/** The stop-loss field's own words: needed for a sold option and for a future (either side), optional otherwise. */
-export function stopHint(side: Side, right: ContractRight = "CE"): string {
-  if (right === "FUT") return "(needed for a future)";
-  return side === "SELL" ? "(needed for a sold option)" : "(optional)";
+/** The stop-loss field's own words. DEF-0 D7 (owner, 28 Oct): a stop is the trader's choice on every side - only his own
+ * setting "A sold option or a future needs a stop-loss" asks for one, and the server says so in the review. */
+export function stopHint(_side: Side, _right: ContractRight = "CE"): string {
+  return "(optional)";
 }
 
 /** What is missing before the ticket can be reviewed (the server checks everything else). */
-export function draftProblems(d: Draft, right: ContractRight = "CE"): string[] {
+export function draftProblems(d: Draft, _right: ContractRight = "CE"): string[] {
   const out: string[] = [];
   if (d.product === null) out.push(PRODUCT_MISSING);
   const n = needs(d.orderType);
   if (n.price && num(d.price) === null) out.push("Enter the limit price");
   if (n.trigger && num(d.trigger) === null) out.push("Enter the trigger price");
-  if (right === "FUT" && num(d.stopLoss) === null) out.push("A future needs a stop-loss");
-  else if (d.side === "SELL" && num(d.stopLoss) === null) out.push("A sold option needs a stop-loss");
   if (d.stopLoss.trim() !== "" && num(d.stopLoss) === null) out.push("The stop-loss is not a price");
   return out;
 }

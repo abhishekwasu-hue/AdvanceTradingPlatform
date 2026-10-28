@@ -118,7 +118,10 @@ def test_structure_metrics_credit_max_loss_breakeven_and_exit_levels():
     premiums = {l.contract.tradingsymbol: _premium(l.contract.tradingsymbol) for l in s.legs}
     m = structure_metrics(s, premiums, target_credit_pct=None, stop_credit_pct=None)
     assert m.net_credit == 40.0 and m.max_profit == 40.0 and m.max_loss == 60.0 and m.breakevens == [24460.0]
-    assert m.target_value == 20.0 and m.stop_value == 80.0 and m.short_strikes == {"PE": 24500.0}
+    # DEF-0: no built-in target / stop when none is set; the old 50% / 100% set explicitly give the old levels.
+    assert m.target_value is None and m.stop_value is None and m.short_strikes == {"PE": 24500.0}
+    m_old = structure_metrics(s, premiums, target_credit_pct=50, stop_credit_pct=100)
+    assert m_old.target_value == 20.0 and m_old.stop_value == 80.0
     m2 = structure_metrics(s, premiums, target_credit_pct=25, stop_credit_pct=50)
     assert m2.target_value == 30.0 and m2.stop_value == 60.0
     with pytest.raises(ContractResolutionError, match="net debit"):

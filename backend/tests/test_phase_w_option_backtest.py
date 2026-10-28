@@ -162,7 +162,8 @@ def test_synthetic_and_snapshot_pricers():
 # --- engine ----------------------------------------------------------------------------------
 
 def test_bull_put_spread_reaches_its_target_in_a_rally():
-    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2)
+    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2,
+                               target_credit_pct=50, stop_credit_pct=100)  # DEF-0: the old built-in levels set explicitly
     result = run_option_backtest(_OneShot(), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg)
     assert result.total_trades == 1 and result.options["structures_opened"] == 1
     trade = result.trades[0]
@@ -183,15 +184,17 @@ def test_bull_put_spread_reaches_its_target_in_a_rally():
 
 def test_undefined_risk_structures_stop_on_the_breakeven_and_the_sizer_refuses_big_lots():
     # A 1:2 call ratio spread in a strong rally: unbounded above the outer breakeven -> underlying exit at that level.
-    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.CALL_RATIO_SPREAD, implied_volatility=0.14, spread_width=2)
+    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.CALL_RATIO_SPREAD, implied_volatility=0.14, spread_width=2,
+                               target_credit_pct=50, stop_credit_pct=100)  # DEF-0: the old built-in levels set explicitly
     result = run_option_backtest(_OneShot(), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg)
     assert result.total_trades == 1 and "breakeven" in result.trades[0].exit_reason and result.trades[0].pnl < 0
     # A short straddle whose stop risk per lot exceeds 1% of capital is refused, counted, not traded.
-    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SHORT_STRADDLE, implied_volatility=0.14)
+    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SHORT_STRADDLE, implied_volatility=0.14, target_credit_pct=50, stop_credit_pct=100)
     result = run_option_backtest(_OneShot(), _frame(24500, 24800), "NIFTY 50", "1min", RiskConfig(capital=200_000, risk_per_trade_pct=1.0), cfg)
     assert result.total_trades == 0 and sum(result.options["signals_skipped"].values()) == 1
     # Payoff-priced structures stop on P&L per unit (butterfly bought at the money, market runs away).
-    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.LONG_BUTTERFLY, implied_volatility=0.14, spread_width=2)
+    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.LONG_BUTTERFLY, implied_volatility=0.14, spread_width=2,
+                               target_credit_pct=50, stop_credit_pct=50)  # DEF-0: the old built-in levels set explicitly
     result = run_option_backtest(_OneShot(), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg)
     assert result.total_trades == 1 and result.trades[0].exit_reason.startswith("Structure stop") and result.trades[0].direction == SignalDirection.LONG
     # The exit rule is the position monitor's own function.
@@ -200,19 +203,22 @@ def test_undefined_risk_structures_stop_on_the_breakeven_and_the_sizer_refuses_b
 
 def test_single_options_mirror_the_live_exits_and_expiry_settles_at_intrinsic():
     # Bought CE on a LONG signal: the underlying target (+1%) closes it at the option's repriced value.
-    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY, implied_volatility=0.14)
+    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY, implied_volatility=0.14,
+                               premium_stop_pct=30.0)  # DEF-0: the old built-in levels set explicitly
     result = run_option_backtest(_OneShot(), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg)
     trade = result.trades[0]
     assert trade.exit_reason == "Target 1 (underlying)" and trade.direction == SignalDirection.LONG and trade.pnl > 0
     assert result.options["structures"][0]["legs"][0]["right"] == "CE"
     # Written CE on a SHORT signal in the same rally: the premium ceiling fires before the underlying stop.
-    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.WRITE, implied_volatility=0.14)
+    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.WRITE, implied_volatility=0.14,
+                               premium_stop_pct=50.0, max_lots=1)   # DEF-0: the old built-in 50% ceiling and one-lot cap, set explicitly
     result = run_option_backtest(_OneShot(SignalDirection.SHORT), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg)
     trade = result.trades[0]
     assert trade.exit_reason.startswith("Premium ceiling") and trade.direction == SignalDirection.SHORT and trade.pnl < 0
-    assert result.options["structures"][0]["lots"] == 1   # a written option without max_lots trades one lot
+    assert result.options["structures"][0]["lots"] == 1   # his own max_lots of one
     # Expiry day, flat market, not intraday: a sold straddle rides to settlement at intrinsic value.
-    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SHORT_STRADDLE, implied_volatility=0.14, intraday=False, max_lots=1, target_credit_pct=95)
+    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SHORT_STRADDLE, implied_volatility=0.14, intraday=False, max_lots=1, target_credit_pct=95,
+                               stop_credit_pct=100)  # DEF-0: the old built-in levels set explicitly
     flat = _frame(24500, 24510, n=370, day="2026-10-06")   # Tuesday = NIFTY expiry; bars run past 15:15
     result = run_option_backtest(_OneShot(), flat, "NIFTY 50", "1min", RiskConfig(capital=5_000_000, risk_per_trade_pct=1.0), cfg)
     trade = result.trades[0]
@@ -221,7 +227,8 @@ def test_single_options_mirror_the_live_exits_and_expiry_settles_at_intrinsic():
     assert st["legs"][0]["exit_price"] + st["legs"][1]["exit_price"] == pytest.approx(abs(24510 - 24500), abs=1.0)   # intrinsic only
     assert trade.pnl > 0
     # Intraday square-off at 15:15 closes what is still open.
-    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.IRON_CONDOR, implied_volatility=0.14, strike_offset=3, spread_width=2, expiry_rule=ExpiryRule.NEXT)
+    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.IRON_CONDOR, implied_volatility=0.14, strike_offset=3, spread_width=2, expiry_rule=ExpiryRule.NEXT,
+                               target_credit_pct=50, stop_credit_pct=100)  # DEF-0: the old built-in levels set explicitly
     result = run_option_backtest(_OneShot(), flat, "NIFTY 50", "1min", RISK, cfg)
     assert result.trades and result.trades[0].exit_reason.startswith("Square-off")
 

@@ -219,7 +219,9 @@ async def reverse(session: AsyncSession, user: User, trade_id: int, *, client_re
         contract = await fno_ticket.find_contract(session, ask.underlying, ask.expiry, ask.strike, ask.right)
     except fno_ticket.ContractNotFound as exc:
         raise HTTPException(status_code=409, detail=f"{exc} Nothing was closed.") from exc
-    problems = fno_ticket.ask_errors(ask, contract.tick_size)
+    from app.me.prefs import own_limits
+    problems = fno_ticket.ask_errors(ask, contract.tick_size,
+                                     stop_required=bool((await own_limits(session, user)).get("stop_required_on_sold")))
     if problems:
         # The user's own input for the new side is missing (e.g. a sold option's stop-loss): nothing is closed yet.
         raise HTTPException(status_code=422, detail=f"{' '.join(problems)}. Nothing was closed.")
@@ -276,7 +278,9 @@ async def modify_resting(session: AsyncSession, user: User, row_id: int, *, pric
             ask.trigger_price = trigger_price
         if lots is not None:
             ask.lots = lots
-        problems = fno_ticket.ask_errors(ask, await _tick(session, row.symbol))
+        from app.me.prefs import own_limits
+        problems = fno_ticket.ask_errors(ask, await _tick(session, row.symbol),
+                                         stop_required=bool((await own_limits(session, user)).get("stop_required_on_sold")))
         if problems:
             raise HTTPException(status_code=422, detail=". ".join(problems))
         new_level = fno_ticket.rest_level(ask)

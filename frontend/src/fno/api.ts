@@ -190,7 +190,7 @@ export type BasketNumbers = Evaluation & {
 };
 export type BasketEvaluation = BasketNumbers | { ok: false; errors: string[] };
 
-export interface BasketSettings { source: string | null; width_steps: number; lots: number; stop_pct: number; note: string }
+export interface BasketSettings { source: string | null; width_steps: number; lots: number; stop_pct: number | null; note: string }   // DEF-0: null = no stop of his own
 
 export interface BasketPreviewLeg extends OrderPreview { seq: number; leg: number; role: "hedge" | "short" }
 export interface BasketPreview {

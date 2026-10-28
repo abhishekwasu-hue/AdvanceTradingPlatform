@@ -159,6 +159,8 @@ def test_reverse_closes_and_opens_the_other_side_once_on_a_double_tap(setup):
 def test_reverse_without_the_new_sides_stop_closes_nothing(setup):
     t, expiry, strike, _ = setup
     trade_id = _open(t, expiry, strike)
+    # DEF-0: the new (sold) side's stop is required only by the user's own my_limits setting.
+    assert client.put("/api/me/prefs/my_limits", headers=t["headers"], json={"stop_required_on_sold": True}).status_code == 200
     out = _reverse(t, trade_id)
     assert out.status_code == 422 and "stop-loss" in out.json()["detail"] and out.json()["detail"].endswith("Nothing was closed.")
     assert _trades(t["tenant_id"])[0].exit_time is None

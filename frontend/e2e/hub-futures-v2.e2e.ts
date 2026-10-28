@@ -187,8 +187,8 @@ test.describe("Symbol hub v2 flows", () => {
     await expect(ticket.locator("[data-practice-frame]")).toContainText("Practice mode (PAPER)");
     await expect(ticket.locator("[data-ticket='units']")).toHaveText("1 lot = 75 qty (lot size 75)");
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
-    await ticket.locator("[data-ticket='review']").click();
-    await expect(ticket.locator("[data-ticket='problem']")).toHaveText("A future needs a stop-loss");
+    // DEF-0 D7: no stop is forced on a future (the Advanced part stays closed) - the trader opens it and adds his own
+    await ticket.locator("[data-ticket='advanced'] summary").click();
     await ticket.locator("[data-ticket='stop']").fill("24500");
     await ticket.locator("[data-ticket='review']").click();
     await expect(ticket.locator("[data-line='margin']")).toContainText("SPAN");

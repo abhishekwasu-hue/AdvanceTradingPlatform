@@ -72,10 +72,8 @@ from app.instruments.contracts import (
 )
 from app.instruments.payoff import PayoffLeg, analyse
 
-DEFAULT_TARGET_CREDIT_PCT = 50.0   # credit: take profit once half the credit has been captured
-DEFAULT_STOP_CREDIT_PCT = 100.0    # credit: stop once the loss equals the credit (value doubled)
-DEFAULT_TARGET_DEBIT_PCT = 50.0    # debit: take profit once the position is worth 1.5x the debit
-DEFAULT_STOP_DEBIT_PCT = 50.0      # debit: stop once half the debit is lost
+# DEF-0 D3 (owner, 28 Oct): no built-in exit. A structure's target / stop exists only when the trader set
+# `target_credit_pct` / `stop_credit_pct` (None = no such exit); `exit_summary` states exactly which exits are set.
 
 CREDIT_SPREADS = frozenset({OptionStrategy.BULL_PUT_SPREAD, OptionStrategy.BEAR_CALL_SPREAD})
 WINGED = frozenset({OptionStrategy.BULL_PUT_SPREAD, OptionStrategy.BEAR_CALL_SPREAD, OptionStrategy.IRON_CONDOR,
@@ -89,9 +87,6 @@ RATIO_SPREADS = frozenset({OptionStrategy.CALL_RATIO_SPREAD, OptionStrategy.PUT_
 PAYOFF_STRUCTURES = RATIO_SPREADS | frozenset({OptionStrategy.LONG_BUTTERFLY, OptionStrategy.CUSTOM})
 WIDTH_STRUCTURES = WINGED | RATIO_SPREADS | frozenset({OptionStrategy.LONG_BUTTERFLY})   # take spread_width
 RATIO_SHORTS = 2                    # a ratio spread sells this many per bought leg
-DEFAULT_TARGET_PAYOFF_PCT = 50.0    # payoff structures: take profit at half the max (or peak) profit
-DEFAULT_STOP_DEFINED_PCT = 50.0     # ... stop at half the max loss when the risk is defined
-DEFAULT_STOP_UNDEFINED_PCT = 100.0  # ... or at a loss equal to the peak profit when it is not
 MAX_CUSTOM_LEGS = 6
 MAX_LEG_RATIO = 4
 NEUTRAL = frozenset({OptionStrategy.IRON_CONDOR, OptionStrategy.IRON_BUTTERFLY, OptionStrategy.SHORT_STRADDLE,
@@ -232,12 +227,14 @@ class StructureMetrics:
     max_profit: Optional[float]       # None = unbounded (long straddle/strangle, calendar)
     max_loss: Optional[float]         # None = undefined (short straddle/strangle)
     breakevens: List[float]
-    target_value: float               # credit: close when value <= this; debit: when worth >= this
-    stop_value: float                 # credit: close when value >= this; debit: when worth <= this
+    target_value: Optional[float]     # credit: close when value <= this; debit: when worth >= this (None = no target set)
+    stop_value: Optional[float]       # credit: close when value >= this; debit: when worth <= this (None = no stop set)
     short_strikes: Dict[str, float]   # right -> short strike, for the structure stop on the underlying
     legs: List[dict]
     debit: bool = False
-    risk_per_unit: float = 0.0        # what the sizer divides risk-per-trade by: max loss, the debit, or the stop distance
+    # what the sizer divides risk-per-trade by: max loss, the debit, or the stop distance (0 = not known: an
+    # undefined-risk structure with no stop set)
+    risk_per_unit: float = 0.0
     defined_risk: bool = True
     # ATM-short structures (straddle, iron butterfly): underlying levels that close the group
     # ("below"/"above" = the breakevens) in place of the short-strike breach.
@@ -246,16 +243,29 @@ class StructureMetrics:
     # (target when pnl >= pnl_target, stop when pnl <= pnl_stop); None for the older structures.
     pnl_target: Optional[float] = None
     pnl_stop: Optional[float] = None
+    payoff: bool = False              # judged on P&L per unit (Phase U) - also when neither level is set (DEF-0)
 
     def as_dict(self) -> dict:
         out = {"net_credit": self.net_credit, "max_profit": self.max_profit, "max_loss": self.max_loss,
                "breakevens": self.breakevens, "target_value": self.target_value, "stop_value": self.stop_value,
                "short_strikes": self.short_strikes, "legs": self.legs, "debit": self.debit,
                "risk_per_unit": self.risk_per_unit, "defined_risk": self.defined_risk, "underlying_exits": self.underlying_exits}
-        if self.pnl_stop is not None:
+        if self.payoff or self.pnl_stop is not None:
             out["pnl_target"] = self.pnl_target
             out["pnl_stop"] = self.pnl_stop
+            out["payoff"] = True
         return out
+
+    def exit_summary(self) -> str:
+        """DEF-0 D3: exactly which group exits are set ("no target or stop set" when none)."""
+        if self.payoff:
+            parts = ([f"target at P&L {self.pnl_target:g}/unit"] if self.pnl_target is not None else []) + \
+                    ([f"stop at P&L {self.pnl_stop:g}/unit"] if self.pnl_stop is not None else [])
+        else:
+            word = "worth" if self.debit else "value"
+            parts = ([f"target at {word} {self.target_value:g}"] if self.target_value is not None else []) + \
+                    ([f"stop at {word} {self.stop_value:g}"] if self.stop_value is not None else [])
+        return "; ".join(parts) if parts else "no target or stop set"
 
     def to_json(self) -> str:
         return json.dumps(self.as_dict())
@@ -561,8 +571,8 @@ def structure_metrics(structure: ResolvedStructure, premiums: Dict[str, float], 
         if credit >= 0:
             raise ContractResolutionError(f"{strategy.value} would be a net credit ({credit}) - quotes inconsistent, not entered")
         debit = round(-credit, 2)
-        target_pct = target_credit_pct if target_credit_pct is not None else DEFAULT_TARGET_DEBIT_PCT
-        stop_pct = min(stop_credit_pct if stop_credit_pct is not None else DEFAULT_STOP_DEBIT_PCT, 100.0)
+        target_pct = target_credit_pct                       # DEF-0: None = no target
+        stop_pct = min(stop_credit_pct, 100.0) if stop_credit_pct is not None else None
         breakevens: List[float] = []
         if strategy in (OptionStrategy.LONG_STRADDLE, OptionStrategy.LONG_STRANGLE):
             if "PE" in long_strikes:
@@ -572,7 +582,8 @@ def structure_metrics(structure: ResolvedStructure, premiums: Dict[str, float], 
         # A calendar's payoff depends on the far leg's value at the near expiry - no static breakeven.
         return StructureMetrics(
             net_credit=credit, max_profit=None, max_loss=debit, breakevens=breakevens,
-            target_value=round(debit * (1 + target_pct / 100.0), 2), stop_value=round(debit * (1 - stop_pct / 100.0), 2),
+            target_value=round(debit * (1 + target_pct / 100.0), 2) if target_pct is not None else None,
+            stop_value=round(debit * (1 - stop_pct / 100.0), 2) if stop_pct is not None else None,
             # A calendar's short strike is protected by the far leg; no underlying breach exit.
             short_strikes={}, legs=legs, debit=True, risk_per_unit=debit, defined_risk=True,
         )
@@ -584,9 +595,9 @@ def structure_metrics(structure: ResolvedStructure, premiums: Dict[str, float], 
         breakevens.append(round(short_strikes["PE"] - credit, 2))
     if "CE" in short_strikes:
         breakevens.append(round(short_strikes["CE"] + credit, 2))
-    target_pct = target_credit_pct if target_credit_pct is not None else DEFAULT_TARGET_CREDIT_PCT
-    stop_pct = stop_credit_pct if stop_credit_pct is not None else DEFAULT_STOP_CREDIT_PCT
-    stop_value = round(credit * (1 + stop_pct / 100.0), 2)
+    target_pct, stop_pct = target_credit_pct, stop_credit_pct     # DEF-0: None = no such exit
+    stop_value = round(credit * (1 + stop_pct / 100.0), 2) if stop_pct is not None else None
+    target_value = round(credit * (1 - target_pct / 100.0), 2) if target_pct is not None else None
     underlying_exits: Dict[str, float] = {}
     if strategy in ATM_SHORTS:
         # The shorts sit at the money, so "underlying through the short strike" would fire on
@@ -597,17 +608,18 @@ def structure_metrics(structure: ResolvedStructure, premiums: Dict[str, float], 
     if strategy in UNDEFINED_RISK:
         # No wing: the loss is open-ended. The sizer works off the loss the stop accepts, and the
         # metrics say so; the position monitor's stop and the underlying levels are the exits.
-        stop_risk = round(stop_value - credit, 2)
+        # DEF-0: with no stop set the loss the stop accepts is not known (0): sizing by a risk per trade then refuses
+        stop_risk = round(stop_value - credit, 2) if stop_value is not None else 0.0
         return StructureMetrics(
             net_credit=credit, max_profit=credit, max_loss=None, breakevens=breakevens,
-            target_value=round(credit * (1 - target_pct / 100.0), 2), stop_value=stop_value,
+            target_value=target_value, stop_value=stop_value,
             short_strikes=short_strikes, legs=legs, debit=False, risk_per_unit=stop_risk, defined_risk=False,
             underlying_exits=underlying_exits,
         )
     max_loss = round(structure.width_points - credit, 2)
     return StructureMetrics(
         net_credit=credit, max_profit=credit, max_loss=max_loss, breakevens=breakevens,
-        target_value=round(credit * (1 - target_pct / 100.0), 2), stop_value=stop_value,
+        target_value=target_value, stop_value=stop_value,
         short_strikes=short_strikes, legs=legs, debit=False, risk_per_unit=max_loss, defined_risk=True,
         underlying_exits=underlying_exits,
     )
@@ -624,20 +636,23 @@ def _payoff_metrics(structure: ResolvedStructure, legs: List[dict], target_pct: 
     if defined and (analysis.max_loss or 0.0) <= 0:
         raise ContractResolutionError(f"{name} shows no loss at expiry at these premiums - quotes inconsistent, not entered")
     risk_basis = analysis.max_loss if defined else analysis.peak
-    t_pct = target_pct if target_pct is not None else DEFAULT_TARGET_PAYOFF_PCT
-    s_pct = stop_pct if stop_pct is not None else (DEFAULT_STOP_DEFINED_PCT if defined else DEFAULT_STOP_UNDEFINED_PCT)
-    if defined:
+    t_pct, s_pct = target_pct, stop_pct                          # DEF-0: None = no such exit
+    if defined and s_pct is not None:
         s_pct = min(s_pct, 100.0)
     target_ref = analysis.max_profit if analysis.max_profit is not None else analysis.peak
-    pnl_target = round(target_ref * t_pct / 100.0, 2)
-    pnl_stop = round(-risk_basis * s_pct / 100.0, 2)
+    pnl_target = round(target_ref * t_pct / 100.0, 2) if t_pct is not None else None
+    pnl_stop = round(-risk_basis * s_pct / 100.0, 2) if s_pct is not None else None
     credit = analysis.net_credit
     debit = credit < 0
+    target_value: Optional[float]
+    stop_value: Optional[float]
     if debit:
         paid = -credit
-        target_value, stop_value = round(paid + pnl_target, 2), round(paid + pnl_stop, 2)     # worth levels
+        target_value = round(paid + pnl_target, 2) if pnl_target is not None else None     # worth levels
+        stop_value = round(paid + pnl_stop, 2) if pnl_stop is not None else None
     else:
-        target_value, stop_value = round(credit - pnl_target, 2), round(credit - pnl_stop, 2)  # value (cost to close) levels
+        target_value = round(credit - pnl_target, 2) if pnl_target is not None else None   # value (cost to close) levels
+        stop_value = round(credit - pnl_stop, 2) if pnl_stop is not None else None
     underlying_exits: Dict[str, float] = {}
     if analysis.breakevens:
         if not analysis.upside_defined:
@@ -647,8 +662,8 @@ def _payoff_metrics(structure: ResolvedStructure, legs: List[dict], target_pct: 
     return StructureMetrics(
         net_credit=credit, max_profit=analysis.max_profit, max_loss=analysis.max_loss, breakevens=analysis.breakevens,
         target_value=target_value, stop_value=stop_value, short_strikes={}, legs=legs, debit=debit,
-        risk_per_unit=analysis.max_loss if defined else -pnl_stop, defined_risk=defined,
-        underlying_exits=underlying_exits, pnl_target=pnl_target, pnl_stop=pnl_stop,
+        risk_per_unit=analysis.max_loss if defined else (-pnl_stop if pnl_stop is not None else 0.0), defined_risk=defined,
+        underlying_exits=underlying_exits, pnl_target=pnl_target, pnl_stop=pnl_stop, payoff=True,
     )
 
 

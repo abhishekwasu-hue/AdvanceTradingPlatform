@@ -54,8 +54,9 @@ export function strikeStep(rows: readonly ChainRow[]): number | null {
 }
 
 /** A sold leg's stop-loss: `pct` % above its price, on the 0.05 tick (null without a price). */
-export function stopFor(price: number | null | undefined, pct: number): number | null {
-  if (typeof price !== "number" || !(price > 0) || !(pct > 0)) return null;
+export function stopFor(price: number | null | undefined, pct: number | null | undefined): number | null {
+  // DEF-0: no stop % of his own = no stop filled in
+  if (typeof price !== "number" || !(price > 0) || typeof pct !== "number" || !(pct > 0)) return null;
   const ticks = Math.ceil(Math.round((price * (1 + pct / 100)) / 0.05 * 1e6) / 1e6);
   const value = Math.round(ticks * 5) / 100;
   return value > price ? value : null;
@@ -129,12 +130,7 @@ export function basketProblems(legs: readonly NewLeg[]): string[] {
   const out: string[] = [];
   if (!legs.length) out.push("Add a leg first.");
   if (new Set(legs.map((l) => l.underlying)).size > 1) out.push("A basket holds one underlying. Remove the legs of the other.");
-  for (const l of legs) {
-    if (!(typeof l.stopLoss === "number" && l.stopLoss > 0)) {
-      if (l.right === "FUT") out.push(`${legLabel(l)}: a future needs a stop-loss.`);
-      else if (l.side === "SELL") out.push(`${legLabel(l)}: a sold leg needs a stop-loss.`);
-    }
-  }
+  // DEF-0 D7 (owner, 28 Oct): a leg's stop is the trader's choice - only his own setting asks for one (the server says so)
   return out;
 }
 

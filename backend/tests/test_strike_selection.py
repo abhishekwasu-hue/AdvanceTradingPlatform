@@ -161,6 +161,7 @@ def test_worker_trades_the_filtered_strike_and_records_why(monkeypatch):
         async with _session_factory() as session:
             dep = await session.get(StrategyDeploymentRecord, dep_id)
             dep.instrument_kind, dep.option_position, dep.max_lots = "OPTION", "BUY", 1
+            dep.premium_stop_pct = 30.0        # DEF-0: the old built-in premium floor, set explicitly as a trader would
             dep.strike_filters = StrikeFilters(max_spread_pct=2.0).to_json()
             await session.commit()
     _run(mark())

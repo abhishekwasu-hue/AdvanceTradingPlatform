@@ -5,7 +5,10 @@ import { api } from "../api/client";
 import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { TAB_LABELS, KIND_ORDER, RHYTHM_REFRESH_MS, cleanBrief } from "./model";
 import type { RhythmBrief, RhythmKind, RhythmSection, RhythmToday } from "./types";
+import { Details } from "../ui/Details";
+import { PageFootnote } from "../ui/PageFootnote";
 import { SubTabs } from "../ui/SubTabs";
+import { SectionRowsV2, hasTypedView } from "./SectionRowsV2";
 
 /**
  * MO4 (Master Order 4 part 1, the daily rhythm; behind `ui_v2` + `daily_rhythm`): the Dashboard's brief card - the
@@ -17,7 +20,9 @@ import { SubTabs } from "../ui/SubTabs";
 
 type State = { status: "loading" } | { status: "error" } | { status: "ok"; data: RhythmToday };
 
-export function RhythmSectionV2({ section }: { section: RhythmSection }) {
+/** One section: its typed view (UX-11b, with `typed`) or, without rows or kind, its lines. */
+export function RhythmSectionV2({ section, typed = false }: { section: RhythmSection; typed?: boolean }) {
+  const view = typed && hasTypedView(section) ? <SectionRowsV2 section={section} /> : null;
   return (
     <div data-rhythm-section={section.id} className="py-space-3 first:pt-0 last:pb-0">
       <div className="flex min-h-11 items-center justify-between gap-space-3 md:min-h-0">
@@ -29,7 +34,7 @@ export function RhythmSectionV2({ section }: { section: RhythmSection }) {
           </Link>
         )}
       </div>
-      {section.lines.length === 0 ? (
+      {view ? <div className="mt-space-2">{view}</div> : section.lines.length === 0 ? (
         <p className="mt-px text-t14 text-fg-muted">{section.empty}</p>
       ) : (
         <ul className="mt-space-1 space-y-space-1">
@@ -58,9 +63,13 @@ export function RhythmBriefV2({ brief, phase, kind, onKind }: {
           label: <>{TAB_LABELS[k]}{k === phase && <span aria-label="now" role="img" className="ml-space-1 inline-block h-1.5 w-1.5 rounded-pill bg-current" />}</>,
         }))} />
       <div className="mt-space-4 divide-y divide-subtle">
-        {shown.sections.map((s) => <RhythmSectionV2 key={s.id} section={s} />)}
+        {shown.sections.map((s) => <RhythmSectionV2 key={s.id} section={s} typed />)}
       </div>
-      <p className="mt-space-4 text-t12 text-fg-muted">{shown.note}</p>
+      {/* UX-11b: the disclaimer once, as the page footnote; the brief's own note in Details. */}
+      <div className="mt-space-4">
+        <PageFootnote />
+        <Details id="rhythm.note" label="About this brief"><p>{shown.note}</p></Details>
+      </div>
     </div>
   );
 }

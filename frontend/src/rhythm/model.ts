@@ -22,7 +22,9 @@ export const RHYTHM_REFRESH_MS = 5 * 60_000;
 
 /** A section with only the lines that pass the signal-language check. */
 export function cleanSection(section: RhythmSection): RhythmSection {
-  return { ...section, lines: section.lines.filter((l) => !hasCallWords(l)) };
+  return { ...section, lines: section.lines.filter((l) => !hasCallWords(l)),
+    // UX-11b: a typed row's words (names, details) pass the same check; a row that fails is left out.
+    ...(section.rows ? { rows: section.rows.filter((r) => !hasCallWords(JSON.stringify(Object.values(r)))) } : {}) };
 }
 
 export function cleanBrief(brief: RhythmBrief): RhythmBrief {

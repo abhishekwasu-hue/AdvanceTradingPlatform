@@ -59,9 +59,18 @@ export function expiryLabel(iso: string | null | undefined): string | null {
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]}` : null;
 }
 
+const SYMBOL_EXPIRY = /\s+(\d{1,2})\s+([A-Za-z]{3})\s+\d{2,4}$/;
+
 /** The contract name without a trailing expiry ("NIFTY 22550 PE 03 NOV 26" -> "NIFTY 22550 PE") when the expiry is known. */
 export function instrumentName(symbol: string, expiry: string | null | undefined): string {
-  return expiry ? symbol.replace(/\s+\d{1,2}\s+[A-Za-z]{3}\s+\d{2,4}$/, "") : symbol;
+  return expiry || symbolExpiryLabel(symbol) ? symbol.replace(SYMBOL_EXPIRY, "") : symbol;
+}
+
+/** "3 Nov" from a contract name that ends in its expiry ("NIFTY 22550 PE 03 NOV 26"), for a position stored without one. */
+export function symbolExpiryLabel(symbol: string): string | null {
+  const m = SYMBOL_EXPIRY.exec(symbol);
+  const month = m ? MONTHS.findIndex((x) => x.toLowerCase() === m[2].toLowerCase()) : -1;
+  return m && month >= 0 ? `${Number(m[1])} ${MONTHS[month]}` : null;
 }
 
 /** "+65 (1 lot)" / "-130 (2 lots)" / "+10": the net quantity, signed by side, with its lots when the lot size is known. */
@@ -145,7 +154,7 @@ export function heldRows(positions: TradeRecord[], exposure: PortfolioExposure |
       levelsOn: on, levels, structure: s.label, structureNote: s.note, strategy: strategyDisplayName(p.strategy_id),
       chartSymbol: isDerivative(p) ? (p.underlying_symbol as string) : p.symbol,
       ltp: row.ltp, pnl: row.pnl, pnlPct: row.pnlPct,
-      instrument: instrumentName(p.symbol, p.expiry), expiryLabel: expiryLabel(p.expiry),
+      instrument: instrumentName(p.symbol, p.expiry), expiryLabel: expiryLabel(p.expiry) ?? symbolExpiryLabel(p.symbol),
       qtyText: qtyText(p.quantity, p.lot_size, p.direction !== "SHORT"), avg: p.entry_price,
     };
   });

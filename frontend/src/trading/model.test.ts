@@ -5,7 +5,7 @@ import {
   LOSS_STREAK_CHOICES, lastResumeText, lossStreakNote,
   allocationRows, bookedCurve, checkStatus, closedRows, closedText, drawdownOrderProblem, eventAction, eventRemoveConsequence, eventScope, eventWindow, exitConfirmText,
   failedText, fieldProblem, guardianLine, heldRows, holdingTiles, limitScopeLabel, limitValueText, longShortLine, openCaption, portfolioTiles,
-  positionLevels, structureLabel, todayRisk, expiryLabel, instrumentName, qtyText } from "./model";
+  positionLevels, structureLabel, todayRisk, expiryLabel, instrumentName, qtyText, symbolExpiryLabel } from "./model";
 import { CONFIG, exposure, guardianMode, marketEvent, trade } from "./trading.fixture";
 
 /** UI2-9a: what My positions, My portfolio and Risk limits show, from made-up API answers. */
@@ -203,6 +203,13 @@ describe("UX-15 the broker-standard Positions row", () => {
     expect(instrumentName("RELIANCE", null)).toBe("RELIANCE");
     expect(expiryLabel("2026-11-03")).toBe("3 Nov");
     expect(expiryLabel(null)).toBeNull();
+  });
+  it("a position stored without its expiry still reads it from the contract name", () => {
+    expect(symbolExpiryLabel("NIFTY 24800 CE 27 OCT 26")).toBe("27 Oct");
+    expect(instrumentName("NIFTY 24800 CE 27 OCT 26", null)).toBe("NIFTY 24800 CE");
+    expect(symbolExpiryLabel("RELIANCE")).toBeNull();
+    expect(symbolExpiryLabel("ABC 12 XYZ 26")).toBeNull();
+    expect(instrumentName("ABC 12 XYZ 26", null)).toBe("ABC 12 XYZ 26");
   });
   it("the net quantity signed by side, with its lots", () => {
     expect(qtyText(65, 65, true)).toBe("+65 (1 lot)");

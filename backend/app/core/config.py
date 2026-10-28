@@ -11,6 +11,12 @@ load_dotenv()
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
 # P0.1: environments that must boot with a hardened configuration and never create tables outside Alembic.
 HARDENED_ENVIRONMENTS = ("production", "staging")
+
+
+def api_docs_enabled(environment: str = ENVIRONMENT) -> bool:
+    """AUD-G1.3 (owner audit 28 Oct): the interactive API docs (/docs, /redoc, /openapi.json) exist in development only;
+    production and staging serve none of them (the edge already routes those paths to the web app)."""
+    return environment not in HARDENED_ENVIRONMENTS
 APP_VERSION = os.environ.get("APP_VERSION", "1.0.0")
 # P0.3 / S14: access tokens carry iss/aud and a key id; JWT_PREVIOUS_SECRET_KEYS (comma-separated) keeps tokens
 # signed with an older secret verifiable through a rotation. JWT_ACCEPT_LEGACY=true (default) also accepts tokens
@@ -879,3 +885,7 @@ VIX_GATE_CAPTURE_MINUTES = _bounded_int("VIX_GATE_CAPTURE_MINUTES", 15, 1, 240)
 # the position at once).
 TICKET_TIME_STOP_MIN_LEAD_MINUTES = _bounded_int("TICKET_TIME_STOP_MIN_LEAD_MINUTES", 5, 0, 120)
 VIX_GATE_UNDERLYINGS = tuple(s.strip().upper() for s in os.environ.get("VIX_GATE_UNDERLYINGS", "NIFTY,BANKNIFTY,SENSEX").split(",") if s.strip())
+
+# AUD-G1.1 (owner audit 28 Oct; DPDP): a user's own "Delete my account" takes effect after this many days; until then
+# the account works as before and the request can be cancelled from Settings -> Account.
+ACCOUNT_ERASE_GRACE_DAYS = int(os.environ.get("ACCOUNT_ERASE_GRACE_DAYS", "7"))

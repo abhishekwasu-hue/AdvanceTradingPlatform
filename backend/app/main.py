@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.rate_limit import user_rate_limit
 from app.core.route_cache import install as install_route_cache
-from app.core.config import ALLOWED_ORIGINS, APP_VERSION, ENVIRONMENT, MAX_REQUEST_BODY_BYTES, tables_created_at_startup, validate_production_config
+from app.core.config import ALLOWED_ORIGINS, APP_VERSION, ENVIRONMENT, MAX_REQUEST_BODY_BYTES, api_docs_enabled, tables_created_at_startup, validate_production_config
 from app.core.logging_config import configure_logging
 from app.core.enums import ExecutionMode, OrderStatus
 from app.core.models import (
@@ -90,6 +90,7 @@ from app.chart_analyze.routes import admin_router as chart_analyze_admin_router,
 from app.signals_feed.routes import router as signals_feed_router
 from app.signals_feed.day_one_routes import router as signals_day_one_router
 from app.me.prefs import router as me_prefs_router
+from app.me.account import router as me_account_router
 from app.rhythm.routes import router as rhythm_router
 from app.option_chain.ask_routes import router as oc_ask_router
 from app.option_chain.probe import admin_router as oc_probe_admin_router
@@ -216,6 +217,10 @@ app = FastAPI(
                 "Educational tooling; nothing here is investment advice.",
     version=APP_VERSION,
     lifespan=_lifespan,
+    # AUD-G1.3: no interactive docs or schema outside development.
+    docs_url="/docs" if api_docs_enabled() else None,
+    redoc_url="/redoc" if api_docs_enabled() else None,
+    openapi_url="/openapi.json" if api_docs_enabled() else None,
 )
 # 422s keep FastAPI's shape but never echo the rejected input (it may be a credential).
 app.add_exception_handler(RequestValidationError, request_validation_handler)
@@ -425,6 +430,7 @@ app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a cha
 app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)
 app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)
 app.include_router(signals_day_one_router)  # Signals day one: the setup card + his adopted watch (ui_v2 + strategy_templates)
+app.include_router(me_account_router)  # AUD-G1.1: the caller's own data export and "Delete my account"
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
 app.include_router(rhythm_router)     # MO4: the daily rhythm - pre-market brief, pulse, closing wrap, weekly review (flags ui_v2 + daily_rhythm)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)

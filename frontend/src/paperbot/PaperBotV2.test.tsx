@@ -143,7 +143,7 @@ describe("UX2 fix 4 view", () => {
   it("a running bot: name, Paper, what it trades, Running, Pause and Stop", () => {
     const t = text(row(bot({ open_positions: 1 })));
     expect(t).toContain("Opening range breakout Paper NIFTY 50 options During the day");   // UX-11b C5: two chips
-    expect(t).toMatch(/Running Checked 2 min ago 1 open trade Pause Stop/);
+    expect(t).toMatch(/Running Checked 2 min ago (No signal yet|Last signal [^ ]+ [a-z]+ ago) 1 open trade Pause Stop/);
     expect(t).not.toContain("Resume");
   });
 

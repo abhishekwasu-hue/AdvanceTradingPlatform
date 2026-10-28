@@ -1,5 +1,5 @@
 import { ChevronRight, Pause, Play, Square } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
@@ -9,7 +9,8 @@ import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { CardV2, ChipV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import type { PageProps } from "../routes";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, StateChipV2 } from "../trading/PartsV2";
-import type { CustomStrategyResponse, Deployment, StrategyInfo } from "../types";
+import type { CustomStrategyResponse, Deployment, PortfolioExposure, StrategyInfo, TradeRecord } from "../types";
+import { BotPositionsV2, botPositions } from "./BotPositionsV2";
 import { DEFAULTS_PATH, appliedLine, useTradingDefaults, type TradingDefaults } from "../settings/tradingDefaults";
 import { Chip } from "../ui/Chip";
 import { Details } from "../ui/numbersFirst";
@@ -18,7 +19,7 @@ import { useFeatures } from "../ui/useFeatures";
 import { draftFromState, formSymbol } from "../copilot/strategyDraft";
 import CopilotDraftV2 from "./CopilotDraftV2";
 import {
-  IDEA_SYMBOL, READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, paperBotRequestWithDefaults, sortBots,
+  IDEA_SYMBOL, READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, lastSignal, paperBotRequestWithDefaults, whyNoTrade, sortBots,
   startSummaryParts, strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
 import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
@@ -85,14 +86,31 @@ export default function PaperBotV2(_props: PageProps) {
   const formRef = useRef<HTMLElement | null>(null);
   const firstField = useRef<HTMLSelectElement>(null);
 
+  // UI-28 U2.4: the bots' own open positions and their live P&L (one read each per refresh, only while a bot holds one).
+  const [positions, setPositions] = useState<TradeRecord[] | null>(null);
+  const [exposure, setExposure] = useState<PortfolioExposure | null>(null);
   const loadBots = useCallback(async () => {
     try {
-      setBots(await api.listDeployments(true));
+      const list = await api.listDeployments(true);
+      setBots(list);
       setBotsFailed(false);
+      if (list.some((b) => b.open_positions > 0)) {
+        api.listPositions().then(setPositions).catch(() => setPositions(null));
+        api.portfolioExposure(true).then(setExposure).catch(() => setExposure(null));
+      } else setPositions(null);
     } catch {
       setBotsFailed(true);
     }
   }, []);
+
+  async function exitBot(list: TradeRecord[]): Promise<number> {
+    let closed = 0;
+    for (const p of list) {
+      try { await api.exitNow(p.id); closed += 1; } catch { /* the next one still exits; the note says how many closed */ }
+    }
+    await loadBots();
+    return closed;
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -177,7 +195,10 @@ export default function PaperBotV2(_props: PageProps) {
               {shown.map((bot) => (
                 <BotRow key={bot.id} bot={bot} name={botName(bot, names)} busy={busyBot === bot.id} disabled={busyBot !== null || !canChange}
                   confirming={confirmStop === bot.id} onAsk={() => setConfirmStop(bot.id)} onCancel={() => setConfirmStop(null)}
-                  onAct={(kind) => void act(bot, kind)} />
+                  onAct={(kind) => void act(bot, kind)}
+                  held={botPositions(positions, bot.id).length ? (
+                    <BotPositionsV2 positions={botPositions(positions, bot.id)} exposure={exposure} canTrade={canChange} onExit={exitBot} />
+                  ) : undefined} />
               ))}
             </ul>
           )}
@@ -230,9 +251,11 @@ export default function PaperBotV2(_props: PageProps) {
   );
 }
 
-export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel, onAct }: {
+export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel, onAct, held }: {
   bot: Deployment; name: string; busy: boolean; disabled: boolean; confirming: boolean;
   onAsk: () => void; onCancel: () => void; onAct: (kind: "pause" | "resume" | "stop") => void;
+  /** UI-28 U2.4: the bot's own open positions (P&L, legs, exit), when it has any. */
+  held?: ReactNode;
 }) {
   const state = botState(bot);
   const status = botStatusText(bot);
@@ -251,8 +274,11 @@ export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel,
           <p className="mt-space-1 flex flex-wrap items-center gap-space-2 text-t13 text-fg-muted">
             <StateChipV2 tone={state === "paused" ? "warn" : "neutral"} check={state === "running"}>{status}</StateChipV2>
             {state !== "stopped" && <span>{lastChecked(bot.last_evaluated_at)}</span>}
-            {bot.open_positions > 0 && <span>{bot.open_positions} open {bot.open_positions === 1 ? "trade" : "trades"}</span>}
+            {state !== "stopped" && <span data-bot-signal>{lastSignal(bot.last_signal_at)}</span>}
+            {whyNoTrade(bot) && <Chip tone="warn" variant="meaning" icon="!" name="why-no-trade">{whyNoTrade(bot)}</Chip>}
+            {bot.open_positions > 0 && !held && <span>{bot.open_positions} open {bot.open_positions === 1 ? "trade" : "trades"}</span>}
           </p>
+          {held}
         </div>
         {state !== "stopped" && !confirming && (
           <div className="flex shrink-0 gap-space-2">

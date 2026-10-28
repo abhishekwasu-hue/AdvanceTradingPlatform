@@ -154,8 +154,9 @@ function Mood({ section }: { section: RhythmSection }) {
           <ResponsiveTable caption="Global markets" className="mt-space-2" rowKey={(m) => m.key} rows={cues.markets}
             columns={[
               { key: "m", header: "Market", cell: (m) => <span className="inline-flex flex-wrap items-center gap-space-1">{m.name}{m.stale && <Chip tone="warn" variant="meaning" icon="!" name="delayed">delayed</Chip>}</span> },
-              { key: "chg", header: "Chg %", align: "right", cell: (m) => pct(m.change_pct) },
+              // UI-28 U2.3: Market | Last | Chg % (the order the owner gave).
               { key: "last", header: "Last", align: "right", cell: (m) => (m.last == null ? "–" : formatNumber(m.last, 2)) },
+              { key: "chg", header: "Chg %", align: "right", cell: (m) => pct(m.change_pct) },
             ]} />
         </div>
       )}
@@ -305,8 +306,9 @@ function Market({ section }: { section: RhythmSection }) {
         <ResponsiveTable caption={section.title} rowKey={(m) => m.label} rows={moves}
           columns={[
             { key: "i", header: "Index", cell: (m) => <span className="inline-flex flex-wrap items-center gap-space-1">{m.label}<AsOf iso={m.as_of} what="close of" /></span> },
-            { key: "p", header: week ? "5 sessions" : "Chg %", align: "right", cell: (m) => pct(m.change_pct) },
+            // UI-28 U2.3: Index | Close | Chg %.
             { key: "c", header: "Close", align: "right", cell: (m) => formatNumber(m.close, 2) },
+            { key: "p", header: week ? "5 sessions" : "Chg %", align: "right", cell: (m) => pct(m.change_pct) },
           ]} />
       )}
       {breadth && total > 0 && (
@@ -407,10 +409,11 @@ function Record({ section }: { section: RhythmSection }) {
     <ResponsiveTable caption={section.title} phone="stack" rowKey={(r) => r.name} rows={rows}
       columns={[
         { key: "s", header: "Strategy", cell: (r) => r.name },
-        { key: "w", header: "Win %", align: "right", cell: (r) => winPct(r.won, r.closed) },
+        // UI-28 U2.4: Strategy | Closed | Won | Lost | Win %.
         { key: "c", header: "Closed", align: "right", cell: (r) => formatNumber(r.closed) },
         { key: "won", header: "Won", align: "right", cell: (r) => <span className="text-up">▲ {formatNumber(r.won)}</span> },
         { key: "lost", header: "Lost", align: "right", cell: (r) => <span className="text-down">▼ {formatNumber(r.lost)}</span> },
+        { key: "w", header: "Win %", align: "right", cell: (r) => winPct(r.won, r.closed) },
       ]} />
   );
 }

@@ -213,7 +213,7 @@ export default function RiskV2(_props: PageProps = {}) {
               ? (
                 <Details id="risk.today">
                   <p className="text-t13 text-fg-muted">
-                    {`The size is halved at ${formatNumber(guardian.settings.dd_level_1_pct, 1)}% below your equity peak and new entries pause at ${formatNumber(guardian.settings.dd_level_2_pct, 1)}%. A winning streak never raises the size above normal. Exits are never blocked.`}
+                    {`The size is halved at ${formatNumber(guardian.settings.dd_level_1_pct, 1)}% below your equity peak and new entries pause at ${formatNumber(guardian.settings.dd_level_2_pct, 1)}%. A winning streak never raises the size above normal.`}
                   </p>
                 </Details>
               )

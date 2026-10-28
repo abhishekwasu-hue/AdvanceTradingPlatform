@@ -73,7 +73,7 @@ from app.execution import approval
 from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
-from app.market_data.freshness import candle_staleness
+from app.market_data.freshness import candle_staleness, closed_frames
 from app.market_data.service import MarketDataService
 from app.market_data.fanin import UserSessionFanIn
 from app.market_data.hub import DataHub
@@ -1704,6 +1704,16 @@ class TradingWorker:
             MARKET_DATA_STALE.labels(kind="candles").inc()
             self._stale_skips += 1
             logger.warning("Deployment %s: %s", dep.id, stale)
+            return False
+        # AUD-V1 (AP-FIX AP1): the feed is alive (checked on its newest bar above); the decision uses closed bars only -
+        # the bar still forming is dropped, as in the backtest and the screener.
+        frames = closed_frames(frames, now)
+        base = frames.get(dep.timeframe)
+        if base is None:
+            base = next(iter(frames.values()))
+        if not strategy.has_enough_history(frames):
+            dep.last_error = f"Insufficient history ({len(base)} closed bars) - waiting for more candles"
+            await session.commit()
             return False
 
         # Phase L3 -> handover item 5 C: the indicator regime is an admin diagnostic only. It is classified and logged;

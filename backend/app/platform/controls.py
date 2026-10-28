@@ -107,8 +107,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # places no orders and changes no trading behaviour.
     "colour_v2": "Colour v2: purposeful colour on the v2 pages (tinted icons, option chain tints, P&L tint, sparklines, Long / Short chips; layout only)",
     # UX-14 "Professional palette" (owner, 28 Oct; docs/owner-orders/ATP_ORDER_UX14.md): the colour v3 token set - neutral
-    # surfaces, one accent, semantic colours only for meaning, no dot backdrop. Needs ui_v2 + colour_v2. OFF until the
-    # owner's OK on the comparison page. Layout only - places no orders and changes no trading behaviour.
+    # surfaces, one accent, semantic colours only for meaning, no dot backdrop. Needs ui_v2 + colour_v2. ON by default
+    # (owner, 28 Oct: "Keep Default on always"); the flag stays so it can be turned off. Layout only - places no orders and
+    # changes no trading behaviour.
     "colour_v3": "Colour v3: the professional palette on the v2 pages (neutral surfaces, one accent, meaning colours; layout only)",
     # N2-5 (P1 spec 1.5, docs/design/N2_P1FGH.md): the market context panel - regime (Dow structure of the NIFTY 50 on
     # daily and weekly bars), breadth, India VIX with its 1-year rank, FII / DII (seam, off until a source is set),
@@ -492,6 +493,7 @@ DEFAULT_ON_FLAGS: frozenset[str] = frozenset({
     "ai_copilot",          # Phase N kill switch for AI strategy drafts; the AI never places orders (ADR-0006)
     "backtest_optimizer",  # Phase N kill switch for optimisation grid runs; a simulation, places no orders
     "colour_v2",           # owner ✅ 24 Oct (DECISIONS): colour v2 ON by default; layout only, needs ui_v2, places no orders
+    "colour_v3",           # owner 28 Oct (DECISIONS, UX-14): colour v3 ON by default, the flag kept to turn it off; layout only
     "live_trading",        # Phase N kill switch for new LIVE deployments only; LIVE itself is gated by the trading:live
                            # scope, the plan, step-up and the phase0_paper_only lock (Phase 0 mode seeds this OFF)
     "marketplace",         # Phase N kill switch for marketplace listings and subscriptions

@@ -79,7 +79,8 @@ test.describe("daily brief card behaviour", () => {
     await expect(card.getByRole("tab", { name: /Morning/ })).toHaveAttribute("aria-selected", "true");
     await card.getByRole("tab", { name: "Wrap" }).click();
     await expect(card.getByRole("heading", { name: "Closing wrap" })).toBeVisible();
-    await expect(card.getByText("You stayed inside your own daily limits today.", { exact: false })).toBeVisible();
+    // UX-11b: the day's limits as a chip (Inside ✓), not a sentence.
+    await expect(card.locator("[data-chip='limits-inside']")).toBeVisible();
     expect(reads).toContain("?kind=closing");
     const text = (await card.innerText()).toLowerCase();
     expect(text).not.toMatch(/\b(buy|sell|target|stop[- ]?loss|stop)\b/);

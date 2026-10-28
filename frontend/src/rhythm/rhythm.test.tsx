@@ -6,7 +6,7 @@ import dashboardSource from "../dashboard/DashboardV2.tsx?raw";
 import { searchSettings } from "../settings/model";
 import sectionSource from "../settings/SettingsSectionV2.tsx?raw";
 import { RhythmBriefV2, RhythmSectionV2 } from "./DailyRhythmCardV2";
-import { CLOSING, EMPTY_WEEK, PRE_MARKET } from "./fixtures";
+import { CLOSING, EMPTY_WEEK, PRE_MARKET, linesOnly } from "./fixtures";
 import { DEFAULT_PREFS, KIND_ORDER, TAB_LABELS, TELEGRAM_CHOICES, cleanBrief } from "./model";
 import { telegramNote } from "./RhythmTelegramV2";
 import type { RhythmBrief } from "./types";
@@ -17,8 +17,8 @@ const html = (node: React.ReactNode) => renderToStaticMarkup(<MemoryRouter>{node
 const text = (out: string) => out.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, "\"").replace(/&#x27;/g, "'");
 
 describe("MO4 the brief card", () => {
-  it("shows every section's lines, its page and the note", () => {
-    const out = html(<RhythmBriefV2 brief={PRE_MARKET} phase="pre_market" kind="pre_market" onKind={() => undefined} />);
+  it("shows every section's lines, its page and the note (an older server: lines only)", () => {
+    const out = html(<RhythmBriefV2 brief={linesOnly(PRE_MARKET)} phase="pre_market" kind="pre_market" onKind={() => undefined} />);
     for (const s of PRE_MARKET.sections) {
       expect(out).toContain(`data-rhythm-section="${s.id}"`);
       for (const line of s.lines) expect(text(out)).toContain(line);

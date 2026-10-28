@@ -8,6 +8,7 @@ import type { PageProps } from "../routes";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2 } from "../trading/PartsV2";
 import { DEBIT_STRUCTURES, WIDTH_STRUCTURES, WINGED_STRUCTURES } from "../types";
 import { SIGN_IN_PATH } from "../ui/BrokerGate";
+import { Details } from "../ui/Details";
 import { useFeatures } from "../ui/useFeatures";
 import ChainSettingsV2 from "./chainSettings";
 import MyLimitsCardV2 from "./MyLimitsCardV2";
@@ -252,10 +253,14 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
 
       {limits && onLimits && (
         <CardV2 title="My own liquidity limits (F&O)" testId="liquidity">
-          <p className="mb-space-3 text-t14 text-fg-muted">
-            Before you place an F&amp;O order, its strike is compared with the other strikes on the chain. You can also add your own limits;
-            the check then says whether the strike is inside them. Information only: it never holds back an order or an exit.
-          </p>
+          {/* UX-11b C5: one line, the rest on demand. */}
+          <p className="text-t14 text-fg-muted">Your own limits for an F&amp;O strike, checked before you place it.</p>
+          <Details id="settings.liquidity" label="How the check works" className="mb-space-3">
+            <p>
+              Before you place an F&amp;O order, its strike is compared with the other strikes on the chain. You can also add your own limits;
+              the check then says whether the strike is inside them. Information only: it never holds back an order or an exit.
+            </p>
+          </Details>
           <label className="flex min-h-11 cursor-pointer items-start gap-space-2 text-t14 text-fg">
             <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-brand" checked={limits.on} data-limits="on"
               onChange={(e) => onLimits({ ...limits, on: e.target.checked })} />

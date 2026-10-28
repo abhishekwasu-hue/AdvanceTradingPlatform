@@ -118,7 +118,7 @@ test.describe("Paper bot behaviour", () => {
     const rows = bots(page).locator("[data-bot]");
     await expect(rows).toHaveCount(2);
     await expect(rows.nth(0)).toContainText("Opening Range Breakout");
-    await expect(rows.nth(0)).toContainText("NIFTY 50 options · during the day");
+    await expect(rows.nth(0).locator("[data-bot-what]")).toHaveText("NIFTY 50 optionsDuring the day");   // UX-11b C5: two chips
     await expect(rows.nth(0)).toContainText("Running");
     await expect(rows.nth(0)).toContainText("1 open trade");
     await expect(rows.nth(1)).toContainText("Paused: 3 losses in a row");

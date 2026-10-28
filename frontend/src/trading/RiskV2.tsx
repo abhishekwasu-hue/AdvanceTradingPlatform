@@ -8,7 +8,7 @@ import type { GuardianStatus, LossStreakPause, LossStreakStatus, PaperRiskStatus
 import { formatINR, formatNumber } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { PageIntro } from "../ui/PageIntro";
-import { Details } from "../ui/numbersFirst";
+import { Details, PageFootnote } from "../ui/numbersFirst";
 import { useLiveHidden } from "../settings/useLiveHidden";
 import { TermHint } from "../ui/TermHint";
 import {
@@ -160,7 +160,7 @@ export default function RiskV2(_props: PageProps = {}) {
 
   return (
     <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="risk-v2">
-      <PageIntro id="risk" lines={["Change a limit and save it; exits are never blocked by these limits."]} />
+      <PageIntro id="risk" lines={["Change a limit and save it."]} />
       <PageTitleV2 title="Risk limits" subtitle={`How much you can lose today, and the rules ${entries} is checked against.`} />
 
       <CardV2 title="Today" testId="today" tour="risk-today">
@@ -217,7 +217,7 @@ export default function RiskV2(_props: PageProps = {}) {
                   </p>
                 </Details>
               )
-              : <p className="text-t13 text-fg-muted">Exits are never blocked by these limits.</p>}
+              : null /* UX-11b C5: "exits are never blocked" is said once, in the page footnote */}
           </div>
         )}
       </CardV2>
@@ -230,7 +230,10 @@ export default function RiskV2(_props: PageProps = {}) {
         <form onSubmit={save} noValidate data-block="limits"
           className="rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card md:p-space-5">
           <h2 data-tour="risk-limits" className="text-t15 font-semibold text-fg">Your limits</h2>
-          <p className="mt-space-1 text-t13 text-fg-muted">Checked before {entries} you place. A limit can never be set above the platform&apos;s ceiling.</p>
+          {/* UX-11b C5: the explanation on demand. */}
+          <Details id="risk.limits" label="How limits work">
+            <p>Checked before {entries} you place. A limit can never be set above the platform&apos;s ceiling.</p>
+          </Details>
           <FieldGroup title="Size and daily limits" fields={LIMIT_FIELDS} drafts={drafts} touched={touched} ceilingOf={ceilingOf} minimumOf={minimumOf} problemOf={problemOf}
             onChange={(k, v) => setDrafts((d) => ({ ...d, [k]: v }))} onBlur={(k) => setTouched((t) => ({ ...t, [k]: true }))} />
           <PauseChoice value={pauseDraft} onChange={setPauseDraft} resumedText={pauseDraft === "until_resume" ? resumedText : null} />
@@ -246,6 +249,9 @@ export default function RiskV2(_props: PageProps = {}) {
       <MarketEventsV2 user={user} defaultCut={config?.event_size_cut_pct ?? null} nonce={eventsNonce} onChanged={refreshGuardian} />
       <OrgLimitsV2 canEdit={canEditOrg} />
       <RiskChecksV2 />
+
+      {/* UX-11b C5: said once for the page (it repeated in the intro, the guardian card and the pause choice). */}
+      <PageFootnote>Exits are never blocked by these limits.</PageFootnote>
     </div>
   );
 }
@@ -295,7 +301,7 @@ function PauseChoice({ value, onChange, resumedText }: { value: LossStreakPause;
   return (
     <fieldset className="mt-space-5" data-field="loss_streak_pause">
       <legend className="text-t14 font-semibold text-fg">After the losses-in-a-row limit</legend>
-      <p className="mt-space-1 text-t13 text-fg-muted">When new entries start again once your losses in a row reach the limit above. Exits are never paused.</p>
+      <p className="mt-space-1 text-t13 text-fg-muted">When new entries start again once your losses in a row reach the limit above.</p>
       <div className="mt-space-3 grid grid-cols-1 gap-space-3 sm:grid-cols-2">
         {LOSS_STREAK_CHOICES.map((c) => {
           const id = `${name}-${c.value}`;

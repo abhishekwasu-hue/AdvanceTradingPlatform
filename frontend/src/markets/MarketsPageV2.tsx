@@ -8,9 +8,13 @@ import { chartTabPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
 import { PageTabs } from "../ui/PageTabs";
 import { SubTabs } from "../ui/SubTabs";
+import { Chip } from "../ui/Chip";
+import { KeyValueTable, type KeyValueRow } from "../ui/KeyValueTable";
+import { ProgressStat } from "../ui/ProgressStat";
+import { Signed } from "../ui/Signed";
 import {
-  PERIODS, UNKNOWN, advanceShare, asOfText, breadthText, closeText, dishLines, fetchList, fetchOverview, heatClass, isPeriod,
-  leadersAndLaggards, moveText, rankGroups, relativeText, toneText, type ListMember, type MarketGroup, type MarketList,
+  PERIODS, UNKNOWN, advanceShare, asOfText, breadthText, closeText, dishFacts, fetchList, fetchOverview, heatClass, isPeriod,
+  leadersAndLaggards, moveText, rankGroups, relativeText, type ListMember, type MarketGroup, type MarketList,
   type MarketsOverview, type Mover, type Period,
 } from "./model";
 
@@ -51,8 +55,10 @@ function Segmented<T extends string>({ label, items, value, onChange }: {
   return <SubTabs kind="toggle" label={label} items={items} value={value} onChange={onChange} size="sm" />;
 }
 
+/** A move: Signed (▲ / ▼ with the sign - UX-11b C4, never colour alone), or "I don't know" when not stored. */
 function Move({ value, className = "" }: { value: number | null; className?: string }) {
-  return <span className={cx("font-tabular font-semibold", toneText(value), value === null && "font-normal", className)}>{moveText(value)}</span>;
+  if (value === null) return <span className={cx("font-tabular text-fg-muted", className)}>{moveText(value)}</span>;
+  return <Signed value={value} kind="pct" className={cx("font-semibold", className)} />;
 }
 
 /** The share of rising stocks as a thin bar (rose / fell), with the counts in words for screen readers. */
@@ -88,7 +94,20 @@ function Movers({ title, rows }: { title: string; rows: Mover[] }) {
   );
 }
 
-/** "Strongest BK1 +3.00% · Weakest BK2 −1.00%" for a tile or a row, or null when no stock has a move. */
+/** UX-11b C4: the strongest / weakest stock of a tile or row with Signed moves, or null when no stock has a move. */
+function Extremes({ g, period, className }: { g: MarketGroup; period: Period; className: string }) {
+  const top = g.strongest[period]?.[0];
+  const bottom = g.weakest[period]?.[0];
+  if (!top && !bottom) return null;
+  return (
+    <div data-extremes className={cx("flex min-w-0 flex-wrap gap-x-space-2 text-t12 text-fg-muted", className)} title={extremesText(g, period) ?? ""}>
+      {top && <span className="inline-flex items-baseline gap-space-1 truncate">{top.symbol} <Signed value={top.change} kind="pct" /></span>}
+      {bottom && <span className="inline-flex items-baseline gap-space-1 truncate">{bottom.symbol} <Signed value={bottom.change} kind="pct" /></span>}
+    </div>
+  );
+}
+
+/** "Strongest BK1 +3.00% · Weakest BK2 −1.00%" (the tile's title text), or null when no stock has a move. */
 function extremesText(g: MarketGroup, period: Period): string | null {
   const top = g.strongest[period]?.[0];
   const bottom = g.weakest[period]?.[0];
@@ -119,7 +138,7 @@ function Tile({ g, view, period, benchmark }: { g: MarketGroup; view: View; peri
       <Move value={v} className={cx("mt-space-1 block", v === null ? "text-t14" : "text-t20")} />
       {rel && <div className="truncate text-t12 text-fg-muted">{rel}</div>}
       <BreadthBar group={g} period={period} />
-      {extremesText(g, period) && <div data-extremes className="mt-space-1 truncate text-t12 text-fg-muted" title={extremesText(g, period) ?? ""}>{extremesText(g, period)}</div>}
+      <Extremes g={g} period={period} className="mt-space-1" />
     </>
   );
   const cls = cx("block min-h-[7.5rem] rounded-panel border border-subtle p-space-3 transition-colors duration-fast", heatClass(v, period));
@@ -132,13 +151,12 @@ function Tile({ g, view, period, benchmark }: { g: MarketGroup; view: View; peri
 function Row({ g, view, period }: { g: MarketGroup; view: View; period: Period }) {
   const to = groupLink(g, view, period);
   const text = breadthText(g.breadth?.[period] ?? null);
-  const extremes = extremesText(g, period);
   const body = (
     <>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-t14 font-medium text-fg">{g.name}</span>
         {text && <span className="block truncate text-t12 text-fg-muted">{text}</span>}
-        {extremes && <span className="block truncate text-t12 text-fg-muted">{extremes}</span>}
+        <Extremes g={g} period={period} className="" />
       </span>
       <span className={cx("shrink-0 rounded-control px-space-2 py-space-1 text-t14", heatClass(g.change[period], period))}>
         <Move value={g.change[period]} />
@@ -336,14 +354,24 @@ function Board({ data, view, period }: { data: MarketsOverview; view: View; peri
   );
 }
 
+/** UX-11b C4: the market at a glance as numbers - the benchmark's Signed move, the strongest / weakest sector chips and
+ * the share of sectors that rose (a progress bar). The same facts as `dishLines` (kept for its tests and words). */
 function Dish({ data, period }: { data: MarketsOverview; period: Period }) {
-  const lines = dishLines(data, period);
+  const f = dishFacts(data, period);
+  const rows: KeyValueRow[] = [{ label: f.bench.name, testId: "benchmark", value: <Move value={f.bench.change} /> }];
+  if (f.strongest) {
+    rows.push({ label: <span className="inline-flex items-center gap-space-2">Strongest <Chip tone="up" variant="meaning" icon="▲" name="leader">{f.strongest.name}</Chip></span>,
+      testId: "leader", value: <Signed value={f.strongest.change} kind="pct" /> });
+  }
+  if (f.weakest) {
+    rows.push({ label: <span className="inline-flex items-center gap-space-2">Weakest <Chip tone="down" variant="meaning" icon="▼" name="laggard">{f.weakest.name}</Chip></span>,
+      testId: "laggard", value: <Signed value={f.weakest.change} kind="pct" /> });
+  }
   return (
     <section aria-label="The market at a glance" data-block="markets-dish" className={cx(CARD, "p-space-4 md:p-space-5")}>
       <div className="text-t12 font-medium text-fg-muted">{asOfText(data.as_of, period)}</div>
-      <ul className="mt-space-2 space-y-space-1">
-        {lines.map((l) => <li key={l} className="text-t15 text-fg">{l}</li>)}
-      </ul>
+      <KeyValueTable caption="The market at a glance" rows={rows} className="mt-space-2" />
+      {f.known > 0 && <ProgressStat label="Sectors that rose" done={f.up} of={f.known} className="mt-space-2" />}
       {data.stale && <p role="status" className="mt-space-3 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn">The latest closes are not in yet, so these moves are from an earlier session.</p>}
     </section>
   );

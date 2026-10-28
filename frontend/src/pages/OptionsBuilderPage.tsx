@@ -9,6 +9,7 @@
  * are the trader's inputs - nothing is defaulted to one instrument. Template premiums are the model's until real ones
  * are typed, and are marked so.
  */
+import { Details } from "../ui/Details";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Layers, Save } from "lucide-react";
 import { ApiError } from "../api/errors";
@@ -204,7 +205,11 @@ export default function OptionsBuilderPage(_props: PageProps) {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Options Builder" description="Build a strategy, see its payoff today and at expiry, and read the numbers before you trade. Model estimates for research, not advice." />
+      {/* UX-11b C5: one line; the model note on demand. */}
+      <PageHeader title="Options Builder" description="Build a strategy and see its payoff." />
+      <Details id="options-builder.about" label="About these numbers" className="mt-0">
+        <p>See the payoff today and at expiry, and read the numbers before you trade. Model estimates for research, not advice.</p>
+      </Details>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]" style={{ gridTemplateAreas: builderAreas(wide, legs.length > 0) }} data-testid="builder-grid">
         <section aria-label="Instrument" style={{ gridArea: "inst" }} className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-surface-1 p-4 sm:grid-cols-4 xl:grid-cols-9">

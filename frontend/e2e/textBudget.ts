@@ -4,7 +4,8 @@ import { cardTextProblems, type CardText } from "../src/ui/textBudget";
 /**
  * UX-11 U6: what the text-budget guard reads on a real page. A card is a v2 card section (`section[aria-labelledby]`),
  * a page block (`section[data-block]`), a Terminal panel (`[data-panel]`) or anything marked `[data-card]`. Its visible lines are the paragraphs that belong to it (not a nested card's) and are
- * shown, outside Details, alerts / status lines, empty states and the page footnote.
+ * shown, outside Details, alerts / status lines, empty states and the page footnote - and (UX-11b C7) its bullet
+ * prose: list items that read as sentences.
  */
 export async function readCards(page: Page): Promise<CardText[]> {
   return page.evaluate(() => {
@@ -17,6 +18,15 @@ export async function readCards(page: Page): Promise<CardText[]> {
         .filter((p) => p.closest(CARD) === card && !p.closest(SKIP) && p.offsetParent !== null)
         .map((p) => (p.innerText || "").replace(/\s+/g, " ").trim())
         .filter(Boolean);
+      // UX-11b C7: bullet prose counts too - a list item that reads as a sentence (ends in . ! or ?, four or more words),
+      // not a row of a list (a symbol and its numbers) and not a link or a button. Same exclusions as a paragraph.
+      const LI_SKIP = SKIP.replace(/, li\b/, "");
+      const prose = Array.from(card.querySelectorAll<HTMLElement>("li"))
+        .filter((li) => li.closest(CARD) === card && !li.parentElement?.closest(LI_SKIP) && !li.closest("nav") && li.offsetParent !== null)
+        .filter((li) => !li.querySelector("li, div, p, table, button, input, [data-signed]"))   // a row with blocks or numbers is data
+        .map((li) => (li.innerText || "").replace(/\s+/g, " ").trim())
+        .filter((t) => /[.!?]$/.test(t) && t.split(" ").filter((w) => /\p{L}/u.test(w)).length >= 4);
+      lines.push(...prose);
       return { card: title, lines };
     });
   });

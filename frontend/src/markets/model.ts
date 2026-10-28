@@ -195,6 +195,24 @@ export function dishLines(o: MarketsOverview, period: Period): string[] {
   return lines;
 }
 
+/** UX-11b C4: the dish's facts for the page to show as numbers - the benchmark's move, the strongest / weakest sector
+ * and how many sectors rose (null where not known). */
+export function dishFacts(o: MarketsOverview, period: Period): {
+  bench: { name: string; change: number | null };
+  strongest: { name: string; change: number } | null;
+  weakest: { name: string; change: number } | null;
+  up: number; known: number;
+} {
+  const { leaders, laggards } = leadersAndLaggards(o.sectors, period, 1);
+  const known = o.sectors.filter((s) => s.change[period] !== null);
+  const pick = (g: (typeof leaders)[number] | undefined) => (g && g.change[period] !== null ? { name: g.name, change: g.change[period] as number } : null);
+  return {
+    bench: { name: o.benchmark.name, change: o.benchmark.change[period] },
+    strongest: pick(leaders[0]), weakest: pick(laggards[0]),
+    up: known.filter((s) => (s.change[period] ?? 0) > 0).length, known: known.length,
+  };
+}
+
 /** A stock's close, or "–" when not stored. */
 export function closeText(v: number | null | undefined): string {
   return typeof v === "number" && Number.isFinite(v) ? formatNumber(v, 2) : EMPTY;

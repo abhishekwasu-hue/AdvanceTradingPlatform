@@ -177,3 +177,15 @@ async def _count(tenant_id):
 def test_snapshot_rows_round_trip():
     rows = gc.snapshot_rows(7, QUOTES, NOW)
     assert rows[0].kind == "GLOBAL" and rows[0].exchange == "GLOBAL" and json.loads(rows[1].payload_json)["key"] == "BRENT"
+
+
+def test_ux11b_c8_no_clock_framing_reaches_the_user():
+    """UX-11b C8: the cues describe; no clock-time line ("first 15 minutes", "opening range") and no instruction - they
+    reach the Copilot's market background through market_memory.describe()."""
+    now = datetime(2031, 6, 11, 2, 0, tzinfo=timezone.utc)
+    for move in (-1.2, 1.2):
+        lines = gc.view("en", [{"symbol": "SP500_FUT", "change_pct": move, "payload": {"as_of": now.isoformat()}}], now)
+        text = " ".join(lines).lower()
+        assert "us futures are" in text
+        for clock in ("first 15 minutes", "opening range", "wait for", "settle before"):
+            assert clock not in text

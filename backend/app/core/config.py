@@ -11,6 +11,12 @@ load_dotenv()
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
 # P0.1: environments that must boot with a hardened configuration and never create tables outside Alembic.
 HARDENED_ENVIRONMENTS = ("production", "staging")
+
+
+def api_docs_enabled(environment: str = ENVIRONMENT) -> bool:
+    """AUD-G1.3 (owner audit 28 Oct): the interactive API docs (/docs, /redoc, /openapi.json) exist in development only;
+    production and staging serve none of them (the edge already routes those paths to the web app)."""
+    return environment not in HARDENED_ENVIRONMENTS
 APP_VERSION = os.environ.get("APP_VERSION", "1.0.0")
 # P0.3 / S14: access tokens carry iss/aud and a key id; JWT_PREVIOUS_SECRET_KEYS (comma-separated) keeps tokens
 # signed with an older secret verifiable through a rotation. JWT_ACCEPT_LEGACY=true (default) also accepts tokens

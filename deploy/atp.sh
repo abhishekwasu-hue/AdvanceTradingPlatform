@@ -784,6 +784,13 @@ print(s, "|", "last ok", c.get("last_ok_at") or "never", "|", c.get("rows") or 0
     bad "caddy runs an older Caddyfile than deploy/$(env_get CADDYFILE | grep . || echo Caddyfile) - run: $ATP_DIR/deploy/atp.sh deploy"
   fi
   if [ "$(env_get CADDYFILE)" != "Caddyfile.ip" ]; then public_domain_check "$domain"; fi
+  step "API docs"
+  # AUD-G1.3: the API serves no interactive docs or schema in production (checked on the API itself, not via the edge).
+  local docs_code p
+  for p in /docs /redoc /openapi.json; do
+    docs_code="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "$API$p" 2>/dev/null || true)"
+    if [ "$docs_code" = "404" ]; then ok "API $p -> 404 (not served)"; else warn "API $p -> ${docs_code:-no answer} (expected 404 in production)"; fi
+  done
 
   step "release"
   local cur; cur="$(current_sha)"

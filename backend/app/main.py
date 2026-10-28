@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.rate_limit import user_rate_limit
 from app.core.route_cache import install as install_route_cache
-from app.core.config import ALLOWED_ORIGINS, APP_VERSION, ENVIRONMENT, MAX_REQUEST_BODY_BYTES, tables_created_at_startup, validate_production_config
+from app.core.config import ALLOWED_ORIGINS, APP_VERSION, ENVIRONMENT, MAX_REQUEST_BODY_BYTES, api_docs_enabled, tables_created_at_startup, validate_production_config
 from app.core.logging_config import configure_logging
 from app.core.enums import ExecutionMode, OrderStatus
 from app.core.models import (
@@ -216,6 +216,10 @@ app = FastAPI(
                 "Educational tooling; nothing here is investment advice.",
     version=APP_VERSION,
     lifespan=_lifespan,
+    # AUD-G1.3: no interactive docs or schema outside development.
+    docs_url="/docs" if api_docs_enabled() else None,
+    redoc_url="/redoc" if api_docs_enabled() else None,
+    openapi_url="/openapi.json" if api_docs_enabled() else None,
 )
 # 422s keep FastAPI's shape but never echo the rejected input (it may be a credential).
 app.add_exception_handler(RequestValidationError, request_validation_handler)

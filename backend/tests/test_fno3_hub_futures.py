@@ -356,13 +356,17 @@ def test_the_contract_route_and_the_ticket_accept_a_future(fut):
     assert client.post("/api/paper/fno/order/preview", headers=t["headers"],
                        json={**_fbody(expiry), "right": "CE"}).status_code == 422
 
+    # DEF-0: no built-in "a future needs a stop" - only the user's own my_limits setting asks for it.
     view = client.post("/api/paper/fno/order/preview", headers=t["headers"], json=_fbody(expiry)).json()
-    assert any("A future needs a stop-loss" in e for e in view["errors"]) and not view["can_place"]
+    assert not any("stop-loss on a future" in e or "needs a stop-loss" in e for e in view["errors"]), view["errors"]
+    assert client.put("/api/me/prefs/my_limits", headers=t["headers"], json={"stop_required_on_sold": True}).status_code == 200
+    view = client.post("/api/paper/fno/order/preview", headers=t["headers"], json=_fbody(expiry)).json()
+    assert any("Your setting asks for a stop-loss on a future" in e for e in view["errors"]) and not view["can_place"]
     view = client.post("/api/paper/fno/order/preview", headers=t["headers"], json=_fbody(expiry, stop_loss=990.0)).json()
     assert view["can_place"] is True, view
     assert view["lot_size"] == LOT and view["units"] == LOT and view["fill_price"] == 1000.0
     assert view["max_loss"]["value"] == pytest.approx(10.0 * LOT)               # (1000 - 990) x 50
-    assert view["margin"]["value"] is None and "SPAN" in view["margin"]["basis"] and "50,000" in view["margin"]["note"]
+    assert view["margin"]["value"] is None and view["margin"]["basis"].startswith("Margin not available") and "50,000" in view["margin"]["note"]
     sold = client.post("/api/paper/fno/order/preview", headers=t["headers"], json=_fbody(expiry, side="SELL", stop_loss=990.0)).json()
     assert any("must be above the price" in e and "sold future" in e for e in sold["errors"])
     sold = client.post("/api/paper/fno/order/preview", headers=t["headers"], json=_fbody(expiry, side="SELL", stop_loss=1008.0)).json()
@@ -439,8 +443,12 @@ def test_a_future_leg_needs_a_stop_and_is_placed_paper_first(covered, monkeypatc
     from tests.test_fno2_basket import _lock as basket_lock, _orders as basket_orders, _org_tenant as basket_tenant, _post
     expiry, fut_symbol, call_symbol, lot = covered
     t = basket_tenant("fut-exec")
+    # DEF-0: the future leg's stop is required only by the user's own my_limits setting.
     view = _post(t, "preview", {"legs": _covered_legs(expiry, fut_stop=None), "spot": 30000.0})
-    assert not view["can_execute"] and any("A future needs a stop-loss" in e for r in view["legs"] for e in r["errors"])
+    assert not any("stop-loss on a future" in e for r in view["legs"] for e in r["errors"]), view["legs"]
+    assert client.put("/api/me/prefs/my_limits", headers=t["headers"], json={"stop_required_on_sold": True}).status_code == 200
+    view = _post(t, "preview", {"legs": _covered_legs(expiry, fut_stop=None), "spot": 30000.0})
+    assert not view["can_execute"] and any("Your setting asks for a stop-loss on a future" in e for r in view["legs"] for e in r["errors"])
     basket_lock(t["tenant_id"], True)
     try:
         asserted = []

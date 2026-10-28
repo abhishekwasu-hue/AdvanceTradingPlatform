@@ -294,6 +294,14 @@ class TradingDefaultsPrefs(_Prefs):
     ticket: Optional[TicketDefaults] = None
 
 
+class MyLimitsPrefs(_Prefs):
+    """`my_limits` (DEF-0, owner 28 Oct): the trader's own switches the server reads - each off until he turns it on.
+    D4 `limit_by_experience`: "Limit me by my experience level" (the experience_levels gates apply only then).
+    D7 `stop_required_on_sold`: "A sold option or a future needs a stop-loss" on the order ticket."""
+    limit_by_experience: Optional[bool] = None
+    stop_required_on_sold: Optional[bool] = None
+
+
 class DailyRhythmPrefs(_Prefs):
     """`daily_rhythm` (Master Order 4, app/rhythm): whether the user's daily digests also go to his Telegram, and which.
     Telegram is OFF until the user turns it on; the mid-session pulse is optional and off by default. The digests on the
@@ -482,7 +490,7 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
                                        "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs,
                                        "option_chain": OptionChainPrefs, "terminal": TerminalPrefs,
-                                       "strategy_exits": StrategyExitPrefs}
+                                       "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -616,3 +624,10 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
 
 
 __all__ = ["router", "NAMESPACES", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+
+
+async def own_limits(session: AsyncSession, user: User) -> Dict[str, Any]:
+    """DEF-0: this user's `my_limits` switches as the schema reads them (every one None = off when he saved none)."""
+    raw = await session.scalar(select(UserPrefsRecord.value_json).where(*_own(user.tenant_id, user.id),
+                                                                         UserPrefsRecord.namespace == "my_limits"))
+    return stored_value("my_limits", raw)

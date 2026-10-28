@@ -356,6 +356,9 @@ async def execute_signal_for_user(
             order_style=order_style or "MARKET", market_protection_pct=market_protection_pct,
             is_option=(contract.kind.value == "OPTION") if contract is not None else None,
             paper_execution=paper_execution, freeze_quantity=freeze_quantity,
+            # DEF-0 D3: an Autopilot option with no premium stop of the trader's own gets no broker stop at its premium
+            place_protective_stop=not (plan is not None and plan.meta.get("instrument_kind") == "OPTION"
+                                       and plan.meta.get("premium_stop_pct") is None),
         )
         async def hierarchy_check(quantity: float):
             # Phase I1: every applicable risk limit (GLOBAL -> TENANT -> USER -> ACCOUNT ->

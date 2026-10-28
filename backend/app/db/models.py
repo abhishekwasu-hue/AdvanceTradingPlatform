@@ -581,6 +581,9 @@ class StrategyDeploymentRecord(Base):
     spread_width: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     target_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     stop_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # DEF-0 PR 4: close the structure when the underlying breaches a short strike / crosses a breakeven - only when the
+    # trader turned it on (NULL / false = off).
+    underlying_breach_exit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # Phase U: the free-form structure's legs (JSON list of {right, role, strike_rule,
     # strike_offset, ratio}) when option_strategy is CUSTOM - see app/instruments/spreads.py.
     custom_legs: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -44,6 +44,18 @@ def _no_instrument_master_download(monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _no_broker_margin_call(monkeypatch):
+    """DEF-0 D8: the order ticket asks the user's own broker for its margin. Tests never call a broker: the read answers
+    "no answer"; tests/test_def0_ui.py stubs an answer to show the estimate."""
+    from app.paper import fno_ticket
+
+    async def _none(*_args, **_kw):
+        return None
+    monkeypatch.setattr(fno_ticket, "read_broker_margin", _none)
+    yield
+
+
 @pytest.fixture(autouse=True, scope="module")
 def _platform_state_reset_per_module():
     yield

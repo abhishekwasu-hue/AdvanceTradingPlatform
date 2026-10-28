@@ -295,8 +295,12 @@ def test_a_sold_leg_without_a_stop_refuses_the_whole_basket(condor):
     t = _org_tenant("stop")
     body = _condor_legs(expiry, legs)
     body[0].pop("stop_loss")
+    # DEF-0: a stop on a sold leg is required only by the user's own my_limits setting (no built-in rule).
+    view = _post(t, "preview", {"legs": body, "spot": base})
+    assert not any("stop-loss on a sold option" in e for r in view["legs"] for e in r["errors"]), view["legs"]
+    assert client.put("/api/me/prefs/my_limits", headers=t["headers"], json={"stop_required_on_sold": True}).status_code == 200
     out = _post(t, "execute", {"legs": body, "basket_ref": uuid.uuid4().hex})
-    assert out["status"] == "REFUSED" and any("needs a stop-loss" in r for r in out["reasons"])
+    assert out["status"] == "REFUSED" and any("Your setting asks for a stop-loss on a sold option" in r for r in out["reasons"]), out
     assert _orders(t["tenant_id"]) == []
 
 

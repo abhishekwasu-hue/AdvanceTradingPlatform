@@ -42,6 +42,7 @@ from app.quality.lookahead import synthetic_bars
 from app.strategy_templates import compile as C
 from app.strategy_templates import exits as X, library
 from app.strategy_templates.adapter import TemplateStrategy
+from tests.def0_legacy import legacy
 
 RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5, min_risk_reward=0.5)
 D1 = library.get("D1")
@@ -66,8 +67,11 @@ def _hash(result) -> str:
     return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
-SINGLE = OptionBacktestConfig(implied_volatility=0.14)
-SPREAD = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2)
+# DEF-0: the old built-in exit levels (bought premium floor 30%, credit target 50% / stop 100%, the short-strike breach exit)
+# set explicitly, so the runs (and the pins below) are the same as before.
+SINGLE = OptionBacktestConfig(implied_volatility=0.14, premium_stop_pct=30.0)
+SPREAD = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2,
+                              target_credit_pct=50, stop_credit_pct=100, underlying_breach_exit=True)
 
 
 def _option_config(base: OptionBacktestConfig, **changes) -> OptionBacktestConfig:
@@ -88,7 +92,8 @@ BASE_PINS = {
     "E3:7:single": "4de168a943f8d179", "E3:7:spread": "afa8859718b00294", "E3:7:underlying": "9633ed416e99a8e9",
 }
 # P1-2b: the pins were recorded with the then built-in minimum reward:risk 1.2; it is stated here so they stay comparable.
-PIN_RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5, min_risk_reward=1.2)
+# DEF-0: the pins were recorded under the old platform risk limits too - set explicitly (tests/def0_legacy.py).
+PIN_RISK = legacy(capital=10_000_000, risk_per_trade_pct=0.5, min_risk_reward=1.2)
 
 
 def _run_pins(choice=None):
@@ -432,7 +437,7 @@ def test_the_live_order_plan_and_the_contract_rules_follow_the_stop_source():
 
     class Dep:
         instrument_kind, option_position, expiry_rule, strike_rule, strike_offset = "OPTION", "BUY", None, None, 0
-        premium_stop_pct, max_lots, strike_filters, stop_source = None, 1, None, "PREMIUM_PCT"
+        premium_stop_pct, max_lots, strike_filters, stop_source = 30.0, 1, None, "PREMIUM_PCT"   # DEF-0: his own 30% floor
     rules = ContractRules.from_deployment(Dep())
     assert rules.underlying_stop is False
     Dep.stop_source = None

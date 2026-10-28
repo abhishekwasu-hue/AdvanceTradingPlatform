@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 MAX_LEGS = 12                       # the Options Builder's limit for one strategy
 NEUTRAL_WIDTH_STEPS = 2             # a neutral starting width the user edits (no setting of their own)
 NEUTRAL_LOTS = 1
-NEUTRAL_STOP_PCT = 50.0             # the platform's default stop for a written option (app/instruments/contracts.py)
+# DEF-0 D3 (owner, 28 Oct): no built-in stop for a sold leg - the trader's own premium stop, else none (he sets each leg)
 
 
 @dataclass
@@ -158,16 +158,16 @@ async def settings(session: AsyncSession, user: User, underlying: str) -> Dict[s
     rows.sort(key=lambda d: (master.underlying_of(d.symbol) != name, d.status != "ACTIVE"))    # stable: newest first within
     dep = rows[0] if rows else None
     if dep is None:
-        return {"source": None, "width_steps": NEUTRAL_WIDTH_STEPS, "lots": NEUTRAL_LOTS, "stop_pct": NEUTRAL_STOP_PCT,
+        return {"source": None, "width_steps": NEUTRAL_WIDTH_STEPS, "lots": NEUTRAL_LOTS, "stop_pct": None,
                 "note": (f"You have no options settings yet, so a neutral start is used: wings {NEUTRAL_WIDTH_STEPS} strikes apart, "
-                         f"{NEUTRAL_LOTS} lot, a sold leg's stop-loss {NEUTRAL_STOP_PCT:g}% above its price. Edit any leg.")}
+                         f"{NEUTRAL_LOTS} lot, no stop-loss on a sold leg until you set one. Edit any leg.")}
     width = int(dep.spread_width or NEUTRAL_WIDTH_STEPS)
     lots = int(dep.max_lots or NEUTRAL_LOTS)
-    stop = float(dep.premium_stop_pct) if dep.premium_stop_pct is not None else NEUTRAL_STOP_PCT
+    stop = float(dep.premium_stop_pct) if dep.premium_stop_pct is not None else None
     where = f"{dep.strategy_id} on {dep.symbol}"
+    stop_text = f"a sold leg's stop-loss {stop:g}% above its price" if stop is not None else "no stop-loss on a sold leg until you set one"
     return {"source": where, "width_steps": width, "lots": lots, "stop_pct": stop,
-            "note": f"From your settings ({where}): wings {width} strikes apart, {lots} lot{'s' if lots != 1 else ''}, a sold leg's "
-                    f"stop-loss {stop:g}% above its price{'' if dep.premium_stop_pct is not None else ' (the default)'}. Edit any leg."}
+            "note": f"From your settings ({where}): wings {width} strikes apart, {lots} lot{'s' if lots != 1 else ''}, {stop_text}. Edit any leg."}
 
 
 # --- the confirm step and Execute basket ----------------------------------------------------------------------------

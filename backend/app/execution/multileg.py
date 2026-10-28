@@ -99,6 +99,7 @@ async def execute_structure(
     rules: ContractRules, target_credit_pct: Optional[float], stop_credit_pct: Optional[float],
     idempotency_key: str, broker: Optional[BrokerInterface] = None, quote_broker: Optional[BrokerInterface] = None,
     deployment_id: Optional[int] = None, risk_config: Optional[RiskConfig] = None, account_id: Optional[int] = None,
+    underlying_exit: bool = False,
 ) -> StructureResult:
     started = time.perf_counter()
     tenant = await session.get(Tenant, user.tenant_id)
@@ -158,7 +159,8 @@ async def execute_structure(
             raise ContractExecutionError("No broker session to quote the legs from")
         for leg in structure.legs:
             premiums[leg.contract.tradingsymbol] = await contract_ltp(price_source, leg.contract)
-        metrics = structure_metrics(structure, premiums, target_credit_pct=target_credit_pct, stop_credit_pct=stop_credit_pct)
+        metrics = structure_metrics(structure, premiums, target_credit_pct=target_credit_pct, stop_credit_pct=stop_credit_pct,
+                                    underlying_exit=underlying_exit)
     except (ContractExecutionError, ContractResolutionError) as exc:
         reasons = [str(exc)]
         await _reject_all(session, orders, reasons)
@@ -207,6 +209,12 @@ async def execute_structure(
         "symbol": structure.underlying_symbol, "direction": SignalDirection.SHORT, "entry": basis,
         "stop_loss": round(basis + metrics.risk_per_unit, 2), "target1": None, "target2": None, "risk_reward": None,
     })
+    if cfg.risk_amount() is not None and metrics.risk_per_unit <= 0:
+        # DEF-0: the trader's risk per trade sizes off the loss the stop accepts - an undefined-risk structure needs his stop
+        reasons = list(structure.notes) + ["This structure has no limit to its loss and no stop-loss is set, so your risk per trade cannot size it. "
+                           "Set a stop for it, or clear the risk per trade in My limits."]
+        await _reject_all(session, orders, reasons)
+        return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
     decision = RiskManager(cfg).validate_and_size(sizing_signal, state, contract_spec=spec,
                                                   requested_quantity=float(rules.max_lots * lot) if rules.max_lots else None)
     notes = list(structure.notes) + [_economics_note(metrics, lot)] + guardian_notes
@@ -353,11 +361,15 @@ def _leg_meta(leg, *, structure: ResolvedStructure, lot: int, signal: Signal, gr
 
 
 def leg_stop(fill_price: float, role: str, *, debit: bool, stop_credit_pct: Optional[float]) -> float:
-    """Per-leg levels are informational: the group exit is what closes the position."""
-    stop = round(fill_price * (2.0 if role == "SHORT" else 0.0), 2)
-    if debit and role == "LONG":
-        stop = round(fill_price * (1 - min(stop_credit_pct if stop_credit_pct is not None else 50.0, 100.0) / 100.0), 2)
-    return stop
+    """Per-leg levels are informational: the group exit is what closes the position (legs are never judged one by one).
+    DEF-0 D3: derived from the trader's own structure stop only; with none set a leg carries no level (0 = none)."""
+    if stop_credit_pct is None:
+        return 0.0
+    if role == "SHORT" and not debit:
+        return round(fill_price * (1 + stop_credit_pct / 100.0), 2)
+    if role == "LONG" and debit:
+        return round(fill_price * (1 - min(stop_credit_pct, 100.0) / 100.0), 2)
+    return 0.0
 
 
 async def _book_legs(
@@ -464,23 +476,22 @@ async def _smart_not_complete(
 
 def _economics_note(metrics: StructureMetrics, lot: int) -> str:
     be = ", ".join(f"{b:g}" for b in metrics.breakevens) or "n/a"
-    if metrics.pnl_stop is not None:
+    exits = metrics.exit_summary()          # DEF-0 D3: exactly the exits the trader set ("no target or stop set")
+    undefined = (f"UNDEFINED max loss - sized off the stop ({metrics.risk_per_unit:g}/unit, {metrics.risk_per_unit * lot:,.0f}/lot)"
+                 if metrics.risk_per_unit > 0 else "UNDEFINED max loss - no stop set")
+    if metrics.payoff:
         # Phase U: payoff-priced structure, exits as P&L per unit.
         side = f"net credit {metrics.net_credit:g}" if metrics.net_credit >= 0 else f"net debit {-metrics.net_credit:g}"
-        loss = f"max loss {metrics.max_loss:g}/unit ({metrics.max_loss * lot:,.0f}/lot)" if metrics.max_loss is not None else \
-            f"UNDEFINED max loss - sized off the stop ({metrics.risk_per_unit:g}/unit, {metrics.risk_per_unit * lot:,.0f}/lot)"
+        loss = f"max loss {metrics.max_loss:g}/unit ({metrics.max_loss * lot:,.0f}/lot)" if metrics.max_loss is not None else undefined
         profit = f"max profit {metrics.max_profit:g}/unit" if metrics.max_profit is not None else "profit open-ended"
-        return (f"{side[0].upper()}{side[1:]}/unit, {loss}, {profit}, breakeven {be}; "
-                f"exit at P&L >= {metrics.pnl_target:g} or <= {metrics.pnl_stop:g} per unit")
+        return f"{side[0].upper()}{side[1:]}/unit, {loss}, {profit}, breakeven {be}; exits: {exits}"
     if metrics.debit:
         debit = -metrics.net_credit
-        return (f"Net debit {debit:g}/unit ({debit * lot:,.0f}/lot) = max loss, profit open-ended, breakeven {be}; "
-                f"exit at worth >= {metrics.target_value:g} or <= {metrics.stop_value:g}")
+        return f"Net debit {debit:g}/unit ({debit * lot:,.0f}/lot) = max loss, profit open-ended, breakeven {be}; exits: {exits}"
     if not metrics.defined_risk:
-        return (f"Net credit {metrics.net_credit:g}/unit, UNDEFINED max loss - sized off the stop ({metrics.risk_per_unit:g}/unit, "
-                f"{metrics.risk_per_unit * lot:,.0f}/lot), breakeven {be}; exit at value <= {metrics.target_value:g} or >= {metrics.stop_value:g}")
+        return f"Net credit {metrics.net_credit:g}/unit, {undefined}, breakeven {be}; exits: {exits}"
     return (f"Net credit {metrics.net_credit:g}/unit, max loss {metrics.max_loss:g}/unit ({metrics.max_loss * lot:,.0f}/lot), "
-            f"breakeven {be}; exit at value <= {metrics.target_value:g} or >= {metrics.stop_value:g}")
+            f"breakeven {be}; exits: {exits}")
 
 
 async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *, debit_per_unit: Optional[float] = None) -> Tuple[int, str]:

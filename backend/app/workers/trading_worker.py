@@ -1890,6 +1890,7 @@ class TradingWorker:
         result = await execute_structure(
             session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal, structure=structure, rules=rules,
             target_credit_pct=dep.target_credit_pct, stop_credit_pct=dep.stop_credit_pct,
+            underlying_exit=bool(getattr(dep, "underlying_breach_exit", None)),
             idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", broker=broker, quote_broker=market_data.broker,
             deployment_id=dep.id, account_id=account_id,
         )

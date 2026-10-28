@@ -195,9 +195,10 @@ describe("FNO-3 futures chain: each row's actions", () => {
     expect(target).toMatchObject({ right: "FUT", strike: null, lotSize: 75, label: "NIFTY 27 OCT FUT", ltp: 24612.5 });
     const ask = askOf(target, { ...newDraft("BUY", { product: "NRML" }), stopLoss: "24500" }, "ref-12345678");
     expect(ask).toMatchObject({ underlying: "NIFTY", expiry: "2026-10-27", right: "FUT", strike: null, stop_loss: 24500 });
-    expect(draftProblems(newDraft("BUY", { product: "NRML" }), "FUT")).toEqual(["A future needs a stop-loss"]);
-    expect(draftProblems(newDraft("BUY", { product: "NRML" }))).toEqual([]);                       // a bought option still needs none
-    expect(stopHint("BUY", "FUT")).toBe("(needed for a future)");
+    // DEF-0 D7: no stop is forced on any side - only the trader's own setting asks for one (the server says so)
+    expect(draftProblems(newDraft("BUY", { product: "NRML" }), "FUT")).toEqual([]);
+    expect(draftProblems(newDraft("BUY", { product: "NRML" }))).toEqual([]);
+    expect(stopHint("BUY", "FUT")).toBe("(optional)");
   });
 
   it("without the PAPER account there is no Buy / Sell and no basket; without watchlists no watchlist button", () => {
@@ -254,8 +255,8 @@ describe("FNO-3 futures in the basket (FNO-2 panel)", () => {
   it("a future leg is written as traders write it, sent with no strike, and needs a stop-loss on either side", () => {
     expect(contractLabel("NIFTY", "2026-10-27", 0, "FUT")).toBe("NIFTY 27 OCT FUT");
     expect(legLabel({ ...fut, label: null })).toBe("NIFTY 27 OCT FUT");
-    expect(basketProblems([fut])).toEqual(["NIFTY 27 OCT FUT: a future needs a stop-loss."]);
-    expect(basketProblems([{ ...fut, side: "SELL" }])).toEqual(["NIFTY 27 OCT FUT: a future needs a stop-loss."]);
+    expect(basketProblems([fut])).toEqual([]);                              // DEF-0 D7: a stop is his choice
+    expect(basketProblems([{ ...fut, side: "SELL" }])).toEqual([]);
     expect(basketProblems([{ ...fut, stopLoss: 24500 }, call])).toEqual([]);
     const ask = basketAsk([{ ...fut, stopLoss: 24500 }, call], 24550, "NRML");
     expect(ask.legs[0]).toMatchObject({ right: "FUT", strike: null, side: "BUY", stop_loss: 24500, price: 24612.5 });

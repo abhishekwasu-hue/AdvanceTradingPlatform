@@ -95,21 +95,19 @@ const num = (text: string): number | null => {
   return text.trim() !== "" && Number.isFinite(v) && v > 0 ? v : null;
 };
 
-/** The stop-loss field's own words: needed for a sold option and for a future (either side), optional otherwise. */
-export function stopHint(side: Side, right: ContractRight = "CE"): string {
-  if (right === "FUT") return "(needed for a future)";
-  return side === "SELL" ? "(needed for a sold option)" : "(optional)";
+/** The stop-loss field's own words. DEF-0 D7 (owner, 28 Oct): a stop is the trader's choice on every side - only his own
+ * setting "A sold option or a future needs a stop-loss" asks for one, and the server says so in the review. */
+export function stopHint(_side: Side, _right: ContractRight = "CE"): string {
+  return "(optional)";
 }
 
 /** What is missing before the ticket can be reviewed (the server checks everything else). */
-export function draftProblems(d: Draft, right: ContractRight = "CE"): string[] {
+export function draftProblems(d: Draft, _right: ContractRight = "CE"): string[] {
   const out: string[] = [];
   if (d.product === null) out.push(PRODUCT_MISSING);
   const n = needs(d.orderType);
   if (n.price && num(d.price) === null) out.push("Enter the limit price");
   if (n.trigger && num(d.trigger) === null) out.push("Enter the trigger price");
-  if (right === "FUT" && num(d.stopLoss) === null) out.push("A future needs a stop-loss");
-  else if (d.side === "SELL" && num(d.stopLoss) === null) out.push("A sold option needs a stop-loss");
   if (d.stopLoss.trim() !== "" && num(d.stopLoss) === null) out.push("The stop-loss is not a price");
   return out;
 }
@@ -173,4 +171,15 @@ export function newClientRef(): string {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   } catch { /* no crypto: fall back */ }
   return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
+
+/** DEF-0 D6 (owner, 28 Oct): why the order cannot be placed, in one line, and where to change it. Only a rule the
+ * trader set himself, a broker / exchange answer or a LIVE switch can hold an order back (an "Information only" line
+ * never does); his own limits link to the place he changes them. Null when it can be placed. */
+export function blockedBy(p: { can_place: boolean; errors: string[]; refusals: string[] }): { text: string; link: string | null } | null {
+  if (p.can_place) return null;
+  const text = p.errors[0] ?? p.refusals[0] ?? "This order cannot be placed right now.";
+  const own = /your (setting|limit|risk per trade|own)|my limits|limit of|today's loss limit|losses in a row|positions, your limit|experience level/i.test(text);
+  return { text, link: own ? "/risk-management" : null };
 }

@@ -36,7 +36,8 @@ def determine_exit_price(
 
     # TT-7: the touch rule is the shared one (app/trading/trigger_rules.py); the stop is judged first.
     stop_side, target_side = (BELOW, ABOVE) if is_long else (ABOVE, BELOW)
-    if touched(stop_loss, stop_side, low, high):
+    # DEF-0 D7: a short's stop of 0 (or less) is "no stop set" - a real one sits above the price (a long's 0 is never hit)
+    if (is_long or stop_loss > 0) and touched(stop_loss, stop_side, low, high):
         return "Stop Loss", fill(stop_loss, stop=True)
     if target2 is not None and touched(target2, target_side, low, high):
         return "Target 2", fill(target2, stop=False)
@@ -85,7 +86,9 @@ def check_contract_exit(trade: TradeRecord, contract_price: float, underlying_pr
     if kind != "OPTION":
         return check_exit(trade, contract_price)
     bought = trade.direction == "LONG"
-    if (bought and contract_price <= trade.stop_loss) or (not bought and contract_price >= trade.stop_loss):
+    # DEF-0 D3 / D7: no premium stop set = stop 0 (a written option's real ceiling sits above its premium; a bought
+    # option's floor of 0 is never reached)
+    if (bought and contract_price <= trade.stop_loss) or (not bought and trade.stop_loss > 0 and contract_price >= trade.stop_loss):
         return ("Premium floor" if bought else "Premium ceiling"), contract_price
     if underlying_price is not None and trade.underlying_direction:
         hit = underlying_exit(trade.underlying_direction, trade.underlying_stop_loss, trade.underlying_target1,

@@ -2,6 +2,7 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
+from app.core.enums import SignalDirection
 from app.core.models import RiskConfig, RiskDecision, Signal
 from app.instruments.models import ContractSpec
 
@@ -80,15 +81,20 @@ class RiskManager:
             return RiskDecision(approved=False, reasons=reasons)
 
         risk_amount = cfg.risk_amount()
+        unit = contract_spec.lot_size if contract_spec is not None else cfg.lot_size
+        if risk_amount is None:
+            # DEF-0: no risk per trade set - the trader's own size (or one lot); no risk-based cap, so the size does
+            # not depend on the stop distance (an undefined-risk structure with no stop set sizes too).
+            quantity = float(requested_quantity) if requested_quantity is not None and requested_quantity > 0 else float(unit)
+            return RiskDecision(approved=True, quantity=quantity, reasons=["Risk checks passed"])
+
+        if signal.direction == SignalDirection.SHORT and signal.stop_loss <= 0:
+            # DEF-0 D7: a short with no stop set has no limit to its loss - the trader's risk per trade cannot size it
+            return RiskDecision(approved=False, reasons=["No stop-loss is set, so your risk per trade cannot size this short position. "
+                                                         "Set a stop-loss, or clear the risk per trade in My limits."])
         risk_per_unit = abs(signal.entry - signal.stop_loss)
         if risk_per_unit <= 0:
             return RiskDecision(approved=False, reasons=["Invalid risk per unit (entry == stop loss)"])
-
-        unit = contract_spec.lot_size if contract_spec is not None else cfg.lot_size
-        if risk_amount is None:
-            # DEF-0: no risk per trade set - the trader's own size (or one lot); no risk-based cap.
-            quantity = float(requested_quantity) if requested_quantity is not None and requested_quantity > 0 else float(unit)
-            return RiskDecision(approved=True, quantity=quantity, reasons=["Risk checks passed"])
 
         raw_qty = risk_amount / risk_per_unit
 

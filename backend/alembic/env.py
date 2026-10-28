@@ -26,6 +26,12 @@ config.set_main_option("sqlalchemy.url", MIGRATION_DATABASE_URL)
 
 target_metadata = Base.metadata
 
+
+def include_name(name, type_, parent_names) -> bool:
+    """A one-off data backup a migration keeps for the owner (DEF-0: `*_def0_backup`, rows kept as they were before the
+    migration) is not a model table: autogenerate (the schema drift check) leaves it alone."""
+    return not (type_ == "table" and name is not None and name.endswith("_def0_backup"))
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
@@ -48,6 +54,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_name=include_name,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -57,7 +64,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata, include_name=include_name)
 
     with context.begin_transaction():
         context.run_migrations()

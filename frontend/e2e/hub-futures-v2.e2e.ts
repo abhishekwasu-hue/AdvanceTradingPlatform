@@ -184,7 +184,7 @@ test.describe("Symbol hub v2 flows", () => {
     await near.locator("[data-action='buy']").click();
     const ticket = page.locator("[data-order-ticket]");
     await expect(ticket.getByRole("heading")).toHaveText("NIFTY 27 OCT FUT");
-    await expect(ticket.locator("[data-practice-frame]")).toContainText("Practice mode (PAPER)");
+    await expect(ticket.locator("[data-practice-frame]")).toContainText("PAPER");
     await expect(ticket.locator("[data-ticket='units']")).toHaveText("1 lot = 75 qty (lot size 75)");
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
     // DEF-0 D7: no stop is forced on a future (the Advanced part stays closed) - the trader opens it and adds his own

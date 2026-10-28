@@ -3,6 +3,7 @@ import { ArrowLeftRight, ExternalLink, FolderOpen, Layers, Minus, Plus, Save, Sc
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { request } from "../api/client";
 import { cx } from "../components/primitives/cx";
+import { Details } from "../ui/Details";
 import type { ChainExpiry, LiveChain } from "../optionChain/types";
 import { PayoffCanvas } from "../optionsBuilder/PayoffCanvas";
 import type { Leg as BuilderLeg } from "../optionsBuilder/model";
@@ -319,12 +320,14 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-40 bg-scrim/50" />
         <RD.Content aria-describedby={undefined} data-basket-panel data-step={step.kind}
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[94dvh] flex-col overflow-hidden rounded-t-panel border-2 border-warn bg-surface-1 text-fg shadow-raised focus:outline-none md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[44rem] md:rounded-none md:rounded-l-panel">
-          <PracticeFrame />
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[94dvh] flex-col overflow-hidden rounded-t-panel border border-border bg-surface-1 text-fg shadow-raised focus:outline-none md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[44rem] md:rounded-none md:rounded-l-panel">
           <div className="flex items-center justify-between gap-space-3 px-space-4 pt-space-3">
-            <RD.Title className="text-t18 font-semibold text-fg">
-              Basket <span className="text-t14 font-normal text-fg-muted">{legs.length} leg{legs.length === 1 ? "" : "s"}{chain.symbol ? ` · ${chain.symbol}` : ""}</span>
-            </RD.Title>
+            <div className="flex min-w-0 items-center gap-space-2">
+              <RD.Title className="text-t18 font-semibold text-fg">
+                Basket <span className="text-t14 font-normal text-fg-muted">{legs.length} leg{legs.length === 1 ? "" : "s"}{chain.symbol ? ` · ${chain.symbol}` : ""}</span>
+              </RD.Title>
+              <PracticeFrame />
+            </div>
             <RD.Close aria-label="Close" className="-mr-space-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg">
               <X size={18} aria-hidden />
             </RD.Close>
@@ -470,10 +473,8 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
                 <div className="rounded-panel border border-subtle p-space-2" data-basket="payoff">
                   <PayoffCanvas evaluation={numbers} legs={chartLegs(legs, numbers)} spot={spot} step={step ?? 50} onStrikeChange={on.onStrike} />
                 </div>
-                <p className="rounded-control bg-surface-2 px-space-3 py-space-2 text-t14 text-fg" data-basket="plain-words">
-                  <span className="block text-t12 font-semibold text-fg-muted">In plain words (information only)</span>
-                  {payoffSentence(numbers, underlying)}
-                </p>
+                {/* UI-28 U1.2: the payoff in words is on demand (ⓘ Details), never a paragraph under the chart. */}
+                <Details id="basket.payoff-words" label="In plain words" className="mt-0"><p data-basket="plain-words">{payoffSentence(numbers, underlying)}</p></Details>
                 <RiskLineV2 line={ext ? riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget) : null} />
                 {checks && <RiskChecksV2 testId="basket" lines={[...checks, marginLine(hedge?.with_hedge.value ?? numbers.margin.value, budget)]} />}
                 <dl className="rounded-control border border-subtle px-space-3">

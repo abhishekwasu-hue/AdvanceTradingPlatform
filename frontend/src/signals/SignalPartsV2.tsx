@@ -14,6 +14,8 @@ import type { AiAction } from "../types";
 import { formatChange, formatDateIST, formatINR, formatLots, formatNumber, formatPrice, formatSignedINR, formatTimeIST } from "../ui/format";
 import { glossary, type GlossaryKey } from "../ui/glossary";
 import { useColourV2 } from "../ui/colourV2";
+import { Chip } from "../ui/Chip";
+import { Details } from "../ui/Details";
 import { DirectionChip } from "../ui/DirectionChip";
 import {
   canDecide, decisionFailure, decisionMessage, directionLabel, effectiveStatus, levelDelta, riskSentences, sizeAndLoss, sourceCaption, statusLabel,
@@ -237,7 +239,7 @@ export function RiskLines({ proposal }: { proposal?: AiAction }) {
     <section data-risk-lines>
       <h3 className="text-t15 font-semibold text-fg">{lines.length === 0 ? "Your risk limits" : ok ? "Fits your risk limits" : "Check your risk limits"}</h3>
       {lines.length === 0 ? (
-        <p className="mt-space-2 text-t14 text-fg-muted">Your limits are checked again when you approve: a trade that breaks one is not placed.</p>
+        <Details id="signals.limits">Your limits are checked again when you approve: a trade that breaks one is not placed.</Details>
       ) : (
         <ul className="mt-space-2 space-y-space-1 text-t14">
           {lines.map((l) => (
@@ -389,7 +391,13 @@ export function SignalActions({ item, now, compact = false, canTrade, chartTimef
         {compact && <MoreButton item={item} open={moreOpen} controls={menuId} onToggle={() => setMoreOpen((o) => !o)} disabled={busy !== null} />}
       </div>
       {compact && moreOpen && <SnoozeMenu id={menuId} item={item} now={now} onDone={onDone} onError={onError} />}
-      {!compact && <p className="text-t12 text-fg-muted">{live ? "This proposal is on a LIVE deployment: approving asks for your authenticator code first, then places a paper order." : "Paper trade: practice money at the real price. Nothing reaches your broker."}</p>}
+      {/* UI-28 U1.3: the mode is one chip; the sentence is its tooltip (never a paragraph under the buttons). */}
+      {!compact && (
+        <span data-signal-mode={live ? "live" : "paper"}
+          title={live ? "This proposal is on a LIVE deployment: approving asks for your authenticator code first, then places a paper order." : "Paper trade: practice money at the real price. Nothing reaches your broker."}>
+          <Chip tone="warn" variant="meaning" name="mode">{live ? "LIVE · code on approve" : "PAPER"}</Chip>
+        </span>
+      )}
       {stepUp && <StepUpDialog reason={stepUp} onCancel={() => setStepUp(null)} onVerified={() => { setStepUp(null); void approve(); }} />}
     </div>
   );
@@ -452,7 +460,7 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
 function CompactRisk({ proposal }: { proposal?: AiAction }) {
   const lines = riskSentences(proposal);
   const sized = sizeAndLoss(proposal);
-  if (lines.length === 0) return <p className="text-t14 text-fg-muted">Your limits are checked again when you approve.</p>;
+  if (lines.length === 0) return null;   // UI-28 U1.3: no limits set = nothing to show (the server checks again on approve)
   const warn = lines.find((l) => l.warn);
   return (
     <p className="flex items-start gap-space-2 text-t14 text-fg">

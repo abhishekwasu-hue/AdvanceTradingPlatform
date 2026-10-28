@@ -136,7 +136,7 @@ describe("FNO-8B-28 the setting on Settings → My trading defaults", () => {
     const off = page(limitsFormOf(LIMITS_OFF));
     expect(off).toContain("My own liquidity limits (F&O)");
     expect(off).toContain("Use my own limits too");
-    expect(off).toContain("Information only: it never holds back an order or an exit.");
+    expect(off).toContain("It never holds back an order or an exit.");
     expect(off).not.toContain("Max bid-ask gap %");
   });
   it("on: the two limits, with their ranges", () => {

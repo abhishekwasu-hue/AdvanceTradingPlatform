@@ -275,7 +275,7 @@ describe("8b-g: the position now vs with the change he built", () => {
       { label: "Booked now by closing", values: ["–", "₹562.50"] },
     ]);
     const html = text(renderToStaticMarkup(<CompareView columns={columns} underlying="NIFTY" spot={24850} testId="t" />));
-    expect(html).toContain("Now: in plain words (information only)");
+    expect(html).toContain("Now: in plain words");
     expect(html).toContain("If NIFTY closes below 24,935 at expiry you keep up to about ₹2,600; above 24,935 you lose up to about ₹4,900.");
     clean(html);
     clean(COMPARE_NOTE);

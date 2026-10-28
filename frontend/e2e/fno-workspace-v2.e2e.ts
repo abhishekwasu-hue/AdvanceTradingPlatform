@@ -236,7 +236,7 @@ test.describe("FNO-4 positions actions, 1440", () => {
     const short = page.locator("[data-position='301']");
     await short.getByTestId("fno-add").click();
     const ticket = page.locator("[data-order-ticket]");
-    await expect(ticket).toContainText("Practice mode (PAPER)");
+    await expect(ticket.locator("[data-practice-frame]")).toHaveText("PAPER");
     await expect(ticket).toContainText("NIFTY 27 OCT 24900 CE");
     await expect(ticket.locator("[data-ticket='side'] [aria-checked='true']")).toHaveAttribute("data-option", "SELL");
     expect(writes.calls.filter((c) => /\/paper\/fno\/order/.test(c.url))).toEqual([]);

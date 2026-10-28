@@ -319,7 +319,7 @@ test.describe("8b slice 4 flows", () => {
     await ticket.locator("[data-ticket='review']").tap();
     const checks = ticket.locator("[data-risk-checks='ticket']");
     await expect(checks).toContainText("Liquidity: bid-ask gap");
-    await expect(checks).toContainText("Information only: none of this holds back the order or any exit.");
+    await expect(checks).toContainText("None of this holds back the order or any exit.");
     await expect(checks.locator("button, a, input")).toHaveCount(0);
     expect(orderCalls(seen).filter((p) => p.url.endsWith("/paper/fno/order"))).toEqual([]);
     await ticket.locator("[data-ticket='place']").tap();
@@ -336,7 +336,7 @@ test.describe("8b slice 4 flows", () => {
     const checks = ticket.locator("[data-risk-checks='ticket']");
     await expect(checks).toContainText("Liquidity: bid-ask gap");
     await expect(checks).toContainText("Outside your own limits: bid-ask gap 0.7% is above your 0.5%; open interest 4,00,000 is below your 5,00,000.");
-    await expect(checks).toContainText("Information only: none of this holds back the order or any exit.");
+    await expect(checks).toContainText("None of this holds back the order or any exit.");
     await expect(checks.locator("button, a, input")).toHaveCount(0);
     await expect(ticket.locator("[data-ticket='place']")).toBeEnabled();
     await ticket.locator("[data-ticket='place']").tap();

@@ -28,7 +28,7 @@ describe("the ready-made lists' state", () => {
     for (const text of [NOT_FILLED_NOTE, INTRO_LINE]) {
       expect(text).not.toMatch(/watchlists\b|flag|sync|universe|api|buy|sell|target|stop/i);
     }
-    expect(NOT_FILLED_NOTE).toContain("fill after the daily list update");
+    expect(NOT_FILLED_NOTE).toBe("Ready-made lists: not filled yet");   // UI-28 U1.6: an empty-row line, no explanation
   });
 });
 

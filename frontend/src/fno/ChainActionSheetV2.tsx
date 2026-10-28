@@ -97,17 +97,18 @@ export async function watchlistAdd(lists: Lists, contract: FnoContract, list: Wa
 }
 
 /** The ScreenQL condition of a price alert: reaching `level` from where the price is now. */
-export function alertCondition(level: number, ltp: number | null): { condition: string; words: string } {
+export function alertCondition(level: number, ltp: number | null): { condition: string; words: string; sign: string } {
   const above = ltp === null || level >= ltp;
-  return { condition: `close ${above ? ">=" : "<="} ${level}`, words: above ? "at or above" : "at or below" };
+  return { condition: `close ${above ? ">=" : "<="} ${level}`, words: above ? "at or above" : "at or below", sign: above ? "≥" : "≤" };
 }
 
 export async function alertSave(createAlert: CreateAlert, contract: FnoContract, levelText: string, ltp: number | null): Promise<Note> {
   const level = Number(levelText.replace(/,/g, ""));
   if (levelText.trim() === "" || !Number.isFinite(level) || level <= 0) return { tone: "warn", text: "Enter a price for the alert." };
-  const { condition, words } = alertCondition(level, ltp);
+  const { condition, words, sign } = alertCondition(level, ltp);
   try {
-    await createAlert({ name: `${contract.label} ${words} ${level}`.slice(0, 120), kind: "instrument", symbol: contract.tradingsymbol,
+    // UI-28 U1.4: the alert reads in plain words ("Alert when NIFTY 24500 CE ≥ 120"); the condition code stays server-side.
+    await createAlert({ name: `Alert when ${contract.label} ${sign} ${level}`.slice(0, 120), kind: "instrument", symbol: contract.tradingsymbol,
       exchange: contract.exchange, condition, base_tf: "1m", priority: "normal", cooldown_minutes: 60, mode: "instant", digest_every: "hourly" });
     return { tone: "done", text: `Alert saved: you will be told when ${contract.label} is ${words} ${formatPrice(level)}.` };
   } catch (e) {

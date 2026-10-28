@@ -99,7 +99,7 @@ describe("UI2-3 detail panel", () => {
     expect(words).toContain("Approve (paper order)");                // Phase 0: an approved entry is a PAPER order
     expect(words).not.toContain("Approve live trade");
     expect(words).toContain("· Live");
-    expect(words).toContain("approving asks for your authenticator code first");
+    expect(words).toContain("LIVE · code on approve");                     // UI-28 U1.3: one chip, the sentence its tooltip
     expect(words).not.toContain("Nothing reaches your broker");
     expect(words).not.toContain("Approve paper trade");
   });

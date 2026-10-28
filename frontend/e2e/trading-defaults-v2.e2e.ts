@@ -162,7 +162,7 @@ test.describe("My trading defaults behaviour", () => {
     const main = page.locator("main");
     const card = main.locator("[data-block='liquidity']");
     await expect(card).toContainText("compared with the other strikes on the chain");
-    await expect(card).toContainText("Information only: it never holds back an order or an exit.");
+    await expect(card).toContainText("It never holds back an order or an exit.");
     const on = card.getByLabel("Use my own limits too");
     await expect(on).not.toBeChecked();
     await expect(card.getByLabel("Max bid-ask gap %")).toHaveCount(0);

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { friendlyError } from "../api/errors";
 import { Button, Dialog, Input } from "../components/primitives";
+import { plainCondition } from "../screener/evidence";
 import { APPROXIMATE_NOTE, bandCondition, draftErrors, ruleBody, ruleTimeframe } from "./alerts";
 
 /**
@@ -48,7 +49,7 @@ export default function AlertDialogV2({ target, onClose, onCreated }: { target: 
     setError(null);
     try {
       await api.createAlertRule(ruleBody(draft));
-      onCreated(`Alert created for ${draft.symbol.trim().toUpperCase()}: ${condition}`);
+      onCreated(`Alert created for ${draft.symbol.trim().toUpperCase()}: ${plainCondition(condition)}`);
       onClose();
     } catch (e) {
       setError(friendlyError(e));
@@ -73,7 +74,7 @@ export default function AlertDialogV2({ target, onClose, onCreated }: { target: 
             <Input label="To price" type="number" inputMode="decimal" value={high} onChange={(e) => setHigh(e.target.value)} className="h-11 md:h-9" />
           </div>
         ) : null}
-        <p className="text-t12 text-fg-muted">Condition: <span className="font-mono text-fg">{condition || "-"}</span> on {draft.timeframe} bars</p>
+        <p className="text-t12 text-fg-muted">When <span className="text-fg">{condition ? plainCondition(condition) : "-"}</span> on {draft.timeframe} bars</p>
         {error && <p role="alert" className="text-t12 text-warn">{error}</p>}
       </div>
     </Dialog>

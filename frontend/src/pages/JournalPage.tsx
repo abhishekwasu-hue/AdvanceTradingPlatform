@@ -13,9 +13,20 @@ import type { DisciplineScore, DisciplineSettings, JournalEntry, JournalSettings
 import type { PageProps } from "../routes";
 import DisciplineCardV2 from "../growth/DisciplineCardV2";
 import PageDishV2 from "../growth/PageDishV2";
+import { Details } from "../ui/Details";
 import { useFeatures } from "../ui/useFeatures";
 
 const OFF_TEXT = "The discipline score is not turned on for your account yet.";
+
+/** UI-28 U1.5: a tag's evidence as "name value" pairs - never raw JSON on screen. */
+export function evidenceText(evidence: unknown): string {
+  if (evidence === null || evidence === undefined) return "";
+  if (typeof evidence !== "object") return String(evidence);
+  return Object.entries(evidence as Record<string, unknown>)
+    .filter(([, v]) => v !== null && v !== undefined && typeof v !== "object")
+    .map(([k, v]) => `${k.replace(/_/g, " ")} ${typeof v === "number" ? v.toLocaleString("en-IN") : String(v)}`)
+    .join(" · ");
+}
 
 function errorText(e: unknown): string {
   if (e instanceof ApiError && e.status === 503) return OFF_TEXT;
@@ -44,10 +55,10 @@ function ScoreCard({ score }: { score: DisciplineScore }) {
           ))}
         </div>
       </div>
-      <p className="mt-3 text-xs text-fg-muted">
+      <Details id="journal.how-scored" label="How scored">
         Each component is the share of this week's decisions with none of its tags; the score weights them by your settings.
         {score.count_unconfirmed ? " Suggested tags count until you dismiss them." : " Only confirmed tags count."}
-      </p>
+      </Details>
     </Card>
   );
 }
@@ -102,7 +113,7 @@ function EntryRow({ e, countUnconfirmed, onDecide }: { e: JournalEntry; countUnc
             {e.stop_history.map((s, i) => <div key={i}>{s.from} → {s.to} ({s.source})</div>)}
             {e.greeks_entry && <div className="mt-2">Greeks at entry: {Object.entries(e.greeks_entry).map(([k, v]) => `${k} ${v}`).join(" · ")}</div>}
             {e.chart_entry && <div className="mt-2 text-fg-muted">Chart at entry: {e.chart_entry.symbol} @ {new Date(e.chart_entry.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</div>}
-            {e.tags.map((t) => <div key={t.id} className="mt-1 text-fg-muted">{tagLabel(t.tag)}: {JSON.stringify(t.evidence)}</div>)}
+            {e.tags.map((t) => <div key={t.id} className="mt-1 text-fg-muted">{tagLabel(t.tag)}{evidenceText(t.evidence) && `: ${evidenceText(t.evidence)}`}</div>)}
           </div>
         </div>
       )}
@@ -290,7 +301,7 @@ export default function JournalPage(_props: PageProps) {
   return (
     <div>
       <PageHeader title="Journal & discipline"
-        description="Every trade journaled automatically, behaviour tags you confirm or dismiss, and a weekly discipline score. Your own data only; numbers, not advice."
+        description="Your trades, behaviour tags and weekly discipline score."
         actions={off ? undefined : nav} />
       {/* MO4 slice 4: the page's ready-made dish (ui_v2 + growth_v2; the server sends nothing while the journal is off). */}
       {shareCard && <PageDishV2 page="journal" className="mb-space-4" />}

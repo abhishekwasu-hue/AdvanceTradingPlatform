@@ -144,7 +144,8 @@ describe("FNO-1 chain action sheet: each action", () => {
     const create = vi.fn(async () => ({}));
     expect(await alertSave(create, CONTRACT, "260", 250)).toEqual({ tone: "done", text: "Alert saved: you will be told when NIFTY 03 NOV 24500 CE is at or above 260.00." });
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ kind: "instrument", symbol: "NIFTY26NOV24500CE", exchange: "NFO", condition: "close >= 260" }));
-    expect(alertCondition(240, 250)).toEqual({ condition: "close <= 240", words: "at or below" });
+    expect(alertCondition(240, 250)).toEqual({ condition: "close <= 240", words: "at or below", sign: "≤" });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "Alert when NIFTY 03 NOV 24500 CE ≥ 260" }));   // UI-28 U1.4: plain words
     expect((await alertSave(create, CONTRACT, "", 250))?.tone).toBe("warn");
     expect(create).toHaveBeenCalledTimes(1);
     expect(has(body({ alertsOn: false }).els, "data-action", "alert")).toBe(false);
@@ -168,7 +169,7 @@ describe("FNO-1 chain action sheet: each action", () => {
 
   it("the practice frame is there and no word advises a trade", () => {
     const { html } = body({ held: [HELD], panel: "basket" });
-    expect(text(html)).toContain("Practice mode (PAPER)");
+    expect(text(html)).toContain("PAPER");                                   // UI-28 U1.1: one chip
     expect(text(html)).not.toMatch(ADVICE);
   });
 });
@@ -250,7 +251,7 @@ describe("FNO-1 order ticket", () => {
     const words = text(review.html);
     for (const part of ["Margin required ₹37,500.00", "Estimate. Long options only: the premium paid.", "Max loss ₹37,500.00",
       "The premium you pay, if the option expires worthless.", "Quantity 2 lots = 150 qty (lot size 75)", "Charges (estimate) ₹61.20",
-      "Place PAPER order"]) {
+      "Buy"]) {
       expect(words).toContain(part);
     }
     by(review.els, "data-ticket", "place").onClick!();
@@ -268,7 +269,7 @@ describe("FNO-1 order ticket", () => {
     const review = ticket(newDraft("BUY"), { kind: "review", preview: preview({ refusals, can_place: false, confirm_label: null }) });
     const words = text(review.html);
     for (const r of refusals) expect(words).toContain(r);
-    expect(words).toContain("Cannot place");
+    expect(words).not.toContain("Cannot place");                                 // UI-28 U1.1: only the blocking line says why
     expect(by(review.els, "data-ticket", "place").disabled).toBe(true);
     expect(words).not.toMatch(/Traceback|Exception|RISK_|max_trades_per_day/);
   });
@@ -292,9 +293,12 @@ describe("FNO-1 order ticket", () => {
     expect(text(ticket(newDraft("BUY")).html)).toContain("Keys: B for Buy, S for Sell.");
   });
 
-  it("the Practice mode (PAPER) frame is on every ticket, and a phone gets a bottom sheet", () => {
-    expect(text(renderToStaticMarkup(<PracticeFrame />))).toContain("Practice mode (PAPER) No real order is sent and no money moves.");
+  it("the PAPER chip is on every ticket (UI-28 U1.1: one chip, the sentence its tooltip), and a phone gets a bottom sheet", () => {
+    const chip = renderToStaticMarkup(<PracticeFrame />);
+    expect(text(chip).trim()).toBe("PAPER");
+    expect(chip).toContain('title="Practice mode: no real order is sent and no money moves."');
     expect(ticketSource).toContain("<PracticeFrame />");
+    expect(ticketSource).not.toContain("Place PAPER order");
     expect(ticketSource).toContain("fixed inset-x-0 bottom-0");                 // a bottom sheet on a phone
     expect(ticketSource).toContain("md:right-0");                                // a side panel from md
     expect(ticketSource).toMatch(/min-h-11/);                                    // 44 px targets

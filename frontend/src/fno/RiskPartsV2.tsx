@@ -32,9 +32,9 @@ export function RiskChecksV2({ lines, testId }: { lines: readonly (RiskLine | nu
   const shown = lines.filter((l): l is RiskLine => l !== null);
   if (!shown.length) return null;
   return (
-    <section aria-label="Before you place (information only)" data-risk-checks={testId}
+    <section aria-label="Before you place" data-risk-checks={testId}
       className="space-y-space-2 rounded-control border border-subtle px-space-3 py-space-2 text-t13">
-      <h4 className="text-t12 font-semibold text-fg-muted">Before you place (information only)</h4>
+      <h4 className="text-t12 font-semibold text-fg-muted">Before you place</h4>
       <ul className="space-y-space-2">
         {shown.map((l) => {
           const Icon = l.tone === "warn" ? TriangleAlert : Info;

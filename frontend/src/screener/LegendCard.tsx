@@ -11,6 +11,7 @@
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Button } from "../components/primitives";
+import { Details } from "../ui/Details";
 import { cardLines, filledSource, rangeText, type LegendCardData } from "./legends";
 
 export interface LegendCardProps {
@@ -56,8 +57,11 @@ export function LegendCard({ card, onBack, canOpen = false, onOpen, focusOnMount
         <p className="mt-2 text-t12 text-fg-muted">
           Timeframe <span className="font-mono text-fg">{card.screen.base_tf}</span> · shown with the default parameters
         </p>
-        <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words rounded-control border border-border bg-surface-inset p-2 font-mono text-t12 text-fg"
-             aria-label="ScreenQL source" data-testid="legend-source"><code>{filledSource(card)}</code></pre>
+        {/* UI-28 U1.4: the screen's code is never shown by default - it sits under "Advanced". */}
+        <Details id="legend.source" label="Advanced" className="mt-1">
+          <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-control border border-border bg-surface-inset p-2 font-mono text-t12 text-fg"
+               aria-label="Screen source" data-testid="legend-source"><code>{filledSource(card)}</code></pre>
+        </Details>
         {card.screen.params.length > 0 && (
           <div className="mt-2 overflow-x-auto">
             <table className="w-full border-collapse text-t12">
@@ -98,7 +102,7 @@ export function LegendCard({ card, onBack, canOpen = false, onOpen, focusOnMount
 
       <div className="mt-4 flex items-center justify-end gap-2">
         <Button size="sm" onClick={onOpen} disabled={!canOpen || !onOpen} aria-label={`Open ${card.name} in the builder`}
-                title={canOpen ? undefined : "The builder cannot load this screen yet; its ScreenQL source is shown above"}>Open</Button>
+                title={canOpen ? undefined : "The builder cannot load this screen yet"}>Open</Button>
       </div>
     </article>
   );

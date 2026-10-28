@@ -353,6 +353,15 @@ export type ExportDataset = "audit-logs" | "orders" | "trades" | "login-events";
 
 export interface ExportDownload { blob: Blob; filename: string; sha256: string; rows: string; chainIntact?: string }
 
+/** AUD-G1.1: the caller's own data as a ZIP (GET /api/me/export) - same token and silent refresh as `request`. */
+export async function downloadMyData(): Promise<{ blob: Blob; filename: string }> {
+  let response = await rawRequest("/me/export");
+  if (response.status === 401 && (await tryRefresh())) response = await rawRequest("/me/export");
+  if (!response.ok) throw await apiErrorFrom(response);
+  const match = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "");
+  return { blob: await response.blob(), filename: match?.[1] ?? "my-data.zip" };
+}
+
 /** Authenticated file download for the compliance exports (Phase D2): same token and silent
  *  refresh as `request`, but returns the body as a Blob plus the integrity headers. */
 async function downloadExport(

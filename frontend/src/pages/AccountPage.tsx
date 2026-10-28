@@ -18,6 +18,7 @@ import InviteFriendV2 from "../growth/InviteFriendV2";
 import { useFeatures } from "../ui/useFeatures";
 import { supportAccess, type SupportAccess } from "../api/viewAs";
 import { formatDateTimeIST } from "../ui/format";
+import MyDataCardV2 from "../settings/MyDataCardV2";
 
 /** The signed-in trader's account: e-mail, two-factor, password, sessions. Signed out, App.tsx shows the sign-in screen
  * before any page; this page shows the same screen should it ever render without a user (UX1). */
@@ -192,6 +193,7 @@ export default function AccountPage() {
         {sessionsMessage && <div className="mt-2 text-xs text-fg-muted">{sessionsMessage}</div>}
         <p className="mt-2 text-xs text-fg-muted">For your safety you are asked to sign in again after a while, even on a device you use every day.</p>
       </Card>
+      <MyDataCardV2 />
       {v2 && <SupportAccessCard />}
     </div>
   );

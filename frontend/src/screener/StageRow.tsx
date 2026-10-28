@@ -3,7 +3,7 @@
  * ("RSI (14) on 15m above 60"); D2 adds the other forms - a filter ("Pattern doji"), a category ("Trend is UPTREND"),
  * a rank across the universe ("Rank of PctChange(close, 5) at or below 10") - and the group: ANY of its blocks or
  * NOT all of them, drawn as a bracket with its own label, its blocks nested inside (they have no trail of their own:
- * the funnel counts top-level stages). The advanced fold shows the block in plain words and as ScreenQL.
+ * the funnel counts top-level stages). The advanced fold shows the block in plain words (its ScreenQL behind "Advanced").
  * U2 (flag `screener_builder_u2`): the formula block - a condition in ScreenQL text (offsets, arithmetic), the form that
  * holds what the other blocks cannot, so Legends and breakout screens open in the builder.
  *
@@ -18,7 +18,7 @@ import {
   seriesRef, stageSummary, stageText, type GroupStage, type IndicatorStage, type Op, type Operand, type ParamValue,
   type Registry, type SeriesRef, type Stage, type StageKind, type TrailRow,
 } from "./model";
-import { NumberInline, SelectInline, TextInline } from "./ParamInline";
+import { NumberInline, SelectInline, TextAreaInline, TextInline } from "./ParamInline";
 import { SurvivorTrail } from "./SurvivorTrail";
 import { TimeframeChip } from "./TimeframeChip";
 
@@ -55,7 +55,8 @@ function SeriesEditor({ value, registry, label, names, onChange }: { value: Seri
   const kinds = entry ? paramKinds(entry) : [];
   const setParam = (name: string, v: ParamValue) => onChange({ ...value, params: { ...value.params, [name]: v } });
   return (
-    <span className="inline-flex items-center gap-0.5 whitespace-nowrap">
+    // SCR-FIX D2: one unit on a wide screen; on a phone a long call may wrap instead of pushing the page sideways
+    <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-0.5 sm:flex-nowrap">
       <SelectInline label={`${label} indicator`} mono={false} value={value.fn} options={names ?? indicatorNames(registry)}
                     onChange={(fn) => onChange(seriesRef(registry, String(fn), value.tf))} />
       {kinds.length > 0 && <span className="font-mono text-t13 text-fg-muted" aria-hidden>(</span>}
@@ -142,14 +143,16 @@ function BlockBody({ stage, registry, scanTf, onChange }: { stage: Stage; regist
     case "formula":
       return (
         <>
-          <span className="text-t12 text-fg-muted">ScreenQL</span>
-          <TextInline value={stage.text} label="Formula condition in ScreenQL" placeholder="high - low < Min(high - low, 6)[1]"
-                      onChange={(text) => onChange({ ...stage, text })} />
+          <span className="text-t12 text-fg-muted">Formula</span>
+          <span className="block w-full min-w-0 basis-full">
+            <TextAreaInline value={stage.text} label="Formula condition in ScreenQL" placeholder="high - low < Min(high - low, 6)[1]"
+                            onChange={(text) => onChange({ ...stage, text })} />
+          </span>
         </>
       );
     case "group":
       return (
-        <SelectInline label="Group" mono={false} value={stage.op} options={["ANY", "NOT"]} format={(o) => (o === "ANY" ? "Any of these" : "None of these")}
+        <SelectInline label="Group" mono={false} value={stage.op} options={["ANY", "NOT"]} format={(o) => (o === "ANY" ? "Any of these" : "Not all of these")}
                       onChange={(op) => onChange({ ...stage, op: op as GroupStage["op"] })} />
       );
   }
@@ -178,12 +181,13 @@ function ValuePicker({ values, choices, onChange }: { values: string[]; choices:
 
 function GroupChildren({ group, registry, scanTf, problems, onChange }: { group: GroupStage; registry: Registry; scanTf: string; problems: Record<string, string>; onChange: (s: Stage) => void }) {
   const setChild = (id: string, next: Stage) => onChange({ ...group, children: group.children.map((c) => (c.id === id ? next : c)) });
-  const label = group.op === "ANY" ? "Any" : "Not";
+  // SCR-FIX D4: the bracket's label reads across, in words; NOT says what it compiles to (NOT (a AND b): "not all")
+  const label = group.op === "ANY" ? "Any of these must pass" : "Not all of these: passes unless every one passes";
   const [adding, setAdding] = useState<StageKind>("indicator");
   return (
-    <div className="relative mx-2 mb-2 ml-10 pl-5">
+    <div className="relative mx-2 mb-2 ml-4 pl-5 sm:ml-10">
       <div aria-hidden className={cx("absolute bottom-1 left-0 top-1 w-3 rounded-l-control border-y border-l", group.op === "NOT" ? "border-warn/60" : "border-signal/60")} />
-      <span aria-hidden className="absolute -left-3 top-1/2 -translate-y-1/2 -rotate-90 text-t12 font-medium text-fg-muted">{label}</span>
+      <p aria-hidden className="mb-1 text-t12 font-medium text-fg-muted" data-testid="group-label">{label}</p>
       <ol aria-label={group.op === "ANY" ? "Blocks - any one may pass" : "Blocks - the stage passes when they do not all pass"} className="rounded-control border border-border bg-surface">
         {group.children.map((c, i) => (
           <StageRow key={c.id} nested stage={c} index={i} registry={registry} scanTf={scanTf} trail={null} total={null}
@@ -269,7 +273,8 @@ export function StageRow(props: StageRowProps) {
           <GripVertical size={14} aria-hidden />
         </button>
         <Icon size={14} className="shrink-0 text-fg-muted" aria-label={`${KIND_LABEL[stage.kind]} block`} />
-        <div className="flex min-w-[14rem] flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-t13 text-fg">
+        {/* SCR-FIX D2: no minimum width on a phone (it pushed the page sideways): the sentence wraps inside the row */}
+        <div className="flex min-w-0 max-w-full flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-t13 text-fg sm:min-w-[14rem]">
           <BlockBody stage={stage} registry={registry} scanTf={scanTf} onChange={onChange} />
         </div>
         <div className={cx("ml-auto flex items-center gap-0.5 opacity-100 sm:opacity-60",
@@ -291,12 +296,12 @@ export function StageRow(props: StageRowProps) {
         {trail && <SurvivorTrail survivors={trail.survivors} removed={trail.removed} total={total} kills={trail.kills} onShowRemoved={props.onShowRemoved} />}
       </div>
       <span id={summaryId} className="sr-only">{stageSummary(registry, stage)}{stage.enabled ? "" : " (disabled)"}</span>
-      {problem && <p role="alert" className="px-10 pb-2 text-t12 text-warn">{problem}</p>}
+      {problem && <p role="alert" className="px-2 pb-2 text-t12 text-warn sm:px-10">{problem}</p>}
       {stage.kind === "group" && (
         <GroupChildren group={stage} registry={registry} scanTf={scanTf} problems={props.problems ?? {}} onChange={onChange} />
       )}
       {props.removedList && (
-        <p className="mx-10 mb-2 rounded-control bg-surface-inset px-3 py-2 text-t12 text-fg-muted">
+        <p className="mx-2 mb-2 break-words rounded-control bg-surface-inset px-3 py-2 text-t12 text-fg-muted sm:mx-10">
           {props.removedList === "run" ? "Live counts carry no symbol list - Run the scan to see what this stage removes." : (
             <>This stage removed{" "}
               {props.removedList.length ? <span className="font-mono text-fg">{props.removedList.join(", ")}</span> : "nothing"}.</>
@@ -304,10 +309,14 @@ export function StageRow(props: StageRowProps) {
         </p>
       )}
       {open && (
-        <div id={foldId} className="mx-10 mb-2 flex flex-wrap items-center gap-3 rounded-control bg-surface-inset px-3 py-2 text-t12 text-fg-muted">
+        <div id={foldId} className="mx-2 mb-2 flex flex-wrap items-center gap-3 rounded-control bg-surface-inset px-3 py-2 text-t12 text-fg-muted sm:mx-10">
           {stage.kind === "indicator" && <CompareWith stage={stage} registry={registry} scanTf={scanTf} onChange={onChange} />}
-          <span className="basis-full text-fg">Reads: {stageSummary(registry, stage)}</span>
-          <code className="truncate font-mono text-t12 text-fg-muted" title="This block in ScreenQL">{stageText(registry, stage)}</code>
+          <span className="min-w-0 basis-full break-words text-fg">Reads: {stageSummary(registry, stage)}</span>
+          {/* SCR-FIX D7: plain words by default; the block's ScreenQL only under its own "Advanced" disclosure */}
+          <details className="min-w-0 basis-full" data-testid="stage-code">
+            <summary className="cursor-pointer text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">Advanced: the code</summary>
+            <code className="mt-1 block break-all font-mono text-t12 text-fg-muted" title="This block in ScreenQL">{stageText(registry, stage)}</code>
+          </details>
         </div>
       )}
     </li>

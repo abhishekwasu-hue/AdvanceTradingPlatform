@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { mockApi } from "./mockApi";
+import { screenerTool } from "./screenerTools";
 
 /**
  * U9 TX1: the screen gallery on the Screener page - the method rail, the setup chips, an empty cell said out loud, and
@@ -45,7 +46,7 @@ test("flag off: the page has no gallery button", async ({ page }) => {
 
 test("browse by method and setup, see an empty cell, open a starter into the builder", async ({ page }) => {
   await screener(page, true);
-  await page.getByTestId("browse-screens").click();
+  await screenerTool(page, "browse-screens");
   const dialog = page.getByRole("dialog", { name: "Screen library" });
   await expect(dialog).toBeVisible();
   const rail = dialog.getByRole("navigation", { name: "Method" });
@@ -68,7 +69,7 @@ test("browse by method and setup, see an empty cell, open a starter into the bui
 
 test("Legends: the library header, a card's disclaimer, its full card from About and back", async ({ page }) => {
   await screener(page, true, true);
-  await page.getByTestId("browse-screens").click();
+  await screenerTool(page, "browse-screens");
   const dialog = page.getByRole("dialog", { name: "Screen library" });
   await dialog.getByRole("navigation", { name: "Method" }).getByRole("button", { name: /^Legends \(/ }).click();
   await expect(dialog.locator("[data-screen-id]")).toHaveCount(legends.cards.length);

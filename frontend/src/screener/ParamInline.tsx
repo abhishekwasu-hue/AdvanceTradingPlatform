@@ -1,12 +1,13 @@
 /**
  * U5: a parameter edited in place - the number reads as plain mono text in the stage's sentence; click (or Enter / Space
  * on it) turns it into an input; Enter or leaving commits, Escape cancels, and Enter / Escape put the focus back on the
- * value so a keyboard user carries on from where they were. Selects stay native for keyboard and screen readers, with a
- * small chevron so they read as choices. Nothing here knows the stage; it reports a value.
+ * value so a keyboard user carries on from where they were. Choices use the shared picker (SCR-FIX D8: the APG
+ * select-only combobox, keyboard and screen readers included), with a small chevron so they read as choices. Nothing
+ * here knows the stage; it reports a value.
  */
-import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cx } from "../components/primitives";
+import { Combobox } from "../ui/Combobox";
 import type { ParamValue } from "./model";
 
 const chip = "rounded-control px-1 font-mono font-tabular text-t13 text-fg underline decoration-border decoration-dotted underline-offset-4 "
@@ -82,31 +83,21 @@ export interface SelectInlineProps {
   label: string;
   mono?: boolean;
   format?: (v: ParamValue) => string;   // the words shown for a value (an operator reads "above", not ">")
+  searchable?: boolean;                 // a filter box above the rows (default: lists longer than 12)
   onChange: (v: ParamValue) => void;
 }
 
-export function SelectInline({ value, options, label, mono = true, format = String, onChange }: SelectInlineProps) {
-  // a native select is as wide as its longest option; the sentence reads better when it is as wide as the chosen one
-  // (words in the proportional face run wider than 1ch each, hence the larger allowance; 14px is the chevron)
-  const width = `calc(${Math.max(2, format(value).length) + (mono ? 0.5 : 2)}ch + 24px)`;
+/** SCR-FIX D8: the shared picker (src/ui/Combobox.tsx) as a word in the sentence - as wide as the chosen value, a list
+ * under it with a mouse, a bottom sheet with 44 px rows on a phone. Long lists (the indicators) get a filter box. */
+export function SelectInline({ value, options, label, mono = true, format = String, searchable, onChange }: SelectInlineProps) {
+  const rows = options.map((o) => ({ value: String(o), label: format(o) }));
   return (
-    <span className="relative inline-flex items-center">
-      <select
-        aria-label={label}
-        value={String(value)}
-        style={{ width }}
-        onChange={(e) => {
-          const picked = options.find((o) => String(o) === e.target.value);
-          if (picked !== undefined) onChange(picked);
-        }}
-        className={cx("cursor-pointer appearance-none rounded-control border border-transparent bg-transparent py-0 pl-1 pr-4 text-t13 text-fg",
-          "hover:border-border hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
-          mono && "font-mono font-tabular")}
-      >
-        {options.map((o) => <option key={String(o)} value={String(o)}>{format(o)}</option>)}
-      </select>
-      <ChevronDown size={12} aria-hidden className="pointer-events-none absolute right-1 text-fg-muted" />
-    </span>
+    <Combobox variant="inline" label={label} value={String(value)} options={rows} searchable={searchable ?? options.length > 12}
+              triggerClassName={mono ? "font-mono font-tabular" : undefined}
+              onChange={(v) => {
+                const picked = options.find((o) => String(o) === v);
+                if (picked !== undefined) onChange(picked);
+              }} />
   );
 }
 
@@ -131,7 +122,32 @@ export function TextInline({ value, label, placeholder = "type a value", onChang
         if (e.key === "Enter") { e.preventDefault(); commit(); }
         if (e.key === "Escape") { e.preventDefault(); setText(value); }
       }}
-      className="rounded-control border border-transparent bg-transparent px-1 font-mono text-t13 text-fg placeholder:text-fg-muted/60 hover:border-border focus:border-border focus:outline-none focus:ring-2 focus:ring-brand"
+      // SCR-FIX D2: as wide as its text, never wider than the line it sits on (a phone never scrolls sideways)
+      className="min-w-0 max-w-full rounded-control border border-transparent bg-transparent px-1 font-mono text-t13 text-fg placeholder:text-fg-muted/60 hover:border-border focus:border-border focus:outline-none focus:ring-2 focus:ring-brand"
+    />
+  );
+}
+
+/** SCR-FIX D2: a long condition (the formula block) - a box the width of the stage that wraps its text onto more lines
+ * instead of running off the screen. Commits on Enter (Shift+Enter is a new line) or leaving; Escape cancels. */
+export function TextAreaInline({ value, label, placeholder = "type a value", onChange }: TextInlineProps) {
+  const [text, setText] = useState(value);
+  useEffect(() => { setText(value); }, [value]);
+  const clean = (t: string) => t.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+  const commit = () => { if (clean(text) !== value) onChange(clean(text)); };
+  return (
+    <textarea
+      aria-label={label}
+      value={text}
+      placeholder={placeholder}
+      rows={Math.min(4, Math.max(1, Math.ceil(Math.max(text.length, placeholder.length) / 40)))}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); }
+        if (e.key === "Escape") { e.preventDefault(); setText(value); }
+      }}
+      className="block w-full min-w-0 max-w-full resize-y break-words rounded-control border border-border bg-surface-inset px-1 py-0.5 font-mono text-t13 text-fg placeholder:text-fg-muted/60 focus:outline-none focus:ring-2 focus:ring-brand"
     />
   );
 }

@@ -11,6 +11,7 @@
  */
 import { useMemo, useState } from "react";
 import { Button, cx, Tabs } from "../components/primitives";
+import { Combobox } from "../ui/Combobox";
 import { screenerApi } from "./api";
 import {
   agreementText, confluenceChoices, MAX_CONFLUENCE, methodLabel, MIN_CONFLUENCE, toggleChoice,
@@ -100,7 +101,9 @@ function Confluence({ taxonomy, mirrors, symbols, initial, api }: {
           {result.rows.length === 0 ? (
             <p className="mt-2 text-t13 text-fg">No symbol was flagged by any of these screens on the data shown.</p>
           ) : (
-            <table className="mt-2 w-full border-collapse text-t13" data-testid="confluence-table">
+            // SCR-FIX D9: a wide table scrolls inside its own box on a phone, never the page
+            <div className="mt-2 overflow-x-auto" data-testid="confluence-scroll">
+            <table className="w-full min-w-[32rem] border-collapse text-t13" data-testid="confluence-table">
               <caption className="sr-only">Symbols by how many methods and screens flagged them</caption>
               <thead>
                 <tr className="text-left text-t12 text-fg-muted">
@@ -122,6 +125,7 @@ function Confluence({ taxonomy, mirrors, symbols, initial, api }: {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
           {result.unflagged.length > 0 && <p className="mt-2 text-t12 text-fg-muted">Not flagged: {result.unflagged.join(", ")}</p>}
           <p className="mt-2 text-t12 text-fg-muted">{result.disclaimer}</p>
@@ -162,11 +166,9 @@ function Watch({ lists, symbols, initial, api }: {
   return (
     <div>
       <label className="block text-t12 font-medium text-fg-muted" htmlFor="watch-list">List</label>
-      <select id="watch-list" value={listId} onChange={(e) => setListId(e.target.value)}
-              className="mt-1 min-h-[44px] w-full rounded-control border border-border bg-surface-1 px-2 text-t13 text-fg">
-        {(lists?.lists ?? []).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        <option value="custom">Your own ready and trigger conditions</option>
-      </select>
+      {/* SCR-FIX D8: the shared picker, not the browser's select */}
+      <Combobox id="watch-list" label="List" value={listId} onChange={setListId} className="mt-1 w-full"
+                options={[...(lists?.lists ?? []).map((l) => ({ value: l.id, label: l.name })), { value: "custom", label: "Your own ready and trigger conditions" }]} />
       {chosen && !custom && <p className="mt-1 text-t12 text-fg-muted">{chosen.definition}</p>}
       {custom && (
         <div className="mt-2 grid gap-2">

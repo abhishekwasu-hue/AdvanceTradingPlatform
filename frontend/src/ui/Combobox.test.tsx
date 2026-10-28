@@ -49,4 +49,16 @@ describe("UX-5: the shared combobox", () => {
       expect(readFileSync(f, "utf8"), f).toContain("<SelectOrCombobox");
     }
   });
+
+  it("SCR-FIX D8: the inline variant is a word in a sentence; triggerText replaces the shown label", () => {
+    const html = renderToStaticMarkup(<Combobox variant="inline" label="Comparison" value="TCS" options={OPTS} onChange={() => undefined}
+      triggerText="above" triggerClassName="font-mono" />);
+    expect(html).toContain('role="combobox"');
+    expect(html).toMatch(/class="inline-flex h-8 [^"]*border-transparent bg-transparent[^"]*md:h-7 w-full font-mono"/);
+    expect(html).toContain(">above</span>");
+    expect(html).not.toContain(">TCS<");
+    const field = renderToStaticMarkup(<Combobox label="Pick" value="TCS" options={OPTS} onChange={() => undefined} />);
+    expect(field).toContain("h-11");
+    expect(field).toContain(">TCS</span>");
+  });
 });

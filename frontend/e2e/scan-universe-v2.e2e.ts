@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
+import { screenerTool } from "./screenerTools";
 
 /**
  * Owner order (23 Oct) "the scan universe is never empty" (`ui_v2` + `screener_v2`): Find setups opens on NIFTY 50
@@ -95,7 +96,7 @@ async function open(page: Page, theme: "dark" | "light", { universes = true, cop
 }
 
 async function addStarter(page: Page) {
-  await page.getByTestId("browse-screens").click();
+  await screenerTool(page, "browse-screens");
   const dialog = page.getByRole("dialog", { name: "Screen library" });
   await dialog.getByRole("button", { name: /^Open .* in the builder$/ }).first().click();
   await expect(dialog).toBeHidden();
@@ -146,7 +147,7 @@ test.describe("The scan universe, 1440", () => {
 
   test("Try as a scan runs at once on the chosen universe", async ({ page }) => {
     const runs = await open(page, "light");
-    await page.getByTestId("browse-screens").click();
+    await screenerTool(page, "browse-screens");
     const dialog = page.getByRole("dialog", { name: "Screen library" });
     await dialog.getByTestId("screen-try").first().click();
     await expect(dialog).toBeHidden();
@@ -183,7 +184,7 @@ test.describe("The scan universe, 1440", () => {
     });
     await page.getByTestId("universe-select").selectOption("sys:index-nifty500");
     await addStarter(page);
-    await page.getByTestId("scan-alert-open").click();
+    await screenerTool(page, "scan-alert-open");
     const dialog = page.getByRole("dialog", { name: "Tell me when it matches" });
     await expect(dialog).toContainText("on NIFTY 500 (50 stocks)");
     await expect(dialog.getByTestId("scan-alert-first")).toHaveText("An alert watches up to 50 stocks, so this one watches the first 50 of the 500 in NIFTY 500.");

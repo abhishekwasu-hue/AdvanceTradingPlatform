@@ -4,6 +4,7 @@ import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockCharts } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 import { PRE_MARKET } from "../src/rhythm/fixtures";
+import { screenerTool } from "./screenerTools";
 
 /**
  * The day-one trader test (owner order 23 Oct, trader review: "a day-one trader test with screenshots (Today ->
@@ -397,7 +398,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await expect(page.getByTestId("universe-select")).toHaveValue("sys:index-nifty50");
         await expect(page.getByTestId("universe-count")).toHaveText("50 stocks · NIFTY 50");
         await shot("03a-find-setups");
-        await page.getByTestId("browse-screens").click();
+        await screenerTool(page, "browse-screens");
         const library = page.getByRole("dialog", { name: "Screen library" });
         await expect(library.getByTestId("screen-try").first()).toBeVisible();
         await shot("03b-screen-gallery");

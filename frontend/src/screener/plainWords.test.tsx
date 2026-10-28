@@ -22,7 +22,7 @@ describe("day-one fix 4: Find setups in a trader's words (ui_v2)", () => {
 
   it("the page hides the developer tools behind Advanced and leads with ready scans and matches", () => {
     const page = readFileSync("src/pages/ScreenerPage.tsx", "utf8");
-    expect(page).toContain("{advanced && pineOn &&");
+    expect(page).toContain("advanced && pineOn && {");
     expect(page).toContain("formula={builderU2 && advanced}");
     expect(page).toContain('data-testid="ready-scans"');
     expect(page).toContain("const longAnswer = universeV2 && (run?.results.length ?? 0) > 0;");

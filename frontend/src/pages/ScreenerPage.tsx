@@ -21,6 +21,9 @@ import { PlainTimeframes } from "../screener/TimeframeChip";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, parseSymbols, runBlocker, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, timeframeWords, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
+import { nothingRead, tally, unreadReason, unreadRows } from "../screener/readCounts";
+import { UnreadNote } from "../screener/UnreadNote";
+import type { ReadAction } from "../screener/api";
 import { ResultViews } from "../screener/ResultViews";
 import { EtfPanel } from "../screener/EtfPanel";
 import { ScreenGallery } from "../screener/ScreenGallery";
@@ -82,6 +85,8 @@ export default function ScreenerPage(_props: PageProps) {
   const [otherProblem, setOtherProblem] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [run, setRun] = useState<RunResponse | null>(null);
+  // SCR-FIX B2: a run where not one symbol could be read - its sentence and one action (no "0 matched" answer)
+  const [readProblem, setReadProblem] = useState<{ text: string; action: ReadAction } | null>(null);
   const [evidence, setEvidence] = useState<{ id: number; symbol: string } | null>(null);   // U8 EV1: "Show on chart"
   const [ran, setRan] = useState<RunStamp | null>(null);         // what the shown run was made of
   const [validating, setValidating] = useState(false);
@@ -369,6 +374,7 @@ export default function ScreenerPage(_props: PageProps) {
   const doRun = useCallback(async () => {
     if (!registry || !canRun || !now) return;
     setRunning(true);
+    setReadProblem(null);
     const stamp = now;                                 // the scan as sent, not as it may be by the time the reply lands
     try {
       if (universeV2 && symbols.length > RUN_MAX) {
@@ -394,7 +400,9 @@ export default function ScreenerPage(_props: PageProps) {
         setRunKey((k) => k + 1);
       }
     } catch (e) {
-      toast.error(errorText(e));                       // a batch that failed: the batches before it stay shown
+      const unreadable = nothingRead(e);
+      if (unreadable) setReadProblem(unreadable);      // shown in Results with its one action, not as a toast
+      else toast.error(errorText(e));                  // a batch that failed: the batches before it stay shown
     } finally {
       setRunning(false);
       setProgress(null);
@@ -420,6 +428,10 @@ export default function ScreenerPage(_props: PageProps) {
     return run.results.filter((r) => r.matched || held.includes(r.symbol));
   }, [run, longAnswer, showAll, held]);
   const hiddenCount = run && shownResults ? run.results.length - shownResults.length : 0;
+  useEffect(() => { setReadProblem(null); }, [text, scanTf]);          // a changed scan: the old "could not read" goes
+  // SCR-FIX B1: the hidden rows split - read and did not match vs could not be read (never counted as "did not match")
+  const hiddenUnread = run && shownResults && !showAll ? unreadRows(run.results).filter((r) => !held.includes(r.symbol)).length : 0;
+  const hiddenNotMatched = hiddenCount - hiddenUnread;
 
   const showStage = (id: string) => {
     const handle = document.querySelector<HTMLElement>(`[data-stage-id="${id}"] button`);
@@ -467,8 +479,8 @@ export default function ScreenerPage(_props: PageProps) {
   };
 
   // the counts shown: the run's while the scan is the one that ran, else a live preview's for the current scan
-  const shown = fresh && run ? { funnel: run.funnel, matched: run.matched.length }
-    : liveFresh && preview ? { funnel: preview.res.funnel, matched: preview.res.matched_count } : null;
+  const shown = fresh && run ? { funnel: run.funnel, matched: run.matched.length, reason: unreadReason(run) }
+    : liveFresh && preview ? { funnel: preview.res.funnel, matched: preview.res.matched_count, reason: unreadReason(preview.res) } : null;
   const rows = trail(stages, shown?.funnel ?? null, !!shown);
   const killer = rows.find((r) => r.kills);
   const matchedNow = shown ? shown.matched : null;
@@ -489,6 +501,13 @@ export default function ScreenerPage(_props: PageProps) {
     },
     ideaOn && scanVersions.length > 0 && { id: "scan-versions-open", onClick: () => setVersionsOpen(true), content: <><History size={14} aria-hidden /> Versions ({scanVersions.length})</> },
   ] as (HeaderTool | false | null | undefined)[]).filter((t): t is HeaderTool => !!t);
+  // SCR-FIX B4: one count source - the answer's own funnel ("Matched N of 50 · K had data"), never the list's length
+  const counts = shown ? tally(shown.funnel, shown.matched) : null;
+  const onReadAction = (action: ReadAction) => {
+    if (action === "login" || action === "connect") navigate("/broker");
+    else if (action === "retry") void doRun();
+    else document.getElementById("screener-tf")?.focus();
+  };
 
   if (loadError === SCREENER_OFF) return <ComingSoon flag="screener_v2" />;
   if (loadError) return <ErrorState message={loadError} />;
@@ -507,6 +526,10 @@ export default function ScreenerPage(_props: PageProps) {
         <FreshnessPill ranAt={ranAt} source={run?.data_source ?? null} scanTf={scanTf} />
         {/* BT1b: the tier the last run actually read (only sent with byob_data_tier on). */}
         <DataTierBadge badge={run?.data_tier} />
+        {/* SCR-FIX A6: said once - these symbols were still read, from history instead of the live session */}
+        {run?.session_held_back ? (
+          <span className="text-t12 text-fg-muted" data-testid="session-held-back">{run.session_held_back} held back by the session budget</span>
+        ) : null}
         {/* SCR-FIX D9: up to eight tools - inline from the small-tablet width up, one "More" sheet on a phone */}
         {narrow ? (
           headerTools.length > 0 && (
@@ -623,10 +646,19 @@ export default function ScreenerPage(_props: PageProps) {
               {held.length} {held.length === 1 ? "stock waited" : "stocks waited"} for your broker&apos;s limit. Run again in a minute to include {held.length === 1 ? "it" : "them"}.
             </p>
           )}
+          {/* SCR-FIX B1 / B2: "N matched · M could not be read", the grouped reason and ONE action */}
+          {!running && (readProblem
+            ? <UnreadNote tally={null} reason={readProblem} onAction={onReadAction} />
+            : counts && <UnreadNote tally={counts} reason={shown?.reason ?? null} onAction={onReadAction} />)}
           {longAnswer && (hiddenCount > 0 || showAll) && (
             <p className="flex flex-wrap items-center justify-between gap-2 text-t13 text-fg-muted" data-testid="results-hidden">
-              <span>{showAll ? `Showing all ${run?.results.length ?? 0} stocks.` : `${hiddenCount} ${hiddenCount === 1 ? "stock did" : "stocks did"} not match; they are not listed.`}</span>
-              <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)}>{showAll ? "Matches only" : `Show the ${hiddenCount} that did not match`}</Button>
+              <span>{showAll ? `Showing all ${run?.results.length ?? 0} stocks.`
+                : hiddenUnread > 0
+                  ? `${hiddenNotMatched} did not match and ${hiddenUnread} could not be read; they are not listed.`
+                  : `${hiddenCount} ${hiddenCount === 1 ? "stock did" : "stocks did"} not match; they are not listed.`}</span>
+              <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)}>
+                {showAll ? "Matches only" : hiddenUnread > 0 ? `Show all ${hiddenCount}` : `Show the ${hiddenCount} that did not match`}
+              </Button>
             </p>
           )}
           {universeV2 && !run && !running && stages.length === 0 && readyScans.length > 0 && (
@@ -725,7 +757,8 @@ export default function ScreenerPage(_props: PageProps) {
         <div className="min-w-0">
           <p className="text-t12 text-fg-muted">
             Matched <span className="font-mono font-tabular text-t15 font-semibold text-signal">{matchedNow ?? "–"}</span>
-            <span> of <span className="font-mono font-tabular">{symbols.length}</span></span>
+            <span> of <span className="font-mono font-tabular">{counts ? counts.total : symbols.length}</span></span>
+            {counts && counts.unread > 0 && <span data-testid="bar-had-data"> · <span className="font-mono font-tabular">{counts.withData}</span> had data</span>}
           </p>
           {runWhy && <p id="run-why-mobile" className="text-t12 text-fg-muted" data-testid="run-why-mobile">{runWhy}</p>}
         </div>

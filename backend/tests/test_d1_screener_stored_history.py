@@ -53,7 +53,8 @@ def test_a_daily_scan_runs_on_stored_history_before_the_broker_login(screener_on
     body = out.json()
     assert body["data_source"] == "lake:daily" and body["matched"] == [SYM]
     missing = next(r for r in body["results"] if r["symbol"] == "NOSUCHD1")
-    assert missing == {"symbol": "NOSUCHD1", "matched": False, "reason": "Daily history for NOSUCHD1 is not stored yet."}
+    assert missing == {"symbol": "NOSUCHD1", "matched": False, "reason": "Daily history for NOSUCHD1 is not stored yet.",
+                       "code": "not_stored", "action": "login"}                         # SCR-FIX B1: its code + one action
     weekly = _scan(headers, base_tf="1w")
     assert weekly.status_code == 200 and weekly.json()["matched"] == [SYM]
     _clear()

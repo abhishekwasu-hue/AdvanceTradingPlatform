@@ -493,6 +493,95 @@ html { font-size: calc(100% * var(--text-scale)); }
   --brand-fill-strong: 30 58 138;
 }
 
+/* UX-14 "Professional palette" (owner, 28 Oct; docs/owner-orders/ATP_ORDER_UX14.md), behind the `colour_v3` flag
+   (`data-palette="v3"` on <html>, set with colour v2 by the v2 shell). Neutral surfaces, ONE accent (ATP blue #2962FF for
+   actions and links), semantic colours only for meaning, the AI violet only on the AI badge. Elevation by surface steps:
+   page -> card -> raised; `border-subtle` is the quiet 1 px divider, `border` (inputs, chips, frames that carry meaning)
+   meets 3 : 1. The extra accents (--accent-2, --ai-2, --signal, --armed, --info) map to brand / semantic colours - the
+   tokens stay. Coloured card backgrounds (--tone-*) become the raised surface; chips keep a 10-15 % tint. Every ratio is
+   computed from this file by src/ui/paletteV3.test.ts; where the ordered value fell short it moved by the smallest step
+   (dark: brand text 84 129 255, ai 152 110 247, border 104 107 117; light: brand text 40 96 250, down 210 44 61,
+   neutral grey 104 111 124, border 138 140 143). The chart background (--chart-bg) does not move. */
+:root[data-palette="v3"]:not([data-theme="light"]) {
+  --surface: 11 14 20;
+  --surface-1: 19 23 34;
+  --surface-2: 28 33 48;
+  --surface-3: 37 43 61;
+  --surface-inset: 7 9 14;
+  --glass: 19 23 34;
+  --border: 104 107 117;
+  --border-subtle: 42 47 61;
+  --range-track: 42 47 61;
+  --fg: 230 233 239;
+  --fg-muted: 154 163 178;
+  --brand: 84 129 255;
+  --brand-strong: 120 156 255;
+  --brand-fill: 41 98 255;
+  --brand-fill-strong: 30 80 230;
+  --on-brand: 255 255 255;
+  --brand-tint: 22 34 67;
+  --up: 46 189 133;
+  --down: 246 70 93;
+  --warn: 240 169 59;
+  --warn-tint: 46 41 37;
+  --info: 84 129 255;
+  --ai: 152 110 247;
+  --ai-2: 152 110 247;
+  --signal: 84 129 255;
+  --armed: 240 169 59;
+  --accent-2: 84 129 255;
+  --tone-profit: 28 33 48;
+  --tone-loss: 28 33 48;
+  --tone-risk: 28 33 48;
+  --tone-info: 28 33 48;
+  --shadow: none;
+}
+
+:root[data-palette="v3"][data-theme="light"] {
+  --surface: 247 248 250;
+  --surface-1: 255 255 255;
+  --surface-2: 241 243 246;
+  --surface-3: 233 236 241;
+  --surface-inset: 236 239 243;
+  --glass: 255 255 255;
+  --border: 138 140 143;
+  --border-subtle: 227 230 235;
+  --range-track: 227 230 235;
+  --fg: 15 23 42;
+  --fg-muted: 91 100 117;
+  --brand: 40 96 250;
+  --brand-strong: 30 72 200;
+  --brand-fill: 41 98 255;
+  --brand-fill-strong: 30 80 230;
+  --on-brand: 255 255 255;
+  --brand-tint: 229 236 255;
+  --up: 10 125 85;
+  --down: 210 44 61;
+  --warn: 180 83 9;
+  --warn-tint: 246 234 225;
+  --info: 40 96 250;
+  --ai: 124 58 237;
+  --ai-2: 124 58 237;
+  --signal: 40 96 250;
+  --armed: 180 83 9;
+  --accent-2: 40 96 250;
+  --tone-profit: 241 243 246;
+  --tone-loss: 241 243 246;
+  --tone-risk: 241 243 246;
+  --tone-info: 241 243 246;
+  --shadow: none;
+}
+
+/* Colour-blind mode keeps its up / down swap under colour v3 (the blocks above would otherwise win). */
+:root[data-palette="v3"][data-cvd="on"]:not([data-theme="light"]) { --up: 86 180 233; --down: 249 115 22; --info: 148 163 184; --signal: 204 121 167; --armed: 240 228 66; }
+:root[data-palette="v3"][data-cvd="on"][data-theme="light"] { --up: 0 114 178; --down: 194 65 12; --info: 71 85 105; --signal: 136 46 114; --armed: 120 94 0; }
+
+/* UX-14: no dot backdrop, gradient or glow behind data under colour v3 - the one primary action is the solid brand fill,
+   the Today hero card a plain card with the quiet divider. */
+:root[data-palette="v3"] .dot-backdrop { display: none; }
+:root[data-palette="v3"] { --accent-gradient: linear-gradient(rgb(var(--brand-fill)), rgb(var(--brand-fill))); }
+:root[data-palette="v3"] .accent-gradient-border { border: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); }
+
 /* UI-H-DM DM4: Appearance -> "High contrast" (per user, saved on the server with the text size; `data-contrast="high"`
    on <html>, src/theme.ts). Stronger borders and brighter text and icons in both themes, over whichever surfaces are in
    force; the meanings (profit, loss, warning) keep their colours. */

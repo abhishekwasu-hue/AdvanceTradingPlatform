@@ -101,6 +101,7 @@ export function mergeRuns(runs: readonly RunResponse[]): RunResponse {
     ...last,
     text: first.text, base_tf: first.base_tf, data_source: first.data_source, disclaimer: first.disclaimer,
     scanned: runs.reduce((n, r) => n + r.scanned, 0),
+    session_held_back: runs.reduce((n, r) => n + (r.session_held_back ?? 0), 0) || undefined,
     matched: runs.flatMap((r) => r.matched),
     results: runs.flatMap((r) => r.results),
     funnel: { universe: runs.reduce((n, r) => n + r.funnel.universe, 0), with_data: runs.reduce((n, r) => n + r.funnel.with_data, 0),

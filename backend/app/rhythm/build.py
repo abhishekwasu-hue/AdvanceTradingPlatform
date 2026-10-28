@@ -447,13 +447,14 @@ async def budget_section(ctx: Ctx) -> Section:
                   link={"label": "Risk limits", "to": "/risk-management"}, kind="budget")
     d = await _your_day(ctx)
     paper = d["paper"]
-    if d["cfg"] is None:
+    if d["cfg"] is None or paper is None or paper.get("loss_limit") is None:      # DEF-0: no daily loss limit set
         sec.empty = "Set your own daily loss limit on the Risk limits page and your loss budget for the day shows here."
     elif paper:
         sec.add(f"Loss budget left today: {money(paper['loss_left']).lstrip('+')} of {money(paper['loss_limit']).lstrip('+')} "
                 f"(your own daily loss limit).")
         if paper["consecutive_losses"]:
-            sec.add(f"Losses in a row so far: {paper['consecutive_losses']} (your pause comes after {paper['max_consecutive_losses']}).")
+            sec.add(f"Losses in a row so far: {paper['consecutive_losses']}"
+                    + (f" (your pause comes after {paper['max_consecutive_losses']})." if paper.get("max_consecutive_losses") is not None else "."))
         sec.row("budget", left=float(paper["loss_left"]), limit=float(paper["loss_limit"]), used=float(paper.get("loss_used") or 0.0),
                 losses_in_row=int(paper["consecutive_losses"] or 0), pause_after=paper.get("max_consecutive_losses"))
     return sec
@@ -487,7 +488,9 @@ async def day_section(ctx: Ctx) -> Section:
         sec.add(f"Booked P&L today: {money(paper['realised_pnl'])}" + (f"; open positions {money(open_pnl)}." if opens else "."))
         facts.update(booked=float(paper["realised_pnl"]), open_pnl=round(open_pnl, 2) if opens else None)
         if cfg is not None:
-            inside = paper["trades_today"] <= cfg.max_trades_per_day and paper["loss_used"] < paper["loss_limit"]
+            # DEF-0: only the limits he set count (a limit not set is never "gone past")
+            inside = ((cfg.max_trades_per_day is None or paper["trades_today"] <= cfg.max_trades_per_day)
+                      and (paper["loss_limit"] is None or paper["loss_used"] < paper["loss_limit"]))
             facts["inside_limits"] = bool(inside)
             if inside:
                 sec.add("You stayed inside your own daily limits today. That is the habit that counts.")
@@ -611,8 +614,8 @@ async def week_you_section(ctx: Ctx, monday: date) -> Section:
         sec.row("record", closed=len(closed), won=wins, lost=len(closed) - wins, net=net, after_charges=False)
     cfg = await _risk_cfg(ctx)
     days = [d for d in schedule.week_trading_days(monday, ctx.holidays) if d <= ctx.today]
-    if trades and days and cfg is not None:
-        limit = cfg.capital * cfg.max_daily_loss_pct / 100.0
+    if trades and days and cfg is not None and cfg.daily_loss_amount() is not None and cfg.max_trades_per_day is not None:
+        limit = float(cfg.daily_loss_amount() or 0.0)
         inside = 0
         for d in days:
             s, e = schedule.day_start(d).astimezone(timezone.utc), schedule.day_start(d + timedelta(days=1)).astimezone(timezone.utc)

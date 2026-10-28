@@ -60,9 +60,9 @@ def counted_since(mode: str, *, session_start: datetime, resumed_at: Optional[da
     return session_start
 
 
-def is_paused(losses_in_a_row: int, limit: int) -> bool:
-    """The same test as `RiskManager.validate_and_size`."""
-    return losses_in_a_row >= limit
+def is_paused(losses_in_a_row: int, limit: Optional[int]) -> bool:
+    """The same test as `RiskManager.validate_and_size` (DEF-0: no limit set = never paused)."""
+    return limit is not None and losses_in_a_row >= limit
 
 
 class BacktestLossStreak:
@@ -71,9 +71,9 @@ class BacktestLossStreak:
     The engine calls `new_session()` at every IST day roll and `closed()` for every closed trade; `report()` is what the
     result says about the pause (None when the limit was never reached)."""
 
-    def __init__(self, mode: str, limit: int) -> None:
+    def __init__(self, mode: str, limit: Optional[int]) -> None:
         self.mode = mode if mode in PAUSE_MODES else NEXT_SESSION
-        self.limit = int(limit)
+        self.limit = int(limit) if limit is not None else None      # DEF-0: None = no limit set, never pauses
         self.count = 0
         self.pauses = 0
         self.first_paused_at: Any = None
@@ -99,10 +99,10 @@ class BacktestLossStreak:
         when = self.first_paused_at
         at = when.isoformat() if hasattr(when, "isoformat") else (str(when) if when is not None else None)
         if self.mode == UNTIL_RESUME:
-            note = (f"After {in_a_row(self.limit)}, new entries paused and stayed paused to the end of this test: your setting "
+            note = (f"After {in_a_row(self.limit or 0)}, new entries paused and stayed paused to the end of this test: your setting "
                     "is \"Pause until I resume\", and nobody can resume a test. The test took no new trade after that point.")
         else:
-            note = (f"New entries paused after {in_a_row(self.limit)} {self.pauses} "
+            note = (f"New entries paused after {in_a_row(self.limit or 0)} {self.pauses} "
                     f"{'time' if self.pauses == 1 else 'times'}; each pause ended at the next session.")
         return {"mode": self.mode, "limit": self.limit, "pauses": self.pauses, "first_paused_at": at,
                 "held_to_end": self.mode == UNTIL_RESUME, "note": note}

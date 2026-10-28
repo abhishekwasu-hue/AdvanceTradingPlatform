@@ -54,13 +54,15 @@ def test_experience_tip_is_general_teaching():
 
 
 def test_briefing_shows_default_risk_settings_as_not_set_yet():
+    # DEF-0 (owner, 28 Oct): there are no platform default limits - nothing set means none applies, said once
     cfg = RiskConfig()
     line = briefing.risk_line("en", cfg, saved=False)
-    assert line.startswith("Default risk settings (not set yet):") and f"{cfg.risk_per_trade_pct:g}% risk per trade" in line
-    assert briefing.risk_line("en", cfg, saved=True).startswith("Your risk settings:")
+    assert line.startswith("No limits of your own are set") and "%" not in line
+    own = RiskConfig(risk_per_trade_pct=0.75, max_daily_loss_pct=2.0)
+    assert briefing.risk_line("en", own, saved=True) == "Your risk settings: 0.75% risk per trade, daily loss limit 2%."
     dt = {"kind": "RANGE", "regime": "RANGING", "vix": 13.0}
     lines = briefing.game_plan("en", dt, {"globals": []}, "new", [], cfg=cfg, cfg_saved=False)["lines"]
-    assert any(line.startswith("Default risk settings (not set yet)") for line in lines)
+    assert any(line.startswith("No limits of your own are set") for line in lines)
     assert not any("as a beginner" in line for line in lines)
 
 

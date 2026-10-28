@@ -151,12 +151,12 @@ async def discipline_week(session: AsyncSession, user: User, now: Optional[datet
     lines: List[str] = []
     hints: List[str] = []
     cfg = await get_tenant_risk_config(user.tenant_id, session)
-    if cfg is not None and days:
-        loss_limit = cfg.capital * cfg.max_daily_loss_pct / 100.0
+    if cfg is not None and days and cfg.daily_loss_amount() is not None and cfg.max_trades_per_day is not None:
+        loss_limit = float(cfg.daily_loss_amount() or 0.0)
         inside = inside_limits(week, days, int(cfg.max_trades_per_day), loss_limit)
         facts.append({"key": "inside_limits", "label": "Days inside my own limits", "value": f"{inside} of {len(days)}"})
         lines.append(f"I stayed inside my own daily limits on {inside} of {len(days)} market day{'s' if len(days) != 1 else ''}.")
-    elif cfg is None:
+    elif cfg is None or cfg.daily_loss_amount() is None or cfg.max_trades_per_day is None:
         hints.append("Save your own daily limits on the Risk limits page and the card shows the days you stayed inside them.")
 
     streak = journal_streak(closed, monday)

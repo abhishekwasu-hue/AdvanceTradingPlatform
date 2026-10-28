@@ -436,20 +436,21 @@ export interface SRZone {
 }
 
 export interface RiskConfig {
-  capital: number;
-  risk_per_trade_pct: number;
-  max_daily_loss_pct: number;
-  max_trades_per_day: number;
-  max_open_positions: number;
-  max_consecutive_losses: number;
+  // DEF-0 (owner, 28 Oct): every limit is the trader's own setting; null = not set (no limit).
+  capital: number | null;
+  risk_per_trade_pct: number | null;
+  max_daily_loss_pct: number | null;
+  max_trades_per_day: number | null;
+  max_open_positions: number | null;
+  max_consecutive_losses: number | null;
   min_risk_reward: number;
   lot_size: number;
   // Phase V1: Risk Guardian rules
-  max_portfolio_risk_pct: number;
-  stop_cooldown_minutes: number;
-  dd_level_1_pct: number;
-  dd_level_2_pct: number;
-  event_size_cut_pct: number;
+  max_portfolio_risk_pct: number | null;
+  stop_cooldown_minutes: number | null;
+  dd_level_1_pct: number | null;
+  dd_level_2_pct: number | null;
+  event_size_cut_pct: number | null;
   /** CP6-15: when the losses-in-a-row pause ends (the server's default is "next_session"). */
   loss_streak_pause?: LossStreakPause;
 }
@@ -508,7 +509,7 @@ export interface GuardianModeStatus {
   open_risk_by_bucket: Record<string, number>;
   open_risk_total: number;
   open_risk_pct: number;
-  portfolio_cap: number;
+  portfolio_cap: number | null;   // DEF-0: null = no portfolio cap set
   cooldowns: { underlying: string; exit_reason: string | null; minutes_left: number }[];
 }
 
@@ -2433,8 +2434,8 @@ export interface BriefDeployment {
   last_evaluated_at: string | null; last_signal_at: string | null; why: string[];
 }
 export interface BriefDay {
-  realised_pnl: number; trades_today: number; max_trades: number; open_positions: number; max_open: number;
-  loss_limit: number; loss_used: number; loss_left: number; consecutive_losses: number; max_consecutive_losses: number; active: boolean;
+  realised_pnl: number; trades_today: number; max_trades: number | null; open_positions: number; max_open: number | null;
+  loss_limit: number | null; loss_used: number; loss_left: number | null; consecutive_losses: number; max_consecutive_losses: number | null; active: boolean;
 }
 export interface DailyBrief {
   as_of: string; language: "en"; experience: string | null;

@@ -136,11 +136,12 @@ def review(trades: Iterable, lang: str = "en", risk: Optional[RiskConfig] = None
         sev = "high" if len(revenge) >= 3 and rv_net < 0 else "medium"
         flags.append(_flag("revenge", sev, "Revenge trading",
                            f"{len(revenge)} trades were entered within {REVENGE_MINUTES} minutes of a loss; together they made {_money(lang, rv_net)}.",
-                           f"After a stop-out, wait {risk.stop_cooldown_minutes or 30} minutes - the platform's cool-down can enforce it (Risk settings).",
+                           (f"After a stop-out, wait {risk.stop_cooldown_minutes} minutes - your cool-down setting enforces it."
+                            if risk.stop_cooldown_minutes else "After a stop-out, take a pause before the next entry - a cool-down in your limits can enforce it."),
                            [r["id"] for r in revenge][:10]))
     # Overtrading.
     counts = {d: len(g) for d, g in by_day.items()}
-    over = [d for d, n in counts.items() if n > risk.max_trades_per_day]
+    over = [d for d, n in counts.items() if n > risk.max_trades_per_day] if risk.max_trades_per_day is not None else []   # DEF-0
     loss_days = [d for d, g in by_day.items() if sum(r["pnl"] for r in g) < 0]
     win_days = [d for d, g in by_day.items() if sum(r["pnl"] for r in g) > 0]
     more_on_losing = loss_days and win_days and mean(counts[d] for d in loss_days) > 1.5 * mean(counts[d] for d in win_days)
@@ -154,7 +155,7 @@ def review(trades: Iterable, lang: str = "en", risk: Optional[RiskConfig] = None
                            "Decide the day's maximum trades before the open and stop there; two losses in a row = done for the day.",
                            [d.isoformat() for d in over][:10]))
     # Daily loss limit.
-    limit = risk.capital * risk.max_daily_loss_pct / 100.0
+    limit = risk.daily_loss_amount() or 0.0          # DEF-0: 0 = no daily loss limit set
     breached = [d for d, g in by_day.items() if -sum(r["pnl"] for r in g) > limit] if limit > 0 else []
     if breached:
         flags.append(_flag("loss_limit", "high", "Daily loss limit broken",
@@ -198,7 +199,7 @@ def review(trades: Iterable, lang: str = "en", risk: Optional[RiskConfig] = None
                            f"{worst['trades']} trades, {worst['win_rate']}% wins, {_money(lang, worst['net_pnl'])}.",
                            "Pause it and check its regime filter - a strategy run in the wrong kind of market (trend rules in a sideways one, reversion in a trend) loses by design. Re-test it on the chart first.",
                            [worst["key"]]))
-    if longest > risk.max_consecutive_losses:
+    if risk.max_consecutive_losses is not None and longest > risk.max_consecutive_losses:
         flags.append(_flag("streak", "low", "Long losing streak",
                            f"{longest} losses in a row, above your guard of {risk.max_consecutive_losses}.",
                            "Streaks happen even to good systems - which is why the size per trade stays small. Check the consecutive-loss guard is on."))

@@ -336,8 +336,8 @@ async def _effective_config(session: AsyncSession, user: User, direction: str, u
     from app.platform.controls import clamp_config, risk_ceilings
     from app.risk_engine import by_default
     from app.risk_engine.guardian import apply_multiplier, guard_entry
-    from app.risk_engine.routes import get_tenant_risk_config
-    cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+    from app.risk_engine.routes import user_risk_config
+    cfg = await user_risk_config(session, user)          # DEF-0: limits not set are off; capital = own, else PAPER balance
     cfg, notes = clamp_config(cfg, await risk_ceilings(session))
     if await by_default.enabled(session, user.tenant_id):
         cfg, cap_notes = await by_default.apply_user_cap(session, user, cfg)
@@ -451,12 +451,14 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         warnings.extend(n for n in notes if n)
         stop = position_stop(side, ask.stop_loss, tick)
         decision = RiskManager(cfg).validate_and_size(_signal(contract, side, basis, stop, now, fill_note), await build_trading_day_state(session, user),
-                                                      contract_spec=_spec(contract))
-        cap_amount = round(cfg.capital * cfg.risk_per_trade_pct / 100.0, 2)
+                                                      contract_spec=_spec(contract), requested_quantity=units)
+        # DEF-0: the risk per trade is the trader's own setting; not set = no risk cap (None) and no refusal for size.
+        amount = cfg.risk_amount()
+        cap_amount = round(amount, 2) if amount is not None else None
         risk = {"risk_per_trade": cap_amount, "allowed_lots": int(decision.quantity // contract.lot_size) if decision.approved else 0}
         if not decision.approved:
             refusals.extend(plain(r) for r in decision.reasons)
-        elif decision.quantity + 1e-9 < units:
+        elif cap_amount is not None and decision.quantity + 1e-9 < units:
             refusals.append(f"Your risk per trade (₹{cap_amount:,.0f}) allows {risk['allowed_lots']} lot(s) at this stop-loss. "
                             "Lower the lots or set a closer stop-loss.")
 

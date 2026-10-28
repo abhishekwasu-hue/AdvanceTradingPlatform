@@ -420,8 +420,9 @@ def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str, rea
     if atr_pts is None:
         atr_pts = study.get("atr_5m")
     stop_pts = round((atr_pts or 0) * cfg.stop_loss_atr_mult, 2) if atr_pts else None
-    risk_amount = round(risk.capital * risk.risk_per_trade_pct / 100.0, 2)
-    qty = int(risk_amount // stop_pts) if stop_pts else None
+    amount = risk.risk_amount()                       # DEF-0: None = no risk per trade set - no derived quantity
+    risk_amount = round(amount, 2) if amount is not None else None
+    qty = int(risk_amount // stop_pts) if stop_pts and risk_amount is not None else None
     # P0.8-D: no "today's triggers" with prices on a template the trader has not adopted - price levels with a rule set
     # read as a trade call. The levels stay in the study; the rules are described in words.
     triggers: List[dict] = []

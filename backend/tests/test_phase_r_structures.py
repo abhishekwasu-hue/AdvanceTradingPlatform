@@ -7,7 +7,6 @@ from datetime import date
 import pytest
 
 from app.core.enums import OptionStrategy, SignalDirection, StrikeRule
-from app.core.models import RiskConfig
 from app.db.models import TradeRecord, User
 from app.execution.multileg import execute_structure
 from app.instruments.contracts import ContractResolutionError
@@ -19,6 +18,7 @@ from tests.test_contract_rules import TODAY, _load_master
 from tests.test_deployments_api import _auth, _create, _store_broker
 from tests.test_multileg import SPOT, _OptionBroker, _rules
 from tests.test_trading_worker import _signal, _tenant, _trades
+from tests.def0_legacy import legacy
 
 FAR_BUMP = 40.0   # a later expiry's option is worth more: the calendar's long leg
 
@@ -161,7 +161,7 @@ def _execute(t, structure, *, mode="PAPER", broker=None, key, capital=1_000_000,
             return await execute_structure(session, user, mode=mode, strategy_id="ema_rsi_scalper_1m", signal=signal or _signal(), structure=structure,
                                            rules=rules or _rules(), target_credit_pct=target, stop_credit_pct=stop, idempotency_key=key,
                                            broker=broker if mode == "LIVE" else None, quote_broker=broker or _OptionBroker(),
-                                           risk_config=RiskConfig(capital=capital, risk_per_trade_pct=1.0))
+                                           risk_config=legacy(capital=capital, risk_per_trade_pct=1.0))
     return _run(go())
 
 

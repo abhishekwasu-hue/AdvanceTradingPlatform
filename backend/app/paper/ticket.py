@@ -89,10 +89,11 @@ def _round(value: Optional[float], digits: int = 2) -> Optional[float]:
     return None if value is None else round(float(value), digits)
 
 
-async def _org_config(session: AsyncSession, tenant_id: int) -> RiskConfig:
+async def _org_config(session: AsyncSession, tenant_id: int, capital: Optional[float] = None) -> RiskConfig:
+    """The organisation's limits (DEF-0: each not set = off); a % reads its own capital, else `capital` (PAPER)."""
     from app.platform.controls import clamp_config, risk_ceilings
     from app.risk_engine.routes import get_tenant_risk_config
-    cfg = await get_tenant_risk_config(tenant_id, session) or RiskConfig()
+    cfg = (await get_tenant_risk_config(tenant_id, session) or RiskConfig()).with_capital(capital)
     cfg, _ = clamp_config(cfg, await risk_ceilings(session))
     return cfg
 
@@ -110,6 +111,11 @@ async def is_cash_underlying(session: AsyncSession, symbol: str) -> bool:
     if rows:
         return any((ex or "").upper() in CASH_EXCHANGES and (kind or "").upper() in CASH_TYPES for ex, kind in rows)
     return get_contract_spec(symbol) is None and not DERIVATIVE.search(symbol.upper())
+
+
+def _finite(value: float) -> Optional[float]:
+    """DEF-0: a cap not set is infinite in the arithmetic and None (not set) in what the ticket shows and stores."""
+    return value if math.isfinite(value) else None
 
 
 async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -143,8 +149,10 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     warnings.extend(setting_notes)
     basis = await by_default.capital_basis(session, user, now)
     cap_info = by_default.risk_cap(basis, settings)
-    cfg = await _org_config(session, user.tenant_id)
-    org_cap = round(cfg.capital * cfg.risk_per_trade_pct / 100.0, 2)
+    cfg = await _org_config(session, user.tenant_id, basis)
+    # DEF-0: the organisation's risk per trade only when it set one (else no organisation cap: inf).
+    org_amount = cfg.risk_amount()
+    org_cap = round(org_amount, 2) if org_amount is not None else math.inf
     guard = await guard_entry(session, user.tenant_id, mode=by_default.MODE, underlying=symbol, cfg=cfg, now=asked_at, direction=direction,
                               user_id=user.id)
     refusals.extend(guard.reasons)
@@ -154,12 +162,17 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     user_cap = float(cap_info["amount"]) if cap_info["amount"] is not None else math.inf
     base_cap = min(user_cap, org_cap)
     binding = "your cap" if user_cap <= org_cap else "the organisation's risk per trade"
-    cap = round(base_cap * multiplier, 2)
+    cap = round(base_cap * multiplier, 2) if math.isfinite(base_cap) else math.inf
+    # DEF-0 D5: the override multiple exists only over a cap the trader set; never above the organisation's own limit.
     override_base = min(user_cap * app_config.RISK_OVERRIDE_MAX_MULTIPLE, org_cap)
-    override_cap = round(override_base * multiplier, 2)
+    override_cap = round(override_base * multiplier, 2) if math.isfinite(override_base) else math.inf
 
     lot = float(cfg.lot_size or 1)            # cash underlyings only (checked above): the organisation's unit
-    suggested = by_default.size(plan.entry, plan.stop_loss, cap, lot)
+    if math.isfinite(cap):
+        suggested = by_default.size(plan.entry, plan.stop_loss, cap, lot)
+    else:                                     # DEF-0: no cap set anywhere - one lot is the start, the trader sizes it
+        one = by_default.size(plan.entry, plan.stop_loss, math.inf, lot)
+        suggested = {**one, "lots": 1, "quantity": lot, "risk_amount": one["risk_per_lot"]}
     quantity = float(plan.quantity) if plan.quantity is not None else float(suggested["quantity"])
     per_unit = abs(float(plan.entry) - float(plan.stop_loss))
     risk_amount = round(quantity * per_unit, 2)
@@ -206,12 +219,12 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
         "entry": plan.entry, "stop_loss": plan.stop_loss, "target": plan.target, "time_stop": plan.time_stop, "invalidation": plan.invalidation,
         "reward_risk": rr, "min_reward_risk": min_rr,
         "sizing": {"capital_basis": basis, "risk_per_trade_pct": settings.risk_per_trade_pct, "risk_per_trade_amount": settings.risk_per_trade_amount,
-                   "user_cap": _round(user_cap) if math.isfinite(user_cap) else None, "org_cap": org_cap, "binding": binding, "size_multiplier": round(multiplier, 4), "cap": cap,
-                   "override_cap": override_cap, "lot_size": lot, "risk_per_unit": round(per_unit, 4),
+                   "user_cap": _round(user_cap) if math.isfinite(user_cap) else None, "org_cap": _finite(org_cap), "binding": binding if math.isfinite(base_cap) else None,
+                   "size_multiplier": round(multiplier, 4), "cap": _finite(cap), "override_cap": _finite(override_cap), "lot_size": lot, "risk_per_unit": round(per_unit, 4),
                    "suggested_quantity": suggested["quantity"], "suggested_lots": suggested["lots"], "quantity": quantity,
                    "lots": round(quantity / lot, 4) if lot else None, "risk_amount": risk_amount,
                    "risk_pct_of_capital": round(risk_amount / basis * 100.0, 3) if basis > 0 else None,
-                   "gauge": round(risk_amount / cap, 4) if cap > 0 else None, "within_cap": within, "override": bool(plan.override),
+                   "gauge": round(risk_amount / cap, 4) if math.isfinite(cap) and cap > 0 else None, "within_cap": within, "override": bool(plan.override),
                    "gauge_zone": "ok" if within else ("override" if risk_amount <= override_cap + 0.005 and base_cap >= user_cap else "over")},
         "checklist": [{"key": k, "label": v, "checked": ticks[k], "auto": False} for k, v in CHECKLIST.items()]
                      + [{"key": k, "label": v, "checked": auto[k], "auto": True} for k, v in AUTO_CHECKS.items()],
@@ -274,8 +287,9 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
     s = view["sizing"]
     multiplier = s["size_multiplier"] or 1.0
     # The checked cap before the guardian's cut (the pipeline applies the cut again), with the override's room if used.
-    own_cap = s["user_cap"] if s["user_cap"] is not None else s["org_cap"]       # TT-12: none of his own - the organisation's
-    cap_amount = round(max(min(own_cap, s["org_cap"]), s["risk_amount"] / multiplier if multiplier > 0 else 0.0), 2)
+    # TT-12: none of his own - the organisation's; DEF-0: neither set - no cap (None), the plan's own quantity sizes it.
+    caps = [c for c in (s["user_cap"], s["org_cap"]) if c is not None]
+    cap_amount = round(max(min(caps), s["risk_amount"] / multiplier if multiplier > 0 else 0.0), 2) if caps else None
     risk = abs(price - plan.stop_loss)
     signal = Signal(symbol=view["symbol"], strategy_id=f"plan_{plan.setup.lower()}", strategy_name=f"PAPER ticket: {SETUPS[plan.setup]}",
                     direction=SignalDirection(view["direction"]), timestamp=now, entry=price, stop_loss=plan.stop_loss, target1=plan.target,
@@ -285,7 +299,7 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
     exit_rules = ExitRules(time_exit_at=plan.time_stop).to_json() if plan.time_stop else None
     if row.override:
         await write_audit_log(session, user.tenant_id, user.id, "risk_cap_override",
-                              f"plan #{row.id} {view['symbol']} qty {s['quantity']:g} risks {s['risk_amount']:,.2f} > cap {s['cap']:,.2f}: {row.override_reason}"[:500])
+                              f"plan #{row.id} {view['symbol']} qty {s['quantity']:g} risks {s['risk_amount']:,.2f} > cap {s['cap'] or 0:,.2f}: {row.override_reason}"[:500])
     await session.commit()
     plan_id = row.id
     try:

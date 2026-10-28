@@ -250,7 +250,7 @@ async def positions_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
         risk.add(f"If each position reached the invalidation you set for it, the result from entry would be about {money(total)} in total.")
         facts["at_invalidation"] = total
         cfg = await _risk_cfg(ctx)
-        limit = float(cfg.capital) * float(cfg.max_daily_loss_pct) / 100.0 if cfg is not None else 0.0
+        limit = float(cfg.daily_loss_amount() or 0.0) if cfg is not None else 0.0      # DEF-0: 0 = no daily loss limit set
         if total < 0 and limit > 0:
             risk.add(f"That is {round(100.0 * -total / limit)}% of your own daily loss limit.")
             facts["of_loss_limit_pct"] = round(100.0 * -total / limit)

@@ -37,11 +37,15 @@ class RiskManager:
 
     def validate_and_size(
         self, signal: Signal, state: TradingDayState, contract_spec: Optional[ContractSpec] = None,
+        requested_quantity: Optional[float] = None,
     ) -> RiskDecision:
         """`contract_spec` is only supplied for symbols the instrument registry recognizes
         (MCX commodities, crypto pairs) - see app/instruments/registry.py. Every plain NSE/BSE
         equity or index-option symbol passes None here and sizes exactly as before, off the
         tenant's own configured `RiskConfig.lot_size`, so this stays fully backward compatible.
+
+        DEF-0 (owner, 28 Oct): each limit applies only when the trader set it. With no risk per trade set the size is
+        not risk-based: it is `requested_quantity` (the trader's own lots, or the caller's cap) when given, else one lot.
         """
         reasons = []
 
@@ -60,24 +64,31 @@ class RiskManager:
             reasons.append(
                 f"Risk/Reward {signal.risk_reward:.2f} below configured minimum {self.config.min_risk_reward:.2f}"
             )
-        if state.trades_today >= self.config.max_trades_per_day:
-            reasons.append(f"Max trades per day reached ({self.config.max_trades_per_day})")
-        if state.open_positions >= self.config.max_open_positions:
-            reasons.append(f"Max open positions reached ({self.config.max_open_positions})")
-        if state.consecutive_losses >= self.config.max_consecutive_losses:
-            reasons.append(f"Max consecutive losses reached ({self.config.max_consecutive_losses}) - cool down")
+        cfg = self.config
+        if cfg.max_trades_per_day is not None and state.trades_today >= cfg.max_trades_per_day:
+            reasons.append(f"Max trades per day reached ({cfg.max_trades_per_day})")
+        if cfg.max_open_positions is not None and state.open_positions >= cfg.max_open_positions:
+            reasons.append(f"Max open positions reached ({cfg.max_open_positions})")
+        if cfg.max_consecutive_losses is not None and state.consecutive_losses >= cfg.max_consecutive_losses:
+            reasons.append(f"Max consecutive losses reached ({cfg.max_consecutive_losses}) - cool down")
 
-        max_daily_loss_amount = -abs(self.config.capital * self.config.max_daily_loss_pct / 100)
-        if state.daily_pnl <= max_daily_loss_amount:
+        daily_limit = cfg.daily_loss_amount()
+        if daily_limit is not None and state.daily_pnl <= -daily_limit:
             reasons.append(f"Daily loss limit breached (P&L {state.daily_pnl:.2f})")
 
         if reasons:
             return RiskDecision(approved=False, reasons=reasons)
 
-        risk_amount = self.config.capital * self.config.risk_per_trade_pct / 100
+        risk_amount = cfg.risk_amount()
         risk_per_unit = abs(signal.entry - signal.stop_loss)
         if risk_per_unit <= 0:
             return RiskDecision(approved=False, reasons=["Invalid risk per unit (entry == stop loss)"])
+
+        unit = contract_spec.lot_size if contract_spec is not None else cfg.lot_size
+        if risk_amount is None:
+            # DEF-0: no risk per trade set - the trader's own size (or one lot); no risk-based cap.
+            quantity = float(requested_quantity) if requested_quantity is not None and requested_quantity > 0 else float(unit)
+            return RiskDecision(approved=True, quantity=quantity, reasons=["Risk checks passed"])
 
         raw_qty = risk_amount / risk_per_unit
 
@@ -87,7 +98,6 @@ class RiskManager:
             increments = int(raw_qty / contract_spec.lot_size)
             quantity = round(increments * contract_spec.lot_size, 8)
         else:
-            unit = contract_spec.lot_size if contract_spec is not None else self.config.lot_size
             lots = int(raw_qty // unit)
             quantity = lots * unit
 

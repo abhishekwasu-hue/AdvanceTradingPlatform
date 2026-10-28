@@ -19,6 +19,7 @@ Exits are the position monitor's job (`app/trading/position_monitor.py::_monitor
 legs are judged together on the spread's value, the short strikes and the square-off time.
 """
 import json
+import math
 import logging
 import time
 import uuid
@@ -34,6 +35,7 @@ from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest
 from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide, OrderStatus, SignalDirection
 from app.core.models import RiskConfig, Signal, Trade
+from app.risk_engine.routes import get_tenant_risk_config
 from app.db.models import OrderRecord, Tenant, TradeRecord, User
 from app.execution import approval as approval_gate
 from app.execution.contract_execution import MARGIN_SAFETY, ContractExecutionError, contract_ltp, _is_upstox
@@ -59,7 +61,6 @@ from app.risk_engine import by_default
 from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
 from app.platform.controls import clamp_config, risk_ceilings
 from app.risk_engine.risk_manager import RiskManager, nonfinite_levels
-from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
 
 logger = logging.getLogger(__name__)
@@ -168,11 +169,18 @@ async def execute_structure(
 
     # Sizing: the risk engine's day checks plus lots off max loss. A synthetic signal whose
     # entry-to-stop distance *is* the max loss per unit makes `risk / max_loss` the quantity.
-    cfg = risk_config or await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+    if risk_config is not None:
+        cfg = risk_config
+    else:                                    # DEF-0: limits not set are off; a % reads the user's PAPER balance
+        from app.risk_engine.by_default import capital_basis
+        cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+        if cfg.capital is None:
+            cfg = cfg.with_capital(await capital_basis(session, user))
     # Phase V1: ceilings, then the guardian's entry rules (cool-down, drawdown ladder, events).
     cfg, guardian_notes = clamp_config(cfg, await risk_ceilings(session))
     state = await build_trading_day_state(session, user)
-    daily_limit = -abs(cfg.capital * cfg.max_daily_loss_pct / 100)
+    daily_amount = cfg.daily_loss_amount()
+    daily_limit = -daily_amount if daily_amount is not None else -math.inf
     # A breached daily-loss limit outranks the guardian (the risk engine's refusal engages the kill switch).
     if mode == ExecutionMode.PAPER.value and await by_default.enabled(session, user.tenant_id):
         # Z5 / P1-d: the user's own PAPER risk cap as well as the organisation's (strictest wins), before the guardian.
@@ -199,7 +207,8 @@ async def execute_structure(
         "symbol": structure.underlying_symbol, "direction": SignalDirection.SHORT, "entry": basis,
         "stop_loss": round(basis + metrics.risk_per_unit, 2), "target1": None, "target2": None, "risk_reward": None,
     })
-    decision = RiskManager(cfg).validate_and_size(sizing_signal, state, contract_spec=spec)
+    decision = RiskManager(cfg).validate_and_size(sizing_signal, state, contract_spec=spec,
+                                                  requested_quantity=float(rules.max_lots * lot) if rules.max_lots else None)
     notes = list(structure.notes) + [_economics_note(metrics, lot)] + guardian_notes
     if not decision.approved:
         reasons = notes + decision.reasons
@@ -207,7 +216,7 @@ async def execute_structure(
         return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
     lots = int(decision.quantity // lot)
     if lots < 1:
-        reasons = notes + [f"Risk per lot ({metrics.risk_per_unit * lot:,.0f}) exceeds risk per trade ({cfg.capital * cfg.risk_per_trade_pct / 100:,.0f})"]
+        reasons = notes + [f"Risk per lot ({metrics.risk_per_unit * lot:,.0f}) exceeds risk per trade ({cfg.risk_amount() or 0:,.0f})"]
         await _reject_all(session, orders, reasons)
         return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
     if rules.max_lots:

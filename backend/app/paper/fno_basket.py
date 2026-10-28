@@ -191,9 +191,12 @@ async def _room(session: AsyncSession, user: User, count: int) -> Optional[str]:
     cfg, _ = clamp_config(cfg, await risk_ceilings(session))
     if await by_default.enabled(session, user.tenant_id):
         cfg, _ = await by_default.apply_user_cap(session, user, cfg)
+    if cfg.max_open_positions is None and cfg.max_trades_per_day is None:
+        return None                      # DEF-0: neither limit set - no room to count against
     state = await build_trading_day_state(session, user)
-    open_room = max(0, cfg.max_open_positions - state.open_positions)
-    day_room = max(0, cfg.max_trades_per_day - state.trades_today)
+    big = 1 << 30
+    open_room = max(0, cfg.max_open_positions - state.open_positions) if cfg.max_open_positions is not None else big
+    day_room = max(0, cfg.max_trades_per_day - state.trades_today) if cfg.max_trades_per_day is not None else big
     room = min(open_room, day_room)
     if room >= count:
         return None

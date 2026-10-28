@@ -101,7 +101,7 @@ class GuardianVerdict:
 
 def apply_multiplier(cfg: RiskConfig, multiplier: float) -> RiskConfig:
     """A smaller risk per trade is how every sizer (single leg, structure lots) shrinks."""
-    if multiplier >= 1.0:
+    if multiplier >= 1.0 or cfg.risk_per_trade_pct is None:   # DEF-0: no risk per trade set - nothing to shrink
         return cfg
     return cfg.model_copy(update={"risk_per_trade_pct": round(cfg.risk_per_trade_pct * max(multiplier, 0.0), 6)})
 
@@ -117,12 +117,12 @@ async def last_stop_out(session: AsyncSession, tenant_id: int, mode: str, underl
     return None
 
 
-async def equity_drawdown(session: AsyncSession, tenant_id: int, mode: str, capital: float) -> DrawdownState:
+async def equity_drawdown(session: AsyncSession, tenant_id: int, mode: str, capital: Optional[float]) -> DrawdownState:
     """Realised equity curve of this mode's closed trades; the peak is the high-water mark."""
     pnls = list(await session.scalars(select(TradeRecord.pnl).where(
         TradeRecord.tenant_id == tenant_id, TradeRecord.mode == mode, TradeRecord.exit_time.isnot(None),
     ).order_by(TradeRecord.exit_time, TradeRecord.id)))
-    equity = peak = float(capital if capital > 0 else 0.0)
+    equity = peak = float(capital if capital is not None and capital > 0 else 0.0)   # DEF-0: no capital known - 0
     for pnl in pnls:
         equity += float(pnl or 0.0)
         peak = max(peak, equity)
@@ -257,7 +257,7 @@ async def portfolio_risk_block(session: AsyncSession, tenant_id: int, *, mode: s
     """R4 after sizing: open risk at the stops plus this trade's max loss against the cap."""
     by_bucket = await open_risk_by_bucket(session, tenant_id, mode)
     cap_pct = float(cfg.max_portfolio_risk_pct or 0.0)
-    if cap_pct <= 0:
+    if cap_pct <= 0 or cfg.capital is None:   # DEF-0: off until the trader sets the cap (and a capital is known)
         return None, by_bucket
     cap = cfg.capital * cap_pct / 100.0
     open_total = sum(by_bucket.values())
@@ -297,11 +297,13 @@ async def status(session: AsyncSession, tenant_id: int, cfg: RiskConfig, now: Op
                 exit_at = trade.exit_time if trade.exit_time.tzinfo else trade.exit_time.replace(tzinfo=timezone.utc)
                 cooldowns.append({"underlying": key, "exit_reason": trade.exit_reason,
                                   "minutes_left": max(0, int(cfg.stop_cooldown_minutes - (now - exit_at).total_seconds() // 60))})
+        capital = cfg.capital or 0.0
         modes[mode] = {
             **dd.as_dict(), "state": state, "size_multiplier": multiplier,
             "open_risk_by_bucket": buckets, "open_risk_total": round(open_total, 2),
-            "open_risk_pct": round(open_total / cfg.capital * 100.0, 2) if cfg.capital > 0 else 0.0,
-            "portfolio_cap": round(cfg.capital * float(cfg.max_portfolio_risk_pct or 0.0) / 100.0, 2),
+            "open_risk_pct": round(open_total / capital * 100.0, 2) if capital > 0 else 0.0,
+            # DEF-0: None = no portfolio cap set
+            "portfolio_cap": round(capital * float(cfg.max_portfolio_risk_pct) / 100.0, 2) if cfg.max_portfolio_risk_pct and capital > 0 else None,
             "cooldowns": cooldowns,
         }
     return {"as_of": now.isoformat(), "settings": cfg.model_dump(), "modes": modes,

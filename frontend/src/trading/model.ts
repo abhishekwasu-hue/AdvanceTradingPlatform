@@ -307,7 +307,7 @@ export function longShortLine(exposure: PortfolioExposure | null): string | null
 
 /** The rupee amount of a percentage of the capital (null when either is unknown). */
 export function ofCapital(config: Pick<RiskConfig, "capital"> | null, pct: number | null | undefined): number | null {
-  if (!config || typeof pct !== "number" || !Number.isFinite(pct) || !Number.isFinite(config.capital)) return null;
+  if (!config || typeof pct !== "number" || !Number.isFinite(pct) || config.capital == null || !Number.isFinite(config.capital)) return null;
   return (config.capital * pct) / 100;
 }
 

@@ -605,10 +605,10 @@ def cap_config(cfg: RiskConfig, amount: float) -> Tuple[RiskConfig, Optional[str
     """The organisation's config with its risk per trade lowered to `amount` when that is stricter (ADR-0003). The risk
     per trade is a percentage of the organisation's capital, so the amount is expressed as one (a hair above, so the
     floor in the sizer never loses a lot to rounding)."""
-    if cfg.capital <= 0:
+    if cfg.capital is None or cfg.capital <= 0:
         return cfg, None
-    current = cfg.capital * cfg.risk_per_trade_pct / 100.0
-    if amount >= current:
+    current = cfg.risk_amount()             # DEF-0: None = the organisation set no risk per trade - the user's cap alone
+    if current is not None and amount >= current:
         return cfg, None
     pct = max(0.0, amount) * (1.0 + 1e-9) / cfg.capital * 100.0
     return cfg.model_copy(update={"risk_per_trade_pct": pct}), f"Risk by default: risk per trade capped at {amount:,.2f} (your PAPER cap)"

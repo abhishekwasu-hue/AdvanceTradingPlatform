@@ -104,25 +104,47 @@ class StrategyInfo(BaseModel):
 
 
 class RiskConfig(BaseModel):
-    capital: float = 100_000.0
-    risk_per_trade_pct: float = 0.5
-    max_daily_loss_pct: float = 3.0
-    max_trades_per_day: int = 20
-    max_open_positions: int = 3
-    max_consecutive_losses: int = 4
+    # DEF-0 (owner, 28 Oct): every limit below is the trader's own setting; None = not set = off (no limit, no gate).
+    # Nothing is pre-filled from code or config. `capital` None = not set: a % shown or checked then reads the PAPER
+    # account balance where the caller has one (`with_capital`), else the %-based rules are off.
+    capital: Optional[float] = None
+    risk_per_trade_pct: Optional[float] = None
+    max_daily_loss_pct: Optional[float] = None
+    max_trades_per_day: Optional[int] = None
+    max_open_positions: Optional[int] = None
+    max_consecutive_losses: Optional[int] = None
     # TT12-4 (owner, 24 Oct): no built-in minimum reward:risk - 0 = not set (no minimum), on LIVE, paper and both
     # backtest engines alike. Only a value the organisation sets itself filters entries (never exits, ADR-0004).
     min_risk_reward: float = 0.0
     lot_size: int = 1
-    # Phase V1 (Risk Guardian): the rules the engine keeps whatever built the strategy.
-    max_portfolio_risk_pct: float = 6.0    # R4: loss if every open stop hits + this trade, % of capital
-    stop_cooldown_minutes: int = 30        # R10: no re-entry in an underlying this long after a stop-out
-    dd_level_1_pct: float = 5.0            # P2: this far below the equity peak, risk per trade is halved
-    dd_level_2_pct: float = 10.0           # P3: this far below, new entries pause until reviewed
-    event_size_cut_pct: float = 50.0       # M8: default size cut on an event day flagged SIZE_CUT
+    # Phase V1 (Risk Guardian): the rules the engine keeps whatever built the strategy - each off until set (DEF-0).
+    max_portfolio_risk_pct: Optional[float] = None    # R4: loss if every open stop hits + this trade, % of capital
+    stop_cooldown_minutes: Optional[int] = None       # R10: no re-entry in an underlying this long after a stop-out
+    dd_level_1_pct: Optional[float] = None            # P2: this far below the equity peak, risk per trade is halved
+    dd_level_2_pct: Optional[float] = None            # P3: this far below, new entries pause until reviewed
+    event_size_cut_pct: Optional[float] = None        # M8: size cut on an event day flagged SIZE_CUT
     # CP6-15: when the losses-in-a-row pause ends - at the next Indian trading session, or when the trader resumes
-    # (app/risk_engine/loss_streak.py). The same rule live, on paper and in both backtest engines.
+    # (app/risk_engine/loss_streak.py). Only used once `max_consecutive_losses` is set.
     loss_streak_pause: Literal["next_session", "until_resume"] = "next_session"
+
+    def with_capital(self, balance: Optional[float]) -> "RiskConfig":
+        """DEF-0 D1: the trader's own capital when set, else `balance` (the PAPER account balance) - never a built-in
+        figure. Unchanged when neither is known."""
+        if self.capital is not None or balance is None or not balance > 0:
+            return self
+        return self.model_copy(update={"capital": float(balance)})
+
+    def risk_amount(self) -> Optional[float]:
+        """Risk per trade in money, or None when the trader set no risk per trade (or no capital is known)."""
+        if self.risk_per_trade_pct is None or self.capital is None:
+            return None
+        return self.capital * self.risk_per_trade_pct / 100.0
+
+    def daily_loss_amount(self) -> Optional[float]:
+        """The daily loss limit in money (positive), or None when not set."""
+        if self.max_daily_loss_pct is None or self.capital is None:
+            return None
+        return abs(self.capital * self.max_daily_loss_pct / 100.0)
 
 
 class RiskDecision(BaseModel):

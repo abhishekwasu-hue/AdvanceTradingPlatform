@@ -25,7 +25,11 @@ function DataStamp({ data }: { data: NonNullable<DailyBrief["market_data"]> }) {
   return <Badge tone="warn" className="font-bold uppercase tracking-wider">{text}</Badge>;
 }
 
-function Meter({ label, used, max, isMoney = false }: { label: string; used: number; max: number; isMoney?: boolean }) {
+function Meter({ label, used, max, isMoney = false }: { label: string; used: number; max: number | null; isMoney?: boolean }) {
+  // DEF-0: max null = no limit set - the value alone, no bar
+  if (max == null) {
+    return <div className="flex justify-between text-xs"><span className="text-fg-muted">{label}</span><span className="font-tabular text-fg">{isMoney ? money(used) : used} · no limit set</span></div>;
+  }
   const pct = max > 0 ? Math.min(100, (used / max) * 100) : 0;
   const tone = pct >= 100 ? "bg-down" : pct >= 70 ? "bg-warn" : "bg-ai";
   return (
@@ -50,7 +54,7 @@ function YourDay({ day }: { day: BriefDay }) {
       <Meter label={t("pulse.day.lossUsed")} used={day.loss_used} max={day.loss_limit} isMoney />
       <Meter label={t("pulse.day.trades")} used={day.trades_today} max={day.max_trades} />
       <Meter label={t("pulse.day.open")} used={day.open_positions} max={day.max_open} />
-      <div className="text-xs text-fg-muted">{t("pulse.day.streak")}: <b className={day.consecutive_losses >= day.max_consecutive_losses ? "text-down" : "text-fg"}>{day.consecutive_losses}</b> / {day.max_consecutive_losses}</div>
+      <div className="text-xs text-fg-muted">{t("pulse.day.streak")}: <b className={day.max_consecutive_losses != null && day.consecutive_losses >= day.max_consecutive_losses ? "text-down" : "text-fg"}>{day.consecutive_losses}</b>{day.max_consecutive_losses != null ? ` / ${day.max_consecutive_losses}` : ""}</div>
     </div>
   );
 }

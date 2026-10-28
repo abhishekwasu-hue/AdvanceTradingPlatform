@@ -12,6 +12,7 @@ from tests.server_evidence import serve_candles
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_phase_l_ai import VALID_ANSWER, _ScriptedProvider, _candles, _owner
 from tests.utils import noisy_uptrend
+from tests.def0_legacy import legacy
 
 
 def _run(coro):
@@ -29,7 +30,7 @@ def _config(**overrides) -> CustomStrategyConfig:
 
 
 def test_checklist_fails_draft_rules_and_fixes_them_deterministically():
-    cfg = RiskConfig(capital=1_000_000.0, risk_per_trade_pct=1.0)
+    cfg = legacy(capital=1_000_000.0, risk_per_trade_pct=1.0)        # DEF-0: the guardian rules the organisation set
     ceilings = {"risk_per_trade_pct": 2.0}
     # P1-2b: the draft states its own minimum (1.3); a stated 1.2 or none = no minimum (no hidden filter).
     _, report = evaluate_config(_config(stop_loss_atr_mult=0.5, target_rr=(1.0, 0.8), min_rr=1.3), cfg, ceilings)
@@ -93,6 +94,8 @@ def test_generator_gives_the_ai_one_auto_fix_round_then_fixes_deterministically(
 
 def test_approval_requires_evidence_and_explicit_acceptance(monkeypatch):
     headers, me = _owner("v2-approve@example.com")
+    # DEF-0: the statement names a loss amount only when a risk per trade is set - the organisation sets one
+    assert client.put("/api/risk-settings", headers=headers, json=legacy().model_dump()).status_code == 200
 
     async def gen():
         async with _session_factory() as session:

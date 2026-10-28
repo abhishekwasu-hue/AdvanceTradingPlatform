@@ -12,6 +12,7 @@ from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixture
 from tests.test_hc2a_agent import _Scripted
 from tests.test_phase_l_ai import _owner
 from tests.test_trading_worker import _deploy
+from tests.def0_legacy import legacy
 
 NOW = datetime(2026, 3, 10, 5, 0, tzinfo=timezone.utc)
 
@@ -137,7 +138,9 @@ def test_one_proposal_per_request_and_tenant_scope():
 
 
 def test_risk_proposals_only_tighten_and_approval_changes_no_setting():
-    _, me, _ = _org("hc2b-risk@example.com")
+    headers, me, _ = _org("hc2b-risk@example.com")
+    # DEF-0: no built-in risk per trade - the organisation sets its own 0.5% first
+    assert client.put("/api/risk-settings", headers=headers, json=legacy().model_dump()).status_code == 200
     loosen = _Spying([("call", [("propose_risk_reduction", {"setting": "risk_per_trade_pct", "proposed_value": 2.0,
                                                              "reason": "Larger size per trade.", "quote": "reduce risk"})]), ("text", "No.")])
     bad = _run(_agent(me["id"], loosen, "reduce risk please"))
@@ -155,7 +158,8 @@ def test_risk_proposals_only_tighten_and_approval_changes_no_setting():
             return await monitor.execute(session, row, user, now=NOW + timedelta(minutes=1))
     done = _run(approve())
     assert done.status == "EXECUTED" and "no automatic change" in done.result
-    assert _run(_rows(RiskSettingsRecord, RiskSettingsRecord.tenant_id == me["tenant_id"])) == []       # the person changes it
+    rows = _run(_rows(RiskSettingsRecord, RiskSettingsRecord.tenant_id == me["tenant_id"]))
+    assert [r.risk_per_trade_pct for r in rows] == [0.5]                                         # the person changes it
 
 
 def test_route_returns_the_proposals(monkeypatch):

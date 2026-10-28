@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import prompt_versions, research
 from app.backtest.data_policy import HoldoutError
+from app.core import config as app_config
 
 MAX_DRAFTS = 8                       # H-9 provisional
 OOS_FRACTION = 0.3                   # H-9 provisional
@@ -133,7 +134,7 @@ async def run_study(session: AsyncSession, *, tenant_id: int, user_id: Optional[
             await session.commit()
             continue
         metrics = _metrics(result)
-        returns = research.daily_returns(result.trades, float(risk.capital), is_days)
+        returns = research.daily_returns(result.trades, float(risk.with_capital(app_config.PAPER_STARTING_CAPITAL).capital or 0.0), is_days)
         row = await trial(dsl=draft, status="ok", metrics=metrics, returns=returns, data_from=start.to_pydatetime(),
                           data_to=cut.to_pydatetime())
         drafts[row.seq] = draft
@@ -152,7 +153,7 @@ async def run_study(session: AsyncSession, *, tenant_id: int, user_id: Optional[
         try:
             oos = await _backtest(strategy, pd.concat([warm, oos_df]), spec.symbol, spec.timeframe, risk)
             oos_trades = oos_trades_only(oos.trades, cut)
-            oos_returns = research.daily_returns(oos_trades, float(risk.capital), oos_days)
+            oos_returns = research.daily_returns(oos_trades, float(risk.with_capital(app_config.PAPER_STARTING_CAPITAL).capital or 0.0), oos_days)
             check: Dict[str, Any] = {"chosen_seq": chosen["seq"], "from": cut.isoformat(), "to": end.isoformat(), "warmup_bars": len(warm),
                                      "metrics": _trade_metrics(oos_trades),
                                      "sharpe_daily": round(research.sharpe(oos_returns), 4) if oos_returns else None}

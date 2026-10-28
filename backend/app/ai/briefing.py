@@ -101,13 +101,18 @@ def _families(regime: str) -> Dict[str, List[str]]:
 
 
 def risk_line(lang: str, cfg: RiskConfig, saved: bool) -> str:
-    """P0.10: the risk settings the trades will actually use - the trader's own, or the platform defaults labelled as
-    such. Experience never changes them (the Risk Management page does, when the trader decides)."""
-    values = (f"{cfg.risk_per_trade_pct:g}% risk per trade, daily loss limit {cfg.max_daily_loss_pct:g}%, "
-              f"pause after {cfg.max_consecutive_losses} losses in a row")
-    if saved:
-        return f"Your risk settings: {values}."
-    return f"Default risk settings (not set yet): {values}. You set your own under Risk Management."
+    """P0.10: the risk settings the trades will actually use. DEF-0: only the limits the trader set himself - there are no
+    platform defaults; with none set, none applies."""
+    parts = []
+    if cfg.risk_per_trade_pct is not None:
+        parts.append(f"{cfg.risk_per_trade_pct:g}% risk per trade")
+    if cfg.max_daily_loss_pct is not None:
+        parts.append(f"daily loss limit {cfg.max_daily_loss_pct:g}%")
+    if cfg.max_consecutive_losses is not None:
+        parts.append(f"pause after {cfg.max_consecutive_losses} losses in a row")
+    if parts:
+        return f"Your risk settings: {', '.join(parts)}."
+    return "No limits of your own are set, so none applies. You can set them in My limits."
 
 
 # Handover 11l (flag `signal_language_v2`): the two plan texts that used stop wording, in the signal language. The brief
@@ -176,7 +181,8 @@ async def your_day(session: AsyncSession, user: User, cfg: RiskConfig, now: date
         entered_today = [t for t in mine if _utc(t.entry_time) >= start]
         open_ = [t for t in mine if t.exit_time is None]
         pnl = round(sum(t.pnl for t in closed_today), 2)
-        limit = round(cfg.capital * cfg.max_daily_loss_pct / 100.0, 2)
+        daily = cfg.daily_loss_amount()                  # DEF-0: None = no daily loss limit set
+        limit = round(daily, 2) if daily is not None else None
         streak = 0
         for t in sorted(closed_today, key=lambda t: _utc(t.exit_time), reverse=True):
             if t.pnl > 0:
@@ -184,7 +190,7 @@ async def your_day(session: AsyncSession, user: User, cfg: RiskConfig, now: date
             streak += 1
         out[mode] = {"realised_pnl": pnl, "trades_today": len(entered_today), "max_trades": cfg.max_trades_per_day,
                      "open_positions": len(open_), "max_open": cfg.max_open_positions, "loss_limit": limit,
-                     "loss_used": round(max(0.0, -pnl), 2), "loss_left": round(max(0.0, limit + min(pnl, 0.0)), 2),
+                     "loss_used": round(max(0.0, -pnl), 2), "loss_left": round(max(0.0, limit + min(pnl, 0.0)), 2) if limit is not None else None,
                      "consecutive_losses": streak, "max_consecutive_losses": cfg.max_consecutive_losses,
                      "active": bool(mine)}
     return out
@@ -269,12 +275,14 @@ async def build(session: AsyncSession, user: User, lang: str = "en", now: Option
     checklist = [
         {"id": "broker", "ok": broker_ok, "text": "Broker session logged in today" if broker_ok
          else "No usable broker session - log in on the Broker page (needed for real candles and LIVE)"},
-        {"id": "risk", "ok": cfg_saved is not None, "text": "Your own risk settings are saved" if cfg_saved is not None
-         else "Risk settings are still the defaults - set capital and daily loss limit (Risk Management)"},
+        # DEF-0: limits are optional - none set is not a problem (ok None = neutral), only an offer
+        {"id": "risk", "ok": True if cfg_saved is not None else None, "text": "Your own limits are saved" if cfg_saved is not None
+         else "No limits of your own are set, so none applies - set them in My limits if you want"},
         {"id": "worker", "ok": worker_ok, "text": "Autopilot worker is running" if worker_ok
          else "Worker not seen in the last minutes - deployments will not trade (check the worker container)"},
-        {"id": "loss_budget", "ok": day[budget_mode]["loss_left"] > 0,
-         "text": f"Loss budget left today ({budget_mode}): {_money(day[budget_mode]['loss_left'])} of {_money(day[budget_mode]['loss_limit'])}"},
+        {"id": "loss_budget", "ok": None if day[budget_mode]["loss_left"] is None else day[budget_mode]["loss_left"] > 0,
+         "text": "No daily loss limit set" if day[budget_mode]["loss_left"] is None
+         else f"Loss budget left today ({budget_mode}): {_money(day[budget_mode]['loss_left'])} of {_money(day[budget_mode]['loss_limit'])}"},
         {"id": "vix", "ok": None if dt["vix"] is None else dt["vix"] < 20,
          "text": "India VIX not read yet" if dt["vix"] is None else market_memory.vix_text(lang, dt["vix"])},
         {"id": "events", "ok": not any(e["action"] == "BLOCK" for e in events),
@@ -299,7 +307,9 @@ def summary_lines(lang: str, brief: dict) -> List[str]:
     lines += brief["plan"]["lines"][:4]
     mode = "LIVE" if brief["you"]["LIVE"]["active"] else "PAPER"
     y = brief["you"][mode]
-    lines.append(f"You today ({mode}): P&L {_money(y['realised_pnl'])}, {y['trades_today']}/{y['max_trades']} trades, loss budget left {_money(y['loss_left'])}.")
+    trades = f"{y['trades_today']}/{y['max_trades']}" if y["max_trades"] is not None else f"{y['trades_today']}"
+    budget = f", loss budget left {_money(y['loss_left'])}" if y["loss_left"] is not None else ""
+    lines.append(f"You today ({mode}): P&L {_money(y['realised_pnl'])}, {trades} trades{budget}.")
     missing = [c["text"] for c in brief["checklist"] if c["ok"] is False]
     if missing:
         lines.append("Fix first: " + missing[0])

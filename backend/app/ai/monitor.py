@@ -33,6 +33,7 @@ from app.market_data.calendar import IST
 from app.notifications.service import notify
 from app.risk_engine.routes import get_tenant_risk_config
 from app.observability.metrics import AI_DECISIONS, AI_PROPOSALS
+from app.core import config as app_config
 
 TTL_HOURS = 24
 LOSING_STREAK = 3
@@ -80,7 +81,8 @@ async def observe(session: AsyncSession, tenant_id: int, deployments: List[Strat
                   regime_lookup: Optional[Callable[[StrategyDeploymentRecord], Optional[str]]] = None) -> List[Proposal]:
     """Pure observation over persisted state; returns the proposals worth raising."""
     risk = await get_tenant_risk_config(tenant_id, session)
-    capital = float(risk.capital) if risk is not None else 100_000.0
+    # DEF-0: the organisation's own capital, else the PAPER account's starting balance - never a built-in 100,000.
+    capital = float(risk.capital) if risk is not None and risk.capital is not None else float(app_config.PAPER_STARTING_CAPITAL)
     day_start = now.astimezone(IST).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     proposals: List[Proposal] = []
     for dep in deployments:

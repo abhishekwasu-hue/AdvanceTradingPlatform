@@ -946,21 +946,22 @@ class RiskSettingsRecord(Base):
         ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
     )
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    capital: Mapped[float] = mapped_column(Float, nullable=False, default=100_000.0)
-    risk_per_trade_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
-    max_daily_loss_pct: Mapped[float] = mapped_column(Float, nullable=False, default=3.0)
-    max_trades_per_day: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
-    max_open_positions: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
-    max_consecutive_losses: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
+    # DEF-0 (owner, 28 Oct): every limit is the organisation's own setting; NULL = not set = off. No built-in value.
+    capital: Mapped[float | None] = mapped_column(Float, nullable=True)
+    risk_per_trade_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_daily_loss_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_trades_per_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_open_positions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_consecutive_losses: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # TT12-4: 0 = not set (no minimum). A row from before then holding the old built-in 1.2 reads as not set
     # (app/risk_engine/routes.py org_min_rr_read); no migration.
     min_risk_reward: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    # Phase V1: Risk Guardian rules (see app/risk_engine/guardian.py).
-    max_portfolio_risk_pct: Mapped[float] = mapped_column(Float, nullable=False, default=6.0, server_default="6.0")
-    stop_cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30, server_default="30")
-    dd_level_1_pct: Mapped[float] = mapped_column(Float, nullable=False, default=5.0, server_default="5.0")
-    dd_level_2_pct: Mapped[float] = mapped_column(Float, nullable=False, default=10.0, server_default="10.0")
-    event_size_cut_pct: Mapped[float] = mapped_column(Float, nullable=False, default=50.0, server_default="50.0")
+    # Phase V1: Risk Guardian rules (see app/risk_engine/guardian.py) - each NULL = not set (DEF-0).
+    max_portfolio_risk_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_cooldown_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dd_level_1_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dd_level_2_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    event_size_cut_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     # CP6-15 (app/risk_engine/loss_streak.py): when the losses-in-a-row pause ends ("next_session" / "until_resume"), and
     # the last "Resume after losses in a row" (only losses closed after it count under "until_resume").
@@ -2704,7 +2705,7 @@ class TradePlanRecord(Base):
     checklist_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     risk_amount: Mapped[float] = mapped_column(Money, nullable=False)
-    risk_cap: Mapped[float] = mapped_column(Money, nullable=False)
+    risk_cap: Mapped[float | None] = mapped_column(Money, nullable=True)       # DEF-0: None = no cap set
     override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     override_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     costs_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")

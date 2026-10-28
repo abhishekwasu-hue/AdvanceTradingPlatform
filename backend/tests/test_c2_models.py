@@ -16,7 +16,6 @@ from app.backtest import engine
 from app.backtest.models import FixedPctSlippage, ModelError, ModelSet
 from app.backtest.repro import result_hash
 from app.core.enums import SignalDirection
-from app.core.models import RiskConfig
 from app.strategy_engine.registry import registry
 from tests.test_auth_api import client
 from tests.test_deployments_api import _auth
@@ -25,9 +24,10 @@ from tests.test_exit_rules_and_backtest_depth import _candles
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND / "scripts"))
 from bench_backtest import crafted_bars  # noqa: E402
+from tests.def0_legacy import legacy
 
 GOLDEN = json.loads((BACKEND / "tests" / "golden" / "c2_default_models.json").read_text())
-RISK = RiskConfig(capital=1_000_000, risk_per_trade_pct=GOLDEN["risk_per_trade_pct"])
+RISK = legacy(capital=1_000_000, risk_per_trade_pct=GOLDEN["risk_per_trade_pct"])
 # CP6-15: the golden was recorded when the losses-in-a-row counter reset only on a win. "Pause until I resume" is exactly
 # that counter in a backtest (nobody resumes a test), so the golden run uses it, and the pause report it adds - a field
 # the pre-C2 engine did not have - is left out of the hash. The default "next session" counter is tested in

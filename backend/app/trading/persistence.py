@@ -146,16 +146,16 @@ async def build_trading_day_state(session: AsyncSession, user: User, *, now: Opt
     )
 
 
-async def _pause_settings(session: AsyncSession, tenant_id: int) -> Tuple[str, Optional[datetime], int]:
-    """(the pause choice, the last resume, the saved limit) from the tenant's risk settings; the defaults without a row."""
+async def _pause_settings(session: AsyncSession, tenant_id: int) -> Tuple[str, Optional[datetime], Optional[int]]:
+    """(the pause choice, the last resume, the saved limit - None = not set, DEF-0) from the tenant's risk settings."""
     row = (await session.execute(
         select(RiskSettingsRecord.loss_streak_pause, RiskSettingsRecord.loss_streak_resumed_at, RiskSettingsRecord.max_consecutive_losses)
         .where(RiskSettingsRecord.tenant_id == tenant_id)
     )).first()
     if row is None:
-        return loss_streak.NEXT_SESSION, None, RiskConfig().max_consecutive_losses
+        return loss_streak.NEXT_SESSION, None, None
     mode = row[0] if row[0] in loss_streak.PAUSE_MODES else loss_streak.NEXT_SESSION
-    return mode, _aware(row[1]), int(row[2])
+    return mode, _aware(row[1]), int(row[2]) if row[2] is not None else None
 
 
 def _aware(value: Optional[datetime]) -> Optional[datetime]:
@@ -173,7 +173,7 @@ async def loss_streak_count(session: AsyncSession, tenant_id: int, *, now: Optio
     if since is not None:
         query = query.where(TradeRecord.exit_time >= since if mode == loss_streak.NEXT_SESSION else TradeRecord.exit_time > since)
     # Enough rows to reach any saved limit; a window bounded by the session or the resume is short anyway.
-    rows = await session.scalars(query.order_by(TradeRecord.exit_time.desc()).limit(max(20, limit + 1)))
+    rows = await session.scalars(query.order_by(TradeRecord.exit_time.desc()).limit(max(20, (limit or 0) + 1)))
     return {"mode": mode, "losses_in_a_row": loss_streak.streak_of(rows), "counted_since": since, "resumed_at": resumed_at,
             "session_start": session_start, "saved_limit": limit}
 
@@ -187,7 +187,7 @@ async def loss_streak_status(session: AsyncSession, tenant_id: int, *, now: Opti
     cfg = await get_tenant_risk_config(tenant_id, session) or RiskConfig()
     cfg, _ = clamp_config(cfg, await risk_ceilings(session))
     counted = await loss_streak_count(session, tenant_id, now=now)
-    limit = int(cfg.max_consecutive_losses)
+    limit = int(cfg.max_consecutive_losses) if cfg.max_consecutive_losses is not None else None   # DEF-0: None = not set
     paused = loss_streak.is_paused(counted["losses_in_a_row"], limit)
     mode = counted["mode"]
     return {

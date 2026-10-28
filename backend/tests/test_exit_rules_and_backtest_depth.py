@@ -187,6 +187,9 @@ def test_deployment_exit_rules_are_validated_stored_and_applied_by_the_monitor(m
 
     # Worker: the rules land on the trade; the monitor trails the stop as price rises and exits at the trailed stop.
     t = _tenant("bt-worker-rules@example.com")
+    # DEF-0: the old 0.5% of 1,00,000 sizing, set by the organisation (one lot would lose its gain to costs)
+    from tests.def0_legacy import legacy
+    assert client.put("/api/risk-settings", headers=t["headers"], json=legacy().model_dump()).status_code == 200
     dep_id = _deploy(t)
     async def mark():
         async with _session_factory() as session:

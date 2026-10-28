@@ -134,7 +134,8 @@ class OrderRouter:
         `pre_place_check(quantity)` (Phase I1) is awaited after sizing and before any fill or
         broker call; it returns (allowed, reasons, notes) from the risk hierarchy."""
         contract_spec = contract_spec or get_contract_spec(signal.symbol)
-        decision = self.risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)
+        # DEF-0: with no risk per trade set the size is the caller's cap (the trader's lots / max lots), else one lot.
+        decision = self.risk_manager.validate_and_size(signal, state, contract_spec=contract_spec, requested_quantity=max_quantity)
         if not decision.approved:
             return ExecutionResult(executed=False, reasons=decision.reasons)
         notes: list[str] = []

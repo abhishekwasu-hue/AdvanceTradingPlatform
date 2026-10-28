@@ -15,6 +15,7 @@ from tests.test_contract_rules import _load_master
 from tests.test_live_execution import _signal
 from tests.test_phase_r_structures import _execute as _execute_structure, _resolve
 from tests.test_trading_worker import _tenant, _trades
+from tests.def0_legacy import legacy
 
 def _ist_today() -> str:
     """Read at call time, not import time: a run that crosses IST midnight must not use yesterday's date."""
@@ -47,7 +48,7 @@ def _execute(t, *, mode="PAPER", risk_config=None, key=None):
             user = await session.get(User, t["user_id"])
             result, order = await execute_signal_for_user(
                 session, user, mode=mode, strategy_id="ema_rsi_scalper_1m", signal=_signal(), idempotency_key=key,
-                risk_config=risk_config or RiskConfig(capital=100_000.0, risk_per_trade_pct=1.0, max_daily_loss_pct=50.0, max_open_positions=10),
+                risk_config=risk_config or legacy(capital=100_000.0, risk_per_trade_pct=1.0, max_daily_loss_pct=50.0, max_open_positions=10),
             )
             trade = await session.get(TradeRecord, order.trade_id) if order.trade_id else None
             return result, order, trade
@@ -80,6 +81,8 @@ def test_cooldown_after_a_stop_out_refuses_reentry_in_the_same_underlying():
 
 def test_drawdown_ladder_halves_then_pauses_per_mode():
     t = _tenant("v1-dd@example.com")
+    # DEF-0: the status page reads the organisation's own ladder - set to the old 5% / 10%
+    assert client.put("/api/risk-settings", headers=t["headers"], json=legacy().model_dump()).status_code == 200
     # Losses on earlier days: the daily-loss limit (clamped to the 5% ceiling) is about today,
     # the drawdown ladder about the whole equity curve.
     _seed(t, exit_reason="Target 1", minutes_ago=3 * 24 * 60, pnl=-6_000.0)     # 6% below the 1,00,000 peak
@@ -145,18 +148,18 @@ def test_portfolio_risk_cap_counts_open_stops_and_buckets():
     status = client.get("/api/risk-guardian/status", headers=t["headers"]).json()["modes"]["PAPER"]
     assert status["open_risk_by_bucket"] == {"TCS": 5200.0, "INDEX": 400.0} and status["open_risk_total"] == 5600.0
     # A wider cap lets it through.
-    result, _, trade = _execute(t, key="v1-pf-2", risk_config=RiskConfig(capital=100_000.0, risk_per_trade_pct=1.0, max_daily_loss_pct=50.0,
+    result, _, trade = _execute(t, key="v1-pf-2", risk_config=legacy(capital=100_000.0, risk_per_trade_pct=1.0, max_daily_loss_pct=50.0,
                                                                           max_open_positions=10, max_portfolio_risk_pct=8.0))
     assert result.executed and trade.quantity == 500, result.reasons
 
 
 def test_platform_ceilings_refuse_settings_and_clamp_at_runtime():
     t = _tenant("v1-ceilings@example.com")
-    too_much = client.put("/api/risk-settings", headers=t["headers"], json={**RiskConfig().model_dump(), "risk_per_trade_pct": 2.5})
+    too_much = client.put("/api/risk-settings", headers=t["headers"], json={**legacy().model_dump(), "risk_per_trade_pct": 2.5})
     assert too_much.status_code == 400 and "exceeds the platform ceiling 2" in too_much.json()["detail"]
-    bad_ladder = client.put("/api/risk-settings", headers=t["headers"], json={**RiskConfig().model_dump(), "dd_level_1_pct": 12, "dd_level_2_pct": 10})
+    bad_ladder = client.put("/api/risk-settings", headers=t["headers"], json={**legacy().model_dump(), "dd_level_1_pct": 12, "dd_level_2_pct": 10})
     assert bad_ladder.status_code == 400
-    ok = client.put("/api/risk-settings", headers=t["headers"], json={**RiskConfig().model_dump(), "risk_per_trade_pct": 1.0, "stop_cooldown_minutes": 45})
+    ok = client.put("/api/risk-settings", headers=t["headers"], json={**legacy().model_dump(), "risk_per_trade_pct": 1.0, "stop_cooldown_minutes": 45})
     assert ok.status_code == 200 and ok.json()["stop_cooldown_minutes"] == 45 and ok.json()["max_portfolio_risk_pct"] == 6.0
     assert client.get("/api/risk-settings/ceilings", headers=t["headers"]).json()["risk_per_trade_pct"] == 2.0
 

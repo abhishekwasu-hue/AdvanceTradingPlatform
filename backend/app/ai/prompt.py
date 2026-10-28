@@ -137,7 +137,7 @@ def parse_suggestion(raw: Any) -> Tuple[Optional[DeploymentSuggestion], List[str
 
 @dataclass
 class RuntimeContext:
-    account_capital: float
+    account_capital: Optional[float]
     currency: str
     risk_profile: str
     allowed_instruments: str
@@ -149,14 +149,14 @@ class RuntimeContext:
     event_calendar: List[str]
     market_regime: str
     user_language: str
-    max_risk_per_trade_pct: float
+    max_risk_per_trade_pct: Optional[float]
     ceiling_risk_per_trade_pct: float
-    max_portfolio_risk_pct: float
-    daily_loss_limit_pct: float
-    cooldown_minutes: int
-    dd_level_1_pct: float
-    dd_level_2_pct: float
-    event_size_cut_pct: float
+    max_portfolio_risk_pct: Optional[float]
+    daily_loss_limit_pct: Optional[float]
+    cooldown_minutes: Optional[int]
+    dd_level_1_pct: Optional[float]
+    dd_level_2_pct: Optional[float]
+    event_size_cut_pct: Optional[float]
     min_stop_atr_multiple: float = MIN_STOP_ATR_MULTIPLE
     allow_naked: bool = False
     generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -165,7 +165,14 @@ class RuntimeContext:
         return asdict(self)
 
 
-def risk_profile_for(risk_per_trade_pct: float) -> str:
+def _limit(value: Optional[float], text: str) -> str:
+    """DEF-0: a limit the trader set, in words (`text` formats it), else "not set (no limit)"."""
+    return text.format(value) if value is not None else "not set (no limit)"
+
+
+def risk_profile_for(risk_per_trade_pct: Optional[float]) -> str:
+    if risk_per_trade_pct is None:            # DEF-0: no risk per trade set
+        return "not set"
     if risk_per_trade_pct <= 0.5:
         return "conservative"
     if risk_per_trade_pct <= 1.0:
@@ -204,17 +211,18 @@ async def build_runtime_context(session: AsyncSession, tenant: Tenant, user: Use
     horizon = datetime.now(guardian.IST).date() + timedelta(days=7)
     events = [e for e in await _events_until(session, tenant.id, horizon)]
     return RuntimeContext(
-        account_capital=float(cfg.capital), currency=getattr(tenant, "base_currency", None) or "INR",
-        risk_profile=risk_profile_for(float(cfg.risk_per_trade_pct)),
+        account_capital=cfg.capital, currency=getattr(tenant, "base_currency", None) or "INR",
+        risk_profile=risk_profile_for(cfg.risk_per_trade_pct),
         allowed_instruments=(f"{symbol.upper()} (requested); " if symbol else "") + DEFAULT_INSTRUMENTS,
         open_risk=float(picked["open_risk_total"]), open_risk_pct=float(picked["open_risk_pct"]),
         current_drawdown_pct=float(picked["drawdown_pct"]), drawdown_mode=mode,
         recent_trade_summary=await recent_trade_summary(session, tenant.id),
         event_calendar=events, market_regime=(regime or "UNKNOWN").upper(), user_language="en",       # English only; `language` is accepted for older clients
-        max_risk_per_trade_pct=float(cfg.risk_per_trade_pct), ceiling_risk_per_trade_pct=float(ceilings.get("risk_per_trade_pct", 2.0)),
-        max_portfolio_risk_pct=float(cfg.max_portfolio_risk_pct), daily_loss_limit_pct=float(cfg.max_daily_loss_pct),
-        cooldown_minutes=int(cfg.stop_cooldown_minutes), dd_level_1_pct=float(cfg.dd_level_1_pct), dd_level_2_pct=float(cfg.dd_level_2_pct),
-        event_size_cut_pct=float(cfg.event_size_cut_pct),
+        # DEF-0: each limit as the user set it (None = not set)
+        max_risk_per_trade_pct=cfg.risk_per_trade_pct, ceiling_risk_per_trade_pct=float(ceilings.get("risk_per_trade_pct", 2.0)),
+        max_portfolio_risk_pct=cfg.max_portfolio_risk_pct, daily_loss_limit_pct=cfg.max_daily_loss_pct,
+        cooldown_minutes=cfg.stop_cooldown_minutes, dd_level_1_pct=cfg.dd_level_1_pct, dd_level_2_pct=cfg.dd_level_2_pct,
+        event_size_cut_pct=cfg.event_size_cut_pct,
     )
 
 
@@ -245,8 +253,8 @@ differ, but ruthless risk management is universal. "Defense first, offense secon
 Reply in English only - also when the user writes in another language or script. Every JSON key and enum value stays in English.
 
 === RUNTIME CONTEXT (filled by the platform; do not ask the user for these) ===
-Account capital: {ctx.account_capital:,.0f} {ctx.currency}
-User risk profile: {ctx.risk_profile} (risk per trade {ctx.max_risk_per_trade_pct:g}% of capital; platform ceiling {ctx.ceiling_risk_per_trade_pct:g}%)
+Account capital: {_limit(ctx.account_capital, '{:,.0f} ' + ctx.currency) if ctx.account_capital is not None else 'not set'}
+User risk profile: {ctx.risk_profile} (risk per trade {_limit(ctx.max_risk_per_trade_pct, '{:g}% of capital')}; platform ceiling {ctx.ceiling_risk_per_trade_pct:g}%)
 Instruments allowed: {ctx.allowed_instruments}
 Current open risk (loss if every open stop hits): {ctx.open_risk:,.0f} {ctx.currency} = {ctx.open_risk_pct:g}% of capital
 Current drawdown from the {ctx.drawdown_mode} equity peak: {ctx.current_drawdown_pct:g}%
@@ -256,15 +264,16 @@ Upcoming events (next 7 days):
 Market regime (from the platform's classifier): {ctx.market_regime}
 
 === WHAT THE ENGINE ENFORCES ON EVERY ENTRY (you describe it, you never bypass it) ===
-- Position size is DERIVED from risk, never chosen: size = capital x risk% / stop distance per unit, floored to whole lots.
+- With a risk per trade set, position size is DERIVED from risk: size = capital x risk% / stop distance per unit, floored to whole lots;
+  without one, the size is the user's own lots. Every limit below applies only when the user set it.
   A structure is sized on its MAX LOSS (or the loss its stop accepts when the risk is undefined), never on premium or margin.
-- Risk per trade <= {ctx.max_risk_per_trade_pct:g}% of capital (hard ceiling {ctx.ceiling_risk_per_trade_pct:g}%).
-- Total open risk across all positions <= {ctx.max_portfolio_risk_pct:g}% of capital; NIFTY, BANKNIFTY, FINNIFTY and SENSEX positions
+- Risk per trade: {_limit(ctx.max_risk_per_trade_pct, '<= {:g}% of capital')} (hard ceiling {ctx.ceiling_risk_per_trade_pct:g}%).
+- Total open risk across all positions: {_limit(ctx.max_portfolio_risk_pct, '<= {:g}% of capital')}; NIFTY, BANKNIFTY, FINNIFTY and SENSEX positions
   count as ONE correlated bucket.
-- Daily loss limit {ctx.daily_loss_limit_pct:g}% of capital -> kill switch, no new trades that day.
-- No re-entry in an underlying for {ctx.cooldown_minutes} minutes after a stop-out. Never averaging down; a stop only moves the favourable way.
-- Drawdown ladder: {ctx.dd_level_1_pct:g}% below the equity peak halves the size; {ctx.dd_level_2_pct:g}% pauses new entries. Size never rises after a streak.
-- Event days on the calendar above block entries or cut the size by {ctx.event_size_cut_pct:g}%.
+- Daily loss limit: {_limit(ctx.daily_loss_limit_pct, '{:g}% of capital -> kill switch, no new trades that day')}.
+- {'No re-entry in an underlying for ' + str(ctx.cooldown_minutes) + ' minutes after a stop-out' if ctx.cooldown_minutes else 'No cool-down after a stop-out is set'}. Never averaging down; a stop only moves the favourable way.
+- Drawdown ladder: halves the size at {_limit(ctx.dd_level_1_pct, '{:g}% below the equity peak')}; pauses new entries at {_limit(ctx.dd_level_2_pct, '{:g}%')}. Size never rises after a streak.
+- Event days on the calendar above block entries or cut the size by {_limit(ctx.event_size_cut_pct, '{:g}%')}.
 - Every stop must sit at least {ctx.min_stop_atr_multiple:g} x ATR from the entry (outside normal noise); the platform raises a tighter one.
 
 === NON-NEGOTIABLE RULES FOR WHAT YOU PROPOSE ===

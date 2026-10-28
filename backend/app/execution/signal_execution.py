@@ -1,4 +1,5 @@
 import json
+import math
 import logging
 from typing import Optional, Tuple
 
@@ -10,6 +11,7 @@ from app.compliance import fo_limits
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderStatus
 from app.core.logging_config import bind_log_context, update_log_context
 from app.core.models import RiskConfig, Signal
+from app.risk_engine.routes import get_tenant_risk_config
 from app.db.models import OrderRecord, Tenant, User
 from app.execution import approval as approval_gate
 from app.execution.order_persistence import create_order, execution_result_from_order, transition_order
@@ -32,7 +34,6 @@ from app.risk_engine.by_default import releases_unused_entry_slot as by_default_
 from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarchy
 from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
 from app.platform.controls import clamp_config, risk_ceilings
-from app.risk_engine.routes import get_tenant_risk_config
 from app.execution.products import product_for
 from app.trading.persistence import build_trading_day_state, persist_trade
 
@@ -226,9 +227,11 @@ async def execute_signal_for_user(
         order = await transition_order(session, order, OrderStatus.RISK_CHECK, detail="Running risk checks")
 
         effective_risk_config = risk_config
-        if effective_risk_config is None:
-            effective_risk_config = await get_tenant_risk_config(user.tenant_id, session)
-        effective_risk_config = effective_risk_config or RiskConfig()
+        if effective_risk_config is None:          # DEF-0: limits not set are off; a % reads the user's PAPER balance
+            from app.risk_engine.by_default import capital_basis
+            effective_risk_config = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+            if effective_risk_config.capital is None:
+                effective_risk_config = effective_risk_config.with_capital(await capital_basis(session, user))
 
         execution_mode = ExecutionMode(mode)
         if execution_mode == ExecutionMode.LIVE and broker is None:
@@ -260,7 +263,8 @@ async def execute_signal_for_user(
         # below engages the kill switch and raises DAILY_LOSS_LIMIT, which a guardian refusal
         # must not pre-empt.
         day_state = await build_trading_day_state(session, user)
-        daily_limit = -abs(effective_risk_config.capital * effective_risk_config.max_daily_loss_pct / 100)
+        daily_amount = effective_risk_config.daily_loss_amount()
+        daily_limit = -daily_amount if daily_amount is not None else -math.inf
         guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=underlying_signal.symbol, cfg=effective_risk_config,
                                   # no user_id: these reasons are stored on the order trail and notified org-wide, so
                                   # the VIX gate words them without India VIX's values (BT1b)

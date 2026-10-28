@@ -48,7 +48,7 @@ class RiskContext:
     quantity: float
     entry: Optional[float]
     stop_loss: Optional[float]
-    capital: float
+    capital: Optional[float]            # DEF-0: None = no capital known (a % of capital limit then reads 100%)
     account_id: Optional[int] = None
     mode: str = "PAPER"
     order_id: Optional[int] = None
@@ -158,7 +158,7 @@ async def _measure(session: AsyncSession, ctx: RiskContext, limit_type: RiskLimi
         return float((await session.scalar(query)) or 0) + 1.0, "trades today including this one"
     if limit_type == RiskLimitType.MAX_CAPITAL_ALLOCATION_PCT:
         value = (ctx.entry or 0.0) * ctx.quantity
-        return float(value / ctx.capital * 100.0) if ctx.capital > 0 else 100.0, "share of capital"
+        return float(value / ctx.capital * 100.0) if ctx.capital is not None and ctx.capital > 0 else 100.0, "share of capital"
     if limit_type == RiskLimitType.MAX_GROSS_EXPOSURE:
         # Phase M / V4.4: open notional at entry prices plus this order.
         from app.portfolio.engine import gross_exposure
@@ -168,7 +168,7 @@ async def _measure(session: AsyncSession, ctx: RiskContext, limit_type: RiskLimi
         from app.portfolio.engine import gross_exposure
         current = await gross_exposure(session, ctx.tenant_id, symbol=ctx.symbol)
         value = current + (ctx.entry or 0.0) * ctx.quantity
-        return float(value / ctx.capital * 100.0) if ctx.capital > 0 else 100.0, f"{ctx.symbol} share of capital after this order"
+        return float(value / ctx.capital * 100.0) if ctx.capital is not None and ctx.capital > 0 else 100.0, f"{ctx.symbol} share of capital after this order"
     return 0.0, limit_type.value
 
 

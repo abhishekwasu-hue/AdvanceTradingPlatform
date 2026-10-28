@@ -15,7 +15,10 @@ def _run(coro):
 
 
 def _scores():
-    _, me = _owner("hc10-evals@example.com")
+    headers, me = _owner("hc10-evals@example.com")
+    # DEF-0: no built-in limits - the injection set was written against an organisation with a risk per trade of its own
+    from tests.def0_legacy import legacy
+    assert client.put("/api/risk-settings", headers=headers, json=legacy().model_dump()).status_code == 200
     dep = _deploy({"tenant_id": me["tenant_id"], "user_id": me["id"]})
     scores = runner.run_static()
     scores["injection"] = _run(runner.run_injection(runner.load("injection"), _session_factory, me["id"], dep))

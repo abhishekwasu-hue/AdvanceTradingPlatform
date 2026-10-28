@@ -397,8 +397,8 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     elif ask.expiry == today:
         warnings.append("This contract expires today.")
     tick = contract.tick_size if contract else 0.05
-    from app.me.prefs import own_trading_defaults
-    errors.extend(ask_errors(ask, tick, stop_required=bool((await own_trading_defaults(session, user)).get("stop_required_on_sold"))))
+    from app.me.prefs import own_limits
+    errors.extend(ask_errors(ask, tick, stop_required=bool((await own_limits(session, user)).get("stop_required_on_sold"))))
     lot_size = contract.lot_size if contract else None
     units = float(ask.lots * lot_size) if lot_size else None
 

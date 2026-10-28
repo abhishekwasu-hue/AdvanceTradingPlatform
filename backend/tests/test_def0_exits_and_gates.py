@@ -122,7 +122,7 @@ def test_a_sold_option_without_a_stop_can_be_placed_and_says_its_loss_has_no_lim
 def test_his_own_setting_asks_for_the_stop(fresh):
     from tests.test_auth_api import client
     t, expiry = fresh
-    assert client.put("/api/me/prefs/trading_defaults", headers=t["headers"], json={"stop_required_on_sold": True}).status_code == 200
+    assert client.put("/api/me/prefs/my_limits", headers=t["headers"], json={"stop_required_on_sold": True}).status_code == 200
     view = _preview(t, _body(expiry, 22700.0, side="SELL", product="NRML"))
     assert not view["can_place"] and any("Your setting asks for a stop-loss" in e for e in view["errors"])
 
@@ -136,6 +136,6 @@ def test_experience_gates_apply_only_to_a_user_who_turned_them_on(fresh):
     _flag(experience.FLAG, t["tenant_id"])                                                       # the organisation's flag on
     view = _preview(t, _body(expiry, 22700.0, side="SELL", product="NRML", stop_loss=150.0))
     assert view["refusals"] == [] and view["can_place"] is True                                  # not opted in: no gate
-    assert client.put("/api/me/prefs/trading_defaults", headers=t["headers"], json={"limit_by_experience": True}).status_code == 200
+    assert client.put("/api/me/prefs/my_limits", headers=t["headers"], json={"limit_by_experience": True}).status_code == 200
     view = _preview(t, _body(expiry, 22700.0, side="SELL", product="NRML", stop_loss=150.0))
     assert not view["can_place"] and any("experience level" in r for r in view["refusals"])

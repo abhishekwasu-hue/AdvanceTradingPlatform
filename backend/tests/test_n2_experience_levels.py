@@ -52,6 +52,12 @@ def _flag(tenant_id: int, on: bool = True) -> None:
             flags[experience.FLAG] = {"on": False, "tenants": sorted(tenants)}
             await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
             await session.commit()
+            if on:
+                # DEF-0 D4: the gates apply only to a user who turned on "Limit me by my experience level" - these tests'
+                # users all did (the organisation's flag alone gates nobody: tests/test_def0_exits_and_gates.py)
+                from app.me import prefs
+                for user in list(await session.scalars(select(User).where(User.tenant_id == tenant_id))):
+                    await prefs.save("my_limits", b'{"limit_by_experience": true}', None, user, session)
     _run(go())
 
 

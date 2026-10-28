@@ -180,8 +180,8 @@ async def symbol_gates(session: AsyncSession, symbol: str, direction: Any) -> Li
 
 async def opted_in(session: AsyncSession, user: User) -> bool:
     """DEF-0 D4 (owner, 28 Oct): the user turned on "Limit me by my experience level" (off by default)."""
-    from app.me.prefs import own_trading_defaults
-    return bool((await own_trading_defaults(session, user)).get("limit_by_experience"))
+    from app.me.prefs import own_limits
+    return bool((await own_limits(session, user)).get("limit_by_experience"))
 
 
 async def applies(session: AsyncSession, user: Optional[User]) -> bool:

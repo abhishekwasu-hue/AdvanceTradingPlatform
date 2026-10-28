@@ -6,3 +6,4 @@ load-500 sign-in redesign #604, backup same-second race #607 (busybox flock -n),
 Next deploy: newest green main after a39719e (T2 + SX/CX2 + #604/#607), no migration.
 Open: owner checks P1-B1 / T2 / SX on the site; load-500 API p95 on 2 CPUs (chart, dashboard) - follow-up;
 VAPID + R2 (owner); SXQ-1..4 / T2 provisional choices. Next (A): J1/J3 day-one test, T3, TL-1..4.
+Session B (28 Oct): UX-11b PRs #622-#626 merged (numbers first: Today, dishes, Markets, Risk...); UX-14 colour_v3 #621 merged, flag OFF, owner toggles it (Admin -> Features). Deploy newest green main, no migration.

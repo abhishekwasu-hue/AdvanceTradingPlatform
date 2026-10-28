@@ -454,9 +454,9 @@ function Discipline({ section }: { section: RhythmSection }) {
   return (
     <div className="flex items-center justify-between gap-space-3" data-discipline>
       <div>
-        <p className="font-tabular text-t24 font-semibold text-fg">{d.score}<span className="text-t14 font-normal text-fg-muted"> / 100</span></p>
+        <div className="font-tabular text-t24 font-semibold text-fg">{d.score}<span className="text-t14 font-normal text-fg-muted"> / 100</span></div>
         {d.previous != null && (
-          <p className="text-t13 text-fg-muted"><Signed value={d.score - d.previous} kind="count" /> on last week</p>
+          <div className="text-t13 text-fg-muted"><Signed value={d.score - d.previous} kind="count" /> on last week</div>
         )}
       </div>
       {series.length >= 2 && (
@@ -563,7 +563,11 @@ function Matches({ section }: { section: RhythmSection }) {
           { key: "c", header: "Matches", align: "right", cell: (r) => formatNumber(r.count) },
           { key: "s", header: "Symbols", cell: (r) => r.symbols.slice(0, 4).join(", ") + (r.symbols.length > 4 ? ` +${r.symbols.length - 4}` : "") },
         ]} />
-      {listed && <p className="text-t13 text-fg-muted">On your lists: <span className="text-fg">{listed.symbols.join(", ")}</span></p>}
+      {listed && (
+        <div className="flex flex-wrap items-center gap-space-2 text-t13 text-fg-muted" data-on-lists>
+          On your lists {listed.symbols.map((s) => <Chip key={s} tone="neutral" variant="meaning" icon="◆" name="on-list">{s}</Chip>)}
+        </div>
+      )}
     </div>
   );
 }

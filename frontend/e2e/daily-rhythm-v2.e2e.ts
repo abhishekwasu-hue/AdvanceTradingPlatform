@@ -4,6 +4,8 @@ import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 import { FEATURES, TELEGRAM_PLATFORM, openSettings } from "./settingsMocks";
+import { readCards } from "./textBudget";
+import { cardTextProblems } from "../src/ui/textBudget";
 
 /**
  * MO4 (Master Order 4 part 1, the daily rhythm; flags ui_v2 + daily_rhythm): the Dashboard's brief card and the
@@ -84,6 +86,19 @@ test.describe("daily brief card behaviour", () => {
     expect(reads).toContain("?kind=closing");
     const text = (await card.innerText()).toLowerCase();
     expect(text).not.toMatch(/\b(buy|sell|target|stop[- ]?loss|stop)\b/);
+  });
+
+  test("UX-11b C7: every tab of the brief fits the text budget (numbers first; prose in Details)", async ({ page }) => {
+    await openDashboard(page, "light");
+    const card = page.locator("[data-block='rhythm']");
+    for (const tab of ["Morning", "Pulse", "Wrap", "Week"]) {
+      await card.getByRole("tab", { name: new RegExp(tab) }).click();
+      await expect(card.locator("[data-rhythm-section]").first()).toBeVisible();
+      const titles = [PRE_MARKET.title, CLOSING.title];
+      const cards = (await readCards(page)).filter((c) => titles.includes(c.card));
+      expect(cards.length, tab).toBe(1);
+      expect(cardTextProblems(cards), tab).toEqual([]);
+    }
   });
 
   test("flag off: no card and no read", async ({ page }) => {

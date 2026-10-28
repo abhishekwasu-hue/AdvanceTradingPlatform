@@ -1,4 +1,4 @@
-import { BookOpen, ChevronDown, ExternalLink, GraduationCap, PlayCircle, Search } from "lucide-react";
+import { ChevronDown, ExternalLink, GraduationCap, PlayCircle, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/errors";
@@ -8,6 +8,7 @@ import { PageTitleV2 } from "../trading/PartsV2";
 import { ComingSoon } from "../ui/ComingSoon";
 import { learnApi, type LearnLibrary, type Lesson } from "./api";
 import { ALL, LEARN_FLAG, isAppPath, learnGlossary, lessonsIn, safeVideoUrl, searchLessons } from "./model";
+import { EducationFrame } from "../ui/EducationFrame";
 import { PageTabs } from "../ui/PageTabs";
 
 /** The lessons a newcomer reads first, in this order (each only when the library has it). */
@@ -63,11 +64,7 @@ export function LearnView({ library, initialTab = "lessons", initialOpen = [] }:
 
   return (
     <>
-      <section data-block="learn-frame" aria-label="About these lessons"
-        className="flex items-start gap-space-3 rounded-panel border border-subtle bg-surface-1 px-space-4 py-space-3">
-        <BookOpen size={18} aria-hidden className="mt-0.5 shrink-0 text-brand" />
-        <ul className="flex min-w-0 flex-col gap-space-1 text-t14 text-fg">{library.header.frame.map((l) => <li key={l}>{l}</li>)}</ul>
-      </section>
+      <EducationFrame block="learn-frame" label="About these lessons" lines={library.header.frame} />
 
       {startHere.length > 0 && (
         <section data-block="learn-start" aria-label="Start here" className={`${CARD} p-space-4 md:p-space-5`}>

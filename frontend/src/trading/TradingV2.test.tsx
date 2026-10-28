@@ -136,7 +136,8 @@ describe("CP6-15 Risk limits: when the losses-in-a-row pause ends", () => {
     expect(code(riskSource)).toMatch(/streak\.can_resume && \([\s\S]*BUTTON_SECONDARY[\s\S]*"Resume after losses in a row"/);
     expect(code(riskSource)).toContain("api.resumeLossStreak()");
     expect(code(riskSource)).toMatch(/pausedNote && streak && \(/);
-    expect(riskSource).toContain("Exits are never paused.");
+    // UX-11b C5: the page says it once, in its footnote.
+    expect(riskSource).toContain("<PageFootnote>Exits are never blocked by these limits.</PageFootnote>");
   });
 });
 

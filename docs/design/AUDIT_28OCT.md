@@ -34,3 +34,10 @@ uptime, degradation banner). T9: plans/registry.py:76 / :86 already give Pro and
 
 ## Summary
 CONFIRMED 13, PARTLY 4 (V1 parity, V3, G1.4, G1.7), NOT REPRODUCED 0 of the V / G1 claims; T8 / T9 partly already built.
+
+## G1.6 progress (28 Oct)
+- Dependabot: `.github/dependabot.yml` (pip, npm weekly with minor / patch grouped; GitHub Actions monthly).
+- ruff widening, measured on main: I (import order) 436 findings, all auto-fixable; UP (pyupgrade) 19,261; ASYNC 10
+  (7 x "timeout parameter on an async function", 2 blocking pathlib calls, 2 test sleeps). Plan, one family per PR as
+  ruff.toml asks: I next (mechanical, done when few other PRs are open - it touches many files), ASYNC with its 10 fixes,
+  UP in per-package slices. ESLint + typescript-eslint and mypy on all of app follow the same pattern.

@@ -33,7 +33,8 @@ placed: net credit or debit, max profit, max loss, breakeven(s), the **risk per 
 uses** and the group exit levels the position monitor judges the whole group by. Everything is
 per unit (one share of the lot); the executor multiplies by lot size and lots.
 
-Underlying exits. Spreads, condors and strangles close when the underlying trades through a
+Underlying exits (DEF-0: only when the trader turns them on - `underlying_breach_exit` on the deployment / backtest).
+Spreads, condors and strangles close when the underlying trades through a
 short strike (`short_strikes`). A short straddle or iron butterfly has its shorts at the money,
 so that rule would fire on entry; they close beyond a breakeven instead (`underlying_exits`).
 
@@ -545,8 +546,22 @@ async def resolve_structure(
 
 
 def structure_metrics(structure: ResolvedStructure, premiums: Dict[str, float], *,
-                      target_credit_pct: Optional[float], stop_credit_pct: Optional[float]) -> StructureMetrics:
-    """`premiums` maps each leg's tradingsymbol to its current price. Per unit."""
+                      target_credit_pct: Optional[float], stop_credit_pct: Optional[float],
+                      underlying_exit: bool = False) -> StructureMetrics:
+    """`premiums` maps each leg's tradingsymbol to its current price. Per unit.
+
+    DEF-0 (owner, 28 Oct): the underlying-level exits (a short strike breached, a breakeven crossed) are the trader's own
+    setting (`underlying_exit`, off by default): off, the group carries no such level and closes only on the target / stop
+    he set, or by hand. The breakevens are still shown."""
+    metrics = _priced_metrics(structure, premiums, target_credit_pct=target_credit_pct, stop_credit_pct=stop_credit_pct)
+    if not underlying_exit:
+        metrics.short_strikes = {}
+        metrics.underlying_exits = {}
+    return metrics
+
+
+def _priced_metrics(structure: ResolvedStructure, premiums: Dict[str, float], *,
+                    target_credit_pct: Optional[float], stop_credit_pct: Optional[float]) -> StructureMetrics:
     credit = 0.0
     legs = []
     short_strikes: Dict[str, float] = {}

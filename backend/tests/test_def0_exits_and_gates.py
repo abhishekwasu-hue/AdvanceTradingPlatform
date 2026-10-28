@@ -139,3 +139,52 @@ def test_experience_gates_apply_only_to_a_user_who_turned_them_on(fresh):
     assert client.put("/api/me/prefs/my_limits", headers=t["headers"], json={"limit_by_experience": True}).status_code == 200
     view = _preview(t, _body(expiry, 22700.0, side="SELL", product="NRML", stop_loss=150.0))
     assert not view["can_place"] and any("experience level" in r for r in view["refusals"])
+
+
+# --- PR 4 (owner "Default yes", 28 Oct): the underlying-level exits are the trader's own setting ----------------------
+
+def test_underlying_level_exits_only_when_the_trader_turns_them_on(monkeypatch):
+    from app.core.enums import OptionStrategy, StrikeRule
+    from app.trading.position_monitor import structure_exit_reason
+    from tests.test_multileg import SPOT, _auth, _create, _OptionBroker, _store_broker
+    from tests.test_phase_r_structures import _load_master as _master, _metrics, _resolve as _resolve_structure
+    from tests.test_auth_api import client
+    _master()
+    strangle = _resolve_structure(OptionStrategy.SHORT_STRANGLE, strike_rule=StrikeRule.OTM, strike_offset=2)
+    off = _metrics(strangle)
+    assert off.short_strikes == {} and off.underlying_exits == {} and off.breakevens                 # shown, not an exit
+    assert structure_exit_reason(off.as_dict(), 1.0, 30_000.0) is None                                  # far through: no exit
+    on = _metrics(strangle, under=True)
+    assert on.short_strikes == {"PE": 24400.0, "CE": 24600.0}
+    assert structure_exit_reason(on.as_dict(), 1.0, 24_650.0).startswith("Short 24600 CE breached")
+    fly = _metrics(_resolve_structure(OptionStrategy.IRON_BUTTERFLY), under=True)
+    assert fly.underlying_exits == {"below": 24420.0, "above": 24580.0}
+
+    headers = _auth(f"def0-und-{uuid.uuid4().hex[:6]}@example.com")
+    _store_broker(headers, token_status="VALID")
+    plain = _create(headers, symbol="NIFTY 50", instrument_kind="OPTION", option_strategy="IRON_CONDOR", spread_width=2,
+                    strike_rule="OTM", strike_offset=2)
+    assert plain.status_code == 201, plain.text
+    assert plain.json()["underlying_breach_exit"] is False
+    headers2 = _auth(f"def0-und2-{uuid.uuid4().hex[:6]}@example.com")                                  # one deployment per symbol
+    _store_broker(headers2, token_status="VALID")
+    turned_on = _create(headers2, symbol="NIFTY 50", instrument_kind="OPTION", option_strategy="IRON_CONDOR", spread_width=2,
+                        strike_rule="OTM", strike_offset=2, underlying_breach_exit=True)
+    assert turned_on.status_code == 201 and turned_on.json()["underlying_breach_exit"] is True
+    monkeypatch.setattr("app.deployments.routes.build_adapter", lambda record, client=None: _OptionBroker())
+    body = {"symbol": "NIFTY 50", "instrument_kind": "OPTION", "option_strategy": "BULL_PUT_SPREAD", "spread_width": 2, "spot": SPOT}
+    preview = client.post("/api/deployments/preview-contract", headers=headers, json=body).json()
+    assert preview["structures"]["LONG"]["metrics"]["short_strikes"] == {}
+    preview = client.post("/api/deployments/preview-contract", headers=headers, json={**body, "underlying_breach_exit": True}).json()
+    assert preview["structures"]["LONG"]["metrics"]["short_strikes"] == {"PE": 24500.0}
+
+
+def test_the_option_backtest_has_no_underlying_exit_unless_set():
+    from app.backtest.options_engine import OptionBacktestConfig, run_option_backtest
+    from app.core.enums import OptionStrategy
+    from tests.test_phase_w_option_backtest import RISK, _frame, _OneShot
+    cfg = dict(option_strategy=OptionStrategy.CALL_RATIO_SPREAD, implied_volatility=0.14, spread_width=2, target_credit_pct=50, stop_credit_pct=100)
+    on = run_option_backtest(_OneShot(), _frame(24500, 24800), "NIFTY 50", "1min", RISK, OptionBacktestConfig(**cfg, underlying_breach_exit=True))
+    off = run_option_backtest(_OneShot(), _frame(24500, 24800), "NIFTY 50", "1min", RISK, OptionBacktestConfig(**cfg))
+    assert "breakeven" in on.trades[0].exit_reason
+    assert all("breakeven" not in (t.exit_reason or "") for t in off.trades)

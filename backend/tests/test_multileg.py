@@ -116,7 +116,7 @@ def test_structure_metrics_credit_max_loss_breakeven_and_exit_levels():
             return await resolve_structure(session, "NIFTY 50", _rules(), OptionStrategy.BULL_PUT_SPREAD, SignalDirection.LONG, spread_width=2, spot=SPOT, today=TODAY)
     s = _run(go())
     premiums = {l.contract.tradingsymbol: _premium(l.contract.tradingsymbol) for l in s.legs}
-    m = structure_metrics(s, premiums, target_credit_pct=None, stop_credit_pct=None)
+    m = structure_metrics(s, premiums, target_credit_pct=None, stop_credit_pct=None, underlying_exit=True)
     assert m.net_credit == 40.0 and m.max_profit == 40.0 and m.max_loss == 60.0 and m.breakevens == [24460.0]
     # DEF-0: no built-in target / stop when none is set; the old 50% / 100% set explicitly give the old levels.
     assert m.target_value is None and m.stop_value is None and m.short_strikes == {"PE": 24500.0}
@@ -147,7 +147,8 @@ def test_paper_bull_put_spread_opens_two_grouped_legs_sized_off_max_loss():
                                                 spread_width=2, spot=SPOT, today=TODAY)
             return await execute_structure(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=_signal(), structure=structure,
                                            rules=_rules(), target_credit_pct=None, stop_credit_pct=None, idempotency_key="ml-paper-1",
-                                           quote_broker=broker, risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0))
+                                           quote_broker=broker, risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0),
+                                           underlying_exit=True)
     result = _run(go())
     assert result.executed, result.reasons
     trades = _trades(t["tenant_id"])

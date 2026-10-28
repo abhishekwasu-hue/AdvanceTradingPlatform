@@ -119,7 +119,7 @@ def test_payoff_metrics_undefined_and_defined_risk():
     bare = _metrics(_resolve(OptionStrategy.CALL_RATIO_SPREAD, SignalDirection.LONG))
     assert bare.pnl_stop is None and bare.pnl_target is None and bare.stop_value is None and bare.target_value is None
     assert bare.risk_per_unit == 0
-    m = _metrics(_resolve(OptionStrategy.CALL_RATIO_SPREAD, SignalDirection.LONG), target=50, stop=100)   # the old built-in levels
+    m = _metrics(_resolve(OptionStrategy.CALL_RATIO_SPREAD, SignalDirection.LONG), target=50, stop=100, under=True)   # the old built-in levels
     assert m.net_credit == 30.0 and m.max_loss is None and m.max_profit == 130.0 and m.defined_risk is False and m.debit is False
     assert m.breakevens == [24730.0] and m.underlying_exits == {"above": 24730.0} and m.short_strikes == {}
     # Stop at a loss equal to the peak profit (100%), target at half of it.
@@ -138,7 +138,7 @@ def test_payoff_metrics_undefined_and_defined_risk():
     assert capped.pnl_stop == -40.0                                  # never more than the max loss
 
     custom = _metrics(_resolve_custom(parse_custom_legs([{"right": "PE", "role": "SHORT"}, {"right": "PE", "role": "LONG", "strike_rule": "OTM", "strike_offset": 2},
-                                                          {"right": "CE", "role": "SHORT", "strike_rule": "OTM", "strike_offset": 2}])), stop=100)
+                                                          {"right": "CE", "role": "SHORT", "strike_rule": "OTM", "strike_offset": 2}])), stop=100, under=True)
     assert custom.net_credit == 110.0 and custom.max_loss is None and custom.breakevens == [24710.0] and custom.underlying_exits == {"above": 24710.0}
     assert custom.as_dict()["pnl_stop"] == -110.0
 

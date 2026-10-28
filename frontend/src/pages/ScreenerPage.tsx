@@ -479,6 +479,10 @@ export default function ScreenerPage(_props: PageProps) {
         <FreshnessPill ranAt={ranAt} source={run?.data_source ?? null} scanTf={scanTf} />
         {/* BT1b: the tier the last run actually read (only sent with byob_data_tier on). */}
         <DataTierBadge badge={run?.data_tier} />
+        {/* SCR-FIX A6: said once - these symbols were still read, from history instead of the live session */}
+        {run?.session_held_back ? (
+          <span className="text-t12 text-fg-muted" data-testid="session-held-back">{run.session_held_back} held back by the session budget</span>
+        ) : null}
         {taxonomy && (
           <Button size="sm" onClick={() => setGalleryOpen(true)} data-testid="browse-screens"><LayoutGrid size={14} /> Browse screens</Button>
         )}

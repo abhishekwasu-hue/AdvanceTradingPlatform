@@ -156,6 +156,7 @@ def _exchange_of(ticker: str, segment=None) -> str:
 class FyersBroker(BrokerInterface):
     name = "fyers"
     daily_days_per_request = 365    # UI2-4a2: the history API serves at most 366 days of "D" candles per request
+    native_intervals = frozenset(RESOLUTION_MAP)          # SCR-FIX A1
     BASE_URL = API_URL
     max_tag_length = 20
 

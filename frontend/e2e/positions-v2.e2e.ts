@@ -182,7 +182,7 @@ test.describe("v2 positions 1440 desktop", () => {
     const block = page.locator("[data-block='positions']");
     await expect(block).toContainText("All positions are closed. Find a setup or let Autopilot trade for you.");
     await expect(block.getByRole("link", { name: "Find setups" })).toHaveAttribute("href", "/screener");
-    await expect(page.locator("[data-block='history']")).toContainText("No closed trades yet.");
+    await expect(page.locator("[data-block='history']")).toContainText("Closed trades show here.");
   });
 
   test("before the day's broker login: 'Log in to Upstox', and the paper exits still work", async ({ page }) => {

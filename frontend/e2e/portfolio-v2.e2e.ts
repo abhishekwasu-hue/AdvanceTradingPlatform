@@ -106,7 +106,7 @@ test.describe("v2 portfolio 1440 desktop", () => {
   test("nothing open: the friendly empty states", async ({ page }) => {
     await open(page, "light", { empty: true });
     const block = page.locator("[data-block='allocation']");
-    await expect(block).toContainText("Nothing is invested right now.");
+    await expect(block).toContainText("All cash.");
     await expect(block.getByRole("link", { name: "Find setups" })).toHaveAttribute("href", "/screener");
     await expect(page.locator("[data-block='booked']")).toContainText("once you have closed two trades");
   });

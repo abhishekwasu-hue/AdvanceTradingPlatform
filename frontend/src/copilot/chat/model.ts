@@ -146,8 +146,9 @@ export interface AnswerRow { label: string; value: string; dir: "up" | "down" | 
 
 export function answerRow(line: string): AnswerRow | null {
   const m = /^([^:]{1,40}):\s+(.{1,40})$/.exec(line.trim());
-  if (!m || /[.!?]$/.test(m[2]) && !/\d[.%]?$/.test(m[2])) return null;
-  const value = m[2].trim();
+  // A row is a short label (up to four words) and a number-led value ("+₹1,200", "0.84", "₹5,000"); anything else is a sentence.
+  if (!m || m[1].trim().split(/\s+/).length > 4 || !/^[+−-]?\s?₹?\s?\d/.test(m[2].trim())) return null;
+  const value = m[2].trim().replace(/\.$/, "");
   const signed = /^([+−-])\s?₹?\s?\d/.exec(value);
   return { label: m[1].trim(), value, dir: signed ? (signed[1] === "+" ? "up" : "down") : null };
 }

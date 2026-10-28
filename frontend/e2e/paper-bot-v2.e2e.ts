@@ -131,7 +131,7 @@ test.describe("Paper bot behaviour", () => {
 
   test("start in three taps: strategy, symbol, Start on paper - always PAPER, one lot for an index", async ({ page }) => {
     const server = await open(page, { empty: true });
-    await expect(bots(page)).toContainText("No paper bot yet.");
+    await expect(bots(page)).toContainText("Start a paper bot below");
     await page.getByRole("button", { name: "Start a paper bot" }).click();
     await expect(form(page).getByLabel("Pick a strategy")).toBeFocused();
     await expect(form(page).getByLabel("Pick a strategy")).toHaveValue("orb_15m_5m");

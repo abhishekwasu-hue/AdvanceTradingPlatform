@@ -237,7 +237,7 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
         await expect(page.getByRole("dialog").getByRole("region", { name: "Ask AI about this option chain" })).toBeVisible();
         await expect(page.getByRole("dialog").getByRole("button", { name: /highest call OI/ })).toBeVisible();   // 3 suggested questions
         await page.keyboard.press("Escape");
-        await expect(block.getByText("No saved analyses yet.")).toBeVisible();
+        await expect(block.getByText("Ask AI about this chain and choose Save as My analysis to keep it here.")).toBeVisible();
         await expect(block).not.toContainText(/sample|lookback|manual ltp/i);
         if (width === 390) await expectPhoneLayout(page);
         await expect(block).toHaveScreenshot(`option-chain-v2-analyses-${width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });

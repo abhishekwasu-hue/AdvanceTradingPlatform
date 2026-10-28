@@ -47,7 +47,7 @@ export function AnswerV2({ answer, onAsk }: { answer: ChatAnswer; onAsk?: (q: st
                   // UI-28 U2.4: "Label: value" lines are rows with the number right-aligned and signed; sentences stay text.
                   return row ? (
                     <li key={i} className="flex items-baseline justify-between gap-space-3 text-t14" data-answer-row>
-                      <span className="min-w-0 text-fg-muted">{row.label}</span>
+                      <span className="min-w-0 text-fg-muted">{row.label}:</span>
                       <span className={cx("shrink-0 font-tabular", row.dir === "up" ? "text-up" : row.dir === "down" ? "text-down" : "text-fg")}
                         data-signed={row.dir ?? undefined}>
                         {row.dir && <span aria-hidden className="text-t12">{row.dir === "up" ? "▲" : "▼"}</span>}{row.value}

@@ -5,7 +5,9 @@ describe("UI-28 U2.4 answer lines as rows", () => {
     expect(answerRow("Net P&L: +₹1,200")).toEqual({ label: "Net P&L", value: "+₹1,200", dir: "up" });
     expect(answerRow("Change: −0.8%")).toEqual({ label: "Change", value: "−0.8%", dir: "down" });
     expect(answerRow("PCR: 0.84")).toEqual({ label: "PCR", value: "0.84", dir: null });
-    expect(answerRow("Trend: up on the daily")).toEqual({ label: "Trend", value: "up on the daily", dir: null });
+    expect(answerRow("Trend: up on the daily")).toBeNull();                            // a word value stays text
+    expect(answerRow("The market-structure trend is up: 3 left")).toBeNull();          // a sentence, not a label
+    expect(answerRow("Net result after costs: 99,919.16.")).toEqual({ label: "Net result after costs", value: "99,919.16", dir: null });
     expect(answerRow("NIFTY closed higher today on broad buying.")).toBeNull();
     expect(answerRow("Note: this is what the method reads, nothing more.")).toBeNull();
   });

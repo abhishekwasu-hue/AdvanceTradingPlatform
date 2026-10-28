@@ -99,14 +99,18 @@ def test_a_run_on_server_bars_is_stored_and_reproducible(flag_on, monkeypatch):
     async def pick(session, tenant_id, broker, label):
         return types.SimpleNamespace(broker_name="fake")
     asked = []
+    # SCR-FIX A9: an adapter-like interval map (Upstox v2's); a non-native interval is refused, as the broker refuses it
+    adapter = types.SimpleNamespace(name="fake", native_intervals=frozenset({"1min", "30min", "day", "week", "month"}))
 
     async def candles(self, symbol, exchange="NSE", interval="1min", now=None):
+        if interval not in self.broker.native_intervals:
+            raise RuntimeError(f"Interval accepts one of {sorted(self.broker.native_intervals)}")
         asked.append((symbol, exchange, interval))
         if symbol == "BROKEN":
             raise RuntimeError("broker said no")
         return _daily_bars(100, 1.0 if symbol == "UP" else -1.0)
     monkeypatch.setattr(candles_routes, "_pick_record", pick)
-    monkeypatch.setattr(token_lifecycle, "build_adapter", lambda record: object())
+    monkeypatch.setattr(token_lifecycle, "build_adapter", lambda record: adapter)
     monkeypatch.setattr(service.MarketDataService, "get_candles", candles)
 
     made = client.post("/api/screener/screens", json={"name": "trend", "source": "close > SMA(close, 20) AND PctChange(close, 5) > 0"}, headers=headers).json()

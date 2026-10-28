@@ -61,6 +61,7 @@ class ShoonyaBroker(BrokerInterface):
     """
 
     name = "shoonya"
+    native_intervals = frozenset(SHOONYA_INTERVAL_MINUTES) | {"day"}   # SCR-FIX A1 (day: the EOD call)
     BASE_URL = "https://api.shoonya.com/NorenWClientTP"
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:

@@ -3,7 +3,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Awaitable, Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
@@ -134,6 +134,9 @@ class BrokerInterface(ABC):
     # UI2-4a2: the longest range of daily bars one history request may ask for; longer ranges (weekly and monthly charts)
     # go out as whole-date chunks of at most this many days. Conservative where the broker publishes no limit.
     daily_days_per_request: int = 365
+    # SCR-FIX A1: the ATP intervals this broker's history / intraday APIs accept as they are. Any other interval is fetched
+    # at the largest native interval that divides it and resampled (app/market_data/intervals.py), never sent raw.
+    native_intervals: FrozenSet[str] = frozenset({"1min", "3min", "5min", "10min", "15min", "30min", "60min", "day"})
     # The session token this adapter uses (read back by `access_token`); adapters set it in __init__ / authenticate().
     _access_token: Optional[str] = None
 

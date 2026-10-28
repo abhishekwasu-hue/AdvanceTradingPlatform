@@ -483,8 +483,12 @@ async def server_fetch(session: AsyncSession, tenant_id: int, symbols: List[str]
     universe, problems, source = await fetch_frames(session, tenant_id, symbols, exchange, base_tf, lookback, include_forming=forming, user_id=user_id)
     if base_tf != "1d" or not universe:
         return universe, problems, source
-    intraday, _p, _s = await fetch_frames(session, tenant_id, [d.symbol for d in universe], exchange, "15m", {"15m": 30},
-                                          include_forming=forming, user_id=user_id)
+    intraday, intraday_problems, _s = await fetch_frames(session, tenant_id, [d.symbol for d in universe], exchange, "15m", {"15m": 30},
+                                                         include_forming=forming, user_id=user_id)
+    # SCR-FIX A2: a symbol whose 15-minute bars could not be read has no today's bar - said, never dropped (the rule's
+    # problem line names it instead of deciding silently on yesterday's bar)
+    for symbol, why in intraday_problems.items():
+        problems.setdefault(symbol, f"today's bar could not be read: {why}")
     today = datetime.now(timezone.utc).astimezone(IST).date()
     by_symbol = {d.symbol: d.frames.get("15m") for d in intraday}
     for data in universe:

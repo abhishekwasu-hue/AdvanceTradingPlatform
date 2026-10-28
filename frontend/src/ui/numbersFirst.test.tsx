@@ -94,9 +94,9 @@ describe("U4 EmptyState and U5 PageFootnote", () => {
     expect(link).toContain('href="/signals"');
     const button = html(<EmptyState text="Nothing yet." action={{ label: "Try again", onClick: () => undefined }} />);
     expect(button).toContain("<button");
-    const foot = html(<PageFootnote>Phase 0 has PAPER only.</PageFootnote>);
+    const foot = html(<PageFootnote>Prices from your broker.</PageFootnote>);
     expect(foot).toContain("data-page-footnote");
-    expect(foot).toContain("Information only — never says what to trade. Phase 0 has PAPER only.");
+    expect(foot).toContain("Information only — never says what to trade. Prices from your broker.");
   });
 });
 

@@ -92,7 +92,7 @@ export function EngineUnavailable({ engine }: { engine: AnalyzeStatus["engine"] 
         </div>
         {engine.reason ? (
           <div className="mt-space-4 rounded-control border border-subtle bg-surface-2 p-space-3" data-testid="engine-admin-detail">
-            <p className="text-t14 font-semibold text-fg">For admins: the analysis engine is missing</p>
+            <p className="text-t14 font-semibold text-fg">For admins: the analysis service is missing</p>
             <p className="mt-space-1 text-t14 text-fg-muted">Why: {engine.reason}.</p>
             {engine.owner_steps ? <p className="mt-space-1 break-words text-t14 text-fg-muted">{engine.owner_steps}</p> : null}
           </div>

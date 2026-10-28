@@ -197,6 +197,23 @@ by running Trade's own functions on seeded random inputs (`capture_from_trade.py
 rotation condition, a PCR edge, the strength baseline, the max-pain tie order or the swing-gate comparison makes the
 suite fail.
 
+## Structural flip (AUD-V5, owner audit 28 Oct)
+
+Trade's rule (kept exactly in `compute_oi_signal_with_hysteresis` when `structural_flip_min_rise_pct` is None - the
+golden replay) flips BULLISH <-> BEARISH only when the diff stayed on the new side for `confirm_count` snapshots AND a
+call / put rotation (both sides moving >= 2 %, opposite ways) shows on two consecutive comparisons. With calls rising and
+puts flat the rotation never shows, so a stale "BULLISH (Weakening)" can last all day (the owner's 28 Oct screenshot:
+Call 488.61 L, Put 369.53 L, delta -57.38 L).
+
+The banner (`evaluate_snapshot`) also accepts the structural alternative, `OIRegimeSettings.structural_flip_min_rise_pct`
+(default 2.0; None turns it off): the diff moved towards the new side on each of the last `confirm_count` snapshots and
+the new side's own OI (calls for BEARISH, puts for BULLISH) rose by at least that % over them. Interpretation of the
+order's "three consecutive negative delta diff" = three consecutive falls of the diff (provisional; OPEN_QUESTIONS).
+Tests: tests/test_aud_v5_structural_flip.py with the owner's numbers.
+
+Trade: oi_analysis.py `compute_oi_signal_with_hysteresis` has the same rotation-only rule (same stale reading). Trade is a
+separate repository with its own STABLE rules; the same fix there needs the owner's go-ahead (reported, not changed).
+
 ## Open questions (provisional defaults in force)
 
 - **OI-1:** should a SIDEWAYS PCR count against both directions in `swing_oi_gate`? Default: yes, as in Trade.

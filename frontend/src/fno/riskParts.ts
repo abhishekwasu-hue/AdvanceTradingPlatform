@@ -22,7 +22,7 @@ export interface EventRisk {
 
 export const EVENTS_NOTE = "From your events calendar.";
 /** Said once under the parts (each part names only its source). */
-export const CHECKS_NOTE = "Information only: none of this holds back the order or any exit.";
+export const CHECKS_NOTE = "None of this holds back the order or any exit.";
 export const EVENTS_UNREAD = "The events calendar could not be read just now, so event risk is not checked here.";
 
 /** The events before the expiry in plain words; null while it is being read. */

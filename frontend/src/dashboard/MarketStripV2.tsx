@@ -7,7 +7,8 @@ import { useColourV2 } from "../ui/colourV2";
 import { Sparkline } from "../ui/Sparkline";
 import { CARD, toneClass } from "./CardV2";
 import { HERO_CARD } from "../ui/accents";
-import { indexCaption, signTone, vixNote, type TodayPnl } from "./model";
+import { indexCaption, signTone, vixBand, type TodayPnl } from "./model";
+import { LevelChip } from "../ui/LevelChip";
 import type { Loadable } from "./useDashboardData";
 import type { MarketStrip, StripIndex } from "./types";
 import { Signed } from "../ui/numbersFirst";
@@ -48,7 +49,8 @@ function Change({ index }: { index: StripIndex }) {
 function IndexCell({ index, oi, nowMs, spark }: { index: StripIndex; oi?: string; nowMs: number; spark?: number[] }) {
   const caption = indexCaption(index, nowMs);
   const tone = signTone(index.change ?? index.change_pct);
-  const note = index.key === "INDIA VIX" ? vixNote(index.ltp) : oi;
+  const vix = index.key === "INDIA VIX" ? vixBand(index.ltp) : null;
+  const note = index.key === "INDIA VIX" ? null : oi;
   return (
     <div className="min-w-0" data-index={index.key}>
       <div className="flex items-center gap-space-1 text-t12 font-medium uppercase text-fg-muted">
@@ -61,6 +63,11 @@ function IndexCell({ index, oi, nowMs, spark }: { index: StripIndex; oi?: string
       )}
       {caption && <div className="mt-space-1 text-t12 text-fg-muted">{caption}</div>}
       {note && <div className="mt-space-1 hidden text-t12 text-fg-muted md:block">{note}</div>}
+      {vix && (
+        <div className="mt-space-1 hidden items-center gap-space-1 text-t12 text-fg-muted md:flex" data-vix-level={vix.level.toLowerCase()}>
+          <LevelChip scale="vix" level={vix.level} /> {vix.range}
+        </div>
+      )}
     </div>
   );
 }
@@ -126,7 +133,7 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
           {pnl.booked !== null && (
             <div className="text-t12 text-fg-muted">
               <span className="whitespace-nowrap"><Signed value={pnl.booked} arrow={false} /> booked</span> ·{" "}
-              <span className="whitespace-nowrap">{pnl.open === null ? `open ${EMPTY}` : <><Signed value={pnl.open} arrow={false} /> open</>}</span>
+              <span className="whitespace-nowrap">{pnl.open === null ? `open ${EMPTY}` : <><Signed value={pnl.open} arrow={false} /> open{pnl.mark ? ` (${pnl.mark})` : ""}</>}</span>
             </div>
           )}
         </div>

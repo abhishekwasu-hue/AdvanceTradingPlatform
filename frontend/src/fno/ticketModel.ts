@@ -42,8 +42,9 @@ export const PRODUCT_MISSING = "Pick a product: MIS or NRML";
 export const PRODUCTS: { value: Product; label: string; hint: string }[] = [
   { value: "MIS", label: "MIS", hint: "Intraday" }, { value: "NRML", label: "NRML", hint: "Carry forward" },
 ];
-export const PRACTICE_TITLE = "Practice mode (PAPER)";
-export const PRACTICE_TEXT = "No real order is sent and no money moves.";
+// UI-28 U1.1 (owner, 28 Oct): the mode is labelled once, as a "PAPER" chip in the header; the sentence is its tooltip only.
+export const PRACTICE_TITLE = "PAPER";
+export const PRACTICE_TEXT = "Practice mode: no real order is sent and no money moves.";
 export const MAX_LOTS = 500;
 
 /** Settings part C: the lots / product / order type the user's own defaults start a ticket with (only the ones set). */

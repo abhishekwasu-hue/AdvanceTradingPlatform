@@ -333,7 +333,8 @@ async def journal_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
         value = (review.get("discipline") or {}).get("score")
         past = [h["score"] for h in reversed(review.get("history") or []) if h.get("score") is not None]   # oldest first
         if value is not None:
-            score.add(f"Discipline score this week: {value} out of 100.")
+            note = (review.get("discipline") or {}).get("note")
+            score.add(f"Discipline score this week: {value} out of 100{' ' + note if note else ''}.")
             if past:
                 prev = past[-1]
                 trend = (f"up {value - prev} on last week" if value > prev else f"down {prev - value} on last week"
@@ -341,6 +342,8 @@ async def journal_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
                 score.add(f"That is {trend}. The weeks before: {', '.join(str(p) for p in past)} (oldest first).")
             score.add("It counts how closely you followed your own plan, not how many trades you took.")
             score.row("discipline", score=value, previous=past[-1] if past else None, history=past)
+        elif (review.get("discipline") or {}).get("note"):
+            score.add(f"Discipline score this week: {review['discipline']['note']}.")   # AUD-V4: open trades only so far
         for b in sorted(review.get("behaviours") or [], key=lambda b: (-int(b.get("trades") or 0), str(b.get("tag"))))[:MAX_LINES]:
             label = BEHAVIOUR_WORDS.get(str(b.get("tag")))
             if not label or not b.get("trades"):

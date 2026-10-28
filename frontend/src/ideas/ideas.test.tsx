@@ -130,7 +130,7 @@ describe("the cards", () => {
     for (const card of [t2, t5]) {
       expect(card).toContain('data-state="adopt-ready"');
       expect(card).toContain('data-state="adopt-note"');
-      expect(readable(card)).toContain("runs on paper only");
+      expect(readable(card)).toContain("it runs in PAPER");
       expect(readable(card)).toContain("is not checked yet");                    // where the paper strategy reads less
     }
     expect((on.match(/data-adopt=/g) ?? []).length).toBe(2);                       // the other ideas still come later

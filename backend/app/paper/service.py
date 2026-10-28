@@ -252,7 +252,7 @@ async def ladder(session: AsyncSession, user: User, now: Optional[datetime] = No
                                                min_trades=app_config.PAPER_EVIDENCE_MIN_TRADES, ruin_pct=app_config.PAPER_EVIDENCE_RUIN_PCT)
     return {**extra, "stage": STAGE_PAPER, "stages": [
                 {"key": STAGE_PAPER, "label": "PAPER", "status": "current"},
-                {"key": STAGE_LIVE, "label": "LIVE (approval-only)", "status": "locked", "note": "Not available in Phase 0"}],
+                {"key": STAGE_LIVE, "label": "LIVE (approval-only)", "status": "locked", "note": "not yet enabled"}],
             "criteria": criteria, "met": sum(1 for c in measured if c["met"]), "measured": len(measured),
             "summary": {k: data[k] for k in ("starting_capital", "balance", "equity", "closed_trades", "sessions", "max_drawdown_pct", "win_rate")},
             "as_of": data["as_of"]}
@@ -271,7 +271,7 @@ async def discipline_criterion(session: AsyncSession, user: User, now: datetime)
                             "weeks_needed": need}
     if not await flag_enabled(session, "discipline_engine", user.tenant_id):
         return {**base, "value": None, "target": None, "comparison": None, "met": None, "status": "engine_off",
-                "note": "Not measured: the journal's discipline engine is off for your organisation"}
+                "note": "Not measured: the journal's discipline score is off for your organisation"}
     _, this_week_start, _ = journal.week_bounds(None, now=now)
     since = this_week_start - timedelta(weeks=app_config.PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS)
     entry_times = await session.scalars(select(TradeRecord.entry_time).where(

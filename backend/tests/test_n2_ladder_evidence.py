@@ -186,7 +186,7 @@ def test_flag_on_without_the_discipline_engine_shows_figures_and_says_why_discip
         _trade(t, 100.0 if i % 2 == 0 else -40.0, entry_ago=timedelta(days=i + 1))
     body = client.get("/api/paper/ladder", headers=t["headers"]).json()
     disc = {c["key"]: c for c in body["criteria"]}["discipline_score"]
-    assert disc["status"] == "engine_off" and disc["met"] is None and "discipline engine is off" in disc["note"]
+    assert disc["status"] == "engine_off" and disc["met"] is None and "discipline score is off" in disc["note"]
     assert body["measured"] == 3
     ev = body["evidence"]
     assert ev["status"] == "too_few" and ev["trades"] == 3 and ev["min_trades"] == app_config.PAPER_EVIDENCE_MIN_TRADES

@@ -23,6 +23,13 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, 
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 const ALL = [positionsSource, portfolioSource, riskSource, riskPartsSource, partsSource, modelSource, confirmSource].map(code).join("\n");
 
+function rowWith(over: Partial<ReturnType<typeof heldRows>[number]>) {
+  const p = trade();
+  const r = { ...heldRows([p], exposure())[0], ...over };
+  const a: RowActions = { exitNowOn: true, canTrade: true, onExit: noop, onCheck: noop };
+  return renderToStaticMarkup(<MemoryRouter><ul><PositionRowV2 row={r} position={p} actions={a} prices /></ul></MemoryRouter>);
+}
+
 function row(p = trade(), actions: Partial<RowActions> = {}, prices = true) {
   const [r] = heldRows([p], exposure());
   const a: RowActions = { exitNowOn: true, canTrade: true, onExit: noop, onCheck: noop, ...actions };
@@ -68,7 +75,8 @@ describe("UI2-9a exits (ADR-0004, UI-11)", () => {
     expect(gated).toContain("prices={false}");
     expect(gated).toContain('<LoadFailedV2 what="your positions" />');
     expect(gated).not.toContain('broker.kind !== "loading"');
-    expect(gated).toMatch(/exitNowOn && canTrade \? " You can still exit a paper position here\." : ""/);
+    // UX-15 (owner, 28 Oct): one chip, not a sentence; each paper position keeps its own Exit.
+    expect(gated).toContain('name="no-price">No live price · connect your broker</Chip>');
   });
 
   it("only for a paper position the trader can trade; a live one is closed in the broker's app", () => {
@@ -85,15 +93,25 @@ describe("UI2-9a exits (ADR-0004, UI-11)", () => {
     expect(html).toContain('aria-hidden="true"');
   });
 
-  it("a row: symbol, Long, Paper, size, levels in red and green, live price and signed P&L, a chart link", () => {
+  it("a row (UX-15, the broker standard): instrument, Long, Paper, Qty, Avg., LTP, levels as chips, Signed P&L, a chart link", () => {
     const html = row();
     const words = text(html);
-    for (const s of ["DEMO A", "Long", "Paper", "Buy · 2 lots (150) · avg 100.00", "Stop 95.00", "Target 110.00", "110.00", "+₹1,500", "+10.00%"]) {
+    for (const s of ["DEMO A", "Long", "Paper", "Qty +150 (2 lots)", "Avg. 100.00", "LTP 110.00", "Stop 95.00", "Target 110.00", "+₹1,500", "+10.00%"]) {
       expect(words, s).toContain(s);
     }
-    expect(html).toContain("text-down");
-    expect(html).toContain("text-up");
+    expect(words).not.toContain("Buy ·");                      // the Long chip says the side
+    expect(html).toMatch(/data-signed="up"[^>]*>.*\+₹1,500/);
+    expect(html).toContain('data-chip="level"');
     expect(html).toContain('href="/charts/DEMO%20A"');
+  });
+
+  it("UX-15: a missing price is one amber chip; a stop that is not set is an amber chip, never red text", () => {
+    const noPrice = text(rowWith({ ltp: null, pnl: null, pnlPct: null }));
+    expect(noPrice).toContain("No live price");
+    expect(noPrice).not.toMatch(/–\s+–/);
+    const noStop = rowWith({ levels: [{ label: "Stop", value: "no stop", tone: "down" }, { label: "Target", value: "–", tone: "up" }] });
+    expect(noStop).toMatch(/data-chip="level-unset"[^>]*text-warn[^>]*>.*Stop not set/);
+    expect(text(noStop)).not.toContain("Target");
   });
 
   it("removing a market event or a limit is a neutral button with a confirm that names the consequence", () => {

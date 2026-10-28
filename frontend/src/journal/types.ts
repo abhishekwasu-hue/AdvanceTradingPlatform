@@ -72,6 +72,10 @@ export interface DisciplineScore {
   trades: number;
   components: ScoreComponent[];
   count_unconfirmed: boolean;
+  /** AUD-V4: "n/a until a trade closes" (open trades only) or "(N open · M closed)"; null with no decisions. */
+  note?: string | null;
+  open?: number;
+  closed?: number;
 }
 
 export interface JournalWeek {

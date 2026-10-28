@@ -280,7 +280,7 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
 }
 
 /** What "Adopt as a paper strategy" does, in plain words (PAPER only; the user saves it himself). */
-export const ADOPT_NOTE = "Opens the paper bot form with this idea's settings filled in. You review it and start it yourself; it runs on paper only.";
+export const ADOPT_NOTE = "Opens the paper bot form with this idea's settings filled in. You review it and start it yourself; it runs in PAPER.";
 
 /** Day-one fix 1: the Strategies › Test link of an idea the server lets the user adopt now, or null. */
 export function testPathForIdea(idea: Pick<Idea, "adopt">): string | null {

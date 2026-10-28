@@ -246,7 +246,7 @@ for (const size of SIZES) {
         await openChain(page, theme, `${FROM_SIGNAL}&trade=1`);
         const panel = page.locator("[data-basket-panel]");
         await expect(panel.locator("[data-basket='legs'] > li")).toHaveCount(2);
-        await expect(panel).toContainText("Practice mode (PAPER)");
+        await expect(panel.locator("[data-practice-frame]")).toHaveText("PAPER");
         await page.mouse.move(0, 0);
         await expect(panel).toHaveScreenshot(`fno8b3-trade-setup-v2-${size.width}-${theme}.png`, SHOT);
       });
@@ -302,7 +302,7 @@ test.describe("8b slice 3 flows", () => {
     await expect(item).toContainText("Lots start from your own ticket defaults");
     await item.locator("[data-setup='trade']").tap();
     const ticket = page.locator("[data-order-ticket]");
-    await expect(ticket.locator("[data-practice-frame]")).toContainText("Practice mode (PAPER)");
+    await expect(ticket.locator("[data-practice-frame]")).toContainText("PAPER");
     await expect(ticket).toContainText("NIFTY 03 NOV 24500 CE");
     expect(orderCalls(seen)).toEqual([]);
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1: no product saved - pick one before Review

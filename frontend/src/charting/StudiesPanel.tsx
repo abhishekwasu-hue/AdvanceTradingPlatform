@@ -97,8 +97,8 @@ export function StudiesPanel({ engine, instrument, timeframe, at = null, start =
       <StudiesList exprs={exprs} result={result} onRemove={(i) => update(exprs.filter((_, k) => k !== i))} />
       {exprs.length < MAX_STUDIES && (
         <form className="inline-flex gap-1" onSubmit={(ev) => { ev.preventDefault(); add(); }}>
-          <input value={draft} onChange={(ev) => setDraft(ev.target.value)} placeholder="ScreenQL, e.g. SMA(close, 20)" maxLength={300}
-                 aria-label="Add a study (ScreenQL)" className="w-48 rounded border border-border bg-surface px-1 py-0.5 font-mono text-xs" />
+          <input value={draft} onChange={(ev) => setDraft(ev.target.value)} placeholder="e.g. SMA(close, 20)" maxLength={300}
+                 aria-label="Add a study (formula)" className="w-48 rounded border border-border bg-surface px-1 py-0.5 font-mono text-xs" />
           <button type="submit" className={`${btn} text-fg-muted hover:text-fg`}>Add</button>
         </form>
       )}

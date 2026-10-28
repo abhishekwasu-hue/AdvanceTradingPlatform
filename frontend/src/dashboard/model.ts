@@ -5,6 +5,7 @@ import type { SetupHealthItem } from "../setup/model";
 import { paperOnlyFrom } from "../setup/paperOnly";
 import { reasonWords, setupWords } from "../signals/signalText";
 import { EMPTY, formatDateIST, formatLots, formatPrice, formatTimeIST } from "../ui/format";
+import { LEVELS, VIX_BANDS, vixLevel, type VixLevel } from "../ui/levels";
 import { botDisplayName, strategyDisplayName } from "../ui/strategyName";
 import type { OiBannerResponse } from "../oi/types";
 import type {
@@ -138,13 +139,21 @@ export function oiLines(banners: OiBannerResponse[] | null | undefined): Record<
   return out;
 }
 
-/** India VIX in words (the market-memory bands: 12 / 16 / 20). */
-export function vixNote(v: number | null | undefined): string | null {
+/** AUD-V3: India VIX's band from the one shared table (ui/levels.ts VIX_BANDS = the backend's 12 / 16 / 20): its level
+ * (for the LevelChip) and the band's range in words. */
+export function vixBand(v: number | null | undefined): { level: VixLevel; range: string } | null {
   if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) return null;
-  if (v < 12) return "Very calm: below 12";
-  if (v < 16) return "Calm: 12 to 16";
-  if (v < 20) return "Elevated: 16 to 20";
-  return "Nervous: above 20";
+  const level = vixLevel(v);
+  const i = VIX_BANDS.findIndex(([, l]) => l === level);
+  const lo = i > 0 ? VIX_BANDS[i - 1][0] : i < 0 ? VIX_BANDS[VIX_BANDS.length - 1][0] : null;
+  const hi = i >= 0 ? VIX_BANDS[i][0] : null;
+  return { level, range: lo === null ? `below ${hi}` : hi === null ? `above ${lo}` : `${lo} to ${hi}` };
+}
+
+/** India VIX in words: "Normal: 12 to 16" (the shared table's label and range). */
+export function vixNote(v: number | null | undefined): string | null {
+  const band = vixBand(v);
+  return band ? `${LEVELS.vix[band.level].label}: ${band.range}` : null;
 }
 
 /** The small line under an index: where a remembered price is from, or that there is none. */
@@ -165,6 +174,8 @@ export interface TodayPnl {
   /** 0 with no open positions; null while any open symbol has no live price (P&L at the entry price would be a made-up
    * zero) or a symbol was converted from another currency, or has no rate to convert it. */
   open: number | null;
+  /** AUD-V2: "last mark 15:29 IST" when the open part is valued at stored marks (no live price), else null. */
+  mark?: string | null;
 }
 
 /** Any currency conversion used or missing: some symbol is not simply in rupees (a missing rate leaves that symbol in
@@ -173,9 +184,20 @@ export function convertedOrUnconverted(exposure: PortfolioExposure): boolean {
   return Object.keys(exposure.fx_rates_used ?? {}).length > 0 || (exposure.fx_missing ?? []).length > 0;
 }
 
-/** True when every open symbol is valued at a live price in rupees: the exposure's open P&L is real. */
+/** Live prices, or (AUD-V2, after hours) the last stored marks: a real price in rupees, not the entry price. */
+export function pricedInRupees(exposure: PortfolioExposure): boolean {
+  return (exposure.price_source === "ltp" || exposure.price_source === "mark") && !convertedOrUnconverted(exposure);
+}
+
+/** AUD-V2: "last mark 15:29 IST" when any symbol is valued at a stored mark (the oldest of them), else null. */
+export function markNote(exposure: PortfolioExposure | null | undefined): string | null {
+  const times = Object.values(exposure?.marks ?? {}).map((v) => Date.parse(v)).filter((v) => Number.isFinite(v));
+  return times.length ? `last mark ${formatTimeIST(Math.min(...times))}` : null;
+}
+
+/** True when every open symbol is valued at a live price (or its last mark) in rupees: the exposure's open P&L is real. */
 export function fullyPriced(exposure: PortfolioExposure): boolean {
-  if (exposure.price_source !== "ltp" || convertedOrUnconverted(exposure)) return false;
+  if (!pricedInRupees(exposure)) return false;
   const priced = new Set(exposure.priced_symbols ?? []);
   return (exposure.by_symbol ?? []).every((row) => priced.has(row.symbol));
 }
@@ -184,7 +206,8 @@ export function todayPnl(exposure: PortfolioExposure | null | undefined): TodayP
   if (!exposure) return { total: null, booked: null, open: null };
   const booked = exposure.realised_today;
   const open = exposure.open_positions === 0 ? 0 : fullyPriced(exposure) ? exposure.unrealised_pnl : null;
-  return { total: open === null ? null : booked + open, booked, open };
+  const mark = open === null ? null : markNote(exposure);
+  return { total: open === null ? null : booked + open, booked, open, ...(mark ? { mark } : {}) };
 }
 
 // --- Open positions ---------------------------------------------------------------------------------------------------
@@ -205,7 +228,7 @@ export interface PositionRow {
 export function symbolPrices(positions: TradeRecord[], exposure: PortfolioExposure | null | undefined): Record<string, number> {
   const out: Record<string, number> = {};
   // A symbol converted from another currency is valued in rupees against an entry in its own currency: no P&L from it.
-  if (!exposure || exposure.price_source !== "ltp" || convertedOrUnconverted(exposure)) return out;
+  if (!exposure || !pricedInRupees(exposure)) return out;
   const priced = new Set(exposure.priced_symbols ?? []);
   for (const row of exposure.by_symbol ?? []) {
     if (!priced.has(row.symbol)) continue;

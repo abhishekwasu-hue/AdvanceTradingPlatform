@@ -1,6 +1,7 @@
 """Phase M / V4.4: `GET /api/portfolio/exposure` - the tenant's open book with live prices when a
 broker session is usable (else entry prices, flagged)."""
-from typing import Dict
+from datetime import datetime, timezone
+from typing import Dict, Tuple
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -41,6 +42,7 @@ async def exposure(live_prices: bool = Query(default=True), user: User = Depends
     # DEF-0: the organisation's own capital, else the PAPER account's starting balance - never a built-in 100,000.
     capital = float(risk.capital) if risk is not None and risk.capital is not None else float(app_config.PAPER_STARTING_CAPITAL)
     prices: Dict[str, float] = {}
+    marks: Dict[str, Tuple[float, datetime]] = {}
     price_source = "entry"
     if live_prices and trades:
         from app.market_data import live_access
@@ -66,6 +68,17 @@ async def exposure(live_prices: bool = Query(default=True), user: User = Depends
                 except Exception:  # noqa: BLE001 - fall back to entry for that symbol
                     continue
             price_source = "ltp" if prices else "entry"
+        # AUD-V2 (PX-1 P1): a symbol with no live price (after hours, no session) is valued at the last mark the position
+        # monitor stored while its market was open - labelled with its time, never passed off as live.
+        for trade in trades:
+            if trade.symbol in prices or trade.mark_price is None or trade.mark_time is None:
+                continue
+            seen = marks.get(trade.symbol)
+            if seen is None or trade.mark_time > seen[1]:
+                marks[trade.symbol] = (float(trade.mark_price), trade.mark_time)
+        if marks:
+            prices.update({symbol: value for symbol, (value, _) in marks.items()})
+            price_source = "mark"
     # Phase P3: express every symbol in the tenant's base currency before aggregating.
     from app.db.models import Tenant
     from app.fx import service as fx
@@ -89,6 +102,7 @@ async def exposure(live_prices: bool = Query(default=True), user: User = Depends
     out = snap.to_dict()
     out["price_source"] = price_source
     out["priced_symbols"] = sorted(prices)
+    out["marks"] = {symbol: (when if when.tzinfo else when.replace(tzinfo=timezone.utc)).isoformat() for symbol, (_, when) in marks.items()}
     out["base_currency"] = base_ccy
     out["fx_rates_used"] = fx_used
     out["fx_missing"] = sorted(set(fx_missing))

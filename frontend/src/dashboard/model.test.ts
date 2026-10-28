@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BrokerGateState } from "../ui/brokerSession";
 import type { AiAction, Deployment, NotificationEntry, PortfolioExposure, TradeRecord } from "../types";
 import {
-  attentionRows, brokerChip, greeting, greetingName, indexCaption, istDay, marketLabel, oiLines, partlyConnected, positionRows,
+  attentionRows, brokerChip, fullyPriced, markNote, greeting, greetingName, indexCaption, istDay, marketLabel, oiLines, partlyConnected, positionRows,
   signTone, signalsToday, symbolPrices, todayPnl, todayTiles, vixNote, type AttentionInput,
 } from "./model";
 import type { StripIndex, StripMarket } from "./types";
@@ -76,9 +76,11 @@ describe("UI2-2 market strip", () => {
   });
 
   it("India VIX in words; a remembered level says when it was taken; no price is never 0", () => {
-    expect(vixNote(13.42)).toBe("Calm: 12 to 16");
-    expect(vixNote(11)).toBe("Very calm: below 12");
-    expect(vixNote(22)).toBe("Nervous: above 20");
+    // AUD-V3: the words come from the one shared table (ui/levels.ts), not a hand-coded copy.
+    expect(vixNote(13.42)).toBe("Normal: 12 to 16");
+    expect(vixNote(11)).toBe("Low: below 12");
+    expect(vixNote(17)).toBe("Elevated: 16 to 20");
+    expect(vixNote(22)).toBe("High: above 20");
     expect(vixNote(null)).toBeNull();
     const idx = (i: Partial<StripIndex>): StripIndex => ({ key: "NIFTY 50", label: "NIFTY 50", symbol: "NIFTY 50", exchange: "NSE", ltp: 1, prev_close: 1,
       change: 0, change_pct: 0, as_of: null, stale: false, source: "live", missing: false, ...i });
@@ -263,5 +265,18 @@ describe("UI2-2 today tiles", () => {
 
   it("days are IST days", () => {
     expect(istDay(Date.parse("2026-10-19T19:00:00Z"))).toBe("2026-10-20");
+  });
+});
+
+describe("AUD-V2: open P&L after hours at the last mark", () => {
+  it("counts a symbol valued at its stored mark as priced and says when the mark was taken", () => {
+    const exp = {
+      open_positions: 1, unrealised_pnl: 1200, realised_today: 0, price_source: "mark", priced_symbols: ["RELIANCE"],
+      by_symbol: [{ symbol: "RELIANCE" }], marks: { RELIANCE: "2026-10-28T09:59:00+00:00" },
+    } as unknown as PortfolioExposure;
+    expect(fullyPriced(exp)).toBe(true);
+    expect(todayPnl(exp)).toMatchObject({ open: 1200, total: 1200, mark: "last mark 15:29 IST" });
+    expect(markNote({ ...exp, marks: {} })).toBeNull();
+    expect(todayPnl({ ...exp, price_source: "entry", marks: {} }).open).toBeNull();
   });
 });

@@ -6,6 +6,7 @@ import type { ExperienceStatus } from "../types";
 import { gateLine, gateState, nextLevel, reasonOk } from "./experience";
 import { useProgressionT } from "./i18n";
 import { KeyValueTable, Signed, TextOnDemand } from "../ui/numbersFirst";
+import { loadSwitches } from "../settings/myLimits";
 import { useUiV2 } from "../ui/useFeatures";
 
 /**
@@ -16,8 +17,16 @@ import { useUiV2 } from "../ui/useFeatures";
 export default function ExperienceCard({ canTrade }: { canTrade: boolean }) {
   const [status, setStatus] = useState<ExperienceStatus | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // UI-28 U1.7 (with DEF-0 D4): on the v2 pages the card shows only when the user turned on "Limit me by my experience
+  // level" in My limits; otherwise no Beginner / Intermediate labels anywhere (the gate itself is server-side).
+  const v2 = useUiV2();
+  const [gateOn, setGateOn] = useState<boolean | null>(null);
   useEffect(() => { api.paperExperience().then(setStatus).catch(() => setStatus(null)); }, []);
-  if (!status) return null;
+  useEffect(() => {
+    if (!v2) return;
+    loadSwitches().then((r) => setGateOn(r.value.limit_by_experience), () => setGateOn(false));
+  }, [v2]);
+  if (!status || (v2 && !gateOn)) return null;
 
   async function optOut(gate: string, reason: string): Promise<boolean> {
     setMessage(null);
@@ -66,9 +75,9 @@ export function ExperiencePanel({ status, canTrade, onOptOut, error }: {
           ))}
         </ol>
         {v2 ? (
+          // UI-28 U1.9: "Sessions" is shown once, on the progression ladder.
           <KeyValueTable caption={t("experience.title")} rows={[
             { label: "Closed PAPER trades", value: r.closed_trades, testId: "trades" },
-            { label: "Sessions", value: r.sessions, testId: "sessions" },
             { label: "Largest drawdown", value: <Signed value={-Math.abs(r.max_drawdown_pct)} kind="pct" />, testId: "drawdown" },
           ]} />
         ) : <p className="text-fg">{t("experience.record", { trades: r.closed_trades, sessions: r.sessions, dd: r.max_drawdown_pct.toFixed(2) })}</p>}
@@ -76,7 +85,7 @@ export function ExperiencePanel({ status, canTrade, onOptOut, error }: {
           <div data-testid="experience-next">
             <p className="text-fg-muted">{t("experience.next", { level: next.label, opens: next.opens.join(", ").toLowerCase() })}</p>
             <ul className="mt-1 space-y-0.5">
-              {next.criteria.map((c) => (
+              {next.criteria.filter((c) => !v2 || c.key !== "sessions").map((c) => (   /* UI-28 U1.9: sessions live on the ladder only */
                 <li key={c.key} className="flex justify-between gap-2">
                   <span className="text-fg">{c.label}</span>
                   <span className={c.met ? "text-up" : "text-fg-muted"}>{criterionText(c)}{c.met ? " ✓" : ""}</span>

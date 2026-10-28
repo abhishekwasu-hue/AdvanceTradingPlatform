@@ -93,3 +93,32 @@ def quote_is_stale(quote_ts: Optional[datetime], now: datetime, max_seconds: Opt
 class StaleMarketDataError(RuntimeError):
     """Raised by MarketDataService.get_ltp when the broker's quote is older than the gate allows.
     Callers treat it exactly like an unavailable price: no exit decision this cycle."""
+
+
+_LONG_TF = re.compile(r"^\s*(\d+)\s*(w|wk|week|M|mo|month)\s*$")
+
+
+def bar_closes(index, timeframe: str):
+    """When each bar (labelled by its start) closes: start + timeframe; weeks and months by the calendar."""
+    import pandas as pd
+    long = _LONG_TF.match(str(timeframe or ""))
+    if long:
+        n, unit = int(long.group(1)), long.group(2)
+        return index + (pd.DateOffset(weeks=n) if unit.lower().startswith("w") else pd.DateOffset(months=n))
+    return index + pd.Timedelta(seconds=timeframe_seconds(timeframe))
+
+
+def closed_frames(frames: dict, now: datetime) -> dict:
+    """AUD-V1 (owner, 28 Oct; AP-FIX AP1): only bars that have closed by `now` - a broker's feed ends with the bar still
+    forming, and the Autopilot decides on closed bars exactly as the backtest does (the screener's `closed_only`)."""
+    import pandas as pd
+    out = {}
+    for tf, df in frames.items():
+        if df is None or df.empty:
+            out[tf] = df
+            continue
+        tz = getattr(df.index, "tz", None)
+        stamp = pd.Timestamp(_aware(now))
+        stamp = stamp.tz_convert(tz) if tz is not None else stamp.tz_convert("UTC").tz_localize(None)
+        out[tf] = df[bar_closes(df.index, tf) <= stamp]
+    return out

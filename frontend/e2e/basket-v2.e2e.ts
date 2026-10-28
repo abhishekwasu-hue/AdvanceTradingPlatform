@@ -209,7 +209,7 @@ test.describe("Basket panel v2 flows", () => {
     const seen = await open(page, "light", { partial: true });
     await expectPhoneLayout(page);
     const panel = await bullPut(page);
-    await expect(panel.locator("[data-practice-frame]")).toContainText("Practice mode (PAPER)");
+    await expect(panel.locator("[data-practice-frame]")).toContainText("PAPER");
     await expect(panel.locator("[data-basket='settings-note']")).toContainText("neutral start");
     await expect(panel.locator("[data-leg='1'] [data-leg-label]")).toHaveText("NIFTY 03 NOV 24300 PE");
     await expect(panel.locator("[data-leg='2'] [data-leg-label]")).toHaveText("NIFTY 03 NOV 24500 PE");

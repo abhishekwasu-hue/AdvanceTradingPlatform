@@ -72,7 +72,8 @@ describe("LegendCard (U7 LG1)", () => {
   it("shows the screen: approximation, timeframe, source and a parameter table with headers", () => {
     expect(text(html)).toContain("An approximation of the published rules.");
     expect(text(html)).toContain(card.approximation);
-    expect(html).toContain('aria-label="ScreenQL source"');
+    expect(html).toContain('aria-label="Screen source"');
+    expect(html).toMatch(/<details data-details="legend.source"[^>]*>[\s\S]*Advanced/);     // UI-28 U1.4: code under "Advanced"
     expect(text(html)).toContain(filledSource(card));
     expect(html).toContain("<caption");
     expect(html.match(/scope="col"/g)).toHaveLength(4);

@@ -1,5 +1,5 @@
 import { friendlyError } from "../api/errors";
-import { convertedOrUnconverted, humanise, positionRows, todayPnl, type Tone } from "../dashboard/model";
+import { humanise, positionRows, pricedInRupees, todayPnl, type Tone } from "../dashboard/model";
 import type {
   GuardianModeStatus, LossStreakPause, LossStreakStatus, MarketEvent, PaperRiskStatus, PortfolioExposure, RiskConfig, RiskLimitType, RiskScope,
   TradeRecord,
@@ -42,6 +42,43 @@ export interface HeldRow {
   ltp: number | null;
   pnl: number | null;
   pnlPct: number | null;
+  /** UX-15 (owner, 28 Oct - the broker-standard Positions row): the contract without its expiry ("NIFTY 22550 PE"),
+   * the expiry as a short chip ("3 Nov", null for a stock), the net quantity signed (+ long, - short) with its lots
+   * ("+65 (1 lot)") and the average entry price. */
+  instrument: string;
+  expiryLabel: string | null;
+  qtyText: string;
+  avg: number;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-11-03" -> "3 Nov" (a calendar day, no time zone shift). */
+export function expiryLabel(iso: string | null | undefined): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]}` : null;
+}
+
+const SYMBOL_EXPIRY = /\s+(\d{1,2})\s+([A-Za-z]{3})\s+\d{2,4}$/;
+
+/** The contract name without a trailing expiry ("NIFTY 22550 PE 03 NOV 26" -> "NIFTY 22550 PE") when the expiry is known. */
+export function instrumentName(symbol: string, expiry: string | null | undefined): string {
+  return expiry || symbolExpiryLabel(symbol) ? symbol.replace(SYMBOL_EXPIRY, "") : symbol;
+}
+
+/** "3 Nov" from a contract name that ends in its expiry ("NIFTY 22550 PE 03 NOV 26"), for a position stored without one. */
+export function symbolExpiryLabel(symbol: string): string | null {
+  const m = SYMBOL_EXPIRY.exec(symbol);
+  const month = m ? MONTHS.findIndex((x) => x.toLowerCase() === m[2].toLowerCase()) : -1;
+  return m && month >= 0 ? `${Number(m[1])} ${MONTHS[month]}` : null;
+}
+
+/** "+65 (1 lot)" / "-130 (2 lots)" / "+10": the net quantity, signed by side, with its lots when the lot size is known. */
+export function qtyText(quantity: number, lotSize: number | null | undefined, long: boolean): string {
+  const n = `${long ? "+" : "−"}${formatNumber(Math.abs(quantity), Math.abs(quantity) % 1 ? 2 : 0)}`;
+  if (!lotSize || lotSize <= 1) return n;
+  const lots = Math.abs(quantity) / lotSize;
+  return Number.isInteger(lots) ? `${n} (${lots} lot${lots === 1 ? "" : "s"})` : n;
 }
 
 const isDerivative = (p: TradeRecord) => !!p.instrument_kind && p.instrument_kind !== "UNDERLYING" && !!p.underlying_symbol;
@@ -117,6 +154,8 @@ export function heldRows(positions: TradeRecord[], exposure: PortfolioExposure |
       levelsOn: on, levels, structure: s.label, structureNote: s.note, strategy: strategyDisplayName(p.strategy_id),
       chartSymbol: isDerivative(p) ? (p.underlying_symbol as string) : p.symbol,
       ltp: row.ltp, pnl: row.pnl, pnlPct: row.pnlPct,
+      instrument: instrumentName(p.symbol, p.expiry), expiryLabel: expiryLabel(p.expiry) ?? symbolExpiryLabel(p.symbol),
+      qtyText: qtyText(p.quantity, p.lot_size, p.direction !== "SHORT"), avg: p.entry_price,
     };
   });
 }
@@ -127,6 +166,8 @@ export interface HoldingTiles {
   live: number;
   /** Null while any open symbol has no live price in rupees (never a P&L at the entry price passed off as real). */
   openPnl: number | null;
+  /** AUD-V2: "last mark 15:29 IST" when the open P&L is at stored marks, else null (live prices). */
+  priceNote?: string | null;
   booked: number | null;
   riskAtStops: number | null;
   riskPct: number | null;
@@ -139,6 +180,7 @@ export function holdingTiles(positions: TradeRecord[] | null, exposure: Portfoli
   return {
     open: list.length, paper: list.length - live, live,
     openPnl: list.length === 0 ? (exposure ? 0 : null) : pnl.open,
+    priceNote: pnl.mark ?? null,
     booked: pnl.booked,
     riskAtStops: exposure ? exposure.risk_at_stops : null,
     riskPct: exposure ? exposure.risk_pct_of_capital : null,
@@ -236,7 +278,7 @@ export interface AllocationRow {
 export function allocationRows(positions: TradeRecord[] | null, exposure: PortfolioExposure | null): AllocationRow[] {
   if (exposure) {
     const priced = new Set(exposure.priced_symbols ?? []);
-    const live = exposure.price_source === "ltp" && !convertedOrUnconverted(exposure);
+    const live = pricedInRupees(exposure);
     return [...(exposure.by_symbol ?? [])]
       .sort((a, b) => b.notional - a.notional)
       .map((r) => ({

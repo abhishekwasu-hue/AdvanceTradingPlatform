@@ -133,7 +133,7 @@ test.describe("page dishes v2 behaviour", () => {
     const card = page.locator("[data-dish='charts']");
     await card.locator("[data-dish-toggle]").click();
     await expect(card.locator("[data-rhythm-section='yours']")).toBeVisible();
-    await expect(card).toContainText("On your lists: Swing ideas.");
+    await expect(card.locator("[data-chip='list']")).toHaveText("◆Swing ideas");     // UX-11b: his lists as chips
     await page.reload();
     await page.waitForLoadState("networkidle");
     await expect(page.locator("[data-dish='charts'] [data-rhythm-section='story']")).toBeVisible();

@@ -15,7 +15,7 @@ import DisciplineCardV2 from "../growth/DisciplineCardV2";
 import PageDishV2 from "../growth/PageDishV2";
 import { useFeatures } from "../ui/useFeatures";
 
-const OFF_TEXT = "The discipline engine is turned off for this organisation. A platform operator can turn on the discipline_engine feature.";
+const OFF_TEXT = "The discipline score is not turned on for your account yet.";
 
 function errorText(e: unknown): string {
   if (e instanceof ApiError && e.status === 503) return OFF_TEXT;

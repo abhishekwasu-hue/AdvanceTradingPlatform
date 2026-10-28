@@ -4,6 +4,7 @@ import { ApiError } from "../api/errors";
 import { cx } from "../components/primitives/cx";
 import { CARD, LoadingRowsV2 } from "../dashboard/CardV2";
 import { RhythmSectionV2 } from "../rhythm/DailyRhythmCardV2";
+import { Details } from "../ui/Details";
 import { growthApi } from "./api";
 import { DISH_REFRESH_MS, dishShown, readDishOpen, writeDishOpen } from "./model";
 import type { DishPage, PageDish } from "./types";
@@ -99,11 +100,12 @@ export function PageDishView({ dish, folded = false, className }: { dish: PageDi
             n === 2 && "md:grid-cols-2", n >= 3 && "md:grid-cols-2 xl:grid-cols-3")}>
             {shown.sections.map((s) => (
               <div key={s.id} className="py-space-3 first:pt-0 last:pb-0 md:py-0 [&>div]:py-0">
-                <RhythmSectionV2 section={s} />
+                <RhythmSectionV2 section={s} typed />
               </div>
             ))}
           </div>
-          <p className="mt-space-4 text-t12 text-fg-muted">{shown.note}</p>
+          {/* UX-11b: the page's footnote carries the disclaimer; the dish's own note sits in Details. */}
+          <Details id={`dish.${dish.page}.note`} label="About this summary"><p>{shown.note}</p></Details>
         </div>
       )}
     </section>

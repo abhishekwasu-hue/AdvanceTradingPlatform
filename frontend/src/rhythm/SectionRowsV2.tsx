@@ -9,6 +9,7 @@ import { LevelChip } from "../ui/LevelChip";
 import { budgetLevel, type BudgetLevel } from "../ui/levels";
 import { ProgressStat } from "../ui/ProgressStat";
 import { ResponsiveTable } from "../ui/ResponsiveTable";
+import { Sparkline } from "../ui/Sparkline";
 import { Signed } from "../ui/Signed";
 import { TrendChip } from "../ui/TrendChip";
 import type { Location, PriceArea, RhythmSection, RowOf, SectionKind, SectionRow, StructureEvent } from "./types";
@@ -179,6 +180,7 @@ function Mood({ section }: { section: RhythmSection }) {
 function EventChips({ rows }: { rows: readonly SectionRow[] }) {
   const events = rowsOf(rows, "event");
   const holidays = rowsOf(rows, "holiday");
+  const expiries = rowsOf(rows, "expiry");
   const notes = events.filter((e) => e.window || e.detail || e.pauses_entries);
   return (
     <>
@@ -186,6 +188,11 @@ function EventChips({ rows }: { rows: readonly SectionRow[] }) {
         {events.map((e, i) => (
           <Chip key={`e${i}`} tone={e.pauses_entries ? "warn" : "info"} variant="meaning" icon="◆" name="event">
             {dayLabel(e.date)} · {e.label}{e.scope ? ` (${e.scope})` : ""}
+          </Chip>
+        ))}
+        {expiries.map((x) => (
+          <Chip key={`x${x.date}${x.underlying}`} tone="warn" variant="meaning" icon="!" name="expiry">
+            {dayLabel(x.date)} · {x.underlying} expiry ({x.count})
           </Chip>
         ))}
         {holidays.map((h) => (
@@ -233,9 +240,12 @@ function Positions({ section }: { section: RhythmSection }) {
     <>
       <ResponsiveTable caption={section.title} rowKey={(r, i) => `${r.symbol}${i}`} rows={rows}
         columns={[
-          { key: "s", header: "Symbol", cell: (r) => <span className="inline-flex flex-wrap items-center gap-space-1 font-medium">{r.symbol}{r.near && <Chip tone="warn" variant="meaning" icon="!" name="near">Near invalidation</Chip>}</span> },
+          { key: "s", header: "Symbol", cell: (r) => (
+            <span className="inline-flex flex-wrap items-center gap-space-1 font-medium">
+              {r.symbol}<DirectionChip side={r.side === "SHORT" ? "short" : "long"} />
+              {r.near && <Chip tone="warn" variant="meaning" icon="!" name="near">Near invalidation</Chip>}
+            </span>) },
           { key: "pnl", header: "Open P&L", align: "right", cell: (r) => money(r.pnl) },
-          { key: "side", header: "Side", cell: (r) => <DirectionChip side={r.side === "SHORT" ? "short" : "long"} /> },
         ]} />
       {more && <p className="mt-space-2 text-t13 text-fg-muted">{more.count} more on My positions.</p>}
     </>
@@ -364,7 +374,223 @@ function Week({ section }: { section: RhythmSection }) {
   );
 }
 
+// --- the dish pages (UX-11b C3; app/growth/dishes.py) ---------------------------------------------------------------
+
+const winPct = (won: number, closed: number) => (closed > 0 ? `${formatNumber((100 * won) / closed, 0)}%` : "–");
+
+function Waiting({ section }: { section: RhythmSection }) {
+  const n = rowsOf(section.rows ?? [], "waiting")[0];
+  return (
+    <div className="space-y-space-2">
+      {n && <Chip tone="info" variant="meaning" icon="◆" name="waiting">{n.count} waiting for you</Chip>}
+      {rowsOf(section.rows ?? [], "setup").length > 0 && <Setups section={section} />}
+    </div>
+  );
+}
+
+function Sources({ section }: { section: RhythmSection }) {
+  const r = rowsOf(section.rows ?? [], "sources")[0];
+  if (!r) return null;
+  return (
+    <div className="flex flex-wrap gap-space-2">
+      {Object.entries(r.counts).map(([k, n]) => (
+        <Chip key={k} tone="neutral" variant="meaning" icon="◆" name={`source-${k}`}>{n} from {r.words[k] ?? k}</Chip>
+      ))}
+      {r.more && <span className="text-t13 text-fg-muted">and more on the list</span>}
+    </div>
+  );
+}
+
+function Record({ section }: { section: RhythmSection }) {
+  const rows = rowsOf(section.rows ?? [], "strategy_record");
+  return (
+    <ResponsiveTable caption={section.title} phone="stack" rowKey={(r) => r.name} rows={rows}
+      columns={[
+        { key: "s", header: "Strategy", cell: (r) => r.name },
+        { key: "w", header: "Win %", align: "right", cell: (r) => winPct(r.won, r.closed) },
+        { key: "c", header: "Closed", align: "right", cell: (r) => formatNumber(r.closed) },
+        { key: "won", header: "Won", align: "right", cell: (r) => <span className="text-up">▲ {formatNumber(r.won)}</span> },
+        { key: "lost", header: "Lost", align: "right", cell: (r) => <span className="text-down">▼ {formatNumber(r.lost)}</span> },
+      ]} />
+  );
+}
+
+function Risk({ section }: { section: RhythmSection }) {
+  const r = rowsOf(section.rows ?? [], "risk")[0];
+  if (!r) return null;
+  const kv: KeyValueRow[] = [{ label: `Open P&L (${r.positions} position${r.positions === 1 ? "" : "s"})`, testId: "open", value: money(r.open_pnl) }];
+  if (r.at_invalidation != null) kv.push({ label: "If each reached its invalidation", testId: "at-invalidation", value: money(r.at_invalidation) });
+  const share = r.of_loss_limit_pct;
+  const level = share != null ? budgetLevel(share, 100) : null;
+  return (
+    <div className="space-y-space-2">
+      <KeyValueTable caption={section.title} rows={kv} />
+      {share != null && level && <MeaningBar label="Of your daily loss limit" share={share / 100} level={level} text={`${formatNumber(share)}%`} />}
+      <div className="flex flex-wrap gap-space-2">
+        {r.no_invalidation > 0 && <Chip tone="warn" variant="meaning" icon="!" name="no-invalidation">{r.no_invalidation} without an invalidation</Chip>}
+        {r.prices_missing && <Chip tone="neutral" variant="meaning" icon="◆" name="prices-missing">Some prices not in yet</Chip>}
+      </div>
+    </div>
+  );
+}
+
+function Premium({ section }: { section: RhythmSection }) {
+  const rows = rowsOf(section.rows ?? [], "premium");
+  return (
+    <ResponsiveTable caption={section.title} phone="stack" rowKey={(r) => r.label} rows={rows}
+      columns={[
+        { key: "p", header: "Position", cell: (r) => r.label },
+        { key: "k", header: "Kept", align: "right", cell: (r) => (r.kept_pct == null ? "–" : `${formatNumber(r.kept_pct, 0)}%`) },
+        { key: "v", header: "Kept ₹", align: "right", cell: (r) => money(r.kept) },
+        { key: "r", header: "Received", align: "right", cell: (r) => formatINR(r.received) },
+      ]} />
+  );
+}
+
+function Discipline({ section }: { section: RhythmSection }) {
+  const d = rowsOf(section.rows ?? [], "discipline")[0];
+  if (!d) return null;
+  const series = [...(d.history ?? []), d.score];
+  return (
+    <div className="flex items-center justify-between gap-space-3" data-discipline>
+      <div>
+        <p className="font-tabular text-t24 font-semibold text-fg">{d.score}<span className="text-t14 font-normal text-fg-muted"> / 100</span></p>
+        {d.previous != null && (
+          <p className="text-t13 text-fg-muted"><Signed value={d.score - d.previous} kind="count" /> on last week</p>
+        )}
+      </div>
+      {series.length >= 2 && (
+        <Sparkline values={series} tone={d.previous == null || d.score === d.previous ? "neutral" : d.score > d.previous ? "up" : "down"} />
+      )}
+    </div>
+  );
+}
+
+function Extremes({ section }: { section: RhythmSection }) {
+  const rows = section.rows ?? [];
+  const pair = [...rowsOf(rows, "best"), ...rowsOf(rows, "worst")];
+  if (pair.length === 0) return rowsOf(rows, "even").length ? <p className="text-t14 text-fg-muted">About even over four weeks.</p> : null;
+  return (
+    <ResponsiveTable caption={section.title} rowKey={(r) => r.type} rows={pair}
+      columns={[
+        // Two columns so it fits a phone (owner, 28 Oct): the closed count sits under the setup's name.
+        { key: "n", header: "Setup", cell: (r) => (
+          <span className="block min-w-0" data-extreme={r.type}>
+            <span className="block text-t12 text-fg-muted">{r.type === "best" ? "Best" : "Cost the most"}</span>
+            <span className="block">{r.name}</span>
+            <span className="block font-tabular text-t12 text-fg-muted">{formatNumber(r.closed)} closed</span>
+          </span>) },
+        { key: "v", header: "Net", align: "right", cell: (r) => money(r.net) },
+      ]} />
+  );
+}
+
+function Habits({ section }: { section: RhythmSection }) {
+  const rows = section.rows ?? [];
+  const habits = rowsOf(rows, "habit");
+  const tags = rowsOf(rows, "suggested_tags")[0];
+  const bare = rowsOf(rows, "no_note")[0];
+  return (
+    <div className="space-y-space-2">
+      {habits.length > 0 && (
+        <ResponsiveTable caption={section.title} phone="stack" rowKey={(r) => r.label} rows={habits}
+          columns={[
+            { key: "t", header: "Pattern", cell: (r) => r.label },
+            { key: "n", header: "Trades", align: "right", cell: (r) => formatNumber(r.trades) },
+            { key: "v", header: "Net", align: "right", cell: (r) => (r.net == null ? "–" : money(r.net)) },
+          ]} />
+      )}
+      <div className="flex flex-wrap gap-space-2">
+        {tags && <Chip tone="warn" variant="meaning" icon="!" name="suggested-tags">{tags.count} tag{tags.count === 1 ? "" : "s"} to confirm</Chip>}
+        {bare && <Chip tone="neutral" variant="meaning" icon="◆" name="no-note">{bare.count} of {bare.closed} without a note</Chip>}
+      </div>
+    </div>
+  );
+}
+
+const PLACE: Record<"ABOVE_HIGH" | "BELOW_LOW" | "BETWEEN", { tone: "up" | "down" | "neutral"; mark: string; label: string }> = {
+  ABOVE_HIGH: { tone: "up", mark: "▲", label: "Above the last swing high" },
+  BELOW_LOW: { tone: "down", mark: "▼", label: "Below the last swing low" },
+  BETWEEN: { tone: "neutral", mark: "◆", label: "Between the last swings" },
+};
+
+function Story({ section }: { section: RhythmSection }) {
+  const r = rowsOf(section.rows ?? [], "story")[0];
+  if (!r) return null;
+  const place = r.place ? PLACE[r.place] : null;
+  return (
+    <KeyValueTable caption={section.title} rows={[
+      { label: "Daily swings", testId: "daily", value: <TrendChip trend={r.daily} /> },
+      ...(r.weekly ? [{ label: "Weekly swings", testId: "weekly", value: <TrendChip trend={r.weekly} /> }] : []),
+      ...(r.event ? [{ label: "Last event", testId: "event", value: <StructureEventChip event={r.event} /> }] : []),
+      ...(place ? [{ label: "Last close", testId: "place", value: <Chip tone={place.tone} variant="meaning" icon={place.mark} name="place">{place.label}</Chip> }] : []),
+      ...(r.as_of ? [{ label: "Read from", testId: "as-of", value: <AsOf iso={r.as_of} what="close of" /> }] : []),
+    ] satisfies KeyValueRow[]} />
+  );
+}
+
+function Yours({ section }: { section: RhythmSection }) {
+  const rows = section.rows ?? [];
+  const held = rowsOf(rows, "held")[0];
+  const setup = rowsOf(rows, "setup")[0];
+  const lists = rowsOf(rows, "lists")[0];
+  const kv: KeyValueRow[] = [];
+  if (held) {
+    kv.push({ label: `Open here (${held.count})`, testId: "held", value: (
+      <span className="inline-flex items-center gap-space-2">{held.near && <Chip tone="warn" variant="meaning" icon="!" name="near">Near invalidation</Chip>}{money(held.open_pnl)}</span>) });
+  }
+  if (setup) {
+    kv.push({ label: setup.today ? "Your setup today" : "Your latest setup", testId: "setup", value: (
+      setup.side ? <DirectionChip side={setup.side === "LONG" ? "long" : "short"} /> : <span>{setup.source === "scan" ? "Scan match" : "Strategy"}</span>) });
+  }
+  return (
+    <div className="space-y-space-2">
+      {kv.length > 0 && <KeyValueTable caption={section.title} rows={kv} />}
+      {lists && (
+        <div className="flex flex-wrap gap-space-2">
+          {lists.names.map((n) => <Chip key={n} tone="neutral" variant="meaning" icon="◆" name="list">{n}</Chip>)}
+        </div>
+      )}
+      {setup && <Details id={`dish.${section.id}.setup`} label="Why"><p>{setup.detail}</p></Details>}
+    </div>
+  );
+}
+
+function Matches({ section }: { section: RhythmSection }) {
+  const rows = section.rows ?? [];
+  const scans = rowsOf(rows, "scan");
+  const listed = rowsOf(rows, "on_lists")[0];
+  return (
+    <div className="space-y-space-2">
+      <ResponsiveTable caption={section.title} phone="stack" rowKey={(r) => r.name} rows={scans}
+        columns={[
+          { key: "n", header: "Scan", cell: (r) => r.name },
+          { key: "c", header: "Matches", align: "right", cell: (r) => formatNumber(r.count) },
+          { key: "s", header: "Symbols", cell: (r) => r.symbols.slice(0, 4).join(", ") + (r.symbols.length > 4 ? ` +${r.symbols.length - 4}` : "") },
+        ]} />
+      {listed && <p className="text-t13 text-fg-muted">On your lists: <span className="text-fg">{listed.symbols.join(", ")}</span></p>}
+    </div>
+  );
+}
+
+function Scans({ section }: { section: RhythmSection }) {
+  const a = rowsOf(section.rows ?? [], "active")[0];
+  return a ? <Chip tone="info" variant="meaning" icon="◆" name="active-scans">{a.count} scan{a.count === 1 ? "" : "s"} running on their own</Chip> : null;
+}
+
 const RENDER: Partial<Record<SectionKind, (p: { section: RhythmSection }) => ReactNode>> = {
+  waiting: Waiting,
+  sources: Sources,
+  record: Record,
+  risk: Risk,
+  premium: Premium,
+  discipline: Discipline,
+  extremes: Extremes,
+  habits: Habits,
+  story: Story,
+  yours: Yours,
+  matches: Matches,
+  scans: Scans,
   mood: Mood,
   events: ({ section }) => <EventChips rows={section.rows ?? []} />,
   structure: Structure,

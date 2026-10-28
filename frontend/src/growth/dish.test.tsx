@@ -36,8 +36,9 @@ describe("the read", () => {
 });
 
 describe("the dish", () => {
-  it("each page: the title, the headline standing out, every section with its lines and the note", () => {
-    for (const dish of Object.values(DEMO_DISHES)) {
+  it("each page: the title, the headline standing out, every section with its lines and the note (an older server)", () => {
+    for (const typed of Object.values(DEMO_DISHES)) {
+      const dish = { ...typed, sections: typed.sections.map(({ kind: _k, rows: _r, ...rest }) => rest) };
       const out = html(<PageDishView dish={dish} />);
       const shown = text(out);
       expect(out).toContain(`data-dish="${dish.page}"`);
@@ -49,6 +50,22 @@ describe("the dish", () => {
       }
       expect(shown).toContain("it does not tell you what to trade");
     }
+  });
+
+  it("UX-11b C3: each typed section renders by its kind - tables, Signed numbers, chips, no sentences", () => {
+    const want: Record<string, string[]> = {
+      signals: ['data-rows="waiting"', 'data-chip="waiting"', 'data-rows="sources"', 'data-rows="record"', "58%"],
+      positions: ['data-rows="risk"', 'data-meaning-bar="inside"', 'data-chip="near"', 'data-rows="premium"', 'data-chip="expiry"'],
+      journal: ["data-discipline", 'data-rows="extremes"', 'data-chip="suggested-tags"'],
+      charts: ['data-chip="trend-up"', 'data-chip="trend-sideways"', 'data-chip="event-bos-up"', 'data-chip="list"'],
+      screener: ['data-rows="matches"', 'data-chip="active-scans"'],
+    };
+    for (const dish of Object.values(DEMO_DISHES)) {
+      const out = html(<PageDishView dish={dish} />);
+      for (const w of want[dish.page]) expect(out, `${dish.page}: ${w}`).toContain(w);
+      expect(out).toContain(`data-details="dish.${dish.page}.note"`);
+    }
+    expect(text(html(<PageDishView dish={DEMO_DISHES.positions} />))).toMatch(/If each reached its invalidation ▼ −₹2,150/);
   });
 
   it("the headline is not repeated below; a section that only held it goes", () => {

@@ -127,8 +127,8 @@ async def signals_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
     page = await _safely(ctx, "waiting signals", feed.feed(ctx.session, ctx.user, tab="waiting", limit=20, now=ctx.now), {})
     n_wait = int(((page.get("counts") or {}).get("waiting")) or 0)
     if n_wait:
-        waiting.add(f"{_plural(n_wait, 'signal')} {'waits' if n_wait == 1 else 'wait'} for your decision. Nothing is placed "
-                    f"until you approve it.")
+        # UX-11b: "Nothing is placed until you approve it" is said once, in the Signals page's footnote.
+        waiting.add(f"{_plural(n_wait, 'signal')} {'waits' if n_wait == 1 else 'wait'} for your decision.")
         waiting.row("waiting", count=n_wait)
     seen = set()
     for item in page.get("items", []):

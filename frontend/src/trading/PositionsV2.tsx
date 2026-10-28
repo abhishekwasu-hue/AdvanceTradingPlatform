@@ -305,8 +305,8 @@ export default function PositionsV2(_props: PageProps = {}) {
         {canTrade && <ContractNoteCard onApplied={reload} />}
       </section>
 
-      {/* UX-11 U5: the page's one footer line (the cards no longer repeat it). */}
-      <PageFootnote>Phase 0 has PAPER only.</PageFootnote>
+      {/* UX-11 U5: the page's one footer line (the cards no longer repeat it). UX-11b: no "Phase 0" jargon. */}
+      <PageFootnote />
     </div>
   );
 }

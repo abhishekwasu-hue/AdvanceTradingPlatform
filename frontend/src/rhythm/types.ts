@@ -52,7 +52,8 @@ export type SectionRow =
   | { type: "habit"; label: string; trades: number; net: number | null }
   | { type: "suggested_tags"; count: number }
   | { type: "no_note"; count: number; closed: number }
-  | { type: "best" | "worst"; name: string; net: number; closed: number }
+  | { type: "best"; name: string; net: number; closed: number }
+  | { type: "worst"; name: string; net: number; closed: number }
   | { type: "even" }
   | { type: "story"; daily: Trend; event: StructureEvent | null; place: "ABOVE_HIGH" | "BELOW_LOW" | "BETWEEN" | null; weekly: Trend | null;
       as_of: string | null }

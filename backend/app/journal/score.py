@@ -28,11 +28,23 @@ def counted(tags: Iterable[TagState], settings: DisciplineSettings) -> List[TagS
     return [t for t in tags if t.status in ok]
 
 
-def weekly_score(units: Dict[int, str], tags: Sequence[TagState], settings: DisciplineSettings) -> Dict:
+NOT_YET = "n/a until a trade closes"
+
+
+def weekly_score(units: Dict[int, str], tags: Sequence[TagState], settings: DisciplineSettings,
+                 closed: Optional[Iterable[int]] = None) -> Dict:
     """`units` maps every trade id in the week to its decision unit (trade or structure). Returns
-    {score, decisions, components: [...]} with each component's weight, flagged decisions, clean share and points."""
+    {score, decisions, components: [...]} with each component's weight, flagged decisions, clean share and points.
+
+    AUD-V4 (owner, 28 Oct): `closed` = the trade ids that have closed. A decision is closed when all its trades are; with
+    open decisions only there is no score yet (`note` = "n/a until a trade closes" - an open, untagged trade is not yet a
+    clean one); otherwise `note` says what the score covers: "(N open · M closed)"."""
     decisions = sorted(set(units.values()))
     n = len(decisions)
+    closed_ids = set(closed) if closed is not None else set(units)
+    open_units = {u for tid, u in units.items() if tid not in closed_ids}
+    n_open = len(open_units)
+    n_closed = n - n_open
     weights = {name: max(0.0, float(settings.weights.get(name, 0.0))) for name in COMPONENT_TAGS}
     total_weight = sum(weights.values()) or 1.0
     live = [t for t in counted(tags, settings) if t.trade_id in units]
@@ -53,5 +65,8 @@ def weekly_score(units: Dict[int, str], tags: Sequence[TagState], settings: Disc
             "decisions": n, "flagged": len(flagged_units), "clean_pct": clean_pct, "points": round(points, 1),
             "max_points": round(share * 100.0, 1), "by_tag": {k: per_tag.get(k, 0) for k in tag_names},
         })
-    return {"score": int(math.floor(score_points + 0.5 + 1e-9)) if n else None, "decisions": n, "trades": len(units), "components": components,
-            "count_unconfirmed": settings.count_unconfirmed}
+    scored = n > 0 and n_closed > 0
+    note = None if n == 0 else (f"({n_open} open · {n_closed} closed)" if scored else NOT_YET)
+    return {"score": int(math.floor(score_points + 0.5 + 1e-9)) if scored else None, "decisions": n, "trades": len(units),
+            "components": components, "count_unconfirmed": settings.count_unconfirmed, "open": n_open, "closed": n_closed,
+            "note": note}

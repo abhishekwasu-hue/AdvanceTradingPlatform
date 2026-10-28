@@ -39,7 +39,7 @@ function ScoreCard({ score }: { score: DisciplineScore }) {
       <div className="flex flex-wrap items-end gap-4">
         <div>
           <div className="font-tabular text-4xl font-extrabold text-fg">{score.score ?? "-"}<span className="text-base text-fg-muted"> / 100</span></div>
-          <div className="text-xs text-fg-muted">{score.score == null ? "No trades this week" : `${score.decisions} decisions · ${score.trades} trades`}</div>
+          <div className="text-xs text-fg-muted">{score.score == null ? (score.note ?? "No trades this week") : `${score.decisions} decisions · ${score.trades} trades ${score.note ?? ""}`.trim()}</div>
         </div>
         <div className="min-w-[16rem] flex-1 space-y-2">
           {score.components.map((c) => (

@@ -248,7 +248,7 @@ def test_journal_dish_score_setups_and_habits():
     _assert_language(d)
     by = {s["id"]: s for s in d["sections"]}
     score = by["score"]["lines"]
-    assert score and score[0].startswith("Discipline score this week: ") and score[0].endswith(" out of 100.")
+    assert score and score[0].startswith("Discipline score this week: ") and score[0].endswith(" out of 100 (0 open · 2 closed).")   # AUD-V4: what the score covers
     assert "It counts how closely you followed your own plan, not how many trades you took." in score
     setups = by["setups"]["lines"]
     assert setups[0].startswith("Best: ") and "+₹300 over 1 closed trade" in setups[0]

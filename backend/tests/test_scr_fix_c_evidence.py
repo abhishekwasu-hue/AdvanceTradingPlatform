@@ -129,7 +129,7 @@ def _telegram_answer(status: int, description: str):
     return make
 
 
-def test_c4_linked_flag_reason_codes_and_one_send_after_connect(screener_on, monkeypatch):
+def test_c4_linked_flag_reason_codes_and_one_send_after_connect(screener_on, monkeypatch):  # noqa: F811 - the fixture
     _set(evidence_charts=True)
     headers, me = _owner("scr-c4-link@example.com")
     _serve_bars(monkeypatch)
@@ -162,7 +162,7 @@ def test_c4_linked_flag_reason_codes_and_one_send_after_connect(screener_on, mon
     (400, "Bad Request: chat not found", "blocked_by_user"),
     (500, "Internal Server Error", "send_failed"),
 ])
-def test_c4_telegram_refusals_become_reason_codes(screener_on, monkeypatch, status, description, reason):
+def test_c4_telegram_refusals_become_reason_codes(screener_on, monkeypatch, status, description, reason):  # noqa: F811 - the fixture
     _set(evidence_charts=True)
     headers, me = _owner(f"scr-c4-{status}-{reason}@example.com")
     _serve_bars(monkeypatch)

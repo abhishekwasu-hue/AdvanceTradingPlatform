@@ -1,4 +1,5 @@
 import { Crosshair, ShoppingBasket } from "lucide-react";
+import { useConfirm } from "../ui/ConfirmDialog";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { cx } from "../components/primitives/cx";
@@ -86,6 +87,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
   const legs = useBasket();
   // 8b-b: the signal the open ticket / basket was pre-filled from (null: opened by hand, nothing is noted).
   const [origin, setOrigin] = useState<string | null>(null);
+  const confirmBox = useConfirm();   // UI-28 U3.3
 
   const reloadHeld = useCallback(() => setRound((r) => r + 1), []);
   useEffect(() => {
@@ -133,7 +135,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
     insights.linkJournal(origin, ids).catch(() => { /* the journal note is a convenience; the trades are as placed */ });
   }
 
-  function tradeSetup(t: SetupTrade) {
+  async function tradeSetup(t: SetupTrade) {
     if (t.kind === "none" || !signal) return;
     setAction(null);
     setNote(null);
@@ -147,7 +149,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
         .catch(() => { /* the ticket reads the lot size on its review step */ });
       return;
     }
-    if (legs.length && !window.confirm(`Your basket has ${legs.length} leg${legs.length === 1 ? "" : "s"}. Replace them with this setup?`)) return;
+    if (legs.length && !(await confirmBox.ask("Replace your basket?", `Your basket has ${legs.length} leg${legs.length === 1 ? "" : "s"}. This setup takes their place.`, "Replace basket"))) return;
     basketStore.replace(t.legs);
     setOrigin(signal);
     setBasketOpen(true);
@@ -167,6 +169,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
     ) : null,
     layer: (
       <>
+        {confirmBox.dialog}
         {note && (
           <p role="status" data-chain-trade-note={note.kind}
             className={cx("rounded-control px-space-3 py-space-2 text-t13", note.kind === "done" ? "bg-surface-2 text-fg" : "bg-warn-tint text-warn")}>

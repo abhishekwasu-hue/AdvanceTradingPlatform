@@ -1,4 +1,5 @@
 import { Clock, Pencil, ShieldCheck, TriangleAlert, X } from "lucide-react";
+import { useConfirm } from "../ui/ConfirmDialog";
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { Dialog, Sheet } from "../components/primitives/Dialog";
 import { useMediaQuery } from "../utils/useMediaQuery";
@@ -358,11 +359,12 @@ export function CombinedExitBarV2({ positions, facts, exits, onChanged, onNote, 
   const legs = useMemo(() => sheetLegs(positions, facts), [positions, facts]);
   const [sheet, setSheet] = useState<{ editing: CombinedExit | null } | null>(null);
   const live = active(exits);
+  const confirmBox = useConfirm();
   // UX-15 (owner, 28 Oct): a combined stop-loss needs two or more positions; one position keeps its own stop.
   if (legs.length < 2 && !live.length) return null;
 
   async function remove(x: CombinedExit) {
-    if (!window.confirm("Remove this combined exit? The positions stay open with their own stop-loss and target.")) return;
+    if (!(await confirmBox.ask("Remove this combined exit?", "The positions stay open with their own stop-loss and target.", "Remove"))) return;
     try {
       await api.cancel(x.id);
       onNote("Combined exit removed. The positions stay open.", true);
@@ -374,6 +376,7 @@ export function CombinedExitBarV2({ positions, facts, exits, onChanged, onNote, 
 
   return (
     <div className="space-y-space-2" data-block="combined-exits">
+      {confirmBox.dialog}
       <div className="flex flex-wrap items-center gap-space-2">
         {legs.length > 1 && (
           <button type="button" className={BUTTON_SECONDARY} onClick={() => setSheet({ editing: null })} data-testid="combined-open">

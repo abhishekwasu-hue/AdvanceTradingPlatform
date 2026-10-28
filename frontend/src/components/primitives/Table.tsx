@@ -10,11 +10,22 @@ export interface Column<T> {
   className?: string;
 }
 
+const NUMBER_LIKE = /^[+−-]?\s?₹?\s?[\d,]+(\.\d+)?\s?%?$|^[–-]$/;
+
+/** UI-28 U3.9 (NN/g H4): a column whose cells are all numbers (or the dash for none) is numeric unless it says otherwise. */
+export function isNumericColumn<T>(column: Pick<Column<T>, "cell" | "numeric">, rows: readonly T[]): boolean {
+  if (column.numeric !== undefined) return column.numeric;
+  const shown = rows.slice(0, 20).map((r) => column.cell(r));
+  return shown.length > 0 && shown.every((v) => typeof v === "number" || (typeof v === "string" && NUMBER_LIKE.test(v.trim())))
+    && shown.some((v) => typeof v === "number" || (typeof v === "string" && /\d/.test(v)));
+}
+
 /** A dense data table: sticky header, tabular numbers, right-aligned numeric columns, horizontal scroll on phones. */
-export function Table<T>({ columns, rows, rowKey, empty, caption }: {
+export function Table<T>({ columns: given, rows, rowKey, empty, caption }: {
   columns: Column<T>[]; rows: T[]; rowKey: (row: T) => string | number; empty?: ReactNode; caption?: string;
 }) {
   if (rows.length === 0 && empty) return <>{empty}</>;
+  const columns = given.map((c) => ({ ...c, numeric: isNumericColumn(c, rows) }));
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full border-collapse text-sm">

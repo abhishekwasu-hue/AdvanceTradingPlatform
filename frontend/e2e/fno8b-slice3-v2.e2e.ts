@@ -317,12 +317,12 @@ test.describe("8b slice 3 flows", () => {
   test("a basket he already has is replaced only on his yes", async ({ page }) => {
     const mine = [{ id: "x", underlying: "NIFTY", expiry: "2026-11-03", strike: 24800, right: "CE", side: "BUY", lots: 1, price: 50, label: null, iv: null }];
     const seen = await openChain(page, "light", FROM_SIGNAL, { basket: mine });
-    page.once("dialog", (d) => void d.dismiss());
     await page.locator("[data-setup-item='7'] [data-setup='trade']").tap();
+    await page.getByRole("dialog", { name: "Replace your basket?" }).getByRole("button", { name: "Cancel" }).tap();   // UI-28 U3.3
     await expect(page.locator("[data-basket-panel]")).toHaveCount(0);
     expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("atp_fno_basket") ?? "[]").map((l: { strike: number }) => l.strike))).toEqual([24800]);
-    page.once("dialog", (d) => void d.accept());
     await page.locator("[data-setup-item='7'] [data-setup='trade']").tap();
+    await page.getByRole("dialog", { name: "Replace your basket?" }).locator("[data-confirm]").tap();
     await expect(page.locator("[data-basket-panel] [data-basket='legs'] > li")).toHaveCount(2);
     expect(orderCalls(seen)).toEqual([]);
   });

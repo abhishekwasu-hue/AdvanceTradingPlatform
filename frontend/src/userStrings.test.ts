@@ -78,3 +78,18 @@ describe("UI-28 U3.1: no raw error text on screen", () => {
     expect(hits).toEqual([]);
   });
 });
+
+/** UI-28 U3.3 / U3.9: one confirm component; chart text readable. */
+const V2_ALL = import.meta.glob<string>(["./**/*V2.tsx", "./screener/EvidenceChart.tsx", "!./**/*.test.*"], { query: "?raw", import: "default", eager: true });
+describe("UI-28 U3.3 / U3.9: the in-app confirm; chart text at 11 px or more", () => {
+  it("a v2 screen asks with the in-app confirm; only the panic Exit now keeps the browser's own (UI-11)", () => {
+    const hits = Object.entries(V2_ALL).flatMap(([path, src]) =>
+      [...code(src).matchAll(/window\.confirm\(([^)\n]*)/g)].filter((m) => !/exitConfirmText|`Exit \$\{sideWord/.test(m[1])).map((m) => `${path}: ${m[0]}`));
+    expect(hits).toEqual([]);
+  });
+
+  it("SVG chart text is never below 11 px", () => {
+    const hits = Object.entries(V2_ALL).flatMap(([path, src]) => [...src.matchAll(/fontSize=\{(\d+)\}/g)].filter((m) => Number(m[1]) < 11).map((m) => `${path}: ${m[0]}`));
+    expect(hits).toEqual([]);
+  });
+});

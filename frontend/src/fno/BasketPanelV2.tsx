@@ -1,4 +1,5 @@
 import * as RD from "@radix-ui/react-dialog";
+import { useConfirm } from "../ui/ConfirmDialog";
 import { ArrowLeftRight, ExternalLink, FolderOpen, Layers, Minus, Plus, Save, Scale, Trash2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { request } from "../api/client";
@@ -119,6 +120,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   const [exitTyped, setExitTyped] = useState<StrategyExitForm | null>(null);
   const [exitVersion, setExitVersion] = useState<number | null>(null);
   const [exitNote, setExitNote] = useState<string | null>(null);
+  const confirmBox = useConfirm();   // UI-28 U3.3: the in-app confirm (never the browser's)
   const exitForm = exitTyped ?? prefillForm(exitDefaults?.value, legs);
   const idPrefix = useId();
   // 8b-d: the user's own risk budget for the risk line (information only: Execute reads only the server's checks).
@@ -168,7 +170,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
 
   async function ready(name: StrategyName) {
     if (pick === null || !live?.expiry) { setNote({ tone: "warn", text: "The chain is not loaded yet." }); return; }
-    if (legs.length && !window.confirm(`Replace the ${legs.length} leg${legs.length === 1 ? "" : "s"} in your basket with a ${name}?`)) return;
+    if (legs.length && !(await confirmBox.ask("Replace your basket?", `The ${legs.length} leg${legs.length === 1 ? "" : "s"} in your basket give way to a ${name}.`, "Replace basket"))) return;
     let next: { expiry: string; rows: LiveChain["rows"] } | null = null;
     if (name === "Calendar") {
       const later = chain.expiries.map((e) => e.date).filter((d) => d > (live.expiry ?? "")).sort()[0];
@@ -261,10 +263,10 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     await writeSaved({ ...saved.items, [newSavedId()]: savedOf(legs.map(strip), saveName, product) }, `Saved "${saveName.trim()}".`);
   }
 
-  function load(id: string) {
+  async function load(id: string) {
     const s = saved?.items[id];
     if (!s) return;
-    if (legs.length && !window.confirm(`Replace the ${legs.length} leg${legs.length === 1 ? "" : "s"} in your basket with "${s.name}"?`)) return;
+    if (legs.length && !(await confirmBox.ask("Replace your basket?", `The ${legs.length} leg${legs.length === 1 ? "" : "s"} in your basket give way to "${s.name}".`, "Replace basket"))) return;
     store.replace(legsOf(s));
     if (s.product) setProduct(s.product);
     setTool(null);
@@ -305,7 +307,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     onStrike: moveStrike,
     onReview: () => { void confirm(); },
     onFlip: () => legs.forEach((l) => store.update(l.id, { side: l.side === "BUY" ? "SELL" : "BUY" })),
-    onClear: () => { if (window.confirm("Remove every leg from the basket?")) store.clear(); },
+    onClear: () => { void confirmBox.ask("Remove every leg from the basket?", "The basket starts empty again.", "Remove legs").then((ok) => { if (ok) store.clear(); }); },
     onTool: (t) => { void openTool(t); },
     onSaveName: setSaveName,
     onSave: () => { void save(); },
@@ -317,6 +319,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
 
   return (
     <RD.Root open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      {confirmBox.dialog}
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-40 bg-scrim/50" />
         <RD.Content aria-describedby={undefined} data-basket-panel data-step={step.kind}

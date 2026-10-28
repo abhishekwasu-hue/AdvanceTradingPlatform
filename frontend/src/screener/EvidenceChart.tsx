@@ -59,7 +59,7 @@ export function EvidenceChart({ pack, drawables, width = 720, height = 360, high
       {g.shapes.filter((s) => s.kind !== "rect" || s.fill === "none").map((s) => {
         if (s.kind === "path") return <path key={s.key} data-drawable={s.drawable} d={s.d} fill="none" stroke={s.color} strokeWidth={2} strokeDasharray={s.dash} opacity={fade(s.drawable)} />;
         if (s.kind === "line") return <line key={s.key} data-drawable={s.drawable} x1={s.x1} x2={s.x2} y1={s.y1} y2={s.y2} stroke={s.color} strokeWidth={1.5} strokeDasharray={s.dash} opacity={fade(s.drawable)} />;
-        if (s.kind === "text") return <text key={s.key} data-drawable={s.drawable} x={s.x} y={s.y} fontSize={10} fill="rgb(var(--chart-text))" opacity={fade(s.drawable)}>{s.text}</text>;
+        if (s.kind === "text") return <text key={s.key} data-drawable={s.drawable} x={s.x} y={s.y} fontSize={11} fill="rgb(var(--chart-text))" opacity={fade(s.drawable)}>{s.text}</text>;
         return <rect key={s.key} data-drawable={s.drawable} x={s.x} y={s.y} width={s.w} height={s.h} fill="none" stroke={s.color} strokeWidth={2} opacity={fade(s.drawable)} />;
       })}
       {g.matchedX != null && (
@@ -68,17 +68,17 @@ export function EvidenceChart({ pack, drawables, width = 720, height = 360, high
           <path d={`M${g.matchedX - 5} ${g.priceBottom + 1}L${g.matchedX + 5} ${g.priceBottom + 1}L${g.matchedX} ${g.priceBottom - 6}Z`} fill="rgb(var(--fg))" />
         </g>
       )}
-      <text x={g.right + 4} y={g.priceTop + 10} fontSize={10} fill="rgb(var(--chart-text))">{g.hi.toFixed(2)}</text>
-      <text x={g.right + 4} y={g.priceBottom} fontSize={10} fill="rgb(var(--chart-text))">{g.lo.toFixed(2)}</text>
+      <text x={g.right + 4} y={g.priceTop + 10} fontSize={11} fill="rgb(var(--chart-text))">{g.hi.toFixed(2)}</text>
+      <text x={g.right + 4} y={g.priceBottom} fontSize={11} fill="rgb(var(--chart-text))">{g.lo.toFixed(2)}</text>
       {g.sub && (
         <g data-testid="evidence-sub-pane">
           <line x1={g.left} x2={g.right} y1={g.sub.bottom} y2={g.sub.bottom} stroke="rgb(var(--border))" />
-          <text x={g.left + 2} y={g.sub.top + 10} fontSize={10} fill={g.sub.color}>{g.sub.label}</text>
+          <text x={g.left + 2} y={g.sub.top + 10} fontSize={11} fill={g.sub.color}>{g.sub.label}</text>
           {g.subShapes.map((s) => {
             if (s.kind === "rect") return <rect key={s.key} data-drawable={s.drawable} x={s.x} y={s.y} width={s.w} height={s.h} fill={s.fill} fillOpacity={s.opacity} />;
             if (s.kind === "path") return <path key={s.key} data-drawable={s.drawable} d={s.d} fill="none" stroke={s.color} strokeWidth={2} strokeDasharray={s.dash} />;
             if (s.kind === "line") return <line key={s.key} x1={s.x1} x2={s.x2} y1={s.y1} y2={s.y2} stroke="currentColor" strokeDasharray={s.dash} />;
-            return <text key={s.key} x={s.x} y={s.y} fontSize={10} fill="currentColor">{s.text}</text>;
+            return <text key={s.key} x={s.x} y={s.y} fontSize={11} fill="currentColor">{s.text}</text>;
           })}
         </g>
       )}

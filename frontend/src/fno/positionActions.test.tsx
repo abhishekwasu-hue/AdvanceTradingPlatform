@@ -156,8 +156,8 @@ describe("TT-9 the position row", () => {
     const html = renderToStaticMarkup(<MemoryRouter><ul><PositionRowV2 row={r} position={option()} actions={{ exitNowOn: true, canTrade: true, onExit: noop, onCheck: noop, part }} /></ul></MemoryRouter>);
     expect(html).not.toMatch(/data-testid="(exit-part|reverse)"[^>]*\sdisabled=""/);
     expect(sheetSource).toContain("Keep it open");
-    expect(sheetSource).toMatch(/window\.confirm\(`Cancel this waiting order\?/);
-    expect(sheetSource).toMatch(/window\.confirm\(`Change this waiting order\?/);
+    expect(sheetSource).toMatch(/confirmBox\.ask\("Cancel this waiting order\?"/);   // UI-28 U3.3: the in-app confirm
+    expect(sheetSource).toMatch(/confirmBox\.ask\("Change this waiting order\?"/);
     expect(panelSource).toContain("<PositionActionSheetV2");
     expect(panelSource).toMatch(/part: fnoOn && canTrade \?/);               // behind the PAPER account + the trader role
   });

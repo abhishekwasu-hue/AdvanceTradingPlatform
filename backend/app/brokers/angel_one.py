@@ -111,6 +111,7 @@ def _parse_time(raw: Optional[str]) -> Optional[datetime]:
 class AngelOneBroker(BrokerInterface):
     name = "angel_one"
     daily_days_per_request = 2000   # UI2-4a2: SmartAPI getCandleData allows at most 2,000 days of ONE_DAY candles per request
+    native_intervals = frozenset(INTERVAL_MAP)            # SCR-FIX A1
     BASE_URL = BASE_URL
     max_tag_length = 20
 

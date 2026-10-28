@@ -119,6 +119,7 @@ class UpstoxBroker(BrokerInterface):
 
     name = "upstox"
     history_by_date = True   # LD-10: the history API takes dates only (get_historical_data)
+    native_intervals = frozenset(UPSTOX_INTERVAL_MAP)   # SCR-FIX A1: v2 API - 1minute / 30minute / day / week / month only
     BASE_URL = "https://api.upstox.com/v2"
 
     @property

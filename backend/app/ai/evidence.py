@@ -42,7 +42,7 @@ async def server_frame(session: AsyncSession, tenant_id: int, symbol: str, excha
     BT1b (flag `byob_data_tier`): only through `user`'s own session at a confirmed broker, cached for that session
     only (never the platform-wide candle key); otherwise 409 with the reason."""
     from app.brokers.token_lifecycle import build_adapter
-    from app.market_data import live_access
+    from app.market_data import intervals, live_access
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
     if await live_access.byob_on(session, tenant_id):
@@ -56,7 +56,8 @@ async def server_frame(session: AsyncSession, tenant_id: int, symbol: str, excha
         record = await _pick_record(session, tenant_id, broker, "primary")          # 409 when no session today
         service = MarketDataService(build_adapter(record), lookback_days=lookback_days)
     try:
-        bars = await service.get_candles(symbol.strip().upper(), exchange.strip().upper(), timeframe)
+        # SCR-FIX A2: fetched at the broker's native interval and resampled when it does not serve `timeframe` as it is
+        bars = await intervals.get_bars(service, symbol.strip().upper(), exchange.strip().upper(), timeframe)
     except Exception as exc:  # noqa: BLE001 - say what the broker said
         raise HTTPException(status_code=502, detail=f"Could not fetch {symbol} candles from {record.broker_name}: {type(exc).__name__}: {exc}"[:300]) from exc
     if not bars:

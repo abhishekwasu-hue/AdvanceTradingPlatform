@@ -61,6 +61,7 @@ class ZerodhaBroker(BrokerInterface):
 
     name = "zerodha"
     daily_days_per_request = 2000   # UI2-4a2: Kite serves at most 2,000 days of "day" candles per historical request
+    native_intervals = frozenset(KITE_INTERVAL_MAP)       # SCR-FIX A1
     BASE_URL = "https://api.kite.trade"
     # Kite does not accept SL-M orders on option contracts; the protective stop goes as SL (limit band) there.
     capabilities = BrokerCapabilities(stop_market_on_options=False)

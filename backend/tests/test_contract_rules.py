@@ -120,23 +120,24 @@ def test_deployment_rules_validation_and_storage():
     assert _create(headers, symbol="NIFTY 50", instrument_kind="OPTION", strike_rule="ATM", strike_offset=2).status_code == 400
     assert _create(headers, symbol="NIFTY 50", instrument_kind="OPTION", premium_stop_pct=2).status_code == 422
 
-    # Defaults are filled: BUY, nearest, ATM, 30% premium stop.
+    # Defaults are filled: BUY, nearest, ATM. DEF-0: no built-in premium stop - blank stays blank (no such exit).
     created = _create(headers, symbol="NIFTY 50", instrument_kind="OPTION")
     assert created.status_code == 201, created.text
     body = created.json()
     assert body["instrument_kind"] == "OPTION" and body["option_position"] == "BUY" and body["expiry_rule"] == "NEAREST"
-    assert body["strike_rule"] == "ATM" and body["strike_offset"] == 0 and body["premium_stop_pct"] == 30.0
-    assert body["contract_rules"] == "buy option, nearest expiry, ATM, premium stop 30%"
+    assert body["strike_rule"] == "ATM" and body["strike_offset"] == 0 and body["premium_stop_pct"] is None
+    assert body["contract_rules"] == "buy option, nearest expiry, ATM"
 
     # Same symbol/strategy/mode with a different kind is a different deployment; same kind is a duplicate.
     fut = _create(headers, symbol="NIFTY 50", instrument_kind="FUTURE", expiry_rule="MONTHLY")
     assert fut.status_code == 201 and fut.json()["contract_rules"] == "future, monthly expiry"
     assert _create(headers, symbol="NIFTY 50", instrument_kind="OPTION").status_code == 409
 
-    # WRITE defaults to a 50% premium ceiling; OTM without an offset means one step.
-    write = _create(headers, symbol="RELIANCE", instrument_kind="OPTION", option_position="WRITE", strike_rule="OTM", max_lots=2)
+    # DEF-0: a WRITE has no built-in premium ceiling - the trader's own 50% is stored as set; OTM without an offset means one step.
+    write = _create(headers, symbol="RELIANCE", instrument_kind="OPTION", option_position="WRITE", strike_rule="OTM", max_lots=2,
+                    premium_stop_pct=50)
     assert write.status_code == 201, write.text
-    assert write.json()["premium_stop_pct"] == 50.0 and write.json()["strike_offset"] == 1 and write.json()["max_lots"] == 2
+    assert write.json()["premium_stop_pct"] == 50.0 and "premium stop 50%" in write.json()["contract_rules"] and write.json()["strike_offset"] == 1 and write.json()["max_lots"] == 2
 
     # An underlying with no contracts in the master is refused with the fix spelled out.
     missing = _create(headers, symbol="TCS", instrument_kind="OPTION")

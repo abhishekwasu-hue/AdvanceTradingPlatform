@@ -60,6 +60,12 @@ async function open(page: Page, path: string, o: { theme?: "light" | "dark"; pre
     server.version += 1;
     return route.fulfill({ json: { namespace: "trading_defaults", value: server.prefs, version: server.version } });
   });
+  // DEF-0 D9: the My limits card reads the risk settings - nothing set (every limit null)
+  await page.route(api("/risk-settings$"), (route) => route.request().method() === "GET"
+    ? route.fulfill({ json: { capital: null, risk_per_trade_pct: null, max_daily_loss_pct: null, max_trades_per_day: null, max_open_positions: null,
+        max_consecutive_losses: null, min_risk_reward: 0, lot_size: 1, max_portfolio_risk_pct: null, stop_cooldown_minutes: null,
+        dd_level_1_pct: null, dd_level_2_pct: null, event_size_cut_pct: null, loss_streak_pause: "next_session" } })
+    : route.fallback());
   await page.route(api("/strategies$"), (route) => route.fulfill({ json: S.strategies }));
   await page.route(api("/custom-strategies$"), (route) => route.fulfill({ json: [] }));
   await page.route(api("/broker/credentials$"), (route) => route.fulfill({ json: [{ broker_name: "upstox", account_label: "primary" }] }));

@@ -127,7 +127,7 @@ def _engine_decisions(mode: str):
 
 def _options_decisions(mode: str):
     cfg = options_engine.OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY, implied_volatility=0.14,
-                                              max_lots=1)
+                                              max_lots=1, premium_stop_pct=30.0)  # DEF-0: the old built-in 30% set explicitly
     result = options_engine.run_option_backtest(_Scripted(), _frame(), "NIFTY 50", "1min", _risk(mode), cfg)
     _outcomes_hold(result)
     # every attempt it did not take was refused by the risk engine's losses in a row, nothing else

@@ -131,7 +131,7 @@ def test_order_plan_for_bought_written_and_future():
     pe_written = _resolve(WRITE)   # LONG signal -> sell PE
     plan = build_order_plan(_signal(), pe_written, WRITE, ltp=100.0)
     assert pe_written.right == "PE" and plan.order_signal.direction == SignalDirection.SHORT
-    assert plan.order_signal.stop_loss == 150.0 and plan.max_quantity == NIFTY_LOT  # one-lot default for writes
+    assert plan.order_signal.stop_loss == 150.0 and plan.max_quantity is None  # DEF-0: no built-in one-lot cap on a written option
 
     fut = _resolve(FUT, SignalDirection.SHORT, spot=None)
     plan = build_order_plan(_signal(SignalDirection.SHORT), fut, FUT, ltp=24580.0)

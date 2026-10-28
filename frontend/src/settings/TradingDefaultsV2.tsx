@@ -11,6 +11,7 @@ import { SIGN_IN_PATH } from "../ui/BrokerGate";
 import { Details } from "../ui/Details";
 import { useFeatures } from "../ui/useFeatures";
 import ChainSettingsV2 from "./chainSettings";
+import MyLimitsCardV2 from "./MyLimitsCardV2";
 import SmartExecutionSettingsV2 from "./smartExecutionSettings";
 import {
   EMPTY_DEFAULTS, EXPIRIES, KINDS, POSITIONS, RISK_LIMITS_PATH, STRIKES, STRUCTURES, TICKET_ORDER_TYPES, TICKET_PRODUCTS,
@@ -88,6 +89,8 @@ export default function TradingDefaultsV2(_props: PageProps = {}) {
     <div className="mx-auto w-full max-w-[760px] space-y-space-4" data-page="trading-defaults-v2">
       <PageTitleV2 title="My trading defaults"
         subtitle="Your own starting values for a new paper bot and a chain order. They only fill in the form: you see each one marked there and can change it." />
+      {/* DEF-0 D9: his own limits - every one not set until he sets it */}
+      <MyLimitsCardV2 />
       {failed && !form ? <CardV2 title="My trading defaults"><LoadFailedV2 what="your defaults" /></CardV2>
         : !form ? <CardV2 title="My trading defaults"><LoadingRowsV2 rows={4} /></CardV2>
         : <DefaultsFormV2 form={form} onChange={(f) => { setForm(f); setNote(null); }} approvalAllowed={approvalAllowed} busy={busy} note={note}

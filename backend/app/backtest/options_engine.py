@@ -40,10 +40,9 @@ from app.core.resampling import resample_ohlc
 from app.backtest.models import ModelError, ModelSet
 from app.backtest.windows import WindowCursor, decision_time
 from app.indicators.prefix_cache import register_frames, with_prefix_cache
-from app.execution.contract_execution import DEFAULT_WRITE_MAX_LOTS
 from app.execution.paper_broker import PaperBroker
 from app.instruments.contracts import (
-    DEFAULT_PREMIUM_STOP_PCT, ContractResolutionError, ContractRules, ResolvedContract, option_right, select_strike,
+    ContractResolutionError, ContractRules, ResolvedContract, option_right, select_strike,
 )
 from app.instruments import expiry_data
 from app.instruments.expiry_data import ExpiryDataMissing, ExpiryDataStale
@@ -79,6 +78,7 @@ class OptionBacktestConfig:
     spread_width: int = 2
     target_credit_pct: Optional[float] = None
     stop_credit_pct: Optional[float] = None
+    underlying_breach_exit: bool = False                      # DEF-0: the trader's own underlying-level exit (off by default)
     premium_stop_pct: Optional[float] = None                  # SINGLE: floor (bought) / ceiling (written)
     custom_legs: List[CustomLeg] = field(default_factory=list)
     max_lots: Optional[int] = None
@@ -104,7 +104,7 @@ class OptionBacktestConfig:
 
     def rules(self) -> ContractRules:
         position = self.option_position if self.is_single else OptionPosition.WRITE
-        stop_pct = self.premium_stop_pct if self.premium_stop_pct is not None else DEFAULT_PREMIUM_STOP_PCT.get(position)
+        stop_pct = self.premium_stop_pct          # DEF-0 D3: None = no premium stop
         return ContractRules(kind=InstrumentKind.OPTION, position=position, expiry_rule=self.expiry_rule, strike_rule=self.strike_rule,
                              strike_offset=self.strike_offset, premium_stop_pct=stop_pct, max_lots=self.max_lots)
 
@@ -409,7 +409,9 @@ def run_option_backtest(
                         price = prices[0]
                         leg = pos.legs[0]
                         # TT-7: the shared close rule (app/trading/trigger_rules.py) - the premium at this bar's close.
-                        if leg.role == "LONG" and closed_beyond(pos.premium_level, BELOW, price):
+                        if pos.premium_level is None:
+                            pass                                  # DEF-0: no premium stop set
+                        elif leg.role == "LONG" and closed_beyond(pos.premium_level, BELOW, price):
                             reason = f"Premium floor ({pos.premium_level:g})"
                         elif leg.role == "SHORT" and closed_beyond(pos.premium_level, ABOVE, price):
                             reason = f"Premium ceiling ({pos.premium_level:g})"
@@ -570,7 +572,8 @@ def _size_lots(risk_manager: RiskManager, state: TradingDayState, signal: Signal
     sizing = signal.model_copy(update={"symbol": underlying_symbol, "direction": direction, "entry": basis,
                                        "stop_loss": round(basis + risk_per_unit, 2) if direction == SignalDirection.SHORT else round(basis - risk_per_unit, 2),
                                        "target1": None, "target2": None, "risk_reward": signal.risk_reward if keep_rr else None})
-    decision = risk_manager.validate_and_size(sizing, state, contract_spec=spec)
+    # DEF-0: with no risk per trade set the size is the trader's max lots (else one lot), as live
+    decision = risk_manager.validate_and_size(sizing, state, contract_spec=spec, requested_quantity=float(max_lots * lot) if max_lots else None)
     if not decision.approved:
         raise _Skip("; ".join(decision.reasons) or "risk engine refused")
     lots = int(decision.quantity // lot)
@@ -594,7 +597,8 @@ def _open_structure(signal: Signal, rules: ContractRules, config: OptionBacktest
     structure = _resolved_structure(strategy, planned, underlying=underlying, underlying_symbol=underlying_symbol, near=expiry, far=far, lot=lot)
     premiums = {leg.contract.tradingsymbol: pricer.price(leg.contract.right, leg.contract.strike, leg.contract.expiry, spot=spot, at=at)
                 for leg in structure.legs}
-    metrics = structure_metrics(structure, premiums, target_credit_pct=config.target_credit_pct, stop_credit_pct=config.stop_credit_pct)
+    metrics = structure_metrics(structure, premiums, target_credit_pct=config.target_credit_pct, stop_credit_pct=config.stop_credit_pct,
+                                underlying_exit=config.underlying_breach_exit)
     basis = abs(metrics.net_credit) or 0.05
     lots = _size_lots(risk_manager, state, signal, basis=basis, risk_per_unit=metrics.risk_per_unit, lot=lot,
                       underlying_symbol=underlying_symbol, max_lots=config.max_lots)
@@ -628,13 +632,18 @@ def _open_single(signal: Signal, rules: ContractRules, config: OptionBacktestCon
     if strike is None:
         raise ContractResolutionError(f"No {right} strike for the rule")
     quote = pricer.price(right, strike, expiry, spot=spot, at=at)
-    pct = (rules.premium_stop_pct or 30.0) / 100.0
+    # DEF-0 D3: the premium stop is the trader's own (None = no premium exit), as live (contract_execution)
+    pct = rules.premium_stop_pct / 100.0 if rules.premium_stop_pct is not None else None
     bought = position == OptionPosition.BUY
     trade_direction = SignalDirection.LONG if bought else SignalDirection.SHORT
     fill = round(broker._slip(quote, trade_direction), 2)
-    level = round(fill * (1 - pct), 2) if bought else round(fill * (1 + pct), 2)
-    max_lots = config.max_lots if config.max_lots else (None if bought else DEFAULT_WRITE_MAX_LOTS)
-    lots = _size_lots(risk_manager, state, signal, basis=fill, risk_per_unit=round(fill * pct, 2), lot=lot,
+    level = (round(fill * (1 - pct), 2) if bought else round(fill * (1 + pct), 2)) if pct is not None else None
+    max_lots = config.max_lots if config.max_lots else None
+    per_unit = round(fill * pct, 2) if pct is not None else (fill if bought else 0.0)
+    if per_unit <= 0 and risk_manager.config.risk_amount() is not None:
+        # DEF-0 D7: as live - a written option with no stop has no limit to its loss; a risk per trade cannot size it
+        raise _Skip("No stop-loss is set, so your risk per trade cannot size this short position")
+    lots = _size_lots(risk_manager, state, signal, basis=fill, risk_per_unit=per_unit, lot=lot,
                       underlying_symbol=underlying, max_lots=max_lots, direction=trade_direction, keep_rr=True)
     quantity = lots * lot
     leg = _Leg(right, "LONG" if bought else "SHORT", float(strike), expiry, 1, fill, quantity)

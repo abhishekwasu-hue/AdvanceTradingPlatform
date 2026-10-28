@@ -258,6 +258,7 @@ export interface OptionBacktestConfig {
   spread_width?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
+  underlying_breach_exit?: boolean | null;   // DEF-0: the trader's own underlying-level exit (off unless set)
   premium_stop_pct?: number | null;
   custom_legs?: CustomLeg[] | null;
   max_lots?: number | null;
@@ -1037,6 +1038,7 @@ export interface Deployment {
   spread_width?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
+  underlying_breach_exit?: boolean | null;   // DEF-0: the trader's own underlying-level exit (off unless set)
   custom_legs?: CustomLeg[] | null;
   exit_rules?: ExitRules | null;
   broker_account_id?: number | null;
@@ -1095,6 +1097,7 @@ export interface ContractRules {
   spread_width?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
+  underlying_breach_exit?: boolean | null;   // DEF-0: the trader's own underlying-level exit (off unless set)
   custom_legs?: CustomLeg[] | null;
 }
 

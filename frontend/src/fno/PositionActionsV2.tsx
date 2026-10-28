@@ -51,8 +51,9 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
   async function go() {
     if (!ask || !position) return;
     const stopLoss = stop.trim() === "" ? undefined : Number(stop);
-    if (needsStop && (stopLoss === undefined || !Number.isFinite(stopLoss) || stopLoss <= 0)) {
-      setProblem("Enter the stop-loss for the new position. Nothing has been closed.");
+    // DEF-0 D7: the stop is optional (only the trader's own setting asks for one - the server says so); a typed one must be a price
+    if (needsStop && stopLoss !== undefined && (!Number.isFinite(stopLoss) || stopLoss <= 0)) {
+      setProblem("The stop-loss is not a price. Nothing has been closed.");
       return;
     }
     setBusy(true);

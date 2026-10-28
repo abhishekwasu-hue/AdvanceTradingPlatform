@@ -127,6 +127,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   const addLeg = () => { setCustomLegs((cur) => [...cur, { right: "CE", role: "SHORT", strike_rule: "OTM", strike_offset: 1, ratio: 1 }]); setPreview(null); };
   const [targetCredit, setTargetCredit] = useState<string>("");
   const [stopCredit, setStopCredit] = useState<string>("");
+  const [underlyingExit, setUnderlyingExit] = useState(false);   // DEF-0: off unless the trader turns it on
   const [showFilters, setShowFilters] = useState(false);
   const [exitTrail, setExitTrail] = useState("");
   const [exitBreakEven, setExitBreakEven] = useState("");
@@ -186,6 +187,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
     return {
       ...base, spread_width: spreadWidth,
       target_credit_pct: targetCredit ? Number(targetCredit) : null, stop_credit_pct: stopCredit ? Number(stopCredit) : null,
+      underlying_breach_exit: underlyingExit || null,
       custom_legs: structure === "CUSTOM" ? customLegs : null,
     };
   }
@@ -553,12 +555,17 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
                     <div>
                       <label className="block text-xs text-fg-muted mb-1">Target / stop (% of {PAYOFF_STRUCTURES.includes(structure) ? "max profit / risk basis" : DEBIT_STRUCTURES.includes(structure) ? "debit" : "credit"})<FromDefaults on={marked("targetCredit", targetCredit) || marked("stopCredit", stopCredit)} /></label>
                       <div className="flex gap-1">
-                        <input type="number" min={5} max={95} placeholder="50" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)}
+                        <input type="number" min={5} max={95} placeholder="Not set" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)}
                           title={DEBIT_STRUCTURES.includes(structure) ? "take profit once the structure is worth this % more than the debit" : "take profit once this % of the credit is captured"} />
-                        <input type="number" min={10} max={DEBIT_STRUCTURES.includes(structure) ? 100 : 500} placeholder={DEBIT_STRUCTURES.includes(structure) ? "50" : "100"} className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={stopCredit} onChange={(e) => setStopCredit(e.target.value)}
+                        <input type="number" min={10} max={DEBIT_STRUCTURES.includes(structure) ? 100 : 500} placeholder="Not set" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={stopCredit} onChange={(e) => setStopCredit(e.target.value)}
                           title={DEBIT_STRUCTURES.includes(structure) ? "stop when this % of the debit is lost (max 100)" : "stop when the loss reaches this % of the credit"} />
                       </div>
+                      <p className="mt-1 text-xs text-fg-muted">Blank = no target / stop.</p>
                     </div>
+                    <label className="flex items-center gap-2 text-sm" data-field="underlying-exit">
+                      <input type="checkbox" checked={underlyingExit} onChange={(e) => setUnderlyingExit(e.target.checked)} />
+                      Close when the underlying crosses a short strike or a breakeven ({underlyingExit ? "on" : "off"})
+                    </label>
                   </>
                 )}
               </>

@@ -193,7 +193,7 @@ export const COPILOT_EN = {
     watchlist: "Watchlist: {{list}}.",
     col: { symbol: "Symbol", price: "Price", today: "Today", direction: "Direction", regime: "Regime (5m / higher)", structure: "Structure" },
     bias: { BULLISH: "up", BEARISH: "down", NEUTRAL: "flat" },
-    sentimentInputs: "Sentiment inputs (deterministic)",
+    sentimentInputs: "Sentiment inputs",
     component: { pcr: "PCR/OI", vix: "VIX", breadth: "Breadth", global: "Global", fii_dii: "FII/DII" },
     global: "Global cues",
     globalName: {
@@ -201,7 +201,7 @@ export const COPILOT_EN = {
       HANG_SENG: "Hang Seng", BRENT: "Brent crude", GOLD: "Gold", DXY: "Dollar index", USDINR: "USD/INR", US10Y: "US 10Y yield",
     },
     globalOff: "Global cues are switched off on this platform.",
-    globalEmpty: "No global data yet. The worker reads it from 08:00 and while the market is open.",
+    globalEmpty: "No global data yet. It appears once the markets abroad are read.",
     globalNote: "Green = usually supportive for India, red = pressure (for example crude or the dollar rising). Free public data, delayed. A tendency, not a signal.",
   },
   lab: {

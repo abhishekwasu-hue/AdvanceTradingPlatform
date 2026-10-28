@@ -577,6 +577,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/marketplace/{listing_id}/unsubscribe"): "trader",
     # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours), per tenant and user
     ("GET", "/api/me/prefs"): "member: the caller's own preferences only (tenant and user)",
+    ("GET", "/api/me/export"): "member: AUD-G1.1 - the caller's own rows only (user_id and tenant), secrets never included",
+    ("GET", "/api/me/erase"): "member: AUD-G1.1 - the caller's own Delete my account request only",
+    ("POST", "/api/me/erase"): "self: AUD-G1.1 - asks to erase the caller's own account (password + ERASE); no route names another user",
+    ("DELETE", "/api/me/erase"): "self: AUD-G1.1 - cancels the caller's own request only; no route names another user",
     ("PUT", "/api/me/prefs/{namespace}"): S_OWN_PREFS,
     # UI2-7: the caller's own setup wizard progress (the `setup` preferences plus steps worked out from their own rows)
     ("GET", "/api/me/setup"): "member: the caller's own setup progress only (tenant and user)",

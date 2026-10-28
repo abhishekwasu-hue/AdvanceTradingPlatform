@@ -853,6 +853,10 @@ class TradingWorker:
                     try:
                         async with guarded(session):
                             report.retention = await run_retention(session, now)
+                            # AUD-G1.1: "Delete my account" requests whose grace period has passed.
+                            from app.me.account import run_due_erasures
+                            if await run_due_erasures(session, now):
+                                await session.commit()
                             # P0.3 / S7: pin the audit chain's head once a day (cheap; lets verification start from here).
                             try:
                                 async with guarded(session):

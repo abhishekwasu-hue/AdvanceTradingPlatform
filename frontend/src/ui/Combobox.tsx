@@ -42,6 +42,13 @@ export interface ComboboxProps {
   dataAttrs?: Record<string, string>;
   /** The phone sheet's heading (defaults to `label`). */
   sheetTitle?: ReactNode;
+  /** SCR-FIX D8: "inline" - a word in a sentence (the Screener's stage blocks): no box until hovered, the sentence's
+   * text size, 32 px tall on a phone and 28 px with a mouse. "field" (default): the 44 / 36 px form control. */
+  variant?: "field" | "inline";
+  /** What the button shows instead of the chosen row's label (a timeframe chip shows "Daily", not "Scan timeframe (Daily)"). */
+  triggerText?: ReactNode;
+  /** Extra classes for the button itself (a mono face, a dashed border). */
+  triggerClassName?: string;
 }
 
 export const RECENT_GROUP = "Recent";
@@ -83,8 +90,11 @@ export function typeAhead(rows: readonly ComboOption[], typed: string, from: num
 
 const triggerClass = "inline-flex h-11 min-w-0 items-center justify-between gap-space-2 rounded-control border border-border bg-surface-2 px-space-3 text-left text-t14 text-fg transition-colors duration-fast hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-60 md:h-9";
 
+const inlineTriggerClass = "inline-flex h-8 min-w-0 items-center justify-between gap-space-1 rounded-control border border-transparent bg-transparent pl-space-1 pr-space-1 text-left text-t13 text-fg hover:border-border hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-60 md:h-7";
+
 export function Combobox({ label, value, options, onChange, id, searchable = false, recent = NO_RECENT, placeholder = "Choose…", disabled = false,
-  className = "", dataAttrs = {}, sheetTitle }: ComboboxProps) {
+  className = "", dataAttrs = {}, sheetTitle, variant = "field", triggerText, triggerClassName }: ComboboxProps) {
+  const inline = variant === "inline";
   const phone = useMediaQuery(PHONE_QUERY);
   const autoId = useId();
   const baseId = id ?? `combo-${autoId}`;
@@ -197,9 +207,9 @@ export function Combobox({ label, value, options, onChange, id, searchable = fal
       <button ref={button} id={baseId} type="button" role="combobox" aria-haspopup="listbox" aria-expanded={open} aria-controls={listId}
         aria-label={label} aria-activedescendant={open && !searchable && active >= 0 ? optionId(active) : undefined}
         disabled={disabled} onClick={() => (open ? close() : openList())} onKeyDown={onKeyDown} data-combobox={value} {...dataAttrs}
-        className={cx(triggerClass, "w-full")}>
-        <span className={cx("min-w-0 flex-1 truncate tabular-nums", !current && "text-fg-muted")}>{current?.label ?? placeholder}</span>
-        <ChevronDown size={16} aria-hidden className={cx("shrink-0 text-fg-muted transition-transform duration-fast", open && "rotate-180")} />
+        className={cx(inline ? inlineTriggerClass : triggerClass, "w-full", triggerClassName)}>
+        <span className={cx("min-w-0 flex-1 truncate tabular-nums", !current && triggerText == null && "text-fg-muted")}>{triggerText ?? current?.label ?? placeholder}</span>
+        <ChevronDown size={inline ? 12 : 16} aria-hidden className={cx("shrink-0 text-fg-muted transition-transform duration-fast", open && "rotate-180")} />
       </button>
       {open && !phone && (
         <div className="absolute left-0 top-full z-30 mt-space-1 w-max min-w-full max-w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-panel border border-subtle bg-surface-1 shadow-raised">

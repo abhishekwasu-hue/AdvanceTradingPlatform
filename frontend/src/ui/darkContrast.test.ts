@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import css from "../styles/tokens.css?raw";
+import { buttonClass, PRIMARY_EDGE } from "../components/primitives/Button";
 
 /**
  * UI-H-DM DM5 (owner, 25 Oct; docs/owner-orders/ATP_ORDER_UI_H_DM.md): the contrast numbers of the colour v2 surfaces,
@@ -90,6 +91,23 @@ describe("UI-H-DM: the colour v2 contrast numbers (computed from tokens.css)", (
       expect(contrast(t[`sec-${s}`], t["surface-1"]), `${s}: the active bottom tab (word and icon)`).toBeGreaterThanOrEqual(7);
       expect(contrast(t[`sec-${s}`], t[`sec-${s}-soft`]), `${s}: an inactive tab's icon on its chip`).toBeGreaterThanOrEqual(4.5);
     }
+  });
+
+  // SCR-FIX D1 (owner order SCR-FIX, PR D): the primary button must read as a button on whatever it sits on - the
+  // Screener's phone bar put the colour v2 dark fill on surface-1 at 1.6 : 1. Its outline (PRIMARY_EDGE: border-brand)
+  // is the non-text contrast (WCAG 1.4.11, >= 3 : 1) against EVERY surface token, light and dark, v1 and v2.
+  const ALL_THEMES: Record<string, Record<string, number[]>> = {
+    "v1 dark": base, "v1 light": lightBase, ...Object.fromEntries(Object.entries(THEMES).map(([k, { t }]) => [k, t])),
+  };
+  const SURFACES = ["surface", "surface-1", "surface-2", "surface-3", "surface-inset"];
+  it.each(Object.entries(ALL_THEMES))("%s: SCR-FIX D1 the primary button's outline >= 3 : 1 on every surface", (_, t) => {
+    expect(PRIMARY_EDGE).toBe("border border-brand");                       // the outline is the --brand token
+    expect(buttonClass({ variant: "primary", edge: true })).toContain(PRIMARY_EDGE);
+    for (const bg of SURFACES) {
+      expect(t[bg], bg).toBeDefined();
+      expect(contrast(t.brand, t[bg]), `primary outline on ${bg}`).toBeGreaterThanOrEqual(3);
+    }
+    expect(contrast(t["on-brand"], t["brand-fill"]), "primary button text").toBeGreaterThanOrEqual(4.5);
   });
 
   it("High contrast is never weaker than the normal theme", () => {

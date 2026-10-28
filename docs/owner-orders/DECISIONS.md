@@ -158,3 +158,5 @@
 | 2026-10-27 | SCR-FIX A6 (owner default): historical scan reads finish every symbol - auto-batch through the existing batch path, or stored daily bars for daily timeframes - and the run shows "N held back by the session budget" once
 | 2026-10-27 | SCR-FIX D7 (owner default): Screener shows plain words by default; the ScreenQL code only under "Advanced"
 | 2026-10-27 | SCR-FIX replaces every earlier Screener message of 27 Oct (incl. "SCREENER FIX PACK"); PRs in order A -> E, each its own draft PR
+| 2026-10-28 | UX-14 (owner): colour_v3 stays an on / off flag the owner switches himself (Admin -> Features, per organisation); it is not made the default and the flag is never removed. |
+| 2026-10-28 | UX-11b (owner): the Journal best / worst table fits a phone - two columns (setup with its closed count under the name, net). |

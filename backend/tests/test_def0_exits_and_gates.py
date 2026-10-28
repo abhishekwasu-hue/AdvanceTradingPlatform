@@ -188,3 +188,20 @@ def test_the_option_backtest_has_no_underlying_exit_unless_set():
     off = run_option_backtest(_OneShot(), _frame(24500, 24800), "NIFTY 50", "1min", RISK, OptionBacktestConfig(**cfg))
     assert "breakeven" in on.trades[0].exit_reason
     assert all("breakeven" not in (t.exit_reason or "") for t in off.trades)
+
+
+# --- staging acceptance (28 Oct): the PAPER ticket with no cap anywhere -----------------------------------------------
+
+def test_the_paper_ticket_with_no_cap_set_anywhere_previews_and_places_one_lot(monkeypatch):
+    """No risk per trade of his own and none of the organisation's: one lot is the start (was a 500 - floor(inf))."""
+    from app.risk_engine import by_default
+    from tests.test_z5_p1d_risk_by_default import _flag as _org_flag, _place, _preview, _tenant_t
+    t = _tenant_t("def0-nocap")
+    _org_flag(by_default.FLAG, t["tenant_id"])
+    view = _preview(t)
+    s = view["sizing"]
+    assert s["cap"] is None and s["user_cap"] is None and s["org_cap"] is None
+    assert s["suggested_quantity"] == 1 and s["quantity"] == 1 and view["errors"] == [] and view["refusals"] == []
+    _price(monkeypatch, 100.0)
+    out = _place(t)
+    assert out["status"] != "REFUSED", out

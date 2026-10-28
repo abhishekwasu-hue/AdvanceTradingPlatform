@@ -98,6 +98,14 @@ def test_empty_answer_says_why_in_the_api(monkeypatch):
     broker = _WindowBroker()
     monkeypatch.setattr(candles_routes, "build_adapter", lambda record: broker)
     _install_cache(monkeypatch, None)
+
+    class _SaturdayNoon(datetime):                     # the bars are Friday 23 Oct's: ask on the Saturday after, not today
+        @classmethod
+        def now(cls, tz=None):
+            return SAT_NOON.astimezone(tz) if tz else SAT_NOON.replace(tzinfo=None)
+    from app.market_data import service as md_service
+    for module in (candles_routes, md_service):
+        monkeypatch.setattr(module, "datetime", _SaturdayNoon)
     res = client.post("/api/market-data/candles", headers=headers,
                       json={"symbols": ["EMPTY", "NIFTY 50"], "exchange": "NFO", "timeframe": "30min", "lookback_days": 5})
     assert res.status_code == 200, res.text

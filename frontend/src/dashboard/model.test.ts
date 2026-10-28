@@ -76,9 +76,11 @@ describe("UI2-2 market strip", () => {
   });
 
   it("India VIX in words; a remembered level says when it was taken; no price is never 0", () => {
-    expect(vixNote(13.42)).toBe("Calm: 12 to 16");
-    expect(vixNote(11)).toBe("Very calm: below 12");
-    expect(vixNote(22)).toBe("Nervous: above 20");
+    // AUD-V3: the words come from the one shared table (ui/levels.ts), not a hand-coded copy.
+    expect(vixNote(13.42)).toBe("Normal: 12 to 16");
+    expect(vixNote(11)).toBe("Low: below 12");
+    expect(vixNote(17)).toBe("Elevated: 16 to 20");
+    expect(vixNote(22)).toBe("High: above 20");
     expect(vixNote(null)).toBeNull();
     const idx = (i: Partial<StripIndex>): StripIndex => ({ key: "NIFTY 50", label: "NIFTY 50", symbol: "NIFTY 50", exchange: "NSE", ltp: 1, prev_close: 1,
       change: 0, change_pct: 0, as_of: null, stale: false, source: "live", missing: false, ...i });

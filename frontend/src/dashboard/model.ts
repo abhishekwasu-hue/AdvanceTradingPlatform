@@ -5,6 +5,7 @@ import type { SetupHealthItem } from "../setup/model";
 import { paperOnlyFrom } from "../setup/paperOnly";
 import { reasonWords, setupWords } from "../signals/signalText";
 import { EMPTY, formatDateIST, formatLots, formatPrice, formatTimeIST } from "../ui/format";
+import { LEVELS, VIX_BANDS, vixLevel, type VixLevel } from "../ui/levels";
 import { botDisplayName, strategyDisplayName } from "../ui/strategyName";
 import type { OiBannerResponse } from "../oi/types";
 import type {
@@ -138,13 +139,21 @@ export function oiLines(banners: OiBannerResponse[] | null | undefined): Record<
   return out;
 }
 
-/** India VIX in words (the market-memory bands: 12 / 16 / 20). */
-export function vixNote(v: number | null | undefined): string | null {
+/** AUD-V3: India VIX's band from the one shared table (ui/levels.ts VIX_BANDS = the backend's 12 / 16 / 20): its level
+ * (for the LevelChip) and the band's range in words. */
+export function vixBand(v: number | null | undefined): { level: VixLevel; range: string } | null {
   if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) return null;
-  if (v < 12) return "Very calm: below 12";
-  if (v < 16) return "Calm: 12 to 16";
-  if (v < 20) return "Elevated: 16 to 20";
-  return "Nervous: above 20";
+  const level = vixLevel(v);
+  const i = VIX_BANDS.findIndex(([, l]) => l === level);
+  const lo = i > 0 ? VIX_BANDS[i - 1][0] : i < 0 ? VIX_BANDS[VIX_BANDS.length - 1][0] : null;
+  const hi = i >= 0 ? VIX_BANDS[i][0] : null;
+  return { level, range: lo === null ? `below ${hi}` : hi === null ? `above ${lo}` : `${lo} to ${hi}` };
+}
+
+/** India VIX in words: "Normal: 12 to 16" (the shared table's label and range). */
+export function vixNote(v: number | null | undefined): string | null {
+  const band = vixBand(v);
+  return band ? `${LEVELS.vix[band.level].label}: ${band.range}` : null;
 }
 
 /** The small line under an index: where a remembered price is from, or that there is none. */

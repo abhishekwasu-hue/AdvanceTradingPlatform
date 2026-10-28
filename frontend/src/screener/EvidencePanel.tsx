@@ -10,16 +10,19 @@
  * screen recomputed from the shared history as of that bar (never stored, never sent), then return to the match.
  */
 import { ChevronLeft, ChevronRight, RotateCcw, Send } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import TelegramConnectV2 from "../alerts/TelegramConnectV2";
 import { ApiError } from "../api/client";
 import { Button, Dialog, cx } from "../components/primitives";
-import { EvidenceChart, EvidenceLegend } from "./EvidenceChart";
+import { EvidenceChartLive, EvidenceLegend, MatchedBarCard } from "./EvidenceChart";
 import {
-  barTimeText, evidenceApi, replaySteps, stepReplay, trendTone, verifyRows, visibleDrawables, type EvidenceContext, type EvidencePack,
+  SendAfterLink, barTimeText, evidenceApi, replaySteps, sendRefusal, stepReplay, telegramAction, trendTone, verifyRows, visibleDrawables,
+  type EvidenceContext, type EvidencePack, type TelegramReason,
 } from "./evidence";
 import { canReplay, type RowState } from "./evidence";
 
-export type SendState = { status: "idle" | "sending" | "sent" | "failed"; message?: string };
+/** SCR-FIX C4: `reason` is the server's code when a send was refused (the page offers the matching action). */
+export type SendState = { status: "idle" | "sending" | "sent" | "failed"; message?: string; reason?: TelegramReason | null };
 
 /** EV3 replay controls: `index` of `steps` (the last step is the stored pack itself). */
 export interface ReplayControls {
@@ -35,8 +38,37 @@ export interface EvidenceViewProps {
   onShowFailed?: (on: boolean) => void;
   onSend?: () => void;
   send?: SendState;
+  /** SCR-FIX C4: Telegram was linked from the connect row in this panel (the panel reloads and sends once). */
+  onLinked?: () => void;
+  /** Kept for callers of the old SVG chart; the chart is the Charts page's own now (SCR-FIX C1) and fills its column. */
   chartWidth?: number;
   replay?: ReplayControls;
+}
+
+/** SCR-FIX C4: "Send to my Telegram" in place - the connect row when the chat is not linked, the button when it is, and
+ * after a refused send the reason's own action (connect again, open the chat and press Start, or try again). Hidden when
+ * the server has no Telegram bot. */
+export function TelegramSend({ pack, onSend, send, onLinked }: Pick<EvidenceViewProps, "pack" | "onSend" | "send" | "onLinked">) {
+  const action = telegramAction(pack);
+  if (action === "hidden" || !onSend) return null;
+  const relink = send?.status === "failed" && send.reason === "not_linked";
+  if (action === "connect" || relink) {
+    return (
+      <section aria-label="Send to my Telegram" className="flex w-full flex-col gap-2 rounded-control border border-border bg-surface-2 p-3" data-testid="telegram-connect">
+        <p className="text-t13 text-fg">{send?.message ?? pack.telegram_message ?? "Connect your Telegram to get this chart there."} It is sent by itself once you are connected.</p>
+        <TelegramConnectV2 title={false} onChanged={onLinked} />
+      </section>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-testid="telegram-send" data-reason={send?.reason ?? undefined}>
+      {send?.status === "sent" && <span role="status" className="text-t12 text-signal">Sent to your Telegram.</span>}
+      {send?.status === "failed" && <span role="alert" className="text-t12 text-warn">{send.message}</span>}
+      <Button variant="secondary" onClick={onSend} disabled={send?.status === "sending"} aria-label="Send this chart to my Telegram">
+        <Send size={14} aria-hidden /> {send?.status === "sending" ? "Sending…" : send?.status === "failed" ? "Try again" : "Send to my Telegram"}
+      </Button>
+    </div>
+  );
 }
 
 const TONE = { up: "border-signal/50 text-signal", down: "border-warn/50 text-warn", flat: "border-border text-fg-muted" } as const;
@@ -100,7 +132,7 @@ function Mark({ passed, state }: { passed: boolean | null; state?: RowState }) {
 }
 
 /** The panel's content (no dialog), for tests and the story. */
-export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, onShowFailed, onSend, send, chartWidth = 720, replay }: EvidenceViewProps) {
+export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, onShowFailed, onSend, send, onLinked, replay }: EvidenceViewProps) {
   const [highlight, setHighlight] = useState<string | null>(null);
   const drawables = useMemo(() => visibleDrawables(pack, hiddenBlocks, showFailed), [pack, hiddenBlocks, showFailed]);
   const rows = verifyRows(pack, showFailed);
@@ -119,10 +151,11 @@ export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, on
       {replay && replay.steps > 1 && <ReplayBar replay={replay} pack={pack} />}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
         <div className="min-w-0 rounded-panel border border-border bg-surface-1 p-2">
-          <EvidenceChart pack={pack} drawables={drawables} width={chartWidth} highlight={highlight} />
+          <EvidenceChartLive pack={pack} drawables={drawables} highlight={highlight} />
           <div className="px-2 pb-1 pt-2"><EvidenceLegend drawables={drawables} /></div>
         </div>
         <section aria-label="Why it matched" className="flex flex-col gap-2">
+          <MatchedBarCard pack={pack} />
           <h3 className="text-t13 font-semibold text-fg">Why it matched</h3>
           <ul className="flex flex-col gap-1.5">
             {pack.blocks.map((b, i) => {
@@ -177,15 +210,7 @@ export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, on
       </section>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-t12 text-fg-muted">{pack.disclaimer}</p>
-        {pack.can_send && onSend && (
-          <div className="flex items-center gap-2">
-            {send?.status === "sent" && <span role="status" className="text-t12 text-signal">Sent to your Telegram.</span>}
-            {send?.status === "failed" && <span role="alert" className="text-t12 text-warn">{send.message}</span>}
-            <Button variant="secondary" onClick={onSend} disabled={send?.status === "sending"} aria-label="Send this chart to my Telegram">
-              <Send size={14} aria-hidden /> {send?.status === "sending" ? "Sending…" : "Send to my Telegram"}
-            </Button>
-          </div>
-        )}
+        <TelegramSend pack={pack} onSend={onSend} send={send} onLinked={onLinked} />
       </div>
     </div>
   );
@@ -204,6 +229,8 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
   const [replayError, setReplayError] = useState<string | null>(null);
   const [refused, setRefused] = useState(false);                          // SCR-FIX B6: the server refused a replay
   const steps = useMemo(() => (pack?.context ? replaySteps(pack) : []), [pack]);
+  const [reloads, setReloads] = useState(0);                               // SCR-FIX C4: read again after Telegram was linked
+  const afterLink = useRef(new SendAfterLink());
 
   useEffect(() => {
     if (evidenceId == null) return;
@@ -214,11 +241,12 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
       (e: unknown) => { if (live) setError(e instanceof ApiError && e.status === 404 ? "This evidence is not available." : "The evidence could not be loaded."); },
     );
     return () => { live = false; };
-  }, [evidenceId, showFailed]);
+  }, [evidenceId, showFailed, reloads]);
 
   useEffect(() => {
     setHidden(new Set()); setSend({ status: "idle" }); setPack(null); setShowFailed(false);
     setStep(null); setReplayed(null); setReplayError(null); setReplayLoading(false); setRefused(false);
+    afterLink.current.disarm();
   }, [evidenceId]);
 
   // EV3 replay: one request per step; a newer step (or closing / going back to the match) drops an older answer.
@@ -242,16 +270,22 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
   }, [evidenceId, step, steps, showFailed]);
 
   const toggle = (id: string) => setHidden((h) => { const next = new Set(h); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  const doSend = async () => {
+  const doSend = useCallback(async () => {
     if (evidenceId == null) return;
     setSend({ status: "sending" });
     try {
       await evidenceApi.sendTelegram(evidenceId);
       setSend({ status: "sent" });
     } catch (e) {
-      setSend({ status: "failed", message: e instanceof ApiError ? e.message : "Could not send." });
+      const refused = e instanceof ApiError ? sendRefusal(e.body) : { reason: null, message: null };
+      setSend({ status: "failed", reason: refused.reason, message: refused.message ?? (e instanceof ApiError ? e.message : "Could not send.") });
     }
-  };
+  }, [evidenceId]);
+  // SCR-FIX C4: linked from the connect row -> read the pack again; once it says linked, send by itself, exactly once.
+  const onLinked = useCallback(() => { afterLink.current.arm(); setReloads((n) => n + 1); }, []);
+  useEffect(() => {
+    if (afterLink.current.take(evidenceId, pack)) void doSend();
+  }, [evidenceId, pack, doSend]);
 
   return (
     <Dialog open={evidenceId != null} onOpenChange={(open) => { if (!open) onClose(); }} wide
@@ -259,7 +293,7 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
       {error ? <p role="alert" className="text-warn">{error}</p>
         : !pack ? <p className="text-fg-muted">Loading the evidence…</p>
           : <EvidenceView pack={replayed ?? pack} hiddenBlocks={hidden} showFailed={showFailed} onToggleBlock={toggle} onShowFailed={setShowFailed}
-                          onSend={doSend} send={send}
+                          onSend={() => void doSend()} send={send} onLinked={onLinked}
                           replay={canReplay(pack, steps.length, refused) ? {
                             steps: steps.length, index: step ?? steps.length - 1, loading: replayLoading, error: replayError,
                             onStep: (delta) => setStep((s) => stepReplay(s, delta, steps.length)),

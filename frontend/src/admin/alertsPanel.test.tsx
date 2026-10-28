@@ -54,6 +54,7 @@ describe("alerts panel", () => {
     expect(html).not.toContain("data-ops-unlink");
     html = render({ ...base, channels: { ...base.channels, telegram: { available: false, connected: false, from: "none", pending: false } } });
     expect(html).toContain("The platform bot is not set up on the server yet.");
+    expect(html).toContain("Set ATP_TELEGRAM_BOT_TOKEN in the server&#x27;s .env");               // SCR-FIX C4: the key NAME only
     expect(html).not.toContain("data-ops-link");
   });
 });

@@ -222,31 +222,100 @@ async def own_chat(session: AsyncSession, tenant_id: int, user_id: Optional[int]
     return str(link.chat_id) if link is not None and link.chat_id else None
 
 
+# SCR-FIX C4: why "Send to my Telegram" cannot go (a machine code for the page, a plain sentence for the person).
+NOT_LINKED, BOT_NOT_CONFIGURED, BLOCKED_BY_USER, SEND_FAILED, NOT_OWNER = (
+    "not_linked", "bot_not_configured", "blocked_by_user", "send_failed", "not_owner")
+REASON_TEXT = {
+    NOT_LINKED: "Connect your Telegram to get this chart there.",
+    BOT_NOT_CONFIGURED: "Telegram is not set up on this server yet.",
+    BLOCKED_BY_USER: "Telegram says the chat with the bot is blocked or closed. Open the chat with the bot, press Start, then try again.",
+    SEND_FAILED: "Telegram did not take the image just now. Try again in a minute.",
+    NOT_OWNER: "Only the person who ran the screen can send its evidence to their own chat.",
+}
+# Telegram's answers when the person blocked the bot, deleted the chat or the account is gone (sendPhoto 403 / 400).
+_BLOCKED_HINTS = ("api 403", "blocked", "deactivated", "chat not found", "kicked")
+
+
+async def _platform_chat(session: AsyncSession, tenant_id: int, user_id: int) -> Optional[str]:
+    """The private chat this user linked through the platform bot ("Connect Telegram") while it is still the
+    organisation's Telegram channel - the chat it sends to is then this user's own."""
+    from app.alerts import platform_bot
+    from app.alerts.channels import decrypt_raw
+    from app.db.models import NotificationLinkRecord
+    from app.secrets_store.envelope import ensure_tenant_key
+    link = await session.scalar(select(NotificationLinkRecord).where(
+        NotificationLinkRecord.tenant_id == tenant_id, NotificationLinkRecord.user_id == user_id,
+        NotificationLinkRecord.channel == platform_bot.CHANNEL, NotificationLinkRecord.status == "used",
+        NotificationLinkRecord.chat_id.is_not(None)).order_by(NotificationLinkRecord.id.desc()).limit(1))
+    if link is None:
+        return None
+    record = await platform_bot.telegram_channel(session, tenant_id)
+    if record is None or not record.enabled:
+        return None
+    await ensure_tenant_key(session, tenant_id)
+    try:
+        raw = decrypt_raw(record)
+    except ValueError:
+        return None
+    return str(link.chat_id) if raw.get("platform_bot") and str(raw.get("chat_id") or "") == str(link.chat_id) else None
+
+
+async def _telegram_target(session: AsyncSession, user: User) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """(chat, bot token, None) when the user's evidence can go to their own chat, else (None, None, reason code).
+    The bot is the organisation's own (its Telegram channel) for a chat linked to it, the platform's for a chat linked
+    with "Connect Telegram". No bot on the server at all -> bot_not_configured (the button is hidden then)."""
+    from app.alerts import platform_bot
+    org_token = await _bot(session, user.tenant_id)
+    if not org_token and not platform_bot.configured():
+        return None, None, BOT_NOT_CONFIGURED
+    chat = await own_chat(session, user.tenant_id, user.id)
+    if chat is not None:
+        return (chat, org_token, None) if org_token else (None, None, BOT_NOT_CONFIGURED)
+    chat = await _platform_chat(session, user.tenant_id, user.id)
+    if chat is not None:
+        return (chat, platform_bot.bot_token(), None) if platform_bot.configured() else (None, None, BOT_NOT_CONFIGURED)
+    return None, None, NOT_LINKED
+
+
+async def telegram_state(session: AsyncSession, row: ScreenEvidenceRecord, user: User) -> Dict[str, Any]:
+    """What the evidence page shows by "Send to my Telegram": `telegram_linked`, and when it cannot send the reason code
+    and its sentence. Never the token or the chat id."""
+    if row.user_id != user.id:
+        return {"telegram_linked": False, "telegram_reason": NOT_OWNER, "telegram_message": REASON_TEXT[NOT_OWNER]}
+    chat, _token, reason = await _telegram_target(session, user)
+    return {"telegram_linked": chat is not None, "telegram_reason": reason, "telegram_message": REASON_TEXT[reason] if reason else None}
+
+
 def image_and_caption(row: ScreenEvidenceRecord, theme: str = "light") -> Tuple[bytes, str]:
     from app.screener import evidence_png
     pack = view(load(row), debug=False)
     return evidence_png.render(pack, theme=theme), ev.caption_text(pack)
 
 
+def _failure(code: str) -> Dict[str, Any]:
+    return {"sent": False, "reason": code, "message": REASON_TEXT[code]}
+
+
 async def send_to_own_chat(session: AsyncSession, row: ScreenEvidenceRecord, user: User, client: Optional[httpx.AsyncClient] = None) -> Dict[str, Any]:
-    """The image + caption to the user's own linked private chat. {"sent": bool, "reason": ...}; never the bot token."""
+    """The image + caption to the user's own linked private chat. {"sent": bool, "reason": code | None, "message": ...};
+    never the bot token. Reasons: not_owner, bot_not_configured, not_linked, blocked_by_user, send_failed."""
     if row.user_id != user.id:
-        return {"sent": False, "reason": "Only the person who ran the screen can send its evidence to their own chat."}
-    chat = await own_chat(session, user.tenant_id, user.id)
-    if chat is None:
-        return {"sent": False, "reason": "Link your Telegram under Settings > Alerts first (a private chat with the bot)."}
-    token = await _bot(session, user.tenant_id)
-    if token is None:
-        return {"sent": False, "reason": "Your organisation's Telegram bot is not set up or is off."}
+        return _failure(NOT_OWNER)
+    chat, token, reason = await _telegram_target(session, user)
+    if reason is not None or chat is None or not token:
+        return _failure(reason or BOT_NOT_CONFIGURED)
     from app.ai.vision_audit import send_photo
     png, caption = await asyncio.to_thread(image_and_caption, row)
     try:
         await send_photo(token, chat, png, caption, client)
     except RuntimeError as exc:
-        return {"sent": False, "reason": str(exc).replace(token, "[redacted]")[:200]}
+        why = str(exc).replace(token, "[redacted]").lower()
+        code = BLOCKED_BY_USER if why.startswith("telegram api") and any(h in why for h in _BLOCKED_HINTS) else SEND_FAILED
+        logger.info("Evidence %s not sent to Telegram: %s", row.id, code)
+        return _failure(code)
     finally:
         token = ""
-    return {"sent": True, "reason": None, "bytes": len(png)}
+    return {"sent": True, "reason": None, "message": None, "bytes": len(png)}
 
 
 async def alert_photos(session: AsyncSession, channel: AlertChannelRecord, bot_token: str, notification: Any, address: Optional[str],
@@ -284,4 +353,4 @@ async def alert_photos(session: AsyncSession, channel: AlertChannelRecord, bot_t
 
 
 __all__ = ["FLAG", "enabled", "canonical", "view", "store_for_run", "store_for_events", "readable", "for_run", "load", "send_to_own_chat",
-           "alert_photos", "image_and_caption", "daily_room", "MAX_PER_RUN", "MAX_PER_RULE", "MAX_PER_TENANT_DAY", "IMAGES_PER_ALERT"]
+           "alert_photos", "image_and_caption", "telegram_state", "REASON_TEXT", "daily_room", "MAX_PER_RUN", "MAX_PER_RULE", "MAX_PER_TENANT_DAY", "IMAGES_PER_ALERT"]

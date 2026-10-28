@@ -48,18 +48,24 @@ describe("EvidenceView (U8 EV1)", () => {
     const strip = html.slice(html.indexOf('data-testid="verify-strip"'));
     for (const r of pack.rows.filter((x) => x.passed !== false)) expect(strip).toContain(esc(r.verify));
     expect(strip).toContain("close 103.80 &gt; SMA(close, 10) 101.33");                   // the engine's numbers, as the backend wrote them
-    expect(strip).not.toContain('data-row="b4.c1"');                                     // the failed condition stays hidden
+    // SCR-FIX B5: the OR's untrue branch is not a failure - another branch made the OR true: shown, grey, "not needed"
+    expect(strip).toContain('data-row="b4.c1"');
+    expect(strip.slice(strip.indexOf('data-row="b4.c1"'), strip.indexOf('data-row="b4.c2"'))).toContain('<span class="sr-only">not needed</span>');
     expect(html).toContain('<th scope="col"');
     expect(html).toContain('<span class="sr-only">passed</span>');
-    expect(html).toContain("Show failed conditions (1)");
+    const oneFailed = { ...pack, rows: pack.rows.map((r) => (r.id === "b5.c1" ? { ...r, passed: false, state: "failed" as const } : r)) };
+    const off = renderToStaticMarkup(<EvidenceView pack={oneFailed} hiddenBlocks={none} showFailed={false} onSend={() => undefined} />);
+    expect(off).toContain("Show failed conditions (1)");
+    expect(off.slice(off.indexOf('data-testid="verify-strip"'))).not.toContain('data-row="b5.c1"');   // a failed condition stays hidden
     expect(html).toContain("Send to my Telegram");
     expect(html).toContain("Not a recommendation.");
     expect(html).not.toMatch(/\b(buy|sell|recommend(ed|s)?)\b/i);
   });
 
   it("shows failed conditions with Show failed conditions on, marked for screen readers", () => {
-    const html = renderToStaticMarkup(<EvidenceView pack={pack} hiddenBlocks={none} showFailed />);
-    expect(html).toContain('data-row="b4.c1"');
+    const oneFailed = { ...pack, rows: pack.rows.map((r) => (r.id === "b5.c1" ? { ...r, passed: false, state: "failed" as const } : r)) };
+    const html = renderToStaticMarkup(<EvidenceView pack={oneFailed} hiddenBlocks={none} showFailed />);
+    expect(html).toContain('data-row="b5.c1"');
     expect(html).toContain('<span class="sr-only">did not pass</span>');
     expect(html).not.toContain("Send to my Telegram");                                    // no handler, no button
   });

@@ -81,6 +81,7 @@ def _f(value, default: float = 0.0) -> float:
 
 class CoinDCXBroker(BrokerInterface):
     name = "coindcx"
+    native_intervals = frozenset({"1min", "5min", "15min", "30min", "60min", "day"})   # SCR-FIX A1: INTERVALS in ATP names
     # CoinDCX has no market stop; `place_order` itself turns an SL-M request into a stop-limit with the limit 0.5%
     # past the trigger (STOP_LIMIT_SLIPPAGE), so the platform keeps asking for SL-M and the adapter maps it. The
     # capability matrix therefore stays at the defaults (the conversion lives here, not in the router).

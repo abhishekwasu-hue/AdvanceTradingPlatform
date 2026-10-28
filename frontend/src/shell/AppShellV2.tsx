@@ -15,7 +15,7 @@ import PwaBanners from "../pwa/PwaBanners";
 import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
-import { ColourV2Provider, colourV2On, useTabularRoot } from "../ui/colourV2";
+import { ColourV2Provider, colourV2On, colourV3On, useColourV3Root, useTabularRoot } from "../ui/colourV2";
 import { PageHelpProvider } from "./pageHelp";
 import { STORED_HISTORY_PATHS, storedDailyFor } from "../ui/dataPages";
 import BottomNavV2 from "./BottomNavV2";
@@ -202,6 +202,7 @@ export default function AppShellV2() {
   const wide = key === "screener" || key === "options-builder" || key === "charts" || key === "terminal";
   // Colour v2 (flag `colour_v2`, OFF until the owner approves): shared with every page and shared component below.
   const colour = colourV2On(features.on);
+  useColourV3Root(colourV3On(features.on));
   // UX-4: fixed-width digits for every number in the v2 UI (html[data-numerals], src/styles/index.css).
   useTabularRoot(true);
   return (

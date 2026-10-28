@@ -38,6 +38,24 @@ export function useTabularRoot(on: boolean): void {
   }, [on]);
 }
 
+/** UX-14 "Professional palette" (owner, 28 Oct; docs/owner-orders/ATP_ORDER_UX14.md): the colour v3 token set, behind
+ * `colour_v3` (OFF until the owner's OK on the comparison page). It rides on colour v2: on only with ui_v2 and colour_v2. */
+export const COLOUR_V3_FLAG = "colour_v3";
+
+export function colourV3On(on: (name: string) => boolean): boolean {
+  return colourV2On(on) && on(COLOUR_V3_FLAG);
+}
+
+/** Sets `data-palette="v3"` on <html> while `on` (the colour v3 tokens in tokens.css); removes it when off or unmounted. */
+export function useColourV3Root(on: boolean): void {
+  useEffect(() => {
+    if (!on || typeof document === "undefined") return undefined;
+    const root = document.documentElement;
+    root.dataset.palette = "v3";
+    return () => { delete root.dataset.palette; };
+  }, [on]);
+}
+
 /** Sets `data-colour="v2"` on <html> while `on`; removes it when off or unmounted. */
 export function useColourV2Root(on: boolean): void {
   useEffect(() => {

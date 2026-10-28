@@ -75,7 +75,7 @@ def _engine(cfg: RiskConfig) -> List[bool]:
 
 def _options(cfg: RiskConfig) -> List[bool]:
     ocfg = options_engine.OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY,
-                                               implied_volatility=0.14, max_lots=1)
+                                               implied_volatility=0.14, max_lots=1, premium_stop_pct=30.0)  # DEF-0: old 30% explicit
     return _taken(options_engine.run_option_backtest(_Scripted(), _frame(), "NIFTY 50", "1min", cfg, ocfg))
 
 
@@ -220,7 +220,7 @@ def _all_paths(strategy_factory, cfg: RiskConfig) -> Dict[str, List[bool]]:
     sigs = _signals(strategy_factory())
     router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=cfg)
     ocfg = options_engine.OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY,
-                                               implied_volatility=0.14, max_lots=1)
+                                               implied_volatility=0.14, max_lots=1, premium_stop_pct=30.0)  # DEF-0: old 30% explicit
     return {
         "scanner": [s.is_tradeable for s in sigs],
         "live": [s.is_tradeable and router.risk_manager.validate_and_size(s, TradingDayState()).approved for s in sigs],
@@ -275,7 +275,7 @@ def _custom_paths(factory, cfg: RiskConfig) -> Dict[str, bool]:
     sig = factory().analyze({"1min": _frame()}, "NIFTY 50")
     router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=cfg)
     ocfg = options_engine.OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY,
-                                               implied_volatility=0.14, max_lots=1)
+                                               implied_volatility=0.14, max_lots=1, premium_stop_pct=30.0)  # DEF-0: old 30% explicit
     return {"scanner": sig.is_tradeable,
             "live": sig.is_tradeable and router.risk_manager.validate_and_size(sig, TradingDayState()).approved,
             "backtest": underlying_engine.run_backtest(factory(), _frame(), "NIFTY 50", "1min", cfg).total_trades > 0,

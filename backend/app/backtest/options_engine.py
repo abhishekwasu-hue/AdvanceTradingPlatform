@@ -638,6 +638,9 @@ def _open_single(signal: Signal, rules: ContractRules, config: OptionBacktestCon
     level = (round(fill * (1 - pct), 2) if bought else round(fill * (1 + pct), 2)) if pct is not None else None
     max_lots = config.max_lots if config.max_lots else None
     per_unit = round(fill * pct, 2) if pct is not None else (fill if bought else 0.0)
+    if per_unit <= 0 and risk_manager.config.risk_amount() is not None:
+        # DEF-0 D7: as live - a written option with no stop has no limit to its loss; a risk per trade cannot size it
+        raise _Skip("No stop-loss is set, so your risk per trade cannot size this short position")
     lots = _size_lots(risk_manager, state, signal, basis=fill, risk_per_unit=per_unit, lot=lot,
                       underlying_symbol=underlying, max_lots=max_lots, direction=trade_direction, keep_rr=True)
     quantity = lots * lot

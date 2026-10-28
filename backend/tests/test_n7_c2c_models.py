@@ -40,13 +40,16 @@ OPTION_GOLDEN = {   # the option engine before C2c (claude/n7-c2b), default mode
     "single_write": "sha256:3dd57ca665392b83a8480a24350e4a123d7fb7447ebe894ff483ee664ad7696e",
     "butterfly": "sha256:05b3db7b2fa8e58800f13dd38133be39cd8cf667c56d50cde1a65782e2814149",
 }
-CASES = {
-    "bull_put": (OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2), SignalDirection.LONG),
-    "single_buy": (OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY, implied_volatility=0.14),
-                   SignalDirection.LONG),
-    "single_write": (OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.WRITE, implied_volatility=0.14),
-                     SignalDirection.SHORT),
-    "butterfly": (OptionBacktestConfig(option_strategy=OptionStrategy.LONG_BUTTERFLY, implied_volatility=0.14, spread_width=2), SignalDirection.LONG),
+CASES = {   # DEF-0: the old built-in exit levels (credit 50 / 100, debit 50 / 50, premium 30 bought / 50 written and one lot
+    # written) are set explicitly, so the same runs reproduce the stored hashes
+    "bull_put": (OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2,
+                                      target_credit_pct=50, stop_credit_pct=100), SignalDirection.LONG),
+    "single_buy": (OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY, implied_volatility=0.14,
+                                        premium_stop_pct=30.0), SignalDirection.LONG),
+    "single_write": (OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.WRITE, implied_volatility=0.14,
+                                          premium_stop_pct=50.0, max_lots=1), SignalDirection.SHORT),
+    "butterfly": (OptionBacktestConfig(option_strategy=OptionStrategy.LONG_BUTTERFLY, implied_volatility=0.14, spread_width=2,
+                                       target_credit_pct=50, stop_credit_pct=50), SignalDirection.LONG),
 }
 
 
@@ -154,7 +157,7 @@ def test_option_margin_uses_the_defined_loss_or_the_short_notional():
     st = ok.options["structures"][0]
     need = st["max_loss"] * ok.trades[0].quantity
     assert 0 < need < RISK.capital
-    write = OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.WRITE, implied_volatility=0.14)
+    write, _ = CASES["single_write"]   # DEF-0: his own 50% premium ceiling and one lot (the old built-ins)
     sold = run_option_backtest(_OneShot(SignalDirection.SHORT), _frame(24500, 24800), "NIFTY 50", "1min", RISK, write, models=ModelSet(margin="span_like"))
     assert sold.total_trades == 1                                                      # 15 % of one lot's notional fits 10 lakh
     refused = run_option_backtest(_OneShot(SignalDirection.SHORT), _frame(24500, 24800), "NIFTY 50", "1min", RISK, write,

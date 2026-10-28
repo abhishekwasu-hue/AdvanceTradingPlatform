@@ -28,7 +28,8 @@ def test_fresh_tenant_sees_blockers_then_clears_them():
 
     live = _by_key(client.get("/api/readiness?target=live", headers=headers).json())
     assert live["mfa"]["status"] == "todo" and live["email_verified"]["status"] == "todo" and live["algo_id"]["status"] == "todo"
-    assert live["risk"]["status"] == "todo" and live["alerts"]["status"] == "todo"          # warn on PAPER, blockers on LIVE
+    assert live["alerts"]["status"] == "todo"                                               # warn on PAPER, a blocker on LIVE
+    assert live["risk"]["status"] == "warn"           # DEF-0: no risk settings is a warning, never a blocker (his own choice)
     assert client.get("/api/readiness?target=nonsense", headers=headers).status_code == 422
 
     # Storing a key without a login flips the first item only; a VALID token clears the second.

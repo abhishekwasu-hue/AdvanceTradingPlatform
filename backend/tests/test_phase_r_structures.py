@@ -48,7 +48,8 @@ def _legs(structure):
 def _metrics(structure, broker=None, **kw):
     broker = broker or _OptionBroker()
     premiums = {l.contract.tradingsymbol: _run(broker.get_ltp_for_symbol(l.contract.tradingsymbol, "NFO")) for l in structure.legs}
-    return structure_metrics(structure, premiums, target_credit_pct=kw.get("target"), stop_credit_pct=kw.get("stop"))
+    return structure_metrics(structure, premiums, target_credit_pct=kw.get("target"), stop_credit_pct=kw.get("stop"),
+                             underlying_exit=kw.get("under", False))   # DEF-0 PR 4: the underlying levels only when set
 
 
 E1, E2 = date(2026, 10, 1), date(2026, 10, 8)
@@ -99,20 +100,20 @@ def test_credit_metrics_defined_and_undefined_risk():
     # DEF-0: no built-in target / stop - nothing set means no such exit; the old 50% / 100% are set explicitly below.
     bare = _metrics(_resolve(OptionStrategy.IRON_BUTTERFLY))
     assert bare.target_value is None and bare.stop_value is None and bare.risk_per_unit == 20.0   # defined risk: the max loss
-    fly = _metrics(_resolve(OptionStrategy.IRON_BUTTERFLY), target=50, stop=100)
+    fly = _metrics(_resolve(OptionStrategy.IRON_BUTTERFLY), target=50, stop=100, under=True)
     # sell 24500 PE 120 + 24500 CE 110, buy 24400 PE 80 + 24600 CE 70 -> credit 80, wings 100 wide.
     assert fly.net_credit == 80.0 and fly.max_profit == 80.0 and fly.max_loss == 20.0 and fly.risk_per_unit == 20.0
     assert fly.breakevens == [24420.0, 24580.0] and fly.target_value == 40.0 and fly.stop_value == 160.0
     assert fly.defined_risk and not fly.debit
     assert fly.short_strikes == {} and fly.underlying_exits == {"below": 24420.0, "above": 24580.0}   # ATM shorts: breakevens are the exits
 
-    strangle = _metrics(_resolve(OptionStrategy.SHORT_STRANGLE, strike_rule=StrikeRule.OTM, strike_offset=2))
+    strangle = _metrics(_resolve(OptionStrategy.SHORT_STRANGLE, strike_rule=StrikeRule.OTM, strike_offset=2), under=True)
     assert strangle.short_strikes == {"PE": 24400.0, "CE": 24600.0} and strangle.underlying_exits == {}   # OTM shorts: strike breach stays
 
     # DEF-0: an undefined-risk structure with no stop has no risk per unit to size off (0) and no stop level.
     no_stop = _metrics(_resolve(OptionStrategy.SHORT_STRADDLE))
     assert no_stop.risk_per_unit == 0 and no_stop.stop_value is None and no_stop.target_value is None and no_stop.max_loss is None
-    straddle = _metrics(_resolve(OptionStrategy.SHORT_STRADDLE), target=50, stop=100)   # the old built-in levels, set explicitly
+    straddle = _metrics(_resolve(OptionStrategy.SHORT_STRADDLE), target=50, stop=100, under=True)   # the old built-in levels, set explicitly
     assert straddle.net_credit == 230.0 and straddle.max_profit == 230.0 and straddle.max_loss is None
     assert not straddle.defined_risk and straddle.risk_per_unit == 230.0       # stop 100% of the credit
     assert straddle.breakevens == [24270.0, 24730.0] and straddle.stop_value == 460.0
@@ -163,14 +164,14 @@ def test_group_exit_for_debit_structures():
     assert "Lower breakeven 24270" in group_exit(shorts, {3: 120.0, 4: 110.0}, 24269.0)
 
 
-def _execute(t, structure, *, mode="PAPER", broker=None, key, capital=1_000_000, target=None, stop=None, rules=None, signal=None):
+def _execute(t, structure, *, mode="PAPER", broker=None, key, capital=1_000_000, target=None, stop=None, rules=None, signal=None, under=False):
     async def go():
         async with _session_factory() as session:
             user = await session.get(User, t["user_id"])
             return await execute_structure(session, user, mode=mode, strategy_id="ema_rsi_scalper_1m", signal=signal or _signal(), structure=structure,
                                            rules=rules or _rules(), target_credit_pct=target, stop_credit_pct=stop, idempotency_key=key,
                                            broker=broker if mode == "LIVE" else None, quote_broker=broker or _OptionBroker(),
-                                           risk_config=legacy(capital=capital, risk_per_trade_pct=1.0))
+                                           risk_config=legacy(capital=capital, risk_per_trade_pct=1.0), underlying_exit=under)
     return _run(go())
 
 
@@ -211,7 +212,7 @@ def test_paper_short_straddle_sized_off_the_stop_not_a_max_loss():
     # DEF-0: the old built-in credit stop 100% set explicitly (no stop at all is refused - see test_def0_exits_and_gates).
     refused = _execute(t, _resolve(OptionStrategy.SHORT_STRADDLE), key="r-ss-1", stop=100)   # stop 100%: 230 x 75 = 17,250 > 10,000
     assert not refused.executed and any("UNDEFINED max loss" in r for r in refused.reasons)
-    result = _execute(t, _resolve(OptionStrategy.SHORT_STRADDLE), key="r-ss-2", stop=20)   # 46 x 75 = 3,450 -> 2 lots
+    result = _execute(t, _resolve(OptionStrategy.SHORT_STRADDLE), key="r-ss-2", stop=20, under=True)   # 46 x 75 = 3,450 -> 2 lots
     assert result.executed, result.reasons
     trades = _trades(t["tenant_id"])
     assert len(trades) == 2 and all(tr.leg_role == "SHORT" and tr.option_position == "WRITE" and tr.quantity == 2 * NIFTY_LOT for tr in trades)

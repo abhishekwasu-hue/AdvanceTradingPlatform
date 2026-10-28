@@ -99,6 +99,7 @@ export default function BacktestPage() {
   const [spreadWidth, setSpreadWidth] = useState(2);
   const [targetCredit, setTargetCredit] = useState("");
   const [stopCredit, setStopCredit] = useState("");
+  const [underlyingExit, setUnderlyingExit] = useState(false);   // DEF-0: off unless the trader turns it on
   const [premiumStop, setPremiumStop] = useState("");
   const [maxLots, setMaxLots] = useState("");
   const [customLegs, setCustomLegs] = useState<CustomLeg[]>([
@@ -126,7 +127,7 @@ export default function BacktestPage() {
       pricing, intraday, allow_synthetic_fallback: allowFallback,
     };
     if (structure === "SINGLE") { cfg.option_position = position; if (premiumStop) cfg.premium_stop_pct = Number(premiumStop); }
-    else { if (targetCredit) cfg.target_credit_pct = Number(targetCredit); if (stopCredit) cfg.stop_credit_pct = Number(stopCredit); }
+    else { if (targetCredit) cfg.target_credit_pct = Number(targetCredit); if (stopCredit) cfg.stop_credit_pct = Number(stopCredit); if (underlyingExit) cfg.underlying_breach_exit = true; }
     if (structure === "CUSTOM") cfg.custom_legs = customLegs;
     if (maxLots) cfg.max_lots = Number(maxLots);
     if (ivPct) cfg.implied_volatility = Number(ivPct) / 100;
@@ -437,9 +438,13 @@ export default function BacktestPage() {
                   <div>
                     <label className="block text-xs text-fg-muted mb-1">Target / stop (% of {PAYOFF_STRUCTURES.includes(structure) ? "max profit / risk" : DEBIT_STRUCTURES.includes(structure) ? "debit" : "credit"})</label>
                     <div className="flex gap-2">
-                      <input type="number" min={5} max={95} placeholder="50" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)} />
-                      <input type="number" min={10} max={500} placeholder={DEBIT_STRUCTURES.includes(structure) ? "50" : "100"} className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={stopCredit} onChange={(e) => setStopCredit(e.target.value)} />
+                      <input type="number" min={5} max={95} placeholder="Not set" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)} />
+                      <input type="number" min={10} max={500} placeholder="Not set" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={stopCredit} onChange={(e) => setStopCredit(e.target.value)} />
                     </div>
+                    <label className="mt-1 flex items-center gap-2 text-xs text-fg-muted" data-field="underlying-exit">
+                      <input type="checkbox" checked={underlyingExit} onChange={(e) => setUnderlyingExit(e.target.checked)} />
+                      Close when the underlying crosses a short strike or a breakeven
+                    </label>
                   </div>
                 )}
                 <div>

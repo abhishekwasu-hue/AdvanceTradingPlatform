@@ -358,7 +358,8 @@ export function CombinedExitBarV2({ positions, facts, exits, onChanged, onNote, 
   const legs = useMemo(() => sheetLegs(positions, facts), [positions, facts]);
   const [sheet, setSheet] = useState<{ editing: CombinedExit | null } | null>(null);
   const live = active(exits);
-  if (!legs.length && !live.length) return null;
+  // UX-15 (owner, 28 Oct): a combined stop-loss needs two or more positions; one position keeps its own stop.
+  if (legs.length < 2 && !live.length) return null;
 
   async function remove(x: CombinedExit) {
     if (!window.confirm("Remove this combined exit? The positions stay open with their own stop-loss and target.")) return;
@@ -374,7 +375,7 @@ export function CombinedExitBarV2({ positions, facts, exits, onChanged, onNote, 
   return (
     <div className="space-y-space-2" data-block="combined-exits">
       <div className="flex flex-wrap items-center gap-space-2">
-        {legs.length > 0 && (
+        {legs.length > 1 && (
           <button type="button" className={BUTTON_SECONDARY} onClick={() => setSheet({ editing: null })} data-testid="combined-open">
             <ShieldCheck size={16} aria-hidden />Set combined stop-loss
           </button>

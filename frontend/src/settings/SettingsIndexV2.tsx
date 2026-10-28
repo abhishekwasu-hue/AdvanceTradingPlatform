@@ -21,6 +21,7 @@ import { Chip as ToneChip } from "../ui/Chip";
 import { IconBadge, type IconTone } from "../ui/IconBadge";
 import { StatusChip as ToneStatusChip } from "../ui/StatusChip";
 import { useFeatures } from "../ui/useFeatures";
+import WhatsNewV2 from "./WhatsNewV2";
 import {
   COMING_SOON, DEFAULTS_CHIP, SETTINGS_ROWS, aiChip, aiProviderChip, alertsChip, appearanceChip, brokerChip, planChip, searchSettings, tipsChip,
   type Chip, type RowId, type SearchHit, type SettingsRow,
@@ -226,6 +227,7 @@ export default function SettingsIndexV2(_props: PageProps = {}) {
               <IndexRow row={advanced} chip={null} />
             </ul>
           )}
+          <WhatsNewV2 />
         </>
       )}
     </div>

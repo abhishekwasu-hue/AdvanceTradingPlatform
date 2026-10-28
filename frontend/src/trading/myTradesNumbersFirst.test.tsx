@@ -88,6 +88,7 @@ describe("wiring of the other cards and the page footnote", () => {
   });
 
   it("Positions has the one footer line instead of a disclaimer per card", () => {
-    expect(positionsSource).toContain("<PageFootnote>Phase 0 has PAPER only.</PageFootnote>");
+    expect(positionsSource).toContain("<PageFootnote />");
+    expect(positionsSource).not.toContain("Phase 0 has PAPER only.");
   });
 });

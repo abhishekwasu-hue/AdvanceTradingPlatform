@@ -138,7 +138,7 @@ def test_every_row_type_and_kind_is_known_to_the_page(monkeypatch):
     import re
     from pathlib import Path
     types_ts = (Path(__file__).resolve().parents[2] / "frontend" / "src" / "rhythm" / "types.ts").read_text()
-    known_rows = set(re.findall(r'type: "(\w+)"', types_ts)) | set(re.findall(r'type: "best" \| "(\w+)"', types_ts)) | {"best"}
+    known_rows = set(re.findall(r'type: "(\w+)"', types_ts))
     kinds_block = types_ts[types_ts.index("export type SectionKind"):types_ts.index("export type Side")]
     known_kinds = set(re.findall(r'"(\w+)"', kinds_block))
     who = _who("ux11b-contract")

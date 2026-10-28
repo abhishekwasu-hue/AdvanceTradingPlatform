@@ -93,7 +93,8 @@ describe("Signals day one: his watch", () => {
     expect(words).toContain("Long");
     expect(words).toContain("Short");
     expect(html).toContain('href="/deployments?template=D3&amp;timeframe=1d"');
-    expect(words).toContain("not advice");
+    // UX-11b C3: the card no longer repeats it; the Signals page says "Nothing is placed until you approve it" once.
+    expect(words).not.toContain("Nothing is placed; each setup waits for you.");
   });
 
   it("with no history at all it says so and shows nothing made up", () => {

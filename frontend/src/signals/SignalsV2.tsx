@@ -6,6 +6,7 @@ import { cx } from "../components/primitives";
 import PageDishV2 from "../growth/PageDishV2";
 import { formatTimeIST } from "../ui/format";
 import { useFeatures } from "../ui/useFeatures";
+import { PageFootnote } from "../ui/PageFootnote";
 import { PageIntro } from "../ui/PageIntro";
 import {
   SOURCES, TABS, canDecide, canTradeRole, countLabel, defaultTab, itemForProposal, missingProposalMessage, sourceCaption,
@@ -108,7 +109,7 @@ export default function SignalsV2() {
       <PageIntro id="signals" lines={["Open a signal to see its levels and why it was suggested, then approve or skip it."]} />
       <header>
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Signals</h1>
-        <p className="hidden text-t14 text-fg-muted md:mt-space-1 md:block">Trades your paper bots, scans and Copilot suggest. Nothing is placed until you approve it.</p>
+        <p className="hidden text-t14 text-fg-muted md:mt-space-1 md:block">Trades your paper bots, scans and Copilot suggest.</p>
       </header>
 
       {dishOn && <PageDishV2 page="signals" />}
@@ -124,8 +125,6 @@ export default function SignalsV2() {
             label: <>{t.label}{n !== undefined && <sup className="ml-space-1 text-t12 font-normal">{n}</sup>}</>,
           };
         })} />
-
-      <p className="text-t14 text-fg-muted md:hidden">Nothing is placed until you approve it.</p>
 
       <Filters source={source} symbol={symbol} open={filtersOpen || filtered} onToggle={() => setFiltersOpen((o) => !o)}
         onSource={(s) => { setSource(s); setPicked(null); }} onSymbol={(s) => { setSymbol(s); setPicked(null); }}
@@ -186,6 +185,9 @@ export default function SignalsV2() {
       {!feed.loading && items.length > 0 && tab === "waiting" && !feed.more && (
         <p className="text-center text-t14 text-fg-muted">That&apos;s all for now. New signals also arrive as a notification.</p>
       )}
+
+      {/* UX-11b C3: said once, here (it repeated in the header, on phones and in the summary). */}
+      <PageFootnote>Nothing is placed until you approve it.</PageFootnote>
     </div>
   );
 }

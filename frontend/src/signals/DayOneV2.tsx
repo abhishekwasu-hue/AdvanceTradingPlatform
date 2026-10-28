@@ -278,7 +278,6 @@ export function WatchView({ watch, canAct = true, busy = false, problem = null, 
         </div>
       )}
       {watch.truncated && <p className="text-t12 text-fg-muted">The first {watch.max_watch} symbols of this list are read.</p>}
-      <p className="text-t12 text-fg-muted">Information about your own strategy, not advice. Nothing is placed; each setup waits for you.</p>
       {problem && <p role="alert" className="rounded-panel border border-warn/40 bg-warn-tint px-space-4 py-space-3 text-t14 text-fg">{problem}</p>}
       {canAct && (
         <div className="flex flex-wrap items-center gap-space-2 border-t border-subtle pt-space-3">

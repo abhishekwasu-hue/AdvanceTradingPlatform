@@ -127,7 +127,7 @@ def test_signals_dish_from_his_own_inbox_and_paper_record():
     _assert_language(d)
     by = {s["id"]: s for s in d["sections"]}
     waiting = by["waiting"]["lines"]
-    assert waiting[0] == "2 signals wait for your decision. Nothing is placed until you approve it."
+    assert waiting[0] == "2 signals wait for your decision."
     assert d["headline"] == waiting[0]
     assert any(line.startswith("MO4SIGA: matched your scan \"Pullback\"") and "pullback reached a buyer area" in line for line in waiting)
     assert any(line.startswith("MO4SIGB") for line in waiting)

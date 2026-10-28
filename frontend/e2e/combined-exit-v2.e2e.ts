@@ -129,8 +129,8 @@ for (const size of SIZES) {
       await expect(chip.locator("[data-distance]")).toHaveText("stop ₹2,600 to go");
       await expect(chip.locator("[data-stale]")).toHaveCount(0);
 
-      page.once("dialog", (d) => void d.accept());
       await chip.getByTestId("combined-remove").click();
+      await page.getByRole("dialog", { name: "Remove this combined exit?" }).locator("[data-confirm]").click();   // UI-28 U3.3
       await expect.poll(() => seen.posts.at(-1)?.url).toBe("/paper/fno/group-exits/7/cancel");
       await expect(page.locator("[data-combined-exit]")).toHaveCount(0);
       await expect(page.getByText("Combined exit removed. The positions stay open.")).toBeVisible();

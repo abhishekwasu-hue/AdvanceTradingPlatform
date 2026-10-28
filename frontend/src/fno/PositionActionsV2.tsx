@@ -1,4 +1,5 @@
 import { Minus, Plus, TriangleAlert } from "lucide-react";
+import { useConfirm } from "../ui/ConfirmDialog";
 import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { Dialog } from "../components/primitives/Dialog";
 import { friendlyError } from "../api/client";
@@ -120,12 +121,13 @@ export function WaitingOrdersV2({ api = positionActionsApi, onChanged, refresh =
   const [rows, setRows] = useState<WaitingOrder[] | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const confirmBox = useConfirm();
   const load = useCallback(() => { api.waiting().then(setRows, () => setRows(null)); }, [api]);
   useEffect(() => { load(); }, [load, refresh]);
   if (!rows || rows.length === 0) return note ? <p className={`text-t13 ${note.ok ? "text-fg-muted" : "text-warn"}`} role="status">{note.text}</p> : null;
 
   async function cancel(o: WaitingOrder) {
-    if (!window.confirm(`Cancel this waiting order? ${waitingLine(o)}`)) return;
+    if (!(await confirmBox.ask("Cancel this waiting order?", waitingLine(o), "Cancel order"))) return;
     try {
       const r = await api.cancel(o.id);
       setNote({ ok: true, text: r.status === "CANCELLED" ? "Waiting order cancelled." : `Not cancelled: it is ${r.status_words.toLowerCase()}.` });
@@ -138,6 +140,7 @@ export function WaitingOrdersV2({ api = positionActionsApi, onChanged, refresh =
 
   return (
     <section className="space-y-space-2" data-waiting-orders aria-label="Waiting orders">
+      {confirmBox.dialog}
       <h3 className="text-t13 font-semibold text-fg">Waiting orders</h3>
       {note && <p className={`text-t13 ${note.ok ? "text-fg-muted" : "text-warn"}`} role="status">{note.text}</p>}
       <ul className="divide-y divide-subtle">
@@ -176,13 +179,14 @@ export function ModifyFormV2({ order, api, onDone }: { order: WaitingOrder; api:
   const [values, setValues] = useState<Partial<Record<keyof ModifyAsk, string>>>(start);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const confirmBox = useConfirm();
   const base = useId();
   const changes = modifyChanges(start, values);
   async function save() {
     const ask = changes;
     if (ask === "same") return;
     if (!ask) { setProblem("Enter numbers above zero."); return; }
-    if (!window.confirm(`Change this waiting order? ${waitingLine(order)}`)) return;
+    if (!(await confirmBox.ask("Change this waiting order?", waitingLine(order), "Change order"))) return;
     setBusy(true);
     try {
       const r = await api.modify(order.id, ask);
@@ -194,6 +198,7 @@ export function ModifyFormV2({ order, api, onDone }: { order: WaitingOrder; api:
   }
   return (
     <div className="mt-space-1 flex flex-wrap items-end gap-space-2" data-modify-form={order.id}>
+      {confirmBox.dialog}
       {fields.map((f) => (
         <label key={f} htmlFor={`${base}-${f}`} className="flex flex-col gap-px text-t12 text-fg-muted">
           {FIELD_LABEL[f]}

@@ -260,8 +260,8 @@ test.describe("Basket panel v2 flows", () => {
     const saved = Object.values((put?.body as { items: Record<string, { name: string; legs: { side: string; stop_loss?: number }[] }> }).items)[0];
     expect(saved.name).toBe("Bull put 24500");
     expect(saved.legs.map((l) => [l.side, l.stop_loss ?? null])).toEqual([["BUY", null], ["SELL", 255]]);
-    page.once("dialog", (d) => d.accept());
     await panel.locator("[data-tool='clear']").tap();
+    await page.getByRole("dialog", { name: "Remove every leg from the basket?" }).locator("[data-confirm]").tap();   // UI-28 U3.3: in-app
     await expect(panel.locator("[data-leg]")).toHaveCount(0);
     await panel.locator("[data-tool='load']").tap();
     await panel.locator("[data-saved-load]").first().tap();

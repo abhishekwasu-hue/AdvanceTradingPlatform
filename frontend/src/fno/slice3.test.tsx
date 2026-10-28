@@ -106,7 +106,7 @@ describe("8b-b Trade this setup: the existing ticket / basket, pre-filled from h
     expect(body).toContain("basketStore.replace(t.legs)");
     expect(body).toContain("setTicket(");
     expect(body).not.toMatch(/\.place\(|\.execute\(|\.preview\(|exitNow/);
-    expect(body).toContain("window.confirm");                    // his basket is replaced only on his yes
+    expect(body).toContain("confirmBox.ask(\"Replace your basket?\"");   // his basket is replaced only on his yes (UI-28 U3.3: in-app)
     // The journal note is sent only after HIS placement, from the ticket's / basket's onPlaced.
     expect(chainTradingSource).toMatch(/onPlaced=\{\(r\) => \{ reloadHeld\(\); noteSignal\(\[r\.trade_id\]\)/);
   });

@@ -1,4 +1,5 @@
 import { LayoutPanelTop, RotateCcw, Save } from "lucide-react";
+import { useConfirm } from "../ui/ConfirmDialog";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
@@ -128,6 +129,7 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
   const [tab, setTab] = useState<PhoneTab>("chart");
   const [masked, setMasked] = useState<boolean>(() => readMask());
   const [ticket, setTicket] = useState<{ target: TicketTarget; side: Side } | null>(null);
+  const confirmBox = useConfirm();   // UI-28 U3.3: the in-app confirm (never the browser's)
 
   const openIds = useMemo(() => new Set(working.panels.filter((x) => x.open).map((x) => x.id)), [working.panels]);
   const wants = (id: PanelId, phoneTab: PhoneTab) => (narrow ? tab === phoneTab : openIds.has(id));
@@ -194,8 +196,8 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
     }
   }
 
-  function pickLayout(next: string) {
-    if (dirty && !window.confirm("Switch layout? The changes you have not saved on this layout will be lost.")) return;
+  async function pickLayout(next: string) {
+    if (dirty && !(await confirmBox.ask("Switch layout?", "The changes you have not saved on this layout will be lost.", "Switch layout"))) return;
     const switched = switchTo(prefs, next);
     const shown = layoutFor(switched, activeKey(switched));
     // The layout changes at once; it is remembered on the server so another device opens on it too.
@@ -224,8 +226,8 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
     void L.persist(r.prefs, `"${own.name}" is saved.`);
   }
 
-  function del() {
-    if (!own || !window.confirm(`Delete the layout "${own.name}"? This cannot be undone.`)) return;
+  async function del() {
+    if (!own || !(await confirmBox.ask(`Delete the layout "${own.name}"?`, "This cannot be undone.", "Delete layout"))) return;
     void L.persist(remove(prefs, key), `"${own.name}" is deleted.`);
   }
 
@@ -234,6 +236,7 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
 
   return (
     <div className="mx-auto w-full space-y-space-3" data-page="terminal-v2" data-layout={key}>
+      {confirmBox.dialog}
       <PageIntro id="terminal" lines={["The chart, the option chain and your order on one screen. Every order is checked and shown to you before it is placed."]} />
       <div className="flex flex-wrap items-center gap-space-2" role="toolbar" aria-label="Terminal" data-block="terminal-toolbar">
         <div className="flex items-center gap-space-2 text-t13 text-fg-muted">

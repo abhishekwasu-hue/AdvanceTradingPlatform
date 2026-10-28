@@ -58,3 +58,15 @@ describe("UI-28 U3.2 a disabled button says why", () => {
     expect(renderToStaticMarkup(<Button disabled loading reason="Pick a list first">Run</Button>)).not.toContain("data-disabled-reason");
   });
 });
+
+import { isNumericColumn } from "./Table";
+describe("UI-28 U3.9 numeric columns", () => {
+  it("a column of numbers is right-aligned by default; text stays left; an explicit `numeric` wins", () => {
+    const rows = [{ a: "₹1,200", b: "NIFTY", c: 3 }, { a: "−4.5%", b: "TCS", c: 12 }, { a: "–", b: "INFY", c: 0 }];
+    expect(isNumericColumn({ cell: (r: typeof rows[number]) => r.a }, rows)).toBe(true);
+    expect(isNumericColumn({ cell: (r: typeof rows[number]) => r.b }, rows)).toBe(false);
+    expect(isNumericColumn({ cell: (r: typeof rows[number]) => r.c }, rows)).toBe(true);
+    expect(isNumericColumn({ cell: (r: typeof rows[number]) => r.c, numeric: false }, rows)).toBe(false);
+    expect(isNumericColumn({ cell: () => "–" }, rows)).toBe(false);
+  });
+});

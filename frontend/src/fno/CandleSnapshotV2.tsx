@@ -41,7 +41,7 @@ export function CandleSnapshotV2({ bars, marks = [], levels = [], title, summary
         {g.levels.map((l) => (
           <g key={l.label} data-snapshot-level={l.label}>
             <line x1={g.left} x2={g.right} y1={l.y} y2={l.y} stroke="rgb(var(--brand))" strokeWidth={1} strokeDasharray="4 3" />
-            <text x={g.left + 2} y={l.y - 3} fontSize={10} fill="rgb(var(--brand))">{l.label}</text>
+            <text x={g.left + 2} y={l.y - 3} fontSize={11} fill="rgb(var(--brand))">{l.label}</text>
           </g>
         ))}
         <g>
@@ -56,11 +56,11 @@ export function CandleSnapshotV2({ bars, marks = [], levels = [], title, summary
         {g.markers.map((m, i) => (
           <g key={m.label} data-snapshot-mark={m.label}>
             <line x1={m.x} x2={m.x} y1={g.top} y2={g.bottom} stroke="rgb(var(--fg))" strokeDasharray="2 3" strokeWidth={1} />
-            <text x={Math.min(m.x + 3, g.right - 40)} y={g.top + 10 + i * 12} fontSize={10} fill="rgb(var(--fg))">{m.label}</text>
+            <text x={Math.min(m.x + 3, g.right - 40)} y={g.top + 10 + i * 12} fontSize={11} fill="rgb(var(--chart-text))">{m.label}</text>
           </g>
         ))}
-        <text x={g.right + 4} y={g.top + 8} fontSize={10} fill="rgb(var(--chart-text))">{formatPrice(g.hi)}</text>
-        <text x={g.right + 4} y={g.bottom} fontSize={10} fill="rgb(var(--chart-text))">{formatPrice(g.lo)}</text>
+        <text x={g.right + 4} y={g.top + 8} fontSize={11} fill="rgb(var(--chart-text))">{formatPrice(g.hi)}</text>
+        <text x={g.right + 4} y={g.bottom} fontSize={11} fill="rgb(var(--chart-text))">{formatPrice(g.lo)}</text>
       </svg>
       {g.outside.length > 0 && <figcaption className="text-t12 text-fg-muted">Beyond this chart's range: {g.outside.join(", ")}.</figcaption>}
     </figure>

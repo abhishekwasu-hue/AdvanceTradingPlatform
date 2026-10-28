@@ -43,7 +43,8 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Numbers first, logical colour (whole-app pass) | ATP_ORDER_UX11B.md | UX-11b | audit re-verify, then PR 1 C1 + C6 |
 | - | Professional palette (colour_v3) | ATP_ORDER_UX14.md | UX-14 | colour_v3 tokens + comparison page |
 | - | M45 Multi-broker accounts MB-0..MB-9 | ATP_ORDER_M45_MULTI_BROKER.md | M45 | design note ✅ (M45_MULTI_ACCOUNT.md); build MA-1..MA-6 next |
-| - | Screener audit + fix pack A-E (27 Oct) | ATP_ORDER_SCR_FIX.md | SCR-FIX | PRs A-E open (#614, #619, #618, #613, #620) |
+| - | Screener audit + fix pack A-E (27 Oct) | ATP_ORDER_SCR_FIX.md | SCR-FIX | A-E merged 28 Oct (#614, #619, #618, #613, #620) |
+| - | No platform defaults in order placement / risk (28 Oct) | ATP_ORDER_DEF0.md | DEF-0 | filed; first report next |
 | - | Trading Brain BR-0..BR-3 (28 Oct) | ATP_ORDER_TRADING_BRAIN.md | BR-0..BR-3 | filed; review in docs/design/BR_REVIEW.md for the owner's ✅; plan only until BR-0 |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

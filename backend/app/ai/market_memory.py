@@ -223,6 +223,15 @@ async def latest(session: AsyncSession, tenant_id: int, *, now: Optional[datetim
             "sentiment": (sentiment or {}).get("payload") if sentiment else None}
 
 
+# UX-11b: one band table for the India VIX level chip (backend and frontend/src/ui/levels.ts use the same edges as
+# vix_text below): under 12 LOW, under 16 NORMAL, under 20 ELEVATED, else HIGH.
+VIX_BANDS = ((12.0, "LOW"), (16.0, "NORMAL"), (20.0, "ELEVATED"))
+
+
+def vix_level(vix: float) -> str:
+    return next((label for edge, label in VIX_BANDS if vix < edge), "HIGH")
+
+
 def vix_text(lang: str, vix: float) -> str:
     if vix < 12:
         return f"India VIX {vix:.1f}: very calm - small moves, option premiums cheap"

@@ -46,5 +46,6 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Screener audit + fix pack A-E (27 Oct) | ATP_ORDER_SCR_FIX.md | SCR-FIX | A-E merged 28 Oct (#614, #619, #618, #613, #620) |
 | - | No platform defaults in order placement / risk (28 Oct) | ATP_ORDER_DEF0.md | DEF-0 | filed; first report next |
 | - | Trading Brain BR-0..BR-3 (28 Oct) | ATP_ORDER_TRADING_BRAIN.md | BR-0..BR-3 | filed; review in docs/design/BR_REVIEW.md for the owner's ✅; plan only until BR-0 |
+| - | UI standards audit fix pack A / B / C (28 Oct) | ATP_ORDER_UI_STD.md | UI-STD, UI-STD-C | filed; audit table docs/design/UI_STANDARDS_AUDIT.md; first report next |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

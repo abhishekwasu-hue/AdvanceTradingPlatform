@@ -1,6 +1,6 @@
-# UI standards audit - sources per item (UI-STD, owner order 28 Oct)
+# UI standards audit - sources per item (UI-28 consolidated UI order, 28 Oct)
 
-Order: docs/owner-orders/ATP_ORDER_UI_STD.md. Findings come from two overseer read-only audits of repo commit 148577c.
+Order: docs/owner-orders/ATP_ORDER_UI_28OCT.md (replaces ATP_ORDER_UI_STD.md; its A / B / C tables below map to U1-U7). Findings come from two overseer read-only audits of repo commit 148577c.
 Status column: filled in the first report ("confirmed" / "not reproduced" after a grep on today's main), then per PR.
 Rule: ATP shows nothing a mainstream tool does not show unless it is a measured improvement (group C); no theory on screen.
 
@@ -68,3 +68,19 @@ Rule: ATP shows nothing a mainstream tool does not show unless it is a measured 
 
 Overlaps (reference, do not redo): UX-11 / UX-11b (numbers first, Signed, chips), UX-14 (palette, colour_v3 ON), UX-15 (Positions:
 the "PAPER" frame sentence under Positions already a chip), SCR-FIX D7 (ScreenQL under Advanced), DEF-0 D4 / D6.
+
+## UI-28 map (consolidated order) and the items it adds
+
+| UI-28 | From | Extra source for new parts |
+|---|---|---|
+| U1.1-U1.6 | A1-A6 | as above |
+| U1.7 | A7 + "Not available in Phase 0" -> "LIVE: not yet enabled"; Experience card hidden unless the gate is on | NNG H2; DEF-0 D4 |
+| U1.8 | A8 + B13 | SEBI; NNG H8 |
+| U1.9 | new: "Sessions 1 of 20" on both the Experience card and the Progression ladder | NNG H4 / H8 (one place) |
+| U2.1-U2.5 | UX-11 / UX-11b (ATP_ORDER_UX11.md, ATP_ORDER_UX11B.md) | WCAG 1.4.1 (colour not alone), 1.4.3; TV / KITE (Signed ▲ ▼, tabular) |
+| U3.1-U3.4 | B1-B4 | as above; U3.4 press-and-hold for LIVE: HIG (confirm destructive / costly actions) |
+| U3.5-U3.9 | B6-B11, B9, B12 + Screener reflow (SCR-FIX UI parts) | WCAG 1.4.10 (reflow), MAT, HIG |
+| U4.1-U4.4 | UX-14 (ATP_ORDER_UX14.md) + B5 | WCAG 1.4.3 / 1.4.11; TV / KITE dark palettes |
+| U5.1-U5.3 | SCR-FIX UI parts (Show on chart, Telegram in place, results board) + C4 | TV / CHK (results board, chart from a match); NNG H3 / H9 (no dead ends) |
+| U6.1-U6.4 | OI view order (components exist, mounted only on OptionChainPage.tsx:116) | SNS (OI views and OI change tables) |
+| U7.1-U7.7 | C1-C3, C5-C7 + deploy preview, PAPER margin estimate, Copilot cost chip / folded tabs | as in C; KITE (margin calculator) |

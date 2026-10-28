@@ -1,5 +1,7 @@
 # Owner order UI-STD - UI standards audit fix pack (28 Oct 2026, verbatim)
 
+**Superseded by UI-28 (docs/owner-orders/ATP_ORDER_UI_28OCT.md, 28 Oct); kept as filed.**
+
 Roadmap: P1 row UI-STD (groups A and B), Phase 2 row UI-STD-C (group C). Extends UX-11 / UX-11b / UX-14 / SCR-FIX.
 Sources per item: docs/design/UI_STANDARDS_AUDIT.md.
 

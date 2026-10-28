@@ -61,6 +61,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | SCR-FIX | Screener audit + fix pack: A data path (non-native intervals resampled, daily window, today's bar, last bucket, session budget, index volume, primary credential), B truthful results, C real chart + Telegram in place, D phone UI, E text + guards | ATP_ORDER_SCR_FIX.md | each item verified then fixed with a test; PROOF comparison page; owner ✅ |
 | DEF-0 | No platform defaults in order placement / risk: D1 RiskConfig all optional, D2 hard-coded capital, D3 hidden exits (AP-FIX AP7), D4 experience levels a user opt-in, D5 override multipliers, D6 ticket truth, D7 stop-loss source, D8 margin estimate, D9 My limits card, D10 migration (extends TT-12; merges AP-FIX AP4 / AP7) | ATP_ORDER_DEF0.md | first report per D-item; tests (no-settings user can place / Autopilot can enter; each setting applies; exits never blocked; PAPER = LIVE); CI grep guard; PROOF page; owner ✅ |
 | UI-STD | UI standards audit fix pack: A1-A8 remove what no mainstream tool shows (+ user-string lint), B1-B13 standards floor (NN/g, WCAG 2.2 AA, Material, HIG); extends UX-11 / UX-11b / UX-14 / SCR-FIX | ATP_ORDER_UI_STD.md, UI_STANDARDS_AUDIT.md | first report per item; PR 1 = A, PR 2 = B1-B4, PR 3 = B5-B13; before / after page per PR; owner ✅ |
+| UI-28 | Consolidated UI order (owner 28 Oct; supersedes UI-STD / UI-STD-C and the UI parts of UX-11, UX-11b, UX-14, Screener UI, Telegram in place, OI view, PX-1 P5/P6): U1 remove what no mainstream tool shows, U2 numbers first + logical colour, U3 standards floor, U4 palette, U5 Screener + chart + Telegram UI, U6 OI view in v2, U7 beyond the best; UI only | ATP_ORDER_UI_28OCT.md, UI_STANDARDS_AUDIT.md | first report per item; one PR per U group in order; comparison page per PR; final summary page with word counts + contrast table; owner ✅ |
 
 ### Phase P2-F — Every feature 100% functional on production with real broker data (owner 25 Oct; before Phase 2 items)
 Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress; one PR per item. Source: ATP_ORDER_P2F_FUNCTIONAL.md.
@@ -166,8 +167,9 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P1-B1 | in review | merged #575 + #595; deployed 27 Oct 21:00 IST (a5db3e1), instrument master ok (91,037 rows, no error); owner check 28 Oct 09:15: a PAPER ticket on a NIFTY contract | #575, #595 |
 | SCR-FIX | in review | A-E merged 28 Oct (#614, #619, #618, #613, #620); PROOF page + deploy next | - |
 | DEF-0 | in progress | owner order 28 Oct filed; first report (confirmed / not reproduced per D-item) next | - |
-| UI-STD | in progress | Session B: owner order 28 Oct filed; docs/design/UI_STANDARDS_AUDIT.md written; first report (confirmed / not reproduced) next, then PR 1 = A1-A8 | - |
-| UI-STD-C | not started | after UI-STD A / B | - |
+| UI-STD | superseded by UI-28 | Session B: owner order 28 Oct filed; docs/design/UI_STANDARDS_AUDIT.md written; first report (confirmed / not reproduced) next, then PR 1 = A1-A8 | - |
+| UI-STD-C | superseded by UI-28 (U7) | - | - |
+| UI-28 | in progress | Session B: consolidated UI order filed 28 Oct; audit table + U map in docs/design/UI_STANDARDS_AUDIT.md; first report (confirmed / not reproduced per item) next, then U1 | - |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
 | FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |

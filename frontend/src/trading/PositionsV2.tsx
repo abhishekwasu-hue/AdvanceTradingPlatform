@@ -9,6 +9,8 @@ import PaperTicketCard from "../components/PaperTicketCard";
 import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2, toneClass } from "../dashboard/CardV2";
 import { useColourV2 } from "../ui/colourV2";
 import { DirectionChip } from "../ui/DirectionChip";
+import { Chip } from "../ui/Chip";
+import { Signed } from "../ui/Signed";
 import { signTone } from "../dashboard/model";
 import { dataOf, usePolled, type Loadable } from "../dashboard/useDashboardData";
 import {
@@ -29,7 +31,7 @@ import { chartsPath } from "../shell/shellRoutes";
 import type { PositionGreeks, TradeRecord } from "../types";
 import { BrokerGateView, CONNECT_BROKER_PATH, SIGN_IN_PATH, useBrokerLogin } from "../ui/BrokerGate";
 import { useBrokerSession } from "../ui/brokerSession";
-import { EMPTY, formatINR, formatNumber, formatPct, formatPrice, formatSignedINR, formatTimeIST } from "../ui/format";
+import { EMPTY, formatINR, formatNumber, formatPrice, formatSignedINR, formatTimeIST } from "../ui/format";
 import { PageIntro } from "../ui/PageIntro";
 import { PageFootnote } from "../ui/numbersFirst";
 import { TermHint } from "../ui/TermHint";
@@ -37,7 +39,7 @@ import { useFeatures } from "../ui/useFeatures";
 import { liveHiddenFrom } from "../settings/useLiveHidden";
 import PageDishV2 from "../growth/PageDishV2";
 import {
-  closedRows, closedText, exitConfirmText, failedText, heldRows, holdingTiles, openCaption, type ClosedRow, type HeldRow,
+  NO_STOP, closedRows, closedText, exitConfirmText, failedText, heldRows, holdingTiles, openCaption, type ClosedRow, type HeldRow,
 } from "./model";
 import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from "./PartsV2";
 import { PracticeFrame } from "../fno/OrderTicketV2";
@@ -197,9 +199,8 @@ export default function PositionsV2(_props: PageProps = {}) {
                 <EmptyStateV2 text="No open positions." />
               ) : (
                 <>
-                  <p className="mb-space-3 text-t13 text-fg-muted">
-                    Live prices and profit or loss show once your broker is connected.{exitNowOn && canTrade ? " You can still exit a paper position here." : ""}
-                  </p>
+                  {/* UX-15: one chip, not a sentence (the Exit button below each paper position says the rest). */}
+                  <div className="mb-space-3"><Chip tone="warn" variant="meaning" icon="!" name="no-price">No live price · connect your broker</Chip></div>
                   {accountFilter}
                   <PositionList rows={shownRows} byId={byId} actions={actions} prices={false} groups={fno.groups} />
                   {groupSheet}
@@ -458,7 +459,6 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
   /** TT-8: a leg of one basket - "Exit this leg" in place of "Exit now" (`hedge`: it protects an open sold leg). */
   groupLeg?: { hedge: boolean };
 }) {
-  const tone = toneClass(signTone(row.pnl));
   const showExit = !groupLeg && actions.exitNowOn && actions.canTrade && position.mode === "PAPER";
   // FNO-4: Add (the ticket on the same contract and side, PAPER) and Adjust (the chain of its expiry) - only for an F&O
   // PAPER position whose contract is known and still trading. Neither is ever shown in place of Exit.
@@ -472,8 +472,11 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
     <li className="py-space-3 first:pt-0 last:pb-0" data-position={row.id}>
       <div className="flex items-start gap-space-3">
         <div className="min-w-0 flex-1">
+          {/* UX-15 (owner, 28 Oct): the broker-standard row - Instrument (expiry as a chip), side, Qty, Avg., LTP, P&L; the
+              levels and the strategy as chips; no sentence. */}
           <div className="flex flex-wrap items-center gap-space-2">
-            <span className="text-t15 font-semibold text-fg">{row.symbol}</span>
+            <span className="text-t15 font-semibold text-fg" data-instrument>{row.instrument}</span>
+            {row.expiryLabel && <Chip tone="neutral" variant="meaning" name="expiry">{row.expiryLabel}</Chip>}
             {colour ? <DirectionChip side={row.side === "Buy" ? "long" : "short"} /> : (
               <span className={`inline-flex items-center gap-px text-t13 font-medium ${row.side === "Buy" ? "text-up" : "text-down"}`}>
                 {row.side === "Buy" ? <ArrowUpRight size={14} aria-hidden /> : <ArrowDownRight size={14} aria-hidden />}{row.side === "Buy" ? "Long" : "Short"}
@@ -485,29 +488,33 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
               <span data-testid="account-badge" title="Practice account"><ChipV2 kind="brand">{position.account_label}</ChipV2></span>
             )}
           </div>
-          <p className="mt-px text-t13 text-fg-muted">{row.detail}</p>
-          <p className="mt-px font-tabular text-t13 text-fg">
-            {row.levelsOn && <span className="text-fg-muted">{row.levelsOn} </span>}
-            {row.levels.map((l, i) => (
-              <span key={l.label}>{i > 0 && <span className="text-fg-muted"> · </span>}<span className="text-fg-muted">{l.label} </span><span className={toneClass(l.tone)}>{l.value}</span></span>
-            ))}
-          </p>
+          <div className="mt-px flex flex-wrap items-baseline gap-x-space-3 font-tabular text-t13" data-qty-avg>
+            <span><span className="text-fg-muted">Qty </span><span className="text-fg">{row.qtyText}</span></span>
+            <span><span className="text-fg-muted">Avg. </span><span className="text-fg">{formatPrice(row.avg)}</span></span>
+            {prices && row.ltp !== null && <span><span className="text-fg-muted">LTP </span><span className="text-fg">{formatPrice(row.ltp)}</span></span>}
+          </div>
+          <div className="mt-space-1 flex flex-wrap items-center gap-space-1" data-levels>
+            {row.levelsOn && <span className="text-t12 text-fg-muted">{row.levelsOn.replace(/:$/, "")}</span>}
+            {row.levels.filter((l) => l.value !== EMPTY).map((l) => (l.value === NO_STOP
+              ? <Chip key={l.label} tone="warn" variant="meaning" icon="!" name="level-unset">{l.label} not set</Chip>
+              : <Chip key={l.label} tone="neutral" variant="meaning" name="level"><span className="font-tabular">{l.label} {l.value}</span></Chip>))}
+            {row.strategy && <Chip tone="neutral" variant="meaning" name="strategy">{row.strategy.replace(/ trade$/, "")}</Chip>}
+          </div>
           {row.structureNote && <p className="mt-px text-t12 text-fg-muted">{row.structureNote}</p>}
-          {row.strategy && <p className="mt-px text-t12 text-fg-muted">{row.strategy}</p>}
           {own && <CaptureLineV2 legs={own} daysLeft={daysLeftOf(facts)} />}
         </div>
         {prices && (
-          <>
-            <div className="hidden w-28 shrink-0 text-right sm:block" data-col="ltp">
-              <div className="flex items-center justify-end gap-space-1 text-t12 text-fg-muted">LTP</div>
-              <div className="font-tabular text-t15 font-medium text-fg">{formatPrice(row.ltp)}</div>
-            </div>
-            <div className="w-28 shrink-0 text-right" data-col="pnl">
-              <div className="text-t12 text-fg-muted">P&amp;L</div>
-              <div className={`font-tabular text-t15 font-semibold ${tone}`}>{formatSignedINR(row.pnl)}</div>
-              <div className={`font-tabular text-t13 ${tone}`}>{formatPct(row.pnlPct)}</div>
-            </div>
-          </>
+          <div className="shrink-0 text-right" data-col="pnl">
+            {row.pnl === null ? (
+              // One amber chip for a missing price - never "–" twice or a sentence under the list.
+              <Chip tone="warn" variant="meaning" icon="!" name="no-price">No live price</Chip>
+            ) : (
+              <>
+                <Signed value={row.pnl} kind="money" paise className="text-t15 font-semibold" />
+                <div><Signed value={row.pnlPct} kind="pct" arrow={false} className="text-t13" /></div>
+              </>
+            )}
+          </div>
         )}
       </div>
       <div className="mt-space-2 flex flex-wrap items-center gap-space-2">

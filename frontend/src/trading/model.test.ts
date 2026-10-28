@@ -5,8 +5,7 @@ import {
   LOSS_STREAK_CHOICES, lastResumeText, lossStreakNote,
   allocationRows, bookedCurve, checkStatus, closedRows, closedText, drawdownOrderProblem, eventAction, eventRemoveConsequence, eventScope, eventWindow, exitConfirmText,
   failedText, fieldProblem, guardianLine, heldRows, holdingTiles, limitScopeLabel, limitValueText, longShortLine, openCaption, portfolioTiles,
-  positionLevels, structureLabel, todayRisk,
-} from "./model";
+  positionLevels, structureLabel, todayRisk, expiryLabel, instrumentName, qtyText } from "./model";
 import { CONFIG, exposure, guardianMode, marketEvent, trade } from "./trading.fixture";
 
 /** UI2-9a: what My positions, My portfolio and Risk limits show, from made-up API answers. */
@@ -196,5 +195,18 @@ describe("CP6-15 the losses-in-a-row pause", () => {
   it("shows the last resume in India time", () => {
     expect(lastResumeText(status())).toBeNull();
     expect(lastResumeText(status({ resumed_at: "2026-10-23T04:00:00+00:00" }))).toMatch(/^Last resumed 23 Oct 2026, 09:30/);
+  });
+});
+describe("UX-15 the broker-standard Positions row", () => {
+  it("the contract without its expiry, the expiry as a short chip", () => {
+    expect(instrumentName("NIFTY 22550 PE 03 NOV 26", "2026-11-03")).toBe("NIFTY 22550 PE");
+    expect(instrumentName("RELIANCE", null)).toBe("RELIANCE");
+    expect(expiryLabel("2026-11-03")).toBe("3 Nov");
+    expect(expiryLabel(null)).toBeNull();
+  });
+  it("the net quantity signed by side, with its lots", () => {
+    expect(qtyText(65, 65, true)).toBe("+65 (1 lot)");
+    expect(qtyText(130, 65, false)).toBe("−130 (2 lots)");
+    expect(qtyText(10, null, true)).toBe("+10");
   });
 });

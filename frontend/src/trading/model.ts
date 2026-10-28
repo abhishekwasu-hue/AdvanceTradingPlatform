@@ -42,6 +42,34 @@ export interface HeldRow {
   ltp: number | null;
   pnl: number | null;
   pnlPct: number | null;
+  /** UX-15 (owner, 28 Oct - the broker-standard Positions row): the contract without its expiry ("NIFTY 22550 PE"),
+   * the expiry as a short chip ("3 Nov", null for a stock), the net quantity signed (+ long, - short) with its lots
+   * ("+65 (1 lot)") and the average entry price. */
+  instrument: string;
+  expiryLabel: string | null;
+  qtyText: string;
+  avg: number;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-11-03" -> "3 Nov" (a calendar day, no time zone shift). */
+export function expiryLabel(iso: string | null | undefined): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]}` : null;
+}
+
+/** The contract name without a trailing expiry ("NIFTY 22550 PE 03 NOV 26" -> "NIFTY 22550 PE") when the expiry is known. */
+export function instrumentName(symbol: string, expiry: string | null | undefined): string {
+  return expiry ? symbol.replace(/\s+\d{1,2}\s+[A-Za-z]{3}\s+\d{2,4}$/, "") : symbol;
+}
+
+/** "+65 (1 lot)" / "-130 (2 lots)" / "+10": the net quantity, signed by side, with its lots when the lot size is known. */
+export function qtyText(quantity: number, lotSize: number | null | undefined, long: boolean): string {
+  const n = `${long ? "+" : "−"}${formatNumber(Math.abs(quantity), Math.abs(quantity) % 1 ? 2 : 0)}`;
+  if (!lotSize || lotSize <= 1) return n;
+  const lots = Math.abs(quantity) / lotSize;
+  return Number.isInteger(lots) ? `${n} (${lots} lot${lots === 1 ? "" : "s"})` : n;
 }
 
 const isDerivative = (p: TradeRecord) => !!p.instrument_kind && p.instrument_kind !== "UNDERLYING" && !!p.underlying_symbol;
@@ -117,6 +145,8 @@ export function heldRows(positions: TradeRecord[], exposure: PortfolioExposure |
       levelsOn: on, levels, structure: s.label, structureNote: s.note, strategy: strategyDisplayName(p.strategy_id),
       chartSymbol: isDerivative(p) ? (p.underlying_symbol as string) : p.symbol,
       ltp: row.ltp, pnl: row.pnl, pnlPct: row.pnlPct,
+      instrument: instrumentName(p.symbol, p.expiry), expiryLabel: expiryLabel(p.expiry),
+      qtyText: qtyText(p.quantity, p.lot_size, p.direction !== "SHORT"), avg: p.entry_price,
     };
   });
 }

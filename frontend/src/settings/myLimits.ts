@@ -1,5 +1,5 @@
 /**
- * DEF-0 D9 (owner, 28 Oct): "My limits" - every limit the trader may set, each blank = "Not set (no limit)". Nothing is
+ * DEF-0 D9 (owner, 28 Oct): "My limits" - every limit the trader may set, each blank = "Off". Nothing is
  * pre-filled: the platform has no default for any of them. The numbers are the risk settings (PUT /api/risk-settings);
  * the two switches are the `my_limits` preferences the server reads (experience levels, a stop on a sold option).
  */
@@ -30,7 +30,7 @@ export const LIMIT_FIELDS: readonly LimitField[] = [
   { key: "event_size_cut_pct", label: "Event-day size cut", unit: "%", help: "On a market event marked as a size cut, the risk per trade is cut by this." },
 ];
 
-export const NOT_SET = "Not set (no limit)";
+export const NOT_SET = "Off";
 
 export interface MyLimitSwitches { limit_by_experience: boolean; stop_required_on_sold: boolean }
 export const SWITCHES_OFF: MyLimitSwitches = { limit_by_experience: false, stop_required_on_sold: false };

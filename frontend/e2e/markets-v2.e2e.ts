@@ -27,7 +27,7 @@ const ON = { ui_v2: true, markets_view: true };
 const THEMES = ["light", "dark"] as const;
 const DISH = {
   title: "What the chain shows",
-  note: "Information only: what the chain's numbers show right now. It never says what to trade.",
+  note: "What the chain's numbers show right now, for your own reading.",
   points: [
     { key: "pcr_zone", label: "PCR zone", state: "ok", text: "PCR is 0.84, in the low zone (0.70 to 0.90): call open interest is larger than put open interest." },
     { key: "oi_walls", label: "OI walls", state: "ok", text: "The largest put open interest is at 100 and the largest call open interest is at 130; the spot 118.00 is between them." },

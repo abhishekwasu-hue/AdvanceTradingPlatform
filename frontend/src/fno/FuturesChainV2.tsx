@@ -46,7 +46,7 @@ export const FUTURES_TEXT: Record<FuturesProblem | "empty", string> = {
   plan: "This symbol is not available live on your plan.",
   budget: "Your broker's rate budget is in use just now. The prices load on the next refresh.",
   failed: "We could not load the futures. We will try again in a moment.",
-  empty: "No futures are listed for this symbol.",
+  empty: "This symbol trades without futures.",
 };
 
 export function useFuturesChain(symbol: string, api: Pick<HubApi, "futures"> = hubApi) {

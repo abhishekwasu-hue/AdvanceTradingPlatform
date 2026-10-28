@@ -14,7 +14,7 @@ import type { AttentionIcon, AttentionRow } from "./model";
 /**
  * UI2-2 (UI v2 proposal §5 block 4): Needs attention - up to five rows, most urgent first, each with what happened and
  * one action. The first row's action is the page's one primary button; the others are secondary. Nothing waiting: the
- * card collapses to one line, "All clear. Nothing needs you right now."
+ * card collapses to one line, "All clear. All caught up."
  *
  * "Log in to <Broker>" runs that broker's existing login here (the broker gate's own login, shared through
  * useBrokerLogin), including the paste-the-code step for Zerodha and Fyers.
@@ -130,7 +130,7 @@ export default function NeedsAttentionV2({ rows, loginBroker, login, onHide }: N
       <section aria-label="Needs attention" data-block="attention" data-tour="dashboard-attention"
         className="flex min-h-11 items-center gap-space-3 rounded-panel border border-subtle bg-surface-1 px-space-4 py-space-3 shadow-card md:px-space-5">
         <CircleCheck size={18} aria-hidden className="shrink-0 text-fg-muted" />
-        <p className="text-t14 text-fg"><span className="font-semibold">All clear.</span> Nothing needs you right now.</p>
+        <p className="text-t14 text-fg"><span className="font-semibold">All clear.</span> All caught up.</p>
       </section>
     );
   }

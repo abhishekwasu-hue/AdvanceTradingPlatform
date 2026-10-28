@@ -267,7 +267,7 @@ export function limitsBody(n: Record<RiskField, number | null>): Record<(typeof 
 
 /** A limit as Settings shows it: "Not set" unless the trader set it himself (TT-12). */
 export function limitText(field: LimitField, set: readonly string[] | undefined, value: number | null | undefined): string {
-  if (!set?.includes(LIMIT_KEYS[field]) || value === null || value === undefined || !Number.isFinite(value)) return "Not set";
+  if (!set?.includes(LIMIT_KEYS[field]) || value === null || value === undefined || !Number.isFinite(value)) return "Off";
   if (field === "maxTradesPerDay") return value === 0 ? "No limit" : `${value} a day`;
   const shown = String(Math.round(value * 100) / 100);                 // "1.5", never "1.50"
   if (field === "minRr") return value === 0 ? "No minimum" : `${shown} : 1`;

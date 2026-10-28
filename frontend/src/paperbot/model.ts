@@ -183,6 +183,19 @@ export function lastChecked(iso: string | null, now: number = Date.now()): strin
   return `Checked ${Math.round(seconds / 86400)} days ago`;
 }
 
+/** UI-28 U2.4: "Last signal 12 min ago" / "No signal yet" - when the bot's conditions last met. */
+export function lastSignal(iso: string | null | undefined, now: number = Date.now()): string {
+  if (!iso) return "No signal yet";
+  return lastChecked(iso, now).replace(/^Checked/, "Last signal");
+}
+
+/** UI-28 U2.4: why a running bot is not trading right now, in one chip (null: nothing is wrong). */
+export function whyNoTrade(d: Pick<Deployment, "status" | "consecutive_failures" | "last_error">): string | null {
+  if (botState(d as Deployment) !== "running") return null;
+  if ((d.consecutive_failures ?? 0) > 0) return "Last check failed · retrying";
+  return null;
+}
+
 /** Running first, then paused, then stopped; newest first inside each. Stopped bots only when asked for. */
 export function sortBots<T extends Pick<Deployment, "status" | "id">>(bots: readonly T[], showStopped = false): T[] {
   const rank: Record<BotState, number> = { running: 0, paused: 1, stopped: 2 };

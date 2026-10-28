@@ -116,7 +116,7 @@ export function LearnView({ library, initialTab = "lessons", initialOpen = [] }:
             ))}
           </div>
           {shown.length === 0 ? (
-            <p className={`${CARD} p-space-4 text-t14 text-fg-muted`}>No lesson matches these words. Try the glossary, or clear the search.</p>
+            <p className={`${CARD} p-space-4 text-t14 text-fg-muted`}>Try the glossary, or clear the search.</p>
           ) : (
             <ul className="grid grid-cols-1 items-start gap-space-3 lg:grid-cols-2" data-block="lessons">
               {shown.map((lesson) => (
@@ -129,7 +129,7 @@ export function LearnView({ library, initialTab = "lessons", initialOpen = [] }:
         </>
       ) : (
         <section className={`${CARD} p-space-4 md:p-space-5`} aria-label="Words explained" data-block="learn-glossary">
-          {glossary.length === 0 ? <p className="text-t14 text-fg-muted">No word matches. Clear the search to see them all.</p> : (
+          {glossary.length === 0 ? <p className="text-t14 text-fg-muted">Clear the search to see every word.</p> : (
             <dl className="grid grid-cols-1 gap-x-space-6 gap-y-space-3 md:grid-cols-2">
               {glossary.map((e) => (
                 <div key={e.key} className="min-w-0 border-b border-subtle pb-space-3" data-term={e.key}>

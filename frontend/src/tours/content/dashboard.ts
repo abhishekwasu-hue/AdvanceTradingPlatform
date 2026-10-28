@@ -11,7 +11,7 @@ export const DASHBOARD_TOUR: PageTour = {
     { id: "positions", target: "dashboard-positions", title: "Your open positions",
       body: "Each line is a position you hold, with its profit or loss at the live price. View all opens My positions." },
     { id: "signals", target: "dashboard-signals", title: "New signals",
-      body: "Signals your Autopilot and scans found today. Nothing is placed until you approve it." },
+      body: "Signals your Autopilot and scans found today. You approve every order." },
     { id: "nav-desktop", target: "nav-sidebar", only: "desktop", title: "Every page in one place",
       body: "The menu on the left lists every page. Broker sits at the top, with a dot that shows whether it is connected." },
     { id: "nav-phone", target: "nav-bottom", only: "phone", title: "Move between pages",

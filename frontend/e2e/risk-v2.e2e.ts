@@ -81,7 +81,7 @@ test.describe("v2 risk 1440 desktop", () => {
     await expect(today.locator("[data-mode='PAPER']")).toContainText("Normal size");
     await expect(today.locator("[data-mode='PAPER']")).toContainText("Waiting after a stop-out: HDFCBANK (12 min left)");
     await expect(today.locator("[data-mode='LIVE']")).toContainText("Size cut to 50%");
-    await expect(today).toContainText("Exits are never blocked.");
+    await expect(page.locator("[data-page-footnote]")).toContainText("Exits are never blocked");   // UI-28 U1.11: said once, in the footnote
   });
 
   test("one primary action: 'Save limits' sends today's request with the changed value", async ({ page }) => {
@@ -103,7 +103,7 @@ test.describe("v2 risk 1440 desktop", () => {
     await field.blur();
     await expect(page.locator("[data-field='risk_per_trade_pct'] [role='alert']")).toHaveText("The most allowed is 2.");
     await page.getByRole("button", { name: "Save limits" }).click();
-    await expect(page.locator("[data-note='save']")).toContainText("Nothing was saved.");
+    await expect(page.locator("[data-note='save']")).toContainText("Fix the values marked below, then save again.");
     expect(writes.calls.filter((c) => c.url === "/risk-settings")).toHaveLength(0);
   });
 

@@ -129,7 +129,7 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
         <section aria-label="Result" className="space-y-space-3 rounded-panel border border-subtle bg-surface-1 p-space-4">
           <div className="flex flex-wrap items-baseline gap-space-2">
             <h3 className="text-t18 font-semibold text-fg">{signal.symbol}</h3>
-            {item.direction ? <Direction value={item.direction} /> : <span className="font-semibold text-fg-muted">No trade now</span>}
+            {item.direction ? <Direction value={item.direction} /> : <span className="font-semibold text-fg-muted">Wait</span>}
             <span className="text-t12 text-fg-muted">Score {result?.composite_score ?? signal.score} · grade {result?.grade ?? signal.grade}{made?.sample ? " · sample data" : ""}</span>
           </div>
           <LevelTiles item={item} />

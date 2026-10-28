@@ -41,7 +41,7 @@ describe("UI2-2 Needs attention", () => {
   it("nothing waiting: one line, 'All clear'", () => {
     const out = html(<NeedsAttentionV2 rows={[]} loginBroker={null} login={idle} />);
     expect(out).toContain("All clear.");
-    expect(out).toContain("Nothing needs you right now.");
+    expect(out).toContain("All caught up.");
     expect(out).not.toContain("<ul");
   });
 
@@ -60,14 +60,14 @@ describe("UI2-2 Needs attention", () => {
 describe("UI2-2 blocks", () => {
   it("friendly empty states with one action each", () => {
     const pos = html(<OpenPositionsV2 data={{ status: "ok", rows: [], total: 0 }} />);
-    expect(pos).toContain("No open positions.");
+    expect(pos).toContain("All positions are closed.");
     expect(pos).toContain('href="/screener"');
     const sig = html(<ActiveSignalsV2 data={{ status: "ok", rows: [], total: 0 }} />);
-    expect(sig).toContain("No signals yet today.");
+    expect(sig).toContain("Signals show here as they come today.");
     expect(sig).toContain('href="/screener/custom"');
     // Day-one fix 9: with the ready strategies on, the empty day points to the one-tap Signals watch
     const ready = html(<ActiveSignalsV2 data={{ status: "ok", rows: [], total: 0 }} readyWatch />);
-    expect(ready).toContain("No signals yet today.");
+    expect(ready).toContain("Signals show here as they come today.");
     expect(ready).toContain("Watch a list on Signals");                       // TD-1: one line + one button
     expect(ready).toContain('href="/signals"');
     expect(ready).toContain("Watch a list on Signals");

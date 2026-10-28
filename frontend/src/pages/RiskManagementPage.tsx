@@ -140,7 +140,7 @@ export default function RiskManagementPage() {
                 step={f.step ?? "1"}
                 className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 value={config[f.key] ?? ""}
-                placeholder="Not set (no limit)"
+                placeholder="Off"
                 onChange={(e) => setConfig({ ...config, [f.key]: e.target.value === "" ? null : Number(e.target.value) })}
               />
             </div>
@@ -159,7 +159,7 @@ export default function RiskManagementPage() {
                 min={0}
                 className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 value={config[f.key] ?? ""}
-                placeholder="Not set (no limit)"
+                placeholder="Off"
                 onChange={(e) => setConfig({ ...config, [f.key]: e.target.value === "" ? null : Number(e.target.value) })}
               />
               <div className="text-xs text-fg-muted mt-0.5">{f.help}</div>

@@ -196,11 +196,11 @@ export default function PositionsV2(_props: PageProps = {}) {
             {notice && <NoteV2 kind={notice.kind} testId="action">{notice.text}</NoteV2>}
             <CardV2 title="Your open positions" count={list?.length} testId="exits">
               {positions.status === "loading" ? <LoadingRowsV2 /> : positions.status === "error" ? <LoadFailedV2 what="your positions" /> : rows.length === 0 ? (
-                <EmptyStateV2 text="No open positions." />
+                <EmptyStateV2 text="All positions are closed." />
               ) : (
                 <>
                   {/* UX-15: one chip, not a sentence (the Exit button below each paper position says the rest). */}
-                  <div className="mb-space-3"><Chip tone="warn" variant="meaning" icon="!" name="no-price">No live price · connect your broker</Chip></div>
+                  <div className="mb-space-3"><Chip tone="warn" variant="meaning" icon="!" name="no-price">Live prices: connect your broker</Chip></div>
                   {accountFilter}
                   <PositionList rows={shownRows} byId={byId} actions={actions} prices={false} groups={fno.groups} />
                   {groupSheet}
@@ -258,7 +258,7 @@ export default function PositionsV2(_props: PageProps = {}) {
 
       <CardV2 title="Open positions" count={list?.length} testId="positions" tour="positions-list">
         {positions.status === "loading" ? <LoadingRowsV2 /> : positions.status === "error" ? <LoadFailedV2 what="your positions" /> : rows.length === 0 ? (
-          <EmptyStateV2 text="No open positions. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
+          <EmptyStateV2 text="All positions are closed. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
         ) : (
           <>
             {fnoOn && (
@@ -496,7 +496,7 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
           <div className="mt-space-1 flex flex-wrap items-center gap-space-1" data-levels>
             {row.levelsOn && <span className="text-t12 text-fg-muted">{row.levelsOn.replace(/:$/, "")}</span>}
             {row.levels.filter((l) => l.value !== EMPTY).map((l) => (l.value === NO_STOP
-              ? <Chip key={l.label} tone="warn" variant="meaning" icon="!" name="level-unset">{l.label} not set</Chip>
+              ? <Chip key={l.label} tone="warn" variant="meaning" icon="!" name="level-unset">Set {l.label.toLowerCase()}</Chip>
               : <Chip key={l.label} tone="neutral" variant="meaning" name="level"><span className="font-tabular">{l.label} {l.value}</span></Chip>))}
             {row.strategy && <Chip tone="neutral" variant="meaning" name="strategy">{row.strategy.replace(/ trade$/, "")}</Chip>}
           </div>
@@ -507,7 +507,7 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
           <div className="shrink-0 text-right" data-col="pnl">
             {row.pnl === null ? (
               // One amber chip for a missing price - never "–" twice or a sentence under the list.
-              <Chip tone="warn" variant="meaning" icon="!" name="no-price">No live price</Chip>
+              <Chip tone="warn" variant="meaning" icon="!" name="no-price">Waiting for a live price</Chip>
             ) : (
               <>
                 <Signed value={row.pnl} kind="money" paise className="text-t15 font-semibold" />
@@ -630,7 +630,7 @@ function ClosedTradesV2({ trades, onSaved }: { trades: Loadable<TradeRecord[]>; 
   return (
     <CardV2 title="Closed trades" count={rows.length} more={{ label: "Orders", to: "/positions/orders" }} testId="history">
       {trades.status === "loading" ? <LoadingRowsV2 /> : trades.status === "error" ? <LoadFailedV2 what="your closed trades" /> : rows.length === 0 ? (
-        <EmptyStateV2 text="No closed trades yet. A trade shows here once it is closed." />
+        <EmptyStateV2 text="Closed trades show here." />
       ) : (
         <>
           <ul className="divide-y divide-subtle">

@@ -95,7 +95,7 @@ export function CompareView({ columns, underlying, spot, testId }: { columns: re
         {columns.map((c) => (
           <li key={c.name} className="rounded-control bg-surface-2 px-space-3 py-space-2 text-t14 text-fg">
             <span className="block text-t12 font-semibold text-fg-muted">{c.name}: in plain words</span>
-            {xs.length ? payoffSentence(sentenceInput(c.legs, c.shift, xs), underlying) : "Nothing to show yet."}
+            {xs.length ? payoffSentence(sentenceInput(c.legs, c.shift, xs), underlying) : "The numbers show once a change is picked."}
             {c.note && <span className="mt-space-1 block text-t12 text-fg-muted">{c.note}</span>}
           </li>
         ))}

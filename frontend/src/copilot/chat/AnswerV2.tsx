@@ -2,7 +2,8 @@ import { CircleHelp, History, ListChecks, Sparkles } from "lucide-react";
 import { Link } from "react-router";
 import { AnalysisTableView, MiniChart } from "../../optionChain/AnalysisTabsV2";
 import { useCopilotT } from "../i18n";
-import { actionState, notSetUpLine, stampText, toolsUsedLine, workedLine, type ChatAnswer } from "./model";
+import { cx } from "../../components/primitives/cx";
+import { actionState, answerRow, notSetUpLine, stampText, toolsUsedLine, workedLine, type ChatAnswer } from "./model";
 
 /** Job 6: the hand-over to the Paper bot page is the answer's one primary action. */
 const DRAFT_ACTION = "inline-flex min-h-11 w-full items-center justify-center py-space-2 text-center gap-space-2 rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto";
@@ -41,7 +42,19 @@ export function AnswerV2({ answer, onAsk }: { answer: ChatAnswer; onAsk?: (q: st
             <section key={s.title} className="min-w-0 rounded-control border border-subtle bg-surface-2 p-space-3" data-section={s.title}>
               <h3 className="text-t13 font-semibold text-fg">{s.title}</h3>
               <ul className="mt-space-1 space-y-space-1">
-                {s.lines.map((line, i) => <li key={i} className="text-t14 text-fg">{line}</li>)}
+                {s.lines.map((line, i) => {
+                  const row = answerRow(line);
+                  // UI-28 U2.4: "Label: value" lines are rows with the number right-aligned and signed; sentences stay text.
+                  return row ? (
+                    <li key={i} className="flex items-baseline justify-between gap-space-3 text-t14" data-answer-row>
+                      <span className="min-w-0 text-fg-muted">{row.label}:</span>
+                      <span className={cx("shrink-0 font-tabular", row.dir === "up" ? "text-up" : row.dir === "down" ? "text-down" : "text-fg")}
+                        data-signed={row.dir ?? undefined}>
+                        {row.dir && <span aria-hidden className="text-t12">{row.dir === "up" ? "▲" : "▼"}</span>}{row.value}
+                      </span>
+                    </li>
+                  ) : <li key={i} className="text-t14 text-fg">{line}</li>;
+                })}
               </ul>
             </section>
           ))}

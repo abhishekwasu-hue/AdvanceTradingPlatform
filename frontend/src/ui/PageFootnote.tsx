@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Details } from "./Details";
 import { DISCLAIMER_TEXT } from "./Disclaimer";
 
 /**
@@ -7,9 +8,13 @@ import { DISCLAIMER_TEXT } from "./Disclaimer";
  * once per page (owner default) and in each card's Details; `children` add the page's own short words after it.
  */
 export function PageFootnote({ children }: { children?: ReactNode }) {
+  // UI-28 U1.11 (owner, 28 Oct: "In all pages, hide common message"): the line every page repeats sits behind one small
+  // ⓘ at the foot of the page, closed by default (state remembered); never removed (SEBI: signals, not advice).
   return (
-    <p data-page-footnote data-disclaimer className="border-t border-subtle pt-space-3 text-t12 text-fg-muted">
-      {DISCLAIMER_TEXT}{children ? <> {children}</> : null}
-    </p>
+    <div data-page-footnote data-disclaimer className="border-t border-subtle pt-space-1">
+      <Details id="page.footnote" label="About" className="mt-0">
+        <p className="text-t12">{DISCLAIMER_TEXT}{children ? <> {children}</> : null}</p>
+      </Details>
+    </div>
   );
 }

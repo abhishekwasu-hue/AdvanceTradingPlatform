@@ -138,3 +138,17 @@ export function stampText(iso: string | null): string | null {
   if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
   return `${d.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST`;
 }
+
+/** UI-28 U2.4 (owner, 28 Oct): a "Label: value" line of an answer as a row - the label left, the value right, a signed
+ * value ("+₹1,200", "−0.8%", "-3") coloured and arrowed by its own sign (the server's words and numbers as sent).
+ * Null for a line that is a sentence, so it stays text. */
+export interface AnswerRow { label: string; value: string; dir: "up" | "down" | null }
+
+export function answerRow(line: string): AnswerRow | null {
+  const m = /^([^:]{1,40}):\s+(.{1,40})$/.exec(line.trim());
+  // A row is a short label (up to four words) and a number-led value ("+₹1,200", "0.84", "₹5,000"); anything else is a sentence.
+  if (!m || m[1].trim().split(/\s+/).length > 4 || !/^[+−-]?\s?₹?\s?\d/.test(m[2].trim())) return null;
+  const value = m[2].trim().replace(/\.$/, "");
+  const signed = /^([+−-])\s?₹?\s?\d/.exec(value);
+  return { label: m[1].trim(), value, dir: signed ? (signed[1] === "+" ? "up" : "down") : null };
+}

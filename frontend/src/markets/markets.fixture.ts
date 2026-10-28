@@ -43,7 +43,7 @@ export const DEMO_OVERVIEW: MarketsOverview = {
     g({ kind: "sector", name: "Realty", list_key: "sector-realty", count: 10, change: pv(null, null, null), known: false }),
   ],
   source: "NSE end-of-day closes (the daily history every user shares)",
-  note: "Information only: how each index and sector moved at the close. It describes the market; it never says what to trade.",
+  note: "How each index and sector moved at the close, for your own reading.",
 };
 
 export const DEMO_LIST: MarketList = {

@@ -65,7 +65,7 @@ export function summaryCards(s: ChainSummary | null, expiry: string | null, spot
       : { key: "spot", label: s?.spot_source === "last_close" ? "Spot: last close" : "Spot", value: formatPrice(s?.spot), num: s?.spot ?? null },
     // OC-4: the near-month future, or the reason it is missing.
     { key: "futures", label: "Futures", value: formatPrice(future?.ltp),
-      caption: future ? `Expires ${formatDateIST(future.expiry).replace(/ \d{4}$/, "")}` : s ? "No near-month price in the feed" : undefined },
+      caption: future ? `Expires ${formatDateIST(future.expiry).replace(/ \d{4}$/, "")}` : s ? "Near-month price: waiting for the feed" : undefined },
     { key: "atm", label: "ATM strike", term: "atm", value: formatStrike(s?.atm_strike) },
     { key: "pcr", label: "PCR (OI)", term: "pcr", value: formatNumber(s?.pcr_oi, 2),
       extra: <MiniGauge label={`PCR on a 0 to ${PCR_GAUGE_MAX} scale`} value={s?.pcr_oi} max={PCR_GAUGE_MAX} /> },

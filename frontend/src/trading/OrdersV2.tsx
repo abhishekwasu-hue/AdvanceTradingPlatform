@@ -57,7 +57,7 @@ export default function OrdersV2(_props: PageProps = {}) {
 
       <CardV2 title="Fills" count={listed.length} testId="orders">
         {trades.status === "loading" ? <LoadingRowsV2 /> : trades.status === "error" ? <LoadFailedV2 what="your orders" /> : rows.length === 0 ? (
-          <EmptyStateV2 text="No orders yet. A trade's entry and exit show here." action={{ label: "Signals", to: "/signals" }} />
+          <EmptyStateV2 text="Each trade's entry and exit show here." action={{ label: "Signals", to: "/signals" }} />
         ) : (
           <>
             <div role="group" aria-label="Show" className="mb-space-3 inline-flex rounded-control border border-border p-px" data-orders-filter>

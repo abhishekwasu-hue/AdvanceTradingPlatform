@@ -35,7 +35,7 @@ const LIMIT_FIELDS: FieldSpec[] = [
 /** Phase V1: the risk guardian's rules, checked on every entry, paper or live, whatever built the strategy. */
 const GUARDIAN_FIELDS: FieldSpec[] = [
   { key: "max_portfolio_risk_pct", label: "Risk across open positions", unit: "% of capital", hint: "risk-at-stops", step: "0.5", ceiling: "max_portfolio_risk_pct", help: "What every open stop and the new trade could lose together. Index positions count as one group." },
-  { key: "stop_cooldown_minutes", label: "Cool-down after a stop-out", unit: "minutes", hint: "cool-down", minimum: "min_stop_cooldown_minutes", help: "No new entry in the same index or stock for this long after a stop." },
+  { key: "stop_cooldown_minutes", label: "Cool-down after a stop-out", unit: "minutes", hint: "cool-down", minimum: "min_stop_cooldown_minutes", help: "After a stop, new entries in the same index or stock wait this long." },
   { key: "dd_level_1_pct", label: "Halve the size at a drawdown of", unit: "%", hint: "drawdown", step: "0.5", help: "This far below your equity peak, the risk per trade is halved." },
   { key: "dd_level_2_pct", label: "Pause new entries at a drawdown of", unit: "%", step: "0.5", ceiling: "dd_level_2_pct", help: "This far below the peak, new entries pause until your equity recovers." },
   { key: "event_size_cut_pct", label: "Size cut on event days", unit: "%", step: "5", help: "Used by a market event that cuts the size and names no cut of its own." },
@@ -121,7 +121,7 @@ export default function RiskV2(_props: PageProps = {}) {
     if (!config) return;
     setTouched(Object.fromEntries(ALL_FIELDS.map((f) => [f.key, true])));
     if (ALL_FIELDS.some((f) => problemOf(f) !== null)) {
-      setNotice({ kind: "warn", text: "Nothing was saved. Fix the values marked below, then save again." });
+      setNotice({ kind: "warn", text: "Fix the values marked below, then save again." });
       return;
     }
     const next: RiskConfig = { ...config, loss_streak_pause: pauseDraft };
@@ -213,7 +213,7 @@ export default function RiskV2(_props: PageProps = {}) {
               ? (
                 <Details id="risk.today">
                   <p className="text-t13 text-fg-muted">
-                    {`The size is halved at ${formatNumber(guardian.settings.dd_level_1_pct, 1)}% below your equity peak and new entries pause at ${formatNumber(guardian.settings.dd_level_2_pct, 1)}%. A winning streak never raises the size above normal. Exits are never blocked.`}
+                    {`The size is halved at ${formatNumber(guardian.settings.dd_level_1_pct, 1)}% below your equity peak and new entries pause at ${formatNumber(guardian.settings.dd_level_2_pct, 1)}%. A winning streak never raises the size above normal.`}
                   </p>
                 </Details>
               )
@@ -263,7 +263,7 @@ function OwnPaperLimitsV2({ paper }: { paper: PaperRiskStatus }) {
     riskPerTradePct: paper.settings?.risk_per_trade_pct, dailyLossPct: paper.settings?.daily_loss_pct,
     maxTradesPerDay: paper.settings?.max_trades_per_day, minRr: paper.settings?.min_rr,
   };
-  const none = SETUP_LIMIT_FIELDS.every((f) => limitText(f, paper.set, values[f]) === "Not set");
+  const none = SETUP_LIMIT_FIELDS.every((f) => limitText(f, paper.set, values[f]) === "Off");
   return (
     <CardV2 title="Your paper limits" testId="own-paper-limits">
       <div className="space-y-space-3">
@@ -276,7 +276,7 @@ function OwnPaperLimitsV2({ paper }: { paper: PaperRiskStatus }) {
             return (
               <div key={f} className="flex items-center justify-between gap-space-3 px-space-3 py-space-2 md:px-space-4" data-limit={f}>
                 <dt className="text-t14 text-fg">{RISK_LABELS[f]}</dt>
-                <dd className={`text-t14 font-tabular ${text === "Not set" ? "text-fg-muted" : "font-semibold text-fg"}`}>{text}</dd>
+                <dd className={`text-t14 font-tabular ${text === "Off" ? "text-fg-muted" : "font-semibold text-fg"}`}>{text}</dd>
               </div>
             );
           })}

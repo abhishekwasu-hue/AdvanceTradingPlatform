@@ -1,4 +1,5 @@
 import { ArrowLeft, ChartCandlestick, ChevronRight, RefreshCw } from "lucide-react";
+import { Details } from "../ui/Details";
 import { useCallback, useEffect, useId, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { CARD, LINK_SECONDARY } from "../dashboard/CardV2";
@@ -238,7 +239,8 @@ function Loading() {
 }
 
 function Footer({ source, note }: { source: string; note: string }) {
-  return <p className="text-t12 text-fg-muted">{note} Source: {source}.</p>;
+  // UI-28 U1.11: the page's note and source are on demand, never a paragraph under the numbers.
+  return <Details id="markets.about" label="About these numbers" className="mt-0"><p className="text-t12">{note} Source: {source}.</p></Details>;
 }
 
 function MemberRow({ m, period, benchmark }: { m: ListMember; period: Period; benchmark: string }) {

@@ -236,7 +236,7 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
       )}
       <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-2">
         {LIMIT_FIELDS.map((f) => (
-          <NumberField key={f} field={f} suffix={SUFFIX[f]} value={form[f]} error={shown(f)} help={RISK_HELP[f]} placeholder="Not set"
+          <NumberField key={f} field={f} suffix={SUFFIX[f]} value={form[f]} error={shown(f)} help={RISK_HELP[f]} placeholder="Off"
             onChange={set(f)} onBlur={blur(f)} />
         ))}
       </div>
@@ -374,7 +374,7 @@ export function StrategyStepV2({ onChanged }: StepProps) {
 
 const CHANNELS: { type: AlertChannelType; name: string; icon: typeof Smartphone; missing: string }[] = [
   { type: "PUSH", name: "App notifications", icon: Smartphone, missing: "Off. Turn them on to get alerts on this device." },
-  { type: "TELEGRAM", name: "Telegram", icon: Send, missing: "Not connected yet." },
+  { type: "TELEGRAM", name: "Telegram", icon: Send, missing: "Connect it in one tap." },
   { type: "EMAIL", name: "Email", icon: Mail, missing: "Not set up. Email alerts are added in Settings, under Alert delivery." },
 ];
 

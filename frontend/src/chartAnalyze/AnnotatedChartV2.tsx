@@ -59,7 +59,7 @@ export function Overlay({ src, width, height, annotations, alt }: { src: string;
 
 export function Legend({ annotations }: { annotations: Annotations }) {
   const rows = legendFor(annotations);
-  if (!rows.length) return <p className="text-t12 text-fg-muted">Nothing is drawn on this chart.</p>;
+  if (!rows.length) return <p className="text-t12 text-fg-muted">The chart is clean.</p>;
   return (
     <ul className="flex flex-wrap gap-x-space-4 gap-y-space-1 text-t12 text-fg-muted" aria-label="What the drawing shows">
       {rows.map((r) => (

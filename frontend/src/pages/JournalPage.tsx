@@ -13,7 +13,10 @@ import type { DisciplineScore, DisciplineSettings, JournalEntry, JournalSettings
 import type { PageProps } from "../routes";
 import DisciplineCardV2 from "../growth/DisciplineCardV2";
 import PageDishV2 from "../growth/PageDishV2";
+import { journalCsv, journalStats } from "../journal/stats";
 import { Details } from "../ui/Details";
+import { Signed as SignedV2 } from "../ui/Signed";
+import { Sparkline } from "../ui/Sparkline";
 import { useFeatures } from "../ui/useFeatures";
 
 const OFF_TEXT = "The discipline score is not turned on for your account yet.";
@@ -121,9 +124,34 @@ function EntryRow({ e, countUnconfirmed, onDecide }: { e: JournalEntry; countUnc
   );
 }
 
+/** UI-28 U2.4 / U7.6: expectancy, average R and the drawdown line of the week's closed trades, first. */
+export function JournalStatsRow({ entries }: { entries: JournalEntry[] }) {
+  const st = journalStats(entries);
+  if (st.closed === 0) return null;
+  return (
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4" data-journal-stats>
+      <StatTile label="Expectancy (per trade)" value={<SignedV2 value={st.expectancy} kind="money" />} />
+      <StatTile label="Average R" value={st.avgR === null ? "–" : <SignedV2 value={st.avgR} kind="count" decimals={2} />} />
+      <StatTile label="Max drawdown" value={<SignedV2 value={st.maxDrawdown} kind="money" />} />
+      <StatTile label={`Equity · ${st.closed} closed`} value={<Sparkline values={[0, ...st.equity]} tone={(st.equity[st.equity.length - 1] ?? 0) >= 0 ? "up" : "down"} />} />
+    </div>
+  );
+}
+
+/** "Export (CSV)": the week's journal on this device (nothing is sent anywhere). */
+export function downloadJournalCsv(week: string, entries: JournalEntry[]): void {
+  const url = URL.createObjectURL(new Blob([journalCsv(entries)], { type: "text/csv" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `journal-${week}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 function WeekTab({ data, onDecide }: { data: JournalWeek; onDecide: (id: number, s: TagStatus) => void }) {
   return (
     <div className="space-y-4">
+      <JournalStatsRow entries={data.entries} />
       <ScoreCard score={data.score} />
       <Card title={`Trades entered in ${data.week}`}>
         {data.entries.length === 0
@@ -302,7 +330,14 @@ export default function JournalPage(_props: PageProps) {
     <div>
       <PageHeader title="Journal & discipline"
         description="Your trades, behaviour tags and weekly discipline score."
-        actions={off ? undefined : nav} />
+        actions={off ? undefined : (
+          <div className="flex flex-wrap items-center gap-2">
+            {nav}
+            {data && data.entries.length > 0 && (
+              <Button size="sm" variant="secondary" onClick={() => downloadJournalCsv(data.week, data.entries)} data-journal-export>Export (CSV)</Button>
+            )}
+          </div>
+        )} />
       {/* MO4 slice 4: the page's ready-made dish (ui_v2 + growth_v2; the server sends nothing while the journal is off). */}
       {shareCard && <PageDishV2 page="journal" className="mb-space-4" />}
       {shareCard && <DisciplineCardV2 />}

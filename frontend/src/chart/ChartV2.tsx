@@ -66,7 +66,7 @@ const NO_MARKERS: readonly ChartMarker[] = [];
 
 export default function ChartV2({
   candles, timeframe, symbol, exchange = "NSE", chartType = "candles", prefs = DEFAULT_CHART_PREFS, overlays = NO_OVERLAYS, live,
-  marketOpen, levels = NO_LEVELS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "No prices for this timeframe yet.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, className = "h-[480px]",
+  marketOpen, levels = NO_LEVELS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, className = "h-[480px]",
 }: ChartV2Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<HTMLDivElement>(null);

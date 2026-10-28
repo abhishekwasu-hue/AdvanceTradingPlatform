@@ -29,7 +29,7 @@ export function feedChip(state: FeedState | undefined): { label: string; tone: T
     case "reconnecting": return { label: "Reconnecting", tone: "warn" };
     case "renew_needed": return { label: "Log in to your broker", tone: "warn" };
     case "polling": return { label: "Prices every few seconds", tone: "neutral" };
-    case "none": return { label: "No live prices", tone: "warn" };
+    case "none": return { label: "Waiting for live prices", tone: "warn" };
     case "off":
     default: return { label: "Prices every few seconds", tone: "neutral" };
   }

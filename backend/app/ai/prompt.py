@@ -271,7 +271,7 @@ Market regime (from the platform's classifier): {ctx.market_regime}
 - Total open risk across all positions: {_limit(ctx.max_portfolio_risk_pct, '<= {:g}% of capital')}; NIFTY, BANKNIFTY, FINNIFTY and SENSEX positions
   count as ONE correlated bucket.
 - Daily loss limit: {_limit(ctx.daily_loss_limit_pct, '{:g}% of capital -> kill switch, no new trades that day')}.
-- Cool-down after a stop-out: {_limit(ctx.cooldown_minutes, 'no re-entry in an underlying for {} minutes')}. Never averaging down; a stop only moves the favourable way.
+- {'No re-entry in an underlying for ' + str(ctx.cooldown_minutes) + ' minutes after a stop-out' if ctx.cooldown_minutes else 'No cool-down after a stop-out is set'}. Never averaging down; a stop only moves the favourable way.
 - Drawdown ladder: halves the size at {_limit(ctx.dd_level_1_pct, '{:g}% below the equity peak')}; pauses new entries at {_limit(ctx.dd_level_2_pct, '{:g}%')}. Size never rises after a streak.
 - Event days on the calendar above block entries or cut the size by {_limit(ctx.event_size_cut_pct, '{:g}%')}.
 - Every stop must sit at least {ctx.min_stop_atr_multiple:g} x ATR from the entry (outside normal noise); the platform raises a tighter one.

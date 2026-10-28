@@ -21,6 +21,7 @@ from app.instruments.master import parse_upstox_master, replace_master
 from tests.master_fixture import NIFTY_LOT, build_master
 from tests.test_auth_api import _register, _session_factory
 from tests.test_live_execution import _upgrade_plan
+from tests.def0_legacy import legacy
 
 TODAY = date(2026, 9, 28)
 BIG = RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0, max_open_positions=10, max_trades_per_day=50)
@@ -224,7 +225,7 @@ def test_small_account_is_rejected_below_one_lot_with_a_clear_reason():
     _load_master()
     user = _user("fno-small@example.com")
     ce = _resolve(BUY)
-    result, order, trade = _execute(user, mode="PAPER", contract=ce, rules=BUY, quote_broker=_FnoBroker(premium=120.0), risk=RiskConfig())
+    result, order, trade = _execute(user, mode="PAPER", contract=ce, rules=BUY, quote_broker=_FnoBroker(premium=120.0), risk=legacy())     # DEF-0: the old 0.5% of 1,00,000, set
     assert not result.executed and order.status == "REJECTED" and trade is None
     assert any("below one lot" in r for r in result.reasons)
 

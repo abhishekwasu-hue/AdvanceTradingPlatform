@@ -186,7 +186,8 @@ async def _tenant_cfg(session, tenant_id: int) -> RiskConfig:
 # --- the shared rule ---------------------------------------------------------------------------------------------------
 
 def test_the_default_is_next_session_and_the_default_limit_is_unchanged():
-    assert RiskConfig().loss_streak_pause == "next_session" and RiskConfig().max_consecutive_losses == 4
+    # DEF-0 (owner, 28 Oct): no built-in losses-in-a-row limit - not set (None) until the trader sets one
+    assert RiskConfig().loss_streak_pause == "next_session" and RiskConfig().max_consecutive_losses is None
     with pytest.raises(ValueError):
         RiskConfig(loss_streak_pause="forever")
 
@@ -320,7 +321,7 @@ def test_the_setting_round_trips_and_defaults_without_a_row():
     me = _new_user("cp615-setting@example.com")
     assert client.get("/api/risk-settings", headers=me["headers"]).json()["loss_streak_pause"] == "next_session"
     status = client.get("/api/risk-settings/loss-streak", headers=me["headers"]).json()
-    assert status["mode"] == "next_session" and not status["paused"] and status["limit"] == 4
+    assert status["mode"] == "next_session" and not status["paused"] and status["limit"] is None      # DEF-0: not set
     assert _save_mode(me, "until_resume")["loss_streak_pause"] == "until_resume"
     bad = {**client.get("/api/risk-settings", headers=me["headers"]).json(), "loss_streak_pause": "never"}
     assert client.put("/api/risk-settings", headers=me["headers"], json=bad).status_code == 422

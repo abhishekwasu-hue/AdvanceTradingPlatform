@@ -9,12 +9,13 @@ from sqlalchemy import select
 from app.brokers.base import BrokerInterface
 from app.brokers.models import BrokerOrderResponse, BrokerOrderStatus
 from app.core.enums import ExecutionMode, OrderSide, SignalDirection, SignalGrade
-from app.core.models import RiskConfig, Signal
+from app.core.models import Signal
 from app.db.models import NotificationRecord, TradeRecord, User
 from app.execution.router import OrderRouter
 from app.execution.signal_execution import execute_signal_for_user
 from app.risk_engine.risk_manager import TradingDayState
 from tests.test_auth_api import _register, _session_factory, client
+from tests.def0_legacy import legacy
 
 
 def _signal(direction=SignalDirection.LONG) -> Signal:
@@ -76,7 +77,7 @@ class _LiveBroker(BrokerInterface):
 
 
 def _router(broker, **kwargs) -> OrderRouter:
-    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker, **kwargs)
+    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=legacy(risk_per_trade_pct=1.0), broker=broker, **kwargs)
     router.fill_poll_delay_seconds = 0  # keep the retry path fast in tests
     return router
 

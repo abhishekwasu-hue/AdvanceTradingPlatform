@@ -101,13 +101,18 @@ def _families(regime: str) -> Dict[str, List[str]]:
 
 
 def risk_line(lang: str, cfg: RiskConfig, saved: bool) -> str:
-    """P0.10: the risk settings the trades will actually use - the trader's own, or the platform defaults labelled as
-    such. Experience never changes them (the Risk Management page does, when the trader decides)."""
-    values = (f"{cfg.risk_per_trade_pct:g}% risk per trade, daily loss limit {cfg.max_daily_loss_pct:g}%, "
-              f"pause after {cfg.max_consecutive_losses} losses in a row")
-    if saved:
-        return f"Your risk settings: {values}."
-    return f"Default risk settings (not set yet): {values}. You set your own under Risk Management."
+    """P0.10: the risk settings the trades will actually use. DEF-0: only the limits the trader set himself - there are no
+    platform defaults; with none set, none applies."""
+    parts = []
+    if cfg.risk_per_trade_pct is not None:
+        parts.append(f"{cfg.risk_per_trade_pct:g}% risk per trade")
+    if cfg.max_daily_loss_pct is not None:
+        parts.append(f"daily loss limit {cfg.max_daily_loss_pct:g}%")
+    if cfg.max_consecutive_losses is not None:
+        parts.append(f"pause after {cfg.max_consecutive_losses} losses in a row")
+    if parts:
+        return f"Your risk settings: {', '.join(parts)}."
+    return "No limits of your own are set, so none applies. You can set them in My limits."
 
 
 # Handover 11l (flag `signal_language_v2`): the two plan texts that used stop wording, in the signal language. The brief

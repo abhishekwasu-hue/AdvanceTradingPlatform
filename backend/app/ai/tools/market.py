@@ -232,7 +232,9 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
         df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, args.timeframe, args.days)
     except HTTPException as exc:
         return _failed("backtest", exc)
-    risk = await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()
+    from app.core import config as app_config
+    # DEF-0: the organisation's capital, else the PAPER starting balance (the engine starts there too)
+    risk = (await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()).with_capital(app_config.PAPER_STARTING_CAPITAL)
     result = await asyncio.to_thread(engine, strategy, df, args.symbol.upper(), args.timeframe, risk)    # CPU-bound: off the event loop
     data = {"strategy_id": args.strategy_id, "symbol": args.symbol.upper(), "timeframe": args.timeframe, "from": _iso(df.index[0]), "to": _iso(df.index[-1]),
             "trades": result.total_trades, "win_rate": _r(result.win_rate), "net_pnl": _r(result.net_pnl), "profit_factor": _r(result.profit_factor),

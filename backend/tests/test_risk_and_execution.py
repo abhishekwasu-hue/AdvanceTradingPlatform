@@ -9,6 +9,7 @@ from app.core.models import RiskConfig, Signal
 from app.execution.router import LiveTradingNotConfigured, OrderRouter
 from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
+from tests.def0_legacy import legacy
 
 
 def _sample_signal(entry=100.0, sl=98.0, rr=2.0) -> Signal:
@@ -43,7 +44,7 @@ def test_risk_manager_refuses_a_level_that_is_not_a_finite_number(field, value):
     """#308 review: a NaN level used to crash the sizing (int(NaN)) and leave the order at RISK_CHECK; an infinite target
     filled and then could not be stored. The reason names the level and its value."""
     signal = _sample_signal().model_copy(update={field: value})
-    decision = RiskManager(RiskConfig()).validate_and_size(signal, TradingDayState())
+    decision = RiskManager(legacy()).validate_and_size(signal, TradingDayState())
     name = {"stop_loss": "stop loss"}.get(field, field)
     assert decision.approved is False and decision.reasons == [f"Signal {name} {value!r} is not a finite number"]
 
@@ -119,7 +120,7 @@ def test_risk_manager_sizes_crypto_fractionally():
 
 
 def test_risk_manager_rejects_no_trade_signal():
-    config = RiskConfig()
+    config = legacy()
     manager = RiskManager(config)
     state = TradingDayState()
     no_trade = Signal(
@@ -131,7 +132,7 @@ def test_risk_manager_rejects_no_trade_signal():
 
 
 def test_order_router_fills_paper_trade():
-    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=RiskConfig(risk_per_trade_pct=1.0))
+    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=legacy(risk_per_trade_pct=1.0))
     state = TradingDayState()
     result = asyncio.run(router.execute(_sample_signal(), state))
     assert result.executed
@@ -142,7 +143,7 @@ def test_order_router_fills_paper_trade():
 
 
 def test_order_router_blocks_live_mode_without_broker_adapter():
-    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig())
+    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=legacy())
     state = TradingDayState()
     with pytest.raises(LiveTradingNotConfigured):
         asyncio.run(router.execute(_sample_signal(), state))
@@ -181,7 +182,7 @@ class _FakeBroker(BrokerInterface):
 def test_order_router_places_live_order_through_broker():
     broker = _FakeBroker()
     router = OrderRouter(
-        mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker
+        mode=ExecutionMode.LIVE, risk_config=legacy(risk_per_trade_pct=1.0), broker=broker
     )
     state = TradingDayState()
     result = asyncio.run(router.execute(_sample_signal(), state))
@@ -202,7 +203,7 @@ def test_order_router_places_live_order_through_broker():
 
 def test_order_router_reports_broker_rejection():
     broker = _FakeBroker(order_status="REJECTED")
-    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker)
+    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=legacy(risk_per_trade_pct=1.0), broker=broker)
     state = TradingDayState()
     result = asyncio.run(router.execute(_sample_signal(), state))
 

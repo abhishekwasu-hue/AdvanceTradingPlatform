@@ -68,12 +68,12 @@ def test_runtime_context_reflects_the_account_state():
     body = client.get("/api/ai/context?language=mr&regime=RANGING&symbol=NIFTY%2050", headers=headers).json()
     assert body["prompt_version"] == PROMPT_VERSION
     ctx = body["context"]
-    assert ctx["risk_profile"] == "conservative" and ctx["user_language"] == "en" and ctx["market_regime"] == "RANGING"   # English only: "mr" ignored
+    assert ctx["risk_profile"] == "not set" and ctx["user_language"] == "en" and ctx["market_regime"] == "RANGING"   # English only: "mr" ignored
     assert ctx["allowed_instruments"].startswith("NIFTY 50 (requested); ")
     assert "last 4 closed trades (PAPER): 1 won, 3 lost, net -200, 3 stopped out; the last 3 in a row lost" == ctx["recent_trade_summary"]
     assert ctx["event_calendar"] == [f"{_ist_today()} EXPIRY (INDEX): size cut 50.0% - weekly expiry"]
     assert ctx["drawdown_mode"] == "PAPER" and ctx["current_drawdown_pct"] > 0 and ctx["ceiling_risk_per_trade_pct"] == 2.0
-    assert ctx["cooldown_minutes"] == 30 and ctx["max_portfolio_risk_pct"] == 6.0
+    assert ctx["cooldown_minutes"] is None and ctx["max_portfolio_risk_pct"] is None        # DEF-0: not set, no built-in rule
     assert risk_profile_for(1.0) == "moderate" and risk_profile_for(1.5) == "aggressive"
 
 

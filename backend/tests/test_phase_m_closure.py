@@ -141,6 +141,9 @@ def test_portfolio_snapshot_aggregates_and_warns():
 
 def test_portfolio_exposure_endpoint_and_portfolio_scope_limits():
     headers, me = _owner("m-portfolio@example.com")
+    # DEF-0: "share of capital" reads the organisation's own capital (no built-in 1,00,000) - set it
+    from tests.def0_legacy import legacy
+    assert client.put("/api/risk-settings", headers=headers, json=legacy().model_dump()).status_code == 200
     _seed_trade(me["tenant_id"], me["id"], symbol="RELIANCE", entry=100.0, qty=300)
     body = client.get("/api/portfolio/exposure?live_prices=false", headers=headers).json()
     assert body["open_positions"] == 1 and body["gross_notional"] == 30_000 and body["price_source"] == "entry" and body["by_symbol"][0]["symbol"] == "RELIANCE"

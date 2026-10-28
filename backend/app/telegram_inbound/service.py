@@ -572,11 +572,15 @@ async def _manual_paper(session: AsyncSession, tenant: Tenant, user: User, text:
 async def _risk_text(session: AsyncSession, user: User, lang: str) -> str:
     cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
     day = await briefing.your_day(session, user, cfg, datetime.now(timezone.utc))
-    out = [f"Risk: capital {cfg.capital:,.0f}, {cfg.risk_per_trade_pct}% per trade, daily loss cap {cfg.max_daily_loss_pct}%."]
+    # DEF-0: only the limits he set
+    set_ = [f"capital {cfg.capital:,.0f}" if cfg.capital is not None else None,
+            f"{cfg.risk_per_trade_pct}% per trade" if cfg.risk_per_trade_pct is not None else None,
+            f"daily loss cap {cfg.max_daily_loss_pct}%" if cfg.max_daily_loss_pct is not None else None]
+    out = [f"Risk: {', '.join(s for s in set_ if s)}." if any(set_) else "Risk: no limits of your own are set."]
     for mode in ("PAPER", "LIVE"):
         d = day.get(mode) or {}
         if d.get("active") or d.get("trades_today"):
-            out.append(f"{mode}: realised today {d.get('realised_pnl', 0):+,.0f}, loss budget left {d.get('loss_left', 0):,.0f}, "
+            out.append(f"{mode}: realised today {d.get('realised_pnl', 0):+,.0f}, loss budget left {d.get('loss_left') or 0:,.0f}, "
                        f"open {d.get('open_positions', 0)}")
     out += await _portfolio_lines(session, user, lang)
     return "\n".join(out)

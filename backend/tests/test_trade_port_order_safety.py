@@ -166,4 +166,5 @@ def test_partial_wing_fill_today_and_with_the_strict_flag(monkeypatch):
 
 
 def test_risk_config_default_is_untouched():
-    assert RiskConfig().capital > 0 and config.LIVE_STRICT_WING_FILL is False and config.ORDER_MARKET_PROTECTION_PCT is None
+    assert RiskConfig().capital is None                                       # DEF-0: no built-in capital
+    assert config.LIVE_STRICT_WING_FILL is False and config.ORDER_MARKET_PROTECTION_PCT is None

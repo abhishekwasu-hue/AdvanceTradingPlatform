@@ -165,6 +165,9 @@ def test_paper_execute_risk_state_is_per_user_not_shared_globally(monkeypatch):
 
     token_a = _register("naomi@example.com")
     headers_a = {"Authorization": f"Bearer {token_a}"}
+    # DEF-0: no built-in limit - user A sets his own 3 open positions
+    from tests.def0_legacy import legacy
+    assert client.put("/api/risk-settings", headers=headers_a, json=legacy().model_dump()).status_code == 200
     for _ in range(3):
         response = client.post(
             "/api/strategies/ema_rsi_scalper_1m/paper-execute",

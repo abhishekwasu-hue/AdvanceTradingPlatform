@@ -162,11 +162,16 @@ async def tenant_checklist(session: AsyncSession, user: User, tenant: Tenant, ta
     settings = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == tenant.id))
     limits = int(await session.scalar(select(func.count()).select_from(RiskLimitRecord).where(RiskLimitRecord.tenant_id == tenant.id, RiskLimitRecord.enabled.is_(True))) or 0)
     if settings or limits:
-        detail = (f"capital {settings.capital:,.0f}, {settings.risk_per_trade_pct}% per trade, {settings.max_daily_loss_pct}% daily loss cap" if settings else "") + (f"; {limits} scoped limit(s)" if limits else "")
+        # DEF-0: only the limits the organisation set
+        parts = [f"capital {settings.capital:,.0f}" if settings and settings.capital is not None else "",
+                 f"{settings.risk_per_trade_pct}% per trade" if settings and settings.risk_per_trade_pct is not None else "",
+                 f"{settings.max_daily_loss_pct}% daily loss cap" if settings and settings.max_daily_loss_pct is not None else ""]
+        detail = (", ".join(p for p in parts if p) or ("no limits set" if settings else "")) + (f"; {limits} scoped limit(s)" if limits else "")
         items.append(Item("risk", "Risk limits set", "ok", detail.strip("; "), link="risk-management"))
     else:
-        items.append(Item("risk", "Risk limits set", "warn" if not live else "todo", "Platform defaults only (0.5% per trade, 3% daily loss, 3 open positions)",
-                          "Review capital, per-trade risk and the daily loss cap on the Risk page before trading real money.", "risk-management"))
+        # DEF-0: no platform defaults - none set means none applies; setting them is the trader's choice, never forced
+        items.append(Item("risk", "Risk limits set", "warn", "No limits of your own are set, so none applies",
+                          "Set capital, per-trade risk and a daily loss cap in My limits if you want them before trading real money.", "risk-management"))
 
     # 7. Alerts -----------------------------------------------------------------------------------
     channels = list(await session.scalars(select(AlertChannelRecord).where(AlertChannelRecord.tenant_id == tenant.id, AlertChannelRecord.enabled.is_(True))))

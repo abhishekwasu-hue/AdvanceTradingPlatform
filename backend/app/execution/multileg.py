@@ -35,6 +35,7 @@ from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest
 from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide, OrderStatus, SignalDirection
 from app.core.models import RiskConfig, Signal, Trade
+from app.risk_engine.routes import get_tenant_risk_config
 from app.db.models import OrderRecord, Tenant, TradeRecord, User
 from app.execution import approval as approval_gate
 from app.execution.contract_execution import MARGIN_SAFETY, ContractExecutionError, contract_ltp, _is_upstox
@@ -171,8 +172,10 @@ async def execute_structure(
     if risk_config is not None:
         cfg = risk_config
     else:                                    # DEF-0: limits not set are off; a % reads the user's PAPER balance
-        from app.risk_engine.routes import user_risk_config
-        cfg = await user_risk_config(session, user)
+        from app.risk_engine.by_default import capital_basis
+        cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+        if cfg.capital is None:
+            cfg = cfg.with_capital(await capital_basis(session, user))
     # Phase V1: ceilings, then the guardian's entry rules (cool-down, drawdown ladder, events).
     cfg, guardian_notes = clamp_config(cfg, await risk_ceilings(session))
     state = await build_trading_day_state(session, user)

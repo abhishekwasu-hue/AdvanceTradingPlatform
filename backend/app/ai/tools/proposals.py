@@ -138,7 +138,11 @@ async def propose_risk_reduction(ctx: ToolContext, args: _RiskProposal) -> ToolR
     """Propose a TIGHTER value for one organisation risk setting. A person decides and makes the change on the Risk page."""
     from app.risk_engine.routes import get_tenant_risk_config
     config = await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()
-    current = float(getattr(config, args.setting))
+    raw = getattr(config, args.setting)
+    if raw is None:                    # DEF-0: not set (no limit) - any value the trader then sets adds a limit
+        return await _raise(ctx, None, "REDUCE_RISK", "AGENT_RISK", f"Set {args.setting} to {args.proposed_value:g} (not set now: no limit).", args,
+                            {"setting": args.setting, "current": None, "proposed": args.proposed_value})
+    current = float(raw)
     tighter = args.proposed_value < current if SAFER[args.setting] == "lower" else args.proposed_value > current
     if not tighter:
         return ToolResult(False, None, None, "ai_actions",

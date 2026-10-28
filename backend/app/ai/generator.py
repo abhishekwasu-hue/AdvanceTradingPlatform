@@ -80,7 +80,10 @@ def text_problem(explanation: Optional[str], warnings: List[str], config, sugges
     the deployment suggestion, the risk context or the trader's own request; advice/guarantee words are never shown."""
     from app.ai import grounding, output_filter
     allowed = (grounding.numbers_in_values(json.loads(config.model_dump_json())) | grounding.numbers_in_values(context)
-               | grounding.allowed_from_text(prompt))
+               | grounding.allowed_from_text(prompt)
+               # the draft's own timeframe ("5min") may be named ("5-minute bars"); it was allowed only through the
+               # platform's default risk numbers before DEF-0
+               | grounding.allowed_from_text(str(getattr(config, "timeframe", "") or "")))
     if suggestion is not None:
         allowed |= grounding.numbers_in_values(json.loads(suggestion.model_dump_json()))
     for text in [explanation or "", *warnings]:

@@ -11,6 +11,7 @@ from app.ai import strategist as st
 from app.strategy_engine.declarative import Condition, CustomStrategyConfig, DeclarativeStrategy, Operand
 from tests.test_auth_api import _register, client
 from tests.test_phase_ap_interview import _sessions
+from tests.def0_legacy import legacy
 
 UTC = timezone.utc
 
@@ -91,7 +92,7 @@ def test_strategist_builds_validated_candidates():
     s = ms.study(df, "NIFTY 50", "en")
     # P0.8-D: the trader names the side; a bullish study no longer picks LONG for them, and nothing is marked best.
     assert st.build(df, s, "en")["sides"] == ["both"]
-    out = st.build(df, s, "en", direction="long")
+    out = st.build(df, s, "en", direction="long", risk=legacy())        # DEF-0: the trader's own 0.5% of 100,000
     assert out["sides"] == ["long"] and out["base_timeframe"] == "5min" and out["tested"] >= 3 and out["best"] is None
     best = out["candidates"][0]
     assert best["direction"] == "LONG" and not best["rules"]["short"] and best["triggers"] == []

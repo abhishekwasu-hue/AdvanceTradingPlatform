@@ -43,6 +43,9 @@ async def guardian_status(user: User = Depends(get_current_user), session: Async
     """Drawdown per mode, open risk by correlation bucket, active cool-downs, today's events,
     the effective (ceiling-clamped) settings and the ceilings themselves."""
     cfg = await _effective_config(session, user.tenant_id)
+    if cfg.capital is None:                  # DEF-0: the drawdown and open-risk % read the user's PAPER balance
+        from app.risk_engine.by_default import capital_basis
+        cfg = cfg.with_capital(await capital_basis(session, user))
     result = await guardian.status(session, user.tenant_id, cfg)
     result["ceilings"] = await controls.risk_ceilings(session)
     return result

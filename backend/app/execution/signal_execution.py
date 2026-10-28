@@ -11,6 +11,7 @@ from app.compliance import fo_limits
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderStatus
 from app.core.logging_config import bind_log_context, update_log_context
 from app.core.models import RiskConfig, Signal
+from app.risk_engine.routes import get_tenant_risk_config
 from app.db.models import OrderRecord, Tenant, User
 from app.execution import approval as approval_gate
 from app.execution.order_persistence import create_order, execution_result_from_order, transition_order
@@ -227,8 +228,10 @@ async def execute_signal_for_user(
 
         effective_risk_config = risk_config
         if effective_risk_config is None:          # DEF-0: limits not set are off; a % reads the user's PAPER balance
-            from app.risk_engine.routes import user_risk_config
-            effective_risk_config = await user_risk_config(session, user)
+            from app.risk_engine.by_default import capital_basis
+            effective_risk_config = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+            if effective_risk_config.capital is None:
+                effective_risk_config = effective_risk_config.with_capital(await capital_basis(session, user))
 
         execution_mode = ExecutionMode(mode)
         if execution_mode == ExecutionMode.LIVE and broker is None:

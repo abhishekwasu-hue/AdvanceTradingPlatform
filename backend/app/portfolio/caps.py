@@ -132,7 +132,7 @@ async def largest_risk_amount(session: AsyncSession, user: User, capital: float,
     from app.core.models import RiskConfig
     user_cap = float(by_default.risk_cap(capital, settings).get("amount") or 0.0)
     cfg, _ = clamp_config(await get_tenant_risk_config(user.tenant_id, session) or RiskConfig(), await risk_ceilings(session))
-    org_cap = float(cfg.capital) * float(cfg.risk_per_trade_pct) / 100.0
+    org_cap = float(cfg.with_capital(capital).risk_amount() or 0.0)      # DEF-0: none set = 0 (no organisation cap)
     return max(user_cap, org_cap)
 
 

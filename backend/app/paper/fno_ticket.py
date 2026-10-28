@@ -270,6 +270,48 @@ def future_margin(fill: float, units: float) -> Dict[str, Any]:
             "does not have.", "note": f"Contract value ₹{fill * units:,.0f}"}
 
 
+NO_MARGIN = "Margin not available: log in to your broker to see its estimate for this order."
+
+
+async def read_broker_margin(session: AsyncSession, user: User, contract: Contract, side: str, units: float,
+                             product: str) -> Optional[Tuple[float, str]]:
+    """The broker's own margin for this order through the user's OWN session (its margin API): (value, broker name), or
+    None without a session or an answer. Never raises."""
+    from app.brokers.models import BrokerOrderRequest
+    from app.core.enums import OrderSide
+    from app.paper.fno_basket import own_broker
+    try:
+        broker = await own_broker(session, user)
+        if broker is None:
+            return None
+        symbol = contract.instrument_key if getattr(broker, "name", "") == "upstox" and "|" in (contract.instrument_key or "") \
+            else contract.tradingsymbol
+        value = await broker.get_order_margin(BrokerOrderRequest(
+            symbol=symbol, exchange=contract.exchange, transaction_type=OrderSide.BUY if side == "BUY" else OrderSide.SELL,
+            quantity=float(units), order_type="MARKET", product=product))
+        return (float(value), str(getattr(broker, "name", "broker"))) if value is not None and float(value) > 0 else None
+    except Exception as exc:  # noqa: BLE001 - a margin read never stands in the way of the ticket
+        logger.info("FNO ticket: broker margin not read (%s)", type(exc).__name__)
+        return None
+
+
+async def _broker_margin(session: AsyncSession, user: User, contract: Contract, side: str, units: float, product: str,
+                         fallback: Dict[str, Any]) -> Dict[str, Any]:
+    """DEF-0 D8: the broker's margin for this order, labelled an estimate - on PAPER too, where nothing is blocked.
+    Without it: the Builder's estimate when it has one, else one honest line (never a "-" beside "comes with the order
+    ticket")."""
+    read = await read_broker_margin(session, user, contract, side, units, product)
+    if read is not None:
+        value, name = read
+        return {"value": round(value, 2), "estimated": True, "basis": f"Your broker's margin for this order ({name}). PAPER blocks nothing.",
+                "note": None, "source": "broker"}
+    note = fallback.get("note")
+    note = None if note and "comes with the order ticket" in note else note       # never "-" beside that promise
+    if fallback.get("value") is None:
+        return {"value": None, "estimated": True, "basis": NO_MARGIN, "note": note, "source": None}
+    return {**fallback, "note": note, "source": "estimate"}
+
+
 def margin(side: str, right: str, strike: float, fill: float, lots: int, lot_size: int, expiry: date) -> Dict[str, Any]:
     """The Options Builder's labelled estimate for this one leg."""
     from app.options_builder.metrics import margin_estimate
@@ -470,6 +512,8 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     if contract is not None and basis is not None and not errors and units:
         margin_line = future_margin(basis, units) if future else margin(side, right, float(contract.strike or 0.0), basis, ask.lots,
                                                                           contract.lot_size, contract.expiry)
+    if margin_line is not None and contract is not None and basis is not None and units:
+        margin_line = await _broker_margin(session, user, contract, side, units, ask.product, margin_line)
     charges = None
     if basis is not None and units and not errors:
         from app.execution.india_costs import leg_cost

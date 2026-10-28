@@ -165,7 +165,8 @@ def test_a_sold_option_needs_a_stop_and_shows_no_made_up_margin(setup):
     assert any("must be above the price" in e for e in view["errors"])
     view = _preview(t, _body(expiry, strike, side="SELL", stop_loss=120.0))
     assert view["max_loss"]["value"] == pytest.approx(20.0 * LOT) and "gap" in view["max_loss"]["basis"]
-    assert view["margin"]["value"] is None and "SPAN" in view["margin"]["basis"]
+    # DEF-0 D8: no broker answer - one honest line, never "-" beside "comes with the order ticket"
+    assert view["margin"]["value"] is None and view["margin"]["basis"].startswith("Margin not available")
 
 
 @pytest.mark.parametrize("order_type,side,price,trigger,fills", [

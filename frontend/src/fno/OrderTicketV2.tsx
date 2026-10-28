@@ -9,7 +9,7 @@ import { useFeatures } from "../ui/useFeatures";
 import { fnoApi, runOnOptions, type FnoApi, type MultiExitResult, type MultiResult, type OrderPreview, type OrderResult, type PracticeAccount, type Side } from "./api";
 import {
   MAX_LOTS, ORDER_TYPES, PRACTICE_TEXT, PRACTICE_TITLE, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
-  draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
+  blockedBy, draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
   PRODUCT_UNSET_TEXT,
 } from "./ticketModel";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
@@ -411,6 +411,14 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
         )}
         {step.kind === "review" && (
           <>
+            {(() => {
+              const why = blockedBy(step.preview);
+              return why && (
+                <p className="basis-full text-t13 text-fg" data-ticket="blocked-by">
+                  {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-ticket="change-limits">Change it in My limits</a></>}
+                </p>
+              );
+            })()}
             <button type="button" onClick={onBack} data-ticket="back" className="min-h-11 rounded-control border border-border px-space-4 text-t14 font-semibold text-fg">
               Back
             </button>

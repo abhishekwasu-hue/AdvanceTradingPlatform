@@ -145,7 +145,7 @@ function BlockBody({ stage, registry, scanTf, onChange }: { stage: Stage; regist
         <>
           <span className="text-t12 text-fg-muted">Formula</span>
           <span className="block w-full min-w-0 basis-full">
-            <TextAreaInline value={stage.text} label="Formula condition in ScreenQL" placeholder="high - low < Min(high - low, 6)[1]"
+            <TextAreaInline value={stage.text} label="Formula condition" placeholder="high - low < Min(high - low, 6)[1]"
                             onChange={(text) => onChange({ ...stage, text })} />
           </span>
         </>
@@ -315,7 +315,7 @@ export function StageRow(props: StageRowProps) {
           {/* SCR-FIX D7: plain words by default; the block's ScreenQL only under its own "Advanced" disclosure */}
           <details className="min-w-0 basis-full" data-testid="stage-code">
             <summary className="cursor-pointer text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">Advanced: the code</summary>
-            <code className="mt-1 block break-all font-mono text-t12 text-fg-muted" title="This block in ScreenQL">{stageText(registry, stage)}</code>
+            <code className="mt-1 block break-all font-mono text-t12 text-fg-muted" title="This block as a formula">{stageText(registry, stage)}</code>
           </details>
         </div>
       )}

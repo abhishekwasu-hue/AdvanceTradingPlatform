@@ -139,7 +139,7 @@ for (const size of SIZES) {
         await openPositions(page, theme, { basket: BASKET });
         await page.locator("[data-group='basket']").getByTestId("fno-compare").click();
         const dialog = page.locator("[data-adjust-compare]");
-        await expect(dialog).toContainText("Practice mode (PAPER)");
+        await expect(dialog.locator("[data-practice-frame]")).toHaveText("PAPER");
         await dialog.locator("[data-change-leg='301'] [data-option='close']").click();
         await dialog.locator("[data-change-leg='302'] [data-option='close']").click();
         await expect(dialog.locator("[data-figure-row='Booked now by closing']")).toContainText("₹262.50");

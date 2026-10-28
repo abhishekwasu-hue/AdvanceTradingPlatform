@@ -2,6 +2,7 @@ import * as RD from "@radix-ui/react-dialog";
 import { ChevronRight, Minus, Plus, ShieldCheck, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
+import { Details } from "../ui/Details";
 import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { formatPrice } from "../ui/format";
@@ -25,7 +26,7 @@ import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
  * - Buy / Sell; quantity in LOTS with the units shown (lots x the instrument master's lot size); Market / Limit / SL /
  *   SL-M; MIS / NRML; the price helper (LTP, bid, ask fill the price field); a stop-loss for the position.
  * - "Review" asks the server for the confirm step: the price it fills at, the margin required and the max loss, the
- *   charges, and the risk checks in plain words - all BEFORE anything is placed. "Place PAPER order" places one PAPER
+ *   charges, and the risk checks in plain words - all BEFORE anything is placed. "Buy" / "Sell" places one PAPER
  *   order; a refusal says why. There is no LIVE path here and the AI never opens it with an order (ADR-0006).
  * - The "Practice mode (PAPER)" frame is always on the ticket. Keyboard: B = Buy, S = Sell (desktop; never while typing).
  * - A bottom sheet on a phone (thumb reach: the main button at the bottom, 44 px targets), a side panel from md.
@@ -220,11 +221,13 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-40 bg-scrim/50" />
         <RD.Content aria-describedby={undefined} data-order-ticket data-step={t.step.kind}
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] flex-col overflow-hidden rounded-t-panel border-2 border-warn bg-surface-1 text-fg shadow-raised focus:outline-none md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[26rem] md:rounded-none md:rounded-l-panel">
-          <PracticeFrame />
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] flex-col overflow-hidden rounded-t-panel border border-border bg-surface-1 text-fg shadow-raised focus:outline-none md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[26rem] md:rounded-none md:rounded-l-panel">
           <div className="flex items-start justify-between gap-space-3 px-space-4 pt-space-3">
             <div className="min-w-0">
-              <RD.Title className="truncate text-t18 font-semibold text-fg">{label}</RD.Title>
+              <div className="flex min-w-0 items-center gap-space-2">
+                <RD.Title className="truncate text-t18 font-semibold text-fg">{label}</RD.Title>
+                <PracticeFrame />
+              </div>
               <p className="text-t13 text-fg-muted font-tabular">
                 LTP {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}
               </p>
@@ -255,13 +258,13 @@ export function needsStop(problem: string | null | undefined): boolean {
   return !!problem && /stop-loss/i.test(problem);
 }
 
+/** UI-28 U1.1: one "PAPER" chip beside the title (the mode labelled once); the sentence is its tooltip, not a band. */
 export function PracticeFrame({ className }: { className?: string } = {}) {
   return (
-    <div className={cx("flex flex-wrap items-center gap-x-space-2 bg-warn-tint px-space-4 py-space-2 text-t13 font-semibold text-warn", className)} data-practice-frame>
-      <ShieldCheck size={16} aria-hidden className="shrink-0" />
-      <span className="shrink-0">{PRACTICE_TITLE}</span>
-      <span className="font-normal">{PRACTICE_TEXT}</span>
-    </div>
+    <span title={PRACTICE_TEXT} aria-label={`${PRACTICE_TITLE}: ${PRACTICE_TEXT}`}
+      className={cx("inline-flex shrink-0 items-center gap-space-1 rounded-pill bg-warn-tint px-space-2 py-px text-t12 font-semibold text-warn", className)} data-practice-frame>
+      <ShieldCheck size={12} aria-hidden />{PRACTICE_TITLE}
+    </span>
   );
 }
 
@@ -424,7 +427,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             </button>
             <button type="button" onClick={onPlace} disabled={busy || !step.preview.can_place} data-ticket="place"
               className={cx("min-h-11 flex-1 rounded-control px-space-4 text-t15 font-semibold disabled:opacity-50", sideTone)}>
-              {busy ? "Placing…" : step.preview.can_place ? "Place PAPER order" : "Cannot place"}
+              {busy ? "Placing…" : sideWord(draft.side)}
             </button>
           </>
         )}
@@ -473,10 +476,7 @@ export function Review({ preview: p, budget, events, liquidity }: {
       </dl>
       {p.fill_note && p.fill_price !== null && <p className="text-t13 text-fg-muted">{p.fill_note}</p>}
       {payoff && (
-        <p className="rounded-control bg-surface-2 px-space-3 py-space-2 text-t14 text-fg" data-ticket="plain-words">
-          <span className="block text-t12 font-semibold text-fg-muted">In plain words (information only)</span>
-          {payoff}
-        </p>
+        <Details id="ticket.payoff-words" label="In plain words" className="mt-0"><p data-ticket="plain-words">{payoff}</p></Details>
       )}
       <RiskLineV2 line={riskLine(p.max_loss?.value, false, budget)} />
       <RiskChecksV2 testId="ticket" lines={[eventLine(events ?? null, p.contract?.expiry), liquidity ?? null, marginLine(p.margin?.value, budget)]} />

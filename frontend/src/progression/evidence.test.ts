@@ -37,6 +37,6 @@ describe("ladder evidence helpers (N2-1)", () => {
     expect(disciplineWeeksNote({ ...base, status: "too_few_weeks", weeks_needed: 4, weeks: [{ week: "2026-W40", score: 70 }, { week: "2026-W41", score: 75 }] }, t))
       .toBe("2 of 4 weeks scored");
     expect(disciplineWeeksNote({ ...base, status: "ok", weeks_needed: 2, weeks: [{ week: "2026-W40", score: 70 }, { week: "2026-W41", score: 75 }] }, t)).toBe("");
-    expect(disciplineWeeksNote({ ...base, status: "engine_off", value: null, met: null }, t)).toBe("The journal's discipline engine is off for your organisation.");
+    expect(disciplineWeeksNote({ ...base, status: "engine_off", value: null, met: null }, t)).toBe("The journal's discipline score is off for your organisation.");
   });
 });

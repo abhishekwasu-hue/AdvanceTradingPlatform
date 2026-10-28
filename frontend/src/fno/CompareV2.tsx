@@ -94,7 +94,7 @@ export function CompareView({ columns, underlying, spot, testId }: { columns: re
       <ul className="space-y-space-2" data-compare-sentences>
         {columns.map((c) => (
           <li key={c.name} className="rounded-control bg-surface-2 px-space-3 py-space-2 text-t14 text-fg">
-            <span className="block text-t12 font-semibold text-fg-muted">{c.name}: in plain words (information only)</span>
+            <span className="block text-t12 font-semibold text-fg-muted">{c.name}: in plain words</span>
             {xs.length ? payoffSentence(sentenceInput(c.legs, c.shift, xs), underlying) : "Nothing to show yet."}
             {c.note && <span className="mt-space-1 block text-t12 text-fg-muted">{c.note}</span>}
           </li>
@@ -212,10 +212,10 @@ function useEvaluation(ask: BasketAsk | null, api: Evaluate): { out: BasketEvalu
 
 // --- 8b-g: compare a change on the positions page ---------------------------------------------------------------------
 
-const DIALOG = "fixed inset-x-0 bottom-0 z-50 flex max-h-[94dvh] flex-col overflow-hidden rounded-t-panel border-2 border-warn bg-surface-1 text-fg shadow-raised focus:outline-none md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[44rem] md:rounded-none md:rounded-l-panel";
+const DIALOG = "fixed inset-x-0 bottom-0 z-50 flex max-h-[94dvh] flex-col overflow-hidden rounded-t-panel border border-border bg-surface-1 text-fg shadow-raised focus:outline-none md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[44rem] md:rounded-none md:rounded-l-panel";
 const SEG = "min-h-11 rounded-control px-space-3 text-t13 font-semibold";
 
-export const COMPARE_NOTE = "Information only. Nothing here places or changes an order: make any change yourself with Exit now, the order ticket or the basket.";
+export const COMPARE_NOTE = "Nothing here places or changes an order: make any change yourself with Exit now, the order ticket or the basket.";
 
 const legWords = (side: "BUY" | "SELL", lots: number) => `${side === "BUY" ? "Long" : "Short"} ${formatNumber(lots, 0)} lot${lots === 1 ? "" : "s"}`;
 
@@ -259,10 +259,9 @@ export function AdjustCompareV2({ open, onClose, title, legs, adjust, store = de
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-40 bg-scrim/50" />
         <RD.Content aria-describedby={undefined} data-adjust-compare className={DIALOG}>
-          <PracticeFrame />
           <div className="flex items-center justify-between gap-space-3 px-space-4 pt-space-3">
             <div className="min-w-0">
-              <RD.Title className="text-t18 font-semibold text-fg">Compare a change</RD.Title>
+              <div className="flex items-center gap-space-2"><RD.Title className="text-t18 font-semibold text-fg">Compare a change</RD.Title><PracticeFrame /></div>
               <p className="text-t13 text-fg-muted">{title}</p>
             </div>
             <RD.Close aria-label="Close" className="-mr-space-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg">
@@ -396,7 +395,7 @@ export function StrategyCompareV2({ underlying, legs, saved, rows, expiry, aroun
       <div className="flex gap-space-2">{select(0, a)}{select(1, b)}</div>
       {!spot && <p className="text-t13 text-fg-muted">The numbers appear once the chain&apos;s price is known.</p>}
       <CompareView columns={[basketColumn(a, ea.out, ea.busy), basketColumn(b, eb.out, eb.busy)]} underlying={underlying} spot={spot} testId="baskets" />
-      <p className="text-t12 text-fg-muted">Information only: comparing places nothing. Load a basket or pick a ready strategy to work with it.</p>
+      <p className="text-t12 text-fg-muted">Comparing places nothing. Load a basket or pick a ready strategy to work with it.</p>
     </section>
   );
 }

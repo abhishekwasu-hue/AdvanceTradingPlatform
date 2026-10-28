@@ -116,7 +116,7 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
               })}
             </ul>
             {ladder.evidence && <LadderEvidence evidence={ladder.evidence} />}
-            {!v2 && <p className="text-xs text-fg-muted">Figures from your own PAPER trades, as of {new Date(ladder.as_of).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST. Phase 0 has PAPER only.</p>}
+            {!v2 && <p className="text-xs text-fg-muted">Figures from your own PAPER trades, as of {new Date(ladder.as_of).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST.</p>}
           </div>
         )}
 
@@ -132,7 +132,7 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
               { label: "Not taken (would-have records)", value: account.not_taken.length },
             ]} />
             <p>{account.note}{account.excluded_trades > 0 ? ` (${account.excluded_trades} left out.)` : ""}</p>
-            {ladder && <p>Figures from your own PAPER trades, as of {formatDateTimeIST(ladder.as_of)}. Phase 0 has PAPER only.</p>}
+            {ladder && <p>Figures from your own PAPER trades, as of {formatDateTimeIST(ladder.as_of)}.</p>}
           </Details>
         )}
       </div>

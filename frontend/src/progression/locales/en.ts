@@ -166,6 +166,6 @@ export const PROGRESSION_EN = {
     weeksLabel: "Weekly discipline scores",
     weekScore: "{{week}}: {{score}}",
     needed: "{{have}} of {{needed}} weeks scored",
-    engineOff: "The journal's discipline engine is off for your organisation.",
+    engineOff: "The journal's discipline score is off for your organisation.",
   },
 } as const;

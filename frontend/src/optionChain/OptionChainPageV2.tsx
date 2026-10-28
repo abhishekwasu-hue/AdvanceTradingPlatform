@@ -15,7 +15,6 @@ import { useTerminalSpot } from "../terminal/spot";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
 import AnalysisSlotV2 from "./AnalysisSlotV2";
-import ChainDishV2 from "./ChainDishV2";
 import ChainTableV2 from "./ChainTableV2";
 import ChainCharts from "./ChartsViewV2";
 import ColumnsMenuV2 from "./ColumnsMenuV2";
@@ -182,7 +181,6 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
     const ready = setupData.items.map((i) => setupTrade(i, symbol, live.expiry, live.rows)).filter((t) => t.kind !== "none");
     if (ready.length === 1) tradeSetup(ready[0]);
   }, [autoTrade, setupData, live, tradeSetup, symbol]);
-  const dishOn = useFeatures().on("markets_view");
 
   return (
     <div className="space-y-space-4" data-page="option-chain-v2">
@@ -257,7 +255,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       </section>}
       {trading.layer}
 
-      {dishOn && <ChainDishV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />}
+      {/* UI-28 U1.2 (owner, 28 Oct): the "What the chain shows" prose is no longer mounted; its numbers stay in the summary strip. */}
 
       {/* OC4: the Analysis tabs, Ask AI and My analyses for the chain on screen. */}
       <AnalysisSlotV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />

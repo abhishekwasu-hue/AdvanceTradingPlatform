@@ -9,7 +9,6 @@ import { cx } from "../components/primitives/cx";
 import { CARD } from "../dashboard/CardV2";
 import type { PageProps } from "../routes";
 import { chartTabPath } from "../shell/shellRoutes";
-import { PageIntro } from "../ui/PageIntro";
 import { recentKeyFor } from "../ui/SymbolPicker";
 import { useFeatures } from "../ui/useFeatures";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
@@ -46,12 +45,12 @@ export default function WatchlistPageV2(_props: PageProps) {
 
   return (
     <div data-page="watchlist" className="mx-auto flex w-full max-w-[760px] flex-col gap-space-4">
-      <PageIntro id="watchlist" lines={["Tap a symbol to open its chart. Ready-made lists are read-only; copy one to make a list of your own."]} />
       <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Watchlist</h1>
-      {readyMade === "empty" && (
-        <p role="status" data-ready-made="empty" className={cx(CARD, "p-space-4 text-t14 text-fg-muted")}>{NOT_FILLED_NOTE}</p>
-      )}
+      {/* UI-28 U1.6: no intro and no sentence card - an unfilled ready-made list is one muted row inside the list card. */}
       <div data-card="Watchlist" className={cx(CARD, "flex flex-col")}>
+        {readyMade === "empty" && (
+          <p role="status" data-ready-made="empty" className="border-b border-subtle px-space-4 py-space-2 text-t13 text-fg-muted">{NOT_FILLED_NOTE}</p>
+        )}
         <WatchlistPanel symbol="" exchange="" onOpen={open} listId={view.watchlist_id} onListId={(id) => keep({ watchlist_id: id })}
           systemKey={view.watchlist_system} onSystemKey={(key) => keep({ watchlist_system: key })}
           storageKey={recentKeyFor(userId)} touch={phone} className="flex-1" liveTicks={features.on("data_hub")} />

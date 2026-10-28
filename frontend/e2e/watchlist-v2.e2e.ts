@@ -71,7 +71,7 @@ test.describe("Watchlist page 1440 desktop", () => {
 
   test("before the daily list update: one honest line and the panel's own empty state, never sample rows", async ({ page }) => {
     await open(page, { systemLists: NOT_FILLED });
-    await expect(page.locator("[data-ready-made='empty']")).toHaveText(/fill after the daily list update/);
+    await expect(page.locator("[data-ready-made='empty']")).toHaveText("Ready-made lists: not filled yet");
     await expect(page.getByText(/You have no watchlists yet/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Create a list" })).toBeVisible();
     await expect(page.getByText(/sample/i)).toHaveCount(0);

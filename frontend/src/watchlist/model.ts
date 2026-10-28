@@ -16,8 +16,7 @@ export function readyMadeState(reply: SystemListsReply | null | undefined): Read
 }
 
 /** The honest note while the ready-made lists are not filled yet (never sample rows in their place). */
-export const NOT_FILLED_NOTE =
-  "The ready-made lists (Indices, Index stocks, Sectors, F&O) fill after the daily list update. Your own lists work now.";
+export const NOT_FILLED_NOTE = "Ready-made lists: not filled yet";
 
 /** The page's one-line intro (what to do here). */
 export const INTRO_LINE = "Tap a symbol to open its chart. Ready-made lists are read-only; copy one to make a list of your own.";

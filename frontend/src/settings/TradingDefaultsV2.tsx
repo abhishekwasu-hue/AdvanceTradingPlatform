@@ -258,7 +258,7 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
           <Details id="settings.liquidity" label="How the check works" className="mb-space-3">
             <p>
               Before you place an F&amp;O order, its strike is compared with the other strikes on the chain. You can also add your own limits;
-              the check then says whether the strike is inside them. Information only: it never holds back an order or an exit.
+              the check then says whether the strike is inside them. It never holds back an order or an exit.
             </p>
           </Details>
           <label className="flex min-h-11 cursor-pointer items-start gap-space-2 text-t14 text-fg">

@@ -188,7 +188,7 @@ export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, on
       <section aria-label="Verify" className="overflow-x-auto rounded-panel border border-border">
         {/* SCR-FIX D6: the result first (a phone sees it without scrolling), plain words that wrap, fixed columns */}
         <table className="w-full table-fixed border-collapse text-t12" data-testid="verify-strip">
-          <caption className="sr-only">Each condition with the engine's value at the matched bar and whether it passed</caption>
+          <caption className="sr-only">Each condition with its value at the matched bar and whether it passed</caption>
           <thead className="bg-surface-2 text-fg-muted">
             <tr>
               <th scope="col" className="w-16 px-3 py-1.5 text-left font-medium">Result</th>
@@ -303,7 +303,7 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
 
   return (
     <Dialog open={evidenceId != null} onOpenChange={(open) => { if (!open) onClose(); }} wide
-            title={`Why ${pack?.symbol ?? symbol ?? ""} matched`} description="Only the screen's own conditions are drawn, with the engine's numbers.">
+            title={`Why ${pack?.symbol ?? symbol ?? ""} matched`} description="Only the screen's own conditions are drawn.">
       {error ? <p role="alert" className="text-warn">{error}</p>
         : !pack ? <p className="text-fg-muted">Loading the evidence…</p>
           : <EvidenceView pack={replayed ?? pack} hiddenBlocks={hidden} showFailed={showFailed} onToggleBlock={toggle} onShowFailed={setShowFailed}

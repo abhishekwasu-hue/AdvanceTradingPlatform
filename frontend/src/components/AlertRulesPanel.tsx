@@ -109,7 +109,7 @@ function NewRuleForm({ onCreated }: { onCreated: () => void }) {
         <Input label="Symbol" value={form.symbol} onChange={(e) => set("symbol", e.target.value)} placeholder="TCS" />
         <Select label="Timeframe" value={form.base_tf} onChange={(v) => set("base_tf", v)} options={TIMEFRAMES.map((t) => ({ value: t, label: t }))} />
       </div>
-      <Input label="Condition (ScreenQL)" value={form.condition} onChange={(e) => set("condition", e.target.value)}
+      <Input label="Condition" value={form.condition} onChange={(e) => set("condition", e.target.value)}
         placeholder="close > SMA(close, 20) and volume > 2 * SMA(volume, 20)" hint="Checked on closed bars only. The server validates it before saving." />
       <div className="grid gap-2 sm:grid-cols-4">
         <Select label="Priority" value={form.priority} onChange={(v) => set("priority", v as AlertRuleInput["priority"])}

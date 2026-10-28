@@ -222,8 +222,8 @@ export default function PositionsV2(_props: PageProps = {}) {
   return (
     <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="positions-v2">
       <PageIntro id="positions" lines={["Open a position's chart, or exit a paper position at the current price."]} />
-      <PageTitleV2 title="My positions" subtitle="What you hold now and how it is doing." />
-      {!!list?.length && list.every((p) => p.mode === "PAPER") && <PracticeFrame className="rounded-control" />}
+      <PageTitleV2 title="My positions" subtitle="What you hold now and how it is doing."
+        action={!!list?.length && list.every((p) => p.mode === "PAPER") ? <PracticeFrame className="self-start md:self-auto" /> : undefined} />
 
       <section aria-label="Summary" data-block="summary" data-tour="positions-summary">
         {positions.status === "loading" ? <LoadingRowsV2 rows={2} /> : (

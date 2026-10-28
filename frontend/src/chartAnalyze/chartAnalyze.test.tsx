@@ -202,7 +202,7 @@ describe("Analyze a chart: the engine is not installed (A1)", () => {
     const html = renderToStaticMarkup(<EngineUnavailable engine={{ ...missing, reason: "the private package is not installed on this server",
       owner_steps: "The owner adds the host's read-only deploy key and ATP_PRIVATE_REF, then runs the deploy." }} />);
     expect(html).toContain("Chart analysis is not available right now");
-    expect(html).toContain("For admins: the analysis engine is missing");
+    expect(html).toContain("For admins: the analysis service is missing");
     expect(html).toContain("Why: the private package is not installed on this server.");
     expect(html).toContain("ATP_PRIVATE_REF");
     expect(html).not.toMatch(/<input/);

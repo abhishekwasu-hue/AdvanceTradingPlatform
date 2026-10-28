@@ -81,7 +81,7 @@ export default function OrdersV2(_props: PageProps = {}) {
       </CardV2>
 
       {/* UX-11 U5: the page's one footer line, as on Positions (owner default: the My trades pages). */}
-      <PageFootnote>Phase 0 has PAPER only.</PageFootnote>
+      <PageFootnote />
     </div>
   );
 }

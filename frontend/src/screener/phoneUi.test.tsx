@@ -43,7 +43,7 @@ describe("SCR-FIX PR D: Find setups on a phone", () => {
     const input = renderToStaticMarkup(<TextInline value="NIFTY BANK" label="Index" onChange={() => undefined} />);
     expect(input).toMatch(/class="min-w-0 max-w-full /);
     const html = canvas([{ id: "f1", kind: "formula", text: "high - low < Min(high - low, 6)[1]", enabled: true }]);
-    expect(html).toContain('aria-label="Formula condition in ScreenQL"');
+    expect(html).toContain('aria-label="Formula condition"');
     expect(html).toContain("<textarea");
     expect(html).not.toContain("min-w-[14rem] flex-1");                                   // the old phone minimum
     expect(html).toContain("sm:min-w-[14rem]");

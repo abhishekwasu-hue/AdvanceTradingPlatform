@@ -10,7 +10,7 @@ import { T, mockTrading } from "./tradingMocks";
  * - The setup-aware chain (8b-a): opened from one of the user's own signals (`?signal=action:12`), the strikes his own
  *   settings land on are ringed and named; nothing is picked, opened or placed by it.
  * - The ticket's confirm step (8b-c, 8b-d, 8b-h): the payoff in plain words, the risk line beside the user's own limits
- *   (a warning that never disables "Place PAPER order") and Explain; the PAPER frame stays on.
+ *   (a warning that never disables the Buy / Sell button) and Explain; the PAPER frame stays on.
  * - 8b slice 3: the panel's item now carries "Trade this setup" (the server's legs have their role); the baselines
  *   `fno8b-setup-chain-v2-*` were regenerated for it.
  * - Baselines (NEW): `fno8b-setup-chain-v2-<width>-<theme>.png` and `fno8b-ticket-review-v2-<width>-<theme>.png` at 1440,
@@ -163,7 +163,7 @@ test.describe("F&O 8b slice 1 flows", () => {
     await callCell(page).tap();
     await page.locator("[data-chain-actions] [data-action='buy']").tap();
     const ticket = page.locator("[data-order-ticket]");
-    await expect(ticket.locator("[data-practice-frame]")).toContainText("Practice mode (PAPER)");
+    await expect(ticket.locator("[data-practice-frame]")).toContainText("PAPER");
     expect(seen.gets.filter((g) => g.endsWith("/risk-budget"))).toEqual([]);         // read only on the confirm step
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();      // F1: no product saved - pick one before Review
     await ticket.locator("[data-ticket='review']").tap();
@@ -190,8 +190,8 @@ test.describe("F&O 8b slice 1 flows", () => {
     await page.route(/\/api(?:\/v1)?\/positions$/, (r) => r.fulfill({ json: paperOnly }));
     await page.goto("/positions");
     const frame = page.locator("[data-page='positions-v2'] [data-practice-frame]");
-    await expect(frame).toContainText("Practice mode (PAPER)");
-    await expect(frame).toContainText("No real order is sent and no money moves.");
+    await expect(frame).toHaveText("PAPER");                                         // UI-28 U1.1: one chip
+    await expect(frame).toHaveAttribute("title", "Practice mode: no real order is sent and no money moves.");
     const exits = page.getByRole("button", { name: /Exit now/ });
     await expect(exits.first()).toBeEnabled();
   });

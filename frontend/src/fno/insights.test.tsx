@@ -121,9 +121,11 @@ describe("8b-c the payoff in plain words (ticket and basket), from fixtures", ()
     for (const n of numbersIn(s)) expect(["24,300", "24,400", "7,500"]).toContain(n);
   });
 
-  it("the ticket's confirm step shows the sentence under 'In plain words (information only)'", () => {
-    const html = text(renderToStaticMarkup(<MemoryRouter><Review preview={preview()} /></MemoryRouter>));
-    expect(html).toContain("In plain words (information only)");
+  it("the ticket's confirm step keeps the sentence under the 'In plain words' details (UI-28 U1.2)", () => {
+    const raw = renderToStaticMarkup(<MemoryRouter><Review preview={preview()} /></MemoryRouter>);
+    const html = text(raw);
+    expect(raw).toContain('data-details="ticket.payoff-words"');
+    expect(html).toContain("In plain words");
     expect(html).toContain("you lose the premium, at most about ₹37,500");
   });
 });
@@ -239,7 +241,7 @@ describe("8b-l the PAPER frame on every F&O order surface", () => {
     expect(ticketSource).toContain("<PracticeFrame />");
     expect(panelSource).toContain("<PracticeFrame />");
     // Positions: while every position shown is PAPER (a LIVE one, never in Phase 0, has its own "Live" chip per row).
-    expect(positionsSource).toMatch(/list\.every\(\(p\) => p\.mode === "PAPER"\) && <PracticeFrame/);
+    expect(positionsSource).toMatch(/list\.every\(\(p\) => p\.mode === "PAPER"\) \? <PracticeFrame/);   // UI-28 U1.1: in the title row
   });
 
   it("the chain's action sheet (Buy / Sell, You hold, Exit) and the futures chain with trading on are marked", () => {

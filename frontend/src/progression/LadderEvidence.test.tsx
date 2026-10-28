@@ -55,7 +55,7 @@ describe("DisciplineWeeks (N2-1)", () => {
 
   it("says why it is not measured, and renders nothing with nothing to say", () => {
     expect(text(renderToStaticMarkup(<DisciplineWeeks criterion={{ ...base, weeks: [], status: "engine_off", value: null, met: null }} />)))
-      .toContain("discipline engine is off");
+      .toContain("discipline score is off");
     expect(renderToStaticMarkup(<DisciplineWeeks criterion={{ ...base, weeks_needed: 2, status: "ok" }} />)).toContain("W41 · 75");
     expect(renderToStaticMarkup(<DisciplineWeeks criterion={{ ...base, weeks: [], weeks_needed: undefined, status: "ok" }} />)).toBe("");
   });

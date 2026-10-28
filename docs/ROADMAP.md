@@ -169,7 +169,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | DEF-0 | in progress | owner order 28 Oct filed; first report (confirmed / not reproduced per D-item) next | - |
 | UI-STD | superseded by UI-28 | Session B: owner order 28 Oct filed; docs/design/UI_STANDARDS_AUDIT.md written; first report (confirmed / not reproduced) next, then PR 1 = A1-A8 | - |
 | UI-STD-C | superseded by UI-28 (U7) | - | - |
-| UI-28 | in progress | Session B: consolidated UI order filed 28 Oct; owner adds U1.10 affirmative wording + U1.11 hide repeated messages on all pages (28 Oct); first report docs/design/UI_28_FIRST_REPORT.md; U1 PR (claude/ui28-u1) on e2e; SEBI text open (UI28Q-1) | - |
+| UI-28 | in progress | Session B: consolidated UI order filed 28 Oct; owner adds U1.10 affirmative wording + U1.11 hide repeated messages on all pages (28 Oct); first report docs/design/UI_28_FIRST_REPORT.md; U1 #640 merged; U2 + U1.10 / U1.11 #647 on CI; next U3; SEBI text open (UI28Q-1) | - |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
 | FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |

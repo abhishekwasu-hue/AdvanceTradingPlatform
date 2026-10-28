@@ -41,6 +41,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Modern trading-app look UX-1..UX-10 | ATP_ORDER_UX2.md | UX-2 | UX-1 first |
 | - | Numbers first, text on demand U1-U6 | ATP_ORDER_UX11.md | UX-11 | PR 1 primitives + guard |
 | - | M45 Multi-broker accounts MB-0..MB-9 | ATP_ORDER_M45_MULTI_BROKER.md | M45 | design note ✅ (M45_MULTI_ACCOUNT.md); build MA-1..MA-6 next |
-| - | Trading Brain BR-0..BR-3 (28 Oct) | ATP_ORDER_TRADING_BRAIN.md | BR-0..BR-3 | filed; plan only until BR-0 |
+| - | Screener audit + fix pack A-E (27 Oct) | ATP_ORDER_SCR_FIX.md | SCR-FIX | PRs A-E open (#614, #619, #618, #613, #620) |
+| - | Trading Brain BR-0..BR-3 (28 Oct) | ATP_ORDER_TRADING_BRAIN.md | BR-0..BR-3 | filed; review in docs/design/BR_REVIEW.md for the owner's ✅; plan only until BR-0 |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

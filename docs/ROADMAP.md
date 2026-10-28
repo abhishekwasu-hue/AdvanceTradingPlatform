@@ -58,6 +58,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-7 | Smart execution ON | row 20 Part 7 (#474 merged) | flag ON; basket confirm step checked on production |
 | P1-8 | WL1 Watchlists (J2): ready-made system lists (Indices, Index stocks, Sectors, F&O) + own lists, live prices, phone layout | handover item 4; INBOX 24 Oct | `watchlists` ON in production, the lists filled by the universe sync, a Watchlist entry on the phone bar, live prices checked on production; owner ✅ on screenshots |
 | P1-B1 | BUG: chain shows contracts the ticket / basket cannot trade ("not in the instrument list yet") - master sync retried with back-off + start-up catch-up, on-demand refresh, honest text, IST expiry dates, next-expiry default on expiry days (setting), exits never need the master | INBOX 27 Oct | the same ticket and basket place on production on an expiry day; before / after phone screenshots; owner ✅ |
+| SCR-FIX | Screener audit + fix pack: A data path (non-native intervals resampled, daily window, today's bar, last bucket, session budget, index volume, primary credential), B truthful results, C real chart + Telegram in place, D phone UI, E text + guards | ATP_ORDER_SCR_FIX.md | each item verified then fixed with a test; PROOF comparison page; owner ✅ |
 
 ### Phase P2-F — Every feature 100% functional on production with real broker data (owner 25 Oct; before Phase 2 items)
 Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress; one PR per item. Source: ATP_ORDER_P2F_FUNCTIONAL.md.
@@ -157,6 +158,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P1-6d | in review | SX: Exits for this strategy on the basket ticket, LOCK_TRAIL / BREAK_EVEN, one combined exit (origin SX) at the fill; merged #603 27 Oct (SXQ-1..4 in OPEN_QUESTIONS); waits for deploy + owner check | #603 |
 | P1-8 | in progress | 26 Oct: W-PR #554 merged (owner ✅): Watchlist page + phone bar tab after Charts, behind `ui_v2` + `watchlists`. On main: server lists + Charts watchlist panel (chooser, search, sort, copy to my list, live ticks with `data_hub`). Missing: `watchlists` flag OFF in production; lists empty until the universe sync runs (P1-3); no Watchlist entry of its own on the phone bar (only inside Charts). Plan: (1) owner turns on via "Enable trader features" + System tab refresh; (2) W-PR: Watchlist page / phone bar entry using the same panel, behind ui_v2; (3) screenshots for ✅ | - |
 | P1-B1 | in review | merged #575 + #595; deployed 27 Oct 21:00 IST (a5db3e1), instrument master ok (91,037 rows, no error); owner check 28 Oct 09:15: a PAPER ticket on a NIFTY contract | #575, #595 |
+| SCR-FIX | in progress | owner order 27 Oct (blocks the day-one test): re-verification of every item first, then PRs A -> E | - |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
 | FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |

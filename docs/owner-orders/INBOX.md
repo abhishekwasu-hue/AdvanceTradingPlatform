@@ -139,3 +139,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-10-27 | (screenshots) deploy health OK; restart (security updates) done; instrument master ok 91,037 rows | P1-B1 live; owner check tomorrow 09:15 (PAPER ticket on a NIFTY contract) |
 | 2026-10-27 | (Marathi, translated) "Give the VPS command for the finished work" | deploy line 534a4f8 (F1 + MB-7, no migration) given; next deploy = T2 + SX/CX2 + load-500 + backup fix after main CI |
 | 2026-10-28 | Server screenshots (deploy of 77a50057db57, health OK - 5 warnings) + production Today screenshot (option C bottom bar live); then "Yes" (OK on the live dots and bar) | UX-12 and UX-13 done |
+| 2026-10-27 | OWNER ORDER — SCREENER AUDIT + FIX PACK (27 Oct), A1-A9 / B1-B6 / C1-C5 / D1-D10 / E1-E2 + PROOF; replaces all earlier Screener messages of 27 Oct - full text verbatim in ATP_ORDER_SCR_FIX.md | roadmap SCR-FIX (P1, blocks the day-one test); re-verification first, then PRs A -> E |

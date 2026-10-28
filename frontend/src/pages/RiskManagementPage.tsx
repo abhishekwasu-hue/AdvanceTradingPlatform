@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import RiskLimitsCard from "../components/RiskLimitsCard";
 import MyLimitsCardV2 from "../settings/MyLimitsCardV2";
-import { Card } from "../components/ui";
+import { Card, Disclaimer } from "../components/ui";
 import type { GuardianStatus, MarketEvent, RiskCeilings, RiskConfig } from "../types";
 import { Badge, PageHeader } from "../components/primitives";
 
@@ -125,8 +125,6 @@ export default function RiskManagementPage() {
 
   return (
     <div className="space-y-4">
-      {/* DEF-0 D9: one "My limits" card - every limit blank = not set (no limit) */}
-      <MyLimitsCardV2 testId="risk-my-limits" />
       <PageHeader title="Risk Management" description="Position sizing and daily-loss/trade-count/consecutive-loss guards the Risk Engine checks before every paper-execute order. Anonymous calls always use the platform default; these apply only to your own logged-in orders." />
       {/* DEF-0 D9: one "My limits" card - every limit blank = not set (no limit) */}
       <MyLimitsCardV2 testId="risk-my-limits" />
@@ -253,6 +251,8 @@ export default function RiskManagementPage() {
       </Card>
 
       <RiskLimitsCard canEdit={user?.role === "OWNER" || user?.role === "SUPER_ADMIN"} />
+      {/* AUD-G1.7 (owner audit 28 Oct): signals, not advice - the shared statement (wording to be confirmed by the lawyer). */}
+      <Disclaimer kind="signals" />
     </div>
   );
 }

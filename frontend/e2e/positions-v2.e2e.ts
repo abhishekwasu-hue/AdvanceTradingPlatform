@@ -192,7 +192,7 @@ test.describe("v2 positions 1440 desktop", () => {
     await expect(gate).toContainText("Your Upstox session has ended. Log in to see live prices.");
     await expect(gate).not.toContainText("your positions");                     // they are listed right below
     const card = page.locator("[data-block='exits']");
-    await expect(card.locator("[data-chip='no-price']").first()).toContainText("No live price · connect your broker");   // UX-15: a chip, not a sentence
+    await expect(card.locator("[data-chip='no-price']").first()).toContainText("Live prices: connect your broker");   // UX-15: a chip, not a sentence
     await expect(card.locator("[data-position]")).toHaveCount(3);
     await expect(card).not.toContainText("+₹3,120");                          // no live price, so no P&L
     const exit = card.locator("[data-position='202']").getByTestId("exit-now");
@@ -243,7 +243,7 @@ test.describe("v2 positions 1440 desktop", () => {
     await expect(page.getByTestId("exit-now")).toHaveCount(2);
     for (const b of await page.getByTestId("exit-now").all()) await expect(b).toBeEnabled();
     const row = page.locator("[data-position='201']");
-    await expect(row.locator("[data-col='pnl'] [data-chip='no-price']")).toContainText("No live price");   // UX-15: one chip, no dashes
+    await expect(row.locator("[data-col='pnl'] [data-chip='no-price']")).toContainText("Waiting for a live price");   // UX-15: one chip, no dashes
     await expect(row.locator("[data-qty-avg]")).not.toContainText("LTP");
     await expect(row).not.toContainText("+₹3,120");
     await expect(page.locator("[data-tile='open-pnl']")).toContainText("–");

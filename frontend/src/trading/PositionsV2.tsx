@@ -200,7 +200,7 @@ export default function PositionsV2(_props: PageProps = {}) {
               ) : (
                 <>
                   {/* UX-15: one chip, not a sentence (the Exit button below each paper position says the rest). */}
-                  <div className="mb-space-3"><Chip tone="warn" variant="meaning" icon="!" name="no-price">No live price · connect your broker</Chip></div>
+                  <div className="mb-space-3"><Chip tone="warn" variant="meaning" icon="!" name="no-price">Live prices: connect your broker</Chip></div>
                   {accountFilter}
                   <PositionList rows={shownRows} byId={byId} actions={actions} prices={false} groups={fno.groups} />
                   {groupSheet}
@@ -496,7 +496,7 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
           <div className="mt-space-1 flex flex-wrap items-center gap-space-1" data-levels>
             {row.levelsOn && <span className="text-t12 text-fg-muted">{row.levelsOn.replace(/:$/, "")}</span>}
             {row.levels.filter((l) => l.value !== EMPTY).map((l) => (l.value === NO_STOP
-              ? <Chip key={l.label} tone="warn" variant="meaning" icon="!" name="level-unset">{l.label} not set</Chip>
+              ? <Chip key={l.label} tone="warn" variant="meaning" icon="!" name="level-unset">Set {l.label.toLowerCase()}</Chip>
               : <Chip key={l.label} tone="neutral" variant="meaning" name="level"><span className="font-tabular">{l.label} {l.value}</span></Chip>))}
             {row.strategy && <Chip tone="neutral" variant="meaning" name="strategy">{row.strategy.replace(/ trade$/, "")}</Chip>}
           </div>
@@ -507,7 +507,7 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
           <div className="shrink-0 text-right" data-col="pnl">
             {row.pnl === null ? (
               // One amber chip for a missing price - never "–" twice or a sentence under the list.
-              <Chip tone="warn" variant="meaning" icon="!" name="no-price">No live price</Chip>
+              <Chip tone="warn" variant="meaning" icon="!" name="no-price">Waiting for a live price</Chip>
             ) : (
               <>
                 <Signed value={row.pnl} kind="money" paise className="text-t15 font-semibold" />

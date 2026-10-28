@@ -373,9 +373,9 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
         <div>
           <div className="text-t12 text-fg-muted">Total P&amp;L</div>
           {total === null
-            ? <Chip tone="warn" variant="meaning" icon="!" name="no-price">No live price</Chip>
+            ? <Chip tone="warn" variant="meaning" icon="!" name="no-price">Waiting for a live price</Chip>
             : <Signed value={total} kind="money" paise className="text-t20 font-semibold" />}
-          {total !== null && known.length < rows.length && <Chip tone="warn" variant="meaning" icon="!" name="some-prices" className="ml-space-2">{rows.length - known.length} without a price</Chip>}
+          {total !== null && known.length < rows.length && <Chip tone="warn" variant="meaning" icon="!" name="some-prices" className="ml-space-2">{rows.length - known.length} waiting for a price</Chip>}
         </div>
         <span className="text-t12 text-fg-muted">{rows.length} open</span>
       </div>

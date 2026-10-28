@@ -52,19 +52,21 @@ NOT_OPTION = "The deployment behind this signal trades the stock or future itsel
 
 async def risk_budget(session: AsyncSession, user: User) -> Dict[str, Any]:
     """The caller's own capital, risk per trade and daily loss limit (the effective configuration the ticket checks)."""
-    from app.core.models import RiskConfig
     from app.platform.controls import clamp_config, risk_ceilings
     from app.risk_engine import by_default
-    from app.risk_engine.routes import get_tenant_risk_config
-    cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+    from app.risk_engine.routes import user_risk_config
+    # DEF-0: the trader's own limits only - a limit not set is None (the line says "not set"); the capital is his own,
+    # else his PAPER balance.
+    cfg = await user_risk_config(session, user)
     cfg, _ = clamp_config(cfg, await risk_ceilings(session))
     if await by_default.enabled(session, user.tenant_id):
         cfg, _ = await by_default.apply_user_cap(session, user, cfg)
-    capital = float(cfg.capital)
+    per_trade, daily = cfg.risk_amount(), cfg.daily_loss_amount()
     return {
-        "capital": round(capital, 2),
-        "per_trade": {"amount": round(capital * cfg.risk_per_trade_pct / 100.0, 2), "pct": float(cfg.risk_per_trade_pct)},
-        "daily": {"amount": round(capital * cfg.max_daily_loss_pct / 100.0, 2), "pct": float(cfg.max_daily_loss_pct)},
+        "capital": round(float(cfg.capital), 2) if cfg.capital is not None else None,
+        "per_trade": ({"amount": round(per_trade, 2), "pct": round(per_trade / float(cfg.capital) * 100.0, 4)}
+                      if per_trade is not None and cfg.capital else None),
+        "daily": {"amount": round(daily, 2), "pct": float(cfg.max_daily_loss_pct or 0.0)} if daily is not None else None,
         "source": "Your risk settings",
         "paper_balance": await paper_balance(session, user),
         "blocks": False,                       # information only: the line never refuses an order or an exit

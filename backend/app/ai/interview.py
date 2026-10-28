@@ -95,7 +95,7 @@ QUESTIONS: List[Question] = [
     Question("capital", "number", "How much capital do you have for trading (₹)?", "Trading साठी तुमच्याकडे किती भांडवल आहे (₹)?",
              "Position size is calculated from capital and risk, never guessed. Only money you can afford to lose belongs here.",
              "Quantity भांडवल आणि risk वरून मोजली जाते, अंदाजाने नाही. जे पैसे गमावले तरी चालतील तेवढेच इथे लिहा.",
-             [], "100000"),
+             [], None),          # DEF-0 D2: no pre-filled capital - the trader types his own (or leaves it blank)
     Question("risk", "choice", "If a trade goes wrong, how much of your capital can you lose on it?", "एखादा trade चुकला तर त्यात भांडवलाच्या किती टक्के तोटा सहन करू शकता?",
              "Professionals risk 0.5-1% per trade, so ten losses in a row still leave 90%+ of the account.",
              "Professional trader एका trade मध्ये 0.5-1% risk घेतात - सलग 10 trades चुकले तरी 90% पेक्षा जास्त भांडवल शिल्लक राहते.",
@@ -153,7 +153,7 @@ QUESTION_IDS = [q.id for q in QUESTIONS]
 class InterviewAnswers(BaseModel):
     language: Lang = "en"
     experience: Literal["new", "learning", "experienced"] = "new"
-    capital: float = Field(default=100_000.0, ge=5_000, le=10_000_000_000)
+    capital: Optional[float] = Field(default=None, ge=5_000, le=10_000_000_000)    # DEF-0 D2: None = not given
     risk: Literal["conservative", "moderate", "aggressive"] = "conservative"
     daily_loss: float = Field(default=2.0, ge=0.5, le=10.0)
     style: Literal["scalping", "intraday", "positional", "swing"] = "intraday"
@@ -424,12 +424,8 @@ def regime_fit(family: str, regime: str, confidence: float = 1.0) -> float:
 RISK_PCT = {"conservative": 0.5, "moderate": 1.0, "aggressive": 1.5}
 TRADES_PER_DAY = {"scalping": 6, "intraday": 3, "positional": 2, "swing": 1}
 SWING_GAP_FACTOR = 0.75   # Phase AS: an overnight gap can jump the stop - swing risk is sized a quarter smaller
-# P0.10: the rest of the risk settings are the same defaults for everyone - experience never changes them. The trader's
-# own answers (risk, daily loss, style) and the operator's ceilings are the only inputs; every value can be edited.
-DEFAULT_OPEN_POSITIONS = 2
-DEFAULT_CONSECUTIVE_LOSSES = 3
-DEFAULT_COOLDOWN_MINUTES = 30
-DEFAULT_DD_LEVELS = (5.0, 10.0)
+# DEF-0 (owner, 28 Oct): the plan holds only what the trader answered (capital, risk, daily loss) within the operator's
+# ceilings; every other limit stays not set (off) until the trader sets it himself.
 DEFAULT_BREAK_EVEN_R = 1.0
 
 
@@ -455,17 +451,9 @@ def risk_plan(a: InterviewAnswers, ceilings: Optional[Dict[str, float]] = None) 
     elif daily < a.daily_loss:
         notes.append(tr(lang, f"Daily loss limit set to {daily:g}% (3 losing trades) rather than {a.daily_loss:g}% - three losses in a day is the professional's stop signal.",
                         f"दिवसाची तोटा मर्यादा {a.daily_loss:g}% ऐवजी {daily:g}% (3 चुकलेले trades) ठेवली - दिवसात 3 तोटे म्हणजे professional साठी थांबण्याचा संकेत."))
-    trades = TRADES_PER_DAY[a.style]
-    trading_capital = round(a.capital, 0)        # P0.8-D: the figure the trader entered; the platform does not allocate for them
-    cfg = RiskConfig(
-        capital=trading_capital, risk_per_trade_pct=risk_pct, max_daily_loss_pct=daily,
-        max_trades_per_day=trades, max_open_positions=DEFAULT_OPEN_POSITIONS,
-        max_consecutive_losses=DEFAULT_CONSECUTIVE_LOSSES,
-        min_risk_reward=2.0 if a.vehicle == "option_buy" else 1.5,
-        max_portfolio_risk_pct=min(round(risk_pct * 3, 2), float(ceilings.get("max_portfolio_risk_pct", 10.0))),
-        stop_cooldown_minutes=DEFAULT_COOLDOWN_MINUTES,
-        dd_level_1_pct=DEFAULT_DD_LEVELS[0], dd_level_2_pct=DEFAULT_DD_LEVELS[1],
-    )
+    # P0.8-D: the figure the trader entered; the platform does not allocate for them. DEF-0: none entered = not set.
+    trading_capital = round(a.capital, 0) if a.capital is not None else None
+    cfg = RiskConfig(capital=trading_capital, risk_per_trade_pct=risk_pct, max_daily_loss_pct=daily)
     return cfg, notes
 
 
@@ -556,9 +544,10 @@ def _compatible(strategy, base_tf: str) -> bool:
     return bool(base) and all(n is not None and n >= base and n % base == 0 for n in needed)
 
 
-# Evidence is measured on one fixed book (1 lakh, 1% risk) so it does not depend on the option
-# being shown, and cached: a refinement round re-uses the walks it already did on the same candles.
-EVIDENCE_RISK = RiskConfig(capital=100_000.0, risk_per_trade_pct=1.0, max_trades_per_day=20, max_consecutive_losses=100)
+# Evidence is measured on one fixed book so it does not depend on the option being shown, and cached: a refinement round
+# re-uses the walks it already did on the same candles. DEF-0 D2: no built-in capital or risk - one lot per trade on the
+# PAPER starting balance (`run_backtest`), no limits.
+EVIDENCE_RISK = RiskConfig()
 _EVIDENCE_CACHE: "OrderedDict[tuple, Tuple[float, dict, Optional[dict]]]" = OrderedDict()
 _EVIDENCE_CACHE_SIZE = 256
 _EVIDENCE_LOCK = Lock()
@@ -719,31 +708,34 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
         for alt in alternatives:
             s_lines.append(tr(lang, f"Other template: {alt['name']} - {alt['evidence']['text']}.", f"दुसरे template: {alt['name']} - {alt['evidence']['text']}."))
 
-    # Risk and capital sentences.
-    per_trade = cfg.capital * cfg.risk_per_trade_pct / 100
-    per_day = cfg.capital * cfg.max_daily_loss_pct / 100
-    r_lines = [
-        tr(lang, f"Risk per trade: {cfg.risk_per_trade_pct:g}% of trading capital = {_money(per_trade)}. The quantity is calculated from this and the stop distance - never chosen by feel.",
-           f"एका trade चा risk: trading भांडवलाच्या {cfg.risk_per_trade_pct:g}% = {_money(per_trade)}. Quantity यावरून आणि stop च्या अंतरावरून मोजली जाते - मनाने नाही."),
-        tr(lang, f"Daily loss limit: {cfg.max_daily_loss_pct:g}% = {_money(per_day)} - then no new trades that day.",
-           f"दिवसाची तोटा मर्यादा: {cfg.max_daily_loss_pct:g}% = {_money(per_day)} - त्यानंतर त्या दिवशी नवीन trade नाही."),
-        tr(lang, f"At most {cfg.max_trades_per_day} trades a day, {cfg.max_open_positions} open position(s) at a time, pause after {cfg.max_consecutive_losses} losses in a row.",
-           f"दिवसाला जास्तीत जास्त {cfg.max_trades_per_day} trades, एका वेळी {cfg.max_open_positions} position, सलग {cfg.max_consecutive_losses} तोटे झाले की थांबा."),
-        tr(lang, f"After a stop-loss: {cfg.stop_cooldown_minutes} minutes cool-down on that symbol. Drawdown {cfg.dd_level_1_pct:g}% halves the size; {cfg.dd_level_2_pct:g}% pauses new entries.",
-           f"Stop-loss लागल्यावर त्या symbol वर {cfg.stop_cooldown_minutes} मिनिटे थांबा. भांडवल {cfg.dd_level_1_pct:g}% खाली गेले की size अर्धी; {cfg.dd_level_2_pct:g}% खाली गेले की नवीन entry बंद."),
-    ] + risk_notes
-    c_lines = [
-        tr(lang, f"The risk settings are computed on a trading capital of {_money(cfg.capital)} - the figure you entered. How much of your money to put to work is your decision; the platform does not advise on allocation.",
-           f"Risk settings {_money(cfg.capital)} या trading भांडवलावर मोजल्या आहेत - तुम्ही दिलेला आकडा. किती पैसे वापरायचे हा निर्णय तुमचा; platform allocation चा सल्ला देत नाही."),
-        tr(lang, f"Open risk across all positions stays under {cfg.max_portfolio_risk_pct:g}% of trading capital; NIFTY/BANK NIFTY/FIN NIFTY count as one bucket.",
-           f"सगळ्या positions चा एकत्रित risk trading भांडवलाच्या {cfg.max_portfolio_risk_pct:g}% पेक्षा कमी; NIFTY/BANK NIFTY/FIN NIFTY एकच गट मानले जातात."),
-    ]
+    # Risk and capital sentences - DEF-0: only the limits the trader set; the rest are said to be off.
+    per_trade, per_day = cfg.risk_amount(), cfg.daily_loss_amount()
+    r_lines = []
+    if per_trade is not None:
+        r_lines.append(tr(lang, f"Risk per trade: {cfg.risk_per_trade_pct:g}% of trading capital = {_money(per_trade)}. The quantity is calculated from this and the stop distance - never chosen by feel.",
+                          f"एका trade चा risk: trading भांडवलाच्या {cfg.risk_per_trade_pct:g}% = {_money(per_trade)}. Quantity यावरून आणि stop च्या अंतरावरून मोजली जाते - मनाने नाही."))
+    elif cfg.risk_per_trade_pct is not None:
+        r_lines.append(tr(lang, f"Risk per trade: {cfg.risk_per_trade_pct:g}% of your capital (enter your capital to see it in rupees).",
+                          f"एका trade चा risk: तुमच्या भांडवलाच्या {cfg.risk_per_trade_pct:g}% (रुपयांत पाहण्यासाठी भांडवल लिहा)."))
+    if per_day is not None:
+        r_lines.append(tr(lang, f"Daily loss limit: {cfg.max_daily_loss_pct:g}% = {_money(per_day)} - then no new trades that day.",
+                          f"दिवसाची तोटा मर्यादा: {cfg.max_daily_loss_pct:g}% = {_money(per_day)} - त्यानंतर त्या दिवशी नवीन trade नाही."))
+    elif cfg.max_daily_loss_pct is not None:
+        r_lines.append(tr(lang, f"Daily loss limit: {cfg.max_daily_loss_pct:g}% of your capital - then no new trades that day.",
+                          f"दिवसाची तोटा मर्यादा: भांडवलाच्या {cfg.max_daily_loss_pct:g}% - त्यानंतर त्या दिवशी नवीन trade नाही."))
+    r_lines.append(tr(lang, "Every other limit (trades a day, open positions, losses in a row, cool-down, drawdown) is off until you set it in My limits.",
+                      "बाकी सर्व मर्यादा (दिवसाचे trades, open positions, सलग तोटे, cool-down, drawdown) तुम्ही My limits मध्ये ठेवेपर्यंत बंद आहेत."))
+    r_lines += risk_notes
+    c_lines = []
+    if cfg.capital is not None:
+        c_lines.append(tr(lang, f"The risk settings are computed on a trading capital of {_money(cfg.capital)} - the figure you entered. How much of your money to put to work is your decision; the platform does not advise on allocation.",
+                          f"Risk settings {_money(cfg.capital)} या trading भांडवलावर मोजल्या आहेत - तुम्ही दिलेला आकडा. किती पैसे वापरायचे हा निर्णय तुमचा; platform allocation चा सल्ला देत नाही."))
     rr = cfg.min_risk_reward
     breakeven_win = 100.0 / (1.0 + rr)
     exit_rules = exit_rules or default_exit_rules(a)
-    rr_lines = [
+    rr_lines = ([] if rr <= 0 else [         # DEF-0: no minimum reward:risk unless the trader set one
         tr(lang, f"Minimum reward:risk 1:{rr:g} - a trade that cannot make {rr:g}x its risk is skipped. Arithmetic: at 1:{rr:g} the break-even win rate before costs is {breakeven_win:.0f}%; brokerage, taxes and slippage raise it - judge the backtest's net figures, not this ratio.",
-           f"किमान reward:risk 1:{rr:g} - risk च्या {rr:g} पट नफा शक्य नसेल तर trade घेत नाही. गणित: 1:{rr:g} वर खर्चाआधीचा break-even win rate {breakeven_win:.0f}% आहे; brokerage, कर आणि slippage तो वाढवतात - या गुणोत्तरावर नाही, backtest च्या निव्वळ आकड्यांवर ठरवा."),
+           f"किमान reward:risk 1:{rr:g} - risk च्या {rr:g} पट नफा शक्य नसेल तर trade घेत नाही. गणित: 1:{rr:g} वर खर्चाआधीचा break-even win rate {breakeven_win:.0f}% आहे; brokerage, कर आणि slippage तो वाढवतात - या गुणोत्तरावर नाही, backtest च्या निव्वळ आकड्यांवर ठरवा.")]) + [
         tr(lang, f"Stop moves to cost once the trade is {exit_rules['break_even_at_r']:g}R in profit; it never moves against you.",
            f"Trade {exit_rules['break_even_at_r']:g}R नफ्यात आला की stop खरेदी भावावर येतो; stop कधीच विरुद्ध दिशेने सरकत नाही."),
     ]
@@ -801,8 +793,10 @@ def ai_prompt(a: InterviewAnswers, market: dict, cfg: RiskConfig, pick: Optional
     same interview and market read instead of a one-line wish."""
     sup, res = market.get("support"), market.get("resistance")
     parts = [
-        f"I am a {a.experience} trader. Capital for trading {cfg.capital:,.0f} INR (of {a.capital:,.0f}); risk {cfg.risk_per_trade_pct:g}% per trade, "
-        f"daily loss limit {cfg.max_daily_loss_pct:g}%, at most {cfg.max_trades_per_day} trades a day.",
+        f"I am a {a.experience} trader. "
+        + (f"Capital for trading {cfg.capital:,.0f} INR; " if cfg.capital is not None else "Capital not given; ")
+        + (f"risk {cfg.risk_per_trade_pct:g}% per trade" if cfg.risk_per_trade_pct is not None else "no risk per trade set")
+        + (f", daily loss limit {cfg.max_daily_loss_pct:g}%." if cfg.max_daily_loss_pct is not None else ", no daily loss limit."),
         f"Style: {a.style}. Instrument: {a.symbol.upper()} via {a.vehicle.replace('_', ' ')}. Goal: {a.goal.replace('_', ' ')}. Time: {a.time.replace('_', ' ')}.",
         f"Market now: today {market['today']['change_pct']:+.2f}% ({market['today']['trend'].lower()}), price {'above' if market['today']['above_vwap'] else 'below'} VWAP; "
         f"{market['work_timeframe']} regime {market['regime']['kind']}, {market['higher_timeframe']} regime {market['higher_regime']['kind']}; "

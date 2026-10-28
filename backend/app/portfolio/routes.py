@@ -13,6 +13,7 @@ from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.portfolio import engine
 from app.risk_engine.routes import get_tenant_risk_config
+from app.core import config as app_config
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -37,7 +38,8 @@ async def exposure(live_prices: bool = Query(default=True), user: User = Depends
                    session: AsyncSession = Depends(get_session)) -> dict:
     trades = await engine.open_trades(session, user.tenant_id)
     risk = await get_tenant_risk_config(user.tenant_id, session)
-    capital = float(risk.capital) if risk is not None else 100_000.0
+    # DEF-0: the organisation's own capital, else the PAPER account's starting balance - never a built-in 100,000.
+    capital = float(risk.capital) if risk is not None and risk.capital is not None else float(app_config.PAPER_STARTING_CAPITAL)
     prices: Dict[str, float] = {}
     price_source = "entry"
     if live_prices and trades:

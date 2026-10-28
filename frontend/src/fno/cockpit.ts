@@ -72,18 +72,20 @@ const pctOf = (part: number, whole: number) => {
 /** The worst case at expiry beside the user's own budget, in plain words; null while either is not known. Information
  * only: nothing reads it to hold back an order or an exit. */
 export function cockpitRiskLine(s: CockpitSummary, b: RiskBudget | null | undefined): RiskLine | null {
-  if (!b || !(b.capital > 0) || !s.lines) return null;
+  if (!b || b.capital == null || !(b.capital > 0) || !s.lines) return null;
+  const daily = b.daily;               // DEF-0: null = no daily loss limit set - the facts alone
   if (s.unbounded) {
     return { tone: "warn", note: RISK_NOTE,
-      text: `At least one of your open F&O positions has no fixed limit to its loss. Your daily loss limit is ${formatINR(b.daily.amount)}.` };
+      text: `At least one of your open F&O positions has no fixed limit to its loss.${daily ? ` Your daily loss limit is ${formatINR(daily.amount)}.` : ""}` };
   }
   if (s.worst === null || !(s.worst > 0)) return null;
   const head = `Together, the most your open F&O positions can lose at expiry is ${formatINR(s.worst)}, ${pctOf(s.worst, b.capital)} of your capital.`;
   const left = s.noOutcome ? ` ${s.noOutcome === 1 ? "One position spans" : `${s.noOutcome} positions span`} two expiries and is not counted.` : "";
-  if (s.worst > b.daily.amount) {
-    return { tone: "warn", note: RISK_NOTE, text: `${head} That is more than your daily loss limit of ${formatINR(b.daily.amount)}.${left}` };
+  if (!daily) return { tone: "info", note: RISK_NOTE, text: `${head}${left}` };
+  if (s.worst > daily.amount) {
+    return { tone: "warn", note: RISK_NOTE, text: `${head} That is more than your daily loss limit of ${formatINR(daily.amount)}.${left}` };
   }
-  return { tone: "info", note: RISK_NOTE, text: `${head} Within your daily loss limit of ${formatINR(b.daily.amount)}.${left}` };
+  return { tone: "info", note: RISK_NOTE, text: `${head} Within your daily loss limit of ${formatINR(daily.amount)}.${left}` };
 }
 
 export interface ExpiryLine { expiry: string; when: string; daysLeft: number; legs: number; underlyings: string[] }

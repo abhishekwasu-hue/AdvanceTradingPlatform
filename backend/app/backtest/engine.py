@@ -16,6 +16,7 @@ from app.backtest.models import ModelSet
 from app.trading.exit_rules import ExitRules, apply_exit_rules
 from app.backtest.analytics import build_analytics
 from app.backtest.options import IST, to_utc
+from app.core import config as app_config
 
 __all__ = ["resample_ohlc", "run_backtest"]
 
@@ -65,6 +66,9 @@ def run_backtest(
     margin_kind = _margin_kind(get_contract_spec(symbol), symbol)
     margin_refused = 0
     margin_calls = 0
+    # DEF-0: a backtest's starting equity is the trader's own capital, else the PAPER account's starting balance.
+    risk_config = risk_config.with_capital(app_config.PAPER_STARTING_CAPITAL)
+    capital = float(risk_config.capital or 0.0)
     risk_manager = RiskManager(risk_config)
     state = TradingDayState()
     streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
@@ -72,7 +76,7 @@ def run_backtest(
 
     open_trade: Trade | None = None
     trades: list[Trade] = []
-    equity = risk_config.capital
+    equity = capital
     equity_curve = [equity]
     rules = exit_rules if exit_rules is not None and exit_rules.active else None
     initial_stop = 0.0
@@ -224,7 +228,7 @@ def run_backtest(
         expectancy=round(net_pnl / total_trades, 2) if total_trades else 0.0,
         trades=trades,
         equity_curve=equity_curve,
-        analytics=build_analytics(trades, equity_curve, risk_config.capital),
+        analytics=build_analytics(trades, equity_curve, capital),
         exit_rules=rules.to_json() if rules is not None else None,
         execution=None if models.is_default else {"models": models.describe(), "margin_refused": margin_refused, "margin_calls": margin_calls,
                                                   "margin_kind": margin_kind if margin_on else None},

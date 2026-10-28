@@ -132,15 +132,21 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
 
     # --- rules the engine enforces on every entry -------------------------------------------
     ceiling = ceilings.get("risk_per_trade_pct")
-    risk_pct = float(cfg.risk_per_trade_pct)
-    check("R2", ceiling is None or risk_pct <= float(ceiling),
-          f"risk per trade {risk_pct:g}% of capital" + (f" (platform ceiling {float(ceiling):g}%)" if ceiling is not None else "")
-          if ceiling is None or risk_pct <= float(ceiling) else f"risk per trade {risk_pct:g}% exceeds the platform ceiling {float(ceiling):g}% - the engine clamps it at runtime",
-          warn_only=True)
-    check("R3", True, "size = capital x risk% / (stop distance per unit), floored to whole lots - the engine derives it, the strategy never chooses it")
+    risk_pct = float(cfg.risk_per_trade_pct) if cfg.risk_per_trade_pct is not None else 0.0     # DEF-0: 0 = not set
+    if cfg.risk_per_trade_pct is None:
+        check("R2", True, "no risk per trade set: the size is the trader's own lots", warn_only=True)
+    else:
+        check("R2", ceiling is None or risk_pct <= float(ceiling),
+              f"risk per trade {risk_pct:g}% of capital" + (f" (platform ceiling {float(ceiling):g}%)" if ceiling is not None else "")
+              if ceiling is None or risk_pct <= float(ceiling) else f"risk per trade {risk_pct:g}% exceeds the platform ceiling {float(ceiling):g}% - the engine clamps it at runtime",
+              warn_only=True)
+    check("R3", True, "size = capital x risk% / (stop distance per unit), floored to whole lots - the engine derives it, the strategy never chooses it"
+          if cfg.risk_per_trade_pct is not None else "no risk per trade set: the size is the trader's own lots")
     check("R9", True, "structures are sized on max loss (or the loss the stop accepts), never on premium collected or margin blocked")
-    check("R4", True, f"open risk at the stops + this trade <= {float(cfg.max_portfolio_risk_pct):g}% of capital; indices count as one correlated bucket")
-    check("R5", True, f"daily loss limit {float(cfg.max_daily_loss_pct):g}% of capital engages the kill switch - no new trades that day")
+    check("R4", True, f"open risk at the stops + this trade <= {float(cfg.max_portfolio_risk_pct):g}% of capital; indices count as one correlated bucket"
+          if cfg.max_portfolio_risk_pct is not None else "no portfolio risk cap set")
+    check("R5", True, f"daily loss limit {float(cfg.max_daily_loss_pct):g}% of capital engages the kill switch - no new trades that day"
+          if cfg.max_daily_loss_pct is not None else "no daily loss limit set")
     check("R6", True, "never add to a losing position - by construction (one open position per deployment)")
     check("R7", True, "a stop only moves the favourable way (exit rules only tighten; break-even and trailing never widen)")
     if suggestion is not None and suggestion.instrument_kind.value == "OPTION":
@@ -153,10 +159,14 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
             report.checks.append(CheckResult("R8", "PASS", f"proposed {suggestion.option_strategy.value.lower().replace('_', ' ')}: defined risk, sized on max loss"))
     else:
         report.checks.append(CheckResult("R8", "N/A", "directional rule set on the underlying; option structures are chosen on the deployment, where undefined-risk ones are flagged and sized off the stop"))
-    check("R10", True, f"no re-entry in an underlying for {int(cfg.stop_cooldown_minutes)} min after a stop-out")
-    check("M8", True, f"market-events calendar: BLOCK days refuse entries, SIZE_CUT days cut risk per trade (default {float(cfg.event_size_cut_pct):g}%)")
-    check("P2", True, f"drawdown ladder: risk per trade halved {float(cfg.dd_level_1_pct):g}% below the equity peak")
-    check("P3", True, f"drawdown ladder: new entries paused {float(cfg.dd_level_2_pct):g}% below the equity peak")
+    check("R10", True, f"no re-entry in an underlying for {int(cfg.stop_cooldown_minutes)} min after a stop-out"
+          if cfg.stop_cooldown_minutes else "no cool-down after a stop-out set")
+    check("M8", True, "market-events calendar: BLOCK days refuse entries, SIZE_CUT days cut risk per trade"
+          + (f" ({float(cfg.event_size_cut_pct):g}% unless the event says)" if cfg.event_size_cut_pct is not None else " by the event's own cut"))
+    check("P2", True, f"drawdown ladder: risk per trade halved {float(cfg.dd_level_1_pct):g}% below the equity peak"
+          if cfg.dd_level_1_pct else "no drawdown size cut set")
+    check("P3", True, f"drawdown ladder: new entries paused {float(cfg.dd_level_2_pct):g}% below the equity peak"
+          if cfg.dd_level_2_pct else "no drawdown pause set")
     check("P4", True, "the size multiplier never exceeds 1 - a winning streak never raises size on its own")
     exits = getattr(suggestion, "exit_rules", None)
     if exits is not None and exits.break_even_at_r:
@@ -181,21 +191,31 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
         report.checks.append(CheckResult("M9", "N/A", "regime filter is set on the deployment; the regime engine reads the market, the deployment decides"))
 
     # --- the statement the human must accept -------------------------------------------------
-    capital = float(cfg.capital)
-    risk_amount = capital * risk_pct / 100.0
-    daily_amount = capital * float(cfg.max_daily_loss_pct) / 100.0
-    gap_amount = risk_amount * GAP_MULTIPLE
-    report.user_must_accept = {
-        "max_loss_per_trade_text": (f"Every trade this strategy takes can lose up to {_money(risk_amount)} {currency} ({risk_pct:g}% of the {_money(capital)} capital) "
-                                    f"at its stop, which sits {updates.get('stop_loss_atr_mult', config.stop_loss_atr_mult):g} x ATR({config.atr_period}) from the entry. Accept this before going live."),
-        "worst_case_text": (f"Worst case: a gap or a 3-5 sigma move through the stop costs about {GAP_MULTIPLE:g} x the planned loss, ~{_money(gap_amount)} {currency} "
-                            f"({gap_amount / capital * 100.0:.1f}% of capital). The daily loss limit stops trading at {_money(daily_amount)} ({float(cfg.max_daily_loss_pct):g}%); "
-                            f"the drawdown ladder halves size {float(cfg.dd_level_1_pct):g}% below the equity peak and pauses entries at {float(cfg.dd_level_2_pct):g}%."),
-    }
+    # DEF-0: only the limits the trader set are stated; with none, the loss at the stop is the trader's own lots x the stop.
+    capital = float(cfg.capital) if cfg.capital is not None else None
+    stop_text = f"{updates.get('stop_loss_atr_mult', config.stop_loss_atr_mult):g} x ATR({config.atr_period}) from the entry"
+    risk_amount = cfg.risk_amount()
+    daily_amount = cfg.daily_loss_amount()
+    if risk_amount is not None and capital:
+        gap_amount = risk_amount * GAP_MULTIPLE
+        loss_text = (f"Every trade this strategy takes can lose up to {_money(risk_amount)} {currency} ({risk_pct:g}% of the {_money(capital)} capital) "
+                     f"at its stop, which sits {stop_text}. Accept this before going live.")
+        worst = (f"Worst case: a gap or a 3-5 sigma move through the stop costs about {GAP_MULTIPLE:g} x the planned loss, ~{_money(gap_amount)} {currency} "
+                 f"({gap_amount / capital * 100.0:.1f}% of capital).")
+    else:
+        loss_text = (f"No risk per trade is set: each trade can lose your lots x the distance to its stop, which sits {stop_text}. "
+                     "Accept this before going live.")
+        worst = f"Worst case: a gap or a 3-5 sigma move through the stop costs about {GAP_MULTIPLE:g} x the planned loss."
+    if daily_amount is not None:
+        worst += f" The daily loss limit stops trading at {_money(daily_amount)} ({float(cfg.max_daily_loss_pct or 0.0):g}%)."
+    if cfg.dd_level_1_pct and cfg.dd_level_2_pct:
+        worst += (f" The drawdown ladder halves size {float(cfg.dd_level_1_pct):g}% below the equity peak and pauses entries at "
+                  f"{float(cfg.dd_level_2_pct):g}%.")
+    report.user_must_accept = {"max_loss_per_trade_text": loss_text, "worst_case_text": worst}
 
     # --- backtest evidence -------------------------------------------------------------------
     if backtest:
-        report.evidence = assess_evidence(backtest, capital)
+        report.evidence = assess_evidence(backtest, capital or 0.0)
         for line in report.evidence["warnings"]:
             report.checks.append(CheckResult("E1", "WARN", line))
         if not report.evidence["warnings"]:

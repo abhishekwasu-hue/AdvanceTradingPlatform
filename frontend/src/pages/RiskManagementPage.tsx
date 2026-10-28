@@ -134,8 +134,9 @@ export default function RiskManagementPage() {
                 type="number"
                 step={f.step ?? "1"}
                 className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-                value={config[f.key]}
-                onChange={(e) => setConfig({ ...config, [f.key]: Number(e.target.value) })}
+                value={config[f.key] ?? ""}
+                placeholder="Not set (no limit)"
+                onChange={(e) => setConfig({ ...config, [f.key]: e.target.value === "" ? null : Number(e.target.value) })}
               />
             </div>
           ))}
@@ -152,8 +153,9 @@ export default function RiskManagementPage() {
                 step={f.step ?? "1"}
                 min={0}
                 className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-                value={config[f.key]}
-                onChange={(e) => setConfig({ ...config, [f.key]: Number(e.target.value) })}
+                value={config[f.key] ?? ""}
+                placeholder="Not set (no limit)"
+                onChange={(e) => setConfig({ ...config, [f.key]: e.target.value === "" ? null : Number(e.target.value) })}
               />
               <div className="text-xs text-fg-muted mt-0.5">{f.help}</div>
             </div>
@@ -184,8 +186,8 @@ export default function RiskManagementPage() {
                     <span className="font-bold text-sm">{mode}</span>
                     <span className={`font-bold uppercase ${colour}`}>{m.state}{m.state !== "normal" ? ` · size x${m.size_multiplier}` : ""}</span>
                   </div>
-                  <div className="text-fg-muted">Equity {m.equity.toLocaleString()} · peak {m.peak.toLocaleString()} · drawdown <span className={m.drawdown_pct >= guardian.settings.dd_level_1_pct ? "text-warn" : "text-fg"}>{m.drawdown_pct.toFixed(1)}%</span> over {m.closed_trades} closed trade(s)</div>
-                  <div className="text-fg-muted">Open risk at the stops {m.open_risk_total.toLocaleString()} ({m.open_risk_pct}% of capital, cap {m.portfolio_cap.toLocaleString()})</div>
+                  <div className="text-fg-muted">Equity {m.equity.toLocaleString()} · peak {m.peak.toLocaleString()} · drawdown <span className={guardian.settings.dd_level_1_pct != null && m.drawdown_pct >= guardian.settings.dd_level_1_pct ? "text-warn" : "text-fg"}>{m.drawdown_pct.toFixed(1)}%</span> over {m.closed_trades} closed trade(s)</div>
+                  <div className="text-fg-muted">Open risk at the stops {m.open_risk_total.toLocaleString()} ({m.open_risk_pct}% of capital{m.portfolio_cap != null ? `, cap ${m.portfolio_cap.toLocaleString()}` : ", no cap set"})</div>
                   {Object.keys(m.open_risk_by_bucket).length > 0 && (
                     <div className="text-fg-muted">By bucket: {Object.entries(m.open_risk_by_bucket).map(([b, v]) => `${b} ${v.toLocaleString()}`).join(" · ")}</div>
                   )}
@@ -197,7 +199,9 @@ export default function RiskManagementPage() {
             })}
           </div>
           <div className="mt-3 text-xs text-fg-muted">
-            The drawdown ladder halves the risk per trade at {guardian.settings.dd_level_1_pct}% below the equity peak and pauses new entries at {guardian.settings.dd_level_2_pct}%; the multiplier never rises above 1 after a winning streak. Exits are never blocked.
+            {guardian.settings.dd_level_1_pct != null || guardian.settings.dd_level_2_pct != null
+              ? `The drawdown ladder halves the risk per trade at ${guardian.settings.dd_level_1_pct ?? "-"}% below the equity peak and pauses new entries at ${guardian.settings.dd_level_2_pct ?? "-"}%; the multiplier never rises above 1 after a winning streak.`
+              : "No drawdown ladder is set."} Exits are never blocked.
           </div>
         </Card>
       )}

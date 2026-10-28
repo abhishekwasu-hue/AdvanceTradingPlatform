@@ -94,7 +94,9 @@ def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: 
         kept = data_policy.filter_allowed(df, boundary)
         sealed, df = int(len(df) - len(kept)), kept
     strategy = DeclarativeStrategy(DRAFT_ID, config)
-    capital = float(risk.capital)
+    from app.core import config as app_config
+    risk = risk.with_capital(app_config.PAPER_STARTING_CAPITAL)     # DEF-0: own capital, else the PAPER start
+    capital = float(risk.capital or 0.0)
     out: Dict[str, Any] = {
         "symbol": symbol.upper(), "timeframe": config.timeframe, "bars": int(len(df)), "capital": _r(capital),
         "from": _iso(df.index[0]) if len(df) else None, "to": _iso(df.index[-1]) if len(df) else None,

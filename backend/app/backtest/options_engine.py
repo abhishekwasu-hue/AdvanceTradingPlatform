@@ -57,6 +57,7 @@ from app.trading.exit_logic import underlying_exit
 from app.trading.trigger_rules import ABOVE, BELOW, closed_beyond
 from app.trading.exit_rules import ExitRules
 from app.trading.position_monitor import structure_exit_reason, underlying_exit_reason
+from app.core import config as app_config
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,9 @@ def run_option_backtest(
             raise ModelError("black76 prices strikes missing from a recorded or uploaded chain; this run has no chain (synthetic pricing)")
         b76 = Black76Pricer(pricer.rows, vol, config.risk_free_rate, **{"max_age_minutes": pricer.max_age_minutes, **models.pricing_params()})
         pricer.fallback = b76  # type: ignore[assignment]
+    # DEF-0: a backtest's starting equity is the trader's own capital, else the PAPER account's starting balance.
+    risk_config = risk_config.with_capital(app_config.PAPER_STARTING_CAPITAL)
+    capital = float(risk_config.capital or 0.0)
     risk_manager = RiskManager(risk_config)
     state = TradingDayState()
     streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
@@ -261,7 +265,7 @@ def run_option_backtest(
     trades: List[Trade] = []
     structures: List[dict] = []
     skipped: Counter = Counter()
-    equity = risk_config.capital
+    equity = capital
     equity_curve = [equity]
     settlements = 0
     current_day: Optional[date] = None
@@ -524,7 +528,7 @@ def run_option_backtest(
         profit_factor=round(gross_profit / abs(gross_loss), 2) if gross_loss else None, max_drawdown=round(max_dd, 2),
         avg_win=round(gross_profit / len(winners), 2) if winners else 0.0, avg_loss=round(gross_loss / len(losers), 2) if losers else 0.0,
         expectancy=round(net_pnl / total, 2) if total else 0.0, trades=trades, equity_curve=equity_curve,
-        analytics=build_analytics(trades, equity_curve, risk_config.capital),
+        analytics=build_analytics(trades, equity_curve, capital),
         exit_rules=time_rules.to_json() if time_rules is not None else None, options=options,
         execution=None if models.is_default else {"models": models.describe(), "margin_refused": margin_refused, "margin_calls": margin_calls,
                                                   "model_prices": b76.count if b76 is not None else 0},

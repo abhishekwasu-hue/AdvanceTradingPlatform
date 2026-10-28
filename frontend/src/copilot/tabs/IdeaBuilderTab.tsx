@@ -403,7 +403,9 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
   const symbol = String(plan.answers.symbol ?? "NIFTY 50");
   const [acceptRisk, setAcceptRisk] = useState(false);
   const [busy, setBusy] = useState(false);
-  const perTrade = Math.round((plan.risk_config.capital * plan.risk_config.risk_per_trade_pct) / 100);
+  // DEF-0: null when the capital or the risk per trade is not set
+  const perTrade = plan.risk_config.capital != null && plan.risk_config.risk_per_trade_pct != null
+    ? Math.round((plan.risk_config.capital * plan.risk_config.risk_per_trade_pct) / 100) : null;
   const act = async (fn: () => Promise<string>) => { setBusy(true); try { onDone(await fn()); } catch (e) { onError(e); } finally { setBusy(false); } };
   return (
     <Panel title={`${t("idea.template")}${plan.option ? `: ${plan.option.label}` : ""} · ${symbol}`} icon={<Sparkles size={15} />} testId="idea-chosen">
@@ -423,7 +425,7 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button size="sm" icon={<ShieldCheck size={13} />} disabled={busy} onClick={() => {
-          const cap = `₹${Math.round(plan.risk_config.capital).toLocaleString("en-IN")}`;
+          const cap = plan.risk_config.capital != null ? `₹${Math.round(plan.risk_config.capital).toLocaleString("en-IN")}` : "-";
           if (!window.confirm(t("idea.confirmRisk", { capital: cap }))) return;
           void act(async () => { await api.updateRiskSettings(plan.risk_config); return t("idea.riskApplied"); });
         }}><span className="text-left leading-tight">{t("idea.applyRisk")}</span></Button>
@@ -431,7 +433,7 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
           <>
             <label className="flex items-center gap-1.5 text-xs text-fg">
               <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--ai))]" checked={acceptRisk} onChange={(e) => setAcceptRisk(e.target.checked)} />
-              <span>{t("idea.acceptLoss", { amount: perTrade.toLocaleString("en-IN") })}</span>
+              <span>{t("idea.acceptLoss", { amount: perTrade != null ? perTrade.toLocaleString("en-IN") : "-" })}</span>
             </label>
             <Button size="sm" variant="primary" icon={<Rocket size={13} />} disabled={busy || !acceptRisk}
                     onClick={() => void act(async () => t("idea.deployed", { id: (await api.aiInterviewDeploy(plan.candidate_id!, acceptRisk)).deployment.id }))}>

@@ -45,11 +45,12 @@ def _record_to_config(record: RiskSettingsRecord) -> RiskConfig:
         max_consecutive_losses=record.max_consecutive_losses,
         min_risk_reward=org_min_rr_read(record.min_risk_reward),
         lot_size=record.lot_size,
-        max_portfolio_risk_pct=record.max_portfolio_risk_pct if record.max_portfolio_risk_pct is not None else 6.0,
-        stop_cooldown_minutes=record.stop_cooldown_minutes if record.stop_cooldown_minutes is not None else 30,
-        dd_level_1_pct=record.dd_level_1_pct if record.dd_level_1_pct is not None else 5.0,
-        dd_level_2_pct=record.dd_level_2_pct if record.dd_level_2_pct is not None else 10.0,
-        event_size_cut_pct=record.event_size_cut_pct if record.event_size_cut_pct is not None else 50.0,
+        # DEF-0: a NULL column is a limit the organisation did not set - off, never a built-in value.
+        max_portfolio_risk_pct=record.max_portfolio_risk_pct,
+        stop_cooldown_minutes=record.stop_cooldown_minutes,
+        dd_level_1_pct=record.dd_level_1_pct,
+        dd_level_2_pct=record.dd_level_2_pct,
+        event_size_cut_pct=record.event_size_cut_pct,
         loss_streak_pause=record.loss_streak_pause if record.loss_streak_pause in loss_streak.PAUSE_MODES else loss_streak.NEXT_SESSION,
     )
 
@@ -62,18 +63,26 @@ async def get_ceilings(user: User = Depends(get_current_user), session: AsyncSes
 
 async def get_tenant_risk_config(tenant_id: int, session: AsyncSession) -> RiskConfig | None:
     """Used by /paper-execute to apply a logged-in user's tenant-wide limits when the request
-    doesn't explicitly override risk_config. Returns None if the tenant has never customized
-    anything - the caller then falls back to the platform default.
+    doesn't explicitly override risk_config. Returns None if the tenant has never saved any - the caller then uses
+    `RiskConfig()`, where every limit is not set (DEF-0).
     """
     record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == tenant_id))
     return _record_to_config(record) if record is not None else None
+
+
+async def user_risk_config(session: AsyncSession, user: User) -> RiskConfig:
+    """DEF-0 (owner, 28 Oct): the organisation's saved limits (each not set = off) with the capital any % reads: the
+    saved capital when set, else this user's PAPER account balance - never a built-in figure."""
+    from app.risk_engine.by_default import capital_basis
+    cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+    return cfg if cfg.capital is not None else cfg.with_capital(await capital_basis(session, user))
 
 
 @router.get("", response_model=RiskConfig)
 async def get_risk_settings(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> RiskConfig:
-    """This tenant's saved risk settings, or the platform default if it hasn't customized any."""
+    """This tenant's saved risk settings; with none saved, every limit is not set (DEF-0: no platform default)."""
     config = await get_tenant_risk_config(user.tenant_id, session)
     return config if config is not None else RiskConfig()
 
@@ -88,7 +97,7 @@ async def update_risk_settings(
         raise HTTPException(status_code=400, detail="; ".join(violations))
     if not math.isfinite(config.min_risk_reward) or not 0 <= config.min_risk_reward <= 10:
         raise HTTPException(status_code=400, detail="min_risk_reward must be between 0 (not set) and 10")
-    if config.dd_level_1_pct > config.dd_level_2_pct > 0:
+    if config.dd_level_1_pct is not None and config.dd_level_2_pct is not None and config.dd_level_1_pct > config.dd_level_2_pct > 0:
         raise HTTPException(status_code=400, detail="dd_level_1_pct must not exceed dd_level_2_pct")
     record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
     if record is None:

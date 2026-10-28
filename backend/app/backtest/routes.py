@@ -344,7 +344,9 @@ async def backtest_monte_carlo(
     risk = body.risk_config or RiskConfig()
     runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
     result = await run_in_threadpool(runner.run, strategy, bars_to_dataframe(body.candles))        # P0.1 / S3
-    mc = await run_in_threadpool(monte_carlo, result.trades, risk.capital, runs=max(100, min(runs, 5000)), seed=seed)
+    from app.core import config as app_config
+    capital = float(risk.with_capital(app_config.PAPER_STARTING_CAPITAL).capital or 0.0)     # DEF-0
+    mc = await run_in_threadpool(monte_carlo, result.trades, capital, runs=max(100, min(runs, 5000)), seed=seed)
     return {"backtest": result.model_dump(exclude={"trades", "equity_curve", "analytics", "options"}), "monte_carlo": mc}
 
 

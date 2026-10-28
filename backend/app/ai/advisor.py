@@ -226,8 +226,8 @@ def match_score(a: InterviewAnswers, p: Preferences, market: dict, pick: Optiona
         return max(0.0, 1.0 - abs(have - target) / max(target, 1e-9))
 
     parts = {
-        "risk": (0.25, closeness(cfg.risk_per_trade_pct, want["risk_pct"])),
-        "trades": (0.20, closeness(cfg.max_trades_per_day, want["trades"])),
+        "risk": (0.25, closeness(cfg.risk_per_trade_pct, want["risk_pct"]) if cfg.risk_per_trade_pct is not None else 0.0),
+        "trades": (0.20, closeness(cfg.max_trades_per_day, want["trades"]) if cfg.max_trades_per_day is not None else 0.0),
         "reward": (0.15, closeness(cfg.min_risk_reward, want["rr"])),
         "style": (0.25, _style_fit(a, p, pick["family"])),
         "contract": (0.15, 1.0 if contract_honoured else 0.6),

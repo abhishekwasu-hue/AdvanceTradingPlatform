@@ -21,8 +21,6 @@ from app.core.enums import RiskLimitType, RiskScope, UserRole
 from app.db.models import RiskEventRecord, RiskLimitRecord, User
 from app.db.session import get_session
 from app.risk_engine.hierarchy import RiskContext, evaluate
-from app.risk_engine.routes import get_tenant_risk_config
-from app.core.models import RiskConfig
 
 router = APIRouter(prefix="/api/risk", tags=["risk"])
 
@@ -183,7 +181,8 @@ async def evaluate_dry_run(
 ) -> dict:
     """What the hierarchy would decide for this order right now. Records the checks like a real
     evaluation (they are labelled by the absent order id) but never engages a kill switch."""
-    cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+    from app.risk_engine.routes import user_risk_config
+    cfg = await user_risk_config(session, user)          # DEF-0: capital = own, else the PAPER balance
     ctx = RiskContext(tenant_id=user.tenant_id, user_id=user.id, strategy_id=request.strategy_id, symbol=request.symbol.upper(),
                       quantity=request.quantity, entry=request.entry, stop_loss=request.stop_loss, capital=cfg.capital,
                       account_id=request.account_id, mode=request.mode)

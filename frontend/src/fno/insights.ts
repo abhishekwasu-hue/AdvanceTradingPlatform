@@ -65,9 +65,11 @@ export function ticketPayoffSentence(p: Pick<OrderPreview, "contract" | "side" |
 
 /** The user's own budget (backend app/paper/fno_insights.py risk_budget). */
 export interface RiskBudget {
-  capital: number;
-  per_trade: { amount: number; pct: number };
-  daily: { amount: number; pct: number };
+  /** DEF-0: his own capital, else his PAPER balance; null while neither is known. */
+  capital: number | null;
+  /** DEF-0: null = he set no risk per trade / no daily loss limit (no limit). */
+  per_trade: { amount: number; pct: number } | null;
+  daily: { amount: number; pct: number } | null;
   source: string;
   /** 8b slice 4: his PAPER balance (starting capital + closed PAPER P&L); the margin open positions use is not taken off. */
   paper_balance?: { amount: number; source: string; open_margin_counted: false } | null;
@@ -83,21 +85,25 @@ const pctText = (v: number) => (v > 0 && v < 0.1 ? "under 0.1%" : `${formatNumbe
 /** The max loss beside the user's own capital and limits, in plain words - or null while either is not known. Never a
  * refusal: the caller shows it as a line, the order's buttons do not read it. */
 export function riskLine(maxLoss: number | null | undefined, unbounded: boolean, b: RiskBudget | null | undefined): RiskLine | null {
-  if (!b || !(b.capital > 0)) return null;
+  if (!b || b.capital == null || !(b.capital > 0)) return null;
+  const capital = b.capital;
   if (unbounded) {
     return { tone: "warn", note: RISK_NOTE,
-      text: `The loss here has no fixed limit. Your daily loss limit is ${formatINR(b.daily.amount)} (${pctText(b.daily.pct)} of your capital).` };
+      text: b.daily ? `The loss here has no fixed limit. Your daily loss limit is ${formatINR(b.daily.amount)} (${pctText(b.daily.pct)} of your capital).`
+        : "The loss here has no fixed limit." };
   }
   if (typeof maxLoss !== "number" || !(maxLoss > 0)) return null;
-  const head = `Max loss ${formatINR(maxLoss)} is ${pctText((maxLoss / b.capital) * 100)} of your capital (${formatINR(b.capital)}).`;
-  if (maxLoss > b.daily.amount) {
+  // DEF-0: the facts, compared only with the limits he set himself
+  const head = `Max loss ${formatINR(maxLoss)} is ${pctText((maxLoss / capital) * 100)} of your capital (${formatINR(capital)}).`;
+  if (b.daily && maxLoss > b.daily.amount) {
     return { tone: "warn", note: RISK_NOTE, text: `${head} That is more than your daily loss limit of ${formatINR(b.daily.amount)}.` };
   }
-  if (maxLoss > b.per_trade.amount) {
+  if (b.per_trade && maxLoss > b.per_trade.amount) {
     return { tone: "warn", note: RISK_NOTE,
       text: `${head} That is more than your risk per trade of ${formatINR(b.per_trade.amount)} (${pctText(b.per_trade.pct)}).` };
   }
-  return { tone: "info", note: RISK_NOTE, text: `${head} Within your risk per trade of ${formatINR(b.per_trade.amount)}.` };
+  if (b.per_trade) return { tone: "info", note: RISK_NOTE, text: `${head} Within your risk per trade of ${formatINR(b.per_trade.amount)}.` };
+  return { tone: "info", note: RISK_NOTE, text: head };
 }
 
 // --- 8b-h: Explain (education) -----------------------------------------------------------------------------------------

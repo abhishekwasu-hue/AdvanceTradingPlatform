@@ -172,3 +172,14 @@ export function newClientRef(): string {
   } catch { /* no crypto: fall back */ }
   return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 }
+
+
+/** DEF-0 D6 (owner, 28 Oct): why the order cannot be placed, in one line, and where to change it. Only a rule the
+ * trader set himself, a broker / exchange answer or a LIVE switch can hold an order back (an "Information only" line
+ * never does); his own limits link to the place he changes them. Null when it can be placed. */
+export function blockedBy(p: { can_place: boolean; errors: string[]; refusals: string[] }): { text: string; link: string | null } | null {
+  if (p.can_place) return null;
+  const text = p.errors[0] ?? p.refusals[0] ?? "This order cannot be placed right now.";
+  const own = /your (setting|limit|risk per trade|own)|my limits|limit of|today's loss limit|losses in a row|positions, your limit|experience level/i.test(text);
+  return { text, link: own ? "/risk-management" : null };
+}

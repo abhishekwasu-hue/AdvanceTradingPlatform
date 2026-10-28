@@ -366,7 +366,7 @@ def test_the_contract_route_and_the_ticket_accept_a_future(fut):
     assert view["can_place"] is True, view
     assert view["lot_size"] == LOT and view["units"] == LOT and view["fill_price"] == 1000.0
     assert view["max_loss"]["value"] == pytest.approx(10.0 * LOT)               # (1000 - 990) x 50
-    assert view["margin"]["value"] is None and "SPAN" in view["margin"]["basis"] and "50,000" in view["margin"]["note"]
+    assert view["margin"]["value"] is None and view["margin"]["basis"].startswith("Margin not available") and "50,000" in view["margin"]["note"]
     sold = client.post("/api/paper/fno/order/preview", headers=t["headers"], json=_fbody(expiry, side="SELL", stop_loss=990.0)).json()
     assert any("must be above the price" in e and "sold future" in e for e in sold["errors"])
     sold = client.post("/api/paper/fno/order/preview", headers=t["headers"], json=_fbody(expiry, side="SELL", stop_loss=1008.0)).json()

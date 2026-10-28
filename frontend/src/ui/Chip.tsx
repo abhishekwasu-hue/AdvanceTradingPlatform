@@ -14,7 +14,7 @@ import { cx } from "../components/primitives/cx";
  * text colour on the card, UI v2 §8 - never a hue).
  */
 export type ChipTone = "neutral" | "brand" | "up" | "down" | "warn" | "info" | "ai";
-export type ChipVariant = "tint" | "outline" | "solid";
+export type ChipVariant = "tint" | "outline" | "solid" | "meaning";
 /** `pill` is the v2 chip; `badge` is the P1.2 Badge's squarer look, kept for the pages that use it. */
 export type ChipShape = "pill" | "badge";
 
@@ -37,6 +37,18 @@ const PILL_OUTLINE: Record<ChipTone, string> = {
   ai: "border border-ai/40 text-ai",
 };
 const SOLID = "bg-fg text-surface-1";
+// UX-11b C6: the meaning chips (TrendChip, LevelChip) sit on the opaque tint tokens DirectionChip uses, so their words keep
+// WCAG AA (>= 4.5 : 1) on every surface in every theme (src/ui/levels.test.tsx measures it); a /10 alpha tint over a
+// raised surface does not.
+const PILL_MEANING: Record<ChipTone, string> = {
+  neutral: "bg-surface-2 text-fg-muted",
+  brand: "bg-brand-tint text-brand",
+  up: "bg-up-tint text-up",
+  down: "bg-down-tint text-down",
+  warn: "bg-warn-tint text-warn",
+  info: "bg-info-tint text-info",
+  ai: "bg-ai-tint text-ai",
+};
 // The P1.2 Badge tones, unchanged (plus ai).
 const BADGE: Record<ChipTone, string> = {
   neutral: "border-border bg-surface-2 text-fg-muted",
@@ -55,7 +67,8 @@ export function chipClass({ tone = "neutral", variant = "tint", shape = "pill", 
   tone?: ChipTone; variant?: ChipVariant; shape?: ChipShape; icon?: boolean; className?: string;
 } = {}): string {
   if (shape === "badge") return cx(BADGE_BASE, BADGE[tone], className);
-  const colour = variant === "solid" ? SOLID : variant === "outline" ? PILL_OUTLINE[tone] : PILL_TINT[tone];
+  const colour = variant === "solid" ? SOLID : variant === "outline" ? PILL_OUTLINE[tone] : variant === "meaning" ? PILL_MEANING[tone]
+    : PILL_TINT[tone];
   return cx(PILL_BASE, icon && "gap-space-1", colour, className);
 }
 

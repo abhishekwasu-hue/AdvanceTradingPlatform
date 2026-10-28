@@ -74,15 +74,22 @@ class Section:
     empty: str
     lines: List[str] = field(default_factory=list)
     link: Optional[Dict[str, str]] = None
+    # UX-11b C1: what the section is (the page renders by it) and its typed facts (numbers, signs, states). `lines` stay
+    # the same sentences for Telegram (rhythm/deliver.py) and for a client that does not know the kind.
+    kind: str = "lines"
+    rows: List[Dict[str, Any]] = field(default_factory=list)
 
     def add(self, text: Optional[str]) -> None:
         value = words.clean(text)
         if value and value not in self.lines:
             self.lines.append(value)
 
+    def row(self, type_: str, **facts: Any) -> None:
+        self.rows.append({"type": type_, **facts})
+
     def as_dict(self) -> Dict[str, Any]:
-        return {"id": self.id, "title": self.title, "lines": list(self.lines), "empty": None if self.lines else self.empty,
-                "link": self.link}
+        return {"id": self.id, "kind": self.kind, "title": self.title, "lines": list(self.lines), "rows": list(self.rows),
+                "empty": None if self.lines or self.rows else self.empty, "link": self.link}
 
 
 @dataclass(frozen=True)
@@ -174,7 +181,15 @@ def _memory_symbol(ctx: Ctx, symbol: str) -> Optional[Dict[str, Any]]:
     return next((s for s in ctx.memory.get("symbols", []) if s.get("symbol") == symbol), None)
 
 
-def _structure_line(ctx: Ctx, symbol: str, label: str, *, today_only: bool = False) -> Optional[str]:
+def _area(area: Any) -> Optional[Dict[str, float]]:
+    """A buyer / seller area as a price range {low, high} (the user's OWN brief shows it inside Details - UX-11b)."""
+    try:
+        return {"low": float(area["low"]), "high": float(area["high"])} if area else None
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _structure_snap(ctx: Ctx, symbol: str, *, today_only: bool = False) -> Optional[tuple]:
     snap = _memory_symbol(ctx, symbol)
     if not snap:
         return None
@@ -184,6 +199,29 @@ def _structure_line(ctx: Ctx, symbol: str, label: str, *, today_only: bool = Fal
     read_today = captured.astimezone(IST).date() == ctx.today
     if today_only and not read_today:
         return None
+    return snap, captured, read_today
+
+
+def _structure_row(ctx: Ctx, symbol: str, label: str, *, today_only: bool = False) -> Optional[Dict[str, Any]]:
+    found = _structure_snap(ctx, symbol, today_only=today_only)
+    if not found:
+        return None
+    snap, captured, read_today = found
+    payload = snap.get("payload") or {}
+    structure = payload.get("structure") or {}
+    price = payload.get("last_price") or snap.get("last_price")
+    return {"type": "index", "symbol": symbol, "label": label, "trend": words.trend_key(snap.get("structure") or structure.get("trend")),
+            "event": words.event_key(structure.get("last_event")),
+            "location": words.area_state(price, payload.get("support"), payload.get("resistance")),
+            "buyer_area": _area(payload.get("support")), "seller_area": _area(payload.get("resistance")),
+            "last_read": None if read_today else captured.astimezone(IST).date().isoformat()}
+
+
+def _structure_line(ctx: Ctx, symbol: str, label: str, *, today_only: bool = False) -> Optional[str]:
+    found = _structure_snap(ctx, symbol, today_only=today_only)
+    if not found:
+        return None
+    snap, captured, read_today = found
     payload = snap.get("payload") or {}
     parts = [f"{label}: {words.trend_words(snap.get('structure') or (payload.get('structure') or {}).get('trend'))}"]
     event = words.event_words((payload.get("structure") or {}).get("last_event"))
@@ -199,8 +237,12 @@ def _structure_line(ctx: Ctx, symbol: str, label: str, *, today_only: bool = Fal
 async def structure_section(ctx: Ctx, *, today_only: bool = False, with_dow: bool = True) -> Section:
     sec = Section("structure", "NIFTY 50 and BANK NIFTY", "No structure read of the indices yet. It appears after the market "
                   "data is read during a session.", link={"label": "Open the chart", "to": "/charts/NIFTY%2050"})
+    sec.kind = "structure"
     for symbol, label in INDICES:
         sec.add(_structure_line(ctx, symbol, label, today_only=today_only))
+        row = _structure_row(ctx, symbol, label, today_only=today_only)
+        if row:
+            sec.rows.append(row)
     if with_dow:
         regime = await _tile(ctx, "regime")
         if regime:
@@ -208,33 +250,49 @@ async def structure_section(ctx: Ctx, *, today_only: bool = False, with_dow: boo
             weekly = (regime.get("weekly") or {}).get("trend")
             if daily and weekly:
                 sec.add(f"NIFTY 50 daily swings: {words.trend_words(daily)}; weekly swings: {words.trend_words(weekly)}.")
+                # the table shows the daily / weekly swings on the NIFTY 50 row (one row per index)
+                nifty = next((r for r in sec.rows if r["symbol"] == INDICES[0][0]), None)
+                if nifty is None:
+                    nifty = {"type": "index", "symbol": INDICES[0][0], "label": INDICES[0][1], "trend": None, "event": None,
+                             "location": None, "buyer_area": None, "seller_area": None, "last_read": None}
+                    sec.rows.insert(0, nifty)
+                nifty.update(daily=words.trend_key(daily), weekly=words.trend_key(weekly))
     return sec
 
 
 async def mood_section(ctx: Ctx) -> Section:
     from app.ai import global_cues, market_memory
-    sec = Section("mood", "Market mood", "No market read yet. It appears once the day's market data is in.")
+    sec = Section("mood", "Market mood", "No market read yet. It appears once the day's market data is in.", kind="mood")
     glob = await _tile(ctx, "global")
-    rows = [{"symbol": m["key"], "change_pct": m.get("change_pct"), "payload": {"as_of": m.get("as_of")}}
+    rows = [{"symbol": m["key"], "change_pct": m.get("change_pct"), "last_price": m.get("last"), "payload": {"as_of": m.get("as_of")}}
             for m in glob.get("markets", []) if m.get("change_pct") is not None]
     if not rows:                                     # the organisation's market memory keeps the last global read too
         rows = [g for g in ctx.memory.get("globals", []) if g.get("change_pct") is not None]
     cue = global_cues.view("en", rows, ctx.now)[:1] if rows else []
     for line in cue:
         sec.add(line)
+    if cue:
+        sec.row("cues", mood=global_cues.mood(rows, ctx.now)["label"],
+                markets=[{"key": g["symbol"], "name": global_cues.BY_KEY[g["symbol"]].en if g["symbol"] in global_cues.BY_KEY else g["symbol"],
+                          "last": g.get("last_price"), "change_pct": float(g["change_pct"]), "stale": not global_cues._fresh(g, ctx.now)}
+                         for g in rows])
     vix = await _tile(ctx, "vix")
     if vix.get("close") is not None:
         text = market_memory.vix_text("en", float(vix["close"]))
         pct = vix.get("percentile")
         if pct is not None:
             text += f"; higher than {pct:.0f}% of the past year's closes"
-        if vix.get("status") == "stale" and vix.get("as_of"):
+        stale = vix.get("status") == "stale" and bool(vix.get("as_of"))
+        if stale:
             text += f" (close of {date.fromisoformat(vix['as_of']).strftime('%a %d %b')})"
         sec.add(text + ".")
+        sec.row("vix", value=float(vix["close"]), change_pct=vix.get("change_pct"), level=market_memory.vix_level(float(vix["close"])),
+                percentile=pct, as_of=vix.get("as_of") if stale else None)
     flows = await _tile(ctx, "fii_dii")
     if flows.get("net_fii_crore") is not None and flows.get("net_dii_crore") is not None:
         sec.add(f"FII net {float(flows['net_fii_crore']):+,.0f} crore, DII net {float(flows['net_dii_crore']):+,.0f} crore "
                 f"(the last published day).")
+        sec.row("flows", fii_crore=float(flows["net_fii_crore"]), dii_crore=float(flows["net_dii_crore"]), as_of=flows.get("as_of"))
     return sec
 
 
@@ -253,15 +311,29 @@ def _event_line(e: MarketEventRecord, *, with_day: bool) -> Optional[str]:
     return text + "." + effect
 
 
+def event_row(e: MarketEventRecord) -> Dict[str, Any]:
+    """An event line's typed facts (the page shows them as a chip with the day; the window and detail go in Details)."""
+    label = EVENT_LABELS.get(e.kind, "Market event")
+    desc = words.clean(e.description)
+    return {"type": "event", "date": e.event_date.isoformat(), "label": label,
+            "scope": e.underlying if e.underlying and e.underlying != "*" else None,
+            "window": f"{e.start_time}-{e.end_time}" if e.start_time and e.end_time else None,
+            "detail": desc if desc and desc.lower() != label.lower() else None, "pauses_entries": e.action == "BLOCK"}
+
+
 async def events_section(ctx: Ctx, start: date, end: date, title: str, empty: str, *, with_day: bool = True) -> Section:
-    sec = Section("events", title, empty, link={"label": "News & events", "to": "/news-events"})
+    sec = Section("events", title, empty, link={"label": "News & events", "to": "/news-events"}, kind="events")
     rows = await _safely(ctx, "events", _events(ctx, start, end), [])
     for e in rows[:MAX_EVENTS]:
-        sec.add(_event_line(e, with_day=with_day))
+        line = _event_line(e, with_day=with_day)
+        sec.add(line)
+        if line and words.clean(line):
+            sec.rows.append(event_row(e))
     names = await _safely(ctx, "holiday names", _holiday_names(ctx, start, end), {})
     for day in sorted(d for d in ctx.holidays if start <= d <= end and d.weekday() < 5):
         name = words.clean(names.get(day)) or ""
         sec.add(f"{_day_label(day)}: market holiday" + (f" ({name})" if name else "") + ".")
+        sec.row("holiday", date=day.isoformat(), name=name or None)
     return sec
 
 
@@ -287,10 +359,20 @@ def _setup_line(item: Dict[str, Any]) -> Optional[str]:
     return words.signal_line(text + ".", [symbol])
 
 
+def setup_row(item: Dict[str, Any], line: str) -> Dict[str, Any]:
+    """A setup line's typed facts: symbol, side (LONG / SHORT / None), source (strategy / scan) and the line's own words
+    after the symbol (already numberless) for the row's Details."""
+    direction = str(item.get("direction") or "").upper()
+    return {"type": "setup", "symbol": str(item.get("symbol") or ""),
+            "side": "SHORT" if direction in ("SHORT", "SELL") else "LONG" if direction in ("LONG", "BUY") else None,
+            "source": "scan" if (item.get("source") or {}).get("kind") == "scan" else "strategy",
+            "detail": line.split(": ", 1)[1] if ": " in line else line}
+
+
 async def setups_section(ctx: Ctx, since: datetime, title: str = "Setups from your lists") -> Section:
     from app.signals_feed import service as feed_service
     sec = Section("setups", title, "No setups from your strategies or scans since the last session.",
-                  link={"label": "Open Signals", "to": "/signals"})
+                  link={"label": "Open Signals", "to": "/signals"}, kind="setups")
     page = await _safely(ctx, "setups", feed_service.feed(ctx.session, ctx.user, tab="history", limit=50, now=ctx.now), {})
     seen: Set[str] = set()
     for item in page.get("items", []):
@@ -304,6 +386,7 @@ async def setups_section(ctx: Ctx, since: datetime, title: str = "Setups from yo
         if line:
             seen.add(sym)
             sec.lines.append(line)
+            sec.rows.append(setup_row(item, line))
         if len(sec.lines) >= MAX_SETUPS:
             break
     return sec
@@ -329,7 +412,7 @@ def position_state(t: TradeRecord) -> Dict[str, Any]:
 async def positions_section(ctx: Ctx, *, only_near: bool = False) -> Section:
     sec = Section("positions", "Your open positions" if not only_near else "Positions near their invalidation",
                   "No open paper positions." if not only_near else "None of your open positions is near its invalidation.",
-                  link={"label": "My positions", "to": "/positions"})
+                  link={"label": "My positions", "to": "/positions"}, kind="positions")
     rows = await _safely(ctx, "positions", _own_trades(ctx, open_only=True), [])
     for t in rows:
         st = position_state(t)
@@ -342,10 +425,12 @@ async def positions_section(ctx: Ctx, *, only_near: bool = False) -> Section:
         if st["near"]:
             text += " - near the invalidation you set for it"
         sec.add(text + ".")
+        sec.row("position", symbol=t.symbol, side=side.upper(), pnl=st["pnl"], near=st["near"])
         if len(sec.lines) >= MAX_POSITIONS:
             break
     if not only_near and len(rows) > MAX_POSITIONS:
         sec.add(f"{len(rows) - MAX_POSITIONS} more on My positions.")
+        sec.row("more", count=len(rows) - MAX_POSITIONS)
     return sec
 
 
@@ -359,7 +444,7 @@ async def _your_day(ctx: Ctx) -> Dict[str, Any]:
 
 async def budget_section(ctx: Ctx) -> Section:
     sec = Section("budget", "Your risk for the day", "Your loss budget appears once your risk settings are read.",
-                  link={"label": "Risk limits", "to": "/risk-management"})
+                  link={"label": "Risk limits", "to": "/risk-management"}, kind="budget")
     d = await _your_day(ctx)
     paper = d["paper"]
     if d["cfg"] is None:
@@ -369,6 +454,8 @@ async def budget_section(ctx: Ctx) -> Section:
                 f"(your own daily loss limit).")
         if paper["consecutive_losses"]:
             sec.add(f"Losses in a row so far: {paper['consecutive_losses']} (your pause comes after {paper['max_consecutive_losses']}).")
+        sec.row("budget", left=float(paper["loss_left"]), limit=float(paper["loss_limit"]), used=float(paper.get("loss_used") or 0.0),
+                losses_in_row=int(paper["consecutive_losses"] or 0), pause_after=paper.get("max_consecutive_losses"))
     return sec
 
 
@@ -390,15 +477,19 @@ async def _discipline_today(ctx: Ctx) -> Optional[Dict[str, Any]]:
 
 async def day_section(ctx: Ctx) -> Section:
     sec = Section("day", "Your day", "No paper trades today. A day without a trade is fine when nothing met your plan.",
-                  link={"label": "My positions", "to": "/positions"})
+                  link={"label": "My positions", "to": "/positions"}, kind="day")
+    facts: Dict[str, Any] = {}
     d = await _your_day(ctx)
     paper, cfg = d["paper"], d["cfg"]
     opens = await _safely(ctx, "open positions", _own_trades(ctx, open_only=True), [])
     open_pnl = sum(p for p in (position_state(t)["pnl"] for t in opens) if p is not None)
     if paper and (paper["trades_today"] or paper["realised_pnl"] or opens):
         sec.add(f"Booked P&L today: {money(paper['realised_pnl'])}" + (f"; open positions {money(open_pnl)}." if opens else "."))
+        facts.update(booked=float(paper["realised_pnl"]), open_pnl=round(open_pnl, 2) if opens else None)
         if cfg is not None:
-            if paper["trades_today"] <= cfg.max_trades_per_day and paper["loss_used"] < paper["loss_limit"]:
+            inside = paper["trades_today"] <= cfg.max_trades_per_day and paper["loss_used"] < paper["loss_limit"]
+            facts["inside_limits"] = bool(inside)
+            if inside:
                 sec.add("You stayed inside your own daily limits today. That is the habit that counts.")
             else:
                 sec.add("Today went past one of your own daily limits (trades or loss). Your Risk limits page shows which.")
@@ -406,10 +497,13 @@ async def day_section(ctx: Ctx) -> Section:
     if score and score.get("score") is not None:
         sec.add(f"Discipline score for today: {score['score']} out of 100 (following your own plan, not the number of trades).")
         sec.link = {"label": "Open the Journal", "to": "/journal"}
+        facts["discipline"] = score["score"]
+    if facts:
+        sec.row("day", **{"booked": None, "open_pnl": None, "inside_limits": None, "discipline": None, **facts})
     return sec
 
 
-async def _index_move(ctx: Ctx, symbol: str, label: str, sessions: int = 1) -> Optional[str]:
+async def _index_move_facts(ctx: Ctx, symbol: str, label: str, sessions: int = 1) -> Optional[Dict[str, Any]]:
     closes = await _closes(ctx, symbol, days=20)
     if len(closes) <= sessions:
         return None
@@ -417,8 +511,19 @@ async def _index_move(ctx: Ctx, symbol: str, label: str, sessions: int = 1) -> O
     _, before = closes[-1 - sessions]
     if not before:
         return None
-    when = "" if last_day == ctx.today or sessions > 1 else f" (close of {_day_label(last_day)})"
-    return f"{label} {_pct(100.0 * (last / before - 1.0))}{when}"
+    return {"type": "index_move", "label": label, "close": round(float(last), 2), "change_pct": round(100.0 * (last / before - 1.0), 2),
+            "as_of": None if last_day == ctx.today or sessions > 1 else last_day.isoformat(), "_pct": 100.0 * (last / before - 1.0),
+            "_day": last_day}
+
+
+def _index_move_text(ctx: Ctx, f: Dict[str, Any], sessions: int) -> str:
+    when = "" if f["_day"] == ctx.today or sessions > 1 else f" (close of {_day_label(f['_day'])})"
+    return f"{f['label']} {_pct(f['_pct'])}{when}"
+
+
+async def _index_move(ctx: Ctx, symbol: str, label: str, sessions: int = 1) -> Optional[str]:
+    f = await _index_move_facts(ctx, symbol, label, sessions)
+    return _index_move_text(ctx, f, sessions) if f else None
 
 
 async def _sector_moves(ctx: Ctx, sessions: int = 1) -> List[tuple]:
@@ -434,19 +539,26 @@ async def market_move_section(ctx: Ctx, *, sessions: int = 1) -> Section:
     week = sessions > 1
     sec = Section("market", "The week in the market" if week else "How the market moved",
                   "The day's closing data is not in yet. It is published in the evening." if not week
-                  else "The week's closing data is not in yet.", link={"label": "Open the chart", "to": "/charts/NIFTY%2050"})
-    moves = [m for m in [await _index_move(ctx, sym, label, sessions) for sym, label in INDICES] if m]
-    if moves:
-        sec.add(("Over the week: " if week else "") + ", ".join(moves) + ".")
+                  else "The week's closing data is not in yet.", link={"label": "Open the chart", "to": "/charts/NIFTY%2050"},
+                  kind="market")
+    facts = [f for f in [await _index_move_facts(ctx, sym, label, sessions) for sym, label in INDICES] if f]
+    if facts:
+        sec.add(("Over the week: " if week else "") + ", ".join(_index_move_text(ctx, f, sessions) for f in facts) + ".")
+        for f in facts:
+            sec.rows.append({**{k: v for k, v in f.items() if not k.startswith("_")}, "sessions": sessions})
     if not week:
         breadth = await _tile(ctx, "breadth")
         if breadth.get("counted"):
             sec.add(f"Breadth: {breadth['advances']} shares rose and {breadth['declines']} fell"
                     + ("" if breadth.get("as_of") == ctx.today.isoformat() else f" (on {date.fromisoformat(breadth['as_of']).strftime('%a %d %b')})") + ".")
+            sec.row("breadth", advances=int(breadth["advances"]), declines=int(breadth["declines"]),
+                    as_of=None if breadth.get("as_of") == ctx.today.isoformat() else breadth.get("as_of"))
     sectors = sorted(await _sector_moves(ctx, sessions), key=lambda s: s[0])
     if len(sectors) >= 2:
         lead, lag = sectors[-1], sectors[0]
         sec.add(f"Strongest sector: {lead[1]} ({_pct(lead[0])}); weakest: {lag[1]} ({_pct(lag[0])}).")
+        sec.row("sectors", strongest={"label": lead[1], "change_pct": round(lead[0], 2)},
+                weakest={"label": lag[1], "change_pct": round(lag[0], 2)})
     return sec
 
 
@@ -454,17 +566,19 @@ async def tomorrow_section(ctx: Ctx) -> Section:
     nxt = next_trading_day(ctx.today, ctx.holidays)
     sec = await events_section(ctx, ctx.today + timedelta(days=1), nxt, "What to watch next session",
                                "No events on the calendar for the next session.")
-    sec.id = "next"
+    sec.id, sec.kind = "next", "next"
     opens = await _safely(ctx, "open positions", _own_trades(ctx, open_only=True), [])
     sec.lines.insert(0, f"Next session: {_day_label(nxt)}.")
+    sec.rows.insert(0, {"type": "next_session", "date": nxt.isoformat()})
     if opens:
         sec.add(f"You carry {len(opens)} open paper position{'s' if len(opens) != 1 else ''} into it.")
+        sec.row("carry", count=len(opens))
     return sec
 
 
 async def week_you_section(ctx: Ctx, monday: date) -> Section:
     sec = Section("you", "Your week", "No paper trades this week. A quiet week is fine when nothing met your plan.",
-                  link={"label": "My positions", "to": "/positions"})
+                  link={"label": "My positions", "to": "/positions"}, kind="week")
     start = schedule.day_start(monday).astimezone(timezone.utc)
     end = start + timedelta(days=7)
     if ctx.flags.get("discipline_engine"):
@@ -473,9 +587,11 @@ async def week_you_section(ctx: Ctx, monday: date) -> Section:
         if review and review["totals"]["trades"]:
             t = review["totals"]
             sec.add(f"{t['closed']} closed, {t['wins']} won and {t['losses']} lost; net {money(t['net_pnl'])} after charges.")
+            sec.row("record", closed=t["closed"], won=t["wins"], lost=t["losses"], net=float(t["net_pnl"]), after_charges=True)
             score = (review.get("discipline") or {}).get("score")
             if score is not None:
                 prev = next((h for h in review.get("history", []) if h.get("score") is not None), None)
+                sec.row("discipline", score=score, previous=prev["score"] if prev else None)
                 change = "" if not prev else (f", up {score - prev['score']} on last week" if score > prev["score"]
                                               else f", down {prev['score'] - score} on last week" if score < prev["score"] else ", the same as last week")
                 sec.add(f"Discipline score: {score} out of 100{change}.")
@@ -483,6 +599,7 @@ async def week_you_section(ctx: Ctx, monday: date) -> Section:
             if cost:
                 sec.add(f"The pattern that cost the most: {cost['label']} ({money(-abs(cost['net_pnl']))} over {cost['closed']} closed trade"
                         f"{'s' if cost['closed'] != 1 else ''}).")
+                sec.row("costliest", label=cost["label"], net=-abs(float(cost["net_pnl"])), closed=cost["closed"])
             sec.link = {"label": "Open the Journal", "to": "/journal"}
             return sec
     trades = await _safely(ctx, "week trades", _own_trades(ctx, since=start), [])
@@ -491,6 +608,7 @@ async def week_you_section(ctx: Ctx, monday: date) -> Section:
         wins = sum(1 for t in closed if (t.pnl or 0) > 0)
         net = round(sum(float(t.pnl or 0) for t in closed), 2)
         sec.add(f"{len(closed)} closed, {wins} won and {len(closed) - wins} did not; net {money(net)}.")
+        sec.row("record", closed=len(closed), won=wins, lost=len(closed) - wins, net=net, after_charges=False)
     cfg = await _risk_cfg(ctx)
     days = [d for d in schedule.week_trading_days(monday, ctx.holidays) if d <= ctx.today]
     if trades and days and cfg is not None:
@@ -502,6 +620,7 @@ async def week_you_section(ctx: Ctx, monday: date) -> Section:
             lost = -sum(float(t.pnl or 0) for t in trades if t.exit_time is not None and s <= (_utc(t.exit_time) or s) < e)
             inside += entered <= cfg.max_trades_per_day and lost < limit
         sec.add(f"Days inside your own daily limits: {inside} of {len(days)}.")
+        sec.row("days_inside", inside=int(inside), days=len(days))
     return sec
 
 
@@ -578,12 +697,15 @@ def subtitle(kind: str, ctx: Ctx, names: Optional[Dict[date, str]] = None) -> st
 
 
 async def build(session: AsyncSession, user: Any, kind: str, now: Optional[datetime] = None) -> Dict[str, Any]:
-    """One digest for `user`: {kind, title, subtitle, as_of, sections: [{id, title, lines, empty, link}], has_content, note}."""
+    """One digest for `user`: {kind, title, subtitle, as_of, sections: [{id, kind, title, lines, rows, empty, link}], has_content,
+    note}. `rows` are the typed facts the page renders by `kind`; `lines` the same facts as sentences (Telegram)."""
     if kind not in KINDS:
         raise ValueError(f"unknown digest {kind!r}")
     now = _utc(now) or datetime.now(timezone.utc)
     ctx = await _ctx(session, Me(id=int(user.id), tenant_id=int(user.tenant_id), role=str(user.role or "USER")), now)
     sections = await BUILDERS[kind](ctx)
+    for s in sections:                                # a typed row passes the same guard as a line
+        s.rows = [r for r in s.rows if words.clean_row(r)]
     names = await _safely(ctx, "holiday names", _holiday_names(ctx, ctx.today, ctx.today), {})
     return {"kind": kind, "title": TITLES[kind], "subtitle": subtitle(kind, ctx, names), "as_of": now.isoformat(),
             "sections": [s.as_dict() for s in sections],
@@ -596,4 +718,4 @@ async def holidays_for(session: AsyncSession) -> Sequence[date]:
     return sorted(await family_holidays(session, "NSE"))
 
 
-__all__ = ["build", "BUILDERS", "TITLES", "NOTE", "position_state", "money", "holidays_for"]
+__all__ = ["build", "BUILDERS", "setup_row", "event_row", "TITLES", "NOTE", "position_state", "money", "holidays_for"]

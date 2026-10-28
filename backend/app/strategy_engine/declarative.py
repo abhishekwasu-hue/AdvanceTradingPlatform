@@ -35,6 +35,8 @@ _PRICE_COLUMNS = {"CLOSE": "close", "OPEN": "open", "HIGH": "high", "LOW": "low"
 _PERIODLESS = {"CLOSE", "OPEN", "HIGH", "LOW", "VWAP", "DAY_OPEN", "PDH", "PDL", "PDC", "VOLUME"}
 _SESSION = {"VWAP", "DAY_OPEN", "OR_HIGH", "OR_LOW", "PDH", "PDL", "PDC"}
 _IST_OPEN_UTC = pd.Timedelta(hours=3, minutes=45)   # 09:15 IST
+_IST_CLOSE_UTC = pd.Timedelta(hours=10)              # 15:30 IST
+_SESSION_MINUTES = 375                                # 09:15-15:30
 
 
 def tf_minutes(tf: Optional[str]) -> Optional[int]:
@@ -176,6 +178,12 @@ class Operand(BaseModel):
         frame = resample_ohlc(utc_df, f"{htf}min", origin=origin)
         inner = self.model_copy(update={"timeframe": None}).series(frame)
         ends = frame.index + pd.Timedelta(minutes=htf)
+        if htf < _SESSION_MINUTES and _SESSION_MINUTES % htf:
+            # SCR-FIX A5 (as screener.runtime.bar_close): a 30m / 1h bucket that starts before the 15:30 IST close and
+            # would end after it closes at the close, so the session's last bucket counts as closed - as Charts and
+            # every broker show it.
+            close = frame.index.normalize() + _IST_CLOSE_UTC
+            ends = ends.where(~((frame.index < close) & (close < ends)), close)
         by_end = pd.Series(inner.values, index=ends)
         base_ends = utc_df.index + pd.Timedelta(minutes=_base_minutes(df))
         return pd.Series(by_end.reindex(base_ends, method="ffill").values, index=df.index, dtype=float)

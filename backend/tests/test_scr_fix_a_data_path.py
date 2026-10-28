@@ -496,3 +496,15 @@ def test_intraday_fetch_days_still_cap_at_the_screener_window():
     from app.screener.routes import MAX_INTRADAY_FETCH_DAYS, fetch_days
     assert fetch_days({"15m": 10_000}, "15m") == MAX_INTRADAY_FETCH_DAYS
     assert nodes.TF_MINUTES["1h"] == 60
+
+
+def test_the_legacy_higher_timeframe_operand_closes_the_last_bucket_at_the_session_close():
+    """A5 in the legacy engine too (strategy_engine.declarative, used by the old scanner and the parity fuzz): on the
+    session's last 5m bar (15:25 IST) a 30m operand reads the 15:15-15:30 bucket, closed at 15:30 - not 14:45-15:15."""
+    from app.strategy_engine.declarative import Operand
+    idx = pd.date_range(pd.Timestamp("2026-03-02 03:45", tz="UTC"), periods=75, freq="5min")     # 09:15-15:30 IST
+    closes = [100.0 + i for i in range(75)]
+    df = pd.DataFrame({"open": closes, "high": closes, "low": closes, "close": closes, "volume": [1.0] * 75}, index=idx)
+    htf = Operand(type="indicator", indicator="CLOSE", timeframe="30min").series(df, "5min")
+    assert htf.iloc[-1] == closes[-1]                       # the 15:15-15:30 bucket's close
+    assert htf.iloc[-4] == closes[-4]                       # 15:10 bar ends 15:15: the 14:45-15:15 bucket

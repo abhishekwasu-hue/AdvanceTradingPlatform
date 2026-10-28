@@ -7,8 +7,10 @@ gives the same bytes (tested by hash), so a stored SHA-256 identifies exactly wh
 What is drawn is the pack and nothing else (owner rule 0): the bars, the matched bar, and the drawables of the blocks
 that define the signal - zone bands, breakout boxes and levels first, then highlighted candles, then price overlays, then
 at most one lower pane (volume or an oscillator with its threshold) - at most IMAGE_MAX_DRAWABLES; every other condition
-is in the caption (`evidence.caption_text`). Colours are the Okabe-Ito set (readable with colour-blind vision) and only
-the drawables carry colour: candles are neutral, rising hollow and falling filled. Light and dark themes.
+is in the caption (`evidence.caption_text`). The drawables' colours are the Okabe-Ito set (readable with colour-blind
+vision). SCR-FIX C3: laid out like the app's chart - candles and volume in the Charts page's up / down colours, the price
+axis on the right, a volume pane, the matched bar's O / H / L / C under the title and the bar times on the time axis.
+Light and dark themes.
 """
 from __future__ import annotations
 
@@ -18,8 +20,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from app.ai import chart_png
 
 Color = Tuple[int, int, int]
-WIDTH, HEIGHT = 800, 480
+WIDTH, HEIGHT = 800, 520
 SUB_PANE_HEIGHT = 92
+VOLUME_PANE_HEIGHT = 56
 IMAGE_MAX_DRAWABLES = 4
 MAX_PNG_BYTES = 512 * 1024
 SCALE = 2
@@ -50,11 +53,12 @@ class Theme:
     marker: Color
 
 
-# Candles are neutral (rising hollow, falling filled), so the screen's drawables are the only colour on the chart.
+# SCR-FIX C3: candles and volume in the Charts page's own up / down colours (frontend tokens.css --chart-up / --chart-down
+# for the light and the dark chart theme), so the Telegram image reads like the chart the trader opens in the app.
 LIGHT = Theme(bg=(255, 255, 255), grid=(232, 234, 238), axis=(120, 126, 136), text=(31, 41, 55), muted=(107, 114, 128),
-              wick=(75, 85, 99), up=(75, 85, 99), down=(75, 85, 99), marker=(17, 24, 39))
-DARK = Theme(bg=(17, 24, 39), grid=(40, 48, 63), axis=(107, 114, 128), text=(229, 231, 235), muted=(156, 163, 175),
-             wick=(156, 163, 175), up=(156, 163, 175), down=(156, 163, 175), marker=(243, 244, 246))
+              wick=(75, 85, 99), up=(21, 128, 61), down=(185, 28, 28), marker=(17, 24, 39))
+DARK = Theme(bg=(9, 12, 18), grid=(26, 35, 51), axis=(107, 114, 128), text=(229, 231, 235), muted=(156, 163, 175),
+             wick=(156, 163, 175), up=(34, 197, 94), down=(239, 68, 68), marker=(243, 244, 246))
 THEMES = {"light": LIGHT, "dark": DARK}
 # drawable colours (Okabe-Ito): zone bands by role (bluish green / reddish purple), the others in order
 PALETTE: Tuple[Color, ...] = ((230, 159, 0), (86, 180, 233), (0, 114, 178), (213, 94, 0))
@@ -157,23 +161,34 @@ def pixels(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, he
 
 
 def draw(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, height: int = HEIGHT) -> Canvas:  # noqa: C901
-    """The canvas with the pack drawn on it."""
+    """The canvas with the pack drawn on it - laid out like the app's chart: the price pane with its price axis on the
+    right, the volume pane under it (bars in the up / down colours, faded), the screen's lower pane when it has one, and
+    the time axis at the bottom."""
     th = THEMES.get(theme, LIGHT)
     bars = pack.get("bars") or {}
     o, h, l, c = bars.get("o") or [], bars.get("h") or [], bars.get("l") or [], bars.get("c") or []
     count = min(len(o), len(h), len(l), len(c))
     if count == 0:
         raise ValueError("no bars to draw")
+    vol = list(bars.get("v") or [])[:count]
+    times = list(bars.get("t") or [])[:count]
     shown = image_drawables(pack)
     others = [d for d in shown if d.get("kind") != "band"]
     colors = {d["id"]: ROLE_COLORS.get(str(d.get("role", "")), PALETTE[0]) if d.get("kind") == "band" else PALETTE[others.index(d) % len(PALETTE)]
               for d in shown}
     sub = next((d for d in shown if d.get("pane") not in (None, "price")), None)
+    # the bars' own volume pane, unless the screen's lower pane is the volume itself
+    vol_pane = sub is None or sub.get("pane") != "volume"
+    vol_pane = vol_pane and any(isinstance(v, (int, float)) and v == v and v > 0 for v in vol)
     canvas = Canvas(width, height, th.bg)
     left, right = 10, width - 112
-    top = 26
+    top = 38
     legend_h = 18
-    bottom = height - legend_h - 8 - ((SUB_PANE_HEIGHT + 8) if sub is not None else 0)
+    axis_h = 16
+    floor = height - legend_h - 6 - axis_h                    # the lowest pane ends here; the time labels sit under it
+    sub_top = floor - SUB_PANE_HEIGHT if sub is not None else floor
+    vol_top = (sub_top - (8 if sub is not None else 0)) - VOLUME_PANE_HEIGHT if vol_pane else sub_top
+    bottom = vol_top - 8 if (vol_pane or sub is not None) else floor
 
     # the price range: bars plus everything drawn on the price pane
     prices: List[float] = _finite(h[:count]) + _finite(l[:count])
@@ -198,15 +213,22 @@ def draw(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, heig
     def x_of(i: int) -> int:
         return int(left + 2 + slot * i + slot / 2)
 
-    # header
+    # header: symbol, timeframe and the matched bar's time; under it the matched bar's own O / H / L / C / V
     tf = str(pack.get("base_tf") or "")
     head = f"{pack.get('symbol', '')} {tf} {_bar_text(pack)}"
     canvas.text(left, 6, fit(head, right - left - 120), th.text)
     canvas.text(width - text_width("INFORMATIONAL") - 8, 6, "INFORMATIONAL", th.muted)
+    j = int(pack.get("matched_index", count - 1))
+    if 0 <= j < count:
+        canvas.text(left, 20, fit(_ohlc_text(o[j], h[j], l[j], c[j], vol[j] if j < len(vol) else None), right - left), th.muted)
 
+    # the price pane: grid, the price axis with its labels on the right
+    ticks: List[Tuple[int, str]] = []
     for i in range(1, 5):
-        canvas.hline(left, right, top + (bottom - top) * i // 5, th.grid)
-    canvas.vline(right, top, bottom, th.axis)
+        y = top + (bottom - top) * i // 5
+        canvas.hline(left, right, y, th.grid)
+        ticks.append((y, _price_text(hi - (hi - lo) * i / 5)))
+    canvas.vline(right, top, floor, th.axis)
     canvas.hline(left, right, bottom, th.axis)
 
     # bands and boxes under the candles
@@ -225,20 +247,15 @@ def draw(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, heig
             canvas.blend(x0, ya, x1, yb, col, 0.18)
             canvas.outline(x0, ya, x1, yb, col)
 
-    # candles: rising hollow, falling filled
+    # candles in the chart's up / down colours (the same as the Charts page)
     body = max(1, int(slot * 0.6))
     for i in range(count):
         cx = x_of(i)
-        rising = c[i] >= o[i]
-        color = th.up if rising else th.down
-        canvas.vline(cx, y_of(h[i]), y_of(l[i]), th.wick)
+        color = th.up if c[i] >= o[i] else th.down
+        canvas.vline(cx, y_of(h[i]), y_of(l[i]), color)
         y0, y1 = y_of(max(o[i], c[i])), y_of(min(o[i], c[i]))
         x0 = cx - body // 2
-        if rising and body >= 3:
-            canvas.rect(x0, y0, x0 + body - 1, max(y0, y1), th.bg)
-            canvas.outline(x0, y0, x0 + body - 1, max(y0, y1), color)
-        else:
-            canvas.rect(x0, y0, x0 + body - 1, max(y0, y1), color)
+        canvas.rect(x0, y0, x0 + body - 1, max(y0, y1), color)
 
     labels: List[Tuple[int, str, Color]] = []
     for d in shown:
@@ -268,17 +285,32 @@ def draw(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, heig
                 _marker(canvas, x_of(int(d["marker"]["index"])), bottom - 2, col)
 
     # the matched bar
-    j = int(pack.get("matched_index", count - 1))
     if 0 <= j < count:
         mx = x_of(j)
         for y in range(top, bottom, 4):
             canvas.vline(mx, y, min(bottom, y + 1), th.marker)
         _marker(canvas, mx, bottom - 2, th.marker)
 
-    # the lower pane
+    # the volume pane: each bar's volume in its candle's colour, faded as on the Charts page
+    if vol_pane:
+        v_top, v_bot = vol_top, vol_top + VOLUME_PANE_HEIGHT
+        vmax = max(_finite(vol) or [1.0]) or 1.0
+        for i, v in enumerate(vol):
+            if isinstance(v, (int, float)) and v == v and v > 0:
+                yv = int(round(v_bot - float(v) / vmax * (v_bot - v_top - 2)))
+                canvas.blend(x_of(i) - body // 2, yv, x_of(i) - body // 2 + body - 1, v_bot, th.up if c[i] >= o[i] else th.down, 0.45)
+        canvas.hline(left, right, v_bot, th.axis)
+        canvas.rect(left, v_top - 1, left + 3 + text_width("VOLUME"), v_top + 5 * SCALE, th.bg)
+        canvas.text(left + 2, v_top, "VOLUME", th.muted)
+        ticks.append((v_top + 5, _volume_text(vmax)))
+        if 0 <= j < count:
+            for y in range(v_top, v_bot, 4):
+                canvas.vline(x_of(j), y, min(v_bot, y + 1), th.marker)
+
+    # the screen's lower pane
     if sub is not None:
         col = colors[sub["id"]]
-        p_top, p_bot = bottom + 10, bottom + 8 + SUB_PANE_HEIGHT
+        p_top, p_bot = sub_top + 2, floor
         vals: List[float] = []
         for s in sub.get("series") or []:
             vals += _finite(s.get("values") or [])
@@ -295,7 +327,6 @@ def draw(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, heig
             def y2(v: float) -> int:
                 return y_of(v, p_top, p_bot, a, b)
             canvas.hline(left, right, p_bot, th.axis)
-            canvas.vline(right, p_top, p_bot, th.axis)
             for si, s in enumerate(sub.get("series") or []):
                 scol = col if si == 0 else PALETTE[(list(colors).index(sub["id"]) + 3) % len(PALETTE)]
                 values = s.get("values") or []
@@ -314,7 +345,13 @@ def draw(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, heig
                 for y in range(p_top, p_bot, 4):
                     canvas.vline(x_of(j), y, min(p_bot, y + 1), th.marker)
 
-    # right-hand labels (no overlaps)
+    # the time axis: a few bar times under the lowest pane, in IST (intraday with the time of day)
+    canvas.hline(left, right, floor, th.axis)
+    _time_axis(canvas, times, x_of, floor, left, right, str(pack.get("base_tf") or ""), th)
+
+    # the price axis labels (muted), then the drawables' own labels over them (no overlaps among those)
+    for y, text in ticks:
+        canvas.text(right + 4, y - 5, fit(text, width - right - 6), th.muted)
     used: List[int] = []
     for y, text, col in sorted(labels):
         ly = y - 5
@@ -337,6 +374,59 @@ def draw(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, heig
         x += canvas.text(x, ly, label, th.text) + 12
 
     return canvas
+
+
+def _price_text(p: float) -> str:
+    return f"{p:,.2f}" if abs(p) < 100000 else f"{p:,.0f}"
+
+
+def _volume_text(v: float) -> str:
+    for size, unit in ((1e7, "CR"), (1e5, "L"), (1e3, "K")):
+        if v >= size:
+            return f"{v / size:.1f}{unit}"
+    return f"{v:.0f}"
+
+
+def _ohlc_text(o: Any, h: Any, l: Any, c: Any, v: Any) -> str:
+    parts = [f"{k} {_price_text(float(x))}" for k, x in (("O", o), ("H", h), ("L", l), ("C", c)) if isinstance(x, (int, float))]
+    if isinstance(v, (int, float)) and v == v:
+        parts.append(f"V {_volume_text(float(v))}")
+    return "  ".join(parts)
+
+
+def _time_labels(times: Sequence[Any], base_tf: str) -> List[str]:
+    """Each bar's start in IST: "10 OCT 11:15" for intraday bars, "19 JUL 2026" for a day, week or month."""
+    import pandas as pd
+    from app.screener.evidence import INTRADAY_TFS
+    out: List[str] = []
+    for t in times:
+        try:
+            ts = pd.Timestamp(t)
+            ts = (ts.tz_localize("UTC") if ts.tzinfo is None else ts).tz_convert("Asia/Kolkata")
+        except (ValueError, TypeError):
+            out.append("")
+            continue
+        out.append(ts.strftime("%d %b %H:%M") if base_tf in INTRADAY_TFS else ts.strftime("%d %b %Y"))
+    return out
+
+
+def _time_axis(canvas: Canvas, times: Sequence[Any], x_of: Any, y: int, left: int, right: int, base_tf: str, th: Theme) -> None:
+    labels = _time_labels(times, base_tf)
+    if not labels:
+        return
+    step = max(1, -(-len(labels) * text_width("00 XXX 00:00") // max(1, (right - left) * 3 // 4)))
+    last_end = right + 100
+    for i in range(len(labels) - 1, -1, -step):              # from the newest bar back, so the matched bar's time shows
+        text = labels[i]
+        if not text:
+            continue
+        x = x_of(i)
+        x0 = min(right - text_width(text), max(left, x - text_width(text) // 2))
+        if i != len(labels) - 1 and x0 + text_width(text) > last_end - 8:
+            continue
+        canvas.vline(x, y, y + 3, th.axis)
+        canvas.text(x0, y + 5, text, th.muted)
+        last_end = x0
 
 
 def _bar_text(pack: Dict[str, Any]) -> str:
@@ -372,4 +462,4 @@ def _series(canvas: Canvas, d: Dict[str, Any], x_of: Any, y_of: Any, count: int,
         _polyline(canvas, s.get("values") or [], x_of, y_of, count, scol)  # type: ignore[arg-type]
 
 
-__all__ = ["render", "pixels", "draw", "Canvas", "image_drawables", "IMAGE_MAX_DRAWABLES", "MAX_PNG_BYTES", "THEMES", "PALETTE", "GLYPHS", "WIDTH", "HEIGHT"]
+__all__ = ["render", "pixels", "draw", "Canvas", "image_drawables", "IMAGE_MAX_DRAWABLES", "MAX_PNG_BYTES", "THEMES", "PALETTE", "GLYPHS", "WIDTH", "HEIGHT", "VOLUME_PANE_HEIGHT", "LIGHT", "DARK"]

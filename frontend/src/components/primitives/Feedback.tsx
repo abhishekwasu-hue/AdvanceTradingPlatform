@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { chipClass } from "../../ui/Chip";
+import { Signed as SignedOne } from "../../ui/Signed";
 import { cx } from "./cx";
 
 /** A placeholder block while data loads (`aria-busy` on the region that contains it). */
@@ -27,15 +28,10 @@ export function Badge({ tone = "neutral", children, className }: { tone?: Tone; 
   return <span className={chipClass({ tone, shape: "badge", className })}>{children}</span>;
 }
 
-/** A number coloured by its sign (profit / loss), tabular digits, explicit + for gains. Colour-blind safe via tokens. */
+/** A number coloured by its sign (profit / loss), tabular digits, explicit + for gains. Colour-blind safe via tokens.
+ * UX-11b C6: one Signed - this renders src/ui/Signed's `format` path (the same text and colour as before). */
 export function Signed({ value, format = (v) => v.toFixed(2), className }: { value: number | null | undefined; format?: (v: number) => string; className?: string }) {
-  if (value == null || !Number.isFinite(value)) return <span className={cx("font-tabular text-fg-muted", className)}>-</span>;
-  // The sign follows what is shown: a value that formats to zero ("0", "0.00", "-0") is neutral and unsigned.
-  const text = format(value);
-  const shown = Number(text.replace(/[^0-9.-]/g, ""));
-  const sign = !Number.isFinite(shown) || shown === 0 ? 0 : Math.sign(value);
-  const tone = sign > 0 ? "text-up" : sign < 0 ? "text-down" : "text-fg-muted";
-  return <span className={cx("font-tabular", tone, className)}>{sign > 0 ? "+" : ""}{sign === 0 ? text.replace(/^-/, "") : text}</span>;
+  return <SignedOne value={value} format={format} className={className} />;
 }
 
 /** UX-7: a list's placeholder rows while it loads (a label and a value per row), instead of a "Loading…" line. */

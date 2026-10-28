@@ -38,7 +38,7 @@ from app.db.models import AlertRuleRecord, JournalTagRecord, MarketEventRecord, 
 from app.market_data.calendar import IST, family_holidays
 from app.rhythm import words
 from app.rhythm.build import (Ctx, Me, Section, _day_label, _own_trades, _risk_cfg, _safely, _setup_line, _side,
-                              _utc, money, position_state)
+                              _utc, event_row, money, position_state, setup_row)
 
 PAGES: Tuple[str, ...] = ("signals", "positions", "journal", "charts", "screener")
 TITLES: Dict[str, str] = {"signals": "Your signals at a glance", "positions": "Your positions now",
@@ -96,43 +96,52 @@ async def _closed_since(ctx: Ctx, since: datetime) -> List[TradeRecord]:
     return list(await ctx.session.scalars(q.order_by(TradeRecord.exit_time.desc()).limit(2000)))
 
 
-def strategy_record_lines(units: Sequence[Any], days: int = RECORD_DAYS) -> List[str]:
-    """Per strategy (most closed first, at most three): closed paper trades and how many ended with a gain - a record of
-    what happened, never a forecast."""
+def strategy_records(units: Sequence[Any]) -> List[Dict[str, Any]]:
+    """Per strategy (most closed first, at most three): {type, name, closed, won, lost} - a record of what happened, never a
+    forecast (UX-11b: the page shows them as a table)."""
     from app.signals_feed.service import strategy_name
     groups: Dict[str, List[Any]] = defaultdict(list)
     for u in units:
         if u.closed:
             groups[u.setup or "-"].append(u)
-    out: List[str] = []
+    out: List[Dict[str, Any]] = []
     for setup, group in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))[:MAX_LINES]:
         gains = sum(1 for u in group if (u.pnl or 0) > 0)
-        name = words.clean(strategy_name(setup)) or "A strategy"
-        out.append(f"{name}: {_plural(len(group), 'closed paper trade')} in the last {days} days; {gains} ended with a gain and "
-                   f"{len(group) - gains} did not.")
+        out.append({"type": "strategy_record", "name": words.clean(strategy_name(setup)) or "A strategy", "closed": len(group),
+                    "won": gains, "lost": len(group) - gains})
     return out
+
+
+def strategy_record_lines(units: Sequence[Any], days: int = RECORD_DAYS) -> List[str]:
+    """Per strategy (most closed first, at most three): closed paper trades and how many ended with a gain - a record of
+    what happened, never a forecast."""
+    return [f"{r['name']}: {_plural(r['closed'], 'closed paper trade')} in the last {days} days; {r['won']} ended with a gain and "
+            f"{r['lost']} did not." for r in strategy_records(units)]
 
 
 async def signals_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
     from app.signals_feed import service as feed
     waiting = Section("waiting", "Waiting for your decision",
-                      "Nothing waits for your decision right now. New signals from your paper bots and scans arrive here.")
+                      "Nothing waits for your decision right now. New signals from your paper bots and scans arrive here.",
+                      kind="waiting")
     page = await _safely(ctx, "waiting signals", feed.feed(ctx.session, ctx.user, tab="waiting", limit=20, now=ctx.now), {})
     n_wait = int(((page.get("counts") or {}).get("waiting")) or 0)
     if n_wait:
         waiting.add(f"{_plural(n_wait, 'signal')} {'waits' if n_wait == 1 else 'wait'} for your decision. Nothing is placed "
                     f"until you approve it.")
+        waiting.row("waiting", count=n_wait)
     seen = set()
     for item in page.get("items", []):
         line = _setup_line(item)
         if line and item.get("symbol") not in seen:
             seen.add(item.get("symbol"))
             waiting.lines.append(line)
+            waiting.rows.append(setup_row(item, line))
         if len(waiting.lines) > MAX_LINES:
             break
 
     today = Section("today", "Today so far", "No new signals today yet. They appear here when your paper bots or scans find a "
-                    "setup from your own rules.")
+                    "setup from your own rules.", kind="sources")
     day = await _safely(ctx, "today's signals", feed.feed(ctx.session, ctx.user, tab="today", limit=100, now=ctx.now), {})
     by_kind: Dict[str, int] = defaultdict(int)
     for item in day.get("items", []):
@@ -142,12 +151,16 @@ async def signals_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
         more = int(((day.get("counts") or {}).get("today")) or 0) > sum(by_kind.values()) or bool(day.get("next_cursor"))
         joined = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
         today.add(joined[:1].upper() + joined[1:] + (" (and more further down the list)" if more else "") + ".")
+        today.row("sources", counts={k: by_kind[k] for k in SOURCE_WORDS if by_kind.get(k)},
+                  words={k: SOURCE_WORDS[k] for k in SOURCE_WORDS if by_kind.get(k)}, more=more)
 
     record = Section("record", "Your strategies' paper record",
-                     f"No closed paper trades from your strategies in the last {RECORD_DAYS} days yet.")
+                     f"No closed paper trades from your strategies in the last {RECORD_DAYS} days yet.", kind="record")
     closed = await _safely(ctx, "paper record", _closed_since(ctx, ctx.now - timedelta(days=RECORD_DAYS)), [])
-    for line in strategy_record_lines(_units(closed)):
+    units = _units(closed)
+    for line in strategy_record_lines(units):
         record.add(line)
+    record.rows = [{**r, "days": RECORD_DAYS} for r in strategy_records(units)]
     headline = waiting.lines[0] if n_wait else "Nothing waits for your decision right now."
     return headline, [waiting, today, record]
 
@@ -207,11 +220,15 @@ def _event_text(e: MarketEventRecord) -> Optional[str]:
 
 async def positions_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
     opens = await _safely(ctx, "open positions", _own_trades(ctx, open_only=True), [])
-    risk = Section("risk", "Your risk in plain words", "No open paper positions. Your risk shows here once you hold one.")
-    near = Section("near", "Near their invalidation", "None of your open positions is near the invalidation you set for it.")
-    premium = Section("premium", "Premium kept on written options", "No written options open.")
+    risk = Section("risk", "Your risk in plain words", "No open paper positions. Your risk shows here once you hold one.",
+                   kind="risk")
+    near = Section("near", "Near their invalidation", "None of your open positions is near the invalidation you set for it.",
+                   kind="positions")
+    premium = Section("premium", "Premium kept on written options", "No written options open.", kind="premium")
     ahead = Section("ahead", "Coming up for what you hold",
-                    f"Nothing on the calendar for what you hold in the next {AHEAD_DAYS} days.")
+                    f"Nothing on the calendar for what you hold in the next {AHEAD_DAYS} days.", kind="events")
+    facts: Dict[str, Any] = {"type": "risk", "positions": 0, "open_pnl": None, "prices_missing": False, "at_invalidation": None,
+                             "of_loss_limit_pct": None, "no_invalidation": 0}
     if not opens:
         return "No open paper positions.", [risk]
 
@@ -220,6 +237,7 @@ async def positions_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
         units[_group_key(t)].append(t)
     pnls = [position_state(t)["pnl"] for t in opens]
     known = [p for p in pnls if p is not None]
+    facts.update(positions=len(units), open_pnl=round(sum(known), 2) if known else None, prices_missing=len(known) != len(pnls))
     if known:
         risk.add(f"Open P&L across {_plural(len(units), 'position')}: {money(sum(known))} at the last prices"
                  + ("" if len(known) == len(pnls) else " (some prices are not in yet)") + ".")
@@ -230,22 +248,31 @@ async def positions_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
     total = round(sum(r for r in results if r is not None), 2)
     if len(results) > unset:
         risk.add(f"If each position reached the invalidation you set for it, the result from entry would be about {money(total)} in total.")
+        facts["at_invalidation"] = total
         cfg = await _risk_cfg(ctx)
         limit = float(cfg.capital) * float(cfg.max_daily_loss_pct) / 100.0 if cfg is not None else 0.0
         if total < 0 and limit > 0:
             risk.add(f"That is {round(100.0 * -total / limit)}% of your own daily loss limit.")
+            facts["of_loss_limit_pct"] = round(100.0 * -total / limit)
     if unset:
         risk.add(f"{_plural(unset, 'position')} {'has' if unset == 1 else 'have'} no invalidation level set.")
+    facts["no_invalidation"] = unset
+    risk.rows.append(facts)
 
     for t in opens:
-        if position_state(t)["near"]:
-            near.add(f"{t.symbol} ({'short' if _side(t.direction) < 0 else 'long'}): close to the invalidation you set for it.")
+        st = position_state(t)
+        if st["near"]:
+            side = "short" if _side(t.direction) < 0 else "long"
+            near.add(f"{t.symbol} ({side}): close to the invalidation you set for it.")
+            near.row("position", symbol=t.symbol, side=side.upper(), pnl=st["pnl"], near=True)
 
     for legs in units.values():
         cap = premium_kept(legs)
         if cap is None:
             continue
         label = _unit_label(legs)
+        premium.row("premium", label=label, kept_pct=None if cap["pct"] is None else round(float(cap["pct"]), 1),
+                    kept=cap["kept"], received=float(cap["received"] or 0))
         if cap["pct"] is None:
             premium.add(f"{label}: the premium kept shows once prices are in ({money(float(cap['received'] or 0)).lstrip('+')} came in).")
         else:
@@ -257,13 +284,17 @@ async def positions_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
     for e in await _safely(ctx, "events", _events_for(ctx, ctx.today, end), []):
         scope = str(e.underlying or "*").upper()
         if scope in ("*", "") or scope in underlyings:
-            ahead.add(_event_text(e))
+            text = _event_text(e)
+            ahead.add(text)
+            if text and words.clean(text):
+                ahead.rows.append(event_row(e))
     expiries: Dict[Tuple[date, str], int] = defaultdict(int)
     for t in opens:
         if t.expiry is not None and ctx.today <= t.expiry <= end:
             expiries[(t.expiry, str(t.underlying_symbol or t.symbol).upper())] += 1
     for (day, under), count in sorted(expiries.items()):
         ahead.add(f"{_day_label(day)}: your {under} contracts expire ({_plural(count, 'position')}).")
+        ahead.row("expiry", date=day.isoformat(), underlying=under, count=count)
 
     sections = [risk] + [s for s in (near, premium) if s.lines] + [ahead]
     return risk.lines[0] if risk.lines else None, sections
@@ -294,9 +325,9 @@ async def _suggested_tags(ctx: Ctx, start: datetime, end: datetime) -> int:
 async def journal_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
     from app.journal import service as journal
     score = Section("score", "Your discipline", "No score yet this week: it starts with your first journaled trade. A week "
-                    "without a trade is fine when nothing met your plan.")
-    setups = Section("setups", "Your setups over the last four weeks", "No closed trades in the last four weeks yet.")
-    habits = Section("habits", "Patterns this week", "No behaviour patterns found in this week's trades.")
+                    "without a trade is fine when nothing met your plan.", kind="discipline")
+    setups = Section("setups", "Your setups over the last four weeks", "No closed trades in the last four weeks yet.", kind="extremes")
+    habits = Section("habits", "Patterns this week", "No behaviour patterns found in this week's trades.", kind="habits")
     review = await _safely(ctx, "weekly review", journal.weekly_review(ctx.session, ctx.user, None, history_weeks=3, now=ctx.now), None)
     if review:
         value = (review.get("discipline") or {}).get("score")
@@ -309,6 +340,7 @@ async def journal_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
                          if value < prev else "the same as last week")
                 score.add(f"That is {trend}. The weeks before: {', '.join(str(p) for p in past)} (oldest first).")
             score.add("It counts how closely you followed your own plan, not how many trades you took.")
+            score.row("discipline", score=value, previous=past[-1] if past else None, history=past)
         for b in sorted(review.get("behaviours") or [], key=lambda b: (-int(b.get("trades") or 0), str(b.get("tag"))))[:MAX_LINES]:
             label = BEHAVIOUR_WORDS.get(str(b.get("tag")))
             if not label or not b.get("trades"):
@@ -317,6 +349,8 @@ async def journal_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
             if b.get("closed"):
                 text += f", net {money(float(b.get('net_pnl') or 0))}"
             habits.add(text + ".")
+            habits.row("habit", label=label[:1].upper() + label[1:], trades=int(b["trades"]),
+                       net=float(b.get("net_pnl") or 0) if b.get("closed") else None)
         start = _utc(datetime.fromisoformat(review["start"])) if review.get("start") else None
         end = _utc(datetime.fromisoformat(review["end"])) if review.get("end") else None
         if start and end:
@@ -324,16 +358,21 @@ async def journal_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
             if waiting:
                 habits.add(f"{_plural(waiting, 'suggested tag')} {'waits' if waiting == 1 else 'wait'} for you to confirm or "
                            f"dismiss on the Week tab.")
+                habits.row("suggested_tags", count=int(waiting))
             mine = await _safely(ctx, "week trades", journal.own_trades(ctx.session, ctx.user, start, end), [])
             closed = [t for t in mine if t.exit_time is not None and t.mode == "PAPER"]
             bare = sum(1 for t in closed if not (t.notes or "").strip())
             if closed and bare:
                 habits.add(f"{bare} of this week's {_plural(len(closed), 'closed trade')} {'has' if bare == 1 else 'have'} no note "
                            f"of yours yet.")
+                habits.row("no_note", count=bare, closed=len(closed))
     since = ctx.now - timedelta(weeks=SETUP_WEEKS)
     recent = await _safely(ctx, "recent trades", _closed_since(ctx, since), [])
     best, worst = setup_extremes(_units(recent))
     from app.signals_feed.service import strategy_name
+    for which, r in (("best", best), ("worst", worst)):
+        if r:
+            setups.row(which, name=words.clean(strategy_name(r["setup"])) or "a setup", net=r["net"], closed=r["closed"])
     if best:
         setups.add(f"Best: {words.clean(strategy_name(best['setup'])) or 'a setup'} ({money(best['net'])} over "
                    f"{_plural(best['closed'], 'closed trade')}).")
@@ -342,6 +381,7 @@ async def journal_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
                    f"{_plural(worst['closed'], 'closed trade')}).")
     if recent and not (best or worst):
         setups.add("Your closed setups of the last four weeks ended about even.")
+        setups.row("even")
     return (score.lines[0] if score.lines else None), [score, setups, habits]
 
 
@@ -372,42 +412,70 @@ async def _daily_bars(ctx: Ctx, symbol: str) -> Any:
                          "close": [float(r.close) for r in rows]}, index=idx)
 
 
-def where_close(close: float, swings: Sequence[Any]) -> Optional[str]:
-    """Where the close sits against the last swing high and the last swing low (in words; no level shown)."""
+PLACE_WORDS: Dict[str, str] = {"ABOVE_HIGH": "the last close is above the last swing high",
+                               "BELOW_LOW": "the last close is below the last swing low",
+                               "BETWEEN": "the last close is between the last swing low and the last swing high"}
+
+
+def where_close_key(close: float, swings: Sequence[Any]) -> Optional[str]:
+    """ABOVE_HIGH / BELOW_LOW / BETWEEN: where the close sits against the last swing high and the last swing low."""
     high = next((s for s in reversed(swings) if s.kind == "HIGH"), None)
     low = next((s for s in reversed(swings) if s.kind == "LOW"), None)
     if high is None or low is None:
         return None
     if close > float(high.price):
-        return "the last close is above the last swing high"
+        return "ABOVE_HIGH"
     if close < float(low.price):
-        return "the last close is below the last swing low"
-    return "the last close is between the last swing low and the last swing high"
+        return "BELOW_LOW"
+    return "BETWEEN"
+
+
+def where_close(close: float, swings: Sequence[Any]) -> Optional[str]:
+    """Where the close sits against the last swing high and the last swing low (in words; no level shown)."""
+    key = where_close_key(close, swings)
+    return PLACE_WORDS[key] if key else None
+
+
+def story_facts(bars: Any) -> Optional[Dict[str, Any]]:
+    """The chart's story from daily bars as facts: {type: story, daily, event, place, weekly} (trend keys UP / DOWN /
+    SIDEWAYS, the last structure event {kind, direction}, where the close sits, the weekly swings or None); None when the
+    history is too short."""
+    from app.context_panel.service import weekly
+    from app.price_action.market_structure import analyze_market_structure
+    if len(bars) < MIN_DAILY_BARS:
+        return None
+    daily = analyze_market_structure(bars, window=3)
+    trend = daily.trend.value if hasattr(daily.trend, "value") else str(daily.trend)
+    event = None
+    if daily.events:
+        last = daily.events[-1]
+        event = {"event": last.event, "direction": last.direction}
+    out: Dict[str, Any] = {"type": "story", "_daily": trend, "_event": event, "daily": words.trend_key(trend),
+                           "event": words.event_key(event), "place": where_close_key(float(bars["close"].iloc[-1]), daily.swings),
+                           "_weekly": None, "weekly": None}
+    weeks = weekly(bars)
+    if len(weeks) >= MIN_WEEKLY_BARS:
+        wk = analyze_market_structure(weeks, window=2)
+        out["_weekly"] = wk.trend.value if hasattr(wk.trend, "value") else str(wk.trend)
+        out["weekly"] = words.trend_key(out["_weekly"])
+    return out
 
 
 def story_lines(bars: Any) -> List[str]:
     """The chart's story from daily bars: daily swings with the last structure event and where the close sits, then the
     weekly swings - structure words only."""
-    from app.context_panel.service import weekly
-    from app.price_action.market_structure import analyze_market_structure
-    if len(bars) < MIN_DAILY_BARS:
+    f = story_facts(bars)
+    if f is None:
         return []
-    daily = analyze_market_structure(bars, window=3)
-    trend = daily.trend.value if hasattr(daily.trend, "value") else str(daily.trend)
-    parts = [f"Daily swings: {words.trend_words(trend)}"]
-    if daily.events:
-        last = daily.events[-1]
-        event = words.event_words({"event": last.event, "direction": last.direction})
-        if event:
-            parts.append(f"most recently {event}")
-    place = where_close(float(bars["close"].iloc[-1]), daily.swings)
-    if place:
-        parts.append(place)
+    parts = [f"Daily swings: {words.trend_words(f['_daily'])}"]
+    event = words.event_words(f["_event"])
+    if event:
+        parts.append(f"most recently {event}")
+    if f["place"]:
+        parts.append(PLACE_WORDS[f["place"]])
     out = ["; ".join(parts) + "."]
-    weeks = weekly(bars)
-    if len(weeks) >= MIN_WEEKLY_BARS:
-        wk = analyze_market_structure(weeks, window=2)
-        out.append(f"Weekly swings: {words.trend_words(wk.trend.value if hasattr(wk.trend, 'value') else str(wk.trend))}.")
+    if f["_weekly"] is not None:
+        out.append(f"Weekly swings: {words.trend_words(f['_weekly'])}.")
     return out
 
 
@@ -416,7 +484,7 @@ async def charts_dish(ctx: Ctx, symbol: str, exchange: str = "NSE") -> Tuple[Opt
     from app.watchlists import service as lists
     sym = symbol.strip().upper()
     story = Section("story", "The chart's story", f"No stored daily history for {sym} yet, so there is no structure read. "
-                    "The chart above still shows its candles.")
+                    "The chart above still shows its candles.", kind="story")
     if exchange.strip().upper() in ("", "NSE"):
         bars = await _safely(ctx, "daily bars", _daily_bars(ctx, sym), None)
         if bars is not None and len(bars):
@@ -427,13 +495,16 @@ async def charts_dish(ctx: Ctx, symbol: str, exchange: str = "NSE") -> Tuple[Opt
                     story.add(line)
                 if as_of != ctx.today:
                     story.add(f"Read from the close of {_day_label(as_of)}.")
+                facts = story_facts(bars) or {}
+                story.rows.append({**{k: v for k, v in facts.items() if not k.startswith("_")},
+                                   "as_of": None if as_of == ctx.today else as_of.isoformat()})
             else:
                 story.empty = f"Too little stored daily history for {sym} to read its swings yet."
     else:
         story.empty = "The structure read uses NSE's stored daily history, which this exchange does not have."
 
     yours = Section("yours", f"Yours on {sym}",
-                    f"Nothing of yours on {sym} yet: no open position, no recent setup, and it is on none of your lists.")
+                    f"Nothing of yours on {sym} yet: no open position, no recent setup, and it is on none of your lists.", kind="yours")
     opens = await _safely(ctx, "open positions", _own_trades(ctx, open_only=True), [])
     mine = [t for t in opens if sym in (str(t.symbol).upper(), str(t.underlying_symbol or "").upper())]
     if mine:
@@ -442,6 +513,8 @@ async def charts_dish(ctx: Ctx, symbol: str, exchange: str = "NSE") -> Tuple[Opt
                   + (f", open P&L {money(sum(known))}" if known else "") + ".")
         if any(position_state(t)["near"] for t in mine):
             yours.add("One of them is close to the invalidation you set for it.")
+        yours.row("held", count=len(mine), open_pnl=round(sum(known), 2) if known else None,
+                  near=any(position_state(t)["near"] for t in mine))
     page = await _safely(ctx, "setups", feed.feed(ctx.session, ctx.user, tab="history", symbol=sym, limit=5, now=ctx.now), {})
     for item in page.get("items", []):
         setup = _setup_line(item)
@@ -449,12 +522,18 @@ async def charts_dish(ctx: Ctx, symbol: str, exchange: str = "NSE") -> Tuple[Opt
         if setup and at is not None:
             when = "today" if at.astimezone(IST).date() == ctx.today else "in the last thirty days"
             what = setup[len(sym) + 2:] if setup.startswith(sym + ": ") else setup
-            yours.add(words.signal_line(f"Your latest setup here, {when}: {what}", [sym]))
+            said = words.signal_line(f"Your latest setup here, {when}: {what}", [sym])
+            yours.add(said)
+            if said:
+                yours.rows.append({**setup_row(item, setup), "today": when == "today"})
             break
     rows = await _safely(ctx, "watchlists", lists.list_own(ctx.session, ctx.user.tenant_id, ctx.user.id), [])
     names = [r.name for r in rows if sym in {s.upper() for s in lists.symbols_of(r)}]
     if names:
         yours.add(f"On your lists: {', '.join(names[:4])}" + (f" and {len(names) - 4} more" if len(names) > 4 else "") + ".")
+        shown = [n for n in (words.clean(x) for x in names) if n]
+        if shown:
+            yours.row("lists", names=shown)
     # The headline is the daily swings alone (one short line above the chart); the details tell the rest of the story.
     headline = story.lines[0].split(";")[0].rstrip(".") + "." if story.lines else None
     return headline, [story, yours]
@@ -485,13 +564,14 @@ async def screener_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
     from app.signals_feed import service as feed
     from app.watchlists import service as lists
     today = Section("today", "Today's matches", "No matches from your scans yet today. New matches arrive here during the session.",
-                    link={"label": "Open Signals", "to": "/signals"})
+                    link={"label": "Open Signals", "to": "/signals"}, kind="matches")
     page = await _safely(ctx, "scan matches", feed.feed(ctx.session, ctx.user, tab="today", source="scan", limit=100, now=ctx.now), {})
     groups = match_groups(page.get("items", []))
     total = len({s for _, syms in groups for s in syms})
     for name, syms in groups[:4]:
         shown = ", ".join(syms[:4]) + (f" and {len(syms) - 4} more" if len(syms) > 4 else "")
         today.add(f"\"{name}\": {_plural(len(syms), 'match', 'matches')} - {shown}.")
+        today.row("scan", name=name, count=len(syms), symbols=syms)
     if len(groups) > 4:
         today.add(f"{_plural(len(groups) - 4, 'more scan')} matched too; Signals lists every match.")
     rows = await _safely(ctx, "watchlists", lists.list_own(ctx.session, ctx.user.tenant_id, ctx.user.id), [])
@@ -500,12 +580,15 @@ async def screener_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
     on_lists = list(dict.fromkeys(on_lists))
     if on_lists:
         today.add(f"On your own lists: {', '.join(on_lists[:6])}" + (f" and {len(on_lists) - 6} more" if len(on_lists) > 6 else "") + ".")
+        today.row("on_lists", symbols=on_lists)
     scans = Section("scans", "Your scans that run on their own",
-                    "None of your scans runs on its own yet. Save a scan with alerts on and its matches show here during the session.")
+                    "None of your scans runs on its own yet. Save a scan with alerts on and its matches show here during the session.",
+                    kind="scans")
     active = await _safely(ctx, "active scans", _active_scans(ctx), 0)
     if active:
         scans.add(f"{_plural(active, 'scan')} of yours {'runs on its own' if active == 1 else 'run on their own'}; new matches "
                   f"show here and on Signals.")
+        scans.row("active", count=active)
     headline = (f"{_plural(total, 'symbol')} matched your scans today." if total else None)
     return headline, [today, scans]
 
@@ -516,12 +599,13 @@ def _guard(sections: Sequence[Section]) -> None:
     """The last check before anything is shown: every line again through the rhythm's guard (call words, advice)."""
     for s in sections:
         s.lines = [line for line in (words.clean(x) for x in s.lines) if line]
+        s.rows = [r for r in s.rows if words.clean_row(r)]
 
 
 async def build(session: AsyncSession, user: Any, page: str, *, symbol: Optional[str] = None, exchange: str = "NSE",
                 now: Optional[datetime] = None) -> Dict[str, Any]:
-    """The dish of `page` for `user`: {page, title, headline, available, sections: [{id, title, lines, empty, link}], as_of,
-    note}. `available` is false for the journal while the journal is off (the page says so itself)."""
+    """The dish of `page` for `user`: {page, title, headline, available, sections: [{id, kind, title, lines, rows, empty, link}],
+    as_of, note} (`rows`: the typed facts the page renders by `kind` - UX-11b). `available` is false for the journal while the journal is off (the page says so itself)."""
     if page not in PAGES:
         raise ValueError(f"unknown page {page!r}")
     now = _utc(now) or datetime.now(timezone.utc)
@@ -549,4 +633,4 @@ async def build(session: AsyncSession, user: Any, page: str, *, symbol: Optional
 
 
 __all__ = ["PAGES", "TITLES", "NOTE", "build", "strategy_record_lines", "at_invalidation", "premium_kept", "setup_extremes",
-           "story_lines", "where_close", "match_groups", "lake_key", "BEHAVIOUR_WORDS"]
+           "story_lines", "story_facts", "strategy_records", "where_close", "match_groups", "lake_key", "BEHAVIOUR_WORDS"]

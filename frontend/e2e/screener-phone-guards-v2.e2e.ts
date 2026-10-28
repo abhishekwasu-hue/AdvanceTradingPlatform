@@ -121,8 +121,7 @@ test.describe("SCR-FIX E2: Find setups on a 390 px phone", () => {
       await expect(dialog.locator("[data-details='screener.evidence.about']")).toBeAttached();
     });
 
-    // PR C (claude/scr-fix-c-chart-telegram) adds `telegram_linked` and the connect row; this base has neither.
-    test.fixme(`${v.label}: Telegram not linked - the connect row fits the dialog`, async ({ page }) => {
+    test(`${v.label}: Telegram not linked - the connect row fits the dialog`, async ({ page }) => {
       await open(page, v.theme, v.colourV2, { ...PACK, telegram_linked: false, telegram_reason: "not_linked",
         telegram_message: "Connect your Telegram to get this chart there." });
       await formulaScan(page);

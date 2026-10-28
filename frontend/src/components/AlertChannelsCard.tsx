@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { BellRing, Mail, MessageSquare, Send, Webhook } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
@@ -93,7 +94,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
           min_severity: e.min_severity, enabled: e.enabled,
         }));
       }
-    }).catch((e) => setError(String(e)));
+    }).catch((e) => setError(errorSentence(e)));
     api.listAlertDeliveries(30).then(setDeliveries).catch(() => {});
     api.telegramInboundStatus().then((s) => {
       setInbound(s); setInboundChats(s.allowed_chat_ids.slice(1).join(", "));
@@ -112,7 +113,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
       setMessage(label);
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }
@@ -128,7 +129,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
       else setError(result.detail);
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }

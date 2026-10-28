@@ -1,7 +1,9 @@
+import { errorSentence } from "../api/errors";
 import * as RD from "@radix-ui/react-dialog";
 import { ChevronRight, Minus, Plus, ShieldCheck, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Details } from "../ui/Details";
 import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
@@ -163,7 +165,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     try {
       setStep({ kind: "review", preview: await api.preview(askOf(target, draft, ref.current)) });
     } catch (e) {
-      setProblem(String(e));
+      setProblem(errorSentence(e));
     } finally {
       setBusy(false);
     }
@@ -184,7 +186,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
       setStep({ kind: "done", result });
       if (result.status === "PLACED") onPlaced?.(result);
     } catch (e) {
-      setProblem(String(e));
+      setProblem(errorSentence(e));
     } finally {
       setBusy(false);
     }
@@ -196,7 +198,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     try {
       setStep({ ...step, exit: await api.exitMulti(ref.current) });
     } catch (e) {
-      setProblem(String(e));
+      setProblem(errorSentence(e));
     } finally {
       setBusy(false);
     }
@@ -269,6 +271,23 @@ export function PracticeFrame({ className }: { className?: string } = {}) {
 }
 
 const sentence = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/** UI-28 U3.4 (NN/g H5): "Exit on every account" asks first in the app, naming how many accounts it closes. Never disabled
+ * by a check (ADR-0004); only "Exiting…" while the exits are on their way. */
+export function ExitEveryAccount({ busy, accounts, onExit }: { busy: boolean; accounts: number; onExit: () => void }) {
+  const [asking, setAsking] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setAsking(true)} disabled={busy} data-ticket="exit-all"
+        className="min-h-11 rounded-control border border-border px-space-4 text-t14 font-semibold text-fg disabled:opacity-50">
+        {busy ? "Exiting…" : "Exit on every account"}
+      </button>
+      <ConfirmDialog open={asking} onOpenChange={setAsking} title="Exit on every account?" confirmLabel="Exit on every account"
+        consequence={`This closes the position on ${accounts} account${accounts === 1 ? "" : "s"} at the current price.`}
+        onConfirm={() => { setAsking(false); onExit(); }} />
+    </>
+  );
+}
 
 /** The ticket's fields, the confirm step and the buttons (no state, no hooks). */
 export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi }: {
@@ -432,10 +451,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
           </>
         )}
         {step.kind === "multi" && !step.exit && multi && step.result.results.some((r) => r.status === "PLACED") && (
-          <button type="button" onClick={() => void multi.exitAll()} disabled={busy} data-ticket="exit-all"
-            className="min-h-11 rounded-control border border-border px-space-4 text-t14 font-semibold text-fg disabled:opacity-50">
-            {busy ? "Exiting…" : "Exit on every account"}
-          </button>
+          <ExitEveryAccount busy={busy} accounts={step.result.results.filter((r) => r.status === "PLACED").length} onExit={() => void multi.exitAll()} />
         )}
         {(step.kind === "done" || step.kind === "multi") && (
           <button type="button" onClick={onClose} data-ticket="done" className="min-h-11 flex-1 rounded-control border border-border px-space-4 text-t14 font-semibold text-fg">Done</button>

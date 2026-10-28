@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { CheckCircle2, CircleAlert, CircleDashed, Info, RefreshCw } from "lucide-react";
 import { api } from "../api/client";
@@ -26,7 +27,7 @@ export default function GoLiveChecklist({ kind, onNavigate }: { kind: "tenant" |
   async function load() {
     setBusy(true); setError(null);
     try { setData(kind === "tenant" ? await api.readiness(target) : await api.adminReadiness()); }
-    catch (e) { setError(String(e)); } finally { setBusy(false); }
+    catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [kind, target]);

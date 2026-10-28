@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/ui";
@@ -13,7 +14,7 @@ export default function InstrumentsPage() {
     api
       .listInstruments()
       .then(setInstruments)
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(errorSentence(e)))
       .finally(() => setLoading(false));
   }, []);
 

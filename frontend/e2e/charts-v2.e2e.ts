@@ -893,10 +893,14 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     expect(cellsRead()).toHaveLength(cellReads);
     expect(bank()).toBe(polls);
     const chartReads = chartTab().length;                                                   // its own refreshes while shown
+    // The page clock holds still while the tabs are switched, so a slow runner's real seconds never count as the
+    // price poll's interval (the test is about switches, not about time passing).
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
     for (let i = 0; i < 3; i += 1) {
       await page.getByRole("tab", { name: "Multi-chart" }).click();
       await page.getByRole("tab", { name: "Chart", exact: true }).click();
     }
+    await page.clock.resume();
     await page.getByRole("tab", { name: "Multi-chart" }).click();
     await cellsReady(page, 2);
     await expect.poll(() => cellsRead().length).toBe(cellReads + 1);                       // one refresh for both cells

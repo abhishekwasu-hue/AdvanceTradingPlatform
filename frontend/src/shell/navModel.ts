@@ -203,11 +203,11 @@ export function navEntryFor(key: ShellKey | null): ShellKey | null {
 }
 
 /** UX audit section 5: the phone bottom bar - Today, Charts, Signals, My trades - and More, which opens the sheet.
- * P1-8 (2): Watchlist after Charts while `watchlists` is on (an entry with `flag` shows only while that flag is on). */
+ * UI-28 U3.5 (owner default, 28 Oct; Material / HIG: 3-5 destinations): five with More, so Watchlist is not on the bar -
+ * it lives in the Charts panel and in More. (An entry with `flag` shows only while that flag is on.) */
 export const BOTTOM_BAR_V2: readonly { key: ShellKey; label: string; flag?: string }[] = [
   { key: "dashboard", label: "Today" },
   { key: "charts", label: "Charts" },
-  { key: "watchlist", label: "Watchlist", flag: PAGE_FLAGS.watchlist },
   { key: "signals", label: "Signals" },
   { key: "positions", label: "My trades" },
 ];

@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import { Card, Disclaimer, StatTile } from "../components/ui";
@@ -61,7 +62,7 @@ export default function QuantPage() {
         api.quantRisk(universe, undefined, symbols.includes(benchmark) ? benchmark : symbols[0]),
       ]);
       setTable(t); setRisk(r);
-    } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   }
 
   const chosenWeights = risk ? (weightsMode === "equal" ? risk.weights_used : risk.suggested[weightsMode]) : {};

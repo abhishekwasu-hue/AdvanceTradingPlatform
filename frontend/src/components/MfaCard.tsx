@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { QRCodeSVG } from "qrcode.react";
 import { KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
 import { useState } from "react";
@@ -27,7 +28,7 @@ export default function MfaCard({ status, onChange }: { status: MfaStatus | null
       await fn();
       onChange();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }

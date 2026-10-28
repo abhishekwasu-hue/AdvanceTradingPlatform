@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -15,7 +16,7 @@ export default function SystemLogsPage() {
 
   useEffect(() => {
     if (!user) return;
-    api.listAuditLogs().then(setLogs).catch((e) => setError(String(e)));
+    api.listAuditLogs().then(setLogs).catch((e) => setError(errorSentence(e)));
     api.loginHistory().then(setLogins).catch(() => setLogins([]));
   }, [user]);
 

@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/ui";
@@ -34,7 +35,7 @@ export default function ExperienceCard({ canTrade }: { canTrade: boolean }) {
       setStatus(await api.paperExperienceOptOut(gate, reason));
       return true;
     } catch (e) {
-      setMessage(String(e));
+      setMessage(errorSentence(e));
       return false;
     }
   }

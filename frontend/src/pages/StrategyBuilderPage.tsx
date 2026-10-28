@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -161,7 +162,7 @@ export default function StrategyBuilderPage() {
   const [parseResult, setParseResult] = useState<ParseStrategyResult | null>(null);
 
   function refresh() {
-    api.listCustomStrategies().then(setSaved).catch((e) => setError(String(e)));
+    api.listCustomStrategies().then(setSaved).catch((e) => setError(errorSentence(e)));
   }
 
   useEffect(() => {
@@ -178,7 +179,7 @@ export default function StrategyBuilderPage() {
       setConfig(defaultCustomStrategyConfig());
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setSaving(false);
     }
@@ -196,7 +197,7 @@ export default function StrategyBuilderPage() {
       const result = await api.parseStrategyDescription(description, config.name);
       setParseResult(result);
     } catch (e) {
-      setParseError(String(e));
+      setParseError(errorSentence(e));
     } finally {
       setParsing(false);
     }

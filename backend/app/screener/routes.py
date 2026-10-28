@@ -413,7 +413,8 @@ async def _rules_still_valid(session: AsyncSession, user: User, row: ScreenRecor
         except HTTPException as exc:
             await session.rollback()
             detail = exc.detail.get("message") if isinstance(exc.detail, dict) else exc.detail
-            raise HTTPException(status_code=422, detail=f"alert rule #{rule_id} runs this screen and could not after this change: {detail}") from exc
+            logging.getLogger(__name__).info("screen change breaks alert rule %s: %s", rule_id, detail)   # UI-28 U3.1: the id stays in the log
+            raise HTTPException(status_code=422, detail=f"One of your alerts runs this screen and could not after this change: {detail}") from exc
 
 
 @router.post("/screens/{screen_id}/archive")

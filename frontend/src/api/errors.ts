@@ -3,7 +3,7 @@ import { rememberServerError } from "../support/lastError";
 /** P1.1: every failed API call becomes an `ApiError` whose message is a sentence a trader can act on - never a raw
  * status line, a JSON body, an HTML error page from the proxy or a developer hint. The status, the server's own
  * detail and the request id stay on the error for code that branches on them (step-up, feature switched off).
- * `String(error)` gives the message alone (no "Error: " prefix), so the many `setError(String(e))` call sites show
+ * `String(error)` gives the message alone (no "Error: " prefix), so the many `setError(errorSentence(e))` call sites show
  * the friendly text without changes. */
 export class ApiError extends Error {
   readonly status: number;

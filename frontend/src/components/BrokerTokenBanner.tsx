@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { ExternalLink, KeyRound, LogIn, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -40,7 +41,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
   const [notes, setNotes] = useState<Record<string, { ok: boolean; text: string; link?: string }>>({});
 
   useEffect(() => {
-    api.brokerTokenStatus().then(setTokens).catch((e) => setError(String(e)));
+    api.brokerTokenStatus().then(setTokens).catch((e) => setError(errorSentence(e)));
   }, []);
 
   function keyOf(t: BrokerTokenInfo) {
@@ -62,7 +63,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
         : `The browser blocked the new tab - open the login page with the link, then paste the ${code_param} here.` } }));
     } catch (e) {
       if (win) win.close();
-      setNotes((n) => ({ ...n, [keyOf(t)]: { ok: false, text: String(e).replace(/^Error:\s*/, "") } }));
+      setNotes((n) => ({ ...n, [keyOf(t)]: { ok: false, text: errorSentence(e).replace(/^Error:\s*/, "") } }));
     } finally {
       setBusy(false);
     }
@@ -78,7 +79,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
       setCodes((c) => ({ ...c, [keyOf(t)]: "" }));
       setNotes((n) => ({ ...n, [keyOf(t)]: { ok: true, text: `Logged in - session token stored (encrypted) and valid until ${updated.token_expires_at ? formatDateTimeIST(updated.token_expires_at) : "the broker's daily expiry"}.` } }));
     } catch (e) {
-      setNotes((n) => ({ ...n, [keyOf(t)]: { ok: false, text: String(e).replace(/^Error:\s*/, "") } }));
+      setNotes((n) => ({ ...n, [keyOf(t)]: { ok: false, text: errorSentence(e).replace(/^Error:\s*/, "") } }));
     } finally {
       setBusy(false);
     }
@@ -91,7 +92,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
       const { authorization_url } = await api.upstoxOAuthStart(t.account_label ?? "primary");
       window.location.href = authorization_url;
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
       setBusy(false);
     }
   }

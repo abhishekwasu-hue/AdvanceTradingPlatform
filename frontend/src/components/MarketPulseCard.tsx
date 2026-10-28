@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { Plus, X } from "lucide-react";
 import { Suspense, lazy, useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -61,7 +62,7 @@ export default function MarketPulseCard({ onNavigate }: { onNavigate?: (page: Pa
         setCandles(next);
         const failed = symbols.filter((s) => r.symbols[s.toUpperCase()]?.error);
         setError(failed.length ? `${failed.join(", ")}: ${r.symbols[failed[0].toUpperCase()]?.error}` : null);
-      } catch (e) { if (!cancelled) setError(String(e)); }
+      } catch (e) { if (!cancelled) setError(errorSentence(e)); }
     };
     void load();
     const id = window.setInterval(load, 60_000);

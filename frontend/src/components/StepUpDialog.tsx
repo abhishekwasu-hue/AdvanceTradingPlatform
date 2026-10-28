@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { ApiError, api } from "../api/client";
@@ -24,7 +25,7 @@ export default function StepUpDialog({ reason, onVerified, onCancel }: { reason:
       await api.mfaStepUp(code);
       onVerified();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }

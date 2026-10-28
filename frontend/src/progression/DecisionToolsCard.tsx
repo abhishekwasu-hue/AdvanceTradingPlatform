@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/ui";
@@ -36,7 +37,7 @@ export default function DecisionToolsCard() {
   async function run() {
     if (!body) return;
     setError(null);
-    try { setCalc(await api.decisionRuin(body)); } catch (e) { setError(String(e)); }
+    try { setCalc(await api.decisionRuin(body)); } catch (e) { setError(errorSentence(e)); }
   }
   const field = (key: keyof RuinInputs, label: string) => (
     <label className="flex flex-col gap-1 text-fg-muted">
@@ -126,7 +127,7 @@ function WhatIfSection({ subjects }: { subjects: WhatIfSubject[] }) {
     try {
       setResult(await api.decisionWhatIf({ underlying, spot: Number(form.spot), iv: subject.has_options ? Number(form.iv) / 100 : undefined,
                                            days_forward: Number(form.days), iv_shift: Number(form.shift) / 100, range_pct: Number(form.range) }));
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorSentence(e)); }
   }
   const input = (key: keyof typeof form, label: string, hidden = false) => hidden ? null : (
     <label className="flex flex-col gap-1 text-fg-muted">

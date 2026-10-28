@@ -4,6 +4,7 @@
  * user's own limits on new entries (F2, when on). Numbers for the person's own decision - never advice, and nothing here
  * places or closes an order. Every string comes from the `portfolioRisk` i18n namespace.
  */
+import { errorSentence } from "../api/errors";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { Card, StatTile } from "../components/ui";
@@ -93,7 +94,7 @@ export default function PortfolioRiskCard() {
   const [view, setView] = useState<PortfolioRiskView | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    api.portfolioRisk().then((v) => (isRiskView(v) ? setView(v) : setError("unexpected answer"))).catch((e) => setError(String(e)));
+    api.portfolioRisk().then((v) => (isRiskView(v) ? setView(v) : setError("unexpected answer"))).catch((e) => setError(errorSentence(e)));
   }, []);
   return (
     <Card title={t("title")}>

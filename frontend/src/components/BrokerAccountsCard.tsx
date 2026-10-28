@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { RefreshCw, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -24,14 +25,14 @@ export default function BrokerAccountsCard({ refreshKey = 0 }: { refreshKey?: nu
       const r = await api.brokerSmokeTest(a.broker_name, a.account_label);
       setSmoke((prev) => ({ ...prev, [a.id]: r }));
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setSmokeBusy(null);
     }
   }
 
   function refresh() {
-    api.listAccounts().then(setAccounts).catch((e) => setError(String(e)));
+    api.listAccounts().then(setAccounts).catch((e) => setError(errorSentence(e)));
   }
   useEffect(refresh, [refreshKey]);
 
@@ -41,7 +42,7 @@ export default function BrokerAccountsCard({ refreshKey = 0 }: { refreshKey?: nu
       await fn();
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(null);
     }

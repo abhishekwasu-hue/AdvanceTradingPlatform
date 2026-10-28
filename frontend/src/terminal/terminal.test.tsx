@@ -7,7 +7,7 @@ import {
   firstFree, forSave, layoutFor, layoutProblem, movePanel, nameProblem, openPanel, presetLayout, readPrefs, readingOrder, remove, rename,
   resetToPreset, resizePanel, saveAs, saveOver, switchTo, type Layout, type TerminalPrefs,
 } from "./layoutModel";
-import { BasketPanelBodyV2, ChainPanelV2, OrdersPanelV2, PlaceholderPanelV2, chainProblem, exitAllConfirmText, exitAllPlan, legFigures } from "./PanelsV2";
+import { BasketPanelBodyV2, ChainPanelV2, OrdersPanelV2, PlaceholderPanelV2, chainProblem, exitAllConfirmText, exitAllConsequence, exitAllPlan, legFigures } from "./PanelsV2";
 import { chartLiveOf, pickSpot } from "./spot";
 import { SpreadBuilderV2, placementOrder, unhedgedSells } from "./SpreadBuilderV2";
 import embeddedSource from "../chart/EmbeddedChartV2.tsx?raw";
@@ -470,6 +470,13 @@ describe("owner fixes T1-2 .. T1-7", () => {
     expect(exitAllConfirmText(4)).toBe("Exit all 4 open positions at the current price? Sold legs close first, then the legs that protect them.");
     expect(panelsSource).toMatch(/<PositionList rows=\{rows\} byId=\{byId\} actions=\{actions\} prices /);
     expect(panelsSource).not.toMatch(/data-terminal="exit-all"[^>]*disabled/);   // never disabled (ADR-0004)
+  });
+
+  it("UI-28 U3.4: Exit all asks in the app with the rupee impact, never the browser's confirm", () => {
+    expect(exitAllConsequence(3, -1250)).toBe("Exit all 3 open positions at the current price. Sold legs close first, then the legs that protect them. Open P&L now: −₹1,250.");
+    expect(exitAllConsequence(2, null)).toBe("Exit all 2 open positions at the current price. Sold legs close first, then the legs that protect them.");
+    expect(panelsSource).not.toContain("window.confirm(exitAllConfirmText");
+    expect(panelsSource).toMatch(/<ConfirmDialog open=\{askExitAll\}[\s\S]*consequence=\{exitAllConsequence\(rows\.length, known\.length === rows\.length \? total : null\)\}/);
   });
 
   it("T1-7 / TF-1: the terminal chart's timeframe control is the shared TimeframePicker", () => {

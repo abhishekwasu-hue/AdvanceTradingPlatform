@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { Download } from "lucide-react";
 import { useState } from "react";
 import { api, type ExportDataset } from "../api/client";
@@ -31,7 +32,7 @@ export default function ExportCard({ scope, tenantId }: { scope: "tenant" | "pla
       URL.revokeObjectURL(url);
       setLast({ name: result.filename, sha: result.sha256, rows: result.rows, chain: result.chainIntact });
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(null);
     }

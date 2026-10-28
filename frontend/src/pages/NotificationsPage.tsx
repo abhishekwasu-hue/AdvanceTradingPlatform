@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -37,7 +38,7 @@ export default function NotificationsPage() {
 
   function refresh() {
     if (!user) return;
-    api.listNotifications().then(setNotifications).catch((e) => setError(String(e)));
+    api.listNotifications().then(setNotifications).catch((e) => setError(errorSentence(e)));
     api.byokReportsBy({ kind: "scan_alert" }).then(setScanVision).catch(() => setScanVision(null));
     api.byokReportsBy({ kind: "daily_review" }).then(setDailyVision).catch(() => setDailyVision(null));
   }
@@ -50,7 +51,7 @@ export default function NotificationsPage() {
       await api.markNotificationRead(id);
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     }
   }
 
@@ -59,7 +60,7 @@ export default function NotificationsPage() {
       await api.markAllNotificationsRead();
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     }
   }
 

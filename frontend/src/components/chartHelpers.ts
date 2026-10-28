@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { LtpResponse } from "../types";
@@ -19,7 +20,7 @@ export function useLiveLtp(enabled: boolean, symbol: string | undefined, exchang
     const tick = async () => {
       if (document.visibilityState !== "visible") return;
       try { const r = await api.marketDataLtp(symbol, exchange, broker); if (!cancelled) { setLtp(r); setError(null); } }
-      catch (e) { if (!cancelled) setError(String(e)); }
+      catch (e) { if (!cancelled) setError(errorSentence(e)); }
     };
     void tick();
     const id = window.setInterval(tick, intervalMs);

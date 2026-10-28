@@ -4,7 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile, signClass, signTone } from "../components/ui";
 import type { AnalyticsSummary, DegradationReport, GroupStats, TaxReport } from "../types";
 import { getToken } from "../api/client";
-import { apiErrorFrom, friendlyError } from "../api/errors";
+import { apiErrorFrom, friendlyError, errorSentence } from "../api/errors";
 import { PageHeader } from "../components/primitives";
 import { SelectOrCombobox } from "../ui/Combobox";
 
@@ -14,8 +14,8 @@ function TaxReportCard() {
   const [mode, setMode] = useState<string>("LIVE");
   const [report, setReport] = useState<TaxReport | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { api.taxYears().then((y) => { setYears(y.years); setFy((f) => f || y.current); }).catch((e) => setError(String(e))); }, []);
-  useEffect(() => { if (fy) api.taxReport(fy, mode).then(setReport).catch((e) => setError(String(e))); }, [fy, mode]);
+  useEffect(() => { api.taxYears().then((y) => { setYears(y.years); setFy((f) => f || y.current); }).catch((e) => setError(errorSentence(e))); }, []);
+  useEffect(() => { if (fy) api.taxReport(fy, mode).then(setReport).catch((e) => setError(errorSentence(e))); }, [fy, mode]);
   const money = (v: number) => v.toLocaleString("en-IN", { maximumFractionDigits: 0 });
   async function download() {
     setError(null);
@@ -102,7 +102,7 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     if (!user) return;
-    api.getAnalyticsSummary().then(setSummary).catch((e) => setError(String(e)));
+    api.getAnalyticsSummary().then(setSummary).catch((e) => setError(errorSentence(e)));
     api.analyticsDegradation().then(setDegradation).catch(() => {});
   }, [user]);
 

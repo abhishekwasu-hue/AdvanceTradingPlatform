@@ -12,7 +12,7 @@ describe("Button", () => {
     expect(html).toContain('class="inline-flex shrink-0 items-center justify-center rounded-md font-semibold transition-colors '
       + "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface "
       + 'disabled:cursor-not-allowed disabled:opacity-50 bg-brand text-on-brand hover:bg-brand-strong h-9 px-4 text-sm gap-2"');
-    expect(renderToStaticMarkup(<Button size="sm">Undo</Button>)).toContain("border border-border bg-surface-2 text-fg hover:bg-surface-3 h-8 px-3 text-xs gap-1.5");
+    expect(renderToStaticMarkup(<Button size="sm">Undo</Button>)).toContain("border border-border bg-surface-2 text-fg hover:bg-surface-3 min-h-11 px-3 text-xs gap-1.5 md:min-h-0 md:h-8");   // UI-28 U3.6: 44 px on a phone
   });
 
   it("the trading parts' button classes are the Button's own, with the same look as the old copies", () => {
@@ -45,5 +45,16 @@ describe("Button", () => {
     expect(html).toContain("w-full");
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain("disabled");
+  });
+});
+
+describe("UI-28 U3.2 a disabled button says why", () => {
+  it("with `reason` and disabled: one helper line under it, tied by aria-describedby, and the tooltip; enabled: nothing extra", () => {
+    const off = renderToStaticMarkup(<Button disabled reason="Pick a list first">Run</Button>);
+    expect(off).toContain('data-disabled-reason="true">Pick a list first</span>');
+    expect(off).toMatch(/aria-describedby="([^"]+)"[^>]*title="Pick a list first"[\s\S]*id="\1"/);
+    const on = renderToStaticMarkup(<Button reason="Pick a list first">Run</Button>);
+    expect(on).not.toContain("data-disabled-reason");
+    expect(renderToStaticMarkup(<Button disabled loading reason="Pick a list first">Run</Button>)).not.toContain("data-disabled-reason");
   });
 });

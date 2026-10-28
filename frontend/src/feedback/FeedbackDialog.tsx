@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Button } from "../components/primitives/Button";
@@ -34,7 +35,7 @@ export default function FeedbackDialog({ open, onOpenChange, pathname, initialTe
       setSent(true);
       setText("");
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setSending(false);
     }

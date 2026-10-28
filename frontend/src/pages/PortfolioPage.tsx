@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -19,7 +20,7 @@ export default function PortfolioPage() {
         setPositions(p);
         setTrades(t);
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(errorSentence(e)));
   }, [user]);
 
   const capitalDeployed = useMemo(
@@ -108,7 +109,7 @@ export default function PortfolioPage() {
 function ExposureCard() {
   const [exposure, setExposure] = useState<PortfolioExposure | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  useEffect(() => { api.portfolioExposure().then(setExposure).catch((e) => setErr(String(e))); }, []);
+  useEffect(() => { api.portfolioExposure().then(setExposure).catch((e) => setErr(errorSentence(e))); }, []);
   if (err) return <Card title="Exposure"><div className="text-xs text-down">{err}</div></Card>;
   if (!exposure) return null;
   return (

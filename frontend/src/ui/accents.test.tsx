@@ -289,16 +289,13 @@ describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today
     expect(render(<BottomNavV2 current="charts" moreOpen={false} onMore={() => {}} />, false)).not.toMatch(/data-nav-tint|bg-sec-/);
   });
 
-  it("P1-8 (2): with `watchlists` on, Watchlist sits after Charts in its section's tint (Markets), with its own icon and word", () => {
+  it("UI-28 U3.5: with `watchlists` on, the bar keeps four tabs and More (Watchlist lives in the Charts panel and in More)", () => {
     const watch = { on: (f: string) => f === "watchlists" };
     const html = render(<BottomNavV2 current="watchlist" moreOpen={false} onMore={() => {}} ctx={watch} />, true);
-    expect([...html.matchAll(/data-nav-tint="([a-z]+)"/g)].map((m) => m[1])).toEqual(["today", "charts", "markets", "signals", "trades", "more"]);
-    expect(html).toContain(navChipClass("markets", true));
-    expect(html).toMatch(/aria-current="page"[^>]*href="\/watchlist"|href="\/watchlist"[^>]*aria-current="page"/);
-    const icons = [...html.matchAll(/class="lucide lucide-([a-z0-9-]+)/g)].map((m) => m[1]);
-    expect(new Set(icons).size).toBe(6);
-    expect(html.match(/min-h-16 flex-1/g)).toHaveLength(6);
-    expect([...html.matchAll(/data-nav-label[^>]*>([^<]+)</g)].map((m) => m[1])).toEqual(["Today", "Charts", "Watchlist", "Signals", "My trades", "More"]);
+    expect(html.match(/min-h-16 flex-1/g)).toHaveLength(5);
+    expect(html).not.toContain('href="/watchlist"');
+    expect([...html.matchAll(/data-nav-label[^>]*>([^<]+)</g)].map((m) => m[1])).toEqual(["Today", "Charts", "Signals", "My trades", "More"]);
+    expect(html).not.toContain("tracking-tight");
   });
 
   const bar = (on: boolean, section: Parameters<typeof TopBarV2>[0]["section"], title = "Option chain") => render(

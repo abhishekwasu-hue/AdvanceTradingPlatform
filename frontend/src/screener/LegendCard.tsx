@@ -102,7 +102,7 @@ export function LegendCard({ card, onBack, canOpen = false, onOpen, focusOnMount
 
       <div className="mt-4 flex items-center justify-end gap-2">
         <Button size="sm" onClick={onOpen} disabled={!canOpen || !onOpen} aria-label={`Open ${card.name} in the builder`}
-                title={canOpen ? undefined : "The builder cannot load this screen yet"}>Open</Button>
+                reason="This screen opens in the builder soon">Open</Button>
       </div>
     </article>
   );

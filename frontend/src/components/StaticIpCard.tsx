@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { StaticIpOverview } from "../types";
@@ -19,7 +20,7 @@ export default function StaticIpCard() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const load = () => api.staticIps().then(setData).catch((e) => setMessage(String(e)));
+  const load = () => api.staticIps().then(setData).catch((e) => setMessage(errorSentence(e)));
   useEffect(() => { load(); }, []);
   useEffect(() => {
     api.availableBrokers().then((r) => setRegistry(r.brokers)).catch(() => undefined);   // keep the built-in list

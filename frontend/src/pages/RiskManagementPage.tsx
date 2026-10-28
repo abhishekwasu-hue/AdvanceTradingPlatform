@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -54,7 +55,7 @@ export default function RiskManagementPage() {
 
   useEffect(() => {
     if (!user) return;
-    api.getRiskSettings().then(setConfig).catch((e) => setError(String(e)));
+    api.getRiskSettings().then(setConfig).catch((e) => setError(errorSentence(e)));
     api.riskCeilings().then(setCeilings).catch(() => {});
     refreshGuardian();
   }, [user]);
@@ -71,7 +72,7 @@ export default function RiskManagementPage() {
       setEvDesc("");
       refreshGuardian();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     }
   }
 
@@ -80,7 +81,7 @@ export default function RiskManagementPage() {
       await api.deleteMarketEvent(id);
       refreshGuardian();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     }
   }
 
@@ -95,7 +96,7 @@ export default function RiskManagementPage() {
       setMessage("Saved. Every paper and live entry now uses these limits and guardian rules.");
       refreshGuardian();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setSaving(false);
     }

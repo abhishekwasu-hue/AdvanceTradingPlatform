@@ -449,7 +449,7 @@ def test_a_screen_edit_is_checked_against_the_rules_that_run_it():
     rule = client.post("/api/alerts/rules", headers=t["headers"], json={"name": "r", "kind": "screen", "screen_id": screen["id"], "symbols": ["X"]})
     assert rule.status_code == 201, rule.text
     edit = client.put(f"/api/screener/screens/{screen['id']}", headers=t["headers"], json={"name": "s", "source": 'RankScore("platform:Momentum") > 80'})
-    assert edit.status_code == 422 and f"alert rule #{rule.json()['id']}" in edit.text
+    assert edit.status_code == 422 and "One of your alerts runs this screen" in edit.text and f"#{rule.json()['id']}" not in edit.text
     still = client.get("/api/screener/screens", headers=t["headers"]).json()
     assert still[0]["text"] == "close > SMA(close, 20)"
 

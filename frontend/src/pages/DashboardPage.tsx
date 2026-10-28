@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import {
   Activity, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, Bell, Bot, Briefcase, GitMerge, History,
   Layers, Link2, PieChart, Rocket, Server, ShieldCheck, Sparkles, Target, TrendingUp, Wallet, Zap, type LucideIcon,
@@ -154,7 +155,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
   useEffect(() => {
     Promise.all([api.listStrategies(), api.availableBrokers(), api.health()])
       .then(([s, b]) => { setStrategies(s); setBrokers(b.brokers); setHealthy(true); })
-      .catch((e) => { setError(String(e)); setHealthy(false); });
+      .catch((e) => { setError(errorSentence(e)); setHealthy(false); });
   }, []);
 
   useEffect(() => {

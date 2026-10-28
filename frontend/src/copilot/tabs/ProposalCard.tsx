@@ -1,3 +1,4 @@
+import { errorSentence } from "../../api/errors";
 import { AlarmClock, CheckCircle2, Clock, ExternalLink, ShieldAlert, XCircle } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../api/client";
@@ -51,7 +52,7 @@ export default function ProposalCard({ a, onDecided, snoozed = false, now = new 
   async function approve() {
     setBusy("approve"); setError(null);
     try { await api.aiApproveAction(a.id); onDecided(t("watch.approved")); }
-    catch (e) { if (isStepUpError(e)) setStepUp(String(e)); else setError(friendlyError(e, t)); }
+    catch (e) { if (isStepUpError(e)) setStepUp(errorSentence(e)); else setError(friendlyError(e, t)); }
     finally { setBusy(null); }
   }
   async function reject() {

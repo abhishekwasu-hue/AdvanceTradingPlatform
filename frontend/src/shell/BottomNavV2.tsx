@@ -50,9 +50,8 @@ export default function BottomNavV2({ current, moreOpen, onMore, onPick, dot = n
   const tintOf = (key: ShellKey): SectionTint => sectionTintOf(key) ?? "account";
   const word = (active: boolean, tint: SectionTint, plain: string) => (colour ? (active ? `${navWordClass(tint)} font-semibold` : "text-fg-muted") : plain);
   const bar = visibleBottomBar(ctx);
-  // P1-8 (2): with six tabs each word keeps to one line, a little tighter (the same text size), down to 360 px.
-  const six = bar.length > 4;
-  const label = (text: string) => (colour || six ? <span data-nav-label className={six ? "whitespace-nowrap tracking-tight" : "whitespace-nowrap"}>{text}</span> : text);
+  // UI-28 U3.5: at most four tabs and More, so every word fits on one line without tightening.
+  const label = (text: string) => (colour ? <span data-nav-label className="whitespace-nowrap">{text}</span> : text);
   const item = "flex min-h-16 flex-1 flex-col items-center justify-center gap-space-1 text-t12 font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand";
   return (
     <nav aria-label="Quick navigation" data-bottom-nav-v2 data-tour="nav-bottom"

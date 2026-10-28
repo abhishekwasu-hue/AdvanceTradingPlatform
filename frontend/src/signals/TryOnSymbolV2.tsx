@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useId, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
@@ -76,7 +77,7 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
       const res = await api.paperExecute(strategy.id, made.symbol, made.data);
       setExecuteMsg(res.executed ? `Paper order placed: ${res.reasons.join("; ")}` : `Not placed: ${res.reasons.join("; ")}`);
     } catch (err) {
-      setExecuteMsg(String(err));
+      setExecuteMsg(errorSentence(err));
     }
   }
 

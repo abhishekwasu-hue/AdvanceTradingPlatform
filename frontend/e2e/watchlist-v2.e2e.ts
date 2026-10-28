@@ -89,21 +89,16 @@ test.describe("Watchlist page 1440 desktop", () => {
 test.describe("Watchlist page 390 phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-  test("Watchlist is a tab of the bottom bar after Charts; a row opens its chart", async ({ page }) => {
+  test("UI-28 U3.5: four tabs and More; Watchlist opens from the More sheet and a row opens its chart", async ({ page }) => {
     await open(page, { path: "/", systemLists: SYSTEM });
     const bar = page.locator("[data-bottom-nav-v2]");
-    await expect(bar.getByRole("link")).toHaveText(["Today", "Charts", "Watchlist", "Signals", "My trades"]);
-    await bar.getByRole("link", { name: "Watchlist" }).click();
-    await expect(page).toHaveURL(/\/watchlist$/);
-    await expect(bar.getByRole("link", { name: "Watchlist" })).toHaveAttribute("aria-current", "page");
-    await expect(rows(page)).toHaveText([/NIFTY 50/, /NIFTY BANK/, /SENSEX/]);
-    await expectPhoneLayout(page);
-    // The More sheet does not repeat it.
+    await expect(bar.getByRole("link")).toHaveText(["Today", "Charts", "Signals", "My trades"]);
     await bar.getByRole("button", { name: /^More pages/ }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
-    await expect(page.getByRole("dialog").getByRole("link", { name: "Watchlist" })).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("dialog").getByRole("link", { name: "Watchlist" }).click();
+    await expect(page).toHaveURL(/\/watchlist$/);
+    await expect(rows(page)).toHaveText([/NIFTY 50/, /NIFTY BANK/, /SENSEX/]);
+    await expectPhoneLayout(page);
     await rows(page).filter({ hasText: "NIFTY BANK" }).getByRole("button", { name: /^NIFTY BANK/ }).click();
     await expect(page).toHaveURL(/\/charts\/NIFTY%20BANK$/);
   });

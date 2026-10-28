@@ -2,8 +2,11 @@
 
 GET  /api/screener/evidence/runs/{run_id}            the run's evidence ids by symbol
 GET  /api/screener/evidence/{evidence_id}?debug=      the pack (`evidence/1`); failed conditions' drawings only with debug
+                                                       + telegram_linked / telegram_reason / telegram_message (SCR-FIX C4)
 GET  /api/screener/evidence/{evidence_id}/image.png   the server-rendered chart (theme=light|dark), the Telegram image
-POST /api/screener/evidence/{evidence_id}/telegram    the image + caption to the caller's OWN linked private chat
+POST /api/screener/evidence/{evidence_id}/telegram    the image + caption to the caller's OWN linked private chat; refused
+                                                       with 409 {reason, message} - not_linked / bot_not_configured /
+                                                       blocked_by_user / send_failed / not_owner (SCR-FIX C4)
 GET  /api/screener/evidence/{evidence_id}/replay?at=  EV3 (flag `evidence_context`): the pack recomputed as of an
                                                        earlier bar of its window, from the shared lake's bars
 
@@ -68,7 +71,7 @@ async def get_evidence(evidence_id: int, debug: bool = False, user: User = Depen
                        session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     row = await _row(session, user, evidence_id)
     return {**evidence_store.view(evidence_store.load(row), debug=debug), "evidence_id": row.id, "pack_sha256": row.pack_sha256,
-            "can_send": row.user_id == user.id}
+            "can_send": row.user_id == user.id, **await evidence_store.telegram_state(session, row, user)}
 
 
 @router.get("/{evidence_id}/image.png", dependencies=[Depends(image_rate_limit)])
@@ -86,8 +89,8 @@ async def evidence_image(evidence_id: int, theme: Literal["light", "dark"] = "li
 async def send_evidence(evidence_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     row = await _row(session, user, evidence_id)
     result = await evidence_store.send_to_own_chat(session, row, user)
-    if not result["sent"]:
-        raise HTTPException(status_code=409, detail=result["reason"])
+    if not result["sent"]:      # SCR-FIX C4: a machine reason code with its plain sentence (the page picks the action)
+        raise HTTPException(status_code=409, detail={"reason": result["reason"], "message": result["message"]})
     return result
 
 

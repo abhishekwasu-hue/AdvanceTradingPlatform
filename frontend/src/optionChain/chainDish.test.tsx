@@ -14,7 +14,7 @@ const ADVICE = /\b(recommend\w*|advice|advise|should|must|buy|buying|sell|sellin
 // The backend's own lines for the hand-made chain of backend/tests/test_mo4_markets.py (made-up numbers).
 const DISH: ChainDish = {
   title: "What the chain shows",
-  note: "Information only: what the chain's numbers show right now. It never says what to trade.",
+  note: "What the chain's numbers show right now, for your own reading.",
   points: [
     { key: "pcr_zone", label: "PCR zone", state: "ok", text: "PCR is 0.84, in the low zone (0.70 to 0.90): call open interest is larger than put open interest." },
     { key: "oi_walls", label: "OI walls", state: "ok", text: "The largest put open interest is at 100 and the largest call open interest is at 130; the spot 118.00 is between them." },
@@ -36,7 +36,7 @@ describe("the summary", () => {
       expect(words).toContain(p.text);
     }
     expect(html).toMatch(/data-point="expected_move" data-state="unknown"/);
-    expect(words).toContain("Information only");
+    expect(words).toContain("for your own reading");
     expect(words).not.toMatch(ADVICE);
   });
 

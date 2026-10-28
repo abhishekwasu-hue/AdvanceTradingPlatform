@@ -114,7 +114,7 @@ function Field({ label, hint, children, id }: { label: string; hint?: string; ch
   );
 }
 
-function Choice<T extends string>({ id, value, options, onChange, notSet = "Not set" }: {
+function Choice<T extends string>({ id, value, options, onChange, notSet = "Off" }: {
   id: string; value: T | ""; options: { value: T; label: string }[]; onChange: (v: T | "") => void; notSet?: string;
 }) {
   return (
@@ -125,7 +125,7 @@ function Choice<T extends string>({ id, value, options, onChange, notSet = "Not 
   );
 }
 
-function NumberBox({ id, value, onChange, placeholder = "Not set", decimal = false }: {
+function NumberBox({ id, value, onChange, placeholder = "Off", decimal = false }: {
   id: string; value: string; onChange: (v: string) => void; placeholder?: string; decimal?: boolean;
 }) {
   return <input id={id} className={FIELD} value={value} inputMode={decimal ? "decimal" : "numeric"} autoComplete="off" placeholder={placeholder}
@@ -222,7 +222,7 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
             <NumberBox id={id("minutes")} value={form.time_exit_minutes} onChange={(v) => set("time_exit_minutes", v)} />
           </Field>
           <Field id={id("at")} label="Flat at (HH:MM)" hint="Empty unless you set one.">
-            <input id={id("at")} className={FIELD} value={form.time_exit_at} placeholder="Not set" autoComplete="off" inputMode="numeric"
+            <input id={id("at")} className={FIELD} value={form.time_exit_at} placeholder="Off" autoComplete="off" inputMode="numeric"
               onChange={(e) => set("time_exit_at", e.target.value)} />
           </Field>
         </div>

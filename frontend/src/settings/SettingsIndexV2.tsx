@@ -157,7 +157,7 @@ function SearchBox({ query, onQuery, onEnter }: { query: string; onQuery: (q: st
 
 function Results({ hits }: { hits: SearchHit[] }) {
   if (hits.length === 0) {
-    return <p className={`${CARD} px-space-4 py-space-4 text-t14 text-fg-muted`} role="status" data-search-empty>Nothing matches. Try another word.</p>;
+    return <p className={`${CARD} px-space-4 py-space-4 text-t14 text-fg-muted`} role="status" data-search-empty>Try another word.</p>;
   }
   return (
     <ul className={`${CARD} overflow-hidden`} data-search-results aria-label="Matching settings">

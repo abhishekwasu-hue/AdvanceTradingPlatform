@@ -96,7 +96,7 @@ describe("U4 EmptyState and U5 PageFootnote", () => {
     expect(button).toContain("<button");
     const foot = html(<PageFootnote>Prices from your broker.</PageFootnote>);
     expect(foot).toContain("data-page-footnote");
-    expect(foot).toContain("Information only — never says what to trade. Prices from your broker.");
+    expect(foot).toContain("For information and education: every trading decision is yours. Prices from your broker.");
   });
 });
 

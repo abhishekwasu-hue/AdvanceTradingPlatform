@@ -22,7 +22,7 @@ export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
   return (
     <CardV2 title="Open positions" count={total} more={{ label: "View all", to: "/positions" }} testId="positions" tour="dashboard-positions">
       {data.status === "loading" ? <LoadingRowsV2 /> : data.status === "error" ? <LoadFailedV2 what="your positions" /> : data.rows.length === 0 ? (
-        <EmptyStateV2 text="No open positions." action={{ label: "Find setups", to: "/screener" }} />
+        <EmptyStateV2 text="All positions are closed." action={{ label: "Find setups", to: "/screener" }} />
       ) : (
         <ul className="divide-y divide-subtle">
           {data.rows.map((p) => {
@@ -54,7 +54,7 @@ export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
 }
 
 /** Day-one fix 9: with the ready strategies on (`strategy_templates`), an empty day points to the one-tap Signals watch. */
-export const READY_WATCH_TEXT = "No signals yet today.";
+export const READY_WATCH_TEXT = "Signals show here as they come today.";
 
 export function ActiveSignalsV2({ data, readyWatch = false }: { data: Rows<SignalRow>; readyWatch?: boolean }) {
   // Colour v2: Long / Short as chips (icon + word), "Waiting for you" amber.
@@ -64,7 +64,7 @@ export function ActiveSignalsV2({ data, readyWatch = false }: { data: Rows<Signa
       {data.status === "loading" ? <LoadingRowsV2 /> : data.status === "error" ? <LoadFailedV2 what="today's signals" /> : data.rows.length === 0 ? (
         readyWatch
           ? <EmptyStateV2 text={READY_WATCH_TEXT} action={{ label: "Watch a list on Signals", to: "/signals" }} />
-          : <EmptyStateV2 text="No signals yet today." action={{ label: "Set up a scan", to: "/screener/custom" }} />
+          : <EmptyStateV2 text="Signals show here as they come today." action={{ label: "Set up a scan", to: "/screener/custom" }} />
       ) : (
         <ul className="divide-y divide-subtle">
           {data.rows.map((s) => (

@@ -54,7 +54,7 @@ export function BotPositionsV2({ positions, exposure, canTrade, onExit }: {
       <div className="flex flex-wrap items-center gap-space-2">
         <span className="text-t13 text-fg-muted">Open P&amp;L</span>
         {pnl === null
-          ? <Chip tone="warn" variant="meaning" icon="!" name="no-price">No live price</Chip>
+          ? <Chip tone="warn" variant="meaning" icon="!" name="no-price">Waiting for a live price</Chip>
           : <Signed value={pnl} kind="money" className="text-t15 font-semibold" />}
       </div>
       <p className="flex flex-wrap gap-space-1" data-bot-legs>

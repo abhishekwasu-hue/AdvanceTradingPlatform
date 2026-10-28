@@ -25,7 +25,7 @@ from app.option_chain import analyses as A
 from app.option_chain.oi_regime import PcrBands
 
 TITLE = "What the chain shows"
-NOTE = "Information only: what the chain's numbers show right now. It never says what to trade."
+NOTE = "What the chain's numbers show right now, for your own reading."
 
 # (upper edge, zone name, plain words); the last zone has no upper edge.
 _B = PcrBands()

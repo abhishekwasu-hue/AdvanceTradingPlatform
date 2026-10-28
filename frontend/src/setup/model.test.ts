@@ -115,12 +115,12 @@ describe("UI2-7 risk limits (TT-12: nothing filled in for him)", () => {
     expect(bad.minRr).toBe("Lowest reward to risk must be between 0 and 10.");
   });
 
-  it("an empty box is sent as null (not set); Settings says 'Not set' unless he set it", () => {
+  it("an empty box is sent as null (not set); Settings says 'Off' unless he set it (UI-28 U1.10)", () => {
     const n = riskNumbers({ capital: "1,00,000", riskPerTradePct: "", dailyLossPct: "2", maxTradesPerDay: "", minRr: "" });
     expect(n).toEqual({ capital: 100000, riskPerTradePct: null, dailyLossPct: 2, maxTradesPerDay: null, minRr: null });
     expect(limitsBody(n)).toEqual({ risk_per_trade_pct: null, daily_loss_pct: 2, max_trades_per_day: null, min_rr: null });
-    expect(limitText("minRr", [], 0)).toBe("Not set");
-    expect(limitText("minRr", undefined, 1.5)).toBe("Not set");               // an older server: nothing is known to be his
+    expect(limitText("minRr", [], 0)).toBe("Off");
+    expect(limitText("minRr", undefined, 1.5)).toBe("Off");               // an older server: nothing is known to be his
     expect(limitText("minRr", ["min_rr"], 1.5)).toBe("1.5 : 1");
     expect(limitText("dailyLossPct", ["daily_loss_pct"], 2)).toBe("2% of capital");
     expect(limitText("maxTradesPerDay", ["max_trades_per_day"], 0)).toBe("No limit");

@@ -257,12 +257,12 @@ test.describe("v2 dashboard 1440 desktop", () => {
 
   test("nothing yet: the friendly empty states, each with one action", async ({ page }) => {
     await open(page, "light", { state: "empty" });
-    await expect(page.locator("[data-block='attention']")).toHaveText("All clear. Nothing needs you right now.");
+    await expect(page.locator("[data-block='attention']")).toHaveText("All clear. All caught up.");
     const positions = page.locator("[data-block='positions']");
-    await expect(positions).toContainText("No open positions.");
+    await expect(positions).toContainText("All positions are closed.");
     await expect(positions.getByRole("link", { name: "Find setups" })).toHaveAttribute("href", "/screener");
     const signals = page.locator("[data-block='signals']");
-    await expect(signals).toContainText("No signals yet today.");
+    await expect(signals).toContainText("Signals show here as they come today.");
     await expect(signals.getByRole("link", { name: "Set up a scan" })).toHaveAttribute("href", "/screener/custom");
     await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(0);
   });

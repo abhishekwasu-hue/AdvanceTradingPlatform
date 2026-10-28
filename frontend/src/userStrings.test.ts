@@ -47,3 +47,23 @@ describe("UI-28 U1.7: no jargon in user strings", () => {
     expect(findings).toEqual([]);
   });
 });
+
+/** UI-28 U1.10 / U1.11 (owner, 28 Oct): affirmative words, and the line every page repeats behind one closed ⓘ. */
+describe("UI-28 U1.10 / U1.11: affirmative words; the common message hidden on every page", () => {
+  const NEGATIVE = /^(No open positions|No live price|Not set\b|Nothing is placed until you approve|Nothing is waiting for you|No signals yet today|No limit is set|Nothing needs you)/i;
+
+  it("no v2 screen opens a message with a 'no / not / nothing' phrase that has an affirmative wording", () => {
+    const findings: string[] = [];
+    for (const [path, text] of Object.entries(SOURCES)) {
+      for (const s of userStrings(text)) if (NEGATIVE.test(s)) findings.push(`${path}: ${s.slice(0, 120)}`);
+    }
+    expect(findings).toEqual([]);
+  });
+
+  it("the page footnote is one closed ⓘ 'About' (never removed), with the disclaimer said affirmatively", async () => {
+    const { DISCLAIMER_TEXT } = await import("./ui/Disclaimer");
+    const foot = (await import("./ui/PageFootnote.tsx?raw")).default as string;
+    expect(DISCLAIMER_TEXT).toBe("For information and education: every trading decision is yours.");
+    expect(foot).toMatch(/<Details id="page\.footnote" label="About"[\s\S]*\{DISCLAIMER_TEXT\}/);
+  });
+});

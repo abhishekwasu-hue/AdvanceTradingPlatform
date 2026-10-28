@@ -138,7 +138,7 @@ export default function HelpCentreV2() {
       </div>
 
       <p className="mt-space-3 text-t12 text-fg-muted" aria-live="polite" data-help-count={found.length}>
-        {found.length === 0 ? "Nothing matches. Try other words, or report a problem." : `${found.length} ${found.length === 1 ? "answer" : "answers"}`}
+        {found.length === 0 ? "Try other words, or report a problem." : `${found.length} ${found.length === 1 ? "answer" : "answers"}`}
       </p>
       <ul className="mt-space-1 divide-y divide-border">
         {shown.map((a) => <ArticleItem key={a.id} article={a} />)}

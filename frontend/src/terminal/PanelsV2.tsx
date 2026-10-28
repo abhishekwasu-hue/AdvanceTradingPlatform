@@ -301,7 +301,7 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
   if (!rows.length) {
     return (
       <div className="space-y-space-2" data-panel-body="positions">
-        <EmptyText testId="positions-empty">No open positions. Your trades show here as soon as an order fills.</EmptyText>
+        <EmptyText testId="positions-empty">Your trades show here as soon as an order fills.</EmptyText>
         {fnoOn && canTrade && <WaitingOrdersV2 />}
       </div>
     );
@@ -415,7 +415,7 @@ export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; term
         items={GROUPS.map((g) => ({ key: g.key, label: <>{g.label}<span className="ml-space-1 font-tabular">{counts[g.key]}</span></>, ariaLabel: `${g.label} ${counts[g.key]}`, data: { "orders-tab": g.key } }))} />
       {shown.length === 0 ? (
         <EmptyText testId={`orders-${group}-empty`}>
-          {group === "open" ? "No orders waiting. Practice orders fill at once at the current price." : group === "executed" ? "No orders filled yet." : "No refused orders."}
+          {group === "open" ? "All orders are filled." : group === "executed" ? "Filled orders show here." : "Every order went through."}
         </EmptyText>
       ) : (
         <ul className="divide-y divide-subtle" data-orders-list={group}>
@@ -436,7 +436,7 @@ export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; term
                 <div className="pl-space-5" data-order-trail={o.id}>
                   {trail.status === "loading" ? <p className={MUTED}>Loading the order&apos;s steps…</p>
                     : trail.status === "error" ? <p className={MUTED}>The order&apos;s steps could not be read just now.</p>
-                      : trail.value.length === 0 ? <p className={MUTED}>No steps recorded for this order.</p> : (
+                      : trail.value.length === 0 ? <p className={MUTED}>Each step shows here as it happens.</p> : (
                         <ol className="space-y-px text-t12 text-fg-muted">
                           {trail.value.map((e) => <li key={e.id}><span className="font-tabular">{formatTimeIST(e.created_at)}</span> · {statusWords(e.to_status)}</li>)}
                         </ol>

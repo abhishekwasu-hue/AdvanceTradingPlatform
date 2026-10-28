@@ -194,7 +194,7 @@ export default function PositionsV2(_props: PageProps = {}) {
             {notice && <NoteV2 kind={notice.kind} testId="action">{notice.text}</NoteV2>}
             <CardV2 title="Your open positions" count={list?.length} testId="exits">
               {positions.status === "loading" ? <LoadingRowsV2 /> : positions.status === "error" ? <LoadFailedV2 what="your positions" /> : rows.length === 0 ? (
-                <EmptyStateV2 text="No open positions." />
+                <EmptyStateV2 text="All positions are closed." />
               ) : (
                 <>
                   <p className="mb-space-3 text-t13 text-fg-muted">
@@ -257,7 +257,7 @@ export default function PositionsV2(_props: PageProps = {}) {
 
       <CardV2 title="Open positions" count={list?.length} testId="positions" tour="positions-list">
         {positions.status === "loading" ? <LoadingRowsV2 /> : positions.status === "error" ? <LoadFailedV2 what="your positions" /> : rows.length === 0 ? (
-          <EmptyStateV2 text="No open positions. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
+          <EmptyStateV2 text="All positions are closed. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
         ) : (
           <>
             {fnoOn && (
@@ -623,7 +623,7 @@ function ClosedTradesV2({ trades, onSaved }: { trades: Loadable<TradeRecord[]>; 
   return (
     <CardV2 title="Closed trades" count={rows.length} more={{ label: "Orders", to: "/positions/orders" }} testId="history">
       {trades.status === "loading" ? <LoadingRowsV2 /> : trades.status === "error" ? <LoadFailedV2 what="your closed trades" /> : rows.length === 0 ? (
-        <EmptyStateV2 text="No closed trades yet. A trade shows here once it is closed." />
+        <EmptyStateV2 text="Closed trades show here." />
       ) : (
         <>
           <ul className="divide-y divide-subtle">

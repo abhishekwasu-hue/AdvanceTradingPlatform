@@ -175,7 +175,7 @@ test.describe("v2 positions 1440 desktop", () => {
   test("nothing open: the friendly empty state with one action", async ({ page }) => {
     await open(page, "light", { empty: true });
     const block = page.locator("[data-block='positions']");
-    await expect(block).toContainText("No open positions. Find a setup or let Autopilot trade for you.");
+    await expect(block).toContainText("All positions are closed. Find a setup or let Autopilot trade for you.");
     await expect(block.getByRole("link", { name: "Find setups" })).toHaveAttribute("href", "/screener");
     await expect(page.locator("[data-block='history']")).toContainText("No closed trades yet.");
   });
@@ -229,7 +229,7 @@ test.describe("v2 positions 1440 desktop", () => {
     await open(page, "light", { broker: "login", positionsFail: true });
     const card = page.locator("[data-block='exits']");
     await expect(card).toContainText("We could not load your positions. We will try again in a moment.");
-    await expect(card).not.toContainText("No open positions.");
+    await expect(card).not.toContainText("All positions are closed.");
   });
 
   test("live prices cannot be read: every row and its Exit now stay, with no price made up", async ({ page }) => {

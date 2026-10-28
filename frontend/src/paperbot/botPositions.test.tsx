@@ -25,7 +25,7 @@ describe("UI-28 U2.4 a bot's own positions", () => {
     else expect(html).toMatch(/data-signed="(up|down|flat)"/);
     expect(botOpenPnl([mine], null)).toBeNull();
     expect(renderToStaticMarkup(<MemoryRouter><BotPositionsV2 positions={[mine]} exposure={null} canTrade onExit={async () => 1} /></MemoryRouter>))
-      .toContain("No live price");
+      .toContain("Waiting for a live price");
   });
 
   it("each leg is a chip that opens My positions; the exit is only for a trader and asks first with the ₹ impact", () => {

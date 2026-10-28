@@ -41,9 +41,9 @@ export function useMediaQuery(query: string): boolean {
 }
 
 const EMPTY: Record<FeedTab, { title: string; body: string }> = {
-  waiting: { title: "Nothing is waiting for you.", body: "New signals also arrive as a notification." },
-  today: { title: "No signals yet today.", body: "Signals from your paper bots, scans and Copilot show here as they come." },
-  history: { title: "No signals in the last 30 days.", body: "Signals you approve, skip or let expire are kept here for 30 days." },
+  waiting: { title: "You are all caught up.", body: "New signals also arrive as a notification." },
+  today: { title: "Signals show here as they come today.", body: "Signals from your paper bots, scans and Copilot show here as they come." },
+  history: { title: "Signals of the last 30 days show here.", body: "Signals you approve, skip or let expire are kept here for 30 days." },
 };
 
 /** With his day-one watch adopted, an empty list points at it. */
@@ -149,7 +149,7 @@ export default function SignalsV2() {
         <div className="h-40 animate-pulse rounded-panel bg-surface-2" aria-busy="true" aria-label="Loading signals" data-tour="signals-list" />
       ) : items.length === 0 ? (
         <div className="rounded-panel border border-subtle bg-surface-1 px-space-6 py-space-10 text-center shadow-card" data-empty data-tour="signals-list">
-          <p className="text-t15 font-semibold text-fg">{filtered ? "No signals match these filters." : EMPTY[tab].title}</p>
+          <p className="text-t15 font-semibold text-fg">{filtered ? "Try other filters." : EMPTY[tab].title}</p>
           <p className="mt-space-1 text-t14 text-fg-muted">{filtered ? "Show every source and symbol to see the rest." : watching ? WATCHING_BODY : EMPTY[tab].body}</p>
           {filtered && (
             <button type="button" onClick={() => { setSource("all"); setSymbol(null); }}
@@ -187,7 +187,7 @@ export default function SignalsV2() {
       )}
 
       {/* UX-11b C3: said once, here (it repeated in the header, on phones and in the summary). */}
-      <PageFootnote>Nothing is placed until you approve it.</PageFootnote>
+      <PageFootnote>You approve every order.</PageFootnote>
     </div>
   );
 }

@@ -221,7 +221,7 @@ describe("UI2-4b1 ChartV2 component", () => {
     const dark = renderToStaticMarkup(<ChartV2 candles={[]} timeframe="day" prefs={{ ...DEFAULT_CHART_PREFS, theme: "dark", grid: true }} />);
     expect(dark).toContain('data-chart-theme="dark"');
     expect(dark).toContain('data-chart-grid="on"');
-    expect(dark).toContain("No prices for this timeframe yet.");
+    expect(dark).toContain("Prices for this timeframe load as they arrive.");
     // "App" follows the app theme (dark by default without the v2 hint).
     expect(renderToStaticMarkup(<ChartV2 candles={[]} timeframe="day" />)).toContain('data-chart-theme="dark"');
   });

@@ -76,7 +76,7 @@ describe("UI-H Wave 0: the shared page parts", () => {
   });
 
   it("Disclaimer (H10): one wording", () => {
-    expect(DISCLAIMER_TEXT).toBe("Information only — never says what to trade.");
+    expect(DISCLAIMER_TEXT).toBe("For information and education: every trading decision is yours.");
     expect(renderToStaticMarkup(<Disclaimer />)).toContain(DISCLAIMER_TEXT);
   });
 

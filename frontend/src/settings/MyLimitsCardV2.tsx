@@ -11,7 +11,7 @@ import {
 
 /**
  * DEF-0 D9 (owner, 28 Oct): one "My limits" card (Risk page and Settings -> Trading defaults). Every limit is the
- * trader's own; a blank one reads "Not set (no limit)" and nothing holds an order back for it. No forced setup: with
+ * trader's own; a blank one reads "Off" and nothing holds an order back for it. No forced setup: with
  * nothing set the card offers "Set my limits" and nothing else.
  */
 export default function MyLimitsCardV2({ testId = "my-limits" }: { testId?: string }) {
@@ -45,7 +45,7 @@ export default function MyLimitsCardV2({ testId = "my-limits" }: { testId?: stri
       const s = await saveSwitches(switches, switchesVersion);
       setSaved(next); setText(textOf(next)); setSwitches(s.value); setSwitchesVersion(s.version); setEditing(false);
       const n = countSet(next);
-      setNote({ kind: "done", text: n ? `Saved. ${n} of your limits ${n === 1 ? "is" : "are"} on; the rest are not set.` : "Saved. No limit is set." });
+      setNote({ kind: "done", text: n ? `Saved. ${n} of your limits ${n === 1 ? "is" : "are"} on; the rest are not set.` : "Saved. All limits are off." });
     } catch (e) {
       setNote({ kind: "warn", text: e instanceof Error ? e.message : "Could not save. Try again." });
     } finally {
@@ -62,7 +62,7 @@ export default function MyLimitsCardV2({ testId = "my-limits" }: { testId?: stri
       <p className="text-t13 text-fg-muted">Your own limits. A blank one is not set: nothing is held back for it. Exits always work.</p>
       {!editing && !anySet && (
         <div className="mt-space-3 flex flex-wrap items-center gap-space-3" data-testid="my-limits-empty">
-          <span className="text-t14 text-fg">No limit is set.</span>
+          <span className="text-t14 text-fg">All limits are off.</span>
           <button type="button" className={BUTTON_SECONDARY} onClick={() => setEditing(true)} data-testid="my-limits-set">Set my limits</button>
         </div>
       )}

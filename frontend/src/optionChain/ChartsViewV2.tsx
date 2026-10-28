@@ -225,7 +225,7 @@ export function ChartSvg({ chart }: { chart: ChainChart }) {
   return (
     <div ref={ref} className="w-full">
       {left && xs.length ? <Drawn chart={chart} l={l} left={left} right={right} xs={xs} leftSeries={leftSeries} rightSeries={rightSeries} />
-        : <p className="text-t13 text-fg-muted">Nothing to draw for these strikes yet.</p>}
+        : <p className="text-t13 text-fg-muted">The chart draws as soon as these strikes have data.</p>}
     </div>
   );
 }

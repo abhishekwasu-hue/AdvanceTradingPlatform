@@ -245,7 +245,7 @@ describe("OC3 My analyses", () => {
   });
 
   it("no saved analyses: says how to make one; a plain state shows its sentence", () => {
-    expect(text(my(null, { items: {}, version: 0 }, null))).toContain("No saved analyses yet. Ask AI about this chain and choose Save as My analysis.");
+    expect(text(my(null, { items: {}, version: 0 }, null))).toContain("Ask AI about this chain and choose Save as My analysis to keep it here.");
     const plain = text(my({ ...QUOTA, state: "no_broker", message: "Connect your broker and log in to it today to run an analysis." }));
     expect(plain).toContain("Connect your broker");
   });

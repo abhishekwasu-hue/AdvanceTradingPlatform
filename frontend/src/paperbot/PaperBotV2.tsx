@@ -189,7 +189,7 @@ export default function PaperBotV2(_props: PageProps) {
         {botsFailed && !bots ? <LoadFailedV2 what="your bots" />
           : !bots ? <LoadingRowsV2 rows={2} />
           : shown.length === 0 ? (
-            <p className="text-t14 text-fg-muted">No paper bot yet. Start one below: it trades with paper money only.</p>
+            <p className="text-t14 text-fg-muted">Start a paper bot below: it trades with paper money.</p>
           ) : (
             <ul className="divide-y divide-border-subtle">
               {shown.map((bot) => (

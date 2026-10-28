@@ -203,7 +203,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P1-8 | in progress | 26 Oct: W-PR #554 merged (owner ✅): Watchlist page + phone bar tab after Charts, behind `ui_v2` + `watchlists`. On main: server lists + Charts watchlist panel (chooser, search, sort, copy to my list, live ticks with `data_hub`). Missing: `watchlists` flag OFF in production; lists empty until the universe sync runs (P1-3); no Watchlist entry of its own on the phone bar (only inside Charts). Plan: (1) owner turns on via "Enable trader features" + System tab refresh; (2) W-PR: Watchlist page / phone bar entry using the same panel, behind ui_v2; (3) screenshots for ✅ | - |
 | P1-B1 | in review | merged #575 + #595; deployed 27 Oct 21:00 IST (a5db3e1), instrument master ok (91,037 rows, no error); owner check 28 Oct 09:15: a PAPER ticket on a NIFTY contract | #575, #595 |
 | SCR-FIX | in review | A-E merged 28 Oct (#614, #619, #618, #613, #620); PROOF page + deploy next | - |
-| DEF-0 | in review | PR 1-4 merged (#630 #631 #632 #637); deploy of b86710ce refused by acceptance (PAPER ticket 500) - fix #641; then deploy (migration yes) + owner ✅ on PROOF | #641 |
+| DEF-0 | merged - deploy + owner ✅ | PR 1-4 + fix #641 merged; deploy line ece32fd8 / e2f099f2 sent (migration yes: d4 d5 d6); owner ✅ on PROOF | - |
 | UI-STD | superseded by UI-28 | Session B: owner order 28 Oct filed; docs/design/UI_STANDARDS_AUDIT.md written; first report (confirmed / not reproduced) next, then PR 1 = A1-A8 | - |
 | UI-STD-C | superseded by UI-28 (U7) | - | - |
 | UI-28 | in progress | Session B: consolidated UI order filed 28 Oct; owner adds U1.10 affirmative wording + U1.11 hide repeated messages on all pages (28 Oct); first report docs/design/UI_28_FIRST_REPORT.md; U1 #640 merged; U2 + U1.10 / U1.11 #647 on CI; next U3; SEBI text open (UI28Q-1) | - |
@@ -211,8 +211,8 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | CP-FIX | filed (stub) | full order text from the owner, then plan | - |
 | OI-V2 | filed (stub) | full order text from the owner, then plan | - |
 | PX-1 | filed (stub) | full order text from the owner, then plan | - |
-| AUD-V1..V7 | in progress | verification in docs/design/AUDIT_28OCT.md; first report; then one PR per group | - |
-| AUD-G1.1..G1.7 | not started | after V (verification done with V) | - |
+| AUD-V1..V7 | merged - deploy + owner ✅ | V1 #643, V2 #644, V3 #645, V4 #646, V5 #648, V6 #649, V7 #651 merged 28 Oct; in e2f099f2 (deploy line sent); v1.0.0 tag + branch prune need the owner (proxy 403) | - |
+| AUD-G1.1..G1.7 | in progress | G1.1 #654, G1.3 #652, G1.4 part 1 #655 merged; G1.6 part 1 #656 + G1.7 part 1 #657 on CI; G1.2 waits for the owner's company / grievance details; G1.4 part 2 waits for a Sentry DSN; G1.5 next | #656 #657 |
 | AUD-T1..T3 | not started | after G1 | - |
 | AUD-G2.1..G2.5 | not started | after T1-T3 | - |
 | AUD-T4..T9 | not started | after G2 | - |

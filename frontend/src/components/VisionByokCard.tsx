@@ -1,4 +1,5 @@
 import { Eye, ExternalLink } from "lucide-react";
+import { Details } from "../ui/Details";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
@@ -222,7 +223,8 @@ export default function VisionByokCard() {
           </div>
         </div>
         <div className="space-y-2">
-          <div className="text-fg-muted">Spend caps (USD, your own key) - a hard stop: Vision pauses at a cap until it resets ({status.spend.resets}).</div>
+          <div className="text-fg-muted">Spend caps (USD, your own key): Vision pauses at a cap.</div>
+          <Details id="vision-byok.caps" className="text-fg-muted"><p>A hard stop: Vision stays paused until the cap resets ({status.spend.resets}).</p></Details>
           <div className="grid grid-cols-[auto_1fr] items-center gap-2">
             <span>Daily</span>
             <input className={input} inputMode="decimal" aria-label="Daily cap in USD" value={caps.daily} onChange={(e) => setCaps({ ...caps, daily: e.target.value })} />

@@ -1,4 +1,5 @@
 import { Sparkles } from "lucide-react";
+import { Details } from "../ui/Details";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -80,9 +81,12 @@ export default function AiProviderCard() {
               ))}
             </tbody>
           </table>
-          <div className="mt-1 text-xs text-fg-muted">
-            Estimate for one typical call ({config.typical_call_tokens ? Object.entries(config.typical_call_tokens).map(([tier, v]) => `${tier}: ${v.input.toLocaleString()} in / ${v.output.toLocaleString()} out tokens`).join("; ") : "typical size"}); real calls are metered below. The cheap, fast and strong models are set by the operator (cheap = the smallest model, for frequent classification and scanner reads); a model typed here replaces the strong one for this organisation.
-          </div>
+          {/* AUD-V6: one short line; the call sizes and the model tiers in Details (the text budget). */}
+          <div className="mt-1 text-xs text-fg-muted">Estimates for one typical call; real calls are metered below.</div>
+          <Details id="ai-provider.estimates" className="mt-1 text-xs text-fg-muted">
+            <p>Typical call: {config.typical_call_tokens ? Object.entries(config.typical_call_tokens).map(([tier, v]) => `${tier}: ${v.input.toLocaleString()} in / ${v.output.toLocaleString()} out tokens`).join("; ") : "typical size"}.</p>
+            <p>The cheap, fast and strong models are set by the operator (cheap = the smallest model, for frequent classification and scanner reads); a model typed here replaces the strong one for this organisation.</p>
+          </Details>
         </div>
       )}
       {config?.usage && config.configured && config.provider !== "rule_based" && (

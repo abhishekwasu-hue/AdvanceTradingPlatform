@@ -136,6 +136,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UX-11b | in progress | Session B: "Numbers first, logical colour" whole-app pass (ATP_ORDER_UX11B.md): audit re-verify, then PR 1 C1 typed payloads + C6 TrendChip / LevelChip / one Signed; PR 2 Today briefs; PR 3 dishes; PR 4 Markets + Risk etc.; PR 5 guard + no clock framing | - |
 | UX-12 | done | Session B: purple dot-grid backdrop behind the v2 page header band, Appearance toggle, default on; merged #609, deployed 77a50057db57, owner OK 28 Oct | #609 |
 | UX-13 | done | Session B: bottom-bar option C (colour on the icon, round fill only on the tab on screen), lighter tile grid lines; merged #609, deployed 77a50057db57, owner OK 28 Oct | #609 |
+| UX-14 | in progress | Session B: "Professional palette" (ATP_ORDER_UX14.md): colour_v3 token set behind its flag, CI contrast for every pair, ONE comparison page (Today, Terminal, Screener, My trades, Signals; 390 + desktop, dark + light); default after owner OK | - |
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | SB-1 | not started | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |

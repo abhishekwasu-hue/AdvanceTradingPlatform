@@ -473,9 +473,14 @@ function Extremes({ section }: { section: RhythmSection }) {
   return (
     <ResponsiveTable caption={section.title} rowKey={(r) => r.type} rows={pair}
       columns={[
-        { key: "n", header: "Setup", cell: (r) => <><span className="text-fg-muted">{r.type === "best" ? "Best" : "Cost the most"}: </span>{r.name}</> },
+        // Two columns so it fits a phone (owner, 28 Oct): the closed count sits under the setup's name.
+        { key: "n", header: "Setup", cell: (r) => (
+          <span className="block min-w-0" data-extreme={r.type}>
+            <span className="block text-t12 text-fg-muted">{r.type === "best" ? "Best" : "Cost the most"}</span>
+            <span className="block">{r.name}</span>
+            <span className="block font-tabular text-t12 text-fg-muted">{formatNumber(r.closed)} closed</span>
+          </span>) },
         { key: "v", header: "Net", align: "right", cell: (r) => money(r.net) },
-        { key: "c", header: "Closed", align: "right", cell: (r) => formatNumber(r.closed) },
       ]} />
   );
 }

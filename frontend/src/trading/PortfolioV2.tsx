@@ -75,7 +75,7 @@ export default function PortfolioV2(_props: PageProps = {}) {
 
       <CardV2 title="Where your money is" count={rows.length} testId="allocation" tour="portfolio-allocation">
         {firstLoad ? <LoadingRowsV2 /> : allocationFailed ? <LoadFailedV2 what="where your money is" /> : rows.length === 0 ? (
-          <EmptyStateV2 text="Nothing is invested right now. Open positions show here with their share of your capital." action={{ label: "Find setups", to: "/screener" }} />
+          <EmptyStateV2 text="All cash. Open positions show here with their share of your capital." action={{ label: "Find setups", to: "/screener" }} />
         ) : (
           <>
             {exp?.price_source === "entry" && (

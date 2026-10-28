@@ -127,7 +127,7 @@ describe("the page", () => {
     expect(words).toMatch(/Realty I don't know/);
     // A tile opens the sector's stocks, keeping the view and the period.
     expect(html).toContain('href="/markets?view=sectors&amp;period=day&amp;list=sector-banking"');
-    expect(words).toContain("Information only");
+    expect(words).toContain("for your own reading");                      // UI-28 U1.10: said affirmatively
   });
 
   it("indices are grouped by family; an index without a stocks list opens its chart", () => {

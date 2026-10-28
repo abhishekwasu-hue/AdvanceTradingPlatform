@@ -76,7 +76,7 @@ describe("UI2-9a exits (ADR-0004, UI-11)", () => {
     expect(gated).toContain('<LoadFailedV2 what="your positions" />');
     expect(gated).not.toContain('broker.kind !== "loading"');
     // UX-15 (owner, 28 Oct): one chip, not a sentence; each paper position keeps its own Exit.
-    expect(gated).toContain('name="no-price">No live price · connect your broker</Chip>');
+    expect(gated).toContain('name="no-price">Live prices: connect your broker</Chip>');
   });
 
   it("only for a paper position the trader can trade; a live one is closed in the broker's app", () => {
@@ -107,10 +107,10 @@ describe("UI2-9a exits (ADR-0004, UI-11)", () => {
 
   it("UX-15: a missing price is one amber chip; a stop that is not set is an amber chip, never red text", () => {
     const noPrice = text(rowWith({ ltp: null, pnl: null, pnlPct: null }));
-    expect(noPrice).toContain("No live price");
+    expect(noPrice).toContain("Waiting for a live price");
     expect(noPrice).not.toMatch(/–\s+–/);
     const noStop = rowWith({ levels: [{ label: "Stop", value: "no stop", tone: "down" }, { label: "Target", value: "–", tone: "up" }] });
-    expect(noStop).toMatch(/data-chip="level-unset"[^>]*text-warn[^>]*>.*Stop not set/);
+    expect(noStop).toMatch(/data-chip="level-unset"[^>]*text-warn[^>]*>.*Set stop/);   // UI-28 U1.10: affirmative
     expect(text(noStop)).not.toContain("Target");
   });
 

@@ -520,7 +520,7 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
         {tool === "load" && (
           <section aria-label="Saved baskets" className="space-y-space-2 rounded-control border border-subtle p-space-3" data-basket="load">
             {!saved && <p className="text-t13 text-fg-muted">Loading your saved baskets…</p>}
-            {saved && Object.keys(saved.items).length === 0 && <p className="text-t13 text-fg-muted">No saved baskets yet.</p>}
+            {saved && Object.keys(saved.items).length === 0 && <p className="text-t13 text-fg-muted">Saved baskets show here.</p>}
             <ul className="space-y-space-1">
               {saved && Object.entries(saved.items).map(([id, s]) => (
                 <li key={id} className="flex items-center justify-between gap-space-2" data-saved={id}>

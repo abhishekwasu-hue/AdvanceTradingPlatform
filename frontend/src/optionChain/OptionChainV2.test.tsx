@@ -376,7 +376,7 @@ describe("OC1 phone layout", () => {
     expect(html).toContain('data-summary="oi-walls"');
     expect(html).toContain("put / call");
     const noFut = renderToStaticMarkup(<SummaryStripV2 summary={{ ...sum, futures: null }} expiry="2026-11-03" loading={false} />);
-    expect(noFut).toContain("No near-month price in the feed");
+    expect(noFut).toContain("Near-month price: waiting for the feed");
     expect(PCR_GAUGE_MAX).toBe(2);
   });
 

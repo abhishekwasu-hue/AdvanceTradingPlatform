@@ -1,0 +1,18 @@
+# AUD-V7 (owner audit 28 Oct): a merged pull request's claude/* branch is deleted on merge (the repository setting
+# "automatically delete head branches" is off). Only branches of this repository; never main.
+name: branch-cleanup
+on:
+  pull_request:
+    types: [closed]
+permissions:
+  contents: write
+jobs:
+  delete-merged-branch:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'claude/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the merged head branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.event.pull_request.head.ref }}
+        run: gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/${REF}" || echo "already gone"

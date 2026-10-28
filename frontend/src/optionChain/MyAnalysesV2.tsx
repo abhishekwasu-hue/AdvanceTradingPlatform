@@ -118,7 +118,7 @@ export function MyAnalysesView({ saved, current, onPick, response, error, note, 
       {note && <p className="text-t13 text-fg-muted" role="status">{note}</p>}
       {!saved && !note && <p className="text-t14 text-fg-muted">Reading your saved analyses…</p>}
       {saved && !ids.length && (
-        <p className="text-t14 text-fg-muted">No saved analyses yet. Ask AI about this chain and choose Save as My analysis.</p>
+        <p className="text-t14 text-fg-muted">Ask AI about this chain and choose Save as My analysis to keep it here.</p>
       )}
       {saved && current && (
         <>

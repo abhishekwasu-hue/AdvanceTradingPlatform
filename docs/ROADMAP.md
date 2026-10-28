@@ -62,6 +62,43 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | DEF-0 | No platform defaults in order placement / risk: D1 RiskConfig all optional, D2 hard-coded capital, D3 hidden exits (AP-FIX AP7), D4 experience levels a user opt-in, D5 override multipliers, D6 ticket truth, D7 stop-loss source, D8 margin estimate, D9 My limits card, D10 migration (extends TT-12; merges AP-FIX AP4 / AP7) | ATP_ORDER_DEF0.md | first report per D-item; tests (no-settings user can place / Autopilot can enter; each setting applies; exits never blocked; PAPER = LIVE); CI grep guard; PROOF page; owner ✅ |
 | UI-STD | UI standards audit fix pack: A1-A8 remove what no mainstream tool shows (+ user-string lint), B1-B13 standards floor (NN/g, WCAG 2.2 AA, Material, HIG); extends UX-11 / UX-11b / UX-14 / SCR-FIX | ATP_ORDER_UI_STD.md, UI_STANDARDS_AUDIT.md | first report per item; PR 1 = A, PR 2 = B1-B4, PR 3 = B5-B13; before / after page per PR; owner ✅ |
 | UI-28 | Consolidated UI order (owner 28 Oct; supersedes UI-STD / UI-STD-C and the UI parts of UX-11, UX-11b, UX-14, Screener UI, Telegram in place, OI view, PX-1 P5/P6): U1 remove what no mainstream tool shows, U2 numbers first + logical colour, U3 standards floor, U4 palette, U5 Screener + chart + Telegram UI, U6 OI view in v2, U7 beyond the best; UI only | ATP_ORDER_UI_28OCT.md, UI_STANDARDS_AUDIT.md | first report per item; one PR per U group in order; comparison page per PR; final summary page with word counts + contrast table; owner ✅ |
+| AP-FIX | Autopilot fix pack (owner 28 Oct; full text to be filed from the owner's message) - AP1 = AUD-V1; AP4 / AP7 merged into DEF-0 | ATP_ORDER_AP_FIX.md (stub) | as its order says |
+| CP-FIX | Copilot fix pack (owner 28 Oct; full text to be filed from the owner's message) | ATP_ORDER_CP_FIX.md (stub) | as its order says |
+| OI-V2 | OI banner v2 (owner 28 Oct; full text to be filed) - the regime hysteresis gap is AUD-V5 | ATP_ORDER_OI_V2.md (stub) | as its order says |
+| PX-1 | Prices everywhere / after hours (owner 28 Oct; full text to be filed) - P1 = AUD-V2 | ATP_ORDER_PX_1.md (stub) | as its order says |
+
+### Phase AUD — Complete audit: verify -> grade -> differentiate (owner 28 Oct)
+Order: V -> G1 -> T1-T3 -> G2 -> T4+; max 5 in progress; one PR per group. Source: ATP_ORDER_AUDIT_28OCT.md; evidence: docs/design/AUDIT_28OCT.md.
+| ID | Item | Source | Done when |
+|---|---|---|---|
+| AUD-V1 | Autopilot decides on closed bars only (trim the forming bar) + parity test backtest == worker (= AP-FIX AP1) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-V2 | Open P&L after hours from the stored mark ("last mark HH:MM"), counted as priced (= PX-1 P1) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-V3 | VIX bands from the one shared table (ui/levels.ts vixLevel + LevelChip) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-V4 | Discipline score: "n/a until a trade closes" at 0 closed; else "(N open · M closed)" | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-V5 | OI regime: structural flip (3 negative delta-diff + call OI up >= 2 %); OI_BANNER.md; owner's numbers as the test; Trade check | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-V6 | Text-budget guard reads leaf div / span text >= 15 words in cards | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-V7 | Repo hygiene: delete merged branches (+ on merge), semver tags, CHANGELOG.md + in-app What's new | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G1.1 | DPDP: /api/me/export + /api/me/erase (grace, confirm, audit) + Settings -> Account | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G1.2 | Legal placeholders (owner supplies fiduciary + grievance officer), 90-day SLA, runbooks/BREACH.md | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G1.3 | Production: no /docs /openapi.json /redoc (or SUPER_ADMIN only); checked in the deploy health step | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G1.4 | Browser error tracking (@sentry/react, PII scrubbed); email / phone redaction in JSON logs | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G1.5 | Core Web Vitals: Lighthouse CI budgets + web-vitals RUM to /metrics | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G1.6 | Dependabot / Renovate, ESLint + typescript-eslint, ruff I / UP / ASYNC, mypy on all of app | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G1.7 | SEBI retail-algo readiness: owner Compliance page + signals-not-advice / RA boundary text (lawyer) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G2.1 | OpenTelemetry tracing + trace id in logs; N+1 profile of the top 5 list endpoints | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G2.2 | Live prices end to end: broker WS -> SSE; remove the 60 s pollers; tick-age stale chip | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G2.3 | Self-hosted fonts, strict CSP, preload; maskable icon + screenshots; iOS later | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G2.4 | Activation metrics atp_activation_total{step} + admin funnel | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-G2.5 | Signed outbound webhooks + WhatsApp Business (owner: number) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-T1 | My day in one card (position-aware brief) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-T2 | Expiry-day & margin checklist (T-1 session) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-T3 | Why no trade today timeline (BR-S1 log) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-T4 | Paper report card (forward test) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-T5 | Read this chart (Trade reader as a service) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-T6 | Similar-setup recall + what the context said vs what happened (BR-M3 / BR-R1) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-T7 | Cost-of-trading meter | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-T8 | Reliability promise: public status page, degradation banner, published SLOs | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
+| AUD-T9 | Pricing (owner decision; defaults in the order; lawyer check before charging) | ATP_ORDER_AUDIT_28OCT.md | first report (confirmed / not reproduced) in docs/design/AUDIT_28OCT.md; tests; before / after proof page; owner ✅ |
 
 ### Phase P2-F — Every feature 100% functional on production with real broker data (owner 25 Oct; before Phase 2 items)
 Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress; one PR per item. Source: ATP_ORDER_P2F_FUNCTIONAL.md.
@@ -166,10 +203,19 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P1-8 | in progress | 26 Oct: W-PR #554 merged (owner ✅): Watchlist page + phone bar tab after Charts, behind `ui_v2` + `watchlists`. On main: server lists + Charts watchlist panel (chooser, search, sort, copy to my list, live ticks with `data_hub`). Missing: `watchlists` flag OFF in production; lists empty until the universe sync runs (P1-3); no Watchlist entry of its own on the phone bar (only inside Charts). Plan: (1) owner turns on via "Enable trader features" + System tab refresh; (2) W-PR: Watchlist page / phone bar entry using the same panel, behind ui_v2; (3) screenshots for ✅ | - |
 | P1-B1 | in review | merged #575 + #595; deployed 27 Oct 21:00 IST (a5db3e1), instrument master ok (91,037 rows, no error); owner check 28 Oct 09:15: a PAPER ticket on a NIFTY contract | #575, #595 |
 | SCR-FIX | in review | A-E merged 28 Oct (#614, #619, #618, #613, #620); PROOF page + deploy next | - |
-| DEF-0 | in progress | owner order 28 Oct filed; first report (confirmed / not reproduced per D-item) next | - |
+| DEF-0 | in review | PR 1-4 merged (#630 #631 #632 #637); deploy of b86710ce refused by acceptance (PAPER ticket 500) - fix #641; then deploy (migration yes) + owner ✅ on PROOF | #641 |
 | UI-STD | superseded by UI-28 | Session B: owner order 28 Oct filed; docs/design/UI_STANDARDS_AUDIT.md written; first report (confirmed / not reproduced) next, then PR 1 = A1-A8 | - |
 | UI-STD-C | superseded by UI-28 (U7) | - | - |
 | UI-28 | in progress | Session B: consolidated UI order filed 28 Oct; owner adds U1.10 affirmative wording + U1.11 hide repeated messages on all pages (28 Oct); first report docs/design/UI_28_FIRST_REPORT.md; U1 #640 merged; U2 + U1.10 / U1.11 #647 on CI; next U3; SEBI text open (UI28Q-1) | - |
+| AP-FIX | filed (stub) | full order text from the owner, then plan | - |
+| CP-FIX | filed (stub) | full order text from the owner, then plan | - |
+| OI-V2 | filed (stub) | full order text from the owner, then plan | - |
+| PX-1 | filed (stub) | full order text from the owner, then plan | - |
+| AUD-V1..V7 | in progress | verification in docs/design/AUDIT_28OCT.md; first report; then one PR per group | - |
+| AUD-G1.1..G1.7 | not started | after V (verification done with V) | - |
+| AUD-T1..T3 | not started | after G1 | - |
+| AUD-G2.1..G2.5 | not started | after T1-T3 | - |
+| AUD-T4..T9 | not started | after G2 | - |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
 | FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |

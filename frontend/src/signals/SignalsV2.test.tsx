@@ -131,7 +131,7 @@ describe("UI2-3 the page", () => {
     expect(html).toContain('role="tablist"');
     expect(html.match(/role="tab"/g)).toHaveLength(3);
     expect(html).toMatch(/aria-selected="true"[^>]*>.*?Waiting/);
-    expect(text(html)).toContain("Nothing is placed until you approve it.");
+    expect(text(html)).toContain("You approve every order.");
     for (const s of ["All sources", "Paper bots", "Scans", "Copilot"]) expect(text(html)).toContain(s);
     expect(html).toContain('aria-label="Loading signals"');
     expect(text(html)).not.toMatch(/sample|seed/i);                  // the generator is not on this page any more (M6)

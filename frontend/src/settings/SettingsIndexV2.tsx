@@ -21,6 +21,7 @@ import { Chip as ToneChip } from "../ui/Chip";
 import { IconBadge, type IconTone } from "../ui/IconBadge";
 import { StatusChip as ToneStatusChip } from "../ui/StatusChip";
 import { useFeatures } from "../ui/useFeatures";
+import WhatsNewV2 from "./WhatsNewV2";
 import {
   COMING_SOON, DEFAULTS_CHIP, SETTINGS_ROWS, aiChip, aiProviderChip, alertsChip, appearanceChip, brokerChip, planChip, searchSettings, tipsChip,
   type Chip, type RowId, type SearchHit, type SettingsRow,
@@ -157,7 +158,7 @@ function SearchBox({ query, onQuery, onEnter }: { query: string; onQuery: (q: st
 
 function Results({ hits }: { hits: SearchHit[] }) {
   if (hits.length === 0) {
-    return <p className={`${CARD} px-space-4 py-space-4 text-t14 text-fg-muted`} role="status" data-search-empty>Nothing matches. Try another word.</p>;
+    return <p className={`${CARD} px-space-4 py-space-4 text-t14 text-fg-muted`} role="status" data-search-empty>Try another word.</p>;
   }
   return (
     <ul className={`${CARD} overflow-hidden`} data-search-results aria-label="Matching settings">
@@ -226,6 +227,7 @@ export default function SettingsIndexV2(_props: PageProps = {}) {
               <IndexRow row={advanced} chip={null} />
             </ul>
           )}
+          <WhatsNewV2 />
         </>
       )}
     </div>

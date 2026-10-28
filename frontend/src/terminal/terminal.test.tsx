@@ -245,7 +245,7 @@ describe("status bar", () => {
   it("feed words for every state; the mask is kept per device and survives a broken storage", () => {
     expect(feedChip("live")).toEqual({ label: "Live prices", tone: "up" });
     expect(feedChip("renew_needed").label).toBe("Log in to your broker");
-    expect(feedChip("none").label).toBe("No live prices");
+    expect(feedChip("none").label).toBe("Waiting for live prices");
     expect(money(12.4, true)).toBe(MASK);
     expect(money(-700, false, true)).toBe("−₹700");
     const m = new Map<string, string>();

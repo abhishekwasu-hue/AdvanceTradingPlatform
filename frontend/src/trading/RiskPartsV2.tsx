@@ -133,7 +133,7 @@ export function MarketEventsV2({ user, defaultCut, nonce, onChanged }: {
       {notice && <div className="mt-space-3"><NoteV2 kind={notice.kind}>{notice.text}</NoteV2></div>}
       <div className="mt-space-4">
         {events === null && !failed ? <LoadingRowsV2 /> : failed ? <LoadFailedV2 what="your market events" /> : events && events.length === 0 ? (
-          <EmptyStateV2 text="No market events in the next 30 days." />
+          <EmptyStateV2 text="The next 30 days are clear of market events." />
         ) : (
           <ul className="divide-y divide-subtle border-t border-subtle">
             {(events ?? []).map((ev) => (
@@ -251,7 +251,7 @@ export function OrgLimitsV2({ canEdit }: { canEdit: boolean }) {
       {notice && <div className="mt-space-3"><NoteV2 kind={notice.kind}>{notice.text}</NoteV2></div>}
       <div className="mt-space-4">
         {limits === null && !failed ? <LoadingRowsV2 /> : failed ? <LoadFailedV2 what="the organisation's limits" /> : limits && limits.length === 0 ? (
-          <EmptyStateV2 text="No organisation limits yet. Your own limits above are the check." />
+          <EmptyStateV2 text="Your own limits above are the check." />
         ) : (
           <ul className="divide-y divide-subtle border-t border-subtle">
             {(limits ?? []).map((l) => (
@@ -295,7 +295,7 @@ export function RiskChecksV2() {
   return (
     <CardV2 title="Recent risk checks" count={events?.length} testId="checks">
       {events === null ? <LoadingRowsV2 /> : events.length === 0 ? (
-        <EmptyStateV2 text="No checks yet. Each order's checks show here as it is placed." />
+        <EmptyStateV2 text="Each order's checks show here as it is placed." />
       ) : (
         <>
           <ul className="divide-y divide-subtle">

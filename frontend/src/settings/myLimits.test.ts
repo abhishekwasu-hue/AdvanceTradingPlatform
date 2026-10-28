@@ -8,7 +8,7 @@ describe("DEF-0 My limits", () => {
     const blank = textOf({ capital: null, risk_per_trade_pct: null });
     expect(Object.values(blank).every((v) => v === "")).toBe(true);
     expect(countSet({ capital: null })).toBe(0);
-    expect(NOT_SET).toBe("Not set (no limit)");
+    expect(NOT_SET).toBe("Off");
   });
 
   it("blank fields save as null (not set); numbers must be above 0 and whole where counted", () => {

@@ -5,7 +5,7 @@ import { cardTextProblems, type CardText } from "../src/ui/textBudget";
  * UX-11 U6: what the text-budget guard reads on a real page. A card is a v2 card section (`section[aria-labelledby]`),
  * a page block (`section[data-block]`), a Terminal panel (`[data-panel]`) or anything marked `[data-card]`. Its visible lines are the paragraphs that belong to it (not a nested card's) and are
  * shown, outside Details, alerts / status lines, empty states and the page footnote - and (UX-11b C7) its bullet
- * prose: list items that read as sentences.
+ * prose: list items that read as sentences - and (AUD-V6) leaf div / span text of 15 or more words.
  */
 export async function readCards(page: Page): Promise<CardText[]> {
   return page.evaluate(() => {
@@ -27,6 +27,14 @@ export async function readCards(page: Page): Promise<CardText[]> {
         .map((li) => (li.innerText || "").replace(/\s+/g, " ").trim())
         .filter((t) => /[.!?]$/.test(t) && t.split(" ").filter((w) => /\p{L}/u.test(w)).length >= 4);
       lines.push(...prose);
+      // AUD-V6 (owner audit 28 Oct): prose written straight into a div / span counts too - a leaf (no element inside)
+      // of 15 or more words, not inside a paragraph or a list item (already read) and with the same exclusions.
+      const LEAF_MIN_WORDS = 15;
+      const leaves = Array.from(card.querySelectorAll<HTMLElement>("div, span"))
+        .filter((el) => el.children.length === 0 && el.closest(CARD) === card && !el.closest(`${SKIP}, p`) && el.offsetParent !== null)
+        .map((el) => (el.innerText || "").replace(/\s+/g, " ").trim())
+        .filter((t) => t.split(" ").filter((w) => /\p{L}/u.test(w)).length >= LEAF_MIN_WORDS);
+      lines.push(...leaves);
       return { card: title, lines };
     });
   });

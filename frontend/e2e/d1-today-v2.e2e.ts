@@ -193,7 +193,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await page.goto("/");
         await settle(page);
         const block = page.locator("[data-block='signals']");
-        await expect(block).toContainText("No signals yet today.");      // TD-1: one line + the one button
+        await expect(block).toContainText("Signals show here as they come today.");      // TD-1: one line + the one button
         await expect(block.getByRole("link", { name: "Watch a list on Signals" })).toHaveAttribute("href", "/signals");
         if (!size.phone) {
           const nav = page.getByRole("navigation", { name: "Pages" }).getByRole("link");

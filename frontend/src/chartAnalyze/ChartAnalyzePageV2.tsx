@@ -447,7 +447,7 @@ export default function ChartAnalyzePageV2() {
       <section className={card} aria-labelledby="ca-history">
         <h2 id="ca-history" className="text-t15 font-semibold text-fg">Your analyses</h2>
         {history.length === 0 ? (
-          <p className="mt-space-2 text-t14 text-fg-muted">Nothing yet. Your past analyses appear here, only for you.</p>
+          <p className="mt-space-2 text-t14 text-fg-muted">Your past analyses appear here, only for you.</p>
         ) : (
           <>
             <p className="mt-space-1 text-t12 text-fg-muted">Only you see these{status ? `. Each is kept for ${status.retention_days} days` : ""}.</p>

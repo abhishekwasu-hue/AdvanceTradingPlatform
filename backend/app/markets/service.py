@@ -44,7 +44,7 @@ FAMILY_LABELS: Dict[str, str] = {"BROAD": "Broad market", "SECTORAL": "Sector in
                                  "STRATEGY": "Strategy indices", "BSE": "BSE"}
 FAMILY_ORDER: Tuple[str, ...] = ("BROAD", "SECTORAL", "THEMATIC", "STRATEGY", "BSE")
 SOURCE = "NSE end-of-day closes (the daily history every user shares)"
-NOTE = "Information only: how each index and sector moved at the close. It describes the market; it never says what to trade."
+NOTE = "How each index and sector moved at the close, for your own reading."
 SECTOR_METHOD = "The average move of the sector's stocks (each stock counts the same)."
 INDEX_METHOD = "The index's own closing value."
 NO_LISTS = "The index and sector lists are not ready yet. They are built once a day after the market data update."

@@ -215,7 +215,7 @@ test.describe("setup wizard 390 x 844", () => {
     await expect(form.locator("[data-field='capital']")).toHaveValue("1,00,000");
     for (const field of ["riskPerTradePct", "dailyLossPct", "maxTradesPerDay", "minRr"]) {      // nothing is filled in for him
       await expect(form.locator(`[data-field='${field}']`)).toHaveValue("");
-      await expect(form.locator(`[data-field='${field}']`)).toHaveAttribute("placeholder", "Not set");
+      await expect(form.locator(`[data-field='${field}']`)).toHaveAttribute("placeholder", "Off");
     }
     await expect(form).toContainText("leave a box empty for no limit");
     await expect(form.locator("[data-risk-sentence]")).toHaveCount(0);

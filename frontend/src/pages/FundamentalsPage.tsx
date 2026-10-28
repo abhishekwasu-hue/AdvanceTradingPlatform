@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { fundamentalsApi } from "../api/fundamentalsClient";
 import { useAuth } from "../auth/AuthContext";
@@ -161,7 +162,7 @@ export default function FundamentalsPage() {
       refreshCompanies();
       setSymbol(newCompany.symbol);
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     }
   }
 
@@ -172,7 +173,7 @@ export default function FundamentalsPage() {
       setImportResult(r);
       setPeriods(await fundamentalsApi.listFinancials(symbol));
       if (r.errors.length === 0) setImportCsv("");
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorSentence(e)); }
   }
 
   async function handleRefresh() {
@@ -181,7 +182,7 @@ export default function FundamentalsPage() {
       const r = await fundamentalsApi.refreshCompany(symbol);
       setRefreshResult(r);
       refreshCompanies();
-    } catch (e) { setError(String(e)); } finally { setRefreshBusy(false); }
+    } catch (e) { setError(errorSentence(e)); } finally { setRefreshBusy(false); }
   }
 
   async function handleBulkRefresh() {
@@ -194,7 +195,7 @@ export default function FundamentalsPage() {
       refreshCompanies();
       const first = r.results.find((x) => x.created_company || x.profile_changed.length);
       if (first) setSymbol(first.symbol);
-    } catch (e) { setError(String(e)); } finally { setRefreshBusy(false); }
+    } catch (e) { setError(errorSentence(e)); } finally { setRefreshBusy(false); }
   }
 
   async function handleAddPeriod() {
@@ -205,7 +206,7 @@ export default function FundamentalsPage() {
       setPeriods(list);
       setNewPeriod(defaultFinancialPeriod());
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     }
   }
 
@@ -222,7 +223,7 @@ export default function FundamentalsPage() {
       try { setScenario(await fundamentalsApi.scenario(symbol)); } catch { /* needs at least one period */ }
       try { setQuarterly(await fundamentalsApi.quarterly(symbol)); } catch { /* needs quarterly periods */ }
     } catch (e) {
-      setAnalysisError(String(e));
+      setAnalysisError(errorSentence(e));
     }
   }
 
@@ -230,7 +231,7 @@ export default function FundamentalsPage() {
     try {
       setValuation(await fundamentalsApi.valuation(symbol, { market_price: marketPrice }));
     } catch (e) {
-      setAnalysisError(String(e));
+      setAnalysisError(errorSentence(e));
     }
   }
 
@@ -238,7 +239,7 @@ export default function FundamentalsPage() {
     try {
       setDcf(await fundamentalsApi.dcf(symbol, dcfAssumptions, marketPrice));
     } catch (e) {
-      setAnalysisError(String(e));
+      setAnalysisError(errorSentence(e));
     }
   }
 
@@ -249,7 +250,7 @@ export default function FundamentalsPage() {
       });
       setScore(result);
     } catch (e) {
-      setAnalysisError(String(e));
+      setAnalysisError(errorSentence(e));
     }
   }
 
@@ -261,7 +262,7 @@ export default function FundamentalsPage() {
         technical_direction: technicalDirection, horizon: "Positional",
       }));
     } catch (e) {
-      setAnalysisError(String(e));
+      setAnalysisError(errorSentence(e));
     }
   }
 
@@ -269,7 +270,7 @@ export default function FundamentalsPage() {
     try {
       setCard(await fundamentalsApi.card(symbol));
     } catch (e) {
-      setAnalysisError(String(e));
+      setAnalysisError(errorSentence(e));
     }
   }
 
@@ -282,7 +283,7 @@ export default function FundamentalsPage() {
     try {
       setScreenerResults(await fundamentalsApi.screener(filters));
     } catch (e) {
-      setScreenerError(String(e));
+      setScreenerError(errorSentence(e));
     }
   }
 
@@ -332,7 +333,7 @@ export default function FundamentalsPage() {
       setUpcomingEvents(upcoming);
       setNewCalendarEvent(defaultCalendarEvent());
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     }
   }
 
@@ -341,7 +342,7 @@ export default function FundamentalsPage() {
     try {
       setPreEarnings(await fundamentalsApi.preEarnings(symbol));
     } catch (e) {
-      setPreEarningsError(String(e));
+      setPreEarningsError(errorSentence(e));
     }
   }
 
@@ -350,7 +351,7 @@ export default function FundamentalsPage() {
     try {
       setPostEarnings(await fundamentalsApi.postEarnings(symbol));
     } catch (e) {
-      setPostEarningsError(String(e));
+      setPostEarningsError(errorSentence(e));
     }
   }
 
@@ -361,7 +362,7 @@ export default function FundamentalsPage() {
       setSectorMetrics(await fundamentalsApi.listSectorMetrics(symbol));
       setNewSectorMetric(defaultSectorMetric());
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     }
   }
 
@@ -370,7 +371,7 @@ export default function FundamentalsPage() {
     try {
       setSectorSpecificResult(await fundamentalsApi.sectorSpecificAnalysis(symbol, sectorKey));
     } catch (e) {
-      setSectorSpecificError(String(e));
+      setSectorSpecificError(errorSentence(e));
     }
   }
 
@@ -379,7 +380,7 @@ export default function FundamentalsPage() {
     try {
       setFinalReport(await fundamentalsApi.finalReport(symbol));
     } catch (e) {
-      setAlertsError(String(e));
+      setAlertsError(errorSentence(e));
     }
   }
 

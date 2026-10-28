@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { FileUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
@@ -39,7 +40,7 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
         setPreview(result);
       }
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }

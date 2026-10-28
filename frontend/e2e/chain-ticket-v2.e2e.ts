@@ -335,6 +335,10 @@ test.describe("Chain ticket v2 multi-account (M45 MA-6)", () => {
     await expect(result.locator("[data-multi-row='SKIPPED']")).toContainText("below the estimated margin");
     expect(posts[0]).toMatchObject({ url: "order", body: { run_on: "PRIMARY+Family", order: { underlying: "NIFTY", strike: 24500, lots: 1 } } });
     await ticket.locator("[data-ticket='exit-all']").click();
+    // UI-28 U3.4: the in-app confirm first, naming the accounts it closes.
+    const ask = page.getByRole("dialog", { name: "Exit on every account?" });
+    await expect(ask).toContainText("This closes the position on 2 accounts at the current price.");
+    await ask.locator("[data-confirm]").click();
     await expect(ticket.locator("[data-ticket='multi-exit']")).toHaveText("Exit sent: 2 closed.");
     expect((posts[1].body as { ref: string }).ref).toBe((posts[0].body as { order: { client_ref: string } }).order.client_ref);
   });

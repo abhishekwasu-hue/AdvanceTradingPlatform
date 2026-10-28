@@ -1,7 +1,7 @@
 import { ChartCandlestick, Info, ListPlus, ShoppingBasket, TriangleAlert } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { ApiError } from "../api/errors";
+import { ApiError, errorSentence } from "../api/errors";
 import { watchlistsV2Api, type WatchlistV2 } from "../chart/watchlistsV2";
 import { cx } from "../components/primitives/cx";
 import { formatCount, formatCountChange } from "../optionChain/model";
@@ -324,7 +324,7 @@ export default function FuturesChainV2({ symbol, timeframe, api, lists = watchli
     onPanel: (p) => {
       setPanel(p);
       setNote(null);
-      if (p?.kind === "watchlist" && watchlists === null) lists.list().then(setWatchlists).catch((e: unknown) => setNote({ tone: "warn", text: String(e) }));
+      if (p?.kind === "watchlist" && watchlists === null) lists.list().then(setWatchlists).catch((e: unknown) => setNote({ tone: "warn", text: errorSentence(e) }));
     },
     onBasket: (row, side) => done(addFutureToBasket(basketStore, row, side)),
     onWatchlist: (row, list) => { void watchlistAdd(lists, futureContract(row), list).then(done); },

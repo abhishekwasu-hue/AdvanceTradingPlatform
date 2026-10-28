@@ -67,3 +67,14 @@ describe("UI-28 U1.10 / U1.11: affirmative words; the common message hidden on e
     expect(foot).toMatch(/<Details id="page\.footnote" label="About"[\s\S]*\{DISCLAIMER_TEXT\}/);
   });
 });
+
+/** UI-28 U3.1 (NN/g H9): a caught error reaches the screen as a sentence (errorSentence), never as String(e). */
+const ALL_USER = import.meta.glob<string>(["./**/*.tsx", "./**/*.ts", "!./**/*.test.*", "!./stories/**", "!./admin/**"],
+  { query: "?raw", import: "default", eager: true });
+describe("UI-28 U3.1: no raw error text on screen", () => {
+  it("no setter or note shows String(e) - the shared errorSentence makes the sentence", () => {
+    const hits = Object.entries(ALL_USER).flatMap(([path, src]) =>
+      [...code(src).matchAll(/set\w*\(String\((e|err|error)\)\)|text: String\((e|err)\)/g)].map((m) => `${path}: ${m[0]}`));
+    expect(hits).toEqual([]);
+  });
+});

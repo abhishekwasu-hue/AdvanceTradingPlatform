@@ -24,8 +24,9 @@ import { PositionList, useFnoPositions, type RowActions } from "../trading/Posit
 import { closedText, exitConfirmText, failedText, heldRows, type HeldRow } from "../trading/model";
 import { NoteV2 } from "../trading/PartsV2";
 import type { PortfolioExposure, TradeRecord } from "../types";
-import { EMPTY, formatCompactIN, formatDateIST, formatNumber, formatPrice, formatSignedCompactIN, formatTimeIST } from "../ui/format";
+import { EMPTY, formatINR, formatCompactIN, formatDateIST, formatNumber, formatPrice, formatSignedCompactIN, formatTimeIST } from "../ui/format";
 import { Chip } from "../ui/Chip";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Signed } from "../ui/Signed";
 import { SubTabs } from "../ui/SubTabs";
 import type { ChartLive, TerminalSpot } from "./spot";
@@ -282,6 +283,12 @@ export function exitAllConfirmText(count: number): string {
   return `Exit all ${count} open ${count === 1 ? "position" : "positions"} at the current price? Sold legs close first, then the legs that protect them.`;
 }
 
+/** UI-28 U3.4 (NN/g H5): the Exit all confirm names the rupee impact - the open P&L it books - when every price is known. */
+export function exitAllConsequence(count: number, openPnl: number | null): string {
+  const base = exitAllConfirmText(count).replace(/\?/, ".");
+  return openPnl === null ? base : `${base} Open P&L now: ${openPnl >= 0 ? "+" : "−"}${formatINR(Math.abs(openPnl))}.`;
+}
+
 export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, fnoOn = false, combined, onChanged }: {
   read: Read<TradeRecord[]>; exposure?: PortfolioExposure | null; canTrade: boolean; exitNowOn: boolean;
   /** The PAPER account on: basket legs grouped with "Exit the whole group" (TT-8), as on My trades. */
@@ -293,6 +300,7 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
   const [note, setNote] = useState<{ kind: "done" | "info" | "warn"; text: ReactNode } | null>(null);
   const [groupExit, setGroupExit] = useState<GroupExitAsk | null>(null);
   const [exitingAll, setExitingAll] = useState(false);
+  const [askExitAll, setAskExitAll] = useState(false);   // UI-28 U3.4: the in-app confirm with the rupee impact
   const [partAsk, setPartAsk] = useState<PositionActionAsk | null>(null);   // T2 (TT-9): Exit part / Reverse
   const [waitingTick, setWaitingTick] = useState(0);
   const list = useMemo(() => (read.status === "ok" ? read.value : []), [read]);
@@ -335,7 +343,6 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
   const byId = new Map(list.map((p) => [p.id, p]));
   // T1-6 Exit all: one confirm, then the existing exits one after another (sold risk first). Never disabled.
   async function exitAll() {
-    if (!window.confirm(exitAllConfirmText(rows.length))) return;
     setExitingAll(true);
     const plan = exitAllPlan(rows, fno.groups);
     const failed: string[] = [];
@@ -382,10 +389,13 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
       {exitNowOn && canTrade && rows.length > 1 && (
         <div className="flex justify-end">
           {/* A neutral button, never disabled (ADR-0004); "Exiting…" only while the exits are on their way. */}
-          <button type="button" onClick={() => void exitAll()} data-terminal="exit-all" aria-busy={exitingAll}
+          <button type="button" onClick={() => setAskExitAll(true)} data-terminal="exit-all" aria-busy={exitingAll}
             className="inline-flex min-h-11 items-center rounded-control border border-border px-space-3 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand lg:min-h-9">
             {exitingAll ? "Exiting…" : `Exit all (${rows.length})`}
           </button>
+          <ConfirmDialog open={askExitAll} onOpenChange={setAskExitAll} title={`Exit all ${rows.length} positions?`}
+            consequence={exitAllConsequence(rows.length, known.length === rows.length ? total : null)} confirmLabel="Exit all"
+            busy={exitingAll} onConfirm={() => { setAskExitAll(false); void exitAll(); }} />
         </div>
       )}
       {combined && fnoOn && canTrade && (

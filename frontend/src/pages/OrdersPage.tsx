@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -43,7 +44,7 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (!user) return;
-    api.listTrades().then(setTrades).catch((e) => setError(String(e)));
+    api.listTrades().then(setTrades).catch((e) => setError(errorSentence(e)));
   }, [user]);
 
   const orders = useMemo(

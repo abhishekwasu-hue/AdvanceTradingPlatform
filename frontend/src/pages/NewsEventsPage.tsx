@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -29,16 +30,16 @@ function FeedSourcesCard({ isAdmin }: { isAdmin: boolean }) {
   const [status, setStatus] = useState<NewsFeedStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const load = () => api.newsFeedStatus().then(setStatus).catch((e) => setError(String(e)));
+  const load = () => api.newsFeedStatus().then(setStatus).catch((e) => setError(errorSentence(e)));
   useEffect(() => { load(); }, []);
   if (!status) return null;
   const toggle = async (id: string, on: boolean) => {
     setBusy(true);
-    try { await api.setNewsFeedSource(id, on); await load(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    try { await api.setNewsFeedSource(id, on); await load(); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   };
   const refresh = async () => {
     setBusy(true);
-    try { await api.refreshNewsFeed(); await load(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    try { await api.refreshNewsFeed(); await load(); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   };
   return (
     <CollapsibleCard title="Live feed sources" subtitle={status.enabled ? `on · fetch every ${Math.round(status.cadence_seconds / 60)} min` : "off (feature flag news_feed)"} storageKey="news-feed-sources">
@@ -110,7 +111,7 @@ export default function NewsEventsPage() {
       const r = await api.newsFeedback(id, verdict);
       setVerdicts((v) => ({ ...v, [String(id)]: r.verdict }));
       setTrust(r.trust);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorSentence(e)); }
   }
 
   function refresh() {
@@ -118,7 +119,7 @@ export default function NewsEventsPage() {
     api
       .listNewsEvents({ category: categoryFilter || undefined, symbol: symbolFilter || undefined, origin: originFilter || undefined })
       .then(setEvents)
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(errorSentence(e)))
       .finally(() => setLoading(false));
   }
 
@@ -135,7 +136,7 @@ export default function NewsEventsPage() {
       setForm(defaultNewsEvent());
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setSubmitting(false);
     }

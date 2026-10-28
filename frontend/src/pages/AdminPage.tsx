@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { Bot, Building2, OctagonX, ScrollText, ShieldEllipsis, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -68,7 +69,7 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
 
   function refresh() {
     if (!isAdmin) return;
-    api.adminOverview().then(setOverview).catch((e) => setError(String(e)));
+    api.adminOverview().then(setOverview).catch((e) => setError(errorSentence(e)));
     api.adminControls().then((c) => { setControls(c); setBrokerList(c.disabled_brokers.join(", ")); setMaintMsg(c.maintenance_message ?? ""); }).catch(() => {});
     api.adminIncidents().then(setIncidents).catch(() => {});
     api.adminBetaCohort().then(setCohort).catch(() => {});
@@ -76,7 +77,7 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
     api.adminEncryptionStatus().then(setEncryption).catch(() => {});
     api.adminRiskCeilings().then((c) => { setCeilings(c); setCeilingDraft(Object.fromEntries(Object.entries(c).map(([k, v]) => [k, String(v)]))); }).catch(() => {});
     api.adminPlans().then(setPlans).catch(() => {});
-    api.adminTenants(query).then(setTenants).catch((e) => setError(String(e)));
+    api.adminTenants(query).then(setTenants).catch((e) => setError(errorSentence(e)));
     api.adminAuditLogs(selected?.id).then(setLogs).catch(() => {});
     if (selected) api.adminTenant(selected.id).then(setSelected).catch(() => {});
   }
@@ -92,7 +93,7 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
       setMessage(label);
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }
@@ -267,7 +268,7 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
                   <td className="py-1.5 pr-3 font-tabular">{t.members}</td>
                   <td className="py-1.5 pr-3 font-tabular">{t.active_deployments} ({t.live_deployments})</td>
                   <td className="py-1.5 pr-3 font-tabular">{t.open_positions}</td>
-                  <td className="py-1.5 text-right"><button onClick={() => api.adminTenant(t.id).then((d) => { setSelected(d); api.adminAuditLogs(d.id).then(setLogs).catch(() => {}); }).catch((e) => setError(String(e)))} className="text-brand hover:underline">details</button></td>
+                  <td className="py-1.5 text-right"><button onClick={() => api.adminTenant(t.id).then((d) => { setSelected(d); api.adminAuditLogs(d.id).then(setLogs).catch(() => {}); }).catch((e) => setError(errorSentence(e)))} className="text-brand hover:underline">details</button></td>
                 </tr>
               ))}
             </tbody>

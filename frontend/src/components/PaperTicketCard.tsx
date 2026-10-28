@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { PaperRiskStatus, TicketSetup, TicketView, TradePlanView } from "../types";
@@ -41,7 +42,7 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
     if (!plan) return;
     setBusy(true); setMessage(null);
     try { setView(await api.previewTicket(plan)); }
-    catch (e) { setMessage(String(e)); }
+    catch (e) { setMessage(errorSentence(e)); }
     finally { setBusy(false); }
   }
   async function place() {
@@ -53,7 +54,7 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
       setView(null);
       load();
       onPlaced?.();
-    } catch (e) { setMessage(String(e)); }
+    } catch (e) { setMessage(errorSentence(e)); }
     finally { setBusy(false); }
   }
 

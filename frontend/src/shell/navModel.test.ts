@@ -121,13 +121,13 @@ describe("UX3-9 bottom bar and More sheet (UX audit section 5)", () => {
   it("the bar is Today, Charts, Signals, My trades (More is the fifth button)", () => {
     expect(visibleBottomBar(trader).map((b) => b.label)).toEqual(["Today", "Charts", "Signals", "My trades"]);
     expect(visibleBottomBar().map((b) => b.label)).toEqual(["Today", "Charts", "Signals", "My trades"]);
-    expect(BOTTOM_BAR_V2.map((b) => navItemFor(b.key)?.path)).toEqual(["/", "/charts", "/watchlist", "/signals", "/positions"]);
+    expect(BOTTOM_BAR_V2.map((b) => navItemFor(b.key)?.path)).toEqual(["/", "/charts", "/signals", "/positions"]);   // UI-28 U3.5
   });
 
-  it("P1-8 (2): Watchlist joins the bar after Charts only while `watchlists` is on, and is not repeated in the sheet", () => {
+  it("UI-28 U3.5: Watchlist is not on the bar (four tabs and More); with `watchlists` on it is in the More sheet", () => {
     const watch = { on: flags("watchlists"), role: "OWNER" };
-    expect(visibleBottomBar(watch).map((b) => b.label)).toEqual(["Today", "Charts", "Watchlist", "Signals", "My trades"]);
-    expect(moreSheetSections(watch).flatMap((s) => s.items.map((i) => i.key))).not.toContain("watchlist");
+    expect(visibleBottomBar(watch).map((b) => b.label)).toEqual(["Today", "Charts", "Signals", "My trades"]);
+    expect(moreSheetSections(watch).flatMap((s) => s.items.map((i) => i.key))).toContain("watchlist");
     expect(moreSheetSections(trader).flatMap((s) => s.items.map((i) => i.key))).not.toContain("watchlist");
     expect(navItemFor("watchlist")).toMatchObject({ label: "Watchlist", path: "/watchlist", flag: "watchlists", section: "markets" });
     expect(isItemVisible(navItemFor("watchlist")!, trader)).toBe(false);

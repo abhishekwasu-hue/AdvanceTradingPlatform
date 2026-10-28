@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { Copy, Link2, ShieldCheck, UserMinus, UserPlus, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -42,8 +43,8 @@ export default function TeamPage() {
 
   function refresh() {
     if (!user) return;
-    api.getTenant().then((t) => { setTenant(t); setTenantName(t.name); setAlgoId(t.algo_id ?? ""); }).catch((e) => setError(String(e)));
-    api.listMembers().then(setMembers).catch((e) => setError(String(e)));
+    api.getTenant().then((t) => { setTenant(t); setTenantName(t.name); setAlgoId(t.algo_id ?? ""); }).catch((e) => setError(errorSentence(e)));
+    api.listMembers().then(setMembers).catch((e) => setError(errorSentence(e)));
     if (isOwner) api.listInvites().then(setInvites).catch(() => setInvites([]));
     if (isOwner && catalogue.length === 0) api.scopeCatalogue().then(setCatalogue).catch(() => {});
   }
@@ -74,7 +75,7 @@ export default function TeamPage() {
       setMessage(label);
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }
@@ -92,7 +93,7 @@ export default function TeamPage() {
       setInviteEmail("");
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }
@@ -199,7 +200,7 @@ export default function TeamPage() {
                       <button disabled={busy} title="Log this member out of every device" onClick={() => act(`${m.email} logged out everywhere.`, () => api.logoutMemberEverywhere(m.id))} className="text-xs text-fg-muted hover:text-fg mr-2">log out</button>
                     )}
                     {m.role !== "SUPER_ADMIN" && m.is_active && (
-                      <button disabled={busy} title="Fine-grained permissions on top of the role" onClick={() => api.memberScopes(m.id).then(setScopeEdit).catch((e) => setError(String(e)))} className="text-xs text-fg-muted hover:text-fg mr-2">permissions</button>
+                      <button disabled={busy} title="Fine-grained permissions on top of the role" onClick={() => api.memberScopes(m.id).then(setScopeEdit).catch((e) => setError(errorSentence(e)))} className="text-xs text-fg-muted hover:text-fg mr-2">permissions</button>
                     )}
                     {m.role !== "SUPER_ADMIN" && m.is_active && (m.trading_disabled_reason
                       ? <button disabled={busy} onClick={() => act(`${m.email} can trade again.`, () => api.enableMemberTrading(m.id))} className="text-xs text-brand hover:underline mr-2">enable trading</button>

@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -43,7 +44,7 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
   const [busy, setBusy] = useState(false);
 
   function refresh() {
-    api.listRiskLimits().then(setLimits).catch((e) => setError(String(e)));
+    api.listRiskLimits().then(setLimits).catch((e) => setError(errorSentence(e)));
     api.listRiskEvents({ limit: 50 }).then(setEvents).catch(() => setEvents([]));
   }
   useEffect(refresh, []);
@@ -55,7 +56,7 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
       setValue("");
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }
@@ -66,7 +67,7 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
       await api.deleteRiskLimit(id);
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     }
   }
 

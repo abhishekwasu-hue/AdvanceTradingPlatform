@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { AlertTriangle, Bot, CircleDot, Pause, Play, Plus, Square, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
@@ -197,7 +198,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
     try {
       setPreview(await api.previewContract({ ...contractRules(), symbol, spot: spot ? Number(spot) : null }));
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }
@@ -211,7 +212,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
         setDeployments(d);
         setWorker(w);
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(errorSentence(e)));
   }
 
   useEffect(() => {
@@ -292,7 +293,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
       refresh();
     } catch (e) {
       if (isStepUpError(e)) setStepUp({ reason: String(e), retry: submit });
-      else setError(String(e));
+      else setError(errorSentence(e));
     } finally {
       setBusy(false);
     }
@@ -316,7 +317,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
       refresh();
     } catch (e) {
       if (isStepUpError(e)) setStepUp({ reason: String(e), retry: () => act(label, fn) });
-      else setError(String(e));
+      else setError(errorSentence(e));
     } finally {
       setBusy(false);
     }

@@ -82,7 +82,8 @@ describe("LegendCard (U7 LG1)", () => {
 
   it("keeps Open disabled with its reason until the builder can load the screen (OPEN_QUESTIONS TX1-7)", () => {
     expect(html).toContain(`aria-label="Open ${card.name} in the builder"`);
-    expect(html).toMatch(/disabled=""[^>]*title="The builder cannot load this screen yet/);
+    expect(html).toMatch(/disabled=""[^>]*title="This screen opens in the builder soon"/);
+    expect(html).toContain('data-disabled-reason="true">This screen opens in the builder soon<');   // UI-28 U3.2: the reason as a line
   });
 
   it("uses no advice wording, no endorsement claim and no Devanagari on any card", () => {

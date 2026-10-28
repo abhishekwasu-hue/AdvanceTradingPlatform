@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useState } from "react";
 import { api } from "../api/client";
 import type { ExposureView } from "../types";
@@ -19,7 +20,7 @@ export default function ExposureSection() {
 
   async function load() {
     setBusy(true); setError(null);
-    try { setView(await api.decisionExposure()); } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    try { setView(await api.decisionExposure()); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   }
   return (
     <section className="space-y-2" aria-label={t("decision.exposure.title")}>

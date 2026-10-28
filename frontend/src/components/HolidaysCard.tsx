@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { CalendarOff, Trash2 } from "lucide-react";
 import { api } from "../api/client";
@@ -20,7 +21,7 @@ export default function HolidaysCard() {
   const [error, setError] = useState<string | null>(null);
 
   function load() {
-    api.marketHolidays(year, exchange).then(setRows).catch((e) => setError(String(e)));
+    api.marketHolidays(year, exchange).then(setRows).catch((e) => setError(errorSentence(e)));
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [year, exchange]);
@@ -43,7 +44,7 @@ export default function HolidaysCard() {
 
   async function remove(row: MarketHoliday) {
     setBusy(true); setError(null);
-    try { await api.deleteMarketHoliday(row.id); load(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    try { await api.deleteMarketHoliday(row.id); load(); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   }
 
   return (

@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { CreditCard, Receipt } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -23,7 +24,7 @@ export default function BillingCard() {
   const isOwner = user?.role === "OWNER" || user?.role === "SUPER_ADMIN";
 
   function refresh() {
-    api.billingOverview().then(setOverview).catch((e) => setError(String(e)));
+    api.billingOverview().then(setOverview).catch((e) => setError(errorSentence(e)));
     api.billingPlans().then(setPlans).catch(() => {});
     api.billingTransactions().then(setTxns).catch(() => {});
   }
@@ -31,7 +32,7 @@ export default function BillingCard() {
 
   async function run(label: string, fn: () => Promise<unknown>) {
     setBusy(true); setError(null); setMessage(null);
-    try { await fn(); setMessage(label); refresh(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    try { await fn(); setMessage(label); refresh(); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   }
 
   const sub = overview?.subscription;

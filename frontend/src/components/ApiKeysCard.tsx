@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { Copy, KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -20,7 +21,7 @@ export default function ApiKeysCard() {
   const isOwner = user?.role === "OWNER" || user?.role === "SUPER_ADMIN";
 
   function refresh() {
-    api.listApiKeys().then(setKeys).catch((e) => setError(String(e)));
+    api.listApiKeys().then(setKeys).catch((e) => setError(errorSentence(e)));
     api.apiKeyScopes().then(setScopes).catch(() => {});
   }
   useEffect(refresh, []);
@@ -30,7 +31,7 @@ export default function ApiKeysCard() {
     try {
       const k = await api.createApiKey({ name: form.name, scopes: form.scopes, rate_limit_per_minute: Number(form.rate) || 60, expires_in_days: form.expires ? Number(form.expires) : null });
       setFresh(k); setForm({ ...form, name: "" }); refresh();
-    } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   }
 
   const toggle = (s: string) => setForm({ ...form, scopes: form.scopes.includes(s) ? form.scopes.filter((x) => x !== s) : [...form.scopes, s] });
@@ -80,7 +81,7 @@ export default function ApiKeysCard() {
               <td className="py-1 text-fg-muted">{k.scopes.join(", ")}</td>
               <td className="py-1 text-fg-muted">{k.rate_limit_per_minute}/min</td>
               <td className="py-1 text-fg-muted">{k.last_used_at ? `used ${formatDateTimeIST(k.last_used_at)}` : "never used"}{k.expires_at ? ` · expires ${formatDateIST(k.expires_at)}` : ""}</td>
-              <td className="py-1 text-right">{k.revoked_at ? <span className="text-fg-muted">revoked</span> : isOwner && <button disabled={busy} onClick={() => api.revokeApiKey(k.id).then(refresh).catch((e) => setError(String(e)))} className="text-down hover:underline">Revoke</button>}</td>
+              <td className="py-1 text-right">{k.revoked_at ? <span className="text-fg-muted">revoked</span> : isOwner && <button disabled={busy} onClick={() => api.revokeApiKey(k.id).then(refresh).catch((e) => setError(errorSentence(e)))} className="text-down hover:underline">Revoke</button>}</td>
             </tr>
           ))}
         </tbody></table>

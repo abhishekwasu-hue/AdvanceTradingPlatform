@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { Suspense, lazy, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/ui";
@@ -16,7 +17,7 @@ export default function StrategiesPage() {
   const [trying, setTrying] = useState<StrategyInfo | null>(null);
 
   useEffect(() => {
-    api.listStrategies().then(setStrategies).catch((e) => setError(String(e)));
+    api.listStrategies().then(setStrategies).catch((e) => setError(errorSentence(e)));
   }, []);
 
   return (

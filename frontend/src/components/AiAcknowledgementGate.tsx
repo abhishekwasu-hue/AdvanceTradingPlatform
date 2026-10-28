@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState, type ReactNode } from "react";
 import { AI_ACK_REQUIRED_EVENT, api } from "../api/client";
 import type { AiAcknowledgement } from "../types";
@@ -13,7 +14,7 @@ export default function AiAcknowledgementGate({ children }: { children: ReactNod
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    const load = () => { api.aiAcknowledgement().then(setAck).catch((e) => setError(String(e))); };
+    const load = () => { api.aiAcknowledgement().then(setAck).catch((e) => setError(errorSentence(e))); };
     load();
     window.addEventListener(AI_ACK_REQUIRED_EVENT, load);
     return () => window.removeEventListener(AI_ACK_REQUIRED_EVENT, load);
@@ -21,7 +22,7 @@ export default function AiAcknowledgementGate({ children }: { children: ReactNod
   async function accept() {
     if (!ack) return;
     setBusy(true); setError(null);
-    try { setAck(await api.aiAcceptAcknowledgement(ack.version, "en")); } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    try { setAck(await api.aiAcceptAcknowledgement(ack.version, "en")); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   }
   if (!ack) return error ? <Card><p className="text-sm text-danger">{error}</p></Card> : null;
   if (ack.accepted) return <>{children}</>;

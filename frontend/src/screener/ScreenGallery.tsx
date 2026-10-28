@@ -190,7 +190,7 @@ function ScreenCard({ taxonomy, screen, canOpen, onOpen, onTry, legend, onAbout,
         <div className="flex items-center gap-1">
           {legend && <Button size="sm" variant="ghost" onClick={onAbout} aria-label={`About ${screen.name}: the method, its sources and the screen`}>About</Button>}
           <Button size="sm" onClick={onOpen} disabled={!canOpen} aria-label={`Open ${screen.name} in the builder`}
-                  title={canOpen ? undefined : "This screen's family is not available on this page yet"}>Open</Button>
+                  reason="This screen opens in the builder soon">Open</Button>
           {onTry && canOpen && (
             <Button size="sm" variant="primary" onClick={onTry} aria-label={`Try ${screen.name} as a scan`} data-testid="screen-try">Try as a scan</Button>
           )}

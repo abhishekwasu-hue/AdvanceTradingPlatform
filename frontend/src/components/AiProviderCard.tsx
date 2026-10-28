@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -30,13 +31,13 @@ export default function AiProviderCard() {
       // P0.8-C: a blank model means "the operator's default for this provider" (shown as the placeholder) and follows
       // the server's environment; typing a name pins that model for this organisation only.
       setForm((f) => ({ ...f, provider, model: c.configured ? c.model : "", enabled: c.enabled, api_key: "" }));
-    }).catch((e) => setError(String(e)));
+    }).catch((e) => setError(errorSentence(e)));
   }
   useEffect(refresh, []);
 
   async function run(label: string, fn: () => Promise<unknown>) {
     setBusy(true); setError(null); setMessage(null);
-    try { await fn(); setMessage(label); refresh(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    try { await fn(); setMessage(label); refresh(); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   }
 
   return (

@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -87,7 +88,7 @@ export default function SignalsPage() {
       setLastGenerated({ strategyId: selected.id, symbol, data });
       refreshHistory();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setLoading(false);
     }
@@ -100,7 +101,7 @@ export default function SignalsPage() {
       const res = await api.paperExecute(lastGenerated.strategyId, lastGenerated.symbol, lastGenerated.data);
       setExecuteMsg(res.executed ? `Paper order filled: ${res.reasons.join("; ")}` : `Not executed: ${res.reasons.join("; ")}`);
     } catch (e) {
-      setExecuteMsg(String(e));
+      setExecuteMsg(errorSentence(e));
     }
   }
 
@@ -157,7 +158,7 @@ export default function SignalsPage() {
             <Button variant="primary" onClick={handleGenerate} disabled={!selected || loading} loading={loading}>
               {loading ? "Generating…" : "Generate Signal"}
             </Button>
-            <Button onClick={handlePaperExecute} disabled={!lastGenerated} title={lastGenerated ? undefined : "Generate a signal first"}>
+            <Button onClick={handlePaperExecute} disabled={!lastGenerated} reason="Generate a signal first">
               Paper Execute
             </Button>
           </div>

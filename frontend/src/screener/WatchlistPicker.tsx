@@ -4,6 +4,7 @@
  * new list, replace the chosen list's symbols, delete it. The parent renders this only while the flag is on; a failed
  * load renders nothing. A watchlist is a list of names: loading one runs nothing.
  */
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { Combobox } from "../ui/Combobox";
 import { isWatchlists, loadNote, optionLabel, replaceWarning, shownList, watchlistsApi, type Watchlist, type WatchlistClient } from "./watchlists";
@@ -56,7 +57,7 @@ export function WatchlistPicker({ symbols, onLoad, max, label = "My watchlists",
       if (isWatchlists(fresh)) setLists(fresh);
       setMessage(done);
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }

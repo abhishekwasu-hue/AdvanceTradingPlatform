@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { AlertOctagon, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -22,7 +23,7 @@ export default function BrokerUncertainBanner() {
     try {
       setStatus(await api.reconciliationStatus());
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     }
   }
 
@@ -38,7 +39,7 @@ export default function BrokerUncertainBanner() {
       setReport(await api.runReconciliation(brokerName));
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }

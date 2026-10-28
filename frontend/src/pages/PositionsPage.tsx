@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -38,7 +39,7 @@ export default function PositionsPage() {
     try {
       setGreeks(await api.positionGreeks());
     } catch (e) {
-      setGreeksError(String(e));
+      setGreeksError(errorSentence(e));
     } finally {
       setGreeksBusy(false);
     }
@@ -51,7 +52,7 @@ export default function PositionsPage() {
         setPositions(p);
         setTrades(t);
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(errorSentence(e)))
       .finally(() => setLoading(false));
   }
 

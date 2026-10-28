@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { ListChecks, RefreshCw } from "lucide-react";
 import { request } from "../api/client";
@@ -119,11 +120,11 @@ export default function SystemListsCard() {
   const [status, setStatus] = useState<SystemListsStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const load = () => { systemListsAdminApi.status().then((s) => { setStatus(s); setError(null); }, (e) => setError(String(e))); };
+  const load = () => { systemListsAdminApi.status().then((s) => { setStatus(s); setError(null); }, (e) => setError(errorSentence(e))); };
   useEffect(load, []);
   const refresh = async () => {
     setBusy(true);
-    try { await systemListsAdminApi.refresh(); load(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    try { await systemListsAdminApi.refresh(); load(); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   };
   return (
     <Card title="System watchlists">

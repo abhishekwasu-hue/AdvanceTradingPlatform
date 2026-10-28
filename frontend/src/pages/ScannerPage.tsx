@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card, Disclaimer } from "../components/ui";
@@ -89,14 +90,14 @@ export default function ScannerPage() {
       if (plan.timeframe) setTimeframe(plan.timeframe);
       if (plan.symbols.length) setWatchlist(plan.symbols.join(", "));
       setResult(null); setAiRead(null);
-    } catch (e) { setError(String(e)); } finally { setAiBusy(false); }
+    } catch (e) { setError(errorSentence(e)); } finally { setAiBusy(false); }
   }
 
   async function readWithAi() {
     if (!lastRequest || !result) return;
     setAiBusy(true); setError(null);
     try { setAiRead(await api.scannerAiRead(lastRequest, result)); }
-    catch (e) { setError(String(e)); } finally { setAiBusy(false); }
+    catch (e) { setError(errorSentence(e)); } finally { setAiBusy(false); }
   }
 
   const needsOptionChain = optionFilters.length > 0;
@@ -138,7 +139,7 @@ export default function ScannerPage() {
       setAiRead(null);
       setResult(res);
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setRunning(false);
     }

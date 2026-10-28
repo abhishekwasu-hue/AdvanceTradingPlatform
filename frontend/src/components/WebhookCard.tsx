@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { WebhookTokenResponse } from "../types";
@@ -12,7 +13,7 @@ export default function WebhookCard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.getWebhookToken().then(setWebhook).catch((e) => setError(String(e)));
+    api.getWebhookToken().then(setWebhook).catch((e) => setError(errorSentence(e)));
   }, []);
 
   async function copy() {
@@ -33,7 +34,7 @@ export default function WebhookCard() {
       setWebhook(await api.rotateWebhookToken());
       setMessage("Webhook URL rotated - update it in TradingView's alert settings.");
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setBusy(false);
     }

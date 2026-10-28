@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { CheckCircle2, Store, Upload, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -69,7 +70,7 @@ export default function MarketplacePage() {
   const isAdmin = user?.role === "SUPER_ADMIN";
 
   function refresh() {
-    api.marketplace().then((l) => { setListings(l); setGate(null); }).catch((e) => setGate(String(e)));
+    api.marketplace().then((l) => { setListings(l); setGate(null); }).catch((e) => setGate(errorSentence(e)));
     api.marketplaceMine().then(setMine).catch(() => {});
     api.marketplaceSubscriptions().then(setSubs).catch(() => {});
     api.listCustomStrategies().then(setStrategies).catch(() => {});
@@ -88,7 +89,7 @@ export default function MarketplacePage() {
 
   async function run(label: string, fn: () => Promise<unknown>) {
     setBusy(true); setError(null); setMessage(null);
-    try { await fn(); setMessage(label); refresh(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    try { await fn(); setMessage(label); refresh(); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   }
 
   const subscribed = (id: number) => subs.find((s) => s.listing_id === id && s.status === "ACTIVE");
@@ -270,7 +271,7 @@ export default function MarketplacePage() {
                 {payoutQueue.map((p) => (
                   <tr key={p.id} className="border-t border-border/60"><td className="py-1">#{p.id} creator org #{p.tenant_id}</td><td className="py-1">{inr(p.amount, p.currency)} to {shownDestination[p.id] ? <span className="select-all font-mono text-fg">{shownDestination[p.id]}</span> : p.destination_hint}</td>
                     <td className="py-1 text-right space-x-2">
-                      <button disabled={busy} onClick={() => api.adminMarketplacePayoutDestination(p.id).then((d) => setShownDestination((s) => ({ ...s, [p.id]: d.destination }))).catch((e) => setError(String(e)))} className="text-fg hover:underline">Show destination</button>
+                      <button disabled={busy} onClick={() => api.adminMarketplacePayoutDestination(p.id).then((d) => setShownDestination((s) => ({ ...s, [p.id]: d.destination }))).catch((e) => setError(errorSentence(e)))} className="text-fg hover:underline">Show destination</button>
                       <button disabled={busy} onClick={() => { const ref = window.prompt("Transfer reference (UTR / UPI ref)") ?? ""; if (ref) void run("Payout marked paid.", () => api.adminMarketplacePayoutSettle(p.id, true, ref)); }} className="text-brand hover:underline">Mark paid</button>
                       <button disabled={busy} onClick={() => { const note = window.prompt("Reason (shown to the creator)") ?? ""; void run("Payout rejected; the earnings are available again.", () => api.adminMarketplacePayoutSettle(p.id, false, undefined, note)); }} className="text-down hover:underline">Reject</button>
                     </td></tr>

@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import * as RD from "@radix-ui/react-dialog";
 import { Bell, ChartCandlestick, ListPlus, ShoppingBasket, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -92,7 +93,7 @@ export async function watchlistAdd(lists: Lists, contract: FnoContract, list: Wa
     await lists.save(applyEdit(list, { kind: "add", item }));
     return { tone: "done", text: `Added ${contract.label} to ${list.name}.` };
   } catch (e) {
-    return { tone: "warn", text: String(e) };
+    return { tone: "warn", text: errorSentence(e) };
   }
 }
 
@@ -112,7 +113,7 @@ export async function alertSave(createAlert: CreateAlert, contract: FnoContract,
       exchange: contract.exchange, condition, base_tf: "1m", priority: "normal", cooldown_minutes: 60, mode: "instant", digest_every: "hourly" });
     return { tone: "done", text: `Alert saved: you will be told when ${contract.label} is ${words} ${formatPrice(level)}.` };
   } catch (e) {
-    return { tone: "warn", text: String(e) };
+    return { tone: "warn", text: errorSentence(e) };
   }
 }
 
@@ -137,7 +138,7 @@ export default function ChainActionSheetV2({
     let live = true;
     api.contract(target.underlying, target.expiry, target.strike, target.right)
       .then((c) => { if (live) setContract(c); })
-      .catch((e: unknown) => { if (live) setContractProblem(String(e)); });
+      .catch((e: unknown) => { if (live) setContractProblem(errorSentence(e)); });
     return () => { live = false; };
   }, [key]);   // one read per contract (the target object changes with every chain refresh)
 
@@ -148,7 +149,7 @@ export default function ChainActionSheetV2({
     onExit,
     onPanel: (p) => {
       setPanel(p);
-      if (p === "watchlist" && watchlists === null) lists.list().then(setWatchlists).catch((e: unknown) => setNote({ tone: "warn", text: String(e) }));
+      if (p === "watchlist" && watchlists === null) lists.list().then(setWatchlists).catch((e: unknown) => setNote({ tone: "warn", text: errorSentence(e) }));
     },
     onBasket: (side) => done(basketAdd(basketStore, target, contract, side)),
     onWatchlist: (list) => { if (contract) void watchlistAdd(lists, contract, list).then(done); },

@@ -1,4 +1,4 @@
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useId, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cx } from "./cx";
 import { useColourV2 } from "../../ui/colourV2";
 import { GRADIENT_FILL } from "../../ui/accents";
@@ -17,7 +17,8 @@ const VARIANT: Record<ButtonVariant, string> = {
   // A destructive action (stop, delete). Never used for "sell" - direction is not danger.
   danger: "border border-down/50 bg-down/10 text-down hover:bg-down/20",
 };
-const SIZE: Record<ButtonSize, string> = { sm: "h-8 px-3 text-xs gap-1.5", md: "h-9 px-4 text-sm gap-2", v2: "h-11 text-t14 gap-space-2 md:h-9" };
+// UI-28 U3.6 (HIG 44 pt): the small button is a finger-sized 44 px on a phone and keeps 32 px with a mouse (md+).
+const SIZE: Record<ButtonSize, string> = { sm: "min-h-11 px-3 text-xs gap-1.5 md:min-h-0 md:h-8", md: "h-9 px-4 text-sm gap-2", v2: "h-11 text-t14 gap-space-2 md:h-9" };
 /**
  * SCR-FIX D1: the primary fill alone can melt into a card or a bar (colour v2 dark: brand-fill on surface-1 is 1.6 : 1).
  * `edge` draws its outline in the link blue (--brand), >= 3 : 1 against every surface token in every theme
@@ -57,19 +58,31 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   gradient?: boolean;
   /** SCR-FIX D1: the >= 3 : 1 outline for a primary button on a surface its fill melts into (primary only). */
   edge?: boolean;
+  /** UI-28 U3.2 (NN/g H1 / H6): why the button is disabled - shown as one short helper line under it, and its tooltip. */
+  reason?: string;
 }
 
 /** The one button. Primary = the page's main action (at most one per view); outline / secondary / ghost for the rest. */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "secondary", size = "md", icon, loading = false, gradient = false, edge = false, disabled, className, children, type = "button", ...rest }, ref,
+  { variant = "secondary", size = "md", icon, loading = false, gradient = false, edge = false, reason, title, disabled, className, children, type = "button", ...rest }, ref,
 ) {
   const colour = useColourV2();
-  return (
+  const why = disabled && !loading && reason ? reason : null;
+  const whyId = useId();
+  const button = (
     <button ref={ref} type={type} disabled={disabled || loading} aria-busy={loading || undefined}
+      aria-describedby={why ? whyId : undefined} title={why ?? title}
       className={buttonClass({ variant, size, gradient: gradient && colour, edge, className })}
       {...rest}>
       {loading ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden /> : icon}
       {children}
     </button>
+  );
+  if (!why) return button;
+  return (
+    <span className="inline-flex flex-col items-start gap-px" data-disabled-reason-wrap>
+      {button}
+      <span id={whyId} className="text-t12 text-fg-muted" data-disabled-reason>{why}</span>
+    </span>
   );
 });

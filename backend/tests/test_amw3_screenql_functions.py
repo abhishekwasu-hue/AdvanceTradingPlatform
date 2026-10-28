@@ -512,7 +512,7 @@ def test_a_screen_rule_and_an_edit_of_its_screen_pass_the_amw3_check_too(screene
     rid = r.json()["id"]
     edit = client.put(f"/api/screener/screens/{sid}", json={"name": "s", "source": 'Pattern($p, "confirmed")', "base_tf": "15m",
                                                              "params": {"p": "hammer"}}, headers=headers)
-    assert edit.status_code == 422 and f"alert rule #{rid}" in edit.text and "bar close only" in edit.text, edit.text
+    assert edit.status_code == 422 and "One of your alerts runs this screen" in edit.text and "bar close only" in edit.text and f"#{rid}" not in edit.text, edit.text   # UI-28 U3.1: no id on screen
     sid2 = client.post("/api/screener/screens", json={"name": "t", "source": 'SwingLabel("high") == "HH"', "base_tf": "15m"},
                        headers=headers).json()["id"]
     r = client.post("/api/alerts/rules", json={"name": "q", "kind": "screen", "screen_id": sid2, "symbols": ["ABC"], "fire_on": "intrabar"},

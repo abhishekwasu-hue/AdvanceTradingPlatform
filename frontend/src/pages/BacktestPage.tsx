@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import ProChart, { directionMarker, type ChartMarker } from "../components/ProChart";
@@ -85,7 +86,7 @@ export default function BacktestPage() {
     try {
       const grid = JSON.parse(optGrid) as Record<string, (number | string)[]>;
       setOptResult(await api.backtestOptimize(selected.id, symbol, selected.timeframes[0], chartCandles, grid, optMetric));
-    } catch (e) { setOptError(String(e)); } finally { setOptBusy(false); }
+    } catch (e) { setOptError(errorSentence(e)); } finally { setOptBusy(false); }
   }
   const [runs, setRuns] = useState<BacktestRunSummary[]>([]);
   const [robustBusy, setRobustBusy] = useState(false);
@@ -145,7 +146,7 @@ export default function BacktestPage() {
       const rows = parseSnapshotCsv(await file.text());
       setUploadedRows(rows);
       setUploadNote(`${rows.length} quotes parsed from ${file.name}`);
-    } catch (e) { setUploadNote(String(e)); setUploadedRows([]); }
+    } catch (e) { setUploadNote(errorSentence(e)); setUploadedRows([]); }
   }
 
   async function saveUploadedRows() {
@@ -154,7 +155,7 @@ export default function BacktestPage() {
       const out = await api.uploadOptionChainSnapshots(symbol, uploadedRows);
       setUploadNote(`${out.written} of ${out.received} quotes stored for ${out.underlying}`);
       api.optionChainCoverage().then(setCoverage).catch(() => undefined);
-    } catch (e) { setUploadNote(String(e)); }
+    } catch (e) { setUploadNote(errorSentence(e)); }
   }
 
   function exitRules(): ExitRules | null {
@@ -183,7 +184,7 @@ export default function BacktestPage() {
       setMonteCarlo(mc.monte_carlo);
       setWalkForward(wf);
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setRobustBusy(false);
     }
@@ -248,7 +249,7 @@ export default function BacktestPage() {
       setWalkForward(null);
       refreshRuns();
     } catch (e) {
-      setError(String(e));
+      setError(errorSentence(e));
     } finally {
       setLoading(false);
     }

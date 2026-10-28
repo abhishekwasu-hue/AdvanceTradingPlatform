@@ -492,7 +492,7 @@ async def create_deployment(
         if account is None:
             raise HTTPException(status_code=404, detail="No such broker account")
         if broker_name and account.broker_name != broker_name:
-            raise HTTPException(status_code=400, detail=f"Account #{account.id} belongs to {account.broker_name}, not {broker_name}")
+            raise HTTPException(status_code=400, detail=f"That account belongs to {account.broker_name}; pick a {broker_name} account")   # UI-28 U3.1: no ids on screen
         broker_name = account.broker_name
     if request.route_across_brokers and request.mode != ExecutionMode.LIVE:
         raise HTTPException(status_code=400, detail="route_across_brokers only applies to LIVE deployments")

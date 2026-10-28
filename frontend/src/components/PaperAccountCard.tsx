@@ -1,3 +1,4 @@
+import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { PaperAccount, PaperLadder } from "../types";
@@ -36,7 +37,7 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
   async function run(action: () => Promise<unknown>, done: string) {
     setBusy(true); setMessage(null);
     try { await action(); setMessage(done); load(); }
-    catch (e) { setMessage(String(e)); }
+    catch (e) { setMessage(errorSentence(e)); }
     finally { setBusy(false); }
   }
 

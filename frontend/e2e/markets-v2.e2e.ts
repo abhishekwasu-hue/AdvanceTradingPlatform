@@ -143,7 +143,7 @@ test.describe("v2 markets 1440", () => {
   test("opens ready; a tile opens the sector's stocks; a stock opens Charts; back to all", async ({ page }) => {
     const reads = await openMarkets(page, "light");
     await expect(page.locator("[data-shell='v2'] header").first()).toContainText("Sectors & indices");
-    await expect(page.locator("[data-block='markets-dish']")).toContainText("NIFTY 50 rose on the day (+0.45%).");
+    await expect(page.locator("[data-block='markets-dish']")).toContainText("NIFTY 50▲+0.45%");   // UX-11b C4: a Signed move
     await expect(page.locator("[data-tile='Realty']")).toContainText("I don't know");
     await page.locator("[data-tile='IT']").click();
     await expect(page).toHaveURL(/\/markets\?view=sectors&period=day&list=sector-it$/);
@@ -160,7 +160,7 @@ test.describe("v2 markets 1440", () => {
     await openMarkets(page, "light");
     await page.getByRole("group", { name: "Period" }).getByRole("button", { name: "Month" }).click();
     await expect(page).toHaveURL(/period=month/);
-    await expect(page.locator("[data-block='markets-dish']")).toContainText("NIFTY 50 fell over the month (−0.80%).");
+    await expect(page.locator("[data-block='markets-dish']")).toContainText("NIFTY 50▼−0.80%");
     await page.getByRole("group", { name: "Show" }).getByRole("button", { name: "Indices" }).click();
     await expect(page).toHaveURL(/view=indices/);
     await expect(page.locator("[data-family='BSE']")).toContainText("SENSEX");

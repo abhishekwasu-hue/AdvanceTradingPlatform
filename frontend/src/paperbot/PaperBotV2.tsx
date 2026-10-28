@@ -11,6 +11,7 @@ import type { PageProps } from "../routes";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, StateChipV2 } from "../trading/PartsV2";
 import type { CustomStrategyResponse, Deployment, StrategyInfo } from "../types";
 import { DEFAULTS_PATH, appliedLine, useTradingDefaults, type TradingDefaults } from "../settings/tradingDefaults";
+import { Chip } from "../ui/Chip";
 import { Details } from "../ui/numbersFirst";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
@@ -243,7 +244,10 @@ export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel,
             <span className="min-w-0 break-words">{name}</span>
             {bot.mode === "LIVE" ? <ChipV2 kind="warn">Live</ChipV2> : <ChipV2>Paper</ChipV2>}
           </p>
-          <p className="text-t14 text-fg-muted">{botWhat(bot)}</p>
+          {/* UX-11b C5: what it trades and how long it holds, as two facts (chips), not a sentence. */}
+          <p className="flex flex-wrap gap-space-1" data-bot-what>
+            {botWhat(bot).split(" · ").map((part) => <Chip key={part} tone="neutral" variant="meaning">{part[0].toUpperCase() + part.slice(1)}</Chip>)}
+          </p>
           <p className="mt-space-1 flex flex-wrap items-center gap-space-2 text-t13 text-fg-muted">
             <StateChipV2 tone={state === "paused" ? "warn" : "neutral"} check={state === "running"}>{status}</StateChipV2>
             {state !== "stopped" && <span>{lastChecked(bot.last_evaluated_at)}</span>}

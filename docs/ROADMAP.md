@@ -60,10 +60,11 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-B1 | BUG: chain shows contracts the ticket / basket cannot trade ("not in the instrument list yet") - master sync retried with back-off + start-up catch-up, on-demand refresh, honest text, IST expiry dates, next-expiry default on expiry days (setting), exits never need the master | INBOX 27 Oct | the same ticket and basket place on production on an expiry day; before / after phone screenshots; owner ✅ |
 | SCR-FIX | Screener audit + fix pack: A data path (non-native intervals resampled, daily window, today's bar, last bucket, session budget, index volume, primary credential), B truthful results, C real chart + Telegram in place, D phone UI, E text + guards | ATP_ORDER_SCR_FIX.md | each item verified then fixed with a test; PROOF comparison page; owner ✅ |
 | DEF-0 | No platform defaults in order placement / risk: D1 RiskConfig all optional, D2 hard-coded capital, D3 hidden exits (AP-FIX AP7), D4 experience levels a user opt-in, D5 override multipliers, D6 ticket truth, D7 stop-loss source, D8 margin estimate, D9 My limits card, D10 migration (extends TT-12; merges AP-FIX AP4 / AP7) | ATP_ORDER_DEF0.md | first report per D-item; tests (no-settings user can place / Autopilot can enter; each setting applies; exits never blocked; PAPER = LIVE); CI grep guard; PROOF page; owner ✅ |
+| UI-STD | UI standards audit fix pack: A1-A8 remove what no mainstream tool shows (+ user-string lint), B1-B13 standards floor (NN/g, WCAG 2.2 AA, Material, HIG); extends UX-11 / UX-11b / UX-14 / SCR-FIX | ATP_ORDER_UI_STD.md, UI_STANDARDS_AUDIT.md | first report per item; PR 1 = A, PR 2 = B1-B4, PR 3 = B5-B13; before / after page per PR; owner ✅ |
+| UI-28 | Consolidated UI order (owner 28 Oct; supersedes UI-STD / UI-STD-C and the UI parts of UX-11, UX-11b, UX-14, Screener UI, Telegram in place, OI view, PX-1 P5/P6): U1 remove what no mainstream tool shows, U2 numbers first + logical colour, U3 standards floor, U4 palette, U5 Screener + chart + Telegram UI, U6 OI view in v2, U7 beyond the best; UI only | ATP_ORDER_UI_28OCT.md, UI_STANDARDS_AUDIT.md | first report per item; one PR per U group in order; comparison page per PR; final summary page with word counts + contrast table; owner ✅ |
 | AP-FIX | Autopilot fix pack (owner 28 Oct; full text to be filed from the owner's message) - AP1 = AUD-V1; AP4 / AP7 merged into DEF-0 | ATP_ORDER_AP_FIX.md (stub) | as its order says |
 | CP-FIX | Copilot fix pack (owner 28 Oct; full text to be filed from the owner's message) | ATP_ORDER_CP_FIX.md (stub) | as its order says |
 | OI-V2 | OI banner v2 (owner 28 Oct; full text to be filed) - the regime hysteresis gap is AUD-V5 | ATP_ORDER_OI_V2.md (stub) | as its order says |
-| UI-STD | UI standard (owner 28 Oct; full text to be filed) | ATP_ORDER_UI_STD.md (stub) | as its order says |
 | PX-1 | Prices everywhere / after hours (owner 28 Oct; full text to be filed) - P1 = AUD-V2 | ATP_ORDER_PX_1.md (stub) | as its order says |
 
 ### Phase AUD — Complete audit: verify -> grade -> differentiate (owner 28 Oct)
@@ -123,6 +124,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P2-6 | Help centre + page tours complete | rows 6, 8 | J7 checked |
 | P2-7 | Positions for options sellers + Performance page | row 20 Parts 2, 4 | J3 end (Performance) checked |
 | P2-8 | Journal v2 (J1-J6): broker sync, chart image, spread view, plan vs actual; 20-second check-in; daily / weekly / monthly reviews; My proof; if-then plans + process goals; Telegram / e-mail; page tabs (extends app/journal + discipline_engine) | ATP_SESSION_JOURNAL.md | 3 PRs with tests + screenshots; owner ✅ on each; billing in P5-2 |
+| UI-STD-C | UI-STD group C, beyond the best (C1-C7, UI only, behind flags; C8 stays UX-11b), one PR each | ATP_ORDER_UI_STD.md | each item's complaint link + screenshots; owner ✅ |
 
 ### Phase 3 — Production readiness (J8) — starts in PARALLEL with Phase 2
 | ID | Item | Source | Done when |
@@ -184,6 +186,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UX-12 | done | Session B: purple dot-grid backdrop behind the v2 page header band, Appearance toggle, default on; merged #609, deployed 77a50057db57, owner OK 28 Oct | #609 |
 | UX-13 | done | Session B: bottom-bar option C (colour on the icon, round fill only on the tab on screen), lighter tile grid lines; merged #609, deployed 77a50057db57, owner OK 28 Oct | #609 |
 | UX-14 | in progress | Session B: "Professional palette" (ATP_ORDER_UX14.md): colour_v3 token set behind its flag, CI contrast for every pair, ONE comparison page (Today, Terminal, Screener, My trades, Signals; 390 + desktop, dark + light); owner 28 Oct: ON by default ("Keep Default on always"), the flag kept to turn it off (Admin -> Features) | - |
+| UX-15 | merged - deploy + owner check | Session B: Positions tab to the broker standard (owner 28 Oct), #639: standard columns and definitions, total P&L first, one amber chip for a missing price / stop, no theory text on screen; Terminal + My trades | - |
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | SB-1 | not started | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
@@ -201,10 +204,12 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P1-B1 | in review | merged #575 + #595; deployed 27 Oct 21:00 IST (a5db3e1), instrument master ok (91,037 rows, no error); owner check 28 Oct 09:15: a PAPER ticket on a NIFTY contract | #575, #595 |
 | SCR-FIX | in review | A-E merged 28 Oct (#614, #619, #618, #613, #620); PROOF page + deploy next | - |
 | DEF-0 | in review | PR 1-4 merged (#630 #631 #632 #637); deploy of b86710ce refused by acceptance (PAPER ticket 500) - fix #641; then deploy (migration yes) + owner ✅ on PROOF | #641 |
+| UI-STD | superseded by UI-28 | Session B: owner order 28 Oct filed; docs/design/UI_STANDARDS_AUDIT.md written; first report (confirmed / not reproduced) next, then PR 1 = A1-A8 | - |
+| UI-STD-C | superseded by UI-28 (U7) | - | - |
+| UI-28 | in progress | Session B: consolidated UI order filed 28 Oct; owner adds U1.10 affirmative wording + U1.11 hide repeated messages on all pages (28 Oct); first report docs/design/UI_28_FIRST_REPORT.md; U1 #640 merged; U2 + U1.10 / U1.11 #647 on CI; next U3; SEBI text open (UI28Q-1) | - |
 | AP-FIX | filed (stub) | full order text from the owner, then plan | - |
 | CP-FIX | filed (stub) | full order text from the owner, then plan | - |
 | OI-V2 | filed (stub) | full order text from the owner, then plan | - |
-| UI-STD | filed (stub) | full order text from the owner, then plan | - |
 | PX-1 | filed (stub) | full order text from the owner, then plan | - |
 | AUD-V1..V7 | in progress | verification in docs/design/AUDIT_28OCT.md; first report; then one PR per group | - |
 | AUD-G1.1..G1.7 | not started | after V (verification done with V) | - |

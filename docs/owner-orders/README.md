@@ -46,11 +46,12 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Screener audit + fix pack A-E (27 Oct) | ATP_ORDER_SCR_FIX.md | SCR-FIX | A-E merged 28 Oct (#614, #619, #618, #613, #620) |
 | - | No platform defaults in order placement / risk (28 Oct) | ATP_ORDER_DEF0.md | DEF-0 | PR 1-4 merged; deploy after #641 (acceptance fix) + owner ✅ |
 | - | Trading Brain BR-0..BR-3 (28 Oct) | ATP_ORDER_TRADING_BRAIN.md | BR-0..BR-3 | filed; review in docs/design/BR_REVIEW.md for the owner's ✅; plan only until BR-0 |
+| - | UI standards audit fix pack A / B / C (28 Oct) | ATP_ORDER_UI_STD.md | UI-STD, UI-STD-C | superseded by UI-28 (file kept) |
+| - | Consolidated UI order U1-U7 (28 Oct; replaces the separate UI orders of 27-28 Oct, UI parts) | ATP_ORDER_UI_28OCT.md | UI-28 | filed; audit table docs/design/UI_STANDARDS_AUDIT.md; first report next |
 | - | Complete audit: verify -> grade -> differentiate (28 Oct) | ATP_ORDER_AUDIT_28OCT.md | AUD-V1..V7, AUD-G1.1..G1.7, AUD-G2.1..G2.5, AUD-T1..T9 | filed; verification in docs/design/AUDIT_28OCT.md; V next |
 | - | Autopilot fix pack (28 Oct) | ATP_ORDER_AP_FIX.md | AP-FIX | stub - full text awaited from the owner |
 | - | Copilot fix pack (28 Oct) | ATP_ORDER_CP_FIX.md | CP-FIX | stub - full text awaited from the owner |
 | - | OI banner v2 (28 Oct) | ATP_ORDER_OI_V2.md | OI-V2 | stub - full text awaited from the owner |
-| - | UI standard (28 Oct) | ATP_ORDER_UI_STD.md | UI-STD | stub - full text awaited from the owner |
 | - | Prices everywhere / after hours (28 Oct) | ATP_ORDER_PX_1.md | PX-1 | stub - full text awaited from the owner |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

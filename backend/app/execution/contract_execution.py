@@ -32,7 +32,13 @@ from app.risk_engine.risk_manager import nonfinite_levels
 logger = logging.getLogger(__name__)
 
 MARGIN_SAFETY = 0.8          # never plan to use more than this share of available margin
-DEFAULT_WRITE_MAX_LOTS = 1   # a written option with no explicit cap trades one lot
+DEFAULT_WRITE_MAX_LOTS = 1   # kept for imports; DEF-0: no longer a cap - a written option's size is the trader's own
+
+
+def has_premium_stop(meta_or_trade) -> bool:
+    """DEF-0 D3: whether an option position carries a premium stop the trader set (old trades stored their default)."""
+    value = meta_or_trade.get("premium_stop_pct") if isinstance(meta_or_trade, dict) else getattr(meta_or_trade, "premium_stop_pct", None)
+    return value is not None
 
 
 class ContractExecutionError(ValueError):
@@ -112,23 +118,26 @@ def build_order_plan(signal: Signal, contract: ResolvedContract, rules: Contract
         })
         return OrderPlan(order_signal, spec, max_quantity, meta, notes)
 
-    pct = (rules.premium_stop_pct or 30.0) / 100.0
+    # DEF-0 D3 (owner, 28 Oct): the premium stop is the trader's own setting - none set, no premium exit (no built-in
+    # 30 / 50%). A bought option then risks its premium (floor 0: the level the risk check sizes against, never hit
+    # before expiry); a written one exits on its underlying levels and the trader's own exits only - its stop is 0
+    # ("no stop": no premium check, no broker stop).
+    pct = rules.premium_stop_pct / 100.0 if rules.premium_stop_pct is not None else None
     if contract.position == OptionPosition.WRITE:
-        ceiling = round(ltp * (1 + pct), 2)
-        if max_quantity is None:
-            max_quantity = DEFAULT_WRITE_MAX_LOTS * contract.lot_size
-            notes.append(f"Written option without max_lots: capped at {DEFAULT_WRITE_MAX_LOTS} lot")
+        ceiling = round(ltp * (1 + pct), 2) if pct is not None else 0.0      # 0 = no stop (app/trading/exit_logic.py)
+        level = f"ceiling {ceiling} (+{pct:.0%})" if pct is not None else "no premium stop set"
         order_signal = signal.model_copy(update={
             "symbol": contract.tradingsymbol, "direction": SignalDirection.SHORT, "entry": ltp,
             "stop_loss": ceiling, "target1": None, "target2": None,
-            "reasons": list(signal.reasons) + [f"Premium received {ltp}; ceiling {ceiling} (+{pct:.0%}); exits on {contract.underlying_symbol} levels"],
+            "reasons": list(signal.reasons) + [f"Premium received {ltp}; {level}; exits on {contract.underlying_symbol} levels"],
         })
     else:
-        floor = round(ltp * (1 - pct), 2)
+        floor = round(ltp * (1 - pct), 2) if pct is not None else 0.0
+        level = f"floor {floor} (-{pct:.0%})" if pct is not None else "no premium stop set (the premium paid is the most it can lose)"
         order_signal = signal.model_copy(update={
             "symbol": contract.tradingsymbol, "direction": SignalDirection.LONG, "entry": ltp,
             "stop_loss": floor, "target1": None, "target2": None,
-            "reasons": list(signal.reasons) + [f"Premium paid {ltp}; floor {floor} (-{pct:.0%}); exits on {contract.underlying_symbol} levels"],
+            "reasons": list(signal.reasons) + [f"Premium paid {ltp}; {level}; exits on {contract.underlying_symbol} levels"],
         })
     return OrderPlan(order_signal, spec, max_quantity, meta, notes)
 

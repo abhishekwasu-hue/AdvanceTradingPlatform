@@ -282,7 +282,8 @@ class OrderRouter:
 
         sl_order_id: Optional[str] = None
         sl_failed = sl_rejected = False
-        if self.place_protective_stop:
+        # DEF-0 D7: no stop set (0) - no broker stop either
+        if self.place_protective_stop and signal.stop_loss is not None and signal.stop_loss > 0:
             # The broker-side stop is the platform's safety net for the case this process dies
             # (or loses connectivity) while a live position is open: the exchange then still
             # closes it at the stop. Placed as SL-M on the opposite side at the signal's stop.

@@ -40,7 +40,7 @@ from app.instruments.spreads import (
 )
 from app.execution.contract_execution import contract_ltp
 from app.instruments.contracts import (
-    DEFAULT_PREMIUM_STOP_PCT, ContractResolutionError, ContractRules, describe_rules, resolve_contract,
+    ContractResolutionError, ContractRules, describe_rules, resolve_contract,
 )
 from app.db.session import get_session
 from app.plans.limits import check_can_add_deployment, load_tenant
@@ -166,8 +166,7 @@ class ContractRulesRequest(BaseModel):
             raise HTTPException(status_code=400, detail="strike_offset only applies to ITM/OTM strikes")
         if data["strike_rule"] != StrikeRule.ATM and not self.strike_offset:
             data["strike_offset"] = 1
-        if self.premium_stop_pct is None and self.option_strategy == OptionStrategy.SINGLE:
-            data["premium_stop_pct"] = DEFAULT_PREMIUM_STOP_PCT[position]
+        # DEF-0 D3: no built-in premium stop - blank = no such exit (the trader sets his own)
         return ContractRulesRequest(**data)
 
     def structure_description(self) -> str:

@@ -178,10 +178,21 @@ async def symbol_gates(session: AsyncSession, symbol: str, direction: Any) -> Li
     return raw_symbol_gates(symbol, direction, master_types=rows)
 
 
+async def opted_in(session: AsyncSession, user: User) -> bool:
+    """DEF-0 D4 (owner, 28 Oct): the user turned on "Limit me by my experience level" (off by default)."""
+    from app.me.prefs import own_trading_defaults
+    return bool((await own_trading_defaults(session, user)).get("limit_by_experience"))
+
+
+async def applies(session: AsyncSession, user: Optional[User]) -> bool:
+    """The gates apply only with the flag on AND the user's own opt-in - no opt-out ritual when he did not turn it on."""
+    return user is not None and await enabled(session, user.tenant_id) and await opted_in(session, user)
+
+
 async def symbol_entry_refusals(session: AsyncSession, user: Optional[User], symbol: str, direction: Any,
                                 now: Optional[datetime] = None) -> List[str]:
-    """`entry_refusals` for a raw-symbol entry; the flag is checked before the symbol is looked up."""
-    if user is None or not await enabled(session, user.tenant_id):
+    """`entry_refusals` for a raw-symbol entry; the flag and the opt-in are checked before the symbol is looked up."""
+    if user is None or not await applies(session, user):
         return []
     return await entry_refusals(session, user, await symbol_gates(session, symbol, direction), now)
 
@@ -276,7 +287,7 @@ async def _opted_out_today(session: AsyncSession, user: User, day: Any) -> List[
 async def entry_refusals(session: AsyncSession, user: Optional[User], gates: Sequence[str], now: Optional[datetime] = None) -> List[str]:
     """Why a new entry needing `gates` is refused for this user ([] when allowed, the flag is off, or nothing is gated).
     New entries only: the exit paths never call this."""
-    if not gates or user is None or not await enabled(session, user.tenant_id):
+    if not gates or user is None or not await applies(session, user):
         return []
     now = now or datetime.now(timezone.utc)
     rec = await record(session, user)
@@ -314,6 +325,7 @@ async def status(session: AsyncSession, user: User, now: Optional[datetime] = No
                      "recent": [{"gate": r.gate, "gate_label": GATES.get(r.gate, (None, r.gate))[1], "level": r.level, "reason": r.reason,
                                  "day": r.day.isoformat()} for r in recent]},
         "min_reason_chars": app_config.EXPERIENCE_OPT_OUT_MIN_REASON_CHARS, "day": day.isoformat(), "exits": EXITS_NOTE,
+        "limit_by_experience": await opted_in(session, user),          # DEF-0 D4: off = no gate applies to him
         "as_of": now.isoformat(),
     }
 

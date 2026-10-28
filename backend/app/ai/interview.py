@@ -426,7 +426,6 @@ TRADES_PER_DAY = {"scalping": 6, "intraday": 3, "positional": 2, "swing": 1}
 SWING_GAP_FACTOR = 0.75   # Phase AS: an overnight gap can jump the stop - swing risk is sized a quarter smaller
 # DEF-0 (owner, 28 Oct): the plan holds only what the trader answered (capital, risk, daily loss) within the operator's
 # ceilings; every other limit stays not set (off) until the trader sets it himself.
-DEFAULT_BREAK_EVEN_R = 1.0
 
 
 def risk_plan(a: InterviewAnswers, ceilings: Optional[Dict[str, float]] = None) -> Tuple[RiskConfig, List[str]]:
@@ -635,8 +634,8 @@ def build_plan(a: InterviewAnswers, df: pd.DataFrame, base_tf: str, *, ceilings:
 
 
 def default_exit_rules(a: InterviewAnswers) -> dict:
-    return {"break_even_at_r": DEFAULT_BREAK_EVEN_R,
-            "time_exit_at": "15:10" if a.style in ("scalping", "intraday") else None}
+    """DEF-0 D3 (owner, 28 Oct): no built-in exit - no break-even move and no time exit unless the trader sets one."""
+    return {"break_even_at_r": None, "time_exit_at": None}
 
 
 def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Optional[dict], cfg: RiskConfig, risk_notes: List[str],
@@ -735,10 +734,10 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
     exit_rules = exit_rules or default_exit_rules(a)
     rr_lines = ([] if rr <= 0 else [         # DEF-0: no minimum reward:risk unless the trader set one
         tr(lang, f"Minimum reward:risk 1:{rr:g} - a trade that cannot make {rr:g}x its risk is skipped. Arithmetic: at 1:{rr:g} the break-even win rate before costs is {breakeven_win:.0f}%; brokerage, taxes and slippage raise it - judge the backtest's net figures, not this ratio.",
-           f"किमान reward:risk 1:{rr:g} - risk च्या {rr:g} पट नफा शक्य नसेल तर trade घेत नाही. गणित: 1:{rr:g} वर खर्चाआधीचा break-even win rate {breakeven_win:.0f}% आहे; brokerage, कर आणि slippage तो वाढवतात - या गुणोत्तरावर नाही, backtest च्या निव्वळ आकड्यांवर ठरवा.")]) + [
+           f"किमान reward:risk 1:{rr:g} - risk च्या {rr:g} पट नफा शक्य नसेल तर trade घेत नाही. गणित: 1:{rr:g} वर खर्चाआधीचा break-even win rate {breakeven_win:.0f}% आहे; brokerage, कर आणि slippage तो वाढवतात - या गुणोत्तरावर नाही, backtest च्या निव्वळ आकड्यांवर ठरवा.")]) + ([
         tr(lang, f"Stop moves to cost once the trade is {exit_rules['break_even_at_r']:g}R in profit; it never moves against you.",
            f"Trade {exit_rules['break_even_at_r']:g}R नफ्यात आला की stop खरेदी भावावर येतो; stop कधीच विरुद्ध दिशेने सरकत नाही."),
-    ]
+    ] if exit_rules.get("break_even_at_r") else [])
     if exit_rules["time_exit_at"]:
         rr_lines.append(tr(lang, "Everything still open is closed at 15:10 - no overnight risk.", "15:10 ला उघडे असलेले सगळे trades बंद - रात्रीचा risk नाही."))
     elif a.style == "swing":
@@ -748,7 +747,7 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
     checklist = [
         tr(lang, "Trend and regime agree with the strategy (regime filter)", "Trend आणि market ची स्थिती strategy ला अनुकूल आहे (regime filter)"),
         tr(lang, "Stop-loss defined before entry, at least 1 ATR away", "Entry आधीच stop-loss ठरलेला, किमान 1 ATR अंतरावर"),
-        tr(lang, f"Reward at least {rr:g}x the risk", f"नफा risk च्या किमान {rr:g} पट"),
+        *([tr(lang, f"Reward at least {rr:g}x the risk", f"नफा risk च्या किमान {rr:g} पट")] if rr > 0 else []),
         tr(lang, "Size from risk %, never from feel; never averaging a loser", "Size risk % वरून, मनाने नाही; तोट्यातल्या trade मध्ये भर नाही"),
         tr(lang, "Daily loss limit and losing-streak pause respected", "दिवसाची तोटा मर्यादा आणि सलग तोट्यानंतरचा थांबा पाळला"),
         tr(lang, "No entries on blocked event days (results, policy)", "मोठ्या घटनांच्या दिवशी (results, policy) entry नाही"),

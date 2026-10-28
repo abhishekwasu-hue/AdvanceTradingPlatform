@@ -81,7 +81,7 @@ class OrderAsk:
     product: str = "MIS"             # MIS (intraday) | NRML (carry forward)
     price: Optional[float] = None    # LIMIT and SL: the limit price
     trigger_price: Optional[float] = None   # SL and SL-M
-    stop_loss: Optional[float] = None       # the position's stop (premium); required for a SELL
+    stop_loss: Optional[float] = None       # the position's stop (premium); DEF-0 D7: the trader's choice on every side
     chain_ltp: Optional[float] = None       # what the chain showed: a preview's price when no live price can be read
     client_ref: Optional[str] = None        # the ticket's own id: a second tap on Place never places twice
     rest_if_waiting: bool = False           # TM-2: a limit / stop the price has not reached waits for it (needs client_ref)
@@ -197,8 +197,9 @@ def paper_fill(order_type: str, side: str, ltp: float, price: Optional[float], t
     return ltp, f"Triggered at {trigger:,.2f}: fills at {ltp:,.2f}"
 
 
-def ask_errors(ask: OrderAsk, tick: float) -> List[str]:
-    """What is wrong with the ticket itself, in plain words (nothing about the market or the user's limits)."""
+def ask_errors(ask: OrderAsk, tick: float, *, stop_required: bool = False) -> List[str]:
+    """What is wrong with the ticket itself, in plain words. `stop_required` (DEF-0 D7): the trader's own setting "A sold
+    option or a future needs a stop-loss" - off by default, then a stop is his choice."""
     errors: List[str] = []
     if ask.side not in SIDES:
         errors.append("Choose Buy or Sell")
@@ -220,10 +221,10 @@ def ask_errors(ask: OrderAsk, tick: float) -> List[str]:
             errors.append("For a buy SL order the limit price must be at or above the trigger")
         if ask.side == "SELL" and ask.price > ask.trigger_price:
             errors.append("For a sell SL order the limit price must be at or below the trigger")
-    if ask.right == FUTURE and ask.stop_loss is None:
-        errors.append("A future needs a stop-loss: without one the loss has no limit")
-    elif ask.side == "SELL" and ask.stop_loss is None:
-        errors.append("A sold option needs a stop-loss: without one the loss has no limit")
+    if stop_required and ask.right == FUTURE and ask.stop_loss is None:
+        errors.append("Your setting asks for a stop-loss on a future: add one, or change the setting in My limits")
+    elif stop_required and ask.side == "SELL" and ask.stop_loss is None:
+        errors.append("Your setting asks for a stop-loss on a sold option: add one, or change the setting in My limits")
     return errors
 
 
@@ -238,18 +239,18 @@ def stop_errors(side: str, fill: float, stop: Optional[float], what: str = "opti
 
 
 def position_stop(side: str, stop: Optional[float], tick: float) -> float:
-    """The stop stored on the position: the user's own, or - a bought option without one - one tick (the whole premium
-    is at risk, which is what the risk engine sizes against)."""
+    """The stop stored on the position: the user's own, or - a bought one without one - one tick (the whole premium
+    is at risk, which is what the risk engine sizes against); a sold one without one - 0, "no stop" (DEF-0 D7,
+    app/trading/exit_logic.py)."""
     if stop is not None:
         return float(stop)
-    assert side == "BUY"
-    return float(tick)
+    return float(tick) if side == "BUY" else 0.0
 
 
 def max_loss(side: str, fill: float, stop: Optional[float], units: float, future: bool = False) -> Dict[str, Any]:
     if future:
-        if stop is None:          # ask_errors refuses a future without a stop before this is reached
-            return {"value": None, "basis": "A future needs a stop-loss: without one the loss has no limit."}
+        if stop is None:          # DEF-0 D7: allowed unless his own setting asks for a stop - the fact, said plainly
+            return {"value": None, "basis": "No stop-loss: the loss on a future has no fixed limit."}
         value = (fill - stop) if side == "BUY" else (stop - fill)
         return {"value": round(value * units, 2), "basis": f"Down to your stop-loss {stop:,.2f}. A gap past the stop can lose more."
                 if side == "BUY" else f"Up to your stop-loss {stop:,.2f}. A gap past the stop can lose more."}
@@ -257,7 +258,8 @@ def max_loss(side: str, fill: float, stop: Optional[float], units: float, future
         if stop is None:
             return {"value": round(fill * units, 2), "basis": "The premium you pay, if the option expires worthless."}
         return {"value": round((fill - stop) * units, 2), "basis": f"Down to your stop-loss {stop:,.2f}. At most the premium you pay."}
-    assert stop is not None
+    if stop is None:              # DEF-0 D7: a sold option without a stop - the fact, said plainly
+        return {"value": None, "basis": "No stop-loss: the loss on a sold option has no fixed limit."}
     return {"value": round((stop - fill) * units, 2), "basis": f"Up to your stop-loss {stop:,.2f}. A gap past the stop can lose more."}
 
 
@@ -395,7 +397,8 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     elif ask.expiry == today:
         warnings.append("This contract expires today.")
     tick = contract.tick_size if contract else 0.05
-    errors.extend(ask_errors(ask, tick))
+    from app.me.prefs import own_trading_defaults
+    errors.extend(ask_errors(ask, tick, stop_required=bool((await own_trading_defaults(session, user)).get("stop_required_on_sold"))))
     lot_size = contract.lot_size if contract else None
     units = float(ask.lots * lot_size) if lot_size else None
 

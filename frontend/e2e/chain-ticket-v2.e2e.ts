@@ -202,8 +202,7 @@ test.describe("Chain ticket v2 flows", () => {
     await page.locator("[data-chain-actions] [data-action='sell']").tap();
     const ticket = page.locator("[data-order-ticket]");
     await pickProduct(ticket);
-    await ticket.locator("[data-ticket='review']").tap();
-    await expect(ticket.locator("[data-ticket='problem']")).toHaveText("A sold option needs a stop-loss");
+    // DEF-0 D7: no stop is forced on a sold option - the trader's own stop here sizes against his risk per trade
     await ticket.locator("[data-ticket='stop']").fill("200");
     await ticket.locator("[data-ticket='lots']").fill("6");
     await ticket.locator("[data-ticket='review']").tap();

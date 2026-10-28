@@ -1033,11 +1033,11 @@ def structure_exit_reason(meta: dict, value: float, underlying_price: Optional[f
     each weighted by its ratio."""
     stop_value = meta.get("stop_value")
     target_value = meta.get("target_value")
-    if meta.get("pnl_stop") is not None:
+    if meta.get("payoff") or meta.get("pnl_stop") is not None:
         # Phase U: payoff-priced structures are judged on mark-to-market P&L per unit - what was
-        # received (or paid) at entry against what closing costs now.
+        # received (or paid) at entry against what closing costs now. DEF-0: either level may be not set.
         pnl = float(meta.get("net_credit") or 0.0) - value
-        if pnl <= meta["pnl_stop"]:
+        if meta.get("pnl_stop") is not None and pnl <= meta["pnl_stop"]:
             return f"Structure stop (P&L {pnl:.2f}/unit <= {meta['pnl_stop']:g})"
         if meta.get("pnl_target") is not None and pnl >= meta["pnl_target"]:
             return f"Structure target (P&L {pnl:.2f}/unit >= {meta['pnl_target']:g})"

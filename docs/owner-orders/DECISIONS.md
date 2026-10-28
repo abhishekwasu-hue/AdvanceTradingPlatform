@@ -160,3 +160,5 @@
 | 2026-10-27 | SCR-FIX replaces every earlier Screener message of 27 Oct (incl. "SCREENER FIX PACK"); PRs in order A -> E, each its own draft PR
 | 2026-10-28 | UX-14 (owner): colour_v3 stays an on / off flag the owner switches himself (Admin -> Features, per organisation); it is not made the default and the flag is never removed. |
 | 2026-10-28 | UX-11b (owner): the Journal best / worst table fits a phone - two columns (setup with its closed count under the name, net). |
+| 2026-10-28 | SCR-FIX A5 (owner, "Default yes"): the last 30m / 1h bucket closes at 15:30 IST in the screener AND in the legacy declarative engine (Autopilot higher-timeframe operands), so the two stay in parity; not limited to the Screener. |
+| 2026-10-28 | BR (owner, "Default yes"): the independent review docs/design/BR_REVIEW.md is accepted as written, with its defaults; BR-1 onwards still starts only after BR-0 (SCR-FIX, AP-FIX, CP-FIX, DATA-H, P5-1) is done. |

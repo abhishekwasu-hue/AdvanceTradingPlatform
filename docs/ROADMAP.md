@@ -146,6 +146,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UX-12 | done | Session B: purple dot-grid backdrop behind the v2 page header band, Appearance toggle, default on; merged #609, deployed 77a50057db57, owner OK 28 Oct | #609 |
 | UX-13 | done | Session B: bottom-bar option C (colour on the icon, round fill only on the tab on screen), lighter tile grid lines; merged #609, deployed 77a50057db57, owner OK 28 Oct | #609 |
 | UX-14 | in progress | Session B: "Professional palette" (ATP_ORDER_UX14.md): colour_v3 token set behind its flag, CI contrast for every pair, ONE comparison page (Today, Terminal, Screener, My trades, Signals; 390 + desktop, dark + light); owner 28 Oct: ON by default ("Keep Default on always"), the flag kept to turn it off (Admin -> Features) | - |
+| UX-15 | in progress | Session B: Positions tab to the broker standard (owner 28 Oct): standard columns and definitions, total P&L first, one amber chip for a missing price / stop, no theory text on screen; Terminal + My trades | - |
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | SB-1 | not started | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { pickOption } from "./combobox";
 import { mockApi, type MockOptions } from "./mockApi";
 import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
@@ -334,7 +335,7 @@ test.describe("From an idea, 1440", () => {
     // owner order 23 Oct: the universe is never empty - NIFTY 50 until the trader picks another list
     await expect(alert).toContainText("for “Scan from my idea” on NIFTY 50 (50 stocks), and tells you when one matches.");
     await page.keyboard.press("Escape");
-    await page.getByTestId("universe-select").selectOption("custom");
+    await pickOption(page, page.getByTestId("universe-select"), "custom");
     await page.getByLabel("Your symbols (up to 500)").fill("RELIANCE, TCS, INFY");
     await screenerTool(page, "scan-alert-open");
     await expect(alert).toContainText("ATP checks each time a daily bar closes for “Scan from my idea” on your own symbols (3 stocks), and tells you when one matches.");

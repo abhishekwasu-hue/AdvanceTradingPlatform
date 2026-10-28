@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockCharts } from "./chartsMocks";
+import { expectComboValue } from "./combobox";
 import { mockApi } from "./mockApi";
 import { PRE_MARKET } from "../src/rhythm/fixtures";
 import { screenerTool } from "./screenerTools";
@@ -395,7 +396,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
 
         // 3 Find setups: NIFTY 50 on open, a ready gallery scan in one tap, its matches
         await go("/screener");
-        await expect(page.getByTestId("universe-select")).toHaveValue("sys:index-nifty50");
+        await expectComboValue(page.getByTestId("universe-select"), "sys:index-nifty50");
         await expect(page.getByTestId("universe-count")).toHaveText("50 stocks · NIFTY 50");
         await shot("03a-find-setups");
         await screenerTool(page, "browse-screens");

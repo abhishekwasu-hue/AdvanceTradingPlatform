@@ -12,6 +12,8 @@
 import { useMemo, useState } from "react";
 import { Button, cx, Tabs } from "../components/primitives";
 import { Combobox } from "../ui/Combobox";
+import { Details } from "../ui/Details";
+import { PageFootnote } from "../ui/PageFootnote";
 import { screenerApi } from "./api";
 import {
   agreementText, confluenceChoices, MAX_CONFLUENCE, methodLabel, MIN_CONFLUENCE, toggleChoice,
@@ -51,6 +53,8 @@ export function LibraryTools({ taxonomy, mirrors, watchLists, symbolsText, initi
         { value: "confluence", label: "Confluence", content: <Confluence taxonomy={taxonomy} mirrors={mirrors} symbols={symbols} initial={initialConfluence} api={api} /> },
         { value: "watch", label: "Watch → trigger", content: <Watch lists={watchLists} symbols={symbols} initial={initialWatch} api={api} /> },
       ]} />
+      {/* SCR-FIX E1: the dialog's one "not advice" line */}
+      <div className="mt-space-4"><PageFootnote /></div>
     </div>
   );
 }
@@ -97,7 +101,10 @@ function Confluence({ taxonomy, mirrors, symbols, initial, api }: {
       {error && <p role="alert" className="mt-2 text-t12 text-warn">{error}</p>}
       {result && (
         <div className="mt-3" aria-live="polite">
-          <p className="text-t12 text-fg-muted">{result.note}</p>
+          <Details id="screener.confluence.about" className="mt-0">
+            <p>{result.note}</p>
+            <p>{result.disclaimer}</p>
+          </Details>
           {result.rows.length === 0 ? (
             <p className="mt-2 text-t13 text-fg">No symbol was flagged by any of these screens on the data shown.</p>
           ) : (
@@ -128,7 +135,6 @@ function Confluence({ taxonomy, mirrors, symbols, initial, api }: {
             </div>
           )}
           {result.unflagged.length > 0 && <p className="mt-2 text-t12 text-fg-muted">Not flagged: {result.unflagged.join(", ")}</p>}
-          <p className="mt-2 text-t12 text-fg-muted">{result.disclaimer}</p>
         </div>
       )}
     </div>
@@ -187,11 +193,13 @@ function Watch({ lists, symbols, initial, api }: {
           <WatchColumn title="Triggered" symbols={result.triggered} empty="Nothing triggered on the last closed bar." />
           <WatchColumn title="Ready" symbols={result.ready} empty="Nothing is ready." />
           <div className="sm:col-span-2">
-            <p className="text-t12 text-fg-muted">{result.note}</p>
-            <p className="mt-1 break-words font-mono text-t12 text-fg">{result.transition_text}</p>
+            <p className="break-words font-mono text-t12 text-fg">{result.transition_text}</p>
             <Button size="sm" className="mt-2" onClick={() => void save()}>Save the trigger screen</Button>
             {saved && <p role="status" className="mt-1 text-t12 text-fg">{saved}</p>}
-            <p className="mt-2 text-t12 text-fg-muted">{result.disclaimer}</p>
+            <Details id="screener.watch.about">
+              <p>{result.note}</p>
+              <p>{result.disclaimer}</p>
+            </Details>
           </div>
         </div>
       )}

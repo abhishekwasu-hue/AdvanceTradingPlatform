@@ -15,6 +15,7 @@ import TelegramConnectV2 from "../alerts/TelegramConnectV2";
 import { ApiError } from "../api/client";
 import { Button, Dialog, cx } from "../components/primitives";
 import { Details } from "../ui/Details";
+import { PageFootnote } from "../ui/PageFootnote";
 import { EvidenceChartLive, EvidenceLegend, MatchedBarCard } from "./EvidenceChart";
 import {
   SendAfterLink, barTimeText, evidenceApi, plainCondition, replaySteps, sendRefusal, stepReplay, telegramAction, trendTone, verifyRows,
@@ -217,10 +218,14 @@ export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, on
           {rows.map((r) => <li key={r.id} className="break-all font-mono text-t12">{r.text}<span className="block text-fg-muted">{r.verify}</span></li>)}
         </ul>
       </Details>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-t12 text-fg-muted">{pack.disclaimer}</p>
+      {/* SCR-FIX E1: the server's note on these numbers is an explanation (Details); the one "not advice" line is the foot */}
+      <Details id="screener.evidence.about" label="About these numbers" className="mt-0">
+        <p>{pack.disclaimer}</p>
+      </Details>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <TelegramSend pack={pack} onSend={onSend} send={send} onLinked={onLinked} />
       </div>
+      <PageFootnote />
     </div>
   );
 }

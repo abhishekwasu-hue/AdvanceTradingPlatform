@@ -38,6 +38,8 @@ import { useFeatures } from "../ui/useFeatures";
 import PageDishV2 from "../growth/PageDishV2";
 import { ComingSoon } from "../ui/ComingSoon";
 import { ErrorState } from "../ui/ErrorState";
+import { Details } from "../ui/Details";
+import { PageFootnote } from "../ui/PageFootnote";
 import { COMING_SOON_MESSAGE } from "../api/errors";
 import { ideasApi } from "../ideas/api";
 import { ideaScanFromSearch, scanName } from "../ideas/model";
@@ -604,7 +606,14 @@ export default function ScreenerPage(_props: PageProps) {
             Live counts while editing
           </label>
           )}
-          <p className="mt-4 text-t12 text-fg-muted">Closed bars only, read from your broker. A scan lists symbols that meet your own conditions; it is not advice.</p>
+          {/* SCR-FIX E1: on the v2 page the "not advice" line is the page's one footnote; the rest of the note is in Details */}
+          {universeV2 ? (
+            <Details id="screener.universe.about" className="mt-4">
+              <p>Closed bars only, read from your broker. A scan lists symbols that meet your own conditions.</p>
+            </Details>
+          ) : (
+            <p className="mt-4 text-t12 text-fg-muted">Closed bars only, read from your broker. A scan lists symbols that meet your own conditions; it is not advice.</p>
+          )}
           </div>
         </aside>
 
@@ -681,9 +690,13 @@ export default function ScreenerPage(_props: PageProps) {
                        why={fresh && registry ? (symbol) => whyChips(registry, stages, run?.funnel ?? null, symbol) : undefined}
                        onShowEvidence={(r) => { if (r.evidence_id != null) setEvidence({ id: r.evidence_id, symbol: r.symbol }); }} />
           <EvidencePanel evidenceId={evidence?.id ?? null} symbol={evidence?.symbol} onClose={() => setEvidence(null)} />
-          {run && <p className="text-t12 text-fg-muted">{run.disclaimer}</p>}
+          {run && (universeV2
+            ? <Details id="screener.results.about" label="About these results"><p>{run.disclaimer}</p></Details>
+            : <p className="text-t12 text-fg-muted">{run.disclaimer}</p>)}
         </div>
       </div>
+      {/* SCR-FIX E1: the page's one "not advice" line, at its foot */}
+      {universeV2 && <div className="mt-space-6"><PageFootnote /></div>}
 
       {taxonomy && (
         <Dialog wide open={galleryOpen} onOpenChange={setGalleryOpen} title="Screen library"
@@ -753,7 +766,8 @@ export default function ScreenerPage(_props: PageProps) {
       )}
 
       {/* Phone: the live count and Run stay in reach - PW2: just above the app's bottom navigation */}
-      <div className={cx("fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-between gap-3 border-t border-border bg-surface-1 px-4 py-2 sm:hidden")}>
+      <div className={cx("fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-between gap-3 border-t border-border bg-surface-1 px-4 py-2 sm:hidden")}
+           data-testid="screener-bottom-bar">
         <div className="min-w-0">
           <p className="text-t12 text-fg-muted">
             Matched <span className="font-mono font-tabular text-t15 font-semibold text-signal">{matchedNow ?? "–"}</span>

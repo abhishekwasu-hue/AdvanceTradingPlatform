@@ -70,6 +70,7 @@ class OptionBacktestBody(BaseModel):
     spread_width: int = Field(default=2, ge=1, le=20)
     target_credit_pct: Optional[float] = Field(default=None, ge=5, le=95)
     stop_credit_pct: Optional[float] = Field(default=None, ge=10, le=500)
+    underlying_breach_exit: bool = False
     premium_stop_pct: Optional[float] = Field(default=None, ge=5, le=95)
     custom_legs: Optional[List[CustomLegBody]] = Field(default=None, max_length=MAX_CUSTOM_LEGS)
     max_lots: Optional[int] = Field(default=None, ge=1, le=500)
@@ -94,6 +95,7 @@ class OptionBacktestBody(BaseModel):
             option_strategy=self.option_strategy, option_position=self.option_position, expiry_rule=self.expiry_rule,
             strike_rule=self.strike_rule, strike_offset=self.strike_offset, spread_width=self.spread_width,
             target_credit_pct=self.target_credit_pct, stop_credit_pct=self.stop_credit_pct, premium_stop_pct=self.premium_stop_pct,
+            underlying_breach_exit=self.underlying_breach_exit,
             custom_legs=[CustomLeg.from_dict(leg.model_dump()) for leg in (self.custom_legs or [])], max_lots=self.max_lots,
             lot_size=self.lot_size, strike_step=self.strike_step, expiry_weekday=self.expiry_weekday, weekly_expiry=self.weekly_expiry,
             holidays=set(holidays), implied_volatility=self.implied_volatility, realised_vol_window=self.realised_vol_window,

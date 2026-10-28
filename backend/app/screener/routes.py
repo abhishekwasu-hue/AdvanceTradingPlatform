@@ -32,6 +32,7 @@ from app.platform.controls import flag_enabled, require_flag
 from app.screener import amw_functions as amw_gate
 from app.screener import compile_screen, nodes
 from app.screener import legends as lg
+from app.screener import reasons
 from app.screener import ranking as ranking_gate   # registers the `legends` template source (U7 LG1)
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
@@ -516,7 +517,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         adapter: Any = own.adapter()
         outside = [s for s in symbols if not own.allows(s, exchange)]
         if include_forming:
-            problems.update({s: own.reason(s, exchange) for s in outside})
+            problems.update({s: reasons.Reason(own.reason(s, exchange), reasons.SESSION_BUDGET) for s in outside})
         else:
             held = outside                                # A6: read through the API budget below, not dropped
         symbols = [s for s in symbols if own.allows(s, exchange)]
@@ -554,9 +555,9 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
             try:
                 bars = await bars_of(svc, symbol, exchange)
             except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
-                if isinstance(exc, api_budget.BudgetUsed):         # a batch's symbol with no budget token (api_budget)
-                    return None, None, BUDGET_WAIT
-                return None, None, f"{type(exc).__name__}: {str(exc)[:120]}"
+                # SCR-FIX B3: a reason code + a plain sentence; the full text (never cut) in the log; the API budget
+                # (a batch's symbol with no token) caught by class, keeping the text the page offers to run again
+                return None, None, reasons.from_exception(exc, symbol=symbol, wait_text=BUDGET_WAIT)
             today_bar = await _today_bar(svc, symbol, exchange, now_utc) if attach_today else None
             fut = futures.get(symbol)
             if fut is not None and bars:
@@ -685,7 +686,7 @@ def _symbol_frames(bars: Any, interval: str, base_tf: str, include_forming: bool
     `today` (SCR-FIX A4): today's finished daily bar, added after the closed-bar cut (its session has closed)."""
     df = bars_to_dataframe(bars) if bars else pd.DataFrame()
     if df.empty:
-        return df, {}, "no bars from the broker"
+        return df, {}, reasons.Reason("no bars from the broker", reasons.NO_BARS)
     if df.index.tz is None:
         df.index = df.index.tz_localize("UTC")
     fetched_tf = _FETCH_TF[interval]
@@ -694,7 +695,7 @@ def _symbol_frames(bars: Any, interval: str, base_tf: str, include_forming: bool
     if today is not None and fetched_tf == "1d":
         df = _with_today(df, today)
     if df.empty:
-        return df, {}, "no closed bars from the broker"
+        return df, {}, reasons.Reason("no closed bars from the broker", reasons.NO_BARS)
     return df, {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming, exchange=exchange)}, ""
 
 
@@ -820,6 +821,30 @@ def missing_data(ast: Any) -> List[str]:
     return out
 
 
+def read_counts(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """SCR-FIX B1 / B2: how many symbols could not be read or checked, the grouped reason in one line with its ONE action
+    (`unread_reason`: code, text, action, count) and the first symbol's reason (`first_error`) - from the result rows,
+    so a run, a preview and a stored run count the same way."""
+    rows = reasons.unread_rows(results)
+    out: Dict[str, Any] = {"unread": len(rows)}
+    if rows:
+        out["unread_reason"] = reasons.summary(rows)
+        first = rows[0]
+        out["first_error"] = {"symbol": first["symbol"], "text": first["reason"], "code": first.get("code") or reasons.NOT_READ,
+                              "action": first.get("action") or "retry"}
+    return out
+
+
+def nothing_read_detail(scanned: int, grouped: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """SCR-FIX B2: the run-level error when not one symbol could be read - the existing {message, problems} error shape,
+    plus the reason code and the one action."""
+    reason = (grouped or {}).get("text") or "The bars could not be read."
+    what = "the stock" if scanned == 1 else f"any of the {scanned} stocks"
+    message = f"Could not read {what}. {reason}"
+    return {"message": message, "code": reasons.NOTHING_READ, "reason_code": (grouped or {}).get("code") or reasons.NOT_READ,
+            "action": (grouped or {}).get("action") or "retry", "unread": scanned, "problems": [{"message": message, "pos": None}]}
+
+
 @router.post("/run", dependencies=[Depends(run_rate_limit)])
 async def run(body: RunBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Runs a saved screen or ad-hoc source over up to 50 symbols, on server bars only; stores the run."""
@@ -859,11 +884,18 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     with ranking_gate.active(systems):
         matches, stages = await asyncio.to_thread(screen_and_funnel, ast, validated, universe, base_tf=base_tf, params=params,
                                                   vectorized=vectorized)
-    results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
-    results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
+    # SCR-FIX B1: a symbol that could not be read (fetch problem) or checked (too little history, no value) carries its
+    # reason code + action and is counted apart from the symbols that were read and did not match
+    results: List[Dict[str, Any]] = [reasons.row(m.symbol, m.matched, m.reason) for m in matches]
+    results += [reasons.row(s, False, reasons.as_reason(why)) for s, why in fetch_problems.items()]
+    unread = read_counts(results)
+    if unread["unread"] and unread["unread"] >= len(symbols) and not body.preview and not body.batch:
+        # SCR-FIX B2: nothing could be read - a run-level error with the grouped reason and its one action, never
+        # "200 with 0 matches" (a preview / a batch of a longer list reports the counts instead)
+        raise HTTPException(status_code=422, detail=nothing_read_detail(len(symbols), unread["unread_reason"]))
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
                "matched": [r["symbol"] for r in results if r["matched"]], "results": results,
-               "funnel": {"universe": len(symbols), **stages}, "disclaimer": DISCLAIMER}
+               "funnel": {"universe": len(symbols), **stages}, **unread, "disclaimer": DISCLAIMER}
     held_back = int(tier.pop("held_back", 0) or 0)
     if tier:
         payload["data_tier"] = tier["data_tier"]          # BT1b: the tier the run actually used (flag byob_data_tier)
@@ -879,7 +911,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
         counts = {"universe": len(symbols), "with_data": stages["with_data"],
                   "stages": [{"text": st["text"], "survivors": st["survivors"]} for st in stages["stages"]]}
         preview = {"run_id": None, "preview": True, "text": payload["text"], "base_tf": base_tf, "data_source": data_source,
-                   "scanned": len(symbols), "matched_count": sum(1 for r in results if r["matched"]), "funnel": counts, "disclaimer": DISCLAIMER}
+                   "scanned": len(symbols), "matched_count": sum(1 for r in results if r["matched"]), "funnel": counts, **unread,
+                   "disclaimer": DISCLAIMER}
         if tier:
             preview["data_tier"] = tier["data_tier"]
         if held_back:
@@ -1061,9 +1094,11 @@ async def get_run(run_id: int, user: User = Depends(get_current_user), session: 
     row = await session.scalar(query)
     if row is None:
         raise HTTPException(status_code=404, detail="Run not found")
+    results = json.loads(row.result_json)
     return {"run_id": row.id, "screen_id": row.screen_id, "ast_sha256": row.ast_sha256, "version": row.ast_version, "base_tf": row.base_tf,
             "universe": json.loads(row.universe_json), "data_source": row.data_source, "scanned": row.scanned, "matched": row.matched,
-            "results": json.loads(row.result_json), "created_at": row.created_at.isoformat() if row.created_at else None, "disclaimer": DISCLAIMER}
+            "results": results, **read_counts(results), "created_at": row.created_at.isoformat() if row.created_at else None,
+            "disclaimer": DISCLAIMER}
 
 
 __all__ = ["router", "FLAG", "GALLERY_FLAG", "LEGENDS_FLAG", "fetch_frames"]

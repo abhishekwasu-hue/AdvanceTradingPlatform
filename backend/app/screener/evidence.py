@@ -177,11 +177,66 @@ def blocks_of(ast: Any) -> List[Any]:
 def conditions_of(node: Any) -> List[Any]:
     """The conditions inside a block, in reading order: AND / OR groups and a NOT over a group are opened; a NOT over
     one condition stays one condition."""
-    if isinstance(node, n.Logic):
-        return [c for item in node.items for c in conditions_of(item)]
-    if isinstance(node, n.Not) and isinstance(node.item, (n.Logic, n.Not)):
-        return conditions_of(node.item)
-    return [node]
+    return [c.node for c in conditions_in(node)]
+
+
+@dataclass(frozen=True)
+class Group:
+    """SCR-FIX B5: an AND / OR group a condition sits in, inside its block. `negated`: an odd number of NOTs over the
+    group (inside the block). `op` is what the group asks of its members once those NOTs are carried in (De Morgan:
+    NOT (a OR b) asks that a and b are both false - an ALL of negated members)."""
+    id: str
+    node: Any
+    negated: bool
+
+    @property
+    def op(self) -> str:
+        return "ANY" if (self.node.op == "ANY") != self.negated else "ALL"
+
+
+@dataclass(frozen=True)
+class Condition:
+    """SCR-FIX B5: one condition row with what its parents ask of it: `required` False when the screen needs it FALSE
+    (an odd number of NOTs over its groups), and its groups (innermost last)."""
+    node: Any
+    required: bool
+    groups: Tuple[Group, ...]
+
+
+def conditions_in(node: Any, prefix: str = "g") -> List[Condition]:
+    """The conditions of a block with each one's group operators and negation carried from its parent groups (B5)."""
+    out: List[Condition] = []
+    count = [0]
+
+    def visit(item: Any, negated: bool, groups: Tuple[Group, ...]) -> None:
+        if isinstance(item, n.Logic):
+            count[0] += 1
+            group = Group(f"{prefix}{count[0]}", item, negated)
+            for sub in item.items:
+                visit(sub, negated, groups + (group,))
+        elif isinstance(item, n.Not) and isinstance(item.item, (n.Logic, n.Not)):
+            visit(item.item, not negated, groups)
+        else:
+            out.append(Condition(item, not negated, groups))
+
+    visit(node, False, ())
+    return out
+
+
+MET, FAILED, NOT_NEEDED, UNKNOWN = "met", "failed", "not_needed", "unknown"
+
+
+def condition_state(raw: Optional[bool], cond: Condition, group_met: Dict[str, Optional[bool]]) -> str:
+    """SCR-FIX B5: a row's mark from what the screen asks of it - "met" (✅: true when it must be true, false when it must be
+    false), "not_needed" (grey: not met, but an OR it sits in was met by another branch), "failed" (✗) or "unknown"
+    (it could not be evaluated). A condition required to be false never shows ✅ for being true."""
+    if raw is None:
+        return UNKNOWN
+    if raw == cond.required:
+        return MET
+    if any(g.op == "ANY" and group_met.get(g.id) for g in cond.groups):
+        return NOT_NEEDED
+    return FAILED
 
 
 def _unit(node: Any, base_tf: str, params: Dict[str, Any]) -> Tuple[str, Optional[str]]:
@@ -617,6 +672,28 @@ def ast_sha256(ast: Any) -> str:
     return hashlib.sha256(json.dumps(n.to_json(ast), sort_keys=True).encode()).hexdigest()
 
 
+def _groups_met(ev: _Eval, base_tf: str, found: Sequence[Condition]) -> Dict[str, Optional[bool]]:
+    """Each group of a block: did it do what the screen asks of it (its truth, flipped under an odd number of NOTs)?"""
+    out: Dict[str, Optional[bool]] = {}
+    for cond in found:
+        for g in cond.groups:
+            if g.id in out:
+                continue
+            try:
+                out[g.id] = _truth(ev.ev(g.node, base_tf)) != g.negated
+            except ScreenRuntimeError:
+                out[g.id] = None
+    return out
+
+
+def _group_of(cond: Condition) -> Optional[Dict[str, Any]]:
+    """The innermost group a row sits in: its id, the operator it asks with (NOTs carried in) and whether a NOT is over it."""
+    if not cond.groups:
+        return None
+    g = cond.groups[-1]
+    return {"id": g.id, "op": g.op, "negated": g.negated}
+
+
 def build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, params: Optional[Dict[str, Any]] = None,
                as_of: Optional[datetime] = None, window: int = DEFAULT_WINDOW, debug: bool = False,
                constants: Optional[Dict[int, float]] = None, exchange: str = "NSE", data_source: Optional[str] = None,
@@ -653,28 +730,39 @@ def build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, para
             bpass = None
         row_ids: List[str] = []
         entry: Dict[str, Any] = {"id": bid, "text": n.to_text(block), "passed": bpass, "rows": row_ids}
-        for ci, cond in enumerate(conditions_of(block), start=1):
+        found = conditions_in(block, prefix=f"{bid}.g")
+        group_met = _groups_met(ev, base_tf, found)
+        for ci, item in enumerate(found, start=1):
             if len(order) >= MAX_ROWS:
                 not_shown += 1
                 continue
             rid = f"{bid}.c{ci}"
+            cond = item.node
+            # SCR-FIX B5: a condition the screen needs FALSE reads as its negation (text and numbers), so the row says
+            # what the block text says; its mark is whether it did what the screen asks, not its raw truth
+            shown_node = cond if item.required else n.Not(cond)
+            shown_text = n.to_text(cond) if item.required else f"NOT ({n.to_text(cond)})"
+            where = _group_of(item)
             try:
-                passed: Optional[bool] = _truth(ev.ev(cond, base_tf))
+                raw: Optional[bool] = _truth(ev.ev(cond, base_tf))
             except ScreenRuntimeError as exc:
-                passed = None
-                row: Dict[str, Any] = {"id": rid, "block": bid, "text": n.to_text(cond), "passed": None, "terms": [],
-                                       "verify": n.to_text(cond), "note": str(exc)[:160], "drawable": None}
+                row: Dict[str, Any] = {"id": rid, "block": bid, "text": shown_text, "passed": None, "state": UNKNOWN,
+                                       "raw": None, "required": item.required, "group": where, "terms": [],
+                                       "verify": shown_text, "note": str(exc)[:160], "drawable": None}
                 rows[rid] = row
                 row_ids.append(rid)
                 order.append(rid)
                 continue
+            state = condition_state(raw, item, group_met)
+            passed: Optional[bool] = True if state == MET else (False if state == FAILED else None)
             terms = [_term(ctx, op) for op in _operands(cond)]
             call = _inner_call(cond)
             if call is not None and not terms:
                 terms = [_term(ctx, a) for a in call.args if not isinstance(a, (n.Str, n.Bool))][:3]
-            row = {"id": rid, "block": bid, "text": n.to_text(cond), "passed": passed, "terms": terms,
-                   "verify": _verify_text(cond, terms), "drawable": None, "is_call": call is not None and not _operands(cond)}
-            if isinstance(cond, n.Not):
+            row = {"id": rid, "block": bid, "text": shown_text, "passed": passed, "state": state, "raw": raw,
+                   "required": item.required, "group": where, "terms": terms,
+                   "verify": _verify_text(shown_node, terms), "drawable": None, "is_call": call is not None and not _operands(cond)}
+            if isinstance(shown_node, n.Not):
                 row["negated"] = True
             chain_call = _chain_call(cond) if context else None
             d = _chain(ctx, chain_call, row) if chain_call is not None else _drawable(ctx, cond, row)
@@ -682,6 +770,8 @@ def build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, para
                 d = {"id": f"d{len(drawables) + 1}", "row": rid, **d, "failed": not passed}
                 drawables.append(d)
                 row["drawable"] = d["id"]
+            if not item.required and not str(row["verify"]).startswith("NOT "):
+                row["verify"] = f"NOT ({row['verify']})"        # a drawn kind's own numbers line, still read as negated
             row.pop("is_call", None)
             rows[rid] = row
             row_ids.append(rid)
@@ -764,7 +854,7 @@ def caption_text(pack: Dict[str, Any], limit: int = CAPTION_MAX) -> str:
     return text[:limit]
 
 
-__all__ = ["SCHEMA", "DISCLAIMER", "build_pack", "blocks_of", "conditions_of", "caption_lines", "caption_text", "value_text", "ast_sha256", "bar_time_text",
+__all__ = ["SCHEMA", "DISCLAIMER", "build_pack", "blocks_of", "conditions_of", "conditions_in", "condition_state", "Condition", "Group", "caption_lines", "caption_text", "value_text", "ast_sha256", "bar_time_text",
            "BREAKOUT_ARGS", "MAX_ROWS", "MAX_ZONE_BANDS", "DEFAULT_WINDOW", "MAX_WINDOW", "DRAWN_AS", "CHAIN_CALLS", "CONTEXT_TFS", "drawn_as"]
 
 

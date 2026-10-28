@@ -338,6 +338,16 @@ def test_replay_is_the_builder_on_the_shared_lake_as_of_the_bar(stored):
         assert pd.Timestamp(body["as_of"]["bar_close"]) <= at
 
 
+def test_the_view_says_up_front_whether_replay_is_available(stored):
+    """SCR-FIX B6: the page shows the replay controls only when the replay route would answer (no buttons beside
+    "Replay is not available")."""
+    headers, _me, rid, _pack, _frame, _ = stored
+    assert client.get(f"/api/screener/evidence/{rid}", headers=headers).json()["replay_available"] is True
+    _flags(evidence_context=False)
+    assert client.get(f"/api/screener/evidence/{rid}", headers=headers).json()["replay_available"] is False
+    _flags(evidence_context=True)
+
+
 def test_replay_never_reads_a_later_or_a_private_row(stored):
     headers, _me, rid, _pack, frame, _ = stored
     at = _close_of(frame, len(frame) - 20)

@@ -128,7 +128,7 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
           <Button size="sm" onClick={() => onChange([...stages, newBlock(registry, kind)])}><Plus size={14} /> Add a condition</Button>
           <KindPicker value={kind} onChange={setKind} formula={!!props.formula} />
         </span>
-        <MatchedFoot matched={props.matched} of={total} kills={rows.some((r) => r.kills)} live={!!props.live} />
+        <MatchedFoot matched={props.matched} of={props.fresh ? funnel?.universe ?? null : null} withData={total} kills={rows.some((r) => r.kills)} live={!!props.live} />
       </div>
     </section>
   );
@@ -146,8 +146,10 @@ function FunnelHead({ universe, withData = null }: { universe: number; withData?
   );
 }
 
-/** The canvas's one live region: a single summary per run ("Matched 4 of 48"), not a count per stage. */
-function MatchedFoot({ matched, of, kills, live }: { matched: number | null; of: number | null; kills: boolean; live: boolean }) {
+/** The canvas's one live region: a single summary per run ("Matched 4 of 50 · 48 had data"), not a count per stage.
+ * SCR-FIX B4: "of" is the answer's own universe (the same count the phone bar shows); a symbol that could not be read
+ * is in it, and "had data" says how many were read. */
+export function MatchedFoot({ matched, of, withData = null, kills, live }: { matched: number | null; of: number | null; withData?: number | null; kills: boolean; live: boolean }) {
   return (
     // one announcement per Run; live previews update the number quietly (they come after every pause in editing)
     <p className="text-t12 text-fg-muted" aria-live={live ? "off" : "polite"} aria-atomic="true">
@@ -156,6 +158,9 @@ function MatchedFoot({ matched, of, kills, live }: { matched: number | null; of:
         {matched ?? "–"}
       </span>
       {matched != null && of != null && <span> of <span className="font-mono font-tabular">{of}</span></span>}
+      {matched != null && of != null && withData != null && withData !== of && (
+        <span data-testid="matched-had-data"> · <span className="font-mono font-tabular">{withData}</span> had data</span>
+      )}
       {matched == null && <span className="sr-only">not counted yet</span>}
       {matched != null && live && <span className="ml-1.5 rounded-full border border-border px-1.5 text-t12" title="Counted as you edit; Run stores a scan">live</span>}
     </p>

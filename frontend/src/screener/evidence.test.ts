@@ -24,7 +24,9 @@ describe("evidence pack helpers (U8 EV1)", () => {
   it("lists failed conditions in the verify strip only when asked", () => {
     expect(verifyRows(pack, false).every((r) => r.passed !== false)).toBe(true);
     expect(verifyRows(pack, true).length).toBe(pack.rows.length);
-    expect(verifyRows(pack, true).some((r) => r.passed === false)).toBe(true);
+    const oneFailed = { ...pack, rows: pack.rows.map((r, i) => (i === 0 ? { ...r, passed: false } : r)) };
+    expect(verifyRows(oneFailed, true).some((r) => r.passed === false)).toBe(true);
+    expect(verifyRows(oneFailed, false).some((r) => r.passed === false)).toBe(false);
   });
 
   it("builds geometry from the pack alone: candles, one shape set per drawable, one lower pane, the matched bar", () => {

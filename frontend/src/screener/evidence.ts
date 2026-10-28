@@ -25,7 +25,13 @@ export interface EvidenceTerm { text: string; value: number | string | boolean |
 export interface EvidenceRow {
   id: string; block: string; text: string; passed: boolean | null; terms: EvidenceTerm[]; verify: string; drawable: string | null;
   note?: string; negated?: boolean; zone_as_of?: string | null;
+  /** SCR-FIX B5 (absent on older packs): what the row did against what the screen asks of it - "met" (✅), "failed"
+   * (✗), "not_needed" (grey: an OR it sits in was made true by another branch) or "unknown". `raw` is the engine's own
+   * truth; `required` false when the screen needs the condition FALSE (a NOT over its group - the text then reads
+   * "NOT (...)"); `group` the innermost AND / OR it sits in, with the NOTs over it carried in. */
+  state?: RowState; raw?: boolean | null; required?: boolean; group?: { id: string; op: "ALL" | "ANY"; negated: boolean } | null;
 }
+export type RowState = "met" | "failed" | "not_needed" | "unknown";
 export interface EvidenceBlock { id: string; text: string; passed: boolean | null; rows: string[] }
 /** EV3 (flag evidence_context): the engine's DowTrend on one timeframe as of the matched bar, and the rows reading it. */
 export interface EvidenceContext {
@@ -51,6 +57,8 @@ export interface EvidencePack {
   disclaimer: string;
   context?: EvidenceContext[];
   replay?: EvidenceReplay;
+  /** SCR-FIX B6: whether this evidence can be replayed at all (the replay controls show only then). */
+  replay_available?: boolean;
 }
 
 export const evidenceApi = {
@@ -123,9 +131,11 @@ export function visibleDrawables(pack: EvidencePack, hiddenBlocks: ReadonlySet<s
   return pack.drawables.filter((d) => (showFailed || !d.failed) && !hiddenBlocks.has(blockOf.get(d.row) ?? ""));
 }
 
-/** The verify strip rows: failed conditions only with `showFailed`. */
+/** The verify strip rows: failed conditions only with `showFailed`. SCR-FIX B5: a row of an OR group says so ("One of:"),
+ * so the table reads like the screen's text; the text already carries a NOT the screen puts over its group. */
 export function verifyRows(pack: EvidencePack, showFailed: boolean): EvidenceRow[] {
-  return pack.rows.filter((r) => showFailed || r.passed !== false);
+  return pack.rows.filter((r) => showFailed || r.passed !== false)
+    .map((r) => (r.group?.op === "ANY" ? { ...r, text: `One of: ${r.text}` } : r));
 }
 
 /** The comparison and logic signs a condition is written with, and the words a trader reads (longest sign first). */
@@ -153,6 +163,12 @@ export function plainCondition(text: string): string {
   return t.replace(/\s+/g, " ").trim();
 }
 
+
+/** SCR-FIX B6: the replay controls show only when the evidence can be replayed - the server says so up front
+ * (`replay_available`; absent on an older server) and no replay request was refused - and there is a bar to step to. */
+export function canReplay(pack: Pick<EvidencePack, "replay_available">, steps: number, refused: boolean): boolean {
+  return steps > 1 && pack.replay_available !== false && !refused;
+}
 // --------------------------------------------------------------------------------------------------- geometry
 export interface Candle { x: number; w: number; open: number; close: number; high: number; low: number; rising: boolean; index: number }
 export interface Shape {

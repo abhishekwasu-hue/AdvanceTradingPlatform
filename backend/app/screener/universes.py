@@ -60,8 +60,21 @@ def batch_wait_seconds(broker: str, symbols: int) -> float:
     return float(math.ceil(symbols / max(1, api_limits(broker).per_second)) + 2)
 
 
-async def _broker_name(session: AsyncSession, tenant_id: int) -> Optional[str]:
-    """The broker this organisation's runs read through (its first stored credential; None when it has none)."""
+async def _broker_name(session: AsyncSession, tenant_id: int, user: Optional[User] = None) -> Optional[str]:
+    """The broker this organisation's runs read through. SCR-FIX A8: the credential a run itself picks - the user's own
+    session with bring-your-own-broker on, else `_pick_record(..., "primary")` as `fetch_frames` does - not the first
+    stored credential by name; that one only when no session is usable now (None when there is no credential at all)."""
+    from app.market_data import live_access
+    from app.market_data.candles_routes import _pick_record
+    if user is not None and await live_access.byob_on(session, tenant_id):
+        own = await live_access.own_session_record(session, user)
+        if own is not None:
+            return str(own.broker_name)
+    else:
+        try:
+            return str((await _pick_record(session, tenant_id, None, "primary")).broker_name)
+        except HTTPException:
+            pass                                          # no usable session now: the stored credential below
     return await session.scalar(select(BrokerCredentialRecord.broker_name).where(BrokerCredentialRecord.tenant_id == tenant_id)
                                 .order_by(BrokerCredentialRecord.broker_name, BrokerCredentialRecord.account_label).limit(1))
 
@@ -118,7 +131,7 @@ async def list_universes(user: User = Depends(get_current_user), session: AsyncS
     """The lists a scan can run on (shared reference data), the default key and this organisation's batch plan."""
     await require_flag(session, FLAG, user.tenant_id)
     groups = await catalogue(session)
-    return {"default_key": DEFAULT_KEY, "groups": groups, "batch": batch_plan(await _broker_name(session, user.tenant_id))}
+    return {"default_key": DEFAULT_KEY, "groups": groups, "batch": batch_plan(await _broker_name(session, user.tenant_id, user))}
 
 
 @router.get("/{key}")

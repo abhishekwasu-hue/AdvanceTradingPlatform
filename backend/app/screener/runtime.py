@@ -33,6 +33,7 @@ from app.indicators.trend import wma as _wma
 from app.indicators.volatility import atr as _atr
 from app.indicators.volatility import supertrend_dir as _supertrend_dir
 from app.screener import nodes as n
+from app.screener import reasons
 from app.screener.registry import FUNCTIONS, RETEST_WAVE_OF
 from app.screener.validator import Validated
 
@@ -77,21 +78,46 @@ class Match:
     reason: Optional[str] = None                           # why a symbol could not be evaluated (history too short...)
 
 
-def bar_close(index: pd.DatetimeIndex, tf: str) -> pd.DatetimeIndex:
+# SCR-FIX A5: the NSE-family session close (09:15-15:30 IST). A 30m / 1h session is not a whole number of buckets, so
+# the day's last bucket (15:15) ends at the close, not 30 / 60 minutes after it starts - as on Charts and every broker.
+_SESSION_CLOSE_IST = pd.Timedelta(hours=15, minutes=30)
+
+
+def _session_capped(tf: str, exchange: Optional[str]) -> bool:
+    """True for an intraday timeframe whose buckets do not tile the NSE-family session, on that session's clock (an
+    exchange of None is NSE, as SymbolData says); another venue's session (MCX, CDS) keeps whole buckets."""
+    minutes = n.TF_MINUTES.get(tf, 0)
+    if not minutes or minutes >= n.TF_MINUTES["1d"] or n.TF_MINUTES["1d"] % minutes == 0:
+        return False
+    if exchange is None:
+        return True
+    from app.market_data.calendar import session_family
+    return session_family(exchange) == "NSE"
+
+
+def bar_close(index: pd.DatetimeIndex, tf: str, exchange: Optional[str] = None) -> pd.DatetimeIndex:
     """When a bar that starts at `index` has closed. Months are counted in exchange time (BK1 verification B): a month
     labelled 1 Aug 00:00 IST is 31 Jul 18:30 UTC, and one calendar month on from the UTC stamp clipped to 30 Aug -
-    a day before the month's last session - so the month was visible early."""
+    a day before the month's last session - so the month was visible early. SCR-FIX A5: a 30m / 1h bar that starts
+    before the session close and would end after it closes at the session close (`_SESSION_CLOSE_IST`)."""
     if tf == "1M" and getattr(index, "tz", None) is not None:
         return (index.tz_convert(EXCHANGE_TZ) + _DURATION[tf]).tz_convert(index.tz)
-    return index + _DURATION[tf]
+    end = index + _DURATION[tf]
+    if len(index) and _session_capped(tf, exchange):
+        tz = getattr(index, "tz", None)
+        local = (index.tz_localize("UTC") if tz is None else index).tz_convert(EXCHANGE_TZ)
+        close = local.normalize() + _SESSION_CLOSE_IST
+        close = close.tz_convert("UTC").tz_localize(None) if tz is None else close.tz_convert(tz)
+        end = end.where(~((index < close) & (close < end)), close)
+    return end
 
 
-def closed_only(df: pd.DataFrame, tf: str, now: datetime) -> pd.DataFrame:
+def closed_only(df: pd.DataFrame, tf: str, now: datetime, exchange: Optional[str] = None) -> pd.DataFrame:
     """Bars whose close time is not after `now` - a broker's intraday feed ends with the bar still forming, and a
     screen decides on closed bars only."""
     if df.empty:
         return df
-    return df[bar_close(df.index, tf) <= pd.Timestamp(now)]
+    return df[bar_close(df.index, tf, exchange) <= pd.Timestamp(now)]
 
 
 def session_origin(index: pd.DatetimeIndex) -> pd.Timestamp:
@@ -105,7 +131,7 @@ def session_origin(index: pd.DatetimeIndex) -> pd.Timestamp:
     return (first.tz_convert("UTC").normalize() + _IST_OPEN_UTC).tz_convert(first.tzinfo)
 
 
-def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = False) -> pd.DataFrame:
+def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = False, exchange: Optional[str] = None) -> pd.DataFrame:
     """Coarser bars from base bars (bar start labels), dropping a trailing bucket that had not closed (kept only for
     S4b-2 intrabar alerts, `keep_forming`). Intraday buckets start at the exchange open, like the broker's charts and
     the Strategy Builder (`declarative._IST_OPEN_UTC`)."""
@@ -125,8 +151,8 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = Fal
     if src is not base:
         out.index = out.index.tz_convert(tz)
     if len(out) and len(base) and not keep_forming:
-        last_base_close = bar_close(base.index[-1:], base_tf)[0]
-        if bar_close(out.index[-1:], tf)[0] > last_base_close:
+        last_base_close = bar_close(base.index[-1:], base_tf, exchange)[0]
+        if bar_close(out.index[-1:], tf, exchange)[0] > last_base_close:
             out = out.iloc[:-1]
     return out
 
@@ -193,16 +219,16 @@ class _Eval:
             # U6 BK1 verification (A): weekly / monthly from a given daily frame (the deeper history) on an intraday screen
             if "1d" in self.frames and n.TF_MINUTES[self.base_tf] < n.TF_MINUTES["1d"] < n.TF_MINUTES[tf]:
                 src = "1d"
-            self.frames[tf] = resample(self.frames[src], src, tf)
+            self.frames[tf] = resample(self.frames[src], src, tf, exchange=getattr(self.data, "exchange", None))
         return self.frames[tf]
 
     def align(self, value: Any, src_tf: str, dst_tf: str) -> Any:
         """A src_tf series onto dst_tf bars by close time (look-ahead safe)."""
         if not isinstance(value, pd.Series) or src_tf == dst_tf:
             return value
-        avail = pd.Series(value.to_numpy(), index=bar_close(value.index, src_tf))
+        avail = pd.Series(value.to_numpy(), index=bar_close(value.index, src_tf, getattr(self.data, "exchange", None)))
         avail = avail[~avail.index.duplicated(keep="last")].sort_index()
-        dst_close = bar_close(self.frame(dst_tf).index, dst_tf)
+        dst_close = bar_close(self.frame(dst_tf).index, dst_tf, getattr(self.data, "exchange", None))
         with pd.option_context("future.no_silent_downcasting", True):       # a category series stays object (no dtype guess)
             out = avail.reindex(avail.index.union(dst_close)).ffill().reindex(dst_close)
         return pd.Series(out.to_numpy(), index=self.frame(dst_tf).index)
@@ -1370,7 +1396,7 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
     out: List[Match] = []
     for d in universe:
         if d.frames.get(base_tf) is None or d.frames[base_tf].empty:
-            out.append(Match(d.symbol, False, f"no {base_tf} bars"))
+            out.append(Match(d.symbol, False, reasons.Reason(f"no {base_tf} bars", reasons.NO_BARS)))
             continue
         ev = _Eval(d, base_tf, params, constants[d.symbol], memo=memo.setdefault(id(d), {}) if memo is not None else None)
         # S5-A review: a higher timeframe built from the base bars is checked too (a 1d swing on a 5m screen needs 100
@@ -1378,19 +1404,27 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
         short = [tf for tf, bars in validated.lookback.items()
                  if (tf in d.frames or n.TF_MINUTES.get(tf, 0) > n.TF_MINUTES[base_tf]) and len(ev.frame(tf)) < bars] if check_history else []
         if short:
-            out.append(Match(d.symbol, False, f"not enough history on {', '.join(sorted(short))}"))
+            out.append(Match(d.symbol, False, reasons.short_history(short)))
             continue
         try:
             value = _last(ev.ev(ast, base_tf))
         except ScreenRuntimeError as exc:
-            out.append(Match(d.symbol, False, str(exc)))
+            out.append(Match(d.symbol, False, reasons.Reason(str(exc), reasons.NOT_CHECKED)))
             continue
         except Exception as exc:  # noqa: BLE001 - S5-A4 review: one symbol's bad data must not abort the whole universe
-            logger.exception("Screen evaluation failed for %s", d.symbol)
-            out.append(Match(d.symbol, False, f"could not be evaluated ({type(exc).__name__})"))
+            # SCR-FIX B3: the full text in the log, a plain sentence (never the exception's class name) for the user
+            out.append(Match(d.symbol, False, reasons.not_checked(exc, d.symbol)))
             continue
-        out.append(Match(d.symbol, bool(value) if not (isinstance(value, float) and np.isnan(value)) else False))
+        out.append(last_match(d.symbol, value))
     return out
+
+
+def last_match(symbol: str, value: Any) -> Match:
+    """SCR-FIX B1: the screen's value on the last bar -> a Match. No value (NaN: the indicators' warm-up is longer than
+    the bars) is "could not be checked" with its reason, never "did not match"."""
+    if isinstance(value, float) and np.isnan(value):
+        return Match(symbol, False, reasons.of(reasons.NO_VALUE))
+    return Match(symbol, bool(value))
 
 
 def evaluate(ast: Any, data: SymbolData, *, base_tf: str, params: Optional[Dict[str, Any]] = None) -> Any:
@@ -1398,4 +1432,4 @@ def evaluate(ast: Any, data: SymbolData, *, base_tf: str, params: Optional[Dict[
     return _Eval(data, base_tf, dict(params or {}), {}).ev(ast, base_tf)
 
 
-__all__ = ["SymbolData", "Match", "run_screen", "evaluate", "resample", "closed_only", "ScreenRuntimeError"]
+__all__ = ["SymbolData", "Match", "last_match", "run_screen", "evaluate", "resample", "closed_only", "ScreenRuntimeError"]

@@ -253,6 +253,7 @@ class KotakNeoBroker(BrokerInterface):
     max_tag_length = 20                  # the SDK checks only "non-blank"; 20 keeps ATP's algo tag as on Kite
     history_by_date = True               # fromdate / todate are dates (YYYY-MM-DD)
     daily_days_per_request = 365         # the per-interval range limits are not published in figures: conservative
+    native_intervals = frozenset(INTERVAL_MAP)           # SCR-FIX A1: 1 / 3 / 5 / 10 / 15 / 30 / 60 min, day, week
     multi_quote = True
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:

@@ -247,6 +247,7 @@ class GrowwBroker(BrokerInterface):
     max_tag_length = 20                  # `order_reference_id`: the published limit is not in the SDK (GW-8); 20 is safe
     history_by_date = False
     daily_days_per_request = 90          # history per call is not published in figures (GW-6): conservative
+    native_intervals = frozenset(INTERVAL_MAP) - {"1hour", "4hour"}   # SCR-FIX A1: ATP names only (4 hours: from 60min)
     multi_quote = True
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:

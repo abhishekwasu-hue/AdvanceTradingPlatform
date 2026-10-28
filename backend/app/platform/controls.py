@@ -106,6 +106,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (the default, until the owner approves the comparison page): every v2 page looks exactly as before. Layout only -
     # places no orders and changes no trading behaviour.
     "colour_v2": "Colour v2: purposeful colour on the v2 pages (tinted icons, option chain tints, P&L tint, sparklines, Long / Short chips; layout only)",
+    # UX-14 "Professional palette" (owner, 28 Oct; docs/owner-orders/ATP_ORDER_UX14.md): the colour v3 token set - neutral
+    # surfaces, one accent, semantic colours only for meaning, no dot backdrop. Needs ui_v2 + colour_v2. OFF until the
+    # owner's OK on the comparison page. Layout only - places no orders and changes no trading behaviour.
+    "colour_v3": "Colour v3: the professional palette on the v2 pages (neutral surfaces, one accent, meaning colours; layout only)",
     # N2-5 (P1 spec 1.5, docs/design/N2_P1FGH.md): the market context panel - regime (Dow structure of the NIFTY 50 on
     # daily and weekly bars), breadth, India VIX with its 1-year rank, FII / DII (seam, off until a source is set),
     # global cues and this week's events, each tile with its source and as-of and NA on its own failure. Shared data

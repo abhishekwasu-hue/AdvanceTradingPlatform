@@ -10,7 +10,7 @@ import { ListDetailView, MarketsBody, type Load, type View } from "./MarketsPage
 import pageSource from "./MarketsPageV2.tsx?raw";
 import modelSource from "./model.ts?raw";
 import {
-  advanceShare, asOfText, breadthText, dishLines, fetchList, fetchOverview, heatClass, leadersAndLaggards, moveText, rankGroups, relativeText,
+  advanceShare, asOfText, breadthText, dishFacts, dishLines, fetchList, fetchOverview, heatClass, leadersAndLaggards, moveText, rankGroups, relativeText,
   toneOf, type MarketList, type MarketsOverview, type Period,
 } from "./model";
 
@@ -82,6 +82,11 @@ describe("the rules", () => {
     expect([two.leaders[0].name, two.laggards[0].name]).toEqual(["Banking", "IT"]);
   });
 
+  it("the dish facts (UX-11b C4) match its words", () => {
+    expect(dishFacts(DEMO_OVERVIEW, "day")).toEqual({ bench: { name: "NIFTY 50", change: 0.45 }, strongest: { name: "Banking", change: 0.9 },
+      weakest: { name: "IT", change: -1.3 }, up: 2, known: 3 });
+  });
+
   it("the dish: the market's move, the strongest and weakest sector, how many rose", () => {
     expect(dishLines(DEMO_OVERVIEW, "day")).toEqual([
       "NIFTY 50 rose on the day (+0.45%).",
@@ -101,7 +106,12 @@ describe("the page", () => {
     const html = bodyHtml();
     const words = text(html);
     expect(words).toContain("At the close of 21 Oct 2026");
-    expect(words).toContain("Strongest sector: Banking (+0.90%)");
+    // UX-11b C4: the dish as numbers - leader / laggard chips, Signed moves, the sectors-up bar.
+    expect(html).toMatch(/data-chip="leader"[^>]*>.*Banking/);
+    expect(html).toMatch(/data-chip="laggard"[^>]*>.*IT/);
+    expect(html).toContain('data-progress="Sectors that rose"');
+    expect(words).toContain("2 of 3");
+    expect(html).toMatch(/data-signed="up"[^>]*>.*\+0\.90%/);
     expect(html).toContain('data-block="leaders"');
     expect(html).toMatch(/data-heatmap[^>]*class="hidden[^"]*md:grid/);
     expect(html).toMatch(/data-list[^>]*class="[^"]*md:hidden/);
@@ -110,7 +120,9 @@ describe("the page", () => {
       expect(html).toContain(`data-row="${name}"`);
     }
     expect(words).toContain("28 rose · 11 fell · 1 unchanged");
-    expect(words).toContain("Strongest KAPPA +4.20% · Weakest SIGMA −2.10%");
+    // UX-11b C4: a tile's strongest / weakest stock with Signed moves (the words stay in its title).
+    expect(words).toContain("KAPPA ▲ +4.20% SIGMA ▼ −2.10%");
+    expect(html).toContain('title="Strongest KAPPA +4.20% · Weakest SIGMA −2.10%"');
     // Realty has no stored move: it says so.
     expect(words).toMatch(/Realty I don't know/);
     // A tile opens the sector's stocks, keeping the view and the period.

@@ -25,6 +25,8 @@ import { closedText, exitConfirmText, failedText, heldRows, type HeldRow } from 
 import { NoteV2 } from "../trading/PartsV2";
 import type { PortfolioExposure, TradeRecord } from "../types";
 import { EMPTY, formatCompactIN, formatDateIST, formatNumber, formatPrice, formatSignedCompactIN, formatTimeIST } from "../ui/format";
+import { Chip } from "../ui/Chip";
+import { Signed } from "../ui/Signed";
 import { SubTabs } from "../ui/SubTabs";
 import type { ChartLive, TerminalSpot } from "./spot";
 import { orderGroup, statusWords, type OrderEvent, type OrderGroup, type OrderRow, type TerminalApi } from "./api";
@@ -360,11 +362,24 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
       onPart: (p) => setPartAsk({ kind: "part", position: p }), onReverse: (p) => setPartAsk({ kind: "reverse", position: p }),
     } : undefined,
   };
-  const priced = rows.some((r) => r.pnl !== null);
+  // UX-15 (owner, 28 Oct): total P&L first (the broker-standard header); Exit all only with two or more positions - each
+  // position keeps its own Exit, never hidden or blocked (ADR-0004).
+  const known = rows.filter((r) => r.pnl !== null);
+  const total = known.length ? known.reduce((a, r) => a + (r.pnl ?? 0), 0) : null;
   return (
     <div className="space-y-space-2" data-panel-body="positions">
       {note && <NoteV2 kind={note.kind} testId="terminal-exit">{note.text}</NoteV2>}
-      {exitNowOn && canTrade && (
+      <div className="flex flex-wrap items-end justify-between gap-space-2" data-positions-total>
+        <div>
+          <div className="text-t12 text-fg-muted">Total P&amp;L</div>
+          {total === null
+            ? <Chip tone="warn" variant="meaning" icon="!" name="no-price">No live price</Chip>
+            : <Signed value={total} kind="money" paise className="text-t20 font-semibold" />}
+          {total !== null && known.length < rows.length && <Chip tone="warn" variant="meaning" icon="!" name="some-prices" className="ml-space-2">{rows.length - known.length} without a price</Chip>}
+        </div>
+        <span className="text-t12 text-fg-muted">{rows.length} open</span>
+      </div>
+      {exitNowOn && canTrade && rows.length > 1 && (
         <div className="flex justify-end">
           {/* A neutral button, never disabled (ADR-0004); "Exiting…" only while the exits are on their way. */}
           <button type="button" onClick={() => void exitAll()} data-terminal="exit-all" aria-busy={exitingAll}
@@ -383,7 +398,6 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
       <PositionActionSheetV2 ask={partAsk} onClose={() => setPartAsk(null)}
         onDone={(text, ok) => { setPartAsk(null); setNote({ kind: ok ? "done" : "warn", text }); setWaitingTick((n) => n + 1); onChanged(); }} />
       {fnoOn && canTrade && <WaitingOrdersV2 refresh={waitingTick} onChanged={onChanged} />}
-      {!priced && <p className={MUTED}>Profit or loss shows once your broker gives live prices.</p>}
     </div>
   );
 }

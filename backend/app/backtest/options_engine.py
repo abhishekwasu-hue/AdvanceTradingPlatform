@@ -78,6 +78,7 @@ class OptionBacktestConfig:
     spread_width: int = 2
     target_credit_pct: Optional[float] = None
     stop_credit_pct: Optional[float] = None
+    underlying_breach_exit: bool = False                      # DEF-0: the trader's own underlying-level exit (off by default)
     premium_stop_pct: Optional[float] = None                  # SINGLE: floor (bought) / ceiling (written)
     custom_legs: List[CustomLeg] = field(default_factory=list)
     max_lots: Optional[int] = None
@@ -596,7 +597,8 @@ def _open_structure(signal: Signal, rules: ContractRules, config: OptionBacktest
     structure = _resolved_structure(strategy, planned, underlying=underlying, underlying_symbol=underlying_symbol, near=expiry, far=far, lot=lot)
     premiums = {leg.contract.tradingsymbol: pricer.price(leg.contract.right, leg.contract.strike, leg.contract.expiry, spot=spot, at=at)
                 for leg in structure.legs}
-    metrics = structure_metrics(structure, premiums, target_credit_pct=config.target_credit_pct, stop_credit_pct=config.stop_credit_pct)
+    metrics = structure_metrics(structure, premiums, target_credit_pct=config.target_credit_pct, stop_credit_pct=config.stop_credit_pct,
+                                underlying_exit=config.underlying_breach_exit)
     basis = abs(metrics.net_credit) or 0.05
     lots = _size_lots(risk_manager, state, signal, basis=basis, risk_per_unit=metrics.risk_per_unit, lot=lot,
                       underlying_symbol=underlying_symbol, max_lots=config.max_lots)

@@ -99,6 +99,7 @@ async def execute_structure(
     rules: ContractRules, target_credit_pct: Optional[float], stop_credit_pct: Optional[float],
     idempotency_key: str, broker: Optional[BrokerInterface] = None, quote_broker: Optional[BrokerInterface] = None,
     deployment_id: Optional[int] = None, risk_config: Optional[RiskConfig] = None, account_id: Optional[int] = None,
+    underlying_exit: bool = False,
 ) -> StructureResult:
     started = time.perf_counter()
     tenant = await session.get(Tenant, user.tenant_id)
@@ -158,7 +159,8 @@ async def execute_structure(
             raise ContractExecutionError("No broker session to quote the legs from")
         for leg in structure.legs:
             premiums[leg.contract.tradingsymbol] = await contract_ltp(price_source, leg.contract)
-        metrics = structure_metrics(structure, premiums, target_credit_pct=target_credit_pct, stop_credit_pct=stop_credit_pct)
+        metrics = structure_metrics(structure, premiums, target_credit_pct=target_credit_pct, stop_credit_pct=stop_credit_pct,
+                                    underlying_exit=underlying_exit)
     except (ContractExecutionError, ContractResolutionError) as exc:
         reasons = [str(exc)]
         await _reject_all(session, orders, reasons)

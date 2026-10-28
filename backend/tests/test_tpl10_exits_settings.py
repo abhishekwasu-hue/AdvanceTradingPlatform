@@ -67,11 +67,11 @@ def _hash(result) -> str:
     return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
-# DEF-0: the old built-in exit levels (bought premium floor 30%, credit target 50% / stop 100%) set explicitly, so the runs
-# (and the pins below) are the same as before.
+# DEF-0: the old built-in exit levels (bought premium floor 30%, credit target 50% / stop 100%, the short-strike breach exit)
+# set explicitly, so the runs (and the pins below) are the same as before.
 SINGLE = OptionBacktestConfig(implied_volatility=0.14, premium_stop_pct=30.0)
 SPREAD = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2,
-                              target_credit_pct=50, stop_credit_pct=100)
+                              target_credit_pct=50, stop_credit_pct=100, underlying_breach_exit=True)
 
 
 def _option_config(base: OptionBacktestConfig, **changes) -> OptionBacktestConfig:

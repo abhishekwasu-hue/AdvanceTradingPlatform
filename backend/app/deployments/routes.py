@@ -110,6 +110,7 @@ class ContractRulesRequest(BaseModel):
     spread_width: int = Field(default=2, ge=1, le=20, description="wing distance in listed strike steps")
     target_credit_pct: Optional[float] = Field(default=None, ge=5, le=95, description="take profit at this % of the credit captured")
     stop_credit_pct: Optional[float] = Field(default=None, ge=10, le=500, description="stop when the loss reaches this % of the credit")
+    underlying_breach_exit: Optional[bool] = Field(default=None, description="DEF-0: close the structure when the underlying breaches a short strike / breakeven (off unless set)")
     # Phase U: the legs of a CUSTOM structure (2..6), each on the deployment's expiry rule.
     custom_legs: Optional[List["CustomLegRequest"]] = Field(default=None, max_length=MAX_CUSTOM_LEGS)
 
@@ -268,6 +269,7 @@ class DeploymentResponse(BaseModel):
     spread_width: int = 2
     target_credit_pct: Optional[float] = None
     stop_credit_pct: Optional[float] = None
+    underlying_breach_exit: bool = False
     custom_legs: Optional[List[dict]] = None
     broker_account_id: Optional[int] = None
     routing_policy: Optional[str] = None
@@ -299,6 +301,7 @@ class DeploymentResponse(BaseModel):
             strike_filters=json.loads(record.strike_filters) if record.strike_filters else None,
             option_strategy=record.option_strategy or "SINGLE", spread_width=record.spread_width or 2,
             target_credit_pct=record.target_credit_pct, stop_credit_pct=record.stop_credit_pct,
+            underlying_breach_exit=bool(getattr(record, "underlying_breach_exit", None)),
             custom_legs=json.loads(record.custom_legs) if getattr(record, "custom_legs", None) else None,
             broker_account_id=record.broker_account_id, exit_rules=json.loads(record.exit_rules) if record.exit_rules else None,
             routing_policy=getattr(record, "routing_policy", None), route_across_brokers=bool(getattr(record, "route_across_brokers", False)),
@@ -530,6 +533,7 @@ async def create_deployment(
         strike_filters=rules.filters_json(),
         option_strategy=rules.option_strategy.value, spread_width=rules.spread_width,
         target_credit_pct=rules.target_credit_pct, stop_credit_pct=rules.stop_credit_pct,
+        underlying_breach_exit=True if rules.underlying_breach_exit else None,
         custom_legs=custom_legs_json(rules.custom_leg_specs()) if rules.option_strategy == OptionStrategy.CUSTOM else None,
         broker_account_id=account.id if account is not None else None,
         routing_policy=request.routing_policy.value if request.routing_policy is not None else None,
@@ -607,7 +611,8 @@ async def preview_contract(
                 try:
                     premiums = {leg.contract.tradingsymbol: await contract_ltp(adapter, leg.contract) for leg in structure.legs}
                     entry["metrics"] = structure_metrics(structure, premiums, target_credit_pct=rules.target_credit_pct,
-                                                         stop_credit_pct=rules.stop_credit_pct).as_dict()
+                                                         stop_credit_pct=rules.stop_credit_pct,
+                                                         underlying_exit=bool(rules.underlying_breach_exit)).as_dict()
                 except Exception as exc:  # noqa: BLE001 - premiums are a bonus in a preview
                     entry["metrics_error"] = str(exc)
             else:

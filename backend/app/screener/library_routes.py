@@ -30,6 +30,7 @@ from app.platform.controls import flag_enabled, require_flag
 from app.screener import compile_screen, nodes
 from app.screener import fundamentals as fundamentals_gate
 from app.screener import library as lib
+from app.screener import reasons
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
 from app.screener.panel import FLAG as VECTOR_FLAG
@@ -246,7 +247,7 @@ def watch_eval(ready: Any, trigger: Any, ready_v: Any, transition_v: Any, univer
         except ScreenRuntimeError as exc:
             return None, str(exc)
         except Exception as exc:  # noqa: BLE001 - one symbol's bad data never aborts the list (as run_screen)
-            return None, f"could not be evaluated ({type(exc).__name__})"
+            return None, reasons.not_checked(exc, ev.data.symbol)        # SCR-FIX B3: plain words; the full text logged
 
     # A trigger that ranks across the list (Rank / PercentileRank) reads the universe's values, as run_screen computes them
     # for the transition screen (the trigger's nodes are the transition's own) - review of TX2 re-check.

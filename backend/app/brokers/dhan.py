@@ -109,6 +109,7 @@ def _parse_time(raw) -> Optional[datetime]:
 class DhanBroker(BrokerInterface):
     name = "dhan"
     history_by_date = True   # LD-10: the history API takes dates only (get_historical_data)
+    native_intervals = frozenset(INTERVAL_MAP) | {"day"}   # SCR-FIX A1: 1 / 5 / 15 / 25 / 60 min + day (no 30)
     BASE_URL = BASE_URL
     max_tag_length = 20
 

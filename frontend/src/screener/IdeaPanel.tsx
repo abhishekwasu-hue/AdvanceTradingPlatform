@@ -14,6 +14,8 @@
 import { useState } from "react";
 import { ApiError, friendlyError } from "../api/errors";
 import { Button, cx } from "../components/primitives";
+import { Details } from "../ui/Details";
+import { PageFootnote } from "../ui/PageFootnote";
 import { screenerApi, type IdeaResponse } from "./api";
 import type { ServerStage } from "./importStages";
 
@@ -202,9 +204,11 @@ export default function IdeaPanel({ baseTf, onOpen, api = screenerApi, initialTe
               {versions.length > 1 ? `Open version ${at + 1} as blocks` : "Open as blocks"}
             </Button>
           )}
-          <p className="text-t12 text-fg-muted">{result.disclaimer}</p>
+          {/* SCR-FIX E1: the draft's note in Details; the dialog's one "not advice" line at its foot */}
+          <Details id="screener.idea.about" className="mt-0"><p>{result.disclaimer}</p></Details>
         </div>
       )}
+      <PageFootnote />
     </div>
   );
 }

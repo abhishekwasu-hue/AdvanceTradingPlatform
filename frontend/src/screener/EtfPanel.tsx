@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { Button } from "../components/primitives";
+import { Combobox } from "../ui/Combobox";
 import { screenerApi } from "./api";
 import { ETF_SORTS, etfQuery, inrShort, pct, SORT_LABEL, type EtfResponse, type EtfSort } from "./etf";
 
@@ -40,9 +41,10 @@ export function EtfPanel({ initial = null, load = screenerApi.etf }: EtfPanelPro
           className="min-h-[44px] w-28 rounded-control border border-border bg-surface-1 px-2 font-mono text-t13 text-fg" /></label>
         <label className="flex flex-col">Max |tracking diff| %<input value={maxTracking} onChange={(e) => setMaxTracking(e.target.value)} placeholder="any"
           className="min-h-[44px] w-24 rounded-control border border-border bg-surface-1 px-2 font-mono text-t13 text-fg" /></label>
-        <label className="flex flex-col">Sort<select value={sort} onChange={(e) => setSort(e.target.value as EtfSort)}
-          className="min-h-[44px] rounded-control border border-border bg-surface-1 px-2 text-t13 text-fg">
-          {ETF_SORTS.map((s) => <option key={s} value={s}>{SORT_LABEL[s]}</option>)}</select></label>
+        {/* SCR-FIX D8: the shared picker, not the browser's select */}
+        <div className="flex flex-col"><span aria-hidden>Sort</span>
+          <Combobox label="Sort" value={sort} onChange={(v) => setSort(v as EtfSort)}
+                    options={ETF_SORTS.map((s) => ({ value: s, label: SORT_LABEL[s] }))} /></div>
         <Button size="sm" variant="primary" onClick={fetchRows} loading={busy}>Show ETFs</Button>
       </div>
       {error && <p role="alert" className="mt-2 text-t12 text-warn">{error}</p>}

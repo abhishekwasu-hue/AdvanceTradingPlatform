@@ -53,8 +53,11 @@ describe("WatchlistPicker (AMW-2)", () => {
     const html = renderToStaticMarkup(<WatchlistPicker symbols={["INFY", "TCS"]} onLoad={() => undefined} initial={[BANKS, BIG]} client={noClient} />);
     const words = text(html);
     expect(words).toContain("My watchlists");
-    expect(words).toContain("Banks (3)");
-    expect(words).toContain("Big (60)");
+    expect(words).toContain("Banks (3)");                                                 // the chosen list, on the picker
+    // SCR-FIX D8: the shared picker (its rows render when it opens), not the browser's select
+    expect(html).toContain('role="combobox"');
+    expect(html).toContain('data-combobox="1"');
+    expect(html).not.toContain("<select");
     expect(html).toContain('data-testid="watchlist-load"');
     expect(words).toContain("Manage watchlists");
     expect(words).toContain("Save 2 as new");
@@ -66,12 +69,14 @@ describe("WatchlistPicker (AMW-2)", () => {
   it("after a delete, the select and Load point at the first remaining list", () => {
     // the selection still names the deleted list (id 1); the lists that are left start with "Big"
     const html = renderToStaticMarkup(<WatchlistPicker symbols={["INFY"]} onLoad={() => undefined} initial={[BIG]} initialSelected={1} client={noClient} />);
-    expect(html).toMatch(/<option value="2" selected="">Big \(60\)<\/option>/);
+    expect(html).toContain('data-combobox="2"');
+    expect(text(html)).toContain("Big (60)");
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*data-testid="watchlist-load"/);
     expect(text(html)).toContain('Delete "Big"');
     // with nothing selected yet, the first list is shown and loadable
     const first = renderToStaticMarkup(<WatchlistPicker symbols={[]} onLoad={() => undefined} initial={[BANKS, BIG]} initialSelected="" client={noClient} />);
-    expect(first).toMatch(/<option value="1" selected="">Banks \(3\)<\/option>/);
+    expect(first).toContain('data-combobox="1"');
+    expect(text(first)).toContain("Banks (3)");
     expect(first).not.toMatch(/<button[^>]*disabled=""[^>]*data-testid="watchlist-load"/);
   });
 

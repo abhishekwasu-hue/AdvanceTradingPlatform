@@ -646,6 +646,9 @@ report_settings() {
   else
     warn "browser notifications (Web Push): VAPID_PRIVATE_KEY is not set - the app refuses new browser subscriptions until it is (runbook section 4, 'Browser and phone notifications')"
   fi
+  # SCR-FIX C4: the platform's Telegram bot (Connect Telegram, the screener's "Send to my Telegram"). The key NAME only.
+  if env_set ATP_TELEGRAM_BOT_TOKEN; then ok "Telegram bot: ATP_TELEGRAM_BOT_TOKEN set (Connect Telegram and Send to my Telegram show)"
+  else warn "Telegram bot: ATP_TELEGRAM_BOT_TOKEN is not set in .env - Connect Telegram and the screener's Send to my Telegram stay hidden for users"; fi
   if env_set FCM_SERVICE_ACCOUNT_JSON_BASE64 || env_set FCM_SERVICE_ACCOUNT_FILE; then ok "phone notifications (Android app, FCM): key set - the mobile_push flag decides who gets them"
   else info "phone notifications (Android app, FCM): not set (optional; FCM_SERVICE_ACCOUNT_JSON_BASE64) - nothing is sent to phones"; fi
 }

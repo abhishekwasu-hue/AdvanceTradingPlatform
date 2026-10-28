@@ -1,7 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { expectComboValue, pickOption } from "./combobox";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
+import { screenerTool } from "./screenerTools";
 
 /**
  * Owner order (23 Oct) "the scan universe is never empty" (`ui_v2` + `screener_v2`): Find setups opens on NIFTY 50
@@ -95,7 +97,7 @@ async function open(page: Page, theme: "dark" | "light", { universes = true, cop
 }
 
 async function addStarter(page: Page) {
-  await page.getByTestId("browse-screens").click();
+  await screenerTool(page, "browse-screens");
   const dialog = page.getByRole("dialog", { name: "Screen library" });
   await dialog.getByRole("button", { name: /^Open .* in the builder$/ }).first().click();
   await expect(dialog).toBeHidden();
@@ -108,7 +110,7 @@ test.describe("The scan universe, 1440", () => {
 
   test("opens on NIFTY 50 from the server's list and runs on it", async ({ page }) => {
     const runs = await open(page, "light");
-    await expect(page.getByTestId("universe-select")).toHaveValue("sys:index-nifty50");
+    await expectComboValue(page.getByTestId("universe-select"), "sys:index-nifty50");
     await expect(page.getByTestId("universe-count")).toHaveText("50 stocks · NIFTY 50");
     await addStarter(page);
     await runButton(page).click();
@@ -119,7 +121,7 @@ test.describe("The scan universe, 1440", () => {
 
   test("without the server's lists, the built-in NIFTY 50 names stand in", async ({ page }) => {
     const runs = await open(page, "light", { universes: false });
-    await expect(page.getByTestId("universe-select")).toHaveValue("sys:index-nifty50");
+    await expectComboValue(page.getByTestId("universe-select"), "sys:index-nifty50");
     await expect(page.getByTestId("universe-count")).toHaveText("50 stocks · NIFTY 50");
     await addStarter(page);
     await runButton(page).click();
@@ -130,10 +132,10 @@ test.describe("The scan universe, 1440", () => {
 
   test("an empty choice runs on NIFTY 50 and says so", async ({ page }) => {
     const runs = await open(page, "light");
-    await page.getByTestId("universe-select").selectOption("sys:sector-it");
+    await pickOption(page, page.getByTestId("universe-select"), "sys:sector-it");
     await expect(page.getByTestId("universe-note")).toHaveText("This list has no stocks yet, so the scan runs on NIFTY 50.");
     await expect(page.getByTestId("universe-count")).toHaveText("50 stocks · NIFTY 50");
-    await page.getByTestId("universe-select").selectOption("custom");
+    await pickOption(page, page.getByTestId("universe-select"), "custom");
     await page.locator("#screener-symbols").fill("");
     await expect(page.getByTestId("universe-note")).toHaveText("Type at least one symbol. Until then the scan runs on NIFTY 50.");
     await page.locator("#screener-symbols").fill("ALPHA, BETA");
@@ -146,7 +148,7 @@ test.describe("The scan universe, 1440", () => {
 
   test("Try as a scan runs at once on the chosen universe", async ({ page }) => {
     const runs = await open(page, "light");
-    await page.getByTestId("browse-screens").click();
+    await screenerTool(page, "browse-screens");
     const dialog = page.getByRole("dialog", { name: "Screen library" });
     await dialog.getByTestId("screen-try").first().click();
     await expect(dialog).toBeHidden();
@@ -157,7 +159,7 @@ test.describe("The scan universe, 1440", () => {
 
   test("NIFTY 500 runs in batches the broker's budget allows, with progress and growing results", async ({ page }) => {
     const runs = await open(page, "light", { slow: 250 });
-    await page.getByTestId("universe-select").selectOption("sys:index-nifty500");
+    await pickOption(page, page.getByTestId("universe-select"), "sys:index-nifty500");
     await expect(page.getByTestId("universe-count")).toHaveText("500 stocks · NIFTY 500");
     await expect(page.getByTestId("universe-batches")).toContainText("Run scans all 500, 40 at a time");
     await addStarter(page);
@@ -181,9 +183,9 @@ test.describe("The scan universe, 1440", () => {
       return route.fulfill({ status: 201, json: { id: 7, name: b.name, kind: "screen", screen_id: b.screen_id, base_tf: "1d", status: "active",
         symbols: b.symbols, fire_on: b.fire_on } });
     });
-    await page.getByTestId("universe-select").selectOption("sys:index-nifty500");
+    await pickOption(page, page.getByTestId("universe-select"), "sys:index-nifty500");
     await addStarter(page);
-    await page.getByTestId("scan-alert-open").click();
+    await screenerTool(page, "scan-alert-open");
     const dialog = page.getByRole("dialog", { name: "Tell me when it matches" });
     await expect(dialog).toContainText("on NIFTY 500 (50 stocks)");
     await expect(dialog.getByTestId("scan-alert-first")).toHaveText("An alert watches up to 50 stocks, so this one watches the first 50 of the 500 in NIFTY 500.");
@@ -199,7 +201,7 @@ for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 1000 }])
     for (const theme of THEMES) {
       test(`NIFTY 500 scanned in batches, ${theme}`, async ({ page }) => {
         const runs = await open(page, theme);
-        await page.getByTestId("universe-select").selectOption("sys:index-nifty500");
+        await pickOption(page, page.getByTestId("universe-select"), "sys:index-nifty500");
         await addStarter(page);
         await runButton(page).click();
         await expect.poll(() => runs.length).toBe(13);

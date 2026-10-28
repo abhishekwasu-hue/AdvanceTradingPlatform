@@ -32,6 +32,7 @@ from app.platform.controls import flag_enabled, require_flag
 from app.screener import amw_functions as amw_gate
 from app.screener import compile_screen, nodes
 from app.screener import legends as lg
+from app.screener import reasons
 from app.screener import ranking as ranking_gate   # registers the `legends` template source (U7 LG1)
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
@@ -84,7 +85,8 @@ MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
 HOLIDAY_PAD_DAYS = 4               # exchange holidays inside the window
-MAX_INTRADAY_FETCH_DAYS = 60
+MAX_INTRADAY_FETCH_DAYS = 60      # fetched in requests of at most 30 days each (service.INTRADAY_DAYS_PER_REQUEST)
+HOLIDAYS_PER_YEAR = 16             # SCR-FIX A3: exchange holidays a year of daily bars loses (NSE: about 15)
 BUDGET_WAIT = "waited for the broker's limit - run again shortly"   # a batch symbol the API budget held back
 FETCH_CONCURRENCY = 3     # LD-7: one screen run's broker fetches in flight at once (capped by the broker's burst)
 
@@ -95,8 +97,10 @@ def fetch_concurrency(broker_name: str) -> int:
     Dhan among them), never more than FETCH_CONCURRENCY."""
     from app.brokers.rate_budget import limits_for
     return max(1, min(FETCH_CONCURRENCY, limits_for(broker_name).burst))
-_FETCH = {"1m": "1min", "3m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "day", "1w": "day", "1M": "day"}
-_FETCH_TF = {"1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m", "60min": "1h", "day": "1d"}
+# SCR-FIX A1: a screen timeframe's own interval; what goes to the broker is `screen_interval` (native, or a native divisor
+# resampled up). Weeks and months are built from daily bars by the runtime.
+_FETCH = {"1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "day", "1w": "day", "1M": "day"}
+_FETCH_TF = {"1min": "1m", "3min": "3m", "5min": "5m", "15min": "15m", "30min": "30m", "60min": "1h", "day": "1d"}
 
 
 def _cost_cap() -> float:
@@ -431,6 +435,37 @@ def fetch_days(lookback: Dict[str, int], base_tf: str) -> int:
     return min(MAX_INTRADAY_FETCH_DAYS, max(5, math.ceil(sessions * 7 / 5) + HOLIDAY_PAD_DAYS))
 
 
+def daily_fetch_days(lookback: Dict[str, int], base_tf: str) -> int:
+    """SCR-FIX A3: calendar days of daily bars for the daily-or-coarser part of a lookback - sized by the need (1w / 1M
+    screens read years), as the stored-history path does (`stored_history.stored_days`), plus each year's exchange
+    holidays. The service never fetches less than its default daily window (DAILY_MIN_LOOKBACK_DAYS)."""
+    from app.screener.stored_history import stored_days
+    days = stored_days(lookback or {base_tf: 1}, base_tf)
+    return days + math.ceil(days / 365) * HOLIDAYS_PER_YEAR
+
+
+def screen_interval(adapter: Any, base_tf: str) -> str:
+    """SCR-FIX A1: the interval a screen at `base_tf` is fetched at through `adapter` - the timeframe's own interval when
+    the broker serves it, else the largest native one that divides it (the screener resamples it, 09:15-anchored)."""
+    from app.market_data.intervals import fetch_interval
+    return fetch_interval(adapter, _FETCH[base_tf], among=_FETCH_TF)
+
+
+async def _closed_for_the_day(session: AsyncSession, exchange: str, now: datetime) -> bool:
+    """SCR-FIX A4: today is a trading day of the exchange and its session has closed - today's daily bar is final, though
+    the broker's daily history has it only from tomorrow (as Charts' `_today_state`)."""
+    from app.market_data.calendar import EXCHANGE_SESSIONS, IST, family_holidays, session_family
+    family = session_family(exchange)
+    spec = EXCHANGE_SESSIONS[family]
+    if spec.always_open:
+        return False
+    now_ist = now.astimezone(IST)
+    if (spec.weekdays_only and now_ist.weekday() >= 5) or now_ist.time() < spec.close:
+        return False
+    holidays = await family_holidays(session, family) if session is not None else set()   # no database: weekends only
+    return now_ist.date() not in holidays
+
+
 async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
                        lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False, *,
                        user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None,
@@ -440,27 +475,39 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars).
 
     BT1b (flag `byob_data_tier`): the bars come only through the session of the user the run / alert rule belongs to
-    (`user_id`), at a broker whose data terms are confirmed, for the symbols inside that session's budget (the rest are
-    reported as EOD-only problems), cached under that session's namespace. No such session -> 409 (Tier C).
-    `tier_out` receives the data-tier badge of what was read.
+    (`user_id`), at a broker whose data terms are confirmed, cached under that session's namespace. No such session ->
+    409 (Tier C). SCR-FIX A6: symbols outside the session's live budget are still read - this is history, not a live
+    slot - through the batch path (the credential's API budget, api_budget.BudgetedAdapter), or for a daily-or-coarser
+    screen the stored daily bars when the API budget is used up; `tier_out` gets their count ("held_back"). An intrabar
+    read (`include_forming`) keeps them as EOD-only problems. `tier_out` receives the data-tier badge of what was read.
     `release` (LD-7, a request whose session has only read so far): the pool connection goes back before the broker
     calls; the worker's callers keep their transaction.
     `budget_out` (owner order 23 Oct, a batch of a larger universe): every broker call takes a token from the
     credential's shared API budget first (api_budget.BudgetedAdapter, as a chart's); a symbol without one is reported
-    "budget used". It receives the calls made and refused and the per-minute share the page paces the next batch by."""
+    "budget used". It receives the calls made and refused and the per-minute share the page paces the next batch by.
+
+    SCR-FIX: the interval goes to the broker only when the broker serves it (A1, `screen_interval`); a daily window is
+    sized by the lookback (A3); after the session's close a 1d / 1w / 1M screen gets today's finished bar (A4); an
+    index takes its near-month future's volume, as Charts do (A7)."""
     from app.brokers.token_lifecycle import build_adapter
-    from app.market_data import live_access
+    from app.market_data import api_budget, live_access
     from app.market_data.candles_routes import _pick_record
     from app.market_data.fanin import Priority
     from app.market_data.service import MarketDataService
-    interval = _FETCH[base_tf]
-    attach_daily = interval != "day" and any(nodes.TF_MINUTES.get(tf, 0) >= nodes.TF_MINUTES["1d"] for tf in lookback)
+    from app.screener.universes import batch_wait_seconds
+    now_utc = now or datetime.now(timezone.utc)
+    daily_tf = nodes.TF_MINUTES["1d"]
+    want = _FETCH[base_tf]
+    attach_daily = want != "day" and any(nodes.TF_MINUTES.get(tf, 0) >= daily_tf for tf in lookback)
     # BK1 verification F3: with the daily history attached, @1d / @1w / @1M come from it, so only the intraday timeframes
     # size the intraday window (a 15m screen with daily context fetches days, not the 60-day cap)
-    window = {tf: b for tf, b in lookback.items() if nodes.TF_MINUTES.get(tf, 0) < nodes.TF_MINUTES["1d"]} if attach_daily else lookback
-    days = fetch_days(window or {base_tf: 1}, base_tf) if interval != "day" else 5
+    window = {tf: b for tf, b in lookback.items() if nodes.TF_MINUTES.get(tf, 0) < daily_tf} if attach_daily else lookback
+    daily_window = {tf: b for tf, b in lookback.items() if nodes.TF_MINUTES.get(tf, 0) >= daily_tf}
+    days = fetch_days(window or {base_tf: 1}, base_tf) if want != "day" else daily_fetch_days(lookback, base_tf)
     problems: Dict[str, str] = {}
     own = None
+    user = None
+    held: List[str] = []
     if await live_access.byob_on(session, tenant_id):
         user = await live_access.load_user(session, user_id)
         if user is not None and user.tenant_id != tenant_id:
@@ -468,17 +515,28 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         own = await live_access.user_source(session, user, [(s, exchange) for s in symbols], priority=Priority.SCREENER)
         record = own.record
         adapter: Any = own.adapter()
-        allowed = [s for s in symbols if own.allows(s, exchange)]
-        problems.update({s: own.reason(s, exchange) for s in symbols if not own.allows(s, exchange)})
-        symbols = allowed
+        outside = [s for s in symbols if not own.allows(s, exchange)]
+        if include_forming:
+            problems.update({s: reasons.Reason(own.reason(s, exchange), reasons.SESSION_BUDGET) for s in outside})
+        else:
+            held = outside                                # A6: read through the API budget below, not dropped
+        symbols = [s for s in symbols if own.allows(s, exchange)]
     else:
         record = await _pick_record(session, tenant_id, None, "primary")
         adapter = build_adapter(record)
     if budget_out is not None:
-        from app.market_data import api_budget
-        from app.screener.universes import batch_wait_seconds
-        adapter = api_budget.BudgetedAdapter(adapter, record.id, record.broker_name, wait_seconds=batch_wait_seconds(record.broker_name, len(symbols)))
+        adapter = api_budget.BudgetedAdapter(adapter, record.id, record.broker_name,
+                                             wait_seconds=batch_wait_seconds(record.broker_name, len(symbols) + len(held)))
+    interval = screen_interval(adapter, base_tf)
     service = own.market_data(adapter, lookback_days=days) if own is not None else MarketDataService(adapter, lookback_days=days)
+    held_adapter: Any = None
+    held_service: Any = None
+    if held and own is not None:
+        held_adapter = adapter if budget_out is not None else api_budget.BudgetedAdapter(
+            own.adapter(), record.id, record.broker_name, wait_seconds=batch_wait_seconds(record.broker_name, len(held)))
+        held_service = own.market_data(held_adapter, lookback_days=days)
+    attach_today = interval == "day" and not include_forming and await _closed_for_the_day(session, exchange, now_utc)
+    futures = await _index_futures(session, user, record, [*symbols, *held], exchange, now_utc, own is not None)
     if release:
         await release_connection(session)
     universe: List[SymbolData] = []
@@ -488,39 +546,63 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     # the symbols' order.
     gate = asyncio.Semaphore(fetch_concurrency(record.broker_name))
 
-    async def fetch_one(symbol: str) -> Tuple[Any, str]:
+    async def bars_of(svc: Any, symbol: str, sym_exchange: str) -> Any:
+        return await (svc.get_candles(symbol, sym_exchange, interval, fresh=True) if include_forming  # no cached copy
+                      else svc.get_candles(symbol, sym_exchange, interval))
+
+    async def fetch_one(symbol: str, svc: Any) -> Tuple[Any, Any, str]:
         async with gate:
             try:
-                return await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
-                              else service.get_candles(symbol, exchange, interval)), ""
+                bars = await bars_of(svc, symbol, exchange)
             except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
-                if type(exc).__name__ == "BudgetUsed":         # a batch's symbol with no budget token (api_budget)
-                    return None, BUDGET_WAIT
-                return None, f"{type(exc).__name__}: {str(exc)[:120]}"
+                # SCR-FIX B3: a reason code + a plain sentence; the full text (never cut) in the log; the API budget
+                # (a batch's symbol with no token) caught by class, keeping the text the page offers to run again
+                return None, None, reasons.from_exception(exc, symbol=symbol, wait_text=BUDGET_WAIT)
+            today_bar = await _today_bar(svc, symbol, exchange, now_utc) if attach_today else None
+            fut = futures.get(symbol)
+            if fut is not None and bars:
+                bars, today_bar = await _future_volume(svc, fut, bars, today_bar, lambda: bars_of(svc, fut.symbol, fut.exchange), now_utc)
+            return bars, today_bar, ""
 
-    got = await asyncio.gather(*(fetch_one(symbol) for symbol in symbols))
+    pairs = [(s, service) for s in symbols] + [(s, held_service) for s in held]
+    got = await asyncio.gather(*(fetch_one(symbol, svc) for symbol, svc in pairs))
 
     def frames_of_all() -> List[Tuple[Any, Dict[str, Any], str]]:
-        return [(None, {}, failed) if failed else _symbol_frames(bars, interval, base_tf, include_forming, now) for bars, failed in got]
+        return [(None, {}, failed) if failed else _symbol_frames(bars, interval, base_tf, include_forming, now, today=today_bar, exchange=exchange)
+                for bars, today_bar, failed in got]
 
     # LD-7: the pandas work runs on a worker thread, so a screen does not hold the event loop - one thread for the run's
     # symbols in turn, not one each (more CPU-bound threads only take the GIL from the event loop more often).
     fetched = await asyncio.to_thread(frames_of_all)
-    for symbol, (df, frames, problem) in zip(symbols, fetched):
+    held_data: List[SymbolData] = []
+    for (symbol, svc), (df, frames, problem) in zip(pairs, fetched):
         if problem:
             problems[symbol] = problem
             continue
-        universe.append(SymbolData(symbol, frames, exchange=exchange))         # U6 BK2: the session clock of the symbol
+        data = SymbolData(symbol, frames, exchange=exchange)          # U6 BK2: the session clock of the symbol
+        universe.append(data)
+        if held_service is not None and svc is held_service:
+            held_data.append(data)
         newest.append(df.index[-1].to_pydatetime())
     if attach_daily and universe:
-        daily_adapter = adapter if budget_out is not None else (own.adapter() if own is not None else build_adapter(record))
-        daily_service = own.market_data(daily_adapter, lookback_days=5) if own is not None else MarketDataService(daily_adapter, lookback_days=5)
-        await _attach_daily(daily_service, universe, exchange, now)        # U6 BK1: through the same (BT1b) source
+        live_data = [d for d in universe if all(d is not h for h in held_data)]
+        daily_days = daily_fetch_days(daily_window, "1d")
+        if live_data:
+            daily_adapter = adapter if budget_out is not None else (own.adapter() if own is not None else build_adapter(record))
+            daily_service = (own.market_data(daily_adapter, lookback_days=daily_days) if own is not None
+                             else MarketDataService(daily_adapter, lookback_days=daily_days))
+            await _attach_daily(daily_service, live_data, exchange, now)       # U6 BK1: through the same (BT1b) source
+        if held_data and own is not None:
+            await _attach_daily(own.market_data(held_adapter, lookback_days=daily_days), held_data, exchange, now)
+    if held:
+        await _stored_for_refused(session, tenant_id, held, problems, universe, exchange, base_tf, lookback)
     if own is not None and tier_out is not None:
         # Timed by the data (the stalest symbol's newest bar); nothing read = age unknown = stale.
         oldest = min(newest) if newest else None
         tier_out["data_tier"] = own.badge(timeframe=_FETCH_TF[interval] if oldest is not None else None, last_bar_start=oldest,
                                           now=now or datetime.now(timezone.utc))
+        if held:
+            tier_out["held_back"] = len(held)
     if budget_out is not None:
         from app.market_data.api_budget import api_limits
         budget_out.update({"broker_calls": int(getattr(adapter, "taken", 0)), "refused": int(getattr(adapter, "refused", 0)),
@@ -528,36 +610,126 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     return universe, problems, f"broker:{record.broker_name}"
 
 
-def _symbol_frames(bars: Any, interval: str, base_tf: str, include_forming: bool, now: Optional[datetime]) -> Tuple[Any, Dict[str, Any], str]:
-    """(closed bars as a frame, {base_tf: frame}, problem) for one symbol's fetched bars - `fetch_frames`' pandas step."""
+async def _today_bar(service: Any, symbol: str, exchange: str, now: datetime) -> Any:
+    """SCR-FIX A4: today's finished daily bar from today's one-minute bars (Charts' `get_today_bar`), None when it could
+    not be read - the completed sessions still make the screen."""
+    try:
+        return await service.get_today_bar(symbol, exchange, now)
+    except Exception as exc:  # noqa: BLE001 - logged; the screen runs on the completed sessions
+        logger.info("today's bar not loaded for %s:%s: %s", exchange, symbol, exc)
+        return None
+
+
+async def _future_volume(service: Any, fut: Any, bars: Any, today_bar: Any, fetch: Any, now: datetime) -> Tuple[Any, Any]:
+    """SCR-FIX A7: the index's bars with its near-month future's volume (`index_volume.replace_volume`, 0 where the future
+    has no bar), as Charts do; the index's own bars unchanged when the future's could not be read."""
+    from app.market_data import index_volume
+    try:
+        fut_bars = await fetch()
+        if today_bar is not None:
+            fut_today = await _today_bar(service, fut.symbol, fut.exchange, now)
+            today_bar = index_volume.replace_volume([today_bar], [fut_today] if fut_today is not None else [])[0]
+        return index_volume.replace_volume(bars, fut_bars), today_bar
+    except Exception as exc:  # noqa: BLE001 - the index's own bars still make the screen
+        logger.info("future volume not loaded for %s: %s", fut.symbol, exc)
+        return bars, today_bar
+
+
+async def _index_futures(session: AsyncSession, user: Any, record: Any, symbols: List[str], exchange: str, now: datetime,
+                         byob: bool) -> Dict[str, Any]:
+    """SCR-FIX A7: the near-month future of each index among `symbols` whose volume replaces the index's own (brokers
+    send 0 for an index) - the condition Charts apply (`candles_routes`, `volume_from_future`): an index with futures, a
+    contract in the platform's master, and with bring-your-own-broker on, the future inside the same session's
+    entitlement. Read before the broker calls (the database session may be given back for them)."""
+    from app.market_data import entitlement, index_volume
+    from app.market_data.calendar import IST
+    from app.market_data.fanin import Priority
+    out: Dict[str, Any] = {}
+    today = now.astimezone(IST).date()
+    for symbol in symbols:
+        if index_volume.index_underlying(symbol, exchange) is None:
+            continue
+        fut = await index_volume.near_future(session, symbol, exchange, today)
+        if fut is None:
+            continue
+        if byob:
+            if user is None:
+                continue
+            fent = await entitlement.resolve(session, user, fut.symbol, fut.exchange, broker=record.broker_name,
+                                             account_label=record.account_label, priority=Priority.SCREENER)
+            if not fent.live or fent.record is None or fent.record.id != record.id:
+                continue
+        out[symbol] = fut
+    return out
+
+
+async def _stored_for_refused(session: AsyncSession, tenant_id: int, held: List[str], problems: Dict[str, str],
+                              universe: List[SymbolData], exchange: str, base_tf: str, lookback: Dict[str, int]) -> None:
+    """SCR-FIX A6: a held-back symbol the API budget refused, on a daily-or-coarser NSE screen, reads ATP's stored daily
+    bars instead (flag `backtest_stored_history`, `stored_history.stored_universe`); anything else keeps its problem."""
+    from app.screener.stored_history import stored_universe
+    refused = [s for s in held if problems.get(s) == BUDGET_WAIT]
+    if not refused:
+        return
+    stored = await stored_universe(session, tenant_id, HTTPException(status_code=409, detail=BUDGET_WAIT), refused, exchange,
+                                   base_tf, lookback)
+    if stored is None:
+        return
+    for data in stored[0]:
+        problems.pop(data.symbol, None)
+        universe.append(data)
+
+
+def _symbol_frames(bars: Any, interval: str, base_tf: str, include_forming: bool, now: Optional[datetime], *,
+                   today: Any = None, exchange: Optional[str] = None) -> Tuple[Any, Dict[str, Any], str]:
+    """(closed bars as a frame, {base_tf: frame}, problem) for one symbol's fetched bars - `fetch_frames`' pandas step.
+    `today` (SCR-FIX A4): today's finished daily bar, added after the closed-bar cut (its session has closed)."""
     df = bars_to_dataframe(bars) if bars else pd.DataFrame()
     if df.empty:
-        return df, {}, "no bars from the broker"
+        return df, {}, reasons.Reason("no bars from the broker", reasons.NO_BARS)
     if df.index.tz is None:
         df.index = df.index.tz_localize("UTC")
     fetched_tf = _FETCH_TF[interval]
     if not include_forming:
-        df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))  # never the bar still forming
+        df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc), exchange)  # never the bar still forming
+    if today is not None and fetched_tf == "1d":
+        df = _with_today(df, today)
     if df.empty:
-        return df, {}, "no closed bars from the broker"
-    return df, {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}, ""
+        return df, {}, reasons.Reason("no closed bars from the broker", reasons.NO_BARS)
+    return df, {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming, exchange=exchange)}, ""
+
+
+def _with_today(daily: pd.DataFrame, today: Any) -> pd.DataFrame:
+    """`daily` plus today's finished bar, unless its date is already there (Charts: `_base_bars`, `merge_bars`)."""
+    row = bars_to_dataframe([today])
+    if row.index.tz is None:
+        row.index = row.index.tz_localize("UTC")
+    if len(daily):
+        row.index = row.index.tz_convert(daily.index.tz)
+        if row.index[0].tz_convert("Asia/Kolkata").date() <= daily.index[-1].tz_convert("Asia/Kolkata").date():
+            return daily
+        return pd.concat([daily, row])
+    return row
 
 
 async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str, now: Optional[datetime]) -> None:
     """U6 BK1 verification (A): an intraday screen that reads a daily-or-coarser timeframe gets the broker's daily history
-    (completed sessions, about 400 calendar days) as its "1d" frame; the runtime builds @1d / @1w / @1M from it instead of
-    from the short intraday window (60 days at most), so a higher-timeframe trend can be read. Closed bars only. A symbol
-    whose daily fetch fails keeps the intraday-built context (shorter; a trend there may read as unknown)."""
+    (completed sessions, sized by the screen's daily lookback - SCR-FIX A3) as its "1d" frame; the runtime builds @1d /
+    @1w / @1M from it instead of from the short intraday window (60 days at most), so a higher-timeframe trend can be
+    read. Closed bars only. A symbol whose daily fetch fails keeps the intraday-built context (shorter; a trend there may
+    read as unknown)."""
     from app.cache.client import cache_get, cache_set
     from app.core.models import OHLCVBar
     from app.market_data.calendar import IST
     from app.market_data.service import HISTORY_CACHE_TTL_SECONDS
     session_day = (now or datetime.now(timezone.utc)).astimezone(IST).date().isoformat()
     scope = f"{getattr(service, 'cache_namespace', None) or 'shared'}:{getattr(getattr(service, 'broker', None), 'name', 'broker')}"
+    span = int(getattr(service, "lookback_days", 0) or 0)
     for data in universe:
         # BK1 verification F2: completed sessions do not change during the day - one fetch per symbol per session date
-        # (kept HISTORY_CACHE_TTL_SECONDS), under the session's own namespace (BT1b), not every alert cycle
-        key = f"md:dailyctx:{scope}:{exchange}:{data.symbol}:{session_day}"
+        # (kept HISTORY_CACHE_TTL_SECONDS), under the session's own namespace (BT1b), not every alert cycle. SCR-FIX A3:
+        # keyed by the window too (a longer need is not answered with a shorter copy).
+        key = f"md:dailyctx:{scope}:{exchange}:{data.symbol}:{span}d:{session_day}"
         cached = await cache_get(key)
         if cached:
             bars = [OHLCVBar.model_validate(b) for b in json.loads(cached)]
@@ -577,6 +749,11 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
         df = closed_only(df, "1d", now or datetime.now(timezone.utc))
         if not df.empty:
             data.frames["1d"] = df
+
+
+def held_back_notice(count: int) -> str:
+    """SCR-FIX A6: the one line a run shows when symbols were outside the live session budget (they were still read)."""
+    return f"{count} held back by the session budget - read from history instead"
 
 
 def screen_and_funnel(ast: Any, validated: Any, universe: List[SymbolData], *, base_tf: str, params: Dict[str, Any],
@@ -644,6 +821,30 @@ def missing_data(ast: Any) -> List[str]:
     return out
 
 
+def read_counts(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """SCR-FIX B1 / B2: how many symbols could not be read or checked, the grouped reason in one line with its ONE action
+    (`unread_reason`: code, text, action, count) and the first symbol's reason (`first_error`) - from the result rows,
+    so a run, a preview and a stored run count the same way."""
+    rows = reasons.unread_rows(results)
+    out: Dict[str, Any] = {"unread": len(rows)}
+    if rows:
+        out["unread_reason"] = reasons.summary(rows)
+        first = rows[0]
+        out["first_error"] = {"symbol": first["symbol"], "text": first["reason"], "code": first.get("code") or reasons.NOT_READ,
+                              "action": first.get("action") or "retry"}
+    return out
+
+
+def nothing_read_detail(scanned: int, grouped: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """SCR-FIX B2: the run-level error when not one symbol could be read - the existing {message, problems} error shape,
+    plus the reason code and the one action."""
+    reason = (grouped or {}).get("text") or "The bars could not be read."
+    what = "the stock" if scanned == 1 else f"any of the {scanned} stocks"
+    message = f"Could not read {what}. {reason}"
+    return {"message": message, "code": reasons.NOTHING_READ, "reason_code": (grouped or {}).get("code") or reasons.NOT_READ,
+            "action": (grouped or {}).get("action") or "retry", "unread": scanned, "problems": [{"message": message, "pos": None}]}
+
+
 @router.post("/run", dependencies=[Depends(run_rate_limit)])
 async def run(body: RunBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Runs a saved screen or ad-hoc source over up to 50 symbols, on server bars only; stores the run."""
@@ -683,13 +884,25 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     with ranking_gate.active(systems):
         matches, stages = await asyncio.to_thread(screen_and_funnel, ast, validated, universe, base_tf=base_tf, params=params,
                                                   vectorized=vectorized)
-    results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
-    results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
+    # SCR-FIX B1: a symbol that could not be read (fetch problem) or checked (too little history, no value) carries its
+    # reason code + action and is counted apart from the symbols that were read and did not match
+    results: List[Dict[str, Any]] = [reasons.row(m.symbol, m.matched, m.reason) for m in matches]
+    results += [reasons.row(s, False, reasons.as_reason(why)) for s, why in fetch_problems.items()]
+    unread = read_counts(results)
+    if unread["unread"] and unread["unread"] >= len(symbols) and not body.preview and not body.batch:
+        # SCR-FIX B2: nothing could be read - a run-level error with the grouped reason and its one action, never
+        # "200 with 0 matches" (a preview / a batch of a longer list reports the counts instead)
+        raise HTTPException(status_code=422, detail=nothing_read_detail(len(symbols), unread["unread_reason"]))
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
                "matched": [r["symbol"] for r in results if r["matched"]], "results": results,
-               "funnel": {"universe": len(symbols), **stages}, "disclaimer": DISCLAIMER}
+               "funnel": {"universe": len(symbols), **stages}, **unread, "disclaimer": DISCLAIMER}
+    held_back = int(tier.pop("held_back", 0) or 0)
     if tier:
         payload["data_tier"] = tier["data_tier"]          # BT1b: the tier the run actually used (flag byob_data_tier)
+    if held_back:
+        # SCR-FIX A6: symbols outside the live session budget, still read (API budget / stored daily bars) - said once
+        payload["session_held_back"] = held_back
+        payload["notice"] = held_back_notice(held_back)
     if budget is not None:
         payload["budget"] = budget                        # a batch: its broker calls, so the page paces the next one
     if body.preview:
@@ -698,9 +911,13 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
         counts = {"universe": len(symbols), "with_data": stages["with_data"],
                   "stages": [{"text": st["text"], "survivors": st["survivors"]} for st in stages["stages"]]}
         preview = {"run_id": None, "preview": True, "text": payload["text"], "base_tf": base_tf, "data_source": data_source,
-                   "scanned": len(symbols), "matched_count": sum(1 for r in results if r["matched"]), "funnel": counts, "disclaimer": DISCLAIMER}
+                   "scanned": len(symbols), "matched_count": sum(1 for r in results if r["matched"]), "funnel": counts, **unread,
+                   "disclaimer": DISCLAIMER}
         if tier:
             preview["data_tier"] = tier["data_tier"]
+        if held_back:
+            preview["session_held_back"] = held_back
+            preview["notice"] = payload["notice"]
         if budget is not None:
             preview["budget"] = budget
         return preview
@@ -877,9 +1094,11 @@ async def get_run(run_id: int, user: User = Depends(get_current_user), session: 
     row = await session.scalar(query)
     if row is None:
         raise HTTPException(status_code=404, detail="Run not found")
+    results = json.loads(row.result_json)
     return {"run_id": row.id, "screen_id": row.screen_id, "ast_sha256": row.ast_sha256, "version": row.ast_version, "base_tf": row.base_tf,
             "universe": json.loads(row.universe_json), "data_source": row.data_source, "scanned": row.scanned, "matched": row.matched,
-            "results": json.loads(row.result_json), "created_at": row.created_at.isoformat() if row.created_at else None, "disclaimer": DISCLAIMER}
+            "results": results, **read_counts(results), "created_at": row.created_at.isoformat() if row.created_at else None,
+            "disclaimer": DISCLAIMER}
 
 
 __all__ = ["router", "FLAG", "GALLERY_FLAG", "LEGENDS_FLAG", "fetch_frames"]

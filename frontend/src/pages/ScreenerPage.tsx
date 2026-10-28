@@ -5,20 +5,25 @@
  *
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
-import { BellRing, ChevronDown, Code2, History, Layers, LayoutGrid, Lightbulb, Play, Save } from "lucide-react";
+import { BellRing, ChevronDown, Code2, History, Layers, LayoutGrid, Lightbulb, MoreHorizontal, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { ApiError } from "../api/errors";
-import { Button, cx, Dialog } from "../components/primitives";
+import { Button, cx, Dialog, Sheet } from "../components/primitives";
+import { Combobox } from "../ui/Combobox";
+import { useMediaQuery } from "../utils/useMediaQuery";
 import { useToast } from "../components/Toast";
 import type { PageProps } from "../routes";
 import { screenerApi, type IdeaResponse, type PreviewResponse, type RunResponse, type ServerVersion } from "../screener/api";
 import { FreshnessPill } from "../screener/FreshnessPill";
 import { PlainTimeframes } from "../screener/TimeframeChip";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
-import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, timeframeWords, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
+import { blockProblems, parseSymbols, runBlocker, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, timeframeWords, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
+import { nothingRead, tally, unreadReason, unreadRows } from "../screener/readCounts";
+import { UnreadNote } from "../screener/UnreadNote";
+import type { ReadAction } from "../screener/api";
 import { ResultViews } from "../screener/ResultViews";
 import { EtfPanel } from "../screener/EtfPanel";
 import { ScreenGallery } from "../screener/ScreenGallery";
@@ -33,12 +38,14 @@ import { useFeatures } from "../ui/useFeatures";
 import PageDishV2 from "../growth/PageDishV2";
 import { ComingSoon } from "../ui/ComingSoon";
 import { ErrorState } from "../ui/ErrorState";
+import { Details } from "../ui/Details";
+import { PageFootnote } from "../ui/PageFootnote";
 import { COMING_SOON_MESSAGE } from "../api/errors";
 import { ideasApi } from "../ideas/api";
 import { ideaScanFromSearch, scanName } from "../ideas/model";
 import { builderOf, clearStore, readStore, readsOf, snapshot, syncDeviceHistory, writeStore } from "../screener/versions";
 import { UniversePicker } from "../screener/UniversePicker";
-import { CUSTOM, DEFAULT_CHOICE, DEFAULT_KEY, FALLBACK_PLAN, NIFTY50_FALLBACK, RUN_MAX, effectiveUniverse, heldBack, isUniverses, listLabel,
+import { CUSTOM, DEFAULT_CHOICE, DEFAULT_KEY, FALLBACK_PLAN, NIFTY50_FALLBACK, NIFTY50_FALLBACK_NOTE, RUN_MAX, effectiveUniverse, heldBack, isUniverses, listLabel,
   runInBatches, serverHasDefault, universesApi, type UniverseSymbols, type UniversesResponse } from "../screener/universe";
 import { isWatchlists, watchlistsApi, type Watchlist } from "../screener/watchlists";
 
@@ -53,6 +60,11 @@ const ScanAlertPanel = lazy(() => import("../screener/ScanAlertPanel"));
 const VALIDATE_DELAY_MS = 350;
 /** D2 live counts: a preview run (not stored) once the trader pauses editing, on bars the server caches per symbol. */
 const PREVIEW_DELAY_MS = 900;
+
+/** SCR-FIX D9: below Tailwind's `sm` (where the sticky Run bar shows) the header's tools fold into one "More" sheet. */
+const NARROW_QUERY = "(max-width: 639px)";
+/** One of the header's tools (Browse screens, From an idea, Advanced, ...): a button inline, a row in the "More" sheet. */
+interface HeaderTool { id: string; onClick: () => void; content: ReactNode; disabled?: boolean; ghost?: boolean; keepOpen?: boolean; expanded?: boolean }
 
 /** UX1: the screener's routes answer 404 while `screener_v2` is off - the page then shows "Coming soon". */
 const SCREENER_OFF = "screener-off";
@@ -75,6 +87,8 @@ export default function ScreenerPage(_props: PageProps) {
   const [otherProblem, setOtherProblem] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [run, setRun] = useState<RunResponse | null>(null);
+  // SCR-FIX B2: a run where not one symbol could be read - its sentence and one action (no "0 matched" answer)
+  const [readProblem, setReadProblem] = useState<{ text: string; action: ReadAction } | null>(null);
   const [evidence, setEvidence] = useState<{ id: number; symbol: string } | null>(null);   // U8 EV1: "Show on chart"
   const [ran, setRan] = useState<RunStamp | null>(null);         // what the shown run was made of
   const [validating, setValidating] = useState(false);
@@ -265,16 +279,19 @@ export default function ScreenerPage(_props: PageProps) {
   const universe = useMemo(() => {
     const max = plan.max_symbols;
     const nifty = lists[DEFAULT_KEY];
-    const nifty50 = nifty && nifty !== "failed" && nifty.symbols.length ? nifty.symbols : NIFTY50_FALLBACK;
+    const serverNifty = !!nifty && nifty !== "failed" && nifty.symbols.length > 0;
+    const nifty50 = serverNifty ? nifty.symbols : NIFTY50_FALLBACK;
     let chosen: readonly string[] = [];
     let label = "your own symbols";
     let note: string | null = null;
     let loading = false;
+    let builtin = false;                                // SCR-FIX D10: the built-in NIFTY 50 names stand in (dated, said)
     if (chosenKey) {
       const got = lists[chosenKey];
       if (chosenKey === DEFAULT_KEY && builtinDefault) {
         chosen = NIFTY50_FALLBACK;
         label = "NIFTY 50";
+        builtin = true;
       } else if (!universesDone || !got) {
         loading = true;
       } else if (got === "failed") {
@@ -294,10 +311,11 @@ export default function ScreenerPage(_props: PageProps) {
     } else {
       chosen = parseSymbols(symbolsText, max);
     }
-    if (loading) return { symbols: [] as string[], name: label, note: null, loading };
+    if (loading) return { symbols: [] as string[], name: label, note: null, loading, builtin: false };
     const eff = effectiveUniverse(chosen, nifty50);
     if (eff.fellBack && !note) note = choice === CUSTOM ? "Type at least one symbol. Until then the scan runs on NIFTY 50." : "This list has no stocks yet, so the scan runs on NIFTY 50.";
-    return { symbols: eff.symbols, name: eff.fellBack ? "NIFTY 50" : label, note, loading };
+    if (eff.fellBack && !serverNifty) builtin = true;
+    return { symbols: eff.symbols, name: eff.fellBack ? "NIFTY 50" : label, note, loading, builtin };
   }, [plan.max_symbols, lists, chosenKey, builtinDefault, universesDone, universes, choice, myLists, symbolsText]);
   const legacySymbols = useMemo(() => parseSymbols(symbolsText), [symbolsText]);
   const symbols = universeV2 ? universe.symbols : legacySymbols;
@@ -358,6 +376,7 @@ export default function ScreenerPage(_props: PageProps) {
   const doRun = useCallback(async () => {
     if (!registry || !canRun || !now) return;
     setRunning(true);
+    setReadProblem(null);
     const stamp = now;                                 // the scan as sent, not as it may be by the time the reply lands
     try {
       if (universeV2 && symbols.length > RUN_MAX) {
@@ -383,7 +402,9 @@ export default function ScreenerPage(_props: PageProps) {
         setRunKey((k) => k + 1);
       }
     } catch (e) {
-      toast.error(errorText(e));                       // a batch that failed: the batches before it stay shown
+      const unreadable = nothingRead(e);
+      if (unreadable) setReadProblem(unreadable);      // shown in Results with its one action, not as a toast
+      else toast.error(errorText(e));                  // a batch that failed: the batches before it stay shown
     } finally {
       setRunning(false);
       setProgress(null);
@@ -409,6 +430,10 @@ export default function ScreenerPage(_props: PageProps) {
     return run.results.filter((r) => r.matched || held.includes(r.symbol));
   }, [run, longAnswer, showAll, held]);
   const hiddenCount = run && shownResults ? run.results.length - shownResults.length : 0;
+  useEffect(() => { setReadProblem(null); }, [text, scanTf]);          // a changed scan: the old "could not read" goes
+  // SCR-FIX B1: the hidden rows split - read and did not match vs could not be read (never counted as "did not match")
+  const hiddenUnread = run && shownResults && !showAll ? unreadRows(run.results).filter((r) => !held.includes(r.symbol)).length : 0;
+  const hiddenNotMatched = hiddenCount - hiddenUnread;
 
   const showStage = (id: string) => {
     const handle = document.querySelector<HTMLElement>(`[data-stage-id="${id}"] button`);
@@ -456,11 +481,35 @@ export default function ScreenerPage(_props: PageProps) {
   };
 
   // the counts shown: the run's while the scan is the one that ran, else a live preview's for the current scan
-  const shown = fresh && run ? { funnel: run.funnel, matched: run.matched.length }
-    : liveFresh && preview ? { funnel: preview.res.funnel, matched: preview.res.matched_count } : null;
+  const shown = fresh && run ? { funnel: run.funnel, matched: run.matched.length, reason: unreadReason(run) }
+    : liveFresh && preview ? { funnel: preview.res.funnel, matched: preview.res.matched_count, reason: unreadReason(preview.res) } : null;
   const rows = trail(stages, shown?.funnel ?? null, !!shown);
   const killer = rows.find((r) => r.kills);
   const matchedNow = shown ? shown.matched : null;
+  // SCR-FIX D1: a disabled Run says why ("Add symbols", "Fix stage 2"); a check or a run in flight shows on the button
+  const runWhy = registry && !running && !validating ? runBlocker({ stages, symbols: symbols.length, text, problems: allProblems, otherProblem }) : null;
+  const narrow = useMediaQuery(NARROW_QUERY);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const headerTools = ([
+    taxonomy && { id: "browse-screens", onClick: () => setGalleryOpen(true), content: <><LayoutGrid size={14} aria-hidden /> Browse screens</> },
+    advanced && taxonomy && mirrors && { id: "library-tools-open", onClick: () => setToolsOpen(true), content: <><Layers size={14} aria-hidden /> Library tools</> },
+    etfOn && { id: "etf-open", onClick: () => setEtfOpen(true), content: <><LayoutGrid size={14} aria-hidden /> ETFs</> },
+    ideaOn && { id: "idea-open-dialog", onClick: () => setIdeaOpen(true), content: <><Lightbulb size={14} aria-hidden /> From an idea</> },
+    advanced && pineOn && { id: "pine-open", onClick: () => setPineOpen(true), content: <><Code2 size={14} aria-hidden /> Pine Script</> },
+    ideaOn && { id: "scan-alert-open", onClick: () => setAlertOpen(true), disabled: !text, content: <><BellRing size={14} aria-hidden /> Tell me when it matches</> },
+    universeV2 && ((taxonomy && mirrors) || pineOn || builderU2) && {
+      id: "screener-advanced", onClick: () => setAdvanced((v) => !v), ghost: true, keepOpen: true, expanded: advancedOpen,
+      content: <>Advanced <ChevronDown size={14} aria-hidden className={cx("transition-transform", advancedOpen && "rotate-180")} /></>,
+    },
+    ideaOn && scanVersions.length > 0 && { id: "scan-versions-open", onClick: () => setVersionsOpen(true), content: <><History size={14} aria-hidden /> Versions ({scanVersions.length})</> },
+  ] as (HeaderTool | false | null | undefined)[]).filter((t): t is HeaderTool => !!t);
+  // SCR-FIX B4: one count source - the answer's own funnel ("Matched N of 50 · K had data"), never the list's length
+  const counts = shown ? tally(shown.funnel, shown.matched) : null;
+  const onReadAction = (action: ReadAction) => {
+    if (action === "login" || action === "connect") navigate("/broker");
+    else if (action === "retry") void doRun();
+    else document.getElementById("screener-tf")?.focus();
+  };
 
   if (loadError === SCREENER_OFF) return <ComingSoon flag="screener_v2" />;
   if (loadError) return <ErrorState message={loadError} />;
@@ -479,33 +528,43 @@ export default function ScreenerPage(_props: PageProps) {
         <FreshnessPill ranAt={ranAt} source={run?.data_source ?? null} scanTf={scanTf} />
         {/* BT1b: the tier the last run actually read (only sent with byob_data_tier on). */}
         <DataTierBadge badge={run?.data_tier} />
-        {taxonomy && (
-          <Button size="sm" onClick={() => setGalleryOpen(true)} data-testid="browse-screens"><LayoutGrid size={14} /> Browse screens</Button>
-        )}
-        {advanced && taxonomy && mirrors && (
-          <Button size="sm" onClick={() => setToolsOpen(true)} data-testid="library-tools-open"><Layers size={14} /> Library tools</Button>
-        )}
-        {etfOn && <Button size="sm" onClick={() => setEtfOpen(true)} data-testid="etf-open"><LayoutGrid size={14} /> ETFs</Button>}
-        {ideaOn && <Button size="sm" onClick={() => setIdeaOpen(true)} data-testid="idea-open-dialog"><Lightbulb size={14} /> From an idea</Button>}
-        {advanced && pineOn && <Button size="sm" onClick={() => setPineOpen(true)} data-testid="pine-open"><Code2 size={14} /> Pine Script</Button>}
-        {ideaOn && (
-          <Button size="sm" onClick={() => setAlertOpen(true)} disabled={!text} data-testid="scan-alert-open"><BellRing size={14} /> Tell me when it matches</Button>
-        )}
-        {universeV2 && ((taxonomy && mirrors) || pineOn || builderU2) && (
-          <Button size="sm" variant="ghost" onClick={() => setAdvanced((v) => !v)} aria-expanded={advancedOpen} data-testid="screener-advanced">
-            Advanced <ChevronDown size={14} aria-hidden className={cx("transition-transform", advancedOpen && "rotate-180")} />
-          </Button>
-        )}
-        {ideaOn && scanVersions.length > 0 && (
-          <Button size="sm" onClick={() => setVersionsOpen(true)} data-testid="scan-versions-open"><History size={14} /> Versions ({scanVersions.length})</Button>
-        )}
+        {/* SCR-FIX A6: said once - these symbols were still read, from history instead of the live session */}
+        {run?.session_held_back ? (
+          <span className="text-t12 text-fg-muted" data-testid="session-held-back">{run.session_held_back} held back by the session budget</span>
+        ) : null}
+        {/* SCR-FIX D9: up to eight tools - inline from the small-tablet width up, one "More" sheet on a phone */}
+        {narrow ? (
+          headerTools.length > 0 && (
+            <Button size="v2" onClick={() => setMoreOpen(true)} aria-haspopup="dialog" data-testid="screener-more">
+              <MoreHorizontal size={16} aria-hidden /> More
+            </Button>
+          )
+        ) : headerTools.map((t) => (
+          <Button key={t.id} size="sm" variant={t.ghost ? "ghost" : "secondary"} onClick={t.onClick} disabled={t.disabled}
+                  aria-expanded={t.expanded} data-testid={t.id}>{t.content}</Button>
+        ))}
         <div className="hidden items-center gap-2 sm:flex">
-          <Button size="sm" onClick={() => void doSave()} disabled={!text}><Save size={14} /> Save</Button>
-          <Button size="sm" variant="primary" onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan">
-            <Play size={14} /> Run
+          {runWhy && <span id="run-why" className="text-t12 text-fg-muted" data-testid="run-why">{runWhy}</span>}
+          <Button size="v2" onClick={() => void doSave()} disabled={!text}><Save size={14} aria-hidden /> Save</Button>
+          <Button size="v2" variant="primary" edge onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan"
+                  aria-describedby={runWhy ? "run-why" : undefined}>
+            <Play size={14} aria-hidden /> Run
           </Button>
         </div>
       </div>
+      {narrow && (
+        <Sheet side="bottom" open={moreOpen} onOpenChange={setMoreOpen} title="More">
+          <ul className="space-y-space-2" data-testid="screener-more-list">
+            {headerTools.map((t) => (
+              <li key={t.id}>
+                <Button size="v2" variant={t.ghost ? "ghost" : "secondary"} className="w-full justify-start" disabled={t.disabled}
+                        aria-expanded={t.expanded} data-testid={t.id}
+                        onClick={() => { if (!t.keepOpen) setMoreOpen(false); t.onClick(); }}>{t.content}</Button>
+              </li>
+            ))}
+          </ul>
+        </Sheet>
+      )}
 
       <div className="screener-grid">
         {/* Universe */}
@@ -518,6 +577,7 @@ export default function ScreenerPage(_props: PageProps) {
                           onChoice={(c) => { if (c === CUSTOM && !symbolsText.trim()) setSymbolsText(symbols.join(", ")); setChoice(c); }}
                           symbolsText={symbolsText} onSymbolsText={setSymbolsText}
                           count={symbols.length} name={universe.name} loading={universe.loading} note={universe.note} maxSymbols={plan.max_symbols} />
+          {universe.builtin && <p className="mt-1 text-t12 text-warn" data-testid="universe-builtin">{NIFTY50_FALLBACK_NOTE}</p>}
           </div>
           ) : (
           <div>
@@ -531,10 +591,9 @@ export default function ScreenerPage(_props: PageProps) {
           )}
           <div>
           <label className="mt-3 block text-t12 text-fg-muted" htmlFor="screener-tf">Scan timeframe</label>
-          <select id="screener-tf" value={scanTf} onChange={(e) => setScanTf(e.target.value)}
-                  className={cx("mt-1 h-9 w-full rounded-control border border-border bg-surface-2 px-2 text-t13 text-fg focus:outline-none focus:ring-2 focus:ring-brand", !universeV2 && "font-mono")}>
-            {TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{timeframeWords(tf, universeV2)}</option>)}
-          </select>
+          {/* SCR-FIX D8: the shared picker (a bottom sheet with 44 px rows on a phone); all nine timeframes */}
+          <Combobox id="screener-tf" label="Scan timeframe" value={scanTf} onChange={setScanTf} className="mt-1 w-full"
+                    options={TIMEFRAMES.map((tf) => ({ value: tf, label: timeframeWords(tf, universeV2) }))} />
           </div>
           {universeV2 && symbols.length > RUN_MAX && (
             <p className="mt-3 text-t12 text-fg-muted" data-testid="universe-batches">
@@ -547,7 +606,14 @@ export default function ScreenerPage(_props: PageProps) {
             Live counts while editing
           </label>
           )}
-          <p className="mt-4 text-t12 text-fg-muted">Closed bars only, read from your broker. A scan lists symbols that meet your own conditions; it is not advice.</p>
+          {/* SCR-FIX E1: on the v2 page the "not advice" line is the page's one footnote; the rest of the note is in Details */}
+          {universeV2 ? (
+            <Details id="screener.universe.about" className="mt-4">
+              <p>Closed bars only, read from your broker. A scan lists symbols that meet your own conditions.</p>
+            </Details>
+          ) : (
+            <p className="mt-4 text-t12 text-fg-muted">Closed bars only, read from your broker. A scan lists symbols that meet your own conditions; it is not advice.</p>
+          )}
           </div>
         </aside>
 
@@ -589,10 +655,19 @@ export default function ScreenerPage(_props: PageProps) {
               {held.length} {held.length === 1 ? "stock waited" : "stocks waited"} for your broker&apos;s limit. Run again in a minute to include {held.length === 1 ? "it" : "them"}.
             </p>
           )}
+          {/* SCR-FIX B1 / B2: "N matched · M could not be read", the grouped reason and ONE action */}
+          {!running && (readProblem
+            ? <UnreadNote tally={null} reason={readProblem} onAction={onReadAction} />
+            : counts && <UnreadNote tally={counts} reason={shown?.reason ?? null} onAction={onReadAction} />)}
           {longAnswer && (hiddenCount > 0 || showAll) && (
             <p className="flex flex-wrap items-center justify-between gap-2 text-t13 text-fg-muted" data-testid="results-hidden">
-              <span>{showAll ? `Showing all ${run?.results.length ?? 0} stocks.` : `${hiddenCount} ${hiddenCount === 1 ? "stock did" : "stocks did"} not match; they are not listed.`}</span>
-              <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)}>{showAll ? "Matches only" : `Show the ${hiddenCount} that did not match`}</Button>
+              <span>{showAll ? `Showing all ${run?.results.length ?? 0} stocks.`
+                : hiddenUnread > 0
+                  ? `${hiddenNotMatched} did not match and ${hiddenUnread} could not be read; they are not listed.`
+                  : `${hiddenCount} ${hiddenCount === 1 ? "stock did" : "stocks did"} not match; they are not listed.`}</span>
+              <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)}>
+                {showAll ? "Matches only" : hiddenUnread > 0 ? `Show all ${hiddenCount}` : `Show the ${hiddenCount} that did not match`}
+              </Button>
             </p>
           )}
           {universeV2 && !run && !running && stages.length === 0 && readyScans.length > 0 && (
@@ -603,7 +678,7 @@ export default function ScreenerPage(_props: PageProps) {
                 {readyScans.map((s) => (
                   <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-subtle px-3 py-2">
                     <span className="min-w-0 flex-1 text-t14 font-medium text-fg">{s.name}</span>
-                    <Button size="sm" variant="primary" onClick={() => openScreen(s, true)} aria-label={`Run ${s.name}`} data-testid="ready-scan-run">
+                    <Button size="sm" variant="primary" edge onClick={() => openScreen(s, true)} aria-label={`Run ${s.name}`} data-testid="ready-scan-run">
                       <Play size={14} aria-hidden /> Run
                     </Button>
                   </li>
@@ -615,9 +690,13 @@ export default function ScreenerPage(_props: PageProps) {
                        why={fresh && registry ? (symbol) => whyChips(registry, stages, run?.funnel ?? null, symbol) : undefined}
                        onShowEvidence={(r) => { if (r.evidence_id != null) setEvidence({ id: r.evidence_id, symbol: r.symbol }); }} />
           <EvidencePanel evidenceId={evidence?.id ?? null} symbol={evidence?.symbol} onClose={() => setEvidence(null)} />
-          {run && <p className="text-t12 text-fg-muted">{run.disclaimer}</p>}
+          {run && (universeV2
+            ? <Details id="screener.results.about" label="About these results"><p>{run.disclaimer}</p></Details>
+            : <p className="text-t12 text-fg-muted">{run.disclaimer}</p>)}
         </div>
       </div>
+      {/* SCR-FIX E1: the page's one "not advice" line, at its foot */}
+      {universeV2 && <div className="mt-space-6"><PageFootnote /></div>}
 
       {taxonomy && (
         <Dialog wide open={galleryOpen} onOpenChange={setGalleryOpen} title="Screen library"
@@ -687,14 +766,21 @@ export default function ScreenerPage(_props: PageProps) {
       )}
 
       {/* Phone: the live count and Run stay in reach - PW2: just above the app's bottom navigation */}
-      <div className={cx("fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-between gap-3 border-t border-border bg-surface-1 px-4 py-2 sm:hidden")}>
-        <p className="text-t12 text-fg-muted">
-          Matched <span className="font-mono font-tabular text-t15 font-semibold text-signal">{matchedNow ?? "–"}</span>
-          <span> of <span className="font-mono font-tabular">{symbols.length}</span></span>
-        </p>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={() => void doSave()} disabled={!text} aria-label="Save"><Save size={14} /></Button>
-          <Button size="sm" variant="primary" onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan-mobile"><Play size={14} /> Run</Button>
+      <div className={cx("fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-between gap-3 border-t border-border bg-surface-1 px-4 py-2 sm:hidden")}
+           data-testid="screener-bottom-bar">
+        <div className="min-w-0">
+          <p className="text-t12 text-fg-muted">
+            Matched <span className="font-mono font-tabular text-t15 font-semibold text-signal">{matchedNow ?? "–"}</span>
+            <span> of <span className="font-mono font-tabular">{counts ? counts.total : symbols.length}</span></span>
+            {counts && counts.unread > 0 && <span data-testid="bar-had-data"> · <span className="font-mono font-tabular">{counts.withData}</span> had data</span>}
+          </p>
+          {runWhy && <p id="run-why-mobile" className="text-t12 text-fg-muted" data-testid="run-why-mobile">{runWhy}</p>}
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {/* SCR-FIX D1: 44 px targets, Save with its word, Run outlined so it reads as a button on the bar */}
+          <Button size="v2" onClick={() => void doSave()} disabled={!text}><Save size={16} aria-hidden /> Save</Button>
+          <Button size="v2" variant="primary" edge onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan-mobile"
+                  aria-describedby={runWhy ? "run-why-mobile" : undefined}><Play size={16} aria-hidden /> Run</Button>
         </div>
       </div>
     </div>

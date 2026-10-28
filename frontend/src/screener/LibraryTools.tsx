@@ -11,6 +11,9 @@
  */
 import { useMemo, useState } from "react";
 import { Button, cx, Tabs } from "../components/primitives";
+import { Combobox } from "../ui/Combobox";
+import { Details } from "../ui/Details";
+import { PageFootnote } from "../ui/PageFootnote";
 import { screenerApi } from "./api";
 import {
   agreementText, confluenceChoices, MAX_CONFLUENCE, methodLabel, MIN_CONFLUENCE, toggleChoice,
@@ -50,6 +53,8 @@ export function LibraryTools({ taxonomy, mirrors, watchLists, symbolsText, initi
         { value: "confluence", label: "Confluence", content: <Confluence taxonomy={taxonomy} mirrors={mirrors} symbols={symbols} initial={initialConfluence} api={api} /> },
         { value: "watch", label: "Watch → trigger", content: <Watch lists={watchLists} symbols={symbols} initial={initialWatch} api={api} /> },
       ]} />
+      {/* SCR-FIX E1: the dialog's one "not advice" line */}
+      <div className="mt-space-4"><PageFootnote /></div>
     </div>
   );
 }
@@ -96,11 +101,16 @@ function Confluence({ taxonomy, mirrors, symbols, initial, api }: {
       {error && <p role="alert" className="mt-2 text-t12 text-warn">{error}</p>}
       {result && (
         <div className="mt-3" aria-live="polite">
-          <p className="text-t12 text-fg-muted">{result.note}</p>
+          <Details id="screener.confluence.about" className="mt-0">
+            <p>{result.note}</p>
+            <p>{result.disclaimer}</p>
+          </Details>
           {result.rows.length === 0 ? (
             <p className="mt-2 text-t13 text-fg">No symbol was flagged by any of these screens on the data shown.</p>
           ) : (
-            <table className="mt-2 w-full border-collapse text-t13" data-testid="confluence-table">
+            // SCR-FIX D9: a wide table scrolls inside its own box on a phone, never the page
+            <div className="mt-2 overflow-x-auto" data-testid="confluence-scroll">
+            <table className="w-full min-w-[32rem] border-collapse text-t13" data-testid="confluence-table">
               <caption className="sr-only">Symbols by how many methods and screens flagged them</caption>
               <thead>
                 <tr className="text-left text-t12 text-fg-muted">
@@ -122,9 +132,9 @@ function Confluence({ taxonomy, mirrors, symbols, initial, api }: {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
           {result.unflagged.length > 0 && <p className="mt-2 text-t12 text-fg-muted">Not flagged: {result.unflagged.join(", ")}</p>}
-          <p className="mt-2 text-t12 text-fg-muted">{result.disclaimer}</p>
         </div>
       )}
     </div>
@@ -162,11 +172,9 @@ function Watch({ lists, symbols, initial, api }: {
   return (
     <div>
       <label className="block text-t12 font-medium text-fg-muted" htmlFor="watch-list">List</label>
-      <select id="watch-list" value={listId} onChange={(e) => setListId(e.target.value)}
-              className="mt-1 min-h-[44px] w-full rounded-control border border-border bg-surface-1 px-2 text-t13 text-fg">
-        {(lists?.lists ?? []).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        <option value="custom">Your own ready and trigger conditions</option>
-      </select>
+      {/* SCR-FIX D8: the shared picker, not the browser's select */}
+      <Combobox id="watch-list" label="List" value={listId} onChange={setListId} className="mt-1 w-full"
+                options={[...(lists?.lists ?? []).map((l) => ({ value: l.id, label: l.name })), { value: "custom", label: "Your own ready and trigger conditions" }]} />
       {chosen && !custom && <p className="mt-1 text-t12 text-fg-muted">{chosen.definition}</p>}
       {custom && (
         <div className="mt-2 grid gap-2">
@@ -185,11 +193,13 @@ function Watch({ lists, symbols, initial, api }: {
           <WatchColumn title="Triggered" symbols={result.triggered} empty="Nothing triggered on the last closed bar." />
           <WatchColumn title="Ready" symbols={result.ready} empty="Nothing is ready." />
           <div className="sm:col-span-2">
-            <p className="text-t12 text-fg-muted">{result.note}</p>
-            <p className="mt-1 break-words font-mono text-t12 text-fg">{result.transition_text}</p>
+            <p className="break-words font-mono text-t12 text-fg">{result.transition_text}</p>
             <Button size="sm" className="mt-2" onClick={() => void save()}>Save the trigger screen</Button>
             {saved && <p role="status" className="mt-1 text-t12 text-fg">{saved}</p>}
-            <p className="mt-2 text-t12 text-fg-muted">{result.disclaimer}</p>
+            <Details id="screener.watch.about">
+              <p>{result.note}</p>
+              <p>{result.disclaimer}</p>
+            </Details>
           </div>
         </div>
       )}

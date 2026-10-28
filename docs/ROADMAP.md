@@ -115,6 +115,14 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P4-8 | Market replay with the reader overlay + Terminal T7 | row 20 Part 10, row 21 |
 | P4-9 | Position helpers (roll what-if) + AI risk questions | row 20 Parts 11–12 |
 
+### Phase BR — Trading Brain (owner 28 Oct; starts only after BR-0)
+| ID | Item | Source | Done when |
+|---|---|---|---|
+| BR-0 | Foundation gate: SCR-FIX, AP-FIX, CP-FIX, DATA-H backfill, P5-1 reader port passing its answer key - merged + deployed + checked | ATP_ORDER_TRADING_BRAIN.md | every listed item done; then the BR review (<= 25 lines) gets the owner's ✅ |
+| BR-1 | Memory: M1 one shared reader, M2 episodes (extends journal capture J1), M3 similar-setup recall, M4 user method profile, M5 chat working memory | ATP_ORDER_TRADING_BRAIN.md | parity / isolation / no-look-ahead tests; recall examples with charts; owner ✅ |
+| BR-2 | Reflection + calibration: R1 post-trade line, R2 weekly lessons as proposals, R3 reliability chart + Brier, R4 "I don't know" (>= 20 closed PAPER episodes) | ATP_ORDER_TRADING_BRAIN.md | reliability chart; proposals never auto-applied; owner ✅ |
+| BR-3 | Second opinion + state + proactive: S1 setup state machine (parity), S2 pre-trade check, S3 for / against, S4 brief + alerts | ATP_ORDER_TRADING_BRAIN.md | byte-identical decisions on stored history; with / without comparison; owner ✅ |
+
 ### Phase 5 — Business launch (last; owner decisions)
 | ID | Item |
 |---|---|
@@ -136,7 +144,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UX-11b | in progress | Session B: "Numbers first, logical colour" whole-app pass (ATP_ORDER_UX11B.md): audit re-verify, then PR 1 C1 typed payloads + C6 TrendChip / LevelChip / one Signed; PR 2 Today briefs; PR 3 dishes; PR 4 Markets + Risk etc.; PR 5 guard + no clock framing | - |
 | UX-12 | done | Session B: purple dot-grid backdrop behind the v2 page header band, Appearance toggle, default on; merged #609, deployed 77a50057db57, owner OK 28 Oct | #609 |
 | UX-13 | done | Session B: bottom-bar option C (colour on the icon, round fill only on the tab on screen), lighter tile grid lines; merged #609, deployed 77a50057db57, owner OK 28 Oct | #609 |
-| UX-14 | in progress | Session B: "Professional palette" (ATP_ORDER_UX14.md): colour_v3 token set behind its flag, CI contrast for every pair, ONE comparison page (Today, Terminal, Screener, My trades, Signals; 390 + desktop, dark + light); default after owner OK | - |
+| UX-14 | in progress | Session B: "Professional palette" (ATP_ORDER_UX14.md): colour_v3 token set behind its flag, CI contrast for every pair, ONE comparison page (Today, Terminal, Screener, My trades, Signals; 390 + desktop, dark + light); default after owner OK; owner 28 Oct: stays an on / off flag he switches himself (Admin -> Features) | - |
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | SB-1 | not started | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | - |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
@@ -171,6 +179,10 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P3-4 | not started (parallel) | security + DPDP checklist | - |
 | P3-5 | waiting for owner | the lawyer's text | - |
 | TP-1 | not started | starts only after Phase 1 is complete | - |
+| BR-0 | waiting | gate only: SCR-FIX (in progress), AP-FIX, CP-FIX, DATA-H backfill, P5-1; BR filed 28 Oct, plan only | - |
+| BR-1 | not started | after BR-0 + the owner's ✅ on the BR review | - |
+| BR-2 | not started | after BR-1 | - |
+| BR-3 | not started | after BR-2 | - |
 | TP-2 | not started | after TP-1 (in order) | - |
 | TP-3 | not started | after TP-2 (in order) | - |
 | TP-4 | not started | after TP-3 (in order) | - |

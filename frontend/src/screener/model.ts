@@ -336,7 +336,8 @@ export function stageSummary(reg: Registry, s: Stage): string {
       return `${s.fn === "Rank" ? "rank" : "percentile rank"} of ${seriesWords(reg, s.of)} ${OP_WORDS[s.op]} ${num(s.value)}`;
     case "group": {
       const parts = live(s.children).map((c) => stageSummary(reg, c));
-      return s.op === "ANY" ? `any of: ${parts.join("; ")}` : `none of: ${parts.join("; ")}`;
+      // NOT compiles as NOT (a AND b) (stageText): it passes unless every block passes - "not all of", never "none of"
+      return s.op === "ANY" ? `any of: ${parts.join("; ")}` : `not all of: ${parts.join("; ")}`;
     }
   }
 }
@@ -406,6 +407,20 @@ export function blockProblems(reg: Registry, stages: Stage[]): Record<string, st
   };
   walk(stages);
   return out;
+}
+
+/** SCR-FIX D1: why Run is off, in a few words beside the button ("Add symbols", "Fix stage 2"); null when nothing in the
+ * scan itself holds it (a check or a run in flight shows on the button). A problem inside a group names its stage. */
+export function runBlocker({ stages, symbols, text, problems, otherProblem }: {
+  stages: Stage[]; symbols: number; text: string; problems: Record<string, string>; otherProblem: string | null;
+}): string | null {
+  if (!text) return "Add a condition";
+  if (symbols === 0) return "Add symbols";
+  const holds = (s: Stage): boolean => s.id in problems || (s.kind === "group" && s.children.some(holds));
+  const at = stages.findIndex(holds);
+  if (at >= 0) return `Fix stage ${at + 1}`;
+  if (otherProblem || Object.keys(problems).length) return "Fix the conditions";
+  return null;
 }
 
 /** Moves a stage up or down by one (keyboard reordering; drag uses the same rule). */

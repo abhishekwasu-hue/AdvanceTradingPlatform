@@ -73,7 +73,7 @@ def test_a_screen_fetches_its_symbols_a_few_at_a_time_in_order(monkeypatch):
     assert peak[0] == 3                                                                # a few at a time, never more
     assert sorted(order) == sorted(symbols)
     assert [d.symbol for d in universe] == ["SLOW", "TCS", "INFY", "SBIN", "LT", "ITC"]  # the symbols' order, not arrival
-    assert problems == {"BAD": "RuntimeError: no such symbol"}
+    assert problems == {"BAD": "The bars could not be read."} and problems["BAD"].code == "not_read"   # SCR-FIX B3: plain words
     assert source == "broker:dhan"
 
 

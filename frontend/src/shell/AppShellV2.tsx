@@ -15,7 +15,7 @@ import PwaBanners from "../pwa/PwaBanners";
 import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
-import { ColourV2Provider, colourV2On, useTabularRoot } from "../ui/colourV2";
+import { ColourV2Provider, colourV2On, colourV3On, useColourV3Root, useTabularRoot } from "../ui/colourV2";
 import { PageHelpProvider } from "./pageHelp";
 import { STORED_HISTORY_PATHS, storedDailyFor } from "../ui/dataPages";
 import BottomNavV2 from "./BottomNavV2";
@@ -202,6 +202,7 @@ export default function AppShellV2() {
   const wide = key === "screener" || key === "options-builder" || key === "charts" || key === "terminal";
   // Colour v2 (flag `colour_v2`, OFF until the owner approves): shared with every page and shared component below.
   const colour = colourV2On(features.on);
+  useColourV3Root(colourV3On(features.on));
   // UX-4: fixed-width digits for every number in the v2 UI (html[data-numerals], src/styles/index.css).
   useTabularRoot(true);
   return (
@@ -227,9 +228,10 @@ export default function AppShellV2() {
           <OneTimeNoticesV2 />
           {/* TM Part 1 (flag data_hub): the one notice while live prices reconnect or the broker login needs renewing. */}
           <LivePricesBanner enabled={!!user && features.on("data_hub")} />
-          {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip. */}
+          {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip, and
+              SCR-FIX D2: Find setups clips too, so nothing there can scroll the page sideways. */}
           <main id="main" ref={mainRef} tabIndex={-1}
-            className={`relative w-full flex-1 ${key === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${key === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>
+            className={`relative w-full flex-1 ${key === "copilot" || key === "screener" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${key === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>
             {/* UX3-9: a merged page's tabs (My trades, Strategies, Performance) above the tab on screen. */}
             {!legacy && !redirect && <PageTabsV2 current={key} ctx={ctx} />}
             {content}

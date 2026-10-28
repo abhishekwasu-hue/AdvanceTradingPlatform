@@ -5,6 +5,7 @@
  * load renders nothing. A watchlist is a list of names: loading one runs nothing.
  */
 import { useEffect, useState } from "react";
+import { Combobox } from "../ui/Combobox";
 import { isWatchlists, loadNote, optionLabel, replaceWarning, shownList, watchlistsApi, type Watchlist, type WatchlistClient } from "./watchlists";
 
 interface Props {
@@ -86,10 +87,10 @@ export function WatchlistPicker({ symbols, onLoad, max, label = "My watchlists",
         <p className="text-fg-muted">No watchlists yet. Type symbols, then save them as a list below.</p>
       ) : (
         <div className="flex gap-2">
-          <select id="watchlist-select" className={`${field} min-w-0 flex-1`} value={chosen?.id ?? ""}
-                  onChange={(e) => setSelected(e.target.value ? Number(e.target.value) : "")}>
-            {lists.map((w) => <option key={w.id} value={w.id}>{optionLabel(w)}</option>)}
-          </select>
+          {/* SCR-FIX D8: the shared picker, not the browser's select */}
+          <Combobox id="watchlist-select" label={label} className="min-w-0 flex-1" value={chosen ? String(chosen.id) : ""}
+                    onChange={(v) => setSelected(v ? Number(v) : "")} searchable={lists.length > 12}
+                    options={lists.map((w) => ({ value: String(w.id), label: optionLabel(w) }))} />
           <button type="button" className={button} disabled={!chosen || chosen.symbols.length === 0}
                   onClick={() => chosen && onLoad(max !== undefined ? chosen.symbols.slice(0, max) : chosen.symbols, chosen.name)}
                   data-testid="watchlist-load">Load</button>

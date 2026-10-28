@@ -92,10 +92,11 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
   return (
     <section aria-label="Conditions" className="rounded-panel border border-border bg-surface-1 p-4" data-run={props.runKey}>
       <FunnelHead universe={props.universe} withData={total} />
-      <div className="relative mt-3 pl-6">
-        {/* the ALL bracket: one continuous left edge with its label - the group, not a nested grey box */}
+      {/* SCR-FIX D4: the ALL bracket's label reads across, in words, above the stages (it was turned on its side) */}
+      <p className="mt-3 pl-6 text-t12 font-medium text-fg-muted" aria-hidden data-testid="all-label">All of these must pass</p>
+      <div className="relative mt-1 pl-6">
+        {/* the ALL bracket: one continuous left edge - the group, not a nested grey box */}
         <div aria-hidden className="absolute bottom-2 left-1 top-2 w-3 rounded-l-control border-y border-l border-fg-muted/50" />
-        <span className="absolute -left-1 top-1/2 -translate-y-1/2 -rotate-90 text-t12 font-medium text-fg-muted" aria-hidden>All</span>
         <ol aria-label="Stages - every one must pass" className="rounded-control border border-border bg-surface">
           {stages.map((s, i) => {
             if (isLive(s)) enabledIndex += 1;                                   // an empty group is not a stage
@@ -121,12 +122,13 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
           })}
         </ol>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-3 pl-6">
-        <span className="inline-flex items-center gap-1">
+      {/* SCR-FIX D3: the footer wraps on a phone, so the Matched count stays inside the card */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 pl-6">
+        <span className="inline-flex min-w-0 flex-wrap items-center gap-1">
           <Button size="sm" onClick={() => onChange([...stages, newBlock(registry, kind)])}><Plus size={14} /> Add a condition</Button>
           <KindPicker value={kind} onChange={setKind} formula={!!props.formula} />
         </span>
-        <MatchedFoot matched={props.matched} of={total} kills={rows.some((r) => r.kills)} live={!!props.live} />
+        <MatchedFoot matched={props.matched} of={props.fresh ? funnel?.universe ?? null : null} withData={total} kills={rows.some((r) => r.kills)} live={!!props.live} />
       </div>
     </section>
   );
@@ -134,7 +136,7 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
 
 function FunnelHead({ universe, withData = null }: { universe: number; withData?: number | null }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
       <h2 className="text-t15 font-semibold text-fg">Conditions</h2>
       <p className="text-t12 text-fg-muted">
         Universe <span className="font-mono font-tabular text-t15 font-semibold text-fg">{universe}</span>
@@ -144,8 +146,10 @@ function FunnelHead({ universe, withData = null }: { universe: number; withData?
   );
 }
 
-/** The canvas's one live region: a single summary per run ("Matched 4 of 48"), not a count per stage. */
-function MatchedFoot({ matched, of, kills, live }: { matched: number | null; of: number | null; kills: boolean; live: boolean }) {
+/** The canvas's one live region: a single summary per run ("Matched 4 of 50 · 48 had data"), not a count per stage.
+ * SCR-FIX B4: "of" is the answer's own universe (the same count the phone bar shows); a symbol that could not be read
+ * is in it, and "had data" says how many were read. */
+export function MatchedFoot({ matched, of, withData = null, kills, live }: { matched: number | null; of: number | null; withData?: number | null; kills: boolean; live: boolean }) {
   return (
     // one announcement per Run; live previews update the number quietly (they come after every pause in editing)
     <p className="text-t12 text-fg-muted" aria-live={live ? "off" : "polite"} aria-atomic="true">
@@ -154,6 +158,9 @@ function MatchedFoot({ matched, of, kills, live }: { matched: number | null; of:
         {matched ?? "–"}
       </span>
       {matched != null && of != null && <span> of <span className="font-mono font-tabular">{of}</span></span>}
+      {matched != null && of != null && withData != null && withData !== of && (
+        <span data-testid="matched-had-data"> · <span className="font-mono font-tabular">{withData}</span> had data</span>
+      )}
       {matched == null && <span className="sr-only">not counted yet</span>}
       {matched != null && live && <span className="ml-1.5 rounded-full border border-border px-1.5 text-t12" title="Counted as you edit; Run stores a scan">live</span>}
     </p>

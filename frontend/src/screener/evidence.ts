@@ -8,6 +8,10 @@
  * only when "Show failed conditions" is on (the backend sends its drawing only with `debug`).
  */
 import { request } from "../api/client";
+import type { LevelLine } from "../chart/chartCore";
+import type { ChartBar, TimeframeId } from "../chart/timeframes";
+import type { ChartMarker } from "../charting/markers";
+import type { LayerData, LayerSegment, StudyLine } from "../charting/engine";
 
 export type DrawableKind = "overlay" | "pane" | "box" | "band" | "bars";
 
@@ -25,7 +29,13 @@ export interface EvidenceTerm { text: string; value: number | string | boolean |
 export interface EvidenceRow {
   id: string; block: string; text: string; passed: boolean | null; terms: EvidenceTerm[]; verify: string; drawable: string | null;
   note?: string; negated?: boolean; zone_as_of?: string | null;
+  /** SCR-FIX B5 (absent on older packs): what the row did against what the screen asks of it - "met" (✅), "failed"
+   * (✗), "not_needed" (grey: an OR it sits in was made true by another branch) or "unknown". `raw` is the engine's own
+   * truth; `required` false when the screen needs the condition FALSE (a NOT over its group - the text then reads
+   * "NOT (...)"); `group` the innermost AND / OR it sits in, with the NOTs over it carried in. */
+  state?: RowState; raw?: boolean | null; required?: boolean; group?: { id: string; op: "ALL" | "ANY"; negated: boolean } | null;
 }
+export type RowState = "met" | "failed" | "not_needed" | "unknown";
 export interface EvidenceBlock { id: string; text: string; passed: boolean | null; rows: string[] }
 /** EV3 (flag evidence_context): the engine's DowTrend on one timeframe as of the matched bar, and the rows reading it. */
 export interface EvidenceContext {
@@ -33,8 +43,12 @@ export interface EvidenceContext {
 }
 /** EV3: present on a replayed pack - recomputed from the shared history as of `at`, never stored, never sent. */
 export interface EvidenceReplay { at: string; source: string | null; note: string; stored_as_of: { bar_start: string; bar_close: string } }
+/** SCR-FIX C4: why "Send to my Telegram" cannot go (the server's machine code; its sentence comes with it). */
+export type TelegramReason = "not_linked" | "bot_not_configured" | "blocked_by_user" | "send_failed" | "not_owner";
 export interface EvidencePack {
   schema: "evidence/1"; evidence_id?: number; pack_sha256?: string; can_send?: boolean;
+  /** SCR-FIX C4: the caller's own Telegram chat is linked (the send can go), else why not. */
+  telegram_linked?: boolean; telegram_reason?: TelegramReason | null; telegram_message?: string | null;
   symbol: string; exchange: string; base_tf: string;
   screen: { text: string; ast_sha256: string; version: string; name: string | null };
   run_id: number | null;
@@ -51,6 +65,8 @@ export interface EvidencePack {
   disclaimer: string;
   context?: EvidenceContext[];
   replay?: EvidenceReplay;
+  /** SCR-FIX B6: whether this evidence can be replayed at all (the replay controls show only then). */
+  replay_available?: boolean;
 }
 
 export const evidenceApi = {
@@ -58,7 +74,7 @@ export const evidenceApi = {
   /** EV3: the stored pack's screen as of an earlier bar of its window (`at` = that bar's close, with its zone). */
   replay: (id: number, at: string, debug = false) =>
     request<EvidencePack>(`/screener/evidence/${id}/replay?at=${encodeURIComponent(at)}${debug ? "&debug=true" : ""}`),
-  sendTelegram: (id: number) => request<{ sent: boolean; reason: string | null }>(`/screener/evidence/${id}/telegram`, { method: "POST" }),
+  sendTelegram: (id: number) => request<{ sent: boolean; reason: TelegramReason | null; message: string | null }>(`/screener/evidence/${id}/telegram`, { method: "POST" }),
 };
 
 /** Okabe-Ito (colour-blind safe): zone bands by role, the other drawables in order. Candles stay neutral. */
@@ -123,11 +139,44 @@ export function visibleDrawables(pack: EvidencePack, hiddenBlocks: ReadonlySet<s
   return pack.drawables.filter((d) => (showFailed || !d.failed) && !hiddenBlocks.has(blockOf.get(d.row) ?? ""));
 }
 
-/** The verify strip rows: failed conditions only with `showFailed`. */
+/** The verify strip rows: failed conditions only with `showFailed`. SCR-FIX B5: a row of an OR group says so ("One of:"),
+ * so the table reads like the screen's text; the text already carries a NOT the screen puts over its group. */
 export function verifyRows(pack: EvidencePack, showFailed: boolean): EvidenceRow[] {
-  return pack.rows.filter((r) => showFailed || r.passed !== false);
+  return pack.rows.filter((r) => showFailed || r.passed !== false)
+    .map((r) => (r.group?.op === "ANY" ? { ...r, text: `One of: ${r.text}` } : r));
 }
 
+/** The comparison and logic signs a condition is written with, and the words a trader reads (longest sign first). */
+const SIGN_WORDS: [RegExp, string][] = [
+  [/\s*>=\s*/g, " at or above "], [/\s*<=\s*/g, " at or below "], [/\s*==\s*/g, " is "], [/\s*!=\s*/g, " is not "],
+  [/\s*>\s*/g, " above "], [/\s*<\s*/g, " below "],
+  [/\bAND\b/g, "and"], [/\bOR\b/g, "or"], [/\bNOT\b/g, "not"],
+];
+
+/**
+ * SCR-FIX D6 / D7: a condition or a verify line in plain words for the default view - "RSI(14) 63.6 above 50", not
+ * "RSI(14) 63.6 > 50"; the quotes around a choice go ("NearZone(demand, 20)"); CrossAbove(a, b) reads "a crosses above b".
+ * The numbers and names are kept exactly as the engine wrote them. The code itself stays one tap away, under "Advanced".
+ */
+export function plainCondition(text: string): string {
+  let t = text.replace(/"([^"]*)"/g, "$1").trim();
+  const cross = /^Cross(Above|Below)\((.*)\)$/.exec(t);
+  if (cross) {
+    // split the two arguments at the comma outside any brackets: CrossAbove(EMA(close, 20), SMA(close, 50))
+    let depth = 0;
+    const at = [...cross[2]].findIndex((c) => { depth += c === "(" ? 1 : c === ")" ? -1 : 0; return c === "," && depth === 0; });
+    if (at > 0) t = `${cross[2].slice(0, at).trim()} crosses ${cross[1].toLowerCase()} ${cross[2].slice(at + 1).trim()}`;
+  }
+  for (const [sign, words] of SIGN_WORDS) t = t.replace(sign, words);
+  return t.replace(/\s+/g, " ").trim();
+}
+
+
+/** SCR-FIX B6: the replay controls show only when the evidence can be replayed - the server says so up front
+ * (`replay_available`; absent on an older server) and no replay request was refused - and there is a bar to step to. */
+export function canReplay(pack: Pick<EvidencePack, "replay_available">, steps: number, refused: boolean): boolean {
+  return steps > 1 && pack.replay_available !== false && !refused;
+}
 // --------------------------------------------------------------------------------------------------- geometry
 export interface Candle { x: number; w: number; open: number; close: number; high: number; low: number; rising: boolean; index: number }
 export interface Shape {
@@ -251,4 +300,136 @@ export function evidenceGeometry(pack: EvidencePack, drawables: readonly Evidenc
 export function chartSummary(pack: EvidencePack, drawables: readonly EvidenceDrawable[]): string {
   const drawn = drawables.length ? drawables.map((d) => d.label).join("; ") : "no conditions drawn";
   return `${pack.symbol} ${pack.base_tf} candles up to the matched ${barTimeText(pack)}. Drawn: ${drawn}.`;
+}
+
+// ------------------------------------------------------------------------------------------- SCR-FIX C1 / C2 / C4
+/** The Charts page's timeframe for a screen's timeframe (null: the Charts page has no such timeframe). */
+const CHART_TF: Record<string, TimeframeId> = {
+  "1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "day", "1w": "week", "1M": "month",
+};
+export function chartTimeframe(baseTf: string): TimeframeId | null {
+  return CHART_TF[baseTf] ?? null;
+}
+
+/** The pack's bars as the chart's bars (a bar with a missing price is left out; a missing volume is 0). */
+export function packCandles(pack: Pick<EvidencePack, "bars">): ChartBar[] {
+  const { t, o, h, l, c, v } = pack.bars;
+  const out: ChartBar[] = [];
+  for (let i = 0; i < t.length; i++) {
+    const [op, hi, lo, cl] = [o[i], h[i], l[i], c[i]];
+    if (!finite(op) || !finite(hi) || !finite(lo) || !finite(cl)) continue;
+    const vol = v?.[i];
+    out.push({ timestamp: t[i], open: op, high: hi, low: lo, close: cl, volume: finite(vol) ? vol : 0 });
+  }
+  return out;
+}
+
+/** C2: the matched bar's own time and prices, exactly as the pack has them (null when the index is outside the bars). */
+export interface MatchedBar { time: string; open: number; high: number; low: number; close: number; volume: number | null }
+export function matchedBar(pack: Pick<EvidencePack, "bars" | "matched_index">): MatchedBar | null {
+  const i = pack.matched_index;
+  const { t, o, h, l, c, v } = pack.bars;
+  const [op, hi, lo, cl, vol] = [o[i], h[i], l[i], c[i], v?.[i]];
+  if (i < 0 || i >= t.length || !finite(op) || !finite(hi) || !finite(lo) || !finite(cl)) return null;
+  return { time: t[i], open: op, high: hi, low: lo, close: cl, volume: finite(vol) ? vol : null };
+}
+
+/** A price with two decimals and Indian grouping ("1,23,456.70"). */
+export function priceText(p: number): string {
+  return p.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * C1: the pack's drawables in the shapes the Charts page's chart takes - the screen's thresholds as level lines, its
+ * series as study lines (price overlays on the price pane, an oscillator in its own pane with its thresholds as flat
+ * lines), zone bands as bands, a breakout box as its four edges (segments: the chart has no box primitive), highlighted
+ * bars as markers, and the matched bar marked. Only the pack's own drawables (owner rule 0).
+ */
+export interface ChartLayers { levels: LevelLine[]; studies: { id: string; line: StudyLine }[]; layer: LayerData; markers: ChartMarker[] }
+export function evidenceChartLayers(pack: EvidencePack, drawables: readonly EvidenceDrawable[], highlight: string | null = null): ChartLayers {
+  const sec = (iso: string | undefined) => (iso ? Math.floor(Date.parse(iso) / 1000) : NaN);
+  const t = pack.bars.t;
+  const n = t.length;
+  const at = (i: number | undefined, fallback: number) => sec(t[Math.max(0, Math.min(n - 1, i ?? fallback))]);
+  const levels: LevelLine[] = [];
+  const studies: { id: string; line: StudyLine }[] = [];
+  const bands: NonNullable<LayerData["bands"]> = [];
+  const segments: LayerSegment[] = [];
+  const markers: ChartMarker[] = [];
+  const fade = (id: string, color: string) => (highlight && id !== highlight ? `${color}55` : color);
+  for (const d of drawables) {
+    const color = fade(d.id, drawableColor(d, drawables));
+    const own = d.pane !== "price";
+    (d.series ?? []).forEach((s, si) => {
+      const data = s.values.slice(0, n).flatMap((v, i) => (finite(v) && Number.isFinite(sec(t[i])) ? [{ time: sec(t[i]), value: v }] : []));
+      if (data.length) studies.push({ id: `ev-${d.id}-s${si}`, line: { data, color, pane: own ? "own" : "price", title: si === 0 ? d.label : s.name } });
+    });
+    (d.levels ?? []).forEach((lv, li) => {
+      if (!finite(lv.value)) return;
+      const title = `${lv.label} ${lv.value_text}`.trim();
+      if (own) {
+        // an oscillator's threshold: a flat line in its pane across the window
+        const data = t.flatMap((x) => (Number.isFinite(sec(x)) ? [{ time: sec(x), value: lv.value }] : []));
+        if (data.length) studies.push({ id: `ev-${d.id}-l${li}`, line: { data, color, pane: "own", title } });
+      } else levels.push({ price: lv.value, title, tone: "neutral" });
+    });
+    if (d.kind === "band" && finite(d.low) && finite(d.high)) {
+      bands.push({ low: d.low, high: d.high, color, opacity: 0.18, label: d.label });
+    } else if (d.kind === "box" && finite(d.low) && finite(d.high)) {
+      const [t1, t2, hi, lo] = [at(d.from, 0), at(d.to, n - 1), d.high, d.low];
+      const edges: [number, number, number, number][] = [[t1, hi, t2, hi], [t1, lo, t2, lo], [t1, lo, t1, hi], [t2, lo, t2, hi]];
+      for (const [a1, p1, a2, p2] of edges) segments.push({ t1: a1, p1, t2: a2, p2, color, width: 1, style: "solid" });
+    }
+    if ((d.kind === "box" || d.kind === "bars") && finite(d.level)) levels.push({ price: d.level, title: d.label, tone: "neutral" });
+    if (d.kind === "bars") {
+      for (const i of d.index ?? []) if (i >= 0 && i < n) markers.push({ timestamp: t[i], position: "belowBar", color, shape: "circle", text: "" });
+    }
+  }
+  const m = pack.matched_index;
+  if (m >= 0 && m < n) markers.push({ timestamp: t[m], position: "aboveBar", color: "fg", shape: "arrowDown", text: "Matched" });
+  return { levels, studies, layer: { bands, segments }, markers: markers.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) };
+}
+
+/**
+ * C4: what the page offers by "Send to my Telegram": nothing when the server has no bot (or the evidence is not the
+ * caller's, or it is a replay), "connect" when the caller's chat is not linked yet (the connect row in place), else
+ * "send".
+ */
+export type TelegramAction = "hidden" | "connect" | "send";
+export function telegramAction(pack: Pick<EvidencePack, "can_send" | "telegram_linked" | "telegram_reason" | "replay">): TelegramAction {
+  if (!pack.can_send || pack.replay || pack.telegram_reason === "bot_not_configured" || pack.telegram_reason === "not_owner") return "hidden";
+  if (pack.telegram_linked === false && pack.telegram_reason === "not_linked") return "connect";
+  return "send";
+}
+
+/**
+ * C4: "connect, then send by itself, exactly once". Armed when the trader linked Telegram from the evidence panel; the
+ * first reload that shows the chat linked sends once for that evidence, and never again (a second link, a re-render or
+ * a reload does not send twice).
+ */
+export class SendAfterLink {
+  private armed = false;
+  private readonly sent = new Set<number>();
+  arm(): void { this.armed = true; }
+  disarm(): void { this.armed = false; }
+  /** True exactly once per evidence: armed and the pack now says the chat is linked. */
+  take(evidenceId: number | null, pack: Pick<EvidencePack, "telegram_linked" | "can_send" | "replay"> | null): boolean {
+    if (!this.armed || evidenceId == null || !pack || !pack.can_send || pack.replay || pack.telegram_linked !== true || this.sent.has(evidenceId)) return false;
+    this.armed = false;
+    this.sent.add(evidenceId);
+    return true;
+  }
+}
+
+const REASONS: readonly TelegramReason[] =["not_linked", "bot_not_configured", "blocked_by_user", "send_failed", "not_owner"];
+
+/** C4: the reason code and sentence of a refused send (the 409's `detail`), from the response body. */
+export function sendRefusal(body: string): { reason: TelegramReason | null; message: string | null } {
+  try {
+    const detail = (JSON.parse(body) as { detail?: unknown }).detail as { reason?: unknown; message?: unknown } | undefined;
+    if (detail && typeof detail === "object") {
+      return { reason: REASONS.find((r) => r === detail.reason) ?? null, message: typeof detail.message === "string" ? detail.message : null };
+    }
+  } catch { /* not JSON */ }
+  return { reason: null, message: null };
 }

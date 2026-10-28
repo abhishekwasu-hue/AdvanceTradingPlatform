@@ -28,7 +28,8 @@ import numpy as np
 import pandas as pd
 
 from app.screener import nodes as n
-from app.screener.runtime import Match, ScreenRuntimeError, SymbolData, _as_bool, _cross, _Eval, bool_frame, time_of_day
+from app.screener import reasons
+from app.screener.runtime import Match, ScreenRuntimeError, SymbolData, _as_bool, _cross, _Eval, bool_frame, last_match, time_of_day
 from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
@@ -523,7 +524,7 @@ def run_panel(ast: Any, validated: Validated, universe: List[SymbolData], *, bas
         panel = Panel([universe[i].frames[base_tf] for i in members], [f"#{k}" for k in range(len(members))])   # symbols may repeat
         if len(panel) < need:
             for i in members:
-                out[i] = Match(universe[i].symbol, False, f"not enough history on {base_tf}")
+                out[i] = Match(universe[i].symbol, False, reasons.short_history([base_tf]))
             continue
         try:
             value = _PanelEval(panel, base_tf, params).ev(ast, base_tf)
@@ -535,7 +536,7 @@ def run_panel(ast: Any, validated: Validated, universe: List[SymbolData], *, bas
             continue
         last = value.iloc[-1].tolist() if isinstance(value, pd.DataFrame) else [value] * len(members)
         for i, symbol, v in zip(members, symbols, last):
-            out[i] = Match(symbol, bool(v) if not (isinstance(v, float) and np.isnan(v)) else False)
+            out[i] = last_match(symbol, v)
     rest_set = set(rest)
     leftovers = [d for i, d in enumerate(universe) if i not in out and (i in rest_set or not _has_bars(d, base_tf))]
     fallback = iter(per_symbol(leftovers)) if leftovers else iter(())

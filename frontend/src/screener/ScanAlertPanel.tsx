@@ -10,6 +10,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { friendlyError } from "../api/errors";
 import { Button, cx } from "../components/primitives";
+import { Details } from "../ui/Details";
+import { PageFootnote } from "../ui/PageFootnote";
 import { scanAlertsApi, type ScanAlertInput, type ScanAlertRule } from "./api";
 
 export interface ScanAlertApi {
@@ -37,7 +39,7 @@ const TF_WORDS: Record<string, string> = {
   "1m": "1-minute", "3m": "3-minute", "5m": "5-minute", "15m": "15-minute", "30m": "30-minute", "1h": "1-hour",
   "1d": "daily", "1w": "weekly", "1M": "monthly",
 };
-export const DONE = "Alert on. ATP tells you when a symbol matches this scan. Matches are filters passed, not advice.";
+export const DONE = "Alert on. ATP tells you when a symbol matches this scan.";
 
 /** "checks each time a daily bar closes" / "checks while each 15-minute bar is forming". */
 export function whenLine(tf: string, fireOn: "bar_close" | "intrabar"): string {
@@ -120,10 +122,12 @@ export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, 
               </label>
             )}
           </fieldset>
-          <p className="text-t12 text-fg-muted">
-            You are told in the app, and on Telegram or e-mail if you connected them in{" "}
-            <Link to="/settings/alerts" className="underline">Settings › Alerts</Link>. Your scan is saved first, so the alert checks exactly what you see.
-          </p>
+          <Details id="screener.alert.how" label="How you are told" className="mt-0">
+            <p>
+              In the app, and on Telegram or e-mail if you connected them in{" "}
+              <Link to="/settings/alerts" className="underline">Settings › Alerts</Link>. Your scan is saved first, so the alert checks exactly what you see.
+            </p>
+          </Details>
           {done ? (
             <p role="status" className="rounded-panel border border-border bg-surface-2 p-3 text-fg" data-testid="scan-alert-done">{DONE}</p>
           ) : (
@@ -146,7 +150,8 @@ export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, 
           </ul>
         </div>
       )}
-      <p className="text-t12 text-fg-muted">An alert only tells you; it never places or changes an order.</p>
+      {/* SCR-FIX E1: the dialog's one "not advice" line, with its own short words */}
+      <PageFootnote>An alert only tells you; it never places or changes an order.</PageFootnote>
     </div>
   );
 }

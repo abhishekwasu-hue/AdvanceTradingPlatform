@@ -4,6 +4,7 @@
  * F&O stocks, one of his watchlists, or type his own symbols. The line under it says what the scan runs on, and the
  * page's note says when an empty choice falls back to NIFTY 50. Choosing a list runs nothing.
  */
+import { Combobox, type ComboOption } from "../ui/Combobox";
 import type { Watchlist } from "./watchlists";
 import { CUSTOM, DEFAULT_CHOICE, listLabel, type UniverseGroup } from "./universe";
 
@@ -24,34 +25,30 @@ export interface UniversePickerProps {
   maxSymbols: number;
 }
 
-const field = "mt-1 h-9 w-full rounded-control border border-border bg-surface-2 px-2 text-t13 text-fg focus:outline-none focus:ring-2 focus:ring-brand";
+/** The picker's rows, grouped as the old <select>'s optgroups were: index stocks, the server's other groups, the trader's
+ * watchlists, then "Type my own symbols". Pure. */
+export function universeOptions(groups: UniverseGroup[], builtinDefault: boolean, watchlists: Watchlist[] | null): ComboOption[] {
+  const index = groups.find((g) => g.group === "INDEX_STOCKS");
+  const others = groups.filter((g) => g.group !== "INDEX_STOCKS");
+  const INDEX = "Index stocks";
+  return [
+    ...(builtinDefault ? [{ value: DEFAULT_CHOICE, label: "NIFTY 50", group: INDEX }] : []),
+    ...(index?.lists ?? []).map((l) => ({ value: `sys:${l.key}`, label: `${listLabel(l, "INDEX_STOCKS")} (${l.count})`, group: INDEX })),
+    ...others.flatMap((g) => g.lists.map((l) => ({ value: `sys:${l.key}`, label: `${listLabel(l, g.group)} (${l.count})`, group: g.label }))),
+    ...(watchlists ?? []).map((w) => ({ value: `wl:${w.id}`, label: `${w.name} (${w.symbols.length})`, group: "My watchlists" })),
+    { value: CUSTOM, label: "Type my own symbols", group: "Other" },
+  ];
+}
 
 export function UniversePicker({ groups, builtinDefault, watchlists, choice, onChoice, symbolsText, onSymbolsText, count, name,
   loading = false, note, maxSymbols }: UniversePickerProps) {
-  const index = groups.find((g) => g.group === "INDEX_STOCKS");
-  const others = groups.filter((g) => g.group !== "INDEX_STOCKS");
+  const options = universeOptions(groups, builtinDefault, watchlists);
   return (
     <div data-testid="universe-picker">
       <label className="mt-3 block text-t12 text-fg-muted" htmlFor="screener-universe">Scan these stocks</label>
-      <select id="screener-universe" value={choice} onChange={(e) => onChoice(e.target.value)} className={field} data-testid="universe-select">
-        <optgroup label="Index stocks">
-          {builtinDefault && <option value={DEFAULT_CHOICE}>NIFTY 50</option>}
-          {index?.lists.map((l) => <option key={l.key} value={`sys:${l.key}`}>{listLabel(l, "INDEX_STOCKS")} ({l.count})</option>)}
-        </optgroup>
-        {others.map((g) => (
-          <optgroup key={g.group} label={g.label}>
-            {g.lists.map((l) => <option key={l.key} value={`sys:${l.key}`}>{listLabel(l, g.group)} ({l.count})</option>)}
-          </optgroup>
-        ))}
-        {watchlists && watchlists.length > 0 && (
-          <optgroup label="My watchlists">
-            {watchlists.map((w) => <option key={w.id} value={`wl:${w.id}`}>{w.name} ({w.symbols.length})</option>)}
-          </optgroup>
-        )}
-        <optgroup label="Other">
-          <option value={CUSTOM}>Type my own symbols</option>
-        </optgroup>
-      </select>
+      {/* SCR-FIX D8 (carried into E): the shared picker - a bottom sheet with 44 px rows and a filter box on a phone */}
+      <Combobox id="screener-universe" label="Scan these stocks" value={choice} onChange={onChoice} options={options} searchable
+                className="mt-1 w-full" dataAttrs={{ "data-testid": "universe-select" }} />
       {choice === CUSTOM && (
         <>
           <label className="mt-3 block text-t12 text-fg-muted" htmlFor="screener-symbols">Your symbols (up to {maxSymbols})</label>

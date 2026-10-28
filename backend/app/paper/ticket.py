@@ -171,7 +171,7 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     if math.isfinite(cap):
         suggested = by_default.size(plan.entry, plan.stop_loss, cap, lot)
     else:                                     # DEF-0: no cap set anywhere - one lot is the start, the trader sizes it
-        one = by_default.size(plan.entry, plan.stop_loss, math.inf, lot)
+        one = by_default.size(plan.entry, plan.stop_loss, 0.0, lot)   # its risk per lot only (no cap: no whole-lot count)
         suggested = {**one, "lots": 1, "quantity": lot, "risk_amount": one["risk_per_lot"]}
     quantity = float(plan.quantity) if plan.quantity is not None else float(suggested["quantity"])
     per_unit = abs(float(plan.entry) - float(plan.stop_loss))

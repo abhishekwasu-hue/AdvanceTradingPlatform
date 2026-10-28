@@ -178,10 +178,10 @@ function Watch({ lists, symbols, initial, api }: {
       {chosen && !custom && <p className="mt-1 text-t12 text-fg-muted">{chosen.definition}</p>}
       {custom && (
         <div className="mt-2 grid gap-2">
-          <label className="text-t12 text-fg-muted">Ready (ScreenQL)
+          <label className="text-t12 text-fg-muted">Ready condition
             <input value={ready} onChange={(e) => setReady(e.target.value)} className="mt-1 w-full rounded-control border border-border bg-surface-1 p-2 font-mono text-t13 text-fg" />
           </label>
-          <label className="text-t12 text-fg-muted">Trigger (ScreenQL)
+          <label className="text-t12 text-fg-muted">Trigger condition
             <input value={trigger} onChange={(e) => setTrigger(e.target.value)} className="mt-1 w-full rounded-control border border-border bg-surface-1 p-2 font-mono text-t13 text-fg" />
           </label>
         </div>

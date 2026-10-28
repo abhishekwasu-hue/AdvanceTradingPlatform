@@ -245,9 +245,9 @@ test.describe("Analyze a chart: the flow", () => {
     await page.getByRole("button", { name: "Alert me when this happens" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("Prices read from a picture are approximate");
-    await expect(dialog).toContainText("close > 120.5");
+    await expect(dialog).toContainText("When close above 120.5");                 // UI-28 U1.4: plain words
     await dialog.getByRole("button", { name: "Save alert" }).click();
-    await expect(page.getByText("Alert created for DEMO: close > 120.5")).toBeVisible();
+    await expect(page.getByText("Alert created for DEMO: close above 120.5")).toBeVisible();
     expect(calls.alerts).toEqual([expect.objectContaining({ kind: "instrument", symbol: "DEMO", condition: "close > 120.5", base_tf: "15m" })]);
   });
 
@@ -257,7 +257,7 @@ test.describe("Analyze a chart: the flow", () => {
     await page.goto("/chart-analyze");
     await analyzeUpload(page);
     await page.getByRole("button", { name: "Set an alert on this area" }).click();
-    await expect(page.getByRole("dialog")).toContainText("close >= 98 and close <= 101");
+    await expect(page.getByRole("dialog")).toContainText("close at or above 98 and close at or below 101");
     await page.getByRole("dialog").getByRole("button", { name: "Save alert" }).click();
     await expect.poll(() => calls.alerts.length).toBe(1);
   });

@@ -203,7 +203,7 @@ describe("FNO-2 basket: the numbers and the payoff in plain words", () => {
     const words = text(html);
     for (const part of ["Net premium received ₹7,500.00", "Max profit ₹7,500.00", "Max loss −₹7,500.00", "Breakevens 24,400", "Probability of profit 62.0%",
       "Margin (estimate) ₹7,500.00", "Defined risk: at least the max loss. With the hedge legs.", "Without the hedge legs From your broker",
-      "needs the broker's margin", "ATP's estimate, not your broker's number.", "In plain words (information only)",
+      "needs the broker's margin", "ATP's estimate, not your broker's number.", "In plain words",
       "If NIFTY closes below 24,400 at expiry", "Delta 12.3", "Theta 410"]) {
       expect(words).toContain(part);
     }

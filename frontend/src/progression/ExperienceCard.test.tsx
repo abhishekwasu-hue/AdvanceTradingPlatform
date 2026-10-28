@@ -52,3 +52,14 @@ describe("ExperiencePanel (N2-2)", () => {
     expect(text(render({ ...S, level: "ADVANCED", levels: S.levels.map((l) => ({ ...l, reached: true })) }))).toContain("Every level is reached.");
   });
 });
+
+import cardSource from "./ExperienceCard.tsx?raw";
+
+describe("UI-28 U1.7 / U1.9: the experience card on the v2 pages", () => {
+  it("shows only when the user turned on 'Limit me by my experience level'; sessions live on the ladder only", () => {
+    expect(cardSource).toMatch(/loadSwitches\(\)\.then\(\(r\) => setGateOn\(r\.value\.limit_by_experience\)/);
+    expect(cardSource).toContain("if (!status || (v2 && !gateOn)) return null;");
+    expect(cardSource).not.toMatch(/label: "Sessions", value: r\.sessions/);
+    expect(cardSource).toContain('c.key !== "sessions"');
+  });
+});

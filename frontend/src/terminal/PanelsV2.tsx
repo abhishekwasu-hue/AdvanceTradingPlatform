@@ -250,9 +250,11 @@ export function OrderPanelV2({ ticket, state: t, onClear }: {
   const label = target.label ?? (target.right === "FUT" ? `${target.underlying} ${target.expiry} FUT` : `${target.underlying} ${target.strike} ${target.right}`);
   return (
     <div className="-mx-space-3 -mb-space-3 flex flex-col md:h-full md:min-h-0 md:overflow-hidden" data-panel-body="order" data-step={t.step.kind}>
-      <PracticeFrame />
       <div className="px-space-4 pt-space-2">
-        <p className="truncate text-t15 font-semibold text-fg">{label}</p>
+        <div className="flex min-w-0 items-center gap-space-2">
+          <p className="truncate text-t15 font-semibold text-fg">{label}</p>
+          <PracticeFrame />
+        </div>
         <p className="text-t13 font-tabular text-fg-muted">LTP {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}</p>
       </div>
       <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults}

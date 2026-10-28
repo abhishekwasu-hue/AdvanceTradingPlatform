@@ -204,36 +204,17 @@ async function openChain(page: Page, theme: "light" | "dark", features: Record<s
   return analyses;
 }
 
-for (const size of [{ width: 390, height: 844, mobile: true }, { width: 1440, height: 900, mobile: false }]) {
-  test.describe(`v2 option chain summary ${size.width}`, () => {
-    test.use({ viewport: { width: size.width, height: size.height }, isMobile: size.mobile, hasTouch: size.mobile, deviceScaleFactor: 1 });
-
-    for (const theme of THEMES) {
-      test(`looks the same (${theme})`, async ({ page }) => {
-        await openChain(page, theme, ON);
-        const block = page.locator("[data-block='chain-dish']");
-        await expect(block).toContainText("PCR is 0.84, in the low zone");
-        await expect(block).toHaveScreenshot(`chain-dish-v2-${size.width}-${theme}.png`, shot);
-      });
-    }
-  });
-}
-
-test.describe("v2 option chain summary: the flag and the shared read", () => {
+test.describe("v2 option chain: no prose summary (UI-28 U1.2)", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("OC-1: below the summary cards and the chain; one analyses read serves it and the tabs", async ({ page }) => {
+  test("with `markets_view` on or off: the numbers strip only, no 'What the chain shows' block; one read per chain", async ({ page }) => {
     const reads = await openChain(page, "light", ON);
-    const dish = await page.locator("[data-block='chain-dish']").boundingBox();
-    const strip = await page.locator("[data-block='chain-summary']").boundingBox();
-    expect(dish!.y).toBeGreaterThan(strip!.y);
-    await expect(page.locator("[data-point='expected_move']")).toHaveAttribute("data-state", "unknown");
-    // The summary and the tabs ask for the same symbol and expiry: never two reads of the same chain.
-    expect(reads.length).toBeGreaterThan(0);
+    await expect(page.locator("[data-block='chain-summary']")).toBeVisible();
+    await expect(page.locator("[data-block='chain-dish']")).toHaveCount(0);
     expect(new Set(reads).size).toBe(reads.length);
   });
 
-  test("with `markets_view` off there is no summary", async ({ page }) => {
+  test("with `markets_view` off there is no summary either", async ({ page }) => {
     await openChain(page, "light", { ui_v2: true });
     await expect(page.locator("[data-block='chain-summary']")).toBeVisible();
     await expect(page.locator("[data-block='chain-dish']")).toHaveCount(0);

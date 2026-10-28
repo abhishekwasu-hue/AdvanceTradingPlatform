@@ -226,7 +226,7 @@ export default function StrategyBuilderPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Strategy Builder" description="Compose entry rules from indicators - no code. Every rule set produces a real signal through the same engine as the inbuilt strategies (score, entry/SL/targets, backtest)." />
+      <PageHeader title="Strategy Builder" description="Compose entry rules from indicators - no code." />
 
       <Disclaimer kind="ai" />
 

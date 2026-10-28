@@ -49,7 +49,7 @@ describe("Orders page wiring and wording", () => {
   });
 
   it("UX-11 U5: the page's one footer line, as on Positions", () => {
-    expect(ordersSource).toContain("<PageFootnote>Phase 0 has PAPER only.</PageFootnote>");
+    expect(ordersSource).toContain("<PageFootnote />");   // UI-28 U1.7: no "Phase 0" jargon
   });
 
   it("read-only, no jargon, no table", () => {

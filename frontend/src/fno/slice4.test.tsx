@@ -141,7 +141,7 @@ describe("8b-d the parts are information only", () => {
       charges: null, risk: {}, errors: [], refusals: [], warnings: [], can_place: true, confirm_label: null, as_of: "",
     } as unknown as Parameters<typeof Review>[0]["preview"];
     const html = text(renderToStaticMarkup(<MemoryRouter><Review preview={preview} budget={BUDGET} events={EV()} liquidity={liquidityLine([], false)} /></MemoryRouter>));
-    expect(html).toContain("Before you place (information only)");
+    expect(html).toContain("Before you place");
     expect(html).toContain("No event in your events calendar between today and the 3 Nov 2026 expiry.");
     expect(html).toContain(NO_CHAIN);
     expect(html).toContain("Margin estimate ₹11,250 is 5.6% of your PAPER balance");

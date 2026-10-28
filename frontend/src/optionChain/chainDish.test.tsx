@@ -45,10 +45,8 @@ describe("the summary", () => {
     expect(renderToStaticMarkup(<ChainDishView dish={null} loading />)).toContain('aria-busy="true"');
   });
 
-  it("is mounted only while `markets_view` is on, as the compact reading below the chain (OC-1); the tabs share its read", () => {
-    expect(pageSource).toMatch(/const dishOn = useFeatures\(\)\.on\("markets_view"\)/);
-    expect(pageSource.indexOf("<ChainDishV2")).toBeGreaterThan(pageSource.indexOf("<ChainTableV2"));
-    expect(pageSource.indexOf("<ChainDishV2")).toBeLessThan(pageSource.indexOf("<AnalysisSlotV2"));
+  it("UI-28 U1.2: the prose summary is not mounted on the page (numbers stay in the summary strip); the tabs keep their read", () => {
+    expect(pageSource).not.toContain("<ChainDishV2");
     expect(slotSource).toContain("load={fetchAnalysesShared}");
   });
 });

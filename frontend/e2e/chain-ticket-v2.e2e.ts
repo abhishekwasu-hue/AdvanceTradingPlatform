@@ -151,10 +151,10 @@ test.describe("Chain ticket v2 flows", () => {
     await callCell(page).tap();
     const sheet = page.locator("[data-chain-actions]");
     await expect(sheet).toHaveAttribute("data-right", "CE");
-    await expect(sheet.locator("[data-practice-frame]")).toHaveText("Practice mode (PAPER)");
+    await expect(sheet.locator("[data-practice-frame]")).toHaveText("PAPER");
     await sheet.locator("[data-action='buy']").tap();
     const ticket = page.locator("[data-order-ticket]");
-    await expect(ticket.locator("[data-practice-frame]")).toContainText("Practice mode (PAPER)");
+    await expect(ticket.locator("[data-practice-frame]")).toContainText("PAPER");
     await ticket.locator("[data-ticket='lots-more']").tap();
     await expect(ticket.locator("[data-ticket='units']")).toHaveText("2 lots = 150 qty (lot size 75)");
     await ticket.getByRole("radio", { name: "Limit" }).tap();

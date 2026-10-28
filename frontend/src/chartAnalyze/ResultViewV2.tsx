@@ -114,7 +114,7 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
         {label && !shared && <p className="mb-space-2 inline-flex rounded-pill bg-warn-tint px-space-3 py-space-1 text-t12 font-medium text-fg" data-testid="image-only-label">{label}</p>}
         <h2 className="text-t20 font-semibold text-fg md:text-t24">{title}</h2>
         {(rec.first_bar || rec.last_bar) && <p className="mt-space-1 text-t12 text-fg-muted">Visible range: {rec.first_bar ?? "?"} to {rec.last_bar ?? "?"}</p>}
-        <p className="mt-space-2 text-t14 text-fg-muted">The situation and the possibilities, as the method reads this chart. Educational, not advice.</p>
+        {/* UI-28 U1.8: no sentence under the title - the card's one disclaimer is its footer line. */}
         {shared && <p className="mt-space-2 text-t14 text-fg" data-testid="shared-note" role="note">{result.shared_note ?? SHARED_NOTE}</p>}
         {!shared && <div className="mt-space-3 flex flex-col gap-space-2 sm:flex-row sm:flex-wrap" {...{ [PRINT_HIDE]: "" }}>
           <Button className="h-11 md:h-9" icon={<Bell size={16} aria-hidden />} disabled={!firstArea}

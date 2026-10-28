@@ -157,7 +157,7 @@ describe("FNO-3 futures chain: the rows", () => {
     expect(t).toContain("Spot NIFTY 50 24,550.00");
     // The far month has no price from the broker: dashes, never 0.
     expect(html).toMatch(/data-future-row="NIFTY26DECFUT"[\s\S]*?data-cell="ltp">–</);
-    expect(t).toContain("Practice mode (PAPER)");
+    expect(t).toContain("PAPER");
     expect(t).not.toMatch(ADVICE);
     expect(futuresSource).not.toMatch(/sampleData|generateSample|Math\.random/);
   });

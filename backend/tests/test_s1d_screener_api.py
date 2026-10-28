@@ -123,10 +123,17 @@ def test_a_run_on_server_bars_is_stored_and_reproducible(flag_on, monkeypatch):
     assert [s["survivors"] for s in funnel["stages"]] == [1, 1] and funnel["stages"][-1]["survivors"] == len(body["matched"])
     assert funnel["stages"][0]["text"] == "close > SMA(close, 20)"
     assert {r["symbol"]: r["matched"] for r in body["results"]} == {"UP": True, "DOWN": False, "BROKEN": False}
-    assert "broker said no" in next(r["reason"] for r in body["results"] if r["symbol"] == "BROKEN")
+    # SCR-FIX B1 / B3: the unread symbol carries a plain sentence + a reason code + one action (never the exception's
+    # class name or raw text), and is counted apart from "did not match" - in the run and in the stored run
+    broken = next(r for r in body["results"] if r["symbol"] == "BROKEN")
+    assert broken["reason"] == "The bars could not be read." and broken["code"] == "not_read" and broken["action"] == "retry"
+    assert "RuntimeError" not in out.text and "broker said no" not in out.text
+    assert body["unread"] == 1 and body["unread_reason"] == {"code": "not_read", "text": "The bars could not be read.", "action": "retry", "count": 1}
+    assert body["first_error"]["symbol"] == "BROKEN"
     assert all(a[2] == "day" for a in asked) and "recommendation" in body["disclaimer"]
     stored = client.get(f"/api/screener/runs/{body['run_id']}", headers=headers).json()
     assert stored["matched"] == 1 and stored["universe"] == ["UP", "DOWN", "BROKEN"] and len(stored["ast_sha256"]) == 64
+    assert stored["unread"] == 1 and stored["unread_reason"]["code"] == "not_read"
     assert client.get(f"/api/screener/runs/{body['run_id']}", headers=other).status_code == 404
 
     async def rows():

@@ -12,8 +12,17 @@ import type { BatchBudget } from "./universe";
 export interface Problem { message: string; pos: number | null }
 export interface ValidateResponse { ok: boolean; problems: Problem[]; text: string | null; plan: { cost: number; lookback: Record<string, number> } }
 /** U8: `evidence_id` - the stored evidence pack of a matched symbol (flag evidence_charts; absent while it is off). */
-export interface RunResult { symbol: string; matched: boolean; reason: string | null; evidence_id?: number | null }
-export interface RunResponse {
+/** SCR-FIX B1: a symbol that could not be read or checked carries `reason` (a plain sentence), its machine `code` and the
+ * ONE `action` that may fix it; a symbol that was read and did not match has no reason. */
+export interface RunResult { symbol: string; matched: boolean; reason: string | null; code?: string; action?: ReadAction; evidence_id?: number | null }
+export type ReadAction = "login" | "connect" | "retry" | "timeframe";
+/** SCR-FIX B1 / B2: the grouped reason in one line (the largest group of unread symbols) and its one action. */
+export interface UnreadReason { code: string; text: string; action: ReadAction; count: number }
+/** SCR-FIX B2: what a run / preview says about the symbols it could not read (absent on an older server). */
+export interface UnreadCounts {
+  unread?: number; unread_reason?: UnreadReason; first_error?: { symbol: string; text: string; code: string; action: ReadAction };
+}
+export interface RunResponse extends UnreadCounts {
   run_id: number; text: string; base_tf: string; data_source: string; scanned: number; matched: string[];
   results: RunResult[]; funnel: FunnelResult; disclaimer: string;
   /** BT1b (flag byob_data_tier): the data tier the run actually used, timed by its newest bars. */
@@ -22,7 +31,7 @@ export interface RunResponse {
   session_held_back?: number;
 }
 /** A live preview: counts only (not stored, so no match list, removed symbols or per-symbol passes). */
-export interface PreviewResponse {
+export interface PreviewResponse extends UnreadCounts {
   run_id: null; preview: true; text: string; base_tf: string; scanned: number; matched_count: number; funnel: FunnelResult;
   data_tier?: DataTierBadgeInfo;
 }

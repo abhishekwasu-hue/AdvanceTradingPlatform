@@ -133,7 +133,7 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
           {pnl.booked !== null && (
             <div className="text-t12 text-fg-muted">
               <span className="whitespace-nowrap"><Signed value={pnl.booked} arrow={false} /> booked</span> ·{" "}
-              <span className="whitespace-nowrap">{pnl.open === null ? `open ${EMPTY}` : <><Signed value={pnl.open} arrow={false} /> open</>}</span>
+              <span className="whitespace-nowrap">{pnl.open === null ? `open ${EMPTY}` : <><Signed value={pnl.open} arrow={false} /> open{pnl.mark ? ` (${pnl.mark})` : ""}</>}</span>
             </div>
           )}
         </div>

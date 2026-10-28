@@ -1,5 +1,5 @@
 import { friendlyError } from "../api/errors";
-import { convertedOrUnconverted, humanise, positionRows, todayPnl, type Tone } from "../dashboard/model";
+import { humanise, positionRows, pricedInRupees, todayPnl, type Tone } from "../dashboard/model";
 import type {
   GuardianModeStatus, LossStreakPause, LossStreakStatus, MarketEvent, PaperRiskStatus, PortfolioExposure, RiskConfig, RiskLimitType, RiskScope,
   TradeRecord,
@@ -166,6 +166,8 @@ export interface HoldingTiles {
   live: number;
   /** Null while any open symbol has no live price in rupees (never a P&L at the entry price passed off as real). */
   openPnl: number | null;
+  /** AUD-V2: "last mark 15:29 IST" when the open P&L is at stored marks, else null (live prices). */
+  priceNote?: string | null;
   booked: number | null;
   riskAtStops: number | null;
   riskPct: number | null;
@@ -178,6 +180,7 @@ export function holdingTiles(positions: TradeRecord[] | null, exposure: Portfoli
   return {
     open: list.length, paper: list.length - live, live,
     openPnl: list.length === 0 ? (exposure ? 0 : null) : pnl.open,
+    priceNote: pnl.mark ?? null,
     booked: pnl.booked,
     riskAtStops: exposure ? exposure.risk_at_stops : null,
     riskPct: exposure ? exposure.risk_pct_of_capital : null,
@@ -275,7 +278,7 @@ export interface AllocationRow {
 export function allocationRows(positions: TradeRecord[] | null, exposure: PortfolioExposure | null): AllocationRow[] {
   if (exposure) {
     const priced = new Set(exposure.priced_symbols ?? []);
-    const live = exposure.price_source === "ltp" && !convertedOrUnconverted(exposure);
+    const live = pricedInRupees(exposure);
     return [...(exposure.by_symbol ?? [])]
       .sort((a, b) => b.notional - a.notional)
       .map((r) => ({

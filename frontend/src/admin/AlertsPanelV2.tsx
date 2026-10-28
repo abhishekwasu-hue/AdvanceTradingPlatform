@@ -79,7 +79,7 @@ export function AlertsPanelView({ data, busy, note, onRun, onTest, onLink, onUnl
           <span className="min-w-0 text-t12">
             <span className="block text-t14 font-medium text-fg">Telegram</span>
             <span className="text-fg-muted">
-              {!tg.available ? "The platform bot is not set up on the server yet."
+              {!tg.available ? "The platform bot is not set up on the server yet. Set ATP_TELEGRAM_BOT_TOKEN in the server's .env; until then users see no Connect Telegram or Send to my Telegram."
                 : tg.pending ? "Waiting for you to press Start in Telegram…"
                 : tg.connected ? (tg.from === "env" ? "Connected (chat set on the server)." : "Your chat is connected.")
                 : "Not connected."}

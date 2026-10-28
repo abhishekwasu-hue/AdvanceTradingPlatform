@@ -136,6 +136,11 @@ def test_signals_dish_from_his_own_inbox_and_paper_record():
     assert by["today"]["lines"] == ["2 from your scans and 1 from the signal generator."]
     record = by["record"]["lines"]
     assert len(record) == 1 and "5 closed paper trades in the last 90 days; 3 ended with a gain and 2 did not." in record[0]
+    # UX-11b C1: the same facts typed for the page's table and chips
+    assert by["waiting"]["kind"] == "waiting" and by["waiting"]["rows"][0] == {"type": "waiting", "count": 2}
+    assert {r["symbol"] for r in by["waiting"]["rows"][1:]} == {"MO4SIGA", "MO4SIGB"}
+    assert by["today"]["rows"][0]["counts"] == {"scan": 2, "library": 1}
+    assert [(r["closed"], r["won"], r["lost"], r["days"]) for r in by["record"]["rows"]] == [(5, 3, 2, 90)]
 
 
 def test_signals_dish_with_nothing_says_so():
@@ -175,6 +180,9 @@ def test_positions_dish_risk_in_plain_words():
     assert "That is 5% of your own daily loss limit." in risk
     assert "1 position has no invalidation level set." in risk
     assert by["near"]["lines"] == ["MO4PA (long): close to the invalidation you set for it."]
+    assert by["risk"]["rows"] == [{"type": "risk", "positions": 3, "open_pnl": 10.0, "prices_missing": True, "at_invalidation": -100.0,
+                                   "of_loss_limit_pct": 5, "no_invalidation": 1}]
+    assert by["near"]["rows"] == [{"type": "position", "symbol": "MO4PA", "side": "LONG", "pnl": -40.0, "near": True}]
     assert "premium" not in by                                                 # nothing written: the section is left out
     assert by["ahead"]["lines"] == []
 
@@ -191,6 +199,9 @@ def test_positions_dish_premium_kept_and_expiry_ahead():
     by = {s["id"]: s for s in d["sections"]}
     assert by["premium"]["lines"] == ["MO4NIFTY25000CE (written): 62% of the premium kept so far (+₹3,750 of ₹6,000)."]
     assert by["ahead"]["lines"] == [f"{exp.strftime('%a %d %b')}: your MO4IDX contracts expire (1 position)."]
+    assert by["premium"]["rows"] == [{"type": "premium", "label": "MO4NIFTY25000CE (written)", "kept_pct": 62.0, "kept": 3750.0,
+                                      "received": 6000.0}]
+    assert by["ahead"]["rows"] == [{"type": "expiry", "date": exp.isoformat(), "underlying": "MO4IDX", "count": 1}]
 
 
 def test_positions_dish_without_positions():
@@ -243,6 +254,11 @@ def test_journal_dish_score_setups_and_habits():
     assert setups[0].startswith("Best: ") and "+₹300 over 1 closed trade" in setups[0]
     assert setups[1].startswith("Cost the most: ") and "-₹350 over 2 closed trades" in setups[1]
     assert "1 of this week's 2 closed trades has no note of yours yet." in by["habits"]["lines"]
+    assert by["score"]["rows"][0]["type"] == "discipline" and isinstance(by["score"]["rows"][0]["score"], int)
+    best, worst = by["setups"]["rows"]
+    assert (best["type"], best["net"], best["closed"]) == ("best", 300.0, 1)
+    assert (worst["type"], worst["net"], worst["closed"]) == ("worst", -350.0, 2)
+    assert {"type": "no_note", "count": 1, "closed": 2} in by["habits"]["rows"]
 
 
 def test_setup_extremes_rules():
@@ -312,6 +328,13 @@ def test_charts_dish_story_and_his_own_on_the_symbol():
     assert any(line.startswith("Your latest setup here, today: matched your scan") for line in yours)
     assert "On your lists: Swing ideas." in yours
     assert by["yours"]["title"] == "Yours on MO4CHART"
+    story_row = by["story"]["rows"][0]
+    assert story_row["daily"] == "UP" and story_row["weekly"] in ("UP", "DOWN", "SIDEWAYS")
+    assert story_row["as_of"] == (DAY - timedelta(days=1)).isoformat()
+    assert story_row["place"] in ("ABOVE_HIGH", "BELOW_LOW", "BETWEEN")
+    held, setup, lists = by["yours"]["rows"]
+    assert held == {"type": "held", "count": 1, "open_pnl": 20.0, "near": False}
+    assert setup["symbol"] == "MO4CHART" and setup["today"] is True and lists == {"type": "lists", "names": ["Swing ideas"]}
 
 
 def test_charts_dish_without_history_says_so():
@@ -368,6 +391,9 @@ def test_screener_dish_groups_his_scan_matches():
     assert not any("MO4THEIRS" in line or "MO4YDAY" in line for line in _lines(d))
     assert d["headline"] == "4 symbols matched your scans today."
     assert by["scans"]["lines"] == ["2 scans of yours run on their own; new matches show here and on Signals."]
+    assert by["today"]["rows"][0] == {"type": "scan", "name": "Pullback to demand", "count": 3, "symbols": ["MO4S3", "MO4S2", "MO4S1"]}
+    assert {"type": "on_lists", "symbols": ["MO4S2"]} in by["today"]["rows"]
+    assert by["scans"]["rows"] == [{"type": "active", "count": 2}]
 
 
 def test_screener_dish_without_scans():

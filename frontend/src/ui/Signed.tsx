@@ -8,7 +8,8 @@ import { indianNumberText, type NumberKind } from "./IndianNumber";
  * zero (as shown) and missing: muted, no arrow. Never colour alone (WCAG 1.4.1): the sign and the arrow say it too; the
  * arrow is decoration for screen readers, the signed text is read. Tabular figures, Indian grouping, the up / down
  * tokens (colour-blind palette of colour_v2). Text from src/ui/format.ts via indianNumberText - nothing re-implemented.
- * (Today's pages keep components/primitives Signed until each page moves to v2.)
+ * UX-11b C6: the ONE Signed. components/primitives `Signed` (the P1.2 pages: a caller's `format`, no arrow) now renders
+ * through this component's `format` path, unchanged in what it shows.
  */
 export interface SignedProps {
   value: number | null | undefined;
@@ -21,6 +22,18 @@ export interface SignedProps {
   /** Leave the arrow out where space is tight (a table cell); sign and colour stay. */
   arrow?: boolean;
   className?: string;
+  /** The P1.2 pages' own text (e.g. `v => v.toFixed(2)`): the sign follows what is shown, "+" for a gain, "-" when
+   * missing. With `format` the arrow is off unless asked for. */
+  format?: (v: number) => string;
+}
+
+/** The `format` path (the P1.2 Signed): a value that formats to zero ("0", "0.00", "-0") is flat and unsigned. */
+export function formattedParts(value: number | null | undefined, format: (v: number) => string): { text: string; dir: "up" | "down" | "flat" } {
+  if (value == null || !Number.isFinite(value)) return { text: "-", dir: "flat" };
+  const text = format(value);
+  const shown = Number(text.replace(/[^0-9.-]/g, ""));
+  const sign = !Number.isFinite(shown) || shown === 0 ? 0 : Math.sign(value);
+  return { text: sign > 0 ? `+${text}` : sign === 0 ? text.replace(/^-/, "") : text, dir: sign > 0 ? "up" : sign < 0 ? "down" : "flat" };
 }
 
 export function signedParts({ value, kind = "money", compact = false, paise, decimals, tick }: SignedProps):
@@ -42,7 +55,17 @@ const TONE = { up: "text-up", down: "text-down", flat: "text-fg-muted" } as cons
 const ARROW = { up: "▲", down: "▼", flat: "" } as const;
 
 export function Signed(props: SignedProps) {
-  const { arrow = true, className } = props;
+  const { format, className } = props;
+  if (format) {
+    const { text, dir } = formattedParts(props.value, format);
+    if (!props.arrow) return <span className={cx("font-tabular", TONE[dir], className)}>{text}</span>;
+    return (
+      <span className={cx("inline-flex items-baseline gap-px whitespace-nowrap font-tabular", TONE[dir], className)} data-signed={dir}>
+        {ARROW[dir] && <span aria-hidden className="text-t12">{ARROW[dir]}</span>}<span>{text}</span>
+      </span>
+    );
+  }
+  const { arrow = true } = props;
   const { text, full, dir } = signedParts(props);
   return (
     <span className={cx("inline-flex items-baseline gap-px whitespace-nowrap font-tabular", TONE[dir], className)}

@@ -45,6 +45,22 @@ def signal_line(text: str, names: Iterable[str] = ()) -> Optional[str]:
     return value if value is not None and numberless(value, names) else None
 
 
+def _texts(value: Any) -> Iterable[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _texts(v)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            yield from _texts(v)
+
+
+def clean_row(row: Dict[str, Any]) -> bool:
+    """True when every text inside a typed row (UX-11b) passes `clean` - the same guard as a line."""
+    return all(clean(t) is not None for t in _texts(row) if t.strip())
+
+
 # --- structure words -------------------------------------------------------------------------------------------------
 
 TREND_WORDS: Dict[str, str] = {
@@ -84,28 +100,59 @@ def _inside(price: float, area: Optional[Dict[str, Any]]) -> bool:
         return False
 
 
-def area_words(price: Optional[float], support: Optional[Dict[str, Any]], resistance: Optional[Dict[str, Any]]) -> Optional[str]:
-    """Where price sits between the nearest buyer area (support) below and seller area (resistance) above - in words; the
-    numbers are used here and never shown."""
+AREA_WORDS: Dict[str, str] = {
+    "IN_BUYER": "price is inside a buyer area",
+    "IN_SELLER": "price is inside a seller area",
+    "NEARER_BUYER": "price is closer to the buyer area below than to the seller area above",
+    "NEARER_SELLER": "price is closer to the seller area above than to the buyer area below",
+    "ABOVE_BUYER": "price is above a buyer area",
+    "BELOW_SELLER": "price is below a seller area",
+}
+
+
+def area_state(price: Optional[float], support: Optional[Dict[str, Any]], resistance: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Where price sits between the nearest buyer area (support) below and seller area (resistance) above, as a key of
+    AREA_WORDS (UX-11b: the page colours it; the sentence is `area_words`)."""
     if price is None:
         return None
     if _inside(price, support):
-        return "price is inside a buyer area"
+        return "IN_BUYER"
     if _inside(price, resistance):
-        return "price is inside a seller area"
+        return "IN_SELLER"
     try:
         below = price - float(support["high"]) if support else None
         above = float(resistance["low"]) - price if resistance else None
     except (KeyError, TypeError, ValueError):
         return None
     if below is not None and above is not None and below >= 0 and above >= 0:
-        return ("price is closer to the buyer area below than to the seller area above" if below < above
-                else "price is closer to the seller area above than to the buyer area below")
+        return "NEARER_BUYER" if below < above else "NEARER_SELLER"
     if below is not None and below >= 0:
-        return "price is above a buyer area"
+        return "ABOVE_BUYER"
     if above is not None and above >= 0:
-        return "price is below a seller area"
+        return "BELOW_SELLER"
     return None
+
+
+def area_words(price: Optional[float], support: Optional[Dict[str, Any]], resistance: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Where price sits between the nearest buyer area (support) below and seller area (resistance) above - in words; the
+    numbers are used here and never shown."""
+    state = area_state(price, support, resistance)
+    return AREA_WORDS[state] if state else None
+
+
+TREND_KEYS: Dict[str, str] = {"UPTREND": "UP", "DOWNTREND": "DOWN"}
+
+
+def trend_key(trend: Optional[str]) -> str:
+    """UP / DOWN / SIDEWAYS - the TrendChip's states (anything not a swing sequence reads sideways, as `trend_words`)."""
+    return TREND_KEYS.get(str(trend or "").upper(), "SIDEWAYS")
+
+
+def event_key(event: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+    """{kind: BOS / CHOCH, direction: UP / DOWN} for an event `event_words` can name, else None."""
+    if event is None or not event_words(event):
+        return None
+    return {"kind": str(event["event"]).upper(), "direction": "UP" if str(event["direction"]).upper() == "BULLISH" else "DOWN"}
 
 
 def evidence_words(grade: Optional[str]) -> Optional[str]:
@@ -120,4 +167,5 @@ def evidence_words(grade: Optional[str]) -> Optional[str]:
     return None
 
 
-__all__ = ["clean", "numberless", "signal_line", "trend_words", "event_words", "area_words", "evidence_words", "SIDE_WORDS"]
+__all__ = ["clean", "clean_row", "numberless", "signal_line", "trend_words", "event_words", "area_words", "area_state", "trend_key", "event_key",
+           "evidence_words", "SIDE_WORDS", "AREA_WORDS"]

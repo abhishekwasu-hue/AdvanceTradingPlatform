@@ -281,7 +281,7 @@ def test_the_image_is_deterministic_and_carries_the_layer():
     assert epng.pixels(pack, theme="dark") != epng.pixels(pack) and epng.pixels(pack, theme="dark")[:3] == bytes(epng.DARK.bg)
 
 
-PIXELS_SHA256 = "23a9d0ccc1eeb868e52df37f57ef02dbf1d5f2f9a28b6451ab7a69edecd2fa49"
+PIXELS_SHA256 = "b871fe3bf0a81f03b0645524048cc599c14f318e46f8c0d5bba5ee9e7e29703f"   # SCR-FIX C3: up / down colours, axes, volume
 
 
 def _rgb_set(px: bytes):

@@ -204,8 +204,8 @@ def test_send_to_my_telegram_goes_to_the_users_own_linked_chat_only(screener_on,
     headers, me = _owner("u8-tg@example.com")
     _serve_bars(monkeypatch)
     eid = _screen_run(headers, symbols=["UP"])["results"][0]["evidence_id"]
-    no_link = client.post(f"/api/screener/evidence/{eid}/telegram", headers=headers)
-    assert no_link.status_code == 409 and "Link your Telegram" in no_link.json()["detail"]
+    no_bot = client.post(f"/api/screener/evidence/{eid}/telegram", headers=headers)        # SCR-FIX C4: a reason code + sentence
+    assert no_bot.status_code == 409 and no_bot.json()["detail"]["reason"] == "bot_not_configured"
     _run(_bot(me["tenant_id"], link_user_id=me["id"]))
     tg = Telegram()
     from app.ai import vision_audit

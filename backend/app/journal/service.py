@@ -212,7 +212,8 @@ async def refresh_week(session: AsyncSession, user: User, label: Optional[str] =
         JournalTagRecord.user_id == user.id, JournalTagRecord.trade_id.in_([t.id for t in week_trades] or [-1])).order_by(
         JournalTagRecord.trade_id, JournalTagRecord.tag).execution_options(populate_existing=True)))
     units = {t.id: (f"g:{t.leg_group_id}" if t.leg_group_id else f"t:{t.id}") for t in week_trades}
-    score = weekly_score(units, [TagState(r.trade_id, r.tag, r.status) for r in tags], s)
+    score = weekly_score(units, [TagState(r.trade_id, r.tag, r.status) for r in tags], s,
+                         closed=[t.id for t in week_trades if t.exit_time is not None])
     return {"week": week, "start": start, "end": end, "settings": s, "trades": week_trades, "entries": entries, "tags": tags, "score": score}
 
 

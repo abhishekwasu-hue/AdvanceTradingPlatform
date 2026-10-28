@@ -109,6 +109,10 @@ class OIRegimeSettings(BaseModel):
     rotation_min_change_pct: float = Field(default=2.0, ge=0)
     lookback_for_strength: int = Field(default=3, ge=1)
     confirm_count: int = Field(default=3, ge=1)
+    # AUD-V5 (owner, 28 Oct): the structural flip - `confirm_count` consecutive moves of the diff towards the new side
+    # with the new side's own OI up by at least this % flips the direction without the other side falling. None = only
+    # Trade's rotation rule (both sides moving).
+    structural_flip_min_rise_pct: Optional[float] = Field(default=2.0, ge=0)
     reconcile_significance_pct: float = Field(default=10.0, ge=0)
     pcr_bands: PcrBands = Field(default_factory=PcrBands)
     stale_after_minutes: float = Field(default=15.0, gt=0)
@@ -215,13 +219,17 @@ def rotation_confirmed_for_2_snapshots(history: Sequence[Tuple[float, float]], m
 
 def compute_oi_signal_with_hysteresis(diff: float, put_oi: float, call_oi: float, recent: Sequence[SnapshotPoint],
                                       lookback_for_strength: int = 3, confirm_count: int = 3,
-                                      rotation_min_change_pct: float = 2.0) -> OISignal:
+                                      rotation_min_change_pct: float = 2.0,
+                                      structural_flip_min_rise_pct: Optional[float] = None) -> OISignal:
     """The stable OI-diff signal. diff = total put OI - total call OI over the ATM window.
 
     * Strength: the leading side's OI against the snapshot `lookback_for_strength` back (or the oldest one held).
     * Same direction as the previous snapshot: the new reading at once.
     * A new direction needs `confirm_count` consecutive diffs of the new sign AND a call/put rotation confirmed on two
       consecutive comparisons. Until then the old direction is shown as Weakening - never as Strong.
+    * AUD-V5 structural flip (`structural_flip_min_rise_pct` set; None = Trade's rule exactly): the diff moved towards
+      the new side on each of the last `confirm_count` snapshots and the new side's OI (calls for BEARISH, puts for
+      BULLISH) rose by at least that % over them - the other side need not fall.
     """
     if len(recent) >= lookback_for_strength:
         baseline: Optional[SnapshotPoint] = recent[-lookback_for_strength]
@@ -252,7 +260,16 @@ def compute_oi_signal_with_hysteresis(diff: float, put_oi: float, call_oi: float
     same_new_direction = all((d > 0) if raw.direction == Direction.BULLISH else (d < 0) for d in diffs)
     rotation = rotation_confirmed_for_2_snapshots(
         [(p.total_call_oi, p.total_put_oi) for p in recent[-2:]] + [(call_oi, put_oi)], rotation_min_change_pct)
-    return raw if same_new_direction and rotation == raw.direction else held
+    if same_new_direction and rotation == raw.direction:
+        return raw
+    if structural_flip_min_rise_pct is not None and raw.direction != Direction.NEUTRAL and len(recent) >= confirm_count:
+        start = recent[-confirm_count]
+        path = [p.diff for p in recent[-confirm_count:]] + [diff]
+        towards = all((b > a) if raw.direction == Direction.BULLISH else (b < a) for a, b in zip(path, path[1:]))
+        side_then, side_now = ((start.total_put_oi, put_oi) if raw.direction == Direction.BULLISH else (start.total_call_oi, call_oi))
+        if towards and side_then and (side_now - side_then) / side_then * 100 >= structural_flip_min_rise_pct:
+            return raw
+    return held
 
 
 def classify_oi_price_action(oi_now: Optional[float], oi_prev: Optional[float], premium_now: Optional[float],
@@ -731,7 +748,7 @@ def evaluate_snapshot(underlying: str, current: ChainTotals, previous: Optional[
     recent = list(history)[-settings.history_window:]
     stable = compute_oi_signal_with_hysteresis(current.diff, current.total_put_oi, current.total_call_oi, recent,
                                                settings.lookback_for_strength, settings.confirm_count,
-                                               settings.rotation_min_change_pct)
+                                               settings.rotation_min_change_pct, settings.structural_flip_min_rise_pct)
     prev = previous
     put_class = classify_oi_price_action(current.total_put_oi, prev.total_put_oi if prev else None, current.total_put_premium,
                                          prev.total_put_premium if prev else None, settings.oi_threshold_pct, settings.premium_threshold_pct)

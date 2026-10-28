@@ -115,6 +115,14 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P4-8 | Market replay with the reader overlay + Terminal T7 | row 20 Part 10, row 21 |
 | P4-9 | Position helpers (roll what-if) + AI risk questions | row 20 Parts 11–12 |
 
+### Phase BR — Trading Brain (owner 28 Oct; starts only after BR-0)
+| ID | Item | Source | Done when |
+|---|---|---|---|
+| BR-0 | Foundation gate: SCR-FIX, AP-FIX, CP-FIX, DATA-H backfill, P5-1 reader port passing its answer key - merged + deployed + checked | ATP_ORDER_TRADING_BRAIN.md | every listed item done; then the BR review (<= 25 lines) gets the owner's ✅ |
+| BR-1 | Memory: M1 one shared reader, M2 episodes (extends journal capture J1), M3 similar-setup recall, M4 user method profile, M5 chat working memory | ATP_ORDER_TRADING_BRAIN.md | parity / isolation / no-look-ahead tests; recall examples with charts; owner ✅ |
+| BR-2 | Reflection + calibration: R1 post-trade line, R2 weekly lessons as proposals, R3 reliability chart + Brier, R4 "I don't know" (>= 20 closed PAPER episodes) | ATP_ORDER_TRADING_BRAIN.md | reliability chart; proposals never auto-applied; owner ✅ |
+| BR-3 | Second opinion + state + proactive: S1 setup state machine (parity), S2 pre-trade check, S3 for / against, S4 brief + alerts | ATP_ORDER_TRADING_BRAIN.md | byte-identical decisions on stored history; with / without comparison; owner ✅ |
+
 ### Phase 5 — Business launch (last; owner decisions)
 | ID | Item |
 |---|---|
@@ -171,6 +179,10 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P3-4 | not started (parallel) | security + DPDP checklist | - |
 | P3-5 | waiting for owner | the lawyer's text | - |
 | TP-1 | not started | starts only after Phase 1 is complete | - |
+| BR-0 | waiting | gate only: SCR-FIX (in progress), AP-FIX, CP-FIX, DATA-H backfill, P5-1; BR filed 28 Oct, plan only | - |
+| BR-1 | not started | after BR-0 + the owner's ✅ on the BR review | - |
+| BR-2 | not started | after BR-1 | - |
+| BR-3 | not started | after BR-2 | - |
 | TP-2 | not started | after TP-1 (in order) | - |
 | TP-3 | not started | after TP-2 (in order) | - |
 | TP-4 | not started | after TP-3 (in order) | - |

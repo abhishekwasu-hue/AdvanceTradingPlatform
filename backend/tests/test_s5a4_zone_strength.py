@@ -173,4 +173,5 @@ def test_an_unexpected_error_on_one_symbol_does_not_abort_the_universe(monkeypat
     universe = [SymbolData("A", {"1m": generate(320, 100.0, 11)}), SymbolData("B", {"1m": generate(320, 200.0, 12)})]
     ast, v = compile_screen('SwingZoneStrength("low") >= 0', base_tf="1m")
     a, b = runtime.run_screen(ast, v, universe, base_tf="1m")
-    assert a.reason is None and b.matched is False and "ZeroDivisionError" in b.reason
+    # SCR-FIX B3: a plain sentence for the user, never the exception's class name (the full text is in the log).
+    assert a.reason is None and b.matched is False and b.reason and "ZeroDivisionError" not in b.reason

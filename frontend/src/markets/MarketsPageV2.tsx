@@ -14,7 +14,7 @@ import { ProgressStat } from "../ui/ProgressStat";
 import { Signed } from "../ui/Signed";
 import {
   PERIODS, UNKNOWN, advanceShare, asOfText, breadthText, closeText, dishFacts, fetchList, fetchOverview, heatClass, isPeriod,
-  leadersAndLaggards, moveText, rankGroups, relativeText, toneText, type ListMember, type MarketGroup, type MarketList,
+  leadersAndLaggards, moveText, rankGroups, relativeText, type ListMember, type MarketGroup, type MarketList,
   type MarketsOverview, type Mover, type Period,
 } from "./model";
 

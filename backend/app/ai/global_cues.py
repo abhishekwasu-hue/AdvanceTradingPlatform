@@ -234,9 +234,10 @@ def view(lang: str, globals_: List[dict], now: Optional[datetime] = None) -> Lis
     us = by_key.get("SP500_FUT") or by_key.get("SP500")
     if us and abs(us["change_pct"]) >= 0.5:
         if us["change_pct"] < 0:
-            lines.append("US futures are down: NIFTY often opens lower on such days - let the first 15 minutes settle before judging the trend.")
+            # UX-11b C8: what the data shows only - no clock framing ("first 15 minutes", "opening range"), no instruction.
+            lines.append("US futures are down: NIFTY often opens lower on such days.")
         else:
-            lines.append("US futures are up: a firmer open is likely; a gap-up can also fade, so wait for the opening range.")
+            lines.append("US futures are up: a firmer open is likely; a gap-up can also fade.")
     brent = by_key.get("BRENT")
     if brent and abs(brent["change_pct"]) >= 1.5:
         if brent["change_pct"] > 0:

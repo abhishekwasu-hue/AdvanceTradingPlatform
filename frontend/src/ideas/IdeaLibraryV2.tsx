@@ -1,4 +1,4 @@
-import { BookOpen, ChevronDown, History, Play, Search } from "lucide-react";
+import { ChevronDown, History, Play, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/errors";
@@ -7,6 +7,7 @@ import type { PageProps } from "../routes";
 import { PageTitleV2 } from "../trading/PartsV2";
 import { ComingSoon } from "../ui/ComingSoon";
 import { Details } from "../ui/numbersFirst";
+import { EducationFrame } from "../ui/EducationFrame";
 import { useFeatures } from "../ui/useFeatures";
 import { paperBotPathFor, testPathFor } from "../strategyTemplates/link";
 import { ideasApi, type Idea, type IdeaLibrary } from "./api";
@@ -77,15 +78,7 @@ export function IdeaLibraryView({ library, initialGroup = ALL_GROUPS, initialAns
 
 /** The compliance frame, always above the cards: education, no claims, the trader's own settings. */
 function Frame({ lines }: { lines: string[] }) {
-  return (
-    <section data-block="idea-frame" aria-label="About these ideas"
-      className="flex items-start gap-space-3 rounded-panel border border-subtle bg-surface-1 px-space-4 py-space-3">
-      <BookOpen size={18} aria-hidden className="mt-0.5 shrink-0 text-brand" />
-      <ul className="flex min-w-0 flex-col gap-space-1 text-t14 text-fg">
-        {lines.map((l) => <li key={l}>{l}</li>)}
-      </ul>
-    </section>
-  );
+  return <EducationFrame block="idea-frame" label="About these ideas" lines={lines} />;
 }
 
 /** "Not sure where to start?": three questions, then two or three ideas to read first (a reading list, not advice). */

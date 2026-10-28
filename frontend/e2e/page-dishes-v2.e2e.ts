@@ -6,6 +6,8 @@ import type { DishPage } from "../src/growth/types";
 import { mockCharts } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 import { T, mockTrading } from "./tradingMocks";
+import { readCards } from "./textBudget";
+import { cardTextProblems } from "../src/ui/textBudget";
 
 /**
  * MO4 slice 4 (`ui_v2` + `growth_v2`): the "ready-made dish" at the top of Signals, My positions, the Journal, Charts and
@@ -118,6 +120,11 @@ for (const size of SIZES) {
             await expect(card.locator("[data-rhythm-section]").first()).toBeVisible();
           }
           await noSidewaysScroll(page);
+          // UX-11b C7: the dish card fits the text budget (its headline is its one line; prose sits in Details).
+          if (which.page !== "charts") {
+            const dishCards = (await readCards(page)).filter((c) => c.card === DEMO_DISHES[which.page].title);
+            expect(cardTextProblems(dishCards)).toEqual([]);
+          }
           if (SHOTS) await page.screenshot({ path: `${SHOTS}/${which.page}-${size.width}-${theme}-after.png` });
         });
       }

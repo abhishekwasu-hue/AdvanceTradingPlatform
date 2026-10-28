@@ -231,7 +231,7 @@ export default function PositionsV2(_props: PageProps = {}) {
           <TilesV2>
             <TileV2 testId="open" label="Open positions" value={positions.status === "ok" ? String(tiles.open) : EMPTY} sub={positions.status === "ok" ? openCaption(tiles, liveHidden) : undefined} />
             <TileV2 testId="open-pnl" label="Open P&L" hint="open-pnl" value={formatSignedINR(tiles.openPnl)} tone={signTone(tiles.openPnl)}
-              sub={tiles.open === 0 ? undefined : tiles.openPnl === null ? "waiting for live prices" : "at live prices"} />
+              sub={tiles.open === 0 ? undefined : tiles.openPnl === null ? "waiting for live prices" : (tiles.priceNote ?? "at live prices")} />
             <TileV2 testId="booked" label="Booked today" hint="booked-pnl" value={formatSignedINR(tiles.booked)} tone={signTone(tiles.booked)}
               sub={tiles.booked === null ? undefined : "closed trades since the open"} />
             <TileV2 testId="risk" label="Risk at stops" hint="risk-at-stops" value={formatINR(tiles.riskAtStops)}

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BrokerGateState } from "../ui/brokerSession";
 import type { AiAction, Deployment, NotificationEntry, PortfolioExposure, TradeRecord } from "../types";
 import {
-  attentionRows, brokerChip, greeting, greetingName, indexCaption, istDay, marketLabel, oiLines, partlyConnected, positionRows,
+  attentionRows, brokerChip, fullyPriced, markNote, greeting, greetingName, indexCaption, istDay, marketLabel, oiLines, partlyConnected, positionRows,
   signTone, signalsToday, symbolPrices, todayPnl, todayTiles, vixNote, type AttentionInput,
 } from "./model";
 import type { StripIndex, StripMarket } from "./types";
@@ -263,5 +263,18 @@ describe("UI2-2 today tiles", () => {
 
   it("days are IST days", () => {
     expect(istDay(Date.parse("2026-10-19T19:00:00Z"))).toBe("2026-10-20");
+  });
+});
+
+describe("AUD-V2: open P&L after hours at the last mark", () => {
+  it("counts a symbol valued at its stored mark as priced and says when the mark was taken", () => {
+    const exp = {
+      open_positions: 1, unrealised_pnl: 1200, realised_today: 0, price_source: "mark", priced_symbols: ["RELIANCE"],
+      by_symbol: [{ symbol: "RELIANCE" }], marks: { RELIANCE: "2026-10-28T09:59:00+00:00" },
+    } as unknown as PortfolioExposure;
+    expect(fullyPriced(exp)).toBe(true);
+    expect(todayPnl(exp)).toMatchObject({ open: 1200, total: 1200, mark: "last mark 15:29 IST" });
+    expect(markNote({ ...exp, marks: {} })).toBeNull();
+    expect(todayPnl({ ...exp, price_source: "entry", marks: {} }).open).toBeNull();
   });
 });

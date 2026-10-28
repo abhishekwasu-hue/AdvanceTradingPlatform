@@ -165,6 +165,8 @@ export interface TodayPnl {
   /** 0 with no open positions; null while any open symbol has no live price (P&L at the entry price would be a made-up
    * zero) or a symbol was converted from another currency, or has no rate to convert it. */
   open: number | null;
+  /** AUD-V2: "last mark 15:29 IST" when the open part is valued at stored marks (no live price), else null. */
+  mark?: string | null;
 }
 
 /** Any currency conversion used or missing: some symbol is not simply in rupees (a missing rate leaves that symbol in
@@ -173,9 +175,20 @@ export function convertedOrUnconverted(exposure: PortfolioExposure): boolean {
   return Object.keys(exposure.fx_rates_used ?? {}).length > 0 || (exposure.fx_missing ?? []).length > 0;
 }
 
-/** True when every open symbol is valued at a live price in rupees: the exposure's open P&L is real. */
+/** Live prices, or (AUD-V2, after hours) the last stored marks: a real price in rupees, not the entry price. */
+export function pricedInRupees(exposure: PortfolioExposure): boolean {
+  return (exposure.price_source === "ltp" || exposure.price_source === "mark") && !convertedOrUnconverted(exposure);
+}
+
+/** AUD-V2: "last mark 15:29 IST" when any symbol is valued at a stored mark (the oldest of them), else null. */
+export function markNote(exposure: PortfolioExposure | null | undefined): string | null {
+  const times = Object.values(exposure?.marks ?? {}).map((v) => Date.parse(v)).filter((v) => Number.isFinite(v));
+  return times.length ? `last mark ${formatTimeIST(Math.min(...times))}` : null;
+}
+
+/** True when every open symbol is valued at a live price (or its last mark) in rupees: the exposure's open P&L is real. */
 export function fullyPriced(exposure: PortfolioExposure): boolean {
-  if (exposure.price_source !== "ltp" || convertedOrUnconverted(exposure)) return false;
+  if (!pricedInRupees(exposure)) return false;
   const priced = new Set(exposure.priced_symbols ?? []);
   return (exposure.by_symbol ?? []).every((row) => priced.has(row.symbol));
 }
@@ -184,7 +197,8 @@ export function todayPnl(exposure: PortfolioExposure | null | undefined): TodayP
   if (!exposure) return { total: null, booked: null, open: null };
   const booked = exposure.realised_today;
   const open = exposure.open_positions === 0 ? 0 : fullyPriced(exposure) ? exposure.unrealised_pnl : null;
-  return { total: open === null ? null : booked + open, booked, open };
+  const mark = open === null ? null : markNote(exposure);
+  return { total: open === null ? null : booked + open, booked, open, ...(mark ? { mark } : {}) };
 }
 
 // --- Open positions ---------------------------------------------------------------------------------------------------
@@ -205,7 +219,7 @@ export interface PositionRow {
 export function symbolPrices(positions: TradeRecord[], exposure: PortfolioExposure | null | undefined): Record<string, number> {
   const out: Record<string, number> = {};
   // A symbol converted from another currency is valued in rupees against an entry in its own currency: no P&L from it.
-  if (!exposure || exposure.price_source !== "ltp" || convertedOrUnconverted(exposure)) return out;
+  if (!exposure || !pricedInRupees(exposure)) return out;
   const priced = new Set(exposure.priced_symbols ?? []);
   for (const row of exposure.by_symbol ?? []) {
     if (!priced.has(row.symbol)) continue;

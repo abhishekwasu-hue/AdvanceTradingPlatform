@@ -58,7 +58,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "telegram_inbound": FlagInfo("Approve / reject paper trades from Telegram buttons", "data", "buttons in Telegram messages", (), "a Telegram bot set up", "ready"),
     "market_thesis": FlagInfo("A per-symbol market reading with scenarios", "ai", "thesis card in the Copilot", (), "market memory", "unfinished"),
     "colour_v2": FlagInfo("Colour v2: purposeful colour on the redesigned pages (approved by the owner 24 Oct, ON by default)", "platform", "tinted icons, option chain OI bars and in-the-money shading, a tinted P&L, index sparklines, Long / Short chips, tinted navigation", ("ui_v2",), "", "ready"),
-    "colour_v3": FlagInfo("Colour v3: the professional palette (neutral surfaces, one accent, meaning colours; OFF until the owner approves)", "platform", "calmer surfaces and borders, one blue for actions, no dot backdrop", ("ui_v2", "colour_v2"), "", "ready"),
+    "colour_v3": FlagInfo("Colour v3: the professional palette (neutral surfaces, one accent, meaning colours; ON by default, owner 28 Oct)", "platform", "calmer surfaces and borders, one blue for actions, no dot backdrop", ("ui_v2", "colour_v2"), "", "ready"),
     "context_panel": FlagInfo("Market context: trend, breadth, VIX, events", "data", "context panel", (), "FII / DII source optional", "ready"),
     "options_builder": FlagInfo("Plan an options trade (payoff)", "trading", "Plan an options trade", (), "instrument master", "ready"),
     "options_builder_saved": FlagInfo("Save option plans", "trading", "Save button in Plan a trade", ("options_builder",), "", "ready"),

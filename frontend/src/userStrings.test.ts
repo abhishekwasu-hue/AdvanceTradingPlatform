@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
  * "flag", "information only". Code names, comments, test ids and the admin console (admins see flags) are not user
  * strings. The one SEBI footer line lives in ui/Disclaimer.tsx (U1.8) and is the only "Information only" on a page.
  */
-const SOURCES = import.meta.glob<string>(["./**/*V2.tsx", "./**/*V2.ts", "!./**/*.test.*", "!./stories/**", "!./admin/**"],
+// The v2 screens and the text modules they render (ticket / basket notes, the ladder words).
+const SOURCES = import.meta.glob<string>(["./**/*V2.tsx", "./**/*V2.ts", "./fno/insights.ts", "./fno/riskParts.ts", "./fno/ticketModel.ts",
+  "./progression/locales/en.ts", "!./**/*.test.*", "!./stories/**", "!./admin/**"],
   { query: "?raw", import: "default", eager: true });
 
 const BANNED = /\b(phase 0|paper only|screenql|engine|dish|tenant|flag|information only)\b/i;

@@ -158,7 +158,7 @@ test.describe("Idea library behaviour", () => {
     await expect(link).toHaveText("Adopt as a paper strategy");
     await expect(link).toHaveAttribute("href", T5_ADOPT);
     const block = page.locator("[data-idea='T5'] [data-block='idea-adopt']");
-    await expect(block).toContainText("runs on paper only");
+    await expect(block).toContainText("it runs in PAPER");
     await expect(block.locator("[data-state='adopt-note']")).toContainText("is not checked yet");
   });
 

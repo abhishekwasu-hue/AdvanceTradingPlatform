@@ -172,7 +172,7 @@ test.describe("F&O 8b slice 1 flows", () => {
     const line = ticket.locator("[data-risk-line='warn']");
     await expect(line).toContainText("is 2.3% of your capital");
     await expect(line).toContainText("That is more than your risk per trade of ₹5,000 (1%).");
-    await expect(line).toContainText("Information only: it does not hold back the order or any exit.");
+    await expect(line).toContainText("It does not hold back the order or any exit.");
     await expect(ticket.locator("[data-ticket='place']")).toBeEnabled();
     await ticket.locator("[data-explain='ticket'] summary").tap();
     await expect(ticket.locator("[data-explain-structure='long_call']")).toContainText("Long call");

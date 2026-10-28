@@ -6,7 +6,7 @@
 export const PROGRESSION_EN = {
   evidence: {
     title: "Your figures",
-    basis: "From your own closed PAPER trades, net of charges. Information only: nothing here sizes or places a trade.",
+    basis: "From your own closed PAPER trades, net of charges. Nothing here sizes or places a trade.",
     tooFew: "{{count}} of {{needed}} closed trades - the figures appear at {{needed}}.",
     counts: "{{trades}} trades · {{wins}} won · {{losses}} lost · {{flat}} flat",
     winRate: "Win rate",
@@ -59,7 +59,7 @@ export const PROGRESSION_EN = {
   },
   decision: {
     title: "Decision tools",
-    intro: "Models of the numbers you enter - information only. Nothing here sizes, places or closes a trade.",
+    intro: "Models of the numbers you enter. Nothing here sizes, places or closes a trade.",
     ruin: {
       title: "Risk of ruin and Kelly",
       prefilled: "Prefilled from your own closed PAPER trades; change any value.",

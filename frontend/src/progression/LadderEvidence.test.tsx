@@ -26,7 +26,7 @@ describe("LadderEvidence (N2-1)", () => {
     expect(words).toContain("Kelly reference: 40.0% of capital lost on a losing trade");
     expect(words).toContain("not a position size. Sizing stays with your risk cap.");
     expect(words).toContain("Risk of ruin (upper bound): At most 0.04% chance of ever falling 10% (₹1,000.00) below your starting capital.");
-    expect(words).toContain("Information only: nothing here sizes or places a trade.");
+    expect(words).toContain("Nothing here sizes or places a trade.");
     expect(html).toContain('aria-label="Your figures"');
     expect(html).not.toMatch(/<button|<input/);                 // information only: no control
     expect(html).toContain("text-up");                          // positive expectancy, the up colour

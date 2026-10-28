@@ -78,7 +78,7 @@ export interface RiskBudget {
 
 export interface RiskLine { tone: "info" | "warn"; text: string; note: string }
 
-export const RISK_NOTE = "From your risk settings. Information only: it does not hold back the order or any exit.";
+export const RISK_NOTE = "From your risk settings. It does not hold back the order or any exit.";
 
 const pctText = (v: number) => (v > 0 && v < 0.1 ? "under 0.1%" : `${formatNumber(Math.round(v * 10) / 10, v >= 10 || Number.isInteger(Math.round(v * 10) / 10) ? 0 : 1)}%`);
 

@@ -42,5 +42,6 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Numbers first, text on demand U1-U6 | ATP_ORDER_UX11.md | UX-11 | PR 1 primitives + guard |
 | - | Numbers first, logical colour (whole-app pass) | ATP_ORDER_UX11B.md | UX-11b | audit re-verify, then PR 1 C1 + C6 |
 | - | M45 Multi-broker accounts MB-0..MB-9 | ATP_ORDER_M45_MULTI_BROKER.md | M45 | design note ✅ (M45_MULTI_ACCOUNT.md); build MA-1..MA-6 next |
+| - | Screener audit + fix pack A-E (27 Oct) | ATP_ORDER_SCR_FIX.md | SCR-FIX | re-verification, then PR A |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

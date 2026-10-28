@@ -473,7 +473,7 @@ async def _discipline_today(ctx: Ctx) -> Optional[Dict[str, Any]]:
         return None
     units = {t.id: (f"g:{t.leg_group_id}" if t.leg_group_id else f"t:{t.id}") for t in today}
     tags = [TagState(r.trade_id, r.tag, r.status) for r in data["tags"] if r.trade_id in units]
-    return weekly_score(units, tags, data["settings"])
+    return weekly_score(units, tags, data["settings"], closed=[t.id for t in today if t.exit_time is not None])
 
 
 async def day_section(ctx: Ctx) -> Section:
@@ -497,8 +497,10 @@ async def day_section(ctx: Ctx) -> Section:
             else:
                 sec.add("Today went past one of your own daily limits (trades or loss). Your Risk limits page shows which.")
     score = await _safely(ctx, "discipline today", _discipline_today(ctx), None)
+    if score and score.get("score") is None and score.get("note"):
+        sec.add(f"Discipline score for today: {score['note']}.")         # AUD-V4: open trades only - nothing to score yet
     if score and score.get("score") is not None:
-        sec.add(f"Discipline score for today: {score['score']} out of 100 (following your own plan, not the number of trades).")
+        sec.add(f"Discipline score for today: {score['score']} out of 100 {score['note']} (following your own plan, not the number of trades).")
         sec.link = {"label": "Open the Journal", "to": "/journal"}
         facts["discipline"] = score["score"]
     if facts:
@@ -597,7 +599,10 @@ async def week_you_section(ctx: Ctx, monday: date) -> Section:
                 sec.row("discipline", score=score, previous=prev["score"] if prev else None)
                 change = "" if not prev else (f", up {score - prev['score']} on last week" if score > prev["score"]
                                               else f", down {prev['score'] - score} on last week" if score < prev["score"] else ", the same as last week")
-                sec.add(f"Discipline score: {score} out of 100{change}.")
+                note = (review.get("discipline") or {}).get("note")
+                sec.add(f"Discipline score: {score} out of 100{' ' + note if note else ''}{change}.")
+            elif (review.get("discipline") or {}).get("note"):
+                sec.add(f"Discipline score: {review['discipline']['note']}.")
             cost = review.get("costliest")
             if cost:
                 sec.add(f"The pattern that cost the most: {cost['label']} ({money(-abs(cost['net_pnl']))} over {cost['closed']} closed trade"

@@ -211,7 +211,10 @@ def lines(review: Dict[str, Any]) -> List[str]:
         if weakest and weakest[0]["clean_pct"] < 100:
             w = weakest[0]
             detail = f"; the lowest component was {COMPONENT_LABELS.get(w['name'], w['name'])} at {w['clean_pct']:g}% of decisions untagged"
-        out.append(f"Discipline score {score} out of 100{detail}.")
+        note = review["discipline"].get("note")
+        out.append(f"Discipline score {score} out of 100{' ' + note if note else ''}{detail}.")
+    elif review["discipline"].get("note"):
+        out.append(f"Discipline score: {review['discipline']['note']}.")
     previous = [h for h in review["history"] if h.get("score") is not None]
     if previous and score is not None:
         last = previous[0]

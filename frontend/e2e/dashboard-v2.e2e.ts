@@ -142,7 +142,7 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await expect(strip.locator("[data-index='NIFTY 50']")).toContainText("PCR 1.12 · Put writing rising");
     await expect(strip.locator("[data-index='NIFTY BANK']")).toContainText("BANK NIFTY");
     await expect(strip.locator("[data-index='NIFTY BANK']")).toContainText("−212.55");
-    await expect(strip.locator("[data-index='INDIA VIX']")).toContainText("Calm: 12 to 16");
+    await expect(strip.locator("[data-index='INDIA VIX']")).toContainText("Normal");
     await expect(strip).toContainText("Market open · closes 15:30");
     await expect(strip).toContainText("Upstox connected");
     await expect(strip).toContainText("+₹6,847");

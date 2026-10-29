@@ -475,6 +475,9 @@ export function Review({ preview: p, budget, events, liquidity }: {
   const payoff = ticketPayoffSentence(p);
   const c = p.contract;
   const boughtOption = p.side === "BUY" && (c?.right === "CE" || c?.right === "PE");
+  const balance = budget?.paper_balance?.amount;
+  const available = typeof balance === "number" && Number.isFinite(balance) ? balance : null;
+  const short = available !== null && typeof p.margin?.value === "number" && p.margin.value > available;
   const type = p.order_type === "MARKET" ? "Market" : p.order_type === "LIMIT" ? "Limit" : p.order_type;
   return (
     <div className="space-y-space-3" data-ticket="confirm">
@@ -491,6 +494,13 @@ export function Review({ preview: p, budget, events, liquidity }: {
           {p.margin && <span className="block max-w-[14rem] text-t12 text-fg-muted">{p.margin.value !== null && !boughtOption ? "Estimate. " : ""}{p.margin.basis}</span>}
           {p.margin?.note && !boughtOption && <span className="block max-w-[14rem] text-t12 text-fg-muted" data-line="margin-note">{p.margin.note}</span>}
         </Line>
+        {/* UI-28 U7.5 (Kite users: margin before placing): Required beside Available - his PAPER balance - one pair. */}
+        {available !== null && (
+          <Line label="Available (PAPER)" testId="available">
+            <span className={short ? "text-warn" : undefined}>{moneyText(available)}</span>
+            {short && <span className="block max-w-[14rem] text-t12 text-warn">Less than the margin required</span>}
+          </Line>
+        )}
         <Line label="Max loss" testId="max-loss">
           {moneyText(p.max_loss?.value)}
           {p.max_loss && <span className="block max-w-[14rem] text-t12 text-fg-muted">{p.max_loss.basis}</span>}

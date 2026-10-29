@@ -18,6 +18,7 @@ import {
   chatApi, cleanQuestion, composerPlacement, jobCards, marketLineText, MAX_QUESTION, needsKey, settled, withTurn,
   type ChatAnswer, type ChatHome, type Turn,
 } from "./model";
+import { Details } from "../../ui/Details";
 
 /**
  * Item 5 (owner's handover 5 C): the chat-first Copilot page, like a chat app. Top to bottom: "Ask me anything about the
@@ -154,14 +155,17 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
         </section>
       )}
 
-      <nav aria-labelledby="copilot-more" className="text-t13" data-tour="copilot-more">
-        <h2 id="copilot-more" className="mb-space-1 font-semibold text-fg-muted">{t("chat.more")}</h2>
-        <ul className="flex flex-wrap gap-x-space-4">
-          {COPILOT_TABS.map((tab) => (
-            <li key={tab}><Link to={copilotPath(tab)} className="inline-flex min-h-11 items-center text-brand hover:underline md:min-h-0">{t(`tabs.${tab}`)}</Link></li>
-          ))}
-        </ul>
-      </nav>
+      {/* UI-28 U7.7: the older Copilot tools fold under one closed "Advanced" (nothing removed; each still opens). */}
+      <div data-tour="copilot-more"><Details id="copilot.chat.advanced" label="Advanced">
+        <nav aria-labelledby="copilot-more" className="text-t13">
+          <h2 id="copilot-more" className="mb-space-1 font-semibold text-fg-muted">{t("chat.more")}</h2>
+          <ul className="flex flex-wrap gap-x-space-4">
+            {COPILOT_TABS.map((tab) => (
+              <li key={tab}><Link to={copilotPath(tab)} className="inline-flex min-h-11 items-center text-brand hover:underline md:min-h-0">{t(`tabs.${tab}`)}</Link></li>
+            ))}
+          </ul>
+        </nav>
+      </Details></div>
 
       <p className="text-t12 text-fg-muted" data-disclaimer>{home?.disclaimer ?? t("chat.disclaimer")}</p>
 

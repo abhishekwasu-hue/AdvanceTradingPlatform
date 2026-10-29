@@ -155,6 +155,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # login. `byob_data_tier` still decides whose session a user may read. OFF: everything exactly as before.
     "data_hub": "Data hub: one live price stream per broker connection for every page, live ticks in the browser, a reconnecting state and one renew prompt",
     "smart_execution": "Smart execution for multi-leg orders: hedge legs first (shorts closed first on exit), the incomplete-order state with Complete the rest / Close the filled legs, freeze-limit slicing, the margin with the hedge benefit and the free balance after, the physical-settlement warning for stock F&O",
+    # AUD-T8 (owner audit 28 Oct; app/observability/status_history.py): uptime per market session (NSE, MCX, CDS, crypto)
+    # from the worker's own samples, the published SLO targets on the public /status page, and the in-app notice (v2 shell)
+    # when the engine has not checked in or market data is late while a market is open. OFF: GET /api/status/sessions
+    # answers 404, the page shows no sessions block and no notice is shown. The sampler writes either way. Read-only.
+    "status_page": "Reliability: uptime per market session and the SLO targets on the status page, and an in-app notice when the platform is degraded",
     # Trading Terminal T1 (docs/owner-orders/ATP_SESSION_TRADING_TERMINAL.md, review TT-16..TT-19, TT-25; needs `ui_v2`):
     # the Terminal page at /terminal - the chart, the option chain, the order panel, positions, orders and the basket on one
     # screen as panels the user moves, resizes, opens and closes (presets and up to 10 own layouts in the prefs namespace

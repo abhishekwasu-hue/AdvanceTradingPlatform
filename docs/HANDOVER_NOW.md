@@ -7,3 +7,4 @@ Migrations since the owner's last deploy: d0f0a1b2c3d7, d0f0a1b2c3d8, d0f0a1b2g2
 Next: T5 "Read this chart"; G1.6 rest (ESLint, ruff I/UP, mypy all); proof pages per T item.
 Owner: deploy line (1eabd47d was refused by the old session gate - fixed in #682); G1.2 details; Sentry DSN;
 WhatsApp number; T9 pricing; AUD-T4-1, AUD-T6-1, AUD-T8-1 defaults.
+Session B (29 Oct): UI-28 U1-U7 all merged (#640-#698); waits for deploy + owner ✅ on the before / after page; open: UI28Q-1 SEBI (hold); UI28Q-2 decided org-wide.

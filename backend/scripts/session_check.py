@@ -3,12 +3,14 @@
 
     python scripts/session_check.py [--orders-since <ISO-8601 UTC>]
 
-    {"open_sessions": ["NSE", "MCX", ...], "open_positions": 3, "orders_since": 12, "now_ist": "..."}
+    {"open_sessions": ["NSE", "MCX", ...], "open_positions": 3, "open_positions_all": 5, "orders_since": 12, "now_ist": "..."}
 
 Sessions come from the app's own calendar (`all_session_statuses`: every exchange family - NSE/BSE, MCX until its
 evening close, crypto - with the holiday tables), so the deploy script never guesses hours. Open positions are
 `trades` without an exit time (PAPER and LIVE, every organisation). `--orders-since` counts orders created after a
-backup was taken: what a database restore to that backup would lose. Counts only - no symbols, users or tenants.
+backup was taken: what a database restore to that backup would lose. `open_positions` counts only the positions whose
+own venue (position_monitor.trade_venue) is in an open session - the ones the worker is watching now;
+`open_positions_all` is every open position. Counts only - no symbols, users or tenants.
 """
 import argparse
 import asyncio
@@ -25,16 +27,23 @@ async def collect(orders_since: datetime | None) -> dict:
 
     from app.db.models import OrderRecord, TradeRecord
     from app.db.session import _session_factory
-    from app.market_data.calendar import IST, all_session_statuses
+    from app.market_data.calendar import IST, all_session_statuses, session_family
+    from app.trading.position_monitor import trade_venues
 
     now = datetime.now(timezone.utc)
     async with _session_factory() as session:
         statuses = await all_session_statuses(session, now)
-        positions = int(await session.scalar(select(func.count()).select_from(TradeRecord).where(TradeRecord.exit_time.is_(None))) or 0)
+        open_names = {name for name, st in statuses.items() if st.is_open}
+        # Owner 29 Oct (a deploy refused at 16:37 IST): a position counts only while ITS OWN venue's session is open -
+        # the worker is not watching an NSE position after 15:30, whatever MCX or crypto are doing. Before, any open
+        # session plus any position refused, so with crypto (always open) one NSE position blocked every deploy.
+        open_trades = list(await session.scalars(select(TradeRecord).where(TradeRecord.exit_time.is_(None))))
+        venues = await trade_venues(session, open_trades)
+        positions = sum(1 for t in open_trades if session_family(venues[t.id]) in open_names)
         orders = None
         if orders_since is not None:
             orders = int(await session.scalar(select(func.count()).select_from(OrderRecord).where(OrderRecord.created_at > orders_since)) or 0)
-    return {"open_sessions": sorted(name for name, st in statuses.items() if st.is_open), "open_positions": positions,
+    return {"open_sessions": sorted(open_names), "open_positions": positions, "open_positions_all": len(open_trades),
             "orders_since": orders, "now_ist": now.astimezone(IST).strftime("%Y-%m-%d %H:%M")}
 
 

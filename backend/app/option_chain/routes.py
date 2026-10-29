@@ -23,7 +23,7 @@ Nothing here places, changes or suggests an order (ADR-0006).
 """
 import json
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -89,8 +89,34 @@ async def _no_byob(session: AsyncSession, user: User) -> None:
                                           "so it is off while the bring-your-own-broker data tier is on.")
 
 
+async def _collector_day_views(session: AsyncSession, user: User, underlyings: List[str]) -> Dict[str, Tuple[Any, date, Any, Dict[str, Any]]]:
+    """AUD-G2.1: `_day_view` (today, the organisation's collector slots - not the own-broker tier) for several underlyings
+    in a fixed number of queries: the dashboard banners read every enabled underlying at once."""
+    if not underlyings:
+        return {}
+    now = datetime.now(timezone.utc)
+    day = now.astimezone(IST).date()
+    rows = await snapshots.settings_rows_many(session, user.tenant_id, underlyings)
+    slots = await snapshots.day_chains_many(session, underlyings, day, tenant_id=user.tenant_id)
+    latest = await snapshots.latest_captures(session, underlyings, tenant_id=user.tenant_id)
+    statuses: Dict[str, Any] = {}
+    out: Dict[str, Tuple[Any, date, Any, Dict[str, Any]]] = {}
+    for u in rows:
+        default_row, own = rows[u]
+        settings = snapshots.resolve_settings(user.tenant_id, u, default_row, own)
+        exchange = own.exchange if own is not None else "NSE"
+        if exchange not in statuses:
+            statuses[exchange] = await market_session_status(session, now, exchange)
+        flags = snapshots.staleness(latest[u], now, settings, statuses[exchange].is_open and day == now.astimezone(IST).date())
+        out[u] = (settings, day, slots[u], flags)
+    return out
+
+
 async def _banner(session: AsyncSession, user: User, underlying: str) -> Dict[str, Any]:
-    settings, day, slots, flags = await _day_view(session, user, underlying, None)
+    return _banner_from(underlying, *await _day_view(session, user, underlying, None))
+
+
+def _banner_from(underlying: str, settings: Any, day: date, slots: Any, flags: Dict[str, Any]) -> Dict[str, Any]:
     timeline = snapshots.replay(underlying, slots, settings, day)
     if not timeline:
         return {"underlying": underlying, "date": day.isoformat(), "banner": None, **flags,
@@ -102,9 +128,10 @@ async def _banner(session: AsyncSession, user: User, underlying: str) -> Dict[st
 async def banners(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     if await _byob(session, user):              # B1: the underlyings of the user's own chain reads today
         names = await chain_store.holder_underlyings(session, user.tenant_id, user.id, own_snapshots.today(datetime.now(timezone.utc)))
-    else:
-        names = sorted(u for t, u, _ in await snapshots.enabled_underlyings(session) if t == user.tenant_id)
-    return {"banners": [await _banner(session, user, u) for u in names]}
+        return {"banners": [await _banner(session, user, u) for u in names]}
+    names = sorted(u for t, u, _ in await snapshots.enabled_underlyings(session, tenant_id=user.tenant_id) if t == user.tenant_id)
+    views = await _collector_day_views(session, user, names)      # AUD-G2.1: one batch, not ~6 queries per underlying
+    return {"banners": [_banner_from(u, *views[u]) for u in names]}
 
 
 @router.get("/{underlying}/banner")

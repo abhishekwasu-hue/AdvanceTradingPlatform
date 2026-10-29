@@ -461,6 +461,7 @@ current release, run after 15:30 IST; the steps are here so you know what it doe
 | `VAPID_PRIVATE_KEY` | only after a leak | A new key pair, `.env`, deploy. | Every browser's push subscription ends; users allow notifications again. |
 | `CAPTCHA_SECRET` | when the provider asks | New secret at the provider, `.env`, deploy. | Nothing. |
 | `ERROR_TRACKER_DSN` | when the tracker asks | New DSN in the tracker's project settings, `.env`, deploy. | Nothing. |
+| `OTEL_EXPORTER_OTLP_HEADERS` (AUD-G2.1, only when tracing is on) | when the tracing account asks | New token in the tracing account, `.env`, deploy. | Nothing. |
 | `KITE_PUBLISHER_API_KEY` | when Zerodha asks | `.env`, deploy. | Nothing. |
 | `ATP_APP_PASSWORD`, `ATP_MIGRATOR_PASSWORD` (only if the split database roles are in use, `scripts/init_db_roles.py`) | 12 months | Like `POSTGRES_PASSWORD`: `ALTER ROLE` first, then the database URLs in `.env`. | As for `POSTGRES_PASSWORD`. |
 
@@ -713,6 +714,7 @@ Your steps (once; names only - the values go into `/opt/atp/.env` or GitHub sett
 | d. Telegram for the second-opinion check | Repository → Settings → Secrets and variables → Actions → New repository secret | `UPTIME_TELEGRAM_BOT_TOKEN` (a bot from @BotFather - a separate one is best, so a server problem with the platform bot cannot silence it) and `UPTIME_TELEGRAM_CHAT_ID` (your private chat with that bot: send it any message first; your chat id is your own Telegram user id, which @userinfobot shows). Never a group or channel others can read. To test: Actions → "Uptime (outside check)" → Run workflow (it only messages you when the site is down). |
 | e. **The primary monitor: a free uptime service** (RDY-8 / RDY-21) | e.g. UptimeRobot or Better Stack, free plan | See "Set up the primary monitor" below. |
 | f. Error tracker (optional) | GlitchTip (glitchtip.com, free plan) or Sentry (free plan) → new project, platform Python | Copy the project's DSN into `.env` as `ERROR_TRACKER_DSN` (optionally `ERROR_TRACKER_ENVIRONMENT=production`). Deploy. Admin → System → Alerts then says "Error tracker: On". Leave empty to keep it off. |
+| f2. Tracing (optional, AUD-G2.1) | Any OpenTelemetry (OTLP/HTTP) collector or tracing account | Put its address in `.env` as `OTEL_EXPORTER_OTLP_ENDPOINT` (and its auth header as `OTEL_EXPORTER_OTLP_HEADERS`, if it needs one). Deploy. Every API request, its SQL and the broker calls are then traced, and each JSON log line carries `trace_id` / `span_id`. Leave empty to keep it off (the default: nothing is sent). Fewer traces: `OTEL_TRACES_SAMPLER=parentbased_traceidratio`, `OTEL_TRACES_SAMPLER_ARG=0.1`. |
 | g. Keep the scheduled check alive | Repository → Actions | See "When GitHub pauses the scheduled check" below. |
 
 **Set up the primary monitor (step e, once, about 10 minutes).**

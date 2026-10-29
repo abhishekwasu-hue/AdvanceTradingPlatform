@@ -103,6 +103,10 @@ SESSION_MAX_DAYS = _env_int_in("SESSION_MAX_DAYS", 90, 1, 3650)
 # stays usable; a write after the window asks for the authenticator code once more and then carries on. The LIVE step-up
 # (`ensure_live_step_up`) is unchanged: PAPER only in Phase 0, decided with LIVE.
 MFA_STEP_UP_MINUTES = _env_int_in("MFA_STEP_UP_MINUTES", 30, 1, 24 * 60)
+# AUD-G2.4 (activation / time to first value): the "first session" of a new person = the first
+# ACTIVATION_FIRST_SESSION_HOURS hours after signing up. The admin activation funnel shows the share of people whose first
+# paper trade came inside that window (target: first paper trade within the first session). Measurement only.
+ACTIVATION_FIRST_SESSION_HOURS = _env_int_in("ACTIVATION_FIRST_SESSION_HOURS", 3, 1, 72)
 
 # Fernet key for encrypting broker credentials at rest. Must be set via env in any real
 # deployment - a process-local fallback is generated here only so the app still runs for local
@@ -893,6 +897,11 @@ ACCOUNT_ERASE_GRACE_DAYS = int(os.environ.get("ACCOUNT_ERASE_GRACE_DAYS", "7"))
 # AUD-T3 ("Why no trade" timeline): how many closed bars each bot keeps a reason for (older rows are pruned on write).
 WHY_NO_TRADE_KEEP_BARS = int(os.environ.get("WHY_NO_TRADE_KEEP_BARS", "50"))
 
+# AUD-T4 (paper report card, flag `paper_report_card`): the calibration (Brier score) of a shown confidence appears only
+# from PAPER_REPORT_CARD_MIN_TRADES_BRIER closed trades that carry one; the card reads at most PAPER_REPORT_CARD_MAX_TRADES
+# of the user's newest closed PAPER trades.
+PAPER_REPORT_CARD_MIN_TRADES_BRIER = _bounded_int("PAPER_REPORT_CARD_MIN_TRADES_BRIER", 20, 2, 10_000)
+PAPER_REPORT_CARD_MAX_TRADES = _bounded_int("PAPER_REPORT_CARD_MAX_TRADES", 5000, 100, 100_000)
 # AUD-T1 ("My day in one card", flag `my_day_card`): the one state chip on each open position is read ONLY from the
 # user's own stop on that position - how much of the room between his entry and his own stop is still left at the
 # position's last mark (100 % = the mark is at the entry, 0 % = the mark has reached his stop). Information only: the

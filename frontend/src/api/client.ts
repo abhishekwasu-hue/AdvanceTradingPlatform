@@ -1,3 +1,4 @@
+import type { PaperReportCard } from "../paperbot/reportCard";
 import type { OiAlertLogResponse, OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
   MultiViewAnalysis,
@@ -860,6 +861,9 @@ export const api = {
 
   /** AUD-T3: the bot's last closed bars with the reason it did or did not trade (404 while `why_no_trade` is off). */
   whyNoTrade: (id: number) => request<{ deployment_id: number; rows: WhyRow[] }>(`/deployments/${id}/why`),
+
+  /** AUD-T4: the caller's own paper report card (closed PAPER trades per bot and per strategy; 404 while `paper_report_card` is off). */
+  paperReportCard: () => request<PaperReportCard>("/paper/report-card"),
 
   // --- Alert delivery ---
 

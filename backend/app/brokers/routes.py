@@ -449,6 +449,8 @@ async def save_credentials(session: AsyncSession, user: User, name: str, account
     await write_audit_log(session, user.tenant_id, user.id, "broker_credentials_stored",
                           f"{name}/{account_label}" + (" (analytics token saved)" if new_analytics else ""))
     await session.commit()
+    from app.growth import activation
+    await activation.record_step(session, user, "broker_connect")    # AUD-G2.4: after the commit, never in the way
     return record, new_analytics
 
 

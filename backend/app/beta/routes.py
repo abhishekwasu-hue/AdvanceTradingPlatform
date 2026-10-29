@@ -26,7 +26,7 @@ from app.beta import invites
 from app.core.rate_limit import rate_limit, user_rate_limit
 from app.db.models import BetaInviteCodeRecord, FeedbackRecord, User
 from app.db.session import get_session
-from app.observability.metrics import PWA_EVENTS
+from app.observability.metrics import PWA_EVENTS, WEB_VITAL_CLS, WEB_VITAL_INP, WEB_VITAL_LCP
 from app.platform.controls import flag_enabled
 
 admin_router = APIRouter(prefix="/api/admin/beta", tags=["admin"], dependencies=[Depends(require_role()), Depends(require_mfa_session)])
@@ -143,6 +143,33 @@ class PwaEventBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event: PwaEvent
     platform: PwaPlatform = "other"
+
+
+# AUD-G1.5: one page view's Core Web Vitals (no login, rate-limited per IP). Closed labels only: the page family and
+# phone / desktop; values bounded so a forged report cannot skew a bucket beyond its top.
+VitalsPage = Literal["today", "charts", "chain", "terminal", "positions", "other"]
+VitalsDevice = Literal["phone", "desktop"]
+pwa_vitals_rate_limit = rate_limit("pwa_vitals", limit=30, window_seconds=60)
+
+
+class VitalsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    page: VitalsPage = "other"
+    device: VitalsDevice = "desktop"
+    lcp_ms: Optional[float] = Field(default=None, ge=0, le=60_000)
+    inp_ms: Optional[float] = Field(default=None, ge=0, le=60_000)
+    cls: Optional[float] = Field(default=None, ge=0, le=10)
+
+
+@pwa_router.post("/vitals", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(pwa_vitals_rate_limit)])
+async def web_vitals(body: VitalsBody) -> Response:
+    if body.lcp_ms is not None:
+        WEB_VITAL_LCP.labels(page=body.page, device=body.device).observe(body.lcp_ms / 1000)
+    if body.inp_ms is not None:
+        WEB_VITAL_INP.labels(page=body.page, device=body.device).observe(body.inp_ms / 1000)
+    if body.cls is not None:
+        WEB_VITAL_CLS.labels(page=body.page, device=body.device).observe(body.cls)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @pwa_router.post("/events", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(pwa_events_rate_limit)])

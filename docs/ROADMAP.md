@@ -207,13 +207,13 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UI-STD | superseded by UI-28 | Session B: owner order 28 Oct filed; docs/design/UI_STANDARDS_AUDIT.md written; first report (confirmed / not reproduced) next, then PR 1 = A1-A8 | - |
 | UI-STD-C | superseded by UI-28 (U7) | - | - |
 | UI-28 | in progress | Session B: consolidated UI order filed 28 Oct; owner adds U1.10 affirmative wording + U1.11 hide repeated messages on all pages (28 Oct); first report docs/design/UI_28_FIRST_REPORT.md; U1 #640 merged; U2 + U1.10 / U1.11 #647 merged; U3 parts 1-2 #650 #653 merged + deployed 29 Oct; U3 part 3 (U3.8 Skeleton + Freshness) on CI; next U3.3 selects, U3.7 reflow; SEBI text open (UI28Q-1) | - |
-| AP-FIX | filed (stub) | full order text from the owner, then plan | - |
-| CP-FIX | filed (stub) | full order text from the owner, then plan | - |
-| OI-V2 | filed (stub) | full order text from the owner, then plan | - |
-| PX-1 | filed (stub) | full order text from the owner, then plan | - |
+| AP-FIX | merged - deploy + owner ✅ | text lost (DECISIONS 29 Oct): AP1 = AUD-V1 #643, AP4 / AP7 in DEF-0 | - |
+| CP-FIX | waiting for owner | text lost and no item quoted anywhere; out of the BR-0 gate until restated (DECISIONS 29 Oct) | - |
+| OI-V2 | merged - deploy + owner ✅ | text lost (DECISIONS 29 Oct): the regime flip = AUD-V5 #648 | - |
+| PX-1 | merged - deploy + owner ✅ | text lost (DECISIONS 29 Oct): P1 = AUD-V2 #644 | - |
 | AUD-V1..V7 | merged - deploy + owner ✅ | V1 #643, V2 #644, V3 #645, V4 #646, V5 #648, V6 #649, V7 #651 merged 28 Oct; in e2f099f2 (deploy line sent); v1.0.0 tag + branch prune need the owner (proxy 403) | - |
 | AUD-G1.1..G1.7 | in progress | G1.1 #654, G1.3 #652, G1.4 part 1 #655 merged; G1.6 part 1 #656 + G1.7 part 1 #657 on CI; G1.2 waits for the owner's company / grievance details; G1.4 part 2 waits for a Sentry DSN; G1.5 next | #656 #657 |
-| AUD-T1..T3 | not started | after G1 | - |
+| AUD-T1..T3 | in progress | T3 built first (smallest, data T1 can reuse): "Why no trade?" on each bot, flag `why_no_trade` OFF, migration d0f0a1b2c3d7; then T1, T2 | T3 PR |
 | AUD-G2.1..G2.5 | not started | after T1-T3 | - |
 | AUD-T4..T9 | not started | after G2 | - |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |

@@ -716,6 +716,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/public/v1/strategies"): "key",
     ("GET", "/api/public/v1/trades"): "key",
     ("POST", "/api/pwa/events"): P_PWA,
+    ("POST", "/api/pwa/vitals"): "public: AUD-G1.5 Core Web Vitals of one page view - closed labels only, no identity (rate limited)",
     ("POST", "/api/quant/exposure"): S_COMPUTE,
     ("POST", "/api/quant/factors"): P_QUANT,
     ("POST", "/api/quant/risk"): P_QUANT,

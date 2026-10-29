@@ -13,6 +13,7 @@ import { Button, cx } from "../components/primitives";
 import { Details } from "../ui/Details";
 import { PageFootnote } from "../ui/PageFootnote";
 import { scanAlertsApi, type ScanAlertInput, type ScanAlertRule } from "./api";
+import TelegramConnectV2 from "../alerts/TelegramConnectV2";
 
 export interface ScanAlertApi {
   rules: () => Promise<ScanAlertRule[]>;
@@ -122,9 +123,11 @@ export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, 
               </label>
             )}
           </fieldset>
+          {/* UI-28 U5.2: Telegram connects here, in place (one tap, then Start in Telegram) - not a pointer to Settings. */}
+          <div data-testid="scan-alert-telegram"><TelegramConnectV2 title={false} /></div>
           <Details id="screener.alert.how" label="How you are told" className="mt-0">
             <p>
-              In the app, and on Telegram or e-mail if you connected them in{" "}
+              In the app, on Telegram once it is connected above, and by e-mail if you set it up in{" "}
               <Link to="/settings/alerts" className="underline">Settings › Alerts</Link>. Your scan is saved first, so the alert checks exactly what you see.
             </p>
           </Details>

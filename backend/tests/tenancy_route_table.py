@@ -415,6 +415,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/contracts/search"): "member",          # N4 CH4b: the instrument master (platform reference data)
     ("GET", "/api/charts/contracts/series"): "member",          # N4 CH4b: shared-lake daily F&O bars (shared-licensed sources only)
     ("GET", "/api/compliance/golive"): "admin",
+    ("GET", "/api/compliance/overview"): "admin",
     ("PUT", "/api/compliance/golive/evidence"): "admin",
     ("GET", "/api/compliance/static-ips"): "member",
     ("PUT", "/api/compliance/static-ips"): "owner",

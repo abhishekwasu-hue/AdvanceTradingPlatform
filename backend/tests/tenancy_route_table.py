@@ -679,6 +679,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/positions/{trade_id}/reverse"): "trader",     # TT-9: the holder's own position only (404 other tenant, 403 anyone else)
     ("POST", "/api/paper/fno/resting/{order_id}/modify"): "trader",        # TT-10: the caller's own waiting order (404 otherwise)
     ("GET", "/api/paper/fno/settlement"): "member: the caller's own open stock F&O positions only (delivery warning)",
+    ("GET", "/api/fno/expiry-checklist"): "member: the caller's own open F&O positions expiring today or next session only (AUD-T2)",
     ("GET", "/api/trading/incomplete"): "member: the caller's own incomplete multi-leg orders only (SE-7)",
     ("POST", "/api/trading/incomplete/{group_id}/answer"): "trader",   # SE-7: his own order (404 other tenant, 403 another member's)
     ("GET", "/api/paper/fno/risk-budget"): "member: the caller's own effective risk settings only (8b-d, the risk line)",
@@ -805,6 +806,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/signals/day-one/refresh"): "trader",
     ("DELETE", "/api/signals/day-one"): "trader",
     ("GET", "/api/status"): P_STATUS_PAGE,
+    ("GET", "/api/status/sessions"): ("public: AUD-T8 uptime per market session from the worker's own samples, the SLO targets and "
+                                      "the degradation notice - platform-wide only, no user, organisation or price (rate limited)"),
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
     ("GET", "/api/strategies/{strategy_id}"): P_STRATEGY_CATALOGUE,
     ("POST", "/api/strategies/{strategy_id}/chart-run"): P_STRATEGY_CATALOGUE,

@@ -45,6 +45,7 @@ import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from ".
 import { PracticeFrame } from "../fno/OrderTicketV2";
 import { AccountFilterV2, accountLabels, inAccount } from "./accountViews";
 import { SettlementWarningsV2 } from "../fno/SmartExecutionV2";
+import ExpiryChecklistV2 from "../fno/ExpiryChecklistV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
 import { CombinedExitBarV2, ExitShortSheetV2, useCombinedExits } from "../fno/CombinedExitV2";
 import { exitParam } from "../fno/combinedExit";
@@ -242,6 +243,8 @@ export default function PositionsV2(_props: PageProps = {}) {
 
       {/* TM Part 7 (flag smart_execution): stock F&O that may settle by delivery, flagged ahead (information only). */}
       {features.on("smart_execution") && signedIn && <SettlementWarningsV2 />}
+      {/* AUD-T2 (flag expiry_checklist): positions expiring today or next session - information and a one-tap basket add only. */}
+      {features.on("expiry_checklist") && signedIn && <ExpiryChecklistV2 />}
       {/* SE-7 (flag smart_execution): a multi-leg order that stopped half way - his three taps and his rule's countdown. */}
       {features.on("smart_execution") && signedIn && <IncompleteOrdersV2 />}
 

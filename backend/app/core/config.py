@@ -697,6 +697,9 @@ def _bounded_int(name: str, default: int, low: int, high: int) -> int:
 # long one POST may take (connect, write and read each) before it counts as failed and is retried by the outbox.
 ALERT_WEBHOOKS_MAX_PER_USER = _bounded_int("ALERT_WEBHOOKS_MAX_PER_USER", 5, 1, 50)
 ALERT_WEBHOOKS_TIMEOUT_SECONDS = _bounded_int("ALERT_WEBHOOKS_TIMEOUT_SECONDS", 10, 1, 30)
+# AUD-T5 ("Read this chart", flag `read_chart`; app/charts/read_chart.py): how many reads one member may ask for per
+# minute (each runs the chart's structure read, the area replay and, once a day per symbol, the Daily trend read).
+READ_CHART_PER_MINUTE = _bounded_int("READ_CHART_PER_MINUTE", 20, 1, 600)
 
 
 # OI Banner (O2): the collector's slot and the strikes kept either side of the money (wider than any banner window,

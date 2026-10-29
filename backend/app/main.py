@@ -93,6 +93,7 @@ from app.me.prefs import router as me_prefs_router
 from app.me.account import router as me_account_router
 from app.rhythm.routes import router as rhythm_router
 from app.trading.cost_meter import router as cost_meter_router
+from app.expiry_checklist.routes import router as expiry_checklist_router
 from app.today.routes import router as today_router
 from app.option_chain.ask_routes import router as oc_ask_router
 from app.option_chain.probe import admin_router as oc_probe_admin_router
@@ -439,6 +440,7 @@ app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences 
 app.include_router(cost_meter_router)  # AUD-T7: the cost-of-trading meter on My trades (flags ui_v2 + cost_meter)
 app.include_router(today_router)      # AUD-T1: My day in one card (flags ui_v2 + my_day_card)
 app.include_router(rhythm_router)     # MO4: the daily rhythm - pre-market brief, pulse, closing wrap, weekly review (flags ui_v2 + daily_rhythm)
+app.include_router(expiry_checklist_router)   # AUD-T2: the expiry-day and margin checklist (flags ui_v2 + expiry_checklist)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
 app.include_router(oc_probe_admin_router)  # B2b: the owner's read-only option chain spot probe (SUPER_ADMIN + two-factor)
 app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress (stored marks + steps worked out; reads only)

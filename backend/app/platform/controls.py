@@ -371,6 +371,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # structures; an explicit opt-out with a reason lifts one gate for that IST day, logged and counted. Exits are never
     # gated. OFF: nothing is gated and /api/paper/experience answers 404.
     "experience_levels": "Experience levels: futures and naked short option entries open with your PAPER record; a logged, counted opt-out lifts a gate for the day (exits never gated)",
+    # AUD-T2 (order ATP_ORDER_AUDIT_28OCT T2): on the session before an expiry and on the expiry day, the user's own open F&O
+    # positions expiring then - in / out of the money now, cash or delivery settlement with his broker's own rule (linked),
+    # the next expiry and a one-tap "Add to basket" (adds a leg only, never places). OFF: GET /api/fno/expiry-checklist 404.
+    "expiry_checklist": "Expiry checklist: positions expiring today or next session, in or out of the money, settlement and the broker's rule (information only, places no orders)",
     # N4 CH3 (docs/design/CHARTING.md): the price-action chart layer - causal swings, legs, real breaks, swing levels and
     # the Dow trend per degree from the shared lake bars as of a time, with toggles, a debug mode and bar replay that
     # recomputes the layer as of each replayed bar. OFF: GET /api/charts/layers/price-action answers 503 and the chart

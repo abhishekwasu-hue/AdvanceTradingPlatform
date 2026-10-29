@@ -59,7 +59,24 @@ export default function TelegramConnectV2({ onChanged, title = true }: { onChang
         }
       });
     }, POLL_MS);
-    return () => window.clearInterval(timer);
+    // UI-28 U5.2: coming back from Telegram (the tab or app gets focus again) asks at once instead of waiting a tick.
+    const back = () => {
+      if (document.visibilityState !== "visible") return;
+      void load().then((next) => {
+        if (next?.connected) {
+          setLink(null);
+          setNote({ tone: "ok", text: "Telegram is connected. A welcome message is in your chat." });
+          changed.current?.();
+        }
+      });
+    };
+    window.addEventListener("focus", back);
+    document.addEventListener("visibilitychange", back);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", back);
+      document.removeEventListener("visibilitychange", back);
+    };
   }, [link, load]);
 
   async function connect() {

@@ -892,3 +892,12 @@ ACCOUNT_ERASE_GRACE_DAYS = int(os.environ.get("ACCOUNT_ERASE_GRACE_DAYS", "7"))
 
 # AUD-T3 ("Why no trade" timeline): how many closed bars each bot keeps a reason for (older rows are pruned on write).
 WHY_NO_TRADE_KEEP_BARS = int(os.environ.get("WHY_NO_TRADE_KEEP_BARS", "50"))
+
+# AUD-T1 ("My day in one card", flag `my_day_card`): the one state chip on each open position is read ONLY from the
+# user's own stop on that position - how much of the room between his entry and his own stop is still left at the
+# position's last mark (100 % = the mark is at the entry, 0 % = the mark has reached his stop). Information only: the
+# chip never places, blocks or changes an order. A position with no stop gets no chip ("No stop set").
+# - MY_DAY_WATCH_ROOM_LEFT_PCT: at or below this % of the room left the chip reads "Watch" (above it: "Safe").
+# - MY_DAY_NEAR_ROOM_LEFT_PCT: at or below this % it reads "Near invalidation" (the daily rhythm's own 75 %-used line).
+MY_DAY_WATCH_ROOM_LEFT_PCT = _bounded_float("MY_DAY_WATCH_ROOM_LEFT_PCT", 50.0, 0.0, 100.0)
+MY_DAY_NEAR_ROOM_LEFT_PCT = _bounded_float("MY_DAY_NEAR_ROOM_LEFT_PCT", 25.0, 0.0, 100.0)

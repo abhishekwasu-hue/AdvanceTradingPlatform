@@ -122,7 +122,7 @@ for (const [width, height] of SIZES) {
         const ticket = page.locator("[data-order-ticket]");
         await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
         await ticket.locator("[data-ticket='review']").click();
-        await expect(ticket.locator("[data-risk-line]")).toBeVisible();
+        await expect(ticket.locator("[data-risk-checks='ticket']")).toBeVisible();
         await expect(ticket).toHaveScreenshot(`fno8b-ticket-review-v2-${width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
       });
     }
@@ -169,10 +169,11 @@ test.describe("F&O 8b slice 1 flows", () => {
     await ticket.locator("[data-ticket='review']").tap();
     await expect(ticket.locator("[data-ticket='plain-words']")).toContainText(
       "If NIFTY closes at or below 24,500 at expiry you lose the premium, at most about ₹11,300; above 24,650 you gain, more the higher it closes.");
-    const line = ticket.locator("[data-risk-line='warn']");
+    // Owner 29 Oct: the max-loss line is a warning in the one "Before you place" box; its source note is in its Details.
+    const line = ticket.locator("[data-risk-checks='ticket'] [data-risk-part='warn']").first();
     await expect(line).toContainText("is 2.3% of your capital");
     await expect(line).toContainText("That is more than your risk per trade of ₹5,000 (1%).");
-    await expect(line).toContainText("It does not hold back the order or any exit.");
+    await expect(ticket.locator("[data-risk-checks='ticket']")).toContainText("It does not hold back the order or any exit.");
     await expect(ticket.locator("[data-ticket='place']")).toBeEnabled();
     await ticket.locator("[data-explain='ticket'] summary").tap();
     await expect(ticket.locator("[data-explain-structure='long_call']")).toContainText("Long call");

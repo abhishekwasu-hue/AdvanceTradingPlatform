@@ -249,7 +249,7 @@ describe("FNO-1 order ticket", () => {
     expect(edit.on.onReview).toHaveBeenCalled();
     const review = ticket(newDraft("BUY"), { kind: "review", preview: preview() });
     const words = text(review.html);
-    for (const part of ["Margin required ₹37,500.00", "Estimate. Long options only: the premium paid.", "Max loss ₹37,500.00",
+    for (const part of ["Margin required ₹37,500.00", "Long options only: the premium paid.", "Max loss ₹37,500.00",
       "The premium you pay, if the option expires worthless.", "Quantity 2 lots = 150 qty (lot size 75)", "Charges (estimate) ₹61.20",
       "Buy"]) {
       expect(words).toContain(part);

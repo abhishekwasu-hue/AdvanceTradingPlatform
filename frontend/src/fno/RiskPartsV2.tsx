@@ -1,6 +1,6 @@
-import { Info, TriangleAlert } from "lucide-react";
+import { Check, Info, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
-import { cx } from "../components/primitives/cx";
+import { Details } from "../ui/Details";
 import type { RiskLine } from "./insights";
 import { CHECKS_NOTE, riskPartsApi, type EventRisk, type RiskPartsApi } from "./riskParts";
 
@@ -27,29 +27,44 @@ export function useEventRisk(on: boolean, underlying: string | null | undefined,
   return key && state?.key === key ? state.value : null;
 }
 
-/** The parts that are known, as one box (nothing while none is). */
+/** The parts that are known, as one box (nothing while none is). Owner 29 Oct ("unnecessary information is displayed"):
+ * only what needs his eye stays open - the warnings; the checks that are fine and every source note move into one closed
+ * Details (moved, not removed). The max-loss line joins this box instead of a box of its own. */
 export function RiskChecksV2({ lines, testId }: { lines: readonly (RiskLine | null)[]; testId: string }) {
   const shown = lines.filter((l): l is RiskLine => l !== null);
   if (!shown.length) return null;
+  const warn = shown.filter((l) => l.tone === "warn");
+  const fine = shown.filter((l) => l.tone !== "warn");
+  const notes = [...new Set([...shown.map((l) => l.note), CHECKS_NOTE].filter(Boolean))];
   return (
     <section aria-label="Before you place" data-risk-checks={testId}
       className="space-y-space-2 rounded-control border border-subtle px-space-3 py-space-2 text-t13">
       <h4 className="text-t12 font-semibold text-fg-muted">Before you place</h4>
-      <ul className="space-y-space-2">
-        {shown.map((l) => {
-          const Icon = l.tone === "warn" ? TriangleAlert : Info;
-          return (
-            <li key={l.text} className={cx("flex items-start gap-space-2", l.tone === "warn" ? "text-warn" : "text-fg")} data-risk-part={l.tone}>
-              <Icon size={16} aria-hidden className="mt-0.5 shrink-0" />
-              <span>
-                <span className="block">{l.text}</span>
-                <span className={cx("block text-t12", l.tone === "warn" ? "" : "text-fg-muted")}>{l.note}</span>
-              </span>
+      {warn.length > 0 ? (
+        <ul className="space-y-space-2">
+          {warn.map((l) => (
+            <li key={l.text} className="flex items-start gap-space-2 text-warn" data-risk-part="warn">
+              <TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0" />
+              <span>{l.text}</span>
             </li>
-          );
-        })}
-      </ul>
-      <p className="text-t12 text-fg-muted">{CHECKS_NOTE}</p>
+          ))}
+        </ul>
+      ) : (
+        <p className="flex items-center gap-space-2 text-fg" data-risk-clear><Check size={16} aria-hidden className="shrink-0 text-up" />All checks are clear.</p>
+      )}
+      <Details id={`checks.${testId}`} label={fine.length ? `${fine.length} more check${fine.length === 1 ? "" : "s"} and sources` : "Sources"} className="mt-0">
+        {fine.length > 0 && (
+          <ul className="space-y-space-2">
+            {fine.map((l) => (
+              <li key={l.text} className="flex items-start gap-space-2 text-fg" data-risk-part={l.tone}>
+                <Info size={16} aria-hidden className="mt-0.5 shrink-0" />
+                <span>{l.text}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {notes.map((n) => <p key={n} className="text-t12">{n}</p>)}
+      </Details>
     </section>
   );
 }

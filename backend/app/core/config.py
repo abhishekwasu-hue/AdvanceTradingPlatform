@@ -889,3 +889,6 @@ VIX_GATE_UNDERLYINGS = tuple(s.strip().upper() for s in os.environ.get("VIX_GATE
 # AUD-G1.1 (owner audit 28 Oct; DPDP): a user's own "Delete my account" takes effect after this many days; until then
 # the account works as before and the request can be cancelled from Settings -> Account.
 ACCOUNT_ERASE_GRACE_DAYS = int(os.environ.get("ACCOUNT_ERASE_GRACE_DAYS", "7"))
+
+# AUD-T3 ("Why no trade" timeline): how many closed bars each bot keeps a reason for (older rows are pruned on write).
+WHY_NO_TRADE_KEEP_BARS = int(os.environ.get("WHY_NO_TRADE_KEEP_BARS", "50"))

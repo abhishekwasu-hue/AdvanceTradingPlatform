@@ -5,7 +5,7 @@
  * grid, RRG and the F&O dashboard join as more views (D3). U8 EV1: a matched row with stored evidence has "Show on chart"
  * (the evidence chart with only the screen's own conditions and the verify strip).
  */
-import { ArrowDown, ArrowUp, ChartCandlestick } from "lucide-react";
+import { ArrowDown, ArrowUp, ChartCandlestick, Download } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cx } from "../components/primitives";
 import type { RunResult } from "./api";
@@ -26,6 +26,25 @@ export function sortResults(rows: RunResult[], sort: SortState): RunResult[] {
   return sort.dir === "asc" ? out : out.reverse();
 }
 
+/** UI-28 U5.3: the board as CSV (symbol, result, reason, then one column per stage when known), in the board's order. */
+export function resultsCsv(rows: RunResult[], why?: (symbol: string) => WhyChip[]): string {
+  const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const stages = why && rows.length ? why(rows[0].symbol).map((c, i) => `stage_${i + 1}`) : [];
+  const head = ["symbol", "result", "reason", ...stages].join(",");
+  const body = rows.map((r) => [r.symbol, r.matched ? "matched" : r.reason ? "not read" : "not matched", r.reason ?? "",
+    ...(why ? why(r.symbol).map((c) => (c.passed ? "passed" : "not passed")) : [])].map(cell).join(","));
+  return [head, ...body].join("\n") + "\n";
+}
+
+function downloadCsv(text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "scan-results.csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 export interface ResultBoardProps {
   results: RunResult[] | null;
   running?: boolean;
@@ -33,19 +52,42 @@ export interface ResultBoardProps {
   stale?: boolean;           // the scan changed since this run: the rows are kept, dimmed, with a note to run again
   why?: (symbol: string) => WhyChip[];
   onShowEvidence?: (row: RunResult) => void;   // U8 EV1: only rows with an evidence id get the button
+  /** UI-28 U5.3: the "Auto-refresh 1m" switch (the page re-runs the scan every minute while it is on and shown). */
+  autoRefresh?: { on: boolean; onChange: (on: boolean) => void };
 }
 
-export function ResultBoard({ results, running = false, runKey, stale = false, why, onShowEvidence }: ResultBoardProps) {
+export function ResultBoard({ results, running = false, runKey, stale = false, why: whyIn, onShowEvidence, autoRefresh }: ResultBoardProps) {
   const [sort, setSort] = useState<SortState>({ key: "result", dir: "asc" });
+  const [showStages, setShowStages] = useState(true);   // U5.3 column picker: the one optional column
+  const why = showStages ? whyIn : undefined;
   const rows = useMemo(() => (results ? sortResults(results, sort) : []), [results, sort]);
   const toggle = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
   const matched = results?.filter((r) => r.matched).length ?? 0;
 
   return (
     <section aria-label="Results" className="flex min-h-0 flex-col rounded-panel border border-border bg-surface-1">
-      <header className="flex items-baseline justify-between gap-2 border-b border-border px-4 py-3">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         <h2 className="text-t15 font-semibold text-fg">Results</h2>
-        <span className="text-t12 text-fg-muted">Table</span>
+        <span className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 text-t12 text-fg-muted">
+          {autoRefresh && (
+            <label className="inline-flex min-h-11 items-center gap-1.5 md:min-h-0" data-testid="results-auto-refresh">
+              <input type="checkbox" checked={autoRefresh.on} onChange={(e) => autoRefresh.onChange(e.target.checked)} className="accent-brand" />
+              Auto-refresh 1m
+            </label>
+          )}
+          {whyIn && (
+            <label className="inline-flex min-h-11 items-center gap-1.5 md:min-h-0" data-testid="results-stages-column">
+              <input type="checkbox" checked={showStages} onChange={(e) => setShowStages(e.target.checked)} className="accent-brand" />
+              Stages column
+            </label>
+          )}
+          {results != null && results.length > 0 && (
+            <button type="button" onClick={() => downloadCsv(resultsCsv(rows, why))} data-testid="results-csv"
+                    className="inline-flex min-h-11 items-center gap-1 rounded-control px-1.5 text-brand hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-0">
+              <Download size={12} aria-hidden />Export (CSV)
+            </button>
+          )}
+        </span>
       </header>
       {stale && results != null && (
         <p role="status" data-testid="results-stale" className="border-b border-border bg-surface-inset px-4 py-2 text-t12 text-fg-muted">

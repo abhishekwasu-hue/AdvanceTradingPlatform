@@ -19,6 +19,7 @@ import {
 import type { ContractFacts } from "./contracts";
 import { groupExitApi, runExit, type GroupExitApi } from "./groupExits";
 import { STRATEGY_TRAILS } from "./strategyExits";
+import { Combobox } from "../ui/Combobox";
 
 /**
  * CX6 (owner, 24 Oct): "Set combined stop-loss" on the positions panel (Terminal and My trades), the sheet (tick boxes per
@@ -147,20 +148,18 @@ export function CombinedExitFormV2({ view, onChange }: { view: FormView; onChang
 
       {form.measure === "SPOT" && (
         <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-2">
-          <label className="block">
-            <span className={LABEL}>Check the level</span>
-            <select className={FIELD} value={form.check} onChange={(e) => set({ check: e.target.value === "CLOSE" ? "CLOSE" : "TOUCH" })} data-testid="combined-check">
-              <option value="TOUCH">On every price</option>
-              <option value="CLOSE">Only when a candle closes</option>
-            </select>
-          </label>
+          <div className="block">
+            <span className={LABEL} aria-hidden>Check the level</span>
+            <Combobox label="Check the level" value={form.check} onChange={(v) => set({ check: v === "CLOSE" ? "CLOSE" : "TOUCH" })} className="w-full"
+              dataAttrs={{ "data-testid": "combined-check" }}
+              options={[{ value: "TOUCH", label: "On every price" }, { value: "CLOSE", label: "Only when a candle closes" }]} />
+          </div>
           {form.check === "CLOSE" && (
-            <label className="block">
-              <span className={LABEL}>Candle</span>
-              <select className={FIELD} value={form.timeframe} onChange={(e) => set({ timeframe: Number(e.target.value) })}>
-                {TIMEFRAMES.map((t) => <option key={t.minutes} value={t.minutes}>{t.label}</option>)}
-              </select>
-            </label>
+            <div className="block">
+              <span className={LABEL} aria-hidden>Candle</span>
+              <Combobox label="Candle" value={String(form.timeframe)} onChange={(v) => set({ timeframe: Number(v) })} className="w-full"
+                options={TIMEFRAMES.map((t) => ({ value: String(t.minutes), label: t.label }))} />
+            </div>
           )}
         </div>
       )}

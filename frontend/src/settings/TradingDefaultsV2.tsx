@@ -8,6 +8,7 @@ import type { PageProps } from "../routes";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2 } from "../trading/PartsV2";
 import { DEBIT_STRUCTURES, WIDTH_STRUCTURES, WINGED_STRUCTURES } from "../types";
 import { SIGN_IN_PATH } from "../ui/BrokerGate";
+import { Combobox } from "../ui/Combobox";
 import { Details } from "../ui/Details";
 import { useFeatures } from "../ui/useFeatures";
 import ChainSettingsV2 from "./chainSettings";
@@ -114,14 +115,12 @@ function Field({ label, hint, children, id }: { label: string; hint?: string; ch
   );
 }
 
-function Choice<T extends string>({ id, value, options, onChange, notSet = "Off" }: {
-  id: string; value: T | ""; options: { value: T; label: string }[]; onChange: (v: T | "") => void; notSet?: string;
+function Choice<T extends string>({ id, label, value, options, onChange, notSet = "Off" }: {
+  id: string; label: string; value: T | ""; options: { value: T; label: string }[]; onChange: (v: T | "") => void; notSet?: string;
 }) {
   return (
-    <select id={id} className={FIELD} value={value} onChange={(e) => onChange(e.target.value as T | "")}>
-      <option value="">{notSet}</option>
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <Combobox id={id} label={label} value={value} onChange={(v) => onChange(v as T | "")}
+      options={[{ value: "", label: notSet }, ...options]} className="w-full" />
   );
 }
 
@@ -154,21 +153,21 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
       <CardV2 title="What a new bot trades" testId="what">
         <div className={grid}>
           <Field id={id("kind")} label="Trade as" hint="On an index the bot trades its options unless you pick futures.">
-            <Choice id={id("kind")} value={kind} options={KINDS} onChange={(v) => set("instrument_kind", v)} />
+            <Choice id={id("kind")} label="Trade as" value={kind} options={KINDS} onChange={(v) => set("instrument_kind", v)} />
           </Field>
           {options && (
             <Field id={id("structure")} label="Structure">
-              <Choice id={id("structure")} value={form.option_strategy} options={STRUCTURES} onChange={(v) => set("option_strategy", v)} />
+              <Choice id={id("structure")} label="Structure" value={form.option_strategy} options={STRUCTURES} onChange={(v) => set("option_strategy", v)} />
             </Field>
           )}
           {options && !structure && (
             <Field id={id("position")} label="Option position">
-              <Choice id={id("position")} value={form.option_position} options={POSITIONS} onChange={(v) => set("option_position", v)} />
+              <Choice id={id("position")} label="Option position" value={form.option_position} options={POSITIONS} onChange={(v) => set("option_position", v)} />
             </Field>
           )}
           {options && (
             <Field id={id("strike")} label="Strike">
-              <Choice id={id("strike")} value={form.strike_rule} options={STRIKES} onChange={(v) => set("strike_rule", v)} />
+              <Choice id={id("strike")} label="Strike" value={form.strike_rule} options={STRIKES} onChange={(v) => set("strike_rule", v)} />
             </Field>
           )}
           {options && (form.strike_rule === "ITM" || form.strike_rule === "OTM") && (
@@ -178,7 +177,7 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
           )}
           {kind !== "UNDERLYING" && (
             <Field id={id("expiry")} label="Expiry">
-              <Choice id={id("expiry")} value={form.expiry_rule} options={EXPIRIES} onChange={(v) => set("expiry_rule", v)} />
+              <Choice id={id("expiry")} label="Expiry" value={form.expiry_rule} options={EXPIRIES} onChange={(v) => set("expiry_rule", v)} />
             </Field>
           )}
           {kind !== "UNDERLYING" && (
@@ -243,10 +242,10 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
             <NumberBox id={id("tlots")} value={form.ticket_lots} onChange={(v) => set("ticket_lots", v)} />
           </Field>
           <Field id={id("product")} label="Product">
-            <Choice id={id("product")} value={form.ticket_product} options={TICKET_PRODUCTS} onChange={(v) => set("ticket_product", v)} />
+            <Choice id={id("product")} label="Product" value={form.ticket_product} options={TICKET_PRODUCTS} onChange={(v) => set("ticket_product", v)} />
           </Field>
           <Field id={id("otype")} label="Order type">
-            <Choice id={id("otype")} value={form.ticket_order_type} options={TICKET_ORDER_TYPES} onChange={(v) => set("ticket_order_type", v)} />
+            <Choice id={id("otype")} label="Order type" value={form.ticket_order_type} options={TICKET_ORDER_TYPES} onChange={(v) => set("ticket_order_type", v)} />
           </Field>
         </div>
       </CardV2>

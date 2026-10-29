@@ -35,6 +35,7 @@ import {
   defaultsOfForm, exitErrors, exitSentence, exitsAsk, prefillForm, saveExitDefaults, useExitDefaults, type StrategyExitForm,
 } from "./strategyExits";
 import { PRODUCT_UNSET_TEXT, moneyText, newClientRef, sideWord } from "./ticketModel";
+import { Combobox } from "../ui/Combobox";
 
 /**
  * FNO-2 (owner order section 5, 8b-c): the basket panel, opened from the basket badge - a side drawer from md, a bottom
@@ -424,13 +425,12 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
         <section aria-label="Ready strategies" data-basket="ready" className="space-y-space-2">
           <div className="flex items-end justify-between gap-space-3">
             <h3 className="text-t14 font-semibold text-fg">Ready strategies</h3>
-            <label className="flex items-center gap-space-2 text-t12 text-fg-muted">
-              Around
-              <select value={pick ?? ""} onChange={(e) => on.onAround(Number(e.target.value))} disabled={!rows.length} data-basket="around"
-                className="h-11 rounded-control border border-border bg-surface-2 px-space-2 text-t14 font-tabular text-fg md:h-9">
-                {rows.map((r) => <option key={r.strike} value={r.strike}>{formatNumber(r.strike, 0)}{r.strike === atm ? " (ATM)" : ""}</option>)}
-              </select>
-            </label>
+            <div className="flex items-center gap-space-2 text-t12 text-fg-muted">
+              <span aria-hidden>Around</span>
+              <Combobox label="Around" value={pick === null || pick === undefined ? "" : String(pick)} onChange={(v) => on.onAround(Number(v))}
+                disabled={!rows.length} dataAttrs={{ "data-basket": "around" }}
+                options={rows.map((r) => ({ value: String(r.strike), label: `${formatNumber(r.strike, 0)}${r.strike === atm ? " (ATM)" : ""}` }))} />
+            </div>
           </div>
           <div className="-mx-space-4 flex gap-space-2 overflow-x-auto px-space-4 pb-space-1">
             {STRATEGIES.map((name) => (

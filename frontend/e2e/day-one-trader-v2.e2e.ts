@@ -2,7 +2,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockCharts } from "./chartsMocks";
-import { expectComboValue } from "./combobox";
+import { choose, expectChoice, expectComboValue } from "./combobox";
 import { mockApi } from "./mockApi";
 import { PRE_MARKET } from "../src/rhythm/fixtures";
 import { screenerTool } from "./screenerTools";
@@ -435,7 +435,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await expect(page).toHaveURL(/\/deployments\?template=A5/);
         await settle(page);
         const form = page.locator("[data-block='start']");
-        await expect(form.getByLabel("Pick a strategy")).toHaveValue("template-pick:A5");
+        await expectChoice(form.getByLabel("Pick a strategy"), "template-pick:A5");
         await expect(form.locator("[data-template-notes]")).toContainText("Starts with the settings from the idea.");
         await form.scrollIntoViewIfNeeded();
         await shot("05b-idea-adopt-form");
@@ -450,7 +450,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await go("/strategies/test");
         await expect(page.locator("[data-plain-data-source='stored']")).toContainText(STORED_NOTE);
         await shot("06b-test-a-strategy");
-        await page.getByRole("combobox").first().selectOption({ label: "Swing EMA Pullback (daily)" });
+        await choose(page, page.getByRole("combobox").first(), { label: "Swing EMA Pullback (daily)" });
         await page.getByRole("button", { name: "Run Backtest" }).click();
         await expect(page.getByTestId("prices-from")).toHaveText(STORED_LINE);
         expect(world.posts.find((p) => p.url === "/backtest")?.body).toEqual({ strategy_id: "swing_ema_pullback_d", symbol: "NIFTY", data_source: "lake:daily" });
@@ -459,9 +459,9 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
 
         // 7 Adopt the idea's template as a PAPER bot; every entry waits for his Approve (his own trading default)
         await go("/deployments?template=A5&timeframe=15m&set.retest_of=swing&set.retest_max_bars=10&set.vol_mult=1.5&set.range_mode=fixed");
-        await expect(form.getByLabel("Pick a strategy")).toHaveValue("template-pick:A5");
-        await form.getByLabel("Chart timeframe").selectOption("1d");
-        await form.getByLabel("Pick a symbol").selectOption("RELIANCE");
+        await expectChoice(form.getByLabel("Pick a strategy"), "template-pick:A5");
+        await choose(page, form.getByLabel("Chart timeframe"), "1d");
+        await choose(page, form.getByLabel("Pick a symbol"), "RELIANCE");
         await expect(form.locator("[data-defaults-line]")).toContainText("each entry waits for your Approve");
         await form.scrollIntoViewIfNeeded();
         await shot("07a-adopt-on-paper");
@@ -479,7 +479,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await page.locator("[data-day-one-also-list]").click();
         const card = page.locator("[data-day-one='setup']");
         await expect(card.getByRole("heading", { name: "Pick a ready strategy and a list to watch" })).toBeVisible();
-        await expect(card.getByLabel("List to watch")).toHaveValue("system:index-nifty50");
+        await expectChoice(card.getByLabel("List to watch"), "system:index-nifty50");
         await shot("08a-signals-day-one");
         await card.getByRole("radio", { name: /Structure flip retest/ }).check();
         await card.getByRole("button", { name: "See its settings" }).click();

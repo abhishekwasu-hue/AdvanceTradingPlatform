@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectChoice } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -203,8 +204,8 @@ test.describe("Copilot strategy builder behaviour", () => {
     await expect(page.locator("[data-note='draft-saved']")).toContainText("Saved as your strategy \"My EMA + RSI idea\"");
     await expect(page.locator("[data-block='copilot-draft']")).toHaveCount(0);
     const form = page.locator("[data-block='start']");
-    await expect(form.getByLabel("Pick a strategy")).toHaveValue("custom:9");
-    await expect(form.getByLabel("Pick a symbol")).toHaveValue("NIFTY 50");
+    await expectChoice(form.getByLabel("Pick a strategy"), "custom:9");
+    await expectChoice(form.getByLabel("Pick a symbol"), "NIFTY 50");
     expect(server.saved).toHaveLength(1);
     expect(server.saved[0]).toMatchObject({
       name: "My EMA + RSI idea", timeframe: "15min", short_conditions: [], stop_loss_atr_mult: 1.5, atr_period: 14, target_rr: [2, 2], min_rr: 1.5,

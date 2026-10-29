@@ -4,6 +4,7 @@ import { BUTTON, FOCUS, Panel, Pill } from "./AdminSectionsV2";
 import { ago, maskEmail } from "./consoleApi";
 import { supportDeskApi, type SupportDeskSettings, type SupportTicket, type SupportTickets, type TicketStatus } from "./supportDeskApi";
 import { SkeletonRows } from "../components/primitives";
+import { Combobox } from "../ui/Combobox";
 
 /**
  * C12: Admin › Support - the inbox as tickets (every "Send feedback" and "Report a problem" message) with a status, an
@@ -35,6 +36,11 @@ export function dueLine(t: SupportTicket): { text: string; late: boolean } | nul
   return null;
 }
 
+/** The assignee rows: "Nobody assigned", then each admin by masked e-mail. */
+export function assigneeOptions(assignees: SupportTickets["assignees"]): { value: string; label: string }[] {
+  return [{ value: "", label: "Nobody assigned" }, ...assignees.map((a) => ({ value: String(a.id), label: maskEmail(a.email) }))];
+}
+
 export function TicketRow({ t, assignees, onChange }: { t: SupportTicket; assignees: SupportTickets["assignees"]; onChange: (t: SupportTicket) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,17 +67,12 @@ export function TicketRow({ t, assignees, onChange }: { t: SupportTicket; assign
         </p>
       )}
       <div className="mt-space-2 flex flex-wrap items-center gap-space-2">
-        <label className="sr-only" htmlFor={`ticket-status-${t.id}`}>Status of #{t.id}</label>
-        <select id={`ticket-status-${t.id}`} className={INPUT} value={t.status} disabled={busy}
-          onChange={(e) => void change({ status: e.target.value as TicketStatus })}>
-          {(Object.keys(STATUS_LABEL) as TicketStatus[]).map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-        </select>
-        <label className="sr-only" htmlFor={`ticket-assignee-${t.id}`}>Assignee of #{t.id}</label>
-        <select id={`ticket-assignee-${t.id}`} className={INPUT} value={t.assignee_id ?? ""} disabled={busy}
-          onChange={(e) => void change({ assignee_id: e.target.value ? Number(e.target.value) : null })}>
-          <option value="">Nobody assigned</option>
-          {assignees.map((a) => <option key={a.id} value={a.id}>{maskEmail(a.email)}</option>)}
-        </select>
+        <Combobox id={`ticket-status-${t.id}`} label={`Status of #${t.id}`} value={t.status} disabled={busy}
+          onChange={(v) => void change({ status: v as TicketStatus })}
+          options={(Object.keys(STATUS_LABEL) as TicketStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] }))} />
+        <Combobox id={`ticket-assignee-${t.id}`} label={`Assignee of #${t.id}`} value={t.assignee_id == null ? "" : String(t.assignee_id)} disabled={busy}
+          onChange={(v) => void change({ assignee_id: v ? Number(v) : null })}
+          options={assigneeOptions(assignees)} />
         {error && <span className="text-t12 text-down" role="alert">{error}</span>}
       </div>
     </li>

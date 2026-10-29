@@ -19,3 +19,51 @@ export async function comboOptions(page: Page, combobox: Locator): Promise<Locat
   await combobox.click();
   return page.locator("[data-combobox-list] [role='option']");
 }
+
+/**
+ * UI-28 U3.3: picks a row in a field that is either the shared combobox or (old pages) the browser's <select>, by the
+ * row's value or `{ label }` - the drop-in for `selectOption` while the v2 pages move to the combobox.
+ */
+export async function choose(page: Page, field: Locator, pick: string | { label: string }): Promise<void> {
+  if ((await field.evaluate((e) => e.tagName)) === "SELECT") { await field.selectOption(pick); return; }
+  await field.click();
+  const list = page.locator("[data-combobox-list]");
+  const row = typeof pick === "string" ? list.locator(`[role='option'][data-value='${pick}']`)
+    : list.getByRole("option", { name: pick.label, exact: true });
+  await row.first().click();
+  if (typeof pick === "string") await expect(field).toHaveAttribute("data-combobox", pick);
+}
+
+/** UI-28 U3.3: the field's picked value, for the shared combobox or a <select>. */
+export async function expectChoice(field: Locator, value: string): Promise<void> {
+  if ((await field.evaluate((e) => e.tagName)) === "SELECT") await expect(field).toHaveValue(value);
+  else await expect(field).toHaveAttribute("data-combobox", value);
+}
+
+/** UI-28 U3.3: the field's row labels in order, for the shared combobox (opened, then closed again) or a <select>. */
+export async function expectChoiceLabels(page: Page, field: Locator, labels: string[]): Promise<void> {
+  if ((await field.evaluate((e) => e.tagName)) === "SELECT") { await expect(field.locator("option")).toHaveText(labels); return; }
+  const button = field.and(page.locator("[data-combobox]"));   // the open list carries the same label
+  await button.click();
+  await expect(page.locator("[data-combobox-list] [role='option']")).toHaveText(labels);
+  await button.click();                   // closes the list (Escape would also close a sheet around it)
+  await expect(page.locator("[data-combobox-list]")).toHaveCount(0);
+}
+
+/** UI-28 U3.3: the labels of one group's rows ("Strategy templates") in the shared combobox, opened then closed again. */
+export async function expectGroupLabels(page: Page, field: Locator, group: string, labels: string[]): Promise<void> {
+  const button = field.and(page.locator("[data-combobox]"));
+  await button.click();
+  const rows = await page.locator("[data-combobox-list] li").evaluateAll((lis, g) => {
+    const out: string[] = [];
+    let inGroup = false;
+    for (const li of lis) {
+      if (li.getAttribute("role") === "presentation") inGroup = li.textContent?.trim() === g;
+      else if (inGroup && li.getAttribute("role") === "option") out.push(li.textContent?.trim() ?? "");
+    }
+    return out;
+  }, group);
+  expect(rows).toEqual(labels);
+  await button.click();
+  await expect(page.locator("[data-combobox-list]")).toHaveCount(0);
+}

@@ -1,5 +1,5 @@
 # HANDOVER_NOW (30 Oct 2026, 03:00 IST)
-In flight: #702 G2.2 live push (CI). Merged 29 Oct: AUD-T1..T4, T6..T8, G1.5, G1.7, G2.1, G2.3..G2.5,
+In flight: #708 G1.6 part 2 (CI). Also merged: G2.2 #702, T5 #707. Merged 29 Oct: AUD-T1..T4, T6..T8, G1.5, G1.7, G2.1, G2.3..G2.5,
 fixes #677 (F&O P&L on Upstox, Cannot-place reason), #678 (ticket noise), #682 (session gate), #674/#704 (date-bomb tests).
 All new flags OFF: why_no_trade, my_day_card, expiry_checklist, cost_meter, status_page, paper_report_card,
 setup_recall, alert_webhooks, live_push.

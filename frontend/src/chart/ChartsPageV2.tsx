@@ -1,4 +1,4 @@
-import { ListTree, Maximize2, Minimize2, Redo2, ScanSearch, Undo2 } from "lucide-react";
+import { ListTree, Maximize2, Minimize2, Redo2, ScanSearch, ScanText, Undo2 } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
@@ -8,6 +8,7 @@ import type { useDrawingTools } from "../charting/DrawingToolbar";
 import type { LightweightEngine } from "../charting/lightweight";
 import type { DrawingController } from "../charting/tools";
 import { LtpHub } from "../charting/ltpHub";
+import { livePushOn } from "../live/livePush";
 import { liveTicks } from "../live/liveTicks";
 import { useLiveLtp } from "../components/chartHelpers";
 import { Sheet } from "../components/primitives/Dialog";
@@ -42,6 +43,8 @@ import { useChartPrefs } from "./useChartPrefs";
 import { useFullscreen } from "./useFullscreen";
 import { useMarketStatus } from "./useMarketStatus";
 import { useTradesLayer } from "./useTradesLayer";
+import { ReadChartPanel, useReadChart } from "./ReadChartV2";
+import { readTimeframe } from "./readChart";
 import { WatchlistPanel } from "./WatchlistPanel";
 import type { WatchItem } from "./watchlistsV2";
 import { Combobox } from "../ui/Combobox";
@@ -100,6 +103,8 @@ export default function ChartsPageV2(_props: PageProps) {
   const multi = features.on("chart_workspace");
   const watchOn = features.on("watchlists");
   const hubOn = features.on("data_hub");
+  // AUD-G2.2 (flag live_push): the charts follow the live price stream; their timers are only the fallback.
+  const pushOn = livePushOn((name) => features.on(name));
   const wide = useMediaQuery("(min-width: 1024px)");
   const phone = useMediaQuery(PHONE_QUERY);
   const [sheet, setSheet] = useState(false);
@@ -133,17 +138,22 @@ export default function ChartsPageV2(_props: PageProps) {
 
   const prefs = useChartPrefs(userId);
   // While the Multi-chart tab shows, the Chart tab keeps its bars and reads nothing (one refresh when it shows again).
-  const data = useChartCandles({ enabled: !waiting, paused: tab !== "chart" || hubView !== null, symbol, exchange, timeframe });
+  const data = useChartCandles({ enabled: !waiting, paused: tab !== "chart" || hubView !== null, symbol, exchange, timeframe, livePush: pushOn });
   const last = data.candles[data.candles.length - 1];
   // The live price moves the newest bar: intraday while the market is open (or its state is not known), day / week /
   // month only while the server marks that bar as forming.
   const liveOn = DAILY_OR_LONGER.has(timeframe) ? !!last?.forming : chip?.open !== false;
-  const live = useLiveLtp(liveOn && data.candles.length > 0 && tab === "chart" && !hubView, symbol, exchange);
+  const live = useLiveLtp(liveOn && data.candles.length > 0 && tab === "chart" && !hubView, symbol, exchange, undefined, undefined, pushOn);
   const shownChip = toolbarMarketChip(chip, live.ltp !== null);
 
   const [engine, setEngine] = useState<LightweightEngine | null>(null);
   const [tools, setTools] = useState<Tools | null>(null);
   const tradesNote = useTradesLayer(engine, `${exchange}:${symbol}`, data.candles, view.layers.includes("trades") && features.on("chart_trades_layer"));
+  // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
+  const readOn = features.on("read_chart");
+  const readTf = readTimeframe(timeframe);
+  const [reading, setReading] = useState(false);
+  const read = useReadChart(engine, `${exchange}:${symbol}`, readTf, readOn && reading && tab === "chart" && !hubView);
 
   // CHP-2: a tool picked and not yet placed stays picked when the symbol (and so the drawing controller) changes.
   const armed = useRef<{ kind: DrawingKind; text?: string; ctl: DrawingController } | null>(null);
@@ -208,8 +218,9 @@ export default function ChartsPageV2(_props: PageProps) {
   // The Multi-chart tab's shared reads, for the page's life; the tab itself stays mounted (hidden) after its first visit.
   const pool = useMemo(() => new CandlePool(api.marketDataCandles), [userId]);  // eslint-disable-line react-hooks/exhaustive-deps
   // TM Part 1 (flag data_hub): the charts' last price also moves with the live ticks of the user's own connection.
-  const ltpHub = useMemo(() => new LtpHub((s, e) => api.marketDataLtp(s, e), undefined, undefined, hubOn ? liveTicks() : undefined),
-    [userId, hubOn]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const ltpHub = useMemo(() => new LtpHub((s, e) => api.marketDataLtp(s, e), undefined, undefined, hubOn ? liveTicks() : undefined,
+    pushOn ? (s, e) => liveTicks().tickFresh(s, e) : undefined),
+    [userId, hubOn, pushOn]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => ltpHub.dispose(), [ltpHub]);
   const [multiSeen, setMultiSeen] = useState(tab === "multi");
   if (tab === "multi" && !multiSeen) setMultiSeen(true);
@@ -272,6 +283,12 @@ export default function ChartsPageV2(_props: PageProps) {
                     <ScanSearch size={16} aria-hidden />
                   </Link>
                 )}
+                {readOn && readTf && (
+                  <button type="button" aria-label="Read this chart" title={reading ? "Hide the reading" : "Read this chart"} aria-pressed={reading}
+                    data-testid="read-chart-button" className={iconBtn} onClick={() => setReading((v) => !v)}>
+                    <ScanText size={16} aria-hidden />
+                  </button>
+                )}
                 <ChartSettingsPopover prefs={prefs.prefs} onChange={prefs.update} error={prefs.error} />
                 <button type="button" aria-label={fs.on ? "Leave full screen" : "Full screen"} title={fs.on ? "Leave full screen (Esc)" : "Full screen (F)"}
                   aria-pressed={fs.on} className={iconBtn} onClick={fs.toggle}>
@@ -289,10 +306,11 @@ export default function ChartsPageV2(_props: PageProps) {
             <div data-tour="charts-chart" className={cx("flex min-h-0", fs.on && "flex-1")}>
               <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
-                prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
+                prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} captureTouch={fs.on}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
+            {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} />}
             {(data.error || tradesNote || data.loadingOlder || drawingText) && (
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">
                 {data.error && <span className="text-fg">{data.error}</span>}
@@ -312,7 +330,7 @@ export default function ChartsPageV2(_props: PageProps) {
         </div>
       )}
       {multi && multiSeen && (
-        <MultiChartV2 key={String(userId)} shown={tab === "multi"} pool={pool} ltpHub={ltpHub}
+        <MultiChartV2 key={String(userId)} shown={tab === "multi"} pool={pool} ltpHub={ltpHub} livePush={pushOn}
           symbol={symbol} exchange={exchange} userId={userId} offered={offered} timeframesKnown={timeframes !== null}
           prefs={prefs.prefs} drawingsHidden={view.drawings_hidden} marketOpen={(ex) => marketChip(status, ex, now)?.open ?? null}
           start={startChartFrom(params)} onStarted={clearStart} onOpenChart={openChart} />

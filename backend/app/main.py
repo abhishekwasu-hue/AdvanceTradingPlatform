@@ -186,6 +186,7 @@ from app.charts.drawings import router as chart_drawings_router
 from app.charts.layouts import router as chart_layouts_router
 from app.charts.zones_layer import router as chart_zones_layer_router
 from app.charts.price_action_layer import router as chart_price_action_layer_router
+from app.charts.read_chart import router as chart_read_router
 from app.charts.trades_layer import router as chart_trades_layer_router
 from app.charts.contracts import router as chart_contracts_router
 from app.charts.futures_basis import router as chart_futures_basis_router
@@ -422,6 +423,7 @@ app.include_router(chart_drawings_router)
 app.include_router(chart_layouts_router)  # CH5: saved multi-chart workspace layouts per user (flag chart_workspace)
 app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer (flag market_zones, off by default)
 app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
+app.include_router(chart_read_router)               # AUD-T5: Read this chart as of the last closed bar, read-only (ui_v2 + read_chart)
 app.include_router(chart_trades_layer_router)  # N4 CH4a: the caller's own PAPER trades on the chart (flag chart_trades_layer, off)
 app.include_router(chart_contracts_router)  # N4 CH4b: daily contract / spread charts from the shared lake (flag chart_contracts, off)
 app.include_router(chart_futures_basis_router)  # N4 CH4c: futures basis / carry / rollover from the shared lake (flag chart_futures_basis, off)

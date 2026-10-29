@@ -12,6 +12,7 @@ import { liveHiddenFrom } from "../settings/useLiveHidden";
 import { useBigText } from "../theme";
 import { useColourV2 } from "../ui/colourV2";
 import { useIndexSparks } from "./indexSparks";
+import { useLivePushOn } from "../live/livePush";
 import DailyRhythmCardV2 from "../rhythm/DailyRhythmCardV2";
 import MyDayCardV2 from "./MyDayCardV2";
 import { ActiveSignalsV2, OpenPositionsV2, TodaySummaryV2, type Rows } from "./BlocksV2";
@@ -89,7 +90,8 @@ export default function DashboardV2(_props: PageProps = {}) {
   const strip = dataOf(data.strip);
   // Colour v2: the strip's sparklines (real broker candles; nothing while the flag is off).
   const colour = useColourV2();
-  const sparks = useIndexSparks(colour, strip);
+  // AUD-G2.2 (flag live_push): the lines follow the live price stream; their minute timer is only the fallback.
+  const sparks = useIndexSparks(colour, strip, useLivePushOn());
   const signals = useMemo(() => signalsToday(actions, now), [actions, now]);
   const attentionKnown = data.pending.status !== "loading" && data.deployments.status !== "loading";
   const setup = useSetup(user?.id ?? null);

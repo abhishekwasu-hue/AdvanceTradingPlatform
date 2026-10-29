@@ -42,6 +42,15 @@ CONFIRMED 13, PARTLY 4 (V1 parity, V3, G1.4, G1.7), NOT REPRODUCED 0 of the V / 
   ruff.toml asks: I next (mechanical, done when few other PRs are open - it touches many files), ASYNC with its 10 fixes,
   UP in per-package slices. ESLint + typescript-eslint and mypy on all of app follow the same pattern.
 
+## G2.2 verification (29 Oct; branch claude/aud-g2-2-live-push)
+PARTLY. Already built (TM-12, flag `data_hub`): broker websocket -> data hub -> `GET /api/live/stream` (SSE over fetch)
+`ticks` / `hub` events per tab, the user's own connection only, 50 symbols per tab, 15 s heartbeat. The four literal 60 s
+pollers (App.tsx:78 system status, MarketPulseCard.tsx:68 candles, OiBanner.tsx:41 and OiBannersCard.tsx:15 OI slots)
+render only in today's shell (ui_v2 OFF) - the push needs ui_v2 + data_hub, and only MarketPulseCard reads prices - so
+they stay. The v2 price timers now follow the push behind `live_push` (fallback to each timer while the stream is down or
+quiet, or a symbol has no fresh tick): Today sparklines (dashboard/indexSparks.ts, 60 s), chart candles
+(chart/useChartCandles.ts, 60 s: re-read on bar close), chart last price (components/chartHelpers.ts useLiveLtp 5 s,
+charting/ltpHub.ts 5 / 20 s); the chart chip reads the age of the last tick (chart/liveChip.ts tickAgeChipState).
 ## G2.3 - fonts, CSP, preload, manifest (29 Oct)
 - Fonts: already self-hosted since UX-4 (`@fontsource-variable/inter` and `jetbrains-mono` imported in main.tsx; Vite emits
   the woff2 files under /assets/, one variable file per subset, so every weight in use is in it; the browser fetches only

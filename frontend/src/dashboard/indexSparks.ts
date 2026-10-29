@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { istDate } from "../components/chartHistory";
+import { liveTicks } from "../live/liveTicks";
+import { useBarCloseReload } from "../live/livePush";
 import type { OHLCVBar } from "../types";
 import type { MarketStrip } from "./types";
 
@@ -27,13 +29,22 @@ export function sparkBroker(strip: MarketStrip | null): string | null {
 }
 
 export const SPARK_REFRESH_MS = 60_000;
+const SPARK_BAR_MS = 5 * 60_000;     // the sparkline's own 5-minute bars (the "5min" read above)
 
-export function useIndexSparks(enabled: boolean, strip: MarketStrip | null): Record<string, number[]> {
+/** AUD-G2.2 (`livePush`, flag `live_push`): while the market is open the indices are registered on the live stream;
+ * the lines are read again when a pushed tick falls in a new 5-minute bar, and the minute timer makes no request while
+ * every index has a fresh tick (it stays the fallback). False: exactly as before. */
+export function useIndexSparks(enabled: boolean, strip: MarketStrip | null, livePush = false): Record<string, number[]> {
   const [sparks, setSparks] = useState<Record<string, number[]>>({});
   const broker = enabled ? sparkBroker(strip) : null;
   const keys = strip ? strip.indices.map((i) => i.key).join("|") : "";
   const open = !!strip?.market.is_open;
+  const pushed = livePush && open && !!broker && !!keys;
+  const lastStart = useRef<number | null>(null);
+  const reload = useRef<() => void>(() => undefined);
   useEffect(() => {
+    lastStart.current = null;
+    reload.current = () => undefined;
     if (!broker || !keys) { setSparks({}); return undefined; }
     let live = true;
     const symbols = keys.split("|");
@@ -41,16 +52,26 @@ export function useIndexSparks(enabled: boolean, strip: MarketStrip | null): Rec
       api.marketDataCandles(symbols, "5min", 5, "NSE", broker).then((r) => {
         if (!live) return;
         const next: Record<string, number[]> = {};
+        let newest: number | null = null;
         for (const s of symbols) {
           const row = r.symbols[s.toUpperCase()] ?? r.symbols[s];
-          if (row && !row.error) next[s] = lastSessionCloses(row.bars);
+          if (row && !row.error) {
+            next[s] = lastSessionCloses(row.bars);
+            for (const b of row.bars) { const at = Date.parse(b.timestamp); if (Number.isFinite(at) && (newest === null || at > newest)) newest = at; }
+          }
         }
+        lastStart.current = newest;
         setSparks(next);
       }, () => { if (live) setSparks({}); });
     };
+    reload.current = load;
+    const store = pushed ? liveTicks() : null;
+    const release = store ? store.register(symbols.map((symbol) => ({ symbol, exchange: "NSE" }))).release : null;
     load();
-    const id = open ? window.setInterval(load, SPARK_REFRESH_MS) : undefined;
-    return () => { live = false; if (id !== undefined) window.clearInterval(id); };
-  }, [broker, keys, open]);
+    const id = open ? window.setInterval(() => { if (!(store && symbols.every((s) => store.tickFresh(s, "NSE")))) load(); }, SPARK_REFRESH_MS) : undefined;
+    return () => { live = false; if (id !== undefined) window.clearInterval(id); release?.(); };
+  }, [broker, keys, open, pushed]);
+  const items = pushed ? keys.split("|").map((symbol) => ({ symbol, exchange: "NSE" })) : [];
+  useBarCloseReload(pushed, items, SPARK_BAR_MS, () => lastStart.current, () => reload.current());
   return sparks;
 }

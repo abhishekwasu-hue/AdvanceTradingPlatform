@@ -35,7 +35,9 @@ export class LtpHub {
   private nextId = 1;
 
   constructor(private readonly fetchLtp: Fetch, private readonly visible: () => boolean = () => typeof document === "undefined" || document.visibilityState === "visible",
-              private readonly now: () => number = () => Date.now(), private readonly ticks?: TickSource) {}
+              private readonly now: () => number = () => Date.now(), private readonly ticks?: TickSource,
+              /** AUD-G2.2 (flag `live_push`): true while the push carries this symbol (a fresh tick): its poll is skipped. */
+              private readonly pushed?: (symbol: string, exchange: string) => boolean) {}
 
   static key(symbol: string, exchange: string) { return `${exchange.trim().toUpperCase()}:${symbol.trim().toUpperCase()}`; }
 
@@ -97,6 +99,7 @@ export class LtpHub {
 
   private async poll(key: string, entry: Entry, symbol: string, exchange: string) {
     if (entry.inFlight || !this.visible() || this.entries.get(key) !== entry) return;
+    if (this.pushed && entry.last?.ltp && this.pushed(symbol, exchange)) return;     // the push carries it; the poll is the fallback
     entry.inFlight = true;
     let update: LtpUpdate;
     try {

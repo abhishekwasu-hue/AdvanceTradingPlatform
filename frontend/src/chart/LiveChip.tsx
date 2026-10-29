@@ -1,14 +1,22 @@
 import { Clock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { usePageVisible } from "../utils/usePageVisible";
-import { liveChipState, liveChipText, type LiveQuote } from "./liveChip";
+import { liveTicks } from "../live/liveTicks";
+import { useTickSeenAt } from "../live/livePush";
+import { liveChipState, liveChipText, tickAgeChipState, type LiveQuote } from "./liveChip";
 
 /**
  * UI2-4e: "Live" / "Price delayed · 4 min" on a v2 chart (rules in liveChip.ts). Neutral: the chart's own text, axis
  * and background tokens (it sits inside the chart's `data-chart-theme` root), words and an icon, never colour alone.
  * Its own one-second clock keeps the age current without drawing the chart again; it stops while the tab is hidden.
  */
-export function LiveChip({ live, marketOpen }: { live: LiveQuote | null | undefined; marketOpen: boolean | null | undefined }) {
+export function LiveChip({ live, marketOpen, push }: {
+  live: LiveQuote | null | undefined; marketOpen: boolean | null | undefined;
+  /** AUD-G2.2 (flag `live_push`): the chart's symbol; while the push is live and it has ticked, the chip reads the age of
+   * its last tick instead of the poll's. Left out: exactly as before. */
+  push?: { symbol: string; exchange: string } | null;
+}) {
+  const tickAt = useTickSeenAt(!!push, push?.symbol, push?.exchange ?? "NSE");
   const [receivedAt, setReceivedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const visible = usePageVisible();
@@ -33,7 +41,10 @@ export function LiveChip({ live, marketOpen }: { live: LiveQuote | null | undefi
     const id = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(id);
   }, [live, visible]);
-  const state = liveChipState(live, receivedAt, marketOpen, now);
+  const store = push && tickAt !== null ? liveTicks() : null;
+  const state = store && live && store.push && store.pushLive(now)
+    ? tickAgeChipState(tickAt as number, marketOpen, now, store.push.staleAfterMs)
+    : liveChipState(live, receivedAt, marketOpen, now);
   if (!state) return null;
   const { text, title } = liveChipText(state);
   return (

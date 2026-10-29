@@ -1,4 +1,4 @@
-import { CalendarDays, ChartColumn, Info, Sparkles, Table2, TriangleAlert } from "lucide-react";
+import { Activity, CalendarDays, ChartColumn, Info, Sparkles, Table2, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useColourV2 } from "../ui/colourV2";
@@ -17,6 +17,7 @@ import { useFeatures } from "../ui/useFeatures";
 import AnalysisSlotV2 from "./AnalysisSlotV2";
 import ChainTableV2 from "./ChainTableV2";
 import ChainCharts from "./ChartsViewV2";
+import OiViewV2 from "./OiViewV2";
 import ColumnsMenuV2 from "./ColumnsMenuV2";
 import {
   INDEX_SYMBOLS, STOCK_SYMBOLS, TEXT, chainNotes, initialSymbol, readColumns, writeColumns, type ColumnPrefs,
@@ -57,7 +58,7 @@ import { Skeleton } from "../components/primitives";
  * Shown only while `ui_v2` is on (src/shell/pagesV2.ts).
  */
 
-export type ChainView = "chain" | "charts";
+export type ChainView = "chain" | "charts" | "oi";
 
 /** "Chain | Charts": which view sits under the summary. Two 44 px targets on a phone (no padding around them, so the
  * toggle fits the 44 px gap above the chain), 28 px from md. */
@@ -65,6 +66,7 @@ export function ViewToggle({ view, onView, className }: { view: ChainView; onVie
   const items: { key: ChainView; label: string; Icon: typeof Table2 }[] = [
     { key: "chain", label: "Chain", Icon: Table2 },
     { key: "charts", label: "Charts", Icon: ChartColumn },
+    { key: "oi", label: "OI", Icon: Activity },   // UI-28 U6.1
   ];
   return (
     <div role="group" aria-label="View" data-view-toggle className={cx("inline-flex items-center gap-space-1 rounded-panel bg-surface-2 p-0 md:p-space-1", className)}>
@@ -227,6 +229,13 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         <section aria-label="Charts" data-block="charts" className="space-y-space-3">
           <div className="flex justify-center"><ViewToggle view={view} onView={setView} /></div>
           <ChainCharts symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />
+        </section>
+      )}
+
+      {view === "oi" && (
+        <section aria-label="OI" data-block="oi" className="space-y-space-3">
+          <div className="flex justify-center"><ViewToggle view={view} onView={setView} /></div>
+          <OiViewV2 underlying={symbol} />
         </section>
       )}
 

@@ -204,5 +204,5 @@ def test_admin_funnel_is_admin_only_and_carries_the_steps():
 
 def test_migration_chains_after_the_previous_head():
     text = (BACKEND / "alembic/versions/d0f0a1b2g204_aud_g24_activation_events.py").read_text()
-    assert "revision: str = 'd0f0a1b2g204'" in text and "down_revision: Union[str, Sequence[str], None] = 'd0f0a1b2c3d7'" in text
+    assert "revision: str = 'd0f0a1b2g204'" in text and "down_revision: Union[str, Sequence[str], None] = 'd0f0a1b2c3d8'" in text
     assert "uq_activation_events_user_step" in text

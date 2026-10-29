@@ -57,3 +57,10 @@ figure says.
 
 Revisit the targets after the first full month of live trading, with the histograms exported from
 Prometheus. Loosen a target only with a written reason in this file; tighten freely.
+
+## Published targets (AUD-T8)
+
+The public status page (`/status`, flag `status_page`) shows SLO-1 to SLO-4, SLO-8 and SLO-9 in plain words, labelled as
+targets, next to the measured uptime per market session. `backend/app/observability/slo.py` mirrors the objective and
+target cells of the table above; `backend/tests/test_aud_t8_status_page.py` fails when they drift, so change both
+together. SLO-5 to SLO-7 (LIVE broker objectives) are published when LIVE trading starts.

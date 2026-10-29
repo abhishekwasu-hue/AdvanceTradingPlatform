@@ -591,6 +591,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/me/setup"): S_OWN_PREFS,
     # MO4: the daily rhythm - the caller's own digests (own trades, signals, journal; the organisation's market memory and
     # events) and the caller's own Telegram choice
+    # AUD-T1: the caller's own open positions with the nearest area, expiry and a chip from his own stop (read-only)
+    ("GET", "/api/today/my-day"): "member: the caller's own open positions (tenant and user) with the organisation's market reads",
     ("GET", "/api/rhythm/today"): "member: the caller's own digest (own trades, signals and journal; the organisation's market reads)",
     ("GET", "/api/rhythm/settings"): "member: the caller's own daily-rhythm choice and whether Telegram reaches the caller's own chat",
     ("PUT", "/api/rhythm/settings"): S_OWN_PREFS,
@@ -802,6 +804,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/signals/day-one/refresh"): "trader",
     ("DELETE", "/api/signals/day-one"): "trader",
     ("GET", "/api/status"): P_STATUS_PAGE,
+    ("GET", "/api/status/sessions"): ("public: AUD-T8 uptime per market session from the worker's own samples, the SLO targets and "
+                                      "the degradation notice - platform-wide only, no user, organisation or price (rate limited)"),
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
     ("GET", "/api/strategies/{strategy_id}"): P_STRATEGY_CATALOGUE,
     ("POST", "/api/strategies/{strategy_id}/chart-run"): P_STRATEGY_CATALOGUE,

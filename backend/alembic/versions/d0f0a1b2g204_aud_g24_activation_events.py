@@ -3,7 +3,7 @@ behind atp_activation_total{step}). Backfills the steps that existing rows alrea
 paper trade) so a person who took them before this release is not counted again.
 
 Revision ID: d0f0a1b2g204
-Revises: d0f0a1b2c3d7
+Revises: d0f0a1b2c3d8
 Create Date: 2026-10-29 12:00:00
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'd0f0a1b2g204'
-down_revision: Union[str, Sequence[str], None] = 'd0f0a1b2c3d7'
+down_revision: Union[str, Sequence[str], None] = 'd0f0a1b2c3d8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 ROLLBACK_SAFE = True     # Z11: additive - a new table the previous release never reads

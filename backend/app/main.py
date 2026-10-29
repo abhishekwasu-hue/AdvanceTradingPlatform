@@ -92,6 +92,7 @@ from app.signals_feed.day_one_routes import router as signals_day_one_router
 from app.me.prefs import router as me_prefs_router
 from app.me.account import router as me_account_router
 from app.rhythm.routes import router as rhythm_router
+from app.today.routes import router as today_router
 from app.option_chain.ask_routes import router as oc_ask_router
 from app.option_chain.probe import admin_router as oc_probe_admin_router
 from app.me.setup import router as me_setup_router
@@ -123,6 +124,7 @@ from app.contract_notes.routes import router as contract_notes_router
 from app.observability.middleware import ObservabilityMiddleware
 from app.observability.routes import router as observability_router
 from app.observability.status_page import router as public_status_router
+from app.observability.status_history import router as status_sessions_router
 from app.instruments.routes import router as instrument_master_router
 from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
@@ -352,6 +354,7 @@ app.include_router(exports_router)
 app.include_router(contract_notes_router)
 app.include_router(observability_router)
 app.include_router(public_status_router)  # Z10-e (G7): public status page data (flag public_status_page, off)
+app.include_router(status_sessions_router)  # AUD-T8: uptime per market session, SLO targets, in-app notice (flag status_page, off)
 app.include_router(instrument_master_router)
 app.include_router(market_holidays_router)
 app.include_router(billing_router)
@@ -432,6 +435,7 @@ app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-o
 app.include_router(signals_day_one_router)  # Signals day one: the setup card + his adopted watch (ui_v2 + strategy_templates)
 app.include_router(me_account_router)  # AUD-G1.1: the caller's own data export and "Delete my account"
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
+app.include_router(today_router)      # AUD-T1: My day in one card (flags ui_v2 + my_day_card)
 app.include_router(rhythm_router)     # MO4: the daily rhythm - pre-market brief, pulse, closing wrap, weekly review (flags ui_v2 + daily_rhythm)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
 app.include_router(oc_probe_admin_router)  # B2b: the owner's read-only option chain spot probe (SUPER_ADMIN + two-factor)

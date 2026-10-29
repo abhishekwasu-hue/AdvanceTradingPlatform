@@ -697,6 +697,9 @@ def _bounded_int(name: str, default: int, low: int, high: int) -> int:
 # long one POST may take (connect, write and read each) before it counts as failed and is retried by the outbox.
 ALERT_WEBHOOKS_MAX_PER_USER = _bounded_int("ALERT_WEBHOOKS_MAX_PER_USER", 5, 1, 50)
 ALERT_WEBHOOKS_TIMEOUT_SECONDS = _bounded_int("ALERT_WEBHOOKS_TIMEOUT_SECONDS", 10, 1, 30)
+# AUD-T5 ("Read this chart", flag `read_chart`; app/charts/read_chart.py): how many reads one member may ask for per
+# minute (each runs the chart's structure read, the area replay and, once a day per symbol, the Daily trend read).
+READ_CHART_PER_MINUTE = _bounded_int("READ_CHART_PER_MINUTE", 20, 1, 600)
 
 
 # OI Banner (O2): the collector's slot and the strikes kept either side of the money (wider than any banner window,
@@ -908,6 +911,20 @@ WHY_NO_TRADE_KEEP_BARS = int(os.environ.get("WHY_NO_TRADE_KEEP_BARS", "50"))
 # of the user's newest closed PAPER trades.
 PAPER_REPORT_CARD_MIN_TRADES_BRIER = _bounded_int("PAPER_REPORT_CARD_MIN_TRADES_BRIER", 20, 2, 10_000)
 PAPER_REPORT_CARD_MAX_TRADES = _bounded_int("PAPER_REPORT_CARD_MAX_TRADES", 5000, 100, 100_000)
+# AUD-G2.2 (live push, flag `live_push`; app/live/routes.py): the live stream's push settings, sent to the tab in its
+# `ready` event.
+# - LIVE_PUSH_STALE_SECONDS: a symbol whose last tick is older than this reads "Price delayed" on the chart, and its
+#   view goes back to its timer until ticks come again.
+# - LIVE_PUSH_HEARTBEAT_SECONDS: a `beat` event this often; a tab that hears nothing for two beats treats the push as
+#   down and goes back to its timers.
+# - LIVE_PUSH_BAR_SETTLE_SECONDS: after a tick in a new bar, the candles are read again this much later (the broker's
+#   closed bar settles first).
+# - LIVE_PUSH_MAX_STREAMS_PER_USER: push streams one user holds open at once (per server process); a further tab gets
+#   the stream as before without the push and keeps its timers.
+LIVE_PUSH_STALE_SECONDS = _bounded_int("LIVE_PUSH_STALE_SECONDS", 30, 1, 3600)
+LIVE_PUSH_HEARTBEAT_SECONDS = _bounded_int("LIVE_PUSH_HEARTBEAT_SECONDS", 10, 1, 120)
+LIVE_PUSH_BAR_SETTLE_SECONDS = _bounded_int("LIVE_PUSH_BAR_SETTLE_SECONDS", 5, 0, 120)
+LIVE_PUSH_MAX_STREAMS_PER_USER = _bounded_int("LIVE_PUSH_MAX_STREAMS_PER_USER", 8, 1, 100)
 # AUD-T6 (similar-setup recall, flag `setup_recall`; BR-M3): the words over the user's own similar closed trades (how
 # many closed with a gain / a loss, average R, the most common way the losses closed) appear only from
 # SETUP_RECALL_MIN_SAMPLE matches; below it the card says "not enough history yet" and only lists them. At most

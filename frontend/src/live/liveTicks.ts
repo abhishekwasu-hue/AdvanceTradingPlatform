@@ -24,6 +24,18 @@ export interface HubStatus {
   retry_seconds: number | null;
 }
 export interface TickItem { symbol: string; exchange: string }
+/** AUD-G2.2 (flag `live_push`): the push settings the server sends in the stream's `ready` event (its LIVE_PUSH_*
+ * settings). Absent while the flag is off: then nothing below changes anything. */
+export interface PushConfig { staleAfterMs: number; beatMs: number; barSettleMs: number }
+
+/** The push settings of a `ready` event, or null (flag off, or a malformed value). Pure. */
+export function pushConfigOf(data: unknown): PushConfig | null {
+  const p = (data as { push?: Record<string, unknown> } | null)?.push;
+  if (!p || typeof p !== "object") return null;
+  const stale = Number(p.stale_after_s), beat = Number(p.beat_s), settle = Number(p.bar_settle_s ?? 0);
+  if (!(stale > 0) || !(beat > 0) || !(settle >= 0)) return null;
+  return { staleAfterMs: stale * 1000, beatMs: beat * 1000, barSettleMs: settle * 1000 };
+}
 
 export const MAX_TAB_SYMBOLS = 50;
 export const REGISTER_DEBOUNCE_MS = 400;
@@ -57,6 +69,11 @@ export class LiveTicksStore {
   private statusRead = false;
   status: HubStatus | null = null;
   streamDownSince: number | null = null;
+  /** AUD-G2.2: the push settings of the stream's last `ready` (null: no push), when this tab last heard the stream,
+   * and when each symbol's last tick arrived (this browser's clock). */
+  push: PushConfig | null = null;
+  lastHeardAt: number | null = null;
+  private seenAt = new Map<string, number>();
 
   constructor(private readonly put: Put = liveTicksApi.put, private readonly read: Read = liveTicksApi.status,
               private readonly now: () => number = () => Date.now()) {}
@@ -145,9 +162,33 @@ export class LiveTicksStore {
     this.statusListeners.forEach((l) => l());
   }
 
+  /** AUD-G2.2: the push is live - the server said so in `ready`, this tab's stream is up and was heard within two
+   * heartbeats. While it is not, every view keeps (or goes back to) its own timer. */
+  pushLive(now: number = this.now()): boolean {
+    const p = this.push;
+    return p !== null && this.streamDownSince === null && this.lastHeardAt !== null && now - this.lastHeardAt <= 2 * p.beatMs;
+  }
+
+  /** When this tab got `symbol`'s last tick (this browser's clock), if any. */
+  tickSeenAt(symbol: string, exchange: string): number | undefined {
+    return this.seenAt.get(tickKey(symbol, exchange));
+  }
+
+  /** AUD-G2.2: the push is live and `symbol` had a tick within the tick-age limit: its view needs no poll now. */
+  tickFresh(symbol: string, exchange: string, now: number = this.now()): boolean {
+    if (!this.pushLive(now)) return false;
+    const at = this.seenAt.get(tickKey(symbol, exchange));
+    return at !== undefined && now - at <= (this.push as PushConfig).staleAfterMs;
+  }
+
   /** One event of the live stream. */
   handle(event: LiveDataEvent, data: unknown) {
-    if (event === "ticks") {
+    if (event !== "stream") this.lastHeardAt = this.now();
+    if (event === "ready") {
+      const before = this.push;
+      this.push = pushConfigOf(data);
+      if ((before === null) !== (this.push === null)) this.statusListeners.forEach((l) => l());
+    } else if (event === "ticks") {
       const items = (data as { items?: unknown })?.items;
       if (!Array.isArray(items)) return;
       for (const raw of items) {
@@ -156,6 +197,7 @@ export class LiveTicksStore {
         const tick: LiveTick = { symbol: t.symbol, exchange: t.exchange, ltp: t.ltp, ts: String(t.ts ?? "") };
         const key = tickKey(tick.symbol, tick.exchange);
         this.latest.set(key, tick);
+        this.seenAt.set(key, this.now());
         this.tickListeners.get(key)?.forEach((l) => l(tick));
       }
     } else if (event === "hub") {

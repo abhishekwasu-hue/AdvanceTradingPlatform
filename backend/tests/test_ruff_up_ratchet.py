@@ -20,12 +20,12 @@ import pytest
 BACKEND = Path(__file__).resolve().parents[1]
 PATHS = ("app", "tests", "evals")            # as the CI lint job: `ruff check app tests evals`
 
-# ruff 0.16.10 (the CI pin), recorded on the AUD-G1.6 branch. Total 19,660.
+# ruff 0.16.10 (the CI pin), recorded on the AUD-G1.6 branch, re-taken when it merged main on 30 Oct (after T5 and G2.2). Total 19,695.
 BASELINE = {
-    "UP006": 9655,   # non-pep585-annotation: List[int] -> list[int]
-    "UP045": 6397,   # non-pep604-annotation-optional: Optional[X] -> X | None
-    "UP035": 1818,   # deprecated-import: typing.List / Dict / Callable ...
-    "UP017": 1452,   # datetime-timezone-utc: timezone.utc -> datetime.UTC
+    "UP006": 9669,   # non-pep585-annotation: List[int] -> list[int]
+    "UP045": 6411,   # non-pep604-annotation-optional: Optional[X] -> X | None
+    "UP035": 1820,   # deprecated-import: typing.List / Dict / Callable ...
+    "UP017": 1457,   # datetime-timezone-utc: timezone.utc -> datetime.UTC
     "UP037": 196,    # quoted-annotation
     "UP007": 60,     # non-pep604-annotation-union: Union[X, Y] -> X | Y
     "UP042": 57,     # replace-str-enum

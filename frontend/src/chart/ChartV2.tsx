@@ -37,6 +37,8 @@ export interface ChartV2Props {
   /** UI2-4e: the market state of this chart's venue (null: not known). Given, the chart shows the "Live" / "Price
    * delayed" chip while it has a live price and the market is not closed; left out, no chip. */
   marketOpen?: boolean | null;
+  /** AUD-G2.2 (flag `live_push`): the chip reads the age of this symbol's last pushed tick while the push is live. */
+  livePush?: boolean;
   /** UI2-4e: levels to mark (a signal's entry, stop and target). */
   levels?: readonly LevelLine[];
   /** Review PR 3: markers on the bars (a backtest's entries and exits); each snaps to the bar at or before its time. */
@@ -66,7 +68,7 @@ const NO_MARKERS: readonly ChartMarker[] = [];
 
 export default function ChartV2({
   candles, timeframe, symbol, exchange = "NSE", chartType = "candles", prefs = DEFAULT_CHART_PREFS, overlays = NO_OVERLAYS, live,
-  marketOpen, levels = NO_LEVELS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, className = "h-[480px]",
+  marketOpen, livePush = false, levels = NO_LEVELS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, className = "h-[480px]",
 }: ChartV2Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<HTMLDivElement>(null);
@@ -129,7 +131,7 @@ export default function ChartV2({
       <div ref={plotRef} className="h-full w-full" />
       {(overlays.length > 0 || (marketOpen !== undefined && !!live) || readout) && (
         <div className="pointer-events-none absolute left-space-2 top-space-2 z-10 flex flex-wrap items-center gap-x-space-3 gap-y-space-1">
-          {marketOpen !== undefined && <span className="pointer-events-auto empty:hidden"><LiveChip live={live} marketOpen={marketOpen} /></span>}
+          {marketOpen !== undefined && <span className="pointer-events-auto empty:hidden"><LiveChip live={live} marketOpen={marketOpen} push={livePush && symbol ? { symbol, exchange } : null} /></span>}
           {overlays.length > 0 && (
             // The price lines' legend (UI2-4b2), in their chart colours; the lower panes name themselves on the canvas.
             <ul aria-label="Price lines" data-chart-legend className="flex flex-wrap gap-x-space-3 text-t12" style={{ color: "rgb(var(--chart-text))" }}>

@@ -15,6 +15,14 @@ so here data does ride the stream - for the symbols the tab registered (`PUT /ap
 update per symbol per second, from the user's own broker connection only) and a `hub` event when that connection's
 state changes (live / reconnecting / renew needed), in plain words. `GET /api/live/hub` gives the state on page load.
 Flag off: the stream is exactly as before and the two routes answer 404.
+
+AUD-G2.2 (flag `live_push`, with `ui_v2` + `data_hub`; OFF by default): the push. The `ready` event of a tab's stream
+then carries `push` - the tick-age limit, the heartbeat and the bar settle time (settings LIVE_PUSH_*) - and the
+heartbeat is a `beat` event the tab can hear (a comment line is invisible to it), so the tab knows it may rely on the
+ticks and stops its price timers; it goes back to them when it hears nothing for two beats. The ticks are the same
+`ticks` events as above: the caller's own broker connection only, the tab's registered symbols only (at most 50). One
+user holds at most LIVE_PUSH_MAX_STREAMS_PER_USER push streams at once per process; a further tab gets the stream as
+before without `push`. The slot is given back when the stream ends (time up, the tab closed or disconnected).
 """
 from __future__ import annotations
 
@@ -76,36 +84,68 @@ def _event(name: str, data: dict) -> bytes:
     return f"event: {name}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n".encode()
 
 
+# AUD-G2.2: open push streams per user in this process (the bound of LIVE_PUSH_MAX_STREAMS_PER_USER).
+_push_streams: Dict[int, int] = {}
+
+
+def _take_push_slot(user_id: int) -> bool:
+    from app.core.config import LIVE_PUSH_MAX_STREAMS_PER_USER
+    held = _push_streams.get(user_id, 0)
+    if held >= LIVE_PUSH_MAX_STREAMS_PER_USER:
+        return False
+    _push_streams[user_id] = held + 1
+    return True
+
+
+def _drop_push_slot(user_id: int) -> None:
+    left = _push_streams.get(user_id, 0) - 1
+    if left > 0:
+        _push_streams[user_id] = left
+    else:
+        _push_streams.pop(user_id, None)
+
+
 async def events(tenant_id: int, disconnected: Callable[[], Awaitable[bool]], *, max_seconds: float = STREAM_SECONDS,
-                 poll_seconds: float = POLL_SECONDS, heartbeat_seconds: float = HEARTBEAT_SECONDS, feed: Any = None) -> AsyncIterator[bytes]:
+                 poll_seconds: float = POLL_SECONDS, heartbeat_seconds: float = HEARTBEAT_SECONDS, feed: Any = None,
+                 push: Optional[Dict[str, Any]] = None, push_user: Optional[int] = None) -> AsyncIterator[bytes]:
     """The stream body: `ready`, then one event per topic whose signature changed, a heartbeat comment, and `bye`
     when the stream's time is up (the client reconnects). With a data-hub `feed` (TM-12) also its `ticks` / `hub`
-    events each second; a failing feed never ends the stream."""
-    factory = _factory()
-    started = last_beat = time.monotonic()
-    previous: Optional[Dict[str, Tuple]] = None
-    yield _event("ready", {"retry_ms": 2000})
-    while time.monotonic() - started < max_seconds:
-        if await disconnected():
-            return
-        async with factory() as session:
-            current = await signature(session, tenant_id)
-        if previous is not None:
-            for topic, value in current.items():
-                if value != previous.get(topic):
-                    yield _event(topic, {"changed": True})
-        previous = current
-        if feed is not None:
-            try:
-                for name, data in await feed.poll():
-                    yield _event(name, data)
-            except Exception:  # noqa: BLE001 - prices are extra: the reload signals keep flowing
-                logger.debug("live ticks feed failed", exc_info=True)
-        if time.monotonic() - last_beat >= heartbeat_seconds:
-            last_beat = time.monotonic()
-            yield b": ping\n\n"
-        await asyncio.sleep(poll_seconds)
-    yield _event("bye", {"reconnect": True})
+    events each second; a failing feed never ends the stream. With `push` (AUD-G2.2) and a free slot for `push_user`:
+    `ready` carries it and the heartbeat is a `beat` event; the slot is given back however the stream ends."""
+    held = False
+    if push is not None and push_user is not None:
+        held = _take_push_slot(push_user)
+    if not held:
+        push = None
+    try:
+        factory = _factory()
+        started = last_beat = time.monotonic()
+        previous: Optional[Dict[str, Tuple]] = None
+        yield _event("ready", {"retry_ms": 2000, **({"push": push} if push is not None else {})})
+        while time.monotonic() - started < max_seconds:
+            if await disconnected():
+                return
+            async with factory() as session:
+                current = await signature(session, tenant_id)
+            if previous is not None:
+                for topic, value in current.items():
+                    if value != previous.get(topic):
+                        yield _event(topic, {"changed": True})
+            previous = current
+            if feed is not None:
+                try:
+                    for name, data in await feed.poll():
+                        yield _event(name, data)
+                except Exception:  # noqa: BLE001 - prices are extra: the reload signals keep flowing
+                    logger.debug("live ticks feed failed", exc_info=True)
+            if time.monotonic() - last_beat >= heartbeat_seconds:
+                last_beat = time.monotonic()
+                yield _event("beat", {}) if push is not None else b": ping\n\n"
+            await asyncio.sleep(poll_seconds)
+        yield _event("bye", {"reconnect": True})
+    finally:
+        if held and push_user is not None:
+            _drop_push_slot(push_user)
 
 
 SID_RE = r"^[A-Za-z0-9_-]{8,64}$"
@@ -132,6 +172,18 @@ async def _feed_for(user: User, sid: Optional[str]) -> Any:
     return BrowserFeed(factory, user.id, sid)
 
 
+async def _push_for(user: User) -> Optional[Dict[str, Any]]:
+    """AUD-G2.2: the push settings for a tab that has a data-hub feed, or None while `live_push` is off."""
+    from app.core import config
+    from app.platform.controls import flag_enabled
+    async with _factory()() as session:
+        if not await flag_enabled(session, "live_push", user.tenant_id):
+            return None
+    from app.market_data.hub import BROWSER_SYMBOL_CAP
+    return {"stale_after_s": config.LIVE_PUSH_STALE_SECONDS, "beat_s": config.LIVE_PUSH_HEARTBEAT_SECONDS,
+            "bar_settle_s": config.LIVE_PUSH_BAR_SETTLE_SECONDS, "max_symbols": BROWSER_SYMBOL_CAP}
+
+
 @router.get("/stream")
 async def live_stream(request: Request, sid: Optional[str] = Query(default=None, pattern=SID_RE),
                       user: User = Depends(get_current_user)) -> StreamingResponse:
@@ -143,6 +195,9 @@ async def live_stream(request: Request, sid: Optional[str] = Query(default=None,
     feed = await _feed_for(user, sid)
     if feed is not None:
         extra["feed"] = feed
+        push = await _push_for(user)
+        if push is not None:
+            extra.update(push=push, push_user=user.id, heartbeat_seconds=float(push["beat_s"]))
     return StreamingResponse(
         events(user.tenant_id, request.is_disconnected, **extra),
         media_type="text/event-stream",

@@ -413,6 +413,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
     ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
+    ("GET", "/api/charts/read"): "member: the caller's organisation's stored zones and his own private bars only (else the shared lake); read-only (AUD-T5)",
     ("POST", "/api/screener/board/context"): S_COMPUTE,          # U5 D3a: reference data + shared closes for the caller's symbols; stores nothing
     ("GET", "/api/charts/layers/trades"): "member",             # N4 CH4a: the caller's OWN PAPER trades only (user + organisation)
     ("GET", "/api/charts/contracts/basis"): "member",       # N4 CH4c: shared lake reference data (futures + spot closes)

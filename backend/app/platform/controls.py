@@ -482,6 +482,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
     # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.
     "plan_limits_v2": "Plan limits v2: watchlists, symbols per screener run, reports, report schedules and Strategy Lab limits per plan",
+    # AUD-T3 (owner audit 28 Oct; app/deployments/why.py; needs `ui_v2`): the "Why no trade" timeline on a bot's card -
+    # the last closed bars with the reason it did or did not trade. Information only: the worker writes the log either way
+    # and never reads it. OFF: GET /api/deployments/{id}/why answers 404 and the card is hidden.
+    "why_no_trade": "Why no trade: the last closed bars of a bot with the reason it did or did not trade",
     # New flags: add ONE entry, in its alphabetical position (not at the end), so parallel branches do not conflict on
     # the same line. A registered flag is OFF by default automatically (DEFAULT_OFF_FLAGS below is computed).
 }

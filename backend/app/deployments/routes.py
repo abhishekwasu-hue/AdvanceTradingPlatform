@@ -712,6 +712,22 @@ async def get_deployment(
     return DeploymentResponse.from_record(record, counts.get(record.id, 0))
 
 
+@router.get("/{deployment_id}/why")
+async def why_no_trade(
+    deployment_id: int, limit: int = Query(20, ge=1, le=50),
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> dict:
+    """AUD-T3: the bot's last closed bars with the reason it did or did not trade (newest first). Behind `why_no_trade`
+    and `ui_v2` (404 while off); the organisation's own deployments only."""
+    from app.deployments import why
+    from app.platform.controls import flag_enabled
+    for name in ("ui_v2", "why_no_trade"):
+        if not await flag_enabled(session, name, user.tenant_id):
+            raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": name})
+    record = await _get_owned_or_404(deployment_id, user, session)
+    return {"deployment_id": record.id, "rows": await why.recent(session, record.id, limit)}
+
+
 @router.post("/{deployment_id}/pause", response_model=DeploymentResponse)
 async def pause_deployment(
     deployment_id: int, request: DeploymentActionRequest = DeploymentActionRequest(),

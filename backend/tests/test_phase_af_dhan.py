@@ -122,7 +122,17 @@ def test_profile_symbols_quotes_and_candles():
     assert len(daily) == 1 and daily[0].close == 26050
 
 
-def test_orders_books_funds_chain_and_errors():
+class _Before28Oct(date):
+    """The fixture's nearest expiry is 28 Oct 2026: the chain's default expiry is read as of a day before it (the test
+    used the real clock and broke once that date passed)."""
+    @classmethod
+    def today(cls):
+        return cls(2026, 10, 27)
+
+
+def test_orders_books_funds_chain_and_errors(monkeypatch):
+    import app.brokers.dhan as dhan_module
+    monkeypatch.setattr(dhan_module, "date", _Before28Oct)
     server = _Server()
     broker = _broker(server)
     placed = run(broker.place_stop_loss_order("RELIANCE", "NSE", OrderSide.SELL, 10, 2950.0, tag="ALGO123-xyz-toolongtag-cut"))

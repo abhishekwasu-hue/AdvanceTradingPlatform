@@ -10,6 +10,7 @@ import { CardV2, ChipV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2
 import type { PageProps } from "../routes";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, StateChipV2 } from "../trading/PartsV2";
 import type { CustomStrategyResponse, Deployment, PortfolioExposure, StrategyInfo, TradeRecord } from "../types";
+import { BotWhyV2 } from "./BotWhyV2";
 import { BotPositionsV2, botPositions } from "./BotPositionsV2";
 import { DEFAULTS_PATH, appliedLine, useTradingDefaults, type TradingDefaults } from "../settings/tradingDefaults";
 import { Chip } from "../ui/Chip";
@@ -199,7 +200,8 @@ export default function PaperBotV2(_props: PageProps) {
                   onAct={(kind) => void act(bot, kind)}
                   held={botPositions(positions, bot.id).length ? (
                     <BotPositionsV2 positions={botPositions(positions, bot.id)} exposure={exposure} canTrade={canChange} onExit={exitBot} />
-                  ) : undefined} />
+                  ) : undefined}
+                  why={features.on("why_no_trade") ? <BotWhyV2 botId={bot.id} /> : undefined} />
               ))}
             </ul>
           )}
@@ -252,11 +254,13 @@ export default function PaperBotV2(_props: PageProps) {
   );
 }
 
-export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel, onAct, held }: {
+export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel, onAct, held, why }: {
   bot: Deployment; name: string; busy: boolean; disabled: boolean; confirming: boolean;
   onAsk: () => void; onCancel: () => void; onAct: (kind: "pause" | "resume" | "stop") => void;
   /** UI-28 U2.4: the bot's own open positions (P&L, legs, exit), when it has any. */
   held?: ReactNode;
+  /** AUD-T3: "Why no trade?" - the last closed bars with their reasons (flag `why_no_trade`). */
+  why?: ReactNode;
 }) {
   const state = botState(bot);
   const status = botStatusText(bot);
@@ -280,6 +284,7 @@ export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel,
             {bot.open_positions > 0 && !held && <span>{bot.open_positions} open {bot.open_positions === 1 ? "trade" : "trades"}</span>}
           </p>
           {held}
+          {state !== "stopped" && why}
         </div>
         {state !== "stopped" && !confirming && (
           <div className="flex shrink-0 gap-space-2">

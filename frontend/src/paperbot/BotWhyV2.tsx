@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { WhyRow } from "../types";
 import { Chip } from "../ui/Chip";
 import { formatDateTimeIST } from "../ui/format";
+import { SkeletonRows } from "../components/primitives";
 
 /**
  * AUD-T3 (owner audit 28 Oct; flag `why_no_trade`): "Why no trade?" on a bot's row - its last closed bars, newest first,
@@ -40,7 +41,7 @@ export function WhyList({ rows, failed = false }: { rows: WhyRow[] | null; faile
   return (
     <div className="mt-space-2 text-t13" data-why-list>
       {failed ? <p className="text-fg-muted">Could not load the reasons. Try again later.</p>
-        : !rows ? <p className="text-fg-muted" aria-busy="true">Loading…</p>
+        : !rows ? <SkeletonRows rows={2} label="Loading" />
         : rows.length === 0 ? <p className="text-fg-muted">No bar read yet. Reasons appear once the bot has looked at a closed bar.</p>
         : (
           <ol className="space-y-space-2" aria-label="Last bars, newest first">

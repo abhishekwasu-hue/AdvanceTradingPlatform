@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { fetchOverview, type MarketGroup, type MarketsOverview } from "../markets/model";
 import { Signed } from "../ui/numbersFirst";
 import { CardV2 } from "./CardV2";
+import { Freshness } from "../ui/Freshness";
 
 /**
  * TD-1 (owner, 25 Oct; UX-10 wave 1, Today): "Your week" as small tiles instead of sentences - NIFTY 50 week %,
@@ -37,7 +38,7 @@ export function weekTiles(o: MarketsOverview | null): WeekTile[] {
 }
 
 
-export function WeekTilesView({ tiles }: { tiles: readonly WeekTile[] }) {
+export function WeekTilesView({ tiles, asOf = null, stale = false }: { tiles: readonly WeekTile[]; asOf?: string | null; stale?: boolean }) {
   if (tiles.length === 0) return null;
   return (
     <CardV2 title="This week" more={{ label: "Sectors", to: "/markets?period=week" }} testId="week-tiles">
@@ -51,6 +52,7 @@ export function WeekTilesView({ tiles }: { tiles: readonly WeekTile[] }) {
           </Link>
         ))}
       </div>
+      <Freshness at={asOf} stale={stale} className="mt-space-2 block" />
     </CardV2>
   );
 }
@@ -64,5 +66,5 @@ export function WeekTilesV2({ enabled }: { enabled: boolean }) {
     fetchOverview().then((o) => { if (live) setOverview(o); }, () => { if (live) setOverview(null); });
     return () => { live = false; };
   }, [enabled]);
-  return enabled ? <WeekTilesView tiles={weekTiles(overview)} /> : null;
+  return enabled ? <WeekTilesView tiles={weekTiles(overview)} asOf={overview?.as_of ?? null} stale={overview?.stale ?? false} /> : null;
 }

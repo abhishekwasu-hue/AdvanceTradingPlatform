@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, CollapsibleCard } from "../components/ui";
-import { PageHeader } from "../components/primitives";
+import { PageHeader, SkeletonRows } from "../components/primitives";
 import {
   NEWS_EVENT_CATEGORY_LABELS,
   defaultNewsEvent,
@@ -179,7 +179,7 @@ export default function NewsEventsPage() {
 
       <Card title={`Events (${events.length})`}>
         {loading ? (
-          <div className="text-sm text-fg-muted py-2">Loading…</div>
+          <SkeletonRows rows={2} label="Loading" />
         ) : events.length === 0 ? (
           <div className="text-sm text-fg-muted py-2">No events match this filter.</div>
         ) : (

@@ -2,6 +2,7 @@ import { CheckCircle2, CircleAlert, CircleDot, CircleOff, Undo2, Zap } from "luc
 import { useEffect, useState } from "react";
 import { request } from "../api/client";
 import { Card } from "../components/ui";
+import { SkeletonRows } from "../components/primitives";
 
 /**
  * Owner decision 23 Oct: "Enable trader features" - one audited, reversible admin action that turns ON every flag a
@@ -121,7 +122,7 @@ export default function TraderPackCard({ onChanged }: { onChanged?: () => void }
           <TraderPackView status={status} busy={busy}
             onEnable={() => void run(traderPackApi.enable, (s) => (s.changed?.length ? `${s.changed.length} features turned on.` : "Everything was already on."))}
             onUndo={() => void run(traderPackApi.undo, (s) => (s.restored?.length ? `${s.restored.length} switches put back as they were.` : "Nothing to undo."))} />
-        ) : !error && <p className="text-xs text-fg-muted">Loading…</p>}
+        ) : !error && <SkeletonRows rows={2} label="Loading" />}
       </div>
     </Card></div>
   );

@@ -8,6 +8,7 @@ import { Signed } from "../ui/numbersFirst";
 import { position } from "../ui/RangeBar";
 import { daysText, formatIv, formatStrike } from "./model";
 import type { ChainSummary } from "./types";
+import { Skeleton } from "../components/primitives";
 
 /**
  * OC1: the summary cards above the chain - spot (live), futures, ATM strike, PCR (OI), max pain, ATM IV and days to
@@ -84,7 +85,7 @@ export function summaryCards(s: ChainSummary | null, expiry: string | null, spot
 function Value({ loading, num, children }: { loading: boolean; num?: number | null; children: ReactNode }) {
   // UX-7: the spot card's number shows a short up / down tint when the price changes.
   const flash = useTickFlash(loading ? null : num);
-  if (loading) return <div className="mt-space-2 h-6 w-20 animate-pulse rounded-control bg-surface-2" />;
+  if (loading) return <Skeleton className="mt-space-2 h-6 w-20" />;
   return <div data-flash={flash ?? undefined} className={`-mx-space-1 mt-space-1 rounded-control px-space-1 font-tabular text-t18 font-semibold text-fg transition-colors duration-base md:text-t20 ${flashClass(flash)}`}>{children}</div>;
 }
 

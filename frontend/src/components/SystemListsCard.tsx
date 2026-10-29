@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ListChecks, RefreshCw } from "lucide-react";
 import { request } from "../api/client";
 import { Card } from "./ui";
+import { SkeletonRows } from "./primitives";
 
 /**
  * WL1 (handover item 4), the admin side of the read-only system watchlists: when they were last rebuilt, what changed
@@ -129,7 +130,7 @@ export default function SystemListsCard() {
   return (
     <Card title="System watchlists">
       {error && <div className="text-xs text-down mb-2">{error}</div>}
-      {status ? <SystemListsView status={status} onRefresh={refresh} busy={busy} /> : !error && <p className="text-xs text-fg-muted">Loading…</p>}
+      {status ? <SystemListsView status={status} onRefresh={refresh} busy={busy} /> : !error && <SkeletonRows rows={2} label="Loading" />}
     </Card>
   );
 }

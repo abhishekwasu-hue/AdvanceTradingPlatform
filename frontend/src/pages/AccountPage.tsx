@@ -19,6 +19,7 @@ import { useFeatures } from "../ui/useFeatures";
 import { supportAccess, type SupportAccess } from "../api/viewAs";
 import { formatDateTimeIST } from "../ui/format";
 import MyDataCardV2 from "../settings/MyDataCardV2";
+import { SkeletonRows } from "../components/primitives";
 
 /** The signed-in trader's account: e-mail, two-factor, password, sessions. Signed out, App.tsx shows the sign-in screen
  * before any page; this page shows the same screen should it ever render without a user (UX1). */
@@ -220,7 +221,7 @@ export function SupportAccessCard() {
     <Card title="Support access">
       <div data-support-access className="space-y-2 text-xs">
         <p className="text-fg-muted">ATP support can open a read-only view of your account to help you. Nothing can be changed, placed or downloaded during it, and every view is listed here.</p>
-        {views === null ? <p className="text-fg-muted" aria-busy="true">Loading…</p> : views.length === 0 ? (
+        {views === null ? <SkeletonRows rows={2} label="Loading" /> : views.length === 0 ? (
           <p className="text-fg">Support has never viewed your account.</p>
         ) : (
           <ul className="divide-y divide-border">

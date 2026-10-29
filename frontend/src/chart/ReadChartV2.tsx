@@ -51,7 +51,7 @@ export function ReadChartBody({ read }: { read: ReadChart }) {
         </ul>
         {read.answer_key && <p>{read.answer_key.words}</p>}
         <p>
-          Read as of the last closed bar{asOf ? ` (${asOf} IST)` : ""}; a bar still forming is not read. Areas are the stored areas near
+          Read from the last closed bar{asOf ? ` (${asOf} IST)` : ""}; a bar still forming is not read. Areas are the stored areas near
           the price, each from its own timeframe. The pullback state is the Daily trend as of the previous close. The commitment candle
           is the newest one at an area since the areas were stored.
         </p>

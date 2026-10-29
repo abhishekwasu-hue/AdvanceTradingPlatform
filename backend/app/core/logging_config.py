@@ -22,6 +22,11 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+try:  # AUD-G2.1: the trace id in each JSON log line when a span is active (app/observability/tracing.py)
+    from opentelemetry import trace as _otel_trace
+except Exception:  # noqa: BLE001 - the package is optional; without it no trace ids are added
+    _otel_trace = None
+
 _context: contextvars.ContextVar[Optional[Dict[str, Any]]] = contextvars.ContextVar("log_context", default=None)
 
 
@@ -89,9 +94,24 @@ class JsonFormatter(logging.Formatter):
         }
         for key, value in (_context.get() or {}).items():
             payload[key] = redact_personal(value) if isinstance(value, str) else value
+        payload.update(trace_ids())
         if record.exc_info:
             payload["exc_info"] = redact_personal(self.formatException(record.exc_info))
         return json.dumps(payload, default=str)
+
+
+def trace_ids() -> Dict[str, str]:
+    """AUD-G2.1: {"trace_id", "span_id"} of the active span (hex, as tracing backends show them); {} when tracing is off
+    or no span is active - so a log line can be found from its trace and the other way round."""
+    if _otel_trace is None:
+        return {}
+    try:
+        ctx = _otel_trace.get_current_span().get_span_context()
+    except Exception:  # noqa: BLE001 - a log line is never lost to tracing
+        return {}
+    if not ctx.is_valid:
+        return {}
+    return {"trace_id": format(ctx.trace_id, "032x"), "span_id": format(ctx.span_id, "016x")}
 
 
 # GS-1: OAuth redirects carry one-time credentials in the query (`code`, `state`; some providers `id_token`,

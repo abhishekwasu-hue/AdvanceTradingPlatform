@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, union_all
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,9 +78,18 @@ def _overrides(row: Optional[OIBannerSettingRecord]) -> Dict:
     return value if isinstance(value, dict) else {}
 
 
-async def settings_for(session: AsyncSession, tenant_id: int, underlying: str) -> OIRegimeSettings:
-    """Platform defaults, then the tenant's "*" row, then the underlying's row."""
-    default_row, own_row = await settings_rows(session, tenant_id, underlying)
+async def settings_rows_many(session: AsyncSession, tenant_id: int, underlyings: Sequence[str]
+                             ) -> Dict[str, Tuple[Optional[OIBannerSettingRecord], Optional[OIBannerSettingRecord]]]:
+    """AUD-G2.1: `settings_rows` for several underlyings in ONE query (the tenant's "*" row and each underlying's row)."""
+    names = list(dict.fromkeys(underlyings))
+    rows = {r.underlying: r for r in await session.scalars(select(OIBannerSettingRecord).where(
+        OIBannerSettingRecord.tenant_id == tenant_id, OIBannerSettingRecord.underlying.in_([DEFAULT_KEY, *names])))}
+    return {u: (rows.get(DEFAULT_KEY), rows.get(u)) for u in names}
+
+
+def resolve_settings(tenant_id: int, underlying: str, default_row: Optional[OIBannerSettingRecord],
+                     own_row: Optional[OIBannerSettingRecord]) -> OIRegimeSettings:
+    """Platform defaults, then the tenant's "*" row, then the underlying's row (rows already read)."""
     try:
         return oi_regime.resolve_settings(platform_layer(), _overrides(default_row), _overrides(own_row))
     except ValueError as exc:                     # a stored override no longer valid: fall back, never fail the read
@@ -88,10 +97,19 @@ async def settings_for(session: AsyncSession, tenant_id: int, underlying: str) -
         return oi_regime.resolve_settings(platform_layer())
 
 
-async def enabled_underlyings(session: AsyncSession) -> List[Tuple[int, str, str]]:
-    """(tenant_id, underlying, exchange) for every tenant/underlying the collector should follow."""
-    rows = await session.scalars(select(OIBannerSettingRecord).where(OIBannerSettingRecord.enabled.is_(True),
-                                                                     OIBannerSettingRecord.underlying != DEFAULT_KEY))
+async def settings_for(session: AsyncSession, tenant_id: int, underlying: str) -> OIRegimeSettings:
+    """Platform defaults, then the tenant's "*" row, then the underlying's row."""
+    default_row, own_row = await settings_rows(session, tenant_id, underlying)
+    return resolve_settings(tenant_id, underlying, default_row, own_row)
+
+
+async def enabled_underlyings(session: AsyncSession, tenant_id: Optional[int] = None) -> List[Tuple[int, str, str]]:
+    """(tenant_id, underlying, exchange) for every tenant/underlying the collector should follow (`tenant_id`: one
+    organisation's only - the dashboard banners read no other organisation's rows)."""
+    query = select(OIBannerSettingRecord).where(OIBannerSettingRecord.enabled.is_(True), OIBannerSettingRecord.underlying != DEFAULT_KEY)
+    if tenant_id is not None:
+        query = query.where(OIBannerSettingRecord.tenant_id == tenant_id)
+    rows = await session.scalars(query)
     return [(r.tenant_id, r.underlying, r.exchange) for r in rows]
 
 
@@ -214,20 +232,34 @@ class SlotChain:
 
 async def day_chains(session: AsyncSession, underlying: str, day: date, *, tenant_id: int) -> List[SlotChain]:
     """One organisation's stored slots of `day`, oldest first (TM-7: its own rows only)."""
+    return (await day_chains_many(session, [underlying], day, tenant_id=tenant_id))[underlying]
+
+
+async def day_chains_many(session: AsyncSession, underlyings: Sequence[str], day: date, *, tenant_id: int) -> Dict[str, List[SlotChain]]:
+    """AUD-G2.1: `day_chains` for several underlyings in a fixed number of queries (the snapshots, then all their strikes)."""
+    names = list(dict.fromkeys(underlyings))
+    out: Dict[str, List[SlotChain]] = {u: [] for u in names}
+    if not names:
+        return out
     scope = await tenant_scope(session, OISnapshotRecord.tenant_id, tenant_id)
-    snaps = _one_per_slot(list(await session.scalars(select(OISnapshotRecord).where(
-        scope, OISnapshotRecord.underlying == underlying, OISnapshotRecord.trade_date == day).order_by(OISnapshotRecord.slot_start))))
-    if not snaps:
-        return []
-    by_snap: Dict[int, List[OptionChainRow]] = {s.id: [] for s in snaps}
+    raw: Dict[str, List[OISnapshotRecord]] = {u: [] for u in names}
+    for snap in await session.scalars(select(OISnapshotRecord).where(
+            scope, OISnapshotRecord.underlying.in_(names), OISnapshotRecord.trade_date == day).order_by(OISnapshotRecord.slot_start)):
+        raw[snap.underlying].append(snap)
+    snaps = {u: _one_per_slot(raw[u]) for u in names}
+    by_snap: Dict[int, List[OptionChainRow]] = {s.id: [] for u in names for s in snaps[u]}
+    if not by_snap:
+        return out
     for r in await session.scalars(select(StrikeOISnapshotRecord).where(StrikeOISnapshotRecord.snapshot_id.in_(list(by_snap)))
                                    .order_by(StrikeOISnapshotRecord.snapshot_id, StrikeOISnapshotRecord.strike)):
         by_snap[r.snapshot_id].append(OptionChainRow(strike=r.strike, call_oi=r.call_oi, put_oi=r.put_oi, call_ltp=r.call_ltp,
                                                      put_ltp=r.put_ltp, call_iv=r.call_iv, put_iv=r.put_iv))
-    return [SlotChain(_utc(s.slot_start), _utc(s.captured_at), OptionChain(underlying=underlying, expiry=s.expiry.isoformat() if s.expiry else "",
-                                                                         underlying_ltp=s.underlying_price, rows=by_snap[s.id]),
-                      s.future_price, s.future_oi)
-            for s in snaps]
+    for u in names:
+        out[u] = [SlotChain(_utc(s.slot_start), _utc(s.captured_at), OptionChain(underlying=u, expiry=s.expiry.isoformat() if s.expiry else "",
+                                                                               underlying_ltp=s.underlying_price, rows=by_snap[s.id]),
+                            s.future_price, s.future_oi)
+                  for s in snaps[u]]
+    return out
 
 
 @dataclass(frozen=True)
@@ -331,6 +363,24 @@ async def latest_capture(session: AsyncSession, underlying: str, *, tenant_id: i
     return _utc(value) if value else None
 
 
+async def latest_captures(session: AsyncSession, underlyings: Sequence[str], *, tenant_id: int) -> Dict[str, Optional[datetime]]:
+    """AUD-G2.1: `latest_capture` for several underlyings in ONE statement (each underlying's own newest-slot read, joined
+    with UNION ALL, so every part still uses the index)."""
+    names = list(dict.fromkeys(underlyings))
+    out: Dict[str, Optional[datetime]] = {u: None for u in names}
+    if not names:
+        return out
+    scope = await tenant_scope(session, OISnapshotRecord.tenant_id, tenant_id)
+    parts = []
+    for u in names:
+        newest = (select(OISnapshotRecord.underlying, OISnapshotRecord.captured_at).where(scope, OISnapshotRecord.underlying == u)
+                  .order_by(OISnapshotRecord.slot_start.desc()).limit(1).subquery())
+        parts.append(select(newest.c.underlying, newest.c.captured_at))
+    for underlying, captured_at in (await session.execute(parts[0] if len(parts) == 1 else union_all(*parts))).all():
+        out[underlying] = _utc(captured_at) if captured_at else None
+    return out
+
+
 def strike_series(slots: Sequence[SlotChain], settings: OIRegimeSettings) -> List[Dict]:
     """Per-strike OI history for the strikes in the latest slot's window (the per-strike OI chart)."""
     if not slots:
@@ -360,5 +410,5 @@ async def baselines(session: AsyncSession, underlying: str, day: date, *, tenant
 
 
 __all__ = ["collect", "CollectResult", "day_chains", "replay", "entry_json", "staleness", "latest_capture", "strike_series",
-           "baselines", "recent_session_closes", "SessionClose", "settings_for", "enabled_underlyings", "normalise_underlying", "platform_layer", "IST", "DEFAULT_KEY",
+           "baselines", "recent_session_closes", "SessionClose", "settings_for", "settings_rows_many", "resolve_settings", "day_chains_many", "latest_captures", "enabled_underlyings", "normalise_underlying", "platform_layer", "IST", "DEFAULT_KEY",
            "legacy_owner", "tenant_scope"]

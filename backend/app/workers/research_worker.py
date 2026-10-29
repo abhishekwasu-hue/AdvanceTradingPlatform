@@ -45,6 +45,8 @@ async def run_forever(session_factory: async_sessionmaker[AsyncSession], stop: a
 
 async def main() -> None:
     configure_logging()
+    from app.observability import tracing
+    tracing.init("research-worker")   # AUD-G2.1: off unless OTEL_EXPORTER_OTLP_ENDPOINT is set
     from app.db.session import _session_factory
     from app.market_data import shared_candles
     shared_candles.never_wait_on_other_processes()   # LD-10 review: never wait on an API process's candle fill (ADR-0004)

@@ -48,7 +48,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple, cast
 
-from sqlalchemy import Table, func, literal, select, update
+from sqlalchemy import Table, bindparam, func, literal, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.pool import StaticPool
 
@@ -225,6 +225,25 @@ async def widen(session: AsyncSession, trade_id: int, prices: Iterable[float]) -
         high_price=greatest(func.coalesce(col.high_price, hi), hi), low_price=least(func.coalesce(col.low_price, lo), lo)))
 
 
+async def widen_many(session: AsyncSession, prices_by_trade: Dict[int, Iterable[float]]) -> None:
+    """AUD-G2.1: `widen` for many trades in ONE executemany round trip (the same atomic UPDATE per row, so two writers
+    still never lose each other's extreme) - a journal read no longer sends one UPDATE per trade."""
+    params = []
+    for trade_id, prices in prices_by_trade.items():
+        valid = [float(p) for p in prices if p is not None and float(p) > 0]
+        if valid:
+            params.append({"w_trade_id": trade_id, "w_hi": max(valid), "w_lo": min(valid)})
+    if not params:
+        return
+    postgres = session.get_bind().dialect.name == "postgresql"
+    greatest, least = (func.greatest, func.least) if postgres else (func.max, func.min)   # SQLite: max()/min() with 2 args
+    col = ENTRIES.c
+    hi, lo = bindparam("w_hi", type_=Price), bindparam("w_lo", type_=Price)
+    stmt = update(ENTRIES).where(col.trade_id == bindparam("w_trade_id")).values(
+        high_price=greatest(func.coalesce(col.high_price, hi), hi), low_price=least(func.coalesce(col.low_price, lo), lo))
+    await session.execute(stmt, params)
+
+
 def new_entry_values(trade: TradeRecord, source: Optional[str] = None) -> Dict[str, Any]:
     """The columns of a fresh journal entry for `trade` (what the trade row alone can tell at creation)."""
     now = datetime.now(timezone.utc)
@@ -250,8 +269,8 @@ async def ensure_entries(session: AsyncSession, trades: Iterable[TradeRecord], *
     if missing:
         stmt = dialect_insert(session, ENTRIES).on_conflict_do_nothing(index_elements=["trade_id"])
         await session.execute(stmt, missing)
-    for trade in trades:
-        await widen(session, trade.id, trade_prices(trade) + ([float(marks[trade.id])] if marks and trade.id in marks else []))
+    await widen_many(session, {trade.id: trade_prices(trade) + ([float(marks[trade.id])] if marks and trade.id in marks else [])
+                               for trade in trades})
     rows = await session.scalars(select(JournalEntryRecord).where(JournalEntryRecord.trade_id.in_(ids))
                                  .execution_options(populate_existing=True))
     existing = {e.trade_id: e for e in rows}

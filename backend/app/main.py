@@ -903,3 +903,9 @@ def health() -> Dict[str, str]:
 
 # LD-7: a request for a path already resolved skips the scan of every route before its own (app/core/route_cache.py).
 install_route_cache(app)
+
+# AUD-G2.1: OpenTelemetry tracing (API requests, SQL, outgoing httpx calls) - off unless OTEL_EXPORTER_OTLP_ENDPOINT is
+# set (app/observability/tracing.py). Here and not in the lifespan: the middleware stack is built on the first ASGI
+# call (the lifespan's own), so the app is instrumented before that. Never stops the API from starting.
+from app.observability import tracing as _tracing  # noqa: E402
+_tracing.init("api", app=app)

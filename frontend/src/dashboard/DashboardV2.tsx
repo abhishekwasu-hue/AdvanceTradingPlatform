@@ -13,6 +13,7 @@ import { useBigText } from "../theme";
 import { useColourV2 } from "../ui/colourV2";
 import { useIndexSparks } from "./indexSparks";
 import DailyRhythmCardV2 from "../rhythm/DailyRhythmCardV2";
+import MyDayCardV2 from "./MyDayCardV2";
 import { ActiveSignalsV2, OpenPositionsV2, TodaySummaryV2, type Rows } from "./BlocksV2";
 import MarketStripV2 from "./MarketStripV2";
 import {
@@ -35,7 +36,8 @@ import { PAGE_FLAGS } from "../shell/pageFlags";
  * at Settings → Setup). With no broker stored and the card showing, the card takes the gate's place (its first step is
  * "Connect your broker"), so the trader sees one card, not two.
  *
- * Order, top to bottom: greeting, Get started (until its steps are done), market strip, Needs attention, the daily brief
+ * Order, top to bottom: greeting, Get started (until its steps are done), market strip, My day (AUD-T1, flag
+ * `my_day_card`), Needs attention, the daily brief
  * (MO4, flag `daily_rhythm`: before the open / pulse / closing wrap / week, src/rhythm), Open positions, Active signals, Today. Desktop: the strip runs full width, then Needs attention and Open positions on the left (2/3) and
  * Active signals and Today on the right (1/3). Phone: one column in that order.
  *
@@ -132,6 +134,8 @@ export default function DashboardV2(_props: PageProps = {}) {
               and the market strip - open the page; the remaining setup steps follow them. */}
           <MarketStripV2 strip={data.strip} oi={oiLines(dataOf(data.oi))} marketText={strip ? marketLabel(strip.market, now) : null}
             broker={brokerChip(broker, brokerRows)} pnl={todayPnl(exposure)} nowMs={now} sparks={sparks} />
+          {/* AUD-T1: My day in one card, under the market strip (flag my_day_card, off by default). */}
+          {features.on("my_day_card") && <MyDayCardV2 />}
           <GetStartedCardV2 primaryNext={false} />
           {/* Item 1: at the Large / Extra large text sizes the two columns start only on a wider screen (2xl). */}
           <div className={`grid grid-cols-1 gap-space-4 ${big ? "2xl:grid-cols-3 2xl:items-start 2xl:gap-space-6" : "lg:grid-cols-3 lg:items-start lg:gap-space-6"}`}>

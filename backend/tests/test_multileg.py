@@ -295,7 +295,7 @@ def test_deployment_api_accepts_structures_and_previews_legs(monkeypatch):
     assert "iron condor" in body["contract_rules"]
 
     monkeypatch.setattr("app.deployments.routes.build_adapter", lambda record, client=None: _OptionBroker())
-    preview = client.post("/api/deployments/preview-contract", headers=headers, json={
+    preview = client.post("/api/deployments/preview-contract", headers=headers, params={"as_of": TODAY.isoformat()}, json={
         "symbol": "NIFTY 50", "instrument_kind": "OPTION", "option_strategy": "BULL_PUT_SPREAD", "spread_width": 2, "spot": SPOT,
     }).json()
     long_side = preview["structures"]["LONG"]

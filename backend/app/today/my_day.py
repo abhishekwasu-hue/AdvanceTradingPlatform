@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config
 from app.db.models import MarketEventRecord, TradeRecord
+from app.instruments import master
 from app.market_data.calendar import IST, family_holidays, previous_session_close, to_ist, trading_days_until
 
 logger = logging.getLogger(__name__)
@@ -109,11 +110,13 @@ def lake_key_of(name: str, exchange: Optional[str]) -> Optional[str]:
         return None
 
 
-def reference_of(t: TradeRecord) -> Tuple[Optional[float], Optional[str]]:
+def reference_of(t: TradeRecord, master_strike: Optional[float] = None) -> Tuple[Optional[float], Optional[str]]:
     """What the nearest area is measured from: the held strike of an option, else the position's own stop on the
-    underlying (an option's underlying stop, or the position's stop when it is the underlying itself)."""
+    underlying (an option's underlying stop, or the position's stop when it is the underlying itself). `master_strike`:
+    the instrument master's own strike for the contract - used first, since a compact symbol (NIFTY26O0124500CE) runs
+    the date into the strike and the text parser can misread it."""
     if str(t.instrument_kind or "").upper() == "OPTION":
-        strike = strike_of(t.symbol)
+        strike = master_strike if master_strike is not None else strike_of(t.symbol)
         if strike is not None:
             return strike, "strike"
         if t.underlying_stop_loss:
@@ -281,7 +284,8 @@ async def build(session: AsyncSession, me: Viewer, now: datetime) -> Dict[str, A
         names.setdefault(name, key)
         chip = chip_for(t.direction, t.entry_price, t.stop_loss, t.mark_price)
         sessions = trading_days_until(today, t.expiry, holidays) if t.expiry else None
-        ref, frm = reference_of(t)
+        record = await master.find_by_symbol(session, t.symbol or "") if str(t.instrument_kind or "").upper() == "OPTION" else None
+        ref, frm = reference_of(t, float(record.strike) if record is not None and record.strike is not None else None)
         area: Optional[Dict[str, Any]] = None
         if not zones_on or key is None:
             area_line = "Structure areas are not available for this position."

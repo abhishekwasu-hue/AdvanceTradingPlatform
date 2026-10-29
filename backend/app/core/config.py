@@ -693,6 +693,12 @@ def _bounded_int(name: str, default: int, low: int, high: int) -> int:
     return value if low <= value <= high else default
 
 
+# AUD-G2.5 (flag `alert_webhooks`; app/alerts/signed_webhooks.py): how many signed webhooks one member may add, and how
+# long one POST may take (connect, write and read each) before it counts as failed and is retried by the outbox.
+ALERT_WEBHOOKS_MAX_PER_USER = _bounded_int("ALERT_WEBHOOKS_MAX_PER_USER", 5, 1, 50)
+ALERT_WEBHOOKS_TIMEOUT_SECONDS = _bounded_int("ALERT_WEBHOOKS_TIMEOUT_SECONDS", 10, 1, 30)
+
+
 # OI Banner (O2): the collector's slot and the strikes kept either side of the money (wider than any banner window,
 # so each tenant's own ATM range applies on read), and the operator's default OIRegimeSettings fields (JSON).
 OI_BANNER_SLOT_MINUTES = _bounded_int("OI_BANNER_SLOT_MINUTES", 5, 1, 60)

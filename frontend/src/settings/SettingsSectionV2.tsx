@@ -11,6 +11,7 @@ import WebhookCard from "../components/WebhookCard";
 import { Card } from "../components/ui";
 import TelegramConnectV2 from "../alerts/TelegramConnectV2";
 import PhonePushV2 from "../alerts/PhonePushV2";
+import SignedWebhooksV2 from "../alerts/SignedWebhooksV2";
 import { isNativeApp } from "../native/platform";
 import RhythmTelegramV2 from "../rhythm/RhythmTelegramV2";
 import ConnectAiPanelV2 from "../aiKeys/ConnectAiPanelV2";
@@ -93,6 +94,8 @@ function AlertsSection() {
   // B8: inside the Android app, with mobile_push on, the phone's own notifications come first.
   const mobilePush = useFeatures().on("mobile_push");
   const phone = isNativeApp() && mobilePush;
+  // AUD-G2.5: the member's own signed webhooks (flag alert_webhooks; this section is ui_v2 only).
+  const webhooks = useFeatures().on("alert_webhooks");
   const [telegramChanged, setTelegramChanged] = useState(0);
   return (
     <div id="alerts" className="space-y-space-4">
@@ -113,6 +116,11 @@ function AlertsSection() {
       <Fold id="channels" title="More ways to get alerts" line="Email, app notifications, SMS and others">
         <AlertChannelsCard ownBotOnly part="channels" />
       </Fold>
+      {webhooks && (
+        <div id="webhooks" className="scroll-mt-20">
+          <Card title="Webhooks"><SignedWebhooksV2 /></Card>
+        </div>
+      )}
     </div>
   );
 }

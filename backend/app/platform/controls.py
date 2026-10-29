@@ -174,6 +174,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # events (read-only). OFF: /api/growth/* and /api/admin/console/activation answer 404 and nothing new is shown. No
     # price, trial, reminder or referral is built; nothing places an order.
     "growth_v2": "Plans and growth: the plan page with a usage meter, the discipline share card and the admin activation events (read-only)",
+    # AUD-G2.5 (owner audit 28 Oct; app/alerts/signed_webhooks.py; needs `ui_v2`): each member adds his own https webhooks
+    # in Settings › Alerts (up to ALERT_WEBHOOKS_MAX_PER_USER); every POST is signed (HMAC-SHA256 of the raw body with a
+    # secret made by the server, shown once, stored encrypted), goes only to a public address checked again at send time
+    # (pinned, no redirects) and is retried by the outbox, then dead-lettered. OFF: /api/alert-webhooks answers 404,
+    # nothing is queued for webhooks and Settings shows nothing new. Places, blocks or changes no order.
+    "alert_webhooks": "Signed webhooks: each member sends his own alerts to his own https receiver (signed, retried, private addresses refused)",
     # Readiness C13 (app/learn, app/growth): learning and growth, each OFF by default.
     # `learn`: the Learn page (short lessons on structure reading, risk, paper practice and how ATP works; the glossary;
     # the video links the operator sets). Education only, guarded content. OFF: GET /api/learn answers 404, no Learn entry.

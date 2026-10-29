@@ -134,6 +134,48 @@ async def _fcm_rows(session: AsyncSession, channel: AlertChannelRecord, notifica
             and push_kinds.device_wants(d.get("kinds"), kind, notification)]
 
 
+async def _signed_webhook_rows(session: AsyncSession, channel: AlertChannelRecord, notification: NotificationRecord) -> List[str]:
+    """AUD-G2.5: the webhooks (ids) that get this notification - one outbox row each, so one dead receiver never re-sends
+    to the others. Empty while `ui_v2` or `alert_webhooks` is off; only webhooks of members still active here, and only
+    for a notification addressed to that member or to the whole organisation."""
+    from app.alerts import signed_webhooks
+    from app.platform.controls import flag_enabled
+    for name in (signed_webhooks.PAGE_FLAG, signed_webhooks.FLAG):
+        if not await flag_enabled(session, name, notification.tenant_id):
+            return []
+    try:
+        config = decrypt_config(channel)
+    except ValueError:
+        return []
+    from app.db.models import User
+    active = set(await session.scalars(select(User.id).where(User.tenant_id == notification.tenant_id, User.is_active.is_(True))))
+    return [e.id for e in config.endpoints if e.user_id in active and signed_webhooks.wants(e, notification)]  # type: ignore[union-attr]
+
+
+async def send_signed_webhook(channel: AlertChannelRecord, config: Any, notification: NotificationRecord,
+                              client: Optional[httpx.AsyncClient] = None, *, address: Optional[str] = None,
+                              session: Optional[AsyncSession] = None) -> None:
+    """AUD-G2.5: one notification to one webhook (`address` = its id). Not sent (kept with its reason, not retried) when
+    the flag was turned off or the webhook removed after the row was queued; every other failure is retried by the
+    outbox and dead-lettered after MAX_ATTEMPTS."""
+    from app.alerts import signed_webhooks
+    if address is None:
+        raise RuntimeError("Use Send test next to one webhook")
+    if session is not None:
+        from app.platform.controls import flag_enabled
+        for name in (signed_webhooks.PAGE_FLAG, signed_webhooks.FLAG):
+            if not await flag_enabled(session, name, channel.tenant_id):
+                raise DeliverySkipped("flag_off", "Webhooks were turned off before this was sent")
+    endpoint = next((e for e in config.endpoints if e.id == address), None)
+    if endpoint is None:
+        raise DeliverySkipped("webhook_removed", "This webhook was removed before the notification was sent")
+    try:
+        await signed_webhooks.post(endpoint, notification, client=client,
+                                   event_id=signed_webhooks.event_id_for(notification.id, channel.id, endpoint.id))
+    except signed_webhooks.WebhookRefused as refused:
+        raise RuntimeError(f"Webhook refused: {refused}") from None
+
+
 def _push_wants(channel: AlertChannelRecord, notification: NotificationRecord) -> bool:
     try:
         categories = decrypt_raw(channel).get("categories")
@@ -172,6 +214,18 @@ async def enqueue_for_notification(session: AsyncSession, notification: Notifica
                 )
                 session.add(phone_row)
                 rows.append(phone_row)
+            continue
+        if channel.channel_type == AlertChannelType.SIGNED_WEBHOOK.value:
+            for hook in await _signed_webhook_rows(session, channel, notification):
+                hook_key = delivery_key(notification.id, channel.id, hook) if keyed else None
+                if hook_key is not None and hook_key in queued:
+                    continue
+                hook_row = AlertDeliveryRecord(
+                    tenant_id=notification.tenant_id, notification_id=notification.id, channel_id=channel.id, address=hook,
+                    status=AlertDeliveryStatus.PENDING.value, next_attempt_at=_utcnow(), idem_key=hook_key,
+                )
+                session.add(hook_row)
+                rows.append(hook_row)
             continue
         key = delivery_key(notification.id, channel.id) if keyed else None
         if key is not None and key in queued:
@@ -490,6 +544,8 @@ async def send_via_channel(
             logger.info("Pruned %d gone push subscription(s) for tenant %s", len(gone), channel.tenant_id)
     elif channel.channel_type in (AlertChannelType.SMS.value, AlertChannelType.WHATSAPP.value):
         await send_sms(config, notification, client, idempotency_key=idempotency_key)  # type: ignore[arg-type]
+    elif channel.channel_type == AlertChannelType.SIGNED_WEBHOOK.value:
+        await send_signed_webhook(channel, config, notification, client, address=address, session=session)
     elif channel.channel_type == AlertChannelType.FCM.value:
         await send_fcm(channel, config, notification, client, address=address, session=session)  # type: ignore[arg-type]
     else:

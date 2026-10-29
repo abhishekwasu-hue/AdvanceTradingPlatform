@@ -3778,3 +3778,20 @@ class DeploymentBarReasonRecord(Base):
     code: Mapped[str] = mapped_column(String(32), nullable=False)
     detail: Mapped[str | None] = mapped_column(String(300), nullable=True)
     seen_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
+class ActivationEventRecord(Base):
+    """AUD-G2.4 (activation / time to first value): the moment one person first took one activation step - `step` is one
+    of app/growth/activation.py STEPS (signup, broker_connect, first_chart, first_paper_trade, first_journal_review).
+    One row per person and step (the unique pair is the "already counted" record: the Prometheus counter
+    `atp_activation_total{step}` goes up only when this row is newly written). Written by the app, read by the admin
+    console's activation funnel only; never shown to the person and never read by a trading decision."""
+
+    __tablename__ = "activation_events"
+    __table_args__ = (UniqueConstraint("user_id", "step", name="uq_activation_events_user_step"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)   # the unique pair indexes it
+    step: Mapped[str] = mapped_column(String(32), nullable=False)
+    reached_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)

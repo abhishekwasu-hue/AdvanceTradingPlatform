@@ -549,6 +549,9 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         result["data_tier"] = live.badge(now=now, timeframe=badge_tf if oldest is not None else None, last_bar_start=oldest)
         result["note"] = ("Candles come through your own broker session; a copy another user of the same broker fetched in the last "
                           "minutes is used instead of a second broker call.")
+    if len(wanted) == 1 and any(v.get("count") for v in out.values()):
+        from app.growth import activation    # AUD-G2.4: one symbol with bars = a chart (several = a screener)
+        await activation.record_step(session, user, "first_chart")
     return result
 
 

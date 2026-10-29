@@ -103,6 +103,10 @@ SESSION_MAX_DAYS = _env_int_in("SESSION_MAX_DAYS", 90, 1, 3650)
 # stays usable; a write after the window asks for the authenticator code once more and then carries on. The LIVE step-up
 # (`ensure_live_step_up`) is unchanged: PAPER only in Phase 0, decided with LIVE.
 MFA_STEP_UP_MINUTES = _env_int_in("MFA_STEP_UP_MINUTES", 30, 1, 24 * 60)
+# AUD-G2.4 (activation / time to first value): the "first session" of a new person = the first
+# ACTIVATION_FIRST_SESSION_HOURS hours after signing up. The admin activation funnel shows the share of people whose first
+# paper trade came inside that window (target: first paper trade within the first session). Measurement only.
+ACTIVATION_FIRST_SESSION_HOURS = _env_int_in("ACTIVATION_FIRST_SESSION_HOURS", 3, 1, 72)
 
 # Fernet key for encrypting broker credentials at rest. Must be set via env in any real
 # deployment - a process-local fallback is generated here only so the app still runs for local

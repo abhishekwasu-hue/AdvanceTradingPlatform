@@ -24,7 +24,7 @@ private bars only. Read-only: nothing here places, changes or blocks an order.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query

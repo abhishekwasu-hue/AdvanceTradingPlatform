@@ -8,6 +8,7 @@ import type { useDrawingTools } from "../charting/DrawingToolbar";
 import type { LightweightEngine } from "../charting/lightweight";
 import type { DrawingController } from "../charting/tools";
 import { LtpHub } from "../charting/ltpHub";
+import { livePushOn } from "../live/livePush";
 import { liveTicks } from "../live/liveTicks";
 import { useLiveLtp } from "../components/chartHelpers";
 import { Sheet } from "../components/primitives/Dialog";
@@ -102,6 +103,8 @@ export default function ChartsPageV2(_props: PageProps) {
   const multi = features.on("chart_workspace");
   const watchOn = features.on("watchlists");
   const hubOn = features.on("data_hub");
+  // AUD-G2.2 (flag live_push): the charts follow the live price stream; their timers are only the fallback.
+  const pushOn = livePushOn((name) => features.on(name));
   const wide = useMediaQuery("(min-width: 1024px)");
   const phone = useMediaQuery(PHONE_QUERY);
   const [sheet, setSheet] = useState(false);
@@ -135,12 +138,12 @@ export default function ChartsPageV2(_props: PageProps) {
 
   const prefs = useChartPrefs(userId);
   // While the Multi-chart tab shows, the Chart tab keeps its bars and reads nothing (one refresh when it shows again).
-  const data = useChartCandles({ enabled: !waiting, paused: tab !== "chart" || hubView !== null, symbol, exchange, timeframe });
+  const data = useChartCandles({ enabled: !waiting, paused: tab !== "chart" || hubView !== null, symbol, exchange, timeframe, livePush: pushOn });
   const last = data.candles[data.candles.length - 1];
   // The live price moves the newest bar: intraday while the market is open (or its state is not known), day / week /
   // month only while the server marks that bar as forming.
   const liveOn = DAILY_OR_LONGER.has(timeframe) ? !!last?.forming : chip?.open !== false;
-  const live = useLiveLtp(liveOn && data.candles.length > 0 && tab === "chart" && !hubView, symbol, exchange);
+  const live = useLiveLtp(liveOn && data.candles.length > 0 && tab === "chart" && !hubView, symbol, exchange, undefined, undefined, pushOn);
   const shownChip = toolbarMarketChip(chip, live.ltp !== null);
 
   const [engine, setEngine] = useState<LightweightEngine | null>(null);
@@ -215,8 +218,9 @@ export default function ChartsPageV2(_props: PageProps) {
   // The Multi-chart tab's shared reads, for the page's life; the tab itself stays mounted (hidden) after its first visit.
   const pool = useMemo(() => new CandlePool(api.marketDataCandles), [userId]);  // eslint-disable-line react-hooks/exhaustive-deps
   // TM Part 1 (flag data_hub): the charts' last price also moves with the live ticks of the user's own connection.
-  const ltpHub = useMemo(() => new LtpHub((s, e) => api.marketDataLtp(s, e), undefined, undefined, hubOn ? liveTicks() : undefined),
-    [userId, hubOn]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const ltpHub = useMemo(() => new LtpHub((s, e) => api.marketDataLtp(s, e), undefined, undefined, hubOn ? liveTicks() : undefined,
+    pushOn ? (s, e) => liveTicks().tickFresh(s, e) : undefined),
+    [userId, hubOn, pushOn]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => ltpHub.dispose(), [ltpHub]);
   const [multiSeen, setMultiSeen] = useState(tab === "multi");
   if (tab === "multi" && !multiSeen) setMultiSeen(true);
@@ -302,7 +306,7 @@ export default function ChartsPageV2(_props: PageProps) {
             <div data-tour="charts-chart" className={cx("flex min-h-0", fs.on && "flex-1")}>
               <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
-                prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
+                prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} captureTouch={fs.on}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
@@ -326,7 +330,7 @@ export default function ChartsPageV2(_props: PageProps) {
         </div>
       )}
       {multi && multiSeen && (
-        <MultiChartV2 key={String(userId)} shown={tab === "multi"} pool={pool} ltpHub={ltpHub}
+        <MultiChartV2 key={String(userId)} shown={tab === "multi"} pool={pool} ltpHub={ltpHub} livePush={pushOn}
           symbol={symbol} exchange={exchange} userId={userId} offered={offered} timeframesKnown={timeframes !== null}
           prefs={prefs.prefs} drawingsHidden={view.drawings_hidden} marketOpen={(ex) => marketChip(status, ex, now)?.open ?? null}
           start={startChartFrom(params)} onStarted={clearStart} onOpenChart={openChart} />

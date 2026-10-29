@@ -32,6 +32,15 @@ export function liveChipState(quote: LiveQuote | null | undefined, receivedAt: n
   return { kind: "live", ageSeconds: since };
 }
 
+/** AUD-G2.2 (flag `live_push`): the chip from the age of the symbol's last tick while the push is live - "Live" up to
+ * the server's tick-age limit (`staleAfterMs`, setting LIVE_PUSH_STALE_SECONDS), then "Price delayed · <age>"; nothing
+ * while the market is closed. `tickAt`: when this browser got the tick. Pure. */
+export function tickAgeChipState(tickAt: number, marketOpen: boolean | null | undefined, nowMs: number, staleAfterMs: number): LiveChipState | null {
+  if (marketOpen === false) return null;
+  const age = Math.max(0, (nowMs - tickAt) / 1000);
+  return age * 1000 > staleAfterMs ? { kind: "delayed", ageSeconds: age } : { kind: "live", ageSeconds: age };
+}
+
 /** "3 s", "4 min", "2 h". */
 export function ageText(seconds: number): string {
   if (seconds < 60) return `${Math.max(0, Math.round(seconds))} s`;

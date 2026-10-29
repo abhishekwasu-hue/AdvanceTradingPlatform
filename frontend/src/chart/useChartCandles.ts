@@ -16,7 +16,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type { CandleVolumeSource, CandlesResponse, OHLCVBar } from "../types";
 import { mergeBars, istDate } from "../components/chartHistory";
-import { DAILY_OR_LONGER, historyDaysFor, olderPageDaysFor, type ChartBar, type TimeframeId } from "./timeframes";
+import { liveTicks } from "../live/liveTicks";
+import { useBarCloseReload } from "../live/livePush";
+import { DAILY_OR_LONGER, historyDaysFor, olderPageDaysFor, timeframeSeconds, type ChartBar, type TimeframeId } from "./timeframes";
 
 /** After a failed "older" request, the next one waits this long (the chart keeps asking while it sits at the edge). */
 export const OLDER_RETRY_MS = 30_000;
@@ -182,8 +184,12 @@ export interface ChartCandles {
   retry: () => void;
 }
 
-export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshMs = 60_000, paused = false, fetchCandles = api.marketDataCandles }: {
+export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshMs = 60_000, paused = false, fetchCandles = api.marketDataCandles, livePush = false }: {
   enabled: boolean; symbol: string; exchange: string; timeframe: TimeframeId; refreshMs?: number;
+  /** AUD-G2.2 (flag `live_push`): intraday candles are read again when a pushed tick falls in a new bar, and the
+   * minute timer makes no request while the symbol has a fresh tick (it stays the fallback). Day / week / month keep
+   * the timer (their forming bar's volume moves only on a read). False: exactly as before. */
+  livePush?: boolean;
   /** UI2-4d: nothing is read while true (the chart is off screen or its tab hidden); a missed read follows on resume. */
   paused?: boolean;
   /** UI2-4d: the candle read (a Multi-chart cell passes its tab's shared pool). */
@@ -207,6 +213,9 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
   pausedRef.current = paused;
   const gate = useRef<FeedGate | null>(null);
   const stopRef = useRef<AbortController | null>(null);
+  const pushed = livePush && !DAILY_OR_LONGER.has(timeframe);
+  const pushedRef = useRef(pushed);
+  pushedRef.current = pushed;
 
   useEffect(() => {
     guard.current.reset();
@@ -224,10 +233,14 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
     });
     const g = new FeedGate(() => void feed.tick(), pausedRef.current);
     gate.current = g;
-    const id = window.setInterval(() => g.timer(), refreshMs);
+    const id = window.setInterval(() => { if (!(pushedRef.current && liveTicks().tickFresh(sym, exchange))) g.timer(); }, refreshMs);
     return () => { feed.stop(); stop.abort(); window.clearInterval(id); setLoading(false); if (gate.current === g) gate.current = null; };
   }, [enabled, sym, exchange, timeframe, refreshMs, nonce]);
   useEffect(() => { gate.current?.setPaused(paused); }, [paused]);
+  useBarCloseReload(pushed && enabled && !!sym, [{ symbol: sym, exchange }], timeframeSeconds(timeframe) * 1000, () => {
+    const last = candlesRef.current[candlesRef.current.length - 1];
+    return last ? Date.parse(last.timestamp) : null;
+  }, () => gate.current?.timer());
 
   const loadOlder = useCallback(() => {
     const bars = candlesRef.current;

@@ -56,6 +56,8 @@ export interface MultiChartV2Props {
   /** The page's shared reads (kept across tab switches). */
   pool: CandlePool;
   ltpHub: LtpHub;
+  /** AUD-G2.2 (flag `live_push`): the cells follow the live price stream; their timers are only the fallback. */
+  livePush?: boolean;
   /** False while the Chart tab shows: the tab stays mounted, hidden, and reads nothing. */
   shown: boolean;
 }
@@ -93,6 +95,7 @@ function useSharedLtp(hub: LtpHub, enabled: boolean, symbol: string, exchange: s
 
 export default function MultiChartV2({
   symbol, exchange, userId, offered, timeframesKnown, prefs, drawingsHidden, marketOpen, start, onStarted, onOpenChart, pool, ltpHub, shown,
+  livePush = false,
 }: MultiChartV2Props) {
   const phone = useMediaQuery(PHONE_QUERY);
   const pageVisible = usePageVisible();
@@ -263,7 +266,7 @@ export default function MultiChartV2({
         {layout.cells.slice(0, count).map((c, i) => (
           <Cell key={i} index={i} cell={c} active={i === active} phone={phone} pageVisible={pageVisible && shown} userId={userId}
             offered={offered} timeframesKnown={timeframesKnown} prefs={cellPrefs} drawingsHidden={drawingsHidden} marketOpen={marketOpen}
-            pool={pool} hub={ltpHub} link={link}
+            pool={pool} hub={ltpHub} link={link} livePush={livePush}
             onFocus={() => apply((x) => setActive(x, i))}
             onSymbol={(s, ex) => apply((x) => setSymbol(x, i, s, ex))}
             onTimeframe={(tf) => apply((x) => setTimeframe(x, i, tf))}
@@ -279,13 +282,13 @@ export default function MultiChartV2({
 interface CellProps {
   index: number; cell: CellV1; active: boolean; phone: boolean; pageVisible: boolean; userId: number | string | null;
   offered: TimeframeId[]; timeframesKnown: boolean; prefs: ChartPrefs; drawingsHidden: boolean; marketOpen: (exchange: string) => boolean | null;
-  pool: CandlePool; hub: LtpHub; link: CrosshairLink;
+  pool: CandlePool; hub: LtpHub; link: CrosshairLink; livePush: boolean;
   onFocus: () => void; onSymbol: (symbol: string, exchange: string) => void; onTimeframe: (tf: TimeframeId) => void;
   onType: (t: CellV1["chart_type"]) => void; onGroup: () => void; onOpen: (tf: TimeframeId) => void;
 }
 
 function Cell({
-  index, cell: c, active, phone, pageVisible, userId, offered, timeframesKnown, prefs, drawingsHidden, marketOpen, pool, hub, link,
+  index, cell: c, active, phone, pageVisible, userId, offered, timeframesKnown, prefs, drawingsHidden, marketOpen, pool, hub, link, livePush,
   onFocus, onSymbol, onTimeframe, onType, onGroup, onOpen,
 }: CellProps) {
   const ref = useRef<HTMLElement>(null);
@@ -293,7 +296,7 @@ function Cell({
   const running = onScreen && pageVisible;
   const tf = cellTimeframe(c.timeframe, offered, timeframesKnown);
   const shownTf = tf ?? DEFAULT_TIMEFRAME;
-  const data = useChartCandles({ enabled: tf !== null, symbol: c.symbol, exchange: c.exchange, timeframe: shownTf, paused: !running, fetchCandles: pool.fetchCandles });
+  const data = useChartCandles({ enabled: tf !== null, symbol: c.symbol, exchange: c.exchange, timeframe: shownTf, paused: !running, fetchCandles: pool.fetchCandles, livePush });
   const last = data.candles[data.candles.length - 1];
   const liveOn = running && data.candles.length > 0 && (DAILY_OR_LONGER.has(shownTf) ? !!last?.forming : marketOpen(c.exchange) !== false);
   const live = useSharedLtp(hub, liveOn, c.symbol, c.exchange, active ? ACTIVE_LTP_MS : INACTIVE_LTP_MS);
@@ -326,7 +329,7 @@ function Cell({
         </button>
       </div>
       <ChartV2 candles={data.candles} timeframe={shownTf} symbol={c.symbol} exchange={c.exchange} chartType={cellChartType(c.chart_type)} prefs={prefs}
-        live={live.ltp} marketOpen={marketOpen(c.exchange)} onLoadOlder={data.loadOlder} drawingTools={active && !drawingsHidden} volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText}
+        live={live.ltp} marketOpen={marketOpen(c.exchange)} livePush={livePush} onLoadOlder={data.loadOlder} drawingTools={active && !drawingsHidden} volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText}
         onEngine={onEngine} viewControls={active} className={phone ? "h-[46vh] min-h-[240px]" : "min-h-0 flex-1"} />
       {data.error && (
         <p role="status" className="flex flex-wrap items-center gap-x-space-2 border-t border-subtle px-space-2 py-space-1 text-t12 text-fg">

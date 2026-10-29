@@ -107,6 +107,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "evidence_context": FlagInfo("OI walls, trend strip and replay on evidence charts", "screens", "more on match charts", ("evidence_charts",), "", "ready"),
     "evidence_charts": FlagInfo("Each screen match drawn on a chart, also on Telegram", "screens", "match charts", ("screener_v2",), "", "ready"),
     "public_status_page": FlagInfo("A public status page", "platform", "/status", (), "", "ready"),
+    "live_push": FlagInfo("Live prices pushed to charts and sparklines instead of timers; the delayed chip from the age of the last tick", "data", "charts and sparklines that move with each live price; a delayed chip that reads the age of the last price", ("ui_v2", "data_hub"), "a broker with a live price stream (Upstox, Zerodha); without one prices refresh on their timers as before", "unfinished"),
     "market_zones": FlagInfo("Nightly demand / supply and S/R zones on the chart", "charts", "chart layer, zone functions", (), "nightly job", "ready"),
     "markets_view": FlagInfo("Sectors & indices page and the option chain summary in plain words", "data", "Sectors & indices page, a summary on the Option chain page", ("ui_v2",), "the daily market data update", "unfinished"),
     "mobile_push": FlagInfo("Phone notifications in the Android app", "data", "Phone notifications in the app's Settings; notifications that open the right screen", ("ui_v2",), "the server's FCM key and the app with the notification plug-in", "unfinished"),
@@ -174,7 +175,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
 # list. FINISH: the roadmap item that finishes it. KEEP_OFF: stays off and hidden, with the reason. REMOVED_FROM_VIEW:
 # stays off, its code kept, and leaves the admin "Turn on" list (FA-2) - the server refuses to turn it on.
 FINISH: Dict[str, str] = {
-    "data_hub": "P1-5", "markets_view": "FN7", "strategy_templates": "P2-3 / FN4", "idea_library": "P2-3 / FN4",
+    "data_hub": "P1-5", "live_push": "AUD-G2.2", "markets_view": "FN7", "strategy_templates": "P2-3 / FN4", "idea_library": "P2-3 / FN4",
     "strategy_lab_pine": "FN3", "daily_rhythm": "P2-4 / FN7", "chart_contracts": "DATA-H / FN7",
     "chart_futures_basis": "DATA-H / FN7", "help_centre": "P2-6 (early, once the support contact is set)",
     "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",

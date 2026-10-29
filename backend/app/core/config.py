@@ -898,3 +898,11 @@ WHY_NO_TRADE_KEEP_BARS = int(os.environ.get("WHY_NO_TRADE_KEEP_BARS", "50"))
 # of the user's newest closed PAPER trades.
 PAPER_REPORT_CARD_MIN_TRADES_BRIER = _bounded_int("PAPER_REPORT_CARD_MIN_TRADES_BRIER", 20, 2, 10_000)
 PAPER_REPORT_CARD_MAX_TRADES = _bounded_int("PAPER_REPORT_CARD_MAX_TRADES", 5000, 100, 100_000)
+# AUD-T1 ("My day in one card", flag `my_day_card`): the one state chip on each open position is read ONLY from the
+# user's own stop on that position - how much of the room between his entry and his own stop is still left at the
+# position's last mark (100 % = the mark is at the entry, 0 % = the mark has reached his stop). Information only: the
+# chip never places, blocks or changes an order. A position with no stop gets no chip ("No stop set").
+# - MY_DAY_WATCH_ROOM_LEFT_PCT: at or below this % of the room left the chip reads "Watch" (above it: "Safe").
+# - MY_DAY_NEAR_ROOM_LEFT_PCT: at or below this % it reads "Near invalidation" (the daily rhythm's own 75 %-used line).
+MY_DAY_WATCH_ROOM_LEFT_PCT = _bounded_float("MY_DAY_WATCH_ROOM_LEFT_PCT", 50.0, 0.0, 100.0)
+MY_DAY_NEAR_ROOM_LEFT_PCT = _bounded_float("MY_DAY_NEAR_ROOM_LEFT_PCT", 25.0, 0.0, 100.0)

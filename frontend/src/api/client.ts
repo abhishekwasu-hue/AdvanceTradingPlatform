@@ -183,6 +183,7 @@ import type { SupportReply } from "../support/support";
 import { CONNECT_AI_EVENT, isNotConnected, type AiConnection } from "../aiKeys/connect";
 import type { AiProviderName } from "../aiKeys/keyFormats";
 import type { MarketStrip } from "../dashboard/types";
+import type { MyDay } from "../dashboard/myDay";
 import type { RhythmKind, RhythmPrefs, RhythmSettings, RhythmToday } from "../rhythm/types";
 import type { ChainExpiries, LiveChain } from "../optionChain/types";
 
@@ -915,6 +916,8 @@ export const api = {
   portfolioExposure: (livePrices = true) => request<PortfolioExposure>(`/portfolio/exposure?live_prices=${livePrices}`),
   // UI2-2: the v2 dashboard's market strip - three indices and the market state in one read-only call.
   marketStrip: () => request<MarketStrip>("/market/strip"),
+  // AUD-T1: My day in one card (app/today/routes.py; flags ui_v2 + my_day_card, 404 while off). Read-only.
+  myDay: () => request<MyDay>("/today/my-day"),
   // MO4: the daily rhythm (app/rhythm/routes.py; flags ui_v2 + daily_rhythm, 404 while off).
   rhythmToday: (kind?: RhythmKind) => request<RhythmToday>(`/rhythm/today${kind ? `?kind=${kind}` : ""}`),
   rhythmSettings: () => request<RhythmSettings>("/rhythm/settings"),

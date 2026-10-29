@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fundamentalsApi } from "../api/fundamentalsClient";
 import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile, Disclaimer, signClass, signTone } from "../components/ui";
-import { PageHeader } from "../components/primitives";
+import { PageHeader, SkeletonRows } from "../components/primitives";
 import {
   defaultCalendarEvent,
   defaultCompanyProfile,
@@ -1083,7 +1083,7 @@ export default function FundamentalsPage() {
               <Card title="Fundamental Alerts">
                 {alertsError && <div className="text-sm text-down">{alertsError}</div>}
                 {alerts == null ? (
-                  <div className="text-sm text-fg-muted py-2">Loading…</div>
+                  <SkeletonRows rows={2} label="Loading" />
                 ) : alerts.length === 0 ? (
                   <div className="text-sm text-fg-muted py-2">No alerts — nothing crossing a threshold right now.</div>
                 ) : (

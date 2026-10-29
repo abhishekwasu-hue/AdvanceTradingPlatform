@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { bannerLines, isLateChip } from "../oi/format";
 import type { OiBannerResponse } from "../oi/types";
+import { Skeleton } from "./primitives";
 
 /** OI Banner (O3): the presentational banner. The direction colours its left border; the lines are the headline,
  *  "Put: … · Call: …", "PCR … — band", then chips (DTE, max pain, last update / market closed, data time). Read-only. */
@@ -41,6 +42,6 @@ export default function OiBanner({ underlying, compact = false }: { underlying: 
     return () => { alive = false; window.clearInterval(id); };
   }, [underlying]);
   if (error) return <div className="text-xs text-fg-muted">The OI summary is not available right now.</div>;
-  if (!data) return <div className="h-16 animate-pulse rounded-lg bg-surface-2" aria-label="Loading OI banner" />;
+  if (!data) return <Skeleton className="h-16" panel label="Loading OI banner" />;
   return <OiBannerView data={data} compact={compact} />;
 }

@@ -12,6 +12,7 @@ import ConnectPanel, { failureText, isPracticeOnly, type PanelMode } from "./Con
 import { BTN_PRIMARY, BTN_SECONDARY, BrokerLogo, ResponsiveDialog, StatusDot } from "./parts";
 import { useBrokerCatalog } from "./useBrokerCatalog";
 import { useBrokerConnections } from "./useBrokerConnections";
+import { Skeleton } from "../components/primitives";
 
 /**
  * P2b: the Broker page - the whole screen is about connecting a broker (owner request: simple first).
@@ -198,7 +199,7 @@ export default function BrokerPage() {
         {catalog.entries === null && !catalog.failed ? (
           <div aria-busy="true" className="grid grid-cols-2 gap-space-3 sm:grid-cols-3 md:grid-cols-4">
             <span className="sr-only">Loading brokers</span>
-            {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 animate-pulse rounded-panel bg-surface-2" />)}
+            {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-24" panel />)}
           </div>
         ) : catalog.failed && entries.length === 0 ? (
           <div className="flex flex-wrap items-center gap-space-3 text-t14 text-fg-muted">

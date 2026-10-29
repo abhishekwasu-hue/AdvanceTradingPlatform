@@ -93,3 +93,21 @@ describe("UI-28 U3.3 / U3.9: the in-app confirm; chart text at 11 px or more", (
     expect(hits).toEqual([]);
   });
 });
+
+// UI-28 U3.8: one loading look - the Skeleton / SkeletonRows placeholders, never a bare "Loading…" line or an ad-hoc
+// pulsing block. The old chart windows keep their line (they wait for the switches; e2e reads it - charts-v2).
+const LOADING_SRC = import.meta.glob<string>(["./**/*.tsx", "!./**/*.test.*", "!./stories/**", "!./components/primitives/Feedback.tsx",
+  "!./pages/ChartWindow.tsx", "!./pages/ChartWorkspace.tsx"], { query: "?raw", import: "default", eager: true });
+describe("UI-28 U3.8: loading placeholders", () => {
+  it("no screen shows a bare 'Loading…' line", () => {
+    const hits = Object.entries(LOADING_SRC).flatMap(([path, src]) =>
+      [...code(src).matchAll(/>\s*Loading(?:…|\.\.\.)\s*</g)].map((m) => `${path}: ${m[0]}`));
+    expect(hits).toEqual([]);
+  });
+  it("a pulsing placeholder block is the shared Skeleton", () => {
+    const hits = Object.entries(LOADING_SRC).flatMap(([path, src]) =>
+      [...code(src).matchAll(/className="[^"]*\banimate-pulse\b[^"]*\bbg-surface-2\b[^"]*"|className="[^"]*\bbg-surface-2\b[^"]*\banimate-pulse\b[^"]*"/g)]
+        .map((m) => `${path}: ${m[0]}`));
+    expect(hits).toEqual([]);
+  });
+});

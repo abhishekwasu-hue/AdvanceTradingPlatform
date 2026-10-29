@@ -5,6 +5,7 @@ import { ThemeToggle } from "../components/AppearanceCard";
 import { LogoMark } from "../components/Logo";
 import { LEGAL_SLUGS, LEGAL_TITLES, legalPath } from "../legal/legal";
 import { SITE_LABELS as NAV_LABEL, SITE_SLUGS, applySeo, sitePages, sitePath, siteSlugFromPath, type SitePageData } from "./site";
+import { Skeleton } from "../components/primitives";
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
@@ -57,7 +58,7 @@ export function SiteView({ page, loading = false, current }: { page: SitePageDat
       <main className="mx-auto w-full max-w-5xl flex-1 px-space-4 py-space-8 pb-[calc(2rem+env(safe-area-inset-bottom))]">
         {loading ? (
           <div aria-busy="true" className="space-y-space-3"><span className="sr-only">Loading</span>
-            <div className="h-8 w-64 animate-pulse rounded-control bg-surface-2" /><div className="h-40 animate-pulse rounded-panel bg-surface-2" />
+            <Skeleton className="h-8 w-64" /><Skeleton className="h-40" panel />
           </div>
         ) : !page ? (
           <div role="alert" className="rounded-panel border border-subtle bg-surface-1 p-space-6 text-t14">

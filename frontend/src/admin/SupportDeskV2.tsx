@@ -3,6 +3,7 @@ import { friendlyError } from "../api/client";
 import { BUTTON, FOCUS, Panel, Pill } from "./AdminSectionsV2";
 import { ago, maskEmail } from "./consoleApi";
 import { supportDeskApi, type SupportDeskSettings, type SupportTicket, type SupportTickets, type TicketStatus } from "./supportDeskApi";
+import { SkeletonRows } from "../components/primitives";
 
 /**
  * C12: Admin › Support - the inbox as tickets (every "Send feedback" and "Report a problem" message) with a status, an
@@ -101,7 +102,7 @@ export function SupportTicketsPanel() {
         ))}
         {data && data.late > 0 && <Pill tone="bad">{data.late} late</Pill>}
       </div>
-      {!data ? (error ? <p className="mt-space-3 text-t12 text-down">Could not load: {error}</p> : <p className="mt-space-3 text-t12 text-fg-muted" aria-busy="true">Loading…</p>)
+      {!data ? (error ? <p className="mt-space-3 text-t12 text-down">Could not load: {error}</p> : <SkeletonRows rows={2} label="Loading" />)
         : data.tickets.length === 0 ? <p className="mt-space-3 text-t12 text-fg-muted">No tickets here.</p> : (
           <ul className="mt-space-2 divide-y divide-border">
             {data.tickets.map((t) => (

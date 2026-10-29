@@ -18,6 +18,7 @@ import {
   leadersAndLaggards, moveText, rankGroups, relativeText, type ListMember, type MarketGroup, type MarketList,
   type MarketsOverview, type Mover, type Period,
 } from "./model";
+import { Skeleton } from "../components/primitives";
 
 /**
  * MO4 slice 2 (ATP_SESSION_GROWTH_MASTER.md PART 2 item 6): the Sector & index view at /markets (v2 only, flag
@@ -230,9 +231,9 @@ function Loading() {
   return (
     <div aria-busy="true" className="space-y-space-3">
       <span className="sr-only">Loading</span>
-      <div className="h-20 animate-pulse rounded-panel bg-surface-2" />
+      <Skeleton className="h-20" panel />
       <div className="grid gap-space-2 md:grid-cols-4">
-        {Array.from({ length: 8 }, (_, i) => <div key={i} className="h-24 animate-pulse rounded-panel bg-surface-2" />)}
+        {Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-24" panel />)}
       </div>
     </div>
   );

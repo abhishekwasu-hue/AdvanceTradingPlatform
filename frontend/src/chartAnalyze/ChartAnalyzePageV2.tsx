@@ -3,7 +3,7 @@ import { ComingSoon } from "../ui/ComingSoon";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent } from "react";
 import { useSearchParams } from "react-router";
 import { friendlyError } from "../api/errors";
-import { Button, Dialog } from "../components/primitives";
+import { Button, Dialog, Skeleton } from "../components/primitives";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
 import AlertDialogV2, { type AlertTarget } from "./AlertDialogV2";
@@ -330,7 +330,7 @@ export default function ChartAnalyzePageV2() {
   };
 
   const engineMissing = status?.engine.installed === false;
-  if (!features.loaded || (!on && !probed)) return <div className="h-40 animate-pulse rounded-panel bg-surface-2" aria-busy="true" />;
+  if (!features.loaded || (!on && !probed)) return <Skeleton className="h-40" panel label="Loading" />;
   // A1: the engine (private package) is not installed - a real "not available" state, never "Coming soon".
   if (engineMissing && !off) return <EngineUnavailable engine={status.engine} />;
   if (!on) return <ComingSoon flag={FLAG} />;                 // the flag is off: the shell's standard page (SELF_GATED)

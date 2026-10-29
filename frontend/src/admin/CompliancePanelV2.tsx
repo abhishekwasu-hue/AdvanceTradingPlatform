@@ -3,6 +3,7 @@ import { request } from "../api/client";
 import ExportCard from "../components/ExportCard";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import { Panel, Pill } from "./AdminSectionsV2";
+import { SkeletonRows } from "../components/primitives";
 
 /** AUD-G1.7 (owner audit 28 Oct; SEBI retail-algo framework, in force 1 Apr 2026): the platform owner's Compliance
  * section - per broker the algo-id tag format and how many organisations registered a static IP, the server's egress IP,
@@ -27,7 +28,7 @@ export default function CompliancePanelV2() {
   return (
     <>
       <Panel title="Algo trading readiness" id="compliance" note="Per broker: the algo-id tag and how many organisations registered a static IP.">
-        {!data ? (error ? <p className="text-t12 text-down">Could not load: {error}</p> : <p className="text-t12 text-fg-muted" aria-busy="true">Loading…</p>) : (
+        {!data ? (error ? <p className="text-t12 text-down">Could not load: {error}</p> : <SkeletonRows rows={2} label="Loading" />) : (
           <div className="space-y-space-3 text-t13" data-compliance-overview>
             <ul className="flex flex-wrap gap-space-2">
               <li><Pill tone={data.server_egress_ip ? "ok" : "warn"}>Server IP {data.server_egress_ip ?? "not set"}</Pill></li>

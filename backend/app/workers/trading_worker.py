@@ -2408,6 +2408,13 @@ class TradingWorker:
         record.last_cycle_ms = cycle_ms
         record.last_error = "; ".join(report.errors)[:2000] if report.errors else None
         await session.commit()
+        # AUD-T8: the status page's uptime sample (at most once a minute, platform-wide). It never blocks the cycle.
+        try:
+            from app.observability.status_history import record_sample
+            await record_sample(session, record.last_seen_at, report.stale_skips)
+        except Exception:  # noqa: BLE001 - a status sample is never worth a failed cycle
+            logger.warning("Status sample not written", exc_info=True)
+            await session.rollback()
         observe_cycle(market_open=report.market_open, seconds=cycle_ms / 1000, signals=report.signals_executed,
                       closes=report.positions_closed, errors=len(report.errors))
 

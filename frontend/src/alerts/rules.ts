@@ -10,6 +10,11 @@ export interface AlertRule {
   digest_every: "hourly" | "eod"; status: "active" | "paused"; expires_at: string | null;
 }
 
+/** UI-28 U7.3 (TradingView users lose alerts silently): a screen alert whose screen is gone can never fire - say so. Pure. */
+export function isOrphaned(rule: Pick<AlertRule, "kind" | "screen_id">): boolean {
+  return rule.kind === "screen" && rule.screen_id === null;
+}
+
 export interface AlertRuleInput {
   name: string; kind: "instrument"; symbol: string; condition: string; base_tf: string; priority: RulePriority;
   cooldown_minutes: number; mode: RuleMode; digest_every: "hourly" | "eod";

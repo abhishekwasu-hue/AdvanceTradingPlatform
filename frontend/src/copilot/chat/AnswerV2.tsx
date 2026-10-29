@@ -4,6 +4,7 @@ import { AnalysisTableView, MiniChart } from "../../optionChain/AnalysisTabsV2";
 import { useCopilotT } from "../i18n";
 import { cx } from "../../components/primitives/cx";
 import { actionState, answerRow, notSetUpLine, stampText, toolsUsedLine, workedLine, type ChatAnswer } from "./model";
+import CostChip from "../components/CostChip";
 
 /** Job 6: the hand-over to the Paper bot page is the answer's one primary action. */
 const DRAFT_ACTION = "inline-flex min-h-11 w-full items-center justify-center py-space-2 text-center gap-space-2 rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto";
@@ -107,6 +108,10 @@ export function AnswerV2({ answer, onAsk }: { answer: ChatAnswer; onAsk?: (q: st
           {answer.note && <p className="mt-space-1 text-t12 text-fg-muted">{answer.note}</p>}
           {adminNotSetUp && <p className="mt-space-1 text-t12 text-fg-muted" data-admin-not-set-up>{t("chat.notSetUpAdmin")}: {adminNotSetUp}</p>}
         </details>
+      )}
+      {/* UI-28 U7.7: the cost of this answer's AI call, beside it (none for a rule-based answer). */}
+      {answer.usage && answer.usage.calls > 0 && (
+        <p data-answer-cost><CostChip tokens={answer.usage.tokens_input + answer.usage.tokens_output} inr={answer.usage.cost_inr} /></p>
       )}
       <p className="text-t12 text-fg-muted" data-disclaimer>{answer.disclaimer}</p>
     </article>

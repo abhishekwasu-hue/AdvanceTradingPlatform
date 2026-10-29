@@ -354,3 +354,19 @@ describe("FNO-1 on the chain", () => {
     expect(columns).toContain('{ key: "pct", label: "OI change in %" }');
   });
 });
+
+describe("UI-28 U7.5: Required beside Available on the confirm step", () => {
+  const budget = { capital: 500_000, per_trade: { amount: 5_000, pct: 1 }, daily: { amount: 15_000, pct: 3 }, source: "Your risk settings",
+    paper_balance: { amount: 200_000, source: "x", open_margin_counted: false }, blocks: false } as const;
+  it("shows his PAPER balance as Available next to the margin required", () => {
+    const html = renderToStaticMarkup(<Review preview={preview({ margin: { value: 50_000, basis: "x" } })} budget={budget} />);
+    expect(html).toContain('data-line="available"');
+    expect(text(html)).toContain("Available (PAPER)");
+    expect(text(html)).not.toContain("Less than the margin required");
+  });
+  it("says so when the margin is more than the balance; no Available line without a balance", () => {
+    const short = text(renderToStaticMarkup(<Review preview={preview({ margin: { value: 250_000, basis: "x" } })} budget={budget} />));
+    expect(short).toContain("Less than the margin required");
+    expect(renderToStaticMarkup(<Review preview={preview()} />)).not.toContain('data-line="available"');
+  });
+});

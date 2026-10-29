@@ -151,6 +151,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # login. `byob_data_tier` still decides whose session a user may read. OFF: everything exactly as before.
     "data_hub": "Data hub: one live price stream per broker connection for every page, live ticks in the browser, a reconnecting state and one renew prompt",
     "smart_execution": "Smart execution for multi-leg orders: hedge legs first (shorts closed first on exit), the incomplete-order state with Complete the rest / Close the filled legs, freeze-limit slicing, the margin with the hedge benefit and the free balance after, the physical-settlement warning for stock F&O",
+    # AUD-T8 (owner audit 28 Oct; app/observability/status_history.py): uptime per market session (NSE, MCX, CDS, crypto)
+    # from the worker's own samples, the published SLO targets on the public /status page, and the in-app notice (v2 shell)
+    # when the engine has not checked in or market data is late while a market is open. OFF: GET /api/status/sessions
+    # answers 404, the page shows no sessions block and no notice is shown. The sampler writes either way. Read-only.
+    "status_page": "Reliability: uptime per market session and the SLO targets on the status page, and an in-app notice when the platform is degraded",
     # Trading Terminal T1 (docs/owner-orders/ATP_SESSION_TRADING_TERMINAL.md, review TT-16..TT-19, TT-25; needs `ui_v2`):
     # the Terminal page at /terminal - the chart, the option chain, the order panel, positions, orders and the basket on one
     # screen as panels the user moves, resizes, opens and closes (presets and up to 10 own layouts in the prefs namespace
@@ -362,6 +367,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # structures; an explicit opt-out with a reason lifts one gate for that IST day, logged and counted. Exits are never
     # gated. OFF: nothing is gated and /api/paper/experience answers 404.
     "experience_levels": "Experience levels: futures and naked short option entries open with your PAPER record; a logged, counted opt-out lifts a gate for the day (exits never gated)",
+    # AUD-T2 (order ATP_ORDER_AUDIT_28OCT T2): on the session before an expiry and on the expiry day, the user's own open F&O
+    # positions expiring then - in / out of the money now, cash or delivery settlement with his broker's own rule (linked),
+    # the next expiry and a one-tap "Add to basket" (adds a leg only, never places). OFF: GET /api/fno/expiry-checklist 404.
+    "expiry_checklist": "Expiry checklist: positions expiring today or next session, in or out of the money, settlement and the broker's rule (information only, places no orders)",
     # N4 CH3 (docs/design/CHARTING.md): the price-action chart layer - causal swings, legs, real breaks, swing levels and
     # the Dow trend per degree from the shared lake bars as of a time, with toggles, a debug mode and bar replay that
     # recomputes the layer as of each replayed bar. OFF: GET /api/charts/layers/price-action answers 503 and the chart

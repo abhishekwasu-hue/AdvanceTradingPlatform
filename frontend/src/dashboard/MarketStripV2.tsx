@@ -1,6 +1,6 @@
 import { Check, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
-import { EMPTY, formatChange, formatPct, formatPrice, formatSignedINR } from "../ui/format";
+import { EMPTY, formatChange, formatPct, formatPrice, formatSignedINR, formatTimeIST } from "../ui/format";
 import { useBigText } from "../theme";
 import { TermHint } from "../ui/TermHint";
 import { useColourV2 } from "../ui/colourV2";
@@ -12,7 +12,7 @@ import { LevelChip } from "../ui/LevelChip";
 import type { Loadable } from "./useDashboardData";
 import type { MarketStrip, StripIndex } from "./types";
 import { Signed } from "../ui/numbersFirst";
-import { Freshness, freshnessText } from "../ui/Freshness";
+import { Freshness } from "../ui/Freshness";
 import { Skeleton } from "../components/primitives/Feedback";
 
 /**
@@ -92,11 +92,11 @@ export function stripAsOf(strip: MarketStrip): string {
 export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowMs, sparks }: MarketStripProps) {
   const data = strip.status === "ok" ? strip.data : null;
   const total = pnl.total;
-  // U3.8: live prices carry their time in the market chip ("Market open · closes 15:30 · as of 10:59 IST"), one line on
-  // a phone; delayed ones get the amber "Delayed · as of" chip instead.
+  // U3.8: live prices carry their time in the market chip ("Market open · closes 15:30 · as of 10:59", like the page's
+  // other times), one line on a phone; delayed ones get the amber "Delayed · as of" chip instead.
   const live = data !== null && data.source === "live";
   const stale = live && data.indices.some((i) => i.stale);
-  const fresh = live ? freshnessText(stripAsOf(data)) : "";
+  const fresh = live ? `as of ${formatTimeIST(stripAsOf(data), { suffix: false })}` : "";
   // Item 1: the one-row desktop strip only at the Normal text size; at Large / Extra large it stays stacked (indices,
   // then the chips, then the P&L), and on a phone the two indices share a row with VIX below.
   const big = useBigText();
@@ -131,7 +131,7 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
       {strip.status === "error" && <p className={`text-t13 text-fg-muted ${L("xl:order-last xl:col-span-5 xl:border-t xl:border-subtle xl:px-space-5 xl:py-space-3")}`}>We could not load the market prices. We will try again in a moment.</p>}
       <div className={`flex flex-wrap items-center gap-space-2 border-t border-subtle pt-space-4 ${L("xl:flex-col xl:items-stretch xl:justify-center xl:border-r xl:border-t-0 xl:p-space-5")}`}>
         {live && stale && <Freshness at={stripAsOf(data)} stale />}
-        {marketText && <StatusChip tone="neutral"><span aria-hidden className="h-1.5 w-1.5 rounded-pill bg-fg" />{marketText}{live && !stale && fresh ? <span data-freshness="fresh">{` · ${fresh}`}</span> : null}</StatusChip>}
+        {marketText && <StatusChip tone="neutral"><span aria-hidden className="h-1.5 w-1.5 rounded-pill bg-fg" />{live && !stale && fresh ? `${marketText} · ${fresh}` : marketText}</StatusChip>}
         {broker && (
           <StatusChip tone={broker.tone}>
             {broker.tone === "warn" ? <TriangleAlert size={14} aria-hidden /> : <Check size={14} aria-hidden />}

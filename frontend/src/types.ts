@@ -1384,7 +1384,7 @@ export const BASE_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min
 
 // --- Out-of-app alert delivery (Telegram / email) ---
 
-export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK" | "PUSH" | "SMS" | "WHATSAPP" | "FCM";
+export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK" | "PUSH" | "SMS" | "WHATSAPP" | "FCM" | "SIGNED_WEBHOOK";
 
 /** B8: one of the caller's own phones (GET /api/mobile/devices); the notification token is never returned. */
 export interface PhoneDevice {
@@ -1401,6 +1401,27 @@ export interface PhoneDevices {
   configured: boolean;
   kinds: { id: string; label: string }[];
   devices: PhoneDevice[];
+}
+
+/** AUD-G2.5 (flag alert_webhooks): one of the member's own signed webhooks. The secret is never part of this. */
+export interface AlertWebhook {
+  id: string;
+  label: string;
+  url: string;
+  event_types: string[];
+  min_severity: string;
+  created_at: string;
+}
+
+export interface AlertWebhookList {
+  webhooks: AlertWebhook[];
+  max: number;
+  left: number;
+}
+
+/** The create answer: the only time the secret is sent to the browser. */
+export interface AlertWebhookCreated extends AlertWebhook {
+  secret: string;
 }
 
 export interface AlertChannel {

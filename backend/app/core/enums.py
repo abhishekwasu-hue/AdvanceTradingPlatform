@@ -170,6 +170,7 @@ class AlertChannelType(str, Enum):
     SMS = "SMS"           # Phase O3: any HTTP SMS gateway (MSG91, Twilio, Textlocal, ...) via a request template
     WHATSAPP = "WHATSAPP"  # S10 seam (flag alerts_whatsapp_dlt): a WhatsApp Business gateway, pre-approved template + opt-in only
     FCM = "FCM"           # B8 (flag mobile_push): phone notifications to the Android app (Firebase Cloud Messaging HTTP v1)
+    SIGNED_WEBHOOK = "SIGNED_WEBHOOK"  # AUD-G2.5 (flag alert_webhooks): each member's own signed webhooks (app/alerts/signed_webhooks.py)
 
 
 class AlertDeliveryStatus(str, Enum):

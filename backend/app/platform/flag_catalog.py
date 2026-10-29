@@ -156,6 +156,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "screener_etf": FlagInfo("ETF screen", "screens", "a screen", ("screener_v2",), "daily history", "ready"),
     "alerts_whatsapp_dlt": FlagInfo("WhatsApp and SMS alerts (India DLT)", "data", "channels", (), "DLT registration", "unfinished"),
     "growth_v2": FlagInfo("Your plan and usage, a discipline card to share, activation in the admin console", "platform", "a usage meter on Settings › Account & plan, a Share my week card on the Journal, Activation in the admin console", ("ui_v2",), "", "unfinished"),
+    "alert_webhooks": FlagInfo("Send your own alerts to your own tools (signed webhooks)", "data", "Webhooks in Settings › Alerts: add an https address, copy the secret once, send a test", ("ui_v2",), "", "ready"),
     "learn": FlagInfo("Learn: short lessons, the glossary and video links (education only)", "platform", "a Learn page in the sidebar", ("ui_v2",), "video links in Admin › Users & business (optional)", "unfinished"),
     "marketing_site": FlagInfo("Public pages: Features, How it works, About (no claims, no prices)", "platform", "links under the sign-in screen and the public pages", (), "", "unfinished"),
     "onboarding_emails": FlagInfo("First-week e-mails: connect broker, first paper bot, first signal review", "platform", "nothing in the app; e-mails in the first week", (), "the platform mailer (PLATFORM_SMTP_*) and PUBLIC_BASE_URL", "unfinished"),

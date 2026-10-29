@@ -265,6 +265,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/alert-channels/{channel_type}"): "trader",
     ("PUT", "/api/alert-channels/{channel_type}"): "trader",
     ("POST", "/api/alert-channels/{channel_type}/test"): "trader",
+    ("GET", "/api/alert-webhooks"): "member: the caller's own webhooks only (AUD-G2.5)",
+    ("POST", "/api/alert-webhooks"): "trader",
+    ("DELETE", "/api/alert-webhooks/{webhook_id}"): "trader",
+    ("POST", "/api/alert-webhooks/{webhook_id}/test"): "trader",
     # B8 (flag mobile_push): the caller's own phones for app notifications, inside the organisation's FCM channel
     ("GET", "/api/mobile/devices"): "member: the caller's own phones only (another member's phones are never listed; no token is returned)",
     ("POST", "/api/mobile/devices"): "self: registers the caller's own phone for notifications (a phone that changes hands is moved, never shared)",

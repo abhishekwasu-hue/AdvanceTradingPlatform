@@ -20,6 +20,7 @@ from app.instruments.contracts import ContractRules
 from app.paper import fno_ticket
 from app.trading.exit_logic import check_contract_exit, determine_exit_price
 from tests.test_contract_execution import BUY, WRITE, _load_master, _resolve, _signal
+from tests.test_contract_rules import TODAY
 from tests.test_fno1_chain_ticket import _body, _contract, _expiry, _preview
 from tests.test_trading_worker import _tenant
 from tests.test_z3_approval_entries import _price
@@ -173,9 +174,9 @@ def test_underlying_level_exits_only_when_the_trader_turns_them_on(monkeypatch):
     assert turned_on.status_code == 201 and turned_on.json()["underlying_breach_exit"] is True
     monkeypatch.setattr("app.deployments.routes.build_adapter", lambda record, client=None: _OptionBroker())
     body = {"symbol": "NIFTY 50", "instrument_kind": "OPTION", "option_strategy": "BULL_PUT_SPREAD", "spread_width": 2, "spot": SPOT}
-    preview = client.post("/api/deployments/preview-contract", headers=headers, json=body).json()
+    preview = client.post(f"/api/deployments/preview-contract?as_of={TODAY.isoformat()}", headers=headers, json=body).json()
     assert preview["structures"]["LONG"]["metrics"]["short_strikes"] == {}
-    preview = client.post("/api/deployments/preview-contract", headers=headers, json={**body, "underlying_breach_exit": True}).json()
+    preview = client.post(f"/api/deployments/preview-contract?as_of={TODAY.isoformat()}", headers=headers, json={**body, "underlying_breach_exit": True}).json()
     assert preview["structures"]["LONG"]["metrics"]["short_strikes"] == {"PE": 24500.0}
 
 

@@ -321,6 +321,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # user across brokers, optional Secondary groups) and simulated PAPER accounts. OFF: /api/accounts/mine answers 404
     # (X-Feature-Disabled). MA-1 is the registry only: nothing here routes, sizes or places an order.
     "multi_account": "Multi-account (M45): your own broker accounts as Primary / Secondary with groups, and simulated paper accounts (registry only; places no orders)",
+    # AUD-T1 (owner audit 28 Oct): "My day in one card" on Today - each open position's nearest area, expiry in sessions,
+    # what changed since the previous session and a chip from the user's own stop. Read-only. OFF: GET /api/today/my-day
+    # answers 404 and the card is hidden.
+    "my_day_card": "My day: one card on Today with each open position's nearest area, expiry and a chip from your own stop (information only)",
     # U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards - publicly described methods with a screen
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.

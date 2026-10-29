@@ -92,7 +92,11 @@ function factTile(f: CardFact, i: number, count: number): string {
 
 /** The card as SVG markup, from the checked card only. */
 export function cardSvg(card: DisciplineCard): string {
-  const c = cleanCard(card);
+  return cardSvgOf(cleanCard(card));
+}
+
+/** AUD-T4: the same drawing for a card its caller has already checked with its own rules (the paper report card). */
+export function cardSvgOf(c: DisciplineCard): string {
   const facts = c.facts.slice(0, 4);
   const lines = c.lines.slice(0, 3).flatMap((l) => wrap(l, 64)).slice(0, 3);
   const body = [

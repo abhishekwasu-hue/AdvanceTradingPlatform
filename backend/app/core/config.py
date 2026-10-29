@@ -892,3 +892,9 @@ ACCOUNT_ERASE_GRACE_DAYS = int(os.environ.get("ACCOUNT_ERASE_GRACE_DAYS", "7"))
 
 # AUD-T3 ("Why no trade" timeline): how many closed bars each bot keeps a reason for (older rows are pruned on write).
 WHY_NO_TRADE_KEEP_BARS = int(os.environ.get("WHY_NO_TRADE_KEEP_BARS", "50"))
+
+# AUD-T4 (paper report card, flag `paper_report_card`): the calibration (Brier score) of a shown confidence appears only
+# from PAPER_REPORT_CARD_MIN_TRADES_BRIER closed trades that carry one; the card reads at most PAPER_REPORT_CARD_MAX_TRADES
+# of the user's newest closed PAPER trades.
+PAPER_REPORT_CARD_MIN_TRADES_BRIER = _bounded_int("PAPER_REPORT_CARD_MIN_TRADES_BRIER", 20, 2, 10_000)
+PAPER_REPORT_CARD_MAX_TRADES = _bounded_int("PAPER_REPORT_CARD_MAX_TRADES", 5000, 100, 100_000)

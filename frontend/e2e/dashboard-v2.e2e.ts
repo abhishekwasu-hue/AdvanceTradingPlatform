@@ -56,7 +56,7 @@ async function open(page: Page, theme: "dark" | "light", setup: Setup = {}) {
 
 const THEMES = ["dark", "light"] as const;
 const PHONES = [{ width: 360, height: 800 }, { width: 390, height: 844 }];
-const ORDER = ["get-started", "strip", "attention", "positions", "signals", "today"];
+const ORDER = ["strip", "get-started", "attention", "positions", "signals", "today"];
 
 for (const size of PHONES) {
   test.describe(`v2 dashboard ${size.width} x ${size.height}`, () => {

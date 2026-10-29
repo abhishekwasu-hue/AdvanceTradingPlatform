@@ -8,7 +8,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import {
-  blankToNull, describeRule, policyErrors, problemsFrom, reasonLabel, ruleErrors, TIMEFRAMES,
+  blankToNull, describeRule, isOrphaned, policyErrors, problemsFrom, reasonLabel, ruleErrors, TIMEFRAMES,
   type AlertEventRow, type AlertRule, type AlertRuleInput, type DeadLetter, type EmailOptOut, type NotificationPolicy, type TelegramLinkCode,
 } from "../alerts/rules";
 import { Badge, Button, Input, Select } from "./primitives";
@@ -58,6 +58,9 @@ function RuleRow({ rule, onChanged, thenOn, then }: { rule: AlertRule; onChanged
           <Badge tone={rule.status === "active" ? "up" : "neutral"}>{rule.status}</Badge>
           {rule.priority === "critical" && <Badge tone="down">critical</Badge>}
           <span className="text-sm font-medium text-fg truncate">{rule.name}</span>
+          {/* UI-28 U7.3: what the alert watches at a glance - its symbol, or "Screen" - and an orphan said plainly. */}
+          {rule.symbol && <Badge tone="neutral"><span data-rule-symbol>{rule.symbol}</span></Badge>}
+          {isOrphaned(rule) && <Badge tone="warn"><span data-rule-orphaned title="The screen this alert ran has been deleted; it cannot fire until it runs a screen again.">Orphaned</span></Badge>}
         </div>
         <div className="flex gap-1 shrink-0">
           <Button size="sm" variant="ghost" onClick={showLog}>{events ? "Hide log" : "Delivery log"}</Button>

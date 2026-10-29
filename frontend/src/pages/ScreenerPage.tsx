@@ -411,6 +411,21 @@ export default function ScreenerPage(_props: PageProps) {
     }
   }, [registry, canRun, now, text, scanTf, symbols, toast, universeV2, plan]);
 
+  // UI-28 U5.3: "Auto-refresh 1m" - while it is on and the page is shown, the same scan runs again every minute (a run
+  // in flight or a changed, unchecked scan is never interrupted; the switch is off on every visit).
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const runNow = useRef(doRun);
+  runNow.current = doRun;
+  const canRunNow = useRef(false);
+  canRunNow.current = canRun && !running;
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible" && canRunNow.current) void runNow.current();
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [autoRefresh]);
+
   // One tap: a screen opened with "Try as a scan" runs as soon as its text has been checked and the universe is ready;
   // a problem in it stops the run (the trader sees it on its block), and the blocks stay editable either way.
   useEffect(() => {
@@ -687,6 +702,7 @@ export default function ScreenerPage(_props: PageProps) {
             </section>
           )}
           <ResultViews results={shownResults} running={running} runKey={runKey} stale={!!run && !fresh}
+                       autoRefresh={run ? { on: autoRefresh, onChange: setAutoRefresh } : undefined}
                        why={fresh && registry ? (symbol) => whyChips(registry, stages, run?.funnel ?? null, symbol) : undefined}
                        onShowEvidence={(r) => { if (r.evidence_id != null) setEvidence({ id: r.evidence_id, symbol: r.symbol }); }} />
           <EvidencePanel evidenceId={evidence?.id ?? null} symbol={evidence?.symbol} onClose={() => setEvidence(null)} />

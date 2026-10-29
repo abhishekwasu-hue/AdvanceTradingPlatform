@@ -39,11 +39,11 @@ import gzip
 import io
 import json
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
 import zipfile
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple

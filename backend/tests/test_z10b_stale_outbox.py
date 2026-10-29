@@ -24,8 +24,7 @@ from app.alerts import barclose, dispatcher, engine, staleness
 from app.alerts.barclose import with_today
 from app.alerts.staleness import alert_badge, closed_bars_after
 from app.core.enums import NotificationSeverity, NotificationType
-from app.db.models import (AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, AuditLogRecord, NotificationPolicyRecord, NotificationRecord,
-                           User)
+from app.db.models import AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, AuditLogRecord, NotificationPolicyRecord, NotificationRecord, User
 from app.market_data import service as md_service
 from app.market_data.calendar import IST
 from app.notifications.service import notify

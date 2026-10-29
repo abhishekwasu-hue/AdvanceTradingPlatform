@@ -19,7 +19,6 @@ from app.db.models import (
     SectorMetricRecord,
     ShareholdingSnapshotRecord,
 )
-from app.fundamentals.visibility import visible
 from app.fundamentals.models import (
     Bias,
     CompanyProfile,
@@ -32,6 +31,7 @@ from app.fundamentals.models import (
     ShareholdingSnapshot,
     SourceCitation,
 )
+from app.fundamentals.visibility import visible
 
 
 def _source_to_json(source: Optional[SourceCitation]) -> Optional[str]:

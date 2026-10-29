@@ -118,9 +118,9 @@ def test_vendor_seam_with_the_mock_vendor():
 
 # --- the tick writer (LAKE_TICK_WRITER_ENABLED) ---------------------------------------------------------------------
 
-from app.market_data import stream as stream_module          # noqa: E402
-from app.market_data.stream import Tick, TickCache, TickStream   # noqa: E402
-from app.market_lake.recorder import LakeRecorder            # noqa: E402
+from app.market_data import stream as stream_module  # noqa: E402
+from app.market_data.stream import Tick, TickCache, TickStream  # noqa: E402
+from app.market_lake.recorder import LakeRecorder  # noqa: E402
 
 
 def _tick(minutes: float, ltp: float, symbol="B2REC") -> Tick:

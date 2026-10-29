@@ -10,7 +10,7 @@ from app.db.models import Tenant, User
 from app.scanner import ai as scanner_ai
 from app.strategy_engine.declarative import CustomStrategyConfig
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
-from tests.test_phase_l_ai import VALID_ANSWER, _ScriptedProvider, _owner
+from tests.test_phase_l_ai import VALID_ANSWER, _owner, _ScriptedProvider
 
 
 def _run(coro):
@@ -106,7 +106,8 @@ def test_copilot_refuses_a_direction_the_facts_do_not_carry():
 
 def test_the_copilot_api_tags_numbers_the_trader_supplied(monkeypatch):
     from app.ai import routes as ai_routes
-    from tests.test_phase_p0_8b_grounding import _Provider as NamedProvider, _deploy, _tenant
+    from tests.test_phase_p0_8b_grounding import _deploy, _tenant
+    from tests.test_phase_p0_8b_grounding import _Provider as NamedProvider
     t = _tenant("hc1d-copilot@example.com")
     _deploy(t, symbol="NIFTY 50")
     provider = NamedProvider(["Your 24000 level is below anything in today's read; the plan stays paper only."])

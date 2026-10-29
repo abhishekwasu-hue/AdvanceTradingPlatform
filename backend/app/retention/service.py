@@ -23,10 +23,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import write_audit_log
 from app.auth.sessions import revoke_all_sessions
 from app.db.models import (
-    AiCandidateRecord, MarketSnapshotRecord, NewsEventRecord,
-    MdTenantChainSnapshotRecord, OIAlertLogRecord, OIBannerStateRecord, OIDayBaselineRecord, OISnapshotRecord, OptionChainSnapshotRecord, StrikeOISnapshotRecord,
-    AlertDeliveryRecord, FeedbackRecord, ScreenEvidenceRecord, LlmCallRecord, LoginEventRecord, MfaBackupCodeRecord, NotificationRecord, PasswordResetRecord,
-    TenantInviteRecord, User, UserAiKeyRecord, UserSessionRecord, UserVisionPrefsRecord, VisionReportRecord,
+    AiCandidateRecord,
+    AlertDeliveryRecord,
+    FeedbackRecord,
+    LlmCallRecord,
+    LoginEventRecord,
+    MarketSnapshotRecord,
+    MdTenantChainSnapshotRecord,
+    MfaBackupCodeRecord,
+    NewsEventRecord,
+    NotificationRecord,
+    OIAlertLogRecord,
+    OIBannerStateRecord,
+    OIDayBaselineRecord,
+    OISnapshotRecord,
+    OptionChainSnapshotRecord,
+    PasswordResetRecord,
+    ScreenEvidenceRecord,
+    StrikeOISnapshotRecord,
+    TenantInviteRecord,
+    User,
+    UserAiKeyRecord,
+    UserSessionRecord,
+    UserVisionPrefsRecord,
+    VisionReportRecord,
 )
 from app.retention.policy import RetentionPolicy, load_policy
 

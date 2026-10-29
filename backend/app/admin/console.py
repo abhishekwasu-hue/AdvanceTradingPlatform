@@ -18,8 +18,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import require_mfa_session, require_role
 from app.core.config import ACTIVATION_FIRST_SESSION_HOURS, WORKER_CYCLE_SECONDS
 from app.db.models import (
-    ActivationEventRecord, AlertDeliveryRecord, BrokerCredentialRecord, DataQualityEventRecord, InstrumentRecord, JournalEntryRecord, LlmCallRecord,
-    LoginEventRecord, MarketSnapshotRecord, StrategyDeploymentRecord, Tenant, User, UserSessionRecord, WorkerHeartbeatRecord,
+    ActivationEventRecord,
+    AlertDeliveryRecord,
+    BrokerCredentialRecord,
+    DataQualityEventRecord,
+    InstrumentRecord,
+    JournalEntryRecord,
+    LlmCallRecord,
+    LoginEventRecord,
+    MarketSnapshotRecord,
+    StrategyDeploymentRecord,
+    Tenant,
+    User,
+    UserSessionRecord,
+    WorkerHeartbeatRecord,
 )
 from app.db.session import get_session
 from app.growth import activation as activation_steps

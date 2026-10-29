@@ -27,8 +27,15 @@ from typing import Any, Dict, List, Mapping, Optional
 import numpy as np
 import pandas as pd
 
-from app.price_action.zones.detect import (DEMAND_ZONE, SUPPLY_ZONE, detect_demand_supply_zones, detect_order_blocks, find_overnight_gaps,
-                                           first_touch_event, role_by_price)
+from app.price_action.zones.detect import (
+    DEMAND_ZONE,
+    SUPPLY_ZONE,
+    detect_demand_supply_zones,
+    detect_order_blocks,
+    find_overnight_gaps,
+    first_touch_event,
+    role_by_price,
+)
 from app.price_action.zones.levels import compute_dynamic_sr, find_support_resistance_levels
 from app.price_action.zones.lifecycle import ZoneTracker, new_tracker, origin_side, prepare, track_zone
 from app.price_action.zones.memory import zone_tolerance

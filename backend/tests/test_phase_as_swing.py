@@ -9,6 +9,7 @@ from app.ai import advisor as ad
 from app.ai import interview as iv
 from app.brokers.models import BrokerOrderResponse
 from app.core.enums import SignalDirection
+from app.core.models import RiskConfig
 from app.db.models import TradeRecord
 from app.deployments.routes import DeploymentCreateRequest
 from app.execution.products import product_for, product_for_trade
@@ -16,9 +17,8 @@ from app.market_data import service as md_service
 from app.market_data.freshness import candle_staleness, timeframe_seconds
 from app.strategy_engine.chart_routes import evaluate_on_candles
 from app.strategy_engine.swing_strategies import SwingBreakout, SwingEmaPullback
-from app.core.models import RiskConfig
-from tests.test_deployments_api import _auth, _create, _store_broker
 from tests.test_auth_api import _session_factory
+from tests.test_deployments_api import _auth, _create, _store_broker
 
 UTC = timezone.utc
 

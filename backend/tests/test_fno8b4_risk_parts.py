@@ -19,11 +19,11 @@ from app.db.models import CompanyRecord, EarningsCalendarEventRecord, MarketEven
 from app.market_data.calendar import IST
 from app.paper import fno_insights
 from app.paper.fno_insights_routes import router
+from tests.tenancy_route_table import ROUTE_TABLE
 from tests.test_auth_api import _session_factory, client
 from tests.test_fno8b_insights import _org
 from tests.test_trading_worker import _tenant
 from tests.test_z5_p1d_risk_by_default import _flag
-from tests.tenancy_route_table import ROUTE_TABLE
 
 URL = "/api/paper/fno/event-risk"
 

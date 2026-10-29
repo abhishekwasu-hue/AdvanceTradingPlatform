@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 
-from app.indicators.volatility import true_range
 from app.indicators.prefix_cache import prefix_cached
+from app.indicators.volatility import true_range
 
 
 @prefix_cached

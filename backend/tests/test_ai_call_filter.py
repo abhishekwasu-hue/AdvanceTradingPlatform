@@ -325,6 +325,7 @@ def test_short_build_up_after_a_price_field_is_not_blocked():
 
 def test_price_field_floods_stay_linear():
     import time
+
     from app.ai.call_detect import detect
     path = "app/ai/data/advice_terms.json"
     for text in ("TCS: close 1, " * 3000, "Close above 2450 in INFY. " * 1500, "INFY: close at 1500 - x " * 1700,

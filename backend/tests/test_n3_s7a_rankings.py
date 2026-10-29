@@ -283,8 +283,9 @@ def test_history_refuses_rankscore_and_alerts_refuse_it():
     r = client.post("/api/screener/history/asof", headers=t["headers"],
                     json={"source": 'RankScore("platform:Momentum") > 80', "date": "2025-12-01", "universe": {"symbols": ["X"]}})
     assert r.status_code == 422 and "rank_system" in r.text
-    from app.alerts.rules_routes import _ranking_check
     from fastapi import HTTPException
+
+    from app.alerts.rules_routes import _ranking_check
     ast, _ = compile_screen('RankScore("platform:Momentum") > 80')
     with pytest.raises(HTTPException, match="422"):
         _ranking_check(ast)

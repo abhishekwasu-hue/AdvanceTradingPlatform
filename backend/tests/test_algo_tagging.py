@@ -10,7 +10,7 @@ from app.db.models import Tenant, TradeRecord, User
 from app.execution.tagging import LEG_ENTRY, LEG_EXIT, LEG_STOP, build_order_tag, valid_algo_id
 from app.risk_engine.risk_manager import TradingDayState
 from tests.test_auth_api import _register, _session_factory, client
-from tests.test_live_execution import _LiveBroker, _execute, _router, _signal, _upgrade_plan
+from tests.test_live_execution import _execute, _LiveBroker, _router, _signal, _upgrade_plan
 from tests.test_orders_api import _fake_long_signal, _sample_candles_payload
 
 
@@ -143,7 +143,9 @@ def test_live_refused_without_algo_id_when_required(monkeypatch):
 
 def test_exit_order_carries_algo_id():
     from app.trading.position_monitor import close_position
-    from tests.test_position_monitor import _Broker as _ExitBroker, _trade, _user as _pm_user
+    from tests.test_position_monitor import _Broker as _ExitBroker
+    from tests.test_position_monitor import _trade
+    from tests.test_position_monitor import _user as _pm_user
 
     user = _pm_user("algo-exit@example.com")
     _set_algo_id(user.tenant_id, "NSE55")

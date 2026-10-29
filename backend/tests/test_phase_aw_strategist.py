@@ -9,9 +9,9 @@ import pytest
 from app.ai import market_study as ms
 from app.ai import strategist as st
 from app.strategy_engine.declarative import Condition, CustomStrategyConfig, DeclarativeStrategy, Operand
+from tests.def0_legacy import legacy
 from tests.test_auth_api import _register, client
 from tests.test_phase_ap_interview import _sessions
-from tests.def0_legacy import legacy
 
 UTC = timezone.utc
 

@@ -33,7 +33,8 @@ from app.core.models import Signal
 from app.indicators.prefix_cache import whole_frame
 from app.screener.nodes import TF_MINUTES
 from app.strategy_engine.base import BaseStrategy
-from app.strategy_templates import engine, exits as exit_settings, ids, library
+from app.strategy_templates import engine, ids, library
+from app.strategy_templates import exits as exit_settings
 from app.strategy_templates.compile import Part, Settings, TemplateError, compile_part, compile_recipe
 from app.strategy_templates.schema import Template
 

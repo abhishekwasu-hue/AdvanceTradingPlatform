@@ -7,13 +7,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.accounts.service import ensure_account_for_credential
 from app.auth.dependencies import get_current_user, require_trader
 from app.brokers.models import BrokerCredentials
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.db.models import BrokerCredentialRecord, Tenant, User
 from app.db.session import get_session
 from app.reconciliation.models import ReconciliationReport
-from app.accounts.service import ensure_account_for_credential
 from app.reconciliation.service import merge_reports, open_trades, reconcile_accounts, run_reconciliation
 from app.secrets_store.encryption import decrypt_text
 from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL

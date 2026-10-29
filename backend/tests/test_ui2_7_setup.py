@@ -11,8 +11,14 @@ import pytest
 from sqlalchemy import func, select
 
 from app.db.models import (
-    AlertChannelRecord, BacktestRunRecord, BrokerCredentialRecord, NotificationLinkRecord, PaperAccountRecord, RiskSettingsRecord,
-    StrategyDeploymentRecord, UserPrefsRecord,
+    AlertChannelRecord,
+    BacktestRunRecord,
+    BrokerCredentialRecord,
+    NotificationLinkRecord,
+    PaperAccountRecord,
+    RiskSettingsRecord,
+    StrategyDeploymentRecord,
+    UserPrefsRecord,
 )
 from app.me import prefs, setup
 from tests.test_auth_api import _session_factory, client

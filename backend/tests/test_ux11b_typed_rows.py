@@ -5,12 +5,11 @@ carries the buyer / seller area as a price range (the owner's default, shown ins
 import json
 from datetime import date, timedelta
 
-
 from app.ai import market_memory
 from app.chart_analyze.signal_language import call_words
 from app.db.models import MarketEventRecord
 from app.rhythm import build, words
-from tests.test_mo4_daily_rhythm import (DAY, _add, _at, _build, _flags_on, _memory, _signal, _trade)  # noqa: F401 - autouse
+from tests.test_mo4_daily_rhythm import DAY, _add, _at, _build, _flags_on, _memory, _signal, _trade  # noqa: F401 - autouse
 from tests.test_ui2_4a1_prefs import _who
 
 

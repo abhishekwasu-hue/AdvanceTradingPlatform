@@ -126,8 +126,9 @@ async def replay_evidence(evidence_id: int, at: datetime, debug: bool = False, u
     if refusal is not None or key is None:
         raise _refuse(refusal or "this instrument has no shared history")
     times = [datetime.fromisoformat(t) for t in pack["bars"]["t"]]
-    from app.screener.runtime import bar_close
     import pandas as pd
+
+    from app.screener.runtime import bar_close
     closes = list(bar_close(pd.DatetimeIndex(times), base_tf))
     if not closes or at < closes[0].to_pydatetime() or at > datetime.fromisoformat(pack["as_of"]["bar_close"]):
         raise _refuse("`at` must be a bar of the pack's window (its first bar's close up to the pack's own bar)")

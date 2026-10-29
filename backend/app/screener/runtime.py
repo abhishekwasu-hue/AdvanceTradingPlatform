@@ -599,8 +599,7 @@ def _pattern_series(f: pd.DataFrame, name: str, confirm: str = "any") -> pd.Seri
     """S5-A: True on each bar where the named pattern shows (`candlestick_patterns.pattern_masks`, vectorised: a whole
     frame costs about as much as one bar did). The first two bars are False. AMW-3: the v2 candles
     (`pattern_masks_v2`), and with `confirm` the status the bar gave the pattern on the bar before (`confirmation_masks`)."""
-    from app.price_action.candlestick_patterns import (CONFIRM_STATES, PATTERN_DIRECTION, V2_PATTERN_NAMES, confirmation_masks, pattern_masks,
-                                                       pattern_masks_v2)
+    from app.price_action.candlestick_patterns import CONFIRM_STATES, PATTERN_DIRECTION, V2_PATTERN_NAMES, confirmation_masks, pattern_masks, pattern_masks_v2
     if confirm not in CONFIRM_STATES:
         raise ScreenRuntimeError(f"unknown confirmation status {confirm!r}")
     masks = pattern_masks_v2(f) if name in V2_PATTERN_NAMES else pattern_masks(f)

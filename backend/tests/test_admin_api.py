@@ -2,7 +2,6 @@
 changes (audited + notified), platform audit trail, and that nobody else can reach any of it."""
 import asyncio
 
-
 from app.admin import bootstrap
 from app.db.models import User
 from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET

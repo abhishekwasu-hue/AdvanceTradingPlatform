@@ -235,7 +235,8 @@ def test_a_quote_row_carries_open_interest_only_when_the_broker_gives_it(oi, exp
 def test_add_from_a_position_is_one_more_paper_ticket_order_and_never_a_group(monkeypatch):
     """Add on the positions page opens the same ticket: one more PAPER order through `/api/paper/fno/order`, asserted at
     the chokepoint. Two single tickets are not a group; each position still exits by itself."""
-    from tests.test_fno1_chain_ticket import _body, _contract, _expiry, _org_tenant as _ticket_tenant, _place
+    from tests.test_fno1_chain_ticket import _body, _contract, _expiry, _place
+    from tests.test_fno1_chain_ticket import _org_tenant as _ticket_tenant
     from tests.test_z3_approval_entries import _price
     t = _ticket_tenant("add")
     expiry = _expiry()

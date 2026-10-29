@@ -8,12 +8,12 @@ from sqlalchemy import select
 from app.brokers.models import BrokerPosition
 from app.db.models import BrokerAccountRecord, BrokerCredentialRecord, Tenant, TradeRecord
 from app.reconciliation.service import reconcile_accounts, run_reconciliation, trades_in_account
+from app.workers import trading_worker as tw
 from tests.broker_fakes import UPSTOX_KEY, UPSTOX_KEY_2, UPSTOX_SECRET
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _me
 from tests.test_safety_gates import _PositionBroker
 from tests.test_trading_worker import _FakeBroker, _worker
-from app.workers import trading_worker as tw
 
 
 def _run(coro):

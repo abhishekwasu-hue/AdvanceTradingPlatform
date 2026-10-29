@@ -16,7 +16,9 @@ import re
 
 import numpy as np
 import pytest
-from hypothesis import HealthCheck, given, settings as hsettings, strategies as st
+from hypothesis import HealthCheck, given
+from hypothesis import settings as hsettings
+from hypothesis import strategies as st
 
 from app.backtest.options_engine import OptionBacktestConfig
 from app.core.enums import OptionStrategy
@@ -27,8 +29,7 @@ from app.strategy_templates import compile as C
 from app.strategy_templates import engine, ids, language, library, wave_parity
 from app.strategy_templates.adapter import TemplateStrategy
 from tests.test_wave2_counter import _mirror_bars
-from tests.test_wave4_templates import (LEAD, PIVOT, RISK, _higher_frame, bars_of, ev, expressions, part_series, recipe, run,
-                                        signals)
+from tests.test_wave4_templates import LEAD, PIVOT, RISK, _higher_frame, bars_of, ev, expressions, part_series, recipe, run, signals
 
 NEW = ("G2", "G4", "G5", "G6", "G7", "G9", "G10", "G11")
 TEMPLATES = {tid: library.get(tid) for tid in NEW}

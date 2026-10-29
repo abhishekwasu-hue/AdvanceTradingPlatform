@@ -15,7 +15,7 @@ import pytest
 from app.market_data import hub as data_hub
 from app.market_data import stream as st
 from scripts import hub_probe
-from tests.test_market_data_service import _MemoryCache, _install_cache
+from tests.test_market_data_service import _install_cache, _MemoryCache
 
 
 @pytest.fixture(autouse=True)

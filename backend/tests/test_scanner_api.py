@@ -1,6 +1,4 @@
-from tests.test_auth_api import client
-
-from tests.test_auth_api import _register
+from tests.test_auth_api import _register, client
 
 _HEADERS = None
 

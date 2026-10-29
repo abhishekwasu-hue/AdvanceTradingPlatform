@@ -12,8 +12,8 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,21 +22,22 @@ from app.auth.dependencies import get_current_user, require_trader
 from app.backtest import chain_recorder
 from app.backtest.engine import ENGINE_VERSION, run_backtest
 from app.backtest.models import ModelError, ModelSet
-from app.backtest.repro import config_hash, fingerprint
-from app.backtest.options import OptionChainSnapshotRow, SnapshotPricer, SyntheticPricer, VolatilityModel, underlying_name
-from app.backtest.options_engine import ENGINE_VERSION as OPTIONS_ENGINE_VERSION, OptionBacktestConfig, OptionBacktestError, run_option_backtest
-from app.core.enums import ExpiryRule, OptionPosition, OptionStrategy, StrikeRule
-from app.instruments.spreads import MAX_CUSTOM_LEGS, MAX_LEG_RATIO, CustomLeg
-from app.market_data.calendar import load_holidays
 from app.backtest.optimizer import MAX_COMBOS, optimize
+from app.backtest.options import OptionChainSnapshotRow, SnapshotPricer, SyntheticPricer, VolatilityModel, underlying_name
+from app.backtest.options_engine import ENGINE_VERSION as OPTIONS_ENGINE_VERSION
+from app.backtest.options_engine import OptionBacktestConfig, OptionBacktestError, run_option_backtest
+from app.backtest.repro import config_hash, fingerprint
 from app.backtest.robustness import monte_carlo, walk_forward
+from app.core.enums import ExpiryRule, OptionPosition, OptionStrategy, StrikeRule
 from app.core.models import BacktestResult, OHLCVBar, RiskConfig, bars_to_dataframe
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BacktestRunRecord, User
 from app.db.session import get_session
-from app.trading.exit_rules import ExitRules
+from app.instruments.spreads import MAX_CUSTOM_LEGS, MAX_LEG_RATIO, CustomLeg
+from app.market_data.calendar import load_holidays
 from app.strategy_templates import exits as exit_settings
 from app.strategy_templates.exits import TemplateExitsBody
+from app.trading.exit_rules import ExitRules
 
 router = APIRouter(tags=["backtest"])
 

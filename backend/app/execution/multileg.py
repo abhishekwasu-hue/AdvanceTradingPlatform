@@ -19,8 +19,8 @@ Exits are the position monitor's job (`app/trading/position_monitor.py::_monitor
 legs are judged together on the spread's value, the short strikes and the square-off time.
 """
 import json
-import math
 import logging
+import math
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -32,35 +32,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.brokers.base import BrokerInterface
 from app.brokers.circuit_breaker import breaker_for
 from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest
+from app.compliance import fo_limits
+from app.compliance.algo_id import order_algo_id
 from app.core import config
-from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide, OrderStatus, SignalDirection
+from app.core.enums import AssetClass, ExecutionMode, NotificationSeverity, NotificationType, OrderSide, OrderStatus, SignalDirection
 from app.core.models import RiskConfig, Signal, Trade
-from app.risk_engine.routes import get_tenant_risk_config
 from app.db.models import OrderRecord, Tenant, TradeRecord, User
 from app.execution import approval as approval_gate
-from app.execution.contract_execution import MARGIN_SAFETY, ContractExecutionError, contract_ltp, _is_upstox
+from app.execution.contract_execution import MARGIN_SAFETY, ContractExecutionError, _is_upstox, contract_ltp
+from app.execution.multileg_smart import LegsRun, entry_specs, place_legs
 from app.execution.order_persistence import create_order, transition_order
 from app.execution.order_safety import wing_fill_complete
-from app.execution.multileg_smart import LegsRun, entry_specs, place_legs
 from app.execution.paper_adapter import PaperExecutionAdapter
 from app.execution.paper_broker import PaperBroker
 from app.execution.router import OrderRouter
 from app.execution.signal_execution import entry_refusals
-from app.compliance import fo_limits
-from app.compliance.algo_id import order_algo_id
 from app.execution.tagging import LEG_ENTRY, LEG_EXIT, build_order_tag
 from app.instruments.contracts import ContractResolutionError, ContractRules
 from app.instruments.models import ContractSpec
-from app.core.enums import AssetClass
 from app.instruments.spreads import ResolvedStructure, StructureMetrics, structure_metrics
 from app.notifications.service import notify
 from app.observability.metrics import ORDERS
+from app.platform.controls import clamp_config, risk_ceilings
 from app.reconciliation.service import mark_broker_uncertain
-from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarchy
 from app.risk_engine import by_default
 from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
-from app.platform.controls import clamp_config, risk_ceilings
+from app.risk_engine.hierarchy import RiskContext
+from app.risk_engine.hierarchy import evaluate as evaluate_hierarchy
 from app.risk_engine.risk_manager import RiskManager, nonfinite_levels
+from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
 
 logger = logging.getLogger(__name__)

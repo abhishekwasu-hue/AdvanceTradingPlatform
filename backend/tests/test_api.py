@@ -1,9 +1,8 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
-from tests.utils import decline_then_rally, make_series
-
 from tests.test_auth_api import _register
+from tests.utils import decline_then_rally, make_series
 
 _HEADERS = None
 

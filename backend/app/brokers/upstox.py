@@ -1,20 +1,17 @@
 import gzip
-import logging
 import json
+import logging
 import re
 import time
 from datetime import date, datetime, timezone
-from zoneinfo import ZoneInfo
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import httpx
 
-from app.instruments.master import normalise_expiry
-from app.brokers import master_cache
-from app.brokers import upstox_analytics
+from app.brokers import master_cache, upstox_analytics
 from app.brokers.base import BrokerCapabilities, BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
-from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
     BasketMargin,
     BrokerCredentials,
@@ -31,10 +28,12 @@ from app.brokers.models import (
     OptionChainRow,
     Quote,
 )
+from app.brokers.timestamps import parse_broker_timestamp
 from app.core import config
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
 from app.execution.order_safety import apply_market_protection
+from app.instruments.master import normalise_expiry
 
 UPSTOX_INTERVAL_MAP = {
     "1min": "1minute", "30min": "30minute", "day": "day", "week": "week", "month": "month",

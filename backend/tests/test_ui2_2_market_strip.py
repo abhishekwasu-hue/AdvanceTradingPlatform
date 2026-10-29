@@ -20,12 +20,12 @@ import pytest
 from sqlalchemy import event
 
 from app.brokers.models import Quote
-from app.core.enums import BrokerTokenStatus
 from app.core import rate_limit
+from app.core.enums import BrokerTokenStatus
 from app.db.models import MarketSnapshotRecord
+from app.main import app
 from app.market_data import api_budget, quotes_routes, strip_routes
 from app.market_data.calendar import IST
-from app.main import app
 from tests.route_inventory import iter_api_routes
 from tests.tenancy_route_table import ROUTE_TABLE
 from tests.test_auth_api import _engine, _session_factory, client

@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from app.ai import agent, tools
-from app.ai.providers import AnthropicProvider, ProviderError, ToolCall, ToolTurn, Completion
+from app.ai.providers import AnthropicProvider, Completion, ProviderError, ToolCall, ToolTurn
 from app.ai.tools import Tool, ToolContext, ToolResult, run_tool
 from app.db.models import AgentRunRecord, AgentStepRecord, TradeRecord, User
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures

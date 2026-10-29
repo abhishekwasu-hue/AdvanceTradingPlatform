@@ -20,7 +20,7 @@ from app.core import config
 from app.db.models import EgressIpChangeRecord, EgressIpRecord, StrategyDeploymentRecord
 from tests.test_auth_api import _session_factory, client
 from tests.test_phase_k_commercial import _owner
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _signal, _tenant, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _signal, _tenant, _worker
 
 PUBLIC, OTHER_PUBLIC, BACKUP = "203.0.113.10", "198.51.100.20", "2001:db8::1"
 

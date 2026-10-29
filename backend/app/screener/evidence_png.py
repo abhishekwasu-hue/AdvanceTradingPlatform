@@ -397,6 +397,7 @@ def _ohlc_text(o: Any, h: Any, l: Any, c: Any, v: Any) -> str:
 def _time_labels(times: Sequence[Any], base_tf: str) -> List[str]:
     """Each bar's start in IST: "10 OCT 11:15" for intraday bars, "19 JUL 2026" for a day, week or month."""
     import pandas as pd
+
     from app.screener.evidence import INTRADAY_TFS
     out: List[str] = []
     for t in times:

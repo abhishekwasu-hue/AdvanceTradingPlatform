@@ -21,7 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.db.models import User
 from app.db.session import get_session
-from app.strategy_templates import exits as exit_settings, ids, language, library, packs
+from app.strategy_templates import exits as exit_settings
+from app.strategy_templates import ids, language, library, packs
 from app.strategy_templates.adapter import ENGINE_LABEL, TemplateStrategy
 from app.strategy_templates.compile import TemplateError, compile_recipe, resolve_settings
 from app.strategy_templates.schema import Template

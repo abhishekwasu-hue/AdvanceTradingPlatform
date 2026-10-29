@@ -400,7 +400,8 @@ def test_a_future_order_is_paper_and_asserted_at_the_chokepoint(fut, monkeypatch
 @pytest.fixture
 def covered(monkeypatch):
     """A covered call on a unique expiry: a future at 30,000 and the 30,200 call at 100 (lot 75, as the FNO-2 tests)."""
-    from tests.test_fno2_basket import LOT as BLOT, _contract, _expiry, _prices
+    from tests.test_fno2_basket import LOT as BLOT
+    from tests.test_fno2_basket import _contract, _expiry, _prices
     expiry = _expiry()
     fut = _future("NIFTY", expiry, lot=BLOT)
     fut.tradingsymbol = f"NIFTY{uuid.uuid4().hex[:6].upper()}FUT"
@@ -420,7 +421,8 @@ def _covered_legs(expiry, fut_stop=29960.0):
 
 
 def test_a_future_leg_in_the_basket_numbers(covered):
-    from tests.test_fno2_basket import _org_tenant as basket_tenant, _post
+    from tests.test_fno2_basket import _org_tenant as basket_tenant
+    from tests.test_fno2_basket import _post
     expiry, _, _, lot = covered
     t = basket_tenant("fut-eval")
     out = _post(t, "evaluate", {"legs": [{**leg, "iv": 0.15} if leg["right"] != "FUT" else leg for leg in _covered_legs(expiry)], "spot": 30000.0})
@@ -440,7 +442,10 @@ def test_a_future_leg_in_the_basket_numbers(covered):
 
 
 def test_a_future_leg_needs_a_stop_and_is_placed_paper_first(covered, monkeypatch):
-    from tests.test_fno2_basket import _lock as basket_lock, _orders as basket_orders, _org_tenant as basket_tenant, _post
+    from tests.test_fno2_basket import _lock as basket_lock
+    from tests.test_fno2_basket import _orders as basket_orders
+    from tests.test_fno2_basket import _org_tenant as basket_tenant
+    from tests.test_fno2_basket import _post
     expiry, fut_symbol, call_symbol, lot = covered
     t = basket_tenant("fut-exec")
     # DEF-0: the future leg's stop is required only by the user's own my_limits setting.

@@ -6,20 +6,72 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Union
 
-from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.rate_limit import user_rate_limit
-from app.core.route_cache import install as install_route_cache
-from app.core.config import ALLOWED_ORIGINS, APP_VERSION, ENVIRONMENT, MAX_REQUEST_BODY_BYTES, api_docs_enabled, tables_created_at_startup, validate_production_config
-from app.core.logging_config import configure_logging
+from app.accounts.routes import router as accounts_router
+from app.admin.bootstrap import promote_configured_super_admins
+from app.admin.console import router as admin_console_router
+from app.admin.routes import router as admin_router
+from app.admin.view_as_routes import admin_router as view_as_admin_router
+from app.admin.view_as_routes import router as view_as_router
+from app.ai.byok_routes import router as ai_byok_router
+from app.ai.chat_routes import router as ai_chat_router
+from app.ai.connect_routes import router as ai_connect_router
+from app.ai.routes import router as ai_router
+from app.alerts.links_routes import router as alert_links_router
+from app.alerts.outbox_admin import router as alert_outbox_admin_router
+from app.alerts.platform_bot_routes import router as telegram_connect_router
+from app.alerts.routes import router as alerts_router
+from app.alerts.rules_routes import router as alert_rules_router
+from app.alerts.webhook_routes import router as alert_webhooks_router
+from app.auth.dependencies import get_current_user, get_current_user_optional
+from app.auth.google_routes import router as google_auth_router
+from app.auth.routes import router as auth_router
+from app.auth.view_as_middleware import ViewSessionReadOnly
+from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, with_template_exits
+from app.backtest.routes import router as backtest_router
+from app.beta.routes import admin_router as beta_admin_router
+from app.beta.routes import feedback_router, pwa_router
+from app.billing.routes import admin_router as billing_admin_router
+from app.billing.routes import router as billing_router
+from app.billing.routes import webhook_router as billing_webhook_router
+from app.billing.service import meter
+from app.brokers.connect import router as broker_connect_router
+from app.brokers.models import OptionChain
+from app.brokers.registry import available_brokers
+from app.brokers.routes import router as broker_router
+from app.cache.client import cache_get, cache_set
+from app.chart_analyze.routes import admin_router as chart_analyze_admin_router
+from app.chart_analyze.routes import router as chart_analyze_router
+from app.charts.contracts import router as chart_contracts_router
+from app.charts.drawings import router as chart_drawings_router
+from app.charts.futures_basis import router as chart_futures_basis_router
+from app.charts.layouts import router as chart_layouts_router
+from app.charts.price_action_layer import router as chart_price_action_layer_router
+from app.charts.studies import router as chart_studies_router
+from app.charts.trades_layer import router as chart_trades_layer_router
+from app.charts.zones_layer import router as chart_zones_layer_router
+from app.compliance.routes import router as compliance_router
+from app.context_panel.routes import router as context_panel_router
+from app.contract_notes.routes import router as contract_notes_router
+from app.core.config import (
+    ALLOWED_ORIGINS,
+    APP_VERSION,
+    ENVIRONMENT,
+    MAX_REQUEST_BODY_BYTES,
+    api_docs_enabled,
+    tables_created_at_startup,
+    validate_production_config,
+)
 from app.core.enums import ExecutionMode, OrderStatus
+from app.core.logging_config import configure_logging
 from app.core.models import (
     BacktestResult,
     OHLCVBar,
@@ -28,175 +80,144 @@ from app.core.models import (
     StrategyInfo,
     bars_to_dataframe,
 )
-from app.auth.dependencies import get_current_user, get_current_user_optional
-from app.auth.routes import router as auth_router
-from app.auth.google_routes import router as google_auth_router
-from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router, with_template_exits
-from app.strategy_templates.exits import TemplateExitsBody
-from app.brokers.models import OptionChain
-from app.brokers.registry import available_brokers
-from app.brokers.routes import router as broker_router
-from app.brokers.connect import router as broker_connect_router
-from app.live.routes import router as live_router
-from app.cache.client import cache_get, cache_set
-from app.custom_strategies.resolver import custom_strategy_info, resolve_strategy
-from app.strategy_engine.chart_routes import router as strategy_chart_router
-from app.custom_strategies.routes import router as custom_strategies_router
-from app.fundamentals.routes import router as fundamentals_router
-from app.db.models import CustomStrategyRecord, User
+from app.core.rate_limit import user_rate_limit
+from app.core.route_cache import install as install_route_cache
 from app.core.validation_errors import request_validation_handler
+from app.custom_strategies.resolver import custom_strategy_info, resolve_strategy
+from app.custom_strategies.routes import router as custom_strategies_router
+from app.db.models import CustomStrategyRecord, User
+from app.db.session import _session_factory as _startup_session_factory
 from app.db.session import get_session, init_models
+from app.decision_tools.routes import router as decision_tools_router
+from app.deployments.routes import router as deployments_router
+from app.execution.incomplete_routes import router as incomplete_orders_router
 from app.execution.order_persistence import get_order_by_idempotency_key
 from app.execution.router import LiveTradingNotConfigured, OrderRouter
 from app.execution.signal_execution import execute_signal_for_user
-from app.instruments.models import ContractSpec
-from app.instruments.registry import get_contract_spec, list_contract_specs
-from app.kill_switch.checks import is_global_kill_switch_engaged
-from app.kill_switch.routes import router as kill_switch_router
-from app.news_events.routes import router as news_events_router
-from app.options_builder.routes import router as options_builder_router
-from app.options_builder.saved import router as options_builder_saved_router
-from app.news_feed.routes import router as news_feed_router
-from app.telegram_inbound.routes import router as telegram_inbound_router
-from app.option_chain.analysis import analyze_option_chain
-from app.option_chain.leg_greeks import compute_strategy_greeks
-from app.option_chain.models import OptionChainAnalysis, OptionLegInput, StrategyGreeksResult
-from app.notifications.routes import router as notifications_router
-from app.reconciliation.routes import router as reconciliation_router
-from app.accounts.routes import router as accounts_router
-from app.scanner.engine import run_scanner
-from app.scanner.routes import router as scanner_ai_router
-from app.quant.routes import router as quant_router
-from app.scanner.models import ScannerRequest, ScannerResult
-from app.price_action.candlestick_patterns import detect_patterns
-from app.price_action.market_structure import analyze_market_structure
-from app.price_action.models import MarketStructureResult, PatternMatch
-from app.risk_engine.risk_manager import TradingDayState
-from app.risk_engine.routes import router as risk_settings_router
-from app.risk_engine.hierarchy_routes import router as risk_hierarchy_router
-from app.risk_engine.guardian_routes import router as risk_guardian_router
-from app.signal_scoring.engine import enrich_signal
-from app.signal_scoring.models import EnrichedSignal
-from app.strategy_engine.registry import registry
-from app.support_resistance.engine import SupportResistanceEngine
-from app.support_resistance.models import SRZone
-from app.trading.persistence import persist_signal_history
-from app.paper.routes import router as paper_router
-from app.decision_tools.routes import router as decision_tools_router
-from app.watchlists.routes import router as watchlists_router
-from app.watchlists.system_routes import admin_router as system_watchlists_admin_router
-from app.watchlists.system_routes import router as system_watchlists_router
-from app.chart_analyze.routes import admin_router as chart_analyze_admin_router, router as chart_analyze_router
-from app.signals_feed.routes import router as signals_feed_router
-from app.signals_feed.day_one_routes import router as signals_day_one_router
-from app.me.prefs import router as me_prefs_router
-from app.me.account import router as me_account_router
-from app.rhythm.routes import router as rhythm_router
-from app.trading.cost_meter import router as cost_meter_router
 from app.expiry_checklist.routes import router as expiry_checklist_router
-from app.today.routes import router as today_router
-from app.option_chain.ask_routes import router as oc_ask_router
-from app.option_chain.probe import admin_router as oc_probe_admin_router
-from app.me.setup import router as me_setup_router
-from app.me.notices import router as me_notices_router
-from app.context_panel.routes import router as context_panel_router
-from app.markets.routes import router as markets_router
-from app.terminal.routes import router as terminal_router
+from app.exports.routes import router as exports_router
+from app.fundamentals.routes import router as fundamentals_router
+from app.fx.routes import admin_router as fx_admin_router
+from app.fx.routes import router as fx_router
 from app.growth.routes import admin_router as growth_admin_router
 from app.growth.routes import router as growth_router
-from app.learn.routes import router as learn_router
-from app.paper.ticket_routes import router as paper_ticket_router
-from app.paper.fno_routes import router as paper_fno_router
-from app.execution.incomplete_routes import router as incomplete_orders_router
-from app.paper.fno_insights_routes import router as paper_fno_insights_router
-from app.paper.fno_journal_routes import router as paper_fno_journal_router
-from app.paper.report_card_routes import router as paper_report_card_router
-from app.setup_recall.routes import router as setup_recall_router
-from app.trading.routes import router as trading_router
-from app.webhooks.routes import router as webhooks_router
-from app.workers.routes import router as workers_router
-from app.deployments.routes import router as deployments_router
-from app.alerts.routes import router as alerts_router
-from app.alerts.webhook_routes import router as alert_webhooks_router
-from app.mobile.devices import router as mobile_devices_router
-from app.team.routes import router as team_router
-from app.admin.routes import router as admin_router
-from app.admin.console import router as admin_console_router
-from app.admin.view_as_routes import admin_router as view_as_admin_router, router as view_as_router
-from app.auth.view_as_middleware import ViewSessionReadOnly
-from app.exports.routes import router as exports_router
-from app.contract_notes.routes import router as contract_notes_router
-from app.observability.middleware import ObservabilityMiddleware
-from app.observability.routes import router as observability_router
-from app.observability.status_page import router as public_status_router
-from app.observability.status_history import router as status_sessions_router
+from app.idea_library.routes import router as idea_library_router
+from app.incidents.routes import router as incidents_router
+from app.instruments.models import ContractSpec
+from app.instruments.registry import get_contract_spec, list_contract_specs
 from app.instruments.routes import router as instrument_master_router
-from app.admin.bootstrap import promote_configured_super_admins
-from app.db.session import _session_factory as _startup_session_factory
-from app.market_data.routes import router as market_holidays_router
+from app.journal.routes import router as journal_router
+from app.kill_switch.checks import is_global_kill_switch_engaged
+from app.kill_switch.routes import router as kill_switch_router
+from app.lab.pine.routes import router as lab_pine_router
+from app.learn.routes import router as learn_router
+from app.legal.routes import router as legal_router
+from app.live.routes import router as live_router
 from app.market_data.candles_routes import router as market_candles_router
 from app.market_data.probe import admin_router as market_probe_admin_router
 from app.market_data.quotes_routes import router as market_quotes_router
+from app.market_data.routes import router as market_holidays_router
 from app.market_data.strip_routes import router as market_strip_router
-from app.market_lake.import_routes import backfill_router as history_backfill_admin_router
-from app.market_lake.import_routes import intraday_router as history_intraday_admin_router
 from app.market_lake.chain_history_routes import admin_router as chain_history_admin_router
 from app.market_lake.chain_history_routes import router as chain_history_router
+from app.market_lake.import_routes import backfill_router as history_backfill_admin_router
+from app.market_lake.import_routes import intraday_router as history_intraday_admin_router
 from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
-from app.option_chain.routes import router as oi_banner_router
-from app.option_chain.futures_routes import router as fno_hub_router
-from app.option_chain.analyses_routes import router as oc_analyses_router
-from app.option_chain.charts_routes import router as oc_charts_router
-from app.platform.readiness_routes import router as readiness_router
-from app.billing.routes import admin_router as billing_admin_router, router as billing_router, webhook_router as billing_webhook_router
-from app.billing.service import meter
-from app.marketplace.routes import admin_router as marketplace_admin_router, router as marketplace_router
-from app.public_api.routes import keys_router as api_keys_router, public_router as public_api_router
-from app.ai.routes import router as ai_router
-from app.ai.chat_routes import router as ai_chat_router
-from app.ai.byok_routes import router as ai_byok_router
-from app.ai.connect_routes import router as ai_connect_router
-from app.platform.routes import admin_router as controls_admin_router, status_router as system_status_router, users_router as trading_disable_router
-from app.portfolio.routes import router as portfolio_router
-from app.tax.routes import router as tax_router
-from app.fx.routes import admin_router as fx_admin_router, router as fx_router
-from app.incidents.routes import router as incidents_router
-from app.screener.routes import router as screener_router
-from app.screener.history_routes import router as screener_history_router
-from app.screener.ranking_routes import router as screener_rankings_router
-from app.screener.breakouts.routes import router as screener_breakouts_router
-from app.screener.evidence_routes import router as screener_evidence_router
-from app.screener.board import router as screener_board_router
-from app.screener.library_routes import router as screener_library_router
-from app.screener.version_routes import router as screener_version_router
-from app.screener.etf_routes import router as screener_etf_router
-from app.screener.universes import router as screener_universes_router
-from app.lab.pine.routes import router as lab_pine_router
-from app.strategy_templates.routes import router as strategy_templates_router
-from app.idea_library.routes import router as idea_library_router
-from app.alerts.rules_routes import router as alert_rules_router
-from app.screener.then.routes import router as scan_then_router
-from app.alerts.links_routes import router as alert_links_router
-from app.alerts.platform_bot_routes import router as telegram_connect_router
+from app.marketplace.routes import admin_router as marketplace_admin_router
+from app.marketplace.routes import router as marketplace_router
+from app.markets.routes import router as markets_router
+from app.me.account import router as me_account_router
+from app.me.notices import router as me_notices_router
+from app.me.prefs import router as me_prefs_router
+from app.me.setup import router as me_setup_router
+from app.mobile.devices import router as mobile_devices_router
+from app.news_events.routes import router as news_events_router
+from app.news_feed.routes import router as news_feed_router
+from app.notifications.routes import router as notifications_router
+from app.observability.middleware import ObservabilityMiddleware
 from app.observability.ops_routes import router as ops_alerts_router
-from app.alerts.outbox_admin import router as alert_outbox_admin_router
-from app.compliance.routes import router as compliance_router
-from app.charts.drawings import router as chart_drawings_router
-from app.charts.layouts import router as chart_layouts_router
-from app.charts.zones_layer import router as chart_zones_layer_router
-from app.charts.price_action_layer import router as chart_price_action_layer_router
-from app.charts.trades_layer import router as chart_trades_layer_router
-from app.charts.contracts import router as chart_contracts_router
-from app.charts.futures_basis import router as chart_futures_basis_router
-from app.charts.studies import router as chart_studies_router
-from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
-from app.journal.routes import router as journal_router
-from app.legal.routes import router as legal_router
-from app.support.routes import router as support_router
-from app.support.desk_routes import admin_router as support_desk_admin_router, router as support_desk_router
-from app.secrets_store.envelope import warm_all as warm_tenant_keys
+from app.observability.routes import router as observability_router
+from app.observability.status_history import router as status_sessions_router
+from app.observability.status_page import router as public_status_router
+from app.option_chain.analyses_routes import router as oc_analyses_router
+from app.option_chain.analysis import analyze_option_chain
+from app.option_chain.ask_routes import router as oc_ask_router
+from app.option_chain.charts_routes import router as oc_charts_router
+from app.option_chain.futures_routes import router as fno_hub_router
+from app.option_chain.leg_greeks import compute_strategy_greeks
+from app.option_chain.models import OptionChainAnalysis, OptionLegInput, StrategyGreeksResult
+from app.option_chain.probe import admin_router as oc_probe_admin_router
+from app.option_chain.routes import router as oi_banner_router
+from app.options_builder.routes import router as options_builder_router
+from app.options_builder.saved import router as options_builder_saved_router
+from app.paper.fno_insights_routes import router as paper_fno_insights_router
+from app.paper.fno_journal_routes import router as paper_fno_journal_router
+from app.paper.fno_routes import router as paper_fno_router
+from app.paper.report_card_routes import router as paper_report_card_router
+from app.paper.routes import router as paper_router
+from app.paper.ticket_routes import router as paper_ticket_router
 from app.platform.deployment_phase import on_startup as deployment_phase_startup
+from app.platform.readiness_routes import router as readiness_router
+from app.platform.routes import admin_router as controls_admin_router
+from app.platform.routes import status_router as system_status_router
+from app.platform.routes import users_router as trading_disable_router
+from app.portfolio.routes import router as portfolio_router
+from app.price_action.candlestick_patterns import detect_patterns
+from app.price_action.market_structure import analyze_market_structure
+from app.price_action.models import MarketStructureResult, PatternMatch
+from app.public_api.routes import keys_router as api_keys_router
+from app.public_api.routes import public_router as public_api_router
+from app.quant.routes import router as quant_router
+from app.reconciliation.routes import router as reconciliation_router
+from app.rhythm.routes import router as rhythm_router
+from app.risk_engine.guardian_routes import router as risk_guardian_router
+from app.risk_engine.hierarchy_routes import router as risk_hierarchy_router
+from app.risk_engine.risk_manager import TradingDayState
+from app.risk_engine.routes import router as risk_settings_router
+from app.scanner.engine import run_scanner
+from app.scanner.models import ScannerRequest, ScannerResult
+from app.scanner.routes import router as scanner_ai_router
+from app.screener.board import router as screener_board_router
+from app.screener.breakouts.routes import router as screener_breakouts_router
+from app.screener.etf_routes import router as screener_etf_router
+from app.screener.evidence_routes import router as screener_evidence_router
+from app.screener.history_routes import router as screener_history_router
+from app.screener.library_routes import router as screener_library_router
+from app.screener.ranking_routes import router as screener_rankings_router
+from app.screener.routes import router as screener_router
+from app.screener.then.routes import router as scan_then_router
+from app.screener.universes import router as screener_universes_router
+from app.screener.version_routes import router as screener_version_router
+from app.secrets_store.envelope import warm_all as warm_tenant_keys
+from app.setup_recall.routes import router as setup_recall_router
+from app.signal_scoring.engine import enrich_signal
+from app.signal_scoring.models import EnrichedSignal
+from app.signals_feed.day_one_routes import router as signals_day_one_router
+from app.signals_feed.routes import router as signals_feed_router
+from app.strategy_engine.chart_routes import router as strategy_chart_router
+from app.strategy_engine.registry import registry
+from app.strategy_templates.exits import TemplateExitsBody
+from app.strategy_templates.routes import router as strategy_templates_router
+from app.support.desk_routes import admin_router as support_desk_admin_router
+from app.support.desk_routes import router as support_desk_router
+from app.support.routes import router as support_router
+from app.support_resistance.engine import SupportResistanceEngine
+from app.support_resistance.models import SRZone
+from app.tax.routes import router as tax_router
+from app.team.routes import router as team_router
+from app.telegram_inbound.routes import router as telegram_inbound_router
+from app.terminal.routes import router as terminal_router
+from app.today.routes import router as today_router
+from app.trading.cost_meter import router as cost_meter_router
+from app.trading.persistence import persist_signal_history
+from app.trading.routes import router as trading_router
+from app.watchlists.routes import router as watchlists_router
+from app.watchlists.system_routes import admin_router as system_watchlists_admin_router
+from app.watchlists.system_routes import router as system_watchlists_router
+from app.webhooks.routes import router as webhooks_router
+from app.workers.routes import router as workers_router
+
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -914,4 +935,5 @@ install_route_cache(app)
 # set (app/observability/tracing.py). Here and not in the lifespan: the middleware stack is built on the first ASGI
 # call (the lifespan's own), so the app is instrumented before that. Never stops the API from starting.
 from app.observability import tracing as _tracing  # noqa: E402
+
 _tracing.init("api", app=app)

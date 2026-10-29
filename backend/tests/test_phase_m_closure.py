@@ -12,15 +12,15 @@ from app.backtest.optimizer import expand_grid, optimize
 from app.brokers.models import BrokerOrderRequest, BrokerOrderResponse
 from app.core.enums import OrderSide
 from app.core.models import RiskConfig
-from app.db.models import TradeRecord, User
+from app.db.models import StrategyDeploymentRecord, TradeRecord, User
 from app.portfolio.engine import snapshot
 from app.strategy_engine.registry import registry
 from app.trading.degradation import compare, live_metrics
 from tests.test_admin_api import _admin
 from tests.test_auth_api import _register, _session_factory, client
-from tests.test_trading_worker import BAR_TS, OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant as _worker_tenant, _trades, _worker
+from tests.test_trading_worker import BAR_TS, OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _trades, _worker
+from tests.test_trading_worker import _tenant as _worker_tenant
 from tests.utils import make_series, noisy_uptrend
-from app.db.models import StrategyDeploymentRecord
 
 
 def _run(coro):
@@ -174,7 +174,8 @@ def test_deployment_scope_limit_counts_only_that_deployments_trades():
     assert client.put("/api/risk/limits", headers=t["headers"], json={"scope": "DEPLOYMENT", "scope_id": str(dep_a), "limit_type": "MAX_OPEN_POSITIONS", "limit_value": 2}).status_code == 200
 
     async def evaluate(dep_id):
-        from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarchy
+        from app.risk_engine.hierarchy import RiskContext
+        from app.risk_engine.hierarchy import evaluate as evaluate_hierarchy
         async with _session_factory() as session:
             user = await session.get(User, t["user_id"])
             ctx = RiskContext(tenant_id=t["tenant_id"], user_id=user.id, strategy_id="ema_rsi_scalper_1m", symbol="RELIANCE", quantity=1, entry=100, stop_loss=98,

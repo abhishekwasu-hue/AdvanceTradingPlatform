@@ -22,7 +22,8 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd

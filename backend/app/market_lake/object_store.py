@@ -58,7 +58,7 @@ class R2Store:
     def __init__(self, *, bucket: str, endpoint: str, access_key_id: str, secret_access_key: str, client=None) -> None:
         self.bucket = bucket
         if client is None:
-            import boto3     # imported here so the API process never needs it
+            import boto3  # imported here so the API process never needs it
 
             client = boto3.client("s3", endpoint_url=endpoint, aws_access_key_id=access_key_id,
                                   aws_secret_access_key=secret_access_key, region_name="auto")

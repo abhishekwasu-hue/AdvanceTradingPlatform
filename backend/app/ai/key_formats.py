@@ -28,8 +28,8 @@ Nothing here keeps, logs or echoes a key.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional, Tuple
 
 Kind = Literal["provider", "unsupported", "session", "admin", "unknown", "empty"]

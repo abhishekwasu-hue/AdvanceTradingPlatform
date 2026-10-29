@@ -48,8 +48,13 @@ from app.auth.dependencies import get_current_user
 from app.brokers import upstox_analytics
 from app.core.enums import AlertChannelType
 from app.db.models import (
-    AlertChannelRecord, BacktestRunRecord, BrokerCredentialRecord, PaperAccountRecord, RiskSettingsRecord,
-    StrategyDeploymentRecord, User,
+    AlertChannelRecord,
+    BacktestRunRecord,
+    BrokerCredentialRecord,
+    PaperAccountRecord,
+    RiskSettingsRecord,
+    StrategyDeploymentRecord,
+    User,
 )
 from app.db.session import get_session
 from app.me import prefs, setup_health

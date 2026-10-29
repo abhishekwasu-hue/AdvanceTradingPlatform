@@ -161,6 +161,7 @@ def format_candles(result: Dict[str, Any]) -> List[str]:
 
 async def _owner(session: AsyncSession) -> User:
     from sqlalchemy import select
+
     from app.core.config import SUPER_ADMIN_EMAILS
     from app.core.enums import UserRole
     query = select(User).where(User.role == UserRole.SUPER_ADMIN.value)

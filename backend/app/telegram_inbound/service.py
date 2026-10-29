@@ -47,15 +47,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import briefing, market_memory, monitor, sentiment
 from app.alerts.channels import TelegramConfig, decrypt_config, decrypt_raw, encrypt_config, parse_config
 from app.alerts.links import START_CODE, consume_start
-from app.cache.client import cache_incr_window
 from app.audit.log import write_audit_log
 from app.billing.service import meter
+from app.cache.client import cache_incr_window
 from app.core import config as app_config
 from app.core.enums import AlertChannelType, UserRole
+from app.core.models import RiskConfig
 from app.db.models import AiActionRecord, AlertChannelRecord, StrategyDeploymentRecord, TelegramCallbackRecord, Tenant, TradeRecord, User
 from app.market_data.calendar import IST
 from app.risk_engine.routes import get_tenant_risk_config
-from app.core.models import RiskConfig
 
 logger = logging.getLogger(__name__)
 

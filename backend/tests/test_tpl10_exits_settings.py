@@ -40,7 +40,8 @@ from app.core.enums import OptionStrategy, SignalDirection, StrikeRule
 from app.core.models import RiskConfig
 from app.quality.lookahead import synthetic_bars
 from app.strategy_templates import compile as C
-from app.strategy_templates import exits as X, library
+from app.strategy_templates import exits as X
+from app.strategy_templates import library
 from app.strategy_templates.adapter import TemplateStrategy
 from tests.def0_legacy import legacy
 

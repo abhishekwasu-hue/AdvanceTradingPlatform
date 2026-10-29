@@ -15,15 +15,14 @@ and its checkout link (none under the manual provider - the operator confirms th
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_mfa_session, require_owner, require_role, require_trader
 from app.auth.scopes import require_scope
-from fastapi.responses import JSONResponse
-
-from app.audit.log import write_audit_log
 from app.billing.razorpay import GatewayError
 from app.db.models import MarketplaceChargeRecord, MarketplaceListingRecord, MarketplacePayoutRecord, MarketplaceSubscriptionRecord, Tenant, User
 from app.db.session import get_session

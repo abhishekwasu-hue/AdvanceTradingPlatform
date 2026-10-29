@@ -1,8 +1,8 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy.sql import false, true
 from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import false, true
 
 from app.db.base import Base
 

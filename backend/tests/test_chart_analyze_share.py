@@ -5,11 +5,11 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 
-from app.chart_analyze import SHARE_FLAG, service, share
-from app.chart_analyze.engine import Answer
 import pytest
 from fastapi import HTTPException
 
+from app.chart_analyze import SHARE_FLAG, service, share
+from app.chart_analyze.engine import Answer
 from app.db.models import ChartAnalysisRecord, User
 from app.platform import controls
 from app.platform.flag_catalog import FLAG_INFO

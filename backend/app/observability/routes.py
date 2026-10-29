@@ -18,9 +18,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.brokers.circuit_breaker import all_breakers
 from app.core import config
 from app.core.config import WORKER_CYCLE_SECONDS
-from app.brokers.circuit_breaker import all_breakers
 from app.db.models import Tenant, WorkerHeartbeatRecord
 from app.db.session import get_session
 from app.market_data.calendar import market_session_status
@@ -55,6 +55,7 @@ def _alembic_head() -> Dict[str, object]:
     async check runs it in a thread."""
     try:
         from pathlib import Path
+
         from alembic.config import Config
         from alembic.script import ScriptDirectory
         ini = Path(__file__).resolve().parents[2] / "alembic.ini"

@@ -223,6 +223,7 @@ def test_worker_collects_once_per_slot_only_while_open(monkeypatch):
 
 def test_retention_trims_old_oi_rows_only():
     import dataclasses
+
     from app.retention import service as retention
     from app.retention.policy import load_policy
     _run(_collect(_chain(), T0))

@@ -34,7 +34,7 @@ from app.market_data.service import MarketDataService
 from app.market_data.stream import Tick, TickCache, TickStream, tick_cache
 from app.platform import controls
 from tests.test_auth_api import _session_factory, client
-from tests.test_market_data_service import _MemoryCache, _install_cache
+from tests.test_market_data_service import _install_cache, _MemoryCache
 from tests.test_passwords import _headers, _tenant_pro
 from tests.test_phase_aa_market_data_api import _Broker, _store_credentials
 from tests.test_phase_k_commercial import _owner

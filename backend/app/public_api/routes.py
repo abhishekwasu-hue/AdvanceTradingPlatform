@@ -20,14 +20,13 @@ from app.auth.dependencies import get_current_user, require_owner
 from app.auth.scopes import require_scope
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import MAX_SIGNAL_PRICE, Signal, unset_if_not_finite
-from app.db.models import ApiKeyRecord, BacktestRunRecord, OrderRecord, RiskEventRecord, RiskLimitRecord, SignalHistoryRecord, TradeRecord, User
+from app.db.models import ApiKeyRecord, BacktestRunRecord, OrderRecord, RiskEventRecord, RiskLimitRecord, SignalHistoryRecord, Tenant, TradeRecord, User
 from app.db.session import get_session
 from app.instruments import master as instrument_master
 from app.plans.limits import limits, require_feature
 from app.plans.registry import get_plan
 from app.public_api.keys import SCOPES, ApiPrincipal, api_key_auth, generate_key, parse_scopes
 from app.strategy_engine.registry import registry
-from app.db.models import Tenant
 
 keys_router = APIRouter(prefix="/api/api-keys", tags=["public-api"])
 public_router = APIRouter(prefix="/api/public/v1", tags=["public-api"])

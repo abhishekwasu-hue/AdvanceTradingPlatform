@@ -4,7 +4,8 @@ risk-parity weights) and the API including the open-book exposure."""
 import numpy as np
 import pandas as pd
 
-from app.quant import factors as F, risk as R
+from app.quant import factors as F
+from app.quant import risk as R
 from tests.test_auth_api import client
 from tests.test_phase_k_commercial import _owner
 from tests.utils import make_series

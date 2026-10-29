@@ -461,6 +461,11 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
   );
 }
 
+/** "Fills at the live price 176.30" says again what the Price row shows: not repeated (owner 29 Oct). */
+export function samePriceNote(note: string): boolean {
+  return /^Fills at the live price [\d,.]+\.?$/.test(note.trim());
+}
+
 /** The confirm step: every figure from the server, before anything is placed. 8b: the payoff in plain words, the risk
  * line (the max loss beside the user's own limits, information only: `can_place` alone decides the button) and Explain. */
 export function Review({ preview: p, budget, events, liquidity }: {
@@ -469,6 +474,7 @@ export function Review({ preview: p, budget, events, liquidity }: {
   const problems = [...p.errors, ...p.refusals];
   const payoff = ticketPayoffSentence(p);
   const c = p.contract;
+  const boughtOption = p.side === "BUY" && (c?.right === "CE" || c?.right === "PE");
   const type = p.order_type === "MARKET" ? "Market" : p.order_type === "LIMIT" ? "Limit" : p.order_type;
   return (
     <div className="space-y-space-3" data-ticket="confirm">
@@ -481,8 +487,9 @@ export function Review({ preview: p, budget, events, liquidity }: {
         </Line>
         <Line label="Margin required" testId="margin">
           {moneyText(p.margin?.value)}
-          {p.margin && <span className="block max-w-[14rem] text-t12 text-fg-muted">{p.margin.value !== null ? "Estimate. " : ""}{p.margin.basis}</span>}
-          {p.margin?.note && <span className="block max-w-[14rem] text-t12 text-fg-muted" data-line="margin-note">{p.margin.note}</span>}
+          {/* Owner 29 Oct: a bought option's margin is the premium itself - no "Estimate." and no broker SPAN note. */}
+          {p.margin && <span className="block max-w-[14rem] text-t12 text-fg-muted">{p.margin.value !== null && !boughtOption ? "Estimate. " : ""}{p.margin.basis}</span>}
+          {p.margin?.note && !boughtOption && <span className="block max-w-[14rem] text-t12 text-fg-muted" data-line="margin-note">{p.margin.note}</span>}
         </Line>
         <Line label="Max loss" testId="max-loss">
           {moneyText(p.max_loss?.value)}
@@ -490,12 +497,12 @@ export function Review({ preview: p, budget, events, liquidity }: {
         </Line>
         {p.charges && <Line label="Charges (estimate)" testId="charges">{moneyText(p.charges.total)}</Line>}
       </dl>
-      {p.fill_note && p.fill_price !== null && <p className="text-t13 text-fg-muted">{p.fill_note}</p>}
+      {p.fill_note && p.fill_price !== null && !samePriceNote(p.fill_note) && <p className="text-t13 text-fg-muted">{p.fill_note}</p>}
       {payoff && (
         <Details id="ticket.payoff-words" label="In plain words" className="mt-0"><p data-ticket="plain-words">{payoff}</p></Details>
       )}
-      <RiskLineV2 line={riskLine(p.max_loss?.value, false, budget)} />
-      <RiskChecksV2 testId="ticket" lines={[eventLine(events ?? null, p.contract?.expiry), liquidity ?? null, marginLine(p.margin?.value, budget)]} />
+      <RiskChecksV2 testId="ticket" lines={[riskLine(p.max_loss?.value, false, budget), eventLine(events ?? null, p.contract?.expiry), liquidity ?? null,
+        marginLine(p.margin?.value, budget)]} />
       {problems.length > 0 && (
         <ul role="alert" className="space-y-space-1 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-ticket="refusals">
           {problems.map((r) => <li key={r}>{r}</li>)}

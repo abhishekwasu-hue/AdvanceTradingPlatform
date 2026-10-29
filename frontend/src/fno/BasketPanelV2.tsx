@@ -671,8 +671,8 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks,
               <Figure label="Max loss" testId="total-max-loss">{ext ? (ext.unbounded_loss ? "Unlimited" : moneyText(ext.max_loss)) : "See the chart"}</Figure>
               {p.totals && <Figure label="Charges to open (estimate)" testId="total-charges">{moneyText(p.totals.costs)}</Figure>}
             </dl>
-            {ext && <RiskLineV2 line={riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget)} />}
-            {checks && <RiskChecksV2 testId="basket-confirm" lines={[...checks, marginLine(hedge?.with_hedge.value, budget)]} />}
+            <RiskChecksV2 testId="basket-confirm" lines={[ext ? riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget) : null,
+              ...(checks ?? []), checks ? marginLine(hedge?.with_hedge.value, budget) : null]} />
             {p.totals_errors.length > 0 && <p className="text-t13 text-fg-muted">{p.totals_errors[0]}</p>}
             {p.refusals.length > 0 && (
               <ul role="alert" className="space-y-space-1 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-basket="confirm-refusals">

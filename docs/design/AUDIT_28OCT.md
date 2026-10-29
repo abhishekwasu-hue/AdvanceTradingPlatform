@@ -41,3 +41,19 @@ CONFIRMED 13, PARTLY 4 (V1 parity, V3, G1.4, G1.7), NOT REPRODUCED 0 of the V / 
   (7 x "timeout parameter on an async function", 2 blocking pathlib calls, 2 test sleeps). Plan, one family per PR as
   ruff.toml asks: I next (mechanical, done when few other PRs are open - it touches many files), ASYNC with its 10 fixes,
   UP in per-package slices. ESLint + typescript-eslint and mypy on all of app follow the same pattern.
+
+## G2.1 N+1 profile (29 Oct)
+SQL statements of one read (auth included), 1 vs 20 rows, counted by tests/sql_counter.py in
+backend/tests/test_aud_g2_1_n_plus_one.py (SQLite test engine; the same statements reach PostgreSQL).
+
+| Endpoint | Rows varied | Before (1 / 20) | After (1 / 20) | Finding / fix |
+|---|---|---|---|---|
+| GET /api/positions | open trades | 3 / 3 | 3 / 3 | none (one list query + one batched account-label read) |
+| GET /api/orders | orders | 3 / 3 | 3 / 3 | none |
+| GET /api/option-chain/{u}/strikes | stored slots of the day | 11 / 11 | 11 / 11 | none (snapshots, then all strikes in one IN query) |
+| GET /api/option-chain/banners | enabled underlyings | 11 / 134 | 9 / 9 | N+1: ~6 queries per underlying (settings, flag, slots, strikes, latest capture, exchange, holidays). Fixed: `snapshots.settings_rows_many` / `day_chains_many` / `latest_captures` (one UNION ALL of per-underlying LIMIT 1 reads) and one market-status read per exchange; `enabled_underlyings` filtered to the caller's organisation in SQL. Same response (test compares each entry with GET /{u}/banner). The own-broker tier (B1) path still reads per underlying. |
+| GET /api/screener/evidence/runs/{id} | evidence rows of a run | 7 / 7 | 7 / 7 | none (no list-of-runs endpoint exists; GET /api/screener/runs/{id} is one row) |
+| GET /api/journal/week | trades of the week | 11 / 30 | 11 / 11 | one `widen` UPDATE per trade on every read. Fixed: `capture.widen_many` - the same atomic UPDATE as one executemany round trip. |
+
+Tracing (same item): app/observability/tracing.py, OFF unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set; `trace_id` / `span_id`
+in every JSON log line written inside a span.

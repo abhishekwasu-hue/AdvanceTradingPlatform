@@ -139,7 +139,7 @@ def test_filters_are_validated_stored_and_echoed_on_deployments(monkeypatch):
         async def get_ltp_for_symbol(self, symbol, exchange="NSE"):
             return 24512.0
     monkeypatch.setattr("app.deployments.routes.build_adapter", lambda record, client=None: _ChainAdapter())
-    preview = client.post(f"/api/deployments/preview-contract?as_of={TODAY.isoformat()}", headers=headers, json={
+    preview = client.post("/api/deployments/preview-contract", headers=headers, params={"as_of": TODAY.isoformat()}, json={
         "symbol": "NIFTY 50", "instrument_kind": "OPTION", "option_position": "BUY", "spot": 24512,
         "strike_filters": {"max_spread_pct": 2.0},
     }).json()

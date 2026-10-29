@@ -153,7 +153,7 @@ def test_preview_contract_endpoint():
     _load_master()
     headers = _auth("rules-preview@example.com")
     body = {"symbol": "NIFTY 50", "instrument_kind": "OPTION", "option_position": "BUY", "strike_rule": "OTM", "strike_offset": 1, "spot": 24512}
-    resp = client.post(f"/api/deployments/preview-contract?as_of={TODAY.isoformat()}", headers=headers, json=body)
+    resp = client.post("/api/deployments/preview-contract", headers=headers, params={"as_of": TODAY.isoformat()}, json=body)
     assert resp.status_code == 200, resp.text
     out = resp.json()
     assert out["spot_source"] == "supplied" and out["kind"] == "OPTION"
@@ -162,11 +162,11 @@ def test_preview_contract_endpoint():
     assert out["contracts"]["LONG"]["lot_size"] == NIFTY_LOT
 
     # No spot and no usable broker: the preview says so rather than failing.
-    no_spot = client.post(f"/api/deployments/preview-contract?as_of={TODAY.isoformat()}", headers=headers, json={"symbol": "NIFTY 50", "instrument_kind": "OPTION"}).json()
+    no_spot = client.post("/api/deployments/preview-contract", headers=headers, params={"as_of": TODAY.isoformat()}, json={"symbol": "NIFTY 50", "instrument_kind": "OPTION"}).json()
     assert no_spot["spot"] is None and "spot" in no_spot["contracts"]["LONG"]["error"].lower()
 
-    fut = client.post(f"/api/deployments/preview-contract?as_of={TODAY.isoformat()}", headers=headers, json={"symbol": "NIFTY 50", "instrument_kind": "FUTURE"}).json()
+    fut = client.post("/api/deployments/preview-contract", headers=headers, params={"as_of": TODAY.isoformat()}, json={"symbol": "NIFTY 50", "instrument_kind": "FUTURE"}).json()
     assert fut["contracts"]["LONG"]["entry_side"] == "BUY" and fut["contracts"]["SHORT"]["entry_side"] == "SELL"
 
-    plain = client.post(f"/api/deployments/preview-contract?as_of={TODAY.isoformat()}", headers=headers, json={"symbol": "RELIANCE"}).json()
+    plain = client.post("/api/deployments/preview-contract", headers=headers, params={"as_of": TODAY.isoformat()}, json={"symbol": "RELIANCE"}).json()
     assert plain["kind"] == "UNDERLYING"

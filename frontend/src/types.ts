@@ -2848,3 +2848,11 @@ export interface ProposalRiskCheck {
 
 /** AUD-T3: one closed bar of a bot with the reason it did or did not trade (GET /api/deployments/{id}/why). */
 export interface WhyRow { bar_time: string | null; seen_at: string; code: string; label: string; detail: string | null }
+
+/** AUD-T7: one period (this financial year or this month) of one mode's closed trades (GET /api/trades/cost-meter). */
+export interface CostPeriod {
+  trades: number; gross: number; charges: number; net: number;
+  charges_share_of_gross: number | null; charges_per_trade: number | null; median_trade_share: number | null;
+  trades_with_gross_profit: number; charges_took_whole_profit: number; from_contract_notes: number; estimated: number;
+}
+export interface CostMeter { year_start: string; month_start: string; modes: { mode: string; year: CostPeriod; month: CostPeriod }[] }

@@ -165,7 +165,13 @@ async def for_user(session: AsyncSession, user: User, now: Optional[datetime] = 
         if t.instrument_kind == "FUTURE":
             right, strike = "FUT", None
         else:
-            right, strike = right_of(t.symbol), strike_of(t.symbol)
+            # The instrument master's own row first (a compact symbol like NIFTY26O0124500CE runs the date into the
+            # strike, which the text parser can misread); the parser only for a contract the master does not hold.
+            record = await master.find_by_symbol(session, t.symbol or "")
+            if record is not None and record.strike is not None and record.instrument_type in ("CE", "PE"):
+                right, strike = record.instrument_type, float(record.strike)
+            else:
+                right, strike = right_of(t.symbol), strike_of(t.symbol)
             if right is None or strike is None:
                 continue
         due.append((t, when, underlying, right, strike))

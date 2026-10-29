@@ -224,3 +224,14 @@ def test_no_advice_wording_anywhere(_setup):
     assert len(body["rows"]) == 3
     for text in texts:
         assert not ADVICE.search(text), text
+
+
+def test_the_strike_comes_from_the_instrument_master_when_it_holds_the_contract(_setup):
+    """A compact symbol runs the date digits into the strike; the master's own strike is used, never the text guess."""
+    who = _who("t2-master-strike")
+    compact = f"FINNIFTY{EXP:%y}O0125000CE"                       # the text parser would read 125000
+    _add(InstrumentRecord(broker="upstox", exchange="NFO", instrument_key=f"upstox|t2compact{EXP:%y%m%d}", tradingsymbol=compact,
+                          underlying="FINNIFTY", instrument_type="CE", expiry=EXP, strike=25000.0, lot_size=65),
+         _trade(who, compact, "FINNIFTY"))
+    row = next(r for r in _get(who)["rows"] if r["symbol"] == compact)
+    assert row["moneyness"] == "in"                               # 25300 above the 25000 call; 125000 would read "out"

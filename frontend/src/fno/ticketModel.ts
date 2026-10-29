@@ -184,3 +184,11 @@ export function blockedBy(p: { can_place: boolean; errors: string[]; refusals: s
   const own = /your (setting|limit|risk per trade|own)|my limits|limit of|today's loss limit|losses in a row|positions, your limit|experience level/i.test(text);
   return { text, link: own ? "/risk-management" : null };
 }
+
+/** The basket's confirm step: the first reason it cannot be placed (a leg's error or refusal, then the basket's own), or
+ * null when it can - the same sentence and "My limits" link as `blockedBy`. */
+export function basketBlockedBy(p: { can_execute: boolean; refusals: string[]; legs: { errors: string[]; refusals: string[] }[] }):
+  { text: string; link: string | null } | null {
+  if (p.can_execute) return null;
+  return blockedBy({ can_place: false, errors: p.legs.flatMap((l) => l.errors), refusals: [...p.legs.flatMap((l) => l.refusals), ...p.refusals] });
+}

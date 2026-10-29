@@ -369,6 +369,25 @@ def test_the_edge_and_the_frontend_image_send_every_header():
         assert header in nginx, header
 
 
+def test_aud_g23_one_csp_everywhere_with_no_third_party_font_origin():
+    """AUD-G2.3: the fonts come with the app (@fontsource-variable), so no Google Fonts origin is allowed any more. The
+    edge (both Caddyfiles) and the frontend image send the same policy. style-src keeps 'unsafe-inline' on purpose:
+    libraries add <style> tags at run time (Radix's scroll lock with run-time sizes, the chart library's logo), see
+    docs/design/AUDIT_28OCT.md "G2.3"; frontend/e2e/csp-v2.e2e.ts loads the main pages under this policy."""
+    def policy(path, pattern):
+        found = re.findall(pattern, (ROOT / path).read_text())
+        assert len(found) == 1, path
+        return found[0]
+    nginx = policy("frontend/nginx.conf", r'add_header Content-Security-Policy "([^"]+)"')
+    for path in ("deploy/Caddyfile", "deploy/Caddyfile.ip"):
+        assert policy(path, r'Content-Security-Policy "([^"]+)"') == nginx, path
+    directives = dict((d.split()[0], d.split()[1:]) for d in nginx.split("; "))
+    assert "fonts.googleapis.com" not in nginx and "fonts.gstatic.com" not in nginx
+    assert directives["script-src"] == ["'self'"]
+    assert directives["font-src"] == ["'self'", "data:"]
+    assert directives["style-src"] == ["'self'", "'unsafe-inline'"]
+    assert directives["default-src"] == ["'self'"] and directives["object-src"] == ["'none'"]
+
 # --- 4. CI scanning -------------------------------------------------------------------------------------------------
 
 def test_ci_scans_dependencies_and_images_and_fails_on_high_findings():

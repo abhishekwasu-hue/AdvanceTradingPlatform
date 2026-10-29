@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import { fileURLToPath } from "node:url";
-import { atpServiceWorker } from "../vite.config";
+import { PRELOAD_FONT, atpFontPreload, atpServiceWorker } from "../vite.config";
 
 /* PW1 shell checks that need Node (files, a sandboxed worker). They live outside src/ because the app's tsconfig
  * has no Node types; vitest runs them with the rest. */
@@ -159,6 +159,32 @@ describe("web app manifest", () => {
     expect(paths).toEqual(["/", "/screener", "/option-chain", "/notifications"]);
   });
 
+  /** A PNG's width and height, from its IHDR chunk. */
+  const pngSize = (src: string) => {
+    const png = readFileSync(join(PUBLIC, src));
+    expect(png.subarray(1, 4).toString("latin1")).toBe("PNG");
+    return `${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`;
+  };
+
+  it("AUD-G2.3: every PNG icon, maskable ones included, is the size it declares", () => {
+    for (const icon of manifest.icons.filter((i: { type: string }) => i.type === "image/png")) expect(pngSize(icon.src)).toBe(icon.sizes);
+  });
+
+  it("AUD-G2.3: a phone and a desktop screenshot for the richer install prompt, each the size it declares", () => {
+    const shots = manifest.screenshots as { src: string; sizes: string; type: string; form_factor: string; label: string }[];
+    expect(shots.map((s) => s.form_factor).sort()).toEqual(["narrow", "wide"]);
+    for (const shot of shots) {
+      expect(shot.type).toBe("image/png");
+      expect(shot.label.length).toBeGreaterThan(0);
+      expect(pngSize(shot.src)).toBe(shot.sizes);
+      const [w, h] = shot.sizes.split("x").map(Number);
+      // Chromium's rules: each side 320-3840 px, the long side at most 2.3 times the short one, the form factor's shape.
+      for (const side of [w, h]) { expect(side).toBeGreaterThanOrEqual(320); expect(side).toBeLessThanOrEqual(3840); }
+      expect(Math.max(w, h) / Math.min(w, h)).toBeLessThanOrEqual(2.3);
+      expect(shot.form_factor === "wide" ? w > h : h > w).toBe(true);
+    }
+  });
+
   it("uses the dark surface token for its colours", () => {
     const tokens = readFileSync(join(HERE, "../src/styles/tokens.css"), "utf8");
     const surface = /--surface: (\d+) (\d+) (\d+);/.exec(tokens)!.slice(1).map(Number);
@@ -168,3 +194,23 @@ describe("web app manifest", () => {
   });
 });
 
+describe("AUD-G2.3 font preload", () => {
+  type Handler = (html: string, ctx: { bundle?: Record<string, unknown> }) => { tag: string; attrs: Record<string, unknown> }[];
+  const plugin = () => {
+    const p = atpFontPreload() as unknown as { configResolved: (c: { base: string }) => void; transformIndexHtml: { order: string; handler: Handler } };
+    p.configResolved({ base: "/" });
+    return p.transformIndexHtml;
+  };
+
+  it("preloads the Inter Latin file the build emitted, same-origin and with crossorigin (fonts are CORS requests)", () => {
+    const bundle = { "assets/inter-latin-ext-wght-normal-AAA.woff2": {}, "assets/inter-latin-wght-normal-Dx4kX_Al.woff2": {}, "assets/index-1.js": {} };
+    expect(plugin().order).toBe("post");
+    expect(plugin().handler("", { bundle })).toEqual([{ tag: "link", injectTo: "head",
+      attrs: { rel: "preload", href: "/assets/inter-latin-wght-normal-Dx4kX_Al.woff2", as: "font", type: "font/woff2", crossorigin: true } }]);
+    expect(PRELOAD_FONT.test("assets/inter-latin-ext-wght-normal-AAA.woff2")).toBe(false);
+  });
+
+  it("stops the build when the file is missing (never a silent loss of the preload)", () => {
+    expect(() => plugin().handler("", { bundle: { "assets/index-1.js": {} } })).toThrow(/Inter Latin/);
+  });
+});

@@ -3758,3 +3758,23 @@ class FeedbackRecord(Base):
     screen: Mapped[str] = mapped_column(String(200), nullable=False)
     user_agent: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+
+
+class DeploymentBarReasonRecord(Base):
+    """AUD-T3 ("Why no trade" timeline): one row per closed bar a bot looked at, with the reason it did or did not trade -
+    a short code (app/deployments/why.py CODES) plus the worker's own detail. `bar_time` is the bar the decision was on
+    (NULL when no bar was read, e.g. the venue was closed: repeats of the same code then collapse into one row whose
+    `seen_at` moves). Written by the trading worker only, never read by it: it changes no decision. Pruned to the newest
+    `WHY_NO_TRADE_KEEP_BARS` rows per deployment on write.
+    """
+
+    __tablename__ = "deployment_bar_reasons"
+    __table_args__ = (Index("ix_deployment_bar_reasons_dep_seen", "deployment_id", "seen_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    deployment_id: Mapped[int] = mapped_column(ForeignKey("strategy_deployments.id", ondelete="CASCADE"), nullable=False)
+    bar_time: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    detail: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    seen_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)

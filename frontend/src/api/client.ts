@@ -167,6 +167,7 @@ import type {
   AiAcknowledgement,
   StaticIp,
   StaticIpOverview,
+  WhyRow,
 } from "../types";
 import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut, NotificationPolicy, TelegramLinkCode } from "../alerts/rules";
 import type { TelegramConnectState } from "../alerts/telegramConnect";
@@ -855,6 +856,9 @@ export const api = {
     request<Deployment>(`/deployments/${id}/stop`, { method: "POST", body: JSON.stringify({ reason }) }),
 
   deleteDeployment: (id: number) => request<void>(`/deployments/${id}`, { method: "DELETE" }),
+
+  /** AUD-T3: the bot's last closed bars with the reason it did or did not trade (404 while `why_no_trade` is off). */
+  whyNoTrade: (id: number) => request<{ deployment_id: number; rows: WhyRow[] }>(`/deployments/${id}/why`),
 
   // --- Alert delivery ---
 

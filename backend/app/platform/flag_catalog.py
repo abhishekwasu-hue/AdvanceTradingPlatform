@@ -158,6 +158,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "onboarding_emails": FlagInfo("First-week e-mails: connect broker, first paper bot, first signal review", "platform", "nothing in the app; e-mails in the first week", (), "the platform mailer (PLATFORM_SMTP_*) and PUBLIC_BASE_URL", "unfinished"),
     "referrals": FlagInfo("Invite a friend: each person's own invite link", "platform", "an Invite a friend card in Settings › Account & plan", ("ui_v2",), "the reward wording in Admin › Users & business", "decision"),
     "plan_limits_v2": FlagInfo("Per-plan limits for watchlists, reports, Lab", "platform", "limits", (), "plans", "decision"),
+    "why_no_trade": FlagInfo("Why no trade: each bot's last closed bars with the reason it did or did not trade", "trading", "a Why no trade list on each bot (Bots page)", ("ui_v2",), "", "ready"),
 }
 
 

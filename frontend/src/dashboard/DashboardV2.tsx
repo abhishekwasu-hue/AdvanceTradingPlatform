@@ -128,9 +128,11 @@ export default function DashboardV2(_props: PageProps = {}) {
         <BrokerGateView state={broker} onConnect={() => navigate(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)} onRetry={refreshBroker} />
       ) : (
         <>
-          <GetStartedCardV2 primaryNext={false} />
+          {/* UI-28 (owner, 29 Oct: "what the user needs must be seen first"): with a broker, the numbers - Today's P&L
+              and the market strip - open the page; the remaining setup steps follow them. */}
           <MarketStripV2 strip={data.strip} oi={oiLines(dataOf(data.oi))} marketText={strip ? marketLabel(strip.market, now) : null}
             broker={brokerChip(broker, brokerRows)} pnl={todayPnl(exposure)} nowMs={now} sparks={sparks} />
+          <GetStartedCardV2 primaryNext={false} />
           {/* Item 1: at the Large / Extra large text sizes the two columns start only on a wider screen (2xl). */}
           <div className={`grid grid-cols-1 gap-space-4 ${big ? "2xl:grid-cols-3 2xl:items-start 2xl:gap-space-6" : "lg:grid-cols-3 lg:items-start lg:gap-space-6"}`}>
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:col-span-2 2xl:space-y-space-6" : "lg:col-span-2 lg:space-y-space-6"}`}>

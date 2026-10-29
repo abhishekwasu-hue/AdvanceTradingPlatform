@@ -29,6 +29,7 @@ from app.core.enums import NotificationSeverity, NotificationType
 from app.db.session import get_session, release_connection
 from app.secrets_store.envelope import ensure_tenant_key
 from app.auth import verification
+from app.growth import activation
 from app.platform.controls import flag_enabled
 from app.legal import acceptance as legal_acceptance
 from app.legal.acceptance import LegalAcceptance
@@ -218,6 +219,7 @@ async def register(request: RegisterRequest, http_request: Request, response: Re
     await verification.send_link(session, user, http_request)  # Phase N3: best effort, logged when no mailer
     issued = await start_session(session, user, http_request)
     await session.commit()
+    await activation.record_step(session, user, "signup")    # AUD-G2.4: after the commit, never in the way
     return _token_response(issued, response)
 
 
@@ -422,6 +424,7 @@ async def accept_invite(token: str, request: AcceptInviteRequest, http_request: 
         await legal_acceptance.accept(session, user, legal_versions, source="invite", request=http_request, require_all=True)
     issued = await start_session(session, user, http_request)
     await session.commit()
+    await activation.record_step(session, user, "signup")    # AUD-G2.4
     return _token_response(issued, response)
 
 

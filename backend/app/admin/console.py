@@ -16,12 +16,13 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_mfa_session, require_role
-from app.core.config import WORKER_CYCLE_SECONDS
+from app.core.config import ACTIVATION_FIRST_SESSION_HOURS, WORKER_CYCLE_SECONDS
 from app.db.models import (
-    AlertDeliveryRecord, BrokerCredentialRecord, DataQualityEventRecord, InstrumentRecord, JournalEntryRecord, LlmCallRecord,
+    ActivationEventRecord, AlertDeliveryRecord, BrokerCredentialRecord, DataQualityEventRecord, InstrumentRecord, JournalEntryRecord, LlmCallRecord,
     LoginEventRecord, MarketSnapshotRecord, StrategyDeploymentRecord, Tenant, User, UserSessionRecord, WorkerHeartbeatRecord,
 )
 from app.db.session import get_session
+from app.growth import activation as activation_steps
 from app.plans.registry import get_plan
 
 router = APIRouter(prefix="/api/admin/console", tags=["admin"],
@@ -192,7 +193,8 @@ async def activation(days: int = Query(90, ge=1, le=365), limit: int = Query(200
     """Who reached which first step after signing up: a broker connected (the first broker credential they added), a
     first paper bot (the first PAPER deployment they created) and a first journal entry (their first auto-captured
     journal row). "Activated" = all three. C13 adds `growth_funnel` (signed up -> broker -> paper bot -> active in week 1)
-    and each person's `active_week1` (null while the first week is still running). Read-only; masked e-mail addresses;
+    and each person's `active_week1` (null while the first week is still running). AUD-G2.4 adds `value_funnel` (the five
+    activation steps with the median hours to each, and the first-session share). Read-only; masked e-mail addresses;
     behind `growth_v2`."""
     from app.platform.controls import flag_enabled
     if not await flag_enabled(session, "growth_v2", admin.tenant_id):
@@ -212,6 +214,7 @@ async def activation(days: int = Query(90, ge=1, le=365), limit: int = Query(200
         .join(journal, journal.c.uid == User.id, isouter=True)
         .where(User.created_at >= since, User.role != "SUPER_ADMIN").order_by(User.id.desc()))).all()
     returned = await _came_back(session, [(u.id, _aware(u.created_at)) for u, *_ in rows])
+    reached_at = await _activation_steps(session, [u.id for u, *_ in rows])
     reached = {key: 0 for key, _ in ACTIVATION_STEPS}
     hours: List[float] = []
     people: List[Dict[str, Any]] = []
@@ -249,8 +252,26 @@ async def activation(days: int = Query(90, ge=1, le=365), limit: int = Query(200
         "median_hours_to_activation": round(median, 1) if median is not None else None,
         "growth_funnel": {"steps": [{"key": key, "label": label, "count": growth[key]} for key, label in GROWTH_FUNNEL],
                           "week1_open": week1_open},
+        # AUD-G2.4: signup -> broker_connect -> first_chart -> first_paper_trade -> first_journal_review, from the
+        # activation_events rows (the steps atp_activation_total{step} counts), with the median hours from signing up to
+        # each step and the share whose first paper trade came within their first session.
+        "value_funnel": activation_steps.value_funnel(
+            [(_aware(u.created_at), reached_at.get(u.id, {})) for u, *_ in rows], now=now,
+            first_session_hours=ACTIVATION_FIRST_SESSION_HOURS),
         "people": people,
     }
+
+
+async def _activation_steps(session: AsyncSession, user_ids: List[int]) -> Dict[int, Dict[str, datetime]]:
+    """AUD-G2.4: {user id: {step: first reached at}} for these people."""
+    out: Dict[int, Dict[str, datetime]] = {}
+    for start in range(0, len(user_ids), 500):
+        chunk = user_ids[start:start + 500]
+        for uid, step, at in (await session.execute(
+                select(ActivationEventRecord.user_id, ActivationEventRecord.step, ActivationEventRecord.reached_at)
+                .where(ActivationEventRecord.user_id.in_(chunk)))).all():
+            out.setdefault(uid, {})[step] = at
+    return out
 
 
 # Readiness C13: the growth funnel - signed up -> broker -> paper bot -> active in week 1. Only people whose first week is

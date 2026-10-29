@@ -78,6 +78,10 @@ ALERT_DELIVERIES = _counter("alert_deliveries", "Out-of-app alert deliveries by 
 PWA_EVENTS = _counter("pwa_events", "PWA install/update events by event and platform family (android/ios/desktop/other)", ("event", "platform"))
 # AUD-G1.5 (owner audit 28 Oct): Core Web Vitals measured in real browsers (POST /api/pwa/vitals). Labels are closed
 # enums (page family, phone / desktop); nothing that identifies a user, a device or a URL is recorded.
+# AUD-G2.4: activation steps (signup, broker_connect, first_chart, first_paper_trade, first_journal_review), counted once
+# per person per step (app/growth/activation.py: the activation_events row is the "already counted" record). The only
+# label is the step - nothing that identifies a person.
+ACTIVATION = _counter("activation", "First time a person took an activation step, once per person per step", ("step",))
 WEB_VITAL_LCP = _histogram("web_vital_lcp_seconds", "Largest Contentful Paint by page and device", ("page", "device"),
                            buckets=(0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 6.0, 10.0))
 WEB_VITAL_INP = _histogram("web_vital_inp_seconds", "Interaction to Next Paint by page and device", ("page", "device"),

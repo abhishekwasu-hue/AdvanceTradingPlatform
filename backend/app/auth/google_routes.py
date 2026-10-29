@@ -151,6 +151,8 @@ async def _sign_up(session: AsyncSession, request: Request, email: str) -> Redir
     await record_login_event(session, email=email, user=user, success=True, reason="google", request=request)
     issued = await start_session(session, user, request)
     await session.commit()
+    from app.growth import activation
+    await activation.record_step(session, user, "signup")    # AUD-G2.4
     response = _back(request, outcome="new")
     _set_refresh_cookie(response, issued.refresh_token)
     return response

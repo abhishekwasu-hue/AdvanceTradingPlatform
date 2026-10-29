@@ -5,7 +5,8 @@ Signals, My positions, the Journal, Charts and Find setups (`dishes.py`).
 
 Behind `ui_v2` + `growth_v2` (OFF by default): with either off the routes answer 404 (X-Feature-Disabled names the flag)
 and the pages show nothing new. Read-only: nothing here changes a plan, starts a trial, sends a reminder, shows a price
-or touches an order. No migration: every number comes from rows that already exist.
+or touches an order. No migration: every number comes from rows that already exist - except AUD-G2.4's activation steps
+(`activation.py`), recorded once per person per step in `activation_events`.
 """
 FLAG = "growth_v2"
 PAGE_FLAG = "ui_v2"

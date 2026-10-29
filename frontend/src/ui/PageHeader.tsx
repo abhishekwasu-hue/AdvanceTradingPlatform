@@ -40,7 +40,7 @@ export function PageHeader({ title, short, line, status, actions, className = ""
           </h1>
           {status}
         </div>
-        {line && <p className="mt-space-1 break-words text-t14 text-fg-muted">{line}</p>}
+        {line && <p data-page-subtitle className="mt-space-1 break-words text-t14 text-fg-muted">{line}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-space-2">{actions}</div>}
     </header>

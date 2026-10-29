@@ -582,6 +582,19 @@ html { font-size: calc(100% * var(--text-scale)); }
 :root[data-palette="v3"] { --accent-gradient: linear-gradient(rgb(var(--brand-fill)), rgb(var(--brand-fill))); }
 :root[data-palette="v3"] .accent-gradient-border { border: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); }
 
+/* UI-28 U4 (owner, 29 Oct: "a modern colour scheme; hide the unnecessary text; what the user needs first"). Under colour
+   v3: ONE accent - the section identity tints rest (the page / settings icon chips are a muted icon on the raised
+   surface, the Settings rows' icons the same, the bottom-bar icons muted, the tab on screen in the brand colour); the P&L block on Today carries its
+   colour in the number only (no tinted card); the page subtitle ("what this page is") is not shown - the page title,
+   the numbers and the ⓘ help say it. Colour v2 without v3 keeps the CA3 / CA6 tints as before. */
+:root[data-palette="v3"] [data-section-chip] { background: rgb(var(--surface-2)); color: rgb(var(--fg-muted)); }
+:root[data-palette="v3"] [data-bottom-nav-v2] [data-nav-tint] { color: inherit; }
+:root[data-palette="v3"] [data-bottom-nav-v2] [data-nav-pill] { background: rgb(var(--brand-fill)); color: rgb(var(--on-brand)); }
+:root[data-palette="v3"] [data-bottom-nav-v2] :is(a, button):has([data-nav-pill]) { color: rgb(var(--brand)); }
+:root[data-palette="v3"] [data-pnl-tint] { background: transparent; }
+:root[data-palette="v3"] li[data-row] [data-icon-tone] { background: rgb(var(--surface-2)); color: rgb(var(--fg-muted)); }
+:root[data-palette="v3"] [data-page-subtitle] { display: none; }
+
 /* UI-H-DM DM4: Appearance -> "High contrast" (per user, saved on the server with the text size; `data-contrast="high"`
    on <html>, src/theme.ts). Stronger borders and brighter text and icons in both themes, over whichever surfaces are in
    force; the meanings (profit, loss, warning) keep their colours. */

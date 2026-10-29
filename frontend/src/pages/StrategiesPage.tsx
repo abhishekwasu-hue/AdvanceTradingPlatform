@@ -22,7 +22,7 @@ export default function StrategiesPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Strategy Library" description="Every inbuilt auto-executable scalping strategy, straight from the registry." />
+      <PageHeader title="Strategy Library" description="The ready-made strategies you can run on paper." />
 
       {error && <div className="text-sm text-down">{error}</div>}
 

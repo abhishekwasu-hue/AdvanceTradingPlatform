@@ -12,6 +12,7 @@ import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, St
 import type { CustomStrategyResponse, Deployment, PortfolioExposure, StrategyInfo, TradeRecord } from "../types";
 import { BotWhyV2 } from "./BotWhyV2";
 import { BotPositionsV2, botPositions } from "./BotPositionsV2";
+import ContractPreviewV2 from "./ContractPreviewV2";
 import { DEFAULTS_PATH, appliedLine, useTradingDefaults, type TradingDefaults } from "../settings/tradingDefaults";
 import { Chip } from "../ui/Chip";
 import { Combobox, type ComboOption } from "../ui/Combobox";
@@ -607,6 +608,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
               </p>
             </div>
           )}
+          {/* UI-28 U7.4: the exact contract each signal side would trade now, before anything starts. */}
+          {effectiveId && <ContractPreviewV2 request={request} />}
           <button type="button" className={`${BUTTON_PRIMARY} w-full sm:w-auto`} disabled={busy || !effectiveId} aria-busy={busy || undefined} onClick={() => void start()}>
             {busy && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}
             Start on paper

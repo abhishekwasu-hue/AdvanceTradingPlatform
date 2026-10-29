@@ -464,16 +464,20 @@ def test_resolve_prefers_a_confirmed_session_over_an_execution_only_one():
 class _FakeConn:
     def __init__(self, frames: List[Any], hold: asyncio.Event):
         self.frames, self.hold, self.sent = list(frames), hold, []
+        self.subscribed = asyncio.Event()
 
     async def send(self, data):
         self.sent.append(data)
+        self.subscribed.set()
 
     def __aiter__(self):
         return self._gen()
 
     async def _gen(self):
-        while not self.sent and not self.hold.is_set():    # a feed sends prices only after a subscription
-            await asyncio.sleep(0.005)
+        waits = [asyncio.ensure_future(self.subscribed.wait()), asyncio.ensure_future(self.hold.wait())]
+        await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)   # a feed sends prices only after a subscription
+        for w in waits:
+            w.cancel()
         for f in self.frames:
             yield f
         await self.hold.wait()

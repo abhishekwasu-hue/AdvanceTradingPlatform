@@ -9,6 +9,7 @@
 * `GET /metrics`                 - Prometheus text format. Outside `/api` so the nginx front does
   not expose it to browsers; when `METRICS_TOKEN` is set the scraper must send it as a bearer.
 """
+import asyncio
 import time
 from datetime import datetime, timezone
 from typing import Dict, Optional
@@ -49,23 +50,32 @@ async def _check_redis() -> Dict[str, object]:
         return {"status": "unreachable", "error": type(exc).__name__}
 
 
-async def _check_migrations(session: AsyncSession) -> Dict[str, object]:
-    try:
-        current = await session.scalar(text("SELECT version_num FROM alembic_version"))
-    except Exception:  # noqa: BLE001 - tests run on create_all without the version table
-        return {"status": "unknown", "detail": "no alembic_version table"}
+def _alembic_head() -> Dict[str, object]:
+    """The migration head from the shipped scripts: {"head": ...}, or why it is unknown. Reads files (blocking), so the
+    async check runs it in a thread."""
     try:
         from pathlib import Path
         from alembic.config import Config
         from alembic.script import ScriptDirectory
         ini = Path(__file__).resolve().parents[2] / "alembic.ini"
         if not ini.exists():
-            return {"status": "unknown", "current": current, "detail": "alembic.ini not shipped"}
+            return {"detail": "alembic.ini not shipped"}
         cfg = Config(str(ini))
         cfg.set_main_option("script_location", str(ini.parent / "alembic"))
-        head = ScriptDirectory.from_config(cfg).get_current_head()
+        return {"head": ScriptDirectory.from_config(cfg).get_current_head()}
     except Exception as exc:  # noqa: BLE001
-        return {"status": "unknown", "current": current, "error": type(exc).__name__}
+        return {"error": type(exc).__name__}
+
+
+async def _check_migrations(session: AsyncSession) -> Dict[str, object]:
+    try:
+        current = await session.scalar(text("SELECT version_num FROM alembic_version"))
+    except Exception:  # noqa: BLE001 - tests run on create_all without the version table
+        return {"status": "unknown", "detail": "no alembic_version table"}
+    found = await asyncio.to_thread(_alembic_head)
+    if "head" not in found:
+        return {"status": "unknown", "current": current, **found}
+    head = found["head"]
     return {"status": "ok" if current == head else "behind", "current": current, "head": head}
 
 

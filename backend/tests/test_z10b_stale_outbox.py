@@ -585,9 +585,9 @@ def test_the_send_budget_is_what_is_left_of_the_lease(monkeypatch, clock):
     budgets: List[float] = []
     real_wait_for = asyncio.wait_for
 
-    async def wait_for(aw, timeout):
-        budgets.append(timeout)
-        return await real_wait_for(aw, timeout)
+    async def wait_for(aw, *args, **kwargs):                                     # stands in for asyncio.wait_for(aw, timeout)
+        budgets.append(kwargs["timeout"] if "timeout" in kwargs else args[0])
+        return await real_wait_for(aw, *args, **kwargs)
     monkeypatch.setattr(dispatcher.asyncio, "wait_for", wait_for)
     real_get = dispatcher.ensure_tenant_key
 

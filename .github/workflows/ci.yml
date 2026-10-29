@@ -65,6 +65,11 @@ jobs:
         working-directory: backend
         run: ruff check app tests evals
 
+      # AUD-G1.6: pyupgrade (UP) is a ratchet, not a gate - its per-rule counts may only fall (baseline in the test).
+      - name: ruff UP ratchet (backend/tests/test_ruff_up_ratchet.py)
+        working-directory: backend
+        run: python -m pytest -q -p no:cacheprovider tests/test_ruff_up_ratchet.py
+
       - name: mypy (backend/mypy.ini - gated packages only)
         working-directory: backend
         run: mypy

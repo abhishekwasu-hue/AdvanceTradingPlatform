@@ -28,7 +28,7 @@ export function PageTitleV2({ title, subtitle, action }: { title: string; subtit
     <header className="flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between">
       <div className="min-w-0">
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:tracking-tight md:text-fg">{title}</h1>
-        <p className="text-t14 text-fg-muted md:mt-space-1">{subtitle}</p>
+        <p data-page-subtitle className="text-t14 text-fg-muted md:mt-space-1">{subtitle}</p>
       </div>
       {action}
     </header>
@@ -86,11 +86,11 @@ export function NoteV2({ kind = "info", children, testId }: { kind?: "done" | "i
  * neutral one carries a check ("done", "normal") unless `check` is false (a plain description such as a size cut). */
 export function StateChipV2({ tone, check = true, children }: { tone: Tone; check?: boolean; children: ReactNode }) {
   return tone === "warn" ? (
-    <span className="inline-flex h-6 shrink-0 items-center gap-space-1 rounded-pill bg-warn-tint px-space-2 text-t12 font-semibold text-warn">
-      <TriangleAlert size={12} aria-hidden />{children}
+    <span className="inline-flex min-h-6 max-w-full items-center gap-space-1 rounded-pill bg-warn-tint px-space-2 py-px text-t12 font-semibold text-warn">
+      <TriangleAlert size={12} aria-hidden className="shrink-0" /><span className="min-w-0">{children}</span>
     </span>
   ) : (
-    <span className="inline-flex h-6 shrink-0 items-center gap-space-1 rounded-pill border border-border px-space-2 text-t12 font-medium text-fg-muted">
+    <span className="inline-flex min-h-6 max-w-full items-center gap-space-1 rounded-pill border border-border px-space-2 py-px text-t12 font-medium text-fg-muted">
       {check && <Check size={12} aria-hidden />}{children}
     </span>
   );

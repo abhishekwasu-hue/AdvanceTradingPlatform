@@ -111,7 +111,7 @@ test.describe("FNO-4 watchlist contract rows, 1440", () => {
   test("Roll to next expiry saves the list with the next contract in place - and nothing else", async ({ page }) => {
     const { calls, lookups } = await openCharts(page, "light");
     const panel = page.locator("[data-watchlist]");
-    await expect(lookups[0]).toEqual([LIVE_CE, OLD_PE, FUT]);                        // the contract rows only
+    await expect.poll(() => lookups[0]).toEqual([LIVE_CE, OLD_PE, FUT]);            // the contract rows only (waits for the first lookup)
     // The rows still trading, then Expired; the expired one gets no price.
     await expect(panel.getByRole("list", { name: "Symbols in F&O" }).locator("[data-row]")).toHaveCount(3);
     // The expired row shows no price (the poll keeps the list's rows, so a later lookup never leaves a gap).

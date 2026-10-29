@@ -42,6 +42,8 @@ export function atpFontPreload(): Plugin {
     transformIndexHtml: {
       order: "post",
       handler(_html, ctx) {
+        // The app's own page only: Storybook builds its preview (iframe.html) with this same config and no app fonts.
+        if (ctx.path !== "/index.html") return [];
         const file = Object.keys(ctx.bundle ?? {}).find((name) => PRELOAD_FONT.test(name));
         if (!file) throw new Error("atp-font-preload: the Inter Latin font file is not in the build");
         return [{ tag: "link", attrs: { rel: "preload", href: `${base}${file}`, as: "font", type: "font/woff2", crossorigin: true }, injectTo: "head" }];

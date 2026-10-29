@@ -195,7 +195,7 @@ describe("web app manifest", () => {
 });
 
 describe("AUD-G2.3 font preload", () => {
-  type Handler = (html: string, ctx: { bundle?: Record<string, unknown> }) => { tag: string; attrs: Record<string, unknown> }[];
+  type Handler = (html: string, ctx: { path?: string; bundle?: Record<string, unknown> }) => { tag: string; attrs: Record<string, unknown> }[];
   const plugin = () => {
     const p = atpFontPreload() as unknown as { configResolved: (c: { base: string }) => void; transformIndexHtml: { order: string; handler: Handler } };
     p.configResolved({ base: "/" });
@@ -205,12 +205,14 @@ describe("AUD-G2.3 font preload", () => {
   it("preloads the Inter Latin file the build emitted, same-origin and with crossorigin (fonts are CORS requests)", () => {
     const bundle = { "assets/inter-latin-ext-wght-normal-AAA.woff2": {}, "assets/inter-latin-wght-normal-Dx4kX_Al.woff2": {}, "assets/index-1.js": {} };
     expect(plugin().order).toBe("post");
-    expect(plugin().handler("", { bundle })).toEqual([{ tag: "link", injectTo: "head",
+    expect(plugin().handler("", { path: "/index.html", bundle })).toEqual([{ tag: "link", injectTo: "head",
       attrs: { rel: "preload", href: "/assets/inter-latin-wght-normal-Dx4kX_Al.woff2", as: "font", type: "font/woff2", crossorigin: true } }]);
     expect(PRELOAD_FONT.test("assets/inter-latin-ext-wght-normal-AAA.woff2")).toBe(false);
   });
 
   it("stops the build when the file is missing (never a silent loss of the preload)", () => {
-    expect(() => plugin().handler("", { bundle: { "assets/index-1.js": {} } })).toThrow(/Inter Latin/);
+    expect(() => plugin().handler("", { path: "/index.html", bundle: { "assets/index-1.js": {} } })).toThrow(/Inter Latin/);
+    // Storybook builds its preview page (iframe.html) with the same config and no app fonts: left alone.
+    expect(plugin().handler("", { path: "/iframe.html", bundle: { "assets/index-1.js": {} } })).toEqual([]);
   });
 });

@@ -28,7 +28,13 @@ function readToken(token: string): string {
 
 /** The card drawn to a PNG with the current theme's colours. */
 async function cardPng(card: DisciplineCard): Promise<Blob> {
-  const svg = resolveTokens(cardSvg(card), readToken);
+  return svgPng(cardSvg(card));
+}
+
+/** Card markup (CARD_W x CARD_H) drawn to a PNG on this device with the current theme's colours; nothing is uploaded.
+ * AUD-T4: shared with the paper report card. */
+export async function svgPng(markup: string): Promise<Blob> {
+  const svg = resolveTokens(markup, readToken);
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
   try {
     const img = new Image();

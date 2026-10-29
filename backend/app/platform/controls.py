@@ -491,6 +491,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
     # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
     "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
+    # AUD-T4 (owner audit 28 Oct; app/paper/report_card.py; needs `ui_v2`): the paper report card on the Paper bot page -
+    # the user's own closed PAPER trades per bot and per strategy (closed trades, win %, average R, credit kept, max
+    # drawdown, plan followed from journal tags) and a share image made on his device. A forward test, not a backtest;
+    # read-only. OFF: GET /api/paper/report-card answers 404 and the card is hidden.
+    "paper_report_card": "Paper report card: your own closed paper trades per bot and per strategy, with a share image made on your device",
     # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
     # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.

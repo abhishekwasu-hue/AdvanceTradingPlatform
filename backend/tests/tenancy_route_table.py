@@ -464,6 +464,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/deployments/{deployment_id}"): "trader",
     ("GET", "/api/deployments/{deployment_id}"): "member",
     ("GET", "/api/deployments/{deployment_id}/why"): "member",
+    ("GET", "/api/paper/report-card"): "member: the caller's own closed PAPER trades only (tenant and user); bot names from the organisation's own bots",
     ("POST", "/api/deployments/{deployment_id}/pause"): "trader",
     ("POST", "/api/deployments/{deployment_id}/resume"): "trader",
     ("POST", "/api/deployments/{deployment_id}/stop"): "trader",

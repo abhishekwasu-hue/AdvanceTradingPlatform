@@ -34,7 +34,7 @@ import { ExitSentenceV2, StrategyExitsV2 } from "./StrategyExitsV2";
 import {
   defaultsOfForm, exitErrors, exitSentence, exitsAsk, prefillForm, saveExitDefaults, useExitDefaults, type StrategyExitForm,
 } from "./strategyExits";
-import { PRODUCT_UNSET_TEXT, moneyText, newClientRef, sideWord } from "./ticketModel";
+import { PRODUCT_UNSET_TEXT, basketBlockedBy, moneyText, newClientRef, sideWord } from "./ticketModel";
 import { Combobox } from "../ui/Combobox";
 
 /**
@@ -682,7 +682,17 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks,
           </>
         )}
       </div>
-      <div className="flex gap-space-2 border-t border-subtle px-space-4 py-space-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      <div className="flex flex-wrap gap-space-2 border-t border-subtle px-space-4 py-space-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        {/* Owner bug 29 Oct: "Cannot place" with its reason off screen - the first reason sits right above the buttons,
+            as on the single-order ticket, with the link to the user's own limits when it is one of them. */}
+        {(() => {
+          const why = p ? basketBlockedBy(p) : null;
+          return why && (
+            <p className="basis-full text-t13 text-fg" data-basket="blocked-by">
+              {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-basket="change-limits">Change it in My limits</a></>}
+            </p>
+          );
+        })()}
         <button type="button" onClick={onBack} data-basket="back" className="min-h-11 rounded-control border border-border px-space-4 text-t14 font-semibold text-fg">Back</button>
         <button type="button" onClick={onPlace} disabled={busy || !p?.can_execute} data-basket="place"
           className="min-h-11 flex-1 rounded-control bg-brand px-space-4 text-t15 font-semibold text-on-brand disabled:opacity-50">

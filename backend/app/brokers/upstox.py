@@ -42,6 +42,8 @@ UPSTOX_INTERVAL_MAP = {
 
 # Static, unauthenticated per-exchange instrument master published by Upstox.
 INSTRUMENTS_URL_TEMPLATE = "https://assets.upstox.com/market-quote/instruments/exchange/{exchange}.json.gz"
+# The derivatives "exchanges" ATP names (instruments/master.py) -> the Upstox file that holds them and their segment.
+_DERIVATIVE_FILES: Dict[str, Tuple[str, str]] = {"NFO": ("NSE", "NSE_FO"), "BFO": ("BSE", "BSE_FO")}
 
 # The instrument master is a multi-MB file that changes at most once a day; re-downloading and
 # re-parsing it on every historical-data/option-chain/place-order call would add seconds of
@@ -226,6 +228,11 @@ class UpstoxBroker(BrokerInterface):
 
     async def get_instruments(self, exchange: Optional[str] = None) -> List[Instrument]:
         exchange = exchange or "NSE"
+        if exchange in _DERIVATIVE_FILES:
+            # Upstox publishes no NFO / BFO file (403): its options and futures are the NSE_FO / BSE_FO rows of the
+            # NSE / BSE file. Without this an F&O position had no price anywhere (open P&L, marks, the stop check).
+            file_exchange, segment = _DERIVATIVE_FILES[exchange]
+            return [i for i in await self.get_instruments(file_exchange) if (i.segment or "").upper() == segment]
         cached = self._instruments_cache.get(exchange)
         if cached is not None and (time.monotonic() - cached[0]) < _INSTRUMENT_CACHE_TTL_SECONDS:
             return cached[1]

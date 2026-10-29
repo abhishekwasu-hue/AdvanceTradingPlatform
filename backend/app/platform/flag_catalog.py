@@ -120,6 +120,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "execution_core": FlagInfo("One queue routes scan entries to a notification or a paper proposal", "screens", "nothing new", (), "", "behind_the_scenes"),
     "ladder_evidence": FlagInfo("Your own figures on the paper ladder card", "trading", "numbers on the card", ("paper_account",), "", "ready"),
     "experience_levels": FlagInfo("Futures and naked option selling open with your paper record", "trading", "a gate message", ("paper_account",), "", "ready"),
+    "expiry_checklist": FlagInfo("Expiry checklist: positions expiring today or next session, settlement and the broker rule", "trading", "an Expiry check card on Positions", ("ui_v2",), "", "ready"),
     "screener_copilot": FlagInfo("Build and run screens from the Copilot", "screens", "screen box", ("screener_v2", "ai_copilot"), "", "ready"),
     "screener_venues": FlagInfo("Refuse fields a venue does not carry", "screens", "clearer errors", ("screener_v2",), "", "behind_the_scenes"),
     "screener_ownership": FlagInfo("Promoter / FII / DII stakes and events in screens", "screens", "fields", ("screener_v2",), "ownership data", "unfinished"),

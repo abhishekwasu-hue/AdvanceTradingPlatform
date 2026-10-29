@@ -855,6 +855,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/telegram/inbound/status"): "member",
     ("POST", "/api/telegram/webhook/{webhook_token}"): P_TELEGRAM_WEBHOOK,
     ("GET", "/api/trades"): "member",
+    ("GET", "/api/trades/cost-meter"): "member: the caller's own closed trades only (tenant and user), charges against gross P&L",
     ("PATCH", "/api/trades/{trade_id}/journal"): "trader",
     # AMW-2 (flag watchlists): the caller's own named watchlists (tenant and user)
     ("GET", "/api/watchlists"): "member: the caller's own watchlists only (tenant and user, BT1b)",

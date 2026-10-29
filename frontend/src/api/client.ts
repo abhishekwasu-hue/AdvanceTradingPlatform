@@ -171,6 +171,7 @@ import type {
   StaticIp,
   StaticIpOverview,
   WhyRow,
+  CostMeter,
 } from "../types";
 import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut, NotificationPolicy, TelegramLinkCode } from "../alerts/rules";
 import type { TelegramConnectState } from "../alerts/telegramConnect";
@@ -864,6 +865,8 @@ export const api = {
   /** AUD-T3: the bot's last closed bars with the reason it did or did not trade (404 while `why_no_trade` is off). */
   whyNoTrade: (id: number) => request<{ deployment_id: number; rows: WhyRow[] }>(`/deployments/${id}/why`),
 
+  /** AUD-T7: the caller's own closed trades' charges vs gross P&L, this year and month (404 while `cost_meter` is off). */
+  costMeter: () => request<CostMeter>("/trades/cost-meter"),
   /** AUD-T4: the caller's own paper report card (closed PAPER trades per bot and per strategy; 404 while `paper_report_card` is off). */
   paperReportCard: () => request<PaperReportCard>("/paper/report-card"),
 

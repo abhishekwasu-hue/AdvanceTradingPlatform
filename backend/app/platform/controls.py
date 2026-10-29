@@ -139,6 +139,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # user's own key, else the organisation's, else the rules / `ai_not_connected`). OFF: every AI call and page behaves
     # exactly as before and /api/ai/byok/connect* answers 404. Background jobs stay on the organisation's key. No orders.
     "ai_one_key": "One AI key for every AI feature: the Connect AI panel and the user's own key first for Copilot, chart analysis and the other AI tools",
+    # AUD-T7 (owner audit 28 Oct; app/trading/cost_meter.py; needs `ui_v2`): the cost-of-trading meter on My trades - the
+    # user's own closed trades' charges against the gross P&L, this financial year and this month, PAPER and LIVE apart,
+    # contract-note charges first. Read-only. OFF: GET /api/trades/cost-meter answers 404 and the card is hidden.
+    "cost_meter": "Cost of trading: your own closed trades' charges against gross P&L, this year and this month (read-only)",
     # Master Order 4 slice 1 (app/rhythm; needs `ui_v2`): the daily rhythm - the pre-market brief, the mid-session pulse,
     # the closing wrap and the weekly review as a card on the Dashboard, and on the user's own Telegram when the user
     # turns it on (Settings > Alerts, OFF by default). Built from the user's own data and the market data ATP holds;

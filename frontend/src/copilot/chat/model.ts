@@ -49,6 +49,8 @@ export interface ChatAnswer {
   draft?: StrategyDraft | null;
   /** Job 6 follow-up (CP6-2): a next question the page offers as one button, e.g. "Test it on past data" for a complete draft. */
   followup?: { label: string; question: string } | null;
+  /** UI-28 U7.7: what this answer's AI call cost (tokens and rupees; only when the AI worded it - the rules cost nothing). */
+  usage?: { calls: number; tokens_input: number; tokens_output: number; cost_inr: number } | null;
 }
 /** Job 6 added: the trader's own settings, a promise of returns, someone else's strategy. */
 export type RefusalKind = "order" | "advice" | "tip" | "settings" | "promise" | "copy";

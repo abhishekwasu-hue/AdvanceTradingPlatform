@@ -124,6 +124,7 @@ from app.contract_notes.routes import router as contract_notes_router
 from app.observability.middleware import ObservabilityMiddleware
 from app.observability.routes import router as observability_router
 from app.observability.status_page import router as public_status_router
+from app.observability.status_history import router as status_sessions_router
 from app.instruments.routes import router as instrument_master_router
 from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
@@ -353,6 +354,7 @@ app.include_router(exports_router)
 app.include_router(contract_notes_router)
 app.include_router(observability_router)
 app.include_router(public_status_router)  # Z10-e (G7): public status page data (flag public_status_page, off)
+app.include_router(status_sessions_router)  # AUD-T8: uptime per market session, SLO targets, in-app notice (flag status_page, off)
 app.include_router(instrument_master_router)
 app.include_router(market_holidays_router)
 app.include_router(billing_router)

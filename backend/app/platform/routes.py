@@ -145,6 +145,9 @@ async def put_flag(name: str, body: FlagBody, user: User = Depends(require_role(
     if name == "public_status_page":                                     # Z10-e: the public page follows at once
         from app.observability.status_page import reset_cache
         reset_cache()
+    if name in ("status_page", "public_status_page"):                    # AUD-T8: the sessions block follows at once
+        from app.observability import status_history
+        status_history.reset_cache()
     return await controls.flag_listing(session)                         # UX1: the same fields as the list
 
 

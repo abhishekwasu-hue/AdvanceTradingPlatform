@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectChoice } from "./combobox";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 
@@ -105,7 +106,7 @@ for (const size of SIZES) {
         const posts = await open(page, theme);
         const card = page.locator("[data-day-one='setup']");
         await expect(card.getByRole("heading", { name: "Pick a ready strategy and a list to watch" })).toBeVisible();
-        await expect(card.getByLabel("List to watch")).toHaveValue("system:index-nifty50");
+        await expectChoice(card.getByLabel("List to watch"), "system:index-nifty50");
         if (size.phone && !process.env.SIG1_SHOTS) await expectPhoneLayout(page);   // a full-page capture resizes the page
         await shot(page, `day-one-${size.width}-${theme}-1-card`);
 

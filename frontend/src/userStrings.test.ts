@@ -111,3 +111,10 @@ describe("UI-28 U3.8: loading placeholders", () => {
     expect(hits).toEqual([]);
   });
 });
+
+describe("UI-28 U3.3: one picker", () => {
+  it("a v2 screen picks with the shared Combobox, never the browser's own <select>", () => {
+    const hits = Object.entries(V2_ALL).flatMap(([path, src]) => [...code(src).matchAll(/<select\b/g)].map(() => path));
+    expect(hits).toEqual([]);
+  });
+});

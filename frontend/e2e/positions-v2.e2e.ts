@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { choose } from "./combobox";
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 import { T, mockTrading, type TradingMocks, type Writes } from "./tradingMocks";
@@ -262,10 +263,10 @@ test.describe("M45 MB-7 accounts (multi_account on)", () => {
     const filter = page.getByTestId("account-filter").getByLabel("Account", { exact: true });
     await expect(filter).toHaveValue("");
     expect((await filter.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
-    await filter.selectOption("Main");
+    await choose(page, filter, "Main");
     await expect(rows).toHaveCount(1);
     await expect(page.locator("[data-position='202'] [data-testid='exit-now']")).toBeEnabled();
-    await filter.selectOption("");
+    await choose(page, filter, "");
     await expect(rows).toHaveCount(3);
   });
 

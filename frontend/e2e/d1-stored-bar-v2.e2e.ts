@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { choose } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -130,7 +131,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
 
         await history.getByRole("button", { name: "2 years" }).click();
         await expect(history.getByRole("button", { name: "2 years" })).toHaveAttribute("aria-pressed", "true");
-        await page.getByRole("combobox").first().selectOption({ label: "Swing EMA Pullback (daily)" });
+        await choose(page, page.getByRole("combobox").first(), { label: "Swing EMA Pullback (daily)" });
         await page.getByRole("button", { name: "Run Backtest" }).click();
         await expect(page.getByTestId("prices-from")).toHaveText(STORED_LINE);
         expect(posts.find((p) => p.url === "/backtest/bars")?.body).toMatchObject({ timeframe: "day", lookback_days: 730 });

@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { choose } from "./combobox";
 import { openAdmin, type Theme } from "./adminMocks";
 import { FEATURES, openSettings } from "./settingsMocks";
 
@@ -103,7 +104,7 @@ for (const size of SIZES) {
         await settle(page);
         await noSidewaysScroll(page);
         await expect(card).toHaveScreenshot(`admin-tickets-v2-${size.name}-${theme}.png`, SHOT);
-        await card.getByLabel("Status of #5").selectOption("answered");
+        await choose(page, card.getByLabel("Status of #5"), "answered");
         await expect(card.locator("[data-ticket='5']")).toHaveAttribute("data-ticket-status", "answered");
         expect(puts).toEqual([{ status: "answered" }]);
       });

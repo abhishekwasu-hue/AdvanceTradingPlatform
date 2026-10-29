@@ -3,6 +3,7 @@ import { useEffect, useId, useState, type FormEvent, type ReactNode } from "reac
 import { api } from "../api/client";
 import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import type { MarketEvent, RiskEvent, RiskLimit, RiskLimitType, RiskScope, UserResponse } from "../types";
+import { Combobox } from "../ui/Combobox";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Details } from "../ui/numbersFirst";
 import { formatDateIST, formatDateTimeIST } from "../ui/format";
@@ -105,15 +106,11 @@ export function MarketEventsV2({ user, defaultCut, nonce, onChanged }: {
         <Field label="Day">{(id) => <input id={id} type="date" value={date} onChange={(e) => setDate(e.target.value)} className={FIELD} />}</Field>
         <Field label="Symbol">{(id) => <input id={id} value={underlying} placeholder="All symbols" autoCapitalize="characters" onChange={(e) => setUnderlying(e.target.value)} className={FIELD} />}</Field>
         <Field label="Kind">{(id) => (
-          <select id={id} value={kind} onChange={(e) => setKind(e.target.value)} className={FIELD}>
-            {EVENT_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-          </select>
+          <Combobox id={id} label="Kind" value={kind} onChange={setKind} options={EVENT_KINDS} />
         )}</Field>
         <Field label="What happens">{(id) => (
-          <select id={id} value={action} onChange={(e) => setAction(e.target.value as "BLOCK" | "SIZE_CUT")} className={FIELD}>
-            <option value="SIZE_CUT">Cut the size</option>
-            <option value="BLOCK">Stop new entries</option>
-          </select>
+          <Combobox id={id} label="What happens" value={action} onChange={(v) => setAction(v as "BLOCK" | "SIZE_CUT")}
+            options={[{ value: "SIZE_CUT", label: "Cut the size" }, { value: "BLOCK", label: "Stop new entries" }]} />
         )}</Field>
         {action === "SIZE_CUT" && (
           <Field label="Size cut (%)">{(id) => (
@@ -229,15 +226,11 @@ export function OrgLimitsV2({ canEdit }: { canEdit: boolean }) {
       {canEdit && (
         <form onSubmit={add} noValidate className="mt-space-4 grid grid-cols-1 gap-space-3 sm:grid-cols-2 lg:grid-cols-4" data-limit-form>
           <Field label="Applies to">{(id) => (
-            <select id={id} value={scope} onChange={(e) => setScope(e.target.value as RiskScope)} className={FIELD}>
-              {LIMIT_SCOPES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
+            <Combobox id={id} label="Applies to" value={scope} onChange={(v) => setScope(v as RiskScope)} options={LIMIT_SCOPES} />
           )}</Field>
           {needsId && <Field label={needsId}>{(id) => <input id={id} value={scopeId} onChange={(e) => setScopeId(e.target.value)} className={FIELD} />}</Field>}
           <Field label="Limit">{(id) => (
-            <select id={id} value={type} onChange={(e) => setType(e.target.value as RiskLimitType)} className={FIELD}>
-              {LIMIT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
+            <Combobox id={id} label="Limit" value={type} onChange={(v) => setType(v as RiskLimitType)} options={LIMIT_TYPES} />
           )}</Field>
           <Field label={typeSpec?.unit === "inr" ? "Value (₹)" : typeSpec?.unit === "pct" ? "Value (%)" : "Value"}>{(id) => (
             <input id={id} type="number" step="any" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} className={FIELD} />

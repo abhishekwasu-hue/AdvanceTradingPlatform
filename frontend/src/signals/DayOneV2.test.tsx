@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { STATE_LABEL, headline, listRef, listValue, rowArea, rowText, type DayOne, type DayOneOffer, type DayOneRow, type DayOneWatch } from "./dayOne";
 import dayOneSource from "./dayOne.ts?raw";
-import { SetupView, WatchView } from "./DayOneV2";
+import { SetupView, WatchView, listGroups, listOptions } from "./DayOneV2";
 import viewSource from "./DayOneV2.tsx?raw";
 import { WITHHELD, callWords, check } from "./language";
 import pageSource from "./SignalsV2.tsx?raw";
@@ -48,8 +48,10 @@ describe("Signals day one: the first-visit card", () => {
     expect(words).toContain("Pick a ready strategy and a list to watch");
     expect(words).toContain("Moving-average pullback in trend");
     expect(words).toContain("Range breakout");
-    expect(html).toMatch(/<option value="system:index-nifty50" selected="">NIFTY 50 stocks \(50\)<\/option>/);
-    expect(html).toContain('label="My lists"');
+    expect(html).toContain('data-combobox="system:index-nifty50"');                // NIFTY 50 picked
+    const rows = listOptions(listGroups(CARD_DATA.lists));
+    expect(rows.find((r) => r.value === "system:index-nifty50")?.label).toBe("NIFTY 50 stocks (50)");
+    expect(rows.some((r) => r.group === "My lists")).toBe(true);
     expect(words).toContain("See its settings");
     expect(words).toContain("Paper money only");
     expect(primaries(html)).toBe(1);

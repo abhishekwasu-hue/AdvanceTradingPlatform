@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { expectChoice } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -124,9 +125,9 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await idea.locator("[data-adopt='A5']").click();
         await settle(page);
         const form = page.locator("[data-block='start']");
-        await expect(form.getByLabel("Pick a strategy")).toHaveValue("template-pick:A5");
-        await expect(form.getByLabel("Pick a strategy").locator("option:checked")).toHaveText("Breakout and retest");
-        await expect(form.getByLabel("Pick a symbol")).toHaveValue("RELIANCE");
+        await expectChoice(form.getByLabel("Pick a strategy"), "template-pick:A5");
+        await expect(form.getByLabel("Pick a strategy")).toContainText("Breakout and retest");
+        await expectChoice(form.getByLabel("Pick a symbol"), "RELIANCE");
         const settings = form.locator("[data-template-settings]");
         await expect(settings).toContainText("The idea's settings");
         await expect(settings).toContainText("What broke");

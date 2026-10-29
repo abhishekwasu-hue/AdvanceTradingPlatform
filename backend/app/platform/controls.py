@@ -511,6 +511,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # timeframe), closed before that entry; and on a closed journal row what the stored entry context said next to what
     # happened. Read-only, no new chart reading. OFF: GET /api/setup-recall/* answers 404 and nothing is shown.
     "setup_recall": "Similar setups: your own past trades with the same stored setup, and what the context said vs what happened",
+    # AUD-T5 (owner audit 28 Oct; app/charts/read_chart.py; needs `ui_v2` and `market_zones`): "Read this chart" on the
+    # Charts page - the existing structure reader (the price-action layer, the stored areas with their lifecycle, the
+    # ported Daily trend fold and the ported level gate's commitment candle), unchanged, as of the last closed bar.
+    # Read-only, the user's own chart only. OFF: GET /api/charts/read answers 404 and the button is hidden.
+    "read_chart": "Read this chart: the areas, their state, the pullback state and the commitment candle as of the last closed bar",
     # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
     # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.

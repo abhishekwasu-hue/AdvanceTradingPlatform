@@ -165,6 +165,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "plan_limits_v2": FlagInfo("Per-plan limits for watchlists, reports, Lab", "platform", "limits", (), "plans", "decision"),
     "paper_report_card": FlagInfo("Paper report card: your own closed paper trades per bot and per strategy", "trading", "a Paper report card on the Paper bot page, with a Share image button", ("ui_v2",), "", "ready"),
     "setup_recall": FlagInfo("Similar setups: your own past trades with the same setup, and what the context said vs what happened", "trading", "a Similar setups fold on each journal trade and on each entry approval in Signals", ("ui_v2",), "", "ready"),
+    "read_chart": FlagInfo("Read this chart: the areas, their state, the pullback state and the commitment candle", "charts", "a Read this chart button on the Charts page toolbar", ("ui_v2", "market_zones"), "nightly zones", "ready"),
     "why_no_trade": FlagInfo("Why no trade: each bot's last closed bars with the reason it did or did not trade", "trading", "a Why no trade list on each bot (Bots page)", ("ui_v2",), "", "ready"),
 }
 

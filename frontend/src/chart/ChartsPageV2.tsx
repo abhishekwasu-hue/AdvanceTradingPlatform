@@ -1,4 +1,4 @@
-import { ListTree, Maximize2, Minimize2, Redo2, ScanSearch, Undo2 } from "lucide-react";
+import { ListTree, Maximize2, Minimize2, Redo2, ScanSearch, ScanText, Undo2 } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
@@ -42,6 +42,8 @@ import { useChartPrefs } from "./useChartPrefs";
 import { useFullscreen } from "./useFullscreen";
 import { useMarketStatus } from "./useMarketStatus";
 import { useTradesLayer } from "./useTradesLayer";
+import { ReadChartPanel, useReadChart } from "./ReadChartV2";
+import { readTimeframe } from "./readChart";
 import { WatchlistPanel } from "./WatchlistPanel";
 import type { WatchItem } from "./watchlistsV2";
 import { Combobox } from "../ui/Combobox";
@@ -144,6 +146,11 @@ export default function ChartsPageV2(_props: PageProps) {
   const [engine, setEngine] = useState<LightweightEngine | null>(null);
   const [tools, setTools] = useState<Tools | null>(null);
   const tradesNote = useTradesLayer(engine, `${exchange}:${symbol}`, data.candles, view.layers.includes("trades") && features.on("chart_trades_layer"));
+  // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
+  const readOn = features.on("read_chart");
+  const readTf = readTimeframe(timeframe);
+  const [reading, setReading] = useState(false);
+  const read = useReadChart(engine, `${exchange}:${symbol}`, readTf, readOn && reading && tab === "chart" && !hubView);
 
   // CHP-2: a tool picked and not yet placed stays picked when the symbol (and so the drawing controller) changes.
   const armed = useRef<{ kind: DrawingKind; text?: string; ctl: DrawingController } | null>(null);
@@ -272,6 +279,12 @@ export default function ChartsPageV2(_props: PageProps) {
                     <ScanSearch size={16} aria-hidden />
                   </Link>
                 )}
+                {readOn && readTf && (
+                  <button type="button" aria-label="Read this chart" title={reading ? "Hide the reading" : "Read this chart"} aria-pressed={reading}
+                    data-testid="read-chart-button" className={iconBtn} onClick={() => setReading((v) => !v)}>
+                    <ScanText size={16} aria-hidden />
+                  </button>
+                )}
                 <ChartSettingsPopover prefs={prefs.prefs} onChange={prefs.update} error={prefs.error} />
                 <button type="button" aria-label={fs.on ? "Leave full screen" : "Full screen"} title={fs.on ? "Leave full screen (Esc)" : "Full screen (F)"}
                   aria-pressed={fs.on} className={iconBtn} onClick={fs.toggle}>
@@ -293,6 +306,7 @@ export default function ChartsPageV2(_props: PageProps) {
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} captureTouch={fs.on}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
+            {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} />}
             {(data.error || tradesNote || data.loadingOlder || drawingText) && (
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">
                 {data.error && <span className="text-fg">{data.error}</span>}

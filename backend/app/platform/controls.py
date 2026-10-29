@@ -496,6 +496,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # drawdown, plan followed from journal tags) and a share image made on his device. A forward test, not a backtest;
     # read-only. OFF: GET /api/paper/report-card answers 404 and the card is hidden.
     "paper_report_card": "Paper report card: your own closed paper trades per bot and per strategy, with a share image made on your device",
+    # AUD-T6 (owner audit 28 Oct; BR-M3 / BR-R1; app/setup_recall; needs `ui_v2`): on a journal row and an entry approval,
+    # the user's own past closed trades whose context stored at entry matches exactly (setup, side, holding, bot
+    # timeframe), closed before that entry; and on a closed journal row what the stored entry context said next to what
+    # happened. Read-only, no new chart reading. OFF: GET /api/setup-recall/* answers 404 and nothing is shown.
+    "setup_recall": "Similar setups: your own past trades with the same stored setup, and what the context said vs what happened",
     # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
     # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.

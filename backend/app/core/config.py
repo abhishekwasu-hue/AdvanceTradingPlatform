@@ -902,6 +902,14 @@ WHY_NO_TRADE_KEEP_BARS = int(os.environ.get("WHY_NO_TRADE_KEEP_BARS", "50"))
 # of the user's newest closed PAPER trades.
 PAPER_REPORT_CARD_MIN_TRADES_BRIER = _bounded_int("PAPER_REPORT_CARD_MIN_TRADES_BRIER", 20, 2, 10_000)
 PAPER_REPORT_CARD_MAX_TRADES = _bounded_int("PAPER_REPORT_CARD_MAX_TRADES", 5000, 100, 100_000)
+# AUD-T6 (similar-setup recall, flag `setup_recall`; BR-M3): the words over the user's own similar closed trades (how
+# many closed with a gain / a loss, average R, the most common way the losses closed) appear only from
+# SETUP_RECALL_MIN_SAMPLE matches; below it the card says "not enough history yet" and only lists them. At most
+# SETUP_RECALL_MAX_LISTED matches are listed (newest first); at most SETUP_RECALL_MAX_SCAN of his closed trades with the
+# same setup are read.
+SETUP_RECALL_MIN_SAMPLE = _bounded_int("SETUP_RECALL_MIN_SAMPLE", 10, 1, 10_000)
+SETUP_RECALL_MAX_LISTED = _bounded_int("SETUP_RECALL_MAX_LISTED", 10, 1, 200)
+SETUP_RECALL_MAX_SCAN = _bounded_int("SETUP_RECALL_MAX_SCAN", 2000, 50, 100_000)
 # AUD-T1 ("My day in one card", flag `my_day_card`): the one state chip on each open position is read ONLY from the
 # user's own stop on that position - how much of the room between his entry and his own stop is still left at the
 # position's last mark (100 % = the mark is at the entry, 0 % = the mark has reached his stop). Information only: the

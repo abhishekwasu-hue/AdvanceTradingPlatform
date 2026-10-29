@@ -9,6 +9,7 @@ import { position } from "../ui/RangeBar";
 import { daysText, formatIv, formatStrike } from "./model";
 import type { ChainSummary } from "./types";
 import { Skeleton } from "../components/primitives";
+import { spotChange } from "./spotChange";
 
 /**
  * OC1: the summary cards above the chain - spot (live), futures, ATM strike, PCR (OI), max pain, ATM IV and days to
@@ -56,14 +57,19 @@ function MiniGauge({ label, value, max }: { label: string; value: number | null 
  * LTP read - src/terminal/spot.ts) the spot card shows THAT value and its time, the same as the chart; only without one
  * does the chain's own spot (or the last close) stand.
  */
-export function summaryCards(s: ChainSummary | null, expiry: string | null, spot: TerminalSpot | null = null): Card[] {
+export function summaryCards(s: ChainSummary | null, expiry: string | null, spot: TerminalSpot | null = null, prevClose: number | null = null): Card[] {
   const future = s?.futures ?? null;
   const live = spot && spot.source !== "chain" ? spot : null;
+  // UI-28 U7.1: the spot's signed change and % against the previous close (the number on screen minus that close).
+  const moved = spotChange(live ? live.ltp : s?.spot, prevClose);
+  const change = moved
+    ? <span className="text-t12" data-spot-change><Signed value={moved.change} kind="count" decimals={2} /> (<Signed value={moved.pct} kind="pct" />)</span>
+    : undefined;
   return [
     // B2b: a closed market's spot from our own last index close says so.
     live
-      ? { key: "spot", label: "Spot", value: formatPrice(live.ltp), num: live.ltp, caption: live.at ? `as of ${formatTimeIST(live.at)}` : undefined }
-      : { key: "spot", label: s?.spot_source === "last_close" ? "Spot: last close" : "Spot", value: formatPrice(s?.spot), num: s?.spot ?? null },
+      ? { key: "spot", label: "Spot", value: formatPrice(live.ltp), num: live.ltp, caption: live.at ? `as of ${formatTimeIST(live.at)}` : undefined, extra: change }
+      : { key: "spot", label: s?.spot_source === "last_close" ? "Spot: last close" : "Spot", value: formatPrice(s?.spot), num: s?.spot ?? null, extra: change },
     // OC-4: the near-month future, or the reason it is missing.
     { key: "futures", label: "Futures", value: formatPrice(future?.ltp),
       caption: future ? `Expires ${formatDateIST(future.expiry).replace(/ \d{4}$/, "")}` : s ? "Near-month price: waiting for the feed" : undefined },
@@ -89,12 +95,14 @@ function Value({ loading, num, children }: { loading: boolean; num?: number | nu
   return <div data-flash={flash ?? undefined} className={`-mx-space-1 mt-space-1 rounded-control px-space-1 font-tabular text-t18 font-semibold text-fg transition-colors duration-base md:text-t20 ${flashClass(flash)}`}>{children}</div>;
 }
 
-export default function SummaryStripV2({ summary, expiry, loading, spot = null }: {
+export default function SummaryStripV2({ summary, expiry, loading, spot = null, prevClose = null }: {
   summary: ChainSummary | null; expiry: string | null; loading: boolean;
+  /** UI-28 U7.1: the underlying's previous close (spotChange.ts), for the spot's signed change and %. */
+  prevClose?: number | null;
   /** The page's one spot (the chart's too, T1-3); without it the chain's own. */
   spot?: TerminalSpot | null;
 }) {
-  const all = summaryCards(summary, expiry, spot);
+  const all = summaryCards(summary, expiry, spot, prevClose);
   const [more, setMore] = useState(false);
   // Phone order: the four first cards, then the rest; from md the server's order (one row).
   const cards = [...all.filter((c) => PHONE_FIRST.has(c.key)), ...all.filter((c) => !PHONE_FIRST.has(c.key))];

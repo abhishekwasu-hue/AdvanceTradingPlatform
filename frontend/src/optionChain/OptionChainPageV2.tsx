@@ -23,6 +23,7 @@ import {
 } from "./model";
 import RowDetailsV2 from "./RowDetailsV2";
 import SummaryStripV2 from "./SummaryStripV2";
+import { STRIKE_RANGES, rowsAround, usePrevClose } from "./spotChange";
 import type { ChainRow } from "./types";
 import { useOptionChain, type OptionChainData } from "./useOptionChain";
 import { Combobox, type ComboOption } from "../ui/Combobox";
@@ -163,6 +164,10 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   // T1-3 on this page (owner 25 Oct): the spot card reads the same feed and time as the chart (src/terminal/spot.ts).
   const spot = useTerminalSpot({ symbol, hub: useFeatures().on("data_hub"), enabled: true, chain: live ?? null });
   const notes = chainNotes(live, marketOpen, (iso) => formatTimeIST(iso));
+  const prevClose = usePrevClose(symbol);
+  // UI-28 U7.1: the chain shows every strike, or ATM ± N (the choice is kept for the visit).
+  const [range, setRange] = useState<number>(0);
+  const shownLive = useMemo(() => (live && range ? { ...live, rows: rowsAround(live.rows, live.summary?.atm_strike, range) } : live), [live, range]);
   const extraSymbol = useMemo(() => (new Set<string>([...INDEX_SYMBOLS, ...STOCK_SYMBOLS]).has(symbol) ? null : symbol), [symbol]);
   const expiryOptions = chain.expiries?.expiries.length
     ? chain.expiries.expiries
@@ -218,7 +223,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       )}
 
       {/* OC-1 (owner, 25 Oct): header -> status -> summary cards -> the chain -> the compact reading -> the tables. */}
-      <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} spot={spot} />
+      <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} spot={spot} prevClose={prevClose} />
 
       <SetupPanelV2 state={setupState} symbol={symbol} expiry={live?.expiry ?? chain.expiry} onExpiry={(e) => { setPicked(null); chain.setExpiry(e); }}
         onClear={() => onClearSignal?.()} tradeOf={tradeOf} onTrade={tradeSetup} />
@@ -247,7 +252,16 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
               <span className={colour ? "text-down" : undefined}>Calls</span><span className={colour ? "text-up" : undefined}>Puts</span>
             </div>
             <ViewToggle view={view} onView={setView} className="absolute -top-space-5 left-1/2 z-10 -translate-x-1/2 md:-top-space-4" />
-            <ChainTableV2 live={live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${trading.centreSuffix}`} onPick={(row) => setPicked(row.strike)}
+            <div role="group" aria-label="Strikes shown" data-strike-range className="mb-space-2 flex flex-wrap items-center gap-space-2">
+              {STRIKE_RANGES.map((n) => (
+                <button key={n} type="button" aria-pressed={range === n} onClick={() => setRange(n)}
+                  className={cx("inline-flex min-h-11 items-center rounded-pill border px-space-3 text-t13 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8",
+                    range === n ? "border-brand bg-brand-tint font-semibold text-fg" : "border-border text-fg-muted hover:text-fg")}>
+                  {n === 0 ? "All strikes" : `ATM ± ${n}`}
+                </button>
+              ))}
+            </div>
+            <ChainTableV2 live={shownLive ?? live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${trading.centreSuffix}`} onPick={(row) => setPicked(row.strike)}
               onPickLeg={trading.onPickLeg} held={trading.held} setup={marks.size ? marks : undefined} />
             {chain.problem && <p className="mt-space-2 text-t12 text-fg-muted">{TEXT.loadFailed}</p>}
           </>

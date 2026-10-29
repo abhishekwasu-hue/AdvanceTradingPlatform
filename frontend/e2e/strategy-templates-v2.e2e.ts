@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { choose, expectChoice, expectChoiceLabels } from "./combobox";
+import { choose, expectChoice, expectChoiceLabels, expectGroupLabels } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -149,7 +149,7 @@ test.describe("Strategy templates behaviour", () => {
   test("pick a template: the server's pre-fill, then Start on paper sends it as PAPER; nothing starts before", async ({ page }) => {
     const server = await open(page);
     const strategy = form(page).getByLabel("Pick a strategy");
-    await expect(strategy.locator("optgroup[label='Strategy templates'] option")).toHaveText(["Moving-average crossover", "Range breakout"]);
+    await expectGroupLabels(page, strategy, "Strategy templates", ["Moving-average crossover", "Range breakout"]);
     await choose(page, strategy, { label: "Range breakout" });
     await expectChoice(form(page).getByLabel("Chart timeframe"), "15m");
     await expect(form(page)).toContainText("A signal on the first close beyond a range");
@@ -235,7 +235,7 @@ test.describe("Strategy templates behaviour", () => {
 
   test("with the flag off: no template group, the form as before", async ({ page }) => {
     await open(page, { templatesOff: true, path: "/deployments?template=D2" });
-    await expect(form(page).locator("optgroup[label='Strategy templates']")).toHaveCount(0);
+    await expectGroupLabels(page, form(page).getByLabel("Pick a strategy"), "Strategy templates", []);
     await expect(form(page).getByLabel("Chart timeframe")).toHaveCount(0);
   });
 });

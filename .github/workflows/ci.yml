@@ -268,6 +268,11 @@ jobs:
 
       # The English-only check covers the whole repository now: the lint job's "English only" step.
 
+      # AUD-G1.6: ESLint + typescript-eslint (eslint.config.js). Errors fail; the warnings the code had when ESLint was
+      # added are a per-rule ratchet whose counts may only fall (scripts/check-eslint-ratchet.mjs).
+      - name: ESLint (typescript-eslint + React hooks; warnings ratcheted)
+        run: npm run lint
+
       - name: Unit tests (Vitest)
         run: npm test
 

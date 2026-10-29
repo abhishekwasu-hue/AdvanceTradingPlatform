@@ -459,7 +459,7 @@ export default function BacktestPage() {
                   <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-1">Legs ({customLegs.length}/{MAX_CUSTOM_LEGS})</div>
                   <div className="space-y-1 text-xs">
                     {customLegs.map((leg, i) => (
-                      <div key={i} className="grid grid-cols-6 gap-2 items-center">
+                      <div key={i} className="grid grid-cols-3 gap-2 items-center sm:grid-cols-6">
                         <select className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.role} onChange={(e) => updateLeg(i, { role: e.target.value as CustomLeg["role"] })}><option value="SHORT">Sell</option><option value="LONG">Buy</option></select>
                         <select className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.right} onChange={(e) => updateLeg(i, { right: e.target.value as CustomLeg["right"] })}><option value="CE">CE</option><option value="PE">PE</option></select>
                         <select className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.strike_rule} onChange={(e) => updateLeg(i, { strike_rule: e.target.value as StrikeRule })}><option value="ATM">ATM</option><option value="ITM">ITM</option><option value="OTM">OTM</option></select>

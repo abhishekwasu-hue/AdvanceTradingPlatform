@@ -7,4 +7,4 @@ Open: #656 G1.6 p1 (Dependabot), #657 G1.7 p1 (Risk disclaimer, duplicate My lim
 Next: G1.5 Lighthouse CI + web-vitals; G1.7 p2 Compliance page; G1.6 ruff I; then T1-T3.
 Owner asks: texts of AP-FIX / CP-FIX / OI-V2 / UI-STD / PX-1 (filed as stubs); G1.2 company + grievance officer;
 Sentry DSN; v1.0.0 tag + "Automatically delete head branches" (session lacks the rights); Trade V5 fix yes / no.
-Session B (28 Oct): UX-15 #639 + UI-28 U1 #640 merged; U2 + affirmative words #647; docs #638; next U3 (their own handover).
+Session B (29 Oct): UI-28 U1 #640, U2 #647, U3 #650 #653 #675 #676 merged; U3.7 reflow sweep PR open; next U4 palette, U5-U7.

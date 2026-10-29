@@ -586,7 +586,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
               </div>
               <div className="space-y-1">
                 {customLegs.map((leg, i) => (
-                  <div key={i} className="grid grid-cols-6 gap-1 items-center">
+                  <div key={i} className="grid grid-cols-3 gap-1 items-center sm:grid-cols-6">
                     <select className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.role} onChange={(e) => updateLeg(i, { role: e.target.value as CustomLeg["role"] })}>
                       <option value="SHORT">Sell</option>
                       <option value="LONG">Buy</option>

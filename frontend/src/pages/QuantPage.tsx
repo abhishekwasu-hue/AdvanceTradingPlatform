@@ -5,6 +5,7 @@ import { Card, Disclaimer, StatTile } from "../components/ui";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import type { FactorTable, QuantRisk, QuantSymbolInput } from "../types";
 import { PageHeader } from "../components/primitives";
+import { Details } from "../ui/Details";
 
 const FACTOR_LABELS: Record<string, string> = {
   momentum: "Momentum", reversal: "Reversal", low_volatility: "Low volatility", trend: "Trend", liquidity: "Liquidity", value: "Value", quality: "Quality",
@@ -100,13 +101,16 @@ export default function QuantPage() {
             </div>
           ))}
         </div>
-        <div className="mt-3 flex items-center gap-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <button onClick={run} disabled={busy} className="whitespace-nowrap rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50">{busy ? "Computing…" : "Score universe"}</button>
           <label className="flex items-center gap-1.5 text-xs text-fg-muted">
             <input type="checkbox" checked={useFundamentals} onChange={(e) => setUseFundamentals(e.target.checked)} />
             Fill value/quality from Fundamentals
           </label>
-          <span className="text-xs text-fg-muted">Weights are renormalised; a factor a symbol has no data for carries no weight in its composite. Value and quality use the latest stored annual financials (PE and PB at the last close of the window).</span>
+          {/* UI-28 U3.7 / U1.11: the scoring note wraps on a phone and sits under "How scored", closed. */}
+          <Details id="quant.how-scored" label="How scored" className="basis-full text-xs text-fg-muted">
+            Weights are renormalised; a factor a symbol has no data for carries no weight in its composite. Value and quality use the latest stored annual financials (PE and PB at the last close of the window).
+          </Details>
         </div>
         {table?.fundamentals && (
           <div className="mt-2 text-xs text-fg-muted">

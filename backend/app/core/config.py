@@ -902,6 +902,20 @@ WHY_NO_TRADE_KEEP_BARS = int(os.environ.get("WHY_NO_TRADE_KEEP_BARS", "50"))
 # of the user's newest closed PAPER trades.
 PAPER_REPORT_CARD_MIN_TRADES_BRIER = _bounded_int("PAPER_REPORT_CARD_MIN_TRADES_BRIER", 20, 2, 10_000)
 PAPER_REPORT_CARD_MAX_TRADES = _bounded_int("PAPER_REPORT_CARD_MAX_TRADES", 5000, 100, 100_000)
+# AUD-G2.2 (live push, flag `live_push`; app/live/routes.py): the live stream's push settings, sent to the tab in its
+# `ready` event.
+# - LIVE_PUSH_STALE_SECONDS: a symbol whose last tick is older than this reads "Price delayed" on the chart, and its
+#   view goes back to its timer until ticks come again.
+# - LIVE_PUSH_HEARTBEAT_SECONDS: a `beat` event this often; a tab that hears nothing for two beats treats the push as
+#   down and goes back to its timers.
+# - LIVE_PUSH_BAR_SETTLE_SECONDS: after a tick in a new bar, the candles are read again this much later (the broker's
+#   closed bar settles first).
+# - LIVE_PUSH_MAX_STREAMS_PER_USER: push streams one user holds open at once (per server process); a further tab gets
+#   the stream as before without the push and keeps its timers.
+LIVE_PUSH_STALE_SECONDS = _bounded_int("LIVE_PUSH_STALE_SECONDS", 30, 1, 3600)
+LIVE_PUSH_HEARTBEAT_SECONDS = _bounded_int("LIVE_PUSH_HEARTBEAT_SECONDS", 10, 1, 120)
+LIVE_PUSH_BAR_SETTLE_SECONDS = _bounded_int("LIVE_PUSH_BAR_SETTLE_SECONDS", 5, 0, 120)
+LIVE_PUSH_MAX_STREAMS_PER_USER = _bounded_int("LIVE_PUSH_MAX_STREAMS_PER_USER", 8, 1, 100)
 # AUD-T1 ("My day in one card", flag `my_day_card`): the one state chip on each open position is read ONLY from the
 # user's own stop on that position - how much of the room between his entry and his own stop is still left at the
 # position's last mark (100 % = the mark is at the entry, 0 % = the mark has reached his stop). Information only: the

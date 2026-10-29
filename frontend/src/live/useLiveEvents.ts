@@ -10,8 +10,9 @@ const listeners = new Set<Listener>();
 let running = false;
 
 /** TM Part 1 (TM-12, flag `data_hub`): the data hub's events on the same stream - `ticks` (prices of the symbols this
- * tab registered), `hub` (the broker connection's state) and `stream` (this tab's own stream is up / down). */
-export type LiveDataEvent = "ticks" | "hub" | "stream";
+ * tab registered), `hub` (the broker connection's state) and `stream` (this tab's own stream is up / down).
+ * AUD-G2.2 (flag `live_push`): also `ready` (its `push` settings while the push is on) and `beat` (the heartbeat). */
+export type LiveDataEvent = "ticks" | "hub" | "stream" | "ready" | "beat";
 type DataListener = (event: LiveDataEvent, data: unknown) => void;
 const dataListeners = new Set<DataListener>();
 
@@ -53,7 +54,7 @@ async function loop() {
           if (done || !wanted()) { void reader.cancel().catch(() => undefined); break; }
           for (const e of parser.push(value)) {
             if (e.event === "ai_actions" || e.event === "notifications") listeners.forEach((l) => l(e.event as LiveTopic));
-            else if (e.event === "ticks" || e.event === "hub") {
+            else if (e.event === "ticks" || e.event === "hub" || e.event === "ready" || e.event === "beat") {
               try { tellData(e.event, JSON.parse(e.data)); } catch { /* a malformed event is skipped */ }
             }
           }

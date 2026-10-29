@@ -362,6 +362,13 @@ FEATURE_FLAGS: Dict[str, str] = {
     # factor, payoff ratio, a Kelly reference and a risk-of-ruin bound from their own closed PAPER trades. OFF: the ladder
     # answers exactly as before. Information only: never used for sizing, never a recommendation.
     "ladder_evidence": "Ladder evidence: the discipline-score criterion and your own figures (expectancy, profit factor, Kelly reference, risk-of-ruin bound) on the PAPER ladder card (information only)",
+    # AUD-G2.2 (order ATP_ORDER_AUDIT_28OCT G2.2; app/live/routes.py; needs `ui_v2` + `data_hub`): live prices pushed
+    # end to end - the live stream tells the tab it may rely on the push (its tick-age limit, heartbeat and bar settle
+    # time); the charts' last price, candle refresh and the Today sparklines then follow the ticks of the user's own
+    # broker connection instead of their timers (each falls back to its timer while the stream is down or a symbol has
+    # no fresh tick), and the chart's "Price delayed" chip reads the age of the last tick. OFF: exactly as before.
+    # Prices only - places, blocks or changes no order.
+    "live_push": "Live push: charts and sparklines follow the live price stream instead of timers; the delayed chip reads the age of the last tick",
     # N2-2 (P1 spec 1.4, docs/design/N2_P1FGH.md): experience levels from the user's own PAPER record (Beginner /
     # Intermediate / Advanced) gate new futures entries (Intermediate) and naked short options (Advanced), single-leg and
     # structures; an explicit opt-out with a reason lifts one gate for that IST day, logged and counted. Exits are never

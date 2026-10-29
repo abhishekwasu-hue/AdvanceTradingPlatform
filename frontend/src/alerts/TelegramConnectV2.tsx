@@ -5,6 +5,7 @@ import { ApiError } from "../api/errors";
 import { ChipV2, LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import { ActionV2, Note } from "../setup/StepsV2";
 import { POLL_MS, TELEGRAM_TEXT, WAIT_MAX_MS, telegramView, type TelegramConnectState } from "./telegramConnect";
+import { Skeleton } from "../components/primitives";
 
 /**
  * UX2 fix 5: the one-tap Telegram row (Settings → Alerts and the Setup wizard's alerts step). "Connect Telegram" makes a
@@ -108,7 +109,7 @@ export default function TelegramConnectV2({ onChanged, title = true }: { onChang
   }
 
   if (failed && !state) return <p className="text-t14 text-fg-muted">Telegram could not be loaded. Try again in a moment.</p>;
-  if (!state) return <div aria-busy="true" className="h-20 animate-pulse rounded-control bg-surface-2"><span className="sr-only">Loading</span></div>;
+  if (!state) return <Skeleton className="h-20" label="Loading" />;
 
   const view = telegramView(state, link !== null);
   return (

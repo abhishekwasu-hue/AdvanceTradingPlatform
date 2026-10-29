@@ -19,6 +19,7 @@ import {
   riskSentence, testSummary,
   type RiskField, type RiskForm, type StrategySuggestion,
 } from "./model";
+import { Skeleton } from "../components/primitives";
 
 /**
  * UI2-7 (UI v2 proposal §9, §11): the setup wizard's four steps. Each uses the APIs that already exist and says what
@@ -172,7 +173,7 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
       </div>
     );
   }
-  if (!form) return <div aria-busy="true" className="h-40 animate-pulse rounded-control bg-surface-2"><span className="sr-only">Loading</span></div>;
+  if (!form) return <Skeleton className="h-40" label="Loading" />;
 
   const withCapital = typeof account === "number";            // unknown or off: no field, nothing sent for it
   const errors = riskErrors(form, { capital: withCapital });
@@ -352,7 +353,7 @@ export function StrategyStepV2({ onChanged }: StepProps) {
   }, [storedOn]);
 
   if (failed) return <p className={P}>We could not load the strategy library. Try again in a moment, or open the Library.</p>;
-  if (!library) return <div aria-busy="true" className="h-40 animate-pulse rounded-control bg-surface-2"><span className="sr-only">Loading</span></div>;
+  if (!library) return <Skeleton className="h-40" label="Loading" />;
   const shown = SUGGESTIONS.flatMap((s) => {
     const info = library.find((x) => x.id === s.strategyId);
     return info ? [{ s, info }] : [];
@@ -450,7 +451,7 @@ export function AlertsStepV2({ onChanged }: StepProps) {
     }
   }
 
-  if (!channels) return <div aria-busy="true" className="h-40 animate-pulse rounded-control bg-surface-2"><span className="sr-only">Loading</span></div>;
+  if (!channels) return <Skeleton className="h-40" label="Loading" />;
   return (
     <div className="space-y-space-3">
       <p className="text-t14 text-fg">Pick where alerts reach you when the app is closed: a lost broker login, a daily loss limit, a trade waiting for your approval.</p>

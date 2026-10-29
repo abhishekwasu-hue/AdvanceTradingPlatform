@@ -9,6 +9,7 @@ import { useAuth } from "../auth/AuthContext";
 import ProChart from "../components/ProChart";
 import { contractsApi, ivText, legName, toCandles, type ContractSeries, type SeriesLeg } from "../charting/contracts";
 import { basisAvailable, basisUrl } from "../charting/futuresBasis";
+import { SkeletonRows } from "../components/primitives";
 
 /** One leg's OI as small bars (the last 60 days), with its last value - numbers from the series, never from pixels. */
 export function OiBars({ leg, days }: { leg: SeriesLeg; days: string[] }) {
@@ -69,7 +70,7 @@ export default function ContractChartWindow({ params }: { params: URLSearchParam
     return () => { live = false; };
   }, [series]);
 
-  if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (loading) return <SkeletonRows rows={2} label="Loading" />;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
   if (!legs.length) return <div className="p-6 text-sm text-fg">No contract given.</div>;
   return (

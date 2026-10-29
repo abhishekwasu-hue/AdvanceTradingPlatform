@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/ui";
 import { ASSET_CLASS_LABELS, type AssetClass, type ContractSpec } from "../types";
-import { PageHeader } from "../components/primitives";
+import { PageHeader, SkeletonRows } from "../components/primitives";
 
 export default function InstrumentsPage() {
   const [instruments, setInstruments] = useState<ContractSpec[]>([]);
@@ -30,7 +30,7 @@ export default function InstrumentsPage() {
       {error && <div className="text-sm text-down">{error}</div>}
 
       {loading ? (
-        <div className="text-sm text-fg-muted">Loading…</div>
+        <SkeletonRows rows={2} label="Loading" />
       ) : (
         (["COMMODITY", "CRYPTO"] as AssetClass[]).map((assetClass) => (
           <Card key={assetClass} title={`${ASSET_CLASS_LABELS[assetClass]} (${(byAssetClass[assetClass] ?? []).length})`}>

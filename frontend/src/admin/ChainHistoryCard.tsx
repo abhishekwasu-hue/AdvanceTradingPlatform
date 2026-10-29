@@ -2,6 +2,7 @@ import { Clock, Database, History, Layers } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Panel, Pill } from "./AdminSectionsV2";
 import { ago, consoleApi, type ChainHistoryRow, type ChainHistoryStatus } from "./consoleApi";
+import { SkeletonRows } from "../components/primitives";
 
 /**
  * TM 9.4: the admin card of the owner's chain history (Admin › System). What is being recorded, today's chains per
@@ -95,7 +96,7 @@ export default function ChainHistoryCard() {
   return (
     <Panel title="Chain history" id="chain-history"
       note="Option chains (every strike: price, OI, IV, Greeks) recorded through the owner's own broker session into the owner's private store.">
-      {data ? <ChainHistoryView data={data} /> : error ? <p className="text-t12 text-down">Could not load: {error}</p> : <p className="text-t12 text-fg-muted" aria-busy="true">Loading…</p>}
+      {data ? <ChainHistoryView data={data} /> : error ? <p className="text-t12 text-down">Could not load: {error}</p> : <SkeletonRows rows={2} label="Loading" />}
     </Panel>
   );
 }

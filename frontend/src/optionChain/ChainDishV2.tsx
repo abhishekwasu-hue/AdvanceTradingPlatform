@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cx } from "../components/primitives/cx";
 import { fetchAnalysesShared, type AnalysesResponse, type ChainDish } from "./analyses";
+import { Skeleton } from "../components/primitives";
 
 /**
  * MO4 slice 2 (ATP_SESSION_GROWTH_MASTER.md PART 2 item 4): the Option chain "dish" - "What the chain shows", five plain
@@ -47,7 +48,7 @@ export function ChainDishView({ dish, loading }: { dish: ChainDish | null; loadi
     return (
       <section aria-busy="true" aria-label="What the chain shows" className="space-y-space-2 rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card">
         <span className="sr-only">Loading the summary</span>
-        {Array.from({ length: 3 }, (_, i) => <div key={i} className="h-5 animate-pulse rounded-control bg-surface-2" />)}
+        {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-5" />)}
       </section>
     );
   }

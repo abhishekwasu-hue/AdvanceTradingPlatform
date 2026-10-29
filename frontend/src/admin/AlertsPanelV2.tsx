@@ -4,6 +4,7 @@ import { friendlyError } from "../api/client";
 import { BUTTON, Panel, Pill } from "./AdminSectionsV2";
 import { ago } from "./consoleApi";
 import { opsApi, type OpsAlerts, type OpsState } from "./opsApi";
+import { SkeletonRows } from "../components/primitives";
 
 /**
  * Production readiness A2: Admin > System > Alerts. The same checks the server's schedule (`atp.sh ops-check`, every
@@ -141,7 +142,7 @@ export default function AlertsPanelV2() {
   if (!data) {
     return (
       <Panel title="Alerts" id="ops-alerts">
-        {error ? <p className="text-t12 text-down">Could not load: {error}</p> : <p className="text-t12 text-fg-muted" aria-busy="true">Loading…</p>}
+        {error ? <p className="text-t12 text-down">Could not load: {error}</p> : <SkeletonRows rows={2} label="Loading" />}
       </Panel>
     );
   }

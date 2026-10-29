@@ -10,6 +10,7 @@ import { capUsage, formatUsd, keyShapeError, parseCap } from "./visionByok";
 import { formatDateTimeIST } from "../ui/format";
 import { TextOnDemand } from "../ui/numbersFirst";
 import { useUiV2 } from "../ui/useFeatures";
+import { SkeletonRows } from "./primitives";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
 const button = "rounded border border-border px-2 py-1 text-xs hover:bg-surface-2 disabled:opacity-50";
@@ -105,7 +106,7 @@ export default function VisionByokCard() {
     );
   }
   if (!status) {
-    return <Card title={TITLE}>{error ? <div className="text-sm text-down">{error}</div> : <p className="text-xs text-fg-muted">Loading...</p>}</Card>;
+    return <Card title={TITLE}>{error ? <div className="text-sm text-down">{error}</div> : <SkeletonRows rows={2} label="Loading" />}</Card>;
   }
 
   const notes = (

@@ -29,6 +29,7 @@ import { Combobox, type ComboOption } from "../ui/Combobox";
 import { Sheet } from "../components/primitives/Dialog";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { AskAi } from "./AskAiV2";
+import { Skeleton } from "../components/primitives";
 
 /**
  * OC1 (owner: "After login everything should happen automatically"): the Option chain page in the v2 shell.
@@ -236,7 +237,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         {chain.loading && !live && !chain.problem && (
           <div aria-busy="true" className="space-y-space-2 rounded-panel border border-subtle bg-surface-1 p-space-4">
             <span className="sr-only">Loading the option chain</span>
-            {Array.from({ length: 6 }, (_, i) => <div key={i} className="h-6 animate-pulse rounded-control bg-surface-2" />)}
+            {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-6" />)}
           </div>
         )}
         {live && live.rows.length === 0 && <Note tone="neutral">{TEXT.empty}</Note>}

@@ -1,7 +1,7 @@
 import { ArrowLeft, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { friendlyError } from "../api/errors";
-import { Button } from "../components/primitives";
+import { Button, Skeleton } from "../components/primitives";
 import { chartAnalyzeApi, errorCode, isFeatureOff } from "./api";
 import ResultViewV2 from "./ResultViewV2";
 import type { SharedAnalysis } from "./types";
@@ -45,7 +45,7 @@ export default function SharedAnalysisV2({ token, onBack }: { token: string; onB
         <h1 className="text-t20 font-semibold text-fg md:text-t24">A shared chart reading</h1>
         <Button className="h-11 md:h-9" variant="ghost" icon={<ArrowLeft size={16} aria-hidden />} onClick={onBack}>Your analyses</Button>
       </div>
-      {state.status === "loading" && <div className="h-40 animate-pulse rounded-panel bg-surface-2" aria-busy="true" />}
+      {state.status === "loading" && <Skeleton className="h-40" panel label="Loading" />}
       {state.status === "error" && (
         <div role="alert" className={`${card} flex items-start gap-space-3 text-t14 text-fg`} data-testid="shared-problem">
           <TriangleAlert size={18} aria-hidden className="mt-0.5 shrink-0 text-warn" />

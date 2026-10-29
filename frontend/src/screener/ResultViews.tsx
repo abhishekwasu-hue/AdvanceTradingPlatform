@@ -9,7 +9,7 @@
  */
 import { useEffect, useId, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
-import { cx } from "../components/primitives";
+import { cx, SkeletonRows } from "../components/primitives";
 import type { RunResult } from "./api";
 import {
   BOARD_VIEWS, CONTEXT_MAX, boardApi, gridSymbols, heatmapLayout, heatmapResults, sparkPath, tileFill, type BoardContext, type BoardView,
@@ -181,7 +181,7 @@ export function ResultViews(props: ResultBoardProps) {
               The {label?.toLowerCase()} could not be loaded: {ctxError}.{" "}
               <button type="button" className="underline" onClick={() => setReload((n) => n + 1)}>Retry</button>
             </p>
-          ) : ctx == null ? <p className="px-4 py-8 text-center text-t13 text-fg-muted">Loading…</p>
+          ) : ctx == null ? <SkeletonRows rows={2} label="Loading" />
             : view === "heatmap" ? <HeatmapView results={results} context={ctx.symbols} />
               : <ChartGridView results={results} context={ctx.symbols} packs={packs} failed={packErrors} />}
           {ctx && <p className="mt-1 text-t12 text-fg-muted">{ctx.note}</p>}

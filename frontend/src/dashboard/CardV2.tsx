@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react";
 import { useId, type ReactNode } from "react";
 import { Link } from "react-router";
 import { chipClass } from "../ui/Chip";
+import { Skeleton } from "../components/primitives";
 
 /**
  * UI2-2 (UI v2 proposal §8 "Cards and numbers"): the one v2 card - surface-1, a 1 px subtle outline, the panel radius,
@@ -69,7 +70,7 @@ export function LoadingRowsV2({ rows = 2 }: { rows?: number }) {
   return (
     <div aria-busy="true" className="space-y-space-2">
       <span className="sr-only">Loading</span>
-      {Array.from({ length: rows }, (_, i) => <div key={i} className="h-10 animate-pulse rounded-control bg-surface-2" />)}
+      {Array.from({ length: rows }, (_, i) => <Skeleton key={i} className="h-10" />)}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { useFeatures } from "../ui/useFeatures";
 import type { BrokerCatalogEntry, BrokerCatalogField } from "../types";
 import { BTN_PRIMARY, BTN_SECONDARY, BrokerLogo, ResponsiveDialog } from "./parts";
 import { entryFor, useBrokerCatalog } from "./useBrokerCatalog";
+import { Skeleton } from "../components/primitives";
 
 /**
  * P2b: the Connect panel - a small modal on a wide screen, a sheet on a phone. It holds ONLY:
@@ -352,7 +353,7 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
           <button type="button" onClick={retry} className={BTN_SECONDARY}>Try again</button>
         </div>
       ) : (
-        <div aria-busy="true" className="h-32 animate-pulse rounded-control bg-surface-2"><span className="sr-only">Loading</span></div>
+        <Skeleton className="h-32" label="Loading" />
       )}
     </ResponsiveDialog>
   );

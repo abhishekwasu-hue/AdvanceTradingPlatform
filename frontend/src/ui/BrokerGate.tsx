@@ -4,7 +4,7 @@ import { gateShowing } from "../live/gateShowing";
 import { Link, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
-import { Button } from "../components/primitives";
+import { Button, Skeleton } from "../components/primitives";
 import type { BrokerTokenInfo } from "../types";
 import {
   BROWSER_LOGIN_DEPS, brokerDisplayName, loginErrorText, loginNote, startBrokerLogin, useBrokerSession,
@@ -141,8 +141,8 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
       return (
         <div data-broker-gate="loading" aria-busy="true" aria-live="polite" className="mx-auto w-full max-w-[480px] space-y-space-3">
           <span className="sr-only">Checking your broker connection</span>
-          <div className="h-6 w-48 animate-pulse rounded-control bg-surface-2" />
-          <div className="h-32 animate-pulse rounded-panel bg-surface-2" />
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="h-32" panel />
         </div>
       );
 

@@ -7,6 +7,7 @@ import {
   layout, markerAt, pickedSeries, pointNote, togglePick, toneClasses, xAt, xText, xValuesOf, yAt,
   type ChainChart, type ChartSeriesV2, type ChartsResponse, type Layout, type Scale,
 } from "./charts";
+import { Skeleton } from "../components/primitives";
 
 /**
  * OC5 (owner's order, handover 2c): the Option chain "Charts" view - shown in place of the chain when the trader picks
@@ -84,7 +85,7 @@ export function ChartsPanel({ data, error, loading, range, onRange, interval, on
         {loading && !error ? (
           <div aria-busy="true" className="space-y-space-2">
             <span className="sr-only">Reading the option chain</span>
-            {Array.from({ length: 3 }, (_, i) => <div key={i} className="h-10 animate-pulse rounded-control bg-surface-2" />)}
+            {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-10" />)}
           </div>
         ) : <p className="text-t14 text-fg-muted">{error ?? "Pick a symbol to see the charts."}</p>}
       </section>

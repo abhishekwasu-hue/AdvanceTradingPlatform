@@ -10,7 +10,7 @@ import { DataTierBadge } from "../components/DataTierBadge";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { ApiError } from "../api/errors";
-import { Button, cx, Dialog, Sheet } from "../components/primitives";
+import { Button, cx, Dialog, Sheet, SkeletonRows } from "../components/primitives";
 import { Combobox } from "../ui/Combobox";
 import { useMediaQuery } from "../utils/useMediaQuery";
 import { useToast } from "../components/Toast";
@@ -723,7 +723,7 @@ export default function ScreenerPage(_props: PageProps) {
         <Dialog wide open={pineOpen} onOpenChange={setPineOpen} title="Pine Script"
                 description="Paste a TradingView Pine script: see what translates, read each condition in plain words and run it as a screen. The script is never run.">
           {pineOpen && (
-            <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
+            <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
               <PinePanel symbols={symbols.slice(0, RUN_MAX)} baseTf={scanTf} />
             </Suspense>
           )}
@@ -734,7 +734,7 @@ export default function ScreenerPage(_props: PageProps) {
         <Dialog wide open={ideaOpen} onOpenChange={setIdeaOpen} title="A scan from your idea"
                 description="Write the idea in plain words. Each part becomes a block you can check and edit; anything ATP cannot read yet is listed, never guessed.">
           {ideaOpen && (
-            <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
+            <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
               <IdeaPanel baseTf={scanTf} onOpen={openIdea} />
             </Suspense>
           )}
@@ -745,7 +745,7 @@ export default function ScreenerPage(_props: PageProps) {
         <Dialog open={alertOpen} onOpenChange={setAlertOpen} title="Tell me when it matches"
                 description="Get a message when a symbol from your list passes this scan.">
           {alertOpen && (
-            <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
+            <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
               <ScanAlertPanel name={name} symbols={symbols.slice(0, RUN_MAX)} scanTf={scanTf} screenId={savedId} save={saveNow}
                               intrabar={features.on("screener_intrabar")}
                               universeName={universeV2 ? universe.name : undefined} universeTotal={symbols.length} />
@@ -758,7 +758,7 @@ export default function ScreenerPage(_props: PageProps) {
         <Dialog open={versionsOpen} onOpenChange={setVersionsOpen} title="Versions of this scan"
                 description="Every save that changes the scan is a version. Open an older one to go back to it.">
           {versionsOpen && (
-            <Suspense fallback={<p className="text-t13 text-fg-muted">Loading…</p>}>
+            <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
               <ScanVersionsPanel versions={scanVersions} onOpen={(v) => void openVersion(v)} max={versionsMax} opening={openingVersion} />
             </Suspense>
           )}

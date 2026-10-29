@@ -648,6 +648,20 @@ class WorkerHeartbeatRecord(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class PlatformStatusSampleRecord(Base):
+    """AUD-T8 (reliability promise): the platform's own measured state, one row per worker cycle at most once a minute
+    (app/observability/status_history.py). `sampled_at` is when the trading worker finished a cycle; `stale_skips` how
+    many decisions that cycle refused for stale market data (SLO-4). A missing minute is a minute the engine did not
+    check in. Platform-wide: nothing about any organisation or user. Pruned to `RETENTION_DAYS` on write.
+    """
+
+    __tablename__ = "platform_status_samples"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sampled_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow, index=True)
+    stale_skips: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
 class PaperRestingOrderRecord(Base):
     """TM-2 (owner, 23 Oct): the resting order book - a limit / SL / SL-M entry or exit that waits for its price, and the
     one trigger engine (app/execution/trigger_engine.py) that fires it. One row per order, owned by its tenant AND user.

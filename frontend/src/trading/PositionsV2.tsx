@@ -46,6 +46,7 @@ import { PracticeFrame } from "../fno/OrderTicketV2";
 import { AccountFilterV2, accountLabels, inAccount } from "./accountViews";
 import { SettlementWarningsV2 } from "../fno/SmartExecutionV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
+import CostMeterV2 from "./CostMeterV2";
 import { CombinedExitBarV2, ExitShortSheetV2, useCombinedExits } from "../fno/CombinedExitV2";
 import { exitParam } from "../fno/combinedExit";
 import { GroupExitSheetV2 } from "../fno/GroupExitsV2";
@@ -289,6 +290,9 @@ export default function PositionsV2(_props: PageProps = {}) {
       {hasOptions && <GreeksCardV2 symbolOf={(id) => byId.get(id)?.symbol} />}
 
       <ClosedTradesV2 trades={trades} onSaved={reloadTrades} />
+
+      {/* AUD-T7 (flag cost_meter): what charges took from his own closed trades, this year and this month. */}
+      {features.on("cost_meter") && signedIn && <CostMeterV2 />}
 
       {fnoOn && (
         <Suspense fallback={null}>

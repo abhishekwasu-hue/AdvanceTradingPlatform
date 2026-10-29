@@ -215,7 +215,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | AUD-G1.1..G1.7 | in progress | G1.1 #654, G1.3 #652, G1.4 part 1 #655 merged; G1.6 part 1 #656 + G1.7 part 1 #657 on CI; G1.2 waits for the owner's company / grievance details; G1.4 part 2 waits for a Sentry DSN; G1.5 next | #656 #657 |
 | AUD-T1..T3 | in progress | T3 built first (smallest, data T1 can reuse): "Why no trade?" on each bot, flag `why_no_trade` OFF, migration d0f0a1b2c3d7; then T1, T2 | T3 PR |
 | AUD-G2.1..G2.5 | not started | after T1-T3 | - |
-| AUD-T4..T9 | not started | after G2 | - |
+| AUD-T4..T9 | in progress | T7 (cost-of-trading meter on My trades, flag `cost_meter` OFF, no migration) in progress on branch claude/aud-t7-cost-meter; T4-T6, T8, T9 after G2 | T7 branch |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
 | FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |

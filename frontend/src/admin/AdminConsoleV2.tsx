@@ -11,6 +11,7 @@ import { useFeatures } from "../ui/useFeatures";
 import AlertsPanelV2 from "./AlertsPanelV2";
 import GrowthSettingsPanelV2 from "./GrowthSettingsPanelV2";
 import ChainHistoryCard from "./ChainHistoryCard";
+import CompliancePanelV2 from "./CompliancePanelV2";
 import { ActivationPanel, AiCostPanel, BUTTON, Phase0Notice, Pill, SupportPanel, SystemPanels, TestingToolsPanel, UsersPanel } from "./AdminSectionsV2";
 import { SupportDeskSettingsPanel, SupportTicketsPanel } from "./SupportDeskV2";
 import { ADMIN_SECTIONS, ago, consoleApi, isAdminSection, type AdminSection, type ConsoleDiagnostics } from "./consoleApi";
@@ -68,7 +69,8 @@ export default function AdminConsoleV2(_props: PageProps) {
           <SupportDeskSettingsPanel />
         </>
       )}
-      {section !== "testing" && section !== "support" && <AdminPage section={section} />}
+      {section === "compliance" && <CompliancePanelV2 />}
+      {section !== "testing" && section !== "support" && section !== "compliance" && <AdminPage section={section} />}
 
       <Sheet open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} title="Diagnostics"
         description="What already went wrong, newest first. Search the server logs by the request id for the full story.">

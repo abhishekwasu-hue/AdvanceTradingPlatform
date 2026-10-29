@@ -1,0 +1,40 @@
+# AUD-G1.5 (owner audit 28 Oct): Lighthouse CI on the production build's public pages (front page, status page), desktop
+# and phone, against the order's budgets: LCP <= 2.5 s, CLS <= 0.1, and total blocking time <= 200 ms as the lab stand-in
+# for INP (INP needs a real user's interaction - the app reports it from real browsers to /metrics, POST /api/pwa/vitals).
+# Budgets warn for now; they become blocking once the first runs give the baseline (docs/design/AUDIT_28OCT.md).
+name: lighthouse
+on:
+  pull_request:
+    paths: ["frontend/**", ".github/workflows/lighthouse.yml"]
+  push:
+    branches: [main]
+    paths: ["frontend/**"]
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        preset: [desktop, mobile]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Lighthouse (${{ matrix.preset }})
+        run: |
+          if [ "${{ matrix.preset }}" = "mobile" ]; then
+            python3 -c "import json; c=json.load(open('lighthouserc.json')); c['ci']['collect']['settings']={'formFactor':'mobile','screenEmulation':{'mobile':True,'width':390,'height':844,'deviceScaleFactor':3,'disabled':False}}; json.dump(c, open('lighthouserc.json','w'))"
+          fi
+          npx --yes @lhci/cli@0.14.0 autorun
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: lighthouse-${{ matrix.preset }}
+          path: frontend/lighthouse-report

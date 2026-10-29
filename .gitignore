@@ -24,3 +24,4 @@ dist/
 
 # A1: the private package checkout deploy/atp.sh keeps on the host (never committed here)
 /private/
+frontend/lighthouse-report/

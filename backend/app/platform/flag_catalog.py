@@ -110,6 +110,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "markets_view": FlagInfo("Sectors & indices page and the option chain summary in plain words", "data", "Sectors & indices page, a summary on the Option chain page", ("ui_v2",), "the daily market data update", "unfinished"),
     "mobile_push": FlagInfo("Phone notifications in the Android app", "data", "Phone notifications in the app's Settings; notifications that open the right screen", ("ui_v2",), "the server's FCM key and the app with the notification plug-in", "unfinished"),
     "multi_account": FlagInfo("Several of your own broker accounts: one Primary, Secondaries in groups, simulated paper accounts", "trading", "Primary / Secondary roles on Settings › Broker accounts", ("ui_v2",), "", "unfinished"),
+    "my_day_card": FlagInfo("My day: each open position's nearest area, expiry and state in one card", "trading", "a My day card at the top of Today", ("ui_v2",), "", "ready"),
     "screener_legends": FlagInfo("Cards on public trading methods with a screen", "screens", "Legends cards", ("screener_v2",), "", "ready"),
     "screener_board_views": FlagInfo("Heat map and chart grid of matches", "screens", "result views", ("screener_v2",), "", "ready"),
     "scan_auto_paper": FlagInfo("Armed scans place PAPER orders without asking", "screens", "paper orders from scans", ("execution_core",), "the Approve step for automatic entries switched off", "decision"),

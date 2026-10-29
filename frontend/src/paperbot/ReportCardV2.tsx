@@ -106,7 +106,7 @@ export function ReportCardBodyV2({ data, view, onView, onShare, note, names }: {
         <p>{data.calibration.shown && data.calibration.brier != null
           ? `Calibration (Brier score, lower is closer): ${data.calibration.brier} over ${data.calibration.trades} trades.`
           : data.calibration.note}</p>
-        <p>Share makes the image on this device when you tap it. It shows no stock or strategy name, no amount and no account details.</p>
+        <p>Share makes the image on this device when you tap it. It shows your closed-trade count, plan followed and the dates only: no results figures, no stock or strategy name, no amount and no account details.</p>
       </Details>
     </div>
   );

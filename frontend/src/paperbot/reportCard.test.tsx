@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { cardSvgOf } from "../growth/model";
+import { cardProblem, cardSvgOf } from "../growth/model";
 import pageSource from "./PaperBotV2.tsx?raw";
 import { ReportCardBodyV2, ReportRowV2 } from "./ReportCardV2";
 import { capText, periodText, rBasis, rText, rowName, shareCard, shareText, winText, type PaperReportCard, type ReportRow } from "./reportCard";
@@ -70,8 +70,14 @@ describe("AUD-T4 paper report card", () => {
     }
     expect(JSON.stringify(card)).not.toContain("41");     // the bot's id
     expect(text).not.toContain("41");
-    expect(card.facts.map((f) => f.key)).toEqual(["closed", "win", "r", "capture"]);
-    expect(text).toContain("Plan followed on 67% of journaled trades.");
+    // AUD-T4-1: no outcome figure on the shared image - count, plan followed, dates and the paper line only.
+    expect(card.facts.map((f) => f.key)).toEqual(["closed", "plan"]);
+    expect(card.lines).toEqual([]);
+    for (const out of [svg, text]) {
+      expect(out).not.toMatch(/Win %|Average R|Credit kept|\dR\b|50%|19%|20%/);
+      expect(out).toContain("Plan followed");
+    }
+    expect([...card.facts.map((f) => `${f.label} ${f.value}`), ...card.lines].some(cardProblem)).toBe(false);
     expect(text).toContain("not a forecast");
   });
 

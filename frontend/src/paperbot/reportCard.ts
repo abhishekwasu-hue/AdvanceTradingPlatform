@@ -7,6 +7,7 @@
  * and counts only: no stock or strategy name, no amount, no account or bot id, and the fixed paper / not-a-forecast line.
  */
 import { hasCallWords } from "../chartAnalyze/signalLanguage";
+import { cardProblem } from "../growth/model";
 import type { CardFact, DisciplineCard } from "../growth/types";
 import { EMPTY, formatDateIST, formatNumber, formatPct } from "../ui/format";
 import { strategyDisplayName } from "../ui/strategyName";
@@ -76,27 +77,18 @@ export function shareProblem(text: string): boolean {
   return !!text && (hasCallWords(text) || CURRENCY.test(text));
 }
 
-/** The share image's card for one row: counts and ratios only, never the row's name, symbol, key or amounts. */
+/** The share image's card for one row. Coordinator / AUD-T4-1 (default until the owner says otherwise): the share image
+ * is a public surface, so it carries NO outcome figure (no win %, R or credit kept) - only the closed-trade count, plan
+ * followed (when the journal gives it), the date range and the fixed paper line. Never the row's name, symbol, key or
+ * amounts. Every fact and line also passes the discipline card's outcome-word guard (`cardProblem`). */
 export function shareCard(row: ReportFigures): DisciplineCard {
-  const facts: CardFact[] = [
-    { key: "closed", label: "Closed paper trades", value: String(row.closed) },
-    { key: "win", label: "Win %", value: winText(row.win_pct) },
-  ];
-  if (row.avg_r != null) facts.push({ key: "r", label: "Average R", value: rText(row.avg_r) });
-  if (row.capture_pct != null) facts.push({ key: "capture", label: "Credit kept", value: capText(row.capture_pct) });
-  else if (row.plan_pct != null) facts.push({ key: "plan", label: "Plan followed", value: winText(row.plan_pct) });
-  const lines: string[] = [];
-  if (row.capture_pct != null && row.plan_pct != null) lines.push(`Plan followed on ${winText(row.plan_pct)} of journaled trades.`);
-  const basis = rBasis(row);
-  if (row.avg_r != null && basis) lines.push(`Average R over ${basis}.`);
+  const facts: CardFact[] = [{ key: "closed", label: "Closed paper trades", value: String(row.closed) }];
+  if (row.plan_pct != null) facts.push({ key: "plan", label: "Plan followed", value: winText(row.plan_pct) });
   const card: DisciplineCard = {
-    title: SHARE_TITLE, week_label: periodText(row), facts, lines, footer: SHARE_FOOTER, empty: row.closed === 0, hints: [],
+    title: SHARE_TITLE, week_label: periodText(row), facts, lines: [], footer: SHARE_FOOTER, empty: row.closed === 0, hints: [],
   };
-  return {
-    ...card,
-    facts: card.facts.filter((f) => !shareProblem(`${f.label} ${f.value}`)),
-    lines: card.lines.filter((l) => !shareProblem(l)),
-  };
+  const bad = (t: string) => shareProblem(t) || cardProblem(t);
+  return { ...card, facts: card.facts.filter((f) => !bad(`${f.label} ${f.value}`)), lines: card.lines.filter((l) => !bad(l)) };
 }
 
 /** The share sheet's text: the same facts and lines, plain. */

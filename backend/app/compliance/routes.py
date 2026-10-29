@@ -84,3 +84,28 @@ async def record_golive_evidence(body: EvidenceBody, user: User = Depends(requir
                           + (f" (valid until {row.valid_until.isoformat()})" if row.valid_until else ""))
     await session.commit()
     return {"item_id": row.item_id, "reference": row.reference, "valid_until": row.valid_until.isoformat() if row.valid_until else None}
+
+
+@router.get("/overview", dependencies=[Depends(require_mfa_session)])   # AUD-G1.7: SUPER_ADMIN + two-factor like /golive
+async def compliance_overview(user: User = Depends(require_role(UserRole.SUPER_ADMIN)), session: AsyncSession = Depends(get_session)) -> dict:
+    """AUD-G1.7 (owner audit 28 Oct; SEBI retail-algo framework, in force 1 Apr 2026): one page for the platform owner -
+    the go-live checklist, per broker the algo-id tag format and how many organisations registered a static IP and an
+    algo id, the server's egress IP, and the audit-trail exports. Read only."""
+    from sqlalchemy import distinct, func, select
+
+    from app.brokers.catalog import catalog
+    from app.compliance import algo_id
+    from app.db.models import EgressIpRecord, Tenant
+    from app.exports.service import DATASETS
+    ip_orgs = dict((static_ip.canonical_broker(b), n) for b, n in (await session.execute(
+        select(EgressIpRecord.broker_name, func.count(distinct(EgressIpRecord.tenant_id))).group_by(EgressIpRecord.broker_name))).all())
+    algo_orgs = await session.scalar(select(func.count()).select_from(Tenant).where(Tenant.algo_id.is_not(None)))
+    brokers = []
+    for b in catalog():
+        name = b["broker"]
+        brokers.append({"broker": name, "name": b["name"], "available": bool(b.get("available")),
+                        "tag_format": algo_id.tag_format(name), "generic_algo_id": algo_id.generic_id(name) is not None,
+                        "orgs_with_static_ip": int(ip_orgs.get(static_ip.canonical_broker(name), 0))})
+    return {"golive": [asdict(i) for i in await golive.evaluate(session)], "server_egress_ip": config.SERVER_EGRESS_IP,
+            "static_ip_required_for_live": config.STATIC_IP_REQUIRED_FOR_LIVE, "ops_within_threshold": algo_id.ops_within_threshold(),
+            "orgs_with_algo_id": int(algo_orgs or 0), "brokers": brokers, "exports": sorted(DATASETS)}

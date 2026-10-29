@@ -111,11 +111,13 @@ from app.execution.incomplete_routes import router as incomplete_orders_router
 from app.paper.fno_insights_routes import router as paper_fno_insights_router
 from app.paper.fno_journal_routes import router as paper_fno_journal_router
 from app.paper.report_card_routes import router as paper_report_card_router
+from app.setup_recall.routes import router as setup_recall_router
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
 from app.workers.routes import router as workers_router
 from app.deployments.routes import router as deployments_router
 from app.alerts.routes import router as alerts_router
+from app.alerts.webhook_routes import router as alert_webhooks_router
 from app.mobile.devices import router as mobile_devices_router
 from app.team.routes import router as team_router
 from app.admin.routes import router as admin_router
@@ -346,6 +348,7 @@ app.include_router(telegram_inbound_router)  # Phase BE: Telegram inbound
 app.include_router(workers_router)
 app.include_router(deployments_router)
 app.include_router(alerts_router)
+app.include_router(alert_webhooks_router)  # AUD-G2.5: each member's own signed webhooks (flags ui_v2 + alert_webhooks)
 app.include_router(mobile_devices_router)  # B8: the caller's own phones for app notifications (flag mobile_push)
 app.include_router(team_router)
 app.include_router(admin_router)
@@ -458,6 +461,7 @@ app.include_router(incomplete_orders_router)  # SE-7: incomplete multi-leg order
 app.include_router(paper_fno_insights_router)  # F&O 8b slice 1: risk budget + setup-aware strikes, read-only (ui_v2)
 app.include_router(paper_fno_journal_router)  # F&O 8b slice 3: the auto journal drafts + the signal link (ui_v2 + PAPER account)
 app.include_router(paper_report_card_router)  # AUD-T4: the paper report card, read-only (ui_v2 + paper_report_card)
+app.include_router(setup_recall_router)       # AUD-T6: similar-setup recall + context vs outcome, read-only (ui_v2 + setup_recall)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
 app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)
 app.include_router(support_desk_router)    # C12: Help centre, Report a problem, contact link (ui_v2 + help_centre, off by default)

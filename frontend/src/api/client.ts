@@ -22,6 +22,8 @@ import type {
   AdminTenantDetail,
   AdminTenantSummary,
   AlertChannel,
+  AlertWebhookCreated,
+  AlertWebhookList,
   PhoneDevice,
   PhoneDevices,
   AlertChannelUpsert,
@@ -1113,6 +1115,13 @@ export const api = {
     request<PhoneDevice>(`/mobile/devices/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
   removePhone: (id: string) => request<void>(`/mobile/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
   testPhone: (id: string) => request<{ ok: boolean; detail: string }>(`/mobile/devices/${encodeURIComponent(id)}/test`, { method: "POST" }),
+
+  // AUD-G2.5 (flag alert_webhooks): the member's own signed webhooks; the secret comes back only from the add.
+  alertWebhooks: () => request<AlertWebhookList>("/alert-webhooks"),
+  addAlertWebhook: (body: { url: string; label?: string }) =>
+    request<AlertWebhookCreated>("/alert-webhooks", { method: "POST", body: JSON.stringify(body) }),
+  removeAlertWebhook: (id: string) => request<void>(`/alert-webhooks/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  testAlertWebhook: (id: string) => request<{ ok: boolean; detail: string }>(`/alert-webhooks/${encodeURIComponent(id)}/test`, { method: "POST" }),
 
   testAlertChannel: (type: string) =>
     request<{ ok: boolean; detail: string }>(`/alert-channels/${type}/test`, { method: "POST" }),

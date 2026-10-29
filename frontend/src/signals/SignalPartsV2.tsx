@@ -17,6 +17,8 @@ import { useColourV2 } from "../ui/colourV2";
 import { Chip } from "../ui/Chip";
 import { Details } from "../ui/Details";
 import { DirectionChip } from "../ui/DirectionChip";
+import { useFeatures } from "../ui/useFeatures";
+import SimilarSetupsV2 from "../journal/SimilarSetupsV2";
 import {
   canDecide, decisionFailure, decisionMessage, directionLabel, effectiveStatus, levelDelta, riskSentences, sizeAndLoss, sourceCaption, statusLabel,
   type FeedTab, type SignalFeedItem,
@@ -413,12 +415,17 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
   const [timeframe, setTimeframe] = useState<TimeframeId>("5min");         // the charts' default (chart/timeframes.ts)
   const menuId = useId();
   const modeLabel = item.mode === "LIVE" ? "Live" : item.mode === "PAPER" ? "Paper" : null;
+  // AUD-T6 (BR-M3): his own similar past closed trades for an entry approval (flags ui_v2 + setup_recall).
+  const features = useFeatures();
+  const recall = item.action_id !== null && features.on("ui_v2") && features.on("setup_recall")
+    ? <SimilarSetupsV2 kind="proposal" id={item.action_id} /> : null;
   if (compact) {
     return (
       <div className="space-y-space-3">
         {waiting && <CompactRisk proposal={proposal} />}
         {!waiting && <OutcomeLine item={item} now={now} />}
         <SignalActions item={item} now={now} compact canTrade={canTrade} onDone={onDone} onError={onError} />
+        {recall}
         <SetupChainLinkV2 item={item} />
         <YourLevels item={item} />
         {reasonWords(item.reasons).length > 0 && (
@@ -452,6 +459,7 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
       <Reasons item={item} />
       {waiting ? <RiskLines proposal={proposal} /> : <OutcomeLine item={item} now={now} />}
       <SignalActions item={item} now={now} canTrade={canTrade} chartTimeframe={timeframe} onDone={onDone} onError={onError} />
+      {recall}
       <SetupChainLinkV2 item={item} />
     </section>
   );

@@ -417,6 +417,9 @@ def parse_config(channel_type: str, raw: Dict[str, Any]) -> ChannelConfig:
         return WhatsAppConfig.model_validate(raw)
     if channel_type == AlertChannelType.FCM.value:
         return FcmConfig.model_validate(raw)
+    if channel_type == AlertChannelType.SIGNED_WEBHOOK.value:
+        from app.alerts.signed_webhooks import SignedWebhookConfig      # AUD-G2.5
+        return SignedWebhookConfig.model_validate(raw)
     raise ValueError(f"Unknown alert channel type '{channel_type}'")
 
 
@@ -508,6 +511,10 @@ def masked_summary(record: AlertChannelRecord) -> Dict[str, Any]:
         # B8: the organisation-wide list shows only how many phones there are; each member manages their own phones
         # under GET /api/mobile/devices. No token, label or member here.
         return {"count": len(raw.get("devices") or [])}
+    if record.channel_type == AlertChannelType.SIGNED_WEBHOOK.value:
+        # AUD-G2.5: the organisation list shows only how many webhooks there are; each member manages his own under
+        # /api/alert-webhooks. No URL, secret or member here.
+        return {"count": len(raw.get("endpoints") or [])}
     if record.channel_type == AlertChannelType.SMS.value:
         return {"url": raw.get("url"), "method": raw.get("method", "POST"), "content_type": raw.get("content_type"),
                 "body_template": raw.get("body_template"), "to_numbers": raw.get("to_numbers", []),

@@ -693,6 +693,12 @@ def _bounded_int(name: str, default: int, low: int, high: int) -> int:
     return value if low <= value <= high else default
 
 
+# AUD-G2.5 (flag `alert_webhooks`; app/alerts/signed_webhooks.py): how many signed webhooks one member may add, and how
+# long one POST may take (connect, write and read each) before it counts as failed and is retried by the outbox.
+ALERT_WEBHOOKS_MAX_PER_USER = _bounded_int("ALERT_WEBHOOKS_MAX_PER_USER", 5, 1, 50)
+ALERT_WEBHOOKS_TIMEOUT_SECONDS = _bounded_int("ALERT_WEBHOOKS_TIMEOUT_SECONDS", 10, 1, 30)
+
+
 # OI Banner (O2): the collector's slot and the strikes kept either side of the money (wider than any banner window,
 # so each tenant's own ATM range applies on read), and the operator's default OIRegimeSettings fields (JSON).
 OI_BANNER_SLOT_MINUTES = _bounded_int("OI_BANNER_SLOT_MINUTES", 5, 1, 60)
@@ -916,6 +922,14 @@ LIVE_PUSH_STALE_SECONDS = _bounded_int("LIVE_PUSH_STALE_SECONDS", 30, 1, 3600)
 LIVE_PUSH_HEARTBEAT_SECONDS = _bounded_int("LIVE_PUSH_HEARTBEAT_SECONDS", 10, 1, 120)
 LIVE_PUSH_BAR_SETTLE_SECONDS = _bounded_int("LIVE_PUSH_BAR_SETTLE_SECONDS", 5, 0, 120)
 LIVE_PUSH_MAX_STREAMS_PER_USER = _bounded_int("LIVE_PUSH_MAX_STREAMS_PER_USER", 8, 1, 100)
+# AUD-T6 (similar-setup recall, flag `setup_recall`; BR-M3): the words over the user's own similar closed trades (how
+# many closed with a gain / a loss, average R, the most common way the losses closed) appear only from
+# SETUP_RECALL_MIN_SAMPLE matches; below it the card says "not enough history yet" and only lists them. At most
+# SETUP_RECALL_MAX_LISTED matches are listed (newest first); at most SETUP_RECALL_MAX_SCAN of his closed trades with the
+# same setup are read.
+SETUP_RECALL_MIN_SAMPLE = _bounded_int("SETUP_RECALL_MIN_SAMPLE", 10, 1, 10_000)
+SETUP_RECALL_MAX_LISTED = _bounded_int("SETUP_RECALL_MAX_LISTED", 10, 1, 200)
+SETUP_RECALL_MAX_SCAN = _bounded_int("SETUP_RECALL_MAX_SCAN", 2000, 50, 100_000)
 # AUD-T1 ("My day in one card", flag `my_day_card`): the one state chip on each open position is read ONLY from the
 # user's own stop on that position - how much of the room between his entry and his own stop is still left at the
 # position's last mark (100 % = the mark is at the entry, 0 % = the mark has reached his stop). Information only: the

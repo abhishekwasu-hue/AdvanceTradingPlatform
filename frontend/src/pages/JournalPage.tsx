@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, NotebookPen } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
 import { Card, StatTile, signTone } from "../components/ui";
 import { Badge, Button, EmptyState, Input, PageHeader, Signed, Skeleton, Tabs } from "../components/primitives";
@@ -14,6 +14,8 @@ import type { PageProps } from "../routes";
 import DisciplineCardV2 from "../growth/DisciplineCardV2";
 import PageDishV2 from "../growth/PageDishV2";
 import { journalCsv, journalStats } from "../journal/stats";
+import { journalTarget } from "../journal/recall";
+import SimilarSetupsV2 from "../journal/SimilarSetupsV2";
 import { Details } from "../ui/Details";
 import { Signed as SignedV2 } from "../ui/Signed";
 import { Sparkline } from "../ui/Sparkline";
@@ -80,11 +82,23 @@ function TagChip({ tag, countUnconfirmed, onDecide }: { tag: JournalTag; countUn
   );
 }
 
-function EntryRow({ e, countUnconfirmed, onDecide }: { e: JournalEntry; countUnconfirmed: boolean; onDecide: (id: number, s: TagStatus) => void }) {
-  const [open, setOpen] = useState(false);
+/** AUD-T6: what a journal row needs for "Similar setups" (flags ui_v2 + setup_recall) and to open a matched row. */
+interface RecallProps { recallOn?: boolean; focusId?: number | null; onOpenTrade?: (week: string | null, tradeId: number) => void }
+
+function EntryRow({ e, countUnconfirmed, onDecide, recallOn = false, focusId = null, onOpenTrade }: {
+  e: JournalEntry; countUnconfirmed: boolean; onDecide: (id: number, s: TagStatus) => void;
+} & RecallProps) {
+  const focused = focusId === e.trade_id;
+  const [open, setOpen] = useState(focused);
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focused) return;
+    setOpen(true);
+    rowRef.current?.scrollIntoView?.({ block: "center" });
+  }, [focused]);
   const diff = chase(e.direction, e.plan.entry, e.execution.entry_price);
   return (
-    <div className="border-t border-border/60 py-2">
+    <div ref={rowRef} id={`trade-${e.trade_id}`} className="border-t border-border/60 py-2">
       <button className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-left text-xs" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         <span className="font-tabular text-fg-muted">{e.entry_time ? new Date(e.entry_time).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "short", timeStyle: "short" }) : "-"}</span>
         <span className="font-semibold text-fg">{e.symbol}</span>
@@ -118,6 +132,8 @@ function EntryRow({ e, countUnconfirmed, onDecide }: { e: JournalEntry; countUnc
             {e.chart_entry && <div className="mt-2 text-fg-muted">Chart at entry: {e.chart_entry.symbol} @ {new Date(e.chart_entry.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</div>}
             {e.tags.map((t) => <div key={t.id} className="mt-1 text-fg-muted">{tagLabel(t.tag)}{evidenceText(t.evidence) && `: ${evidenceText(t.evidence)}`}</div>)}
           </div>
+          {/* AUD-T6 (BR-M3 / BR-R1): his own similar past trades and what the context said vs what happened. */}
+          {recallOn && <div className="sm:col-span-2"><SimilarSetupsV2 kind="trade" id={e.trade_id} onOpenTrade={onOpenTrade} /></div>}
         </div>
       )}
     </div>
@@ -148,7 +164,7 @@ export function downloadJournalCsv(week: string, entries: JournalEntry[]): void 
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function WeekTab({ data, onDecide }: { data: JournalWeek; onDecide: (id: number, s: TagStatus) => void }) {
+function WeekTab({ data, onDecide, ...recall }: { data: JournalWeek; onDecide: (id: number, s: TagStatus) => void } & RecallProps) {
   return (
     <div className="space-y-4">
       <JournalStatsRow entries={data.entries} />
@@ -156,7 +172,7 @@ function WeekTab({ data, onDecide }: { data: JournalWeek; onDecide: (id: number,
       <Card title={`Trades entered in ${data.week}`}>
         {data.entries.length === 0
           ? <EmptyState icon={<NotebookPen size={20} />} title="No trades this week" body="Every PAPER or LIVE fill is journaled here automatically." />
-          : data.entries.map((e) => <EntryRow key={e.trade_id} e={e} countUnconfirmed={data.score.count_unconfirmed} onDecide={onDecide} />)}
+          : data.entries.map((e) => <EntryRow key={e.trade_id} e={e} countUnconfirmed={data.score.count_unconfirmed} onDecide={onDecide} {...recall} />)}
       </Card>
     </div>
   );
@@ -304,7 +320,12 @@ export default function JournalPage(_props: PageProps) {
   const features = useFeatures();
   // MO4 slice 3: "Share my week" - the discipline card (ui_v2 + growth_v2).
   const shareCard = features.on("ui_v2") && features.on("growth_v2");
-  const [week, setWeek] = useState<string | undefined>(undefined);
+  // AUD-T6: "Similar setups" on each row (ui_v2 + setup_recall); a matched row opens here (`?week=...#trade-<id>`).
+  const recallOn = features.on("ui_v2") && features.on("setup_recall");
+  const [target] = useState(() => (typeof window === "undefined" ? { week: null, tradeId: null } : journalTarget(window.location.search, window.location.hash)));
+  const [focusId, setFocusId] = useState<number | null>(target.tradeId);
+  const [week, setWeek] = useState<string | undefined>(target.week ?? undefined);
+  const openTrade = useCallback((w: string | null, tradeId: number) => { if (w) setWeek(w); setFocusId(tradeId); }, []);
   const [data, setData] = useState<JournalWeek | null>(null);
   const [off, setOff] = useState(false);
   const [tab, setTab] = useState("week");
@@ -343,7 +364,7 @@ export default function JournalPage(_props: PageProps) {
       {shareCard && <DisciplineCardV2 />}
       {off ? <EmptyState icon={<NotebookPen size={20} />} title="Not enabled" body={OFF_TEXT} /> : !data ? <Skeleton className="h-40 w-full" /> : (
         <Tabs value={tab} onChange={setTab} items={[
-          { value: "week", label: "Week", content: <WeekTab data={data} onDecide={decide} /> },
+          { value: "week", label: "Week", content: <WeekTab data={data} onDecide={decide} recallOn={recallOn} focusId={focusId} onOpenTrade={openTrade} /> },
           { value: "review", label: "Weekly review", content: <ReviewTab week={data.week} version={version} /> },
           { value: "settings", label: "Settings", content: <SettingsTab /> },
         ]} />

@@ -70,9 +70,13 @@ class TestSendResponse(BaseModel):
 
 def _channel_type_or_404(raw: str) -> str:
     try:
-        return AlertChannelType(raw.upper()).value
+        kind = AlertChannelType(raw.upper()).value
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=f"Unknown channel type '{raw}'. Use one of {[t.value for t in AlertChannelType]}.") from exc
+    if kind == AlertChannelType.SIGNED_WEBHOOK.value:
+        # AUD-G2.5: each member's own webhooks, with a secret made by the server - managed only under /api/alert-webhooks.
+        raise HTTPException(status_code=400, detail="Signed webhooks are added and removed one by one under Settings › Alerts › Webhooks.")
+    return kind
 
 
 async def _get_channel(session: AsyncSession, tenant_id: int, channel_type: str) -> Optional[AlertChannelRecord]:

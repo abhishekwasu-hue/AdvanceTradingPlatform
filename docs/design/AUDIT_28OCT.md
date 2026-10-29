@@ -51,6 +51,33 @@ they stay. The v2 price timers now follow the push behind `live_push` (fallback 
 quiet, or a symbol has no fresh tick): Today sparklines (dashboard/indexSparks.ts, 60 s), chart candles
 (chart/useChartCandles.ts, 60 s: re-read on bar close), chart last price (components/chartHelpers.ts useLiveLtp 5 s,
 charting/ltpHub.ts 5 / 20 s); the chart chip reads the age of the last tick (chart/liveChip.ts tickAgeChipState).
+## G2.3 - fonts, CSP, preload, manifest (29 Oct)
+- Fonts: already self-hosted since UX-4 (`@fontsource-variable/inter` and `jetbrains-mono` imported in main.tsx; Vite emits
+  the woff2 files under /assets/, one variable file per subset, so every weight in use is in it; the browser fetches only
+  the subsets a page needs, by unicode-range). What was left: the CSP still allowed fonts.googleapis.com (style-src) and
+  fonts.gstatic.com (font-src). Both removed from frontend/nginx.conf, deploy/Caddyfile and deploy/Caddyfile.ip.
+- style-src 'unsafe-inline' is KEPT. Measured with frontend/e2e/csp-v2.e2e.ts (CSP_POLICY set to the policy without it)
+  on Today, Charts, Option chain, Terminal and offline.html; what a strict style-src blocks (1-3 seen as console
+  violations there, 4 read from the built code):
+  1. Radix Dialog / Select / sheets (react-remove-scroll-bar via react-style-singleton) add a `<style>` tag on every open
+     whose text carries run-time numbers (the scroll-bar gap in px), so no fixed hash can allow it;
+  2. lightweight-charts adds a `<style>` tag for its attribution logo on every chart (fixed text, hash-able);
+  3. public/offline.html has its own `<style>` block (hash-able, or a file);
+  4. the print / save-as-PDF of the Copilot and Chart analysis pages copies the page's styles plus one `<style>` into an
+     about:blank frame, which inherits the policy.
+  A nonce would need a fresh value per response written into both index.html and the header; the frontend image is
+  static nginx and the edge Caddy replaces the header with its own copy, so the two cannot share one nonce without new
+  moving parts on the production path. A hash list cannot cover item 1, and a hash or nonce makes browsers ignore
+  'unsafe-inline' (all or nothing). React `style={...}` props are set through CSSOM and are not affected either way.
+  The script policy stays strict (`script-src 'self'`, no inline script), which is the injection defence that matters;
+  inline CSS cannot run code. Revisit if Radix drops the injected style or the edge starts serving index.html itself.
+- Preload: a build plugin (vite.config.ts `atpFontPreload`) writes `<link rel="preload" as="font" crossorigin>` for the
+  Inter Latin file (48 KB) into index.html; the build stops if the file is missing. JetBrains Mono is not preloaded (not
+  above the fold on every page; it loads on first use).
+- Manifest: the maskable icons (192 and 512) were already there; test/pwa-shell.test.ts now checks every PNG icon's real
+  size. Added `screenshots` (narrow 780x1688, wide 1280x800): the public Features page on the fixture, made by
+  `PWA_SHOTS=1 npx playwright test --project=phone e2e/pwa-screenshots-v2.e2e.ts` (no account, symbol or price).
+- Out of scope (later, per the order): the iOS Capacitor target.
 ## G2.1 N+1 profile (29 Oct)
 SQL statements of one read (auth included), 1 vs 20 rows, counted by tests/sql_counter.py in
 backend/tests/test_aud_g2_1_n_plus_one.py (SQLite test engine; the same statements reach PostgreSQL).

@@ -196,10 +196,10 @@ describe("OC5 Chain | Charts toggle on the page", () => {
     expect(html).not.toMatch(/data-view-toggle[^>]*class="[^"]*absolute/);
   });
 
-  it("the toggle's two targets are 44 px on a phone, and it is a group of pressed buttons", () => {
+  it("the toggle's three targets (Chain, Charts, OI - UI-28 U6.1) are 44 px on a phone, and it is a group of pressed buttons", () => {
     const html = renderToStaticMarkup(<ViewToggle view="charts" onView={noop} />);
     expect(html).toContain('role="group"');
-    expect(html.match(/h-11/g)).toHaveLength(2);
+    expect(html.match(/h-11/g)).toHaveLength(3);
     expect(html).toMatch(/aria-pressed="true"[^>]*>[\s\S]*Charts/);
   });
 

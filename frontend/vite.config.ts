@@ -28,6 +28,30 @@ export function atpServiceWorker(): Plugin {
   };
 }
 
+/** AUD-G2.3: the body font's Latin file (self-hosted by @fontsource-variable/inter, emitted under a hashed name) is
+ * preloaded from index.html, so the first paint does not wait for the stylesheet before asking for it. Only this one
+ * file: the other subsets load on demand (unicode-range) and the fixed-width font is not above the fold everywhere.
+ * A build without the file stops here (a renamed package file must not drop the preload silently). */
+export const PRELOAD_FONT = /^assets\/inter-latin-wght-normal-[\w-]+\.woff2$/;
+export function atpFontPreload(): Plugin {
+  let base = "/";
+  return {
+    name: "atp-font-preload",
+    apply: "build",
+    configResolved(config) { base = config.base; },
+    transformIndexHtml: {
+      order: "post",
+      handler(_html, ctx) {
+        // The app's own page only: Storybook builds its preview (iframe.html) with this same config and no app fonts.
+        if (ctx.path !== "/index.html") return [];
+        const file = Object.keys(ctx.bundle ?? {}).find((name) => PRELOAD_FONT.test(name));
+        if (!file) throw new Error("atp-font-preload: the Inter Latin font file is not in the build");
+        return [{ tag: "link", attrs: { rel: "preload", href: `${base}${file}`, as: "font", type: "font/woff2", crossorigin: true }, injectTo: "head" }];
+      },
+    },
+  };
+}
+
 /** PW6: the build id shown in "Send feedback" - package.json's version plus the short git commit when the build has
  * one (the Docker build copies no .git, so it gets the version alone), "dev" when neither can be read. */
 function appVersion(): string {
@@ -65,6 +89,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       atpServiceWorker(),
+      atpFontPreload(),
       ...(native ? [atpNativeBuildMarker({ kind: native.kind, apiOrigin: native.apiBase, appId: native.appId })] : []),
     ],
     define: {

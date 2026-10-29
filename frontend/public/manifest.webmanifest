@@ -18,6 +18,10 @@
     { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ],
+  "screenshots": [
+    { "src": "/screenshots/features-narrow.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "What AiAlgoDesk does, on a phone" },
+    { "src": "/screenshots/features-wide.png", "sizes": "1280x800", "type": "image/png", "form_factor": "wide", "label": "What AiAlgoDesk does, on a desktop" }
+  ],
   "shortcuts": [
     { "name": "Dashboard", "url": "/?source=pwa-shortcut", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Screener", "url": "/screener?source=pwa-shortcut", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },

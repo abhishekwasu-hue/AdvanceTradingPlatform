@@ -50,12 +50,21 @@ export interface GrowthFunnel {
   week1_open: number;
 }
 
+/** AUD-G2.4: time to first value - the five activation steps (each counted once per person), the median hours from
+ * signing up to each, and the share whose first paper trade came within their first session (`hours` after signing up;
+ * `decided` = first session over or already holding that trade, `open` = still inside it). */
+export interface ValueFunnel {
+  steps: { key: "signup" | "broker_connect" | "first_chart" | "first_paper_trade" | "first_journal_review"; label: string; count: number; median_hours: number | null }[];
+  first_session: { hours: number; decided: number; within: number; open: number; share_pct: number | null };
+}
+
 export interface Activation {
   days: number;
   since: string;
   funnel: { key: string; label: string; count: number }[];
   median_hours_to_activation: number | null;
   growth_funnel?: GrowthFunnel;
+  value_funnel?: ValueFunnel;
   people: ActivationPerson[];
 }
 

@@ -29,3 +29,10 @@ pyarrow>=17.0,<27.0
 boto3>=1.34,<2.0
 # A2: the error tracker's SDK (app/observability/error_tracker.py) - used only when ERROR_TRACKER_DSN is set.
 sentry-sdk>=2.19,<3.0
+# AUD-G2.1: OpenTelemetry tracing (app/observability/tracing.py) - used only when OTEL_EXPORTER_OTLP_ENDPOINT is set.
+# The instrumentation packages are versioned in lockstep with the SDK (1.45.x <-> 0.66bN): move them together.
+opentelemetry-sdk>=1.45.1,<1.46
+opentelemetry-exporter-otlp-proto-http>=1.45.1,<1.46
+opentelemetry-instrumentation-fastapi>=0.66b1,<0.67
+opentelemetry-instrumentation-sqlalchemy>=0.66b1,<0.67
+opentelemetry-instrumentation-httpx>=0.66b1,<0.67

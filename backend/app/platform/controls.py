@@ -367,6 +367,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # structures; an explicit opt-out with a reason lifts one gate for that IST day, logged and counted. Exits are never
     # gated. OFF: nothing is gated and /api/paper/experience answers 404.
     "experience_levels": "Experience levels: futures and naked short option entries open with your PAPER record; a logged, counted opt-out lifts a gate for the day (exits never gated)",
+    # AUD-T2 (order ATP_ORDER_AUDIT_28OCT T2): on the session before an expiry and on the expiry day, the user's own open F&O
+    # positions expiring then - in / out of the money now, cash or delivery settlement with his broker's own rule (linked),
+    # the next expiry and a one-tap "Add to basket" (adds a leg only, never places). OFF: GET /api/fno/expiry-checklist 404.
+    "expiry_checklist": "Expiry checklist: positions expiring today or next session, in or out of the money, settlement and the broker's rule (information only, places no orders)",
     # N4 CH3 (docs/design/CHARTING.md): the price-action chart layer - causal swings, legs, real breaks, swing levels and
     # the Dow trend per degree from the shared lake bars as of a time, with toggles, a debug mode and bar replay that
     # recomputes the layer as of each replayed bar. OFF: GET /api/charts/layers/price-action answers 503 and the chart
@@ -487,6 +491,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
     # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
     "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
+    # AUD-T4 (owner audit 28 Oct; app/paper/report_card.py; needs `ui_v2`): the paper report card on the Paper bot page -
+    # the user's own closed PAPER trades per bot and per strategy (closed trades, win %, average R, credit kept, max
+    # drawdown, plan followed from journal tags) and a share image made on his device. A forward test, not a backtest;
+    # read-only. OFF: GET /api/paper/report-card answers 404 and the card is hidden.
+    "paper_report_card": "Paper report card: your own closed paper trades per bot and per strategy, with a share image made on your device",
     # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
     # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.

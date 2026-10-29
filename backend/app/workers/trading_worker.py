@@ -2423,6 +2423,8 @@ async def main() -> None:
     configure_logging()
     from app.observability import error_tracker
     error_tracker.init("worker")   # A2: off unless ERROR_TRACKER_DSN is set; events are scrubbed of personal data
+    from app.observability import tracing
+    tracing.init("worker")   # AUD-G2.1: off unless OTEL_EXPORTER_OTLP_ENDPOINT is set
     from app.db.session import _session_factory  # the app's own engine/pool configuration
     from app.market_data import shared_candles
     shared_candles.never_wait_on_other_processes()   # LD-10 review: never wait on an API process's candle fill (ADR-0004)

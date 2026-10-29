@@ -11,6 +11,7 @@ import type { PageProps } from "../routes";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, StateChipV2 } from "../trading/PartsV2";
 import type { CustomStrategyResponse, Deployment, PortfolioExposure, StrategyInfo, TradeRecord } from "../types";
 import { BotWhyV2 } from "./BotWhyV2";
+import ReportCardV2 from "./ReportCardV2";
 import { BotPositionsV2, botPositions } from "./BotPositionsV2";
 import ContractPreviewV2 from "./ContractPreviewV2";
 import { DEFAULTS_PATH, appliedLine, useTradingDefaults, type TradingDefaults } from "../settings/tradingDefaults";
@@ -214,6 +215,9 @@ export default function PaperBotV2(_props: PageProps) {
           </button>
         )}
       </CardV2>
+
+      {/* AUD-T4: the paper report card - his own closed paper trades per bot and per strategy (flag paper_report_card). */}
+      {features.on("paper_report_card") && <ReportCardV2 names={names} />}
 
       {canChange && draft && (
         <CopilotDraftV2 key={draft.idea} draft={draft}

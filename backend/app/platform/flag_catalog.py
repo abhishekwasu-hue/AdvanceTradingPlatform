@@ -122,6 +122,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "execution_core": FlagInfo("One queue routes scan entries to a notification or a paper proposal", "screens", "nothing new", (), "", "behind_the_scenes"),
     "ladder_evidence": FlagInfo("Your own figures on the paper ladder card", "trading", "numbers on the card", ("paper_account",), "", "ready"),
     "experience_levels": FlagInfo("Futures and naked option selling open with your paper record", "trading", "a gate message", ("paper_account",), "", "ready"),
+    "expiry_checklist": FlagInfo("Expiry checklist: positions expiring today or next session, settlement and the broker rule", "trading", "an Expiry check card on Positions", ("ui_v2",), "", "ready"),
     "screener_copilot": FlagInfo("Build and run screens from the Copilot", "screens", "screen box", ("screener_v2", "ai_copilot"), "", "ready"),
     "screener_venues": FlagInfo("Refuse fields a venue does not carry", "screens", "clearer errors", ("screener_v2",), "", "behind_the_scenes"),
     "screener_ownership": FlagInfo("Promoter / FII / DII stakes and events in screens", "screens", "fields", ("screener_v2",), "ownership data", "unfinished"),
@@ -160,6 +161,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "onboarding_emails": FlagInfo("First-week e-mails: connect broker, first paper bot, first signal review", "platform", "nothing in the app; e-mails in the first week", (), "the platform mailer (PLATFORM_SMTP_*) and PUBLIC_BASE_URL", "unfinished"),
     "referrals": FlagInfo("Invite a friend: each person's own invite link", "platform", "an Invite a friend card in Settings › Account & plan", ("ui_v2",), "the reward wording in Admin › Users & business", "decision"),
     "plan_limits_v2": FlagInfo("Per-plan limits for watchlists, reports, Lab", "platform", "limits", (), "plans", "decision"),
+    "paper_report_card": FlagInfo("Paper report card: your own closed paper trades per bot and per strategy", "trading", "a Paper report card on the Paper bot page, with a Share image button", ("ui_v2",), "", "ready"),
     "why_no_trade": FlagInfo("Why no trade: each bot's last closed bars with the reason it did or did not trade", "trading", "a Why no trade list on each bot (Bots page)", ("ui_v2",), "", "ready"),
 }
 

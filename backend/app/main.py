@@ -92,6 +92,7 @@ from app.signals_feed.day_one_routes import router as signals_day_one_router
 from app.me.prefs import router as me_prefs_router
 from app.me.account import router as me_account_router
 from app.rhythm.routes import router as rhythm_router
+from app.expiry_checklist.routes import router as expiry_checklist_router
 from app.today.routes import router as today_router
 from app.option_chain.ask_routes import router as oc_ask_router
 from app.option_chain.probe import admin_router as oc_probe_admin_router
@@ -108,6 +109,7 @@ from app.paper.fno_routes import router as paper_fno_router
 from app.execution.incomplete_routes import router as incomplete_orders_router
 from app.paper.fno_insights_routes import router as paper_fno_insights_router
 from app.paper.fno_journal_routes import router as paper_fno_journal_router
+from app.paper.report_card_routes import router as paper_report_card_router
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
 from app.workers.routes import router as workers_router
@@ -437,6 +439,7 @@ app.include_router(me_account_router)  # AUD-G1.1: the caller's own data export 
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
 app.include_router(today_router)      # AUD-T1: My day in one card (flags ui_v2 + my_day_card)
 app.include_router(rhythm_router)     # MO4: the daily rhythm - pre-market brief, pulse, closing wrap, weekly review (flags ui_v2 + daily_rhythm)
+app.include_router(expiry_checklist_router)   # AUD-T2: the expiry-day and margin checklist (flags ui_v2 + expiry_checklist)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
 app.include_router(oc_probe_admin_router)  # B2b: the owner's read-only option chain spot probe (SUPER_ADMIN + two-factor)
 app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress (stored marks + steps worked out; reads only)
@@ -452,6 +455,7 @@ app.include_router(paper_fno_router)       # FNO-1: trading from the option chai
 app.include_router(incomplete_orders_router)  # SE-7: incomplete multi-leg orders - his answer and his rule (ui_v2 + smart_execution)
 app.include_router(paper_fno_insights_router)  # F&O 8b slice 1: risk budget + setup-aware strikes, read-only (ui_v2)
 app.include_router(paper_fno_journal_router)  # F&O 8b slice 3: the auto journal drafts + the signal link (ui_v2 + PAPER account)
+app.include_router(paper_report_card_router)  # AUD-T4: the paper report card, read-only (ui_v2 + paper_report_card)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
 app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)
 app.include_router(support_desk_router)    # C12: Help centre, Report a problem, contact link (ui_v2 + help_centre, off by default)
@@ -899,3 +903,9 @@ def health() -> Dict[str, str]:
 
 # LD-7: a request for a path already resolved skips the scan of every route before its own (app/core/route_cache.py).
 install_route_cache(app)
+
+# AUD-G2.1: OpenTelemetry tracing (API requests, SQL, outgoing httpx calls) - off unless OTEL_EXPORTER_OTLP_ENDPOINT is
+# set (app/observability/tracing.py). Here and not in the lifespan: the middleware stack is built on the first ASGI
+# call (the lifespan's own), so the app is instrumented before that. Never stops the API from starting.
+from app.observability import tracing as _tracing  # noqa: E402
+_tracing.init("api", app=app)

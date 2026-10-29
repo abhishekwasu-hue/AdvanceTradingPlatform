@@ -464,6 +464,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/deployments/{deployment_id}"): "trader",
     ("GET", "/api/deployments/{deployment_id}"): "member",
     ("GET", "/api/deployments/{deployment_id}/why"): "member",
+    ("GET", "/api/paper/report-card"): "member: the caller's own closed PAPER trades only (tenant and user); bot names from the organisation's own bots",
     ("POST", "/api/deployments/{deployment_id}/pause"): "trader",
     ("POST", "/api/deployments/{deployment_id}/resume"): "trader",
     ("POST", "/api/deployments/{deployment_id}/stop"): "trader",
@@ -678,6 +679,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/positions/{trade_id}/reverse"): "trader",     # TT-9: the holder's own position only (404 other tenant, 403 anyone else)
     ("POST", "/api/paper/fno/resting/{order_id}/modify"): "trader",        # TT-10: the caller's own waiting order (404 otherwise)
     ("GET", "/api/paper/fno/settlement"): "member: the caller's own open stock F&O positions only (delivery warning)",
+    ("GET", "/api/fno/expiry-checklist"): "member: the caller's own open F&O positions expiring today or next session only (AUD-T2)",
     ("GET", "/api/trading/incomplete"): "member: the caller's own incomplete multi-leg orders only (SE-7)",
     ("POST", "/api/trading/incomplete/{group_id}/answer"): "trader",   # SE-7: his own order (404 other tenant, 403 another member's)
     ("GET", "/api/paper/fno/risk-budget"): "member: the caller's own effective risk settings only (8b-d, the risk line)",

@@ -462,6 +462,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/deployments/preview-contract"): S_PREVIEW,
     ("DELETE", "/api/deployments/{deployment_id}"): "trader",
     ("GET", "/api/deployments/{deployment_id}"): "member",
+    ("GET", "/api/deployments/{deployment_id}/why"): "member",
     ("POST", "/api/deployments/{deployment_id}/pause"): "trader",
     ("POST", "/api/deployments/{deployment_id}/resume"): "trader",
     ("POST", "/api/deployments/{deployment_id}/stop"): "trader",

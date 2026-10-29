@@ -74,6 +74,7 @@ from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
 from app.market_data.freshness import candle_staleness, closed_frames
+from app.deployments import why as why_log
 from app.market_data.service import MarketDataService
 from app.market_data.fanin import UserSessionFanIn
 from app.market_data.hub import DataHub
@@ -261,6 +262,8 @@ class TradingWorker:
         # Phase L: last regime per deployment (for the monitoring agent) and which deployments the
         # agent wants classified even without a filter (those with open positions).
         self._regimes: Dict[int, str] = {}
+        # AUD-T3: the reason each deployment's last evaluation ended with (code, bar, detail) - stored after it, never read back
+        self._why_notes: Dict[int, tuple] = {}
         self._regime_wanted: set = set()
         # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
         self._vision_task: Optional["asyncio.Task[None]"] = None
@@ -1385,6 +1388,7 @@ class TradingWorker:
             evaluated += 1
             family = session_family(dep.exchange)
             if family not in open_families:
+                await self._store_why(session, dep, now, ("outside_hours", None, None))
                 continue  # Phase O2: this venue is closed right now; nothing to evaluate
             if dep.mode == ExecutionMode.LIVE.value and phase0_lock.locked(tenant_id):
                 # Z10-c / Phase 0 defaults: the LIVE entry path is not started at all while the PAPER-only lock is on
@@ -1439,7 +1443,9 @@ class TradingWorker:
                         report.deployments_evaluated += 1
                         if executed:
                             report.signals_executed += 1
+                    await self._store_why(session, dep, now, self._why_notes.pop(dep.id, None))
                 except Exception as exc:  # noqa: BLE001 - recorded on the deployment, never fatal
+                    self._why_notes.pop(dep.id, None)
                     await self._record_failure(session, dep, exc, dep_user.id)
                     report.errors.append(f"deployment {dep.id}: {exc}")
         self._tenant_cursor[tenant_id] = (start + evaluated) % max(1, len(active))
@@ -1693,6 +1699,7 @@ class TradingWorker:
         if not frames or not strategy.has_enough_history(frames):
             bars = len(next(iter(frames.values()))) if frames else 0
             dep.last_error = f"Insufficient history ({bars} bars) - waiting for more candles"
+            self._why(dep, "not_enough_history", None, dep.last_error)
             await session.commit()
             return False
 
@@ -1704,6 +1711,7 @@ class TradingWorker:
         stale = candle_staleness(last_bar, dep.timeframe, now)
         if stale is not None:
             dep.last_error = f"Skipped: {stale}"
+            self._why(dep, "stale_data", None, str(stale))
             await session.commit()
             MARKET_DATA_STALE.labels(kind="candles").inc()
             self._stale_skips += 1
@@ -1715,8 +1723,10 @@ class TradingWorker:
         base = frames.get(dep.timeframe)
         if base is None:
             base = next(iter(frames.values()))
+        closed_bar = base.index[-1].to_pydatetime() if len(base) else None
         if not strategy.has_enough_history(frames):
             dep.last_error = f"Insufficient history ({len(base)} closed bars) - waiting for more candles"
+            self._why(dep, "not_enough_history", closed_bar, dep.last_error)
             await session.commit()
             return False
 
@@ -1740,11 +1750,13 @@ class TradingWorker:
                 dep.last_signal_at = bar_ts
             dep.last_error = None
             dep.consecutive_failures = 0
+            self._why(dep, "exit_read", closed_bar, None)
             await session.commit()
             return False
 
         signal = strategy.analyze(frames, dep.symbol)
         if not signal.is_tradeable:
+            self._why(dep, "no_signal", closed_bar, "; ".join(signal.reasons) or None)
             dep.last_error = None
             dep.consecutive_failures = 0
             await session.commit()
@@ -1756,6 +1768,7 @@ class TradingWorker:
             last = dep.last_signal_at if dep.last_signal_at.tzinfo else dep.last_signal_at.replace(tzinfo=timezone.utc)
             if last >= signal_ts:
                 # Same (or older) bar already acted on - the strategy is still "in signal", not signalling anew.
+                self._why(dep, "same_signal", closed_bar, None)
                 await session.commit()
                 return False
         if (getattr(dep, "holding", None) or "INTRADAY") == "SWING" and (dep.instrument_kind or "UNDERLYING") == "UNDERLYING" \
@@ -1764,14 +1777,17 @@ class TradingWorker:
             dep.last_signal_at = signal_ts
             dep.last_error = (f"Swing SHORT signal at {signal_ts.isoformat()} skipped: cash equity cannot be held short overnight "
                               f"(deploy on futures or options to take swing shorts)")
+            self._why(dep, "swing_short", closed_bar, None)
             await session.commit()
             return False
         if not entries_allowed:
             dep.last_error = f"Signal at {signal_ts.isoformat()} skipped: no new entries after {NO_NEW_ENTRIES_AFTER.strftime('%H:%M')} IST"
+            self._why(dep, "entry_cutoff", closed_bar, f"No new entries after {NO_NEW_ENTRIES_AFTER.strftime('%H:%M')} IST")
             await session.commit()
             return False
         if await self._has_open_position(session, dep):
             dep.last_error = None
+            self._why(dep, "position_open", closed_bar, None)
             await session.commit()
             return False
         # OI Banner O5: opt-in OI gates before a NEW entry (this path never runs for exits - ADR-0004). Fail-closed.
@@ -1784,19 +1800,25 @@ class TradingWorker:
                 if not verdict.allowed:
                     dep.last_signal_at = signal_ts                     # this signal is done; the next one is checked afresh
                     dep.last_error = f"Signal at {signal_ts.isoformat()} skipped by OI gates: " + "; ".join(verdict.reasons)[:400]
+                    self._why(dep, "oi_gate", closed_bar, "; ".join(verdict.reasons))
                     await session.commit()
                     return False
 
         # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; nothing is placed until a person approves.
         if await approval.required(session, dep.tenant_id, dep):
-            return await self._propose_entry(session, dep, signal, signal_ts, now, user.id)
+            proposed = await self._propose_entry(session, dep, signal, signal_ts, now, user.id)
+            waiting = (dep.last_error or "").startswith("Waiting for approval")
+            self._why(dep, "proposed" if waiting else "risk_setting", closed_bar, None if waiting else dep.last_error)
+            return proposed
 
         contract = None
         rules = ContractRules.from_deployment(dep)
         structure_kind = OptionStrategy(dep.option_strategy or "SINGLE")
         if rules.kind == InstrumentKind.OPTION and structure_kind != OptionStrategy.SINGLE:
             # Phase H2: a multi-leg structure - resolved and executed as one position.
-            return await self._evaluate_structure(session, dep, user, market_data, adapters, now, signal, signal_ts, rules, structure_kind, frames)
+            executed = await self._evaluate_structure(session, dep, user, market_data, adapters, now, signal, signal_ts, rules, structure_kind, frames)
+            self._why(dep, "entered" if executed else "risk_setting", closed_bar, None if executed else dep.last_error)
+            return executed
         if rules.derived:
             # Phase F3: pick the option/future from the master at signal time, off the latest
             # underlying close. A rule that cannot be satisfied is recorded, never traded around.
@@ -1811,6 +1833,7 @@ class TradingWorker:
                 )
             except ContractResolutionError as exc:
                 dep.last_error = f"Contract not resolved: {exc}"
+                self._why(dep, "contract_missing", closed_bar, str(exc))
                 await session.commit()
                 logger.warning("Deployment %s: %s", dep.id, exc)
                 return False
@@ -1818,6 +1841,7 @@ class TradingWorker:
         broker, account_id, skip = await self._live_broker_for(session, dep, adapters)
         if skip:
             dep.last_error = skip
+            self._why(dep, "broker_unavailable", closed_bar, skip)
             await session.commit()
             logger.warning("Deployment %s LIVE entry skipped: %s", dep.id, skip)
             return False
@@ -1834,6 +1858,7 @@ class TradingWorker:
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
         dep.consecutive_failures = 0
+        self._why(dep, "entered" if result.executed else "risk_setting", closed_bar, dep.last_error)
         # Phase M / V4.14: stamp the regime read at entry on the trade for the journal.
         if result.executed and order.trade_id is not None and dep.id in self._regimes:
             trade = await session.get(TradeRecord, order.trade_id)
@@ -1843,6 +1868,21 @@ class TradingWorker:
         logger.info("Deployment %s signal %s -> executed=%s order=%s%s", dep.id, signal.direction.value, result.executed, order.id,
                     f" provenance={signal.provenance}" if signal.provenance else "")
         return result.executed
+
+    def _why(self, dep: StrategyDeploymentRecord, code: str, bar: Optional[datetime], detail: Optional[str]) -> None:
+        """AUD-T3: note why this evaluation ended (stored by `_store_why` once it is done; never read by the worker)."""
+        self._why_notes[dep.id] = (code, bar, detail)
+
+    async def _store_why(self, session: AsyncSession, dep: StrategyDeploymentRecord, now: datetime, note: Optional[tuple]) -> None:
+        """AUD-T3: the "Why no trade" timeline row, in its own commit after the decision; a failure here never stops the cycle."""
+        if note is None:
+            return
+        try:
+            async with guarded(session, keep=(dep,)):
+                await why_log.record(session, dep, note[0], note[1], note[2], now)
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001 - an information log only; trading and exits never depend on it
+            logger.warning("Deployment %s: why-no-trade row not stored: %s", dep.id, exc)
 
     async def _propose_entry(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime,
                              user_id: int) -> bool:

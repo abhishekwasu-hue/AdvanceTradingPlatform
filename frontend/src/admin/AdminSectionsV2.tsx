@@ -5,7 +5,7 @@ import { CARD } from "../dashboard/CardV2";
 import { startView } from "../api/viewAs";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { growthApi } from "../growth/api";
-import type { Activation, GrowthFunnel } from "../growth/types";
+import type { Activation, GrowthFunnel, ValueFunnel } from "../growth/types";
 import { useFeatures } from "../ui/useFeatures";
 import {
   ago, consoleApi, maskEmail, shortDate,
@@ -231,6 +231,7 @@ export function ActivationPanel() {
                 sub={f.key === "signed_up" || signedUp === 0 ? undefined : `${Math.round((100 * f.count) / signedUp)}% of sign-ups`} />
             ))}
           </dl>
+          {data.value_funnel && <ValueFunnelView funnel={data.value_funnel} />}
           {data.growth_funnel && <GrowthFunnelView funnel={data.growth_funnel} />}
           {data.people.length === 0 ? <p className="text-t12 text-fg-muted">Nobody signed up in this period.</p> : (
             <Scroll>
@@ -256,6 +257,47 @@ export function ActivationPanel() {
         </>
       )}
     </Panel>
+  );
+}
+
+/** Hours as a reader says them: under two days in hours, else in days. */
+export const spanText = (hours: number | null) =>
+  hours === null ? "-" : hours < 1 ? `${Math.round(hours * 60)} minutes` : hours < 48 ? `${hours} hours` : `${Math.round(hours / 24)} days`;
+
+/** AUD-G2.4: time to first value - each activation step's people, its share of the sign-ups and the median time from
+ * signing up to it, then the share whose first paper trade came within their first session (the target). */
+export function ValueFunnelView({ funnel }: { funnel: ValueFunnel }) {
+  const first = funnel.steps[0]?.count ?? 0;
+  const s = funnel.first_session;
+  return (
+    <section aria-label="Time to first value" data-value-funnel className="mb-space-4">
+      <h3 className="text-t14 font-semibold text-fg">Time to first value</h3>
+      <p className="mt-space-1 text-t12 text-fg-muted">
+        The first time each person took each step, counted once per person. The time is the median from signing up to that step.
+      </p>
+      <ol className="mt-space-3 flex flex-col gap-space-2">
+        {funnel.steps.map((step, i) => {
+          const ofFirst = first ? Math.round((100 * step.count) / first) : 0;
+          return (
+            <li key={step.key} data-value-step={step.key} className="text-t12">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-space-3">
+                <span className="text-fg">{step.label}</span>
+                <span className="whitespace-nowrap font-tabular text-fg">
+                  <strong>{step.count}</strong>
+                  {i > 0 && <span className="text-fg-muted"> · {ofFirst}% of sign-ups · median {spanText(step.median_hours)}</span>}
+                </span>
+              </div>
+              <span className="mt-space-1 block h-2 rounded-pill bg-surface-2" aria-hidden><span className="block h-2 rounded-pill bg-brand" style={{ width: `${ofFirst}%` }} /></span>
+            </li>
+          );
+        })}
+      </ol>
+      <p data-first-session className="mt-space-3 text-t14 text-fg">
+        First paper trade within the first session ({s.hours} {s.hours === 1 ? "hour" : "hours"} after signing up):{" "}
+        <strong>{s.share_pct === null ? "-" : `${s.share_pct}%`}</strong>
+        <span className="text-t12 text-fg-muted"> ({s.within} of {s.decided}{s.open > 0 ? `; ${s.open} still in their first session` : ""})</span>
+      </p>
+    </section>
   );
 }
 

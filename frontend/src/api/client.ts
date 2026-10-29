@@ -1,3 +1,4 @@
+import type { PaperReportCard } from "../paperbot/reportCard";
 import type { OiAlertLogResponse, OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
   MultiViewAnalysis,
@@ -864,6 +865,8 @@ export const api = {
 
   /** AUD-T7: the caller's own closed trades' charges vs gross P&L, this year and month (404 while `cost_meter` is off). */
   costMeter: () => request<CostMeter>("/trades/cost-meter"),
+  /** AUD-T4: the caller's own paper report card (closed PAPER trades per bot and per strategy; 404 while `paper_report_card` is off). */
+  paperReportCard: () => request<PaperReportCard>("/paper/report-card"),
 
   // --- Alert delivery ---
 

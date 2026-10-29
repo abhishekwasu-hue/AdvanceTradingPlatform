@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { choose, expectChoice, expectChoiceLabels } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -120,8 +121,8 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
       test(`the exits for this bot, pre-filled with the template's defaults (${theme})`, async ({ page }) => {
         await open(page, { theme, path: "/deployments?template=D2", exits: true });
         await expect(form(page).locator("[data-template-exits]")).toContainText("Exits for this bot");
-        await expect(form(page).getByLabel("Stop")).toHaveValue("TEMPLATE_INVALIDATION");          // NIFTY 50: its option
-        await form(page).getByLabel("Take profit").selectOption({ label: "At a multiple of my risk" });
+        await expectChoice(form(page).getByLabel("Stop"), "TEMPLATE_INVALIDATION");          // NIFTY 50: its option
+        await choose(page, form(page).getByLabel("Take profit"), { label: "At a multiple of my risk" });
         await form(page).getByLabel("Times my risk").fill("2");
         await expect(page).toHaveScreenshot(`strategy-templates-exits-v2-${size.name}-${theme}.png`, SHOT);
       });
@@ -135,7 +136,7 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
 
       test("with the exits shown: no sideways scroll, 44 px targets", async ({ page }) => {
         await open(page, { path: "/deployments?template=D2", exits: true });
-        await form(page).getByLabel("Take profit").selectOption({ label: "At a multiple of my risk" });
+        await choose(page, form(page).getByLabel("Take profit"), { label: "At a multiple of my risk" });
         await expectPhoneLayout(page);
       });
     }
@@ -149,15 +150,15 @@ test.describe("Strategy templates behaviour", () => {
     const server = await open(page);
     const strategy = form(page).getByLabel("Pick a strategy");
     await expect(strategy.locator("optgroup[label='Strategy templates'] option")).toHaveText(["Moving-average crossover", "Range breakout"]);
-    await strategy.selectOption({ label: "Range breakout" });
-    await expect(form(page).getByLabel("Chart timeframe")).toHaveValue("15m");
+    await choose(page, strategy, { label: "Range breakout" });
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "15m");
     await expect(form(page)).toContainText("A signal on the first close beyond a range");
     await expect(form(page).locator("[data-template-notes]")).toContainText("Nothing starts until you confirm it.");
     expect(server.sent.filter((c) => c.url === "/deployments")).toHaveLength(0);
     expect(server.sent.at(-1)).toEqual({ method: "POST", url: "/strategy-templates/B1/adopt", body: { timeframe: "15m" } });
-    await form(page).getByLabel("Chart timeframe").selectOption("1d");
+    await choose(page, form(page).getByLabel("Chart timeframe"), "1d");
     await expect(form(page)).toContainText("Held for days");
-    await form(page).getByLabel("Pick a symbol").selectOption("RELIANCE");
+    await choose(page, form(page).getByLabel("Pick a symbol"), "RELIANCE");
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Started on paper: RELIANCE.");
     const post = server.sent.find((c) => c.url === "/deployments");
@@ -167,14 +168,14 @@ test.describe("Strategy templates behaviour", () => {
 
   test("opened from an idea's Adopt link: its timeframe and settings are the pre-fill the server checks; nothing starts", async ({ page }) => {
     const server = await open(page, { path: "/deployments?template=D2&timeframe=1h&set.fast=5&set.unknown=1&set.slow=x" });
-    await expect(form(page).getByLabel("Pick a strategy")).toHaveValue("template-pick:D2");
-    await expect(form(page).getByLabel("Chart timeframe")).toHaveValue("1h");
+    await expectChoice(form(page).getByLabel("Pick a strategy"), "template-pick:D2");
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "1h");
     await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the settings from the idea.");
     // only the template's own settings, typed as it declares them, reach the adopt request
     expect(server.sent.filter((c) => c.url.endsWith("/adopt")).at(-1)).toEqual(
       { method: "POST", url: "/strategy-templates/D2/adopt", body: { timeframe: "1h", params: { fast: 5 } } });
     expect(server.sent.filter((c) => c.url === "/deployments")).toHaveLength(0);
-    await form(page).getByLabel("Pick a strategy").selectOption({ label: "Range breakout" });
+    await choose(page, form(page).getByLabel("Pick a strategy"), { label: "Range breakout" });
     await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
     expect(server.sent.at(-1)?.body).toEqual({ timeframe: "1h" });
   });
@@ -189,21 +190,21 @@ test.describe("Strategy templates behaviour", () => {
   test("the exits: pre-filled with the template's defaults (nothing extra sent); a choice is sent with the same PAPER request", async ({ page }) => {
     const server = await open(page, { path: "/deployments?template=D2", exits: true });
     const exits = form(page).locator("[data-template-exits]");
-    await expect(exits.getByLabel("Take profit")).toHaveValue("NONE");
-    await expect(exits.getByLabel("Take profit").locator("option")).toHaveText(
+    await expectChoice(exits.getByLabel("Take profit"), "NONE");
+    await expectChoiceLabels(page, exits.getByLabel("Take profit"), 
       ["No fixed target", "At a multiple of my risk", "When the template says the idea has ended"]);
     // NIFTY 50 trades its option: the stop may be the template's level or only the premium stop
-    await expect(exits.getByLabel("Stop").locator("option")).toHaveText(
+    await expectChoiceLabels(page, exits.getByLabel("Stop"), 
       ["Where the idea is wrong", "Only my premium stop"]);
     await expect(exits).toContainText("Your premium stop always stays as a safety net.");
     // a share: one fixed stop, shown as words
-    await form(page).getByLabel("Pick a symbol").selectOption("RELIANCE");
+    await choose(page, form(page).getByLabel("Pick a symbol"), "RELIANCE");
     await expect(exits.locator("[data-exit-stop]")).toContainText("Where the idea is wrong");
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Started on paper: RELIANCE.");
     expect((server.sent.find((c) => c.url === "/deployments")?.body as Record<string, unknown>).template_exits).toBeUndefined();
     // a multiple of the risk needs its number first; then it is sent
-    await exits.getByLabel("Take profit").selectOption({ label: "At a multiple of my risk" });
+    await choose(page, exits.getByLabel("Take profit"), { label: "At a multiple of my risk" });
     await expect(exits).toContainText("Your minimum reward to risk in your risk settings still applies.");
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(exits.getByRole("alert")).toHaveText("Type how many times your risk to take profit at (0.1 to 20).");
@@ -214,9 +215,9 @@ test.describe("Strategy templates behaviour", () => {
     expect((server.sent.filter((c) => c.url === "/deployments").at(-1)?.body as Record<string, unknown>).template_exits)
       .toEqual({ target_rule: "R_MULTIPLE", target_r: 2 });
     // the exit signal, on the option of an index, with only the premium stop
-    await form(page).getByLabel("Pick a symbol").selectOption("NIFTY 50");
-    await exits.getByLabel("Stop").selectOption({ label: "Only my premium stop" });
-    await exits.getByLabel("Take profit").selectOption({ label: "When the template says the idea has ended" });
+    await choose(page, form(page).getByLabel("Pick a symbol"), "NIFTY 50");
+    await choose(page, exits.getByLabel("Stop"), { label: "Only my premium stop" });
+    await choose(page, exits.getByLabel("Take profit"), { label: "When the template says the idea has ended" });
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect.poll(() => server.sent.filter((c) => c.url === "/deployments").length).toBe(3);
     const last = server.sent.filter((c) => c.url === "/deployments").at(-1)?.body as Record<string, unknown>;

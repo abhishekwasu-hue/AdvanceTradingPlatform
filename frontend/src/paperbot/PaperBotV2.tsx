@@ -13,6 +13,7 @@ import type { CustomStrategyResponse, Deployment, PortfolioExposure, StrategyInf
 import { BotPositionsV2, botPositions } from "./BotPositionsV2";
 import { DEFAULTS_PATH, appliedLine, useTradingDefaults, type TradingDefaults } from "../settings/tradingDefaults";
 import { Chip } from "../ui/Chip";
+import { Combobox, type ComboOption } from "../ui/Combobox";
 import { Details } from "../ui/numbersFirst";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
@@ -84,7 +85,7 @@ export default function PaperBotV2(_props: PageProps) {
   const [preselect, setPreselect] = useState<Preselect | null>(null);
   const [draftNote, setDraftNote] = useState<string | null>(null);
   const formRef = useRef<HTMLElement | null>(null);
-  const firstField = useRef<HTMLSelectElement>(null);
+  const firstField = useRef<HTMLButtonElement>(null);
 
   // UI-28 U2.4: the bots' own open positions and their live P&L (one read each per refresh, only while a bot holds one).
   const [positions, setPositions] = useState<TradeRecord[] | null>(null);
@@ -316,10 +317,21 @@ function StepNo({ n }: { n: number }) {
   return <span aria-hidden className="mr-space-1 inline-flex h-5 w-5 items-center justify-center rounded-pill bg-surface-3 text-t12 font-semibold text-fg">{n}</span>;
 }
 
+/** The "Pick a strategy" rows, in their groups (Ready-made, My strategies, More from the Library, Strategy templates). */
+export function strategyOptions(ready: readonly StrategyInfo[], custom: readonly CustomStrategyResponse[], others: readonly StrategyInfo[],
+  templates: readonly StrategyTemplate[]): ComboOption[] {
+  return [
+    ...ready.map((s) => ({ value: s.id, label: s.name, group: "Ready-made" })),
+    ...custom.map((c) => ({ value: c.strategy_id, label: c.config.name, group: "My strategies" })),
+    ...others.map((s) => ({ value: s.id, label: s.name, group: "More from the Library" })),
+    ...templates.map((t) => ({ value: PICK + t.id, label: t.name, group: "Strategy templates" })),
+  ];
+}
+
 export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, defaults = null, approvalAllowed = false, templates = [],
   initialTemplate = null, preselect = null }: {
   library: StrategyInfo[] | null; custom: CustomStrategyResponse[]; hasBroker: boolean | null;
-  firstField: RefObject<HTMLSelectElement>; onStarted: () => void;
+  firstField: RefObject<HTMLButtonElement>; onStarted: () => void;
   /** Settings part C: the user's own defaults (a pre-fill, shown and switchable here); null = none. */
   defaults?: TradingDefaults | null; approvalAllowed?: boolean;
   /** Strategy templates step 2: templates the user can adopt here (empty while the flag is off). */
@@ -465,27 +477,19 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
         )}
         <div>
           <label htmlFor={ids.strategy} className={LABEL}><StepNo n={1} />Pick a strategy</label>
-          <select id={ids.strategy} ref={firstField} className={FIELD} value={strategyId} aria-describedby={ids.line}
-            onChange={(e) => {
-              setStrategyId(e.target.value); setResult(null);
-              const r = READY.find((x) => x.id === e.target.value);
+          <Combobox id={ids.strategy} label="Pick a strategy" buttonRef={firstField} value={strategyId} describedBy={ids.line} className="w-full"
+            onChange={(v) => {
+              setStrategyId(v); setResult(null);
+              const r = READY.find((x) => x.id === v);
               if (r && symbolChoice !== OTHER) setSymbolChoice(r.symbol);
-            }}>
-            {ready.length > 0 && <optgroup label="Ready-made">{ready.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>}
-            {custom.length > 0 && <optgroup label="My strategies">{custom.map((c) => <option key={c.strategy_id} value={c.strategy_id}>{c.config.name}</option>)}</optgroup>}
-            {others.length > 0 && <optgroup label="More from the Library">{others.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>}
-            {templates.length > 0 && (
-              <optgroup label="Strategy templates">{templates.map((t) => <option key={t.id} value={PICK + t.id}>{t.name}</option>)}</optgroup>
-            )}
-          </select>
+            }}
+            options={strategyOptions(ready, custom, others, templates)} />
         </div>
         {picked && (
           <div data-template={picked.id}>
             <label htmlFor={ids.timeframe} className={LABEL}>Chart timeframe</label>
-            <select id={ids.timeframe} className={FIELD} value={templateTimeframe}
-              onChange={(e) => { setTemplateTimeframe(e.target.value); setResult(null); }}>
-              {picked.timeframes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
+            <Combobox id={ids.timeframe} label="Chart timeframe" value={templateTimeframe} className="w-full"
+              onChange={(v) => { setTemplateTimeframe(v); setResult(null); }} options={picked.timeframes} />
             {/* UX-11 U1: where the settings come from and the template's own notes on demand, word for word; a failure or the wait stays visible. */}
             <div data-template-notes>
               {adoptFailed ? <p role="alert" className="mt-space-1 text-t13 text-fg-muted">This template cannot be set up just now. Try again in a moment.</p>
@@ -519,10 +523,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
         )}
         <div>
           <label htmlFor={ids.symbol} className={LABEL}><StepNo n={2} />Pick a symbol</label>
-          <select id={ids.symbol} className={FIELD} value={symbolChoice} onChange={(e) => { setSymbolChoice(e.target.value); setResult(null); }}>
-            {SYMBOLS.map((s) => <option key={s} value={s}>{s}</option>)}
-            <option value={OTHER}>Another symbol…</option>
-          </select>
+          <Combobox id={ids.symbol} label="Pick a symbol" value={symbolChoice} className="w-full" onChange={(v) => { setSymbolChoice(v); setResult(null); }}
+            options={[...SYMBOLS.map((s) => ({ value: s, label: s })), { value: OTHER, label: "Another symbol…" }]} />
           {symbolChoice === OTHER && (
             <div className="mt-space-2">
               <label htmlFor={ids.other} className="sr-only">Type the symbol</label>
@@ -538,9 +540,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             {stopOptions(exitChoices, cls).length > 1 ? (
               <div>
                 <label htmlFor={ids.stop} className={LABEL}>Stop</label>
-                <select id={ids.stop} className={FIELD} value={exitsNow.stop} onChange={(e) => setExit({ stop: e.target.value as StopSource })}>
-                  {stopOptions(exitChoices, cls).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                <Combobox id={ids.stop} label="Stop" value={exitsNow.stop} className="w-full" onChange={(v) => setExit({ stop: v as StopSource })}
+                  options={stopOptions(exitChoices, cls)} />
               </div>
             ) : (
               <div data-exit-stop>
@@ -550,9 +551,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             )}
             <div>
               <label htmlFor={ids.target} className={LABEL}>Take profit</label>
-              <select id={ids.target} className={FIELD} value={exitsNow.target} onChange={(e) => setExit({ target: e.target.value as TargetRule })}>
-                {targetOptions(exitChoices, cls).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              <Combobox id={ids.target} label="Take profit" value={exitsNow.target} className="w-full" onChange={(v) => setExit({ target: v as TargetRule })}
+                options={targetOptions(exitChoices, cls)} />
             </div>
             {exitsNow.target === "R_MULTIPLE" && (
               <div>
@@ -565,10 +565,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
               <div className="grid gap-space-3 sm:grid-cols-2">
                 <div>
                   <label htmlFor={ids.wave} className={LABEL}>Measured on</label>
-                  <select id={ids.wave} className={FIELD} value={exitsNow.baseWave} onChange={(e) => setExit({ baseWave: e.target.value })}>
-                    <option value="">Pick a wave</option>
-                    {exitChoices.base_waves.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
-                  </select>
+                  <Combobox id={ids.wave} label="Measured on" value={exitsNow.baseWave} className="w-full" onChange={(v) => setExit({ baseWave: v })}
+                    placeholder="Pick a wave" options={exitChoices.base_waves} />
                 </div>
                 <div>
                   <label htmlFor={ids.share} className={LABEL}>Share of that wave</label>

@@ -1,5 +1,5 @@
 import { Check, ChevronDown, Search } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode, type Ref } from "react";
 import { Sheet } from "../components/primitives/Dialog";
 import { cx } from "../components/primitives/cx";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
@@ -49,9 +49,20 @@ export interface ComboboxProps {
   triggerText?: ReactNode;
   /** Extra classes for the button itself (a mono face, a dashed border). */
   triggerClassName?: string;
+  /** UI-28 U3.3 (in place of a form's <select>): the button's describing line, its invalid state, a blur handler (a
+   * form's "touched"), and a ref to the button (a form that focuses its first field). */
+  describedBy?: string;
+  invalid?: boolean;
+  onBlur?: () => void;
+  buttonRef?: Ref<HTMLButtonElement>;
 }
 
 export const RECENT_GROUP = "Recent";
+
+function setRef<T>(ref: Ref<T> | undefined, el: T | null): void {
+  if (typeof ref === "function") ref(el);
+  else if (ref) (ref as MutableRefObject<T | null>).current = el;
+}
 const NO_RECENT: readonly string[] = [];
 
 /** The rows to show for the filter text: recent first (when not filtering), then the options; disabled rows kept. Pure. */
@@ -93,7 +104,7 @@ const triggerClass = "inline-flex h-11 min-w-0 items-center justify-between gap-
 const inlineTriggerClass = "inline-flex h-8 min-w-0 items-center justify-between gap-space-1 rounded-control border border-transparent bg-transparent pl-space-1 pr-space-1 text-left text-t13 text-fg hover:border-border hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-60 md:h-7";
 
 export function Combobox({ label, value, options, onChange, id, searchable = false, recent = NO_RECENT, placeholder = "Choose…", disabled = false,
-  className = "", dataAttrs = {}, sheetTitle, variant = "field", triggerText, triggerClassName }: ComboboxProps) {
+  className = "", dataAttrs = {}, sheetTitle, variant = "field", triggerText, triggerClassName, describedBy, invalid, onBlur, buttonRef }: ComboboxProps) {
   const inline = variant === "inline";
   const phone = useMediaQuery(PHONE_QUERY);
   const autoId = useId();
@@ -105,7 +116,7 @@ export function Combobox({ label, value, options, onChange, id, searchable = fal
   const [active, setActive] = useState(-1);
   const typed = useRef({ text: "", at: 0 });
   const root = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
+  const button = useRef<HTMLButtonElement | null>(null);
   const filterBox = useRef<HTMLInputElement>(null);
 
   const rows = useMemo(() => comboRows(options, filter, recent), [options, filter, recent]);
@@ -204,8 +215,9 @@ export function Combobox({ label, value, options, onChange, id, searchable = fal
 
   return (
     <div ref={root} className={cx("relative inline-flex min-w-0", className)}>
-      <button ref={button} id={baseId} type="button" role="combobox" aria-haspopup="listbox" aria-expanded={open} aria-controls={listId}
-        aria-label={label} aria-activedescendant={open && !searchable && active >= 0 ? optionId(active) : undefined}
+      <button ref={(el) => { button.current = el; setRef(buttonRef, el); }} id={baseId} type="button" role="combobox"
+        aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-describedby={describedBy} aria-invalid={invalid || undefined}
+        onBlur={onBlur} aria-label={label} aria-activedescendant={open && !searchable && active >= 0 ? optionId(active) : undefined}
         disabled={disabled} onClick={() => (open ? close() : openList())} onKeyDown={onKeyDown} data-combobox={value} {...dataAttrs}
         className={cx(inline ? inlineTriggerClass : triggerClass, "w-full", triggerClassName)}>
         <span className={cx("min-w-0 flex-1 truncate tabular-nums", !current && triggerText == null && "text-fg-muted")}>{triggerText ?? current?.label ?? placeholder}</span>

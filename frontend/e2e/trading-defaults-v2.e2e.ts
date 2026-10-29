@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { choose } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -127,15 +128,15 @@ test.describe("My trading defaults behaviour", () => {
   test("empty on the first visit; saving sends only the reviewed fields - never a mode, routing or LIVE field", async ({ page }) => {
     const server = await open(page, "/settings/trading-defaults");
     const main = page.locator("main");
-    await expect(main.getByLabel("Trade as")).toHaveValue("");
+    await expect(main.getByLabel("Trade as")).toHaveAttribute("data-combobox", "");
     await expect(main.getByLabel("Time exit after (minutes)")).toHaveValue("");
     await expect(main.getByLabel("Flat at (HH:MM)")).toHaveValue("");
     await expect(main.getByRole("link", { name: "Open Risk limits" })).toHaveAttribute("href", "/risk-management");
     await expect(main.getByText("keeps asking for my Approve")).toHaveCount(0);       // the approval-only flag is off
     for (const word of [/\bLIVE\b/, /\bMode\b/, /Routing/, /deployment/i, /namespace/i]) await expect(main.getByText(word)).toHaveCount(0);
 
-    await main.getByLabel("Trade as").selectOption("OPTION");
-    await main.getByLabel("Expiry", { exact: true }).selectOption("NEXT");
+    await choose(page, main.getByLabel("Trade as"), "OPTION");
+    await choose(page, main.getByLabel("Expiry", { exact: true }), "NEXT");
     await main.getByLabel("Lots for a new bot").fill("0");
     await main.getByRole("button", { name: "Save my defaults" }).click();
     await expect(main.locator("[data-note='defaults-note']")).toHaveText("Lots for a new bot: a whole number from 1 to 500.");
@@ -192,7 +193,7 @@ test.describe("My trading defaults behaviour", () => {
   test("identity: with empty defaults Start on paper sends today's body, byte for byte", async ({ page }) => {
     const server = await open(page, "/deployments", { prefs: EMPTY });
     await expect(startCard(page).locator("[data-defaults]")).toHaveCount(0);
-    await startCard(page).getByLabel("Pick a symbol").selectOption("NIFTY BANK");
+    await choose(page, startCard(page).getByLabel("Pick a symbol"), "NIFTY BANK");
     await expect(startCard(page)).toContainText("Trades a NIFTY BANK option at the nearest expiry, 1 lot");
     await startCard(page).getByRole("button", { name: "Start on paper" }).click();
     await expect.poll(() => posts(server).length).toBe(1);
@@ -202,7 +203,7 @@ test.describe("My trading defaults behaviour", () => {
   test("pre-fill: Start on paper takes the defaults, says so, and can start without them", async ({ page }) => {
     const server = await open(page, "/deployments", { prefs: SOME });
     const card = startCard(page);
-    await card.getByLabel("Pick a symbol").selectOption("NIFTY BANK");
+    await choose(page, card.getByLabel("Pick a symbol"), "NIFTY BANK");
     await expect(card.locator("[data-defaults-line]")).toContainText("From your defaults: strike 1 step out of the money, next expiry, 2 lots, trailing stop 1.5%.");
     await expect(card).toContainText("Trades a NIFTY BANK option at the next expiry, 2 lots");
     await expect(card.getByRole("link", { name: "Change my defaults" })).toHaveAttribute("href", "/settings/trading-defaults");

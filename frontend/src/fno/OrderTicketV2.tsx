@@ -20,6 +20,7 @@ import { riskLine, structureOf, ticketPayoffSentence, type RiskBudget, type Risk
 import type { ChainRow } from "../optionChain/types";
 import { eventLine, legLiquidity, liquidityLine, marginLine, type EventRisk } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
+import { Combobox } from "../ui/Combobox";
 
 /**
  * FNO-1 (owner order section 6): the ONE order ticket - used by the option chain now, built to be opened the same way
@@ -393,9 +394,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             {multi && (
               <div>
                 <label htmlFor={`${idPrefix}-run-on`} className="mb-space-1 block text-t12 font-medium text-fg-muted">Run on</label>
-                <select id={`${idPrefix}-run-on`} value={multi.runOn} onChange={(e) => multi.setRunOn(e.target.value)} className={FIELD} data-ticket="run-on">
-                  {multi.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                <Combobox id={`${idPrefix}-run-on`} label="Run on" value={multi.runOn} onChange={multi.setRunOn} options={multi.options} className="w-full"
+                  dataAttrs={{ "data-ticket": "run-on" }} />
                 {multi.runOn !== "ONE" && (
                   <p className="mt-space-1 text-t12 text-fg-muted">Your practice accounts each get their own order, sized by their own setting. The lots above are the Primary's.</p>
                 )}

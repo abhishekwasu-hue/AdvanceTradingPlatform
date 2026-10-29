@@ -14,6 +14,7 @@ import {
   changeSide, heldAsks, heldPayoff, levelText, netPremium, oneExpiry, outcome, pnlAt, priceGrid, sentenceInput, type PayoffLeg, type PosLeg,
 } from "./positionInsights";
 import { moneyText } from "./ticketModel";
+import { Combobox } from "../ui/Combobox";
 
 /**
  * F&O workspace 8b, slice 2: side-by-side outcomes, information only.
@@ -382,13 +383,12 @@ export function StrategyCompareV2({ underlying, legs, saved, rows, expiry, aroun
     return <p className="rounded-control bg-surface-2 px-space-3 py-space-3 text-t13 text-fg-muted" data-basket="compare">Two baskets are needed to compare: add legs, or open the chain to use the ready strategies.</p>;
   }
   const select = (i: 0 | 1, current: Choice) => (
-    <label className="block min-w-0 flex-1 text-t12 text-fg-muted">
-      {i === 0 ? "First" : "Second"}
-      <select value={current.key} onChange={(e) => setPicked((p) => (i === 0 ? [e.target.value, p[1]] : [p[0], e.target.value]))} data-compare-pick={i}
-        className="mt-px h-11 w-full rounded-control border border-border bg-surface-2 px-space-2 text-t14 text-fg">
-        {choices.filter((c) => i === 0 || c.key !== a.key).map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
-      </select>
-    </label>
+    <div className="block min-w-0 flex-1 text-t12 text-fg-muted">
+      <span aria-hidden>{i === 0 ? "First" : "Second"}</span>
+      <Combobox label={i === 0 ? "First" : "Second"} value={current.key} className="mt-px w-full" dataAttrs={{ "data-compare-pick": String(i) }}
+        onChange={(v) => setPicked((p) => (i === 0 ? [v, p[1]] : [p[0], v]))}
+        options={choices.filter((c) => i === 0 || c.key !== a.key).map((c) => ({ value: c.key, label: c.name }))} />
+    </div>
   );
   return (
     <section aria-label="Compare two baskets" className="space-y-space-3 rounded-control border border-subtle p-space-3" data-basket="compare">

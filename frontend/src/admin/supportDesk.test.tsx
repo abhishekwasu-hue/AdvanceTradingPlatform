@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { TicketRow, dueLine, hours } from "./SupportDeskV2";
+import { TicketRow, assigneeOptions, dueLine, hours } from "./SupportDeskV2";
 import deskSource from "./SupportDeskV2.tsx?raw";
 import consoleSource from "./AdminConsoleV2.tsx?raw";
 import type { SupportTicket } from "./supportDeskApi";
@@ -25,7 +25,7 @@ describe("a ticket", () => {
     expect(html).not.toContain("trader@example.com");
     expect(html).toContain("req-1");
     expect(html).toContain("503 /api/positions");
-    expect(html).toContain("op*@example.com");      // the assignee list is masked too
+    expect(assigneeOptions([{ id: 1, email: "ops@example.com" }]).map((o) => o.label)).toContain("op*@example.com");      // the assignee list is masked too
   });
 
   it("an error this server no longer holds says where to look", () => {

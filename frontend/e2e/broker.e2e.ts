@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { choose } from "./combobox";
 import { mockApi, type MockCalls, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 
@@ -316,7 +317,7 @@ test.describe("desktop 1440", () => {
     } });
     await page.locator("[data-broker-advanced] summary").click();
     const another = page.locator("[data-another-account]");
-    await another.getByLabel("Broker").selectOption("dhan");
+    await choose(page, another.getByLabel("Broker"), "dhan");
     await another.getByLabel("Account name").fill("family");
     await another.getByRole("button", { name: "Connect" }).click();
     const panel = page.locator("[data-broker-dialog='connect']");

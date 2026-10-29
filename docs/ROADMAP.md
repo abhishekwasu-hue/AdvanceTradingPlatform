@@ -212,7 +212,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | OI-V2 | merged - deploy + owner ✅ | text lost (DECISIONS 29 Oct): the regime flip = AUD-V5 #648 | - |
 | PX-1 | merged - deploy + owner ✅ | text lost (DECISIONS 29 Oct): P1 = AUD-V2 #644 | - |
 | AUD-V1..V7 | merged - deploy + owner ✅ | V1 #643, V2 #644, V3 #645, V4 #646, V5 #648, V6 #649, V7 #651 merged 28 Oct; in e2f099f2 (deploy line sent); v1.0.0 tag + branch prune need the owner (proxy 403) | - |
-| AUD-G1.1..G1.7 | in progress | G1.1 #654, G1.3 #652, G1.4 part 1 #655 merged; G1.6 part 1 #656 + G1.7 part 1 #657 on CI; G1.2 waits for the owner's company / grievance details; G1.4 part 2 waits for a Sentry DSN; G1.5 next | #656 #657 |
+| AUD-G1.1..G1.7 | in progress | G1.1 #654, G1.3 #652, G1.4 part 1 #655 merged; G1.6 part 1 #656 + G1.7 part 1 #657 on CI; G1.2 waits for the owner's company / grievance details; G1.4 part 2 waits for a Sentry DSN; G1.5 next; G1.6 part 2: claude/aud-g1-6-lint | #656 #657 |
 | AUD-T1..T3 | in progress | T3 merged (#673, flag `why_no_trade` OFF, migration d0f0a1b2c3d7); T1 merged (#687, "My day" card, flag `my_day_card` OFF, settings MY_DAY_WATCH_ROOM_LEFT_PCT / MY_DAY_NEAR_ROOM_LEFT_PCT); T2 expiry checklist (#685, flag `expiry_checklist` OFF, no migration) | #685 |
 | AUD-G2.1..G2.5 | not started | after T1-T3 | - |
 | AUD-T4..T9 | in progress | T8 merged (#691: uptime per market session + SLOs on /status, degraded notice, flag `status_page` OFF, migration d0f0a1b2c3d8); T7 cost-of-trading meter (#688, flag `cost_meter` OFF); T4 paper report card (#695, flag `paper_report_card` OFF); T5, T6 next; T9 waits for the owner | #688 #695 |

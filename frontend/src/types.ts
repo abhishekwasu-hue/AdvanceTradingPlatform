@@ -2845,3 +2845,6 @@ export interface ProposalRiskCheck {
   sizing: TicketSizing; costs: TicketCostLine | null; refusals: string[]; warnings: string[]; errors: string[];
   reward_risk: number | null; min_reward_risk: number | null;
 }
+
+/** AUD-T3: one closed bar of a bot with the reason it did or did not trade (GET /api/deployments/{id}/why). */
+export interface WhyRow { bar_time: string | null; seen_at: string; code: string; label: string; detail: string | null }

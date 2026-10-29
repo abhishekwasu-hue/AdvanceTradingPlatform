@@ -6,7 +6,7 @@ import RiskLimitsCard from "../components/RiskLimitsCard";
 import MyLimitsCardV2 from "../settings/MyLimitsCardV2";
 import { Card, Disclaimer } from "../components/ui";
 import type { GuardianStatus, MarketEvent, RiskCeilings, RiskConfig } from "../types";
-import { Badge, PageHeader } from "../components/primitives";
+import { Badge, PageHeader, SkeletonRows } from "../components/primitives";
 
 const FIELDS: { key: keyof RiskConfig; label: string; step?: string; ceiling?: string }[] = [
   { key: "capital", label: "Capital (₹)" },
@@ -120,7 +120,7 @@ export default function RiskManagementPage() {
   }
 
   if (!config) {
-    return <div className="text-sm text-fg-muted">Loading…</div>;
+    return <SkeletonRows rows={2} label="Loading" />;
   }
 
   return (

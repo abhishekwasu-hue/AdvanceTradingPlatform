@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { DEFAULT_PREFS, TELEGRAM_CHOICES } from "./model";
 import type { RhythmPrefs, RhythmSettings } from "./types";
+import { Skeleton } from "../components/primitives";
 
 /**
  * MO4 (Settings → Alerts, behind `ui_v2` + `daily_rhythm`): "Daily briefs on Telegram" - OFF until the user turns it on,
@@ -44,7 +45,7 @@ export default function RhythmTelegramV2() {
   }
 
   if (hidden) return null;
-  if (!settings) return note ? <p className="text-t13 text-fg-muted">{note}</p> : <div aria-busy="true" className="h-20 animate-pulse rounded-control bg-surface-2"><span className="sr-only">Loading</span></div>;
+  if (!settings) return note ? <p className="text-t13 text-fg-muted">{note}</p> : <Skeleton className="h-20" label="Loading" />;
   const prefs = { ...DEFAULT_PREFS, ...settings.prefs };
   const blocked = telegramNote(settings);
   const on = prefs.telegram && !blocked;

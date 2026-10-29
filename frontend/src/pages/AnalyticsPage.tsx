@@ -5,7 +5,7 @@ import { Card, StatTile, signClass, signTone } from "../components/ui";
 import type { AnalyticsSummary, DegradationReport, GroupStats, TaxReport } from "../types";
 import { getToken } from "../api/client";
 import { apiErrorFrom, friendlyError, errorSentence } from "../api/errors";
-import { PageHeader } from "../components/primitives";
+import { PageHeader, SkeletonRows } from "../components/primitives";
 import { SelectOrCombobox } from "../ui/Combobox";
 
 function TaxReportCard() {
@@ -123,7 +123,7 @@ export default function AnalyticsPage() {
   }
 
   if (error) return <div className="text-sm text-down">{error}</div>;
-  if (!summary) return <div className="text-sm text-fg-muted">Loading…</div>;
+  if (!summary) return <SkeletonRows rows={2} label="Loading" />;
 
   return (
     <div className="space-y-4">

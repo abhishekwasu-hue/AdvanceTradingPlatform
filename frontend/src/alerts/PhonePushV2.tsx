@@ -6,6 +6,7 @@ import { appVersions, versionLine } from "../native/version";
 import { ActionV2, Note } from "../setup/StepsV2";
 import type { PhoneDevices } from "../types";
 import { PHONE_KINDS, PHONE_STATE_TEXT, phoneState, toggleKind, type PhoneState } from "./phonePush";
+import { Skeleton } from "../components/primitives";
 
 /**
  * B8 (flag mobile_push, inside the Android app only): "Notifications on this phone" in Settings -> Alerts.
@@ -91,7 +92,7 @@ export default function PhonePushV2() {
     }
   }
 
-  if (!state) return <div aria-busy="true" className="h-20 animate-pulse rounded-control bg-surface-2"><span className="sr-only">Loading</span></div>;
+  if (!state) return <Skeleton className="h-20" label="Loading" />;
   const devices = data?.devices ?? [];
 
   return (

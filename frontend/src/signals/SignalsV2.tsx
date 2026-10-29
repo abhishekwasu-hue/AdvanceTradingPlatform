@@ -2,10 +2,10 @@ import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useAuth } from "../auth/AuthContext";
-import { cx } from "../components/primitives";
+import { cx, Skeleton } from "../components/primitives";
 import PageDishV2 from "../growth/PageDishV2";
-import { formatTimeIST } from "../ui/format";
 import { useFeatures } from "../ui/useFeatures";
+import { Freshness } from "../ui/Freshness";
 import { PageFootnote } from "../ui/PageFootnote";
 import { PageIntro } from "../ui/PageIntro";
 import {
@@ -128,7 +128,7 @@ export default function SignalsV2() {
 
       <Filters source={source} symbol={symbol} open={filtersOpen || filtered} onToggle={() => setFiltersOpen((o) => !o)}
         onSource={(s) => { setSource(s); setPicked(null); }} onSymbol={(s) => { setSymbol(s); setPicked(null); }}
-        updated={feed.asOf ? formatTimeIST(feed.asOf, { suffix: false }) : null} />
+        updated={feed.asOf} />
 
       {missing && (
         <p className="rounded-panel border border-subtle bg-surface-1 px-space-4 py-space-3 text-t14 text-fg" data-missing-proposal>
@@ -146,7 +146,7 @@ export default function SignalsV2() {
       )}
 
       {feed.loading ? (
-        <div className="h-40 animate-pulse rounded-panel bg-surface-2" aria-busy="true" aria-label="Loading signals" data-tour="signals-list" />
+        <div data-tour="signals-list"><Skeleton className="h-40" panel label="Loading signals" /></div>
       ) : items.length === 0 ? (
         <div className="rounded-panel border border-subtle bg-surface-1 px-space-6 py-space-10 text-center shadow-card" data-empty data-tour="signals-list">
           <p className="text-t15 font-semibold text-fg">{filtered ? "Try other filters." : EMPTY[tab].title}</p>
@@ -245,7 +245,7 @@ function Filters({ source, symbol, open, onToggle, onSource, onSymbol, updated }
             <Search size={16} aria-hidden />Symbol
           </button>
         )}
-        {updated && <p className="ml-auto hidden text-t12 text-fg-muted md:block">Updated {updated} · new signals arrive live</p>}
+        <Freshness at={updated} className="ml-auto" />
       </div>
     </div>
   );

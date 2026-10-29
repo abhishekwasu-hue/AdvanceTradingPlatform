@@ -206,7 +206,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | DEF-0 | merged - deploy + owner ✅ | PR 1-4 + fix #641 merged; deploy line ece32fd8 / e2f099f2 sent (migration yes: d4 d5 d6); owner ✅ on PROOF | - |
 | UI-STD | superseded by UI-28 | Session B: owner order 28 Oct filed; docs/design/UI_STANDARDS_AUDIT.md written; first report (confirmed / not reproduced) next, then PR 1 = A1-A8 | - |
 | UI-STD-C | superseded by UI-28 (U7) | - | - |
-| UI-28 | in progress | Session B: consolidated UI order filed 28 Oct; owner adds U1.10 affirmative wording + U1.11 hide repeated messages on all pages (28 Oct); first report docs/design/UI_28_FIRST_REPORT.md; U1 #640 merged; U2 + U1.10 / U1.11 #647 on CI; next U3; SEBI text open (UI28Q-1) | - |
+| UI-28 | in progress | Session B: consolidated UI order filed 28 Oct; owner adds U1.10 affirmative wording + U1.11 hide repeated messages on all pages (28 Oct); first report docs/design/UI_28_FIRST_REPORT.md; U1 #640 merged; U2 + U1.10 / U1.11 #647 merged; U3 parts 1-2 #650 #653 merged + deployed 29 Oct; U3 part 3 (U3.8 Skeleton + Freshness) on CI; next U3.3 selects, U3.7 reflow; SEBI text open (UI28Q-1) | - |
 | AP-FIX | filed (stub) | full order text from the owner, then plan | - |
 | CP-FIX | filed (stub) | full order text from the owner, then plan | - |
 | OI-V2 | filed (stub) | full order text from the owner, then plan | - |

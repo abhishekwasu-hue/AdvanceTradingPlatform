@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { basisApi, latest, linePaths, pctText, type BasisSeries } from "../charting/futuresBasis";
+import { SkeletonRows } from "../components/primitives";
 
 const W = 360;
 const H = 56;
@@ -69,7 +70,7 @@ export default function FuturesBasisWindow({ params }: { params: URLSearchParams
     return () => { live = false; };
   }, [user, underlying]);
 
-  if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (loading) return <SkeletonRows rows={2} label="Loading" />;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
   if (!underlying) return <div className="p-6 text-sm text-fg">No underlying given.</div>;
   return (

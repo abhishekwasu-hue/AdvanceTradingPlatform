@@ -2,7 +2,7 @@ import { Stethoscope } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { useAuth } from "../auth/AuthContext";
-import { Sheet } from "../components/primitives";
+import { Sheet, SkeletonRows } from "../components/primitives";
 import AdminPage from "../pages/AdminPage";
 import type { PageProps } from "../routes";
 import { NotFound } from "../shell/common";
@@ -86,7 +86,7 @@ function DiagnosticsBody() {
     consoleApi.diagnostics().then((d) => { if (live) setData(d); }, (e) => { if (live) setError(String(e)); });
     return () => { live = false; };
   }, []);
-  if (!data) return error ? <p className="text-t12 text-down">Could not load: {error}</p> : <p className="text-t12 text-fg-muted" aria-busy="true">Loading…</p>;
+  if (!data) return error ? <p className="text-t12 text-down">Could not load: {error}</p> : <SkeletonRows rows={2} label="Loading" />;
   const failedDeliveries = Object.values(data.alert_deliveries_failed).reduce((a, n) => a + n, 0);
   return (
     <div className="space-y-space-4 text-t12" data-diagnostics>

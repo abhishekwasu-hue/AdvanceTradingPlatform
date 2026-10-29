@@ -5,7 +5,7 @@ export { Select, type SelectOption } from "./Select";
 export { Dialog, Sheet } from "./Dialog";
 export { Tabs, type TabItem } from "./Tabs";
 export { Table, type Column } from "./Table";
-export { Badge, EmptyState, Signed, Skeleton, type Tone } from "./Feedback";
+export { Badge, EmptyState, Signed, Skeleton, SkeletonRows, type Tone } from "./Feedback";
 export { PageHeader } from "./PageHeader";
 export { cx } from "./cx";
 // Chart + colour order Part 3: the one chip, the status chip and the range bar (v2 building blocks in src/ui/).

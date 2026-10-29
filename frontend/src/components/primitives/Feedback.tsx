@@ -3,9 +3,12 @@ import { chipClass } from "../../ui/Chip";
 import { Signed as SignedOne } from "../../ui/Signed";
 import { cx } from "./cx";
 
-/** A placeholder block while data loads (`aria-busy` on the region that contains it). */
-export function Skeleton({ className }: { className?: string }) {
-  return <div aria-hidden className={cx("animate-pulse rounded-md bg-surface-2", className ?? "h-4 w-full")} />;
+/** A placeholder block while data loads (`aria-busy` on the region that contains it). UI-28 U3.8: the one loading
+ * block - `panel` rounds it like a card; `label` makes it the busy region itself (read out, e.g. "Loading signals"). */
+export function Skeleton({ className, panel = false, label }: { className?: string; panel?: boolean; label?: string }) {
+  const look = cx("animate-pulse bg-surface-2", panel ? "rounded-panel" : "rounded-control", className ?? "h-4 w-full");
+  if (!label) return <div aria-hidden className={look} data-skeleton-block />;
+  return <div role="status" aria-busy="true" aria-label={label} className={look} data-skeleton-block />;
 }
 
 /** "Nothing here yet" with the one action that fills it. */

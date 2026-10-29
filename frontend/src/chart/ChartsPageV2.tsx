@@ -45,6 +45,7 @@ import { useTradesLayer } from "./useTradesLayer";
 import { WatchlistPanel } from "./WatchlistPanel";
 import type { WatchItem } from "./watchlistsV2";
 import { Combobox } from "../ui/Combobox";
+import { Skeleton } from "../components/primitives";
 
 /**
  * UI2-4b2 (UI v2 proposal §6, Charts page plan §3): the Charts page at `/charts` and `/charts/:symbol`, v2 only.
@@ -221,7 +222,7 @@ export default function ChartsPageV2(_props: PageProps) {
       {!fs.on && <HubTabsView info={hubInfo} current={hubView ?? "chart"} carry={{ expiry: readCarry(params).expiry, timeframe }} />}
 
       {hubView && (
-        <Suspense fallback={<div aria-busy="true" className="h-40 animate-pulse rounded-panel bg-surface-2" />}>
+        <Suspense fallback={<Skeleton className="h-40" panel label="Loading" />}>
           {hubView === "futures"
             ? <FuturesChainV2 symbol={hubInfo?.underlying ?? symbol} timeframe={timeframe} />
             : <OverviewV2 symbol={symbol} exchange={exchange} info={hubInfo} />}

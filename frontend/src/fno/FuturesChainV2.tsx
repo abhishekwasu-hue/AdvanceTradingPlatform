@@ -17,6 +17,7 @@ import {
 } from "./hubModel";
 import OrderTicketV2 from "./OrderTicketV2";
 import { PRACTICE_TITLE, type TicketTarget } from "./ticketModel";
+import { Skeleton } from "../components/primitives";
 
 /**
  * FNO-3 (owner order section 4): the Futures tab of the symbol hub - every listed future of the symbol with its LTP,
@@ -185,7 +186,7 @@ export function FuturesChainView({ data, problem, loading, trading, watchlistsOn
     body = (
       <div aria-busy="true" className="space-y-space-2 rounded-panel border border-subtle bg-surface-1 p-space-4">
         <span className="sr-only">Loading the futures</span>
-        {Array.from({ length: 3 }, (_, i) => <div key={i} className="h-8 animate-pulse rounded-control bg-surface-2" />)}
+        {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-8" />)}
       </div>
     );
   } else if (data && rows.length === 0) body = <Problem tone="neutral">{FUTURES_TEXT.empty}</Problem>;

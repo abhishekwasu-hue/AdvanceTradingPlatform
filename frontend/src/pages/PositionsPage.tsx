@@ -10,7 +10,7 @@ import PaperTicketCard from "../components/PaperTicketCard";
 import PositionChartCard from "../components/PositionChartCard";
 import { Card, DirectionBadge, StatTile, signClass } from "../components/ui";
 import type { PositionGreeks, TradeRecord } from "../types";
-import { PageHeader } from "../components/primitives";
+import { PageHeader, SkeletonRows } from "../components/primitives";
 import { useFeatures } from "../ui/useFeatures";
 import { formatTimeIST } from "../ui/format";
 
@@ -118,7 +118,7 @@ export default function PositionsPage() {
       <PageHeader title="Positions" description={`Paper trades executed from the Signals tab while signed in as ${user.email}.`} />
 
       {error && <div className="text-sm text-down">{error}</div>}
-      {loading && <div className="text-sm text-fg-muted">Loading…</div>}
+      {loading && <SkeletonRows rows={2} label="Loading" />}
 
       <PaperAccountCard canTrade={user.role !== "VIEWER"} />
       <ExperienceCard canTrade={user.role !== "VIEWER"} />

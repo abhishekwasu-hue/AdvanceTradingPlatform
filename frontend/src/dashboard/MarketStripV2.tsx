@@ -12,6 +12,8 @@ import { LevelChip } from "../ui/LevelChip";
 import type { Loadable } from "./useDashboardData";
 import type { MarketStrip, StripIndex } from "./types";
 import { Signed } from "../ui/numbersFirst";
+import { Freshness } from "../ui/Freshness";
+import { Skeleton } from "../components/primitives/Feedback";
 
 /**
  * UI2-2 (UI v2 proposal §5 block 3): the market strip - NIFTY 50, BANK NIFTY and INDIA VIX (last price, change, %
@@ -80,6 +82,13 @@ function StatusChip({ children, tone }: { children: ReactNode; tone: "neutral" |
   );
 }
 
+/** U3.8: the time of the newest live price in the strip (the request time only when no index carries one). A strip
+ * read from market memory shows its own "As of" under each index instead. */
+export function stripAsOf(strip: MarketStrip): string {
+  const times = strip.indices.map((i) => i.as_of).filter((t): t is string => !!t).sort();
+  return times[times.length - 1] ?? strip.fetched_at;
+}
+
 export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowMs, sparks }: MarketStripProps) {
   const data = strip.status === "ok" ? strip.data : null;
   const total = pnl.total;
@@ -109,13 +118,14 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
           <div key={label} className={`min-w-0 ${L("xl:border-r xl:border-subtle xl:p-space-5")} ${cell(n)}`}>
             <div className="text-t12 font-medium uppercase text-fg-muted">{label}</div>
             {strip.status === "loading"
-              ? <div className="mt-space-2 h-6 w-20 animate-pulse rounded-control bg-surface-2" />
+              ? <Skeleton className="mt-space-2 h-6 w-20" />
               : <div className="mt-space-1 font-tabular text-t18 font-semibold text-fg md:text-t20">{EMPTY}</div>}
           </div>
         ))}
       </div>
       {strip.status === "error" && <p className={`text-t13 text-fg-muted ${L("xl:order-last xl:col-span-5 xl:border-t xl:border-subtle xl:px-space-5 xl:py-space-3")}`}>We could not load the market prices. We will try again in a moment.</p>}
       <div className={`flex flex-wrap items-center gap-space-2 border-t border-subtle pt-space-4 ${L("xl:flex-col xl:items-stretch xl:justify-center xl:border-r xl:border-t-0 xl:p-space-5")}`}>
+        {data && data.source === "live" && <Freshness at={stripAsOf(data)} stale={data.indices.some((i) => i.stale)} />}
         {marketText && <StatusChip tone="neutral"><span aria-hidden className="h-1.5 w-1.5 rounded-pill bg-fg" />{marketText}</StatusChip>}
         {broker && (
           <StatusChip tone={broker.tone}>

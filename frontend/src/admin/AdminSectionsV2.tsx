@@ -11,6 +11,7 @@ import {
   ago, consoleApi, maskEmail, shortDate,
   type ConsoleAiCost, type ConsoleSystem, type ConsoleUsers, type DeadLetter, type OutboxState, type RetentionState, type SupportUser,
 } from "./consoleApi";
+import { SkeletonRows } from "../components/primitives";
 
 /**
  * MO3 addition (a): the new read-only parts of the admin console's sections. Each reads its own `/api/admin/console/*`
@@ -45,7 +46,7 @@ function Scroll({ children }: { children: ReactNode }) {
 }
 
 function Loading({ error }: { error: string | null }) {
-  return error ? <p className="text-t12 text-down">Could not load: {error}</p> : <p className="text-t12 text-fg-muted" aria-busy="true">Loading…</p>;
+  return error ? <p className="text-t12 text-down">Could not load: {error}</p> : <SkeletonRows rows={2} label="Loading" />;
 }
 
 function useRead<T>(read: () => Promise<T>, deps: unknown[] = []): { data: T | null; error: string | null } {

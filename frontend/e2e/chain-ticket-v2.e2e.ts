@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { choose, expectChoiceLabels } from "./combobox";
 import { readFileSync } from "node:fs";
 import { mockApi, type MockCalls, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
@@ -325,8 +326,8 @@ test.describe("Chain ticket v2 multi-account (M45 MA-6)", () => {
     await page.locator("[data-chain-actions] [data-action='buy']").click();
     const ticket = page.locator("[data-order-ticket]");
     const runOn = ticket.locator("[data-ticket='run-on']");
-    await expect(runOn.locator("option")).toHaveText(["This order only", "Primary account", "Primary + Family", "All accounts"]);
-    await runOn.selectOption("PRIMARY+Family");
+    await expectChoiceLabels(page, runOn, ["This order only", "Primary account", "Primary + Family", "All accounts"]);
+    await choose(page, runOn, "PRIMARY+Family");
     await pickProduct(ticket);
     await ticket.locator("[data-ticket='review']").click();
     await ticket.locator("[data-ticket='place']").click();

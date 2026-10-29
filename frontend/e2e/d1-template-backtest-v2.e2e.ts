@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { choose, expectChoice } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -126,8 +127,8 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await idea.locator("[data-test-idea='A5']").click();
         await expect(page).toHaveURL(/\/strategies\/test\?template=A5&timeframe=15m/);
         await settle(page);
-        await expect(page.getByRole("combobox").first()).toHaveValue("template-pick:A5");
-        await expect(page.getByLabel("Chart timeframe")).toHaveValue("1d");
+        await expectChoice(page.getByRole("combobox").first(), "template-pick:A5");
+        await expectChoice(page.getByLabel("Chart timeframe"), "1d");
         const note = page.locator("[data-template-test-note]");
         await expect(note).toContainText("Tests the idea's own strategy with the settings from the idea.");
         await expect(note).toContainText("The idea is set to 15-minute bars. Without your broker's prices today only Daily history is stored, so this test runs on Daily.");
@@ -146,7 +147,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await shot("03-template-backtest");
 
         // His own intraday pick says what it needs instead of failing later.
-        await page.getByLabel("Chart timeframe").selectOption("15m");
+        await choose(page, page.getByLabel("Chart timeframe"), "15m");
         await expect(note).toContainText("15-minute bars need prices from your broker: log in on the Broker page, or pick Daily to test on ATP's stored history.");
       });
     });

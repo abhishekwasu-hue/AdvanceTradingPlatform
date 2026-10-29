@@ -9,7 +9,7 @@ import { PAGE_COMPONENTS_V2 } from "../shell/pagesV2";
 import type { Deployment, StrategyInfo } from "../types";
 import modelSource from "./model.ts?raw";
 import pageSource from "./PaperBotV2.tsx?raw";
-import { BotRow, StartBotV2 } from "./PaperBotV2";
+import { BotRow, StartBotV2, strategyOptions } from "./PaperBotV2";
 import {
   READY, botName, botState, botStatusText, botWhat, cleanSymbol, isSwing, lastChecked, paperBotRequest, sortBots, startSummary, startSummaryParts, strategyLine,
   symbolProblem,
@@ -158,13 +158,14 @@ describe("UX2 fix 4 view", () => {
 
   it("the start form: 1 pick a strategy, 2 pick a symbol, Start on paper; the broker note when none is connected", () => {
     const html = renderToStaticMarkup(<MemoryRouter><StartBotV2 library={[intraday, daily, other]} custom={[]} hasBroker={false}
-      firstField={createRef<HTMLSelectElement>()} onStarted={noop} /></MemoryRouter>);
+      firstField={createRef<HTMLButtonElement>()} onStarted={noop} /></MemoryRouter>);
     const t = text(html);
     expect(t).toMatch(/1 Pick a strategy .* 2 Pick a symbol .* Start on paper/);
     expect(t).toContain("Connect your broker");
-    expect(html.match(/<optgroup label="Ready-made">[\s\S]*?<\/optgroup>/)?.[0]).toContain("Opening range breakout");
-    expect(html.match(/<optgroup label="More from the Library">[\s\S]*?<\/optgroup>/)?.[0]).toContain("RSI divergence");
-    expect(t).toContain("Another symbol…");
+    const rows = strategyOptions([intraday, daily], [], [other], []);
+    expect(rows.filter((r) => r.group === "Ready-made").map((r) => r.label)).toContain("Opening range breakout");
+    expect(rows.filter((r) => r.group === "More from the Library").map((r) => r.label)).toContain("RSI divergence");
+    expect(pageSource).toContain('{ value: OTHER, label: "Another symbol…" }');
   });
 
   it("no developer words on the page", () => {

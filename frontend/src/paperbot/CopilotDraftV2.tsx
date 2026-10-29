@@ -8,6 +8,7 @@ import type { CustomStrategyConfig, CustomStrategyResponse } from "../types";
 import {
   answerProblem, askKind, draftConfig, DRAFT_TIMEFRAMES, openAsks, saveLine, type DraftValues, type StrategyDraft,
 } from "../copilot/strategyDraft";
+import { Combobox } from "../ui/Combobox";
 
 /**
  * Item 5 (owner's handover), job 6: the Copilot's draft on the Paper bot page (v2 only, with the `ai_copilot` switch on).
@@ -129,6 +130,13 @@ export default function CopilotDraftV2({ draft, onSaved, onDiscard, save = api.c
   );
 }
 
+/** UI-28 U3.3: the picked answers, in the shared picker ("Choose…" until one is picked). */
+const CHOICES: Record<"side" | "timeframe" | "direction", { value: string; label: string }[]> = {
+  side: [{ value: "long", label: "Long" }, { value: "short", label: "Short" }, { value: "both", label: "Both" }],
+  timeframe: DRAFT_TIMEFRAMES.map((t) => ({ value: t.value, label: t.label })),
+  direction: [{ value: "CROSSES_ABOVE", label: "Crosses above" }, { value: "CROSSES_BELOW", label: "Crosses below" }],
+};
+
 function AskField({ askKey, label, value, touched, onChange, onBlur }: {
   askKey: string; label: string; value: string; touched: boolean; onChange: (v: string) => void; onBlur: () => void;
 }) {
@@ -140,19 +148,9 @@ function AskField({ askKey, label, value, touched, onChange, onBlur }: {
   return (
     <div>
       <label htmlFor={id} className={LABEL}>{label}</label>
-      {kind === "side" ? (
-        <select {...common} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Choose…</option><option value="long">Long</option><option value="short">Short</option><option value="both">Both</option>
-        </select>
-      ) : kind === "timeframe" ? (
-        <select {...common} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Choose…</option>
-          {DRAFT_TIMEFRAMES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
-      ) : kind === "direction" ? (
-        <select {...common} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Choose…</option><option value="CROSSES_ABOVE">Crosses above</option><option value="CROSSES_BELOW">Crosses below</option>
-        </select>
+      {kind === "side" || kind === "timeframe" || kind === "direction" ? (
+        <Combobox id={id} label={label} value={value} onChange={onChange} onBlur={onBlur} invalid={!!problem} describedBy={problem ? hint : undefined}
+          dataAttrs={{ "data-ask": askKey }} className="w-full" options={CHOICES[kind]} />
       ) : (
         <input {...common} inputMode="decimal" autoComplete="off" placeholder={kind === "pair" ? "Your number (or two)" : "Your number"}
           onChange={(e) => onChange(e.target.value)} />

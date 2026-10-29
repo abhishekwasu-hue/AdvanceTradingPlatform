@@ -15,6 +15,7 @@ import {
   STANDS_OUT, STATE_LABEL, dayOneApi, headline, listRef, listValue, rowArea, rowText,
   type DayOne, type DayOneList, type DayOneOffer, type DayOneRow, type DayOneWatch,
 } from "./dayOne";
+import { Combobox } from "../ui/Combobox";
 
 type Api = typeof dayOneApi;
 type State = { status: "loading" } | { status: "off" } | { status: "error" } | { status: "ok"; data: DayOne };
@@ -173,14 +174,8 @@ export function SetupView({ data, busy = false, problem = null, onAdopt, onCance
           </fieldset>
           <div className="space-y-space-1">
             <label htmlFor={listId} className="block text-t14 font-semibold text-fg">List to watch</label>
-            <select id={listId} value={list} onChange={(e) => setList(e.target.value)}
-              className="min-h-11 w-full rounded-control border border-border bg-surface-1 px-space-3 text-t14 text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:w-96">
-              {groups.map(([group, items]) => (
-                <optgroup key={group} label={group}>
-                  {items.map((l) => <option key={listValue(l)} value={listValue(l)}>{l.name}</option>)}
-                </optgroup>
-              ))}
-            </select>
+            <Combobox id={listId} label="List to watch" value={list} onChange={setList} className="w-full md:w-96"
+              options={listOptions(groups)} />
             {chosen && chosen.count > data.max_watch && (
               <p className="text-t12 text-fg-muted">The first {data.max_watch} symbols of this list are read.</p>
             )}
@@ -238,6 +233,13 @@ function groupLists(lists: DayOneList[]): [string, DayOneList[]][] {
   for (const l of lists) out.set(l.group, [...(out.get(l.group) ?? []), l]);
   return [...out.entries()];
 }
+
+/** The "List to watch" rows, under their groups ("Indices", "My lists"), with the member count in the name. */
+export function listOptions(groups: [string, DayOneList[]][]): { value: string; label: string; group: string }[] {
+  return groups.flatMap(([group, items]) => items.map((l) => ({ value: listValue(l), label: l.name, group })));
+}
+
+export const listGroups = groupLists;
 
 /** His watch: the headline, the rows that stand out, the rest folded. */
 export function WatchView({ watch, canAct = true, busy = false, problem = null, onRefresh, onChange, onStop }: {

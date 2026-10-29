@@ -4,7 +4,7 @@ import { mockApi } from "./mockApi";
 import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
 import { warnOnManySolidBrand } from "./solidBrand";
-import { comboOptions, expectComboValue, pickOption } from "./combobox";
+import { comboOptions, expectComboValue, pickOption, choose } from "./combobox";
 
 // Chart + colour order Part 3 (CC-8): a warning annotation, never a failure, when a screen shows more than one solid
 // brand button (the one main action per screen).
@@ -462,10 +462,10 @@ test.describe("TF-1: one timeframe control (favourites + grouped dropdown)", () 
     await expect(group.getByRole("button", { name: "3 min", exact: true })).toBeVisible();
     await menu.getByRole("menuitem", { name: "Add custom interval" }).click();
     await page.getByLabel("Interval length").fill("2");
-    await page.getByLabel("Interval unit").selectOption("hours");
+    await choose(page, page.getByLabel("Interval unit"), "hours");
     await menu.getByRole("button", { name: "Add", exact: true }).click();
     await expect(menu.getByRole("alert")).toHaveText(/A 2 hours chart is not available yet/);
-    await page.getByLabel("Interval unit").selectOption("minutes");
+    await choose(page, page.getByLabel("Interval unit"), "minutes");
     await page.getByLabel("Interval length").fill("30");
     await menu.getByRole("button", { name: "Add", exact: true }).click();
     await expect(menu).toHaveCount(0);
@@ -538,7 +538,7 @@ test.describe("v2 Charts 1440: watchlist and drawing rail (UI2-4c)", () => {
     // Review: the edits did not each ask for prices again (the route allows 30 a minute; one batch per 10 s).
     expect(calls.quotes).toHaveLength(1);
     // The other list.
-    await page.getByRole("combobox", { name: "Watchlist" }).selectOption({ label: "Banks (2)" });
+    await choose(page, page.getByRole("combobox", { name: "Watchlist" }), { label: "Banks (2)" });
     await expect(rows(page)).toHaveText([/HDFCBANK/, /ICICIBANK/]);
   });
 
@@ -698,7 +698,7 @@ test.describe("v2 Charts 1440: system watchlists (WL1)", () => {
     await page.getByRole("searchbox", { name: "Search in Banking" }).fill("made-up bank b");
     await expect(rows(page)).toHaveText([/ICICIBANK/]);
     await page.getByRole("searchbox", { name: "Search in Banking" }).fill("");
-    await page.getByRole("combobox", { name: "Sort the list" }).selectOption({ label: "A to Z" });
+    await choose(page, page.getByRole("combobox", { name: "Sort the list" }), { label: "A to Z" });
     await expect(rows(page)).toHaveText([/AXISBANK/, /HDFCBANK/, /ICICIBANK/, /SBIN/]);
     // A list is found by name across the groups.
     await chooser(page).click();

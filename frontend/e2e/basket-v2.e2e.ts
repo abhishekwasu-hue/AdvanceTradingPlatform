@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { choose } from "./combobox";
 import { readFileSync } from "node:fs";
 import { mockApi, type MockCalls, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
@@ -187,7 +188,7 @@ for (const [width, height] of [[1440, 900], [390, 844], [360, 800]] as const) {
         const panel = await bullPut(page);
         await panel.locator("[data-tool='compare']").click();
         const compare = panel.locator("[data-basket='compare']");
-        await compare.locator("[data-compare-pick='1']").selectOption({ label: "Bear call spread" });
+        await choose(page, compare.locator("[data-compare-pick='1']"), { label: "Bear call spread" });
         await expect(compare.locator("[data-figure-row='Breakevens'] td")).toHaveText(["24,452", "24,528"]);
         await expect(compare.locator("[data-figure-row='Probability of profit'] td")).toHaveText(["58.0%", "58.0%"]);
         // The engine was asked for the bear call's numbers; nothing was checked for placing or placed.

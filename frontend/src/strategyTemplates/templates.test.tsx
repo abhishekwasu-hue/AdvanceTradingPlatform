@@ -2,7 +2,7 @@ import { createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
-import { StartBotV2 } from "../paperbot/PaperBotV2";
+import { StartBotV2, strategyOptions } from "../paperbot/PaperBotV2";
 import pageSource from "../paperbot/PaperBotV2.tsx?raw";
 import { TEMPLATE_ID_PREFIX, botName, isTemplateId, templateOf } from "../paperbot/model";
 import type { StrategyInfo } from "../types";
@@ -40,12 +40,12 @@ describe("strategy templates: ids and names", () => {
 
 describe("strategy templates: the paper bot form", () => {
   const render = (templates: StrategyTemplate[]) => renderToStaticMarkup(<MemoryRouter><StartBotV2 library={[intraday]} custom={[]} hasBroker
-    firstField={createRef<HTMLSelectElement>()} onStarted={noop} templates={templates} /></MemoryRouter>);
+    firstField={createRef<HTMLButtonElement>()} onStarted={noop} templates={templates} /></MemoryRouter>);
 
   it("lists the templates in their own group, only when there are any", () => {
     const html = render([D2]);
-    expect(html.match(/<optgroup label="Strategy templates">[\s\S]*?<\/optgroup>/)?.[0]).toContain("Moving-average crossover");
-    expect(render([])).not.toContain("Strategy templates");
+    expect(strategyOptions([intraday], [], [], [D2]).filter((r) => r.group === "Strategy templates").map((r) => r.label)).toContain("Moving-average crossover");
+    expect(strategyOptions([intraday], [], [], []).some((r) => r.group === "Strategy templates")).toBe(false);
     expect(text(html)).not.toMatch(/template-pick|template:/);
   });
 

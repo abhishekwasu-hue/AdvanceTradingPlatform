@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { choose, expectChoice } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -134,9 +135,9 @@ test.describe("Paper bot behaviour", () => {
     await expect(bots(page)).toContainText("Start a paper bot below");
     await page.getByRole("button", { name: "Start a paper bot" }).click();
     await expect(form(page).getByLabel("Pick a strategy")).toBeFocused();
-    await expect(form(page).getByLabel("Pick a strategy")).toHaveValue("orb_15m_5m");
+    await expectChoice(form(page).getByLabel("Pick a strategy"), "orb_15m_5m");
     await expect(form(page)).toContainText("Waits for the first 15 minutes' range to break");
-    await form(page).getByLabel("Pick a symbol").selectOption("NIFTY BANK");
+    await choose(page, form(page).getByLabel("Pick a symbol"), "NIFTY BANK");
     await expect(form(page)).toContainText("Trades a NIFTY BANK option at the nearest expiry, 1 lot");
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Started on paper: NIFTY BANK.");
@@ -145,9 +146,9 @@ test.describe("Paper bot behaviour", () => {
       instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1 });
     await expect(bots(page).locator("[data-bot]")).toHaveCount(1);
 
-    await form(page).getByLabel("Pick a strategy").selectOption("swing_ema_pullback_d");
-    await expect(form(page).getByLabel("Pick a symbol")).toHaveValue("RELIANCE");
-    await form(page).getByLabel("Pick a symbol").selectOption("__other__");
+    await choose(page, form(page).getByLabel("Pick a strategy"), "swing_ema_pullback_d");
+    await expectChoice(form(page).getByLabel("Pick a symbol"), "RELIANCE");
+    await choose(page, form(page).getByLabel("Pick a symbol"), "__other__");
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Pick or type a symbol.");
     await form(page).getByLabel("Type the symbol").fill("tcs");

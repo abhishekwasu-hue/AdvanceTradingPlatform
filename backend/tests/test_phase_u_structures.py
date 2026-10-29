@@ -238,14 +238,14 @@ def test_deployment_api_custom_legs_and_preview(monkeypatch):
     assert ratio.status_code == 201 and "call ratio spread, buy 1 ATM CE / sell 2 2 step(s) higher" in ratio.json()["contract_rules"]
 
     monkeypatch.setattr("app.deployments.routes.build_adapter", lambda record, client=None: _WingBroker())
-    preview = client.post("/api/deployments/preview-contract", headers=headers, json={
+    preview = client.post("/api/deployments/preview-contract", headers=headers, params={"as_of": TODAY.isoformat()}, json={
         "symbol": "NIFTY 50", "instrument_kind": "OPTION", "option_strategy": "CALL_RATIO_SPREAD", "spread_width": 2, "spot": SPOT,
         "target_credit_pct": 50, "stop_credit_pct": 100,   # DEF-0: the old built-in levels, set by the trader
     }).json()
     long_side = preview["structures"]["LONG"]
     assert [l["ratio"] for l in long_side["legs"]] == [1, 2] and long_side["metrics"]["pnl_stop"] == -130.0 and long_side["metrics"]["max_loss"] is None
     assert "not entered on a SHORT" in preview["structures"]["SHORT"]["error"]
-    custom_preview = client.post("/api/deployments/preview-contract", headers=headers, json={
+    custom_preview = client.post("/api/deployments/preview-contract", headers=headers, params={"as_of": TODAY.isoformat()}, json={
         "symbol": "NIFTY 50", "instrument_kind": "OPTION", "option_strategy": "CUSTOM", "custom_legs": legs, "spot": SPOT,
     }).json()
     assert custom_preview["structures"]["SHORT"]["metrics"]["net_credit"] == 110.0 and "custom structure" in custom_preview["rules"]

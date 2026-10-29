@@ -802,6 +802,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/signals/day-one/refresh"): "trader",
     ("DELETE", "/api/signals/day-one"): "trader",
     ("GET", "/api/status"): P_STATUS_PAGE,
+    ("GET", "/api/status/sessions"): ("public: AUD-T8 uptime per market session from the worker's own samples, the SLO targets and "
+                                      "the degradation notice - platform-wide only, no user, organisation or price (rate limited)"),
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
     ("GET", "/api/strategies/{strategy_id}"): P_STRATEGY_CATALOGUE,
     ("POST", "/api/strategies/{strategy_id}/chart-run"): P_STRATEGY_CATALOGUE,

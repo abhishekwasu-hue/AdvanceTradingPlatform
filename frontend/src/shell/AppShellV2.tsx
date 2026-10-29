@@ -11,6 +11,7 @@ import type { Page } from "../components/Sidebar";
 import LegalAcceptanceBanner from "../legal/LegalAcceptanceBanner";
 import OneTimeNoticesV2 from "../notices/OneTimeNoticesV2";
 import LivePricesBanner from "../live/LivePricesBanner";
+import DegradedNotice from "../status/DegradedNotice";
 import PwaBanners from "../pwa/PwaBanners";
 import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
@@ -228,6 +229,8 @@ export default function AppShellV2() {
           <OneTimeNoticesV2 />
           {/* TM Part 1 (flag data_hub): the one notice while live prices reconnect or the broker login needs renewing. */}
           <LivePricesBanner enabled={!!user && features.on("data_hub")} />
+          {/* AUD-T8 (flag status_page): the one notice while the engine or market data is late during an open market. */}
+          <DegradedNotice enabled={!!user && features.on("status_page")} />
           {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip, and
               SCR-FIX D2: Find setups clips too, so nothing there can scroll the page sideways. */}
           <main id="main" ref={mainRef} tabIndex={-1}

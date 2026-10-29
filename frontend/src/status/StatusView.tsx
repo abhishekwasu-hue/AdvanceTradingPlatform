@@ -1,10 +1,14 @@
 import { AlertTriangle, CheckCircle2, CircleHelp, Wrench, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { LogoMark } from "../components/Logo";
+import { Details } from "../ui/Details";
 import {
   COMPONENT_NAMES, STATE_LABEL, STATE_TONE, checkedAt, eodLine, incidentText, marketLine, pageHeadline,
   type ComponentState, type StatusLoad,
 } from "./publicStatus";
+import {
+  SESSION_LABEL, SESSION_TONE, headlineUptime, measuredLine, nextOpenLine, sessionDayLine, type SessionsLoad, type StatusSessions,
+} from "./sessions";
 
 /** Z10-e (G7): the public status page body. Presentational only (the page fetches), so it renders on the server in
  * tests. Every state is said in words next to its icon; colour is never the only signal. */
@@ -38,7 +42,67 @@ function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-export function StatusView({ load }: { load: StatusLoad }) {
+/** AUD-T8: uptime per market session (one shared line of measurements, then one row per market) and the service
+ * targets. The state and this session's uptime stay open; past sessions and how it is measured live in Details. */
+export function MarketsBlock({ body }: { body: StatusSessions }) {
+  return (
+    <>
+      <section aria-labelledby="markets-title" data-markets className="rounded-xl border border-border bg-surface-1">
+        <div className="p-space-4 pb-0">
+          <h2 id="markets-title" className="text-t14 font-semibold">Markets</h2>
+          <p className="mt-space-1 text-t13 text-fg-muted" data-measured>{measuredLine(body.measured)}</p>
+        </div>
+        <ul className="divide-y divide-border">
+          {body.sessions.map((m) => {
+            const next = nextOpenLine(m);
+            return (
+              <li key={m.key} className="p-space-4" data-market={m.key} data-state={m.state}>
+                <div className="flex items-center justify-between gap-space-3">
+                  <h3 className="text-t14 font-semibold">{m.name}</h3>
+                  <span className={`text-t12 font-semibold ${SESSION_TONE[m.state]}`}>{SESSION_LABEL[m.state]}</span>
+                </div>
+                <p className="mt-space-1 text-t13 text-fg" data-uptime>{headlineUptime(m)}</p>
+                {next && <p className="text-t12 text-fg-muted">{next}</p>}
+                {m.recent.length > 1 && (
+                  <Details id={`status.market.${m.key}`} label="Recent sessions">
+                    <ul className="space-y-space-1">
+                      {m.recent.map((s) => <li key={s.opens_at}>{sessionDayLine(s)}</li>)}
+                    </ul>
+                  </Details>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="px-space-4 pb-space-4">
+          <Details id="status.uptime" label="How uptime is measured">
+            <p>Uptime is the share of a session&apos;s minutes in which the trading engine had checked in within the last{" "}
+              {Math.round(body.measured.heartbeat_limit_seconds / 60)} minutes and market data was on time. A minute with no
+              check-in counts as down. Crypto trades around the clock and is counted per day (IST).</p>
+            <p>Minutes before measuring began are not counted.</p>
+          </Details>
+        </div>
+      </section>
+
+      {body.slos.length > 0 && (
+        <section aria-labelledby="targets-title" data-targets className="rounded-xl border border-border bg-surface-1 p-space-4">
+          <h2 id="targets-title" className="text-t14 font-semibold">Service targets</h2>
+          <ul className="mt-space-2 space-y-space-2 text-t13">
+            {body.slos.map((t) => (
+              <li key={t.id} data-slo={t.id}>{t.target}</li>
+            ))}
+          </ul>
+          <Details id="status.targets">
+            <p>These are the targets the platform is built to meet, not guarantees or past results. They are reviewed after
+              the first full month of live trading.</p>
+          </Details>
+        </section>
+      )}
+    </>
+  );
+}
+
+export function StatusView({ load, sessions }: { load: StatusLoad; sessions?: SessionsLoad }) {
   if (load.kind === "loading") {
     return (
       <Shell>
@@ -133,7 +197,8 @@ export function StatusView({ load }: { load: StatusLoad }) {
                 {key === "data_feed" && (
                   <ul className="mt-2 space-y-0.5 text-xs text-fg-muted">
                     <li>{eodLine(feed.eod.date)}</li>
-                    <li>{marketLine(feed.market_open)}</li>
+                    {/* AUD-T8: the Markets block says each market's state; not repeated here. */}
+                    {sessions?.kind !== "ok" && <li>{marketLine(feed.market_open)}</li>}
                     <li>{feed.tier_a.summary}</li>
                   </ul>
                 )}
@@ -142,6 +207,8 @@ export function StatusView({ load }: { load: StatusLoad }) {
           })}
         </ul>
       </section>
+
+      {sessions?.kind === "ok" && <MarketsBlock body={sessions.body} />}
     </Shell>
   );
 }

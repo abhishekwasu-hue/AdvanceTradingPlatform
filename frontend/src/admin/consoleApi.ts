@@ -6,7 +6,7 @@ import type { ServerView } from "../api/viewAs";
  * with two-factor on the server); Testing tools and Support reuse the admin endpoints that already exist.
  */
 
-export type AdminSection = "system" | "controls" | "users" | "testing" | "support";
+export type AdminSection = "system" | "controls" | "users" | "testing" | "support" | "compliance";
 
 export const ADMIN_SECTIONS: { id: AdminSection; label: string; hint: string }[] = [
   { id: "system", label: "System", hint: "Alerts, health, workers, the data feed and the platform go-live checklist" },
@@ -14,6 +14,7 @@ export const ADMIN_SECTIONS: { id: AdminSection; label: string; hint: string }[]
   { id: "users", label: "Users & business", hint: "People, organisations, plans and AI cost" },
   { id: "testing", label: "Testing tools", hint: "Read-only state of the operator tools" },
   { id: "support", label: "Support", hint: "Tickets, support contact and one person's status" },
+  { id: "compliance", label: "Compliance", hint: "Algo trading readiness per broker, the go-live checklist and the audit-trail exports" },
 ];
 
 export function isAdminSection(value: string | null): value is AdminSection {

@@ -9,3 +9,6 @@ What is known:
 - P1 (= AUD-V2): open P&L after hours from the stored TradeRecord.mark_price, labelled "last mark HH:MM", counted as priced.
 
 Roadmap: row PX-1 (docs/ROADMAP.md).
+
+29 Oct: the owner confirmed the text is not with him; searched trade-data (every branch), every ATP branch, the Trade repo and
+the session transcripts - not found. Scope = the quoted items above (DECISIONS 29 Oct).

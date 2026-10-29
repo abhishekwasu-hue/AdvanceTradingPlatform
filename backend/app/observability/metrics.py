@@ -76,6 +76,14 @@ ALERT_DELIVERIES = _counter("alert_deliveries", "Out-of-app alert deliveries by 
 # PW6: install/update events the installed app reports (POST /api/pwa/events). Both labels are closed enums; nothing
 # that identifies a user or a device is recorded.
 PWA_EVENTS = _counter("pwa_events", "PWA install/update events by event and platform family (android/ios/desktop/other)", ("event", "platform"))
+# AUD-G1.5 (owner audit 28 Oct): Core Web Vitals measured in real browsers (POST /api/pwa/vitals). Labels are closed
+# enums (page family, phone / desktop); nothing that identifies a user, a device or a URL is recorded.
+WEB_VITAL_LCP = _histogram("web_vital_lcp_seconds", "Largest Contentful Paint by page and device", ("page", "device"),
+                           buckets=(0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 6.0, 10.0))
+WEB_VITAL_INP = _histogram("web_vital_inp_seconds", "Interaction to Next Paint by page and device", ("page", "device"),
+                           buckets=(0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0))
+WEB_VITAL_CLS = _histogram("web_vital_cls", "Cumulative Layout Shift by page and device", ("page", "device"),
+                           buckets=(0.01, 0.05, 0.1, 0.15, 0.25, 0.5, 1.0))
 
 # --- AI and billing (Phase O4 / V4.11) --------------------------------------------------------
 AI_PROVIDER_CALLS = _counter("ai_provider_calls", "LLM provider calls by provider and outcome", ("provider", "outcome"))

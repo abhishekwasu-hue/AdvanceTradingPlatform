@@ -7,6 +7,7 @@ import "@fontsource-variable/jetbrains-mono";
 import "./styles/index.css";
 import { initAppearance } from "./theme";
 import { startPwaEvents } from "./pwa/events";
+import { startWebVitals } from "./pwa/webVitals";
 import { initPwa } from "./pwa/pwa";
 import { isNativeApp } from "./native/platform";
 
@@ -16,6 +17,7 @@ function start(app: ReactNode) {
   // PW6: install/update metrics are the browser's; the Android app's versions are its own (plan §9)
   if (!isNativeApp()) {
     try { startPwaEvents(); } catch { /* PW6: install/update metrics are best effort */ }
+    try { startWebVitals(); } catch { /* AUD-G1.5: Core Web Vitals are best effort */ }
   }
 
   ReactDOM.createRoot(document.getElementById("root")!).render(

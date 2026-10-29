@@ -9,3 +9,6 @@ What is known:
 - AP1 (= AUD-V1): the Autopilot decides on the still-forming bar - trim every bar whose start + timeframe > now before analyze; parity test backtest == worker on the same closed bars. AP4 / AP7: merged into DEF-0 (ATP_ORDER_DEF0.md).
 
 Roadmap: row AP-FIX (docs/ROADMAP.md).
+
+29 Oct: the owner confirmed the text is not with him; searched trade-data (every branch), every ATP branch, the Trade repo and
+the session transcripts - not found. Scope = the quoted items above (DECISIONS 29 Oct).

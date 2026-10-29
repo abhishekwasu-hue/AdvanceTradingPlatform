@@ -9,3 +9,6 @@ What is known:
 - (no item text in the audit order)
 
 Roadmap: row CP-FIX (docs/ROADMAP.md).
+
+29 Oct: the owner confirmed the text is not with him; searched trade-data (every branch), every ATP branch, the Trade repo and
+the session transcripts - not found. Scope = the quoted items above (DECISIONS 29 Oct).

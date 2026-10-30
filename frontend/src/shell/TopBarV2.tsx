@@ -7,7 +7,7 @@ import type { SystemStatus, UserResponse } from "../types";
 import { COMMAND_HINT, COMMAND_LABEL, currentPlatform, shortcutLabel } from "./CommandBarV2";
 import { initialsOf } from "./SidebarV2";
 import { navItemFor, type ShellKey } from "./navModel";
-import { usePageHelp } from "./pageHelp";
+import { usePageHelp, usePageSubtitle } from "./pageHelp";
 import { HelpPopover } from "../ui/HelpPopover";
 import { sectionChipClass, sectionTintOf } from "../ui/accents";
 import { useColourV2 } from "../ui/colourV2";
@@ -106,6 +106,8 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
   const row = useRef<HTMLDivElement>(null);
   const small = useTitleFits(row, title, colour);
   const help = usePageHelp();
+  // PROSE-1: the page's subtitle sits behind the same (?), first - never a line under the title.
+  const subtitle = usePageSubtitle();
   // UX-7: the price-feed dot, only with live prices on (flag `data_hub`) for a signed-in user.
   const liveOn = useFeatures().on("data_hub") && !!user;
 
@@ -124,10 +126,11 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
         <span data-topbar-title data-title-size={small ? "small" : undefined}
           className={`shrink ${small ? "text-t15 group-data-[title-fit=measure]/bar:text-t18" : "text-t18"} font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:normal] [word-break:normal] md:min-w-0 md:truncate md:py-0" : "min-w-0 truncate"}`}>{title}</span>
         {/* UX-6: the page's help line (and its tips) behind one (?) beside the title - never a paragraph above the data. */}
-        {help && (
+        {(help || subtitle) && (
           <HelpPopover title={title} className="-ml-space-1 shrink-0">
-            <p data-page-help={help.id}>{help.lines.join(" ")}</p>
-            {help.showMe && <a href={help.showMe.href} className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">{help.showMe.label ?? "Show me"}</a>}
+            {subtitle && <p data-page-subtitle>{subtitle}</p>}
+            {help && <p data-page-help={help.id}>{help.lines.join(" ")}</p>}
+            {help?.showMe && <a href={help.showMe.href} className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">{help.showMe.label ?? "Show me"}</a>}
             {onTour && (
               <button type="button" onClick={onTour} data-tour="tour-replay"
                 className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-0">
@@ -136,7 +139,7 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
             )}
           </HelpPopover>
         )}
-        {!help && onTour && (
+        {!help && !subtitle && onTour && (
           <button type="button" onClick={onTour} title="Tips for this page" aria-label="Show the tips for this page" data-tour="tour-replay"
             className={`${iconButton} -ml-space-2 shrink-0`}>
             <CircleHelp size={18} aria-hidden />

@@ -1,6 +1,7 @@
 import { Activity, Database, Eye, Lock, Search, Users } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
+import { Details } from "../ui/Details";
 import { CARD } from "../dashboard/CardV2";
 import { startView } from "../api/viewAs";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
@@ -35,7 +36,8 @@ export function Panel({ title, note, children, id }: { title: string; note?: Rea
   return (
     <section data-console-card={id} aria-label={title} className={`${CARD} p-space-4 md:p-space-5`}>
       <h2 className="text-t15 font-semibold text-fg">{title}</h2>
-      {note && <p className="mt-space-1 text-t12 text-fg-muted">{note}</p>}
+      {/* PROSE-1: the card's explanation sits in its Details, closed by default. */}
+      {note && <Details id={`console.${id ?? title}`}>{note}</Details>}
       <div className="mt-space-3">{children}</div>
     </section>
   );

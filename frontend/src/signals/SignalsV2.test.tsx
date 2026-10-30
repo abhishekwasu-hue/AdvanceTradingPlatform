@@ -95,6 +95,17 @@ describe("UI2-3 detail panel", () => {
     expect(html.match(/min-h-11/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
   });
 
+  it("M55 T2: an option structure proposal lists its legs under Your order; an ordinary one shows no such block", () => {
+    const legs = ["Buy 1 lot DEMO 24400 PE, expiry 1 Oct 2026", "Sell 1 lot DEMO 24500 PE, expiry 1 Oct 2026",
+      "Per lot of the trade. The number of lots is sized from your own risk settings when you approve, at most 1"];
+    for (const compact of [false, true]) {
+      const words = text(inRouter(<SignalDetail item={feedItem({ legs })} now={NOW} compact={compact} canTrade onDone={noop} onError={noop} />));
+      expect(words).toContain("Your order");
+      for (const l of legs) expect(words).toContain(l);
+      expect(text(inRouter(<SignalDetail item={feedItem()} now={NOW} compact={compact} canTrade onDone={noop} onError={noop} />))).not.toContain("Your order");
+    }
+  });
+
   it("a LIVE proposal says so and never promises that nothing reaches the broker", () => {
     const words = text(inRouter(<SignalDetail item={feedItem({ mode: "LIVE" })} proposal={proposal} now={NOW} canTrade onDone={noop} onError={noop} />));
     expect(words).toContain("Approve (paper order)");                // Phase 0: an approved entry is a PAPER order

@@ -6,7 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Union
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +37,7 @@ from app.auth.routes import router as auth_router
 from app.auth.view_as_middleware import ViewSessionReadOnly
 from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, with_template_exits
 from app.backtest.routes import router as backtest_router
+from app.backtest.server_candles import DataChoice
 from app.beta.routes import admin_router as beta_admin_router
 from app.beta.routes import feedback_router, pwa_router
 from app.billing.routes import admin_router as billing_admin_router
@@ -558,14 +559,16 @@ class EnrichSignalRequest(SignalRequest):
     swing_window: int = 3
 
 
-class BacktestRequest(BaseModel):
+class BacktestRequest(DataChoice):
     strategy_id: str
     symbol: str
     base_timeframe: str
-    candles: List[OHLCVBar]
+    # M55 T3: no candles = the server loads them for symbol / timeframe; posted candles = "paste your own data".
+    candles: list[OHLCVBar] = Field(default_factory=list)
     risk_config: Optional[RiskConfig] = None
     strategy_params: Optional[Dict] = None
-    # Phase J: dynamic exits and a label for where the candles came from (recorded on the run).
+    # Phase J: dynamic exits and a label for where the candles came from (recorded on the run). M55 T3: the server sets
+    # the label from what it loaded ("uploaded" for pasted candles); what the client sends here is ignored.
     exit_rules: Optional[ExitRulesBody] = None
     data_source: str = "uploaded"
     # Phase W: present = run the signals as option structures (app/backtest/options_engine.py).
@@ -589,7 +592,8 @@ class CandlesRequest(BaseModel):
     swing_window: int = 3
 
 
-class SRZonesRequest(CandlesRequest):
+class SRZonesRequest(CandlesRequest, DataChoice):
+    candles: list[OHLCVBar] = Field(default_factory=list)      # M55 T3: no candles = the server loads them
     tolerance_pct: float = 0.15
     opening_range_minutes: int = 15
 
@@ -797,6 +801,8 @@ async def backtest(
     if request.strategy_params:
         strategy.params = {**strategy.params, **request.strategy_params}
 
+    from app.backtest import server_candles
+    await server_candles.fill(session, user, request)                  # M55 T3: server-side candles; sets data_source
     base_df = bars_to_dataframe(request.candles)
     risk_config = request.risk_config or _default_risk_config
 
@@ -810,6 +816,7 @@ async def backtest(
     prepared = await run_in_threadpool(warmup.prepare, strategy, base_df, history)
     result = await run_in_threadpool(runner.run, prepared.strategy, prepared.frame)   # CPU-bound pandas work off the event loop (P0.1 / S3)
     result.history = prepared.history()
+    result.data_source = request.data_source
     # Phase J2: the run is recorded (strategy, params, data span, metrics) and metered against the plan.
     result.run_id = await record_run(session, user, body, result)
     await meter(session, user.tenant_id, "backtest", 1, source="api", metadata={"strategy_id": request.strategy_id, "bars": len(request.candles)})
@@ -879,12 +886,24 @@ def _cache_key(prefix: str, payload: str) -> str:
 
 
 @app.post("/api/support-resistance/zones", response_model=List[SRZone])
-async def support_resistance_zones(request: SRZonesRequest, _: User = Depends(get_current_user)) -> List[SRZone]:
+async def support_resistance_zones(request: SRZonesRequest, response: Response, user: User = Depends(get_current_user),
+                                   session: AsyncSession = Depends(get_session)) -> List[SRZone]:
     """Pure function of its input candles, so short-lived results are cached in Redis (when
     reachable - this fails open to a plain recompute otherwise) to avoid rebuilding the same
     swing-cluster/pivot/Fibonacci zones on every identical repeated call.
+    M55 T3: no candles = the server loads them for symbol / timeframe; the `X-Data-Source` header says where they came
+    from ("uploaded" for pasted candles).
     """
-    key = _cache_key("sr_zones", request.model_dump_json())
+    from app.backtest import server_candles
+    if server_candles.mode_of(request, request.candles) == server_candles.PASTE:
+        if not request.candles:
+            raise HTTPException(status_code=422, detail=server_candles.PASTE_NEEDS_CANDLES)
+        source = server_candles.UPLOADED
+    else:
+        request.candles, source, _line = await server_candles.load(session, user, request.symbol, request.timeframe, request)
+    response.headers["X-Data-Source"] = source
+    key = _cache_key("sr_zones", request.model_dump_json(include={"symbol", "candles", "timeframe", "swing_window", "tolerance_pct",
+                                                                   "opening_range_minutes"}))
     cached = await cache_get(key)
     if cached is not None:
         return [SRZone.model_validate(z) for z in json.loads(cached)]
@@ -942,18 +961,24 @@ async def option_chain_greeks(request: GreeksRequest, _: User = Depends(get_curr
 
 
 @app.post("/api/scanner/run", response_model=ScannerResult, dependencies=[Depends(analysis_rate_limit)])
-async def scanner_run(request: ScannerRequest, _: User = Depends(get_current_user)) -> ScannerResult:
+async def scanner_run(request: ScannerRequest, user: User = Depends(get_current_user),
+                      session: AsyncSession = Depends(get_session)) -> ScannerResult:
     """Runs configurable indicator/price-action-structure/option-chain filters across a supplied
     list of symbols (each with its own OHLCV candles and, optionally, option chain) and returns
     only the ones that clear every filter. Indicator filters reuse the exact same `Condition`
     building block the no-code Strategy Builder uses. Pure function of its input - no persistence,
     needs a logged-in caller (P0.1 / S3: CPU-bound work is not offered to anonymous callers).
     """
+    from app.backtest import server_candles
     from app.core import config as app_config
+    source, warnings = await server_candles.fill_scan(session, user, request)     # M55 T3: server-side candles
     if app_config.SCANNER_ENGINE == "screenql":
         from app.scanner.screenql import run_scanner_screenql
-        return await run_in_threadpool(run_scanner_screenql, request)
-    return await run_in_threadpool(run_scanner, request)
+        result = await run_in_threadpool(run_scanner_screenql, request)
+    else:
+        result = await run_in_threadpool(run_scanner, request)
+    result.data_source, result.warnings = source, warnings
+    return result
 
 
 @app.get("/api/broker/available")

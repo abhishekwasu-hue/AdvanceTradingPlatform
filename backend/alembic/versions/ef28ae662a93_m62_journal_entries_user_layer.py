@@ -14,7 +14,7 @@ Rollback caveats:
   are lost (the image files stay in the private store, unreferenced).
 
 Revision ID: ef28ae662a93
-Revises: f4b6d8a0c2e3
+Revises: c7e9a1b3d5f7
 Create Date: 2026-10-30 18:00:00
 """
 from typing import Sequence, Union
@@ -23,7 +23,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'ef28ae662a93'
-down_revision: Union[str, Sequence[str], None] = 'f4b6d8a0c2e3'
+down_revision: Union[str, Sequence[str], None] = 'c7e9a1b3d5f7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 ROLLBACK_SAFE = True     # Z11: new tables and nullable columns only - the previous release's code keeps working

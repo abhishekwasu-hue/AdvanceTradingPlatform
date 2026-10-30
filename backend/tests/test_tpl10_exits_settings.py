@@ -69,6 +69,8 @@ def _hash(result) -> str:
     data = result.model_dump(mode="json", exclude={"reproducibility", "run_id"})
     if data.get("history") is None:
         data.pop("history", None)                             # REV-S3 added the field (None on these engine-level runs)
+    if data.get("data_source") is None:
+        data.pop("data_source", None)                         # M55 T3 added the field (set by the routes only)
     if isinstance(data.get("options"), dict) and data["options"].get("engine_version") == "9-options":
         data["options"]["engine_version"] = "8-options"      # P1-2b bumped the label; the pins were recorded under 8
     return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:16]

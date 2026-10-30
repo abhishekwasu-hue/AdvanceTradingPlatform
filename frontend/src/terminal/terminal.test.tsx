@@ -24,6 +24,7 @@ import { terminalLevels } from "./chartLevels";
 import exitAllSource from "../trading/ExitAllV2.tsx?raw";
 import { ExitAllV2, exitableRows } from "../trading/ExitAllV2";
 import listSource from "../trading/PositionsV2.tsx?raw";
+import basketSource from "../fno/BasketPanelV2.tsx?raw";
 import type { TradeRecord } from "../types";
 import type { OptionChainData } from "../optionChain/useOptionChain";
 import { strategyDisplayName } from "../ui/strategyName";
@@ -456,7 +457,9 @@ describe("owner fixes T1-2 .. T1-7", () => {
     expect(draftProblems(newDraft("BUY"))[0]).toBe(PRODUCT_MISSING);
     expect(draftProblems(newDraft("BUY", { product: "MIS" }))).not.toContain(PRODUCT_MISSING);
     expect(PRODUCT_UNSET_TEXT).toMatch(/^Pick MIS or NRML/);
-    expect(pageSource).toMatch(/ticketPrefill\(useTradingDefaults/);
+    // TERM-2 step 2: the Terminal's basket panel is the one basket, which starts from his trading defaults itself.
+    expect(basketSource).toMatch(/ticketPrefill\(useTradingDefaults/);
+    expect(pageSource).toContain("<BasketPanelV2 embedded");
   });
 
   it("T1-6: plain words - \"Manual trade\", \"no stop\" (never the one-tick placeholder)", () => {

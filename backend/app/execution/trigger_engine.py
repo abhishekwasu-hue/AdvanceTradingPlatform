@@ -38,7 +38,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import time as monotonic
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -48,7 +47,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.base import BrokerInterface
-from app.core.config import TRIGGER_ACK_TIMEOUT_SECONDS, WORKER_CYCLE_SECONDS
+from app.core.config import TRIGGER_ACK_TIMEOUT_SECONDS, TRIGGER_STALL_SECONDS, TRIGGER_TICK_MAX_AGE_SECONDS, TRIGGER_TICK_SECONDS
 from app.db.models import GroupExitRecord, PaperRestingOrderRecord, TradeRecord, User, WorkerHeartbeatRecord
 from app.execution import group_exits as gx
 from app.execution import resting_book as book
@@ -60,9 +59,6 @@ logger = logging.getLogger(__name__)
 ENGINE_NAME = "trigger_engine"
 PriceFn = Callable[[str, str], Awaitable[float]]
 CandleFn = Callable[[str, str], Awaitable[Sequence[Any]]]
-TRIGGER_TICK_SECONDS = float(os.environ.get("TRIGGER_TICK_SECONDS", "1"))
-TRIGGER_TICK_MAX_AGE_SECONDS = float(os.environ.get("TRIGGER_TICK_MAX_AGE_SECONDS", "5"))
-TRIGGER_STALL_SECONDS = int(os.environ.get("TRIGGER_STALL_SECONDS", str(WORKER_CYCLE_SECONDS * 3)))
 HEARTBEAT_EVERY_SECONDS = 5.0
 STALL_TITLE = "Your waiting orders are not being watched right now"
 

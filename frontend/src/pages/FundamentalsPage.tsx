@@ -4,6 +4,7 @@ import { fundamentalsApi } from "../api/fundamentalsClient";
 import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile, Disclaimer, signClass, signTone } from "../components/ui";
 import { PageHeader, SkeletonRows } from "../components/primitives";
+import { DCF_FIELDS, EMPTY_DCF, dcfAssumptionsFrom, numberOrNull, type DcfInputs } from "./fundamentalsInputs";
 import {
   defaultCalendarEvent,
   defaultCompanyProfile,
@@ -90,21 +91,18 @@ export default function FundamentalsPage() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [screenerError, setScreenerError] = useState<string | null>(null);
 
-  const [marketPrice, setMarketPrice] = useState(300);
+  // REV-1 M2: every input starts empty - nothing is computed on made-up sample numbers (the buttons wait for his own).
+  const [marketPrice, setMarketPrice] = useState<number | null>(null);
   const [valuation, setValuation] = useState<ValuationResult | null>(null);
   const [dcf, setDcf] = useState<DCFResult | null>(null);
-  const [dcfAssumptions, setDcfAssumptions] = useState({
-    base_revenue: 1000, revenue_growth_pct: [10, 10, 8, 8, 6], ebitda_margin_pct: 25,
-    tax_rate_pct: 25, capex_pct_of_revenue: 5, working_capital_pct_of_revenue: 2,
-    wacc_pct: 11, terminal_growth_pct: 4, net_debt: 300, shares_outstanding: 50,
-  });
+  const [dcfInputs, setDcfInputs] = useState<DcfInputs>(EMPTY_DCF);
 
-  const [sectorOutlook, setSectorOutlook] = useState(60);
-  const [macroRisk, setMacroRisk] = useState(60);
-  const [managementScore, setManagementScore] = useState(60);
+  const [sectorOutlook, setSectorOutlook] = useState<number | null>(null);
+  const [macroRisk, setMacroRisk] = useState<number | null>(null);
+  const [managementScore, setManagementScore] = useState<number | null>(null);
   const [score, setScore] = useState<FundamentalScoreResult | null>(null);
-  const [technicalScore, setTechnicalScore] = useState(70);
-  const [technicalDirection, setTechnicalDirection] = useState<"LONG" | "SHORT" | "NO_TRADE">("LONG");
+  const [technicalScore, setTechnicalScore] = useState<number | null>(null);
+  const [technicalDirection, setTechnicalDirection] = useState<"" | "LONG" | "SHORT" | "NO_TRADE">("");
   const [fusion, setFusion] = useState<FusionResult | null>(null);
 
   const [card, setCard] = useState<CompanyIntelligenceCard | null>(null);
@@ -228,6 +226,7 @@ export default function FundamentalsPage() {
   }
 
   async function handleValuation() {
+    if (marketPrice === null) return;
     try {
       setValuation(await fundamentalsApi.valuation(symbol, { market_price: marketPrice }));
     } catch (e) {
@@ -236,14 +235,17 @@ export default function FundamentalsPage() {
   }
 
   async function handleDcf() {
+    const assumptions = dcfAssumptionsFrom(dcfInputs);
+    if (!assumptions) return;
     try {
-      setDcf(await fundamentalsApi.dcf(symbol, dcfAssumptions, marketPrice));
+      setDcf(await fundamentalsApi.dcf(symbol, assumptions, marketPrice ?? undefined));
     } catch (e) {
       setAnalysisError(errorSentence(e));
     }
   }
 
   async function handleScore() {
+    if (sectorOutlook === null || macroRisk === null || managementScore === null) return;
     try {
       const result = await fundamentalsApi.fundamentalScore(symbol, {
         sector_outlook_0_100: sectorOutlook, macro_event_risk_0_100: macroRisk, management_score_0_100: managementScore,
@@ -255,7 +257,7 @@ export default function FundamentalsPage() {
   }
 
   async function handleFusion() {
-    if (!score) return;
+    if (!score || technicalScore === null || !technicalDirection) return;
     try {
       setFusion(await fundamentalsApi.fusion({
         fundamental_score: score.score, technical_score: technicalScore,
@@ -386,7 +388,7 @@ export default function FundamentalsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Fundamental Analysis" description="Institutional-grade company intelligence: business quality, earnings quality, valuation, DCF, red flags, SWOT, and a composite Fundamental Score fused with the technical Signal Score. Every input is entered and cited - nothing here is fetched from a live feed (no SEBI/NSE/BSE credentials are wired in yet)." />
+      <PageHeader title="Company research" description="A company's business quality, earnings quality, valuation, red flags and strengths and weaknesses in one place. Company profiles, shareholding and announcements can be fetched from NSE with Add from NSE; the other figures are the ones you enter, and every calculation runs only on them." />
       <Disclaimer kind="score" />
 
       <Card>
@@ -683,9 +685,9 @@ export default function FundamentalsPage() {
                   <div>
                     <label className="block text-xs text-fg-muted mb-1">Market Price</label>
                     <input type="number" className="w-32 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-                      value={marketPrice} onChange={(e) => setMarketPrice(Number(e.target.value))} />
+                      value={marketPrice ?? ""} onChange={(e) => setMarketPrice(numberOrNull(e.target.value))} />
                   </div>
-                  <button onClick={handleValuation} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
+                  <button onClick={handleValuation} disabled={marketPrice === null} className="disabled:opacity-50 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                     Compute Valuation
                   </button>
                 </div>
@@ -704,20 +706,12 @@ export default function FundamentalsPage() {
 
               <Card title="DCF Calculator">
                 <div className="grid sm:grid-cols-4 gap-2 text-sm mb-3">
-                  <input type="number" placeholder="Base Revenue" className="rounded bg-surface-2 border border-border px-2 py-1.5"
-                    value={dcfAssumptions.base_revenue} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, base_revenue: Number(e.target.value) })} />
-                  <input type="number" placeholder="EBITDA Margin %" className="rounded bg-surface-2 border border-border px-2 py-1.5"
-                    value={dcfAssumptions.ebitda_margin_pct} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, ebitda_margin_pct: Number(e.target.value) })} />
-                  <input type="number" placeholder="WACC %" className="rounded bg-surface-2 border border-border px-2 py-1.5"
-                    value={dcfAssumptions.wacc_pct} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, wacc_pct: Number(e.target.value) })} />
-                  <input type="number" placeholder="Terminal Growth %" className="rounded bg-surface-2 border border-border px-2 py-1.5"
-                    value={dcfAssumptions.terminal_growth_pct} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, terminal_growth_pct: Number(e.target.value) })} />
-                  <input type="number" placeholder="Net Debt" className="rounded bg-surface-2 border border-border px-2 py-1.5"
-                    value={dcfAssumptions.net_debt} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, net_debt: Number(e.target.value) })} />
-                  <input type="number" placeholder="Shares Outstanding" className="rounded bg-surface-2 border border-border px-2 py-1.5"
-                    value={dcfAssumptions.shares_outstanding} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, shares_outstanding: Number(e.target.value) })} />
+                  {DCF_FIELDS.map(([key, label]) => (
+                    <input key={key} type="number" placeholder={label} aria-label={label} className="rounded bg-surface-2 border border-border px-2 py-1.5"
+                      value={dcfInputs[key] ?? ""} onChange={(e) => setDcfInputs({ ...dcfInputs, [key]: numberOrNull(e.target.value) })} />
+                  ))}
                 </div>
-                <button onClick={handleDcf} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handleDcf} disabled={!dcfAssumptionsFrom(dcfInputs)} className="disabled:opacity-50 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                   Run DCF
                 </button>
                 {dcf && (
@@ -769,13 +763,13 @@ export default function FundamentalsPage() {
               <Card title="Fundamental Score inputs (analyst judgment - not computed automatically)">
                 <div className="grid sm:grid-cols-3 gap-3 text-sm">
                   <div><label className="block text-xs text-fg-muted mb-1">Sector Outlook (0-100)</label>
-                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={sectorOutlook} onChange={(e) => setSectorOutlook(Number(e.target.value))} /></div>
+                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={sectorOutlook ?? ""} onChange={(e) => setSectorOutlook(numberOrNull(e.target.value))} /></div>
                   <div><label className="block text-xs text-fg-muted mb-1">Macro/Event Risk (0-100)</label>
-                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={macroRisk} onChange={(e) => setMacroRisk(Number(e.target.value))} /></div>
+                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={macroRisk ?? ""} onChange={(e) => setMacroRisk(numberOrNull(e.target.value))} /></div>
                   <div><label className="block text-xs text-fg-muted mb-1">Management Quality (0-100)</label>
-                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={managementScore} onChange={(e) => setManagementScore(Number(e.target.value))} /></div>
+                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={managementScore ?? ""} onChange={(e) => setManagementScore(numberOrNull(e.target.value))} /></div>
                 </div>
-                <button onClick={handleScore} className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handleScore} disabled={sectorOutlook === null || macroRisk === null || managementScore === null} className="disabled:opacity-50 mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                   Compute Fundamental Score
                 </button>
               </Card>
@@ -802,12 +796,12 @@ export default function FundamentalsPage() {
               <Card title="Fusion with Technical Signal">
                 <div className="grid sm:grid-cols-3 gap-3 text-sm items-end">
                   <div><label className="block text-xs text-fg-muted mb-1">Technical Score (0-100)</label>
-                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={technicalScore} onChange={(e) => setTechnicalScore(Number(e.target.value))} /></div>
+                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={technicalScore ?? ""} onChange={(e) => setTechnicalScore(numberOrNull(e.target.value))} /></div>
                   <div><label className="block text-xs text-fg-muted mb-1">Technical Direction</label>
                     <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={technicalDirection} onChange={(e) => setTechnicalDirection(e.target.value as typeof technicalDirection)}>
-                      <option value="LONG">LONG</option><option value="SHORT">SHORT</option><option value="NO_TRADE">NO_TRADE</option>
+                      <option value="">Choose</option><option value="LONG">Long</option><option value="SHORT">Short</option><option value="NO_TRADE">No trade</option>
                     </select></div>
-                  <button onClick={handleFusion} disabled={!score} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+                  <button onClick={handleFusion} disabled={!score || technicalScore === null || !technicalDirection} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
                     Compute Final Bias
                   </button>
                 </div>

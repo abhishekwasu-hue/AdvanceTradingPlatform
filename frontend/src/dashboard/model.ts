@@ -3,6 +3,7 @@ import type { BrokerGateState } from "../ui/brokerSession";
 import { brokerDisplayName } from "../ui/brokerSession";
 import type { SetupHealthItem } from "../setup/model";
 import { paperOnlyFrom } from "../setup/paperOnly";
+import { pauseReasonDetail } from "../ui/pauseReason";
 import { reasonWords, setupWords } from "../signals/signalText";
 import { EMPTY, formatDateIST, formatLots, formatPrice, formatTimeIST } from "../ui/format";
 import { LEVELS, VIX_BANDS, vixLevel, type VixLevel } from "../ui/levels";
@@ -472,7 +473,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
     rows.push({
       id: "paused", icon: "paused", tone: "warn",
       title: paused.length === 1 ? `Trading bot paused “${botDisplayName(d.strategy_id, d.symbol)}”` : `${paused.length} trading bots are paused`,
-      detail: paused.length === 1 ? (d.pause_reason ? `${d.pause_reason} Nothing else is affected.` : "It stays paused until you resume it.")
+      detail: paused.length === 1 ? (pauseReasonDetail(d.pause_reason) ? `${pauseReasonDetail(d.pause_reason)} Nothing else is affected.` : "It stays paused until you resume it.")
         : "They stay paused until you resume them.",
       action: { label: "Review", to: "/deployments" }, dismissible: true,
     });

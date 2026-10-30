@@ -37,7 +37,7 @@ through the same session, budget and entitlement.
 import asyncio
 import logging
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple, cast
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -52,6 +52,7 @@ from app.brokers.catalog import display_name
 from app.brokers.exceptions import BrokerAuthenticationError
 from app.brokers.gates import data_sources, market_data_open
 from app.brokers.token_lifecycle import build_adapter, data_is_usable, token_is_usable
+from app.core import config
 from app.core.models import OHLCVBar
 from app.core.rate_limit import user_rate_limit
 from app.db.models import BrokerCredentialRecord, User
@@ -85,6 +86,11 @@ INTRADAY_TIMEFRAMES = ("1min", "3min", "5min", "15min", "30min", "60min")
 SUPPORTED_TIMEFRAMES = INTRADAY_TIMEFRAMES + ("day",) + periods.PERIODS
 DAILY_TIMEFRAMES = ("day",) + periods.PERIODS
 INTRADAY_MAX_LOOKBACK_DAYS = 30      # brokers serve one-minute history about a month per request
+# M55 T4: 15M / 30M / 1H of a backfilled index reach further back from the stored index history (own_bars.scope_for:
+# the reader's own rows, else the shared index scope while the data tier is off); the broker's own bars stay first.
+LAKE_EXTEND_TIMEFRAMES = ("15min", "30min", "60min")
+LAKE_ROWS_PER_DAY = 400              # 1-minute rows per calendar day at most (an NSE / BSE session is 375)
+STORED_HISTORY_NOTE = "older bars from ATP's stored index history"
 DAILY_MAX_LOOKBACK_DAYS = 730
 WEEKLY_MAX_LOOKBACK_DAYS = periods.WEEKLY_MAX      # weekly and monthly only: their daily bars come in chunks
 MONTHLY_MAX_LOOKBACK_DAYS = periods.MONTHLY_MAX
@@ -370,6 +376,57 @@ async def _future_bars(service: MarketDataService, fut: index_volume.NearFuture,
     return got.bars
 
 
+def _index_keys(symbols: list[str]) -> dict[str, str]:
+    """M55 T4: {symbol: lake key} of the symbols that are backfilled indices (index_history's keys); others are left out."""
+    from app.market_lake.index_history import is_target_key, lake_key_for
+    out: dict[str, str] = {}
+    for symbol in symbols:
+        try:
+            key = lake_key_for(symbol)
+        except Exception:  # noqa: BLE001 - not an index: no stored history
+            continue
+        if is_target_key(key):
+            out[symbol] = key
+    return out
+
+
+async def _stored_older(session: AsyncSession, user: User, key: str, bars: list[OHLCVBar], days: int, before: date | None,
+                        today: date, now: datetime) -> list[OHLCVBar]:
+    """M55 T4: the stored 1-minute bars of an index older than the broker's first bar, back to `days` before the window's
+    end - the reader's own rows, else the shared index scope (own_bars.scope_for; none while the data tier is on). The
+    broker's bars are never replaced: only minutes before its first bar are added. Empty when nothing is stored."""
+    from app.market_lake import own_bars
+    minute = timedelta(minutes=1)
+    try:
+        scope = await own_bars.scope_for(session, user, key)
+        if scope is None:
+            return []
+        last_day = before or today
+        start = datetime.combine(last_day - timedelta(days=days), datetime.min.time(), tzinfo=IST).astimezone(UTC)
+        if bars:
+            end = _as_utc(bars[0].timestamp)                 # an END at the broker's first start
+        elif before is not None:
+            end = datetime.combine(before, datetime.min.time(), tzinfo=IST).astimezone(UTC)
+        else:
+            end = now
+        if end <= start:
+            return []
+        rows = await own_bars.fetch_rows(session, scope, key, "1m", start, end, limit=LAKE_ROWS_PER_DAY * (days + 1))
+    except Exception:  # noqa: BLE001 - the broker's bars are shown as they are without the stored history
+        logger.exception("Stored index history read failed for %s", key)
+        return []
+    # stamped in the broker's own zone (India time without bars): 15M / 1H buckets are anchored to 09:15 of the FIRST
+    # bar's zone, and one frame never mixes two zones
+    zone = (bars[0].timestamp.tzinfo if bars else None) or IST
+    out = [OHLCVBar(timestamp=(_as_utc(r[0]) - minute).astimezone(zone), open=r[2], high=r[3], low=r[4], close=r[5], volume=float(r[6] or 0)) for r in rows]
+    first_broker = _as_utc(bars[0].timestamp) if bars else None
+    return [b for b in out if first_broker is None or b.timestamp < first_broker]
+
+
+def _as_utc(ts: datetime) -> datetime:
+    return ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+
+
 def _is_contract(symbol: str, exchange: str) -> bool:
     s = symbol.upper()
     return exchange.upper() in ("NFO", "BFO", "MCX", "CDS", "BCD", "NSE_FO", "BSE_FO", "MCX_FO") or (
@@ -425,8 +482,16 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     else:
         lookback = body.lookback_days
         cap = DAILY_MAX_LOOKBACK_DAYS if daily else INTRADAY_MAX_LOOKBACK_DAYS
+    lake_days = 0
+    if period is None and not daily and body.timeframe in LAKE_EXTEND_TIMEFRAMES and lookback > cap and _index_keys(wanted):
+        if byob:
+            from app.market_lake.own_bars import SHARED_OFF_LINE
+            warnings.append(SHARED_OFF_LINE)                 # M55 T4: nothing shared while the data tier is on
+        else:
+            lake_days = min(lookback, config.LAKE_BACKFILL_INTRADAY_DAYS)
     if lookback > cap:
-        warnings.append(f"lookback clamped to {cap} days for {body.timeframe} bars")
+        if not lake_days:
+            warnings.append(f"lookback clamped to {cap} days for {body.timeframe} bars")
         lookback = cap
     base_interval = "day" if daily else "1min"
     # Every broker call of this request takes a token from the credential's API budget (api_budget, shared with /ltp by
@@ -514,6 +579,18 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         await _older_round_robin(service, exchange, window, gots, now, pool=pool, deadline=deadline)
         for got in gots.values():
             _trim_periods(got, period, window)
+    extended = 0
+    if lake_days:
+        keys = _index_keys(list(loaded))
+        for symbol, (got, _fut, _vs) in loaded.items():
+            if symbol in keys:
+                older = await _stored_older(session, user, keys[symbol], got.bars, lake_days, body.before, today, now)
+                if older:
+                    got.bars = merge_bars(older, got.bars)
+                    got.notes.append(STORED_HISTORY_NOTE)
+                    extended += 1
+        if not extended:
+            warnings.append(f"lookback clamped to {INTRADAY_MAX_LOOKBACK_DAYS} days for {body.timeframe} bars")
     for symbol, (got, fut_bars, volume_source) in loaded.items():
         try:
             warnings.extend(f"{symbol}: {note}" for note in got.notes)
@@ -548,7 +625,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     if not fetched and not budget_used:
         warnings.append("every symbol failed - check the symbols are the broker's trading symbols and the session token is valid")
     result = {"source": {"broker": record.broker_name, "account_label": record.account_label}, "exchange": exchange, "timeframe": body.timeframe,
-              "base_interval": base_interval, "lookback_days": lookback, "before": body.before.isoformat() if body.before else None, "fetched_at": datetime.now(timezone.utc).isoformat(),
+              "base_interval": base_interval, "lookback_days": lake_days if extended else lookback, "before": body.before.isoformat() if body.before else None, "fetched_at": datetime.now(UTC).isoformat(),
               "symbols": out, "warnings": warnings,
               "note": "Candles come from your broker's historical API through your own session and are cached for 60 seconds platform-wide."}
     if live is not None:

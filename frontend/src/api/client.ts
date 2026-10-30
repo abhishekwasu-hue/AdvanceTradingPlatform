@@ -1,4 +1,5 @@
 import type { PaperReportCard } from "../paperbot/reportCard";
+import { readAllPages, readNewest, tradesPageQuery } from "./tradesPaging";
 import type { OiAlertLogResponse, OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
   DataRequest,
@@ -597,7 +598,12 @@ export const api = {
 
   logoutMemberEverywhere: (id: number) => request<void>(`/team/members/${id}/logout-all`, { method: "POST" }),
 
-  listTrades: () => request<TradeRecord[]>("/trades"),
+  /** REV-1 M3: one page of /trades, newest first (the server answers at most 500 rows a page). */
+  listTradesPage: (limit: number, offset = 0) => request<TradeRecord[]>(tradesPageQuery(limit, offset)),
+  /** The whole trade history, read page by page (for figures over every trade: booked P&L, the curve). */
+  listTrades: () => readAllPages((limit, offset) => request<TradeRecord[]>(tradesPageQuery(limit, offset))),
+  /** REV-1 M3: the newest `count` trades and whether older ones exist (a list that pages through). */
+  listNewestTrades: (count: number) => readNewest((limit, offset) => request<TradeRecord[]>(tradesPageQuery(limit, offset)), count),
 
   listPositions: () => request<TradeRecord[]>("/positions"),
 
@@ -934,6 +940,9 @@ export const api = {
   // M55 S1: `confirm` is the owner's typed confirmation for switching LIVE on (left out when not given).
   adminSetFlag: (name: string, on: boolean, tenants: number[] = [], confirm?: string) =>
     request<FeatureFlags>(`/admin/controls/flags/${name}`, { method: "PUT", body: JSON.stringify({ on, tenants, confirm }) }),
+  // M55 S1b: the owner grants (or revokes) LIVE for one organisation, with the typed confirmation.
+  adminSetLiveOrg: (tenantId: number, granted: boolean, confirm: string) =>
+    request<FeatureFlags>(`/admin/controls/live-orgs/${tenantId}`, { method: "PUT", body: JSON.stringify({ granted, confirm }) }),
   adminEncryptionStatus: () => request<EncryptionStatus>("/system/encryption"),
   disableMemberTrading: (memberId: number, reason: string) =>
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-disable`, { method: "POST", body: JSON.stringify({ reason }) }),

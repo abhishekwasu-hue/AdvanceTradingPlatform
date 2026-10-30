@@ -14,6 +14,7 @@ import { signalsLinkFor, watchtowerSplit } from "../../signals/watchtower";
 import { useUiV2 } from "../../ui/useFeatures";
 import ProposalCard from "./ProposalCard";
 import { Panel } from "./shared";
+import { formatDateTimeIST } from "../../ui/format";
 
 /**
  * Watchtower: what the monitoring agent proposed (pause a deployment, exit a position, reduce risk, review) as a
@@ -26,7 +27,7 @@ const STATUS_TONE: Record<string, Tone> = { PROPOSED: "warn", APPROVED: "info", 
 const SEVERITY_TONE: Record<string, Tone> = { INFO: "info", WARNING: "warn", CRITICAL: "down", EMERGENCY: "down" };
 
 function when(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "-";
+  return iso ? formatDateTimeIST(iso) : "-";                // REV-1 M3: IST
 }
 
 export default function WatchtowerTab() {

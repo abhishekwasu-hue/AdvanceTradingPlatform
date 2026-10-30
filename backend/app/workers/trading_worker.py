@@ -20,8 +20,8 @@ UI process. Every `WORKER_CYCLE_SECONDS` (default 60, one base candle) one cycle
 5. Bookkeeping: per-deployment last_evaluated/last_signal/last_error, auto-PAUSE after repeated
    failures (with a SYSTEM_FAILURE alert), heartbeat row for the dashboard/ops.
 
-A Redis lock guards against two replicas trading the same deployments; Redis down means the lock
-fails open (single replica assumed) - see app/cache/client.py::cache_acquire_lock.
+A Redis lock guards against two replicas trading the same deployments; Redis down means no new automated
+entries (PAPER and LIVE alike, M55 A18) while exits continue - see app/cache/client.py::cache_try_lock.
 """
 import asyncio
 import copy
@@ -78,7 +78,7 @@ from app.market_lake.recorder import LakeRecorder
 from app.news_feed import service as news_feed
 from app.notifications.service import notify
 from app.observability.metrics import MARKET_DATA_STALE, RETENTION_DELETED, observe_cycle
-from app.plans.limits import live_allowed, tenant_is_active
+from app.plans.limits import live_allowed_for, tenant_is_active
 from app.platform import controls as platform_controls
 from app.platform import phase0_lock
 from app.reconciliation.service import broker_uncertain_reason, reconcile_accounts, run_reconciliation
@@ -104,7 +104,7 @@ NO_NEW_ENTRIES_AFTER = dtime(15, 0)
 SQUARE_OFF_AT = dtime(15, 15)
 
 # A deployment that fails this many cycles in a row is paused rather than retried forever.
-MAX_CONSECUTIVE_FAILURES = 5
+MAX_CONSECUTIVE_FAILURES = app_config.WORKER_MAX_CONSECUTIVE_FAILURES
 # How often a VALID token is re-proven against the broker.
 TOKEN_RECHECK_SECONDS = 300
 RHYTHM_EVERY_MINUTES = 5            # MO4: how often the worker looks for daily-rhythm digests due on Telegram
@@ -182,6 +182,14 @@ def _pre_open(now: datetime) -> bool:
     return ist.weekday() < 5 and dtime(8, 0) <= ist.time() < dtime(9, 15)
 
 
+def _held_spread_expires(trade: TradeRecord, today: date | None) -> bool:
+    """M55 T1: a deployment's structure held for days (SWING legs in a group) settles at the square-off time of its expiry
+    day, as the option backtest settles it (SETTLEMENT_FROM). Single swing positions are unchanged."""
+    expiry = getattr(trade, "expiry", None)
+    return (today is not None and expiry is not None and bool(trade.leg_group_id) and trade.deployment_id is not None
+            and expiry <= today)
+
+
 def _adapter_key(broker_name: str, account_label: str) -> str:
     return broker_name if (account_label or "primary") == "primary" else f"{broker_name}@{account_label}"
 
@@ -229,12 +237,12 @@ class TradingWorker:
     ) -> None:
         self.session_factory = session_factory
         self.cycle_seconds = cycle_seconds
-        # P0.1 / S2: in production/staging a LIVE entry needs the replica lock to be real (Redis reachable);
-        # a single dev/test replica may trade LIVE without Redis as before.
+        # P0.1 / S2: in production/staging a LIVE entry needed the replica lock to be real (Redis reachable). M55 A18: every
+        # new automated entry needs it now, in every environment; the attribute is kept for callers that still pass it.
         self.require_lock_for_live = ENVIRONMENT in HARDENED_ENVIRONMENTS if require_lock_for_live is None else require_lock_for_live
         self._lock_degraded = False
         self._lock_lost = False
-        self._lock_ttl = max(cycle_seconds * 2, 30)
+        self._lock_ttl = max(cycle_seconds * 2, app_config.WORKER_LOCK_TTL_MIN_SECONDS)
         self.redis_guard = RedisGuard()
         self.market_data_factory = market_data_factory
         self.worker_name = worker_name
@@ -429,14 +437,14 @@ class TradingWorker:
     async def run_cycle(self, now: Optional[datetime] = None) -> CycleReport:
         now = now or datetime.now(timezone.utc)
         cycle_started = time.monotonic()
-        lock_ttl = self._lock_ttl = max(self.cycle_seconds * 2, 30)
+        lock_ttl = self._lock_ttl = max(self.cycle_seconds * 2, app_config.WORKER_LOCK_TTL_MIN_SECONDS)
         acquired, reachable = await cache_try_lock(LOCK_KEY, self.holder_id, lock_ttl)
         if not acquired:
             logger.info("Another worker replica holds the lock - skipping this cycle")
             await self._note_stale_lock(lock_ttl)
             return CycleReport(started_at=now, market_open=False, session_reason="lock held elsewhere", skipped_lock=True)
         if self._lock_degraded != (not reachable):
-            logger.warning("Redis %s - the replica lock is %s", "unreachable" if not reachable else "back", "off (LIVE entries paused where required)" if not reachable else "on again")
+            logger.warning("Redis %s - the replica lock is %s", "unreachable" if not reachable else "back", "off (new automated entries paused; exits continue)" if not reachable else "on again")
         self._lock_degraded = not reachable
         self._lock_lost = False
 
@@ -1104,7 +1112,7 @@ class TradingWorker:
     async def _keep_lock(self, session: AsyncSession, report: CycleReport, where: str) -> bool:
         """P0.1 / S2 renewal + H-1 fail-closed. False when the cycle must stop here (another replica holds the lock).
 
-        Renewed: carry on. Redis unreachable: the S2 degraded mode (LIVE entries paused where required). The key gone
+        Renewed: carry on. Redis unreachable: the degraded mode (M55 A18: no new automated entries; exits continue). The key gone
         (evicted at the memory cap): take it back, but no new entries for the rest of this cycle - a second replica
         could have run in the gap - and exits continue. Held by someone else: stop, the holder trades. Both raise the
         CRITICAL (app/workers/redis_guard.py)."""
@@ -1112,7 +1120,7 @@ class TradingWorker:
             return True
         holder, reachable = await cache_lock_holder(LOCK_KEY)
         if not reachable:
-            logger.warning("Redis unreachable %s - the replica lock is off (LIVE entries paused where required)", where)
+            logger.warning("Redis unreachable %s - the replica lock is off (new automated entries paused; exits continue)", where)
             self._lock_degraded = report.lock_degraded = True
             return True
         if holder == self.holder_id:
@@ -1407,7 +1415,8 @@ class TradingWorker:
             # positions on venues still inside their session are monitored as before.
             due_square_off = {f for f in open_families if (cut := intraday_cutoffs(f)[1]) is not None and now_ist.time() >= cut}
             if due_square_off:
-                report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user_id, families=due_square_off)
+                report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user_id, families=due_square_off,
+                                                                      today=now_ist.date())
             monitored = open_families - due_square_off
             if monitored:
                 # Z3 / BT2: on approval-only positions a target asked "Exit now?"; M55 S2 (A8): every exit is automatic now
@@ -1513,7 +1522,7 @@ class TradingWorker:
                     dep.last_error = phase0_lock.WORKER_NOT_EVALUATED
                     await session.commit()
                 continue
-            if dep.mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
+            if dep.mode == ExecutionMode.LIVE.value and not await live_allowed_for(session, tenant):
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"
                 await session.commit()
                 continue
@@ -1527,8 +1536,10 @@ class TradingWorker:
                     dep.last_error = ip_problem
                     await session.commit()
                     continue
-            if dep.mode == ExecutionMode.LIVE.value and self.require_lock_for_live and self._lock_degraded:
-                dep.last_error = "Redis replica lock unavailable - LIVE entries paused this cycle (a second worker could double-trade); exits continue"
+            if self._lock_degraded:
+                # M55 A18: fail closed - without the replica lock a second worker could double-trade, so no new automated
+                # entry (PAPER and LIVE alike, every environment). Exits, stops and square-off above already ran.
+                dep.last_error = "Redis replica lock unavailable - new automated entries paused this cycle (a second worker could double-trade); exits continue"
                 await session.commit()
                 continue
             no_new_after = intraday_cutoffs(family)[0]
@@ -1906,6 +1917,14 @@ class TradingWorker:
             self._why(dep, "position_open", closed_bar, None)
             await session.commit()
             return False
+        opposite = await self._opposite_position(session, dep, signal.direction)
+        if opposite:
+            # M55 S6 (A11): the organisation's own setting (default deny) - one direction per symbol across its bots. Like
+            # "position_open", the signal is read again next cycle (the other bot's position may have closed by then).
+            dep.last_error = opposite
+            self._why(dep, "opposite_position", closed_bar, opposite)
+            await session.commit()
+            return False
         # OI Banner O5: opt-in OI gates before a NEW entry (this path never runs for exits - ADR-0004). Fail-closed.
         if getattr(dep, "oi_gates", None):
             from app.option_chain import oi_gates
@@ -2105,7 +2124,7 @@ class TradingWorker:
             target_credit_pct=dep.target_credit_pct, stop_credit_pct=dep.stop_credit_pct,
             underlying_exit=bool(getattr(dep, "underlying_breach_exit", None)),
             idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", broker=broker, quote_broker=market_data.broker,
-            deployment_id=dep.id, account_id=account_id,
+            deployment_id=dep.id, account_id=account_id, holding=getattr(dep, "holding", None) or "INTRADAY",   # M55 T1
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
@@ -2352,9 +2371,36 @@ class TradingWorker:
         )
         return open_trade is not None
 
+    async def _opposite_position(self, session: AsyncSession, dep: StrategyDeploymentRecord, direction: Any) -> Optional[str]:
+        """M55 S6 (A11): the plain reason a NEW automated entry is held back, or None. Under the organisation's
+        `opposite_positions` setting "deny" (the default, owner order M55; risk_settings) an entry is skipped while another
+        of its bots holds an open position in the same mode on the same underlying in the other direction. Same direction:
+        unchanged. A position with no known direction (a neutral structure) never counts. Reads only - exits never come here."""
+        from app.core.models import OPPOSITE_ALLOW
+        from app.db.models import RiskSettingsRecord
+        from app.portfolio.risk import BEARISH, BULLISH, direction_of, underlying_of_trade
+        wanted = {"LONG": BULLISH, "SHORT": BEARISH}.get(str(getattr(direction, "value", direction) or "").upper())
+        if wanted is None:
+            return None
+        setting = await session.scalar(select(RiskSettingsRecord.opposite_positions).where(RiskSettingsRecord.tenant_id == dep.tenant_id))
+        if setting == OPPOSITE_ALLOW:          # anything else - no row saved yet included - is the default "deny"
+            return None
+        underlying = master.underlying_of(dep.symbol)
+        others = await session.scalars(select(TradeRecord).where(
+            TradeRecord.tenant_id == dep.tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.mode == dep.mode,
+            TradeRecord.deployment_id.is_not(None), TradeRecord.deployment_id != dep.id))
+        for trade in others:
+            held = direction_of(trade)
+            if held in (BULLISH, BEARISH) and held != wanted and underlying_of_trade(trade) == underlying:
+                side = "long" if held == BULLISH else "short"
+                return (f"Skipped: another of your bots already holds a {side} position on {underlying}, and your risk "
+                        "settings allow one direction per symbol")
+        return None
+
     async def _square_off_all(
         self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,
         live_broker: Optional[BrokerInterface], user_id: Optional[int], families: Optional[set] = None,
+        today: date | None = None,
     ) -> int:
         open_trades = list(await session.scalars(
             select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
@@ -2362,10 +2408,13 @@ class TradingWorker:
         venues = await trade_venues(session, open_trades)       # BK2-8: a row without an exchange follows its deployment
         closed = 0
         groups: Dict[str, List[TradeRecord]] = {}
+        expiring: dict[str, list[TradeRecord]] = {}
         for trade in open_trades:
             if families is not None and session_family(venues[trade.id]) not in families:
                 continue
             if (getattr(trade, "holding", None) or "INTRADAY") == "SWING":
+                if _held_spread_expires(trade, today):
+                    expiring.setdefault(trade.leg_group_id, []).append(trade)   # M55 T1: settles on its expiry day
                 continue   # Phase AS: a swing position is held overnight by design
             if trade.leg_group_id:
                 groups.setdefault(trade.leg_group_id, []).append(trade)
@@ -2389,7 +2438,9 @@ class TradingWorker:
                 closed += int(outcome.closed)
             except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
                 logger.error("Square-off of trade %s failed: %s", trade_id, exc)
-        for group_id, legs in groups.items():
+        jobs = [(gid, legs, "Intraday square-off") for gid, legs in groups.items()]
+        jobs += [(gid, legs, "Expiry settlement") for gid, legs in expiring.items()]
+        for group_id, legs, reason in jobs:
             # MED-1 (naked-short guard): a structure's legs close through close_group - shorts first, and its wings are
             # held while a LIVE short has not closed (selling them first would leave a naked short).
             prices: Dict[int, float] = {}
@@ -2400,7 +2451,7 @@ class TradingWorker:
                     logger.warning("Square-off: no price for %s (%s) - left open", leg.symbol, exc)
             try:
                 async with guarded(session, keep=tuple(legs)):
-                    outcomes = await close_group(session, legs, prices, "Intraday square-off", broker=live_broker, user_id=user_id)
+                    outcomes = await close_group(session, legs, prices, reason, broker=live_broker, user_id=user_id)
                 closed += sum(int(o.closed) for o in outcomes)
             except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
                 logger.error("Square-off of group %s failed: %s", group_id, exc)

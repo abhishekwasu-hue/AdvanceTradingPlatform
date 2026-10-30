@@ -30,6 +30,16 @@ Owner 30 Oct: work through the full review as one roadmap group: High first, the
 | REV-S5 | Phone title wraps ("Paper / bot", "Find / setups"); badge "MULTI-TIMEFRAME" wraps | Fixed in the shared header and badge components; before / after at 375 px. |
 | REV-S6 | Tested result after costs on the strategy cards | Owner decision only: REVQ-3 (default: no change). |
 
+## Built-in strategy additions (owner 30 Oct, review section 4; part of M2)
+| ID | Item | Fix |
+|---|---|---|
+| REV-B1 | "Why this signal" empty for built-in signals (signal_language_v2 drops reason lines with digits) | Each built-in writes its reasons in structure words (no periods, no prices; an area only as a range). Test with the real reason lines of all 13 strategies. |
+| REV-B2 | min_rr on the built-ins can never act (two fixed constants) | Removed from the built-ins and from the Strategies page. |
+| REV-B3 | VWAP + Supertrend on an index: the line is a running mean of the typical price | Named truthfully in the reasons and the description (default, REVQ-4); the near-month future's volume only on the owner's yes. |
+| REV-B4 | Ready-made Swing EMA pullback line | Also says it reads the downtrend mirror (taken on an option / future, skipped on shares). |
+| REV-B5 | RSI = 100 with no gains and no losses | A neutral 50 (indicators/momentum.py); test. |
+| REV-B6 | The built-ins' own stop / target / indicator numbers | Same item as D2: follows the owner's D2 answer, nothing extra. |
+
 ## M2 — Medium, page by page (order as in the review)
 Paper bot / Signals (pause-reason text + its test; phone chip + button text) · Charts (server reason shown instead of
 "check the symbol") · Option chain (no-session vs plan; stale numbers marked old with the real reason) · Sectors &

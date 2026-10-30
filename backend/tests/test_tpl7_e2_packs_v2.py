@@ -548,9 +548,9 @@ def test_the_new_members_run_exactly_as_on_their_own():
 
 
 def test_a1_is_not_a_member_yet():
-    """F1's order names A1 too; A1 (areas) is not in the library yet (TPL-Q23), so it is not a `source` (TPL-Q50)."""
-    with pytest.raises(KeyError):
-        library.get("A1")
+    """F1's order names A1 too; A1 (areas) is in the library since M55 T5, but adding it to the pack is a new pack version
+    the owner has not ordered (TPL-Q50), so it is still not a `source`."""
+    assert library.get("A1").id == "A1"
     assert "A1" not in packs.MEMBERS["F1"].values() and set(packs.MEMBERS["F1"].values()) == {"D1", "D3"}
     assert set(packs.MEMBERS["F2"].values()) == {"A2", "E3"}
 

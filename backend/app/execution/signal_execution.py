@@ -25,7 +25,7 @@ from app.instruments.registry import get_contract_spec
 from app.kill_switch.checks import active_kill_switch_reasons
 from app.notifications.service import notify
 from app.observability.metrics import ORDER_ENTRY_LATENCY, ORDERS
-from app.plans.limits import live_allowed, tenant_is_active
+from app.plans.limits import live_allowed_for, tenant_is_active
 from app.platform.controls import clamp_config, risk_ceilings
 from app.platform.controls import entry_blocks as platform_entry_blocks
 from app.reconciliation.service import broker_uncertain_reason, mark_broker_uncertain
@@ -61,7 +61,7 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
             reasons.extend(await by_default.entry_refusals(session, user, reserve=reserve and not reasons))
     if tenant is not None and not tenant_is_active(tenant):
         reasons.append(f"Organisation is {tenant.status}: no new orders")
-    if mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
+    if mode == ExecutionMode.LIVE.value and not await live_allowed_for(session, tenant):
         reasons.append("Plan does not include live trading - order refused")
     if mode == ExecutionMode.LIVE.value and config.ALGO_ID_REQUIRED_FOR_LIVE:
         # D1: the registered id, or the broker's generic one while the OPS throttle keeps us under the threshold.

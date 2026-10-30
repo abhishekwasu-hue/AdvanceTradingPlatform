@@ -168,6 +168,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/admin/controls/brokers"): "admin",
     ("GET", "/api/admin/controls/flags"): "admin",
     ("PUT", "/api/admin/controls/flags/{name}"): "admin",
+    ("PUT", "/api/admin/controls/live-orgs/{tenant_id}"): "admin",          # M55 S1b: the owner's LIVE grant
     ("PUT", "/api/admin/controls/maintenance"): "admin",
     ("GET", "/api/admin/controls/marketplace-terms"): "admin",
     ("PUT", "/api/admin/controls/marketplace-terms"): "admin",

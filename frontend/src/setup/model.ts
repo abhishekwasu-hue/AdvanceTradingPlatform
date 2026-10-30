@@ -292,12 +292,16 @@ export const SUGGESTIONS: readonly StrategySuggestion[] = [
   { style: "Intraday", strategyId: "vwap_supertrend_5m", symbol: "NIFTY 50", timeframe: "1min",
     line: "Trades NIFTY 50 during the day and closes before the market does." },
   { style: "Swing", strategyId: "swing_ema_pullback_d", symbol: "RELIANCE", timeframe: "day",
-    line: "Buys RELIANCE on a pullback in an uptrend and holds for days." },
+    line: "Looks for a pullback inside an uptrend on RELIANCE and holds for days." },
   { style: "Options", strategyId: "orb_15m_5m", symbol: "NIFTY 50", timeframe: "1min", option: true,
-    line: "Buys a NIFTY 50 option at the nearest expiry when the first 15 minutes' range breaks." },
+    line: "Looks for a break of the first 15 minutes' range on NIFTY 50; you choose the option on the Trading bot form." },
 ];
 
-/** The deployment "Start on Paper Autopilot" creates. Always PAPER: this screen never offers LIVE. */
+/** REV-1 M2 (decision D3): Setup's "Start a trading bot" opens the Trading bot form with nothing pre-chosen. */
+export const START_BOT_PATH = "/deployments";
+
+/** The deployment "Start on Paper Autopilot" created before REV-1 M2 (D3). Kept as a helper; the Setup step no longer
+ * starts a bot in one tap. Always PAPER: this screen never offers LIVE. */
 export function paperDeployment(s: StrategySuggestion): DeploymentCreateRequest & { mode: "PAPER" } {
   const contract: ContractRules = s.option
     ? { instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0 }

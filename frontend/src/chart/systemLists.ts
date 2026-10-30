@@ -5,6 +5,7 @@
  * server answers 403) and nothing places an order.
  */
 import { request } from "../api/client";
+import { sharedRead } from "../api/sharedRead";
 import type { QuoteRow, WatchItem, WatchlistV2 } from "./watchlistsV2";
 import { MAX_ITEMS, itemKey } from "./watchlistsV2";
 
@@ -28,7 +29,8 @@ export const LISTS_FALLBACK_NOTE = "These index and sector lists are a fallback 
 export interface CopyReply extends WatchlistV2 { copied_from: string; truncated: boolean; source_count: number }
 
 export const systemListsApi = {
-  groups: () => request<SystemListsReply>("/watchlists/system"),
+  /** REV-1 M3: the page and its list panel ask at the same time - one shared request. */
+  groups: () => sharedRead("watchlists/system", () => request<SystemListsReply>("/watchlists/system")),
   list: (key: string) => request<SystemList>(`/watchlists/system/${encodeURIComponent(key)}`),
   copy: (key: string, name?: string) =>
     request<CopyReply>(`/watchlists/system/${encodeURIComponent(key)}/copy`, { method: "POST", body: JSON.stringify(name ? { name } : {}) }),

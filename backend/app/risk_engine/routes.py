@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_trader
 from app.auth.scopes import require_scope
-from app.core.models import RiskConfig
+from app.core.models import OPPOSITE_ALLOW, OPPOSITE_DENY, RiskConfig
 from app.db.models import RiskSettingsRecord, User
 from app.db.session import get_session
 from app.platform import controls
@@ -62,6 +62,8 @@ def _stored_config(record: RiskSettingsRecord) -> RiskConfig:
         max_lots_per_order=record.max_lots_per_order, daily_loss_rupees=record.daily_loss_rupees,
         risk_per_trade_rupees=record.risk_per_trade_rupees, loss_cooldown_minutes=record.loss_cooldown_minutes,
         margin_safety_pct=record.margin_safety_pct,
+        # M55 S6: anything but an explicit "allow" reads as the default "deny".
+        opposite_positions=OPPOSITE_ALLOW if record.opposite_positions == OPPOSITE_ALLOW else OPPOSITE_DENY,
     )
 
 
@@ -148,6 +150,9 @@ async def update_risk_settings(
         else:
             enabled.discard(check.id)
     record.limits_switches_json = risk_limits.switches_json({"enabled": sorted(enabled), "saved": sorted(saved)})
+    if "opposite_positions" in config.model_fields_set:
+        # M55 S6: a save that does not send the field (an older page) keeps the stored choice.
+        record.opposite_positions = config.opposite_positions
 
     await session.commit()
     await session.refresh(record)

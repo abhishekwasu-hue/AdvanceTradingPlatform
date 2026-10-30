@@ -13,7 +13,7 @@ every limit off already; nothing is written for them. The count of rows and chec
 Run after 15:30 IST (owner, DECISIONS 25 Oct).
 
 Revision ID: 1f3a5c7e9b20
-Revises: f4b6d8a0c2e3
+Revises: c7e9a1b3d5f7
 Create Date: 2026-10-30 23:40:00
 """
 import json
@@ -24,7 +24,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = '1f3a5c7e9b20'
-down_revision: Union[str, Sequence[str], None] = 'f4b6d8a0c2e3'
+down_revision: Union[str, Sequence[str], None] = 'c7e9a1b3d5f7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: new nullable columns only; the UPDATE fills the NEW limits_switches_json column - the previous release never reads it

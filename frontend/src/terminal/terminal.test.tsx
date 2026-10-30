@@ -307,17 +307,21 @@ describe("panels: plain words", () => {
     const rows = [
       { id: 1, mode: "PAPER", symbol: "NIFTY 25000 CE", direction: "SHORT", quantity: 75, status: "POSITION_OPEN", trade_id: 9, reasons: [], created_at: "2026-10-24T04:00:00Z", updated_at: "2026-10-24T04:00:00Z" },
       { id: 2, mode: "PAPER", symbol: "NIFTY 24000 PE", direction: "LONG", quantity: 75, status: "REJECTED", trade_id: null, reasons: ["Today's loss limit is reached."], created_at: "2026-10-24T04:01:00Z", updated_at: "2026-10-24T04:01:00Z" },
+      { id: 3, mode: "PAPER", symbol: "NIFTY 24100 PE", direction: "LONG", quantity: 75, status: "CANCELLED", trade_id: null, reasons: [], created_at: "2026-10-24T04:02:00Z", updated_at: "2026-10-24T04:02:00Z" },
     ];
     const out = text(renderToStaticMarkup(<OrdersPanelV2 read={{ status: "ok", value: rows }} terminal={{ events: async () => [] }} />));
     expect(out).toContain("Open 0");
     expect(out).toContain("Executed 1");
-    expect(out).toContain("Rejected 1");
+    expect(out).toContain("Rejected 1");                                    // REV-1 M3: the cancelled one is not counted here
+    expect(out).toContain("Cancelled 1");
     expect(out).toContain("Sell NIFTY 25000 CE");
     expect(out).toContain("Filled, position open");
     expect(out).not.toContain("Practice");                                  // CT-1 C8: the one PAPER badge says it
     expect(out).not.toContain("POSITION_OPEN");
     expect(orderGroup("PARTIAL_FILL")).toBe("open");
-    expect(orderGroup("CANCELLED")).toBe("rejected");
+    expect(orderGroup("CANCELLED")).toBe("cancelled");        // REV-1 M3: never under "Rejected"
+    expect(orderGroup("REJECTED")).toBe("rejected");
+    expect(orderGroup("FAILED")).toBe("rejected");
     expect(statusWords("SOMETHING_NEW")).toBe("Updated");
   });
 

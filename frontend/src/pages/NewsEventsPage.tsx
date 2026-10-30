@@ -1,5 +1,6 @@
 import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
+import { useDebouncedValue } from "../utils/debounce";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, CollapsibleCard } from "../components/ui";
@@ -42,7 +43,7 @@ function FeedSourcesCard({ isAdmin }: { isAdmin: boolean }) {
     try { await api.refreshNewsFeed(); await load(); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   };
   return (
-    <CollapsibleCard title="Live feed sources" subtitle={status.enabled ? `on · fetch every ${Math.round(status.cadence_seconds / 60)} min` : "off (feature flag news_feed)"} storageKey="news-feed-sources">
+    <CollapsibleCard title="Live feed sources" subtitle={status.enabled ? `on · fetch every ${Math.round(status.cadence_seconds / 60)} min` : "off"} storageKey="news-feed-sources">
       <p className="text-xs text-fg-muted mb-2">{status.note}</p>
       {error && <div className="text-xs text-down mb-2">{error}</div>}
       <div className="space-y-1.5">
@@ -78,14 +79,19 @@ function sentimentClass(sentiment: NewsSentiment): string {
   return "bg-surface-2/30 text-fg-muted border-border";
 }
 
+/** REV-1 M3: the Symbol box reads the list this long after the last key (no read per keystroke). */
+const NEWS_SEARCH_DEBOUNCE_MS = 400;
+
 export default function NewsEventsPage() {
   const { user, loading: authLoading } = useAuth();
   const [events, setEvents] = useState<NewsEventResponse[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<NewsEventCategory | "">("");
   const [symbolFilter, setSymbolFilter] = useState("");
+  const symbolQuery = useDebouncedValue(symbolFilter.trim(), NEWS_SEARCH_DEBOUNCE_MS);   // REV-1 M3: one read when typing stops
   const [originFilter, setOriginFilter] = useState<"" | "MANUAL" | "FEED">("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [form, setForm] = useState<NewsEvent>(defaultNewsEvent());
   const [submitting, setSubmitting] = useState(false);
   // Phase BD-2: this member's verdicts on feed items (useful / noise / wrong direction) and the organisation's news trust.
@@ -117,7 +123,7 @@ export default function NewsEventsPage() {
   function refresh() {
     setLoading(true);
     api
-      .listNewsEvents({ category: categoryFilter || undefined, symbol: symbolFilter || undefined, origin: originFilter || undefined })
+      .listNewsEvents({ category: categoryFilter || undefined, symbol: symbolQuery || undefined, origin: originFilter || undefined })
       .then(setEvents)
       .catch((e) => setError(errorSentence(e)))
       .finally(() => setLoading(false));
@@ -126,7 +132,7 @@ export default function NewsEventsPage() {
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryFilter, symbolFilter, originFilter]);
+  }, [categoryFilter, symbolQuery, originFilter]);
 
   async function handleSubmit() {
     setSubmitting(true);
@@ -142,9 +148,15 @@ export default function NewsEventsPage() {
     }
   }
 
+  // REV-1 M2: a failed delete says so next to the list (never an unhandled rejection with no message).
   async function handleDelete(id: number) {
-    await api.deleteNewsEvent(id);
-    refresh();
+    setDeleteError(null);
+    try {
+      await api.deleteNewsEvent(id);
+      refresh();
+    } catch (e) {
+      setDeleteError(`The event could not be deleted: ${errorSentence(e)}`);
+    }
   }
 
   return (
@@ -178,6 +190,7 @@ export default function NewsEventsPage() {
       </Card>
 
       <Card title={`Events (${events.length})`}>
+        {deleteError && <div role="alert" className="mb-2 text-sm text-down" data-news-delete-error>{deleteError}</div>}
         {loading ? (
           <SkeletonRows rows={2} label="Loading" />
         ) : events.length === 0 ? (

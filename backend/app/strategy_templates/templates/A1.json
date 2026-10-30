@@ -1,0 +1,364 @@
+{
+  "schema": "atp.template/1",
+  "id": "A1",
+  "version": 1,
+  "name": "Pullback to a demand / supply area",
+  "family": "A",
+  "idea": "In the direction the Daily structure allows, wait for the price to pull back into a demand area (or a supply area) and for a commitment candle to close back out of it. The idea is wrong beyond the area's far edge. The ported level method, every number a setting.",
+  "difficulty": "Intermediate",
+  "style": "Intraday",
+  "allowed_timeframes": [
+    "5m",
+    "15m"
+  ],
+  "params": [
+    {
+      "key": "min_rr",
+      "label": "Room to the next area",
+      "help": "The distance from the commitment close to the next opposite area must be at least this many times the distance to the invalidation; with less room there is no signal.",
+      "type": "float",
+      "default": 3.0,
+      "min": 1.0,
+      "max": 10.0,
+      "step": 0.5
+    },
+    {
+      "key": "max_armed_bars",
+      "label": "Bars to wait after the visit",
+      "help": "After the price reaches the area, a commitment candle must come within this many closed bars; later, the visit is over.",
+      "type": "int",
+      "default": 8,
+      "min": 2,
+      "max": 40,
+      "step": 1
+    },
+    {
+      "key": "mr_n",
+      "label": "Candles for the typical range",
+      "help": "The typical candle range is the median range of this many earlier closed candles; the other distances are counted in it.",
+      "type": "int",
+      "default": 20,
+      "min": 5,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "approach_bars",
+      "label": "Approach candles checked",
+      "help": "How many candles up to the visit are checked for a forceful drive into the area.",
+      "type": "int",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "step": 1
+    },
+    {
+      "key": "approach_wide_mr",
+      "label": "Wide approach candle",
+      "help": "An approach candle is wide when its range is at least this many typical ranges.",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.5,
+      "max": 5.0,
+      "step": 0.1
+    },
+    {
+      "key": "approach_close_frac",
+      "label": "Approach close near its end",
+      "help": "A wide approach candle counts as forceful when it closes within this fraction of its range at the end it is moving to.",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "approach_min_wide",
+      "label": "Forceful candles in a row",
+      "help": "This many forceful candles in a row into the area mean an impulsive approach: no signal on that visit.",
+      "type": "int",
+      "default": 2,
+      "min": 1,
+      "max": 10,
+      "step": 1
+    },
+    {
+      "key": "sl_buffer_mr",
+      "label": "Buffer beyond the far edge",
+      "help": "The idea is wrong beyond the area's far edge (and the extreme since the visit) by this many typical ranges.",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.0,
+      "max": 3.0,
+      "step": 0.05
+    },
+    {
+      "key": "wait_next_candle",
+      "label": "Wait for the next candle",
+      "help": "On: the candle after the commitment must also close beyond the area before the signal.",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "allow_parent_correction",
+      "label": "Signals during a larger correction",
+      "help": "On: signals also while the Daily structure is in a larger correction. Off: none then.",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "power_shift_min",
+      "label": "Signs of a power shift",
+      "help": "How many signs of the pullback losing force the study needs.",
+      "type": "int",
+      "default": 2,
+      "min": 1,
+      "max": 5,
+      "step": 1
+    },
+    {
+      "key": "power_a_rule",
+      "label": "Pullback losing force read",
+      "help": "How shrinking pullback candles are read.",
+      "type": "enum",
+      "default": "relative",
+      "choices": [
+        "relative",
+        "strict3"
+      ],
+      "choice_labels": [
+        "Compared with the earlier candles",
+        "The last three candles shrink"
+      ]
+    },
+    {
+      "key": "commit_dom_mult",
+      "label": "Commitment body size",
+      "help": "The commitment candle's body must be at least this many times the average body since the visit.",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.5,
+      "max": 5.0,
+      "step": 0.1
+    },
+    {
+      "key": "study_min_bars",
+      "label": "Candles for the area study",
+      "help": "The handover study inside the area needs at least this many candles.",
+      "type": "int",
+      "default": 4,
+      "min": 1,
+      "max": 20,
+      "step": 1
+    },
+    {
+      "key": "pattern_eq_mr",
+      "label": "Equal lows / highs tolerance",
+      "help": "Two lows (or highs) inside the area count as equal within this many typical ranges.",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.05,
+      "max": 3.0,
+      "step": 0.05
+    },
+    {
+      "key": "power_overlap",
+      "label": "Overlap of pullback candles",
+      "help": "Pullback candles count as overlapping when this fraction of their bodies overlaps.",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "commit_body",
+      "label": "Body share of a strong candle",
+      "help": "A strong candle's body is at least this fraction of its range.",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.1,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "commit_beyond",
+      "label": "Commitment close beyond",
+      "help": "The commitment candle closes beyond the previous candle's close, or beyond its extreme.",
+      "type": "enum",
+      "default": "close",
+      "choices": [
+        "close",
+        "extreme"
+      ],
+      "choice_labels": [
+        "The previous close",
+        "The previous high / low"
+      ]
+    },
+    {
+      "key": "pin_wick_min",
+      "label": "Rejection wick share",
+      "help": "A rejection (pin) candle's wick at the area is at least this fraction of its range.",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.1,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "star_body_max",
+      "label": "Star middle candle body",
+      "help": "The middle candle of a star is at most this fraction of its range.",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.05,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "tweezer_tol",
+      "label": "Tweezer tolerance",
+      "help": "Two candle extremes count as a tweezer within this fraction of their average range.",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "commit_close_frac",
+      "label": "Close near the candle's end",
+      "help": "A commitment candle closes within the outer part of its range: at least this fraction from the other end.",
+      "type": "float",
+      "default": 0.6666666666666666,
+      "min": 0.1,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "candle_avg_n",
+      "label": "Candles for the candle average",
+      "help": "How many earlier candles make the average a candle is compared with.",
+      "type": "int",
+      "default": 5,
+      "min": 1,
+      "max": 50,
+      "step": 1
+    },
+    {
+      "key": "doji_body_max",
+      "label": "Doji body",
+      "help": "A candle whose body is at most this fraction of its range is a doji: the study waits for the next candle.",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.0,
+      "max": 0.5,
+      "step": 0.01
+    },
+    {
+      "key": "power_fallback_bars",
+      "label": "Candles for the pullback read",
+      "help": "Without a known pullback start, the pullback is read over this many candles.",
+      "type": "int",
+      "default": 8,
+      "min": 1,
+      "max": 50,
+      "step": 1
+    },
+    {
+      "key": "median_range_n",
+      "label": "Candles for the break range",
+      "help": "The typical range used to judge a real break of the far edge, over this many candles.",
+      "type": "int",
+      "default": 20,
+      "min": 5,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "break_buffer_mr",
+      "label": "Break distance",
+      "help": "A close beyond the far edge by at least this many typical ranges can be a real break.",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.0,
+      "max": 3.0,
+      "step": 0.05
+    },
+    {
+      "key": "break_displacement_confirm",
+      "label": "A strong breaking candle confirms",
+      "help": "On: one strong candle beyond the far edge confirms a real break at once.",
+      "type": "bool",
+      "default": true
+    },
+    {
+      "key": "break_close_loc",
+      "label": "Breaking candle close",
+      "help": "A strong breaking candle closes within this fraction of its range at the break side.",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "strength_min",
+      "label": "Breaking candle size",
+      "help": "A strong breaking candle's range is at least this many typical ranges.",
+      "type": "float",
+      "default": 1.2,
+      "min": 0.5,
+      "max": 5.0,
+      "step": 0.1
+    },
+    {
+      "key": "break_no_reclaim_bars",
+      "label": "Bars without a reclaim",
+      "help": "Without a strong candle, a break is real when the price does not come back inside for this many candles.",
+      "type": "int",
+      "default": 1,
+      "min": 1,
+      "max": 10,
+      "step": 1
+    },
+    {
+      "key": "break_accept_closes",
+      "label": "Closes beyond to accept",
+      "help": "This many closes in a row beyond the far edge also make a real break.",
+      "type": "int",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "step": 1
+    }
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "AreaGate(\"up\", min_rr=$min_rr, max_armed_bars=$max_armed_bars, mr_n=$mr_n, approach_bars=$approach_bars, approach_wide_mr=$approach_wide_mr, approach_close_frac=$approach_close_frac, approach_min_wide=$approach_min_wide, sl_buffer_mr=$sl_buffer_mr, wait_next_candle=$wait_next_candle, allow_parent_correction=$allow_parent_correction, power_shift_min=$power_shift_min, power_a_rule=$power_a_rule, commit_dom_mult=$commit_dom_mult, study_min_bars=$study_min_bars, pattern_eq_mr=$pattern_eq_mr, power_overlap=$power_overlap, commit_body=$commit_body, commit_beyond=$commit_beyond, pin_wick_min=$pin_wick_min, star_body_max=$star_body_max, tweezer_tol=$tweezer_tol, commit_close_frac=$commit_close_frac, candle_avg_n=$candle_avg_n, doji_body_max=$doji_body_max, power_fallback_bars=$power_fallback_bars, median_range_n=$median_range_n, break_buffer_mr=$break_buffer_mr, break_displacement_confirm=$break_displacement_confirm, break_close_loc=$break_close_loc, strength_min=$strength_min, break_no_reclaim_bars=$break_no_reclaim_bars, break_accept_closes=$break_accept_closes)",
+    "short": "AreaGate(\"down\", min_rr=$min_rr, max_armed_bars=$max_armed_bars, mr_n=$mr_n, approach_bars=$approach_bars, approach_wide_mr=$approach_wide_mr, approach_close_frac=$approach_close_frac, approach_min_wide=$approach_min_wide, sl_buffer_mr=$sl_buffer_mr, wait_next_candle=$wait_next_candle, allow_parent_correction=$allow_parent_correction, power_shift_min=$power_shift_min, power_a_rule=$power_a_rule, commit_dom_mult=$commit_dom_mult, study_min_bars=$study_min_bars, pattern_eq_mr=$pattern_eq_mr, power_overlap=$power_overlap, commit_body=$commit_body, commit_beyond=$commit_beyond, pin_wick_min=$pin_wick_min, star_body_max=$star_body_max, tweezer_tol=$tweezer_tol, commit_close_frac=$commit_close_frac, candle_avg_n=$candle_avg_n, doji_body_max=$doji_body_max, power_fallback_bars=$power_fallback_bars, median_range_n=$median_range_n, break_buffer_mr=$break_buffer_mr, break_displacement_confirm=$break_displacement_confirm, break_close_loc=$break_close_loc, strength_min=$strength_min, break_no_reclaim_bars=$break_no_reclaim_bars, break_accept_closes=$break_accept_closes)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "AreaGateRef(\"invalidation\", \"up\", min_rr=$min_rr, max_armed_bars=$max_armed_bars, mr_n=$mr_n, approach_bars=$approach_bars, approach_wide_mr=$approach_wide_mr, approach_close_frac=$approach_close_frac, approach_min_wide=$approach_min_wide, sl_buffer_mr=$sl_buffer_mr, wait_next_candle=$wait_next_candle, allow_parent_correction=$allow_parent_correction, power_shift_min=$power_shift_min, power_a_rule=$power_a_rule, commit_dom_mult=$commit_dom_mult, study_min_bars=$study_min_bars, pattern_eq_mr=$pattern_eq_mr, power_overlap=$power_overlap, commit_body=$commit_body, commit_beyond=$commit_beyond, pin_wick_min=$pin_wick_min, star_body_max=$star_body_max, tweezer_tol=$tweezer_tol, commit_close_frac=$commit_close_frac, candle_avg_n=$candle_avg_n, doji_body_max=$doji_body_max, power_fallback_bars=$power_fallback_bars, median_range_n=$median_range_n, break_buffer_mr=$break_buffer_mr, break_displacement_confirm=$break_displacement_confirm, break_close_loc=$break_close_loc, strength_min=$strength_min, break_no_reclaim_bars=$break_no_reclaim_bars, break_accept_closes=$break_accept_closes)",
+    "short": "AreaGateRef(\"invalidation\", \"down\", min_rr=$min_rr, max_armed_bars=$max_armed_bars, mr_n=$mr_n, approach_bars=$approach_bars, approach_wide_mr=$approach_wide_mr, approach_close_frac=$approach_close_frac, approach_min_wide=$approach_min_wide, sl_buffer_mr=$sl_buffer_mr, wait_next_candle=$wait_next_candle, allow_parent_correction=$allow_parent_correction, power_shift_min=$power_shift_min, power_a_rule=$power_a_rule, commit_dom_mult=$commit_dom_mult, study_min_bars=$study_min_bars, pattern_eq_mr=$pattern_eq_mr, power_overlap=$power_overlap, commit_body=$commit_body, commit_beyond=$commit_beyond, pin_wick_min=$pin_wick_min, star_body_max=$star_body_max, tweezer_tol=$tweezer_tol, commit_close_frac=$commit_close_frac, candle_avg_n=$candle_avg_n, doji_body_max=$doji_body_max, power_fallback_bars=$power_fallback_bars, median_range_n=$median_range_n, break_buffer_mr=$break_buffer_mr, break_displacement_confirm=$break_displacement_confirm, break_close_loc=$break_close_loc, strength_min=$strength_min, break_no_reclaim_bars=$break_no_reclaim_bars, break_accept_closes=$break_accept_closes)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "demand_area_pullback_committed"
+      }
+    ],
+    "short": [
+      {
+        "token": "supply_area_pullback_committed"
+      }
+    ]
+  }
+}

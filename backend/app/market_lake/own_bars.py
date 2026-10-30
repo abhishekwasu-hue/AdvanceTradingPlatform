@@ -10,6 +10,13 @@ DH3: the closing-auction flags (`md_bar_flags`, written by app/market_lake/index
 an intraday bar after continuous trading is dropped, and a Daily bar whose extreme was set only in the closing auction
 is read with the continuous session's extremes (its open and close held inside them), so no structure or zone is built
 from either. The official close stays in the stored bar and is read as such (`official_close`).
+
+M55 T4 (owner order): the history owner's INDEX intraday rows (the keys `index_history` backfills) are read by every
+member of every organisation through a `SharedScope` (`shared_scope`) - only while the bring-your-own-broker data tier
+(`byob_data_tier`) is off for the reader's organisation and the owner's (licence: docs/COMPLIANCE_IN.md, "Data
+licences"; OPEN_QUESTIONS M55Q-1). A shared scope reads 1-minute rows of an index key only (never his Daily rows, never
+another symbol) and compares unequal to the owner's own scope (no cache keyed by a scope mixes the two); the reader's
+own rows still come first (`scope_for`). Nothing here writes a bar.
 """
 from __future__ import annotations
 
@@ -28,6 +35,22 @@ RowTuple = Tuple[Any, ...]              # (ts, version, open, high, low, close, 
 PARTITION = 5000
 DROP_KINDS = ("post_close",)
 EXTREME_KINDS = ("auction_high", "auction_low")
+DAILY_LABELS = ("day", "1d", "1w", "week")
+SHARED_TAG = "shared-index-intraday"
+SHARED_OFF_LINE = ("Longer intraday index history is not shared while each organisation brings its own broker data, so "
+                   "only your broker's own history is shown.")
+
+
+class SharedScope(tuple):
+    """M55 T4: the history owner's (tenant_id, user_id) read by ANOTHER reader - index keys and intraday labels only.
+    A 3-tuple (tenant_id, user_id, SHARED_TAG): never equal to the owner's own (tenant_id, user_id)."""
+
+    def __new__(cls, tenant_id: int, user_id: int) -> SharedScope:
+        return super().__new__(cls, (int(tenant_id), int(user_id), SHARED_TAG))
+
+
+def is_shared(scope: Any) -> bool:
+    return isinstance(scope, SharedScope)
 
 
 def _utc(ts: datetime) -> datetime:
@@ -38,6 +61,11 @@ def _scoped(scope: Scope, key: str, labels: Sequence[str]) -> List[Any]:
     tenant_id, user_id = int(scope[0]), int(scope[1])
     if tenant_id <= 0 or user_id <= 0:
         raise PermissionError("private bars are read per tenant and member")
+    if is_shared(scope):
+        from app.market_lake.index_history import is_target_key
+        if not is_target_key(key):
+            raise PermissionError("the shared scope reads the backfilled index keys only")
+        labels = [label for label in labels if label not in DAILY_LABELS]       # intraday only, never his Daily rows
     return [MdTenantCandleRecord.tenant_id == tenant_id, MdTenantCandleRecord.instrument_key == key,
             MdTenantCandleRecord.timeframe.in_(list(labels)), holder_visible(MdTenantCandleRecord.source, user_id)]
 
@@ -50,11 +78,39 @@ async def has_rows(session: AsyncSession, scope: Optional[Scope], key: str) -> b
 
 
 async def scope_for(session: AsyncSession, user: Any, key: str) -> Optional[Scope]:
-    """The reader's private scope for `key` when he has private bars of it, else None (the shared lake only)."""
+    """The reader's private scope for `key` when he has private bars of it; else (M55 T4) the shared index scope when
+    `shared_scope` allows it; else None (the shared lake only)."""
     tenant_id, user_id = getattr(user, "tenant_id", None), getattr(user, "id", None)
     if not tenant_id or not user_id:
         return None
     scope = (int(tenant_id), int(user_id))
+    if await has_rows(session, scope, key):
+        return scope
+    return await shared_scope(session, int(tenant_id), key)
+
+
+async def shared_off(session: AsyncSession, tenant_id: int | None, holder_tenant: int | None = None) -> bool:
+    """True while the bring-your-own-broker data tier is on for the reader's organisation or the owner's: then no
+    broker-sourced row of one session is served to another reader (licence; docs/COMPLIANCE_IN.md)."""
+    from app.market_data import live_access
+    if await live_access.byob_on(session, tenant_id):
+        return True
+    return holder_tenant is not None and await live_access.byob_on(session, holder_tenant)
+
+
+async def shared_scope(session: AsyncSession, tenant_id: int | None, key: str) -> SharedScope | None:
+    """M55 T4: the history owner's index intraday rows for a reader of `tenant_id` - a `SharedScope` when `key` is a
+    backfilled index key, the owner is configured and holds rows of it, and the data tier is off for both
+    organisations; else None. Never a non-index key, never Daily rows."""
+    if not tenant_id or int(tenant_id) <= 0:
+        return None
+    from app.market_lake.index_history import is_target_key
+    if not is_target_key(key):
+        return None
+    holder = await history_owner(session)
+    if holder is None or await shared_off(session, int(tenant_id), holder[0]):
+        return None
+    scope = SharedScope(*holder)
     return scope if await has_rows(session, scope, key) else None
 
 
@@ -182,5 +238,5 @@ async def official_close(session: AsyncSession, key: str, scope: Optional[Scope]
     return {"close": round(float(pick[1]), 2), "date": _utc(pick[0]).astimezone(IST).date().isoformat(), "source": whose}
 
 
-__all__ = ["Scope", "has_rows", "scope_for", "flags", "apply_flags", "fetch_rows", "probe", "distinct_bars", "prefer_own",
+__all__ = ["Scope", "SharedScope", "SHARED_OFF_LINE", "is_shared", "shared_scope", "shared_off", "has_rows", "scope_for", "flags", "apply_flags", "fetch_rows", "probe", "distinct_bars", "prefer_own",
            "history_owner", "official_close"]

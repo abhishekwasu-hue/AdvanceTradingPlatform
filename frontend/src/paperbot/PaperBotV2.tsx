@@ -27,6 +27,7 @@ import {
   startSummaryParts, strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
 import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
+import { handoffFromState, withTestedContract } from "../strategyFlow/model";
 import { settingRows, templateLinkFromSearch, testPathFor, typedSettings, type TemplateLink } from "../strategyTemplates/link";
 import {
   EMPTY_PICK, effectivePick, exitClass, exitNotes, exitProblem, stopOptions, targetOptions, templateExitsBody, type ExitPick, type StopSource,
@@ -85,6 +86,8 @@ export default function PaperBotV2(_props: PageProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const draft = features.on("ai_copilot") ? draftFromState(location.state) : null;
+  // SB-UX SU6: the strategy builder's "Start on paper" - the saved strategy, its symbol and the contract it was tested with.
+  const fromFlow = handoffFromState(location.state);
   const [preselect, setPreselect] = useState<Preselect | null>(null);
   const [draftNote, setDraftNote] = useState<string | null>(null);
   const formRef = useRef<HTMLElement | null>(null);
@@ -159,6 +162,14 @@ export default function PaperBotV2(_props: PageProps) {
       setBusyBot(null);
     }
   }
+
+  useEffect(() => {
+    if (!fromFlow) return;
+    setPreselect({ strategyId: fromFlow.strategyId, symbol: fromFlow.symbol, lots: null, contract: fromFlow.contract });
+    setDraftNote(`"${fromFlow.name || "Your strategy"}" from the strategy builder is picked below, with the contract you tested. Check it and press Start on paper when you are ready.`);
+    navigate(location.pathname + location.search, { replace: true, state: null });
+    goToForm();
+  }, [fromFlow?.strategyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function goToForm() {
     formRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -446,7 +457,10 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const built = paperBotRequestWithDefaults(effectiveId, symbol, info, defaults, approvalAllowed, useDefaults).request;
   // Job 6: the size the trader's own idea named (his saved strategy only).
   const ideaLots = preselect && preselect.strategyId === strategyId ? preselect.lots : null;
-  const withLots = withIdeaLots(built, ideaLots);
+  const ideaSized = withIdeaLots(built, ideaLots);
+  // SB-UX SU6: the contract the strategy builder tested replaces the form's own while that strategy stays picked.
+  const testedContract = preselect && preselect.strategyId === strategyId ? preselect.contract ?? null : null;
+  const withLots = withTestedContract(ideaSized, testedContract);
   // A template reads its own candles (the adopted timeframe) and holds as the server said (Daily: for days).
   const adopted = picked && adoption ? { ...withLots, timeframe: adoption.deployment.timeframe, holding: adoption.deployment.holding } : withLots;
   // Section 5: the exit choices this template offers for the instrument the bot will trade; a default choice sends nothing
@@ -598,7 +612,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             {line && <p id={ids.line}>{line}</p>}
             <p>{summary.more}</p>
           </Details>
-          {withLots !== built && <p className="text-t13 text-fg-muted" data-idea-lots>The size comes from your idea.</p>}
+          {ideaSized !== built && <p className="text-t13 text-fg-muted" data-idea-lots>The size comes from your idea.</p>}
+          {testedContract && <p className="text-t13 text-fg-muted" data-tested-contract>The option structure, strikes and expiry are the ones you tested.</p>}
           {offered.length > 0 && (
             <div className="space-y-space-1 rounded-control border border-subtle p-space-3" data-defaults>
               <label className="flex min-h-11 cursor-pointer items-center gap-space-2 text-t14 font-medium text-fg md:min-h-0">

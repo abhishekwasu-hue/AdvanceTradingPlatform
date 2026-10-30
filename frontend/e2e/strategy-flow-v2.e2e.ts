@@ -66,9 +66,10 @@ async function open(page: Page, theme: "light" | "dark"): Promise<Server> {
       symbols: { [body.symbols[0]]: { bars, count: bars.length, first: bars[0].timestamp, last: bars.at(-1)!.timestamp, error: null, volume_source: null } } } });
   });
   await page.route(api("/backtest$"), (route) => {
-    const b = route.request().postDataJSON() as Record<string, unknown> & { candles: { timestamp: string; close: number }[] };
+    // M55 T3: the page names symbol + timeframe and the server loads the bars itself (the same made-up walk here).
+    const b = route.request().postDataJSON() as Record<string, unknown> & { candles?: { timestamp: string; close: number }[] };
     server.backtests.push({ strategy_id: b.strategy_id, symbol: b.symbol, base_timeframe: b.base_timeframe, data_source: b.data_source, options: b.options });
-    const bars = b.candles;
+    const bars = b.candles ?? walk(400);
     const trade = (i: number, pnl: number) => ({ symbol: b.symbol, strategy_id: b.strategy_id, direction: "LONG", entry_time: bars[i].timestamp,
       entry_price: 120, quantity: 75, stop_loss: 0, target1: 0, target2: null, exit_time: bars[i + 8].timestamp, exit_price: 120 - pnl / 75,
       exit_reason: "EXPIRY", pnl, charges: 140 });

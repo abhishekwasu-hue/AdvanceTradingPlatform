@@ -226,6 +226,8 @@ export interface BacktestResult {
   strategy_id: string;
   symbol: string;
   total_trades: number;
+  /** M55 T3: where the candles came from, as the server loaded them ("uploaded" = your own pasted data). */
+  data_source?: string | null;
   winning_trades: number;
   losing_trades: number;
   win_rate: number;
@@ -786,9 +788,13 @@ export interface OptionFilter {
 export interface ScannerSymbolInput {
   symbol: string;
   timeframe: string;
-  candles: OHLCVBar[];
+  /** M55 T3: omitted in server mode (the server loads each symbol's bars). */
+  candles?: OHLCVBar[];
   option_chain: OptionChain | null;
 }
+
+/** M55 T3: where a request's candles come from - the server loads them, or the browser pastes its own. */
+export type DataRequest = { data_mode: "server"; lookback_days: number; broker?: string | null } | { data_mode: "paste" };
 
 export interface ScannerRequest {
   symbols: ScannerSymbolInput[];
@@ -796,6 +802,10 @@ export interface ScannerRequest {
   structure_filters: StructureFilter[];
   option_filters: OptionFilter[];
   swing_window: number;
+  /** M55 T3: server mode = no candles posted; paste = the posted candles (recorded as "uploaded"). */
+  data_mode?: "server" | "paste";
+  lookback_days?: number;
+  broker?: string | null;
 }
 
 export interface ScannerMatch {
@@ -810,6 +820,9 @@ export interface ScannerResult {
   scanned_count: number;
   matched_count: number;
   matches: ScannerMatch[];
+  /** M55 T3: where the candles came from, as the server loaded them ("uploaded" for pasted candles). */
+  data_source?: string | null;
+  warnings?: string[];
 }
 
 // Phase Y: the AI scanner.

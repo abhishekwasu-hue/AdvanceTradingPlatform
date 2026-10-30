@@ -526,7 +526,7 @@ function ResultStep({ flow, template }: { flow: FlowState; template: StrategyTem
       const fetched = await source.fetch([symbol], tf, { count: 600, seedFor: () => 11 });
       const bars = fetched.candles[symbol];
       if (!bars?.length) throw new Error(`No candles for ${symbol}.`);
-      const res = await api.backtest(id, symbol, tf, bars, null, fetched.label, options);
+      const res = await api.backtest(id, symbol, tf, bars, null, fetched.label, options, fetched.request);   // M55 T3
       setResult(res); setStrategyId(id); setRanTf(tf); setCandles(bars); setPricesFrom(fetched.line);
     } catch (e) {
       setError(errorSentence(e));

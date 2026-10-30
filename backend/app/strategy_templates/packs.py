@@ -22,7 +22,7 @@ library (areas, TPL-Q23; OPEN_QUESTIONS TPL-Q50).
 """
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 from app.strategy_templates import library
 from app.strategy_templates.compile import Settings, resolve_settings
@@ -56,7 +56,7 @@ PICK_STRUCTURE = ("Choose how this bot trades the option: an option structure, o
                   "An option seller pack only gives the side.")
 
 
-def contract_problem(strategy_id: str, instrument_kind: str, option_strategy: str, option_position: Optional[str]) -> Optional[str]:
+def contract_problem(strategy_id: str, instrument_kind: str, option_strategy: str, option_position: str | None) -> str | None:
     """REV-H3: a pack on an option trades only the construction the user chose. A single option with no side chosen
     would otherwise be bought at the money by the server's fallback - a platform pick nobody stated - so it is refused
     in plain words (a structure, a future, the symbol itself or an explicit buy / write are the user's own)."""

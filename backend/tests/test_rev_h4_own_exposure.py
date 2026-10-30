@@ -1,13 +1,13 @@
 """REV-H4 (docs/design/REV1_PLAN.md M1): the Terminal shows the caller's own positions (`/positions?mine=true`), so its
 exposure read must have the same scope. Two members of one organisation hold the same symbol: with `mine=true` each sees
 only his own exposure and P&L; without it the answer is the organisation's, exactly as before."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.db.models import TradeRecord
 from tests.test_auth_api import _session_factory, client
 from tests.test_terminal_t1 import _member, _run, _trade, _who
 
-MARKED_AT = datetime(2026, 10, 28, 9, 59, tzinfo=timezone.utc)      # 15:29 IST
+MARKED_AT = datetime(2026, 10, 28, 9, 59, tzinfo=UTC)      # 15:29 IST
 
 
 def _mark(trade_id: int, price: float) -> None:
@@ -56,7 +56,7 @@ def test_mine_leaves_out_another_members_symbol_and_realised_today():
     member = _member(owner)
     _trade(owner, symbol="H4OWN")
     _trade(member, symbol="H4TEAM")
-    _trade(member, symbol="H4TEAM", exit_time=datetime.now(timezone.utc), exit_price=105.0, pnl=50.0)
+    _trade(member, symbol="H4TEAM", exit_time=datetime.now(UTC), exit_price=105.0, pnl=50.0)
     mine = _exposure(owner, mine="true", live_prices="false")
     assert {r["symbol"] for r in mine["by_symbol"]} == {"H4OWN"} and mine["realised_today"] == 0.0
     org = _exposure(owner, live_prices="false")

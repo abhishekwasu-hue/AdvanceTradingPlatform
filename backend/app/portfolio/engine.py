@@ -118,7 +118,7 @@ def snapshot(trades: List[TradeRecord], prices: Dict[str, float], *, capital: fl
     )
 
 
-async def open_trades(session: AsyncSession, tenant_id: int, *, mode: Optional[str] = None, user_id: Optional[int] = None) -> List[TradeRecord]:
+async def open_trades(session: AsyncSession, tenant_id: int, *, mode: str | None = None, user_id: int | None = None) -> List[TradeRecord]:
     """The organisation's open trades; with `user_id` only that member's own (REV-H4: the scope of `/positions?mine=true`)."""
     query = select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
     if mode:
@@ -128,7 +128,7 @@ async def open_trades(session: AsyncSession, tenant_id: int, *, mode: Optional[s
     return list(await session.scalars(query.order_by(TradeRecord.id)))
 
 
-async def realised_today(session: AsyncSession, tenant_id: int, *, user_id: Optional[int] = None) -> float:
+async def realised_today(session: AsyncSession, tenant_id: int, *, user_id: int | None = None) -> float:
     start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     query = select(func.coalesce(func.sum(TradeRecord.pnl), 0.0)).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time >= start)
     if user_id is not None:

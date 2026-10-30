@@ -6,7 +6,7 @@ export const DEMO_PLAN: PlanPage = {
   plan: { id: "free", name: "Free", status: "active" },
   trial: { plan_name: "Pro", ends_on: "2032-03-20", days_left: 4 },
   includes: [
-    { key: "paper_bots", text: "Up to 2 paper bots running at once" },
+    { key: "paper_bots", text: "Up to 2 trading bots running at once" },
     { key: "custom_strategies", text: "3 strategies of your own" },
     { key: "backtests", text: "50 backtests a month" },
     { key: "watchlists", text: "5 watchlists" },
@@ -23,7 +23,7 @@ export const DEMO_PLAN: PlanPage = {
     { key: "ai", label: "AI requests", used: 12, limit: null, period: "this month", text: "12 this month", state: "ok", note: "Requests on your own AI key are counted too." },
     { key: "analyses_today", label: "Chart analyses today", used: 4, limit: 5, period: "today", text: "4 of 5 today", state: "near", note: null },
     { key: "backtests", label: "Backtests (Strategy Lab)", used: 4, limit: 50, period: "this month", text: "4 of 50 this month", state: "ok", note: null },
-    { key: "paper_bots", label: "Paper bots running", used: 2, limit: 2, period: "", text: "2 of 2", state: "full", note: null },
+    { key: "paper_bots", label: "Trading bots running", used: 2, limit: 2, period: "", text: "2 of 2", state: "full", note: null },
   ],
   month_starts: "2032-03-01",
   resets: "Monthly counts start again on the 1st of each month.",
@@ -54,7 +54,7 @@ export const DEMO_ACTIVATION: Activation = {
   funnel: [
     { key: "signed_up", label: "Signed up", count: 10 },
     { key: "broker", label: "Connected a broker", count: 6 },
-    { key: "paper_bot", label: "Started a first paper bot", count: 4 },
+    { key: "paper_bot", label: "Started a first trading bot", count: 4 },
     { key: "journal", label: "First journal entry", count: 3 },
     { key: "activated", label: "All three (activated)", count: 2 },
   ],
@@ -64,7 +64,7 @@ export const DEMO_ACTIVATION: Activation = {
     steps: [
       { key: "signed_up", label: "Signed up", count: 8 },
       { key: "broker", label: "Connected a broker", count: 5 },
-      { key: "paper_bot", label: "Started a paper bot", count: 3 },
+      { key: "paper_bot", label: "Started a trading bot", count: 3 },
       { key: "active_week1", label: "Active in week 1", count: 2 },
     ],
     week1_open: 2,

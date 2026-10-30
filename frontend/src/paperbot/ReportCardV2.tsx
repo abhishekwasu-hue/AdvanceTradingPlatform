@@ -12,7 +12,7 @@ import {
 } from "./reportCard";
 
 /**
- * AUD-T4 (owner audit 28 Oct; flags `ui_v2` + `paper_report_card`): the paper report card on the Paper bot page, under
+ * AUD-T4 (owner audit 28 Oct; flags `ui_v2` + `paper_report_card`): the paper report card on the Trading bot page, under
  * "Your bots" - per bot (or per strategy) the closed paper trades, win %, average R, max drawdown and, when they apply,
  * credit kept on written options and plan followed from the journal. A forward test of his own paper trades, not a
  * backtest. Only the numbers stay open; how each is worked out is in the card's one Details. Share makes an image on

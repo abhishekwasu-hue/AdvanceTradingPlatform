@@ -3,7 +3,7 @@
  *
  * The user's own starting values live on the server per user (`/api/me/prefs`, namespace `trading_defaults`, backend
  * app/me/prefs.py TradingDefaultsPrefs: every field empty by default). The server never reads them to trade. Only the
- * frontend form builders read them - the Paper bot's "Start on paper", the full deployment form ("More ways to trade")
+ * frontend form builders read them - the Trading bot's "Start on paper", the full deployment form ("More ways to trade")
  * and the chain order ticket - and each value they take is shown "from your defaults" and can be changed there.
  *
  * Rules kept here (pure functions, unit-tested):
@@ -217,7 +217,7 @@ function exitWords(r: ExitRules): string[] {
   return out;
 }
 
-// ---------------------------------------------------------------- the Paper bot's "Start on paper"
+// ---------------------------------------------------------------- the Trading bot's "Start on paper"
 
 export interface BotContext {
   /** An index symbol (no cash leg: the quick bot trades its option, or its future when that is the default). */

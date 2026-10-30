@@ -5,7 +5,7 @@ import { mockApi } from "./mockApi";
 
 /**
  * Day-one fix 7 (docs/design/DAY_ONE_TRADER_TEST.md finding 6): Signals knows the bot he just started. He started the
- * idea's strategy (Breakout and retest, A5) on RELIANCE as a PAPER bot; Signals then shows "Your paper bot is on" with
+ * idea's strategy (Breakout and retest, A5) on RELIANCE as a PAPER bot; Signals then shows "Your trading bot is on" with
  * the bot, its symbol and "Just started" instead of asking him to "Pick a ready strategy" again; the list watch is one
  * tap away ("Also watch a whole list"). Flags: the trader pack. Every reply is made up; names only for public lists.
  * With D1F_SHOTS=<folder> each step is saved as `<step>-<width>-<theme>.png`; no baseline is stored.
@@ -196,7 +196,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await page.goto("/signals");
         await settle(page);
         const card = page.locator("[data-day-one='bots']");
-        await expect(card.getByRole("heading", { name: "Your paper bot is on" })).toBeVisible();
+        await expect(card.getByRole("heading", { name: "Your trading bot is on" })).toBeVisible();
         await expect(card).toContainText("Breakout and retest · RELIANCE");
         await expect(card).toContainText("Just started: it reads its chart on its next round");
         await expect(page.locator("[data-day-one='setup']")).toHaveCount(0);

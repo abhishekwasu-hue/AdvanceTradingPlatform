@@ -4,7 +4,7 @@
   settings the form shows (label, help, default, bounds, choices in words) and the constraints' messages. `available`
   says whether every function the template reads is switched on for the caller's organisation (flag names are never sent).
 * `POST /api/strategy-templates/{template_id}/adopt` - the caller's settings checked (plain messages) and turned into
-  the PRE-FILL of the existing paper bot form: the strategy id that carries the settings, the candle timeframe, the
+  the PRE-FILL of the existing trading bot form: the strategy id that carries the settings, the candle timeframe, the
   holding, PAPER. It creates NOTHING: the user reviews the form and saves it (the deployment route), and nothing starts
   by itself. Templates generate signals only; every execution choice (lots, exits, options) stays in the form.
 
@@ -119,7 +119,7 @@ async def list_templates(user: User = Depends(get_current_user), session: AsyncS
 @router.post("/{template_id}/adopt")
 async def adopt(template_id: str, body: AdoptBody, user: User = Depends(get_current_user),
                 session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    """The paper bot form's pre-fill for this template with the caller's settings (nothing is created)."""
+    """The trading bot form's pre-fill for this template with the caller's settings (nothing is created)."""
     await _enabled(session, user)
     try:
         template = library.get(template_id)
@@ -150,7 +150,7 @@ async def adopt(template_id: str, body: AdoptBody, user: User = Depends(get_curr
 
 
 def _exit_choices(strategy: TemplateStrategy) -> Dict[str, Any]:
-    """Section 5: what the paper bot form may offer as this template's exits (with these settings), per instrument
+    """Section 5: what the trading bot form may offer as this template's exits (with these settings), per instrument
     (the first choice of each list is the default: the behaviour before section 5). The form shows them in words; the
     deployment route checks the choice again."""
     caps = strategy.capabilities()

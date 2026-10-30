@@ -8,7 +8,7 @@ import { expectPhoneLayout } from "./phoneLayout";
 
 /**
  * Strategy templates step 2 (docs/design/STRATEGY_TEMPLATES_IMPL.md): with `ui_v2` and `strategy_templates` on, the v2
- * Paper bot form lists the templates; picking one asks the server for the pre-fill ("Adopt as a paper strategy") and
+ * Trading bot form lists the templates; picking one asks the server for the pre-fill ("Adopt as a paper strategy") and
  * "Start on paper" sends the same PAPER request with the template's strategy id and candles. Nothing starts before that.
  * - Baselines `strategy-templates-v2-{1440,390,360}-{light,dark}.png` (the form with a template picked) and, section 5,
  *   `strategy-templates-exits-v2-{1440,390,360}-{light,dark}.png` (its exits, a multiple of the risk chosen).

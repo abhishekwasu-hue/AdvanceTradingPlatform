@@ -38,8 +38,8 @@ function plain(key: string, brokerPath: string): Plain | null {
     case "instrument_master": return { sentence: "Load the list of tradable contracts.", label: "Open Instruments", to: "/instruments" };
     case "worker": return { sentence: "Automatic trading is not running, so nothing trades by itself. Ask your platform admin.", label: "Check again" };
     case "holidays": return { sentence: "This year's exchange holidays are not loaded yet. Ask your platform admin.", label: "Check again" };
-    case "deployment": return { sentence: "Start a paper bot and let it run for a few sessions first.", label: "Open Paper bot", to: "/deployments" };
-    case "deployment_errors": return { sentence: "A bot keeps hitting a problem. Open it to see why.", label: "Open Paper bot", to: "/deployments" };
+    case "deployment": return { sentence: "Start a trading bot and let it run for a few sessions first.", label: "Open Trading bot", to: "/deployments" };
+    case "deployment_errors": return { sentence: "A bot keeps hitting a problem. Open it to see why.", label: "Open Trading bot", to: "/deployments" };
     case "risk": return { sentence: "Set your capital, risk per trade and daily loss limit.", label: "Open Risk", to: "/risk-management" };
     case "alerts": return { sentence: "Get alerts on your phone so a stopped bot or a kill switch reaches you.", label: "Set up Telegram", to: ALERTS_PATH };
     case "kill_switch": return { sentence: "A kill switch is on. Turn it off once you know why it was used.", label: "Open Risk", to: "/risk-management" };
@@ -66,7 +66,7 @@ const titleOf = (item: ReadinessItem): string => TITLES[item.key] ?? item.title;
 /** The page ids the server's `link` may name, as addresses (anything else - an environment variable - is no link). */
 const PAGE_LINKS: Record<string, { label: string; to: string }> = {
   settings: { label: "Open Settings", to: "/settings" }, instruments: { label: "Open Instruments", to: "/instruments" },
-  deployments: { label: "Open Paper bot", to: "/deployments" }, "risk-management": { label: "Open Risk", to: "/risk-management" },
+  deployments: { label: "Open Trading bot", to: "/deployments" }, "risk-management": { label: "Open Risk", to: "/risk-management" },
   positions: { label: "Open Positions", to: "/positions" }, account: { label: "Open Account", to: "/account" }, team: { label: "Open Team", to: "/team" },
 };
 

@@ -1,6 +1,6 @@
 /**
  * Strategy templates section 5 ("exits as settings", docs/design/STRATEGY_TEMPLATES_IMPL.md): the template's exits as
- * the user's own choice in the v2 Paper bot form - where the trade's stop comes from and when to take profit, in plain
+ * the user's own choice in the v2 Trading bot form - where the trade's stop comes from and when to take profit, in plain
  * words, pre-filled with the template's defaults (the template's own level; no fixed target). The server sends what
  * fits each instrument (`TemplateAdoption.exits`) and checks the choice again. Pure functions only (unit-tested).
  *

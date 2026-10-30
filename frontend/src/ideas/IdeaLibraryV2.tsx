@@ -22,7 +22,7 @@ import { ALL_GROUPS, IDEA_FLAG, defaultText, ideasIn, rangeText, screenerPathFor
  *
  * "Try as a scan" opens the idea's screen in Find setups (`/screener?idea=..&scan=..`), built from the existing registry
  * only. Slice 2 (IDEA-1): "Adopt as a paper strategy" appears only on an idea the server maps HONESTLY onto a strategy
- * template (`adopt.available`, with `strategy_templates` on too); it opens the Paper bot form with the template picked
+ * template (`adopt.available`, with `strategy_templates` on too); it opens the Trading bot form with the template picked
  * and the idea's settings as the pre-fill, which the user reviews and saves himself (PAPER only). Every other idea says
  * it comes later. Slice 3: T2 (A2) and T5 (A5) are mapped; the card shows the mapping's note (where the paper strategy
  * still reads less than the card). Nothing here places an order.
@@ -280,7 +280,7 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
 }
 
 /** What "Adopt as a paper strategy" does, in plain words (PAPER only; the user saves it himself). */
-export const ADOPT_NOTE = "Opens the paper bot form with this idea's settings filled in. You review it and start it yourself; it runs in PAPER.";
+export const ADOPT_NOTE = "Opens the trading bot form with this idea's settings filled in. You review it and start it yourself; it runs in PAPER.";
 
 /** Day-one fix 1: the Strategies › Test link of an idea the server lets the user adopt now, or null. */
 export function testPathForIdea(idea: Pick<Idea, "adopt">): string | null {
@@ -288,7 +288,7 @@ export function testPathForIdea(idea: Pick<Idea, "adopt">): string | null {
   return a.available ? testPathFor({ template: a.template, timeframe: a.timeframe, params: a.params }) : null;
 }
 
-/** The Paper bot link of an idea the server lets the user adopt now, or null ("comes later"). */
+/** The Trading bot link of an idea the server lets the user adopt now, or null ("comes later"). */
 export function adoptPathFor(idea: Pick<Idea, "adopt">): string | null {
   const a = idea.adopt;
   return a.available ? paperBotPathFor({ template: a.template, timeframe: a.timeframe, params: a.params }) : null;

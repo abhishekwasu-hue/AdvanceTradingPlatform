@@ -51,7 +51,7 @@ describe("the usage meter", () => {
       expect(t).toContain(m.label);
       expect(t).toContain(m.text);
     }
-    expect(html.match(/role="meter"/g)).toHaveLength(4);                  // watchlists, analyses, backtests, paper bots
+    expect(html.match(/role="meter"/g)).toHaveLength(4);                  // watchlists, analyses, backtests, trading bots
     expect(meterFill(DEMO_PLAN.meters[0])).toBe(40);
     expect(meterFill(DEMO_PLAN.meters[1])).toBeNull();
     expect(meterFill({ ...DEMO_PLAN.meters[0], used: 9 })).toBe(100);

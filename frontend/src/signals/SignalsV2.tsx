@@ -42,12 +42,12 @@ export function useMediaQuery(query: string): boolean {
 
 const EMPTY: Record<FeedTab, { title: string; body: string }> = {
   waiting: { title: "You are all caught up.", body: "New signals also arrive as a notification." },
-  today: { title: "Signals show here as they come today.", body: "Signals from your paper bots, scans and Copilot show here as they come." },
+  today: { title: "Signals show here as they come today.", body: "Signals from your trading bots, scans and Copilot show here as they come." },
   history: { title: "Signals of the last 30 days show here.", body: "Signals you approve, skip or let expire are kept here for 30 days." },
 };
 
 /** With his day-one watch adopted, an empty list points at it. */
-const WATCHING_BODY = "Your watch above shows where each symbol on your list stands. Setups from your paper bots that wait for your approval land here.";
+const WATCHING_BODY = "Your watch above shows where each symbol on your list stands. Setups from your trading bots that wait for your approval land here.";
 
 /**
  * UI2-3 (UI v2 proposal §7, §3 M6 / M7; MOBILE_APP_PLAN §2.1): Signals - "What should I act on?". An inbox of the trades
@@ -109,7 +109,7 @@ export default function SignalsV2() {
       <PageIntro id="signals" lines={["Open a signal to see its levels and why it was suggested, then approve or skip it."]} />
       <header>
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Signals</h1>
-        <p className="hidden text-t14 text-fg-muted md:mt-space-1 md:block">Trades your paper bots, scans and Copilot suggest.</p>
+        <p className="hidden text-t14 text-fg-muted md:mt-space-1 md:block">Trades your trading bots, scans and Copilot suggest.</p>
       </header>
 
       {dishOn && <PageDishV2 page="signals" />}

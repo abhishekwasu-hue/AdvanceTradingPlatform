@@ -20,7 +20,7 @@ export interface DashboardMocks {
 }
 
 /** UI2-7: GET /api/me/setup as the server works it out for these replies (the wizard already seen once). P3: with the
- * Get started card's three steps (broker, paper bot, Telegram), none of its marks set. */
+ * Get started card's three steps (broker, trading bot, Telegram), none of its marks set. */
 export function setupAnswer(state: DashboardMocks["state"] = "connected") {
   const done: Record<string, boolean> = { broker: state !== "none", risk: true, strategy: state === "connected" || state === "login", alerts: false };
   const steps = ["broker", "risk", "strategy", "alerts"].map((key) => ({ key, done: done[key], skipped: false, skipped_at: null }));

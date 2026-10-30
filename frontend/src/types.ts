@@ -52,7 +52,7 @@ export interface TradeRecord {
   tags?: string[];
   /** M45 MB-7 (flags `ui_v2` + `multi_account`): the caller's own simulated PAPER account of this position, else null. */
   account_label?: string | null;
-  /** UI-28 U2.4: the Paper bot that opened this trade (null: entered by hand or by a webhook). */
+  /** UI-28 U2.4: the Trading bot that opened this trade (null: entered by hand or by a webhook). */
   deployment_id?: number | null;
   mode: string;
   symbol: string;

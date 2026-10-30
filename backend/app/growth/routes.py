@@ -7,7 +7,7 @@ is off, X-Feature-Disabled names the flag).
 * `GET /api/growth/share/discipline-week` - the "my discipline this week" card from his own PAPER record, guarded for a
   public surface: no security names, no prices, no money, no call words (app/growth/share.py).
 
-Per user: every read is the caller's own (the organisation's paper bots and backtests are counted for the team, and the
+Per user: every read is the caller's own (the organisation's trading bots and backtests are counted for the team, and the
 meter says so). Read-only towards billing and trading: nothing here changes a plan, starts a trial or touches an order.
 
 Readiness C13 adds (each behind its own flag, OFF):

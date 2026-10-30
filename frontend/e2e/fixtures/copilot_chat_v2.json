@@ -80,7 +80,7 @@
     "starter": "Turn my idea into a strategy and test it",
     "built": true,
     "page": {
-     "label": "Open the Paper bot page",
+     "label": "Open the Trading bot page",
      "to": "/deployments"
     }
    },
@@ -1854,7 +1854,7 @@
       "The fast EMA length.",
       "The slow EMA length.",
       "Your profit objective, in R (a multiple of the risk).",
-      "The size: the Paper bot page starts with one lot or your own saved default; change it there."
+      "The size: the Trading bot page starts with one lot or your own saved default; change it there."
      ]
     },
     {
@@ -1896,7 +1896,7 @@
     }
    ],
    "action": {
-    "label": "Review it on the Paper bot page",
+    "label": "Review it on the Trading bot page",
     "to": "/deployments"
    },
    "refused": null,
@@ -2005,9 +2005,9 @@
    "title": "Strategy builder",
    "summary": [
     "Your idea as a draft paper strategy, built only from ATP's own building blocks.",
-    "Every value comes from your words. Review it on the Paper bot page, then save it and start it on paper yourself."
+    "Every value comes from your words. Review it on the Trading bot page, then save it and start it on paper yourself."
    ],
-   "answer": "Your idea as a draft paper strategy, built only from ATP's own building blocks.\nEvery value comes from your words. Review it on the Paper bot page, then save it and start it on paper yourself.",
+   "answer": "Your idea as a draft paper strategy, built only from ATP's own building blocks.\nEvery value comes from your words. Review it on the Trading bot page, then save it and start it on paper yourself.",
    "sections": [
     {
      "title": "Long side: all of these hold on the 15-minute chart",
@@ -2027,7 +2027,7 @@
     {
      "title": "Values you decide",
      "lines": [
-      "The size: the Paper bot page starts with one lot or your own saved default; change it there."
+      "The size: the Trading bot page starts with one lot or your own saved default; change it there."
      ]
     },
     {
@@ -2069,7 +2069,7 @@
     }
    ],
    "action": {
-    "label": "Review it on the Paper bot page",
+    "label": "Review it on the Trading bot page",
     "to": "/deployments"
    },
    "refused": null,
@@ -2169,9 +2169,9 @@
    "title": "Strategy builder",
    "summary": [
     "Your idea as a draft paper strategy, built only from ATP's own building blocks.",
-    "Every value comes from your words. Review it on the Paper bot page, then save it and start it on paper yourself."
+    "Every value comes from your words. Review it on the Trading bot page, then save it and start it on paper yourself."
    ],
-   "answer": "Your idea as a draft paper strategy, built only from ATP's own building blocks.\nEvery value comes from your words. Review it on the Paper bot page, then save it and start it on paper yourself.",
+   "answer": "Your idea as a draft paper strategy, built only from ATP's own building blocks.\nEvery value comes from your words. Review it on the Trading bot page, then save it and start it on paper yourself.",
    "sections": [
     {
      "title": "Long side: all of these hold on the 15-minute chart",
@@ -2191,7 +2191,7 @@
     {
      "title": "Values you decide",
      "lines": [
-      "The size: the Paper bot page starts with one lot or your own saved default; change it there."
+      "The size: the Trading bot page starts with one lot or your own saved default; change it there."
      ]
     },
     {
@@ -2352,7 +2352,7 @@
     }
    ],
    "action": {
-    "label": "Review it on the Paper bot page",
+    "label": "Review it on the Trading bot page",
     "to": "/deployments"
    },
    "refused": null,

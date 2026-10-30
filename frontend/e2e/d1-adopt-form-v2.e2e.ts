@@ -6,7 +6,7 @@ import { mockApi } from "./mockApi";
 
 /**
  * Day-one fix 6 (docs/design/DAY_ONE_TRADER_TEST.md findings 5 and 6): adopting an idea. Ideas › Breakout and retest ›
- * "Adopt as a paper strategy" opens the Paper bot form with the idea's template under the idea's own name (one name per
+ * "Adopt as a paper strategy" opens the Trading bot form with the idea's template under the idea's own name (one name per
  * idea), the idea's settings listed in words, and a stock picked (never a quiet NIFTY 50 option): the summary reads
  * "Trades RELIANCE shares". Nothing starts. Flags: ui_v2 + strategy_templates + idea_library (mocked feature list).
  * Every reply is made up. With D1F_SHOTS=<folder> each step is saved as `<step>-<width>-<theme>.png`; no baseline.
@@ -106,7 +106,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
     test.describe(`Day-one fix 6: adopt an idea ${size.width} ${theme}`, () => {
       test.use({ viewport: { width: size.width, height: size.height }, isMobile: size.phone, hasTouch: size.phone, deviceScaleFactor: 1 });
 
-      test("the idea's settings, one name and a stock on the Paper bot form", async ({ page }) => {
+      test("the idea's settings, one name and a stock on the Trading bot form", async ({ page }) => {
         const shot = async (step: string) => {
           if (SHOTS) await page.screenshot({ path: `${SHOTS}/${step}-${size.width}-${theme}.png`, fullPage: true, animations: "disabled" });
         };

@@ -63,9 +63,9 @@ describe("P3 Get started: the three steps", () => {
 
   it("names the three steps and where each button leads", () => {
     const card = getStartedSteps(view(), brokerAt("/nowhere"))!;
-    expect(card.steps.map((s) => s.title)).toEqual(["Connect your broker", "Start your paper bot", "Get alerts on your phone (Telegram)"]);
+    expect(card.steps.map((s) => s.title)).toEqual(["Connect your broker", "Start your trading bot", "Get alerts on your phone (Telegram)"]);
     expect(card.steps.map((s) => s.action)).toEqual([
-      { label: "Connect your broker", to: BROKER_FALLBACK_PATH }, { label: "Start paper bot", to: "/deployments" },
+      { label: "Connect your broker", to: BROKER_FALLBACK_PATH }, { label: "Start trading bot", to: "/deployments" },
       { label: "Set up Telegram", to: ALERTS_PATH }]);
     const done = getStartedSteps(view(KEYS), BROKER_PATH)!;
     expect(done.steps.map((s) => s.action.label)).toEqual(["Your broker", "See your bot", "Alert settings"]);

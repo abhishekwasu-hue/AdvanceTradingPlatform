@@ -995,6 +995,9 @@ class RiskSettingsRecord(Base):
     loss_cooldown_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     margin_safety_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     limits_switches_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # M55 S6 (A11, owner order M55): "allow" / "deny" opposite positions of two bots on one symbol; default deny
+    # (app/workers/trading_worker.py::_opposite_position - new automated entries only, never an exit).
+    opposite_positions: Mapped[str] = mapped_column(String(8), nullable=False, default="deny", server_default="deny")
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 

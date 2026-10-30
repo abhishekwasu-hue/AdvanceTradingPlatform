@@ -53,7 +53,7 @@ describe("Orders page wiring and wording", () => {
   });
 
   it("read-only, no jargon, no table", () => {
-    expect(ordersSource).toContain("api.listTrades");
+    expect(ordersSource).toContain("api.listNewestTrades");           // REV-1 M3: the newest page of /trades
     expect(ordersSource).not.toMatch(/api\.(place|cancel|modify|exit|close)/i);
     expect(ordersSource).not.toMatch(/blotter|<table|ENTRY"|EXIT"/);
   });

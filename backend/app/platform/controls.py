@@ -662,6 +662,11 @@ async def set_flag(session: AsyncSession, user: User, name: str, *, on: bool, te
     if name == "live_trading":
         # Phase 0 deployment mode: no live_trading while phase0_paper_only is on (audited refusal, ValueError -> 400).
         await deployment_phase.refuse_live_trading_on(session, user.id, on=on, tenants=tenants)
+        # M55 S1b: the allow-list of `live_trading` is the owner's per-organisation LIVE grant (live_owner.set_org_grant);
+        # the switch only changes `on` and keeps the granted list.
+        if tenants:
+            raise ValueError(live_owner.GRANT_VIA_LIST)
+        tenants = await live_owner.granted_orgs(session)
     open_items = legal_open_placeholders() if name == "legal_pages" and (on or tenants) else {}
     if open_items and not override_open_placeholders:
         listed = "; ".join(f"{slug}: {', '.join(items)}" for slug, items in sorted(open_items.items()))

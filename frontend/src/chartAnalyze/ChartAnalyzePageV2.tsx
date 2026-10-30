@@ -18,6 +18,7 @@ import { resultShapes } from "./shapes";
 import { guardResult } from "./signalLanguage";
 import type { StrikesState } from "./StrikesSectionV2";
 import type { AnalysisItem, AnalyzeStatus } from "./types";
+import { EMPTY, formatDateTimeIST } from "../ui/format";
 
 type Mode = "image_only" | "hybrid";
 /** M59 CR-4: the two modes' names (the server's `mode_labels` wins when it sends them). */
@@ -76,8 +77,8 @@ function problemFrom(e: unknown): Problem {
 
 function when(iso: string | null): string {
   if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const text = formatDateTimeIST(iso);                      // REV-1 M3: IST, never the device's zone
+  return text === EMPTY ? "" : text;
 }
 
 export function firstImage(files: FileList | File[] | null | undefined): File | null {

@@ -138,6 +138,14 @@ async def _flag_listing_for(session: AsyncSession, user: User) -> dict:
         if name in flags:
             flags[name].update(owner_only=True, can_switch_live=owner, confirm_text=live_owner.CONFIRM_TEXT,
                                opens_live_when_on=name == live_owner.LIVE_TRADING)
+    if live_owner.LIVE_TRADING in flags:
+        # M55 S1b: "LIVE for organisations" - the owner's grant list (the flag's allow-list), with the names.
+        from sqlalchemy import select
+
+        from app.db.models import Tenant
+        ids = list(flags[live_owner.LIVE_TRADING].get("tenants") or [])
+        names = dict((await session.execute(select(Tenant.id, Tenant.name).where(Tenant.id.in_(ids)))).all()) if ids else {}
+        flags[live_owner.LIVE_TRADING]["live_orgs"] = [{"id": i, "name": names.get(i) or f"Organisation {i}"} for i in ids]
     return flags
 
 
@@ -167,6 +175,26 @@ async def put_flag(name: str, body: FlagBody, user: User = Depends(require_role(
         from app.observability import status_history
         status_history.reset_cache()
     return await _flag_listing_for(session, user)                       # UX1: the same fields as the list
+
+
+class LiveOrgBody(BaseModel):
+    granted: bool
+    confirm: str | None = Field(default=None, max_length=40)
+
+
+@admin_router.put("/live-orgs/{tenant_id}")
+async def put_live_org(tenant_id: int, body: LiveOrgBody, user: User = Depends(require_role()),
+                       session_id: int | None = Depends(current_session_id), session: AsyncSession = Depends(get_session)) -> dict:
+    """M55 S1b: grant (granted = true) or revoke LIVE for one organisation - the owner only, a recent two-factor check
+    and the typed confirmation; audited either way. Answers the flag listing (the same fields as GET /flags)."""
+    from app.platform.live_owner import LiveOwnerRefused, set_org_grant
+    try:
+        await set_org_grant(session, user, tenant_id, granted=body.granted, session_id=session_id, confirm=body.confirm)
+    except LiveOwnerRefused as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await _flag_listing_for(session, user)
 
 
 # --- Owner decision 23 Oct: "Enable trader features" (app/platform/trader_pack.py) -------------------------------------

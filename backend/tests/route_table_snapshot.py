@@ -6,7 +6,8 @@ the response model (its JSON schema, hashed), the request body (its JSON schema,
 cookie parameters, every dependency (qualified name, in order), the role / scope gate and whether a signed-in caller
 is needed. The module an endpoint lives in is left out on purpose: that is what a move changes.
 
-Regenerate the fixture (only when a route change is intended):
+The committed fixture covers only the routes M55 Q1 moved (`MOVED`) and every `/api/scanner*` route (`in_scope`), so
+other PRs stay free to add or change routes. Regenerate it only when one of those changes on purpose:
     python -m tests.route_table_snapshot > tests/fixtures/route_table.json
 """
 from __future__ import annotations
@@ -33,6 +34,23 @@ def _schema_hash(annotation: Any) -> str | None:
         schema = getattr(annotation, "__name__", str(annotation))
     text = json.dumps(schema, sort_keys=True, default=str)
     return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+# The routes M55 Q1 moved out of app/main.py, in their old order.
+MOVED = (
+    ("GET", "/api/strategies"), ("GET", "/api/strategies/{strategy_id}"), ("POST", "/api/strategies/{strategy_id}/signal"),
+    ("POST", "/api/strategies/{strategy_id}/signal/enrich"), ("POST", "/api/strategies/{strategy_id}/paper-execute"),
+    ("POST", "/api/backtest"), ("POST", "/api/price-action/structure"), ("POST", "/api/price-action/patterns"),
+    ("POST", "/api/price-action/reversal"), ("POST", "/api/price-action/reversal-markers"),
+    ("POST", "/api/support-resistance/zones"), ("POST", "/api/option-chain/analyze"), ("POST", "/api/option-chain/greeks"),
+    ("POST", "/api/scanner/run"), ("GET", "/api/broker/available"), ("GET", "/api/instruments"),
+    ("GET", "/api/instruments/{symbol}"), ("GET", "/api/system/health"),
+)
+
+
+def in_scope(row: dict[str, Any]) -> bool:
+    """A moved route or any scanner route (the M55 Q1 scope)."""
+    return row["path"].startswith("/api/scanner") or any((m, row["path"]) in MOVED for m in row["methods"])
 
 
 def _type_name(annotation: Any) -> str | None:
@@ -94,4 +112,4 @@ def route_table(app: FastAPI) -> list[dict[str, Any]]:
 if __name__ == "__main__":
     from app.main import app as _app
 
-    sys.stdout.write("[\n" + ",\n".join(json.dumps(row, sort_keys=True) for row in route_table(_app)) + "\n]\n")
+    sys.stdout.write("[\n" + ",\n".join(json.dumps(row, sort_keys=True) for row in route_table(_app) if in_scope(row)) + "\n]\n")

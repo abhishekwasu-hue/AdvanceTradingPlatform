@@ -112,9 +112,9 @@ PRIVATE_FIXTURES_RESOLVER = "backend/tests/private_fixtures.py"
 # no real data: `python3 scripts/check_public_repo.py --hash <path>` prints the line to put here
 # (docs/PUBLIC_REPO_POLICY.md 5).
 ALLOWED_TEST_DATA: Dict[str, str] = {
-    # M55 Q1: the app's own route table (paths, dependencies, schema hashes) - generated from the code, no data;
+    # M55 Q1: the moved and scanner routes (paths, dependencies, schema hashes) - generated from the code, no data;
     # re-pin after regenerating it (tests/route_table_snapshot.py)
-    "backend/tests/fixtures/route_table.json": "75769009e3057fb79052dd7515a65a29596ff7fb632b28f544e11f8f2f39e648",
+    "backend/tests/fixtures/route_table.json": "287ad213d1f4b8a236742fc436dbd281fe2fc1aaa4bf45a7b5fca83ef15717b5",
     # F&O 8b slice 3: UI screenshots of the auto journal card on made-up trades (e2e/fno8b-slice3-v2.e2e.ts); re-pin
     # after regenerating them
     "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-dark.png": "445f6eaf5030c874e09efb555e77238bea985e6f0a840b55913d29383c6dd3fc",

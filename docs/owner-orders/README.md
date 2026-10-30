@@ -61,6 +61,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Sidebar show/hide + Terminal panel resizing (30 Oct) | ATP_ORDER_M57_M58.md | M57, M58 | not started |
 | - | Copilot reading card + Analyze a chart (30 Oct) | ATP_ORDER_M59.md | M59 | not started |
 | - | Sidebar / tabs rationalisation (30 Oct) | ATP_ORDER_M60.md | M60 | proposal |
+| - | Option chain OI / PCR tab fixes (30 Oct) | ATP_ORDER_M61.md | M61 | not started |
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

@@ -347,7 +347,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       )}
 
       <div data-tour="terminal-status">
-        <StatusBarV2 status={status} failed={statusL.status === "error"} masked={masked} onMask={toggleMask} compact={narrow} combined={combined.list} showMode={false} />
+        <StatusBarV2 status={status} failed={statusL.status === "error"} masked={masked} onMask={toggleMask} compact={narrow} combined={combined.list} showMode={false} showFeed={false} />
       </div>
       {trading.layer}
     </div>

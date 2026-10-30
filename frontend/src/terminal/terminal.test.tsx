@@ -21,6 +21,10 @@ import type { ChainLeg, LiveChain } from "../optionChain/types";
 import { NO_STOP, stopText, type HeldRow } from "../trading/model";
 import { ContextBarV2, contextFigures } from "./ContextBarV2";
 import { terminalLevels } from "./chartLevels";
+import exitAllSource from "../trading/ExitAllV2.tsx?raw";
+import { ExitAllV2, exitableRows } from "../trading/ExitAllV2";
+import listSource from "../trading/PositionsV2.tsx?raw";
+import type { TradeRecord } from "../types";
 import type { OptionChainData } from "../optionChain/useOptionChain";
 import { strategyDisplayName } from "../ui/strategyName";
 import { formatPrice, formatTimeIST } from "../ui/format";
@@ -478,8 +482,9 @@ describe("owner fixes T1-2 .. T1-7", () => {
   it("UI-28 U3.4: Exit all asks in the app with the rupee impact, never the browser's confirm", () => {
     expect(exitAllConsequence(3, -1250)).toBe("Exit all 3 open positions at the current price. Sold legs close first, then the legs that protect them. Open P&L now: −₹1,250.");
     expect(exitAllConsequence(2, null)).toBe("Exit all 2 open positions at the current price. Sold legs close first, then the legs that protect them.");
-    expect(panelsSource).not.toContain("window.confirm(exitAllConfirmText");
-    expect(panelsSource).toMatch(/<ConfirmDialog open=\{askExitAll\}[\s\S]*consequence=\{exitAllConsequence\(rows\.length, known\.length === rows\.length \? total : null\)\}/);
+    // CT-1 T4: Exit all lives in the one position list (trading/ExitAllV2.tsx), for My trades and the Terminal alike.
+    expect(exitAllSource).not.toContain("window.confirm(exitAllConfirmText");
+    expect(exitAllSource).toMatch(/<ConfirmDialog open=\{askExitAll\}[\s\S]*consequence=\{exitAllConsequence\(rows\.length, known\.length === rows\.length \? total : null\)\}/);
   });
 
   it("T1-7 / TF-1: the terminal chart's timeframe control is the shared TimeframePicker", () => {
@@ -557,5 +562,18 @@ describe("TERM-2 step 2: the chart's lines", () => {
       { price: 24651.5, title: "Breakeven", tone: "neutral" },
       { price: 24800, title: "Your stop", tone: "down" },
     ]);
+  });
+});
+
+describe("CT-1 T4: Exit all in the one position list", () => {
+  it("counts only the PAPER positions (a LIVE one closes in the broker's app)", () => {
+    const rec = (id: number, mode: string) => ({ id, mode }) as unknown as TradeRecord;
+    const rows = [1, 2, 3].map((id) => ({ id, side: "Buy", pnl: 10 }) as unknown as HeldRow);
+    const byId = new Map([[1, rec(1, "PAPER")], [2, rec(2, "PAPER")], [3, rec(3, "LIVE")]]);
+    const paper = exitableRows(rows, byId);
+    expect(paper.map((r) => r.id)).toEqual([1, 2]);
+    const html = renderToStaticMarkup(<ExitAllV2 rows={paper} byId={byId} groups={[]} hooks={{ onChanged: () => undefined, onNote: () => undefined }} />);
+    expect(html).toContain("Exit all (2)");
+    expect(listSource).toContain("exitableRows(rows, byId)");
   });
 });

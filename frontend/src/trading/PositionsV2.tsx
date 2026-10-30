@@ -1,3 +1,4 @@
+import { ExitAllV2, exitableRows, type ExitAllHooks } from "./ExitAllV2";
 import { ArrowDownRight, ArrowUpRight, ChartCandlestick, Layers, Plus, SlidersHorizontal } from "lucide-react";
 import { Suspense, lazy, useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
@@ -204,7 +205,8 @@ export default function PositionsV2(_props: PageProps = {}) {
                   {/* UX-15: one chip, not a sentence (the Exit button below each paper position says the rest). */}
                   <div className="mb-space-3"><Chip tone="warn" variant="meaning" icon="!" name="no-price">Live prices: connect your broker</Chip></div>
                   {accountFilter}
-                  <PositionList rows={shownRows} byId={byId} actions={actions} prices={false} groups={fno.groups} />
+                  <PositionList rows={shownRows} byId={byId} actions={actions} prices={false} groups={fno.groups}
+                    exitAll={{ onChanged: reload, onNote: (text, ok) => setNotice({ kind: ok ? "done" : "warn", text }) }} />
                   {groupSheet}
                 </>
               )}
@@ -272,7 +274,8 @@ export default function PositionsV2(_props: PageProps = {}) {
               </div>
             )}
             {accountFilter}
-            <PositionList rows={shownRows} byId={byId} actions={actions} groups={fno.groups} />
+            <PositionList rows={shownRows} byId={byId} actions={actions} groups={fno.groups}
+              exitAll={{ onChanged: reload, onNote: (text, ok) => setNotice({ kind: ok ? "done" : "warn", text }) }} />
             {groupSheet}
           </>
         )}
@@ -399,10 +402,14 @@ function groupExits(group: PositionGroup, actions: RowActions): boolean {
 
 /** `prices: false` (no broker session): no LTP or P&L columns at all - an entry-price row with nothing made up.
  * FNO-4: legs placed together show together under one line with their combined P&L; every leg keeps its own Exit. */
-export function PositionList({ rows, byId, actions, prices = true, groups = [] }: {
+export function PositionList({ rows, byId, actions, prices = true, groups = [], exitAll }: {
   rows: HeldRow[]; byId: Map<number, TradeRecord>; actions: RowActions; prices?: boolean; groups?: PositionGroup[];
+  /** CT-1 T4: "Exit all" in the list itself (My trades and the Terminal, one code path); shown with two or more
+   * positions while "Exit now" is on - each position keeps its own Exit, never hidden or blocked (ADR-0004). */
+  exitAll?: ExitAllHooks;
 }) {
   const { grouped, single } = groupRows(rows, groups);
+  const paperRows = exitableRows(rows, byId);
   const row = (r: HeldRow, inGroup = false, group?: PositionGroup) => {
     const p = byId.get(r.id);
     const groupLeg = group && groupExits(group, actions) ? { hedge: (group.hedge_ids ?? []).includes(r.id) } : undefined;
@@ -410,6 +417,8 @@ export function PositionList({ rows, byId, actions, prices = true, groups = [] }
   };
   return (
     <div className="space-y-space-3">
+      {/* Only the PAPER positions this list can exit (a LIVE one closes in the broker's app, as its row says). */}
+      {exitAll && actions.exitNowOn && actions.canTrade && paperRows.length > 1 && <ExitAllV2 rows={paperRows} byId={byId} groups={groups} hooks={exitAll} />}
       {grouped.map((g) => (
         <section key={g.group.key} aria-label={groupTitle(g)} data-group={g.group.kind}
           className="rounded-control border border-border px-space-3 py-space-2">

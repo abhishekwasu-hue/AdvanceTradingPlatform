@@ -270,27 +270,8 @@ export function OrderPanelV2({ ticket, state: t, onClear }: {
 
 // --- Positions -----------------------------------------------------------------------------------------------------------
 
-/** T1-6 "Exit all": every open position through the existing exits, short risk first - each basket group closes its sold
- *  legs before its hedges (exit-group), then the single sold positions, then the bought ones (Exit now). Nothing here
- *  is ever disabled and no check stops it (ADR-0004); a leg that does not close is named, the rest still go. Pure order. */
-export function exitAllPlan(rows: readonly HeldRow[], groups: readonly PositionGroup[]): { groups: number[]; sells: number[]; buys: number[] } {
-  const { grouped, single } = groupRows(rows, groups);
-  return {
-    groups: grouped.filter((g) => g.group.kind === "basket").map((g) => g.legs[0].id),
-    sells: [...grouped.filter((g) => g.group.kind !== "basket").flatMap((g) => g.legs), ...single].filter((r) => r.side === "Sell").map((r) => r.id),
-    buys: [...grouped.filter((g) => g.group.kind !== "basket").flatMap((g) => g.legs), ...single].filter((r) => r.side === "Buy").map((r) => r.id),
-  };
-}
-
-export function exitAllConfirmText(count: number): string {
-  return `Exit all ${count} open ${count === 1 ? "position" : "positions"} at the current price? Sold legs close first, then the legs that protect them.`;
-}
-
-/** UI-28 U3.4 (NN/g H5): the Exit all confirm names the rupee impact - the open P&L it books - when every price is known. */
-export function exitAllConsequence(count: number, openPnl: number | null): string {
-  const base = exitAllConfirmText(count).replace(/\?/, ".");
-  return openPnl === null ? base : `${base} Open P&L now: ${openPnl >= 0 ? "+" : "−"}${formatINR(Math.abs(openPnl))}.`;
-}
+// CT-1 T4: Exit all moved into the one position list (trading/ExitAllV2.tsx); re-exported for older callers.
+export { exitAllConfirmText, exitAllConsequence, exitAllPlan } from "../trading/ExitAllV2";
 
 export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, fnoOn = false, combined, onChanged }: {
   read: Read<TradeRecord[]>; exposure?: PortfolioExposure | null; canTrade: boolean; exitNowOn: boolean;
@@ -302,8 +283,6 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
 }) {
   const [note, setNote] = useState<{ kind: "done" | "info" | "warn"; text: ReactNode } | null>(null);
   const [groupExit, setGroupExit] = useState<GroupExitAsk | null>(null);
-  const [exitingAll, setExitingAll] = useState(false);
-  const [askExitAll, setAskExitAll] = useState(false);   // UI-28 U3.4: the in-app confirm with the rupee impact
   const [partAsk, setPartAsk] = useState<PositionActionAsk | null>(null);   // T2 (TT-9): Exit part / Reverse
   const [waitingTick, setWaitingTick] = useState(0);
   const list = useMemo(() => (read.status === "ok" ? read.value : []), [read]);
@@ -344,24 +323,6 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
     }
   }
   const byId = new Map(list.map((p) => [p.id, p]));
-  // T1-6 Exit all: one confirm, then the existing exits one after another (sold risk first). Never disabled.
-  async function exitAll() {
-    setExitingAll(true);
-    const plan = exitAllPlan(rows, fno.groups);
-    const failed: string[] = [];
-    for (const id of plan.groups) {
-      try { const r = await groupExitApi.exitGroup(id); r.legs.filter((l) => !l.closed).forEach((l) => failed.push(l.symbol)); }
-      catch { failed.push(byId.get(id)?.symbol ?? "a group"); }
-    }
-    for (const id of [...plan.sells, ...plan.buys]) {
-      try { await api.exitNow(id); } catch { failed.push(byId.get(id)?.symbol ?? "a position"); }
-    }
-    setExitingAll(false);
-    onChanged();
-    setNote(failed.length
-      ? { kind: "warn", text: `Not closed: ${failed.join(", ")}. Exit ${failed.length === 1 ? "it" : "them"} one by one below.` }
-      : { kind: "done", text: "Every open position was sent to close at the current price." });
-  }
   const actions: RowActions = {
     exitNowOn, canTrade, onExit: (p) => void exitNow(p), onCheck: (p, price) => void checkPrice(p, price),
     group: fnoOn && canTrade ? {
@@ -389,23 +350,12 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
         </div>
         <span className="text-t12 text-fg-muted">{rows.length} open</span>
       </div>
-      {exitNowOn && canTrade && rows.length > 1 && (
-        <div className="flex justify-end">
-          {/* A neutral button, never disabled (ADR-0004); "Exiting…" only while the exits are on their way. */}
-          <button type="button" onClick={() => setAskExitAll(true)} data-terminal="exit-all" aria-busy={exitingAll}
-            className="inline-flex min-h-11 items-center rounded-control border border-border px-space-3 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand lg:min-h-9">
-            {exitingAll ? "Exiting…" : `Exit all (${rows.length})`}
-          </button>
-          <ConfirmDialog open={askExitAll} onOpenChange={setAskExitAll} title={`Exit all ${rows.length} positions?`}
-            consequence={exitAllConsequence(rows.length, known.length === rows.length ? total : null)} confirmLabel="Exit all"
-            busy={exitingAll} onConfirm={() => { setAskExitAll(false); void exitAll(); }} />
-        </div>
-      )}
       {combined && fnoOn && canTrade && (
         <CombinedExitBarV2 positions={list} facts={fno.facts} exits={combined.list}
           onChanged={() => { combined.reload(); onChanged(); }} onNote={(text, ok) => setNote({ kind: ok ? "done" : "warn", text })} />
       )}
-      <PositionList rows={rows} byId={byId} actions={actions} prices groups={fno.groups} />
+      <PositionList rows={rows} byId={byId} actions={actions} prices groups={fno.groups}
+        exitAll={{ onChanged, onNote: (text, ok) => setNote({ kind: ok ? "done" : "warn", text }) }} />
       <GroupExitSheetV2 ask={groupExit} onClose={() => setGroupExit(null)}
         onDone={(text, ok) => { setGroupExit(null); setNote({ kind: ok ? "done" : "warn", text }); onChanged(); }} />
       <PositionActionSheetV2 ask={partAsk} onClose={() => setPartAsk(null)}

@@ -225,7 +225,7 @@ test.describe("v2 terminal 1440", () => {
       // TERM-2 step 1: one PAPER badge, in the context bar (the status bar no longer repeats it).
       await expect(page.locator("[data-terminal='mode']")).toHaveText("PAPER");
       await expect(page.locator("[data-status='mode']")).toHaveCount(0);
-      await expect(page.locator("[data-status='feed']")).toHaveText("Live prices");
+      await expect(page.locator("[data-status='feed']")).toHaveCount(0);           // CT-1 C9: the shell / chart say freshness once
       await noSidewaysScroll(page);
       await shot(page, `terminal-1440-${theme}`);
       await page.locator("[data-status='mask']").click();

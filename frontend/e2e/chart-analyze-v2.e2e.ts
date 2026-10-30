@@ -388,7 +388,10 @@ test.describe("Analyze a chart: the flow", () => {
     await open(page, "/charts", "light");
     await mockChartAnalyze(page, "formed");
     await page.goto("/charts");
-    await page.getByRole("link", { name: "Analyze a chart" }).click();
+    // CT-1 C10: the entry is the shell's one Ask AI (top bar), no longer a Charts toolbar link.
+    await expect(page.getByRole("toolbar", { name: "Chart controls" }).getByRole("link", { name: "Analyze a chart" })).toHaveCount(0);
+    await page.locator("[data-ask-ai-open]").click();
+    await page.getByRole("dialog").getByRole("link", { name: /Analyze a chart image/ }).click();
     await expect(page).toHaveURL(/\/chart-analyze$/);
     await expect(page.getByTestId("chart-analyze-page")).toBeVisible();
   });
@@ -468,6 +471,8 @@ test.describe("Analyze a chart: the flow", () => {
     await page.goto("/charts");
     await expect(page.getByRole("toolbar", { name: "Chart controls" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Analyze a chart" })).toHaveCount(0);
+    // CT-1 C10: nor in the shell: with no AI flag on, Charts offers nothing, so the top bar has no Ask AI.
+    await expect(page.locator("[data-ask-ai-open]")).toHaveCount(0);
     await page.goto("/chart-analyze");
     await expect(page.getByRole("heading", { name: "Coming soon" })).toBeVisible();      // item 7: the shell's standard page
     await expect(page.getByTestId("chart-analyze-page")).toHaveCount(0);

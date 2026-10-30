@@ -1,4 +1,4 @@
-import { Bell, CircleHelp, LifeBuoy, MessageSquarePlus, Search, TriangleAlert } from "lucide-react";
+import { Bell, CircleHelp, LifeBuoy, MessageSquarePlus, Search, Sparkles, TriangleAlert } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Link } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
@@ -30,6 +30,8 @@ import { FeedDot } from "./FeedDot";
  * with an icon). P3: on the front page in PAPER (`paperOnly`) the LIVE-paused notice is left out; the shell also passes
  * `paperOnly` on every page while `phase0_paper_only` is on (user-friendly pass item 2: no LIVE wording in the paper
  * phase).
+ * CT-1 C10: the one "Ask AI" button (`onAskAi`, present while the page on screen has something to offer): an icon on a
+ * phone, the icon and its name from md up; it opens the shell's Ask AI sheet (src/shell/AskAiSheetV2.tsx). The phone bar then leaves out the "AT" mark and the gaps between its icons, so a title such as "Option chain" fits.
  * User-friendly pass item 1 (UX audit M13): "Verify your email" is never a chip on every page; it is one row in the
  * Dashboard's Needs attention list (with Resend) and the Email verification card in Settings › Account.
  */
@@ -52,6 +54,9 @@ export interface TopBarV2Props {
   onTour?: () => void;
   /** UI-H CA7: the page's navigation key - its section chip beside the title on a phone (colour v2). */
   section?: ShellKey | null;
+  /** CT-1 C10: opens the one Ask AI sheet (absent: nothing to offer on this page). */
+  onAskAi?: () => void;
+  askAiOpen?: boolean;
 }
 
 /** The notices under the top bar, in plain words. `paperOnly` leaves out the LIVE ones. Never an e-mail chip (item 1). */
@@ -95,7 +100,7 @@ export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, 
   return small;
 }
 
-export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour, section = null }: TopBarV2Props) {
+export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour, section = null, onAskAi, askAiOpen = false }: TopBarV2Props) {
   const colour = useColourV2();
   const tint = colour ? sectionTintOf(section) : null;
   const SectionIcon = tint ? navItemFor(section)?.icon : undefined;
@@ -112,7 +117,9 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
   return (
     <header className="shrink-0 border-b border-subtle bg-surface-1 pt-[env(safe-area-inset-top)]">
       <div ref={row} className={`group/bar flex ${colour ? "min-h-14" : "h-14"} items-center gap-space-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] md:px-space-8`}>
-        <Link to="/" aria-label="AiAlgoDesk - Dashboard" className="shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:hidden">
+        {/* CT-1 C10: on a phone the Ask AI button takes the mark's room (Today is in the bottom bar), so a title such as
+            "Option chain" is not cut. */}
+        <Link to="/" aria-label="AiAlgoDesk - Dashboard" className={`shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:hidden ${onAskAi ? "hidden" : ""}`}>
           {/* A text monogram, not the logo SVG: the sidebar's (hidden on phones) owns the logo's gradient id. */}
           <span aria-hidden className="flex h-7 w-7 items-center justify-center rounded-control bg-fg text-t12 font-bold text-surface">AT</span>
         </Link>
@@ -148,7 +155,13 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
           <span className="flex-1 truncate text-left">{COMMAND_HINT}</span>
           <kbd className="shrink-0 rounded-control border border-border bg-surface-1 px-space-1 text-t12 text-fg-muted">{shortcut}</kbd>
         </button>
-        <div className="ml-auto flex shrink-0 items-center gap-space-1">
+        <div className={`ml-auto flex shrink-0 items-center ${onAskAi ? "gap-0 md:gap-space-1" : "gap-space-1"}`}>
+          {onAskAi && (
+            <button type="button" onClick={onAskAi} title="Ask AI" aria-label="Ask AI" aria-haspopup="dialog" aria-expanded={askAiOpen} data-ask-ai-open
+              className={`${iconButton} text-brand hover:text-brand md:mr-space-1 md:w-auto md:gap-space-2 md:border md:border-border md:px-space-3 md:text-t14 md:font-semibold`}>
+              <Sparkles size={18} aria-hidden /><span className="hidden md:inline">Ask AI</span>
+            </button>
+          )}
           <button type="button" onClick={onSearch} aria-label={COMMAND_LABEL} aria-haspopup="dialog" className={`${iconButton} md:hidden`}>
             <Search size={20} aria-hidden />
           </button>

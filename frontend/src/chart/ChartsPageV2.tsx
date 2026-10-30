@@ -17,6 +17,7 @@ import { hubViewOf, readCarry } from "../fno/hubModel";
 import { HubTabsView, useHubInfo } from "../fno/SymbolHubTabsV2";
 import { pathFor, type PageProps } from "../routes";
 import { chartsPath } from "../shell/shellRoutes";
+import { useHasAskAiEntry, useRegisterAskAi } from "../shell/askAiEntry";
 import { PageIntro } from "../ui/PageIntro";
 import { SubTabs } from "../ui/SubTabs";
 import { recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
@@ -34,7 +35,7 @@ import {
 import { toggle as toggleIndicator } from "./indicatorsModel";
 import { CandlePool, START_PARAMS, startChartFrom } from "./multiChart";
 import MultiChartV2 from "./MultiChartV2";
-import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, type TimeframeId } from "./timeframes";
+import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, type TimeframeId } from "./timeframes";
 import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs } from "./useChartPrefs";
 import { useFullscreen } from "./useFullscreen";
@@ -152,6 +153,14 @@ export default function ChartsPageV2(_props: PageProps) {
   const readTf = readTimeframe(timeframe);
   const [reading, setReading] = useState(false);
   const read = useReadChart(engine, `${exchange}:${symbol}`, readTf, readOn && reading && tab === "chart" && !hubView);
+  // CT-1 C10: inside the shell, Read this chart and Analyze a chart live in the top bar's one Ask AI (src/shell/askAiEntry.tsx);
+  // the page hands it the symbol, the timeframe and the reading's switch. Outside the shell the toolbar keeps its buttons.
+  const shellAsk = useHasAskAiEntry();
+  const onChartTab = tab === "chart" && !hubView;
+  useRegisterAskAi(shellAsk ? {
+    symbol, timeframe: onChartTab ? timeframeLabel(timeframe) : undefined,
+    read: readOn && readTf && onChartTab ? { on: reading, toggle: () => setReading((v) => !v) } : undefined,
+  } : null);
 
   // CHP-2: a tool picked and not yet placed stays picked when the symbol (and so the drawing controller) changes.
   const armed = useRef<{ kind: DrawingKind; text?: string; ctl: DrawingController } | null>(null);
@@ -201,8 +210,8 @@ export default function ChartsPageV2(_props: PageProps) {
   // CT-1 C1: the host's actions in the one ChartToolbar - icon buttons from 768 px, labelled rows under More on a phone.
   const actions: ToolbarAction[] = [
     // Analyze a chart (flag chart_analyze, off by default): a short way from the chart to the reading page.
-    ...(features.on("chart_analyze") && !fs.on ? [{ id: "analyze", label: "Analyze a chart", icon: <ScanSearch size={16} aria-hidden />, to: pathFor("chart-analyze") }] : []),
-    ...(readOn && readTf ? [{ id: "read", label: "Read this chart", title: reading ? "Hide the reading" : "Read this chart", moreLabel: reading ? "Hide the reading" : "Read this chart",
+    ...(!shellAsk && features.on("chart_analyze") && !fs.on ? [{ id: "analyze", label: "Analyze a chart", icon: <ScanSearch size={16} aria-hidden />, to: pathFor("chart-analyze") }] : []),
+    ...(!shellAsk && readOn && readTf ? [{ id: "read", label: "Read this chart", title: reading ? "Hide the reading" : "Read this chart", moreLabel: reading ? "Hide the reading" : "Read this chart",
       icon: <ScanText size={16} aria-hidden />, pressed: reading, testId: "read-chart-button", onClick: () => setReading((v) => !v) }] : []),
   ];
   const endActions: ToolbarAction[] = [
@@ -291,7 +300,7 @@ export default function ChartsPageV2(_props: PageProps) {
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} captureTouch={fs.on}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
-            {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} />}
+            {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}
             {(data.error || tradesNote || data.loadingOlder || drawingText) && (
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">
                 {data.error && <span className="text-fg">{data.error}</span>}

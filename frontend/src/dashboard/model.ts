@@ -279,7 +279,7 @@ export interface SignalRow {
 }
 
 const SOURCES: Record<string, string> = {
-  deployment: "Paper bot", scan: "Scan", tradingview: "TradingView alert", public_api: "Your API", manual: "Your setup",
+  deployment: "Trading bot", scan: "Scan", tradingview: "TradingView alert", public_api: "Your API", manual: "Your setup",
   ticket: "Paper ticket", requote: "Re-quoted", console: "Copilot",
 };
 const STATUS: Record<string, SignalStatus> = {
@@ -467,7 +467,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
   if (others.length) {
     rows.push({
       id: "suggestions", icon: "approval", tone: "neutral",
-      title: others.length === 1 ? "1 paper bot suggestion needs your answer" : `${others.length} paper bot suggestions need your answer`,
+      title: others.length === 1 ? "1 trading bot suggestion needs your answer" : `${others.length} trading bot suggestions need your answer`,
       detail: others[0].reason, action: { label: "Review", to: input.approvalsPath },
     });
   }
@@ -477,7 +477,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
     const d = paused[0];
     rows.push({
       id: "paused", icon: "paused", tone: "warn",
-      title: paused.length === 1 ? `Paper bot paused “${botDisplayName(d.strategy_id, d.symbol)}”` : `${paused.length} paper bots are paused`,
+      title: paused.length === 1 ? `Trading bot paused “${botDisplayName(d.strategy_id, d.symbol)}”` : `${paused.length} trading bots are paused`,
       detail: paused.length === 1 ? (d.pause_reason ? `${d.pause_reason} Nothing else is affected.` : "It stays paused until you resume it.")
         : "They stay paused until you resume them.",
       action: { label: "Review", to: "/deployments" }, dismissible: true,
@@ -485,8 +485,8 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
   } else if (failing.length) {
     rows.push({
       id: "failing", icon: "paused", tone: "warn",
-      title: failing.length === 1 ? `Paper bot “${botDisplayName(failing[0].strategy_id, failing[0].symbol)}” hit a problem` : `${failing.length} paper bots hit a problem`,
-      detail: "Open Paper bot to see what happened and what to do.", action: { label: "Review", to: "/deployments" }, dismissible: true,
+      title: failing.length === 1 ? `Trading bot “${botDisplayName(failing[0].strategy_id, failing[0].symbol)}” hit a problem` : `${failing.length} trading bots hit a problem`,
+      detail: "Open Trading bot to see what happened and what to do.", action: { label: "Review", to: "/deployments" }, dismissible: true,
     });
   }
   const lockout = input.risk?.lockout;

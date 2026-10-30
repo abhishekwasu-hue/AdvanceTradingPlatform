@@ -7,8 +7,8 @@ import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
 
 /**
- * UX2 fix 4 ("Paper bot in three taps", docs/design/UX_AUDIT_FULL.md P18): the v2 Paper bot page at /deployments with
- * `ui_v2` on. Your bots as cards (Pause / Resume / Stop with a confirm), "Start a paper bot" (1 strategy, 2 symbol,
+ * UX2 fix 4 ("Trading bot in three taps", docs/design/UX_AUDIT_FULL.md P18): the v2 Trading bot page at /deployments with
+ * `ui_v2` on. Your bots as cards (Pause / Resume / Stop with a confirm), "Start a trading bot" (1 strategy, 2 symbol,
  * 3 Start on paper: always PAPER, one lot), the old form under "More ways to trade" without the PAPER / LIVE switch.
  * - Baselines `paper-bot-v2-{1440,390}-{light,dark}.png`.
  * Every reply is made-up data (e2e/fixtures/setup_v2.json strategies, the bots below): no real account or id.
@@ -30,7 +30,7 @@ const BOTS = [
     pause_reason: "3 losses in a row", last_evaluated_at: "2026-10-20T10:00:00Z", open_positions: 0, instrument_kind: "UNDERLYING",
     option_position: null, expiry_rule: null, strike_rule: null, max_lots: null, holding: "SWING" },
   { ...base, id: 40, strategy_id: "vwap_supertrend_5m", symbol: "NIFTY BANK", timeframe: "1min", mode: "PAPER", status: "STOPPED",
-    pause_reason: "stopped from the Paper bot page", last_evaluated_at: null, open_positions: 0, instrument_kind: "OPTION",
+    pause_reason: "stopped from the Trading bot page", last_evaluated_at: null, open_positions: 0, instrument_kind: "OPTION",
     option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", max_lots: 1, holding: "INTRADAY" },
 ];
 
@@ -102,7 +102,7 @@ const form = (page: Page) => page.locator("[data-block='start']");
 const SHOT = { animations: "disabled" as const, fullPage: true, maxDiffPixelRatio: 0.02, timeout: 15_000 };
 
 for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, { name: "390", width: 390, height: 844, mobile: true }]) {
-  test.describe(`Paper bot ${size.name}`, () => {
+  test.describe(`Trading bot ${size.name}`, () => {
     test.use({ viewport: { width: size.width, height: size.height }, isMobile: size.mobile, hasTouch: size.mobile, deviceScaleFactor: 1 });
 
     for (const theme of ["light", "dark"] as const) {
@@ -122,12 +122,12 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
   });
 }
 
-test.describe("Paper bot behaviour", () => {
+test.describe("Trading bot behaviour", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("your bots: running first, a readable pause reason, stopped bots on request; one name, no developer words", async ({ page }) => {
     await open(page);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Paper bot");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Trading bot");
     const rows = bots(page).locator("[data-bot]");
     await expect(rows).toHaveCount(2);
     await expect(rows.nth(0)).toContainText("Opening Range Breakout");
@@ -144,8 +144,8 @@ test.describe("Paper bot behaviour", () => {
 
   test("start in three taps: strategy, symbol, Start on paper - always PAPER, one lot for an index", async ({ page }) => {
     const server = await open(page, { empty: true });
-    await expect(bots(page)).toContainText("Start a paper bot below");
-    await page.getByRole("button", { name: "Start a paper bot" }).click();
+    await expect(bots(page)).toContainText("Start a trading bot below");
+    await page.getByRole("button", { name: "Start a trading bot" }).click();
     await expect(form(page).getByLabel("Pick a strategy")).toBeFocused();
     await expectChoice(form(page).getByLabel("Pick a strategy"), "orb_15m_5m");
     await expect(form(page)).toContainText("Waits for the first 15 minutes' range to break");
@@ -240,18 +240,18 @@ test.describe("Paper bot behaviour", () => {
 
   test("without a broker: says to connect one first", async ({ page }) => {
     await open(page, { noBroker: true });
-    await expect(form(page)).toContainText("A paper bot reads live prices from your broker.");
+    await expect(form(page)).toContainText("A trading bot reads live prices from your broker.");
     await expect(form(page).getByRole("link", { name: "Connect your broker" })).toHaveAttribute("href", "/broker");
   });
 });
 
-/** UX-11 PR 5 (owner, 27 Oct): numbers first - every Paper bot card passes the text budget; the visible-word count is printed. */
+/** UX-11 PR 5 (owner, 27 Oct): numbers first - every Trading bot card passes the text budget; the visible-word count is printed. */
 for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
-  test.describe(`v2 Paper bot text budget ${size.width}`, () => {
+  test.describe(`v2 Trading bot text budget ${size.width}`, () => {
     test.use({ viewport: size });
     test("every card fits the text budget", async ({ page }) => {
       await open(page, { theme: "light" });
-      console.log(`[words] Paper bot ${size.width}: ${await visibleWords(page)}`);
+      console.log(`[words] Trading bot ${size.width}: ${await visibleWords(page)}`);
       console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
       expect(await textBudgetProblems(page)).toEqual([]);
     });

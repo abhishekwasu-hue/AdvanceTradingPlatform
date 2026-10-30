@@ -13,7 +13,7 @@ What it does (and what it never does):
   the minimum reward to risk, the timeframe, the side). The draft never fills in a stop, an objective, a size or a rule
   he did not state. The one value taken from elsewhere is his OWN saved minimum reward to risk (his risk limits),
   labelled as such and changeable.
-* Nothing is saved, started or sent. The draft goes to the Paper bot page, where the trader reviews it, fills in his
+* Nothing is saved, started or sent. The draft goes to the Trading bot page, where the trader reviews it, fills in his
   values, saves it as his strategy and starts it on paper himself (ADR-0006: the AI never places, blocks or changes an
   order). Pure functions only, so every rule here is unit-tested.
 """

@@ -14,7 +14,7 @@ export const WELCOME: readonly WelcomeCard[] = [
   },
   {
     id: "paper",
-    title: "Your paper bot",
+    title: "Your trading bot",
     body: "Start a strategy in paper mode: it trades with pretend money, so you can see how it behaves without any risk.",
   },
   {

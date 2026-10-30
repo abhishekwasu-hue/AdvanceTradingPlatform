@@ -261,7 +261,7 @@ export function OutcomeLine({ item, now }: { item: SignalFeedItem; now: Date }) 
   const status = effectiveStatus(item, now);
   const text = status === "expired" ? "This signal expired before anyone decided. Nothing was placed."
     : status === "skipped" ? "Skipped. Nothing was placed."
-    : status === "taken" ? (item.source.kind === "autopilot" && item.action_id === null ? "Taken by your paper bot." : "Approved.")
+    : status === "taken" ? (item.source.kind === "autopilot" && item.action_id === null ? "Taken by your trading bot." : "Approved.")
     : status === "not_placed" ? "Nothing was placed."
     : status === "snoozed" ? "Snoozed. It comes back to Waiting before it expires."
     : status === "info" ? (item.source.kind === "library" ? "Made with the signal generator. Nothing to decide." : "A scan match. Nothing to decide.")

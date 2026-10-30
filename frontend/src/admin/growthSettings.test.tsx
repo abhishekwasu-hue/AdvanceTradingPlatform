@@ -13,7 +13,7 @@ describe("the funnel", () => {
     steps: [
       { key: "signed_up" as const, label: "Signed up", count: 40 },
       { key: "broker" as const, label: "Connected a broker", count: 20 },
-      { key: "paper_bot" as const, label: "Started a paper bot", count: 10 },
+      { key: "paper_bot" as const, label: "Started a trading bot", count: 10 },
       { key: "active_week1" as const, label: "Active in week 1", count: 5 },
     ],
     week1_open: 3,

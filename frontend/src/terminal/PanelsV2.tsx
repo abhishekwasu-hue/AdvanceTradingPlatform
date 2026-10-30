@@ -474,10 +474,10 @@ export function PlaceholderPanelV2({ kind }: { kind: "bots" | "payoff" }) {
     return (
       <div className="space-y-space-2" data-panel-body="bots">
         <p className="flex items-center gap-space-2 text-t14 font-semibold text-fg"><Bot size={16} aria-hidden className="text-brand" />Coming in a later update</p>
-        <p className={MUTED}>Your running bots and the signals waiting for you will show here, with pause and exit for each bot. Until then, use the Signals and Paper bot pages.</p>
+        <p className={MUTED}>Your running bots and the signals waiting for you will show here, with pause and exit for each bot. Until then, use the Signals and Trading bot pages.</p>
         <div className="flex flex-wrap gap-x-space-4">
           <Link to="/signals" className={LINK}>Open Signals</Link>
-          <Link to="/deployments" className={LINK}>Open Paper bot</Link>
+          <Link to="/deployments" className={LINK}>Open Trading bot</Link>
         </div>
       </div>
     );

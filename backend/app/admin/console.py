@@ -186,7 +186,7 @@ async def users(q: Optional[str] = None, limit: int = Query(200, ge=1, le=500),
 # MO4 slice 3 (flag `growth_v2`): the activation events, from rows that already exist - no tracker, no new table.
 ACTIVATION_STEPS = (
     ("broker", "Connected a broker"),
-    ("paper_bot", "Started a first paper bot"),
+    ("paper_bot", "Started a first trading bot"),
     ("journal", "First journal entry"),
 )
 
@@ -203,8 +203,8 @@ def _median(values: List[float]) -> Optional[float]:
 async def activation(days: int = Query(90, ge=1, le=365), limit: int = Query(200, ge=1, le=500),
                      admin: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Who reached which first step after signing up: a broker connected (the first broker credential they added), a
-    first paper bot (the first PAPER deployment they created) and a first journal entry (their first auto-captured
-    journal row). "Activated" = all three. C13 adds `growth_funnel` (signed up -> broker -> paper bot -> active in week 1)
+    first trading bot (the first PAPER deployment they created) and a first journal entry (their first auto-captured
+    journal row). "Activated" = all three. C13 adds `growth_funnel` (signed up -> broker -> trading bot -> active in week 1)
     and each person's `active_week1` (null while the first week is still running). AUD-G2.4 adds `value_funnel` (the five
     activation steps with the median hours to each, and the first-session share). Read-only; masked e-mail addresses;
     behind `growth_v2`."""
@@ -286,13 +286,13 @@ async def _activation_steps(session: AsyncSession, user_ids: List[int]) -> Dict[
     return out
 
 
-# Readiness C13: the growth funnel - signed up -> broker -> paper bot -> active in week 1. Only people whose first week is
+# Readiness C13: the growth funnel - signed up -> broker -> trading bot -> active in week 1. Only people whose first week is
 # over are counted (the others are `week1_open`). "Active in week 1" = signed in or used the app again on a later day:
 # a successful sign-in, or a session started or used, between one day and seven days after signing up.
 GROWTH_FUNNEL = (
     ("signed_up", "Signed up"),
     ("broker", "Connected a broker"),
-    ("paper_bot", "Started a paper bot"),
+    ("paper_bot", "Started a trading bot"),
     ("active_week1", "Active in week 1"),
 )
 WEEK_ONE = timedelta(days=7)

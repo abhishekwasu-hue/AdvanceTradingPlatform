@@ -16,7 +16,7 @@ export interface Idea {
   adopt: IdeaAdopt;
 }
 /** Slice 2 (IDEA-1): an idea mapped honestly onto a strategy template the organisation can adopt now; otherwise only
- * `available: false` ("comes later"). The settings are the Paper bot form's pre-fill. Slice 3: `note` says, in plain
+ * `available: false` ("comes later"). The settings are the Trading bot form's pre-fill. Slice 3: `note` says, in plain
  * words, where the paper strategy still reads less than the card. */
 export type IdeaAdopt =
   | { available: false }

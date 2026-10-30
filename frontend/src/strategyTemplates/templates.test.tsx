@@ -10,7 +10,7 @@ import apiSource from "./api.ts?raw";
 import type { StrategyTemplate } from "./api";
 import { paperBotPathFor, templateLinkFromSearch, typedSettings } from "./link";
 
-/** Strategy templates step 2: templates adopted as paper strategies in the v2 Paper bot form (ui_v2 + strategy_templates). */
+/** Strategy templates step 2: templates adopted as paper strategies in the v2 Trading bot form (ui_v2 + strategy_templates). */
 
 const noop = () => undefined;
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
@@ -38,7 +38,7 @@ describe("strategy templates: ids and names", () => {
   });
 });
 
-describe("strategy templates: the paper bot form", () => {
+describe("strategy templates: the trading bot form", () => {
   const render = (templates: StrategyTemplate[]) => renderToStaticMarkup(<MemoryRouter><StartBotV2 library={[intraday]} custom={[]} hasBroker
     firstField={createRef<HTMLButtonElement>()} onStarted={noop} templates={templates} /></MemoryRouter>);
 

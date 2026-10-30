@@ -118,7 +118,7 @@ describe("the cards", () => {
     expect(readable(html)).not.toMatch(/\blive\b/i);
   });
 
-  it("slice 3: T2 and T5 offer Adopt as a paper strategy into the Paper bot form with their template and settings", () => {
+  it("slice 3: T2 and T5 offer Adopt as a paper strategy into the Trading bot form with their template and settings", () => {
     const on = render({ adoptOn: true });
     const t2 = on.slice(on.indexOf('data-idea="T2"'), on.indexOf('data-idea="T3"'));
     expect(t2).toContain('data-adopt="A2"');

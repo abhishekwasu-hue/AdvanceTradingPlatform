@@ -52,7 +52,7 @@ export interface TradeRecord {
   tags?: string[];
   /** M45 MB-7 (flags `ui_v2` + `multi_account`): the caller's own simulated PAPER account of this position, else null. */
   account_label?: string | null;
-  /** UI-28 U2.4: the Paper bot that opened this trade (null: entered by hand or by a webhook). */
+  /** UI-28 U2.4: the Trading bot that opened this trade (null: entered by hand or by a webhook). */
   deployment_id?: number | null;
   mode: string;
   symbol: string;
@@ -246,6 +246,8 @@ export interface BacktestResult {
   options?: OptionBacktestSummary | null;
   // CP6-15: what the losses-in-a-row pause did in this run; absent when the limit was never reached.
   loss_streak?: { mode: LossStreakPause; limit: number; pauses: number; first_paused_at: string | null; held_to_end: boolean; note: string } | null;
+  /** REV-S3: a template run's history before the test window; `note` is one plain sentence when the test lacked it. */
+  history?: { note: string | null; needed_days: number; warmup_days: number } | null;
 }
 
 // Phase W: historical option backtests.

@@ -15,7 +15,7 @@ import {
   symbolProblem,
 } from "./model";
 
-/** UX2 fix 4: the v2 Paper bot page - three taps, PAPER only, plain words. */
+/** UX2 fix 4: the v2 Trading bot page - three taps, PAPER only, plain words. */
 
 const noop = () => undefined;
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
@@ -36,15 +36,15 @@ function bot(over: Partial<Deployment> = {}): Deployment {
 }
 
 describe("UX2 fix 4 wiring", () => {
-  it("the v2 shell has the Paper bot page at /deployments; today's router keeps the old page", () => {
+  it("the v2 shell has the Trading bot page at /deployments; today's router keeps the old page", () => {
     expect(PAGE_COMPONENTS_V2.deployments).toBeDefined();
     expect(routesSource).toContain('deployments: () => import("./pages/DeploymentsPage")');
     expect(routesSource).not.toContain("paperbot");
   });
 
-  it("one name: the navigation says Paper bot and still finds it by its old name", () => {
+  it("one name: the navigation says Trading bot and still finds it by its old name", () => {
     const item = NAV_SECTIONS_V2.flatMap((s) => s.items).find((i) => i.key === "deployments")!;
-    expect([item.label, item.title]).toEqual(["Paper bot", "Paper bot"]);
+    expect([item.label, item.title]).toEqual(["Trading bot", "Trading bot"]);
     expect(item.keywords).toContain("autopilot");
   });
 
@@ -111,7 +111,7 @@ describe("UX2 fix 4 model", () => {
   it("status in words: running, paused by you, a readable reason, never an internal code", () => {
     expect(botStatusText(bot())).toBe("Running");
     expect(botStatusText(bot({ status: "PAUSED", pause_reason: "paused from Autopilot tab" }))).toBe("Paused by you");
-    expect(botStatusText(bot({ status: "PAUSED", pause_reason: "paused from the Paper bot page" }))).toBe("Paused by you");
+    expect(botStatusText(bot({ status: "PAUSED", pause_reason: "paused from the Trading bot page" }))).toBe("Paused by you");
     expect(botStatusText(bot({ status: "PAUSED", pause_reason: "3 losses in a row." }))).toBe("Paused: 3 losses in a row");
     expect(botStatusText(bot({ status: "PAUSED", pause_reason: "auto_paused: consecutive_failures>=5" }))).toBe("Paused");
     expect(botStatusText(bot({ status: "STOPPED" }))).toBe("Stopped");

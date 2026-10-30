@@ -67,9 +67,9 @@ const STRATEGY: ChatAnswer = {
   summary: ["Your idea as a draft paper strategy, built only from ATP's own building blocks."],
   sections: [{ title: "Long side: all of these hold on the 15-minute chart", lines: RULE_TEXTS },
     { title: "Your settings", lines: ["Where the idea is wrong: 1.5 x ATR (14) from the entry.", "Profit objective: 2R."] },
-    { title: "Values you decide", lines: ["The size: the Paper bot page starts with one lot or your own saved default; change it there."] },
+    { title: "Values you decide", lines: ["The size: the Trading bot page starts with one lot or your own saved default; change it there."] },
     { title: "How I build it", lines: ["I use only ATP's own building blocks."] }],
-  action: { label: "Review it on the Paper bot page", to: "/deployments" }, followup: { label: "Test it on past data", question: "x. Test it on past data." },
+  action: { label: "Review it on the Trading bot page", to: "/deployments" }, followup: { label: "Test it on past data", question: "x. Test it on past data." },
   draft: { rules: RULE_TEXTS.map((text) => ({ side: "long", text })) } as unknown as ChatAnswer["draft"],
 };
 const STRIP: MarketStrip = {

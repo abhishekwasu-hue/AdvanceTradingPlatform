@@ -41,7 +41,7 @@ function answer(s: Server) {
   // As the backend: a skip only changes the order; a skipped broker step counts as done (app/me/setup.py view()).
   const open = steps.filter((x) => !(x.done || (x.key === "broker" && x.skipped)));
   const next = (open.find((x) => !x.skipped) ?? open[0])?.key ?? null;
-  // P3: the Get started card's three steps (its paper bot and Telegram steps read as the strategy and alerts steps here).
+  // P3: the Get started card's three steps (its trading bot and Telegram steps read as the strategy and alerts steps here).
   const card = [{ key: "broker", done: s.done.broker }, { key: "paper_bot", done: s.done.strategy }, { key: "telegram", done: s.done.alerts }];
   const cardDone = card.every((c) => c.done);
   const get_started = { steps: card, done_count: card.filter((c) => c.done).length, complete: cardDone, hidden_at: s.stored.get_started_hidden_at,
@@ -251,8 +251,8 @@ test.describe("setup wizard 390 x 844", () => {
     await expect(wizard(page)).not.toContainText(/\bLive\b|\bLIVE\b|real money/);
     await cards.first().getByRole("button", { name: "Test it" }).click();
     await expect(cards.first()).toContainText("12 trades · 58% won · +₹4,250 on the last 30 days of NIFTY 50 prices.");
-    await cards.nth(2).getByRole("button", { name: "Start a paper bot" }).click();
-    await expect(cards.nth(2)).toContainText("Started as a paper bot.");
+    await cards.nth(2).getByRole("button", { name: "Start a trading bot" }).click();
+    await expect(cards.nth(2)).toContainText("Started as a trading bot.");
     const post = server.sent.find((c) => c.method === "POST" && c.url === "/deployments");
     expect(post?.body).toMatchObject({ strategy_id: "orb_15m_5m", mode: "PAPER", instrument_kind: "OPTION", option_position: "BUY" });
     expect(post?.body).not.toHaveProperty("broker_name");
@@ -276,9 +276,9 @@ test.describe("setup wizard 390 x 844", () => {
   test("the strategy step: already running in the organisation (409 duplicate_active_bot) says nothing new started and is not done", async ({ page }) => {
     await open(page, { done: { broker: true, risk: true }, deployConflict: true });
     const first = wizard(page).locator("[data-suggestion]").first();
-    await first.getByRole("button", { name: "Start a paper bot" }).click();
+    await first.getByRole("button", { name: "Start a trading bot" }).click();
     await expect(first).toContainText("Nothing new was started: this strategy already runs for this symbol in your organisation. Stop that bot first");
-    await expect(first).not.toContainText("Started as a paper bot");
+    await expect(first).not.toContainText("Started as a trading bot");
     await expect(wizard(page).locator("[data-step-state='done']")).toHaveCount(2);
   });
 

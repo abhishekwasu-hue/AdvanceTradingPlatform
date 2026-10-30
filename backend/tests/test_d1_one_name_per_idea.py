@@ -1,5 +1,5 @@
 """Day-one fix 6 (README row 19): one name per idea - a strategy template an idea adopts carries the idea's own name, so
-Ideas, the Paper bot form and Signals never show two names for the same thing (A5 was "Structure flip retest" while its
+Ideas, the Trading bot form and Signals never show two names for the same thing (A5 was "Structure flip retest" while its
 idea T5 is "Breakout and retest (structure flip)"). Only the display name changed: the template's id, version and
 params hash (adopted bots keep their behaviour) are untouched."""
 from app.idea_library import content

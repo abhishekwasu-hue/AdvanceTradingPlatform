@@ -20,7 +20,7 @@ describe("UX3-9 navigation model: the 13-entry sidebar (UX audit section 5)", ()
 
   it("lists the audit's 13 entries in task order, Broker first", () => {
     expect(entries({ on: flags("ai_copilot", "screener_v2"), role: "OWNER" })).toEqual([
-      "Broker", "Today", "Charts", "Option chain", "Find setups", "Signals", "Paper bot", "My trades", "Performance",
+      "Broker", "Today", "Charts", "Option chain", "Find setups", "Signals", "Trading bot", "My trades", "Performance",
       "Strategies", "AI Copilot", "News & events", "Settings",
     ]);
   });
@@ -28,7 +28,7 @@ describe("UX3-9 navigation model: the 13-entry sidebar (UX audit section 5)", ()
   it("groups them for the More sheet and search captions; the admin area is its own group", () => {
     expect(labels(everything)).toEqual([
       ["Markets", ["Today", "Charts", "Option chain", "Find setups"]],
-      ["Trading", ["Signals", "Paper bot", "My trades"]],
+      ["Trading", ["Signals", "Trading bot", "My trades"]],
       ["Insights", ["Performance", "Strategies", "AI Copilot", "News & events"]],
       ["Account", ["Settings"]],
       ["Admin", ["Admin console"]],
@@ -39,7 +39,7 @@ describe("UX3-9 navigation model: the 13-entry sidebar (UX audit section 5)", ()
 
   it("a trader with no feature on sees 10 entries; nothing technical", () => {
     expect(entries(trader)).toEqual([
-      "Broker", "Today", "Charts", "Option chain", "Signals", "Paper bot", "My trades", "Performance", "Strategies",
+      "Broker", "Today", "Charts", "Option chain", "Signals", "Trading bot", "My trades", "Performance", "Strategies",
       "News & events", "Settings",
     ].filter(Boolean));
     for (const gone of ["Factor Lab", "Contract specs", "Activity log", "Company research", "Team", "Notifications", "Risk", "Orders", "Portfolio"]) {
@@ -140,7 +140,7 @@ describe("UX3-9 bottom bar and More sheet (UX audit section 5)", () => {
     expect(sheet.map((s) => s.title)).toEqual(["Markets", "Trading", "Insights", "Account"]);
     expect(sheet[0].items.map((i) => i.label)).toEqual(["Option chain"]);                    // screener_v2 off
     expect(moreSheetSections(withScreener)[0].items.map((i) => i.label)).toEqual(["Option chain", "Find setups"]);
-    expect(sheet[1].items.map((i) => i.label)).toEqual(["Paper bot"]);
+    expect(sheet[1].items.map((i) => i.label)).toEqual(["Trading bot"]);
     expect(sheet[2].items.map((i) => i.label)).toEqual(["Performance", "Strategies", "News & events"]);
     const all = sheet.flatMap((s) => s.items.map((i) => i.key));
     for (const inBar of BOTTOM_BAR_V2) expect(all).not.toContain(inBar.key);
@@ -170,7 +170,8 @@ describe("UI2-1 page search (More sheet and command bar)", () => {
 
   it("ranks a label that starts with the query first", () => {
     const p = find("p");
-    expect(p.indexOf("Paper bot")).toBeLessThan(p.indexOf("My trades"));      // label start before a keyword
+    const t = find("tr");
+    expect(t.indexOf("Trading bot")).toBeLessThan(t.indexOf("My trades"));      // label start before a word inside
     expect(p.indexOf("Performance")).toBeLessThan(p.indexOf("Money"));        // label start before a keyword
     expect(find("my t")[0]).toBe("My trades");
     expect(find("risk")[0]).toBe("Risk limits");

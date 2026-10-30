@@ -74,7 +74,7 @@ JOBS: Tuple[Job, ...] = (
     Job("review", 5, "Post-trade coach", "Reviews each trade, your repeated habits and your week.",
         "Review my last trade", True, ("Open the trade coach", "/copilot/coach")),
     Job("strategy", 6, "Strategy builder", "Turns your own idea into readable rules: a draft paper strategy you review and save yourself.",
-        "Turn my idea into a strategy and test it", True, ("Open the Paper bot page", "/deployments")),
+        "Turn my idea into a strategy and test it", True, ("Open the Trading bot page", "/deployments")),
     Job("option_chain", 7, "Option chain and risk", "Explains the option chain and checks a size against your own risk settings.",
         "What does the option chain show?", True),
     Job("teacher", 8, "Teacher", "Explains a trading concept and shows it on your own chart.",
@@ -93,7 +93,7 @@ BUILT = frozenset(j.id for j in JOBS if j.built)
 
 REFUSALS = {
     "order": ("I can't place, change or cancel orders, and I never will. I only read the data and explain it. "
-              "Orders stay in your hands, on the Positions page or through your own paper bot."),
+              "Orders stay in your hands, on the Positions page or through your own trading bot."),
     "advice": ("I can't tell you to buy or sell anything. That decision is always yours. "
                "I can show you what the data says right now: the structure, the key areas and the conditions to watch."),
     "tip": ("I don't give tips, picks or targets. "
@@ -1446,7 +1446,7 @@ def builder_symbol(message: str) -> str | None:
 async def strategy_builder(answer: Answer, run: Runner, message: str) -> None:
     """Job 6: the trader's own idea, in his words, as a DRAFT paper strategy made only of ATP's building blocks. Every
     number is his: what his words do not state is listed under "Values you decide", never filled in. The draft goes to
-    the Paper bot page, where he reviews it, saves it and starts it on paper himself - nothing is saved or started here."""
+    the Trading bot page, where he reviews it, saves it and starts it on paper himself - nothing is saved or started here."""
     from app.ai import strategy_builder as sb
     from app.strategy_engine.registry import registry
     risk = await _call(answer, run, "get_risk_limits", "Your own risk settings (your minimum reward to risk)", {}, ("min_risk_reward",))
@@ -1482,7 +1482,7 @@ async def strategy_builder(answer: Answer, run: Runner, message: str) -> None:
     if asks:
         answer.summary = [head, "Some values are still yours to decide before you can save it: they are listed below."]
     else:
-        answer.summary = [head, "Every value comes from your words. Review it on the Paper bot page, then save it and start it on paper "
+        answer.summary = [head, "Every value comes from your words. Review it on the Trading bot page, then save it and start it on paper "
                                 "yourself."]
     for side in ("long", "short", None):
         lines = [r["text"] for r in d["rules"] if r["side"] == side]
@@ -1491,18 +1491,18 @@ async def strategy_builder(answer: Answer, run: Runner, message: str) -> None:
     answer.section("Your settings", sb.settings_lines(draft))
     decide = [a["label"] + "." for a in asks]
     if not draft.symbol:
-        decide.append("The symbol: pick it on the Paper bot page.")
+        decide.append("The symbol: pick it on the Trading bot page.")
     if draft.lots is None:
-        decide.append("The size: the Paper bot page starts with one lot or your own saved default; change it there.")
+        decide.append("The size: the Trading bot page starts with one lot or your own saved default; change it there.")
     answer.section("Values you decide", decide)
     answer.section("How I read your words", [f"{x[0].upper()}{x[1:]}." for x in draft.read_as])
     answer.section("Not supported yet", [f"{x[0].upper()}{x[1:]}." for x in draft.unsupported] + ([sb.LEFT_OUT] if draft.unsupported else []))
     answer.section("Parts I could not read", [f"\"{x}\"" for x in draft.unread] + (["Say these another way, or leave them out."] if draft.unread else []))
     names = {s.id: s.name for s in registry.list_all()}
     answer.section("Close to a ready-made strategy", [f"{names[i]}: a ready-made strategy with its own fixed rules (not your idea). Read them on the "
-                                                       "Paper bot page before you use it." for i in draft.ready_made if i in names])
+                                                       "Trading bot page before you use it." for i in draft.ready_made if i in names])
     answer.section("How I build it", [sb.HOW_I_BUILD])
-    answer.action = {"label": "Review it on the Paper bot page", "to": PAPER_BOT_PATH}
+    answer.action = {"label": "Review it on the Trading bot page", "to": PAPER_BOT_PATH}
     await _draft_test(answer, run, message, draft)
 
 

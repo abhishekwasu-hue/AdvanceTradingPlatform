@@ -9,7 +9,7 @@ import { formatINR } from "../ui/format";
 import { Signed } from "../ui/Signed";
 
 /**
- * UI-28 U2.4 (owner, 28 Oct): a Paper bot's own open positions on its row - the open P&L (Signed), one chip per leg that
+ * UI-28 U2.4 (owner, 28 Oct): a Trading bot's own open positions on its row - the open P&L (Signed), one chip per leg that
  * opens My positions, and one tap "Exit this bot's positions" with the ₹ impact in its confirm. Exits are never blocked
  * (ADR-0004): it calls the same Exit now as My positions, one position after another, for PAPER positions only.
  */

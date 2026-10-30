@@ -21,8 +21,8 @@ export const DEMO_DISHES: Record<PageDish["page"], PageDish> = {
         "DEMOBETA: a seller-side setup from your strategy \"Range edges\" - price is at the upper edge of the range.",
       ] },
       { id: "today", kind: "sources", title: "Today so far", empty: null, link: null, rows: [
-        { type: "sources", counts: { autopilot: 3, scan: 5 }, words: { autopilot: "your paper bots", scan: "your scans" }, more: false },
-      ], lines: ["3 from your paper bots and 5 from your scans."] },
+        { type: "sources", counts: { autopilot: 3, scan: 5 }, words: { autopilot: "your trading bots", scan: "your scans" }, more: false },
+      ], lines: ["3 from your trading bots and 5 from your scans."] },
       { id: "record", kind: "record", title: "Your strategies' paper record", empty: null, link: null, rows: [
         { type: "strategy_record", name: "Pullback", closed: 12, won: 7, lost: 5, days: 90 },
         { type: "strategy_record", name: "Range edges", closed: 4, won: 2, lost: 2, days: 90 },
@@ -134,8 +134,8 @@ export const EMPTY_SIGNALS: PageDish = {
   headline: "Nothing waits for your decision right now.",
   sections: [
     { id: "waiting", title: "Waiting for your decision", lines: [], link: null,
-      empty: "Nothing waits for your decision right now. New signals from your paper bots and scans arrive here." },
+      empty: "Nothing waits for your decision right now. New signals from your trading bots and scans arrive here." },
     { id: "today", title: "Today so far", lines: [], link: null,
-      empty: "No new signals today yet. They appear here when your paper bots or scans find a setup from your own rules." },
+      empty: "No new signals today yet. They appear here when your trading bots or scans find a setup from your own rules." },
   ],
 };

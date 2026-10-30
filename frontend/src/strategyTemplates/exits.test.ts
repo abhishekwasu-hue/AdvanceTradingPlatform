@@ -5,7 +5,7 @@ import {
   type TemplateExitChoices,
 } from "./exits";
 
-/** Strategy templates section 5: the template's exits as the user's own settings in the v2 Paper bot form. */
+/** Strategy templates section 5: the template's exits as the user's own settings in the v2 Trading bot form. */
 
 const LEVEL = ["NONE", "R_MULTIPLE", "TEMPLATE_EXIT"] as const;
 const D1: TemplateExitChoices = {
@@ -90,7 +90,7 @@ describe("what the form sends", () => {
   });
 });
 
-describe("the paper bot form", () => {
+describe("the trading bot form", () => {
   it("shows the exits only for a picked template the server sent choices for, and sends them with the same PAPER request", () => {
     expect(pageSource).toContain("const exitChoices = picked && adoption?.exits ? adoption.exits : null;");
     expect(pageSource).toContain("const request = exitsBody ? { ...adopted, template_exits: exitsBody } : adopted;");

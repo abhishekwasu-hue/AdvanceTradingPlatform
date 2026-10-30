@@ -106,7 +106,7 @@ export function readableDetail(body: string): string {
 export const REASON_SENTENCES: Readonly<Record<string, string>> = {
   // Starting a bot (POST /deployments): each refusal has its own sentence, never "already runs" for all of them.
   no_instrument_master: "The contracts for this symbol are not loaded yet, so the bot cannot pick one. Ask your admin to sync the instrument list, or check the symbol.",
-  no_broker: "Connect your broker on the Broker page first: even a paper bot reads live prices through your broker.",
+  no_broker: "Connect your broker on the Broker page first: even a trading bot on paper reads live prices through your broker.",
   broker_login_needed: "Your broker login is not active. Log in again on the Broker page, then try again.",
   broker_account_off: "This broker account is switched off. Switch it on on the Broker page, then try again.",
   duplicate_active_bot: "Nothing new was started: this strategy already runs for this symbol in your organisation. Stop that bot first, or pick another strategy or symbol.",

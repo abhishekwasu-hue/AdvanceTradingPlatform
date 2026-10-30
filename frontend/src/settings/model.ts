@@ -34,7 +34,7 @@ export const SETTINGS_ROWS: readonly SettingsRow[] = [
   { id: "broker", name: "Broker", to: BROKER_PATH, keywords: ["upstox", "zerodha", "connect broker", "renew", "login", "token"] },
   { id: "ai", name: "AI", to: SETTINGS_PATH.ai, tour: "settings-ai", keywords: ["ai key", "api key", "connect ai", "claude", "openai", "gemini", "copilot", "ai limits", "spend"] },
   { id: "alerts", name: "Alerts", to: SETTINGS_PATH.alerts, tour: "settings-alerts", keywords: ["telegram", "notifications", "email", "sms", "whatsapp", "push", "phone"] },
-  // Part C: the user's own starting values for new paper bots and chain tickets (a pre-fill, never a rule).
+  // Part C: the user's own starting values for new trading bots and chain tickets (a pre-fill, never a rule).
   { id: "defaults", name: "My trading defaults", to: "/settings/trading-defaults", keywords: ["defaults", "lots", "exits", "presets"] },
   { id: "risk", name: "Risk limits", to: "/risk-management", keywords: ["risk", "daily loss", "loss limit", "limits", "max positions"] },
   { id: "appearance", name: "Appearance", to: SETTINGS_PATH.appearance, tour: "settings-appearance", keywords: ["theme", "dark", "light", "text size", "font", "colour-blind", "color blind", "reduce motion"] },

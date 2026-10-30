@@ -83,7 +83,7 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
       item("terminal", "Terminal", "Terminal", TERMINAL_ADDRESS, MonitorDot,
         { flag: PAGE_FLAGS.terminal, keywords: ["trading terminal", "trade screen", "workspace", "order panel", "scalper", "option seller"] }),
       item("signals", "Signals", "Signals", "/signals", Zap, { keywords: ["approvals", "alerts", "ideas"] }),
-      item("deployments", "Paper bot", "Paper bot", "/deployments", Bot, { keywords: ["autopilot", "deployments", "deploy", "running", "bots"] }),
+      item("deployments", "Trading bot", "Trading bot", "/deployments", Bot, { keywords: ["autopilot", "deployments", "deploy", "running", "bots"] }),
       item("positions", "My trades", "My trades", "/positions", ListChecks, { keywords: ["my positions", "positions", "holdings", "open trades", "closed trades"] }),
     ],
   },

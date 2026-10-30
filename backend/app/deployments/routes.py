@@ -560,6 +560,8 @@ async def create_deployment(
         elif await get_credential_record(session, user.tenant_id, broker_name) is None:
             raise _refused(REFUSED_NO_BROKER, f"{broker_name} is not connected yet. Connect it on the Broker page first, then try again.")
 
+    # A bad request is a 422 before it is a duplicate (409): the last input checks run first.
+    regime_filter, oi_gates = _regime_filter(request), _oi_gates(request)
     if await _active_duplicate(session, user.tenant_id, request.strategy_id, symbol, request.mode.value, rules.instrument_kind.value):
         raise _duplicate_refusal()
 
@@ -581,8 +583,8 @@ async def create_deployment(
         routing_policy=request.routing_policy.value if request.routing_policy is not None else None,
         route_across_brokers=bool(request.route_across_brokers),
         exit_rules=request.exit_rules.to_rules().to_json() if request.exit_rules is not None else None,
-        regime_filter=",".join(_regime_filter(request)) or None,
-        oi_gates=",".join(_oi_gates(request)) or None,
+        regime_filter=",".join(regime_filter) or None,
+        oi_gates=",".join(oi_gates) or None,
         holding=request.holding,
         order_style=request.order_style, market_protection_pct=request.market_protection_pct,
         entry_mode=request.entry_mode,

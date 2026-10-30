@@ -84,14 +84,19 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await settle(page);
         await expect(page.locator("[data-page='charts-v2'] .tv-lightweight-charts canvas").first()).toBeVisible();
         const tfs = page.getByRole("group", { name: "Timeframe" }).getByRole("button");
-        await expect(tfs.first()).toHaveAccessibleName("5 min");             // TF-1: the favourites first, in words for a reader
-        if (!size.phone) await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "Daily", exact: true })).toBeVisible();
-        await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "1 hour", exact: true })).toBeVisible();
+        // TF-1: the favourites first, in words for a reader. CT-1 L1: a phone's one-line bar shows the list button alone.
+        if (size.phone) await expect(tfs.first()).toHaveAccessibleName("Timeframe: 5 min");
+        else {
+          await expect(tfs.first()).toHaveAccessibleName("5 min");
+          await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "Daily", exact: true })).toBeVisible();
+          await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "1 hour", exact: true })).toBeVisible();
+        }
         await shot("01-charts");
         const panel = size.phone ? page.getByRole("dialog", { name: "Watchlist" }) : page.locator("main");
         if (size.phone) {
           await page.evaluate(() => window.scrollTo(0, 0));
-          await page.getByRole("button", { name: "Watchlist", exact: true }).click();
+          await page.getByRole("button", { name: "More chart controls" }).click();             // CT-1 L1: under More on a phone
+          await page.getByRole("dialog", { name: "More chart controls" }).getByRole("button", { name: "Watchlist", exact: true }).click();
           await expect(panel).toBeVisible();
         }
         await expect(panel.getByRole("button", { name: /^Choose a list\. Shown: / })).toContainText("NIFTY 50 stocks");

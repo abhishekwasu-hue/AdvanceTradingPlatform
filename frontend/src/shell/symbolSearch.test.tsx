@@ -29,11 +29,12 @@ describe("UX-2: symbol-first search", () => {
     expect(recent[0].type === "symbol" && recent[0].path).toBe("/charts/RELIANCE");
   });
 
-  it("a contract row names it in words and opens the contract chart", () => {
+  it("a contract row names it in words and opens the contract on the Charts page (CT-1 C1)", () => {
     const hit = contractHit({ key: "NFO:NIFTY:CE:2026-10-28:22700", tradingsymbol: "NIFTY26O2822700CE", underlying: "NIFTY", kind: "CE",
       expiry: "2026-10-28", strike: 22700, lot_size: 75 });
     expect(hit.label).toBe("NIFTY 28 Oct 22700 CE");
-    expect(hit.type === "contract" && hit.href).toBe("/?contract=NFO%3ANIFTY%3ACE%3A2026-10-28%3A22700");
+    expect(hit.type === "contract" && hit.path).toBe("/charts/NIFTY26O2822700CE?exchange=NFO");
+    expect(hit.type === "contract" && hit.href).toBe("/?contract=NFO%3ANIFTY%3ACE%3A2026-10-28%3A22700");   // the old window, still reachable
     expect(hit.detail).toBe("Option · lot 75");
   });
 

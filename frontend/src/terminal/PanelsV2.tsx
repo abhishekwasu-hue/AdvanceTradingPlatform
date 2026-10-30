@@ -21,6 +21,8 @@ import { GroupExitSheetV2 } from "../fno/GroupExitsV2";
 import { PositionActionSheetV2, WaitingOrdersV2, type PositionActionAsk } from "../fno/PositionActionsV2";
 import type { GroupExitAsk } from "../fno/groupExits";
 import { PositionList, useFnoPositions, type RowActions } from "../trading/PositionsV2";
+import type { RollAsk } from "../fno/roll";
+import type { MyDayArea } from "../dashboard/myDay";
 import { closedText, exitConfirmText, failedText, heldRows } from "../trading/model";
 import { NoteV2 } from "../trading/PartsV2";
 import type { PortfolioExposure, TradeRecord } from "../types";
@@ -273,13 +275,18 @@ export function OrderPanelV2({ ticket, state: t, onClear, paperBadge = true }: {
 // CT-1 T4: Exit all moved into the one position list (trading/ExitAllV2.tsx); re-exported for older callers.
 export { exitAllConfirmText, exitAllConsequence, exitAllPlan } from "../trading/ExitAllV2";
 
-export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, fnoOn = false, combined, onChanged }: {
+export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, fnoOn = false, combined, onChanged, roll, areas }: {
   read: Read<TradeRecord[]>; exposure?: PortfolioExposure | null; canTrade: boolean; exitNowOn: boolean;
   /** The PAPER account on: basket legs grouped with "Exit the whole group" (TT-8), as on My trades. */
   fnoOn?: boolean;
   /** CX6: his combined exits (the page reads them once for this panel and the status bar); absent: no button, no chip. */
   combined?: { list: readonly CombinedExit[]; reload: () => void };
   onChanged: () => void;
+  /** TERM-2 R1 (flag term_roll): "Roll" on F&O PAPER positions and groups (the page holds the roll's sheet, so a panel
+   *  that re-renders never drops it half way). */
+  roll?: { onRoll: (ask: RollAsk) => void };
+  /** TERM-2 R3 (flag term_strike_area): each short strike's nearest area, by trade id. */
+  areas?: ReadonlyMap<number, MyDayArea>;
 }) {
   const [note, setNote] = useState<{ kind: "done" | "info" | "warn"; text: ReactNode } | null>(null);
   const [groupExit, setGroupExit] = useState<GroupExitAsk | null>(null);
@@ -332,6 +339,8 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
     part: fnoOn && canTrade ? {
       onPart: (p) => setPartAsk({ kind: "part", position: p }), onReverse: (p) => setPartAsk({ kind: "reverse", position: p }),
     } : undefined,
+    roll: roll && fnoOn && canTrade ? roll : undefined,
+    areas,
   };
   // UX-15 (owner, 28 Oct): total P&L first (the broker-standard header); Exit all only with two or more positions - each
   // position keeps its own Exit, never hidden or blocked (ADR-0004).

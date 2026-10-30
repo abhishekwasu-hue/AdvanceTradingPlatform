@@ -15,7 +15,7 @@ import type { ChainRow, LiveChain } from "./types";
  * Greeks and quotes from the columns menu, the "ATM ± N" strike range and the tick flash (ChainTableV2). The Option chain
  * page and the Terminal place this one component; neither keeps a table of its own.
  */
-export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuffix = "", onPick, onPickLeg, held, setup, toggle }: {
+export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuffix = "", onPick, onPickLeg, held, setup, toggle, areaMarks }: {
   symbol: string;
   live: LiveChain | null;
   loading: boolean;
@@ -27,6 +27,8 @@ export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuf
   onPickLeg?: (row: ChainRow, side: "call" | "put") => void;
   held?: ReadonlySet<string>;
   setup?: ReadonlyMap<string, string>;
+  /** TERM-2 R3 (optional): the distance mark under a short strike (ChainTableV2 `areaMarks`). */
+  areaMarks?: ReadonlyMap<string, string>;
   /** The page's own control above the strike column (the chain page's Chain / OI view toggle). */
   toggle?: (placed: "empty" | "above") => ReactNode;
 }) {
@@ -52,19 +54,20 @@ export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuf
           </div>
           {toggle?.("above")}
           {/* UI-28 polish (owner 30 Oct): one row on a phone - "All / ± 5 / ± 10 / ± 15" after a quiet Strikes label;
-              the full names stay in each chip's aria-label. */}
-          <div role="group" aria-label="Strikes shown" data-strike-range className="mb-space-2 flex items-center gap-space-2">
+              the full names stay in each chip's aria-label. CT-1: a chip never breaks inside; in a narrower place (the
+              F&O desk's card on a 360 phone) the chips go to a second row instead. */}
+          <div role="group" aria-label="Strikes shown" data-strike-range className="mb-space-2 flex flex-wrap items-center gap-space-2">
             <span aria-hidden className="text-t12 text-fg-muted">Strikes</span>
             {STRIKE_RANGES.map((n) => (
               <button key={n} type="button" aria-pressed={range === n} onClick={() => setRange(n)} aria-label={n === 0 ? "All strikes" : `ATM ± ${n} strikes`}
-                className={cx("inline-flex min-h-11 items-center rounded-pill border px-space-3 text-t13 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8",
+                className={cx("inline-flex min-h-11 items-center whitespace-nowrap rounded-pill border px-space-3 text-t13 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8",
                   range === n ? "border-brand bg-brand-tint font-semibold text-fg" : "border-border text-fg-muted hover:text-fg")}>
                 {n === 0 ? "All" : `± ${n}`}
               </button>
             ))}
           </div>
           <ChainTableV2 live={shownLive ?? live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${centreSuffix}`} onPick={onPick}
-            onPickLeg={onPickLeg} held={held} setup={setup} />
+            onPickLeg={onPickLeg} held={held} setup={setup} areaMarks={areaMarks} />
           {problem && <p className="mt-space-2 text-t12 text-fg-muted">{TEXT.loadFailed}</p>}
         </>
       )}

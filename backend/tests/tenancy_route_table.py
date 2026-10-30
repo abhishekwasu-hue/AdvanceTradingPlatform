@@ -678,7 +678,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/group-exits/{exit_id}/edit"): "trader", # CX: the caller's own armed combined exit (404 otherwise)
     ("POST", "/api/paper/fno/group-exits/{exit_id}/cancel"): "trader",   # CX: the caller's own armed combined exit (404 otherwise)
     ("POST", "/api/paper/fno/order/preview"): "trader",
-    ("POST", "/api/paper/fno/basket/evaluate"): S_COMPUTE,     # FNO-2: the basket's numbers (instrument master + the body)
+    # FNO-2: the basket's numbers (instrument master + the body); TERM-2 R2 / R4 (flags term_whatif / term_margin_pair):
+    # also the caller's OWN open PAPER legs (tenant and user) and his own funds - stores nothing, changes no order.
+    ("POST", "/api/paper/fno/basket/evaluate"): S_OWN_WHATIF,
+    ("POST", "/api/paper/fno/roll/preview"): "trader",         # TERM-2 R1: the caller's own open legs (404 other tenant, 403 another member's); reads only
     ("GET", "/api/paper/fno/basket/settings"): "member: the caller's own options settings (their deployments) only",
     ("POST", "/api/paper/fno/basket/preview"): "trader",
     ("POST", "/api/paper/fno/basket/execute"): "trader",       # FNO-2: every leg one PAPER order, hedge legs first

@@ -1,5 +1,5 @@
 import { ExitAllV2, exitableRows, type ExitAllHooks } from "./ExitAllV2";
-import { ArrowDownRight, ArrowUpRight, ChartCandlestick, Layers, Plus, SlidersHorizontal } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, ChartCandlestick, Layers, Plus, RefreshCcw, SlidersHorizontal } from "lucide-react";
 import { Suspense, lazy, useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
@@ -54,6 +54,9 @@ import { CombinedExitBarV2, ExitShortSheetV2, useCombinedExits } from "../fno/Co
 import { exitParam } from "../fno/combinedExit";
 import { GroupExitSheetV2 } from "../fno/GroupExitsV2";
 import type { GroupExitAsk } from "../fno/groupExits";
+import type { RollAsk } from "../fno/roll";
+import { areaWords } from "../fno/strikeArea";
+import type { MyDayArea } from "../dashboard/myDay";
 
 // N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
@@ -341,6 +344,11 @@ export interface RowActions {
   /** Terminal T2 (TT-9): "Exit part" (some of the lots) and "Reverse" on a PAPER position (absent: the row is as before).
    *  Exit part is an exit: never disabled here (ADR-0004). */
   part?: { onPart: (p: TradeRecord) => void; onReverse: (p: TradeRecord) => void };
+  /** TERM-2 R1 (flag `term_roll`): "Roll" on an F&O PAPER position or a group of legs - a preview, then the existing exit
+   *  and the new legs in the basket (two confirmed steps). Never shown in place of Exit (absent: the row is as before). */
+  roll?: { onRoll: (ask: RollAsk) => void };
+  /** TERM-2 R3 (flag `term_strike_area`): a short strike's distance to the nearest area, by trade id (information only). */
+  areas?: ReadonlyMap<number, MyDayArea>;
 }
 
 export interface CompareTarget { title: string; legs: PosLeg[]; adjust: string | null }
@@ -434,6 +442,13 @@ export function PositionList({ rows, byId, actions, prices = true, groups = [], 
                   <span className={`font-tabular text-t15 font-semibold ${toneClass(signTone(g.pnl))}`}>{g.pnl === null ? EMPTY : formatSignedINR(g.pnl)}</span>
                 </span>
               )}
+              {actions.roll && actions.canTrade && rollable(g.legs, byId) && (
+                // TERM-2 R1: a preview first; its confirm runs this group's own exit, then fills the basket.
+                <button type="button" data-testid="roll-group" className={BUTTON_SECONDARY}
+                  onClick={() => actions.roll?.onRoll({ kind: "group", tradeIds: g.legs.map((l) => l.id), title: groupTitle(g), basket: g.group.kind === "basket" })}>
+                  <RefreshCcw size={16} aria-hidden />Roll
+                </button>
+              )}
               {groupExits(g.group, actions) && (
                 // TT-8: closes every leg, the sold legs first. A neutral button, never disabled (ADR-0004).
                 <button type="button" onClick={() => actions.group?.onGroup(g.legs[0].id, groupTitle(g), g.legs.length)} data-testid="exit-group"
@@ -450,6 +465,11 @@ export function PositionList({ rows, byId, actions, prices = true, groups = [], 
       {single.length > 0 && <ul className="divide-y divide-subtle">{single.map((r) => row(r))}</ul>}
     </div>
   );
+}
+
+/** TERM-2 R1: every leg an F&O PAPER position (a LIVE one is rolled in the broker's app). Pure. */
+function rollable(rows: readonly HeldRow[], byId: Map<number, TradeRecord>): boolean {
+  return rows.length > 0 && rows.every((r) => { const p = byId.get(r.id); return !!p && p.mode === "PAPER" && isFnoPosition(p); });
 }
 
 /** 8b slice 2 on legs placed together: the premium kept (a net premium received), "Tell me when" on the group's own
@@ -485,6 +505,8 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
   // 8b slice 2 on a position of its own (legs placed together carry them on the group): the premium kept and "Tell me when".
   const own = !inGroup && prices ? fnoLegs([row], new Map([[position.id, position]]), actions) : null;
   const colour = useColourV2();          // colour v2: Long / Short as chips
+  const area = actions.areas?.get(position.id) ?? null;     // TERM-2 R3: a short strike's nearest area (words + numbers)
+  const canRoll = !inGroup && !!actions.roll && actions.canTrade && position.mode === "PAPER" && isFnoPosition(position);
   return (
     <li className="py-space-3 first:pt-0 last:pb-0" data-position={row.id}>
       <div className="flex items-start gap-space-3">
@@ -516,6 +538,7 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
               ? <Chip key={l.label} tone="warn" variant="meaning" icon="!" name="level-unset">Set {l.label.toLowerCase()}</Chip>
               : <Chip key={l.label} tone="neutral" variant="meaning" name="level"><span className="font-tabular">{l.label} {l.value}</span></Chip>))}
             {row.strategy && <Chip tone="neutral" variant="meaning" name="strategy">{row.strategy.replace(/ trade$/, "")}</Chip>}
+            {area && <Chip tone="neutral" variant="meaning" name="strike-area"><span className="font-tabular">{areaWords(area)}</span></Chip>}
           </div>
           {row.structureNote && <p className="mt-px text-t12 text-fg-muted">{row.structureNote}</p>}
           {own && <CaptureLineV2 legs={own} daysLeft={daysLeftOf(facts)} />}
@@ -561,6 +584,13 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
         {target && actions.fno && (
           <button type="button" onClick={() => actions.fno?.onAdd(target, addSide(position))} data-testid="fno-add" className={BUTTON_SECONDARY}>
             <Plus size={16} aria-hidden />Add
+          </button>
+        )}
+        {canRoll && (
+          // TERM-2 R1: a preview first; its confirm runs this position's own Exit now, then fills the basket.
+          <button type="button" onClick={() => actions.roll?.onRoll({ kind: "single", tradeId: position.id, title: row.instrument })} data-testid="roll"
+            className={BUTTON_SECONDARY}>
+            <RefreshCcw size={16} aria-hidden />Roll
           </button>
         )}
         {adjust && (

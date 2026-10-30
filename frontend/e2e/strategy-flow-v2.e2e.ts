@@ -140,8 +140,15 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await page.locator("[data-flow-next]").click();
         await page.getByRole("button", { name: "+ Price vs moving average" }).click();
         await page.locator("[data-block-editor]").getByLabel("Length").fill("20");
+        // SU7: the higher timeframe per operand is under a closed Advanced fold; only timeframes above 15m are offered.
+        const htf = page.locator("[data-block-editor] [data-advanced='operand-timeframe']").last();
+        await expect(htf).not.toHaveAttribute("open", "");
+        await htf.locator("summary").click();
+        await htf.getByRole("combobox", { name: "Read it on" }).click();
+        await expect(page.locator("[data-combobox-list] [role='option']")).toHaveText(["Same as the strategy", "30-minute", "1-hour"]);
+        await page.locator("[data-combobox-list] [role='option'][data-value='60min']").click();
         await page.locator("[data-block-done]").click();
-        await expect(page.locator("[data-block-chip='set']")).toHaveText(/Close is above EMA \(20\)/);
+        await expect(page.locator("[data-block-chip='set']")).toHaveText(/Close is above EMA \(20\) on 1-hour/);
         await expect(page.locator("[data-soon-blocks]")).toContainText("Pullback into an area");
         await shot("03-entry");
 
@@ -154,6 +161,13 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await page.getByLabel("Strikes away").fill("2");
         await page.getByLabel("Spread width (strikes)").fill("2");
         await page.locator("[data-expiry='ROLL']").click();
+        // SU7: the ATR length is under a closed Advanced fold, which opens by itself once a stop waits for it.
+        const atr = page.locator("[data-advanced='exit-atr']");
+        await expect(atr).not.toHaveAttribute("open", "");
+        await page.getByLabel("Stop (x ATR)").fill("1.5");
+        await expect(atr).toHaveAttribute("open", "");
+        await expect(atr.getByLabel("ATR length")).toBeVisible();
+        await page.getByLabel("Stop (x ATR)").fill("");
         await shot("04-exit");
 
         await page.locator("[data-flow-next]").click();
@@ -162,6 +176,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await expect(page.locator("[data-result-numbers]")).toContainText("% from the peak");
         expect(server.saved).toHaveLength(1);
         expect(server.saved[0]).toMatchObject({ timeframe: "15min", stop_loss_atr_mult: null, target_rr: null, min_rr: null });
+        expect((server.saved[0] as { long_conditions: { right: { timeframe: string | null } }[] }).long_conditions[0].right.timeframe).toBe("60min");
         expect(server.backtests[0]).toMatchObject({ strategy_id: "custom:9", symbol: "NIFTY", base_timeframe: "15min", data_source: "broker:upstox",
           options: { option_strategy: "BULL_PUT_SPREAD", expiry_rule: "ROLL", strike_rule: "OTM", strike_offset: 2, spread_width: 2 } });
         await shot("05-result");

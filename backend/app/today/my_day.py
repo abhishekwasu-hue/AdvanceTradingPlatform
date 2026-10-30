@@ -309,6 +309,9 @@ async def build(session: AsyncSession, me: Viewer, now: datetime) -> Dict[str, A
             "expiry": t.expiry.isoformat() if t.expiry else None, "expiry_sessions": sessions,
             "expiry_text": expiry_text(sessions) if sessions is not None else None,
             "area": None if area is None else {**area, "from": frm}, "area_text": area_line,
+            # TERM-2 R3: the held contract's strike and right (the master's own), so the chain can mark that strike.
+            "strike": float(record.strike) if record is not None and record.strike is not None else None,
+            "right": str(record.instrument_type).upper() if record is not None and record.instrument_type else None,
         })
 
     gaps: List[Dict[str, Any]] = []

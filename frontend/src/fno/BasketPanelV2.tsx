@@ -110,6 +110,12 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   useEffect(() => { if (savedProduct && !picked.current) setProductState(savedProduct); }, [savedProduct]);
   const setProduct = (p: Product) => { picked.current = true; setProductState(p); };
   const [numbers, setNumbers] = useState<BasketNumbers | null>(null);
+  // TERM-2 step 4 (each behind its own flag, with ui_v2 + terminal): R2 the what-if payoff with his open positions, R4 the
+  // margin pair - both from the ONE evaluate call (the server ignores a field while its flag is off).
+  const termOn = (flag: string) => features.on("ui_v2") && features.on("terminal") && features.on(flag);
+  const whatifOn = termOn("term_whatif");
+  const pairOn = termOn("term_margin_pair");
+  const [payoffView, setPayoffView] = useState<PayoffView>("combined");
   const [problems, setProblems] = useState<string[]>([]);
   const [settings, setSettings] = useState<BasketSettings | null>(null);
   const [around, setAround] = useState<number | null>(null);
@@ -170,13 +176,13 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     const other = legs.find((l) => l.underlying !== chain.symbol);
     if (other) { setNumbers(null); setProblems([`These legs are on ${other.underlying}: open its option chain to see the numbers.`]); return undefined; }
     const timer = window.setTimeout(() => {
-      api.evaluate(basketAsk(legs.map(strip), spot, product)).then((out) => {
+      api.evaluate({ ...basketAsk(legs.map(strip), spot, product), ...(whatifOn ? { with_open: true } : {}), ...(pairOn ? { margin_pair: true } : {}) }).then((out) => {
         if (n !== seq.current) return;
         if (out.ok) { setNumbers(out); setProblems([]); } else { setNumbers(null); setProblems(out.errors); }
       }).catch((e: unknown) => { if (n === seq.current) setProblems([e instanceof Error ? e.message : String(e)]); });
     }, EVAL_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [open, legs, spot, product, api, chain.symbol]);
+  }, [open, legs, spot, product, api, chain.symbol, whatifOn, pairOn]);
 
   async function ready(name: StrategyName) {
     if (pick === null || !live?.expiry) { setNote({ tone: "warn", text: "The chain is not loaded yet." }); return; }
@@ -332,6 +338,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           {step.kind === "edit" && (
             <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} rows={rows} pick={pick} atm={atm} spot={spot}
               product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks}
+              whatif={whatifOn ? { view: payoffView, onView: setPayoffView } : undefined}
               exits={(
                 <StrategyExitsV2 form={exitForm} legCount={legs.length} saveNote={exitNote} onSaveDefaults={() => { void saveExits(); }}
                   onChange={(patch) => { setExitNote(null); setExitTyped({ ...exitForm, ...patch }); }} />
@@ -424,7 +431,16 @@ function Figure({ label, children, sub, testId }: { label: string; children: Rea
 }
 
 /** The panel's edit view: ready strategies, the legs, the numbers and the tools (no state, no hooks). */
-export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks, exits }: {
+/** TERM-2 R2: the payoff drawn - the basket with his open positions on the same underlying + expiry, or the basket alone. */
+export type PayoffView = "combined" | "basket";
+
+/** TERM-2 R2: the open legs and the basket's legs on one chart (the open legs cannot be dragged). */
+export function whatIfLegs(legs: readonly BasketLeg[], numbers: BasketNumbers): BuilderLeg[] {
+  const w = numbers.whatif;
+  return w && w.ok ? [...w.open_legs, ...chartLegs(legs, numbers)] : chartLegs(legs, numbers);
+}
+
+export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks, exits, whatif }: {
   legs: readonly BasketLeg[]; numbers: BasketNumbers | null; problems: string[]; settings: BasketSettings | null; rows: LiveChain["rows"];
   pick: number | null; atm: number | null; spot: number | null; product: Product | null; note: Note; tool: Tool; saved: SavedState | null;
   saveName: string; idPrefix: string; on: BodyHandlers;
@@ -436,12 +452,17 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
   checks?: readonly (RiskLine | null)[];
   /** SX1: "Exits for this strategy", shown before Review once there is a leg. */
   exits?: ReactNode;
+  /** TERM-2 R2 (flag term_whatif): which payoff is drawn; absent: the basket's own payoff only, as before. */
+  whatif?: { view: PayoffView; onView: (v: PayoffView) => void };
 }) {
   const step = strikeStep(rows);
   const ext = numbers?.extremes ?? null;
   const hedge = numbers?.margin.hedge ?? null;
   const g = numbers?.summary.greeks;
   const underlying = legs[0]?.underlying ?? "";
+  const combined = whatif && numbers?.whatif?.ok ? numbers.whatif : null;
+  const showCombined = !!combined && whatif?.view === "combined";
+  const pair = numbers?.margin_pair ?? null;
   return (
     <>
       <div className="min-h-0 flex-1 space-y-space-4 overflow-y-auto px-space-4 py-space-3" data-basket-body>
@@ -496,9 +517,31 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
             )}
             {numbers && spot && (
               <>
-                <div className="rounded-panel border border-subtle p-space-2" data-basket="payoff">
-                  <PayoffCanvas evaluation={numbers} legs={chartLegs(legs, numbers)} spot={spot} step={step ?? 50} onStrikeChange={on.onStrike} />
+                {combined && whatif && (
+                  <div role="group" aria-label="Payoff shown" className="flex flex-wrap gap-space-2" data-basket="whatif-toggle">
+                    {([["combined", `With my positions (${combined.open.length})`], ["basket", "This basket"]] as const).map(([v, label]) => (
+                      <button key={v} type="button" aria-pressed={whatif.view === v} onClick={() => whatif.onView(v)} data-whatif-view={v}
+                        className={cx(CHIP, whatif.view === v && "border-brand bg-brand-tint font-semibold text-fg")}>{label}</button>
+                    ))}
+                  </div>
+                )}
+                <div className="rounded-panel border border-subtle p-space-2" data-basket="payoff" data-payoff={showCombined ? "combined" : "basket"}>
+                  {showCombined && combined
+                    ? <PayoffCanvas evaluation={combined} legs={whatIfLegs(legs, numbers)} spot={spot} step={step ?? 50}
+                      onStrikeChange={(id, strike) => { if (!id.startsWith("open-")) on.onStrike(id, strike); }} />
+                    : <PayoffCanvas evaluation={numbers} legs={chartLegs(legs, numbers)} spot={spot} step={step ?? 50} onStrikeChange={on.onStrike} />}
                 </div>
+                {showCombined && combined && (
+                  <dl className="rounded-control border border-subtle px-space-3" data-basket="whatif" aria-label="With your open positions">
+                    <Figure label="Open positions added" testId="whatif-open" sub={combined.open.map((o) => o.label).join(" · ")}>{combined.open.length}</Figure>
+                    <Figure label="Max profit, together" testId="whatif-max-profit">{combined.extremes ? (combined.extremes.unbounded_profit ? "Unlimited" : moneyText(combined.extremes.max_profit)) : "See the chart"}</Figure>
+                    <Figure label="Max loss, together" testId="whatif-max-loss">{combined.extremes ? (combined.extremes.unbounded_loss ? "Unlimited" : moneyText(combined.extremes.max_loss)) : "See the chart"}</Figure>
+                    <Figure label="Breakevens, together" testId="whatif-breakevens">{combined.breakevens?.length ? combined.breakevens.map((b) => formatNumber(Math.round(b), 0)).join(" · ") : "–"}</Figure>
+                  </dl>
+                )}
+                {whatif && numbers.whatif && !numbers.whatif.ok && numbers.whatif.errors.length > 0 && (
+                  <p className="text-t12 text-fg-muted" data-basket="whatif-note">Your open positions could not be added: {numbers.whatif.errors[0]}</p>
+                )}
                 {/* UI-28 U1.2: the payoff in words is on demand (ⓘ Details), never a paragraph under the chart. */}
                 <Details id="basket.payoff-words" label="In plain words" className="mt-0"><p data-basket="plain-words">{payoffSentence(numbers, underlying)}</p></Details>
                 <RiskLineV2 line={ext ? riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget) : null} />
@@ -509,7 +552,22 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
                   <Figure label="Max loss" testId="max-loss">{ext ? (ext.unbounded_loss ? "Unlimited" : moneyText(ext.max_loss)) : "See the chart"}</Figure>
                   <Figure label="Breakevens" testId="breakevens">{numbers.breakevens?.length ? numbers.breakevens.map((b) => formatNumber(Math.round(b), 0)).join(" · ") : "–"}</Figure>
                   <Figure label="Probability of profit" testId="pop" sub="Model estimate">{`${(numbers.summary.pop * 100).toFixed(1)}%`}</Figure>
-                  {hedge && (
+                  {pair && (
+                    // TERM-2 R4: required (the broker's number through his own session, else the labelled estimate) and
+                    // available (the Terminal status funds) - re-read on every lot change.
+                    <>
+                      <Figure label={pair.estimate ? "Margin required (estimate)" : "Margin required"} testId="margin-required" sub={pair.label}>
+                        {pair.required !== null ? moneyText(pair.required) : "From your broker"}
+                      </Figure>
+                      <Figure label="Available" testId="margin-available" sub={pair.available_note}>
+                        {pair.available !== null ? moneyText(pair.available) : "–"}
+                      </Figure>
+                      {pair.free_after !== null && (
+                        <Figure label="Left after" testId="margin-left"><Signed value={pair.free_after} kind="money" /></Figure>
+                      )}
+                    </>
+                  )}
+                  {hedge && !pair && (
                     <Figure label="Margin (estimate)" testId="margin" sub={`${hedge.with_hedge.basis}${hedge.hedged ? " With the hedge legs." : ""}`}>
                       {hedge.with_hedge.value !== null ? moneyText(hedge.with_hedge.value) : "From your broker"}
                     </Figure>

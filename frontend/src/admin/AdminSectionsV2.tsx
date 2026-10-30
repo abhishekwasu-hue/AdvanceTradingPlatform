@@ -156,8 +156,8 @@ export function Phase0Notice() {
         <h2 className="text-t15 font-semibold text-fg">{paperOnly ? "Phase 0: PAPER only - LIVE is locked" : "Phase 0 lock is off"}</h2>
         <p className="mt-space-1 text-t12 text-fg-muted">
           Phase 0 paper only: <strong className="text-fg">{paperOnly ? "on" : "off"}</strong> · LIVE trading: <strong className="text-fg">{live ? "on" : "off"}</strong>.
-          {" "}LIVE changes only on the owner's explicit word. Exits are never blocked by any switch here.
         </p>
+        <Details id="console.phase0" className="mt-space-1">LIVE changes only on the owner's explicit word. Exits are never blocked by any switch here.</Details>
       </div>
     </section>
   );
@@ -274,9 +274,9 @@ export function ValueFunnelView({ funnel }: { funnel: ValueFunnel }) {
   return (
     <section aria-label="Time to first value" data-value-funnel className="mb-space-4">
       <h3 className="text-t14 font-semibold text-fg">Time to first value</h3>
-      <p className="mt-space-1 text-t12 text-fg-muted">
+      <Details id="console.value-funnel" className="mt-space-1">
         The first time each person took each step, counted once per person. The time is the median from signing up to that step.
-      </p>
+      </Details>
       <ol className="mt-space-3 flex flex-col gap-space-2">
         {funnel.steps.map((step, i) => {
           const ofFirst = first ? Math.round((100 * step.count) / first) : 0;
@@ -309,10 +309,10 @@ export function GrowthFunnelView({ funnel }: { funnel: GrowthFunnel }) {
   return (
     <section aria-label="Growth funnel" data-growth-funnel className="mb-space-4">
       <h3 className="text-t14 font-semibold text-fg">Funnel: the first week</h3>
-      <p className="mt-space-1 text-t12 text-fg-muted">
+      <Details id="console.growth-funnel" className="mt-space-1">
         People whose first week is over. Each step counts only those who also took every step before it. Active in week 1 = signed in or used the app again on a later day within seven days.
-        {funnel.week1_open > 0 && ` ${funnel.week1_open} more ${funnel.week1_open === 1 ? "person is" : "people are"} still in their first week.`}
-      </p>
+      </Details>
+      {funnel.week1_open > 0 && <p className="mt-space-1 text-t12 text-fg-muted">{`${funnel.week1_open} more ${funnel.week1_open === 1 ? "person is" : "people are"} still in their first week.`}</p>}
       <ol className="mt-space-3 flex flex-col gap-space-2">
         {funnel.steps.map((step, i) => {
           const prev = i === 0 ? step.count : funnel.steps[i - 1].count;
@@ -405,12 +405,13 @@ function sumValues(o: unknown): number {
   return 0;
 }
 
-function Tool({ id, name, what, read, render }: { id: string; name: string; what: string; read: () => Promise<unknown>; render: (data: never) => ReactNode }) {
+function Tool({ id, name, what, read, render }: { id: string; name: string; what: ReactNode; read: () => Promise<unknown>; render: (data: never) => ReactNode }) {
   const { data, error } = useRead<unknown>(read);
   return (
     <li data-tool={id} className="rounded-control border border-subtle p-space-3">
       <div className="text-t14 font-semibold text-fg">{name}</div>
-      <p className="text-t12 text-fg-muted">{what}</p>
+      {/* PROSE-1: `what` is the tool's Details (closed by default), written at the call site. */}
+      {what}
       <div className="mt-space-2 text-t12 text-fg">{data === null ? <Loading error={error} /> : render(data as never)}</div>
     </li>
   );
@@ -434,25 +435,25 @@ export function TestingToolsPanel() {
     <Panel title="Testing and operator tools" id="testing-tools"
       note="The state of the operator tools that already exist, read-only. Replays, uploads and runs stay where they are today (the API and the runbook). Sample data and test signals move here from the user pages in a later step.">
       <ul className="grid gap-space-3 md:grid-cols-2">
-        <Tool id="outbox" name="Alert outbox" what="Alerts waiting to be delivered, by state." read={consoleApi.outbox}
+        <Tool id="outbox" name="Alert outbox" what={<Details id="console.tool.outbox" className="mt-space-1">Alerts waiting to be delivered, by state.</Details>} read={consoleApi.outbox}
           render={(o: OutboxState) => <>{pairs(o.by_status)}{o.oldest_pending_seconds != null && <> · oldest waiting {Math.round(o.oldest_pending_seconds)} s</>}</>} />
-        <Tool id="dead-letters" name="Failed alert deliveries" what="Deliveries that gave up (the newest 20)." read={consoleApi.deadLetters}
+        <Tool id="dead-letters" name="Failed alert deliveries" what={<Details id="console.tool.dead-letters" className="mt-space-1">Deliveries that gave up (the newest 20).</Details>} read={consoleApi.deadLetters}
           render={(rows: DeadLetter[]) => rows.length === 0 ? "None." : (
             <ul className="space-y-space-1">{rows.slice(0, 5).map((d) => <li key={d.id}>{d.channel.toLowerCase()} · {d.event_type.toLowerCase()} · {d.error_class ?? "unknown"} · {ago(d.created_at)}</li>)}
               {rows.length > 5 && <li className="text-fg-muted">+{rows.length - 5} more</li>}</ul>)} />
-        <Tool id="retention" name="Data retention" what="Rows past the retention policy right now (a dry run) and the last run." read={consoleApi.retention}
+        <Tool id="retention" name="Data retention" what={<Details id="console.tool.retention" className="mt-space-1">Rows past the retention policy right now (a dry run) and the last run.</Details>} read={consoleApi.retention}
           render={(r: RetentionState) => <>{sumValues(r.eligible_now)} rows due · last run {r.last_run ? ago(r.last_run.at) : "never"}</>} />
-        <Tool id="screener-audit" name="Saved screens check" what="Saved screens and alert rules that no longer pass the screen language check." read={consoleApi.screenerAudit}
+        <Tool id="screener-audit" name="Saved screens check" what={<Details id="console.tool.screener-audit" className="mt-space-1">Saved screens and alert rules that no longer pass the screen language check.</Details>} read={consoleApi.screenerAudit}
           render={(a: { screens_checked?: number; alert_rules_checked?: number; failing?: unknown[] }) =>
             <>{a.screens_checked ?? 0} screens and {a.alert_rules_checked ?? 0} alert rules checked · <strong>{a.failing?.length ?? 0} failing</strong></>} />
-        <Tool id="history-import" name="History import" what="The stored history import, by dataset." read={consoleApi.historyImport}
+        <Tool id="history-import" name="History import" what={<Details id="console.tool.history-import" className="mt-space-1">The stored history import, by dataset.</Details>} read={consoleApi.historyImport}
           render={(h: { datasets?: Record<string, Record<string, number>>; symbol_count?: number }) =>
             <>{Object.entries(h.datasets ?? {}).map(([k, v]) => `${k}: ${pairs(v)}`).join(" | ") || "nothing imported"}</>} />
-        <Tool id="history-backfill" name="Daily file backfill" what="The exchange daily files backfill, by segment, and the range of days the shared history holds (what backtests without a broker can use)." read={consoleApi.historyBackfill}
+        <Tool id="history-backfill" name="Daily file backfill" what={<Details id="console.tool.history-backfill" className="mt-space-1">The exchange daily files backfill, by segment, and the range of days the shared history holds (what backtests without a broker can use).</Details>} read={consoleApi.historyBackfill}
           render={(h: { flag_on?: boolean; segments?: Record<string, BackfillSegment>; attention?: unknown[] }) =>
             <>{h.flag_on ? "On" : "Off"} · {Object.entries(h.segments ?? {}).map(([k, v]) => `${k}: ${pairs(v.by_status)}`).join(" | ") || "no files"} · {h.attention?.length ?? 0} need attention
               <div data-lake-range>{heldRange(h.segments)}</div></>} />
-        <Tool id="history-intraday" name="Intraday history" what="The owner's intraday history load." read={consoleApi.historyIntraday}
+        <Tool id="history-intraday" name="Intraday history" what={<Details id="console.tool.history-intraday" className="mt-space-1">The owner's intraday history load.</Details>} read={consoleApi.historyIntraday}
           render={(h: { flag_on?: boolean; instruments?: Record<string, unknown>; attention?: unknown[] }) =>
             <>{h.flag_on ? "On" : "Off"} · {Object.keys(h.instruments ?? {}).length} instruments · {h.attention?.length ?? 0} need attention</>} />
       </ul>
@@ -568,10 +569,10 @@ function ViewAsStart({ userId, role, active }: { userId: number; role: string; a
         if (!ok || busy) return;
         await begin();
       }}>
-      <p className="text-t12 text-fg-muted">
+      <Details id="console.view-as" className="mt-0">
         Opens the app as this person sees it, for a short time (the banner on top shows how long). Read only: nothing can be changed, placed, connected or
         downloaded. It is recorded on both accounts, and the person sees it and your reason in their Settings.
-      </p>
+      </Details>
       <label className="flex flex-col gap-space-1 text-t12 text-fg-muted">Why are you opening this account? (required)
         <textarea value={reason} onChange={(e) => setReason(e.target.value.slice(0, 300))} rows={2} required minLength={5} maxLength={300}
           className={`rounded-control border border-border bg-surface-1 px-space-2 py-space-1 text-t14 text-fg ${FOCUS}`} />

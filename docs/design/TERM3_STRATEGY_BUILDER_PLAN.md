@@ -51,3 +51,9 @@ missing data; strictness "B" = own direction Strong (Trade's could never pass); 
 ## Also for the next session (owner 30 Oct): PB-AUDIT
 A fresh audit of the Paper bot (/deployments: paperbot/PaperBotV2.tsx, backend deployments/routes.py, the worker's
 entry / exit paths), file:line proof, findings by severity, plan to the owner before any fix. Start from REV-1 §1.
+
+## Also for the next session (owner 30 Oct): NAV-1 (approved, option A)
+Bottom bar Today - Trade (Terminal) - Signals - My trades - More (Charts in More); top-bar "AI" for every signed-in user
+on every page, bold, larger, gentle pulse (off under prefers-reduced-motion). Mock: option A of the sample sent 30 Oct.
+Note: the Terminal's phone tab row cuts "Orders" - add a scroll hint. One small PR with before / after shots.
+Reports to the owner: Devanagari Marathi.

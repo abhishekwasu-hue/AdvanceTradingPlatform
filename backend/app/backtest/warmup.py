@@ -24,8 +24,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import pandas as pd
 
@@ -74,7 +74,7 @@ class WindowStart:
     def __setattr__(self, name: str, value: Any) -> None:
         setattr(self.__dict__["inner"], name, value)
 
-    def analyze(self, data: Dict[str, pd.DataFrame], symbol: str) -> Signal:
+    def analyze(self, data: dict[str, pd.DataFrame], symbol: str) -> Signal:
         inner = self.__dict__["inner"]
         df = data.get(inner.timeframes[0])
         if df is not None and len(df):
@@ -91,20 +91,20 @@ class Prepared:
     bar, and what the user is told about the history."""
     frame: pd.DataFrame
     strategy: Any
-    window_start: Optional[pd.Timestamp] = None
+    window_start: pd.Timestamp | None = None
     warmup_sessions: int = 0
-    needed_sessions: Optional[int] = None
-    note: Optional[str] = None
-    extra: Dict[str, Any] = field(default_factory=dict)
+    needed_sessions: int | None = None
+    note: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
-    def history(self) -> Optional[Dict[str, Any]]:
+    def history(self) -> dict[str, Any] | None:
         """`BacktestResult.history`: None for a strategy that is not a template (its result hashes as before)."""
         if self.needed_sessions is None:
             return None
         return {"note": self.note, "needed_days": self.needed_sessions, "warmup_days": self.warmup_sessions}
 
 
-def prepare(strategy: Any, window: pd.DataFrame, history: Optional[pd.DataFrame] = None) -> Prepared:
+def prepare(strategy: Any, window: pd.DataFrame, history: pd.DataFrame | None = None) -> Prepared:
     """The run's frame and strategy. `history`: bars from the same source, fetched for the warm-up; only its bars strictly
     before the window's first bar are used. Not a template: the window and the strategy unchanged."""
     recipe = recipe_of(strategy)
@@ -148,8 +148,8 @@ def note(needed: int, had: int, window_days: int, blocked_days: int) -> str:
     return head + f", so its first {days(blocked_days)} could not give a signal."
 
 
-async def fetch_history(session: Any, user: Any, data_source: Optional[str], symbol: str, timeframe: str,
-                        window: pd.DataFrame, strategy: Any, now: Optional[datetime] = None) -> Optional[pd.DataFrame]:
+async def fetch_history(session: Any, user: Any, data_source: str | None, symbol: str, timeframe: str,
+                        window: pd.DataFrame, strategy: Any, now: datetime | None = None) -> pd.DataFrame | None:
     """R6: the template's `history_days` of candles before the window, from the source the window came from (the
     organisation's broker, or ATP's stored Daily history). None when the window was uploaded / sample candles, the
     strategy is not a template, or the source cannot serve it (the result's note then says what the test lacked)."""
@@ -158,7 +158,7 @@ async def fetch_history(session: Any, user: Any, data_source: Optional[str], sym
         return None
     from app.backtest import bar_source
     start = pd.Timestamp(_utc(window.index[:1])[0])
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     span = max(0, math.ceil((pd.Timestamp(now) - start).total_seconds() / 86400))
     lookback = min(MAX_FETCH_DAYS, span + int(strategy.history_days()))
     broker = source.split(":", 1)[1] if source.startswith("broker:") else None

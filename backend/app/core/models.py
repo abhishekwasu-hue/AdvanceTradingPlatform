@@ -213,4 +213,4 @@ class BacktestResult(BaseModel):
     loss_streak: Optional[Dict[str, Any]] = None
     # REV-S3: a template run's history before the test window (app/backtest/warmup.py): {"note": one plain sentence or None,
     # "needed_days", "warmup_days"}; None for every other strategy. Never in the result hash (the data hash covers the bars).
-    history: Optional[Dict[str, Any]] = None
+    history: dict[str, Any] | None = None

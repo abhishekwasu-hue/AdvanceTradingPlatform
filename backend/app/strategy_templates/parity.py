@@ -47,7 +47,7 @@ class Answer:
     instance: Optional[str] = None
 
 
-def needs(recipe: Recipe) -> Dict[str, int]:
+def needs(recipe: Recipe) -> dict[str, int]:
     """R6 (REV-S3): the bars every timeframe the recipe reads needs before it can answer - its refusal lookback and its
     fetch lookback (a function that reads as missing on a shorter frame: DowTrend at degree 1 on its first 250 bars, so
     `DowTrend(1)@1d` needs 250 daily bars although it refuses nothing)."""

@@ -75,7 +75,7 @@ class Part:
     lookback: Dict[str, int]
     # R6: the bars to FETCH per timeframe (the validator's fetch_lookback: at least `lookback`, more where a function reads
     # as missing on a shorter frame - DowTrend's swing history by degree). Fetch sizing only; never a refusal.
-    fetch_lookback: Dict[str, int] = field(default_factory=dict)
+    fetch_lookback: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -94,7 +94,7 @@ class Recipe:
     # step 5 (TPL-5): the invalidation is the extreme since the setup bar (the engine keeps it; no expression is compiled)
     invalidation_since_setup: bool = False
     # R6 (REV-S3): the bars to fetch per timeframe - every part's fetch_lookback, at least `lookback` (fetch sizing only)
-    fetch_lookback: Dict[str, int] = field(default_factory=dict)
+    fetch_lookback: dict[str, int] = field(default_factory=dict)
 
     @property
     def chosen_setup(self) -> Setup:
@@ -352,7 +352,7 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
     if problems:
         raise TemplateError(problems)
     lookback: Dict[str, int] = {}
-    fetch: Dict[str, int] = {}
+    fetch: dict[str, int] = {}
     flags: Set[str] = set()
     for (_, side), compiled_part in parts.items():
         if side not in settings.side_list():

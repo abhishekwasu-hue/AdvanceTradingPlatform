@@ -16,7 +16,6 @@ traded (`app.backtest.warmup`); where it cannot, the result says so in one plain
 from __future__ import annotations
 
 import math
-from typing import List
 
 import numpy as np
 import pandas as pd
@@ -137,7 +136,7 @@ def test_a_strategy_that_is_not_a_template_is_unchanged():
 
 
 # ======================================================================================================== the route
-def _candles(df: pd.DataFrame) -> List[dict]:
+def _candles(df: pd.DataFrame) -> list[dict]:
     return [{"timestamp": ts.isoformat(), "open": float(r.open), "high": float(r.high), "low": float(r.low), "close": float(r.close),
              "volume": float(r.volume)} for ts, r in df.iterrows()]
 

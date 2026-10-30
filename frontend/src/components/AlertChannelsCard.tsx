@@ -40,7 +40,7 @@ function OwnBotFold({ fold, open, children }: { fold: boolean; open: boolean; ch
  * organisation's own Telegram bot). */
 export type AlertChannelsPart = "all" | "channels" | "delivery" | "own-bot";
 export const ALERT_DELIVERY_PATH = "/settings/advanced#alert-delivery";
-const OTHER_CHANNELS: readonly (readonly [AlertChannelType, string])[] = [["EMAIL", "Email"], ["SMS", "SMS"], ["WHATSAPP", "WhatsApp"], ["WEBHOOK", "Your own app (webhook)"]];
+const OTHER_CHANNELS: readonly (readonly [AlertChannelType, string])[] = [["EMAIL", "Email"], ["SMS", "SMS"], ["WHATSAPP", "WhatsApp"], ["WEBHOOK", "Your own app"]];
 
 export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: { ownBotOnly?: boolean; part?: AlertChannelsPart } = {}) {
   const [channels, setChannels] = useState<AlertChannel[]>([]);

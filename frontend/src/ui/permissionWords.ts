@@ -21,7 +21,8 @@ const WORDS: Readonly<Record<string, PermissionWords>> = {
 
 /** Plain words for a permission; an unknown one gets the server's description, never its code. */
 export function permissionWords(scope: string, serverDescription: string): PermissionWords {
-  return WORDS[scope] ?? { label: serverDescription || "Other permission", line: "" };
+  const words = serverDescription.replace(/\b[a-z_]+:[a-z_]+\b/g, "").replace(/\s*\(\s*\)|\s{2,}/g, " ").trim();
+  return WORDS[scope] ?? { label: words || "Other permission", line: "" };
 }
 
 /** The permissions an owner may see: everything but platform administration, and nothing about LIVE in Phase 0. */

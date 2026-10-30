@@ -7,7 +7,8 @@ import settingsSource from "../settings/SettingsSectionV2.tsx?raw";
 import teamSource from "../pages/TeamPage.tsx?raw";
 import { DCF_FIELDS, EMPTY_DCF, dcfAssumptionsFrom, numberOrNull } from "../pages/fundamentalsInputs";
 import { notificationEventWords } from "./notificationWords";
-import { pauseReasonText } from "./pauseReason";
+import { pauseReasonDetail, pauseReasonText } from "./pauseReason";
+import { attentionRows } from "../dashboard/model";
 import { permissionWords, routingHelp, shownPermission } from "./permissionWords";
 
 /** REV-1 M2 part 2: Signals, Library, News, Company research, Alerts, Setup, Notifications, Team. */
@@ -20,6 +21,17 @@ describe("pause reason in words", () => {
     expect(pauseReasonText("3 losses in a row.")).toBe("Paused: 3 losses in a row");
     expect(pauseReasonText("Auto-paused after 5 consecutive failures: broker_error {code=500}")).toBeNull();
     expect(pauseReasonText(null)).toBeNull();
+  });
+
+  it("Today's paused row: one sentence, never the stored prefix", () => {
+    expect(pauseReasonDetail("Paused by user: paused from the Trading bot page")).toBe("You paused it.");
+    expect(pauseReasonDetail("Paused on AI proposal #4 (loss_streak), approved by user 2")).toBe("You approved a suggestion to pause it.");
+    expect(pauseReasonDetail("It hit your rule of 3 losses in a row at 10:21.")).toBe("It hit your rule of 3 losses in a row at 10:21.");
+    expect(pauseReasonDetail("3 losses in a row")).toBe("3 losses in a row.");
+    expect(pauseReasonDetail("auto_paused: consecutive_failures>=5")).toBeNull();
+    const rows = attentionRows({ nowMs: 0, broker: { kind: "connected", brokers: [] }, status: { maintenance_mode: false, maintenance_message: null, disabled_brokers: [] }, brokerRows: [], pending: [], risk: null, exposure: null, unread: [], emailVerified: true, approvalsPath: "/copilot/watchtower", deployments: [{ strategy_id: "orb_nifty", symbol: "NIFTY", status: "PAUSED",
+      pause_reason: "Paused by user: paused from the Trading bot page", last_error: null }] } as never);
+    expect(rows.find((r) => r.id === "paused")?.detail).toBe("You paused it. Nothing else is affected.");
   });
 });
 

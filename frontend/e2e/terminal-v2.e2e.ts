@@ -219,13 +219,13 @@ test.describe("v2 terminal 1440", () => {
       const panels = page.locator("[data-terminal-grid] [data-panel]");
       await expect(panels).toHaveCount(6);
       for (const id of ["chart-1", "chain", "order", "positions", "basket", "orders"]) await expect(page.locator(`[data-panel='${id}']`)).toBeVisible();
-      await expect(page.locator("[data-chain-ladder] [data-atm]")).toContainText("24,500");
+      await expect(page.locator("[data-terminal-chain] tr[data-atm]")).toContainText("24,500");
       await expect(page.locator("[data-status='today']")).toContainText("+₹2,650");
       await expect(page.locator("[data-status='margin']")).toContainText("(estimate)");
       // TERM-2 step 1: one PAPER badge, in the context bar (the status bar no longer repeats it).
       await expect(page.locator("[data-terminal='mode']")).toHaveText("PAPER");
       await expect(page.locator("[data-status='mode']")).toHaveCount(0);
-      await expect(page.locator("[data-status='feed']")).toHaveText("Live prices");
+      await expect(page.locator("[data-status='feed']")).toHaveCount(0);           // CT-1 C9: the shell / chart say freshness once
       await noSidewaysScroll(page);
       await shot(page, `terminal-1440-${theme}`);
       await page.locator("[data-status='mask']").click();
@@ -243,9 +243,10 @@ test.describe("v2 terminal 1440", () => {
     await expect(page.locator("[data-panel='chain']")).toHaveCount(0);
     expect(seen.puts.at(-1)?.body).toMatchObject({ active: "quick_trade" });
     await shot(page, "terminal-1440-light-quick-trade");
-    await pickOption(page, page.locator("[data-terminal=\'layout\']"), "multi_chart");
-    await expect(page.locator("[data-terminal-grid] [data-panel^='chart-']")).toHaveCount(4);
-    await shot(page, "terminal-1440-light-multi-chart");
+    // TERM-2 step 2: no Multi-chart layout in the Terminal (the Charts page owns multi-chart, CT-1 C2).
+    await page.locator("[data-terminal='layout']").click();
+    await expect(page.getByRole("option", { name: "Multi-chart" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
     // His own: back to Option seller, close the basket, save it under his name.
     await pickOption(page, page.locator("[data-terminal=\'layout\']"), "option_seller");
     await page.locator("[data-panel-close='basket']").click();
@@ -283,9 +284,11 @@ test.describe("v2 terminal 1440", () => {
   test("owner fixes T1-3 / T1-6: chain columns and one spot; positions with P&L, plain words, a group exit and Exit all", async ({ page }) => {
     await open(page, "light");
     const chain = page.locator("[data-panel='chain']");
-    for (const col of ["call-oi", "call-oiChange", "call-iv", "call-delta", "put-oi", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();
-    await expect(chain.locator("[data-chain-spot]")).toContainText(/spot [\d,.]+/);
-    expect((await chain.locator("[data-chain-spot]").innerText()).match(/as of/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    // TERM-2 step 2: the chain page's own chain and summary strip (one spot card; Greeks from the columns menu).
+    for (const col of ["call-oi", "call-oi_change", "call-iv", "call-ltp", "put-oi", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();
+    await expect(chain.locator("[data-summary='spot']")).toContainText(/[\d,.]+/);
+    await expect(chain.locator("[data-summary]")).not.toHaveCount(0);
+    await expect(chain.locator("[data-strike-range]")).toBeVisible();
     const positions = page.locator("[data-panel='positions']");
     await expect(positions.locator("[data-col='pnl']").first()).toBeVisible();
     await expect(positions.locator("[data-col='pnl']")).toHaveCount(2);
@@ -297,7 +300,7 @@ test.describe("v2 terminal 1440", () => {
     await shot(page, "terminal-1440-light-fixes");
   });
 
-  test("owner fix T1-4: the spread builder - hedge first, net credit, max loss, breakeven, margin with the hedge; a broken leg alert", async ({ page }) => {
+  test("TERM-2 step 2 (owner fix T1-4): the one basket in its panel - net, max loss, breakevens, margin; a broken leg alert", async ({ page }) => {
     await open(page, "light", { incomplete: true });
     for (const [cell, leg] of [["call-24600", "basket-buy"], ["call-24500", "basket-sell"]] as const) {
       await page.locator(`[data-cell='${cell}']`).click();
@@ -306,11 +309,12 @@ test.describe("v2 terminal 1440", () => {
       await page.keyboard.press("Escape");                                  // the sheet stays open after "Add"; close it
       await expect(page.locator("[data-chain-actions]")).toHaveCount(0);
     }
-    const builder = page.locator("[data-panel='basket']");
-    await expect(builder.locator("[data-leg-role]")).toHaveCount(2);
-    await expect(builder.locator("[data-leg-role]").first()).toHaveAttribute("data-leg-role", "hedge");
-    for (const f of ["net", "max-loss", "breakeven", "margin"]) await expect(builder.locator(`[data-figure='${f}']`)).toBeVisible();
-    await expect(builder.locator("[data-spread='hedge-benefit']")).toBeVisible();
+    // TERM-2 step 2: the one basket placed in the panel - the server's figures rendered once (no spread-builder copy).
+    const builder = page.locator("[data-panel='basket'] [data-basket-panel][data-embedded]");
+    await expect(builder.locator("[data-basket-body]")).toBeVisible();
+    await expect(builder.locator("[data-basket='legs'] > li")).toHaveCount(2);
+    for (const f of ["net", "max-loss", "breakevens", "margin"]) await expect(builder.locator(`[data-figure='${f}']`)).toBeVisible();
+    await expect(page.locator("[data-panel='basket'] [data-practice-frame]")).toHaveCount(0);     // one PAPER badge per screen
     const alert = page.locator("[data-terminal='incomplete'] [data-incomplete-action]");
     await expect(alert.first()).toHaveText("Complete the leg");
     await expect(alert.nth(1)).toHaveText("Exit the filled leg");
@@ -403,7 +407,7 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
         await expect(page.locator("[data-status='margin']")).toHaveCount(0);
         await shot(page, `terminal-${size.width}-${theme}`);
         await page.locator("[data-tab='chain']").tap();
-        await expect(page.locator("[data-phone-panel='chain'] [data-chain-ladder]")).toBeVisible();
+        await expect(page.locator("[data-phone-panel='chain'] [data-terminal-chain] [data-chain-scroll]")).toBeVisible();
         await shot(page, `terminal-${size.width}-${theme}-chain`);
         await page.locator("[data-tab='positions']").tap();
         await expect(page.locator("[data-phone-panel='positions'] [data-position]")).toHaveCount(2);
@@ -434,9 +438,9 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
       await shot(page, `terminal-${size.width}-light-order`);
       // T1-3: LTP + OI per side on a phone; a strike opens the rest.
       await page.locator("[data-tab='chain']").tap();
-      await expect(page.locator("[data-phone-panel='chain'] [data-col='call-iv']")).toHaveCount(0);
-      await page.locator("[data-phone-panel='chain'] [data-expand]").first().tap();
-      await expect(page.locator("[data-phone-panel='chain'] [data-more]")).toBeVisible();
+      await expect(page.locator("[data-phone-panel='chain'] [data-col='call-iv']").first()).toBeHidden();
+      await page.locator("[data-phone-panel='chain'] tr[data-atm] th").tap();
+      await expect(page.locator("[data-row-details]")).toBeVisible();
       await noSidewaysScroll(page);
       await shot(page, `terminal-${size.width}-light-chain-expanded`);
     });

@@ -65,7 +65,7 @@ export const PANELS: Record<PanelId, PanelInfo> = {
   order: { label: "Order", minW: 3, minH: 8, w: 4, h: 11 },
   positions: { label: "Positions", minW: 3, minH: 4, w: 5, h: 7 },
   orders: { label: "Orders", minW: 3, minH: 4, w: 4, h: 7 },
-  basket: { label: "Spread builder", minW: 3, minH: 4, w: 3, h: 7 },
+  basket: { label: "Basket", minW: 3, minH: 4, w: 3, h: 7 },   // TERM-2 step 2: the one basket
   bots: { label: "Bots & signals", minW: 3, minH: 4, w: 4, h: 6 },
   payoff: { label: "Payoff", minW: 3, minH: 4, w: 4, h: 6 },
 };

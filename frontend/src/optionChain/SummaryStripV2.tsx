@@ -95,8 +95,10 @@ function Value({ loading, num, children }: { loading: boolean; num?: number | nu
   return <div data-flash={flash ?? undefined} className={`-mx-space-1 mt-space-1 rounded-control px-space-1 font-tabular text-t18 font-semibold text-fg transition-colors duration-base md:text-t20 ${flashClass(flash)}`}>{children}</div>;
 }
 
-export default function SummaryStripV2({ summary, expiry, loading, spot = null, prevClose = null }: {
+export default function SummaryStripV2({ summary, expiry, loading, spot = null, prevClose = null, dense = false }: {
   summary: ChainSummary | null; expiry: string | null; loading: boolean;
+  /** TERM-2: the same figures as one compact row (the Terminal's chain panel), so the chain stays in view. */
+  dense?: boolean;
   /** UI-28 U7.1: the underlying's previous close (spotChange.ts), for the spot's signed change and %. */
   prevClose?: number | null;
   /** The page's one spot (the chart's too, T1-3); without it the chain's own. */
@@ -106,6 +108,21 @@ export default function SummaryStripV2({ summary, expiry, loading, spot = null, 
   const [more, setMore] = useState(false);
   // Phone order: the four first cards, then the rest; from md the server's order (one row).
   const cards = [...all.filter((c) => PHONE_FIRST.has(c.key)), ...all.filter((c) => !PHONE_FIRST.has(c.key))];
+  if (dense) {
+    return (
+      <section aria-label="Summary" data-block="chain-summary" data-dense className="flex flex-wrap items-end gap-x-space-4 gap-y-space-1 text-t12">
+        {all.map((c) => (
+          <div key={c.key} data-summary={c.key} className="min-w-0">
+            <div className="text-fg-muted">{c.label}</div>
+            <div className="font-tabular text-t14 font-semibold text-fg">
+              {loading ? <Skeleton className="h-4 w-12" /> : c.value}
+              {!loading && c.key === "spot" && c.extra ? <span className="ml-space-1 font-normal">{c.extra}</span> : null}
+            </div>
+          </div>
+        ))}
+      </section>
+    );
+  }
   return (
     <section aria-label="Summary" data-block="chain-summary" data-tour="oc-summary"
       className="grid grid-cols-2 gap-space-3 md:grid-cols-4">

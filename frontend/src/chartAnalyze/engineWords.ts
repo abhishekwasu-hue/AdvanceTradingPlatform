@@ -5,7 +5,8 @@
  */
 export const ENGINE_USER_TITLE = "Chart upload analysis is being switched on";
 export const ENGINE_USER_LINE = "Your saved analyses are kept. Please check again later.";
-export const ENGINE_ADMIN_TITLE = "Chart analysis engine not installed — owner action";
+/** The admin-only headline lives with the admin code (UI-28 U1.7: admins may read internal names). */
+export { ENGINE_ADMIN_TITLE } from "../admin/chartEngineNotice";
 
 /** The admin's view: the server sent the reason or the owner's steps (it sends them to SUPER_ADMIN only). */
 export function engineAudience(engine: { reason?: string; owner_steps?: string }): "admin" | "user" {

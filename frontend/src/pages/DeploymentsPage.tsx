@@ -9,6 +9,7 @@ import BrokerUncertainBanner from "../components/BrokerUncertainBanner";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { Card, StatTile } from "../components/ui";
 import { PageHeader } from "../components/primitives";
+import { Details } from "../ui/Details";
 import { FROM_DEFAULTS, formPrefill, stillFromDefaults, useTradingDefaults, type FormPrefill } from "../settings/tradingDefaults";
 import { useFeatures } from "../ui/useFeatures";
 import {
@@ -741,7 +742,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
         )}
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
-          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">Regime filter <span className="normal-case font-normal">(optional; a diagnostic only - recorded for review, it never blocks an entry)</span></div>
+          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">Regime filter</div>
           <div className="flex flex-wrap gap-2">
             {REGIME_OPTIONS.map((r) => (
               <button key={r} type="button" onClick={() => toggleRegime(r)} className={`rounded-md border px-2.5 py-1 text-xs font-bold ${regimes.includes(r) ? "border-brand/60 text-brand bg-brand/10" : "border-border text-fg-muted hover:text-fg"}`}>
@@ -749,10 +750,11 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
               </button>
             ))}
           </div>
+          <Details id="deployments.regime-filter" className="mt-space-2"><p>(optional; a diagnostic only - recorded for review, it never blocks an entry)</p></Details>
         </div>
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
-          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">OI gates <span className="normal-case font-normal">(optional; checked before each new entry from the option chain's OI - missing or stale OI data blocks the entry; exits are never gated. Limits come from the Option Chain page's OI settings)</span></div>
+          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">OI gates</div>
           <div className="flex flex-wrap gap-2">
             {OI_GATE_OPTIONS.map(([g, label]) => (
               <button key={g} type="button" onClick={() => toggleOiGate(g)} title={g}
@@ -761,6 +763,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
               </button>
             ))}
           </div>
+          <Details id="deployments.oi-gates" className="mt-space-2"><p>(optional; checked before each new entry from the option chain's OI - missing or stale OI data blocks the entry; exits are never gated. Limits come from the Option Chain page's OI settings)</p></Details>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-4">

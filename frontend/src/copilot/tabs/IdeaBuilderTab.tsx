@@ -19,6 +19,7 @@ import { useCopilotT, useSecondary } from "../i18n";
 import { copilotPath } from "../tabs";
 import { Panel, Stagger, StaggerItem } from "./shared";
 import { useUiV2 } from "../../ui/useFeatures";
+import { Details } from "../../ui/Details";
 
 /**
  * Idea Builder: the strategy interview, step by step - the one trilingual screen (the owner's ruling). Every question is
@@ -63,11 +64,11 @@ export default function IdeaBuilderTab() {
     <Panel>
       <div className="space-y-3" data-idea-builder-moved>
         <h2 className="text-base font-semibold text-fg">Build a strategy step by step</h2>
-        <p className="text-sm text-fg-muted">Pick a template or describe your idea in words, choose the market, the entry and your exits, then test it and start it on paper.</p>
         <div className="flex flex-wrap gap-2">
           <Button variant="primary" onClick={() => navigate("/strategies/build", { state: idea ? { idea } : null })}>Open the strategy builder</Button>
           <Button variant="ghost" onClick={() => setInterview(true)}>Advanced: the strategy interview</Button>
         </div>
+        <Details id="copilot.idea-builder"><p>Pick a template or describe your idea in words, choose the market, the entry and your exits, then test it and start it on paper.</p></Details>
       </div>
     </Panel>
   );

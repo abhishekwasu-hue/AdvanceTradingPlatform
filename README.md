@@ -146,7 +146,7 @@ sudo -u postgres psql -c "CREATE DATABASE advance_trading_platform OWNER atp_use
 # backend
 cd backend
 cp .env.example .env   # then fill in JWT_SECRET_KEY / SECRETS_ENCRYPTION_KEY for anything beyond local dev
-pip install -r requirements.txt
+pip install --require-hashes -r requirements.lock   # the hashed lock; regenerate: sh scripts/lock_requirements.sh
 alembic upgrade head   # applies the tracked schema migrations (see docs/ARCHITECTURE.md)
 uvicorn app.main:app --reload
 # API docs at http://localhost:8000/docs

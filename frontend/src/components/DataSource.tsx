@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { Database, FlaskConical, Plug } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { CandleSource, DataTierBadgeInfo, OHLCVBar, OptionChain } from "../types";
+import type { CandleSource, DataRequest, DataTierBadgeInfo, OHLCVBar, OptionChain } from "../types";
 import { DataTierBadge } from "./DataTierBadge";
 import { useFeatures } from "../ui/useFeatures";
 import { generateSampleCandles } from "../utils/sampleData";
@@ -16,6 +16,28 @@ import { StoredLoginAction } from "../ui/BrokerGate";
  * choice and does the fetching; the bar renders it. Sample mode never touches the network. */
 
 export type CandleMode = "sample" | "broker";
+
+/**
+ * M55 T3 (data honesty): sample data is never the default. Mode "broker" - the default for everyone - is the server's
+ * own candles for the chosen symbol / timeframe: the broker session when one is usable, else ATP's stored Daily history
+ * where the page allows it (flag backtest_stored_history), else one plain sentence. Sample candles only behind the
+ * labelled switch SAMPLE_TOGGLE (never for a user under ui_v2, see sampleHiddenFor), and everything built on them shows
+ * the SAMPLE chip. A backtest / scan / S&R request names symbol + timeframe and the server loads the bars itself
+ * (`dataRequestFor`); posted candles are "paste your own data", which the server records as `uploaded`.
+ */
+export const SAMPLE_TOGGLE = "Use sample data (practice only)";
+export const SAMPLE_CHIP = "SAMPLE";
+/** The run history's words for a recorded data source. */
+export function sourceWords(source: string | null | undefined): string {
+  const s = source ?? "";
+  if (s === "uploaded") return "Your own data";
+  if (s === "sample") return "Sample";
+  if (s.startsWith("broker")) return "Your broker";
+  if (s.startsWith("lake")) return "Stored history";
+  return s || "Unknown";
+}
+
+export type { DataRequest };
 
 /**
  * UX3 fix 7 (UX audit §1 problem 6, U4 "no sample data"): with `ui_v2` on, sample candles are a testing tool for the
@@ -37,6 +59,8 @@ export interface FetchedCandles {
   label: string;
   /** Owner order 23 Oct: where the prices came from and the range, in plain words (null for sample data). */
   line: string | null;
+  /** M55 T3: what a backtest / scan request sends instead of trusting a label (server mode posts no candles). */
+  request?: DataRequest;
 }
 
 export interface CandleSourceState {
@@ -75,8 +99,9 @@ export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?
   const { user } = useAuth();
   const features = useFeatures();
   const sampleHidden = sampleHiddenFor(features.on("ui_v2"), user?.role);
-  const storedOn = !!opts?.storedHistory && sampleHidden && features.on("backtest_stored_history");
-  const [mode, setMode] = useState<CandleMode>("sample");
+  // M55 T3: stored Daily history is the server's own data for everyone on a backtest page, not only without sample data.
+  const storedOn = !!opts?.storedHistory && features.on("backtest_stored_history");
+  const [mode, setMode] = useState<CandleMode>("broker");
   const [broker, setBroker] = useState("");
   const [lookbackDays, setLookbackDays] = useState(defaultLookbackDays);
   const [storedDays, setStoredDays] = useState(STORED_HISTORY_DEFAULT_DAYS);
@@ -85,7 +110,7 @@ export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?
   const [dataTier, setDataTier] = useState<DataTierBadgeInfo | undefined>(undefined);
 
   useEffect(() => {
-    if (!user) { setSources([]); setMode("sample"); return; }
+    if (!user) { setSources([]); return; }
     let cancelled = false;
     api.marketDataSources().then((r) => {
       if (cancelled) return;
@@ -101,14 +126,14 @@ export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?
   }, [user]);
 
   const usable = sources.some((s) => s.usable);
-  // UX3 fix 7: a user without sample data runs on the broker as soon as one is usable.
-  useEffect(() => { if (sampleHidden && usable && mode === "sample") setMode("broker"); }, [sampleHidden, usable, mode]);
+  // UX3 fix 7: a user without sample data never runs on it.
+  useEffect(() => { if (sampleHidden && mode === "sample") setMode("broker"); }, [sampleHidden, mode]);
   const stored = storedOn && !usable;
-  const label = mode === "broker" ? `broker:${broker || "auto"}` : stored ? "lake:daily" : "sample";
+  const label = mode === "sample" ? "sample" : usable ? `broker:${broker || "auto"}` : stored ? "lake:daily" : "none";
 
   async function fetch(symbols: string[], timeframe: string, sample?: { count?: number; startPriceFor?: (s: string) => number; seedFor?: (s: string) => number; daily?: boolean }): Promise<FetchedCandles> {
     const clean = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
-    if (mode === "sample" && stored) {
+    if (mode !== "sample" && !usable && stored) {
       // Owner order 23 Oct: the server chooses the bars (stored Daily history here) and says where they came from.
       setLoading(true);
       try {
@@ -121,12 +146,13 @@ export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?
           line = line ?? res.line;
           label = res.source;
         }
-        return { candles, warnings: [], label, line };
+        return { candles, warnings: [], label, line, request: { data_mode: "server", lookback_days: storedDays } };
       } finally {
         setLoading(false);
       }
     }
     if (mode === "sample" && sampleHidden) throw new Error(NEEDS_BROKER_FOR_DATA);
+    if (mode !== "sample" && !usable) throw new Error(NEEDS_BROKER_FOR_DATA);
     if (mode === "sample") {
       const candles: Record<string, OHLCVBar[]> = {};
       for (const s of clean) {
@@ -134,7 +160,7 @@ export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?
         const start = sample?.startPriceFor ? sample.startPriceFor(s) : 100 + (hashSymbol(s) % 900);
         candles[s] = generateSampleCandles(sample?.count ?? 300, start, seed, { daily: sample?.daily });
       }
-      return { candles, warnings: [], label: "sample", line: null };
+      return { candles, warnings: [], label: "sample", line: null, request: { data_mode: "paste" } };
     }
     setLoading(true);
     try {
@@ -148,7 +174,8 @@ export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?
       }
       if (Object.keys(candles).length === 0) throw new Error(`No candles from ${res.source.broker}: ${warnings.join("; ") || "empty response"}`);
       const label = `broker:${res.source.broker}`;
-      return { candles, warnings, label, line: pricesLine(label, candles[clean[0]] ?? Object.values(candles)[0] ?? []) };
+      return { candles, warnings, label, line: pricesLine(label, candles[clean[0]] ?? Object.values(candles)[0] ?? []),
+               request: { data_mode: "server", lookback_days: lookbackDays, broker: res.source.broker || broker || null } };
     } finally {
       setLoading(false);
     }
@@ -181,8 +208,28 @@ export function useCandleSource(defaultLookbackDays = 5, opts?: { storedHistory?
            dataTier: mode === "broker" ? dataTier : undefined };
 }
 
+/** M55 T3: what a scan / S&R request sends for the current choice, without fetching candles in the browser. Server mode
+ * needs a usable broker or stored history (else NEEDS_BROKER_FOR_DATA, the sentence the bar shows); sample = paste. */
+export function dataRequestFor(source: Pick<CandleSourceState, "mode" | "usable" | "stored" | "lookbackDays" | "broker" | "storedDays">): DataRequest {
+  if (source.mode === "sample") return { data_mode: "paste" };
+  if (source.usable) return { data_mode: "server", lookback_days: source.lookbackDays, broker: source.broker || null };
+  if (source.stored) return { data_mode: "server", lookback_days: source.storedDays ?? STORED_HISTORY_DEFAULT_DAYS };
+  throw new Error(NEEDS_BROKER_FOR_DATA);
+}
+
+/** M55 T3: the chip on every chart or table built on sample data. */
+export function SampleChip({ className = "" }: { className?: string }) {
+  return (
+    <span data-sample-chip title="Practice prices made up by ATP - not real market prices"
+      className={`inline-flex items-center rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-t12 font-semibold tracking-wide text-warn ${className}`}>
+      {SAMPLE_CHIP}
+    </span>
+  );
+}
+
 /** UX3 fix 7: the bar a user without sample data sees - where the prices come from, in plain words. */
-export function PlainDataSourceBar({ source }: { source: CandleSourceState }) {
+export function PlainDataSourceBar({ source, bare }: { source: CandleSourceState; bare?: boolean }) {
+  const mb = bare ? "" : "mb-4 ";
   const usable = source.sources.filter((s) => s.usable);
   if (!source.usable && source.stored) {
     // Day-one fix 3: a stored broker that is only not logged in today is named as such; the sentence has its own line
@@ -190,7 +237,7 @@ export function PlainDataSourceBar({ source }: { source: CandleSourceState }) {
     const stored = source.sources[0];
     const note = stored ? storedHistoryLoginNote(brokerDisplayName(stored.broker)) : STORED_HISTORY_NOTE;
     return (
-      <div className="mb-4 flex flex-col gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg md:flex-row md:items-center md:gap-3" data-plain-data-source="stored">
+      <div className={`${mb}flex flex-col gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg md:flex-row md:items-center md:gap-3`} data-plain-data-source="stored">
         <p className="flex min-w-0 items-start gap-2 md:flex-1">
           <Database size={16} aria-hidden className="mt-0.5 shrink-0 text-fg-muted" />
           <span>{note}</span>
@@ -218,7 +265,7 @@ export function PlainDataSourceBar({ source }: { source: CandleSourceState }) {
   }
   if (!source.usable) {
     return (
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg" data-plain-data-source="no-broker">
+      <div className={`${mb}flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg`} data-plain-data-source="no-broker">
         <Plug size={16} aria-hidden className="shrink-0 text-fg-muted" />
         <span className="min-w-0 flex-1">{NEEDS_BROKER_FOR_DATA}</span>
         <Link to="/broker" className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">Open Broker</Link>
@@ -226,7 +273,7 @@ export function PlainDataSourceBar({ source }: { source: CandleSourceState }) {
     );
   }
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg" data-plain-data-source="broker">
+    <div className={`${mb}flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg`} data-plain-data-source="broker">
       <Database size={16} aria-hidden className="shrink-0 text-fg-muted" />
       <span>Prices from your broker</span>
       {usable.length > 1 && (
@@ -246,36 +293,33 @@ export function PlainDataSourceBar({ source }: { source: CandleSourceState }) {
   );
 }
 
+/**
+ * The data bar of a research page. A user without sample data (ui_v2, not the platform admin) sees only the plain bar.
+ * Everyone else (ui_v2 off, or the platform admin) gets the same server prices by default, plus the labelled switch
+ * SAMPLE_TOGGLE; with it on, the bar shows the SAMPLE chip and says the prices are made up (M55 T3).
+ */
 export function DataSourceBar({ source, note }: { source: CandleSourceState; note?: string }) {
-  const { user } = useAuth();
   if (source.sampleHidden) return <PlainDataSourceBar source={source} />;
-  const brokerMode = source.mode === "broker";
+  const sample = source.mode === "sample";
   return (
-    <div className={`mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-xs ${brokerMode ? "border-info/30 bg-info/[0.06] text-info" : "border-warn/30 bg-warn/[0.07] text-warn"}`}>
-      {brokerMode ? <Database size={14} className="shrink-0" /> : <FlaskConical size={14} className="shrink-0" />}
-      <span className="font-semibold">Data</span>
-      <div className="flex rounded border border-border overflow-hidden">
-        <button onClick={() => source.setMode("sample")} className={`px-2 py-0.5 ${!brokerMode ? "bg-surface-2 text-fg" : "text-fg-muted"}`}>Sample</button>
-        <button onClick={() => source.setMode("broker")} disabled={!source.usable} title={source.usable ? "" : user ? "No broker with a valid session today - connect it on the Broker page" : "Log in first"}
-          className={`px-2 py-0.5 border-l border-border ${brokerMode ? "bg-surface-2 text-fg" : "text-fg-muted"} disabled:opacity-40`}>Broker candles</button>
-      </div>
-      {brokerMode && (
+    <div className="mb-4 space-y-2" data-data-source-bar={sample ? "sample" : "server"}>
+      {sample ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-warn/30 bg-warn/[0.07] px-3 py-2 text-sm text-fg" data-sample-bar>
+          <FlaskConical size={16} aria-hidden className="shrink-0 text-warn" />
+          <SampleChip />
+          <span className="min-w-0 flex-1 text-fg-muted">Practice prices made up by ATP, not real market prices. Results on them show the SAMPLE chip.{note ? " " + note : ""}</span>
+        </div>
+      ) : (
         <>
-          <select value={source.broker} onChange={(e) => source.setBroker(e.target.value)} className="rounded bg-surface-2 border border-border px-2 py-0.5 text-xs text-fg">
-            {source.sources.filter((s) => s.usable).map((s) => <option key={`${s.broker}:${s.account_label}`} value={s.broker}>{s.broker} ({s.account_label})</option>)}
-          </select>
-          <label className="flex items-center gap-1 text-fg-muted">lookback
-            <input type="number" min={1} max={730} value={source.lookbackDays} onChange={(e) => source.setLookbackDays(Math.max(1, Number(e.target.value) || 1))} className="w-16 rounded bg-surface-2 border border-border px-1 py-0.5 text-xs text-fg" /> days
-          </label>
-          {source.loading && <span className="text-fg-muted">fetching…</span>}
-          <DataTierBadge badge={source.dataTier} />
+          <PlainDataSourceBar source={source} bare />
+          {source.mode === "broker" && source.usable && <DataTierBadge badge={source.dataTier} />}
         </>
       )}
-      <span className="text-fg-muted">
-        {brokerMode
-          ? "Real candles through your own broker session (history + today, cached 60 s). The backend computes on them exactly as on sample data."
-          : `Deterministic sample OHLCV; the backend computes everything for real on it. Switch to broker candles once a broker is logged in on the Broker page.${note ? " " + note : ""}`}
-      </span>
+      <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-fg-muted md:min-h-0">
+        <input type="checkbox" role="switch" aria-checked={sample} checked={sample} data-sample-toggle
+          onChange={(e) => source.setMode(e.target.checked ? "sample" : "broker")} className="h-4 w-4 accent-warn" />
+        <span>{SAMPLE_TOGGLE}</span>
+      </label>
     </div>
   );
 }

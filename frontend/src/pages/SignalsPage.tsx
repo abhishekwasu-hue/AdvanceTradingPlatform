@@ -6,7 +6,7 @@ import { useBrokerChart } from "../components/chartHistory";
 import ProChart, { chartWindowUrl, directionMarker, useLiveLtp, type PriceLineSpec } from "../components/ProChart";
 import SignalCard from "../components/SignalCard";
 import { Card, Disclaimer } from "../components/ui";
-import { DataSourceBar, useCandleSource } from "../components/DataSource";
+import { DataSourceBar, SampleChip, useCandleSource } from "../components/DataSource";
 import type { EnrichedSignal, OHLCVBar, SRZone, SignalHistoryEntry, StrategyInfo } from "../types";
 import { buildTimeframeData } from "../utils/sampleData";
 import { Button, Input, PageHeader, Select } from "../components/primitives";
@@ -24,6 +24,7 @@ export default function SignalsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EnrichedSignal | null>(null);
+  const [ranOnSample, setRanOnSample] = useState(false);          // M55 T3: the chart shows sample candles
   const [chartCandles, setChartCandles] = useState<OHLCVBar[]>([]);
   const [baseCandles, setBaseCandles] = useState<OHLCVBar[]>([]);     // Phase AN: 1-minute base for the chart's timeframe switcher
   const [chartTf, setChartTf] = useState<string>("5min");
@@ -66,7 +67,8 @@ export default function SignalsPage() {
       // must not take the signal itself down with it.
       const [enriched, srZones] = await Promise.all([
         api.enrichSignal(selected.id, symbol, data),
-        api.supportResistanceZones(symbol, primaryCandles).catch(() => [] as SRZone[]),
+        // M55 T3: in server mode the server loads the S&R bars itself (no candles posted).
+        api.supportResistanceZones(symbol, primaryCandles, fetched.request, fetched.request?.data_mode === "server" ? primaryTf : undefined).catch(() => [] as SRZone[]),
       ]);
 
       // The engine can return dozens of small swing clusters; keep only the strongest few
@@ -78,6 +80,7 @@ export default function SignalsPage() {
         .slice(0, 5);
 
       setResult(enriched);
+      setRanOnSample(fetched.label === "sample");
       setChartCandles(primaryCandles);
       setBaseCandles(base);
       setChartTf(primaryTf);
@@ -170,6 +173,7 @@ export default function SignalsPage() {
 
       {chartCandles.length > 0 && (
         <Card title="Chart — strategy indicators, entry / stop / targets, support &amp; resistance">
+          {ranOnSample && <SampleChip className="mb-2" />}
           <ProChart candles={displayCandles} symbol={lastGenerated?.symbol} timeframe={chartTf}
                     timeframes={brokerMode ? ["1min", "5min", "15min", "30min", "60min", "day"] : ["1min", "5min", "15min", "30min", "60min"]} onTimeframeChange={setChartTf}
                     priceLines={priceLines} zones={zones} markers={markers} strategyParams={selected?.default_params} live={chartTf === "day" ? null : live.ltp} liveError={live.error}

@@ -233,6 +233,21 @@ export function Reasons({ item }: { item: SignalFeedItem }) {
   );
 }
 
+/** M55 T2: the legs Approve places for an option / structure proposal, in the server's own words. His own order, so
+ * order words are fine here (and only here). Nothing for an ordinary proposal. */
+export function YourOrder({ item }: { item: SignalFeedItem }) {
+  const legs = item.legs ?? [];
+  if (legs.length === 0) return null;
+  return (
+    <section data-your-order>
+      <h3 className="text-t15 font-semibold text-fg">Your order</h3>
+      <ul className="mt-space-2 space-y-space-1 text-t14 text-fg">
+        {legs.map((l) => <li key={l}>{l}</li>)}
+      </ul>
+    </section>
+  );
+}
+
 /** "Fits your risk limits": the existing risk pre-check on the waiting proposal, as sentences. */
 export function RiskLines({ proposal }: { proposal?: AiAction }) {
   const lines = riskSentences(proposal);
@@ -421,6 +436,7 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
   if (compact) {
     return (
       <div className="space-y-space-3">
+        <YourOrder item={item} />
         {waiting && <CompactRisk proposal={proposal} />}
         {!waiting && <OutcomeLine item={item} now={now} />}
         <SignalActions item={item} now={now} compact canTrade={canTrade} onDone={onDone} onError={onError} />
@@ -456,6 +472,7 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
       {waiting && canTrade && moreOpen && <SnoozeMenu id={menuId} item={item} now={now} onDone={onDone} onError={onError} />}
       <SignalChart item={item} timeframe={timeframe} onTimeframe={setTimeframe} />
       {(item.entry !== null || item.stop !== null || item.target !== null || item.rr !== null || proposal?.risk_check) && <KeyFigures item={item} proposal={proposal} />}
+      <YourOrder item={item} />
       <Reasons item={item} />
       {waiting ? <RiskLines proposal={proposal} /> : <OutcomeLine item={item} now={now} />}
       <SignalActions item={item} now={now} canTrade={canTrade} chartTimeframe={timeframe} onDone={onDone} onError={onError} />

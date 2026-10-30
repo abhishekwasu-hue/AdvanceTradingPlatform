@@ -135,7 +135,9 @@ async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionR
         if risk_on and row.action == "ENTRY" and user is not None:
             item["strike_breach"] = item["evidence"].get("strike_breach")
             owner_id = getattr(row, "owner_user_id", None)
-            if row.status == "PROPOSED" and (owner_id is None or owner_id == user.id):
+            # M55 T2: an option / structure proposal is sized by its own order path (lots off its max loss) when it is
+            # placed; the underlying-share pre-check would show a size that is not the order's, so it shows none.
+            if row.status == "PROPOSED" and (owner_id is None or owner_id == user.id) and not item["evidence"].get("structure"):
                 # The owner's own limits: the approved order is placed for (and sized by) the proposal's owner.
                 item["risk_check"] = await _risk_check(session, user, item["evidence"])
         out.append(item)

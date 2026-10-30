@@ -14,7 +14,8 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from typing import Any
+from types import UnionType
+from typing import Any, Literal, Union, get_args, get_origin
 
 from fastapi import FastAPI
 from fastapi.datastructures import DefaultPlaceholder
@@ -32,6 +33,20 @@ def _schema_hash(annotation: Any) -> str | None:
         schema = getattr(annotation, "__name__", str(annotation))
     text = json.dumps(schema, sort_keys=True, default=str)
     return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def _type_name(annotation: Any) -> str | None:
+    """A type as FastAPI sees it: `List[X]` and `list[X]`, `Optional[X]` and `X | None` read the same."""
+    if annotation is None:
+        return None
+    origin, args = get_origin(annotation), get_args(annotation)
+    if origin is None:
+        return getattr(annotation, "__name__", str(annotation))
+    if origin in (Union, UnionType):
+        return " | ".join(sorted(str(_type_name(a)) for a in args))
+    if origin is Literal:
+        return f"Literal{list(args)}"
+    return f"{getattr(origin, '__name__', str(origin))}[{', '.join(str(_type_name(a)) for a in args)}]"
 
 
 def _call_name(call: Any) -> str:
@@ -61,8 +76,7 @@ def route_table(app: FastAPI) -> list[dict[str, Any]]:
             "name": route.name,
             "status_code": route.status_code,
             "response_class": _class_name(route.response_class),
-            "response_model": getattr(route.response_model, "__name__", None if route.response_model is None
-                                      else str(route.response_model)),
+            "response_model": _type_name(route.response_model),
             "response_schema": _schema_hash(route.response_model),
             "body": [[f.name, _schema_hash(f.field_info.annotation)] for f in dependant.body_params],
             "path_params": sorted(f.name for f in dependant.path_params),

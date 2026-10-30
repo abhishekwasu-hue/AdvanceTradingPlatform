@@ -1207,8 +1207,8 @@ def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:
 
 
 def _near_zone(f: pd.DataFrame, kind: str, tolerance_pct: float, window: int) -> bool:
-    from app.scanner.engine import _check_structure_filter
-    from app.scanner.models import StructureFilter, StructureFilterType
+    from app.screener.scanner.engine import _check_structure_filter
+    from app.screener.scanner.models import StructureFilter, StructureFilterType
     if not tolerance_pct > 0:
         return False
     return _check_structure_filter(StructureFilter(filter_type=StructureFilterType(kind), tolerance_pct=tolerance_pct), f, window)[0]

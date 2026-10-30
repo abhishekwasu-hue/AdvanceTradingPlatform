@@ -60,7 +60,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | M55 full audit response (30 Oct; text kept private - security) | owner upload / private repo | M55 | approved 30 Oct, in progress |
 | - | Sidebar show/hide + Terminal panel resizing (30 Oct) | ATP_ORDER_M57_M58.md | M57, M58 | not started |
 | - | Copilot reading card + Analyze a chart (30 Oct) | ATP_ORDER_M59.md | M59 | not started |
-| - | Sidebar / tabs rationalisation (30 Oct) | ATP_ORDER_M60.md | M60 | proposal |
+| - | Sidebar / tabs rationalisation (30 Oct) | ATP_ORDER_M60.md | M60 | approved, not started |
 | - | Option chain OI / PCR tab fixes (30 Oct) | ATP_ORDER_M61.md | M61 | not started |
 | - | Trading journal made working (30 Oct) | ATP_ORDER_M62.md | M62 | not started |
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |

@@ -2145,6 +2145,8 @@ export interface FeatureFlag {
   confirm_text?: string;
   /** M55 S1: true when turning the flag ON opens LIVE (live_trading); false when turning it OFF does (the PAPER-only lock). */
   opens_live_when_on?: boolean;
+  /** M55 S1b (live_trading only): "LIVE for organisations" - the organisations the owner granted LIVE. */
+  live_orgs?: { id: number; name: string }[];
 }
 
 export type FeatureFlags = Record<string, FeatureFlag>;

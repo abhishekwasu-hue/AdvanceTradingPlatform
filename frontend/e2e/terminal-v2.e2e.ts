@@ -732,3 +732,121 @@ test.describe("v2 terminal TERM-2 step 4 (R1-R4) 390", () => {
     }
   }
 });
+
+// M58 (T4): the lines between panels grow one panel and shrink its neighbour; the limit shows inline; the Panels dialog's
+// width / height steppers (saved with "Save as mine"); double-click a line = the ready sizes, a title = maximise.
+for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]) {
+  test.describe(`v2 terminal gutters ${size.width} (M58)`, () => {
+    test.use({ viewport: size });
+    const box = async (page: Page, id: string) => (await page.locator(`[data-panel='${id}']`).boundingBox())!;
+    const line = (page: Page, ids: string) => page.locator(`[data-gutter-ids='${ids}']`);
+    // Mid-gesture and open-menu shots: the visible screen only (a full-page shot resizes the page under the pointer).
+    const shotView = async (page: Page, name: string) => {
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, animations: "disabled" });
+    };
+
+    test("M58 proof: the default layout", async ({ page }) => {
+      await open(page, "light");
+      await settle(page);
+      await shot(page, `m58-${size.width}-default`);
+      await page.locator("[data-terminal='panels'] summary").click();
+      await shotView(page, `m58-${size.width}-panels`);
+    });
+
+    test("dragging the line between Chart and Option chain grows one and shrinks the other; the limit shows", async ({ page }) => {
+      await open(page, "light");
+      await settle(page);
+      const gutter = line(page, "chart-1|chain");
+      await expect(gutter).toHaveAttribute("aria-label", "Resize Chart and Option chain");
+      await expect(gutter).toHaveCSS("cursor", "col-resize");
+      const g = (await gutter.boundingBox())!;
+      expect(g.width).toBeGreaterThanOrEqual(6);
+      expect(g.width).toBeLessThanOrEqual(8);
+      const chart0 = await box(page, "chart-1"), chain0 = await box(page, "chain");
+      expect(g.height).toBeGreaterThanOrEqual(chart0.height - 1);                 // full length
+      const col = (chain0.x + chain0.width - chart0.x + 8) / 9;                   // 4 + 5 columns
+      await gutter.hover();
+      await shotView(page, `m58-${size.width}-hover`);
+      await page.mouse.down();
+      await page.mouse.move(g.x + g.width / 2 + col * 1.1, g.y + g.height / 2, { steps: 6 });
+      await page.mouse.up();
+      const chart1 = await box(page, "chart-1"), chain1 = await box(page, "chain");
+      expect(chart1.width).toBeGreaterThan(chart0.width + col / 2);
+      expect(chain1.width).toBeLessThan(chain0.width - col / 2);
+      expect(chain1.x).toBeGreaterThan(chain0.x + col / 2);
+      // Further than the chain's smallest width: it stops at 3 columns and says so (the line turns amber).
+      const g2 = (await gutter.boundingBox())!;
+      await page.mouse.move(g2.x + g2.width / 2, g2.y + g2.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(g2.x + col * 4, g2.y + g2.height / 2, { steps: 6 });
+      await expect(page.locator("[data-terminal-limit]")).toContainText("Option chain cannot be narrower than 3 columns.");
+      await expect(gutter).toHaveAttribute("data-limit", "true");
+      await shotView(page, `m58-${size.width}-limit`);
+      await page.mouse.up();
+      const chain2 = await box(page, "chain");
+      expect(chain2.width).toBeGreaterThan(col * 2.5);
+      expect(chain2.width).toBeLessThan(col * 3.5);
+      // The horizontal line under the top row: the top panels and Positions & orders share it.
+      await expect(line(page, "chart-1|chain|basket|positions")).toHaveCSS("cursor", "row-resize");
+      // Double-click the line: Chart and Option chain go back to the ready sizes.
+      await gutter.dblclick();
+      await expect.poll(async () => Math.round((await box(page, "chart-1")).width)).toBe(Math.round(chart0.width));
+      await expect.poll(async () => Math.round((await box(page, "chain")).width)).toBe(Math.round(chain0.width));
+    });
+
+    test("the keyboard moves the line; a title double-click maximises and restores", async ({ page }) => {
+      await open(page, "light");
+      await settle(page);
+      const chart0 = await box(page, "chart-1");
+      await line(page, "chart-1|chain").focus();
+      await page.keyboard.press("ArrowRight");
+      await expect.poll(async () => (await box(page, "chart-1")).width).toBeGreaterThan(chart0.width);
+      await page.keyboard.press("ArrowLeft");
+      await expect.poll(async () => Math.round((await box(page, "chart-1")).width)).toBe(Math.round(chart0.width));
+      await page.locator("[data-panel-handle='chain']").dblclick();
+      await expect(page.locator("[data-panel='chain']")).toHaveAttribute("data-maximised", "true");
+      for (const id of ["chart-1", "basket", "positions"]) await expect(page.locator(`[data-panel='${id}']`)).toHaveAttribute("data-collapsed", "true");
+      expect((await box(page, "chain")).width).toBeGreaterThan(chart0.width * 2.5);
+      await expect(page.locator("[data-gutter-ids]")).toHaveCount(0);
+      await shot(page, `m58-${size.width}-maximised`);
+      await page.locator("[data-panel-handle='chain']").dblclick();
+      await expect(page.locator("[data-panel='chain']")).not.toHaveAttribute("data-maximised", "true");
+      await expect.poll(async () => Math.round((await box(page, "chart-1")).width)).toBe(Math.round(chart0.width));
+    });
+
+    test("the Panels dialog: width and height steppers, Fit to screen, Equal widths; saved with Save as mine", async ({ page }) => {
+      const seen = await open(page, "light");
+      await settle(page);
+      await page.locator("[data-terminal='panels'] summary").click();
+      const width = page.locator("[data-size='chart-1:w']");
+      await expect(width).toHaveText("4");
+      await expect(page.locator("[data-size-min='chart-1:w']")).toContainText("min 3");
+      await page.locator("[data-size-step='chart-1:w:+1']").click();
+      await expect(width).toHaveText("5");
+      await expect(page.locator("[data-size='chain:w']")).toHaveText("4");             // the neighbour gave a column
+      await shotView(page, `m58-${size.width}-dialog`);
+      await page.locator("[data-size-step='chain:w:-1']").click();                       // 3: its smallest
+      await expect(page.locator("[data-size-step='chain:w:-1']")).toBeDisabled();
+      await page.locator("[data-terminal='equal-widths']").click();
+      for (const id of ["chart-1", "chain", "basket"]) await expect(page.locator(`[data-size='${id}:w']`)).toHaveText("4");
+      await page.locator("[data-terminal='fit']").click();
+      await expect(page.locator("[data-size='positions:w']")).toHaveText("12");
+      await page.locator("[data-size-step='chart-1:h:+1']").click();
+      await page.locator("[data-size-step='chart-1:w:+1']").click();
+      await expect(width).toHaveText("5");
+      const height = await page.locator("[data-size='chart-1:h']").textContent();
+      await page.locator("[data-terminal='panels'] summary").click();
+      await page.locator("[data-terminal='save']").click();
+      await page.locator("[data-terminal='name']").fill("Wide chart");
+      await page.locator("[data-terminal='ask-ok']").click();
+      await expect(page.locator("[data-note='terminal-layout'], [data-testid='terminal-layout']").first()).toContainText("Saved as");
+      const saved = seen.puts.at(-1)?.body as { layouts: Record<string, { panels: { id: string; w: number }[] }>; active: string };
+      expect(saved.layouts[saved.active].panels.find((p) => p.id === "chart-1")?.w).toBe(5);
+      await page.reload();
+      await settle(page);
+      await page.locator("[data-terminal='panels'] summary").click();
+      await expect(page.locator("[data-size='chart-1:w']")).toHaveText("5");
+      await expect(page.locator("[data-size='chart-1:h']")).toHaveText(height ?? "");
+    });
+  });
+}

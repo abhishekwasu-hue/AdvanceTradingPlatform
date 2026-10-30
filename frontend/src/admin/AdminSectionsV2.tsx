@@ -13,6 +13,7 @@ import {
   type ConsoleAiCost, type ConsoleSystem, type ConsoleUsers, type DeadLetter, type OutboxState, type RetentionState, type SupportUser,
 } from "./consoleApi";
 import { SkeletonRows } from "../components/primitives";
+import { formatDateIST, formatTimeIST } from "../ui/format";
 
 /**
  * MO3 addition (a): the new read-only parts of the admin console's sections. Each reads its own `/api/admin/console/*`
@@ -111,7 +112,7 @@ export function SystemPanels() {
       </Panel>
       <Panel title="Data feed" id="data-feed">
         <dl className="grid gap-space-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat icon={Activity} label="Market" value={feed.market_open ? "Open" : "Closed"} sub={feed.market_open ? feed.market_reason : feed.next_open ? `Opens ${new Date(feed.next_open).toLocaleString("en-IN", { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : feed.market_reason} />
+          <Stat icon={Activity} label="Market" value={feed.market_open ? "Open" : "Closed"} sub={feed.market_open ? feed.market_reason : feed.next_open ? `Opens ${formatDateIST(feed.next_open, { weekday: true })}, ${formatTimeIST(feed.next_open)}` : feed.market_reason} />
           <Stat icon={Database} label="Market memory" value={ago(feed.market_memory.last_captured_at)} sub={`${feed.market_memory.snapshots_last_hour} snapshots in the last hour`} />
           <Stat icon={Database} label="Instrument master" value={`${feed.instrument_master.instruments.toLocaleString("en-IN")} instruments`} sub={`Synced ${ago(feed.instrument_master.last_synced_at)}`} />
           <Stat icon={Activity} label="Data quality (24 h)" value={quality.length === 0 ? "No events" : `${quality.reduce((a, [, n]) => a + n, 0)} events`} sub={quality.map(([k, n]) => `${k} ${n}`).join(" · ") || "gaps, spikes, late bars"} />

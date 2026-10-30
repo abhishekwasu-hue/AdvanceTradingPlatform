@@ -68,14 +68,16 @@ export function terminalApi(fetcher: typeof request = request): TerminalApi {
 
 export const defaultTerminalApi = terminalApi();
 
-/** Open / Executed / Rejected, from the order's state (app/core/enums.py OrderStatus). */
-export type OrderGroup = "open" | "executed" | "rejected";
+/** Open / Executed / Rejected / Cancelled, from the order's state (app/core/enums.py OrderStatus). REV-1 M3: a cancelled
+ * order is its own group, never listed under "Rejected". */
+export type OrderGroup = "open" | "executed" | "rejected" | "cancelled";
 const OPEN = new Set(["CREATED", "VALIDATING", "RISK_CHECK", "SUBMITTED", "PENDING", "PARTIAL_FILL"]);
 const EXECUTED = new Set(["FILLED", "POSITION_OPEN"]);
 
 export function orderGroup(status: string): OrderGroup {
   if (OPEN.has(status)) return "open";
   if (EXECUTED.has(status)) return "executed";
+  if (status === "CANCELLED") return "cancelled";
   return "rejected";
 }
 

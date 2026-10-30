@@ -76,6 +76,10 @@ export function topBarNotices(status: SystemStatus | null, _user: UserResponse |
  * when the bar would run past the screen edge; 2 = still too wide at the small size: the (?) moves under the title and,
  * only as the last resort, the title wraps between words (never inside one, never cut). It steps back up when there is
  * room (rotation). `extras`: what else sits in the row (PROSE-1: the (?) appears once the page has set its subtitle).
+ *
+ * REV-1 M3 (Settings at 375 px: the avatar was cut and the page scrolled sideways): the row is measured again whenever
+ * one of its parts changes size (the Ask AI button, the tips button or the price dot arrive after the first paint), so
+ * the buttons always stay on screen - by the steps above, never by cutting the title.
  */
 export type TitleFit = 0 | 1 | 2;
 export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean, extras = ""): TitleFit {
@@ -98,7 +102,14 @@ export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, 
     let live = true;
     void document.fonts?.ready.then(() => { if (live) check(); });
     window.addEventListener("resize", check);
-    return () => { live = false; window.removeEventListener("resize", check); };
+    // A part of the row that arrives or changes size later (a button, the price dot) is measured too.
+    const el = row.current;
+    const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(() => check()) : null;
+    const watch = () => { if (el && sizes) { sizes.disconnect(); for (const child of Array.from(el.children)) sizes.observe(child); } };
+    watch();
+    const parts = el && typeof MutationObserver === "function" ? new MutationObserver(() => { watch(); check(); }) : null;
+    if (el) parts?.observe(el, { childList: true });
+    return () => { live = false; window.removeEventListener("resize", check); sizes?.disconnect(); parts?.disconnect(); };
   }, [row, title, enabled, extras]);
   return fit;
 }

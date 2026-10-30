@@ -26,7 +26,7 @@ import { useFeatures } from "../ui/useFeatures";
 import {
   BLOCK_PRESETS, EXPIRIES, FLOW_TIMEFRAMES, INDICATORS, INDICATOR_LABEL, NEEDS_MULTIPLIER, NEEDS_PERIOD, OPERATORS, OPERATOR_WORDS, SOON_BLOCKS,
   START_CARDS, STEPS, STRIKES, STRUCTURES, SYMBOL_CHOICES, SYMBOL_LABEL, TIMEFRAME_WORDS, blockOpen, blockWords, emptyFlow, entryProblems, higherTimeframes, atrLengthMissing,
-  exitProblems, flowConfig, isOption, isSpread, marketProblems, optionBacktest, paperContract, paperSymbol, resultSummary, sidesOf, withCard,
+  exitProblems, flowConfig, isOption, isSpread, marketProblems, optionBacktest, paperContract, paperSymbol, resultSummary, sidesOf, withCard, cardLocked,
   withDraft, type FlowBlock, type FlowHandoff, type FlowOperand, type FlowSide, type FlowState, type StepKey,
 } from "./model";
 
@@ -187,7 +187,7 @@ function StartStep({ flow, setFlow, templates, templatesOn, idea }: {
       <CardV2 title="Pick a starting point" testId="flow-cards">
         <ul className="grid grid-cols-1 gap-space-2 sm:grid-cols-2 lg:grid-cols-3">
           {START_CARDS.map((c) => {
-            const soon = c.engine === "soon" || (c.engine === "template" && !(templatesOn && templates.some((t) => t.id === c.templateId)));
+            const soon = cardLocked(c, templatesOn, templates.map((t) => t.id));
             const on = flow.card === c.key;
             return (
               <li key={c.key}>

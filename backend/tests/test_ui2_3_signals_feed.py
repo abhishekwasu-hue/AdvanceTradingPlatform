@@ -36,7 +36,7 @@ from tests.test_z3_members import member
 URL = "/api/signals/feed"
 UTC = timezone.utc
 ITEM_KEYS = {"id", "at", "symbol", "exchange", "direction", "setup", "entry", "stop", "target", "rr", "source", "mode", "status",
-             "expires_at", "snoozed_until", "reasons", "action_id", "outcome"}
+             "expires_at", "snoozed_until", "reasons", "action_id", "outcome", "legs"}
 
 
 def _run(coro):
@@ -330,6 +330,8 @@ def test_source_and_symbol_filters():
     assert _ids(_get(t, source="autopilot")) == [f"action:{auto}"]
     assert _ids(_get(t, source="scan")) == [f"action:{scan}"]
     assert _ids(_get(t, source="copilot")) == [f"action:{copilot}"]
+    assert _ids(_get(t, source="library")) == [f"history:{hist}"]           # REV-1 M3: the signal generator's own filter
+    assert _get(t, source="library", tab="waiting")["items"] == []       # nothing of it waits for a decision
     by_symbol = _get(t, symbol="demo1")
     assert set(_ids(by_symbol)) == {f"action:{auto}", f"action:{copilot}", f"history:{hist}"} and by_symbol["symbol"] == "DEMO1"
     assert by_symbol["counts"] == _counts(2, 3)

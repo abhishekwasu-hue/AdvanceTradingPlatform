@@ -4,7 +4,7 @@ import { useColourV2 } from "../ui/colourV2";
 import { formatPrice } from "../ui/format";
 import {
   CALL_COLUMNS, PUT_COLUMNS, atmIndex, barPercent, centreScrollTop, columnShown, formatCount, formatCountChange, formatGreek,
-  formatIv, formatOiChangePct, formatStrike, isItm, maxOi, type ColumnDef, type ColumnPrefs,
+  formatIv, formatOiChangePct, formatStrike, isItm, maxOi, type ColumnDef, type ColumnKey, type ColumnPrefs,
 } from "./model";
 import type { ChainLeg, ChainRow, LiveChain } from "./types";
 
@@ -51,7 +51,7 @@ function cellText(key: ColumnDef["key"], leg: ChainLeg, pct = false): string {
 
 const SHOWN_CLASS = { all: "", desktop: "hidden md:table-cell", none: "hidden" } as const;
 
-export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg, held, setup, areaMarks }: {
+export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg, held, setup, areaMarks, hide }: {
   live: LiveChain;
   prefs: ColumnPrefs;
   /** The ATM row is centred once per key (symbol and expiry; FNO-1: and each "recentre" tap). */
@@ -65,14 +65,16 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
   setup?: ReadonlyMap<string, string>;
   /** TERM-2 R3 (optional): under a short strike, its distance to the nearest area, "strike|CE" / "strike|PE" -> words. */
   areaMarks?: ReadonlyMap<string, string>;
+  /** M58 T4-5 (optional): columns left out for a narrow panel (the Terminal's chain: IV first, then OI change). */
+  hide?: readonly ColumnKey[];
 }) {
   const { rows, summary } = live;
   const spot = summary.spot;
   const atm = summary.atm_strike;
   const max = { call: maxOi(rows, "call"), put: maxOi(rows, "put") };
   const highest = { call: summary.max_call_oi_strike, put: summary.max_put_oi_strike };
-  const calls = CALL_COLUMNS.filter((c) => columnShown(c, prefs) !== "none");
-  const puts = PUT_COLUMNS.filter((c) => columnShown(c, prefs) !== "none");
+  const calls = CALL_COLUMNS.filter((c) => columnShown(c, prefs) !== "none" && !hide?.includes(c.key));
+  const puts = PUT_COLUMNS.filter((c) => columnShown(c, prefs) !== "none" && !hide?.includes(c.key));
 
   const box = useRef<HTMLDivElement>(null);
   const atmRow = useRef<HTMLTableRowElement>(null);

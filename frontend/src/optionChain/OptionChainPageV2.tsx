@@ -129,16 +129,9 @@ export default function OptionChainPageV2(_props: PageProps) {
 }
 
 /** The page's look for given data (no reads of its own), so tests render every state directly. */
-/** UX-5: the Symbol picker's rows - a deep-linked symbol outside the list first, then the indices, then the F&O stocks. */
-export function symbolOptions(extra: string | null): ComboOption[] {
-  return [...(extra ? [{ value: extra, label: extra }] : []),
-    ...INDEX_SYMBOLS.map((s) => ({ value: s, label: s, group: "Indices" })), ...STOCK_SYMBOLS.map((s) => ({ value: s, label: s, group: "Stocks" }))];
-}
-
-/** UX-5: the Expiry picker's rows ("3 Nov 2026", the monthly one marked). */
-export function expiryComboOptions(list: readonly { date: string; kind?: string }[]): ComboOption[] {
-  return list.map((e) => ({ value: e.date, label: formatDateIST(e.date), hint: e.kind === "monthly" ? "Monthly" : undefined }));
-}
+// UX-5: the Symbol / Expiry pickers' rows live in ./model (TERM-2: the Terminal's context bar uses the same ones).
+import { expiryComboOptions, symbolOptions } from "./model";
+export { expiryComboOptions, symbolOptions };
 
 export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal, autoTrade = false }: {
   symbol: string;

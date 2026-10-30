@@ -19,6 +19,8 @@ import type { BasketLeg } from "../fno/basket";
 import type { PositionGroup } from "../fno/contracts";
 import type { ChainLeg, LiveChain } from "../optionChain/types";
 import { NO_STOP, stopText, type HeldRow } from "../trading/model";
+import { ContextBarV2, contextFigures } from "./ContextBarV2";
+import type { OptionChainData } from "../optionChain/useOptionChain";
 import { strategyDisplayName } from "../ui/strategyName";
 import { formatPrice, formatTimeIST } from "../ui/format";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
@@ -501,5 +503,38 @@ describe("unbuilt panels stay hidden (R6, FN0 25 Oct)", () => {
     const read = readPrefs(stored);
     const panels = read.layouts.mine.panels;
     expect(panels.filter((x) => x.open).map((x) => x.id)).toEqual(["chart-1"]);
+  });
+});
+
+describe("TERM-2 step 1: the context bar", () => {
+  const chainData = (summary: Record<string, unknown> | null) => ({
+    expiries: { underlying: "NIFTY", today: "2026-10-27", source: "master", default: "2026-11-03",
+      expiries: [{ date: "2026-10-27", kind: "monthly" }, { date: "2026-11-03", kind: "weekly" }] },
+    expiry: "2026-11-03", setExpiry: () => undefined, loading: false, problem: null,
+    live: summary ? { underlying: "NIFTY", expiry: "2026-11-03", rows: [], summary } : null,
+  }) as unknown as OptionChainData;
+
+  it("figures: the live spot wins over the chain's, its Signed change from the previous close, PCR, DTE, VIX band", () => {
+    const f = contextFigures(chainData({ spot: 24400, pcr_oi: 0.91, days_to_expiry: 7, atm_strike: 24500 }),
+      { ltp: 24480, at: null, source: "tick" }, 24400, 13.4);
+    expect(f.spot).toBe(24480);
+    expect(f.moved?.change).toBeCloseTo(80);
+    expect(f.pcr).toBe(0.91);
+    expect(f.dte).toBe(7);
+    expect(f.vix?.level).toBeTruthy();
+    const none = contextFigures(chainData(null), null, null, null);
+    expect(none.spot).toBeNull();
+    expect(none.moved).toBeNull();
+    expect(none.vix).toBeNull();
+  });
+
+  it("renders the symbol, the expiry chosen by the chain read, and ONE PAPER badge", () => {
+    const html = renderToStaticMarkup(<MemoryRouter><ContextBarV2 symbol="NIFTY" onSymbol={() => undefined}
+      chain={chainData({ spot: 24400, pcr_oi: 0.91, days_to_expiry: 7, atm_strike: 24500 })} spot={null} prevClose={null} vix={null}
+      mode={{ label: "Paper", title: "Practice" }} /></MemoryRouter>);
+    expect(html).toContain('data-expiry="2026-11-03"');
+    expect(html).toContain('data-symbol="NIFTY"');
+    expect(html.match(/>PAPER</g)?.length).toBe(1);
+    expect(html).not.toMatch(/\bPractice\b(?![^<]*")/);
   });
 });

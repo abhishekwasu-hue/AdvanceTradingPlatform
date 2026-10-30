@@ -31,7 +31,7 @@ from app.platform import controls
 from app.public_api.keys import SCOPES as API_KEY_SCOPES
 from tests import tenancy_probe as probe
 from tests.route_inventory import Route, authenticates, gate_of, iter_api_routes
-from tests.tenancy_route_table import ROUTE_TABLE
+from tests.tenancy_route_table import ROUTE_TABLE, SELF_COMPUTE_UNDER_GUARDED_PREFIX
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_trading_worker import _upgrade_plan
 
@@ -312,6 +312,8 @@ def test_no_shared_data_or_order_write_is_open_to_a_viewer_by_classification():
     """The 'self' class is for the caller's own data and pure computations; a write to data every organisation shares,
     or anything on the order path, must never be 'self' (Z10-c fixed the shared-data writes that were)."""
     for route in _of("self"):
+        if route.key in SELF_COMPUTE_UNDER_GUARDED_PREFIX:          # M55 O2: compute only, listed by name
+            continue
         assert not route.path.startswith(("/api/fundamentals/", "/api/news-events", "/api/reconciliation", "/api/deployments/{",
                                           "/api/positions", "/api/kill-switch", "/api/strategies/")), route.key
 

@@ -44,6 +44,11 @@ networks:
     ipam:
       config:
         - subnet: ${ATP_CI_SUBNET:-172.31.250.0/24}
+  # M55 O1: the prod overlay's Caddy network, on a range of this stack's own (it can run beside a production project).
+  edge:
+    ipam:
+      config: !override
+        - subnet: ${ATP_CI_EDGE_SUBNET:-172.31.251.0/24}
 
 volumes:
   ci_tls:
@@ -84,6 +89,8 @@ services:
       <<: *faketime
       GLOBAL_CUES_ENABLED: "false"
       API_WORKERS: ${API_WORKERS:-2}
+      # M55 O1: Caddy is on this stack's network too (its alias below), so it may reach the API from either range.
+      FORWARDED_ALLOW_IPS: "127.0.0.1,${ATP_CI_EDGE_SUBNET:-172.31.251.0/24},${ATP_CI_SUBNET:-172.31.250.0/24}"
     extra_hosts: *broker_hosts
     volumes:
       - ci_tls:/ci-tls:ro

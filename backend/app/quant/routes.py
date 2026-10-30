@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.core.models import OHLCVBar, bars_to_dataframe
+from app.core.rate_limit import analysis_rate_limit
 from app.db.models import User
 from app.db.session import get_session
 from app.fundamentals.visibility import viewer_tenant
@@ -91,7 +92,7 @@ async def _fill_fundamentals(session: AsyncSession, inputs: List[factor_model.Fa
     return {"enabled": True, "filled": {k: v.as_dict() for k, v in fills.items()}, "note": note}
 
 
-@router.post("/factors")
+@router.post("/factors", dependencies=[Depends(analysis_rate_limit)])      # M55 O2: signed in (the limiter resolves the user)
 async def factors(body: FactorsBody, session: AsyncSession = Depends(get_session), viewer: Optional[int] = Depends(viewer_tenant)) -> dict:
     inputs = _inputs(body.symbols)
     fundamentals = await _fill_fundamentals(session, inputs, body.use_fundamentals, viewer)
@@ -105,7 +106,7 @@ async def factors(body: FactorsBody, session: AsyncSession = Depends(get_session
     return out
 
 
-@router.post("/risk")
+@router.post("/risk", dependencies=[Depends(analysis_rate_limit)])         # M55 O2: as /factors
 async def risk(body: RiskBody) -> dict:
     frames = {s.symbol.upper().strip(): bars_to_dataframe(s.candles) for s in body.symbols if s.candles}
     if not frames:

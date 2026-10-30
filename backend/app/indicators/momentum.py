@@ -15,8 +15,9 @@ def rsi(close: pd.Series, period: int = 14) -> pd.Series:
 
     rs = avg_gain / avg_loss.replace(0.0, np.nan)
     result = 100 - (100 / (1 + rs))
-    result = result.where(avg_loss != 0, 100.0)
-    return result
+    result = result.where(avg_loss != 0, 100.0)             # only gains over the period: 100
+    # REV-B5: no gains and no losses (a flat period) is neither strong nor weak - the neutral 50, not 100
+    return result.where(~((avg_loss == 0) & (avg_gain == 0)), 50.0)
 
 
 @prefix_cached

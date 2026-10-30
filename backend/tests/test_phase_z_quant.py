@@ -104,24 +104,24 @@ def test_risk_model_correlation_beta_vol_var_and_weights():
 
 
 def test_quant_endpoints_including_open_book_exposure(monkeypatch):
+    headers, me = _owner("quant-exposure@example.com")                 # M55 O2: factors and risk are signed in only
     up, down, flat = _series(_trend(slope=0.25, seed=7)), _series(_trend(slope=-0.2, seed=8)), _series(100 + np.sin(np.arange(300) / 4) * 0.4)
     symbols = [{"symbol": "up", "candles": _candles(up), "fundamentals": {"pe": 15, "roe_pct": 20}}, {"symbol": "down", "candles": _candles(down)},
                {"symbol": "flat", "candles": _candles(flat)}]
-    res = client.post("/api/quant/factors", json={"symbols": symbols, "weights": {"momentum": 0.6, "trend": 0.4}})
+    res = client.post("/api/quant/factors", headers=headers, json={"symbols": symbols, "weights": {"momentum": 0.6, "trend": 0.4}})
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["rows"][0]["symbol"] == "UP" and body["rows"][0]["bucket"] == "LONG" and body["weights"] == {"momentum": 0.6, "trend": 0.4}
     assert any("value" in w or "quality" in w for w in body["warnings"]) is False      # UP has fundamentals, so those factors exist
-    assert client.post("/api/quant/factors", json={"symbols": symbols, "weights": {"momentum": 0}}).status_code == 400
+    assert client.post("/api/quant/factors", headers=headers, json={"symbols": symbols, "weights": {"momentum": 0}}).status_code == 400
 
-    risk = client.post("/api/quant/risk", json={"symbols": symbols, "benchmark": "up", "weights": {"up": 0.5, "down": 0.5}})
+    risk = client.post("/api/quant/risk", headers=headers, json={"symbols": symbols, "benchmark": "up", "weights": {"up": 0.5, "down": 0.5}})
     assert risk.status_code == 200, risk.text
     r = risk.json()
     assert r["benchmark"] == "UP" and r["weights_source"] == "given" and r["portfolio"]["vol_annual"] > 0
     assert set(r["suggested"]["inverse_volatility"]) == {"UP", "DOWN", "FLAT"} and abs(sum(r["suggested"]["risk_parity"].values()) - 1) < 1e-6
     assert r["betas"]["UP"] == 1.0 and r["correlation"]["UP"]["UP"] == 1.0
 
-    headers, me = _owner("quant-exposure@example.com")
     assert client.post("/api/quant/exposure", json={"symbols": symbols}).status_code == 401
     empty = client.post("/api/quant/exposure", headers=headers, json={"symbols": symbols}).json()
     assert empty["weights"] == {} and any("no open positions" in n for n in empty["notes"])

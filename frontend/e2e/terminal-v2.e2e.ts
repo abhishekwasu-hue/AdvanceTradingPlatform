@@ -139,6 +139,10 @@ async function open(page: Page, theme: "light" | "dark", opts: { features?: Reco
     return route.fulfill({ json: { prefs: { chart: {}, terminal: stored }, versions: { chart: 1, terminal: version } } });
   });
   let reads = 0;
+  // TERM-2 step 1: the context bar's India VIX and the previous close (the Today strip).
+  await page.route(/\/api(?:\/v1)?\/market\/strip$/, (r) => r.fulfill({ json: { indices: [
+    { key: "NIFTY 50", label: "NIFTY 50", ltp: 24480, prev_close: 24400 }, { key: "INDIA VIX", label: "INDIA VIX", ltp: 13.4, prev_close: 13.1 },
+  ] } }));
   await page.route(/\/api(?:\/v1)?\/terminal\/status$/, (r) => {
     reads += 1;
     // `vary`: every read brings new figures (a bigger and a smaller number in turn), as a moving market does.
@@ -218,7 +222,9 @@ test.describe("v2 terminal 1440", () => {
       await expect(page.locator("[data-chain-ladder] [data-atm]")).toContainText("24,500");
       await expect(page.locator("[data-status='today']")).toContainText("+₹2,650");
       await expect(page.locator("[data-status='margin']")).toContainText("(estimate)");
-      await expect(page.locator("[data-status='mode']")).toHaveText("Paper");
+      // TERM-2 step 1: one PAPER badge, in the context bar (the status bar no longer repeats it).
+      await expect(page.locator("[data-terminal='mode']")).toHaveText("PAPER");
+      await expect(page.locator("[data-status='mode']")).toHaveCount(0);
       await expect(page.locator("[data-status='feed']")).toHaveText("Live prices");
       await noSidewaysScroll(page);
       await shot(page, `terminal-1440-${theme}`);
@@ -341,6 +347,47 @@ test.describe("v2 terminal 1440", () => {
     const ms = await page.evaluate(() => { const w = window as unknown as { __clickAt: number; __sentAt: number }; return w.__sentAt - w.__clickAt; });
     if (MEASURE) console.log(`T8 click on Place to the order request leaving the page: ${ms.toFixed(1)} ms`);
   });
+});
+
+test.describe("v2 terminal context bar (TERM-2 step 1)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("one symbol + expiry: on an expiry day the next weekly; the figures; changing the expiry re-reads the chain", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => { if (/option-chain\/[^/]+\/live/.test(r.url())) asked.push(new URL(r.url()).search); });
+    await open(page, "light");
+    const bar = page.locator("[data-block='terminal-context']");
+    await expect(bar).toHaveAttribute("data-symbol", "NIFTY");
+    await expect(bar).toHaveAttribute("data-expiry", "2026-11-03");            // 27 Oct is an expiry day: the next one opens
+    await expect(bar.locator("[data-figure='pcr']")).toContainText("0.91");
+    await expect(bar.locator("[data-figure='dte']")).toContainText("7");
+    await expect(bar.locator("[data-figure='vix']")).toContainText("13.40");
+    await expect(bar.locator("[data-figure='spot'] [data-signed]")).toBeVisible();
+    await expect(bar.locator("[data-terminal='mode']")).toHaveText("PAPER");
+    await page.locator("[data-terminal='expiry']").click();
+    await page.getByRole("option", { name: /10 Nov 2026/ }).click();
+    await expect(bar).toHaveAttribute("data-expiry", "2026-11-10");
+    await expect.poll(() => asked.some((q) => q.includes("2026-11-10"))).toBe(true);
+    await page.locator("[data-terminal='symbol']").click();
+    await page.getByRole("option", { name: "BANKNIFTY", exact: true }).click();
+    await expect(bar).toHaveAttribute("data-symbol", "BANKNIFTY");
+    await expect(page.locator("[data-panel='chart-1']")).toContainText("NIFTY BANK");
+  });
+});
+
+test.describe("v2 terminal tablet 820 (CT-1 T3)", () => {
+  test.use({ viewport: { width: 820, height: 1180 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  for (const theme of THEMES) {
+    test(`the phone tabs and no layout controls (${theme})`, async ({ page }) => {
+      await open(page, theme);
+      await shot(page, `terminal-820-${theme}`);
+      await expect(page.locator("[data-terminal-tabs]")).toBeVisible();
+      await expect(page.locator("[data-block='terminal-toolbar']")).toHaveCount(0);
+      await expect(page.locator("[data-block='terminal-context']")).toBeVisible();
+      await noSidewaysScroll(page);
+    });
+  }
 });
 
 for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {

@@ -17,9 +17,11 @@ const LABEL = "text-t12 text-fg-muted";
 const VALUE = "whitespace-nowrap font-tabular text-t15 font-semibold";
 const tone = (t: Tone) => (t === "neutral" ? "text-fg" : toneClass(t));
 
-export function StatusBarV2({ status, failed, masked, onMask, compact = false, combined = [] }: {
+export function StatusBarV2({ status, failed, masked, onMask, compact = false, combined = [], showMode = true }: {
   status: TerminalStatus | null; failed: boolean; masked: boolean; onMask: () => void; compact?: boolean;
   combined?: readonly CombinedExit[];
+  /** TERM-2 step 1: false where the context bar already shows the one PAPER badge (one badge per screen). */
+  showMode?: boolean;
 }) {
   const mode = modeChip(status);
   const cx6 = statusSummary(combined, masked);
@@ -53,7 +55,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
         <p className="min-w-0 flex-1 text-t13 text-fg-muted" role="status">
           {failed ? "Your figures could not be read. We will try again in a moment." : "Loading your figures…"}
         </p>
-        {modeChipEl}
+        {showMode && modeChipEl}
         {maskButton}
       </section>
     );
@@ -72,7 +74,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
           <span className={cx(VALUE, "text-fg")}>{money(status.funds.available, masked)}</span>
         </div>
         {combinedChip}
-        {modeChipEl}
+        {showMode && modeChipEl}
         {maskButton}
       </section>
     );
@@ -105,7 +107,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
           ? <WifiOff size={14} aria-hidden /> : <Wifi size={14} aria-hidden />}
         {feed.label}
       </span>
-      {modeChipEl}
+      {showMode && modeChipEl}
       <span data-status="kill-switch" data-engaged={status.kill_switch.engaged ? "" : undefined} title={status.kill_switch.message}
         className={cx("inline-flex shrink-0 items-center gap-space-1 text-t13 font-medium", status.kill_switch.engaged ? "text-warn" : "text-fg-muted")}>
         {status.kill_switch.engaged ? <ShieldAlert size={14} aria-hidden /> : <ShieldCheck size={14} aria-hidden />}

@@ -69,6 +69,18 @@ export function libraryChips(params: Record<string, unknown> | null | undefined)
   return paramChips(Object.fromEntries(Object.entries(params).filter(([k]) => k !== "min_rr")));
 }
 
+/** STRAT-X (owner decision 30 Oct, D2): a built-in's stop and targets are suggested values for the trader's own settings,
+ * never a rule of the strategy - the Library shows them apart, under this note. */
+export const SUGGESTED_KEYS: readonly string[] = ["atr_mult_sl", "target_rr"];
+export const SUGGESTED_NOTE = "Suggested — change in settings";
+
+/** The Library's chips for a built-in, split: its own settings, and the suggested stop / targets (SUGGESTED_KEYS). */
+export function librarySplit(params: Record<string, unknown> | null | undefined): { settings: string[]; suggested: string[] } {
+  const own = Object.fromEntries(Object.entries(params ?? {}).filter(([k]) => k !== "min_rr"));
+  const pick = (want: boolean) => Object.fromEntries(Object.entries(own).filter(([k]) => SUGGESTED_KEYS.includes(k) === want));
+  return { settings: paramChips(pick(false)), suggested: paramChips(pick(true)) };
+}
+
 /** The optimiser's scores (backend/app/backtest/optimizer.py METRICS). */
 export const METRIC_LABEL: Readonly<Record<string, string>> = {
   net_pnl: "Net P&L", expectancy: "Average per trade", profit_factor: "Profit factor", win_rate: "Win %",
